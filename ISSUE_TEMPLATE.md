@@ -25,8 +25,7 @@ to reach Stable.
 
 - [ ] Before Alpha
     - [ ] Design Approval
-      - [ ] < 1 page PR description of the design. [advice for design description]  **PR-NUMBER**
-      - [ ] Design doc under [docs/proposals](https://github.com/kubernetes/kubernetes/docs/proposals).  **PR-NUMBER**
+      - [ ] Design Proposal.  This goes under [docs/proposals](https://github.com/kubernetes/kubernetes/docs/proposals).  Doing a proposal as a PR allows line-by-line commenting from community, and creates the basis for later design documentation.  Paste link to merged design proposal here: **PROPOSAL-NUMBER**
       - [ ] Initial API review (if API).  Maybe same PR as design doc. **PR-NUMBER**
         -  Any code that changes an API (`/pkg/apis/...`)
         -  **cc @kubernetes/api**
