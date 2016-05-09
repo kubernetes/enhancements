@@ -1,11 +1,27 @@
+
+BEFORE YOU CLICK CREATE ISSUE:
+
+- Put a 2-3 sentence description of your feature under the **Summary** heading below.
+- Delete from the top of this text down to the **Summary** heading.
+- Read the text below.
+
 Thanks for wanting to add a feature to Kubernetes!  You will be responsible for guiding
 your feature through completion, and asking the right people for approvals.  
 
 Large features typically go through three stages: [Alpha, Beta, and Stable](https://github.com/kubernetes/kubernetes/blob/master/docs/api.md#api-versioning)
-Each stage requires various approvals from various teams.
+Each stage requires various approvals from various teams.  Features require several releases
+to reach Stable.
 
-You can use the checkboxes below to
-track your progress.  You can delete the text above once you have read it.  Please keep the checklist.
+
+** Delete from here to top of input box before creating issue so that issue creation emails will be informative.**
+
+# Description
+
+**Add description here**
+
+
+# Progress Tracker
+
 
 - [ ] Before Alpha
     - [ ] Design Approval
