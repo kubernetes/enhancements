@@ -55,7 +55,7 @@ Please do not comment on the feature issue to:
 
 ## Writing a Design Proposal
 
-- Read some existing [design proposals](https://github.com/kubernetes/kubernetes/docs/proposals) and [design docs](https://github.com/kubernetes/kubernetes/docs/design).
+- Read some existing [design proposals](https://github.com/kubernetes/kubernetes/tree/master/docs/proposals) and [design docs](https://github.com/kubernetes/kubernetes/tree/master/docs/design).
 - Include concrete use cases and describe the "roles" who will use your feature.
 - Submitting the design proposal as a PR against `docs/proposals` in https://github.com/kubernetes/kubernetes allows line-by-line discussion of the proposal with the whole community.
  
