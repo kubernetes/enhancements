@@ -1,8 +1,8 @@
 
 BEFORE YOU CLICK CREATE ISSUE:
 
-- Put a 2-3 sentence description of your feature under the **Summary** heading below.
-- Delete from the top of this text down to the **Summary** heading.
+- Put a 2-3 sentence description of your feature under the **Description** heading below.
+- Delete from the top of this text down to the **Description** heading.
 - Read the text below.
 
 Thanks for wanting to add a feature to Kubernetes!  You will be responsible for guiding
