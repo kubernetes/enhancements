@@ -3,8 +3,8 @@ BEFORE YOU CLICK CREATE ISSUE:
 
 - Please first build consensus within the appropriate SIG or in github.com/kubernetes/kubernetes/issues that
   that the problem you are trying to solve is worth solving at this time.
-- Put a 2-3 sentence description of your feature under the **Summary** heading below.
-- Delete from the top of this text down to the **Summary** heading.
+- Put a 2-3 sentence description of your feature under the **Description** heading below.
+- Delete from the top of this text down to the **Description** heading.
 - Read the text below.
 
 Thanks for wanting to add a feature to Kubernetes!  You will be responsible for guiding
