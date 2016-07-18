@@ -1,7 +1,19 @@
-# features
+# Feature Tracking and Backlog
+
 Feature tracking repo for Kubernetes releases
 
-This repo only contains issues.  These issues are umbrellas for new features added to Kubernetes.  
+This repo only contains issues. These issues are umbrellas for new features to be added to Kubernetes. A feature usually takes multiple releases to complete. And a feature can be tracked as backlog items before work begins. A feature may be filed once there is consensus in at least one [Kubernetes SIG](https://github.com/kubernetes/kubernetes/wiki/Special-Interest-Groups-(SIGs)).
+
+## Is My Thing a Feature?
+
+We are trying to figure out the exact shape of a feature. Until then here are a few rough hueristics.
+
+A feature is anything that:
+
+- A blog post would be written about after its release (ex. [minikube](http://blog.kubernetes.io/2016/07/minikube-easily-run-kubernetes-locally.html), [PetSet](http://blog.kubernetes.io/2016/07/thousand-instances-of-cassandra-using-kubernetes-pet-set.html), [rkt container runtime](http://blog.kubernetes.io/2016/07/rktnetes-brings-rkt-container-engine-to-Kubernetes.html).
+- Requires multiple parties/SIGs/owners participating to complete (ex. GPU scheduling [API, Core, & Node], PetSet [Storage & API]).
+- Needs significant effort or changes Kubernetes in a significant way (ex. something that would take 10 person-weeks to implement, introduce or redesign a system component, or introduces API changes).
+- Impacts the UX or operation of Kubernetes substatially such that engineers using Kubernetes will need retraining.
 
 ## Why are features tracked
 
