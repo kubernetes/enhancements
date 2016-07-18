@@ -31,6 +31,8 @@ to reach Stable.
       - [ ] Initial API review (if API).  Maybe same PR as design doc. **PR-NUMBER**
         -  Any code that changes an API (`/pkg/apis/...`)
         -  **cc @kubernetes/api**
+      - [ ] Identify shepherd (your SIG lead and/or kubernetes-pm@googlegroups.com will be able to help you). **My Shepherd is:** _REPLACE ME_
+      - [ ] Identify secondary/backup contact point. **My Secondary Contact Point is:** _REPLACE ME_
     - [ ] Write (code + tests + docs) then get them merged.  **ALL-PR-NUMBERS**
       - [ ] **Code needs to be disabled by default.**   Verified by code OWNERS
       - [ ] Minimal testing
