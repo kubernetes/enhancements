@@ -31,6 +31,10 @@ to reach Stable.
       - [ ] Initial API review (if API).  Maybe same PR as design doc. **PR-NUMBER**
         -  Any code that changes an API (`/pkg/apis/...`)
         -  **cc @kubernetes/api**
+      - [ ] Identify shepherd (your SIG lead and/or kubernetes-pm@googlegroups.com will be able to help you). **My Shepherd is:** _replace.me@replaceme.com_ (and/or GH Handle)
+        -  A shepherd is an individual who will help acquaint you with the process of getting your feature into the repo, identify reviewers and provide feedback on the feature. They are _not_ (necessarily) the code reviewer of the feature, or tech lead for the area.
+        -  The shepherd is _not_ responsible for showing up to Kubernetes-PM meetings and/or communicating if the feature is on-track to make the release goals. That is still your responsibility.
+      - [ ] Identify secondary/backup contact point. **My Secondary Contact Point is:** _replace.me@replaceme.com_ (and/or GH Handle)
     - [ ] Write (code + tests + docs) then get them merged.  **ALL-PR-NUMBERS**
       - [ ] **Code needs to be disabled by default.**   Verified by code OWNERS
       - [ ] Minimal testing
