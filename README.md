@@ -10,7 +10,7 @@ We are trying to figure out the exact shape of a feature. Until then here are a 
 
 A feature is anything that:
 
-- A blog post would be written about after its release (ex. [minikube](http://blog.kubernetes.io/2016/07/minikube-easily-run-kubernetes-locally.html), [PetSet](http://blog.kubernetes.io/2016/07/thousand-instances-of-cassandra-using-kubernetes-pet-set.html), [rkt container runtime](http://blog.kubernetes.io/2016/07/rktnetes-brings-rkt-container-engine-to-Kubernetes.html).
+- A blog post would be written about after its release (ex. [minikube](http://blog.kubernetes.io/2016/07/minikube-easily-run-kubernetes-locally.html), [PetSet](http://blog.kubernetes.io/2016/07/thousand-instances-of-cassandra-using-kubernetes-pet-set.html), [rkt container runtime](http://blog.kubernetes.io/2016/07/rktnetes-brings-rkt-container-engine-to-Kubernetes.html)).
 - Requires multiple parties/SIGs/owners participating to complete (ex. GPU scheduling [API, Core, & Node], PetSet [Storage & API]).
 - Needs significant effort or changes Kubernetes in a significant way (ex. something that would take 10 person-weeks to implement, introduce or redesign a system component, or introduces API changes).
 - Impacts the UX or operation of Kubernetes substatially such that engineers using Kubernetes will need retraining.
