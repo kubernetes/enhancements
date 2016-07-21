@@ -1,7 +1,7 @@
 
 BEFORE YOU CLICK CREATE ISSUE:
 
-- Please first build consensus within the appropriate SIG or in github.com/kubernetes/kubernetes/issues that
+- Please first build consensus within the appropriate SIG or in github.com/kubernetes/kubernetes/issues
   that the problem you are trying to solve is worth solving at this time.
 - Put a 2-3 sentence description of your feature under the **Description** heading below.
 - Delete from the top of this text down to the **Description** heading.
