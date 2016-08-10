@@ -32,7 +32,7 @@ to reach Stable.
       - [ ] Design Proposal.  This goes under [docs/proposals](https://github.com/kubernetes/kubernetes/tree/master/docs/proposals).  Doing a proposal as a PR allows line-by-line commenting from community, and creates the basis for later design documentation.  Paste link to merged design proposal here: **PROPOSAL-NUMBER**
       - [ ] Initial API review (if API).  Maybe same PR as design doc. **PR-NUMBER**
         -  Any code that changes an API (`/pkg/apis/...`)
-        -  **cc @kubernetes/api**
+        -  **cc `@kubernetes/api`**
       - [ ] Identify shepherd (your SIG lead and/or kubernetes-pm@googlegroups.com will be able to help you). **My Shepherd is:** _replace.me@replaceme.com_ (and/or GH Handle)
         -  A shepherd is an individual who will help acquaint you with the process of getting your feature into the repo, identify reviewers and provide feedback on the feature. They are _not_ (necessarily) the code reviewer of the feature, or tech lead for the area.
         -  The shepherd is _not_ responsible for showing up to Kubernetes-PM meetings and/or communicating if the feature is on-track to make the release goals. That is still your responsibility.
@@ -41,40 +41,40 @@ to reach Stable.
       - [ ] **Code needs to be disabled by default.**   Verified by code OWNERS
       - [ ] Minimal testing
       - [ ] Minimal docs
-        - cc @kubernetes/docs on docs PR
-        - **cc @kubernetes/feature-reviewers on this issue** to get approval before checking this off
+        - cc `@kubernetes/docs` on docs PR
+        - **cc `@kubernetes/feature-reviewers` on this issue** to get approval before checking this off
         - New apis: *Glossary Section Item* in the docs repo: kubernetes/kubernetes.github.io
       - [ ] Update release notes
 - [ ] Before Beta
   - [ ] Testing is sufficient for beta
   - [ ] User docs with tutorials
         - *Updated walkthrough / tutorial* in the docs repo: kubernetes/kubernetes.github.io
-        - cc @kubernetes/docs on docs PR
-        - **cc @kubernetes/feature-reviewers on this issue** to get approval before checking this off
+        - cc `@kubernetes/docs` on docs PR
+        - **cc `@kubernetes/feature-reviewers` on this issue** to get approval before checking this off
   - [ ] Thorough API review
-    - **cc @kubernetes/api**
+    - **cc `@kubernetes/api`**
 - [ ] Before Stable
   - [ ] docs/proposals/foo.md moved to docs/design/foo.md 
-        - **cc @kubernetes/feature-reviewers on this issue** to get approval before checking this off
+        - **cc `@kubernetes/feature-reviewers` on this issue** to get approval before checking this off
   - [ ] Soak, load testing 			
   - [ ] detailed user docs and examples
-    - **cc @kubernetes/docs**
-    - **cc @kubernetes/feature-reviewers on this issue** to get approval before checking this off
+    - **cc `@kubernetes/docs`**
+    - **cc `@kubernetes/feature-reviewers` on this issue** to get approval before checking this off
 
-*FEATURE_STATUS is used for feature tracking and to be updated by @kubernetes/feature-reviewers.*
+*FEATURE_STATUS is used for feature tracking and to be updated by `@kubernetes/feature-reviewers`.*
 **FEATURE_STATUS: IN_DEVELOPMENT**
 
 More advice:
 
 Design
-   - Once you get LGTM from a *@kubernetes/feature-reviewers* member, you can check this checkbox, and the reviewer will apply the "design-complete" label.
+   - Once you get LGTM from a *`@kubernetes/feature-reviewers`* member, you can check this checkbox, and the reviewer will apply the "design-complete" label.
  
 Coding
   - Use as many PRs as you need.  Write tests in the same or different PRs, as is convenient for you.
   - As each PR is merged, add a comment to this issue referencing the PRs.  Code goes in the http://github.com/kubernetes/kubernetes repository,
         and sometimes http://github.com/kubernetes/contrib, or other repos.
   - When you are done with the code, apply the "code-complete" label.
-  - When the feature has user docs, please add a comment mentioning @kubernetes/feature-reviewers and they will
+  - When the feature has user docs, please add a comment mentioning `@kubernetes/feature-reviewers` and they will
         check that the code matches the proposed feature and design, and that everything is done, and that there is adequate
         testing.  They won't do detailed code review: that already happened when your PRs were reviewed.
         When that is done, you can check this box and the reviewer will apply the "code-complete" label.
@@ -82,6 +82,6 @@ Coding
 Docs
   - [ ] Write user docs and get them merged in.
   - User docs go into http://github.com/kubernetes/kubernetes.github.io.
-  - When the feature has user docs, please add a comment mentioning @kubernetes/docs.
+  - When the feature has user docs, please add a comment mentioning `@kubernetes/docs`.
   - When you get LGTM, you can check this checkbox, and the reviewer will apply the "docs-complete" label.
 
