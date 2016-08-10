@@ -6,7 +6,7 @@ This repo only contains issues. These issues are umbrellas for new features to b
 
 ## Is My Thing a Feature?
 
-We are trying to figure out the exact shape of a feature. Until then here are a few rough hueristics.
+We are trying to figure out the exact shape of a feature. Until then here are a few rough heuristics.
 
 A feature is anything that:
 
@@ -14,37 +14,19 @@ A feature is anything that:
 - Requires multiple parties/SIGs/owners participating to complete (ex. GPU scheduling [API, Core, & Node], PetSet [Storage & API]).
 - Needs significant effort or changes Kubernetes in a significant way (ex. something that would take 10 person-weeks to implement, introduce or redesign a system component, or introduces API changes).
 - Impacts the UX or operation of Kubernetes substatially such that engineers using Kubernetes will need retraining.
+- A users will notice and come to rely on.
 
-## Why are features tracked
+It is unlikely a feature if it is:
 
-Once users adopt a feature, they expect to use it for a extened period of time.   Therefore, we hold new features them to a
-high standard of conceptual integrity, and require consistency with other parts of the system, thorough testing, and complete
-documentation.   As the project grows, no single person can track whether all those requirements are met.  Also, a feature's
-development lifetime often spans three stages: [Alpha, Beta, and Stable](
-https://github.com/kubernetes/kubernetes/blob/master/docs/api.md#api-versioning). 
-Feature Tracking Issues provide a checklist that allows for different approvers for different aspects, and ensures that nothing is forgotten across the long development lifetime of a feature.  
-
-## What changes require a Feature Tracking Issue
-
-Features are things which users will notice, and come to rely on.  
-
-Here are some examples things that require a Feature Tracking Issue:
-- adding a new type to the core APIs (`pkg/api` or `pkg/apis` in [https://github.com/kubernetes/kubernetes]).
-- adding fields to an existing type
-- changing the behavior of the Kubernetes scheduler or Kubelet in ways that are easily visible to users
-- adding commands and flags to `kubectl`.
-
-Here are some examples things that do not require Feature Tracking Issues:
-- features implemented using `ThirdPartyResource` and/or in [https://github.com/kubernetes/contrib]
+- implemented using `ThirdPartyResource` and/or in [https://github.com/kubernetes/contrib]
 - fixing a flaky test
 - refactoring code
-- performance improvments, which are only visible to users as faster API operations, or faster control loops.
-- just adding error messages or events
+- performance improvements, which are only visible to users as faster API operations, or faster control loops.
+- adding error messages or events
 
 If you are not sure, ask someone in the SIG where you initially circulated the idea.  If they aren't sure, file an issue an
-mention @kubernetes/kube-api.
 
-## When to create an issue here
+## When to Create a New Feature Issue
 
 Create an issue here once you:
 - Have circulated your idea to see if there is interest
@@ -55,6 +37,17 @@ Create an issue here once you:
   - you and your team should be prepared to work on the approx. 9mo - 1 year that it takes to progress to Stable status.
 - Are ready to be the project-manager for the feature.
 
+## Why are features tracked
+
+Once users adopt a feature, they expect to use it for a extended period of time.   Therefore, we hold new features them to a
+high standard of conceptual integrity, and require consistency with other parts of the system, thorough testing, and complete
+documentation.   As the project grows, no single person can track whether all those requirements are met.  Also, a feature's
+development lifetime often spans three stages: [Alpha, Beta, and Stable](
+https://github.com/kubernetes/kubernetes/blob/master/docs/api.md#api-versioning). 
+Feature Tracking Issues provide a checklist that allows for different approvers for different aspects, and ensures that nothing is forgotten across the long development lifetime of a feature.  
+
+mention @kubernetes/kube-api.
+
 ## When to comment on a Feature Issue
 
 Please comment on the feature issue to:
@@ -64,23 +57,3 @@ Please comment on the feature issue to:
 
 Please do not comment on the feature issue to:
 - discuss a detail of the design, code or docs.  Use a linked-to-issue or PR for that.
-
-## Writing a Design Proposal
-
-- Read some existing [design proposals](https://github.com/kubernetes/kubernetes/tree/master/docs/proposals) and [design docs](https://github.com/kubernetes/kubernetes/tree/master/docs/design).
-- Include concrete use cases and describe the "roles" who will use your feature.
-- Submitting the design proposal as a PR against `docs/proposals` in https://github.com/kubernetes/kubernetes allows line-by-line discussion of the proposal with the whole community.
- 
-## Coding
-
-Use as many PRs as you need.  Write tests in the same or different PRs, as is convenient for you.  As each PR is merged, add 
-a comment to this issue referencing the PRs.  Code goes in the http://github.com/kubernetes/kubernetes repository, and 
-sometimes other repos.  Once the code is complete, you can check off the corresponding box in the checklist. 
-
-## Docs
-
-User docs go into http://github.com/kubernetes/kubernetes.github.io.  Use as many PRs are needed to add these.  Once your 
-docs are merged, you can check check off the box on the checklist.
-
-
-
