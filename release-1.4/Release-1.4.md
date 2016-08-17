@@ -16,7 +16,7 @@ Going from 14w to 11w per release seems feasible if we hold feature complete str
 ###1.4 Overview
 - June 27 flake week (1w)
 - July 3 coding start (7w)
-- Aug 19 feature complete, move to bugfix (4w)
+- Aug 19 feature complete, move to bugfix (4w) (Aug 17 update, FC moved one business day to Aug 22)
 - Sept 16 release
 
 ###1.5 Overview
