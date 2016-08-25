@@ -21,8 +21,8 @@ Going from 14w to 11w per release seems feasible if we hold feature complete str
 
 ###1.5 Overview
 - Sept 19 coding start (7w)
-- Nov 4 feature complete, move to bugfix (5w, includes US Thanksgiving holiday)
-- Dec 9 release
+- Nov 7 feature complete, move to bugfix (5w, includes US Thanksgiving holiday)
+- Dec 8 release
 
 ##1.4 Details
 
