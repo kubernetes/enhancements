@@ -39,7 +39,7 @@ Going from 14w to 11w per release seems feasible if we hold feature complete str
 - Start Milestone Burndown meetings
 - Branch and cut Beta release on Sept 2
 
-###Sept 5 - Sept 16
+###Sept 5 - Sept 20
 - Open head for 1.5 work on Sept 5, after branch
 - Fix bugs and run tests, update docs
-- Release 1.4 on Sept 16
+- Release 1.4 on Sept 20
