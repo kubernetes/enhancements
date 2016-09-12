@@ -30,6 +30,7 @@ to reach Stable.
       - [ ] During development keep a doc up-to-date about the desired experience of the feature and how someone can try the feature in its current state. Think of it as the README of your new feature and a skeleton for the docs to be written before the Kubernetes release. Paste link to Google Doc: **DOC-LINK**
     - [ ] Design Approval
       - [ ] Design Proposal.  This goes under [docs/proposals](https://github.com/kubernetes/kubernetes/tree/master/docs/proposals).  Doing a proposal as a PR allows line-by-line commenting from community, and creates the basis for later design documentation.  Paste link to merged design proposal here: **PROPOSAL-NUMBER**
+      - [ ] Decide which repo this feature's code will be checked into. Not everything needs to land in the core kubernetes repo. **REPO-NAME**
       - [ ] Initial API review (if API).  Maybe same PR as design doc. **PR-NUMBER**
         -  Any code that changes an API (`/pkg/apis/...`)
         -  **cc `@kubernetes/api`**
