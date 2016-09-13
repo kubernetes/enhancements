@@ -1,7 +1,7 @@
 (approved at Aug 25 community meeting)
 
 #Proposed timeline
-Kubernetes 1.4 is set to release on Sept 16.  We want to have another release of Kubernetes in the 2016 calendar year, so that means in December.
+Kubernetes 1.4 is set to release on Sept 20.  We want to have another release of Kubernetes in the 2016 calendar year, so that means in December.
 
 December tends to have a lot of vacation time towards the end, and we want to have a little buffer time in case of slips.  Late November also has the US Thanksgiving holiday, when many people will be on vacation.
 
