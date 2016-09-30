@@ -25,7 +25,7 @@ to reach Stable.
 # Progress Tracker
 
 
-- [ ] Before Alpha
+- [ ] Alpha
     - [ ] Write and maintain draft quality doc
       - [ ] During development keep a doc up-to-date about the desired experience of the feature and how someone can try the feature in its current state. Think of it as the README of your new feature and a skeleton for the docs to be written before the Kubernetes release. Paste link to Google Doc: **DOC-LINK**
     - [ ] Design Approval
@@ -46,7 +46,7 @@ to reach Stable.
         - **cc `@kubernetes/feature-reviewers` on this issue** to get approval before checking this off
         - New apis: *Glossary Section Item* in the docs repo: kubernetes/kubernetes.github.io
       - [ ] Update release notes
-- [ ] Before Beta
+- [ ] Beta
   - [ ] Testing is sufficient for beta
   - [ ] User docs with tutorials
         - *Updated walkthrough / tutorial* in the docs repo: kubernetes/kubernetes.github.io
@@ -54,7 +54,7 @@ to reach Stable.
         - **cc `@kubernetes/feature-reviewers` on this issue** to get approval before checking this off
   - [ ] Thorough API review
     - **cc `@kubernetes/api`**
-- [ ] Before Stable
+- [ ] Stable
   - [ ] docs/proposals/foo.md moved to docs/design/foo.md 
         - **cc `@kubernetes/feature-reviewers` on this issue** to get approval before checking this off
   - [ ] Soak, load testing 			
