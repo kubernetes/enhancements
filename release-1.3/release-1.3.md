@@ -77,6 +77,4 @@ That would look like:
 - release 1.3 Final
 
 #Key features
-
-###Release Blocking Features
-https://docs.google.com/spreadsheets/d/1rrt179VjClAfMYnh8NwC_RLJbdI5j6zcVkW1z14vPR0
+[Feature tracking spreadsheet](https://docs.google.com/spreadsheets/d/1rrt179VjClAfMYnh8NwC_RLJbdI5j6zcVkW1z14vPR0)

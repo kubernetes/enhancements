@@ -44,5 +44,5 @@ Going from 14w to 11w per release seems feasible if we hold feature complete str
 - Fix bugs and run tests, update docs
 - Release 1.4 on Sept 20
 
-#Release features
+#Key features
 [Feature tracking spreadsheet](https://docs.google.com/spreadsheets/d/1MeTQbtSiTCoQ74zjEGRI1rXRSP0Tzmo9-kMJSK_HGoA/edit?usp=sharing)
