@@ -33,5 +33,5 @@ The proposal below is identical in layout to the 1.4 plan, with the exceptions o
 - Release 1.5 on Dec 8
 
 
-#Release features
+#Key features
 [Feature tracking spreadsheet (draft)](https://docs.google.com/spreadsheets/d/1g9JU-67ncE4MHMeKnmslm-JO_aKeltv2kg_Dd6VFmKs/edit?usp=sharing)
