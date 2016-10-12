@@ -8,7 +8,7 @@ December tends to have a lot of vacation time towards the end, and we want to ha
 The proposal below is identical in layout to the 1.4 plan, with the exceptions of:
 - key days aren't Fridays, since it can be hard to end milestones right up against weekends
 - a week is added for the bugfix period due to the Thanksgiving holiday
-- KubeCon is Nov 8-9
+- KubeCon is Nov 8-9; Kubernetes Dev Summit - Nov 10
 
 ##1.5 Overview
 - Sept 19 (Mon) coding start (7w)
