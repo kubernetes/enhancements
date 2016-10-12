@@ -16,14 +16,14 @@ The length of exception needed should be on the order of days, not weeks. If the
 
 To get an exception, please fill out this questionnaire and request email to your SIG lead, the release czar and cc: kubernetes-milestone-burndown@.  You should have *very high confidence* on the “additional time needed” number - we will not grant multiple exceptions for a feature.
 
-Feature name: 
-Feature status (alpha/beta/stable):
-SIG:
-Feature issue #:
-PR #’s: 
-Additional time needed (in days):
-Reason this feature is critical for this milestone: 
-Risks from adding code late: (to k8s stability, testing, etc.)
-Risks from cutting feature: (partial implementation, critical customer usecase, etc.)
+* Feature name:
+* Feature status (alpha/beta/stable):
+* SIG:
+* Feature issue #:
+* PR #’s:
+* Additional time needed (in days):
+* Reason this feature is critical for this milestone:
+* Risks from adding code late: (to k8s stability, testing, etc.)
+* Risks from cutting feature: (partial implementation, critical customer usecase, etc.)
 
 Once an exception is approved, it should be broadcast broadly - send an email with the data and approval to kubernetes-dev@, then follow up with a reply off that email once the feature is in.
