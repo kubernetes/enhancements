@@ -12,6 +12,7 @@ The proposal below is identical in layout to the 1.4 plan, with the exceptions o
 
 ##1.5 Overview
 - Sept 19 (Mon) coding start (7w)
+- Oct 10 (Mon) feature submission freeze
 - Nov 7 (Mon) feature complete, move to bugfix (5w, includes Thanksgiving)
 - Dec 8 (Thurs) release
 
