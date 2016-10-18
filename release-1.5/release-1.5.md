@@ -1,6 +1,43 @@
 (approved at Aug 25 community meeting)
 
-#Proposed timeline
+#1.5 Tenative Timeline
+
+###September 19 - Monday, November 7, 2016
+- **Monday, September 19, 2016**
+  - 7 week coding period begins
+  - 1.5 alpha releases are cut every 2 weeks during this period.
+- **Monday, October 10, 2016**
+  - *Feature freeze* begins
+    - All features that planned for v1.5 must be defined in the [features repository with the 1.5 milestone label](https://github.com/kubernetes/features/issues?q=is%3Aopen+is%3Aissue+milestone%3Av1.5) by this date.
+- **Monday, November 7, 2016**
+  - Final day to merge non-bug related code changes for the v1.5 release.
+
+###November 8 - November 18, 2016
+- **Tuesday, November 8, 2016**
+  - *Code freeze* begins
+    - Only bug fixes with the `v1.5` milestone will be merged to HEAD after this date.
+    - All other changes must go through the [exceptions process](https://github.com/kubernetes/features/blob/master/EXCEPTIONS.md)
+  - Milestone Burndown meetings begin
+- **Friday, November 18, 2016**
+  - 1.5 release branch fast-forwarded to match HEAD (picking up all changes merged since code freeze).
+  - 1.5 Beta released
+
+###November 18, 2016 - December 8, 2016
+- **Friday, November 18, 2016**
+  - HEAD branch is opened for 1.6 work after 1.5 release branch has been fast-forwarded.
+  - All bug fixes after this point must be manually cherry-picked to the 1.5 release branch.
+- **Friday, November 25, 2016**
+  - Docs for all [1.5 features](https://github.com/kubernetes/features/issues?q=is%3Aopen+is%3Aissue+milestone%3Av1.5) should have PRs out for review.
+  - Include a link to the relevant 1.5 feature in the Docs PR.
+- **Friday, December 2, 2016**
+  - Docs for all [1.5 features](https://github.com/kubernetes/features/issues?q=is%3Aopen+is%3Aissue+milestone%3Av1.5) must be merged.
+- **Thursday, December 8, 2016**
+  - Release 1.5
+
+#Key features
+[Feature tracking spreadsheet (draft)](https://docs.google.com/spreadsheets/d/1g9JU-67ncE4MHMeKnmslm-JO_aKeltv2kg_Dd6VFmKs/edit?usp=sharing)
+
+#Why?
 Kubernetes 1.4 is set to release on Sept 20.  We want to have another release of Kubernetes in the 2016 calendar year, so that means in December.
 
 December tends to have a lot of vacation time towards the end, and we want to have a little buffer time in case of slips.  Late November also has the US Thanksgiving holiday, when many people will be on vacation.
@@ -9,29 +46,3 @@ The proposal below is identical in layout to the 1.4 plan, with the exceptions o
 - key days aren't Fridays, since it can be hard to end milestones right up against weekends
 - a week is added for the bugfix period due to the Thanksgiving holiday
 - KubeCon is Nov 8-9
-
-##1.5 Overview
-- Sept 19 (Mon) coding start (7w)
-- Nov 7 (Mon) feature complete, move to bugfix (5w, includes Thanksgiving)
-- Dec 8 (Thurs) release
-
-##1.5 Details
-
-###Sept 19 - Nov 7
-- 7 week coding period
-- Release 1.5 alphas every 2 weeks
-
-###Nov 8 - Nov 18
-- Enter code slush on head, no more features or major refactors
-- Fix bugs and run tests
-- Start Milestone Burndown meetings
-- Branch and cut Beta release on Nov 18
-
-###Nov 18 - Dec 8
-- Open head for 1.6 work on Nov 18, after branch
-- Fix bugs and run tests, update docs
-- Release 1.5 on Dec 8
-
-
-#Key features
-[Feature tracking spreadsheet (draft)](https://docs.google.com/spreadsheets/d/1g9JU-67ncE4MHMeKnmslm-JO_aKeltv2kg_Dd6VFmKs/edit?usp=sharing)
