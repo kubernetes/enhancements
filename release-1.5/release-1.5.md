@@ -10,7 +10,9 @@
   - *Feature freeze* begins
     - All features that planned for v1.5 must be defined in the [features repository with the 1.5 milestone label](https://github.com/kubernetes/features/issues?q=is%3Aopen+is%3Aissue+milestone%3Av1.5) by this date.
 - **Monday, November 7, 2016**
-  - Final day to merge non-bug related code changes for the v1.5 release.
+  - Feature Complete Date
+    - All feature code must be LGTMed with tests written and in the submit queue by 6 PM PST.
+    - Final day to merge non-bug related code changes for the v1.5 release.
 
 ###November 8 - November 18, 2016
 - **Tuesday, November 8, 2016**
