@@ -1,6 +1,5 @@
-(approved at Aug 25 community meeting)
-
 #1.5 Tenative Timeline
+*Approved at Aug 25 community meeting*
 
 ###September 19 - Monday, November 7, 2016
 - [x] **Monday, September 19, 2016**
@@ -39,6 +38,11 @@
   - Docs for all [1.5 features](https://github.com/kubernetes/features/issues?q=is%3Aopen+is%3Aissue+milestone%3Av1.5) must be merged.
 - **Thursday, December 8, 2016**
   - Release 1.5
+
+#1.5 Release Czar
+**Github:** [saad-ali](https://github.com/saad-ali)
+
+**Email:** saadali@google.com
 
 #Key features
 [Feature tracking spreadsheet (draft)](https://docs.google.com/spreadsheets/d/1g9JU-67ncE4MHMeKnmslm-JO_aKeltv2kg_Dd6VFmKs/edit?usp=sharing)
