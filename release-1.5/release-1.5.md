@@ -8,18 +8,18 @@
 - [x] **Monday, October 10, 2016**
   - *Feature freeze* begins
     - All features that planned for v1.5 must be defined in the [features repository with the 1.5 milestone label](https://github.com/kubernetes/features/issues?q=is%3Aopen+is%3Aissue+milestone%3Av1.5) by this date.
-- **Monday, November 7, 2016**
+- [x] **Monday, November 7, 2016**
   - Feature Complete Date
     - Final day to merge non-bug related code changes for the v1.5 release.
     - All feature code must be LGTMed with tests written and in the submit queue by 6 PM PST.
 
 ###November 8 - November 18, 2016
-- **Tuesday, November 8, 2016**
+- [x] **Tuesday, November 8, 2016**
   - *Code freeze* begins
     - Only bug fixes with the `v1.5` milestone will be merged to `master` branch after this date.
     - All other changes must go through the [exceptions process](https://github.com/kubernetes/features/blob/master/EXCEPTIONS.md)
       - All requests for exception must be submitted by Nov 8, 6 PM PST.
-- **Wednesday, November 9, 2016**
+- [x] **Wednesday, November 9, 2016**
   - [Milestone Burndown](https://groups.google.com/forum/#!forum/kubernetes-milestone-burndown) meetings begin
     - All requests for exception will be reviewed and either approved or rejected during the first meeting.
     - Requesters will be notified within 24 hours.
