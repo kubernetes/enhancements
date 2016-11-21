@@ -13,7 +13,7 @@
     - Final day to merge non-bug related code changes for the v1.5 release.
     - All feature code must be LGTMed with tests written and in the submit queue by 6 PM PST.
 
-###November 8 - November 18, 2016
+###November 8 - November 22, 2016
 - [x] **Tuesday, November 8, 2016**
   - *Code freeze* begins
     - Only bug fixes with the `v1.5` milestone will be merged to `master` branch after this date.
@@ -23,15 +23,15 @@
   - [Milestone Burndown](https://groups.google.com/forum/#!forum/kubernetes-milestone-burndown) meetings begin
     - All requests for exception will be reviewed and either approved or rejected during the first meeting.
     - Requesters will be notified within 24 hours.
-- **Friday, November 18, 2016**
+- **Friday, November 22, 2016**
   - 1.5 release branch fast-forwarded to match `master` branch (picking up all changes merged since code freeze).
   - 1.5 Beta released
 
-###November 18, 2016 - December 8, 2016
-- **Friday, November 18, 2016**
+###November 22, 2016 - December 8, 2016
+- **Friday, November 22, 2016**
   - `master` branch is opened for 1.6 work after 1.5 release branch has been fast-forwarded.
   - All bug fixes after this point must be manually cherry-picked to the 1.5 release branch.
-- **Friday, November 25, 2016**
+- **Friday, November 29, 2016**
   - Docs for all [1.5 features](https://github.com/kubernetes/features/issues?q=is%3Aopen+is%3Aissue+milestone%3Av1.5) should have PRs out for review.
   - Include a link to the relevant 1.5 feature in the Docs PR.
 - **Friday, December 2, 2016**
