@@ -23,12 +23,11 @@
   - [Milestone Burndown](https://groups.google.com/forum/#!forum/kubernetes-milestone-burndown) meetings begin
     - All requests for exception will be reviewed and either approved or rejected during the first meeting.
     - Requesters will be notified within 24 hours.
-- **Monday, November 28, 2016**
+- [x] **Monday, November 28, 2016**
   - 1.5 release branch fast-forwarded to match `master` branch (picking up all changes merged since code freeze).
-  - 1.5 Beta released
 
 ###November 28, 2016 - December 8, 2016
-- **Monday, November 28, 2016**
+- [x] **Monday, November 28, 2016**
   - `master` branch is opened for 1.6 work after 1.5 release branch has been fast-forwarded.
   - All bug fixes for 1.5, after this point, must be manually cherry-picked to the 1.5 release branch.
 - **Tuesday, November 29, 2016**
