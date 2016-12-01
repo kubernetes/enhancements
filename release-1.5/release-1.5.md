@@ -46,7 +46,7 @@
 **Email:** saadali@google.com
 
 #Key features
-[Feature tracking spreadsheet (draft)](https://docs.google.com/spreadsheets/d/1g9JU-67ncE4MHMeKnmslm-JO_aKeltv2kg_Dd6VFmKs/edit?usp=sharing)
+[Feature tracking spreadsheet](https://docs.google.com/spreadsheets/d/1g9JU-67ncE4MHMeKnmslm-JO_aKeltv2kg_Dd6VFmKs/edit?usp=sharing)
 
 #Why?
 Kubernetes 1.4 is set to release on Sept 20.  We want to have another release of Kubernetes in the 2016 calendar year, so that means in December.
