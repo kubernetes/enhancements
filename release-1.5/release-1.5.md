@@ -30,7 +30,7 @@
 - [x] **Monday, November 28, 2016**
   - `master` branch is opened for 1.6 work after 1.5 release branch has been fast-forwarded.
   - All bug fixes for 1.5, after this point, must be manually cherry-picked to the 1.5 release branch.
-- **Tuesday, November 29, 2016**
+- [x] **Tuesday, November 29, 2016**
   - Docs for all [1.5 features](https://github.com/kubernetes/features/issues?q=is%3Aopen+is%3Aissue+milestone%3Av1.5) should have PRs out for review.
     - Include a link to the relevant 1.5 feature in the docs PR.
     - Add a link to the docs PR in the [1.5 Feature Tracking Spreadsheet](https://docs.google.com/spreadsheets/d/1g9JU-67ncE4MHMeKnmslm-JO_aKeltv2kg_Dd6VFmKs/edit#gid=0).
