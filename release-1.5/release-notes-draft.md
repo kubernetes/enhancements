@@ -25,7 +25,7 @@ Features for this release were tracked via the use of the [kubernetes/features](
   - [stable] When replica sets cannot create pods, they will now report detail via the API about the underlying reason ([kubernetes/features#120](https://github.com/kubernetes/features/issues/120))
   - [stable] `kubectl apply` is now able to delete resources you no longer need with `--prune` ([kubernetes/features#128](https://github.com/kubernetes/features/issues/128))
   - [beta] Deployments that cannot make progress in rolling out the newest version will now indicate via the API they are blocked ([docs](https://deploy-preview-1699--kubernetes-io-vnext-staging.netlify.com/docs/user-guide/deployments/#failed-deployment)) ([kubernetes/features#122](https://github.com/kubernetes/features/issues/122))
-  - [beta] StatefulSets allow workloads that require persistent identity or per-instance storage to be created and managed on Kubernetes. ([docs](https://deploy-preview-1719--kubernetes-io-vnext-staging.netlify.com/docs/concepts/controllers/statefulsets/)) ([kubernetes/features#137](https://github.com/kubernetes/features/issues/137))
+  - [beta] StatefulSets allow workloads that require persistent identity or per-instance storage to be created and managed on Kubernetes. ([docs](https://deploy-preview-1719--kubernetes-io-vnext-staging.netlify.com/docs/concepts/abstractions/controllers/statefulsets/)) ([kubernetes/features#137](https://github.com/kubernetes/features/issues/137))
   - [beta] In order to preserve safety guarantees the cluster no longer force deletes pods on un-responsive nodes and users are now warned if they try to force delete pods via the CLI. ([dos](https://deploy-preview-1774--kubernetes-io-vnext-staging.netlify.com/docs/tasks/manage-stateful-set/scale-stateful-set/)) ([kubernetes/features#119](https://github.com/kubernetes/features/issues/119))
 - **Auth**
   - [alpha] Further polishing of the Role-based access control alpha API including a default set of cluster roles. ([docs](http://kubernetes.io/docs/admin/authorization/)) ([kubernetes/features#2](https://github.com/kubernetes/features/issues/2))
@@ -70,8 +70,17 @@ Populated via [v1.5.0 known issues / FAQ accumulator](https://github.com/kuberne
 ## Notable Changes to Existing Behavior
 
 * Node controller no longer force-deletes pods from the api-server. ([#35235](https://github.com/kubernetes/kubernetes/pull/35235), [@foxish](https://github.com/foxish))
-  * For StatefulSet (previously PetSet), this change means creation of replacement pods is blocked until old pods are definitely not running (indicated either by the kubelet returning from partitioned state, or deletion of the Node object, or deletion of the instance in the cloud provider, or force deletion of the pod from the api-server). This has the desirable outcome of "fencing" to prevent "split brain" scenarios.
-  * For all other existing controllers except StatefulSet , this has no effect on the ability of the controller to replace pods because the controllers do not reuse pod names (they use generate-name).
+  * For StatefulSet (previously PetSet), this change means creation of
+    replacement pods is blocked until old pods are definitely not running
+    (indicated either by the kubelet returning from partitioned state,
+    deletion of the Node object, deletion of the instance in the cloud provider,
+    or force deletion of the pod from the api-server).
+    This helps prevent "split brain" scenarios in clustered applications by
+    ensuring that unreachable pods will not be presumed dead unless some
+    "fencing" operation has provided one of the above indications.
+  * For all other existing controllers except StatefulSet, this has no effect on
+    the ability of the controller to replace pods because the controllers do not
+    reuse pod names (they use generate-name).
   * User-written controllers that reuse names of pod objects should evaluate this change.
 
 * Allow anonymous API server access, decorate authenticated users with system:authenticated group ([#32386](https://github.com/kubernetes/kubernetes/pull/32386), [@liggitt](https://github.com/liggitt))
@@ -88,7 +97,9 @@ Populated via [v1.5.0 known issues / FAQ accumulator](https://github.com/kuberne
 ## Action Required Before Upgrading
 
 * batch/v2alpha1.ScheduledJob has been renamed, use batch/v2alpha1.CronJob instead ([#36021](https://github.com/kubernetes/kubernetes/pull/36021), [@soltysh](https://github.com/soltysh))
-* PetSet has been renamed, use StatefulSet instead ([docs](https://deploy-preview-1704--kubernetes-io-vnext-staging.netlify.com/docs/tasks/manage-stateful-set/upgrade-pet-set-to-stateful-set/)) ([#35663](https://github.com/kubernetes/kubernetes/pull/35663), [@janetkuo](https://github.com/janetkuo))
+* PetSet has been renamed to StatefulSet.
+  If you have existing PetSets, **you must perform extra migration steps** both
+  before and after upgrading to convert them to StatefulSets. ([docs](https://deploy-preview-1704--kubernetes-io-vnext-staging.netlify.com/docs/tasks/manage-stateful-set/upgrade-pet-set-to-stateful-set/)) ([#35663](https://github.com/kubernetes/kubernetes/pull/35663), [@janetkuo](https://github.com/janetkuo))
 * If you are upgrading your Cluster Federation components from v1.4.x, please update your `federation-apiserver` and `federation-controller-manager` manifests to the new version ([#30601](https://github.com/kubernetes/kubernetes/pull/30601), [@madhusudancs](https://github.com/madhusudancs))
 * The deprecated kubelet --configure-cbr0 flag has been removed, and with that the "classic" networking mode as well.  If you depend on this mode, please investigate whether `kubenet` can meet your needs. ([#34906](https://github.com/kubernetes/kubernetes/pull/34906), [@luxas](https://github.com/luxas))
 * New client-go structure, refer to kubernetes/client-go for versioning policy ([#34989](https://github.com/kubernetes/kubernetes/pull/34989), [@caesarxuchao](https://github.com/caesarxuchao))
