@@ -9,8 +9,8 @@
   - Deployments
   - ConfigMaps
 - Simplified Cluster Deployment
-  - `kubeadm`
-  - `kubefed`
+  - Improvements to `kubeadm`
+  - New command: `kubefed`
   - HA Setup for Master
 - Node Robustness
   - Windows Server Container support
@@ -33,7 +33,7 @@ Features for this release were tracked via the use of the [kubernetes/features](
 - **AWS**
   - [stable] Roles should appear in kubectl get nodes ([kubernetes/features#113](https://github.com/kubernetes/features/issues/113))
 - **Cluster Lifecycle**
-  - [alpha] Use kubeadm to make it easy to get a cluster running. ([docs](https://deploy-preview-1684--kubernetes-io-vnext-staging.netlify.com/docs/admin/kubeadm/)) ([kubernetes/features#11](https://github.com/kubernetes/features/issues/11))
+  - [alpha] Improved UX and usability for the kubeadm binary that makes it easy to get a new cluster running. ([docs](https://deploy-preview-1684--kubernetes-io-vnext-staging.netlify.com/docs/getting-started-guides/kubeadm/)) ([kubernetes/features#11](https://github.com/kubernetes/features/issues/11))
 - **Cluster Ops**
   - [alpha] Added ability to create/remove clusters w/highly available (replicated) masters on GCE using kube-up/kube-down scripts. ([docs](https://deploy-preview-1810--kubernetes-io-vnext-staging.netlify.com/docs/admin/ha-master-gce/)) ([kubernetes/features#48](https://github.com/kubernetes/features/issues/48)) 
 - **Federation**
@@ -90,7 +90,7 @@ Populated via [v1.5.0 known issues / FAQ accumulator](https://github.com/kuberne
 * batch/v2alpha1.ScheduledJob has been renamed, use batch/v2alpha1.CronJob instead ([#36021](https://github.com/kubernetes/kubernetes/pull/36021), [@soltysh](https://github.com/soltysh))
 * PetSet has been renamed, use StatefulSet instead ([docs](https://deploy-preview-1704--kubernetes-io-vnext-staging.netlify.com/docs/tasks/manage-stateful-set/upgrade-pet-set-to-stateful-set/)) ([#35663](https://github.com/kubernetes/kubernetes/pull/35663), [@janetkuo](https://github.com/janetkuo))
 * If you are upgrading your Cluster Federation components from v1.4.x, please update your `federation-apiserver` and `federation-controller-manager` manifests to the new version ([#30601](https://github.com/kubernetes/kubernetes/pull/30601), [@madhusudancs](https://github.com/madhusudancs))
-* The deprecated kubelet --configure-cbr0 flag has been removed, and with that the "classic" networking mode as well.  If you depend on this mode, please investigate whether `kubenet` can meet your needs. ([#34906](https://github.com/kubernetes/kubernetes/pull/34906), [@luxas](https://github.com/luxas))
+* The deprecated kubelet --configure-cbr0 flag has been removed, and with that the "classic" networking mode as well.  If you depend on this mode, please investigate whether the other network plugins `kubenet` or `cni` meet your needs. ([#34906](https://github.com/kubernetes/kubernetes/pull/34906), [@luxas](https://github.com/luxas))
 * New client-go structure, refer to kubernetes/client-go for versioning policy ([#34989](https://github.com/kubernetes/kubernetes/pull/34989), [@caesarxuchao](https://github.com/caesarxuchao))
 * The deprecated kube-scheduler --bind-pods-qps and --bind-pods burst flags have been removed, use --kube-api-qps and --kube-api-burst instead ([#34471](https://github.com/kubernetes/kubernetes/pull/34471), [@timothysc](https://github.com/timothysc))
 * If you used the [PodDisruptionBudget](http://kubernetes.io/docs/admin/disruptions/) feature in 1.4 (i.e. created `PodDisruptionBudget` objects), then **BEFORE**  upgrading from 1.4 to 1.5, you must delete all `PodDisruptionBudget` objects (`policy/v1alpha1/PodDisruptionBudget`) that you have created. It is not possible to delete these objects after you upgrade, and their presence will prevent you from using the beta PodDisruptionBudget feature in 1.5 (which uses `policy/v1beta1/PodDisruptionBudget`). If you have already upgraded, you will need to downgrade the master to 1.4 to delete the `policy/v1alpha1/PodDisruptionBudget` objects.
