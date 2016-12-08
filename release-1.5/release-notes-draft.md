@@ -5,12 +5,12 @@
 ## Major Themes
 
 - Improved Federation Support
+  - New command: `kubefed`
   - Daemonsets
   - Deployments
   - ConfigMaps
 - Simplified Cluster Deployment
   - Improvements to `kubeadm`
-  - New command: `kubefed`
   - HA Setup for Master
 - Node Robustness
   - Windows Server Container support
