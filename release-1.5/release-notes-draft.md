@@ -37,7 +37,7 @@ Features for this release were tracked via the use of the [kubernetes/features](
 - **Cluster Ops**
   - [alpha] Added ability to create/remove clusters w/highly available (replicated) masters on GCE using kube-up/kube-down scripts. ([docs](https://deploy-preview-1810--kubernetes-io-vnext-staging.netlify.com/docs/admin/ha-master-gce/)) ([kubernetes/features#48](https://github.com/kubernetes/features/issues/48)) 
 - **Federation**
-  - [beta] Support for config maps in federation. ([docs](https://deploy-preview-1838--kubernetes-io-vnext-staging.netlify.com/docs/user-guide/federation/configmap/)) ([kubernetes/features#105](https://github.com/kubernetes/features/issues/105))
+  - [alpha] Support for config maps in federation. ([docs](https://deploy-preview-1838--kubernetes-io-vnext-staging.netlify.com/docs/user-guide/federation/configmap/)) ([kubernetes/features#105](https://github.com/kubernetes/features/issues/105))
   - [alpha] Alpha level support for Daemonsets in federation. ([docs](https://deploy-preview-1827--kubernetes-io-vnext-staging.netlify.com/docs/user-guide/federation/daemonsets/)) ([kubernetes/features#101](https://github.com/kubernetes/features/issues/101))
   - [alpha] Alpha level support for Deployments in federation. ([docs](https://deploy-preview-1828--kubernetes-io-vnext-staging.netlify.com/docs/user-guide/federation/deployment/)) ([kubernetes/features#100](https://github.com/kubernetes/features/issues/100))
   - [alpha] Cluster federation: Added support for DeleteOptions.OrphanDependents for federation resources. ([docs](https://deploy-preview-1787--kubernetes-io-vnext-staging.netlify.com/docs/user-guide/federation/#cascading-deletion)) ([kubernetes/features#99](https://github.com/kubernetes/features/issues/99))
