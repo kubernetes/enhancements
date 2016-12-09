@@ -12,9 +12,9 @@
 - Simplified Cluster Deployment
   - Improvements to `kubeadm`
   - HA Setup for Master
-- Node Robustness
+- Node Robustness and Extensibility
   - Windows Server Container support
-  - CRI implementation
+  - CRI for pluggable container runtimes
   - `kubelet` API supports authentication and authorization
 
 ## Features
@@ -64,7 +64,8 @@ Features for this release were tracked via the use of the [kubernetes/features](
 Populated via [v1.5.0 known issues / FAQ accumulator](https://github.com/kubernetes/kubernetes/issues/37134)
 
 * kubectl --force deletion is breaking upgrade tests [#37117](https://github.com/kubernetes/kubernetes/issues/37117)
-* CRI: pass full seccomp profile path to runtime [#36997](https://github.com/kubernetes/kubernetes/issues/36997)
+* CRI [known issues and
+  limitations](https://github.com/kubernetes/community/blob/master/contributors/devel/container-runtime-interface.md#kubernetes-v15-release-cri-v1alpha1)
 * getDeviceNameFromMount() function doesn't return the volume path correctly when the volume path contains spaces [#37712](https://github.com/kubernetes/kubernetes/issues/37712)
 
 ## Notable Changes to Existing Behavior
