@@ -35,7 +35,7 @@
     - Include a link to the relevant 1.5 feature in the docs PR.
     - Add a link to the docs PR in the [1.5 Feature Tracking Spreadsheet](https://docs.google.com/spreadsheets/d/1g9JU-67ncE4MHMeKnmslm-JO_aKeltv2kg_Dd6VFmKs/edit#gid=0).
   - Release Notes for all [1.5 features](https://github.com/kubernetes/features/issues?q=is%3Aopen+is%3Aissue+milestone%3Av1.5) should have a "One Line Release Note Description" in the [1.5 Feature Tracking Spreadsheet](https://docs.google.com/spreadsheets/d/1g9JU-67ncE4MHMeKnmslm-JO_aKeltv2kg_Dd6VFmKs/edit#gid=0).
-- **Friday, December 2, 2016**
+- [x] **Friday, December 2, 2016**
   - Docs PRs for all [1.5 features](https://github.com/kubernetes/features/issues?q=is%3Aopen+is%3Aissue+milestone%3Av1.5) must be merged.
 - **Thursday, December 12, 2016**
   - Release 1.5
