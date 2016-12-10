@@ -66,6 +66,13 @@ Populated via [v1.5.0 known issues / FAQ accumulator](https://github.com/kuberne
 * kubectl --force deletion is breaking upgrade tests [#37117](https://github.com/kubernetes/kubernetes/issues/37117)
 * CRI: pass full seccomp profile path to runtime [#36997](https://github.com/kubernetes/kubernetes/issues/36997)
 * getDeviceNameFromMount() function doesn't return the volume path correctly when the volume path contains spaces [#37712](https://github.com/kubernetes/kubernetes/issues/37712)
+* Federation alpha features do not have feature gates defined and
+are hence enabled by default. This will be fixed in a future release.
+[#38593](https://github.com/kubernetes/kubernetes/issues/38593)
+* Federation control plane can be upgraded by updating the image
+fields in the `Deployment` specs of the control plane components.
+However, federation control plane upgrades were not tested in this
+release [38537](https://github.com/kubernetes/kubernetes/issues/38537)
 
 ## Notable Changes to Existing Behavior
 
