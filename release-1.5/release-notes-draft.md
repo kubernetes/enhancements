@@ -41,6 +41,7 @@ Features for this release were tracked via the use of the [kubernetes/features](
 - **Network**
   - [stable] Services can reference another service by DNS name, rather than being hosted in pods ([kubernetes/features#33](https://github.com/kubernetes/features/issues/33))
   - [beta] Opt in source ip preservation for Services with Type NodePort or LoadBalancer ([docs](https://deploy-preview-1841--kubernetes-io-vnext-staging.netlify.com/docs/tutorials/services/source-ip/)) ([kubernetes/features#27](https://github.com/kubernetes/features/issues/27))
+  - [stable] Enable DNS Horizontal Autoscaling with beta ConfigMap parameters support ([docs](https://deploy-preview-1727--kubernetes-io-vnext-staging.netlify.com/docs/tasks/administer-cluster/dns-horizontal-autoscaling/))
 - **Node**
   - [alpha] Added ability to preserve access to host userns when userns remapping is enabled in container runtime ([kubernetes/features#127](https://github.com/kubernetes/features/issues/127))
   - [alpha] Introducing the v1alpha1 CRI API to allow pluggable container runtimes; an experimental docker-CRI integration is ready for testing and feedback. ([docs](https://github.com/kubernetes/community/blob/master/contributors/devel/container-runtime-interface.md)) ([kubernetes/features#54](https://github.com/kubernetes/features/issues/54))
