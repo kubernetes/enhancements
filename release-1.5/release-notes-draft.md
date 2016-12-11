@@ -60,7 +60,6 @@ Features for this release were tracked via the use of the [kubernetes/features](
 
 Populated via [v1.5.0 known issues / FAQ accumulator](https://github.com/kubernetes/kubernetes/issues/37134)
 
-* kubectl --force deletion is breaking upgrade tests [#37117](https://github.com/kubernetes/kubernetes/issues/37117)
 * CRI [known issues and
   limitations](https://github.com/kubernetes/community/blob/master/contributors/devel/container-runtime-interface.md#kubernetes-v15-release-cri-v1alpha1)
 * getDeviceNameFromMount() function doesn't return the volume path correctly when the volume path contains spaces [#37712](https://github.com/kubernetes/kubernetes/issues/37712)
@@ -80,6 +79,12 @@ Populated via [v1.5.0 known issues / FAQ accumulator](https://github.com/kuberne
     the ability of the controller to replace pods because the controllers do not
     reuse pod names (they use generate-name).
   * User-written controllers that reuse names of pod objects should evaluate this change.
+  * When deleting an object with `kubectl delete ... --grace-period=0`, the client will 
+    begin a graceful deletion and wait until the resource is fully deleted.  To force 
+    deletion immediately, use the `--force` flag. This prevents users from accidentally 
+    allowing two Stateful Set pods to share the same persistent volume which could lead to data 
+    corruption [#37263](https://github.com/kubernetes/kubernetes/pull/37263)
+
 
 * Allow anonymous API server access, decorate authenticated users with system:authenticated group ([#32386](https://github.com/kubernetes/kubernetes/pull/32386), [@liggitt](https://github.com/liggitt))
   * kube-apiserver learned the '--anonymous-auth' flag, which defaults to true. When enabled, requests to the secure port that are not rejected by other configured authentication methods are treated as anonymous requests, and given a username of 'system:anonymous' and a group of 'system:unauthenticated'. 
