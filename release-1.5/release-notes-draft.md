@@ -86,6 +86,10 @@ Populated via [v1.5.0 known issues / FAQ accumulator](https://github.com/kuberne
   * Authenticated users are decorated with a 'system:authenticated' group.
   * NOTE: anonymous access is enabled by default. If you rely on authentication alone to authorize access, change to use an authorization mode other than AlwaysAllow, or or set '--anonymous-auth=false'.
 
+* kubectl get -o jsonpath=... will now throw an error if the path is to a field not present in the json, even if the path is for a field valid for the type.  This is a change from the pre-1.5 behavior, which would return the default value for some fields even if they were not present in the json. ([#37991](https://github.com/kubernetes/kubernetes/issues/37991), [@pwittrock](http://github.com/pwittrock))
+
+* The strategicmerge patchMergeKey for VolumeMounts was changed from "name" to "mountPath".  This was necessary because the name field refers to the name of the Volume, and is not a unique key for the VolumeMount.  Multiple VolumeMounts will have the same Volume name if mounting the same volume more than once.  The "mountPath" is verified to be unique and can act as the mergekey.  ([#35071](https://github.coma/kubernetes/kubernetes/pull/35071), [@pwittrock](http://github.com/pwittrock))
+
 ## Deprecations
 
 * extensions/v1beta1.Jobs is deprecated, use batch/v1.Job instead ([#36355](https://github.com/kubernetes/kubernetes/pull/36355), [@soltysh](https://github.com/soltysh))
