@@ -1,5 +1,7 @@
 ## Major Themes
 
+- StatefulSets (ex-PetSets)
+  - StatefulSets are beta now (fixes and stabilization)
 - Improved Federation Support
   - New command: `kubefed`
   - Daemonsets
