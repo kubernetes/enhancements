@@ -134,8 +134,8 @@ Continuous integration builds have used the following versions of external depen
       which can be identified by the [node problem detector](http://kubernetes.io/docs/admin/node-problem/)
     - Leaked File descriptors ([#275](https://github.com/docker/containerd/issues/275))
     - Additional memory overhead per container ([#21737](https://github.com/docker/docker/issues/21737))
-  * Docker version 1.12.1 [has also been validated](https://github.com/kubernetes/kubernetes/issues/28698)
- *  Docker 1.10.3 has [backports provided by RedHat](https://github.com/docker/docker/compare/v1.10.3...runcom:docker-1.10.3-stable)
+  * Docker version 1.12.1 [has also been validated](https://github.com/kubernetes/kubernetes/issues/28698) and Docker version 1.12.3 has been validated through Kubernetes docker automated validation framework.
+ *  Docker 1.10.3 has also been validated and contains [backports provided by RedHat](https://github.com/docker/docker/compare/v1.10.3...runcom:docker-1.10.3-stable)
   * Docker versions as old as 1.9.1 should still work with the existing [known issues](https://github.com/kubernetes/kubernetes/blob/master/CHANGELOG.md#191) 
 * rkt version 1.21.0
   * known issues with the rkt runtime are [listed here](http://kubernetes.io/docs/getting-started-guides/rkt/notes/)
