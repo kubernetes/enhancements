@@ -130,4 +130,4 @@ Continuous integration builds have used the following versions of external depen
 
 * Docker version 1.11.2, Docker version 1.12.0 [has also been validated](https://github.com/kubernetes/kubernetes/issues/28698)
 * rkt version 1.21.0
-* etcd version 2.2.1, etcd 3.0.14 [has also been validated](https://k8s-gubernator.appspot.com/builds/kubernetes-jenkins/logs/ci-kubernetes-e2e-gce-etcd3/)
+* etcd version 2.2.1, etcd version 3.0.14 [has also been validated](https://k8s-gubernator.appspot.com/builds/kubernetes-jenkins/logs/ci-kubernetes-e2e-gce-etcd3/)
