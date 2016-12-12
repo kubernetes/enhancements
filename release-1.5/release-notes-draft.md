@@ -128,6 +128,6 @@ release [38537](https://github.com/kubernetes/kubernetes/issues/38537)
 
 Continuous integration builds have used the following versions of external dependencies, however, this is not a strong recommendation and users should consult an appropriate installation or upgrade guide before deciding what versions of etcd, docker or rkt to use. 
 
-* Docker version 1.11.2
+* Docker version 1.11.2, Docker version 1.12.0 [has also been validated](https://github.com/kubernetes/kubernetes/issues/28698)
 * rkt version 1.21.0
-* etcd version 2.2.1
+* etcd version 2.2.1, etcd 3.0.14 [has also been validated](https://k8s-gubernator.appspot.com/builds/kubernetes-jenkins/logs/ci-kubernetes-e2e-gce-etcd3/)
