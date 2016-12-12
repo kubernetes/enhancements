@@ -134,4 +134,4 @@ Continuous integration builds have used the following versions of external depen
 * rkt version 1.21.0
   * known issues with the rkt runtime are [listed here](http://kubernetes.io/docs/getting-started-guides/rkt/notes/)
 * etcd version 2.2.1
-  * etcd version 3.0.14 [has also been validated](https://k8s-gubernator.appspot.com/builds/kubernetes-jenkins/logs/ci-kubernetes-e2e-gce-etcd3/)
+  * etcd version 3.0.14 [has also been validated](https://k8s-gubernator.appspot.com/builds/kubernetes-jenkins/logs/ci-kubernetes-e2e-gce-etcd3/) but does require [specific configuration steps](https://coreos.com/blog/migrating-applications-etcd-v3.html)
