@@ -128,6 +128,16 @@ release [38537](https://github.com/kubernetes/kubernetes/issues/38537)
 
 Continuous integration builds have used the following versions of external dependencies, however, this is not a strong recommendation and users should consult an appropriate installation or upgrade guide before deciding what versions of etcd, docker or rkt to use. 
 
-* Docker version 1.11.2, Docker version 1.12.0 [has also been validated](https://github.com/kubernetes/kubernetes/issues/28698)
+* Docker versions 1.10.3 - 1.12.3
+  * Docker version 1.11.2 known issues
+    - Kernel crash with Aufs storage driver on Debian Jessie ([#27885](https://github.com/kubernetes/kubernetes/issues/27885))
+      which can be identified by the [node problem detector](http://kubernetes.io/docs/admin/node-problem/)
+    - Leaked File descriptors ([#275](https://github.com/docker/containerd/issues/275))
+    - Additional memory overhead per container ([#21737](https://github.com/docker/docker/issues/21737))
+  * Docker version 1.12.1 [has been validated](https://github.com/kubernetes/kubernetes/issues/28698) through the Kubernetes docker automated validation framework as has Docker version 1.12.3 
+ *  Docker 1.10.3 contains [backports provided by RedHat](https://github.com/docker/docker/compare/v1.10.3...runcom:docker-1.10.3-stable) for known issues
+  * Docker versions as old as may 1.9.1 work with [known issues](https://github.com/kubernetes/kubernetes/blob/master/CHANGELOG.md#191) but this is not guaranteed 
 * rkt version 1.21.0
-* etcd version 2.2.1, etcd version 3.0.14 [has also been validated](https://k8s-gubernator.appspot.com/builds/kubernetes-jenkins/logs/ci-kubernetes-e2e-gce-etcd3/)
+  * known issues with the rkt runtime are [listed here](http://kubernetes.io/docs/getting-started-guides/rkt/notes/)
+* etcd version 2.2.1
+  * etcd version 3.0.14 [has also been validated](https://k8s-gubernator.appspot.com/builds/kubernetes-jenkins/logs/ci-kubernetes-e2e-gce-etcd3/) but does require [specific configuration steps](https://coreos.com/blog/migrating-applications-etcd-v3.html)
