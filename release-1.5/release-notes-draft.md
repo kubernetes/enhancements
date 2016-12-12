@@ -121,3 +121,11 @@ release [38537](https://github.com/kubernetes/kubernetes/issues/38537)
 * New client-go structure, refer to kubernetes/client-go for versioning policy ([#34989](https://github.com/kubernetes/kubernetes/pull/34989), [@caesarxuchao](https://github.com/caesarxuchao))
 * The deprecated kube-scheduler --bind-pods-qps and --bind-pods burst flags have been removed, use --kube-api-qps and --kube-api-burst instead ([#34471](https://github.com/kubernetes/kubernetes/pull/34471), [@timothysc](https://github.com/timothysc))
 * If you used the [PodDisruptionBudget](http://kubernetes.io/docs/admin/disruptions/) feature in 1.4 (i.e. created `PodDisruptionBudget` objects), then **BEFORE**  upgrading from 1.4 to 1.5, you must delete all `PodDisruptionBudget` objects (`policy/v1alpha1/PodDisruptionBudget`) that you have created. It is not possible to delete these objects after you upgrade, and their presence will prevent you from using the beta PodDisruptionBudget feature in 1.5 (which uses `policy/v1beta1/PodDisruptionBudget`). If you have already upgraded, you will need to downgrade the master to 1.4 to delete the `policy/v1alpha1/PodDisruptionBudget` objects.
+
+## External Dependency Version Information
+
+Continuous integration builds have used the following versions of external dependencies, however, this is not a strong recommendation and users should consult an appropriate installation or upgrade guide before deciding what versions of etcd, docker or rkt to use. 
+
+* Docker version 1.11.2
+* rkt version 1.21.0
+* etcd version 2.2.1
