@@ -42,17 +42,17 @@ Before the coding freeze:
 Please, select the following checkboxes and fill with the necessary data after completing the desired steps: 
 
 Before the features freeze:
-[ ] - Primary contact
-[ ] - SIG
-[ ] - Proposal link 
-[ ] - Reviewer(s)
-[ ] - Approver
-[ ] - Target
-[ ] - Timeline / status
+- [ ] Primary contact
+- [ ] SIG
+- [ ] Proposal link 
+- [ ] Reviewer(s)
+- [ ] Approver
+- [ ] Target
+- [ ] Timeline / status
 
 Before the coding freeze:
-[ ] - Release note
-[ ] - Documentation
+- [ ] Release note
+- [ ] Documentation
 
 
 More advices:
