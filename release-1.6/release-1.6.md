@@ -1,5 +1,3 @@
-(To Be Approved at Dec 22 1.5 Retrospective Meeting)
-
 #Proposed timeline for 1.6
 We will begin the 1.6 release the first week of 2017.
 We will use the time between releases for planning, designing and bugfixes.
