@@ -9,14 +9,18 @@ modifications:
   feature proposals
 - there are fewer major holidays and vacation breaks this quarter 
 
-##1.6 Overview
+##1.6 Release Schedule
 - Dec 8 - Jan 3: planning/design/bugfix period
 - Jan 3 (Tues) coding start (7w)
 - Jan 24 (Tues) features repo freeze
-- Feb 20 (Mon) - Feb 24 (Fri) Feature Burndown Meetings
-- Feb 27 (Mon) feature complete, move to bugfix (4w)
-- March 15 (Weds) release-candidate branch cut
-- March 22 (Weds) release
+- Jan 30th (Monday) v1.6.0-alpha.1
+- Feb 13th (Monday) v1.6.0-alpha.2
+- Feb 20th (Monday) Cut release-1.6 branch and v1.6.0-beta.0; Feature Burndown Meetings begin
+- Feb 27th (Monday) Start code freeze
+- Feb 28th (Tuesday) v1.6.0-beta.1
+- March 7th (Tuesday) - v1.6.0-beta.2
+- March 14th (Tuesday) Lift code freeze and v1.6.0-rc.1
+- March 22nd (Wednesday) - v1.6.0 (release!)
 
 ##1.6 Details
 
@@ -25,8 +29,8 @@ modifications:
 - Release 1.6 alphas every 2 weeks
 
 ###Feb 20 - Feb 24
-- Community Feature Burndown Meetings
-  - 2 or 3 this week
+- Community Feature Burndown Meetings held two or three times this week. For those interested in joining please
+  join [the Google Group](https://groups.google.com/forum/#!forum/kubernetes-milestone-burndown)
 - Identify all features going into the release, and make sure alpha, beta, ga is
   marked in features repo
 
@@ -37,13 +41,17 @@ modifications:
   release, then every day)
 
 ###Mar 8 - Mar 22
-- Open head for 1.7 work on Mar 18, after 1.6 release branch has been fast-forwarded.
+- Open head for 1.7 work on Mar 14, after 1.6 release branch has been fast-forwarded.
 - Fix bugs and run tests, update docs
-- Branch and cut first beta release on Mar 8 (Weds)
-- Branch and cut rc on Mar 15 (Weds)
-- Release 1.6 on March 22
+- Branch and cut second beta release on Mar 7 (Tuesday)
+- Branch and cut release candidate on Mar 14 (Tuesday)
+- Release 1.6 on March 22 (Wednesday)
 
 
 #Key features
 [Feature tracking spreadsheet
 link](https://docs.google.com/spreadsheets/d/1nspIeRVNjAQHRslHQD1-6gPv99OcYZLMezrBe3Pfhhg/edit#gid=0)
+
+# Contact us
+- [via slack](https://kubernetes.slack.com/messages/k8s-release/)
+- [via email](kubernetes-release@googlegroups.com)
