@@ -52,6 +52,14 @@ modifications:
 [Feature tracking spreadsheet
 link](https://docs.google.com/spreadsheets/d/1nspIeRVNjAQHRslHQD1-6gPv99OcYZLMezrBe3Pfhhg/edit#gid=0)
 
+## Notable operational changes
+
+1. Starting in the 1.6 release the [release team](https://github.com/kubernetes/features/blob/master/release-1.6/release_team.md)
+  will use the following procedure to identify release blocking issues
+  1. Any issues listed in the [v1.6 milestone](https://github.com/kubernetes/kubernetes/issues?utf8=%E2%9C%93&q=is%3Aissue%20is%3Aopen%20milestone%3Av1.6)
+     will be considered release blocking. It is everyone's responsibility to move non blocking issues out of the `v1.6` milestone. Items targeting 1.7 can be moved into the `v1.7` milestone.
+     milestones **or the release will not ship**
+
 # Contact us
 - [via slack](https://kubernetes.slack.com/messages/k8s-release/)
 - [via email](kubernetes-release@googlegroups.com)
