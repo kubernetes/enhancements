@@ -59,11 +59,6 @@ link](https://docs.google.com/spreadsheets/d/1nspIeRVNjAQHRslHQD1-6gPv99OcYZLMez
   1. Any issues listed in the [v1.6 milestone](https://github.com/kubernetes/kubernetes/issues?utf8=%E2%9C%93&q=is%3Aissue%20is%3Aopen%20milestone%3Av1.6)
      will be considered release blocking. It is everyone's responsibility to move non blocking issues out of the `v1.6` milestone. Items targeting 1.7 can be moved into the `v1.7` milestone.
      milestones **or the release will not ship**
-  1. The release team *will not* use or consider the `release-blocking` or `non-release-blocking` labels although they may have meaning
-     for other members of the community
-  1. The release team *will not* user or consider `priority/*` labels of any kind. There is an ongoing migration away from `priority/p[0-9]` labels
-     in favor of `priority/[a-z]` labels and usage is inconsistent across the project.
-  1. `priority/p*` labels will continue to be used by the submit queue
 
 # Contact us
 - [via slack](https://kubernetes.slack.com/messages/k8s-release/)
