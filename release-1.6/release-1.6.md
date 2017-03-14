@@ -62,4 +62,4 @@ link](https://docs.google.com/spreadsheets/d/1nspIeRVNjAQHRslHQD1-6gPv99OcYZLMez
 
 # Contact us
 - [via slack](https://kubernetes.slack.com/messages/k8s-release/)
-- [via email](kubernetes-release@googlegroups.com)
+- [via email](mailto:kubernetes-release@googlegroups.com)
