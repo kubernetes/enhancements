@@ -1,4 +1,4 @@
-#Proposed timeline for 1.6
+# Proposed timeline for 1.6
 We will begin the 1.6 release the first week of 2017.
 We will use the time between releases for planning, designing and bugfixes.
 
@@ -9,7 +9,7 @@ modifications:
   feature proposals
 - there are fewer major holidays and vacation breaks this quarter 
 
-##1.6 Release Schedule
+## 1.6 Release Schedule
 - Dec 8 - Jan 3: planning/design/bugfix period
 - Jan 3 (Tues) coding start (7w)
 - Jan 24 (Tues) features repo freeze
@@ -22,25 +22,25 @@ modifications:
 - March 14th (Tuesday) Lift code freeze and v1.6.0-rc.1
 - March 22nd (Wednesday) - v1.6.0 (release!)
 
-##1.6 Details
+## 1.6 Details
 
-###Jan 3 - Feb 27
+### Jan 3 - Feb 27
 - 7 week coding period
 - Release 1.6 alphas every 2 weeks
 
-###Feb 20 - Feb 24
+### Feb 20 - Feb 24
 - Community Feature Burndown Meetings held two or three times this week. For those interested in joining please
   join [the Google Group](https://groups.google.com/forum/#!forum/kubernetes-milestone-burndown)
 - Identify all features going into the release, and make sure alpha, beta, ga is
   marked in features repo
 
-###Feb 27 - Mar 22
+### Feb 27 - Mar 22
 - Enter code slush on head, no new features or major refactors
 - Fix bugs, and test flakes
 - Start Milestone Burndown meetings (2x per week until the week leading up the
   release, then every day)
 
-###Mar 8 - Mar 22
+### Mar 8 - Mar 22
 - Open head for 1.7 work on Mar 14, after 1.6 release branch has been fast-forwarded.
 - Fix bugs and run tests, update docs
 - Branch and cut second beta release on Mar 7 (Tuesday)
@@ -48,7 +48,7 @@ modifications:
 - Release 1.6 on March 22 (Wednesday)
 
 
-#Key features
+# Key features
 [Feature tracking spreadsheet
 link](https://docs.google.com/spreadsheets/d/1nspIeRVNjAQHRslHQD1-6gPv99OcYZLMezrBe3Pfhhg/edit#gid=0)
 
