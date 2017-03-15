@@ -5,6 +5,7 @@
 ## API Machinery
 ### New Features
 ### Notable Changes
+- The internal storage layer for kubernetes cluster state has been updated to use etcd v3 by default for new clusters.  Old clusters will have to plan for a data migration window.
 ### Breaking Changes
 
 ## AWS
@@ -15,16 +16,21 @@
 ## Apps
 ### New Features
 ### Notable Changes
+- Implement the update feature for DaemonSet.
+- Deployments that cannot make progress in rolling out the newest version will now indicate via the API they are blocked
 ### Breaking Changes
 
 ## Auth
 ### New Features
 ### Notable Changes
+- RBAC API is promoted to v1beta1 (rbac.authorization.k8s.io/v1beta1), and defines default roles for control plane, node, and controller components.
 ### Breaking Changes
 
 ## Autoscaling
 ### New Features
 ### Notable Changes
+- The Horizontal Pod Autoscaler now supports drawing metrics throug the API server aggregator.
+- The Horizontal Pod Autoscaler now supports scaling on multiple, custom metrics.
 ### Breaking Changes
 
 ## Big Data
@@ -40,6 +46,10 @@
 ## Cluster Lifecycle
 ### New Features
 ### Notable Changes
+- New Bootstrap Token authentication and management method. Works well with kubeadm.
+- Adds a new cloud-controller-manager binary that may be used for testing the new out-of-core cloudprovider flow
+- Introduces an API for the Kubelet to request TLS certificates from the API server.
+- kubeadm is enhanced and improved with a baseline feature set and command line flags that are now marked as beta.
 ### Breaking Changes
 
 ## Cluster Ops
@@ -60,6 +70,7 @@
 ## Federation
 ### New Features
 ### Notable Changes
+- `kubefed` has graduated to beta: supports hosting federation on on-prem clusters, automatically configures `kube-dns` in joining clusters and allows passing arguments to federation components.
 ### Breaking Changes
 
 ## Instrumentation
@@ -75,6 +86,8 @@
 ## Node
 ### New Features
 ### Notable Changes
+- The Docker-CRI implementation is Beta and is enabled by default in kubelet.  You can disable it by --enable-cri=false.
+- kubelet launches pods in a new cgroup hierarchy to better enforce quality of service.  Operators must drain all pods from their nodes prior to upgrade of the kubelet.  They must ensure the configured cgroup driver matches their associated container runtime cgroup driver.
 ### Breaking Changes
 
 ## On Prem
@@ -99,9 +112,15 @@
 ## Scheduling
 ### New Features
 ### Notable Changes
+- Rules for spreading and packing pods relative to one another, within arbitrary topologies (node, zone, etc.)
+- Per-pod configurable duration to stay bound to a node that becomes unreachable, not ready, or has other problems
+- Rules for restricting which node(s) a pod can schedule onto
+- User can run multiple schedulers in parallel resposible for different sets of pods
+- Rules for "repelling" pods from nodes by default (support use cases like dedicated nodes, and reserve nodes with special features for pods that need those features)
 ### Breaking Changes
 
 ## Service Catalog
+- Adds a new API resource `PodPreset` and admission controller to enable defining cross-cutting injection of Volumes and Environment into Pods.
 ### New Features
 ### Notable Changes
 ### Breaking Changes
@@ -109,6 +128,16 @@
 ## Storage
 ### New Features
 ### Notable Changes
+- A new volume driver capable of projecting secrets, configmaps, and downward API items into the same directory.
+- Flex volume plugin is updated to support attach/detach interfaces. It broke backward compatibility. Please update your drivers and implement the new callouts.
+- Added support for mount options in persistent volumes
+- StorageClass API is promoted to v1 (storage.k8s.io/v1)
+- Default storage classes are deployed during installation on Azure, AWS, GCE, OpenStack and vSphere
+- Populate environment variables from a configmap or secret.
+- Support for user-written/run dynamic PV provisioners. See github.com/kubernetes-incubator/external-storage for a golang library and examples
+- ScaleIO Kubernetes Volume Plugin added enabling pods to seamlessly access and use data stored on ScaleIO volumes.
+- Portworx Volume Plugin added capability to use [Portworx](http://www.portworx.com) as a storage provider for Kubernetes clusters. Portworx pools your servers capacity and turns your servers or cloud instances into converged, highly available compute and storage nodes.
+- Add support to use NFSv3, NFSv4, and GlusterFS on GCI image cluster
 ### Breaking Changes
 
 ## Testing
