@@ -86,9 +86,8 @@
 ### Breaking Changes
 
 ## PM
-### New Features
-### Notable Changes
-### Breaking Changes
+
+[ Nothing for this release]
 
 ## Scalability
 ### New Features
