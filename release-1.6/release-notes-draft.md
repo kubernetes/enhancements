@@ -145,7 +145,8 @@ The features described above are now specified using fields rather than annotati
   - Note that you can only start using the `schedulerName` field **after** you upgrade to 1.6; it is not recognized in 1.5.
 
 - **Node affinity/anti-affinity and pod affinity/anti-affinity**
-  - You can continue to use the alpha version of this feature, in which you specify affinity requests using Pod annotations, in 1.6 by including `AffinityInAnnotations=true` in `--feature-gates`, such as `--feature-gates=FooBar=true,AffinityInAnnotations=true`. Otherwise, you must modify your PodSpecs that currently use the `scheduler.alpha.kubernetes.io/affinity` annotation on Pod, to instead use the `affinity` field in the PodSpec. Support for the annotation will be removed in a future release, so we encourage you to switch to using the field as soon as possible.
+  - You can continue to use the alpha version of this feature (with one caveat -- see below), in which you specify affinity requests using Pod annotations, in 1.6 by including `AffinityInAnnotations=true` in `--feature-gates`, such as `--feature-gates=FooBar=true,AffinityInAnnotations=true`. Otherwise, you must modify your PodSpecs that currently use the `scheduler.alpha.kubernetes.io/affinity` annotation on Pod, to instead use the `affinity` field in the PodSpec. Support for the annotation will be removed in a future release, so we encourage you to switch to using the field as soon as possible.
+  - Caveat: The alpha version no longer supports, and the beta version does not support, the "empty `podAffinityTerm.namespaces` list means all namespaces" behavior. In both alpha and beta it now means "same namespace as the pod specifying this affinity rule."
   - Note that you can only start using the `affinity` field **after** you upgrade to 1.6; it is not recognized in 1.5.
   - The `--failure-domains` scheduler command line-argument is not supported in the beta vesion of the feature.
 
