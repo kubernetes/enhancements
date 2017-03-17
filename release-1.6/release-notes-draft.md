@@ -194,9 +194,7 @@ The features described above are now specified using fields rather than annotati
 ### Breaking Changes
 
 ## Windows
-### New Features
-### Notable Changes
-### Breaking Changes
+[Nothing for this release]
 
 # Auto Generated Release Notes
 ## (please move information into the correct SIG)
