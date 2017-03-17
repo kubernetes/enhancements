@@ -58,12 +58,33 @@
 
 ## Cluster Lifecycle
 ### New Features
+- kubeadm is a simple tool for creating Kubernetes clusters on existing
+  machines. kubeadm's command line interface is now in beta. This means that
+  using it is considered safe.
+  Please [try it out](https://kubernetes.io/docs/getting-started-guides/kubeadm/) and
+  [give us feedback](https://kubernetes.io/docs/getting-started-guides/kubeadm/#feedback)!
+
 ### Notable Changes
-- New Bootstrap Token authentication and management method. Works well with kubeadm.
-- Adds a new cloud-controller-manager binary that may be used for testing the new out-of-core cloudprovider flow
-- Introduces an API for the Kubelet to request TLS certificates from the API server.
-- kubeadm is enhanced and improved with a baseline feature set and command line flags that are now marked as beta.
+- kubeadm 1.6 sets up a more secure cluster by default.  It uses [RBAC](https://kubernetes.io/)
+  to grant limited privileges to workloads running on the cluster.  By default,
+  service accounts and users are restricted from accessing the API. They can be
+  granted permissions
+  [using the RBAC command-line utilities](https://kubernetes.io/docs/admin/authorization/rbac/#command-line-utilities).
+- kubeadm now uses a new [bootstrap mechanism](https://kubernetes.io/docs/admin/bootstrap-tokens/)
+  which is baked into the Kubernetes API server, rather than a separate
+  service. The API for TLS bootstrapping is now baked in to the Kubernetes API
+  server also.
+- kubeadm now supports managing the bootstrap tokens active in your cluster
+  using the new [`kubeadm token`](https://kubernetes.io/docs/admin/bootstrap-tokens/) subcommands.
+- Many other bug-fixes and improvements have been contributed that make using
+  `kubeadm` a more pleasant and reliable experience.
+
 ### Breaking Changes
+- kubeadm creates RBAC-enabled clusters. This means that some add-ons which
+  worked previously won't work without having their YAML configuration updated.
+  For example, to use Weave Net with a Kubernetes 1.6 cluster created by
+  kubeadm 1.6, you must use the
+  [latest YAML](https://www.weave.works/documentation/net-latest-kube-addon/).
 
 ## Cluster Ops
 ### New Features
