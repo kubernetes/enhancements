@@ -120,7 +120,7 @@
 ## Node
 ### New Features
 ### Notable Changes
-- The Docker-CRI implementation is Beta and is enabled by default in kubelet.  You can disable it by --enable-cri=false.
+- The Docker-CRI implementation is Beta and is enabled by default in kubelet.  You can disable it by --enable-cri=false. See [notes on the new implementation]( https://github.com/kubernetes/community/blob/master/contributors/devel/container-runtime-interface.md#kubernetes-v16-release-docker-cri-integration-beta) for more details.
 - kubelet launches pods in a new cgroup hierarchy to better enforce quality of service.  Operators must drain all pods from their nodes prior to upgrade of the kubelet.  They must ensure the configured cgroup driver matches their associated container runtime cgroup driver.
 ### Breaking Changes
 
@@ -258,6 +258,8 @@ The features described above are now specified using fields rather than annotati
 * `federation/deploy/deploy.sh` was an interim solution introduced in Kubernetes v1.4 to simplify the federation control plane deployment experience. Now that we have `kubefed`, we are deprecating `deploy.sh` scripts. ([#38902](https://github.com/kubernetes/kubernetes/pull/38902), [@madhusudancs](https://github.com/madhusudancs))
 * Cluster federation servers have changed the location in etcd where federated services are stored, so existing federated services must be deleted and recreated. Before upgrading, export all federated services from the federation server and delete the services. After upgrading the cluster, recreate the federated services from the exported data. ([#37770](https://github.com/kubernetes/kubernetes/pull/37770), [@enj](https://github.com/enj))
 * etcd2: watching from 0 returns all initial states as ADDED events ([#38079](https://github.com/kubernetes/kubernetes/pull/38079), [@hongchaodeng](https://github.com/hongchaodeng))
+* Kubelet: The Docker-CRI implementation is not compatible with containers created by older Kubelets. It is recommended to drain your node before upgrade. If you choose to perform an in-place upgrade, the Kubelet will automatically restart all Kubernetes-managed containers on the node.
+* Kubelet: The Docker-CRI implementation is not compatible with CNI plugins that do not conform to the [error handling behavior in the spec](https://github.com/containernetworking/cni/blob/master/SPEC.md#network-configuration-list-error-handling). The plugins are being updated to resolve this issue ([#43014](https://github.com/kubernetes/kubernetes/issues/43014)). You can disable CRI explicity (`--enable-cri=false`) as a temporary workaround.
 
 ### Other notable changes
 
