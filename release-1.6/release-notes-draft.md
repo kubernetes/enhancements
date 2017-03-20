@@ -171,18 +171,21 @@ The features described above are now specified using fields rather than annotati
 
 ## Storage
 ### New Features
+- Volume plugin for ScaleIO enabling pods to seamlessly access and use data stored on Dell EMC ScaleIO volumes.
+- Volume plugin for Portworx added capability to use [Portworx](http://www.portworx.com) as a storage provider for Kubernetes clusters. Portworx pools server capacity and turns servers or cloud instances into converged, highly available compute and storage nodes.
+- Volume plugin capable of projecting secrets, configmaps, and downward API items into the same directory.
+- Added support for mount options in persistent volumes.
+- Added ability to populate environment variables from a configmap or secret.
+- Add support to use NFSv3, NFSv4, and GlusterFS on GCE/GKE GCI image based clusters.
+- Support for user-written/run dynamic PV provisioners. See github.com/kubernetes-incubator/external-storage for a golang library and examples.
+- StorageClass API is promoted to v1 (storage.k8s.io/v1).
 ### Notable Changes
-- A new volume driver capable of projecting secrets, configmaps, and downward API items into the same directory.
-- Flex volume plugin is updated to support attach/detach interfaces. It broke backward compatibility. Please update your drivers and implement the new callouts.
-- Added support for mount options in persistent volumes
-- StorageClass API is promoted to v1 (storage.k8s.io/v1)
-- Default storage classes are deployed during installation on Azure, AWS, GCE, OpenStack and vSphere
-- Populate environment variables from a configmap or secret.
-- Support for user-written/run dynamic PV provisioners. See github.com/kubernetes-incubator/external-storage for a golang library and examples
-- ScaleIO Kubernetes Volume Plugin added enabling pods to seamlessly access and use data stored on ScaleIO volumes.
-- Portworx Volume Plugin added capability to use [Portworx](http://www.portworx.com) as a storage provider for Kubernetes clusters. Portworx pools your servers capacity and turns your servers or cloud instances into converged, highly available compute and storage nodes.
-- Add support to use NFSv3, NFSv4, and GlusterFS on GCI image cluster
+- StorageClass pre-installed and set as default on Azure, AWS, GCE, OpenStack, and vSphere.
+  - This is something to pay close attention to if you’ve been using Kubernetes for a while, because it changes the default behavior of PersistentVolumeClaim objects on these clouds.
+  - Marking a StorageClass as default makes it so that even a PersistentVolumeClaim without a StorageClass specified will trigger dynamic provisioning (instead of binding to an existing pool of PVs).
+  - If you depend on the old behavior of volumes binding to existing pool of PersistentVolume objects then modify the StorageClass object and set `storageclass.beta.kubernetes.io/is-default-class` to `false`.
 ### Breaking Changes
+- Flex volume plugin is updated to support attach/detach interfaces. This broke backward compatibility. Please update Flex drivers to ensure they implement the new callouts.
 
 ## Testing
 ### New Features
