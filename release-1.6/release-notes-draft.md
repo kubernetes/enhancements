@@ -59,32 +59,58 @@
 ## Cluster Lifecycle
 ### New Features
 - kubeadm is a simple tool for creating Kubernetes clusters on existing
-  machines. kubeadm's command line interface is now in beta. This means that
-  using it is considered safe.
+  machines. kubeadm's command line interface is now in beta.  Using it is
+  considered safe, although note that upgrades and HA are not yet supported.
   Please [try it out](https://kubernetes.io/docs/getting-started-guides/kubeadm/) and
   [give us feedback](https://kubernetes.io/docs/getting-started-guides/kubeadm/#feedback)!
+- Debian packages are additionally built for ppc64le and s390x architectures.
+- kubeadm now deploys etcd3, and no longer supports etcd2.
 
 ### Notable Changes
-- kubeadm 1.6 sets up a more secure cluster by default.  It uses [RBAC](https://kubernetes.io/)
-  to grant limited privileges to workloads running on the cluster.  By default,
-  service accounts and users are restricted from accessing the API. They can be
-  granted permissions
+- kubeadm 1.6 now sets up a more secure cluster by default.  It uses
+  [RBAC](https://kubernetes.io/) to grant limited privileges to workloads
+  running on the cluster.  By default, service accounts and users are
+  restricted from accessing the API. They can be granted permissions
   [using the RBAC command-line utilities](https://kubernetes.io/docs/admin/authorization/rbac/#command-line-utilities).
-- kubeadm now uses a new [bootstrap mechanism](https://kubernetes.io/docs/admin/bootstrap-tokens/)
+- Added experimental self-hosting support (only available via
+  [config file](https://kubernetes.io/docs/admin/kubeadm/) since it's not
+  reliable yet). This is a step towards making upgrades easier with a planned
+  `kubeadm upgrade` command.
+- Added an experimental command for running only one of kubeadm's functions,
+  for instance `kubeadm alpha phase certs selfsign` generates all necessary
+  certificates for a cluster. You can use these building block functions in
+  your own, custom deployment. In future versions, this command will mature and
+  be moved to beta quality.
+- kubeadm now uses a new [bootstrap and discovery mechanism](https://kubernetes.io/docs/admin/bootstrap-tokens/)
+  ([proposal](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/bootstrap-discovery.md))
   which is baked into the Kubernetes API server, rather than a separate
-  service. The API for TLS bootstrapping is now baked in to the Kubernetes API
-  server also.
+  service.
 - kubeadm now supports managing the bootstrap tokens active in your cluster
   using the new [`kubeadm token`](https://kubernetes.io/docs/admin/bootstrap-tokens/) subcommands.
 - Many other bug-fixes and improvements have been contributed that make using
   `kubeadm` a more pleasant and reliable experience.
 
 ### Breaking Changes
+- A new label and taint is used for marking the master. The label is
+  `node-role.kubernetes.io/master=""` and the taint has the effect
+  `NoSchedule`. If you want to schedule a workload one the master (a networking
+  DaemonSet for example), you must tolerate the
+  `node-role.kubernetes.io/master="":NoSchedule` taint
+- The kubelet API is now secured, only cluster admins are allowed to access it.
+- Insecure access to the API Server over `localhost:8080` is disabled by default.
+- The control plane components now talk securely to each other. The API
+  Server talks securely to the kubelets in the cluster.
 - kubeadm creates RBAC-enabled clusters. This means that some add-ons which
   worked previously won't work without having their YAML configuration updated.
-  For example, to use Weave Net with a Kubernetes 1.6 cluster created by
-  kubeadm 1.6, you must use the
-  [latest YAML](https://www.weave.works/documentation/net-latest-kube-addon/).
+  Please see each vendor's own documentation to check that the add-ons you are
+  using will work with Kubernetes 1.6.
+- The kube-discovery Deployment isn't used anymore when creating a kubeadm
+  cluster and shouldn't be used anywhere else either due to its insecure nature.
+- The Certificates API has graduated from alpha to beta. This is a
+  backwards-incompatible change since the alpha support is dropped, and
+  therefore kubeadm v1.5 and v1.6 don't work together (for example kubeadm v1.5
+  can't join a kubeadm v1.6 cluster).
+- Supporting only etcd3, with 3.0.14 as the minimum version.
 
 ## Cluster Ops
 ### New Features
