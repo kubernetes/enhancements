@@ -177,7 +177,7 @@ The features described above are now specified using fields rather than annotati
 - Added support for mount options in persistent volumes.
 - Added ability to populate environment variables from a configmap or secret.
 - Add support to use NFSv3, NFSv4, and GlusterFS on GCE/GKE GCI image based clusters.
-- Support for user-written/run dynamic PV provisioners. See github.com/kubernetes-incubator/external-storage for a golang library and examples.
+- Support for user-written/run dynamic PV provisioners. The Kubernetes Incubator contains [a golang library and examples](https://github.com/kubernetes-incubator/external-storage).
 - StorageClass API is promoted to v1 (storage.k8s.io/v1).
 ### Notable Changes
 - StorageClass pre-installed and set as default on Azure, AWS, GCE, OpenStack, and vSphere.
