@@ -17,8 +17,8 @@
 ### New Features
 - Introduce apps/v1beta1.Deployments resource with modified defaults compared to extensions/v1beta1.Deployments. ([#39683](https://github.com/kubernetes/kubernetes/pull/39683), [@soltysh](https://github.com/soltysh))
 - Introduce new generator for apps/v1beta1 deployments ([#42362](https://github.com/kubernetes/kubernetes/pull/42362), [@soltysh](https://github.com/soltysh))
+- Introduce the rolling update feature for DaemonSet. See [Performing a Rolling Update on a DaemonSet](https://deploy-preview-2878--kubernetes-io-master-staging.netlify.com/docs/tasks/manage-daemon/update-daemon-set/).
 ### Notable Changes
-- Implement the update feature for DaemonSet.
 - Deployments that cannot make progress in rolling out the newest version will now indicate via the API they are blocked
 - kubectl: respect deployment strategy parameters for rollout status ([#41809](https://github.com/kubernetes/kubernetes/pull/41809), [@kargakis](https://github.com/kargakis))
 - kubectl logs allows getting logs directly from deployment, job and statefulset ([#40927](https://github.com/kubernetes/kubernetes/pull/40927), [@soltysh](https://github.com/soltysh))
@@ -29,6 +29,7 @@
 - ReplicaSet has onwer ref of the Deployment that created it ([#35676](https://github.com/kubernetes/kubernetes/pull/35676), [@krmayankk](https://github.com/krmayankk))
 ### Breaking Changes
 - Remove extensions/v1beta1 Jobs resource, and job/v1beta1 generator. ([#38614](https://github.com/kubernetes/kubernetes/pull/38614), [@soltysh](https://github.com/soltysh))
+- 1.5 kubectl can't do `kubectl edit deployment` on 1.6 server ([#42392](https://github.com/kubernetes/kubernetes/issues/42392)). Current workaround is to either upgrade to 1.6 kubectl, or run `kubectl edit deployment.extensions` instead of `kubectl edit deployment`.
 
 ## Auth
 ### New Features
