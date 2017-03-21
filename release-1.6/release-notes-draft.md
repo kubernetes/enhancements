@@ -159,7 +159,7 @@
   specified in /etc/resolv.conf.
   
 ### Notable Changes
-* An empty `kube-system:kube-dns` will be created for the cluster if one did not already exist.
+* An empty `kube-system:kube-dns` ConfigMap will be created for the cluster if one did not already exist.
 
 ### Breaking Changes
 
