@@ -60,7 +60,9 @@
 ## Cluster Lifecycle
 ### New Features
 - kubeadm is a simple tool for creating Kubernetes clusters on existing
-  machines. kubeadm's command line interface is now in beta.  Using it is
+  machines. kubeadm's command line interface is now in beta.  Other parts of
+  kubeadm, including subcommands under `kubeadm alpha`, are
+  [still in alpha](https://kubernetes.io/docs/admin/kubeadm/).  Using it is
   considered safe, although note that upgrades and HA are not yet supported.
   Please [try it out](https://kubernetes.io/docs/getting-started-guides/kubeadm/) and
   [give us feedback](https://kubernetes.io/docs/getting-started-guides/kubeadm/#feedback)!
@@ -69,15 +71,17 @@
 
 ### Notable Changes
 - kubeadm 1.6 now sets up a more secure cluster by default.  It uses
-  [RBAC](https://kubernetes.io/) to grant limited privileges to workloads
-  running on the cluster.  By default, service accounts and users are
-  restricted from accessing the API. They can be granted permissions
+  [RBAC](https://kubernetes.io/docs/admin/authorization/rbac/) to grant limited
+  privileges to workloads running on the cluster.  By default, service accounts
+  and users are restricted from accessing the API. They can be granted
+  permissions
   [using the RBAC command-line utilities](https://kubernetes.io/docs/admin/authorization/rbac/#command-line-utilities).
 - Added experimental self-hosting support (only available via
   [config file](https://kubernetes.io/docs/admin/kubeadm/) since it's not
   reliable yet). This is a step towards making upgrades easier with a planned
   `kubeadm upgrade` command.
-- Added an experimental command for running only one of kubeadm's functions,
+- Added an experimental command for running only one of
+  [kubeadm's phases](https://github.com/kubernetes/kubeadm/pull/156),
   for instance `kubeadm alpha phase certs selfsign` generates all necessary
   certificates for a cluster. You can use these building block functions in
   your own, custom deployment. In future versions, this command will mature and
