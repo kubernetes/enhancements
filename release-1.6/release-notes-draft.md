@@ -94,7 +94,26 @@
 
 ## Network
 ### New Features
+* Adds support for configurable DNS stub domains and upstream nameservers to kube-dns.
+  The following configuration options have been added to the `kube-system:kube-dns` ConfigMap:
+  ```
+  "stubDomains": {
+    "acme.local": ["1.2.3.4"]
+  },
+  ```
+  is a map of domain to list of nameservers for the domain. This is used
+  to inject private DNS domains into the kube-dns namespace. In the above
+  example, any DNS requests for *.acme.local will be served by the
+  nameserver 1.2.3.4.
+  ```
+  "upstreamNameservers": ["8.8.8.8", "8.8.4.4"]
+  ```
+  is a list of upstreamNameservers to use, overriding the configuration
+  specified in /etc/resolv.conf.
+  
 ### Notable Changes
+* An empty `kube-system:kube-dns` ConfigMap will be created for the cluster if one did not already exist.
+
 ### Breaking Changes
 
 ## Node
@@ -256,19 +275,6 @@ The features described above are now specified using fields rather than annotati
 * restored normalization of custom `--etcd-prefix` when `--storage-backend` is set to etcd3 ([#42506](https://github.com/kubernetes/kubernetes/pull/42506), [@liggitt](https://github.com/liggitt))
 * kubelet created cgroups follow lowercase naming conventions ([#42497](https://github.com/kubernetes/kubernetes/pull/42497), [@derekwaynecarr](https://github.com/derekwaynecarr))
 * Support whitespace in command path for gcp auth plugin ([#41653](https://github.com/kubernetes/kubernetes/pull/41653), [@jlowdermilk](https://github.com/jlowdermilk))
-* Updates the dnsmasq cache/mux layer to be managed by dnsmasq-nanny. ([#41826](https://github.com/kubernetes/kubernetes/pull/41826), [@bowei](https://github.com/bowei))
-    * dnsmasq-nanny manages dnsmasq based on values from the
-    * kube-system:kube-dns configmap:
-    * "stubDomains": {
-    * 	"acme.local": ["1.2.3.4"]
-    * },
-    * is a map of domain to list of nameservers for the domain. This is used
-    * to inject private DNS domains into the kube-dns namespace. In the above
-    * example, any DNS requests for *.acme.local will be served by the
-    * nameserver 1.2.3.4.
-    * "upstreamNameservers": ["8.8.8.8", "8.8.4.4"]
-    * is a list of upstreamNameservers to use, overriding the configuration
-    * specified in /etc/resolv.conf.
 * kubelet exports metrics for cgroup management ([#41988](https://github.com/kubernetes/kubernetes/pull/41988), [@sjenning](https://github.com/sjenning))
 * Remove cmd/kube-discovery from the tree since it's not necessary anymore ([#42070](https://github.com/kubernetes/kubernetes/pull/42070), [@luxas](https://github.com/luxas))
 * kubeadm: Hook up kubeadm against the BootstrapSigner ([#41417](https://github.com/kubernetes/kubernetes/pull/41417), [@luxas](https://github.com/luxas))
