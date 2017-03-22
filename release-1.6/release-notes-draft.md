@@ -68,9 +68,6 @@
   [give us feedback](https://kubernetes.io/docs/getting-started-guides/kubeadm/#feedback)!
 - Debian packages are additionally built for ppc64le and s390x architectures.
 - kubeadm now deploys etcd3, and no longer supports etcd2.
-- kubeadm now supports managing tokens, including time based expiration, after
-  the cluster is launched.  See [kubeadm reference
-  docs](https://kubernetes.io/docs/admin/kubeadm/#manage-tokens) for details.
 
 ### Notable Changes
 - kubeadm 1.6 now sets up a more secure cluster by default.  It uses
@@ -93,25 +90,19 @@
   ([proposal](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/bootstrap-discovery.md))
   which is baked into the Kubernetes API server, rather than a separate
   service.
+- kubeadm now supports managing the bootstrap tokens active in your cluster
+  using the new [`kubeadm token`](https://kubernetes.io/docs/admin/bootstrap-tokens/) subcommands.
 - Many other bug-fixes and improvements have been contributed that make using
   `kubeadm` a more pleasant and reliable experience.
-- The config file (still in alpha) now supports passing arbitrary flags to the
-  control plane components.
 
 ### Breaking Changes
-- Quite a few flags been renamed or removed.  Those options that are removed as
-  flags can still be accessed via the config file.  Most noteably this includes
-  external etcd settings and the option for setting the cloud provider on the
-  API server.  The [kubeadm reference
-  documentation](https://kubernetes.io/docs/admin/kubeadm/) is up to date with
-  the new flags.
 - A new label and taint is used for marking the master. The label is
   `node-role.kubernetes.io/master=""` and the taint has the effect
   `NoSchedule`. If you want to schedule a workload one the master (a networking
   DaemonSet for example), you must tolerate the
   `node-role.kubernetes.io/master="":NoSchedule` taint
 - The kubelet API is now secured, only cluster admins are allowed to access it.
-- Insecure access to the API Server over `localhost:8080` is now disabled.
+- Insecure access to the API Server over `localhost:8080` is disabled by default.
 - The control plane components now talk securely to each other. The API
   Server talks securely to the kubelets in the cluster.
 - kubeadm creates RBAC-enabled clusters. This means that some add-ons which
@@ -125,11 +116,6 @@
   therefore kubeadm v1.5 and v1.6 don't work together (for example kubeadm v1.5
   can't join a kubeadm v1.6 cluster).
 - Supporting only etcd3, with 3.0.14 as the minimum version.
-- `kubeadm reset` will no longer drain nodes automatically.  This is because the
-  credentials on nodes do not have permission to perform this operation.  We
-  have documented an [alternate
-  procedure](https://kubernetes.io/docs/getting-started-guides/kubeadm/#tear-down),
-  driven from the API server/master.
 
 ## Cluster Ops
 ### New Features
@@ -175,7 +161,7 @@
   ```
   is a list of upstreamNameservers to use, overriding the configuration
   specified in /etc/resolv.conf.
-
+  
 ### Notable Changes
 * An empty `kube-system:kube-dns` ConfigMap will be created for the cluster if one did not already exist.
 
@@ -214,7 +200,7 @@
 
 ### Notable Changes
 
-- The [multiple schedulers](https://kubernetes.io/docs/admin/multiple-schedulers/) feature is now in Beta. This feature allows you to run multiple schedulers in parallel, each responsible for different sets of pods. When using multiple schedulers, the scheduler name is now specified in a new-in-1.6 `schedulerName` field of the PodSpec rather than using the `scheduler.alpha.kubernetes.io/name` annotation on the Pod. When you upgrade to 1.6, the Kubernetes default scheduler will start using the `schedulerName` field of the PodSpec and will ignore the annotation.
+- The [multiple schedulers](https://kubernetes.io/docs/admin/multiple-schedulers/) feature is now in Beta. This feature allows you to run multiple schedulers in parallel, each responsible for different sets of pods. When using multiple schedulers, the scheduler name is now specified in a new-in-1.6 `schedulerName` field of the PodSpec rather than using the `scheduler.alpha.kubernetes.io/name` annotation on the Pod. When you upgrade to 1.6, the Kubernetes default scheduler will start using the `schedulerName` field of the PodSpec and will ignore the annotation. 
 
 - [Node affinity/anti-affinity](https://kubernetes.io/docs/user-guide/node-selection/) and [pod affinity/anti-affinity](https://kubernetes.io/docs/user-guide/node-selection/) are now in Beta. Node affinity/anti-affinity allow you to specify rules for restricting which node(s) a pod can schedule onto, based on the labels on the node. Pod affinity/anti-affinity allow you to specify rules for spreading and packing pods relative to one another, across arbitrary topologies (node, zone, etc.) These affinity rules are now be specified in a new-in-1.6 `affinity` field of the PodSpec. Kubernetes 1.6 continues to support the alpha `scheduler.alpha.kubernetes.io/affinity` annotation on the Pod if you explicitly enable the alpha feature "AffinityInAnnotations", but it will be removed in a future release. When you upgrade to 1.6, if you have not enabled the alpha feature, then the scheduler will use the `affinity` field in PodSpec and will ignore the annotation. If you have enabled the alpha feature, then the scheduler will use the `affinity` field in PodSpec if it is present, and otherwise will use the annotation.
 
@@ -226,7 +212,7 @@ The features described above are now specified using fields rather than annotati
 
 - **Multiple schedulers**
   - Modify your PodSpecs that currently use the `scheduler.alpha.kubernetes.io/name` annotation on Pod, to instead use the `schedulerName` field in the PodSpec.
-  - Modify any custom scheduler(s) you have written so that they read the `schedulerName` field on Pod instead of the `scheduler.alpha.kubernetes.io/name` annotation.
+  - Modify any custom scheduler(s) you have written so that they read the `schedulerName` field on Pod instead of the `scheduler.alpha.kubernetes.io/name` annotation. 
   - Note that you can only start using the `schedulerName` field **after** you upgrade to 1.6; it is not recognized in 1.5.
 
 - **Node affinity/anti-affinity and pod affinity/anti-affinity**
@@ -236,7 +222,7 @@ The features described above are now specified using fields rather than annotati
   - The `--failure-domains` scheduler command line-argument is not supported in the beta vesion of the feature.
 
 - **Taints**
-  - You will need to use `kubectl taint` to re-create all of your taints after kubectl and the master are upgraded to 1.6. Between the time the master is upgraded to 1.6 and when you do this, your existing taints will have no effect.
+  - You will need to use `kubectl taint` to re-create all of your taints after kubectl and the master are upgraded to 1.6. Between the time the master is upgraded to 1.6 and when you do this, your existing taints will have no effect. 
   - You can find out what taints you have in place on a node while you are still running Kubernetes 1.5 by doing `kubectl describe node <node name>`; the `Taints` section will show the taints you have in place. To see the taints that were created under 1.5 when you are running 1.6, do `kubectl get node <node name> -o yaml` and look for the "Annotation" section with the annotation key `scheduler.alpha.kubernetes.io/taints`
   - You can remove the "old" taints (stored internally as annotations) at any time after the upgrade by doing `kubectl annotate nodes <node name> scheduler.alpha.kubernetes.io/taints-`
 (note the minus at the end, which means "delete the taint with this key")
