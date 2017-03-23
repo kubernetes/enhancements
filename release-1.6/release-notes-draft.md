@@ -195,6 +195,7 @@
 ### Notable Changes
 - The Docker-CRI implementation is Beta and is enabled by default in kubelet.  You can disable it by --enable-cri=false. See [notes on the new implementation]( https://github.com/kubernetes/community/blob/master/contributors/devel/container-runtime-interface.md#kubernetes-v16-release-docker-cri-integration-beta) for more details.
 - kubelet launches pods in a new cgroup hierarchy to better enforce quality of service.  Operators must drain all pods from their nodes prior to upgrade of the kubelet.  They must ensure the configured cgroup driver matches their associated container runtime cgroup driver.
+- Hard eviction thresholds will be subtracted from the Allocatable capacity on nodes to improve node reliability. This *may* break existing clusters since the overall schedulable capacity would reduce after upgrading to v1.6. You can opt-out of this feature by specifying --experimental-allocatable-ignore-eviction=true. 
 ### Breaking Changes
 
 ## On Prem
