@@ -249,6 +249,15 @@ Create subcommands
   specified in /etc/resolv.conf.
 
 ### Notable Changes
+* <a name="#CNIcompatdetails"></a>Container Network Interface ([CNI](https://github.com/containernetworking/cni)) integration with Container
+  Runtime Interface (CRI) is enabled by default.
+  * The standard `bridge` plugin have been validated to interoperate with the new CRI + CNI code path.
+  * If you are using plugins other than `bridge`, make sure you have updated custom plugins to the 
+    latest version that is compatible.
+  * If you encounter any issues involving CNI plugins, CRI can be disabled with setting the `--enable-cri`
+    flag to `false`.
+  * [Associated action required notes](#CNIcompat).
+  
 * An empty `kube-system:kube-dns` ConfigMap will be created for the cluster if one did not already exist.
 
 ### Breaking Changes
@@ -399,7 +408,7 @@ The features described above are now specified using fields rather than annotati
 * Cluster federation servers have changed the location in etcd where federated services are stored, so existing federated services must be deleted and recreated. Before upgrading, export all federated services from the federation server and delete the services. After upgrading the cluster, recreate the federated services from the exported data. ([#37770](https://github.com/kubernetes/kubernetes/pull/37770), [@enj](https://github.com/enj))
 * etcd2: watching from 0 returns all initial states as ADDED events ([#38079](https://github.com/kubernetes/kubernetes/pull/38079), [@hongchaodeng](https://github.com/hongchaodeng))
 * Kubelet: The Docker-CRI implementation is not compatible with containers created by older Kubelets. It is recommended to drain your node before upgrade. If you choose to perform an in-place upgrade, the Kubelet will automatically restart all Kubernetes-managed containers on the node.
-* Kubelet: The Docker-CRI implementation is not compatible with CNI plugins that do not conform to the [error handling behavior in the spec](https://github.com/containernetworking/cni/blob/master/SPEC.md#network-configuration-list-error-handling). The plugins are being updated to resolve this issue ([#43488](https://github.com/kubernetes/kubernetes/issues/43488)). You can disable CRI explicity (`--enable-cri=false`) as a temporary workaround.
+* Kubelet: <a name="CNIcompat"></a>The Docker-CRI implementation is not compatible with CNI plugins that do not conform to the [error handling behavior in the spec](https://github.com/containernetworking/cni/blob/master/SPEC.md#network-configuration-list-error-handling). The plugins are being updated to resolve this issue ([#43488](https://github.com/kubernetes/kubernetes/issues/43488)). You can disable CRI explicity (`--enable-cri=false`) as a temporary workaround. See [this section](#CNIcompatdetails) for more details.
 
 ### Other notable changes
 
