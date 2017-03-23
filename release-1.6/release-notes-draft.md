@@ -29,7 +29,6 @@
 - ReplicaSet has onwer ref of the Deployment that created it ([#35676](https://github.com/kubernetes/kubernetes/pull/35676), [@krmayankk](https://github.com/krmayankk))
 ### Breaking Changes
 - Remove extensions/v1beta1 Jobs resource, and job/v1beta1 generator. ([#38614](https://github.com/kubernetes/kubernetes/pull/38614), [@soltysh](https://github.com/soltysh))
-- 1.5 kubectl can't do `kubectl edit deployment` on 1.6 server ([#42392](https://github.com/kubernetes/kubernetes/issues/42392)). Current workaround is to either upgrade to 1.6 kubectl, or run `kubectl edit deployment.extensions` instead of `kubectl edit deployment`.
 
 ## Auth
 ### New Features
