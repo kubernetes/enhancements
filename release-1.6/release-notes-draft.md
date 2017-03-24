@@ -9,6 +9,8 @@
     * The multiple schedulers feature has graduated to beta
     * Node affinity/anti-affinity and pod affinity/anti-affinity are now in beta
     * Taints and tolerations are now in beta
+* An alpha feature allowing you to specify per-pod how long a pod should stay bound to a
+node when there is a node problem, overriding the default 5 minutes
 * Storage features, graduated to GA:
 	* StorageClass pre-installed and set as default on Azure, AWS, GCE, OpenStack, and vSphere;
 	* Configurable Dynamic Provisioning aka StorageClass.
