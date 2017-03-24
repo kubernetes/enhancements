@@ -39,7 +39,7 @@
 ## Autoscaling
 ### New Features
 ### Notable Changes
-- The Horizontal Pod Autoscaler now supports drawing metrics throug the API server aggregator.([#118](https://github.com/kubernetes/features/issues/118), [@DirectXMan12](https://github.com/DirectXMan12))
+- The Horizontal Pod Autoscaler now supports drawing metrics through the API server aggregator.([#118](https://github.com/kubernetes/features/issues/118), [@DirectXMan12](https://github.com/DirectXMan12))
 - The Horizontal Pod Autoscaler now supports scaling on multiple, custom metrics.([#117](https://github.com/kubernetes/features/issues/117),[@DirectXMan12](https://github.com/DirectXMan12))
 ### Breaking Changes
 
