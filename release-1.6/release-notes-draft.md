@@ -82,6 +82,8 @@ Features for this release were tracked via the use of the [kubernetes/features](
 - Running `kubectl taint` (alpha in 1.5) against a 1.5 server requires a kubectl version of 1.5
 - `create secret` no longer accepts passing multiple values to a single --from-literal flag using comma separation
   - Update command invocations to pass separate --from-literal flags for each value
+- Format changes for `get` and `describe` HPA. ([#36033](https://github.com/kubernetes/kubernetes/pull/36033), [@DirectXMan12](https://github.com/DirectXMan12))
+  - Caused by introducing new HPA v2 API.
 
 ### New Commands
 - `apply set-last-applied` *updates the applied-applied-configuration annotation* ([#41694](https://github.com/kubernetes/kubernetes/pull/41694), [@shiywang](https://github.com/shiywang))
