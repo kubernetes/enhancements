@@ -14,6 +14,9 @@ node when there is a node problem, overriding the default 5 minutes
 * Storage features, graduated to GA:
 	* StorageClass pre-installed and set as default on Azure, AWS, GCE, OpenStack, and vSphere;
 	* Configurable Dynamic Provisioning aka StorageClass.
+* `kubeadm` CLI interface is now at beta.  All communication is over TLS and
+  RBAC is enabled. Bootstrap token system allows token management and
+  expiration.
 
 ## Features and changes
 
