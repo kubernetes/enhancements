@@ -1,3 +1,27 @@
+## WARNING: etcd backup strongly recommended
+
+Before updating to 1.6, you are strongly recommended to back up your etcd data.
+Please consult the installation procedure you are using (kargo, kops, kube-up,
+kube-aws, kubeadm etc) for specific advice.
+
+1.6 encourages etcd3, and switching from etcd2 to etcd3 involves a full
+migration of data between different storage engines.  You must stop the API
+from writing to etcd during an etcd2 -> etcd3 migration.  HA installations cannot
+be migrated at the current time using the official kubernetes procedure.
+
+1.6 will also default to protobuf encoding if using etcd3.  This change is
+irreversible.  To rollback, you must restore from a backup made before the
+protobuf/etcd3 switch, and any changes since the backup will be lost.  As 1.5
+does not support protobuf encoding, if you roll back to 1.5 after upgrading to
+protobuf you will be forced to restore from backup, and you will lose any changes
+since you converted to protobuf.  After conversion to protobuf, you should
+validate the correct operation of your cluster thoroughly before returning it
+to normal operation.
+
+Backups are always a good precaution, particularly around upgrades, but this
+upgrade has multiple known issues where the only remedy is to restore from
+backup.
+
 ## Major updates and release themes
 
 * Kubernetes now supports up to 5,000 nodes via etcd v3, which is enabled by default.
