@@ -1,24 +1,24 @@
-## Major Themes
+## Major updates and release themes
 
-* etcd v3 is enabled by default and provides support up to 5000 nodes;
-* RBAC has graduated to beta, and defines default roles for control plane, node, and controller components;
-* DaemonSets - rolling updates enabled;
-* `kubefed` has graduated to beta;
-* Docker-CRI has graduated to beta and enabled by default;
-* Scheduling features, graduated to beta:
-    * The multiple schedulers feature has graduated to beta
-    * Node affinity/anti-affinity and pod affinity/anti-affinity are now in beta
-    * Taints and tolerations are now in beta
-* An alpha feature allowing you to specify per-pod how long a pod should stay bound to a
-node when there is a node problem, overriding the default 5 minutes
-* Storage features, graduated to GA:
-	* StorageClass pre-installed and set as default on Azure, AWS, GCE, OpenStack, and vSphere;
-	* Configurable Dynamic Provisioning aka StorageClass.
-* `kubeadm` CLI interface is now at beta.  All communication is over TLS and
-  RBAC is enabled. Bootstrap token system allows token management and
-  expiration.
+* Kubernetes now supports up to 5,000 nodes via etcd v3, which is enabled by default.
+* [Role-based access control (RBAC)](https://kubernetes.io//docs/admin/authorization/rbac) has graduated to beta, and defines secure default roles for control plane, node, and controller components.
+* The [`kubeadm` cluster bootstrap tool](https://kubernetes.io/docs/getting-started-guides/kubeadm/) has graduated to beta. Some highlights:
+  * All communication is now over TLS
+  * Authorization plugins can be installed by kubeadm, including the new default of RBAC
+  * The bootstrap token system now allows token management and expiration
+* The [`kubefed` federation bootstrap tool](https://kubernetes.io/docs/tutorials/federation/set-up-cluster-federation-kubefed/) has also graduated to beta.
+* Interaction with container runtimes is now through the CRI interface, enabling easier integration of runtimes with the kubelet. Docker remains the default runtime via Docker-CRI (which moves to beta).
+* Various scheduling features have graduated to beta:
+  * You can now use [multiple schedulers](https://kubernetes.io/docs/admin/multiple-schedulers/)
+  * [Nodes](https://kubernetes.io/docs/user-guide/node-selection/#node-affinity-beta-feature) and [pods](https://kubernetes.io/docs/user-guide/node-selection/#inter-pod-affinity-and-anti-affinity-beta-feature) now support affinity and anti-affinity
+  * Advanced scheduling can be performed with [taints and tolerations](https://kubernetes.io/docs/user-guide/node-selection/#taints-and-tolerations-beta-feature)
+* You can now specify (per pod) how long a pod should stay bound to a node, when there is a node problem. 
+* Various storage features have graduated to GA:
+  * StorageClass pre-installed and set as default on Azure, AWS, GCE, OpenStack, and vSphere
+  * Configurable [Dynamic Provisioning](https://kubernetes.io/docs/user-guide/persistent-volumes/#dynamic) and [StorageClass](https://kubernetes.io/docs/user-guide/persistent-volumes/#storageclasses)
+* DaemonSets [can now be updated by a rolling update](https://kubernetes.io/docs/tasks/manage-daemon/update-daemon-set).
 
-## Features and changes
+## In-depth features and changes
 
 Features for this release were tracked via the use of the [kubernetes/features](https://github.com/kubernetes/features) issues repo.  Each Feature issue is owned by a Special Interest Group from the [kubernetes/community](https://github.com/kubernetes/community/blob/master/sig-list.md).
 
