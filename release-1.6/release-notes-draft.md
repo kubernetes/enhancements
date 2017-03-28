@@ -42,9 +42,7 @@ backup.
   * Configurable [Dynamic Provisioning](https://kubernetes.io/docs/user-guide/persistent-volumes/#dynamic) and [StorageClass](https://kubernetes.io/docs/user-guide/persistent-volumes/#storageclasses)
 * DaemonSets [can now be updated by a rolling update](https://kubernetes.io/docs/tasks/manage-daemon/update-daemon-set).
 
-## Features and changes
-
-Features for this release were tracked via the use of the [kubernetes/features](https://github.com/kubernetes/features) issues repo.  Each Feature issue is owned by a Special Interest Group from the [kubernetes/community](https://github.com/kubernetes/community/blob/master/sig-list.md).
+## Action Required
 
 ### Certificates API
 * Users of the alpha certificates API should delete v1alpha1 CSRs from the API before upgrading and recreate them as v1beta1 CSR after upgrading. ([#39772](https://github.com/kubernetes/kubernetes/pull/39772), [@mikedanese](https://github.com/mikedanese))
@@ -115,6 +113,7 @@ Features for this release were tracked via the use of the [kubernetes/features](
 * Flex volume plugin is updated to support attach/detach interfaces. It broke backward compatibility. Please update your drivers and implement the new callouts.  ([#41804](https://github.com/kubernetes/kubernetes/pull/41804), [@chakri-nelluri](https://github.com/chakri-nelluri))
 
 ## Notable Features
+Features for this release were tracked via the use of the [kubernetes/features](https://github.com/kubernetes/features) issues repo.  Each Feature issue is owned by a Special Interest Group from the [kubernetes/community](https://github.com/kubernetes/community/blob/master/sig-list.md).
 
 ### Autoscaling
 * **[alpha]** The Horizontal Pod Autoscaler now supports drawing metrics throug the API server aggregator.
