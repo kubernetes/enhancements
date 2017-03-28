@@ -493,26 +493,6 @@ Features for this release were tracked via the use of the [kubernetes/features](
 * Add error message when trying to use clusterrole with namespace in kubectl ([#36424](https://github.com/kubernetes/kubernetes/pull/36424), [@xilabao](https://github.com/xilabao))
 * When deleting an object with `--grace-period=0`, the client will begin a graceful deletion and wait until the resource is fully deleted.  To force deletion, use the `--force` flag. ([#37263](https://github.com/kubernetes/kubernetes/pull/37263), [@smarterclayton](https://github.com/smarterclayton))
 
-
-[ requires SIG CLI edits below ]
-
-* kubectl: respect deployment strategy parameters for rollout status ([#41809](https://github.com/kubernetes/kubernetes/pull/41809), [@kargakis](https://github.com/kargakis))
-* kubectl logs allows getting logs directly from deployment, job and statefulset ([#40927](https://github.com/kubernetes/kubernetes/pull/40927), [@soltysh](https://github.com/soltysh))
-* remove the create-external-load-balancer flag in cmd/expose.go ([#38183](https://github.com/kubernetes/kubernetes/pull/38183), [@tianshapjq](https://github.com/tianshapjq))
-* Adds `shortNames` to the `APIResource` from discovery which is a list of recommended shortNames for clients like `kubectl`. ([#40312](https://github.com/kubernetes/kubernetes/pull/40312), [@p0lyn0mial](https://github.com/p0lyn0mial))
-* Add a special purpose tool for editing individual fields in a ConfigMap with kubectl ([#38445](https://github.com/kubernetes/kubernetes/pull/38445), [@brendandburns](https://github.com/brendandburns))
-* ShortcutExpander has been extended in a way that it will examine a ha… ([#38835](https://github.com/kubernetes/kubernetes/pull/38835), [@p0lyn0mial](https://github.com/p0lyn0mial))
-* Support loading UTF16 files if a byte-order-mark is present ([#39008](https://github.com/kubernetes/kubernetes/pull/39008), [@brendandburns](https://github.com/brendandburns))
-* add create rolebinding ([#38991](https://github.com/kubernetes/kubernetes/pull/38991), [@deads2k](https://github.com/deads2k))
-* kubectl run --rm no longer prints "pod xxx deleted" ([#38429](https://github.com/kubernetes/kubernetes/pull/38429), [@duglin](https://github.com/duglin))
-* Allow a selector when retrieving logs ([#32752](https://github.com/kubernetes/kubernetes/pull/32752), [@fraenkel](https://github.com/fraenkel))
-* Allow no ports when exposing headless service ([#32811](https://github.com/kubernetes/kubernetes/pull/32811), [@fraenkel](https://github.com/fraenkel))
-* check the value of min and max in kubectl ([#37789](https://github.com/kubernetes/kubernetes/pull/37789), [@yarntime](https://github.com/yarntime))
-* When deleting an object with `--grace-period=0`, the client will begin a graceful deletion and wait until the resource is fully deleted.  To force deletion, use the `--force` flag. ([#37263](https://github.com/kubernetes/kubernetes/pull/37263), [@smarterclayton](https://github.com/smarterclayton))
-* Removes shorthand flag -w from kubectl apply ([#37345](https://github.com/kubernetes/kubernetes/pull/37345), [@MrHohn](https://github.com/MrHohn))
-
-[ requires SIG CLI edits above ]
-
 ### kublet
 * Apply taint tolerations for NoExecute for all static pods. ([#43116](https://github.com/kubernetes/kubernetes/pull/43116), [@dchen1107](https://github.com/dchen1107))
 * Disable devicemapper thin_ls due to excessive iops ([#42899](https://github.com/kubernetes/kubernetes/pull/42899), [@dashpole](https://github.com/dashpole))
