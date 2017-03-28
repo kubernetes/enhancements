@@ -420,7 +420,7 @@ Features for this release were tracked via the use of the [kubernetes/features](
   * deleteOptions.orphanDependents is going to be deprecated in 1.7. Please use deleteOptions.propagationPolicy instead.
 
 ### kubeadm
-* A new label and taint is used for marking the master. The label is `node-role.kubernetes.io/master=""` and the taint has the effect `NoSchedule`. If you want to schedule a workload one the master (a networking DaemonSet for example), you must tolerate the `node-role.kubernetes.io/master="":NoSchedule` taint
+* A new label and taint is used for marking the master. The label is `node-role.kubernetes.io/master=""` and the taint has the effect `NoSchedule`. Tolerate the `node-role.kubernetes.io/master="":NoSchedule` taint to schedule a workload on the master (a networking DaemonSet for example).
 * The kubelet API is now secured, only cluster admins are allowed to access it.
 * Insecure access to the API Server over `localhost:8080` is now disabled.
 * The control plane components now talk securely to each other. The API Server talks securely to the kubelets in the cluster.
