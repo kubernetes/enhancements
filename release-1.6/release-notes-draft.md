@@ -48,7 +48,7 @@ Features for this release were tracked via the use of the [kubernetes/features](
 
 ## API Machinery
 ### Features
-- **[stable]** The internal storage layer for kubernetes cluster state has been updated to use etcd v3 by default for new clusters.  Old clusters will have to plan for a data migration window. ([docs](https://github.com/kubernetes/kubernetes.github.io/pull/2763))([kubernetes/features#44](https://github.com/kubernetes/features/issues/44))
+- **[stable]** The internal storage layer for kubernetes cluster state has been updated to use etcd v3 by default.  Old clusters will have to plan for a data migration window. ([docs](https://github.com/kubernetes/kubernetes.github.io/pull/2763))([kubernetes/features#44](https://github.com/kubernetes/features/issues/44))
 ### Notable Changes
 - Action is required (related to etcd v3):
 	- upgrade to etcd3 prior to upgrading to 1.6 OR
