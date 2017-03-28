@@ -1,16 +1,3 @@
-# Contents
-
-* [WARNING: etcd backup strongly recommended](#warning-etcd-backup-strongly-recommended)
-* [Major updates and release themes](#major-updates-and-release-themes)
-* [Action Required](#action-required)
-* [Notable Features](#notable-features)
-* [Deprications](#deprecations)
-* [Changes to API Resources](#changes-to-api-resources)
-* [Changes to Major Components](#changes-to-major-components)
-* [Changes to Cluster Provisioning Scripts](#changes-to-cluster-provisioning-scripts)
-* [Changes to Addons](#changes-to-addons)
-* [External Dependency Version Information](#external-dependency-version-information)
-
 ## WARNING: etcd backup strongly recommended
 
 Before updating to 1.6, you are strongly recommended to back up your etcd data.
