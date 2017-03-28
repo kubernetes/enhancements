@@ -775,3 +775,23 @@ Features for this release were tracked via the use of the [kubernetes/features](
 ### Registry
 * Use daemonset in docker registry add on ([#35582](https://github.com/kubernetes/kubernetes/pull/35582), [@surajssd](https://github.com/surajssd))
 * contribute deis/registry-proxy as a replacement for kube-registry-proxy ([#35797](https://github.com/kubernetes/kubernetes/pull/35797), [@bacongobbler](https://github.com/bacongobbler))
+
+## External Dependency Version Information
+
+Continuous integration builds have used the following versions of external dependencies, however, this is not a strong recommendation and users should consult an appropriate installation or upgrade guide before deciding what versions of etcd, docker or rkt to use. 
+
+* Docker versions 1.10.3, 1.11.2, 1.12.6 have been validated
+  * Docker version 1.12.6 known issues
+    * overlay2 driver not fully supported
+    * live-restore not fully supported 
+    * no shared pid namespace support
+  * Docker version 1.11.2 known issues
+    * Kernel crash with Aufs storage driver on Debian Jessie ([#27885](https://github.com/kubernetes/kubernetes/issues/27885))
+      which can be identified by the [node problem detector](http://kubernetes.io/docs/admin/node-problem/)
+    * Leaked File descriptors ([#275](https://github.com/docker/containerd/issues/275))
+    * Additional memory overhead per container ([#21737](https://github.com/docker/docker/issues/21737))
+  * Docker 1.10.3 contains [backports provided by RedHat](https://github.com/docker/docker/compare/v1.10.3...runcom:docker-1.10.3-stable) for known issues
+  * Support for Docker version 1.9.x has been removed
+* rkt version 1.23.0+
+  * known issues with the rkt runtime are [listed here](http://kubernetes.io/docs/getting-started-guides/rkt/notes/)
+* etcd version 3.0.17
