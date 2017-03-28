@@ -224,7 +224,7 @@ Create subcommands
   the new flags.
 - A new label and taint is used for marking the master. The label is
   `node-role.kubernetes.io/master=""` and the taint has the effect
-  `NoSchedule`. If you want to schedule a workload one the master (a networking
+  `NoSchedule`. To schedule a workload on the master (a networking
   DaemonSet for example), you must tolerate the
   `node-role.kubernetes.io/master="":NoSchedule` taint
 - The kubelet API is now secured, only cluster admins are allowed to access it.
