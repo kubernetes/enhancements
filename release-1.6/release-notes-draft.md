@@ -246,6 +246,9 @@ Features for this release were tracked via the use of the [kubernetes/features](
 * Introduce apps/v1beta1.Deployments resource with modified defaults compared to extensions/v1beta1.Deployments. ([#39683](https://github.com/kubernetes/kubernetes/pull/39683), [@soltysh](https://github.com/soltysh))
 * Introduce new generator for apps/v1beta1 deployments ([#42362](https://github.com/kubernetes/kubernetes/pull/42362), [@soltysh](https://github.com/soltysh))
 
+### Node
+* Set all node conditions to Unknown when node is unreachable ([#36592](https://github.com/kubernetes/kubernetes/pull/36592), [@andrewsykim](https://github.com/andrewsykim))
+
 ### Pod
 * Init containers have graduated to GA and now appear as a field.  The beta annotation value will still be respected and overrides the field value. ([#38382](https://github.com/kubernetes/kubernetes/pull/38382), [@hodovska](https://github.com/hodovska))
 * A new field `terminationMessagePolicy` has been added to containers that allows a user to request `FallbackToLogsOnError`, which will read from the container's logs to populate the termination message if the user does not write to the termination message log file.  The termination message file is now properly readable for end users and has a maximum size (4k bytes) to prevent abuse.  Each pod may have up to 12k bytes of termination messages before the contents of each will be truncated. ([#39341](https://github.com/kubernetes/kubernetes/pull/39341), [@smarterclayton](https://github.com/smarterclayton))
@@ -296,6 +299,7 @@ Features for this release were tracked via the use of the [kubernetes/features](
     * and  DefaultStorageClass admission plugin can be used to preserve similar behavior of Kubernetes cluster,
     * see https://kubernetes.io/docs/user-guide/persistent-volumes/#class-1 for details.
 * Reduce verbosity of volume reconciler when attaching volumes ([#36900](https://github.com/kubernetes/kubernetes/pull/36900), [@codablock](https://github.com/codablock))
+* We change the default attach_detach_controller sync period to 1 minute to reduce the query frequency through cloud provider to check whether volumes are attached or not.  ([#41363](https://github.com/kubernetes/kubernetes/pull/41363), [@jingxu97](https://github.com/jingxu97))
 
 ## Changes to Major Components
 ### API Server
@@ -313,6 +317,8 @@ Features for this release were tracked via the use of the [kubernetes/features](
 * Pipe get options to storage ([#37693](https://github.com/kubernetes/kubernetes/pull/37693), [@wojtek-t](https://github.com/wojtek-t))
 * The --long-running-request-regexp flag to kube-apiserver is deprecated and will be removed in a future release. Long-running requests are now detected based on specific verbs (watch, proxy) or subresources (proxy, portforward, log, exec, attach). ([#38119](https://github.com/kubernetes/kubernetes/pull/38119), [@liggitt](https://github.com/liggitt))
 * if kube-apiserver is started with `--storage-backend=etcd2`, the media type `application/json` is used. ([#43122](https://github.com/kubernetes/kubernetes/pull/43122), [@liggitt](https://github.com/liggitt))
+* API fields that previously serialized null arrays as `null` and empty arrays as `[]` no longer distinguish between those values and always output `[]` when serializing to JSON. ([#43422](https://github.com/kubernetes/kubernetes/pull/43422), [@liggitt](https://github.com/liggitt))
+* Generate OpenAPI definition for inlined types ([#39466](https://github.com/kubernetes/kubernetes/pull/39466), [@mbohlool](https://github.com/mbohlool))
 
 ### API Server Aggregator
 * Rename kubernetes-discovery to kube-aggregator ([#39619](https://github.com/kubernetes/kubernetes/pull/39619), [@deads2k](https://github.com/deads2k))
@@ -555,6 +561,9 @@ Features for this release were tracked via the use of the [kubernetes/features](
 * kubelet will no longer set hairpin mode on every interface on the machine when an error occurs in setting up hairpin for a specific interface. ([#36990](https://github.com/kubernetes/kubernetes/pull/36990), [@bboreham](https://github.com/bboreham))
 * kubelet: don't reject pods without adding them to the pod manager ([#37661](https://github.com/kubernetes/kubernetes/pull/37661), [@yujuhong](https://github.com/yujuhong))
 
+### kube-controller-manager
+* add --controllers to controller manager ([#39740](https://github.com/kubernetes/kubernetes/pull/39740), [@deads2k](https://github.com/deads2k))
+
 ### kube-dns
 * Adds support for configurable DNS stub domains and upstream nameservers.
   The following configuration options have been added to the `kube-system:kube-dns` ConfigMap:
@@ -593,7 +602,7 @@ Features for this release were tracked via the use of the [kubernetes/features](
 * Update kube-proxy image to be based off of Debian 8.6 base image. ([#39695](https://github.com/kubernetes/kubernetes/pull/39695), [@ixdy](https://github.com/ixdy))
 * Update amd64 kube-proxy base image to debian-iptables-amd64:v5 ([#39725](https://github.com/kubernetes/kubernetes/pull/39725), [@ixdy](https://github.com/ixdy))
 * Clean up the kube-proxy container image by removing unnecessary packages and files. ([#42090](https://github.com/kubernetes/kubernetes/pull/42090), [@timstclair](https://github.com/timstclair))
-
+* Better compat with very old iptables (e.g. CentOS 6) ([#37594](https://github.com/kubernetes/kubernetes/pull/37594), [@thockin](https://github.com/thockin))
 
 ### Scheduler
 * Add the support to the scheduler for spreading pods of StatefulSets. ([#41708](https://github.com/kubernetes/kubernetes/pull/41708), [@bsalamat](https://github.com/bsalamat))
@@ -713,18 +722,26 @@ Features for this release were tracked via the use of the [kubernetes/features](
 
 ### DNS
 * Updates the dnsmasq cache/mux layer to be managed by dnsmasq-nanny. ([#41826](https://github.com/kubernetes/kubernetes/pull/41826), [@bowei](https://github.com/bowei))
-  * dnsmasq-nanny manages dnsmasq based on values from the
-  * kube-system:kube-dns configmap:
-  * "stubDomains": {
-  * 	"acme.local": ["1.2.3.4"]
-  * },
-  * is a map of domain to list of nameservers for the domain. This is used
-  * to inject private DNS domains into the kube-dns namespace. In the above
-  * example, any DNS requests for *.acme.local will be served by the
-  * nameserver 1.2.3.4.
-  * "upstreamNameservers": ["8.8.8.8", "8.8.4.4"]
-  * is a list of upstreamNameservers to use, overriding the configuration
-  * specified in /etc/resolv.conf.
+  dnsmasq-nanny manages dnsmasq based on values from the
+  kube-system:kube-dns configmap:
+  ```
+  "stubDomains": {
+  "acme.local": ["1.2.3.4"]
+   },
+  ```
+  
+  is a map of domain to list of nameservers for the domain. This is used
+  to inject private DNS domains into the kube-dns namespace. In the above
+  example, any DNS requests for `*.acme.local` will be served by the
+  ```
+  nameserver 1.2.3.4.
+  ```
+  
+  ```
+  upstreamNameservers": ["8.8.8.8", "8.8.4.4"]
+  ```
+  is a list of upstreamNameservers to use, overriding the configuration
+  specified in `/etc/resolv.conf`.
 * `kube-dns` now runs using a separate `system:serviceaccount:kube-system:kube-dns` service account which is automatically bound to the correct RBAC permissions. ([#38816](https://github.com/kubernetes/kubernetes/pull/38816), [@deads2k](https://github.com/deads2k))
 * Use kube-dns:1.11.0 ([#39925](https://github.com/kubernetes/kubernetes/pull/39925), [@sadlil](https://github.com/sadlil))
 
@@ -758,13 +775,3 @@ Features for this release were tracked via the use of the [kubernetes/features](
 ### Registry
 * Use daemonset in docker registry add on ([#35582](https://github.com/kubernetes/kubernetes/pull/35582), [@surajssd](https://github.com/surajssd))
 * contribute deis/registry-proxy as a replacement for kube-registry-proxy ([#35797](https://github.com/kubernetes/kubernetes/pull/35797), [@bacongobbler](https://github.com/bacongobbler))
-
-## Other Notable Changes
-* Better compat with very old iptables (e.g. CentOS 6) ([#37594](https://github.com/kubernetes/kubernetes/pull/37594), [@thockin](https://github.com/thockin))
-* API fields that previously serialized null arrays as `null` and empty arrays as `[]` no longer distinguish between those values and always output `[]` when serializing to JSON. ([#43422](https://github.com/kubernetes/kubernetes/pull/43422), [@liggitt](https://github.com/liggitt))
-* We change the default attach_detach_controller sync period to 1 minute to reduce the query frequency through cloud provider to check whether volumes are attached or not.  ([#41363](https://github.com/kubernetes/kubernetes/pull/41363), [@jingxu97](https://github.com/jingxu97))
-* Set all node conditions to Unknown when node is unreachable ([#36592](https://github.com/kubernetes/kubernetes/pull/36592), [@andrewsykim](https://github.com/andrewsykim))
-* add --controllers to controller manager ([#39740](https://github.com/kubernetes/kubernetes/pull/39740), [@deads2k](https://github.com/deads2k))
-* Generate OpenAPI definition for inlined types ([#39466](https://github.com/kubernetes/kubernetes/pull/39466), [@mbohlool](https://github.com/mbohlool))
-* delete continue in monitorNodeStatus ([#38798](https://github.com/kubernetes/kubernetes/pull/38798), [@NickrenREN](https://github.com/NickrenREN))
-* Fix logic error in graceful deletion ([#37721](https://github.com/kubernetes/kubernetes/pull/37721), [@derekwaynecarr](https://github.com/derekwaynecarr))
