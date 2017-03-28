@@ -22,6 +22,10 @@ Backups are always a good precaution, particularly around upgrades, but this
 upgrade has multiple known issues where the only remedy is to restore from
 backup.
 
+Also, please note:
+- using `application/vnd.kubernetes.protobuf` as the media storage type for 1.6 is default but not required
+- the ability to rollback to etcd2 can be preserved by continuing to use `application/json` as the storage media type. This can be changed to `application/vnd.kubernetes.protobuf` at a later time.
+
 ## Major updates and release themes
 
 * Kubernetes now supports up to 5,000 nodes via etcd v3, which is enabled by default.
