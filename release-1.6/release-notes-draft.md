@@ -51,6 +51,12 @@ Also, please note:
 ### Certificates API
 * Users of the alpha certificates API should delete v1alpha1 CSRs from the API before upgrading and recreate them as v1beta1 CSR after upgrading. ([#39772](https://github.com/kubernetes/kubernetes/pull/39772), [@mikedanese](https://github.com/mikedanese))
 
+### Cluster Autoscaler
+* If you are using (or planning to use) Cluster Autoscaler please wait for Kubernetes 1.6.1. In 1.6.0 Cluster Autoscaler 
+may ocassionally increase the size of the cluster a bit more than it is actually needed, when there are 
+unschedulable pods, scale up is required and cloud provider is slow to set up networking for new nodes. 
+Anyway, the cluster should get back to the proper size after 10 min.
+
 ### Deployment
 * Deployment now fully respects ControllerRef to avoid fighting over Pods and ReplicaSets. At the time of upgrade, **you must not have Deployments with selectors that overlap**, or else [ownership of ReplicaSets may change](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/controller-ref.md#upgrading). ([#42175](https://github.com/kubernetes/kubernetes/pull/42175), [@enisoc](https://github.com/enisoc))
 
@@ -122,6 +128,9 @@ Features for this release were tracked via the use of the [kubernetes/features](
 ### Autoscaling
 * **[alpha]** The Horizontal Pod Autoscaler now supports drawing metrics throug the API server aggregator.
 * **[alpha]** The Horizontal Pod Autoscaler now supports scaling on multiple, custom metrics.
+* Cluster Autoscaler publishes its status to kube-system/cluster-autoscaler-status ConfigMap.
+* Cluster Autoscaler can continue operations while some nodes are broken or unready.
+* Cluster Autoscaler respects Pod Disruption Budgets when removing a node.
 
 ### DaemonSets
 * **[beta]** Introduce the rolling update feature for DaemonSet. See [Performing a Rolling Update on a DaemonSet](https://deploy-preview-2878--kubernetes-io-master-staging.netlify.com/docs/tasks/manage-daemon/update-daemon-set/).
