@@ -7,7 +7,7 @@ kube-aws, kubeadm etc) for specific advice.
 1.6 encourages etcd3, and switching from etcd2 to etcd3 involves a full
 migration of data between different storage engines.  You must stop the API
 from writing to etcd during an etcd2 -> etcd3 migration.  HA installations cannot
-be migrated at the current time using the official kubernetes procedure.
+be migrated at the current time using the official Kubernetes procedure.
 
 1.6 will also default to protobuf encoding if using etcd3.  **This change is
 irreversible.**  To rollback, you must restore from a backup made before the
@@ -53,7 +53,7 @@ Also, please note:
 
 ### Cluster Autoscaler
 * If you are using (or planning to use) Cluster Autoscaler please wait for Kubernetes 1.6.1. In 1.6.0 Cluster Autoscaler 
-may ocassionally increase the size of the cluster a bit more than it is actually needed, when there are 
+may occasionally increase the size of the cluster a bit more than it is actually needed, when there are 
 unschedulable pods, scale up is required and cloud provider is slow to set up networking for new nodes. 
 Anyway, the cluster should get back to the proper size after 10 min.
 
@@ -96,7 +96,7 @@ Anyway, the cluster should get back to the proper size after 10 min.
   * You can continue to use the alpha version of this feature (with one caveat -- see below), in which you specify affinity requests using Pod annotations, in 1.6 by including `AffinityInAnnotations=true` in `--feature-gates`, such as `--feature-gates=FooBar=true,AffinityInAnnotations=true`. Otherwise, you must modify your PodSpecs that currently use the `scheduler.alpha.kubernetes.io/affinity` annotation on Pod, to instead use the `affinity` field in the PodSpec. Support for the annotation will be removed in a future release, so we encourage you to switch to using the field as soon as possible.
   * Caveat: The alpha version no longer supports, and the beta version does not support, the "empty `podAffinityTerm.namespaces` list means all namespaces" behavior. In both alpha and beta it now means "same namespace as the pod specifying this affinity rule."
   * Note that you can only start using the `affinity` field **after** you upgrade to 1.6; it is not recognized in 1.5.
-  * The `--failure-domains` scheduler command line-argument is not supported in the beta vesion of the feature.
+  * The `--failure-domains` scheduler command line-argument is not supported in the beta version of the feature.
 
 * **Taints**
   * You will need to use `kubectl taint` to re-create all of your taints after kubectl and the master are upgraded to 1.6. Between the time the master is upgraded to 1.6 and when you do this, your existing taints will have no effect. 
@@ -127,7 +127,7 @@ Anyway, the cluster should get back to the proper size after 10 min.
 Features for this release were tracked via the use of the [kubernetes/features](https://github.com/kubernetes/features) issues repo.  Each Feature issue is owned by a Special Interest Group from the [kubernetes/community](https://github.com/kubernetes/community/blob/master/sig-list.md).
 
 ### Autoscaling
-* **[alpha]** The Horizontal Pod Autoscaler now supports drawing metrics throug the API server aggregator.
+* **[alpha]** The Horizontal Pod Autoscaler now supports drawing metrics through the API server aggregator.
 * **[alpha]** The Horizontal Pod Autoscaler now supports scaling on multiple, custom metrics.
 * Cluster Autoscaler publishes its status to kube-system/cluster-autoscaler-status ConfigMap.
 * Cluster Autoscaler can continue operations while some nodes are broken or unready.
