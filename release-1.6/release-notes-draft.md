@@ -793,5 +793,5 @@ Continuous integration builds have used the following versions of external depen
   * Docker 1.10.3 contains [backports provided by RedHat](https://github.com/docker/docker/compare/v1.10.3...runcom:docker-1.10.3-stable) for known issues
   * Support for Docker version 1.9.x has been removed
 * rkt version 1.23.0+
-  * known issues with the rkt runtime are [listed here](http://kubernetes.io/docs/getting-started-guides/rkt/notes/)
+  * known issues with the rkt runtime are [listed in the Getting Started Guide](http://kubernetes.io/docs/getting-started-guides/rkt/notes/)
 * etcd version 3.0.17
