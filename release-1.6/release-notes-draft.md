@@ -67,9 +67,45 @@ Anyway, the cluster should get back to the proper size after 10 min.
 ### Internal Storage Layer
 * upgrade to etcd3 prior to upgrading to 1.6 **OR** explicitly specify `--storage-type=etcd2 --storage-media-type=application/json` when starting the apiserver
 
-### kubelet
-* Hard eviction thresholds will be subtracted from the Allocatable capacity on nodes to improve node reliability. This *may* break existing clusters since the overall schedulable capacity would reduce after upgrading to v1.6. You can opt-out of this feature by specifying `--experimental-allocatable-ignore-eviction=true`.
-* Fluentd was migrated to Daemon Set, which targets nodes with beta.kubernetes.io/fluentd-ds-ready=true label. If you use fluentd in your cluster please make sure that the nodes with version 1.6+ contains this label. ([#42931](https://github.com/kubernetes/kubernetes/pull/42931), [@piosz](https://github.com/piosz))
+### Node Components
+* **Kubelet with the Docker-CRI implementation**
+  * The Docker-CRI implementation is enabled by default.
+  * It is not compatible with containers created by older Kubelets. It is
+    recommended to drain your node before upgrade. If you choose to perform
+    an in-place upgrade, the Kubelet will automatically restart all
+    Kubernetes-managed containers on the node.
+  * It is not compatible with CNI plugins that do not conform to the
+    [error handling behavior in the spec](https://github.com/containernetworking/cni/blob/master/SPEC.md#network-configuration-list-error-handling).
+    The plugins are being updated to resolve this issue ([#43488](https://github.com/kubernetes/kubernetes/issues/43488)).
+    You can disable CRI explicitly (`--enable-cri=false`) as a
+    temporary workaround.
+      * The standard `bridge` plugin have been validated to interoperate with
+         the new CRI + CNI code path.
+      * If you are using plugins other than `bridge`, make sure you have
+        updated custom plugins to the latest version that is compatible.
+* **Enhance Kubelet QoS**:
+  * Pods are placed under a new cgroup hierarchy by default. This feature requires
+    draining and restarting the node as part of upgrades. To opt-out set
+    `--cgroups-per-qos=false`.
+  * If `kube-reserved` and/or `system-reserved` are specified, node allocatable
+    will be enforced on all pods by default. To opt-out set
+    `--enforce-node-allocatable=””`
+  * Hard Eviction Thresholds will be subtracted from Capacity while calculating
+    Node Allocatable. This will result in a reduction of schedulable capacity in
+    clusters post upgrade where kubelet hard eviction has been turned on for
+    memory. To opt-out set `--experimental-allocatable-ignore-eviction=true`.
+  * More details on these feature here:
+    https://kubernetes.io/docs/concepts/cluster-administration/node-allocatable/
+* Drop the support for docker 1.9.x. Docker versions 1.10.3, 1.11.2, 1.12.6
+  have been validated.
+* The following deprecated kubelet flags are removed: `--config`, `--auth-path`,
+  `--resource-container`, `--system-container`, `--reconcile-cidr`
+* Remove the temporary fix for pre-1.0 mirror pods. Upgrade directly from
+  pre-1.0 to 1.6 kubelet is not supported.
+* Fluentd was migrated to Daemon Set, which targets nodes with
+  beta.kubernetes.io/fluentd-ds-ready=true label. If you use fluentd in your
+  cluster please make sure that the nodes with version 1.6+ contains this
+  label.
 
 ### kubectl
 * Running `kubectl taint` (alpha in 1.5) against a 1.6 server requires upgrading kubectl to version 1.6
@@ -151,8 +187,51 @@ Features for this release were tracked via the use of the [kubernetes/features](
 * **[alpha]** New Bootstrap Token authentication and management method. Works well with kubeadm. kubeadm now supports managing tokens, including time based expiration, after the cluster is launched.  See [kubeadm reference docs](https://kubernetes.io/docs/admin/kubeadm/#manage-tokens) for details.
 * **[alpha]** Adds a new cloud-controller-manager binary that may be used for testing the new out-of-core cloudprovider flow.
 
-### kubelet
-* **[stable]** kubelet launches pods in a new cgroup hierarchy to better enforce quality of service.  Operators must drain all pods from their nodes prior to upgrade of the kubelet.  They must ensure the configured cgroup driver matches their associated container runtime cgroup driver.
+### Node Components
+* **[stable]** Init containers have graduated to GA and now appear as a field.
+  The beta annotation value will still be respected and overrides the field
+  value.
+* Kubelet Container Runtime Interface (CRI) support 
+  - **[beta]** The Docker-CRI implementation is enabled by default in kubelet.
+    You can disable it by --enable-cri=false. See
+    [notes on the new implementation](https://github.com/kubernetes/community/blob/master/contributors/devel/container-runtime-interface.md#kubernetes-v16-release-docker-cri-integration-beta)
+    for more details.
+  - **[alpha]** Alpha support for other runtimes:
+    [cri-o](https://github.com/kubernetes-incubator/cri-o/releases/tag/v0.1), [frakti](https://github.com/kubernetes/frakti/releases/tag/v0.1), [rkt](https://github.com/coreos/rkt/issues?q=is%3Aopen+is%3Aissue+label%3Aarea%2Fcri).
+* **[beta]** Node Problem Detector is beta (v0.3.0) now. New
+  features added into node-problem-detector:v0.3.0:
+  - Add support for journald.
+  - The ability to monitor any system daemon logs. Previously only kernel
+    logs were supported.
+  - The ability to be deployed and run as a native daemon.
+* **[alpha]** Critical Pods: When feature gate "ExperimentalCriticalPodAnnotation" is
+  set to true, the system will guarantee scheduling and admission of pods with
+  the following annotation - `scheduler.alpha.kubernetes.io/critical-pod`
+  - This feature should be used in conjunction with the
+    [rescheduler](https://kubernetes.io/docs/admin/rescheduler/) to guarantee
+    resource availability for critical system pods.
+* **[alpha]** `--experimental-nvidia-gpus` flag is replaced by `Accelerators` alpha
+  feature gate along with addition of support for multiple Nvidia GPUs.
+  - To use GPUs, pass `Accelerators=true` as part of `--feature-gates` flag.
+  - More information [here](https://vishh.github.io/docs/user-guide/gpus/).
+* A pod’s Quality of Service Class is now available in its Status.
+* Upgrade cAdvisor library to v0.25.0. Notable changes include,
+  - Container filesystem usage tracking disabled for device mapper due to excessive
+    IOPS.
+  - Ignore `.mount` cgroups, fixing disappearing stats.
+* A new field `terminationMessagePolicy` has been added to containers that allows
+  a user to request FallbackToLogsOnError, which will read from the container's
+  logs to populate the termination message if the user does not write to the
+  termination message log file. The termination message file is now properly
+  readable for end users and has a maximum size (4k bytes) to prevent abuse.
+  Each pod may have up to 12k bytes of termination messages before the contents
+  of each will be truncated.
+* Do not delete pod objects until all its compute resource footprint has been
+  reclaimed.
+  - This feature prevents the node and scheduler from oversubscribing resources
+    that are still being used by a pod in the process of being cleaned up.
+  - This feature can result in increase of Pod Deletion latency especially if the
+    pod has a large filesystem footprint.
 
 ### RBAC
 * **[beta]** RBAC API is promoted to v1beta1 (rbac.authorization.k8s.io/v1beta1), and defines default roles for control plane, node, and controller components.
@@ -512,53 +591,52 @@ Features for this release were tracked via the use of the [kubernetes/features](
 * Add error message when trying to use clusterrole with namespace in kubectl ([#36424](https://github.com/kubernetes/kubernetes/pull/36424), [@xilabao](https://github.com/xilabao))
 * When deleting an object with `--grace-period=0`, the client will begin a graceful deletion and wait until the resource is fully deleted.  To force deletion, use the `--force` flag. ([#37263](https://github.com/kubernetes/kubernetes/pull/37263), [@smarterclayton](https://github.com/smarterclayton))
 
-### kubelet
-* Apply taint tolerations for NoExecute for all static pods. ([#43116](https://github.com/kubernetes/kubernetes/pull/43116), [@dchen1107](https://github.com/dchen1107))
-* Disable devicemapper thin_ls due to excessive iops ([#42899](https://github.com/kubernetes/kubernetes/pull/42899), [@dashpole](https://github.com/dashpole))
-* Dropped the support for docker 1.9.x and the belows.  ([#42694](https://github.com/kubernetes/kubernetes/pull/42694), [@dchen1107](https://github.com/dchen1107))
-* kubelet created cgroups follow lowercase naming conventions ([#42497](https://github.com/kubernetes/kubernetes/pull/42497), [@derekwaynecarr](https://github.com/derekwaynecarr))
-* kubelet exports metrics for cgroup management ([#41988](https://github.com/kubernetes/kubernetes/pull/41988), [@sjenning](https://github.com/sjenning))
-* Pods are launched in a separate cgroup hierarchy than system services. ([#42350](https://github.com/kubernetes/kubernetes/pull/42350), [@vishh](https://github.com/vishh))
-* Experimental support to reserve a pod's memory request from being utilized by pods in lower QoS tiers. ([#41149](https://github.com/kubernetes/kubernetes/pull/41149), [@sjenning](https://github.com/sjenning))
-* `--experimental-nvidia-gpus` flag is **replaced** by `Accelerators` alpha feature gate along with  support for multiple Nvidia GPUs.  ([#42116](https://github.com/kubernetes/kubernetes/pull/42116), [@vishh](https://github.com/vishh))
-  * To use GPUs, pass `Accelerators=true` as part of `--feature-gates` flag.
-  * Works only with Docker runtime.
-* New Kubelet flag `--enforce-node-allocatable` with a default value of `pods` is added which will make kubelet create a top level cgroup for all pods to enforce Node Allocatable. Optionally, `system-reserved` & `kube-reserved` values can also be specified separated by comma to enforce node allocatable on cgroups specified via `--system-reserved-cgroup` & `--kube-reserved-cgroup` respectively. Note the default value of the latter flags are "". ([#41234](https://github.com/kubernetes/kubernetes/pull/41234), [@vishh](https://github.com/vishh))
-  * This feature requires a **Node Drain** prior to upgrade failing which pods will be restarted if possible or terminated if they have a `RestartNever` policy.
-* Guaranteed admission for Critical Pods ([#40952](https://github.com/kubernetes/kubernetes/pull/40952), [@dashpole](https://github.com/dashpole))
-* Deprecate outofdisk-transition-frequency and low-diskspace-threshold-mb flags ([#41941](https://github.com/kubernetes/kubernetes/pull/41941), [@dashpole](https://github.com/dashpole))
-* kubelet config should ignore file start with dots ([#39196](https://github.com/kubernetes/kubernetes/pull/39196), [@resouer](https://github.com/resouer))
-* Each pod has its own associated cgroup by default. ([#41349](https://github.com/kubernetes/kubernetes/pull/41349), [@derekwaynecarr](https://github.com/derekwaynecarr))
-* Nodes can now report two additional address types in their status: InternalDNS and ExternalDNS. The apiserver can use `--kubelet-preferred-address-types` to give priority to the type of address it uses to reach nodes. ([#34259](https://github.com/kubernetes/kubernetes/pull/34259), [@liggitt](https://github.com/liggitt))
-* Fix ConfigMap for Windows Containers. ([#39373](https://github.com/kubernetes/kubernetes/pull/39373), [@jbhurat](https://github.com/jbhurat))
-* Node Problem Detector is beta now. New features added: journald support, standalone mode and arbitrary system log monitoring. ([#40206](https://github.com/kubernetes/kubernetes/pull/40206), [@Random-Liu](https://github.com/Random-Liu))
-* Report node not ready on failed PLEG health check ([#41569](https://github.com/kubernetes/kubernetes/pull/41569), [@yujuhong](https://github.com/yujuhong))
-* Delay Deletion of a Pod until volumes are cleaned up ([#41456](https://github.com/kubernetes/kubernetes/pull/41456), [@dashpole](https://github.com/dashpole))
-* Make EnableCRI default to true ([#41378](https://github.com/kubernetes/kubernetes/pull/41378), [@yujuhong](https://github.com/yujuhong))
-* The deprecated flags --config, --auth-path, --resource-container, and --system-container were removed. ([#40048](https://github.com/kubernetes/kubernetes/pull/40048), [@mtaufen](https://github.com/mtaufen))
-* We should mention the caveats of in-place upgrade in release note. ([#40727](https://github.com/kubernetes/kubernetes/pull/40727), [@Random-Liu](https://github.com/Random-Liu))
-* Delay deletion of pod from the API server until volumes are deleted ([#41095](https://github.com/kubernetes/kubernetes/pull/41095), [@dashpole](https://github.com/dashpole))
-* Rename --experiemental-cgroups-per-qos to --cgroups-per-qos ([#39972](https://github.com/kubernetes/kubernetes/pull/39972), [@derekwaynecarr](https://github.com/derekwaynecarr))
-* Remove the temporary fix for pre-1.0 mirror pods ([#40877](https://github.com/kubernetes/kubernetes/pull/40877), [@yujuhong](https://github.com/yujuhong))
-* When feature gate "ExperimentalCriticalPodAnnotation" is set, Kubelet will avoid evicting pods in "kube-system" namespace that contains a special annotation - `scheduler.alpha.kubernetes.io/critical-pod` ([#40655](https://github.com/kubernetes/kubernetes/pull/40655), [@vishh](https://github.com/vishh))
-* Port forwarding can forward over websockets or SPDY. ([#33684](https://github.com/kubernetes/kubernetes/pull/33684), [@fraenkel](https://github.com/fraenkel))
-* CRI: use more gogoprotobuf plugins ([#40397](https://github.com/kubernetes/kubernetes/pull/40397), [@yujuhong](https://github.com/yujuhong))
-* kubelet tears down pod volumes on pod termination rather than pod deletion ([#37228](https://github.com/kubernetes/kubernetes/pull/37228), [@sjenning](https://github.com/sjenning))
-* CRI: upgrade protobuf to v3 ([#39158](https://github.com/kubernetes/kubernetes/pull/39158), [@feiskyer](https://github.com/feiskyer))
-* Add SIGCHLD handler to pause container ([#36853](https://github.com/kubernetes/kubernetes/pull/36853), [@verb](https://github.com/verb))
-* kubelet: remove the pleg health check from healthz ([#37865](https://github.com/kubernetes/kubernetes/pull/37865), [@yujuhong](https://github.com/yujuhong))
-* Fixes nil dereference when doing a volume type check on persistent volumes ([#39493](https://github.com/kubernetes/kubernetes/pull/39493), [@sjenning](https://github.com/sjenning))
-* The `--reconcile-cidr` kubelet flag was removed since it had been deprecated since v1.5 ([#39322](https://github.com/kubernetes/kubernetes/pull/39322), [@luxas](https://github.com/luxas))
-* Remove 'exec' network plugin - use CNI instead ([#39254](https://github.com/kubernetes/kubernetes/pull/39254), [@freehan](https://github.com/freehan))
-* Add path exist check in getPodVolumePathListFromDisk ([#38909](https://github.com/kubernetes/kubernetes/pull/38909), [@jingxu97](https://github.com/jingxu97))
-* Don't evict static pods ([#39059](https://github.com/kubernetes/kubernetes/pull/39059), [@bprashanth](https://github.com/bprashanth))
-* Assign -998 as the oom_score_adj for critical pods (e.g. kube-proxy) ([#39114](https://github.com/kubernetes/kubernetes/pull/39114), [@dchen1107](https://github.com/dchen1107))
-* Admit critical pods in the kubelet ([#38836](https://github.com/kubernetes/kubernetes/pull/38836), [@bprashanth](https://github.com/bprashanth))
-* Fail kubelet if runtime is unresponsive for 30 seconds ([#38527](https://github.com/kubernetes/kubernetes/pull/38527), [@derekwaynecarr](https://github.com/derekwaynecarr))
-* Add image cache. ([#38375](https://github.com/kubernetes/kubernetes/pull/38375), [@Random-Liu](https://github.com/Random-Liu))
-* kernel memcg notification enabled via experimental flag ([#38258](https://github.com/kubernetes/kubernetes/pull/38258), [@derekwaynecarr](https://github.com/derekwaynecarr))
-* kubelet will no longer set hairpin mode on every interface on the machine when an error occurs in setting up hairpin for a specific interface. ([#36990](https://github.com/kubernetes/kubernetes/pull/36990), [@bboreham](https://github.com/bboreham))
-* kubelet: don't reject pods without adding them to the pod manager ([#37661](https://github.com/kubernetes/kubernetes/pull/37661), [@yujuhong](https://github.com/yujuhong))
+### Node Components
+* Kubelet config should ignore file start with dots.
+  ([#39196](https://github.com/kubernetes/kubernetes/pull/39196),
+  [@resouer](https://github.com/resouer))
+* Bump GCI to gci-stable-56-9000-84-2.
+  ([#41819](https://github.com/kubernetes/kubernetes/pull/41819),
+  [@dchen1107](https://github.com/dchen1107))
+* Bump GCE ContainerVM to container-vm-v20170214 to address CVE-2016-9962.
+  ([#41449](https://github.com/kubernetes/kubernetes/pull/41449),
+  [@zmerlynn](https://github.com/zmerlynn))
+* Kubelet: Remove the PLEG health check from /healthz, Kubelet will now report
+* NodeNotReady on failed PLEG health check.
+  ([#41569](https://github.com/kubernetes/kubernetes/pull/41569),
+  [@yujuhong](https://github.com/yujuhong))
+* CRI: upgrade protobuf to v3. Protobuf v2 and v3 are not compatible.
+  ([#39158](https://github.com/kubernetes/kubernetes/pull/39158), [@feiskyer](https://github.com/feiskyer))
+* kubelet exports metrics for cgroup management (#41988, @sjenning)
+* Experimental support to reserve a pod's memory request from being utilized by
+  pods in lower QoS tiers.
+  ([#41149](https://github.com/kubernetes/kubernetes/pull/41149),
+  [@sjenning](https://github.com/sjenning))
+* Port forwarding can forward over websockets or SPDY.
+  ([#33684](https://github.com/kubernetes/kubernetes/pull/33684),
+  [@fraenkel](https://github.com/fraenkel))
+* Flag gate faster evictions based on node memory pressure using kernel memcg
+  notifications - `--experimental-kernel-memcg-notification`.
+  ([#38258](https://github.com/kubernetes/kubernetes/pull/38258),
+  [@derekwaynecarr](https://github.com/derekwaynecarr)) 
+* Nodes can now report two additional address types in their status: InternalDNS
+  and ExternalDNS. The apiserver can use --kubelet-preferred-address-types to
+  give priority to the type of address it uses to reach nodes.
+  ([#34259](https://github.com/kubernetes/kubernetes/pull/34259), [@liggitt](https://github.com/liggitt))
+
+#### Bug fixes
+* Add image cache to fix the issue where kubelet hands when reporting the node
+  status. ([#38375](https://github.com/kubernetes/kubernetes/pull/38375),
+  [@Random-Liu](https://github.com/Random-Liu))
+* Fix logic error in graceful deletion that caused pods not being able to
+  be deleted. ([#37721](https://github.com/kubernetes/kubernetes/pull/37721),
+  [@derekwaynecarr](https://github.com/derekwaynecarr))
+* Fix ConfigMap for Windows Containers.
+  ([#39373](https://github.com/kubernetes/kubernetes/pull/39373),
+  [@jbhurat](https://github.com/jbhurat))
+* Fix the “pod rejected by kubelet may stay at pending forever” bug.
+  (https://github.com/kubernetes/kubernetes/pull/37661),
+  [@yujuhong](https://github.com/yujuhong))
 
 ### kube-controller-manager
 * add --controllers to controller manager ([#39740](https://github.com/kubernetes/kubernetes/pull/39740), [@deads2k](https://github.com/deads2k))
@@ -580,15 +658,6 @@ Features for this release were tracked via the use of the [kubernetes/features](
   ```
   is a list of upstreamNameservers to use, overriding the configuration
   specified in /etc/resolv.conf.
-
-* <a name="#CNIcompatdetails"></a>Container Network Interface ([CNI](https://github.com/containernetworking/cni)) integration with Container
-  Runtime Interface (CRI) is enabled by default.
-  * The standard `bridge` plugin have been validated to interoperate with the new CRI + CNI code path.
-  * If you are using plugins other than `bridge`, make sure you have updated custom plugins to the 
-    latest version that is compatible.
-  * If you encounter any issues involving CNI plugins, CRI can be disabled with setting the `--enable-cri`
-    flag to `false`.
-  * [Associated action required notes](#CNIcompat).
   
 * An empty `kube-system:kube-dns` ConfigMap will be created for the cluster if one did not already exist.
 
