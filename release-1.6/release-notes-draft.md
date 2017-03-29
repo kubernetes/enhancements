@@ -57,6 +57,10 @@ may occasionally increase the size of the cluster a bit more than it is actually
 unschedulable pods, scale up is required and cloud provider is slow to set up networking for new nodes. 
 Anyway, the cluster should get back to the proper size after 10 min.
 
+### Dashboard
+
+* Due to migration to [client-go](https://github.com/kubernetes/client-go) Dashboard no longer supports in-cluster config without enabled Service Accounts. Dashboard's [troubleshooting guide](https://github.com/kubernetes/dashboard/blob/master/docs/user-guide/troubleshooting.md) contains more details about it.
+
 ### Deployment
 * Deployment now fully respects ControllerRef to avoid fighting over Pods and ReplicaSets. At the time of upgrade, **you must not have Deployments with selectors that overlap**, or else [ownership of ReplicaSets may change](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/controller-ref.md#upgrading). ([#42175](https://github.com/kubernetes/kubernetes/pull/42175), [@enisoc](https://github.com/enisoc))
 
@@ -171,6 +175,10 @@ Features for this release were tracked via the use of the [kubernetes/features](
 
 ### DaemonSets
 * **[beta]** Introduce the rolling update feature for DaemonSet. See [Performing a Rolling Update on a DaemonSet](https://deploy-preview-2878--kubernetes-io-master-staging.netlify.com/docs/tasks/manage-daemon/update-daemon-set/).
+
+### Dashboard
+* Introduce Storage Classes view.
+* Introduce initial Third Party Resources view. It allows to view all third party resources in the cluster and see the lists of their intances.
 
 ### Deployments
 * **[beta]** Deployments that cannot make progress in rolling out the newest version will now indicate via the API they are blocked ([docs](https://kubernetes.io/docs/user-guide/deployments/#deployment-status))
