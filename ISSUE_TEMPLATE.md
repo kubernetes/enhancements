@@ -14,6 +14,21 @@ Large features typically go through three stages: [Alpha, Beta, and Stable](http
 Each stage requires various approvals from various teams.  Features require several releases
 to reach Stable.
 
+The following items have to be filled before the features freeze:
+
+- Primary contact (assignee);
+- SIG, responsible for the feature;
+- Proposal link - do the public design proposal in the community repo;
+- Reviewer(s) - recommend having 2+ reviewers (at least one from code-area OWNERS file) agreed to review. Reviewers from multiple companies preferred;
+- Approver (for LGTM, likely from SIG to which feature belongs);
+- Target - Alpha / beta / stable;
+- Timeline / status;
+
+Before the coding freeze:
+
+- Release note - a short sentence, describing the feature;
+- User documentation PR link (to http://github.com/kubernetes/kubernetes.github.io)
+
 
 ** Delete from here to top of input box before creating issue so that issue creation emails will be informative.**
 
@@ -24,48 +39,23 @@ to reach Stable.
 
 # Progress Tracker
 
+Please, select the following checkboxes and fill with the necessary data after completing the desired steps: 
 
-- [ ] Alpha
-    - [ ] Write and maintain draft quality doc
-      - [ ] During development keep a doc up-to-date about the desired experience of the feature and how someone can try the feature in its current state. Think of it as the README of your new feature and a skeleton for the docs to be written before the Kubernetes release. Paste link to Google Doc: **DOC-LINK**
-    - [ ] Design Approval
-      - [ ] Design Proposal.  This goes under [design-proposals](https://github.com/kubernetes/community/tree/master/contributors/design-proposals).  Doing a proposal as a PR allows line-by-line commenting from community, and creates the basis for later design documentation.  Paste link to merged design proposal here: **PROPOSAL-NUMBER**
-      - [ ] Decide which repo this feature's code will be checked into. Not everything needs to land in the core kubernetes repo. **REPO-NAME**
-      - [ ] Initial API review (if API).  Maybe same PR as design doc. **PR-NUMBER**
-        -  Any code that changes an API (`/pkg/apis/...`)
-        -  **cc `@kubernetes/api`**
-      - [ ] Identify shepherd (your SIG lead and/or kubernetes-pm@googlegroups.com will be able to help you). **My Shepherd is:** _replace.me@replaceme.com_ (and/or GH Handle)
-        -  A shepherd is an individual who will help acquaint you with the process of getting your feature into the repo, identify reviewers and provide feedback on the feature. They are _not_ (necessarily) the code reviewer of the feature, or tech lead for the area.
-        -  The shepherd is _not_ responsible for showing up to Kubernetes-PM meetings and/or communicating if the feature is on-track to make the release goals. That is still your responsibility.
-      - [ ] Identify secondary/backup contact point. **My Secondary Contact Point is:** _replace.me@replaceme.com_ (and/or GH Handle)
-    - [ ] Write (code + tests + docs) then get them merged.  **ALL-PR-NUMBERS**
-      - [ ] **Code needs to be disabled by default.**   Verified by code OWNERS
-      - [ ] Minimal testing
-      - [ ] Minimal docs
-        - cc `@kubernetes/docs` on docs PR
-        - **cc `@kubernetes/feature-reviewers` on this issue** to get approval before checking this off
-        - New apis: *Glossary Section Item* in the docs repo: kubernetes/kubernetes.github.io
-      - [ ] Update release notes
-- [ ] Beta
-  - [ ] Testing is sufficient for beta
-  - [ ] User docs with tutorials
-        - *Updated walkthrough / tutorial* in the docs repo: kubernetes/kubernetes.github.io
-        - cc `@kubernetes/docs` on docs PR
-        - **cc `@kubernetes/feature-reviewers` on this issue** to get approval before checking this off
-  - [ ] Thorough API review
-    - **cc `@kubernetes/api`**
-- [ ] Stable
-  - [ ] docs/proposals/foo.md moved to docs/design/foo.md 
-        - **cc `@kubernetes/feature-reviewers` on this issue** to get approval before checking this off
-  - [ ] Soak, load testing 			
-  - [ ] detailed user docs and examples
-    - **cc `@kubernetes/docs`**
-    - **cc `@kubernetes/feature-reviewers` on this issue** to get approval before checking this off
+Before the features freeze:
+- [ ] Primary contact
+- [ ] SIG
+- [ ] Proposal link 
+- [ ] Reviewer(s)
+- [ ] Approver
+- [ ] Target
+- [ ] Timeline / status
 
-*FEATURE_STATUS is used for feature tracking and to be updated by `@kubernetes/feature-reviewers`.*
-**FEATURE_STATUS: IN_DEVELOPMENT**
+Before the coding freeze:
+- [ ] Release note
+- [ ] Documentation
 
-More advice:
+
+More advices:
 
 Design
    - Once you get LGTM from a *`@kubernetes/feature-reviewers`* member, you can check this checkbox, and the reviewer will apply the "design-complete" label.
@@ -81,8 +71,8 @@ Coding
         When that is done, you can check this box and the reviewer will apply the "code-complete" label.
 
 Docs
-  - [ ] Write user docs and get them merged in.
+  - Write user docs and get them merged in.
   - User docs go into http://github.com/kubernetes/kubernetes.github.io.
   - When the feature has user docs, please add a comment mentioning `@kubernetes/docs`.
-  - When you get LGTM, you can check this checkbox, and the reviewer will apply the "docs-complete" label.
+  - When you get LGTM, you can check the `documentation` checkbox, and the reviewer will apply the "docs-complete" label.
 
