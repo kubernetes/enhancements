@@ -1,6 +1,7 @@
 |  **Role** | **Name** | **GitHub/Slack ID** |
 |  ------ | ------ | ------ |
-|  Lead | | |
+|  Lead | Maru Newby | marun |
+|  Shadow Lead | Shruti Ramesh | |
 |  Secondary || |
 |  Features | | |
 |  Release branch | | |
@@ -8,5 +9,5 @@
 |  Docs | | |
 |  Bugs | | |
 |  Testing | | |
-|  Manual upgrade | | |
+|  Manual upgrade | Anthony Howe | anhowe |
 |  Automatic upgrade | | |
