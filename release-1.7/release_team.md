@@ -1,11 +1,11 @@
 |  **Role** | **Name** | **GitHub/Slack ID** |
 |  ------ | ------ | ------ |
-|  Lead | | |
+|  Lead | Dawn Chen| dchen1107|
 |  Secondary || |
-|  Features | | |
-|  Release branch | | |
+|  Features |Ihor Dvoretskyi|idvoretskyi|
+|  Release branch |Wojciech Tyczynski|wojtek-t|
 |  Infra | | |
-|  Docs | | |
+|  Docs |Andrew Chen| chenopis|
 |  Bugs | | |
 |  Testing | | |
 |  Manual upgrade | | |
