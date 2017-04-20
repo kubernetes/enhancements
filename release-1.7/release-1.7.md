@@ -7,12 +7,12 @@ modifications:
 
 ## 1.7 Release Schedule
 - April 3 (Mon) coding start (7w)
-- April 26 (Weds) features repo freeze
 - April 6th (Thurs): v1.7.0-alpha.1
 - April 19th (Weds): v1.7.0-alpha.2
+- April 26 (Weds) features repo freeze
 - May 3 (Weds): v1.7.0-alpha.3
 - May 17(Weds): v1.7.0-alpha.4
-- May 31(Weds): v1.7.0-beta.0
+- May 31 (Weds): v1.7.0-beta.0
 - Jun 1 (Thurs): Code Freeze 
 - Jun 7 (Weds): v1.7.0-beta.1
 - June 14 (Weds): v1.7.0-beta.2
@@ -31,6 +31,7 @@ modifications:
   have an associated issue in the features repo
 - May 3 (Weds): v1.7.0-alpha.3
 - May 17(Weds): v1.7.0-alpha.4
+- May 31 (Weds): v1.7.0-beta.0
   * Create release branch.
   * Set up CI for branch.
   * Begin regular fast-forwards (at least daily to keep CI up-to-date).
