@@ -1,7 +1,7 @@
-|  **Role** | **Name** (**GitHub/Slack ID**)  | **Shadow Name(S) (GitHub/Slack ID), ...**
+|  **Role** | **Name** (**GitHub/Slack ID**)  | **Shadow Name(s) (GitHub/Slack ID), ...**
 |  ------ | ------ | ------ |
-|  Lead | Dawn Chen (dchen1107) | |
-|  Secondary |Maru Newby (marun) | |
+|  Lead | Dawn Chen (dchen1107) | Maru Newby (marun) |
+|  Secondary | | |
 |  Features |Ihor Dvoretskyi (idvoretskyi) | |
 |  Release branch |Wojciech Tyczynski (wojtek-t)| |
 |  Infra | | | |
