@@ -7,6 +7,5 @@
 |  Infra | | | |
 |  Docs |Andrew Chen (chenopis) | |
 |  Bugs | | | |
-|  Testing | | | |
-|  Manual upgrade | Anthony Howe (anhowe) | | |
-|  Automatic upgrade | | | |
+|  CI Signal | | | |
+|  Upgrade Testing | Anthony Howe (anhowe) | | |
