@@ -6,7 +6,7 @@
 |  Release branch |Wojciech Tyczynski (wojtek-t)| |
 |  Infra | | | |
 |  Docs |Andrew Chen (chenopis) | |
-|  Bugs | | | |
+|  Bugs | Maru Newby (marun) | | |
 |  Testing | | | |
 |  Manual upgrade | | | |
 |  Automatic upgrade | | | |
