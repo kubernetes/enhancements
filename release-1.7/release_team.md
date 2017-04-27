@@ -3,10 +3,10 @@
 |  Lead | Dawn Chen (dchen1107) | Maru Newby (marun) |
 |  Secondary | Caleb Miles (calebamiles)| |
 |  Features |Ihor Dvoretskyi (idvoretskyi) | |
-|  Release branch |Wojciech Tyczynski (wojtek-t)| |
-|  Infra | | | |
+|  Branch Manager | Chao Xu  (caesarxuchao)| |
+|  Test Infra | Sen Lu (krzyzacy) | | |
 |  Docs |Andrew Chen (chenopis) | |
 |  Bugs | Maru Newby (marun) | | |
-|  Testing | | | |
-|  Manual upgrade | | | |
-|  Automatic upgrade | | | |
+|  CI Signal | | | |
+|  Upgrade Testing | Jeff Regan (monopole) | | |
+| Patch Release Manager | Wojciech Tyczynski (wojtek-t)| |
