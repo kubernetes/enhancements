@@ -9,3 +9,8 @@
   - Alpha release target (x.y)
   - Beta release target (x.y)
   - Stable release target (x.y)
+- Feature docs for kubernetes.io (choose one or more):
+  - Concept - Help the user gain deeper understanding of your feature.
+  - Task - Show a user how to accomplish a specific task using your feature.
+  - Tutorial - Walk a user through a real-world, industry-specific, or end-to-end development scenario that uses your feature.
+  - Reference - If the feature is a CLI or tool, give the user details on how to use its interface(s).
