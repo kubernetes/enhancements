@@ -9,7 +9,7 @@ modifications:
 - April 3 (Mon) coding start (7w)
 - April 6th (Thurs): v1.7.0-alpha.1
 - April 19th (Weds): v1.7.0-alpha.2
-- April 26 (Weds) features repo freeze
+- May 1 (Mon) features repo freeze
 - May 3 (Weds): v1.7.0-alpha.3
 - May 17(Weds): v1.7.0-alpha.4
 - May 31 (Weds): v1.7.0-beta.0
