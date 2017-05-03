@@ -7,6 +7,6 @@
 |  Test Infra | Sen Lu (krzyzacy) | | |
 |  Docs |Andrew Chen (chenopis) | |
 |  Bugs | Maru Newby (marun) | | |
-|  CI Signal | | | |
+|  CI Signal | Eric Chiang (ericchiang) | | |
 |  Upgrade Testing | Jeff Regan (monopole) | | |
 | Patch Release Manager | Wojciech Tyczynski (wojtek-t)| |
