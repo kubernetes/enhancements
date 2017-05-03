@@ -1,4 +1,4 @@
-# Feature Name
+# Feature Description
 - One-line feature description (can be used as a release note):
 - Primary contact (assignee):
 - Responsible SIGs:
