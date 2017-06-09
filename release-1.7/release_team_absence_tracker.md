@@ -10,3 +10,11 @@ should also be updated.
   - slack: [calebamiles](https://kubernetes.slack.com/team/calebamiles)
 - absences
   - 8 - 17 May 2017
+
+### Eric Chiang
+- contact info
+  - email: [eric.chiang@coreos.com](mailto:eric.chiang@coreos.com)
+  - github: [ericchiang](https://github.com/ericchiang/)
+  - slack: [ericchiang](https://kubernetes.slack.com/team/ericchiang)
+- absences
+  - 9 June 2017
