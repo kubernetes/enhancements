@@ -1,6 +1,6 @@
 ### Release Team absence tracker
 
-Release Team members with upcoming unavailability. The [shared calendar](https://calendar.google.com/calendar/embed?src=coreos.com_gajqnr7fcj8vh1oia6bb2di9bs%40group.calendar.google.com&ctz=America/Los_Angeles)
+Release Team members with upcoming unavailability. The [shared calendar](https://calendar.google.com/calendar/embed?src=coreos.com_regcvcrgvq98lua2ikijg1g1uk%40group.calendar.google.com&ctz=America/Los_Angeles)
 should also be updated.
 
 #### Caleb Miles 
