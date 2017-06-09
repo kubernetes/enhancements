@@ -11,7 +11,7 @@ should also be updated.
 - absences
   - 8 - 17 May 2017
 
-### Eric Chiang
+#### Eric Chiang
 - contact info
   - email: [eric.chiang@coreos.com](mailto:eric.chiang@coreos.com)
   - github: [ericchiang](https://github.com/ericchiang/)
