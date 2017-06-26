@@ -93,25 +93,3 @@ TODO: this is copy-pasted from release-1.6/release-notes-draft.md, please update
 * rkt version 1.23.0+
   * known issues with the rkt runtime are [listed in the Getting Started Guide](http://kubernetes.io/docs/getting-started-guides/rkt/notes/)
 * etcd version 3.0.17
-
-## Process
-
-I started with the release-1.5/release-notes-draft.md file, and removed all content under the existing headings.
-
-I use the following script to start populating the features section
-```sh
-for sig in $(hub issue -M 6 | sed -e 's|.*sig/\([^ ]*\).*|\1|g' | sort | uniq); do
-  echo "- **$sig**"
-  for stage in alpha beta stable; do 
-    hub issue -M 6 -l sig/$sig,stage/$stage -f \
-      "  - [$stage] %t ([kubernetes/features%i](%U))%n";
-  done
-done
-```
-
-I noticed the following sections in the release-1.6/release-notes-draft.md file, but have explicitly left them out here.  Please add back in if you feel they're necessary:
-- WARNING: etcd backup strongly recommneded
-- Changes to API Resources
-- Changes to Major Components
-- Changes to Cluster Provisioning Scripts
-- Changes to Addons
