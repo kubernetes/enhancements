@@ -1,10 +1,14 @@
 ## Major Themes
 
-TODO
+TODO:
+- align with marketing plans
 
 ## Features
 
 Features for this release were tracked via the use of the [kubernetes/features](https://github.com/kubernetes/features) issues repo.  Each Feature issue is owned by a Special Interest Group from [kubernetes/community](https://github.com/kubernetes/community)
+
+TODO:
+- replace docs PR links with links to actual docs
 
 - **API Machinery**
   - [alpha] Add extensible external admission control ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/4092)) ([kubernetes/features#209](https://github.com/kubernetes/features/issues/209))
@@ -51,32 +55,32 @@ Populated via [v1.7.x known issues / FAQ accumulator](https://github.com/kuberne
 
 - Kubectl API discovery caching may be up to 10 minutes stale ([#47977](https://github.com/kubernetes/kubernetes/issues/47977))
 
-TODO
+TODO:
+- populate this based on any further issues
 
 ## Notable Changes to Existing Behavior
 
-TODO
-
-historically this has been done by human curation of PR's merged since 1.6.0, and responses to a call for comment
+TODO:
+- historically this has been done by human curation of PR's merged since 1.6.0, and responses to a call for comment
 
 ## Deprecations
 
-TODO
-
-flags, api resources, and behaviors
-what is going away, what it is being replaced with
-
-historically this has been done by human curation of PR's merged since 1.6.0, and responses to a call for comment
+TODO:
+- historically this has been done by human curation of PR's merged since 1.6.0, and responses to a call for comment
+- flags, api resources, and behaviors
+- what is going away, what it is being replaced with
 
 ## Action Required Before Upgrading
 
-historically this has been done by human curation of PR's merged since 1.6.0, and responses to a call for comment
+TODO:
+- historically this has been done by human curation of PR's merged since 1.6.0, and responses to a call for comment
 
 ## External Dependency Version Information
 
-Continuous integration builds have used the following versions of external dependencies, however, this is not a strong recommendation and users should consult an appropriate installation or upgrade guide before deciding what versions of etcd, docker or rkt to use. 
+TODO:
+- this is copy-pasted from release-1.6/release-notes-draft.md, please update for 1.7
 
-TODO: this is copy-pasted from release-1.6/release-notes-draft.md, please update for 1.7
+Continuous integration builds have used the following versions of external dependencies, however, this is not a strong recommendation and users should consult an appropriate installation or upgrade guide before deciding what versions of etcd, docker or rkt to use. 
 
 * Docker versions 1.10.3, 1.11.2, 1.12.6 have been validated
   * Docker version 1.12.6 known issues
