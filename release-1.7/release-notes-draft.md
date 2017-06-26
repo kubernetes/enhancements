@@ -47,7 +47,9 @@ Features for this release were tracked via the use of the [kubernetes/features](
 
 ## Known Issues
 
-Populated via [v1.7.0 known issues / FAQ accumulator](https://github.com/kubernetes/kubernetes/issues/TBD)
+Populated via [v1.7.x known issues / FAQ accumulator](https://github.com/kubernetes/kubernetes/issues/46733)
+
+- Kubectl API discovery caching may be up to 10 minutes stale ([#47977](https://github.com/kubernetes/kubernetes/issues/47977))
 
 TODO
 
