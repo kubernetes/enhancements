@@ -33,9 +33,9 @@ TODO:
   - [alpha] The federation-apiserver now supports a SchedulingPolicy admission controller that enables policy-based control over placement of federated resources ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/4075)) ([kubernetes/features#250](https://github.com/kubernetes/features/issues/250))
   - [alpha] Federation ClusterSelector annotation to direct objects to federated clusters with matching labels ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/4214)) ([kubernetes/features#74](https://github.com/kubernetes/features/issues/74))
 - **Instrumentation**
-  - [alpha] Introduces a lightweight monitoring component for serving the core resource metrics API used by the Horizontal Pod Autoscaler and other components ([docs PR](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/metrics-server.md))([kubernetes/features#271](https://github.com/kubernetes/features/issues/271))
+  - [alpha] Introduces a lightweight monitoring component for serving the core resource metrics API used by the Horizontal Pod Autoscaler and other components ([docs PR](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/metrics-server.md))([kubernetes/features#271](https://github.com/kubernetes/features/issues/271))
 - **Network**
-  - [stable] NetworkPolicy promoted to GA ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/4003))([kubernetes/features#185](https://github.com/kubernetes/features/issues/185))
+  - [stable] NetworkPolicy promoted to GA ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/4003))([kubernetes/features#185](https://github.com/kubernetes/features/issues/185))
   - [stable] Source IP Preservation - change Cloud load-balancer strategy to health-checks and respond to health check only on nodes that host pods for the service ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/4093)) ([kubernetes/features#27](https://github.com/kubernetes/features/issues/27))
 - **Node**
   - [alpha] Provide a serial of common validation test suites for Kubelet CRI ([docs PR](https://github.com/kubernetes/community/pull/725)) ([kubernetes/features#292](https://github.com/kubernetes/features/issues/292))
@@ -81,12 +81,12 @@ TODO:
 TODO:
 - this is copy-pasted from release-1.6/release-notes-draft.md, please update for 1.7
 
-Continuous integration builds have used the following versions of external dependencies, however, this is not a strong recommendation and users should consult an appropriate installation or upgrade guide before deciding what versions of etcd, docker or rkt to use. 
+Continuous integration builds have used the following versions of external dependencies, however, this is not a strong recommendation and users should consult an appropriate installation or upgrade guide before deciding what versions of etcd, docker or rkt to use.
 
 * Docker versions 1.10.3, 1.11.2, 1.12.6 have been validated
   * Docker version 1.12.6 known issues
     * overlay2 driver not fully supported
-    * live-restore not fully supported 
+    * live-restore not fully supported
     * no shared pid namespace support
   * Docker version 1.11.2 known issues
     * Kernel crash with Aufs storage driver on Debian Jessie ([#27885](https://github.com/kubernetes/kubernetes/issues/27885))
