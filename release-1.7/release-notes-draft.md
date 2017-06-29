@@ -6,7 +6,7 @@ Security enhancements in this release include encrypted secrets (alpha), network
 
 Major features for stateful applications include automated updates to StatefulSets, enhanced updates for DaemonSets, a burst mode for scaling StatefulSets faster, and (alpha) support for local storage.
 
-Extensibility features include, API aggregation, support for extensible admission controllers (alpha), pluggable cloud providers (alpha), and container runtime interface (CRI) enhancements.
+Extensibility features include, API aggregation (beta), CustomResourceDefinitions (beta) in favor of ThirdPartyResources, support for extensible admission controllers (alpha), pluggable cloud providers (alpha), and container runtime interface (CRI) enhancements.
 
 ## **Action Required Before Upgrading**
 
