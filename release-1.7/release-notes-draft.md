@@ -542,7 +542,7 @@ Continuous integration builds have used the following versions of external depen
 
             * [beta] [CRI-O](https://github.com/kubernetes-incubator/cri-o) v1.0.0-alpha.0. It has passed all e2e tests. ([release notes](https://github.com/kubernetes-incubator/cri-o/releases/tag/v1.0.0-alpha.0))
 
-            * [beta] [Frakti](https://github.com/kubernetes/frakti) v1.0. It has passed all node conformance tests. ([release notes](https://github.com/kubernetes/frakti/issues/183#issuecomment-311543170)) (TODO: Link to real release note)
+            * [beta] [Frakti](https://github.com/kubernetes/frakti) v1.0. It has passed all node conformance tests. ([release notes](https://github.com/kubernetes/frakti/releases/tag/v1.0))
 
             * [alpha] [cri-containerd](https://github.com/kubernetes-incubator/cri-containerd) v0.1.0. It supports all functionalities other than container streaming and several container security features. (release notes) (TODO: Link to v0.1.0 release note)
 
