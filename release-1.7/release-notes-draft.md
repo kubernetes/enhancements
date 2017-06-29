@@ -63,11 +63,19 @@ Extensibility features include, API aggregation, support for extensible admissio
 
 Populated via [v1.7.x known issues / FAQ accumulator](https://github.com/kubernetes/kubernetes/issues/46733)
 
-* Kubectl API discovery caching may be up to 10 minutes stale.  This can cause kubectl api-versions to have stale results. ([#47977](https://github.com/kubernetes/kubernetes/issues/47977))
+* The kube-apiserver discovery APIs (for example, `/apis`) return information about the API groups being served, and can change dynamically.
+During server startup, prior to the server reporting healthy (via `/healthz`), not all API groups may be reported.
+Wait for the server to report healthy (via `/healthz`) before depending on the information provided by the discovery APIs.
+Additionally, since the information returned from the discovery APIs may change dynamically, a cache of the results should not be considered authoritative.
+ETag support is planned in a future version to facilitate client caching.
+([#47977](https://github.com/kubernetes/kubernetes/issues/47977), [#44957](https://github.com/kubernetes/kubernetes/issues/44957))
 
 * The DaemonSet controller will evict running Pods that do not tolerate the NoSchedule taint if the taint is added to a Node.  There is an open PR ([#48189](https://github.com/kubernetes/kubernetes/pull/48189)) to resolve this issue, but as this issue also exists in 1.6, and as we do not wish to risk release stability by merging it directly prior to a release without sufficient testing, we have decided to defer merging the PR until the next point release for each minor version ([#48190](https://github.com/kubernetes/kubernetes/issues/48190)).
 
-* API objects do not persist [] for empty fields
+* Protobuf serialization does not distinguish between `[]` and `null`.
+API fields previously capable of storing and returning either `[]` and `null` via JSON API requests (for example, the Endpoints `subsets` field)
+can now store only `null` when created using the protobuf content-type or stored in etcd using protobuf serialization (the default in 1.6).
+JSON API clients should tolerate `null` values for such fields, and treat `null` and `[]` as equivalent in meaning unless specifically documented otherwise for a particular field. ([#44593](https://github.com/kubernetes/kubernetes/issues/44593))
 
 ## **Deprecations**
 
@@ -204,8 +212,6 @@ Continuous integration builds have used the following versions of external depen
 * API Machinery
 
     * The protobuf serialization of API objects has been updated to store maps in a predictable order to ensure that the representation of that object does not change when saved into etcd. This prevents the same object from being seen as being modified, even when no values have changed. ([#47701](https://github.com/kubernetes/kubernetes/pull/47701), [@smarterclayton](https://github.com/smarterclayton))
-
-    * Gzip compression is supported on GET and LIST requests (disabled by default) ([#45666](https://github.com/kubernetes/kubernetes/pull/45666), [@ilackarms](https://github.com/ilackarms))
 
     * API resource discovery now includes the singularName used to refer to the resource. ([#43312](https://github.com/kubernetes/kubernetes/pull/43312), [@deads2k](https://github.com/deads2k))
 
