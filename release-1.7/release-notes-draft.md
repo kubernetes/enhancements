@@ -168,6 +168,8 @@ TODO: replace docs PR links with links to actual docs
 
 * [alpha] Rotation of the client TLS certificate on the kubelet ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/4208)) ([kubernetes/features#266](https://github.com/kubernetes/features/issues/266))
 
+* [beta] [Kubelet TLS Bootstrap](https://kubernetes.io/docs/admin/kubelet-tls-bootstrapping/#kubelet-configuration)
+
 #### Audit Logging
 * [alpha] Advanced Auditing enhances the Kubernetes API audit logging capabilities through a customizable policy, pluggable audit backends, and richer audit data ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/4101)) ([kubernetes/features#22](https://github.com/kubernetes/features/issues/22))
 
@@ -1019,7 +1021,6 @@ Bug fixes:
 
 * Adds the Categories []string field to API resources, which represents the list of group aliases (e.g. "all") that every resource belongs to. ([#43338](https://github.com/kubernetes/kubernetes/pull/43338), [@fabianofranz](https://github.com/fabianofranz))
 
-* Promote kubelet tls bootstrap to beta. Add a non-experimental flag to use it and deprecate the old flag. ([#46799](https://github.com/kubernetes/kubernetes/pull/46799), [@mikedanese](https://github.com/mikedanese))
 
 
 
