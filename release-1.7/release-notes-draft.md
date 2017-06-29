@@ -34,7 +34,7 @@ Extensibility features include, API aggregation, support for extensible admissio
 
 * Support updating storageclasses in etcd to storage.k8s.io/v1. You must do this prior to upgrading to 1.8. ([#46116](https://github.com/kubernetes/kubernetes/pull/46116), [@ncdc](https://github.com/ncdc))
 
-* PodSpec containing backsteps (for example, "../bar") in hostPath volume path or in volumeMount subpaths must be changed to the absolute path, the backsteps are no longer allowed.([#47290](https://github.com/kubernetes/kubernetes/pull/47290), [@jhorwit2](https://github.com/jhorwit2)). 
+* PodSpec containing parent directory references such as ".." (for example, "../bar") in hostPath volume path or in volumeMount subpaths must be changed to the simple absolute path. This is due to the backsteps ".." are no longer allowed.([#47290](https://github.com/kubernetes/kubernetes/pull/47290), [@jhorwit2](https://github.com/jhorwit2)). 
 
 * Azure: Change container permissions to private for provisioned volumes. If you have existing Azure volumes that were created by Kubernetes v1.6.0-v1.6.5, you should change the permissions on them manually. ([#47605](https://github.com/kubernetes/kubernetes/pull/47605), [@brendandburns](https://github.com/brendandburns))
 
