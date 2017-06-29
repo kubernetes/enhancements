@@ -560,7 +560,7 @@ Continuous integration builds have used the following versions of external depen
 
             * waiting for the request to be satisfied. It will continually refresh the certificate
 
-        * Create clusters with GPUs in GCE by specifying "type=<gpu-type>,count=<gpu-count>" to NODE_ACCELERATORS environment variable. ([#45130](https://github.com/kubernetes/kubernetes/pull/45130), [@vishh](https://github.com/vishh))
+        * Create clusters with GPUs in GCE by specifying `type=<gpu-type>,count=<gpu-count>` to NODE_ACCELERATORS environment variable. ([#45130](https://github.com/kubernetes/kubernetes/pull/45130), [@vishh](https://github.com/vishh))
 
             * List of available GPUs - [https://cloud.google.com/compute/docs/gpus/#introduction](https://cloud.google.com/compute/docs/gpus/#introduction)
 
