@@ -14,17 +14,14 @@ Extensibility features include, API aggregation, support for extensible admissio
 
 	Action Required: When upgrading to Kubernetes 1.7 (and a [network plugin](https://kubernetes.io/docs/tasks/administer-cluster/declare-network-policy/) that supports the new NetworkPolicy v1 semantics), the beta API used an annotation on Namespaces to activate the DefaultDeny policy for an entire namespace.  To activate default deny in the v1 API, you can create  a NetworkPolicy that matches all pods but does not allow any traffic:
 
-      kind: NetworkPolicy
-
-      apiVersion: networking.k8s.io/v1
-
-      metadata:
-
-        name: default-deny
-
-      spec:
-
-        podSelector:
+    ```yaml
+    kind: NetworkPolicy
+    apiVersion: networking.k8s.io/v1
+    metadata:
+      name: default-deny
+    spec:
+      podSelector:
+    ```
 
 	This will ensure that pods that aren't matched by any other NetworkPolicy will continue to be fully-isolated, as they were in v1beta1.
  
