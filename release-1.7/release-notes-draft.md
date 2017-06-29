@@ -152,7 +152,7 @@ TODO: replace docs PR links with links to actual docs
 
     * [alpha] Adds support of container metrics in CRI ([docs PR](https://github.com/kubernetes/community/pull/742)) ([kubernetes/features#290](https://github.com/kubernetes/features/issues/290))
 
-    * [alpha] Alpha integration with containerd 1.0, which supports basic pod lifecycle and image management. (TODO: A link to cri-containerd alpha release note) ([kubernetes/features#286](https://github.com/kubernetes/features/issues/286))
+    * [alpha] Alpha integration with containerd 1.0, which supports basic pod lifecycle and image management. [docs](https://github.com/kubernetes-incubator/cri-containerd/blob/master/README.md) and [release notes](https://github.com/kubernetes-incubator/cri-containerd/releases/tag/v0.1.0) ([kubernetes/features#286](https://github.com/kubernetes/features/issues/286))
 
 * Scheduling
 
@@ -544,7 +544,7 @@ Continuous integration builds have used the following versions of external depen
 
             * [beta] [Frakti](https://github.com/kubernetes/frakti) v1.0. It has passed all node conformance tests. ([release notes](https://github.com/kubernetes/frakti/releases/tag/v1.0))
 
-            * [alpha] [cri-containerd](https://github.com/kubernetes-incubator/cri-containerd) v0.1.0. It supports all functionalities other than container streaming and several container security features. (release notes) (TODO: Link to v0.1.0 release note)
+            * [alpha] [cri-containerd](https://github.com/kubernetes-incubator/cri-containerd) v0.1.0. It supports basic sandbox/container/image management and passes 30/36 CRI validation test. ([release notes](https://github.com/kubernetes-incubator/cri-containerd/releases/tag/v0.1.0))
 
         * Support running Ubuntu image on GCE node ([#44744](https://github.com/kubernetes/kubernetes/pull/44744), [@yguo0905](https://github.com/yguo0905))
 
