@@ -1,18 +1,20 @@
 ## **Major Themes**
 
-Kubernetes 1.7 is a milestone release that adds security, stateful application and extensibility features motivated by widespread production use of Kubernetes.
+Kubernetes 1.7 is a milestone release that adds security, stateful application, and extensibility features motivated by widespread production use of Kubernetes.
 
-Security enhancements in this release include encrypted secrets (alpha), network policy for pod-to-pod communication, node authorizer to limit kubelet access and kubelet client / server TLS certificate rotation (alpha).  
+Security enhancements in this release include encrypted secrets (alpha), network policy for pod-to-pod communication, the node authorizer to limit Kubelet access to API resources, and Kubelet client / server TLS certificate rotation (alpha).  
 
-Major features for stateful applications include automated updates to StatefulSets, enhanced updates for DaemonSets, a burst mode for scaling StatefulSets faster, and (alpha) support for local storage.
+Major features for stateful applications include automated updates to StatefulSets, enhanced updates for DaemonSets, a burst mode for faster StatefulSets scaling, and (alpha) support for local storage.
 
-Extensibility features include, API aggregation (beta), CustomResourceDefinitions (beta) in favor of ThirdPartyResources, support for extensible admission controllers (alpha), pluggable cloud providers (alpha), and container runtime interface (CRI) enhancements.
+Extensibility features include API aggregation (beta), CustomResourceDefinitions (beta) in favor of ThirdPartyResources, support for extensible admission controllers (alpha), pluggable cloud providers (alpha), and container runtime interface (CRI) enhancements.
 
 ## **Action Required Before Upgrading**
 
-* NetworkPolicy has been promoted from extensions/v1beta1 to the new networking.k8s.io/v1 API group. The structure remains unchanged from the beta1 API. The net.beta.kubernetes.io/network-policy annotation on Namespaces to opt in to isolation has been removed. Instead, isolation is now determined at a per-pod level, with pods being isolated if there is any NetworkPolicy whose spec.podSelector targets them. Pods that are targeted by NetworkPolicies accept traffic that is accepted by any of the NetworkPolicies (and nothing else), and pods that are not targeted by any NetworkPolicy accept all traffic by default. ([#39164](https://github.com/kubernetes/kubernetes/pull/39164), [@danwinship](https://github.com/danwinship))
+* NetworkPolicy has been promoted from extensions/v1beta1 to the new networking.k8s.io/v1 API group. The structure remains unchanged from the v1beta1 API. The net.beta.kubernetes.io/network-policy annotation on Namespaces (used to opt in to isolation) has been removed. Instead, isolation is now determined on a per-pod basis. A NetworkPolicy may target a pod for isolation by including the pod in its spec.podSelector. Targeted Pods accept the traffic specified in the respective NetworkPolicy (and nothing else). Pods not targeted by any NetworkPolicy accept all traffic by default. ([#39164](https://github.com/kubernetes/kubernetes/pull/39164), [@danwinship](https://github.com/danwinship))
 
-	Action Required: When upgrading to Kubernetes 1.7 (and a [network plugin](https://kubernetes.io/docs/tasks/administer-cluster/declare-network-policy/) that supports the new NetworkPolicy v1 semantics), the beta API used an annotation on Namespaces to activate the DefaultDeny policy for an entire namespace.  To activate default deny in the v1 API, you can create  a NetworkPolicy that matches all pods but does not allow any traffic:
+	**Action Required:** When upgrading to Kubernetes 1.7 (and a [network plugin](https://kubernetes.io/docs/tasks/administer-cluster/declare-network-policy/) that supports the new NetworkPolicy v1 semantics), you should consider the following.
+	
+	The v1beta1 API used an annotation on Namespaces to activate the DefaultDeny policy for an entire Namespace. To activate default deny in the v1 API, you can create a NetworkPolicy that matches all Pods but does not allow any traffic:
 
     ```yaml
     kind: NetworkPolicy
@@ -23,9 +25,9 @@ Extensibility features include, API aggregation (beta), CustomResourceDefinition
       podSelector:
     ```
 
-	This will ensure that pods that aren't matched by any other NetworkPolicy will continue to be fully-isolated, as they were in v1beta1.
+	This will ensure that Pods that aren't matched by any other NetworkPolicy will continue to be fully-isolated, as they were in v1beta1. 
  
-	In Namespaces that previously did not have the "DefaultDeny"  annotation, you should delete any existing NetworkPolicy objects. These would have had no effect before, but with v1 semantics they might cause some traffic to be blocked that you didn't intend to be blocked.
+	In Namespaces that previously did not have the "DefaultDeny" annotation, you should delete any existing NetworkPolicy objects. These had no effect in the v1beta1 API, but with v1 semantics they might cause some traffic to be unintentionally blocked.
 
 * Support updating storageclasses in etcd to storage.k8s.io/v1. You must do this prior to upgrading to 1.8. ([#46116](https://github.com/kubernetes/kubernetes/pull/46116), [@ncdc](https://github.com/ncdc))
 
