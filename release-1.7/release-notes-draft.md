@@ -155,6 +155,7 @@ TODO: replace docs PR links with links to actual docs
 #### Placement Policy
 * [alpha] The federation-apiserver now supports a SchedulingPolicy admission controller that enables policy-based control over placement of federated resources ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/4075)) ([kubernetes/features#250](https://github.com/kubernetes/features/issues/250))
 
+#### Cluster Selection
 * [alpha] Federation ClusterSelector annotation to direct objects to federated clusters with matching labels ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/4214)) ([kubernetes/features#74](https://github.com/kubernetes/features/issues/74))
 
 
@@ -805,7 +806,7 @@ Continuous integration builds have used the following versions of external depen
 
     * An example command:
 
-     `kubectl get pods --experimental-use-openapi-print-columns` 
+     `kubectl get pods --experimental-use-openapi-print-columns`
 
 * add gzip compression to GET and LIST requests ([#45666](https://github.com/kubernetes/kubernetes/pull/45666), [@ilackarms](https://github.com/ilackarms))
 
