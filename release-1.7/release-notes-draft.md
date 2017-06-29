@@ -158,7 +158,7 @@ TODO: replace docs PR links with links to actual docs
 
     * [alpha] Adds support of container metrics in CRI ([docs PR](https://github.com/kubernetes/community/pull/742)) ([kubernetes/features#290](https://github.com/kubernetes/features/issues/290))
 
-    * [alpha] Alpha integration with containerd 1.0, which supports basic pod lifecycle and image management. [docs](https://github.com/kubernetes-incubator/cri-containerd/blob/master/README.md) and [release notes](https://github.com/kubernetes-incubator/cri-containerd/releases/tag/v0.1.0) ([kubernetes/features#286](https://github.com/kubernetes/features/issues/286))
+    * [alpha] Integration with containerd 1.0, which supports basic pod lifecycle and image management. ([docs](https://github.com/kubernetes-incubator/cri-containerd/blob/master/README.md) and [release notes](https://github.com/kubernetes-incubator/cri-containerd/releases/tag/v0.1.0)) ([kubernetes/features#286](https://github.com/kubernetes/features/issues/286))
 
 * Scheduling
 
