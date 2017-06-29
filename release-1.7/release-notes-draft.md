@@ -141,6 +141,8 @@ TODO: replace docs PR links with links to actual docs
 
     * [alpha] The federation-apiserver now supports a SchedulingPolicy admission controller that enables policy-based control over placement of federated resources ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/4075)) ([kubernetes/features#250](https://github.com/kubernetes/features/issues/250))
 
+    * [alpha] Federation ClusterSelector annotation to direct objects to federated clusters with matching labels ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/4214)) ([kubernetes/features#74](https://github.com/kubernetes/features/issues/74))
+
 * Instrumentation
 
     * [alpha] Introduces a lightweight monitoring component for serving the core resource metrics API used by the Horizontal Pod Autoscaler and other components ([kubernetes/features#271](https://github.com/kubernetes/features/issues/271))
