@@ -13,7 +13,7 @@ Extensibility features include API aggregation (beta), CustomResourceDefinitions
 * NetworkPolicy has been promoted from extensions/v1beta1 to the new networking.k8s.io/v1 API group. The structure remains unchanged from the v1beta1 API. The net.beta.kubernetes.io/network-policy annotation on Namespaces (used to opt in to isolation) has been removed. Instead, isolation is now determined on a per-pod basis. A NetworkPolicy may target a pod for isolation by including the pod in its spec.podSelector. Targeted Pods accept the traffic specified in the respective NetworkPolicy (and nothing else). Pods not targeted by any NetworkPolicy accept all traffic by default. ([#39164](https://github.com/kubernetes/kubernetes/pull/39164), [@danwinship](https://github.com/danwinship))
 
 	**Action Required:** When upgrading to Kubernetes 1.7 (and a [network plugin](https://kubernetes.io/docs/tasks/administer-cluster/declare-network-policy/) that supports the new NetworkPolicy v1 semantics), you should consider the following.
-	
+
 	The v1beta1 API used an annotation on Namespaces to activate the DefaultDeny policy for an entire Namespace. To activate default deny in the v1 API, you can create a NetworkPolicy that matches all Pods but does not allow any traffic:
 
     ```yaml
@@ -25,13 +25,14 @@ Extensibility features include API aggregation (beta), CustomResourceDefinitions
       podSelector:
     ```
 
-	This will ensure that Pods that aren't matched by any other NetworkPolicy will continue to be fully-isolated, as they were in v1beta1. 
- 
+	This will ensure that Pods that aren't matched by any other NetworkPolicy will continue to be fully-isolated, as they were in v1beta1.
+
 	In Namespaces that previously did not have the "DefaultDeny" annotation, you should delete any existing NetworkPolicy objects. These had no effect in the v1beta1 API, but with v1 semantics they might cause some traffic to be unintentionally blocked.
+
 
 * `cluster/update-storage-objects.sh` now supports updating StorageClasses in etcd to storage.k8s.io/v1. You must do this prior to upgrading to 1.8. ([#46116](https://github.com/kubernetes/kubernetes/pull/46116), [@ncdc](https://github.com/ncdc))
 
-* PodSpecs containing parent directory references such as `..` (for example, `../bar`) in hostPath volume path or in volumeMount subpaths must be changed to the simple absolute path. Backsteps `..` are no longer allowed.([#47290](https://github.com/kubernetes/kubernetes/pull/47290), [@jhorwit2](https://github.com/jhorwit2)). 
+* PodSpecs containing parent directory references such as `..` (for example, `../bar`) in hostPath volume path or in volumeMount subpaths must be changed to the simple absolute path. Backsteps `..` are no longer allowed.([#47290](https://github.com/kubernetes/kubernetes/pull/47290), [@jhorwit2](https://github.com/jhorwit2)).
 
 * Azure: Container permissions for provisioned volumes have changed to private. If you have existing Azure volumes that were created by Kubernetes v1.6.0-v1.6.5, you should change the permissions on them manually. ([#47605](https://github.com/kubernetes/kubernetes/pull/47605), [@brendandburns](https://github.com/brendandburns))
 
@@ -88,91 +89,113 @@ JSON API clients should tolerate `null` values for such fields, and treat `null`
 
 * In 1.7, the kube-proxy component has been converted to use a configuration file. The old flags still work in 1.7, but they are being deprecated and will be removed in a future release. Cluster administrators are advised to switch to using the configuration file, but no action is strictly necessary in 1.7. ([#34727](https://github.com/kubernetes/kubernetes/pull/34727), [@ncdc](https://github.com/ncdc))
 
-## **Features**
+## **Notable Features**
 
 Features for this release were tracked via the use of the [kubernetes/features](https://github.com/kubernetes/features) issues repo. Each Feature issue is owned by a Special Interest Group from [kubernetes/community](https://github.com/kubernetes/community)
 
 TODO: replace docs PR links with links to actual docs
 
-* API Machinery
 
-    * [alpha] Add extensible external admission control ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/4092)) ([kubernetes/features#209](https://github.com/kubernetes/features/issues/209))
+### **Kubernetes API**
+#### User Provided Extensions
+* [beta] ThirdPartyResource is deprecated. Please migrate to the successor, CustomResourceDefinition. ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/4071)) ([kubernetes/features#95](https://github.com/kubernetes/features/issues/95))
 
-    * [beta] User-provided apiservers can be aggregated (served along with) the rest of the Kubernetes API ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/4173)) ([kubernetes/features#263](https://github.com/kubernetes/features/issues/263))
+* [beta] User-provided apiservers can be aggregated (served along with) the rest of the Kubernetes API ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/4173)) ([kubernetes/features#263](https://github.com/kubernetes/features/issues/263))
 
-    * [beta] ThirdPartyResource is deprecated. Please migrate to the successor, CustomResourceDefinition. ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/4071)) ([kubernetes/features#95](https://github.com/kubernetes/features/issues/95))
 
-* Apps
+### **Application Deployment**
+#### StatefulSet
+* [beta] StatefulSet supports RollingUpdate and OnDelete update strategies. ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/4174)) ([kubernetes/features#188](https://github.com/kubernetes/features/issues/188))
 
-    * [beta] StatefulSet supports RollingUpdate and OnDelete update strategies. ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/4174)) ([kubernetes/features#188](https://github.com/kubernetes/features/issues/188))
+* [alpha] StatefulSet authors should be able to relax the ordering and parallelism policies for software that can safely support rapid, out-of-order changes. ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/4162)) ([kubernetes/features#272](https://github.com/kubernetes/features/issues/272))
 
-    * [beta] DaemonSet supports history and rollback. ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/4098)) ([kubernetes/features#124](https://github.com/kubernetes/features/issues/124))
+#### DaemonSet
+* [beta] DaemonSet supports history and rollback. ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/4098)) ([kubernetes/features#124](https://github.com/kubernetes/features/issues/124))
 
-    * [alpha] StatefulSet authors should be able to relax the ordering and parallelism policies for software that can safely support rapid, out-of-order changes. ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/4162)) ([kubernetes/features#272](https://github.com/kubernetes/features/issues/272))
+#### Deployments
+* [beta] Deployments uses a hashing collision avoidance mechanism that ensures new rollouts will not block on hashing collisions anymore. ([kubernetes/features#287](https://github.com/kubernetes/features/issues/287))
 
-    * [beta] PodDisruptionBudget has a new field MaxUnavailable, which allows users to specify the maximum number of disruptions that can be tolerated during eviction. ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/4140)) ([kubernetes/features#285](https://github.com/kubernetes/features/issues/285))
+#### PodDisruptionBudget
+* [beta] PodDisruptionBudget has a new field MaxUnavailable, which allows users to specify the maximum number of disruptions that can be tolerated during eviction. ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/4140)) ([kubernetes/features#285](https://github.com/kubernetes/features/issues/285))
 
-    * [beta] Deployments uses a hashing collision avoidance mechanism that ensures new rollouts will not block on hashing collisions anymore. ([kubernetes/features#287](https://github.com/kubernetes/features/issues/287))
 
-* Auth
+### **Security**
+#### Admission Control
+* [alpha] Add extensible external admission control ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/4092)) ([kubernetes/features#209](https://github.com/kubernetes/features/issues/209))
 
-    * [alpha] Rotation of the server TLS certificate on the kubelet ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/4208)) ([kubernetes/features#267](https://github.com/kubernetes/features/issues/267))
+#### TLS Bootstrapping
+* [alpha] Rotation of the server TLS certificate on the kubelet ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/4208)) ([kubernetes/features#267](https://github.com/kubernetes/features/issues/267))
 
-    * [alpha] Rotation of the client TLS certificate on the kubelet ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/4208)) ([kubernetes/features#266](https://github.com/kubernetes/features/issues/266))
+* [alpha] Rotation of the client TLS certificate on the kubelet ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/4208)) ([kubernetes/features#266](https://github.com/kubernetes/features/issues/266))
 
-    * [alpha] Encrypt secrets stored in etcd ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/4181)) ([kubernetes/features#92](https://github.com/kubernetes/features/issues/92))
+#### Audit Logging
+* [alpha] Advanced Auditing enhances the Kubernetes API audit logging capabilities through a customizable policy, pluggable audit backends, and richer audit data ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/4101)) ([kubernetes/features#22](https://github.com/kubernetes/features/issues/22))
 
-    * [beta] A new Node authorization mode and NodeRestriction admission plugin, when used in combination, limit nodes' access to specific APIs, so that they may only modify their own Node API object, only modify Pod objects bound to themselves, and only retrieve secrets and configmaps referenced by pods bound to themselves ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/4077)) ([kubernetes/features#279](https://github.com/kubernetes/features/issues/279))
+#### Encryption at Rest
+* [alpha] Encrypt secrets stored in etcd ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/4181)) ([kubernetes/features#92](https://github.com/kubernetes/features/issues/92))
 
-    * [alpha] Advanced Auditing enhances the Kubernetes API audit logging capabilities through a customizable policy, pluggable audit backends, and richer audit data ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/4101)) ([kubernetes/features#22](https://github.com/kubernetes/features/issues/22))
+#### Node Authorization
+* [beta] A new Node authorization mode and NodeRestriction admission plugin, when used in combination, limit nodes' access to specific APIs, so that they may only modify their own Node API object, only modify Pod objects bound to themselves, and only retrieve secrets and configmaps referenced by pods bound to themselves ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/4077)) ([kubernetes/features#279](https://github.com/kubernetes/features/issues/279))
 
-* Autoscaling
 
-    * [alpha] HPA Status Conditions ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/4118)) ([kubernetes/features#264](https://github.com/kubernetes/features/issues/264))
+### **Application Autoscaling**
+#### Horizontal Pod Autoscaler
+* [alpha] HPA Status Conditions ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/4118)) ([kubernetes/features#264](https://github.com/kubernetes/features/issues/264))
 
-* Cluster Lifecycle
 
-    * [alpha] Improved support for out-of-tree and out-of-process cloud providers, a.k.a pluggable cloud providers ([docs](https://kubernetes.io/docs/tasks/administer-cluster/running-cloud-controller)) ([kubernetes/features#88](https://github.com/kubernetes/features/issues/88))
+### **Cluster Lifecycle**
+#### kubeadm
+* [alpha] Manual upgrades for kubeadm from v1.6 to v1.7. Automated upgrades ([kubernetes/features#296](https://github.com/kubernetes/features/issues/296)) are targeted for v1.8. ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/3999)) (part of [kubernetes/features#11](https://github.com/kubernetes/features/issues/11))
 
-    * [alpha] Manual upgrades for kubeadm from v1.6 to v1.7. Automated upgrades ([kubernetes/features#296](https://github.com/kubernetes/features/issues/296)) are targeted for v1.8. ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/3999)) (part of [kubernetes/features#11](https://github.com/kubernetes/features/issues/11))
+#### Cloud Provider Support
+* [alpha] Improved support for out-of-tree and out-of-process cloud providers, a.k.a pluggable cloud providers ([docs](https://kubernetes.io/docs/tasks/administer-cluster/running-cloud-controller)) ([kubernetes/features#88](https://github.com/kubernetes/features/issues/88))
 
-* Federation
 
-    * [alpha] The federation-apiserver now supports a SchedulingPolicy admission controller that enables policy-based control over placement of federated resources ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/4075)) ([kubernetes/features#250](https://github.com/kubernetes/features/issues/250))
+### **Cluster Federation**
+#### Placement Policy
+* [alpha] The federation-apiserver now supports a SchedulingPolicy admission controller that enables policy-based control over placement of federated resources ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/4075)) ([kubernetes/features#250](https://github.com/kubernetes/features/issues/250))
 
-    * [alpha] Federation ClusterSelector annotation to direct objects to federated clusters with matching labels ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/4214)) ([kubernetes/features#74](https://github.com/kubernetes/features/issues/74))
+* [alpha] Federation ClusterSelector annotation to direct objects to federated clusters with matching labels ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/4214)) ([kubernetes/features#74](https://github.com/kubernetes/features/issues/74))
 
-* Instrumentation
 
-    * [alpha] Introduces a lightweight monitoring component for serving the core resource metrics API used by the Horizontal Pod Autoscaler and other components ([kubernetes/features#271](https://github.com/kubernetes/features/issues/271))
+### **Instrumentation**
+#### Core Metrics API
+* [alpha] Introduces a lightweight monitoring component for serving the core resource metrics API used by the Horizontal Pod Autoscaler and other components ([kubernetes/features#271](https://github.com/kubernetes/features/issues/271))
 
-* Network
 
-    * [stable] NetworkPolicy promoted to GA ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/4003)([kubernetes/features#185](https://github.com/kubernetes/features/issues/185))
+### **Networking**
+#### Network Policy
+* [stable] NetworkPolicy promoted to GA ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/4003)([kubernetes/features#185](https://github.com/kubernetes/features/issues/185))
 
-    * [stable] Source IP Preservation - change Cloud load-balancer strategy to health-checks and respond to health check only on nodes that host pods for the service ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/4093)) ([kubernetes/features#27](https://github.com/kubernetes/features/issues/27))
+#### Load Balancing
+* [stable] Source IP Preservation - change Cloud load-balancer strategy to health-checks and respond to health check only on nodes that host pods for the service ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/4093)) ([kubernetes/features#27](https://github.com/kubernetes/features/issues/27))
 
-* Node
 
-    * [alpha] CRI validation testing, which provides a test framework and a suite of tests to validate that the CRI server implementation meets all the requirements. This allows the CRI runtime developers to verify that their runtime conforms to CRI, without needing to set up Kubernetes components or run Kubernetes end-to-end tests. ([docs](https://github.com/kubernetes/community/blob/master/contributors/devel/cri-validation.md) and [release notes](https://github.com/kubernetes-incubator/cri-tools/releases/tag/v0.1)) ([kubernetes/features#292](https://github.com/kubernetes/features/issues/292))
+### **Node Components**
+#### Container Runtime Interface
+* [alpha] CRI validation testing, which provides a test framework and a suite of tests to validate that the CRI server implementation meets all the requirements. This allows the CRI runtime developers to verify that their runtime conforms to CRI, without needing to set up Kubernetes components or run Kubernetes end-to-end tests. ([docs](https://github.com/kubernetes/community/blob/master/contributors/devel/cri-validation.md) and [release notes](https://github.com/kubernetes-incubator/cri-tools/releases/tag/v0.1)) ([kubernetes/features#292](https://github.com/kubernetes/features/issues/292))
 
-    * [alpha] Adds support of container metrics in CRI ([docs PR](https://github.com/kubernetes/community/pull/742)) ([kubernetes/features#290](https://github.com/kubernetes/features/issues/290))
+* [alpha] Adds support of container metrics in CRI ([docs PR](https://github.com/kubernetes/community/pull/742)) ([kubernetes/features#290](https://github.com/kubernetes/features/issues/290))
 
-    * [alpha] Integration with containerd 1.0, which supports basic pod lifecycle and image management. ([docs](https://github.com/kubernetes-incubator/cri-containerd/blob/master/README.md) and [release notes](https://github.com/kubernetes-incubator/cri-containerd/releases/tag/v0.1.0)) ([kubernetes/features#286](https://github.com/kubernetes/features/issues/286))
+* [alpha] Integration with containerd 1.0, which supports basic pod lifecycle and image management. ([docs](https://github.com/kubernetes-incubator/cri-containerd/blob/master/README.md) and [release notes](https://github.com/kubernetes-incubator/cri-containerd/releases/tag/v0.1.0)) ([kubernetes/features#286](https://github.com/kubernetes/features/issues/286))
 
-* Scheduling
 
-    * [alpha] Support for delegating pod binding to a scheduler extender ([kubernetes/features#270](https://github.com/kubernetes/features/issues/270))
+### **Scheduling**
+#### Scheduler Extender
+* [alpha] Support for delegating pod binding to a scheduler extender ([kubernetes/features#270](https://github.com/kubernetes/features/issues/270))
 
-* Storage
 
-    * [alpha] This feature adds capacity isolation support for local storage at node, container, and volume levels ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/4145)) ([kubernetes/features#245](https://github.com/kubernetes/features/issues/245))
+### **Storage**
+#### Local Storage
+* [alpha] This feature adds capacity isolation support for local storage at node, container, and volume levels ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/4145)) ([kubernetes/features#245](https://github.com/kubernetes/features/issues/245))
 
-    * [alpha] Make locally attached (non-network attached) storage available as a persistent volume source. ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/4050)) ([kubernetes/features#121](https://github.com/kubernetes/features/issues/121))
+* [alpha] Make locally attached (non-network attached) storage available as a persistent volume source. ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/4050)) ([kubernetes/features#121](https://github.com/kubernetes/features/issues/121))
 
-    * [stable] Volume plugin for StorageOS provides highly-available cluster-wide persistent volumes from local or attached node storage ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/4095)) ([kubernetes/features#190](https://github.com/kubernetes/features/issues/190))
+#### Volume Plugins
+* [stable] Volume plugin for StorageOS provides highly-available cluster-wide persistent volumes from local or attached node storage ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/4095)) ([kubernetes/features#190](https://github.com/kubernetes/features/issues/190))
 
-    * [stable] Add support for cloudprovider metrics for storage API calls ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/4138)) ([kubernetes/features#182](https://github.com/kubernetes/features/issues/182))
+#### Metrics
+* [stable] Add support for cloudprovider metrics for storage API calls ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/4138)) ([kubernetes/features#182](https://github.com/kubernetes/features/issues/182))
 
 ## **External Dependency Version Information**
 
@@ -782,7 +805,7 @@ Continuous integration builds have used the following versions of external depen
 
     * An example command:
 
-    * `kubectl get pods --experimental-use-openapi-print-columns` 
+     `kubectl get pods --experimental-use-openapi-print-columns` 
 
 * add gzip compression to GET and LIST requests ([#45666](https://github.com/kubernetes/kubernetes/pull/45666), [@ilackarms](https://github.com/ilackarms))
 
