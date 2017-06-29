@@ -62,7 +62,7 @@ Extensibility features include API aggregation (beta), CustomResourceDefinitions
 
 * kube-controller-manager has dropped support for the `--insecure-experimental-approve-all-kubelet-csrs-for-group` flag. It is accepted in 1.7, but ignored. Instead, the csrapproving controller uses authorization checks to determine whether to approve certificate signing requests: ([#45619](https://github.com/kubernetes/kubernetes/pull/45619), [@mikedanese](https://github.com/mikedanese))
 
-    * Before upgrading, users must ensure their controller manager will enable the csrapproving controller, create an RBAC ClusterRole and ClusterRoleBinding to approve CSRs for the same group, then upgrade. Example roles to enable the equivalent behavior can be found in the TLS bootstrapping documentation ([https://github.com/kubernetes/kubernetes.github.io/pull/4208](https://github.com/kubernetes/kubernetes.github.io/pull/4208)).
+    * Before upgrading, users must ensure their controller manager will enable the csrapproving controller, create an RBAC ClusterRole and ClusterRoleBinding to approve CSRs for the same group, then upgrade. Example roles to enable the equivalent behavior can be found in the [TLS bootstrapping](https://kubernetes.io//docs/admin/kubelet-tls-bootstrapping/) documentation. 
 
 ### CLI
 * `kubectl create role` and  `kubectl create clusterrole`  invocations must be updated to specify multiple resource names as repeated  `--resource-name` arguments instead of comma-separated arguments to a single `--resource-name` argument. E.g. `--resource-name=x,y` must become `--resource-name x --resource-name y` ([#44950](https://github.com/kubernetes/kubernetes/pull/44950), [@xilabao](https://github.com/xilabao))
@@ -138,67 +138,67 @@ TODO: replace docs PR links with links to actual docs
 
 ### **Kubernetes API**
 #### User Provided Extensions
-* [beta] ThirdPartyResource is deprecated. Please migrate to the successor, CustomResourceDefinition. ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/4071)) ([kubernetes/features#95](https://github.com/kubernetes/features/issues/95))
+* [beta] ThirdPartyResource is deprecated. Please migrate to the successor, CustomResourceDefinition. For more information, see [Custom Resources](https://kubernetes.io/docs/concepts/api-extension/custom-resources/) and [Migrate a ThirdPartyResource to CustomResourceDefinition](https://kubernetes.io/docs/tasks/access-kubernetes-api/migrate-third-party-resource/).
 
-* [beta] User-provided apiservers can be aggregated (served along with) the rest of the Kubernetes API ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/4173)) ([kubernetes/features#263](https://github.com/kubernetes/features/issues/263))
+* [beta] User-provided apiservers can be aggregated (served along with) the rest of the Kubernetes API. See [Extending the Kubernetes API with the aggregation layer](https://kubernetes.io/docs/concepts/api-extension/apiserver-aggregation/), [Configure the aggregation layer](https://kubernetes.io/docs/tasks/access-kubernetes-api/configure-aggregation-layer/), and [Setup an extension API server](https://kubernetes.io/docs/tasks/access-kubernetes-api/setup-extension-api-server/).
 
 
 ### **Application Deployment**
 #### StatefulSet
-* [beta] StatefulSet supports RollingUpdate and OnDelete update strategies. ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/4174)) ([kubernetes/features#188](https://github.com/kubernetes/features/issues/188))
+* [beta] StatefulSet supports [RollingUpdate](https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/#rolling-updates) and [OnDelete](https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/#on-delete) update strategies. 
 
-* [alpha] StatefulSet authors should be able to relax the ordering and parallelism policies for software that can safely support rapid, out-of-order changes. ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/4162)) ([kubernetes/features#272](https://github.com/kubernetes/features/issues/272))
+* [alpha] StatefulSet authors should be able to relax the [ordering](https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/#orderedready-pod-management) and [parallelism](https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/#parallel-pod-management) policies for software that can safely support rapid, out-of-order changes.
 
 #### DaemonSet
-* [beta] DaemonSet supports history and rollback. ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/4098)) ([kubernetes/features#124](https://github.com/kubernetes/features/issues/124))
+* [beta] DaemonSet supports history and rollback. See [Performing a Rollback on a DaemonSet](https://kubernetes.io//docs/tasks/manage-daemon/rollback-daemon-set/).
 
 #### Deployments
 * [beta] Deployments uses a hashing collision avoidance mechanism that ensures new rollouts will not block on hashing collisions anymore. ([kubernetes/features#287](https://github.com/kubernetes/features/issues/287))
 
 #### PodDisruptionBudget
-* [beta] PodDisruptionBudget has a new field MaxUnavailable, which allows users to specify the maximum number of disruptions that can be tolerated during eviction. ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/4140)) ([kubernetes/features#285](https://github.com/kubernetes/features/issues/285))
+* [beta] PodDisruptionBudget has a new field MaxUnavailable, which allows users to specify the maximum number of disruptions that can be tolerated during eviction. For more information, see [Pod Disruptions](https://kubernetes.io/docs/concepts/workloads/pods/disruptions/) and [Specifying a Disruption Budget for your Application](https://kubernetes.io/docs/tasks/run-application/configure-pdb/).
 
 
 ### **Security**
 #### Admission Control
-* [alpha] Add extensible external admission control ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/4092)) ([kubernetes/features#209](https://github.com/kubernetes/features/issues/209))
+* [alpha] Add [extensible external admission control](https://kubernetes.io/docs/admin/extensible-admission-controllers/). 
 
 #### TLS Bootstrapping
-* [alpha] Rotation of the server TLS certificate on the kubelet ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/4208)) ([kubernetes/features#267](https://github.com/kubernetes/features/issues/267))
+* [alpha] Rotation of the server TLS certificate on the kubelet. See [TLS bootstrapping - approval controller](https://kubernetes.io/docs/admin/kubelet-tls-bootstrapping/#approval-controller).
 
-* [alpha] Rotation of the client TLS certificate on the kubelet ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/4208)) ([kubernetes/features#266](https://github.com/kubernetes/features/issues/266))
+* [alpha] Rotation of the client TLS certificate on the kubelet. See [TLS bootstrapping - kubelet configuration](https://kubernetes.io/docs/admin/kubelet-tls-bootstrapping/#kubelet-configuration).
 
 * [beta] [Kubelet TLS Bootstrap](https://kubernetes.io/docs/admin/kubelet-tls-bootstrapping/#kubelet-configuration)
 
 #### Audit Logging
-* [alpha] Advanced Auditing enhances the Kubernetes API audit logging capabilities through a customizable policy, pluggable audit backends, and richer audit data ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/4101)) ([kubernetes/features#22](https://github.com/kubernetes/features/issues/22))
+* [alpha] Advanced Auditing enhances the Kubernetes API [audit logging](https://kubernetes.io/docs/tasks/debug-application-cluster/audit/#audit-logs) capabilities through a customizable policy, pluggable audit backends, and richer audit data.
 
 #### Encryption at Rest
-* [alpha] Encrypt secrets stored in etcd ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/4181)) ([kubernetes/features#92](https://github.com/kubernetes/features/issues/92))
+* [alpha] Encrypt secrets stored in etcd. For more information, see [Securing a Cluster](https://kubernetes.io/docs/tasks/administer-cluster/securing-a-cluster/) and [Encrypting data at rest](https://kubernetes.io/docs/tasks/administer-cluster/encrypt-data/).
 
 #### Node Authorization
-* [beta] A new Node authorization mode and NodeRestriction admission plugin, when used in combination, limit nodes' access to specific APIs, so that they may only modify their own Node API object, only modify Pod objects bound to themselves, and only retrieve secrets and configmaps referenced by pods bound to themselves ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/4077)) ([kubernetes/features#279](https://github.com/kubernetes/features/issues/279))
+* [beta] A new Node authorization mode and NodeRestriction admission plugin, when used in combination, limit nodes' access to specific APIs, so that they may only modify their own Node API object, only modify Pod objects bound to themselves, and only retrieve secrets and configmaps referenced by pods bound to themselves. See [Using Node Authorization](https://kubernetes.io/docs/admin/authorization/node/) for more information.
 
 
 ### **Application Autoscaling**
 #### Horizontal Pod Autoscaler
-* [alpha] HPA Status Conditions ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/4118)) ([kubernetes/features#264](https://github.com/kubernetes/features/issues/264))
+* [alpha] [HPA Status Conditions](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale-walkthrough/#appendix-horizontal-pod-autoscaler-status-conditions).
 
 
 ### **Cluster Lifecycle**
 #### kubeadm
-* [alpha] Manual upgrades for kubeadm from v1.6 to v1.7. Automated upgrades ([kubernetes/features#296](https://github.com/kubernetes/features/issues/296)) are targeted for v1.8. ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/3999)) (part of [kubernetes/features#11](https://github.com/kubernetes/features/issues/11))
+* [alpha] Manual [upgrades for kubeadm from v1.6 to v1.7](https://kubernetes.io/docs/tasks/administer-cluster/kubeadm-upgrade-1-7/). Automated upgrades ([kubernetes/features#296](https://github.com/kubernetes/features/issues/296)) are targeted for v1.8.
 
 #### Cloud Provider Support
-* [alpha] Improved support for out-of-tree and out-of-process cloud providers, a.k.a pluggable cloud providers ([docs](https://kubernetes.io/docs/tasks/administer-cluster/running-cloud-controller)) ([kubernetes/features#88](https://github.com/kubernetes/features/issues/88))
+* [alpha] Improved support for out-of-tree and out-of-process cloud providers, a.k.a pluggable cloud providers. See [Build and Run cloud-controller-manager](https://kubernetes.io/docs/tasks/administer-cluster/running-cloud-controller) documentation.
 
 
 ### **Cluster Federation**
 #### Placement Policy
-* [alpha] The federation-apiserver now supports a SchedulingPolicy admission controller that enables policy-based control over placement of federated resources ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/4075)) ([kubernetes/features#250](https://github.com/kubernetes/features/issues/250))
+* [alpha] The federation-apiserver now supports a SchedulingPolicy admission controller that enables policy-based control over placement of federated resources. For more information, see [Set up placement policies in Federation](https://kubernetes.io/docs/tasks/federation/set-up-placement-policies-federation/).
 
 #### Cluster Selection
-* [alpha] Federation ClusterSelector annotation to direct objects to federated clusters with matching labels ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/4214)) ([kubernetes/features#74](https://github.com/kubernetes/features/issues/74))
+* [alpha] Federation [ClusterSelector annotation](https://kubernetes.io/docs/tasks/administer-federation/cluster/#clusterselector-annotation) to direct objects to federated clusters with matching labels.
 
 
 ### **Instrumentation**
@@ -302,15 +302,15 @@ TODO: replace docs PR links with links to actual docs
 
 ### **Networking**
 #### Network Policy
-* [stable] NetworkPolicy promoted to GA ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/4003)([kubernetes/features#185](https://github.com/kubernetes/features/issues/185))
+* [stable] [NetworkPolicy](https://kubernetes.io/docs/concepts/services-networking/network-policies/) promoted to GA.
   * Additionally adds short name "netpol" for networkpolicies ([#42241](https://github.com/kubernetes/kubernetes/pull/42241), [@xiangpengzhao](https://github.com/xiangpengzhao))
 
 
 #### Load Balancing
-* [stable] Source IP Preservation - change Cloud load-balancer strategy to health-checks and respond to health check only on nodes that host pods for the service ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/4093)) ([kubernetes/features#27](https://github.com/kubernetes/features/issues/27))
+* [stable] Source IP Preservation - change Cloud load-balancer strategy to health-checks and respond to health check only on nodes that host pods for the service. See [Create an External Load Balancer - Preserving the client source IP](https://kubernetes.io/docs/tasks/access-application-cluster/create-external-load-balancer/#preserving-the-client-source-ip).
   Two annotations have been promoted to API fields:
 
-	* Service.Spec.ExternalTrafficPolicy was 'service.beta.kubernetes.io/external-traffic' annotation.
+  * Service.Spec.ExternalTrafficPolicy was 'service.beta.kubernetes.io/external-traffic' annotation.
 
   * Service.Spec.HealthCheckNodePort was 'service.beta.kubernetes.io/healthcheck-nodeport' annotation.
 
@@ -337,15 +337,15 @@ TODO: replace docs PR links with links to actual docs
 
 ### **Storage**
 #### Local Storage
-* [alpha] This feature adds capacity isolation support for local storage at node, container, and volume levels ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/4145)) ([kubernetes/features#245](https://github.com/kubernetes/features/issues/245))
+* [alpha] This feature adds capacity isolation support for local storage at node, container, and volume levels. See updated [Reserve Compute Resources for System Daemons](https://kubernetes.io/docs/tasks/administer-cluster/reserve-compute-resources/) documentation.
 
-* [alpha] Make locally attached (non-network attached) storage available as a persistent volume source. ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/4050)) ([kubernetes/features#121](https://github.com/kubernetes/features/issues/121))
+* [alpha] Make locally attached (non-network attached) storage available as a persistent volume source. For more information, see [Storage Volumes - local](https://kubernetes.io//docs/concepts/storage/volumes/#local).
 
 #### Volume Plugins
-* [stable] Volume plugin for StorageOS provides highly-available cluster-wide persistent volumes from local or attached node storage ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/4095)) ([kubernetes/features#190](https://github.com/kubernetes/features/issues/190))
+* [stable] Volume plugin for StorageOS provides highly-available cluster-wide persistent volumes from local or attached node storage. See [Persistent Volumes - StorageOS](https://kubernetes.io//docs/concepts/storage/persistent-volumes/#storageos) and [Storage Volumes - StorageOS](https://kubernetes.io/docs/concepts/storage/volumes/#storageos).
 
 #### Metrics
-* [stable] Add support for cloudprovider metrics for storage API calls ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/4138)) ([kubernetes/features#182](https://github.com/kubernetes/features/issues/182))
+* [stable] Add support for cloudprovider metrics for storage API calls. See [Controller manager metrics](https://kubernetes.io/docs/concepts/cluster-administration/controller-metrics/) for more information.
 
 ## **External Dependency Version Information**
 
@@ -363,7 +363,7 @@ Continuous integration builds have used the following versions of external depen
 
     * Docker version 1.11.2 known issues
 
-        * Kernel crash with Aufs storage driver on Debian Jessie ([#27885](https://github.com/kubernetes/kubernetes/issues/27885)) which can be identified by the [node problem detector](http://kubernetes.io/docs/admin/node-problem/)
+        * Kernel crash with Aufs storage driver on Debian Jessie ([#27885](https://github.com/kubernetes/kubernetes/issues/27885)) which can be identified by the [node problem detector](https://kubernetes.io/docs/tasks/debug-application-cluster/monitor-node-health/)
 
         * Leaked File descriptors ([#275](https://github.com/docker/containerd/issues/275))
 
@@ -373,7 +373,7 @@ Continuous integration builds have used the following versions of external depen
 
 * rkt version 1.23.0+
 
-    * known issues with the rkt runtime are [listed in the Getting Started Guide](http://kubernetes.io/docs/getting-started-guides/rkt/notes/)
+    * known issues with the rkt runtime are [listed in the Getting Started Guide](https://kubernetes.io/docs/getting-started-guides/rkt/notes/)
 
 * etcd version 3.0.17
 
@@ -855,7 +855,7 @@ Continuous integration builds have used the following versions of external depen
 
         * Kubernetes now shares a single PID namespace among all containers in a pod when running with docker >= 1.13.1. This means processes can now signal processes in other containers in a pod, but it also means that the `kubectl exec {pod} kill 1` pattern will cause the Pod to be restarted rather than a single container. ([#45236](https://github.com/kubernetes/kubernetes/pull/45236), [@verb](https://github.com/verb))
 
-        * A new field hostAliases has been added to the pod spec to support adding entries to a Pod's /etc/hosts file. ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/4080))([#44641](https://github.com/kubernetes/kubernetes/pull/44641), [@rickypai](https://github.com/rickypai))
+        * A new field hostAliases has been added to the pod spec to support [adding entries to a Pod's /etc/hosts file](https://kubernetes.io/docs/concepts/services-networking/add-entries-to-pod-etc-hosts-with-host-aliases/). ([#44641](https://github.com/kubernetes/kubernetes/pull/44641), [@rickypai](https://github.com/rickypai))
 
         * With `--feature-gates=RotateKubeletClientCertificate=true` set, the Kubelet will ([#41912](https://github.com/kubernetes/kubernetes/pull/41912), [@jcbsmpsn](https://github.com/jcbsmpsn))
 
