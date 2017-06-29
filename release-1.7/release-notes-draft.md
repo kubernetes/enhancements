@@ -128,9 +128,9 @@ TODO: replace docs PR links with links to actual docs
 
 * Cluster Lifecycle
 
-    * [alpha] Improved support for out-of-tree and out-of-process cloud providers, a.k.a pluggable cloud providers ([docs PR](https://github.com/kubernetes/kubernetes/pull/47934)) ([kubernetes/features#88](https://github.com/kubernetes/features/issues/88))
+    * [alpha] Improved support for out-of-tree and out-of-process cloud providers, a.k.a pluggable cloud providers ([docs](https://kubernetes.io/docs/tasks/administer-cluster/running-cloud-controller)) ([kubernetes/features#88](https://github.com/kubernetes/features/issues/88))
 
-    * [alpha] Manual upgrades for kubeadm from v1.6 to v1.7 (docs PR) (part of kubernetes/features#11)
+    * [alpha] Manual upgrades for kubeadm from v1.6 to v1.7. Automated upgrades ([kubernetes/features#296](https://github.com/kubernetes/features/issues/296)) are targeted for v1.8. ([docs PR](https://github.com/kubernetes/kubernetes.github.io/pull/3999)) (part of [kubernetes/features#11](https://github.com/kubernetes/features/issues/11))
 
 * Federation
 
@@ -388,19 +388,17 @@ Continuous integration builds have used the following versions of external depen
 
 * Cluster Lifecycle
 
-    * TODO: Sig-cluster-lifecycle please find notable changes (feature & bug fix) below for your SIG and pull into this section
-
     * Features:
 
         * kubeadm: Enable the Node Authorizer/Admission plugin in v1.7 ([#46879](https://github.com/kubernetes/kubernetes/pull/46879), [@luxas](https://github.com/luxas))
 
         * kubeadm: Users can now pass extra parameters to etcd in a kubeadm cluster ([#42246](https://github.com/kubernetes/kubernetes/pull/42246), [@jamiehannaford](https://github.com/jamiehannaford))
 
-        * kubeadm: Make kubeadm use the new CSR approver in v1.7 ([#46864](https://github.com/kubernetes/kubernetes/pull/46864),  [@luxas](https://github.com/luxas))
+        * kubeadm: Make kubeadm use the new CSR approver in v1.7 ([#46864](https://github.com/kubernetes/kubernetes/pull/46864), [@luxas](https://github.com/luxas))
 
-        * kubeadm: Allow enabling multiple authorization modes at the same time ([#42557](https://github.com/kubernetes/kubernetes/pull/42557),  [@xilabao](https://github.com/xilabao))
+        * kubeadm: Allow enabling multiple authorization modes at the same time ([#42557](https://github.com/kubernetes/kubernetes/pull/42557), [@xilabao](https://github.com/xilabao))
 
-        * kubeadm: add proxy client-certs to kube-apiserver to allow it to proxy aggregated api servers ([#43715](https://github.com/kubernetes/kubernetes/pull/43715),  [@deads2k](https://github.com/deads2k))
+        * kubeadm: add proxy client-certs to kube-apiserver to allow it to proxy aggregated api servers ([#43715](https://github.com/kubernetes/kubernetes/pull/43715), [@deads2k](https://github.com/deads2k))
 
     * Action required when upgrading:
 
