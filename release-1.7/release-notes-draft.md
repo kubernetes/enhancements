@@ -214,7 +214,7 @@ TODO: replace docs PR links with links to actual docs
 
 * Add Simplified Chinese translation for kubectl ([#45573](https://github.com/kubernetes/kubernetes/pull/45573), [@shiywang](https://github.com/shiywang))
 
-#### kubectl
+### **kubectl (CLI)**
 * Features
 
   * `kubectl logs` supports specifying a container name when using label selectors ([#44282](https://github.com/kubernetes/kubernetes/pull/44282), [@derekwaynecarr](https://github.com/derekwaynecarr))
@@ -419,7 +419,6 @@ Continuous integration builds have used the following versions of external depen
 
 #### Admission plugin
 * OwnerReferencesPermissionEnforcement admission plugin ignores pods/status. ([#45747](https://github.com/kubernetes/kubernetes/pull/45747), [@derekwaynecarr](https://github.com/derekwaynecarr))
-
 
 
 #### Application Deployment
@@ -808,7 +807,7 @@ Continuous integration builds have used the following versions of external depen
 
 #### Node controller
 * Bug fixes:
-*
+
   * Fix [transition between NotReady and Unreachable taints](https://github.com/kubernetes/kubernetes/issues/43444). ([#44042](https://github.com/kubernetes/kubernetes/pull/44042), [@gmarek](https://github.com/gmarek))
 
 
