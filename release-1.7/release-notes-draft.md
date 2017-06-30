@@ -791,6 +791,11 @@ Continuous integration builds have used the following versions of external depen
 
   * CRI: `kubectl logs -f` now stops following when container stops, as it did pre-CRI. ([#44406](https://github.com/kubernetes/kubernetes/pull/44406), [@Random-Liu](https://github.com/Random-Liu))
 
+	* Fixes a bug where pods were evicted even after images are successfully deleted. ([#44986](https://github.com/kubernetes/kubernetes/pull/44986), [@dashpole](https://github.com/dashpole))
+
+	* When creating a container using envFrom, ([#42083](https://github.com/kubernetes/kubernetes/pull/42083), [@fraenkel](https://github.com/fraenkel))
+	  * validate the name of the ConfigMap in a ConfigMapRef
+	  * validate the name of the Secret in a SecretRef
 
 #### Node controller
 * Bug fixes:
