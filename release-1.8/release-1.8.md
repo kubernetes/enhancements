@@ -77,7 +77,7 @@ modifications:
 
 # Key features
 [Feature tracking spreadsheet
-link]()
+link](https://docs.google.com/spreadsheets/d/1AFksRDgAt6BGA3OjRNIiO3IyKmA-GU7CXaxbihy48ns/edit#gid=0)
 
 ## Operational Changes 
 1. For the 1.8 release, the [release team](https://github.com/kubernetes/features/blob/master/release-1.8/release_team.md)
