@@ -5,8 +5,9 @@
 |  Features | Ihor Dvoretskyi (idvoretskyi) | |
 |  Branch Manager | Adam Worrall (abgworrall) | |
 |  Test Infra | Sen Lu (krzyzacy) | | |
-|  Docs | | |
+|  Docs | Steve Perry (steveperry-53) | |
+|  Release Notes | | |
 |  Bugs | Aaron Crickenberger (spiffxp) | | |
 |  Upgrade Testing / CI Signal| Eric Chiang (ericchiang) | | |
-| Patch Release Manager | | |
-| Marketing coordinator | | |
+|  Patch Release Manager | Joe Betz (jpbetz) | |
+|  Marketing coordinator | Swarna Podila | |
