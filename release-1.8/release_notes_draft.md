@@ -1,6 +1,7 @@
 # Checklist for SIGs and Release Team
 As SIGs fill out their sections by component, please check off that
-you are finished.
+you are finished. For guidance about what should have a release note
+please check out the [release notes guidance][] issue.
 
 - [ ] sig-api-machinery
 - [ ] sig-apps
@@ -31,6 +32,8 @@ you are finished.
 - [ ] sig-testing
 - [ ] sig-ui
 - [ ] sig-windows
+
+[release notes guidance]: https://github.com/kubernetes/community/issues/484
 
 ## **Major Themes**
 
