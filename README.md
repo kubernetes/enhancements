@@ -13,7 +13,7 @@ A feature is anything that:
 - a blog post would be written about after its release (ex. [minikube](http://blog.kubernetes.io/2016/07/minikube-easily-run-kubernetes-locally.html), [StatefulSets](http://blog.kubernetes.io/2016/07/thousand-instances-of-cassandra-using-kubernetes-pet-set.html), [rkt container runtime](http://blog.kubernetes.io/2016/07/rktnetes-brings-rkt-container-engine-to-Kubernetes.html))
 - requires multiple parties/SIGs/owners participating to complete (ex. GPU scheduling [API, Core, & Node], StatefulSets [Storage & API])
 - needs significant effort or changes Kubernetes in a significant way (ex. something that would take 10 person-weeks to implement, introduce or redesign a system component, or introduces API changes)
-- impacts the UX or operation of Kubernetes substatially such that engineers using Kubernetes will need retraining
+- impacts the UX or operation of Kubernetes substantially such that engineers using Kubernetes will need retraining
 - users will notice and come to rely on
 
 It is unlikely a feature if it is:
