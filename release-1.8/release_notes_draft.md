@@ -44,3 +44,8 @@ please check out the [release notes guidance][] issue.
 ## **Deprecations**
 
 ## **Notable Features**
+
+#### Kubelet
+
+* when `--bootstrap-kubeconfig` is enabled on a kubelet, the client certificate
+  will automatically be renewed as it approaches expiration.
