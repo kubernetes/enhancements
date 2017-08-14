@@ -57,4 +57,5 @@ please check out the [release notes guidance][] issue.
 * Mount Options to GA
 * Allow configuration of reclaim policy in StorageClass
 * Expose Storage Usage Metrics
+* PV spec refactoring for plugins that reference namespaced resources: Azure File, CephFS, iSCSI, Glusterfs
 
