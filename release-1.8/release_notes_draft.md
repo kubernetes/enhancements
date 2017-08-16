@@ -68,7 +68,7 @@ please check out the [release notes guidance][] issue.
 #### kubeadm
 * [beta] A new `phase` subcommand supports performing only subtasks of the full `kubeadm init` flow. Combined with fine-grained configuration, kubeadm is now more easily consumable by higher-level provisioning tools like kops or GKE. ([#356](https://github.com/kubernetes/features/issues/356), [@luxas](https://github.com/luxas), [@justinsb](https://github.com/justinsb))
 
-* [alpha] A new `upgrade` subcommand allows you to automatically upgrade a self-hosted cluster created with kubeadm. ([#296](https://github.com/kubernetes/features/issues/296), [@luxas](https://github.com/luxas))
+* [beta] A new `upgrade` subcommand allows you to automatically upgrade a self-hosted cluster created with kubeadm. ([#296](https://github.com/kubernetes/features/issues/296), [@luxas](https://github.com/luxas))
 
 #### kops
 * [alpha] Added support for targeting bare metal (or non-cloudprovider) machines. ([#360](https://github.com/kubernetes/features/issues/360), [@justinsb](https://github.com/justinsb)).
@@ -79,7 +79,7 @@ please check out the [release notes guidance][] issue.
 
 #### Cluster Discovery/Bootstrap
 
-* [beta] A new authentication and verification mechanism called Bootstrap Tokens has been added to the core API, which can be used to easily add new members to a cluster. ([#130](https://github.com/kubernetes/features/issues/130), [@luxas](https://github.com/luxas), [@jbeda](https://github.com/jbeda)).
+* [beta] The authentication and verification mechanism called Bootstrap Tokens has been added to the core API, which can be used to easily add new members to a cluster. ([#130](https://github.com/kubernetes/features/issues/130), [@luxas](https://github.com/luxas), [@jbeda](https://github.com/jbeda)).
 
 #### Addons
 * [alpha] A new system addon manager is available that is aiming to improve the downsides of the existing `kube-addons.sh` manager. ([#18](https://github.com/kubernetes/features/issues/18), [@justinsb](https://github.com/justinsb))
