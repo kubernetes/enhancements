@@ -85,7 +85,7 @@ please check out the [release notes guidance][] issue.
 * [alpha] A new system addon manager is available that is aiming to improve the downsides of the existing `kube-addons.sh` manager. ([#18](https://github.com/kubernetes/features/issues/18), [@justinsb](https://github.com/justinsb))
 
 #### Multi-platform
-* [beta] Kubernetes now has automated continuous-integration tests against all of our supported platforms (amd64, armhfp, aarch64, ppc64le, s390x), to ensure that it continues to work on these platforms. It's also possible to run clusters with nodes of mixed architectures. ([#288](https://github.com/kubernetes/features/issues/288), [@luxas](https://github.com/luxas), [@mkumatag](https://github.com/mkumatag), [@ixdy](https://github.com/ixdy))
+* [beta] Kubernetes now has automated continuous-integration tests against all of our supported platforms (amd64, armhfp, aarch64, ppc64le), to ensure that it continues to work on these platforms. It's also possible to run clusters with nodes of mixed architectures. ([#288](https://github.com/kubernetes/features/issues/288), [@luxas](https://github.com/luxas), [@mkumatag](https://github.com/mkumatag), [@ixdy](https://github.com/ixdy))
 
 #### Cloud Providers
 * [beta] Support for out-of-tree and out-of-process cloud providers, a.k.a pluggable providers, has been promoted from alpha to beta. ([#88](https://github.com/kubernetes/features/issues/88), [@wlan0](https://github.com/wlan0))
