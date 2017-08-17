@@ -44,3 +44,7 @@ please check out the [release notes guidance][] issue.
 ## **Deprecations**
 
 ## **Notable Features**
+
+### Service
+
+Paramaterize session affinity timeout seconds in service API for Client IP based session affinity.
