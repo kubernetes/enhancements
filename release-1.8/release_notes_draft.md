@@ -39,6 +39,18 @@ please check out the [release notes guidance][] issue.
 
 ## **Action Required Before Upgrading**
 
+* The autoscaling/v2alpha1 API has graduated to autoscaling/v2beta1.  The
+  form remains unchanged.  HorizontalPodAutoscalers making use of features
+  from the autoscaling/v2alpha1 API will need to be migrated to
+  autoscaling/v2beta1 to ensure that the new features are properly
+  persisted.
+
+* The metrics APIs (`custom.metrics.metrics.k8s.io` and `metrics`) have
+  graduated from `v1alpha1` to `v1beta1`.  If you have deployed a custom
+  metrics adapter, ensure that it supports the new API version.  If you
+  have deployed Heapster in aggregated API server mode, ensure that you
+  upgrade Heapster as well. 
+
 ## **Known Issues**
 
 ## **Deprecations**
@@ -59,3 +71,9 @@ please check out the [release notes guidance][] issue.
 * Expose Storage Usage Metrics
 * PV spec refactoring for plugins that reference namespaced resources: Azure File, CephFS, iSCSI, Glusterfs
 
+#### Autoscaling and Metrics
+
+* Support for custom metrics in the Horizontal Pod Autoscaler is moving to
+  beta.  The associated metrics APIs (custom metrics and resource/master
+  metrics) are graduating to v1beta1.  See [Action Required Before
+  Upgrading](#action-required-before-upgrading).
