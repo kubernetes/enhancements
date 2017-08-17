@@ -44,3 +44,18 @@ please check out the [release notes guidance][] issue.
 ## **Deprecations**
 
 ## **Notable Features**
+#### Storage
+
+* Capacity Isolation/Resource Management for Local Ephemeral Storage
+* Block Volumes Support
+* Enable containerization of mount dependencies
+* Support Attach/Detach for RWO volumes such as iSCSI, Fibre Channel and RBD
+* Volume Plugin Metrics
+* Snapshots
+* Resizing Volume Support
+* Exposing StorageClass Params To End Users (aka Provisioning configuration in PVC)
+* Mount Options to GA
+* Allow configuration of reclaim policy in StorageClass
+* Expose Storage Usage Metrics
+* PV spec refactoring for plugins that reference namespaced resources: Azure File, CephFS, iSCSI, Glusterfs
+
