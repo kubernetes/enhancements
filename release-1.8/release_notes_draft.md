@@ -56,6 +56,10 @@ please check out the [release notes guidance][] issue.
 ## **Deprecations**
 
 ## **Notable Features**
+#### Scheduling
+* [alpha] Support pod priority and creation of PriorityClasses ([design doc](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/pod-priority-api.md))
+* [alpha] Support priority-based preemption of pods ([design doc](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/pod-preemption.md))
+
 #### Storage
 
 * Capacity Isolation/Resource Management for Local Ephemeral Storage
