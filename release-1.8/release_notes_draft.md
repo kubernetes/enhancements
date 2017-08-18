@@ -71,6 +71,11 @@ please check out the [release notes guidance][] issue.
 * Expose Storage Usage Metrics
 * PV spec refactoring for plugins that reference namespaced resources: Azure File, CephFS, iSCSI, Glusterfs
 
+### **Node Components**
+#### kubelet
+* [alpha] Kubelet now supports alternative container-level CPU affinity policies using new CPU manager. ([#375](https://github.com/kubernetes/features/issues/375), [@sjenning](https://github.com/sjenning), [@ConnorDoyle](https://github.com/ConnorDoyle)
+
+* [alpha] Applications may now request pre-allocated hugepages by using the new `hugepages` resource in the container resource requests. [#275](https://github.com/kubernetes/features/issues/275), [@derekwaynecarr](https://github.com/derekwaynecarr)
 
 #### Autoscaling and Metrics
 
@@ -112,4 +117,3 @@ please check out the [release notes guidance][] issue.
 
 #### DaemonSet
 * [beta] DaemonSet upgrades can be achieved via a start-then-kill update strategy. ([#373](https://github.com/kubernetes/features/issues/373), [@aaronlevy](https://github.com/aaronlevy), [@diegs](https://github.com/diegs))
-
