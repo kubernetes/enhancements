@@ -72,7 +72,6 @@ API surface for promotion.
 
 ## **Notable Features**
 
-
 ### [Workload API (apps/v1beta2)](https://github.com/kubernetes/features/issues/353)
 
 Kubernetes 1.8 adds the apps/v1beta2 group version. This group version contains 
@@ -150,16 +149,18 @@ kind.
 
 * [alpha] Applications may now request pre-allocated hugepages by using the new `hugepages` resource in the container resource requests. [#275](https://github.com/kubernetes/features/issues/275), [@derekwaynecarr](https://github.com/derekwaynecarr)
 
+* when `--bootstrap-kubeconfig` is enabled on a kubelet, the client certificate
+  will automatically be renewed as it approaches expiration.
+
+* [alpha] Add limited support for pod "checkpointing" in the kubelet to help enable self-hosting. ([#378](https://github.com/kubernetes/features/issues/378), [@timothysc](https://github.com/timothysc))
+
+
 #### Autoscaling and Metrics
 
 * Support for custom metrics in the Horizontal Pod Autoscaler is moving to
   beta.  The associated metrics APIs (custom metrics and resource/master
   metrics) are graduating to v1beta1.  See [Action Required Before
   Upgrading](#action-required-before-upgrading).
-
-### **Node Components**
-#### kubelet
-* [alpha] Add limited support for pod "checkpointing" in the kubelet to help enable self-hosting. ([#378](https://github.com/kubernetes/features/issues/378), [@timothysc](https://github.com/timothysc))
 
 ### **Cluster Lifecycle**
 #### kubeadm
