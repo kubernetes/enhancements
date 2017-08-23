@@ -12,7 +12,7 @@ please check out the [release notes guidance][] issue.
 - [ ] sig-azure
 - [ ] sig-big-data
 - [ ] sig-cli
-- [ ] sig-cluster-lifecycle
+- [x] sig-cluster-lifecycle
 - [ ] sig-cluster-ops
 - [ ] sig-contributor-experience
 - [ ] sig-docs
