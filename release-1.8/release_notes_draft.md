@@ -69,6 +69,9 @@ API surface for promotion.
  apps/v1beta2 group.
  - The pod.alpha.kubernetes.io/initialized has been removed.
 
+### Scheduling
+- Opaque Integer Resources (OIRs) are deprecated and may be removed in a
+  future release. Extended Resources (ERs) are a drop-in replacment.
 
 ## **Notable Features**
 
@@ -102,6 +105,11 @@ kind.
  Users that have any code that depends on mutable selectors may continue to use 
  the apps/v1beta1 API for this release, but they should begin migration to code 
  that does depend on mutable selectors.
+ - Extended resources outside the `*kubernetes.io/` namespace are treated as
+ integers. Users can use any resource name of the form `[aaa.]my-domain.bbb/ccc`
+ in place of [Opaque Integer Resources](https://v1-6.docs.kubernetes.io/docs/concepts/configuration/manage-compute-resources-container/#opaque-integer-resources-alpha-feature).
+ These resources may not be overcommitted, so request and limit must be equal
+ if both are present in a container spec.
 
  #### Defaults
 
@@ -146,9 +154,9 @@ kind.
 
 ### **Node Components**
 #### kubelet
-* [alpha] Kubelet now supports alternative container-level CPU affinity policies using new CPU manager. ([#375](https://github.com/kubernetes/features/issues/375), [@sjenning](https://github.com/sjenning), [@ConnorDoyle](https://github.com/ConnorDoyle)
+* [alpha] Kubelet now supports alternative container-level CPU affinity policies using new CPU manager. ([#375](https://github.com/kubernetes/features/issues/375), [@sjenning](https://github.com/sjenning), [@ConnorDoyle](https://github.com/ConnorDoyle))
 
-* [alpha] Applications may now request pre-allocated hugepages by using the new `hugepages` resource in the container resource requests. [#275](https://github.com/kubernetes/features/issues/275), [@derekwaynecarr](https://github.com/derekwaynecarr)
+* [alpha] Applications may now request pre-allocated hugepages by using the new `hugepages` resource in the container resource requests. ([#275](https://github.com/kubernetes/features/issues/275), [@derekwaynecarr](https://github.com/derekwaynecarr))
 
 * when `--bootstrap-kubeconfig` is enabled on a kubelet, the client certificate
   will automatically be renewed as it approaches expiration.
