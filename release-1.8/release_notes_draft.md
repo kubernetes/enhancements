@@ -63,10 +63,8 @@ API surface for promotion.
 ## **Deprecations**
 
 ### Apps 
- - The rollbackTo field of the Deployment kind is depreatcted in the 
- apps/v1beta2 group version. 
- - The templateGeneration field of the DaemonSet kinds is deprecated in the 
- apps/v1beta2 group.
+ - The .spec.rollbackTo field of the Deployment kind is deprecated in the
+ extensions/v1beta1 group version.
  - The pod.alpha.kubernetes.io/initialized has been removed.
 
 
