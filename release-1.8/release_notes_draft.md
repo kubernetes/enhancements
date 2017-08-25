@@ -71,7 +71,9 @@ API surface for promotion.
 
 ### Scheduling
 - Opaque Integer Resources (OIRs) are deprecated and will be removed in
-  v1.9. Extended Resources (ERs) are a drop-in replacement for OIRs.
+  v1.9. Extended Resources (ERs) are a drop-in replacement for OIRs. Users can use
+  any domain name prefix outside of the `kubernetes.io/` domain instead of the
+  previous `pod.alpha.kubernetes.io/opaque-int-resource-` prefix.
 
 ## **Notable Features**
 
