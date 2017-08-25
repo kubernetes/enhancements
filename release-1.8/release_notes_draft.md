@@ -67,6 +67,11 @@ API surface for promotion.
  extensions/v1beta1 group version.
  - The pod.alpha.kubernetes.io/initialized has been removed.
 
+### Scheduling
+- Opaque Integer Resources (OIRs) are deprecated and will be removed in
+  v1.9. Extended Resources (ERs) are a drop-in replacement for OIRs. Users can use
+  any domain name prefix outside of the `kubernetes.io/` domain instead of the
+  previous `pod.alpha.kubernetes.io/opaque-int-resource-` prefix.
 
 ## **Notable Features**
 
@@ -100,6 +105,12 @@ kind.
  Users that have any code that depends on mutable selectors may continue to use 
  the apps/v1beta1 API for this release, but they should begin migration to code 
  that does depend on mutable selectors.
+ - Extended Resources are fully-qualified resource names outside the
+ `kubernetes.io` domain. Extended Resource quantities must be integers.
+ Users can use any resource name of the form `[aaa.]my-domain.bbb/ccc`
+ in place of [Opaque Integer Resources](https://v1-6.docs.kubernetes.io/docs/concepts/configuration/manage-compute-resources-container/#opaque-integer-resources-alpha-feature).
+ Extended resources cannot be overcommitted, so request and limit must be equal
+ if both are present in a container spec.
 
  #### Defaults
 
@@ -144,9 +155,9 @@ kind.
 
 ### **Node Components**
 #### kubelet
-* [alpha] Kubelet now supports alternative container-level CPU affinity policies using new CPU manager. ([#375](https://github.com/kubernetes/features/issues/375), [@sjenning](https://github.com/sjenning), [@ConnorDoyle](https://github.com/ConnorDoyle)
+* [alpha] Kubelet now supports alternative container-level CPU affinity policies using the new CPU manager. ([#375](https://github.com/kubernetes/features/issues/375), [@sjenning](https://github.com/sjenning), [@ConnorDoyle](https://github.com/ConnorDoyle))
 
-* [alpha] Applications may now request pre-allocated hugepages by using the new `hugepages` resource in the container resource requests. [#275](https://github.com/kubernetes/features/issues/275), [@derekwaynecarr](https://github.com/derekwaynecarr)
+* [alpha] Applications may now request pre-allocated hugepages by using the new `hugepages` resource in the container resource requests. ([#275](https://github.com/kubernetes/features/issues/275), [@derekwaynecarr](https://github.com/derekwaynecarr))
 
 * when `--bootstrap-kubeconfig` is enabled on a kubelet, the client certificate
   will automatically be renewed as it approaches expiration.
