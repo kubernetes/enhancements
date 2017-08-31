@@ -141,6 +141,7 @@ kind.
   deletion. Users who depend on ordered termination for the Pods of their
   StatefulSet’s must use kubectl scale to scale down the StatefulSet prior to
   deletion.
+- `kubectl create configmap` and `kubectl create secret` subcommands now support the `--append-hash` flag, which enables unique yet deterministic naming for objects generated from files, e.g. via `--from-file`.
 
 #### Scheduling
 * [alpha] Support pod priority and creation of PriorityClasses ([design doc](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/pod-priority-api.md))
