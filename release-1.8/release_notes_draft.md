@@ -6,7 +6,7 @@ please check out the [release notes guidance][] issue.
 - [ ] sig-api-machinery
 - [ ] sig-apps
 - [ ] sig-architecture
-- [ ] sig-auth
+- [x] sig-auth
 - [ ] sig-autoscaling
 - [ ] sig-aws
 - [ ] sig-azure
@@ -39,10 +39,16 @@ please check out the [release notes guidance][] issue.
 
 - The kubernetes workloads API (the DaemonSet, Deployment, ReplicaSet, and
 StatefulSet kinds) have been moved to the new apps/v1beta2 group version. This
-is the current version of the API, and the version we intend to promote to
-GA in future releases. This version of the API introduces several deprecations
-and behavioral changes, but its intention is to provide a stable, consistent
+is the current version of the API, and the version we intend to promote to 
+GA in future releases. This version of the API introduces several deprecations 
+and behavioral changes, but its intention is to provide a stable, consistent 
 API surface for promotion.
+
+- The roles based access control (RBAC) API group for managing API authorization
+has been promoted to v1. No changes were made to the API from v1beta1. This
+promotion indicates RBAC's production readiness and adoption. Today, the
+authorizer is turned on by default by many distributions of Kubernetes, and is a
+fundamental aspect of a secure cluster.
 
 ## **Action Required Before Upgrading**
 
@@ -72,6 +78,9 @@ API surface for promotion.
   v1.9. Extended Resources (ERs) are a drop-in replacement for OIRs. Users can use
   any domain name prefix outside of the `kubernetes.io/` domain instead of the
   previous `pod.alpha.kubernetes.io/opaque-int-resource-` prefix.
+
+### Auth
+- With the introduction of RBAC v1, the RBAC v1alpha has been depricated.
 
 ## **Notable Features**
 
@@ -159,9 +168,6 @@ kind.
 
 * [alpha] Applications may now request pre-allocated hugepages by using the new `hugepages` resource in the container resource requests. ([#275](https://github.com/kubernetes/features/issues/275), [@derekwaynecarr](https://github.com/derekwaynecarr))
 
-* when `--bootstrap-kubeconfig` is enabled on a kubelet, the client certificate
-  will automatically be renewed as it approaches expiration.
-
 * [alpha] Add limited support for pod "checkpointing" in the kubelet to help enable self-hosting. ([#378](https://github.com/kubernetes/features/issues/378), [@timothysc](https://github.com/timothysc))
 
 
@@ -171,6 +177,13 @@ kind.
   beta.  The associated metrics APIs (custom metrics and resource/master
   metrics) are graduating to v1beta1.  See [Action Required Before
   Upgrading](#action-required-before-upgrading).
+
+### Auth
+
+* [GA] The RBAC API group has been promoted from v1beta1 to v1. No API changes were introduced.
+* [beta] Advanced auditing has been promoted from alpha to beta. The webhook and logging policy formats have changed since alpha, and may require modification.
+* [beta] Kubelet certificate rotation through the certificates API has been promoted from alpha to beta. RBAC cluster roles for the certificates controller have been added for common uses of the certificates API, such as the kubelet's.
+* [alpha] The API server can now use Google Cloud KMS for encryption of resources, such as secrets, before storing them in etcd.
 
 ### **Cluster Lifecycle**
 #### kubeadm
