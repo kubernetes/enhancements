@@ -37,12 +37,13 @@ please check out the [release notes guidance][] issue.
 
 ## **Major Themes**
 
-- The kubernetes workloads API (the DaemonSet, Deployment, ReplicaSet, and 
+- The kubernetes workloads API (the DaemonSet, Deployment, ReplicaSet, and
 StatefulSet kinds) have been moved to the new apps/v1beta2 group version. This
 is the current version of the API, and the version we intend to promote to 
 GA in future releases. This version of the API introduces several deprecations 
 and behavioral changes, but its intention is to provide a stable, consistent 
-API surface for promotion. 
+API surface for promotion.
+
 - The roles based access control (RBAC) API group for managing API authorization
 has been promoted to v1. No changes were made to the API from v1beta1. This
 promotion indicates RBAC's production readiness and adoption. Today, the
@@ -61,13 +62,13 @@ fundamental aspect of a secure cluster.
   graduated from `v1alpha1` to `v1beta1`.  If you have deployed a custom
   metrics adapter, ensure that it supports the new API version.  If you
   have deployed Heapster in aggregated API server mode, ensure that you
-  upgrade Heapster as well. 
+  upgrade Heapster as well.
 
 ## **Known Issues**
 
 ## **Deprecations**
 
-### Apps 
+### Apps
  - The .spec.rollbackTo field of the Deployment kind is deprecated in the
  extensions/v1beta1 group version.
  - The pod.alpha.kubernetes.io/initialized has been removed.
@@ -85,33 +86,33 @@ fundamental aspect of a secure cluster.
 
 ### [Workload API (apps/v1beta2)](https://github.com/kubernetes/features/issues/353)
 
-Kubernetes 1.8 adds the apps/v1beta2 group version. This group version contains 
-the Kubernetes workload API which consists of the DaemonSet, Deployment, 
-ReplicaSet and StatefulSet kinds. It is the current version of the API, and we 
-intend to promote it to GA in upcoming releases 
+Kubernetes 1.8 adds the apps/v1beta2 group version. This group version contains
+the Kubernetes workload API which consists of the DaemonSet, Deployment,
+ReplicaSet and StatefulSet kinds. It is the current version of the API, and we
+intend to promote it to GA in upcoming releases
 
 #### API Object Additions and Migrations
 
-- The current version DaemonSet, Deployment, ReplicaSet, and StatefulSet kinds 
+- The current version DaemonSet, Deployment, ReplicaSet, and StatefulSet kinds
   are now in the apps/v1beta2 group version.
-- The apps/v1beta2 group version adds a Scale subresource for the StatefulSet 
+- The apps/v1beta2 group version adds a Scale subresource for the StatefulSet
 kind.
-- All kinds in the apps/v1beta2 group version add a corresponding conditions 
+- All kinds in the apps/v1beta2 group version add a corresponding conditions
   kind.
 
 #### Behavioral Changes
 
- - For all kinds in the API group version, as it is incompatible with kubectl 
+ - For all kinds in the API group version, as it is incompatible with kubectl
  apply and strategic merge patch, spec.selector defaulting is disabled. Users
- must set the spec.selector in their manifests, and the creation of an object 
- with a spec.selector that does not match the labels in its spec.template is 
+ must set the spec.selector in their manifests, and the creation of an object
+ with a spec.selector that does not match the labels in its spec.template is
  considered to be invalid.
- - As none of the controllers in the workloads API handle selector mutation in 
- a consistent way, selector mutation is disabled in for all kinds in the 
- app/v1beta2 group version. This restriction may be lifted in the future, but 
- it is likely that that selectors will remain immutable after GA promotion. 
- Users that have any code that depends on mutable selectors may continue to use 
- the apps/v1beta1 API for this release, but they should begin migration to code 
+ - As none of the controllers in the workloads API handle selector mutation in
+ a consistent way, selector mutation is disabled in for all kinds in the
+ app/v1beta2 group version. This restriction may be lifted in the future, but
+ it is likely that that selectors will remain immutable after GA promotion.
+ Users that have any code that depends on mutable selectors may continue to use
+ the apps/v1beta1 API for this release, but they should begin migration to code
  that does depend on mutable selectors.
  - Extended Resources are fully-qualified resource names outside the
  `kubernetes.io` domain. Extended Resource quantities must be integers.
@@ -122,23 +123,23 @@ kind.
 
  #### Defaults
 
- - The default spec.updateStrategy for the StatefulSet and DaemonSet kinds is 
- RollingUpdate for the apps/v1beta2 group version. Users may specifically set 
- the OnDelete strategy, and no strategy auto-conversion will be applied to 
+ - The default spec.updateStrategy for the StatefulSet and DaemonSet kinds is
+ RollingUpdate for the apps/v1beta2 group version. Users may specifically set
+ the OnDelete strategy, and no strategy auto-conversion will be applied to
  replace defaulted values.
- - As mentioned in [Behavioral Changes](#behavioral-changes), selector 
+ - As mentioned in [Behavioral Changes](#behavioral-changes), selector
  defaulting is disabled.
- - The default spec.revisionHistoryLimit for all applicable kinds in the 
+ - The default spec.revisionHistoryLimit for all applicable kinds in the
  apps/v1beta2 group version has set to 10.
 
 #### CLI Changes
 
 - The kubectl rollout and rollback implementation is complete for StatefulSet.
-- The kubectl scale command will uses the Scale subresource for kinds in the 
+- The kubectl scale command will uses the Scale subresource for kinds in the
   apps/v1beta2 group.
-- kubectl delete will no longer scale down workload API objects prior to 
-  deletion. Users who depend on ordered termination for the Pods of their 
-  StatefulSet’s must use kubectl scale to scale down the StatefulSet prior to 
+- kubectl delete will no longer scale down workload API objects prior to
+  deletion. Users who depend on ordered termination for the Pods of their
+  StatefulSet’s must use kubectl scale to scale down the StatefulSet prior to
   deletion.
 
 #### Scheduling
@@ -218,3 +219,5 @@ kind.
 * [beta] Apply NetworkPolicy based on CIDR ([#50033](https://github.com/kubernetes/kubernetes/pull/50033), [@cmluciano](https://github.com/cmluciano))
 #### kube-proxy ipvs mode
 * [alpha] Support ipvs mode for kube-proxy([#46580](https://github.com/kubernetes/kubernetes/pull/46580), [@haibinxie](https://github.com/haibinxie))
+
+## External Dependencies
