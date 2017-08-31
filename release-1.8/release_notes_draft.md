@@ -170,6 +170,7 @@ kind.
 
 * [alpha] Add limited support for pod "checkpointing" in the kubelet to help enable self-hosting. ([#378](https://github.com/kubernetes/features/issues/378), [@timothysc](https://github.com/timothysc))
 
+* [alpha] Add support for dynamic Kubelet configuration ([#281](https://github.com/kubernetes/features/issues/281), [@mtaufen](https://github.com/mtaufen))
 
 #### Autoscaling and Metrics
 
