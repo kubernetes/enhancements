@@ -80,7 +80,7 @@ fundamental aspect of a secure cluster.
   previous `pod.alpha.kubernetes.io/opaque-int-resource-` prefix.
 
 ### Auth
-- With the introduction of RBAC v1, the RBAC v1alpha has been depricated.
+- With the introduction of RBAC v1, the RBAC v1alpha has been deprecated.
 
 ## **Notable Features**
 
@@ -185,7 +185,7 @@ kind.
 * [GA] The RBAC API group has been promoted from v1beta1 to v1. No API changes were introduced.
 * [beta] Advanced auditing has been promoted from alpha to beta. The webhook and logging policy formats have changed since alpha, and may require modification.
 * [beta] Kubelet certificate rotation through the certificates API has been promoted from alpha to beta. RBAC cluster roles for the certificates controller have been added for common uses of the certificates API, such as the kubelet's.
-* [alpha] The API server can now use Google Cloud KMS for encryption of resources, such as secrets, before storing them in etcd.
+* [alpha] Building on the 1.7 work to allow encryption of resources such as secrets, a mechanism to store resource encryption keys in external Key Management Systems (KMS) was introduced. This complements the original file-based storage and allows integration with multiple KMS. A Google Cloud KMS plugin was added and will be usable once the Google side of the integration is complete.
 
 ### **Cluster Lifecycle**
 #### kubeadm
