@@ -223,3 +223,36 @@ kind.
 * [alpha] Support ipvs mode for kube-proxy([#46580](https://github.com/kubernetes/kubernetes/pull/46580), [@haibinxie](https://github.com/haibinxie))
 
 ## External Dependencies
+Continuous integration builds have used Docker versions 1.11.2, 1.12.6, 1.13.1,
+and 17.03.2. These versions have been validated on Kubernetes 1.8. However,
+consult an appropriate installation or upgrade guide before deciding what
+versions of Docker to use.
+
+- Docker 1.13.1 and 17.03.2
+    - Shared PID namespace, live-restore, and overlay2 have been validated.
+    - **Known issues**
+        - The default iptables FORWARD policy has been changed from ACCEPT to
+          DROP, which causes outbound container traffic to stop working by
+          default. See
+          [#40182](https://github.com/kubernetes/kubernetes/issues/40182) for
+          the workaround.
+        - The support for the v1 registries has been removed.
+- Docker 1.12.6
+    - Overlay2 and live-restore have *not* been validated.
+    - **Known issues**
+        - Shared PID namespace does not work properly.
+          ([#207](https://github.com/kubernetes/community/pull/207#issuecomment-281870043))
+        - Docker reports incorrect exit codes for containers.
+          ([#41516](https://github.com/kubernetes/kubernetes/issues/41516))
+- Docker 1.11.2
+    - **Known issues**
+        - Kernel crash with Aufs storage driver on Debian Jessie
+          ([#27885](https://github.com/kubernetes/kubernetes/issues/27885)),
+          which can be identified by the node problem detector.
+        - File descriptor leak on init/control.
+          ([#275](https://github.com/containerd/containerd/issues/275))
+        - Additional memory overhead per container.
+          ([#21737](https://github.com/kubernetes/kubernetes/pull/21737))
+        - Processes may be leaked when Docker is killed repeatedly in a short
+          time frame.
+          ([#41450](https://github.com/kubernetes/kubernetes/issues/41450))
