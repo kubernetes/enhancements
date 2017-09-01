@@ -64,6 +64,14 @@ fundamental aspect of a secure cluster.
   have deployed Heapster in aggregated API server mode, ensure that you
   upgrade Heapster as well.
 
+* Advanced auditing has graduated from `v1alpha1` to `v1beta1` with the
+  following changes to the default behavior.
+  * The webhook and log file now output the `v1beta1` event format.
+  * The audit log file defaults to JSON encoding when using the advanced
+    auditing feature gate.
+  * The`--audit-policy-file` requires `kind` and `apiVersion` fields
+    specifying what format version the `Policy` is using.
+
 ## **Known Issues**
 
 ## **Deprecations**
@@ -80,7 +88,7 @@ fundamental aspect of a secure cluster.
   previous `pod.alpha.kubernetes.io/opaque-int-resource-` prefix.
 
 ### Auth
-- With the introduction of RBAC v1, the RBAC v1alpha has been deprecated.
+- With the introduction of RBAC v1, the RBAC v1alpha1 API group has been deprecated.
 
 ## **Notable Features**
 
@@ -185,6 +193,7 @@ kind.
 * [GA] The RBAC API group has been promoted from v1beta1 to v1. No API changes were introduced.
 * [beta] Advanced auditing has been promoted from alpha to beta. The webhook and logging policy formats have changed since alpha, and may require modification.
 * [beta] Kubelet certificate rotation through the certificates API has been promoted from alpha to beta. RBAC cluster roles for the certificates controller have been added for common uses of the certificates API, such as the kubelet's.
+* [beta] SelfSubjectRulesReview, an API that lets a user see what actions they can perform with a namespace, has been added to the authorization.k8s.io API group. This bulk query is intended to enable UIs to show/hide actions based on the end user, and for users to quickly reason about their own permissions.
 * [alpha] Building on the 1.7 work to allow encryption of resources such as secrets, a mechanism to store resource encryption keys in external Key Management Systems (KMS) was introduced. This complements the original file-based storage and allows integration with multiple KMS. A Google Cloud KMS plugin was added and will be usable once the Google side of the integration is complete.
 
 ### **Cluster Lifecycle**
