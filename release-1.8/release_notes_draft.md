@@ -37,21 +37,28 @@ please check out the [release notes guidance][] issue.
 
 ## **Major Themes**
 
-- The kubernetes workloads API (the DaemonSet, Deployment, ReplicaSet, and
-StatefulSet kinds) have been moved to the new apps/v1beta2 group version. This
-is the current version of the API, and the version we intend to promote to 
-GA in future releases. This version of the API introduces several deprecations 
-and behavioral changes, but its intention is to provide a stable, consistent 
-API surface for promotion.
+### Versioning changes
 
-- The roles based access control (RBAC) API group for managing API authorization
-has been promoted to v1. No changes were made to the API from v1beta1. This
-promotion indicates RBAC's production readiness and adoption. Today, the
-authorizer is turned on by default by many distributions of Kubernetes, and is a
-fundamental aspect of a secure cluster.
+Version changes were made to the following APIs. For details, see 
+<!-- need to figure out correct links. "Action Required Before Upgrading", 
+but also other sections with more detail. The goal is to reduce duplication/
+redundancy -->.
+
+- Workloads (`DaemonSet`, `Deployment`, `ReplicaSet`, `StatefulSet`)
+
+- RBAC
+
+- Autoscaling
+
+- Metrics
+
+- Advanced auditing
 
 ## **Action Required Before Upgrading**
 
+<!-- Do we need to add information here for Workloads and RBAC APIs? We 
+don't seem to be consistent about what needs to be included in this section
+-->
 * The autoscaling/v2alpha1 API has graduated to autoscaling/v2beta1.  The
   form remains unchanged.  HorizontalPodAutoscalers making use of features
   from the autoscaling/v2alpha1 API will need to be migrated to
@@ -142,14 +149,19 @@ kind.
 
 #### CLI Changes
 
-- The kubectl rollout and rollback implementation is complete for StatefulSet.
-- The kubectl scale command will uses the Scale subresource for kinds in the
-  apps/v1beta2 group.
-- kubectl delete will no longer scale down workload API objects prior to
-  deletion. Users who depend on ordered termination for the Pods of their
-  StatefulSet’s must use kubectl scale to scale down the StatefulSet prior to
-  deletion.
-- `kubectl create configmap` and `kubectl create secret` subcommands now support the `--append-hash` flag, which enables unique yet deterministic naming for objects generated from files, e.g. via `--from-file`.
+- StatefulSet now fully supports `kubectl rollout` and `kubectl rollback`.
+<!--Not sure whether edit reflects original meaning, but original is also 
+not clear enough. Need to check w/ author. -->
+- `kubectl scale` uses the Scale subresource for kinds in the
+  apps/v1beta2 group. 
+  <!--Meaning unclear; need to check w/ author. -->
+- `kubectl delete` does not scale down Workload API objects before 
+  deletion. To provide ordered termination of StatefulSet Pods, call 
+  `kubectl scale` before calling `kubectl delete`.
+  <!--Again, not completely sure of meaning before or after edits. -->
+- `kubectl create configmap` and `kubectl create secret` subcommands now support the `--append-hash` flag. 
+  This flag enables unique and deterministic naming of objects that are generated from files, for example 
+  by setting the `--from-file` flag.
 
 #### Scheduling
 * [alpha] Support pod priority and creation of PriorityClasses ([design doc](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/pod-priority-api.md))
