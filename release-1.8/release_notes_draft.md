@@ -26,7 +26,7 @@ please check out the [release notes guidance][] issue.
 - [ ] sig-product-management
 - [ ] sig-release
 - [ ] sig-scalability
-- [ ] sig-scheduling
+- [x] sig-scheduling
 - [ ] sig-service-catalog
 - [ ] sig-storage
 - [ ] sig-testing
