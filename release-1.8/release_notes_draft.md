@@ -19,7 +19,7 @@ please check out the [release notes guidance][] issue.
 - [ ] sig-federation
 - [ ] sig-governance.md
 - [ ] sig-instrumentation
-- [ ] sig-network
+- [x] sig-network
 - [ ] sig-node
 - [ ] sig-on-premise
 - [ ] sig-openstack
@@ -228,6 +228,7 @@ kind.
 ### **Network**
 #### network-policy
 * [beta] Apply NetworkPolicy based on CIDR ([#50033](https://github.com/kubernetes/kubernetes/pull/50033), [@cmluciano](https://github.com/cmluciano))
+* [beta] Support EgressRules in NetworkPolicy ([#51351](https://github.com/kubernetes/kubernetes/pull/51351), [@cmluciano](https://github.com/cmluciano))
 #### kube-proxy ipvs mode
 * [alpha] Support ipvs mode for kube-proxy([#46580](https://github.com/kubernetes/kubernetes/pull/46580), [@haibinxie](https://github.com/haibinxie))
 
