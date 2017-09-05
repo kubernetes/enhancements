@@ -10,4 +10,4 @@
 |  Bugs | Aaron Crickenberger (spiffxp) | | |
 |  Upgrade Testing / CI Signal| Eric Chiang (ericchiang) | | |
 |  Patch Release Manager | Joe Betz (jpbetz) | |
-|  Marketing coordinator | Swarna Podila | |
+|  Marketing coordinator | Swarna Podila (swarnap) | |
