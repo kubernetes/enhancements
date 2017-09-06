@@ -90,6 +90,14 @@ fundamental aspect of a secure cluster.
 ### Auth
 - With the introduction of RBAC v1, the RBAC v1alpha1 API group has been deprecated.
 
+### Cluster Lifecycle
+
+- The `auto-detect` behavior of the kubelet's `--cloud-provider` flag is deprecated.
+  - In v1.8, the default value for the kubelet's `--cloud-provider` flag is `auto-detect`. It only works on a few cloud providers though.
+  - In v1.9, the default will be `""`, which means no built-in cloud provider extension will be enabled by default.
+  - If you want to use an out-of-tree cloud provider in either version, you should use `--cloud-provider=external`
+  - [PR #51312](https://github.com/kubernetes/kubernetes/pull/51312) and [announcement](https://groups.google.com/forum/#!topic/kubernetes-dev/UAxwa2inbTA)
+
 ## **Notable Features**
 
 ### [Workload API (apps/v1beta2)](https://github.com/kubernetes/features/issues/353)
@@ -128,6 +136,15 @@ kind.
  in place of [Opaque Integer Resources](https://v1-6.docs.kubernetes.io/docs/concepts/configuration/manage-compute-resources-container/#opaque-integer-resources-alpha-feature).
  Extended resources cannot be overcommitted, so request and limit must be equal
  if both are present in a container spec.
+ - The default Bootstrap Token created with `kubeadm init` v1.8 expires
+ and is deleted after 24 hours by default to limit the exposure of the
+ valuable credential. You can create a new Bootstrap Token with
+ `kubeadm token create` or make the default token permanently valid by specifying
+ `--token-ttl 0` to `kubeadm init`. The default token can later be deleted with
+ `kubeadm token delete`.
+ - `kubeadm join` now delegates TLS Bootstrapping to the kubelet itself, instead
+ of reimplementing that process. `kubeadm join` writes the bootstrap KubeConfig
+ file to `/etc/kubernetes/bootstrap-kubelet.conf`.
 
  #### Defaults
 
@@ -177,8 +194,6 @@ kind.
 
 * [alpha] Applications may now request pre-allocated hugepages by using the new `hugepages` resource in the container resource requests. ([#275](https://github.com/kubernetes/features/issues/275), [@derekwaynecarr](https://github.com/derekwaynecarr))
 
-* [alpha] Add limited support for pod "checkpointing" in the kubelet to help enable self-hosting. ([#378](https://github.com/kubernetes/features/issues/378), [@timothysc](https://github.com/timothysc))
-
 * [alpha] Add support for dynamic Kubelet configuration ([#281](https://github.com/kubernetes/features/issues/281), [@mtaufen](https://github.com/mtaufen))
 
 #### Autoscaling and Metrics
@@ -197,12 +212,19 @@ kind.
 * [alpha] Building on the 1.7 work to allow encryption of resources such as secrets, a mechanism to store resource encryption keys in external Key Management Systems (KMS) was introduced. This complements the original file-based storage and allows integration with multiple KMS. A Google Cloud KMS plugin was added and will be usable once the Google side of the integration is complete.
 
 ### **Cluster Lifecycle**
+
 #### kubeadm
-* [beta] A new `phase` subcommand supports performing only subtasks of the full `kubeadm init` flow. Combined with fine-grained configuration, kubeadm is now more easily consumable by higher-level provisioning tools like kops or GKE. ([#356](https://github.com/kubernetes/features/issues/356), [@luxas](https://github.com/luxas), [@justinsb](https://github.com/justinsb))
 
 * [beta] A new `upgrade` subcommand allows you to automatically upgrade a self-hosted cluster created with kubeadm. ([#296](https://github.com/kubernetes/features/issues/296), [@luxas](https://github.com/luxas))
 
+* [alpha] An experimental self-hosted cluster can now easily be created with `kubeadm init`. Enable the feature by setting the SelfHosting feature gate to true: `--feature-gates=SelfHosting=true` ([#296](https://github.com/kubernetes/features/issues/296), [@luxas](https://github.com/luxas))
+   * **NOTE:** Self-hosting will be the default way to host the control plane in the next release, v1.9
+
+* [alpha] A new `phase` subcommand supports performing only subtasks of the full `kubeadm init` flow. Combined with fine-grained configuration, kubeadm is now more easily consumable by higher-level provisioning tools like kops or GKE. ([#356](https://github.com/kubernetes/features/issues/356), [@luxas](https://github.com/luxas))
+   * **NOTE:** This command is currently staged under `kubeadm alpha phase` and will be graduated to top level in a future release.
+
 #### kops
+
 * [alpha] Added support for targeting bare metal (or non-cloudprovider) machines. ([#360](https://github.com/kubernetes/features/issues/360), [@justinsb](https://github.com/justinsb)).
 
 * [alpha] kops now supports [running as a server](https://github.com/kubernetes/kops/blob/master/docs/api-server/README.md). ([#359](https://github.com/kubernetes/features/issues/359), [@justinsb](https://github.com/justinsb)).
@@ -211,19 +233,15 @@ kind.
 
 #### Cluster Discovery/Bootstrap
 
-* [beta] The authentication and verification mechanism called Bootstrap Tokens has been added to the core API, which can be used to easily add new members to a cluster. ([#130](https://github.com/kubernetes/features/issues/130), [@luxas](https://github.com/luxas), [@jbeda](https://github.com/jbeda)).
-
-#### Addons
-* [alpha] A new system addon manager is available that is aiming to improve the downsides of the existing `kube-addons.sh` manager. ([#18](https://github.com/kubernetes/features/issues/18), [@justinsb](https://github.com/justinsb))
+* [beta] The authentication and verification mechanism called Bootstrap Tokens has been improved. Use Bootstrap Tokens to add new node identities to a cluster easily. ([#130](https://github.com/kubernetes/features/issues/130), [@luxas](https://github.com/luxas), [@jbeda](https://github.com/jbeda)).
 
 #### Multi-platform
-* [beta] Kubernetes now has automated continuous-integration tests against all of our supported platforms (amd64, armhfp, aarch64, ppc64le), to ensure that it continues to work on these platforms. It's also possible to run clusters with nodes of mixed architectures. ([#288](https://github.com/kubernetes/features/issues/288), [@luxas](https://github.com/luxas), [@mkumatag](https://github.com/mkumatag), [@ixdy](https://github.com/ixdy))
+
+* [alpha] The Conformance e2e test suite now passes on the arm, arm64, and ppc64le platforms. ([#288](https://github.com/kubernetes/features/issues/288), [@luxas](https://github.com/luxas), [@mkumatag](https://github.com/mkumatag), [@ixdy](https://github.com/ixdy))
 
 #### Cloud Providers
-* [beta] Support for out-of-tree and out-of-process cloud providers, a.k.a pluggable providers, has been promoted from alpha to beta. ([#88](https://github.com/kubernetes/features/issues/88), [@wlan0](https://github.com/wlan0))
 
-#### DaemonSet
-* [beta] DaemonSet upgrades can be achieved via a start-then-kill update strategy. ([#373](https://github.com/kubernetes/features/issues/373), [@aaronlevy](https://github.com/aaronlevy), [@diegs](https://github.com/diegs))
+* [alpha] Support for the pluggable, out-of-tree and out-of-core cloud providers, has been significantly improved. ([#88](https://github.com/kubernetes/features/issues/88), [@wlan0](https://github.com/wlan0))
 
 ### **Network**
 #### network-policy
