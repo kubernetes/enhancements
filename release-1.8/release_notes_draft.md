@@ -7,7 +7,7 @@ please check out the [release notes guidance][] issue.
 - [ ] sig-apps
 - [ ] sig-architecture
 - [x] sig-auth
-- [ ] sig-autoscaling
+- [x] sig-autoscaling
 - [ ] sig-aws
 - [ ] sig-azure
 - [ ] sig-big-data
@@ -18,7 +18,7 @@ please check out the [release notes guidance][] issue.
 - [ ] sig-docs
 - [ ] sig-federation
 - [ ] sig-governance.md
-- [ ] sig-instrumentation
+- [x] sig-instrumentation
 - [x] sig-network
 - [ ] sig-node
 - [ ] sig-on-premise
