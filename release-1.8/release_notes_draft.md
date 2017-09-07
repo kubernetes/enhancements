@@ -58,11 +58,12 @@ fundamental aspect of a secure cluster.
   autoscaling/v2beta1 to ensure that the new features are properly
   persisted.
 
-* The metrics APIs (`custom.metrics.metrics.k8s.io` and `metrics`) have
-  graduated from `v1alpha1` to `v1beta1`.  If you have deployed a custom
-  metrics adapter, ensure that it supports the new API version.  If you
-  have deployed Heapster in aggregated API server mode, ensure that you
-  upgrade Heapster as well.
+* The metrics APIs, `custom-metrics.metrics.k8s.io` and `metrics`, have
+  graduated from `v1alpha1` to `v1beta1`, and been renamed to
+  `custom.metrics.k8s.io` and `metrics.k8s.io`, respectively. If you have
+  deployed a custom metrics adapter, ensure that it supports the new API
+  version. If you have deployed Heapster in aggregated API server mode,
+  ensure that you upgrade Heapster as well.
 
 * Advanced auditing has graduated from `v1alpha1` to `v1beta1` with the
   following changes to the default behavior.
