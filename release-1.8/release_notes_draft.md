@@ -55,6 +55,18 @@ For the 1.8 release, SIG Apps moved the kubernetes workloads API to the new apps
 
 [SIG Apps]: https://github.com/kubernetes/community/tree/master/sig-apps
 
+### SIG Auth
+
+[SIG Auth][] is responsible for Kubernetes authentication, authorization, and
+cluster security policies.
+
+For the 1.8 release SIG Auth focused on stablizing existing features introduced
+in previous releases. RBAC was promoted to v1 and advanced auditing was promoted
+to beta. Encryption of resources at rest, which remained alpha, began exploring
+integrations with external Key Management Systems.
+
+[SIG Auth]: https://github.com/kubernetes/community/tree/master/sig-auth
+
 ### SIG Cluster Lifecycle
 
 [SIG Cluster Lifecycle][] is responsible for the user experience of deploying,
@@ -162,10 +174,12 @@ across the system. Here's the release [scalability validation report].
 * Advanced auditing has graduated from `v1alpha1` to `v1beta1` with the
   following changes to the default behavior.
   * Advanced auditing is enabled by default.
+  * The `--audit-policy-file` is now required unless the `AdvancedAudit`
+    feature is explicitly turned off on the API server. (`--feature-gates=AdvancedAudit=false`)
   * The webhook and log file now output the `v1beta1` event format.
   * The audit log file defaults to JSON encoding when using the advanced
     auditing feature gate.
-  * The`--audit-policy-file` requires `kind` and `apiVersion` fields
+  * The `--audit-policy-file` requires `kind` and `apiVersion` fields
     specifying what format version the `Policy` is using.
 
 * The deprecated ThirdPartyResource (TPR) API has been removed.
@@ -198,6 +212,13 @@ across the system. Here's the release [scalability validation report].
 * The APIs `rbac/v1alpha1`, `settings/v1alpha1`, and `scheduling/v1alpha1` are
   disabled by default.
 
+* The `system:node` role is no longer automatically granted to the `system:nodes`
+  group in new clusters. It is recommended that nodes be authorized using the
+  `Node` authorization mode instead. Installations that wish to continue giving
+  all members of the `system:nodes` group the `system:node` role (which grants
+  broad read access, including all secrets and configmaps) must create an
+  installation-specific `ClusterRoleBinding`. ([#49638](https://github.com/kubernetes/kubernetes/pull/49638))
+
 ## **Known Issues**
 
 ## **Deprecations**
@@ -226,6 +247,7 @@ across the system. Here's the release [scalability validation report].
 ### Auth
 
 - With the introduction of RBAC v1, the RBAC v1alpha1 API group has been deprecated.
+- The API server flag `--experimental-bootstrap-token-auth` is now deprecated in favor of `--enable-bootstrap-token-auth`. The `--experimental-bootstrap-token-auth` flag will be removed in 1.9.
 
 ### Cluster Lifecycle
 
@@ -436,6 +458,22 @@ kind.
 * [beta] Kubelet certificate rotation through the certificates API has been promoted from alpha to beta. RBAC cluster roles for the certificates controller have been added for common uses of the certificates API, such as the kubelet's.
 * [beta] SelfSubjectRulesReview, an API that lets a user see what actions they can perform with a namespace, has been added to the authorization.k8s.io API group. This bulk query is intended to enable UIs to show/hide actions based on the end user, and for users to quickly reason about their own permissions.
 * [alpha] Building on the 1.7 work to allow encryption of resources such as secrets, a mechanism to store resource encryption keys in external Key Management Systems (KMS) was introduced. This complements the original file-based storage and allows integration with multiple KMS. A Google Cloud KMS plugin was added and will be usable once the Google side of the integration is complete.
+
+* Websocket requests may now authenticate to the API server by passing a bearer token in a websocket subprotocol of the form `base64url.bearer.authorization.k8s.io.<base64url-encoded-bearer-token>`. ([#47740](https://github.com/kubernetes/kubernetes/pull/47740) [@liggitt](https://github.com/liggitt))
+* Advanced audit now correctly reports impersonated user info. ([#48184], [@CaoShuFeng](https://github.com/CaoShuFeng))
+* Advanced audit policy now supports matching subresources and resource names, but the top level resource no longer matches the subresouce. For example "pods" no longer matches requests to the logs subresource of pods. Use "pods/logs" to match subresources. ([#48836](https://github.com/kubernetes/kubernetes/pull/48836), [@ericchiang](https://github.com/ericchiang))
+* Previously a deleted service account or bootstrapping token secret would be considered valid until it was reaped. It is now invalid as soon as the `deletionTimestamp` is set. ([#48343](https://github.com/kubernetes/kubernetes/pull/48343), [@deads2k](https://github.com/deads2k); [#49057](https://github.com/kubernetes/kubernetes/pull/49057), [@ericchiang](https://github.com/ericchiang))
+* The `--insecure-allow-any-token` flag has been removed from the API server. Users of the flag should use impersonation headers instead for debugging. ([#49045](https://github.com/kubernetes/kubernetes/pull/49045), [@ericchiang](https://github.com/ericchiang))
+* The NodeRestriction admission plugin now allows a node to evict pods bound to itself. ([#48707](https://github.com/kubernetes/kubernetes/pull/48707), [@danielfm](https://github.com/danielfm))
+* The OwnerReferencesPermissionEnforcement admission plugin now requires `update` permission on the `finalizers` subresource of the referenced owner in order to set `blockOwnerDeletion` on an owner reference. ([#49133](https://github.com/kubernetes/kubernetes/pull/49133), [@deads2k](https://github.com/deads2k))
+* The SubjectAccessReview API in the `authorization.k8s.io` API group now allows providing the user uid. ([#49677](https://github.com/kubernetes/kubernetes/pull/49677), [@dims](https://github.com/dims))
+* After a kubelet rotates its client cert, it now closes its connections to the API server to force a handshake using the new cert. Previously, the kubelet could keep its existing connection open, even if the cert used for that connection was expired and rejected by the API server. ([#49899](https://github.com/kubernetes/kubernetes/pull/49899), [@ericchiang](https://github.com/ericchiang))
+* PodSecurityPolicies can now specify a whitelist of allowed paths for host volumes. ([#50212](https://github.com/kubernetes/kubernetes/pull/50212), [@jhorwit2](https://github.com/jhorwit2))
+* API server authentication now caches successful bearer token authentication results for a few seconds. ([#50258](https://github.com/kubernetes/kubernetes/pull/50258), [@liggitt](https://github.com/liggitt))
+* The OpenID Connect authenticator can now use a custom prefix, or omit the default prefix, for username and groups claims through the --oidc-username-prefix and --oidc-groups-prefix flags. For example, the authenticator can map a user with the username "jane" to "google:jane" by supplying the "google:" username prefix. ([#50875](https://github.com/kubernetes/kubernetes/pull/50875), [@ericchiang](https://github.com/ericchiang))
+* The bootstrap token authenticator can now configure tokens with a set of extra groups in addition to `system:bootstrappers`. ([#50933](https://github.com/kubernetes/kubernetes/pull/50933), [@mattmoyer](https://github.com/mattmoyer))
+* Advanced audit allows logging failed login attempts. ([#51119](https://github.com/kubernetes/kubernetes/pull/51119), [@soltysh](https://github.com/soltysh))
+* A `kubectl auth reconcile` subcommand has been added for applying RBAC resources. When passed a file which contains RBAC roles, rolebindings, clusterroles, or clusterrolebindings, it will compute covers and add the missing rules. ([#51636](https://github.com/kubernetes/kubernetes/pull/51636), [@deads2k](https://github.com/deads2k))
 
 ### **Cluster Lifecycle**
 
