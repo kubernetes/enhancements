@@ -204,6 +204,10 @@ kind.
   metrics) are graduating to v1beta1.  See [Action Required Before
   Upgrading](#action-required-before-upgrading).
 
+* metrics-server is now the reccomended way to provide the resource
+  metrics API. It is deployable as an addon, similarly to how Heapster is
+  deployed.
+
 ### Auth
 
 * [GA] The RBAC API group has been promoted from v1beta1 to v1. No API changes were introduced.
