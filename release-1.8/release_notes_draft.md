@@ -7,7 +7,7 @@ please check out the [release notes guidance][] issue.
 - [ ] sig-apps
 - [ ] sig-architecture
 - [x] sig-auth
-- [ ] sig-autoscaling
+- [x] sig-autoscaling
 - [ ] sig-aws
 - [ ] sig-azure
 - [ ] sig-big-data
@@ -18,7 +18,7 @@ please check out the [release notes guidance][] issue.
 - [ ] sig-docs
 - [ ] sig-federation
 - [ ] sig-governance.md
-- [ ] sig-instrumentation
+- [x] sig-instrumentation
 - [x] sig-network
 - [ ] sig-node
 - [ ] sig-on-premise
@@ -39,9 +39,9 @@ please check out the [release notes guidance][] issue.
 
 - The kubernetes workloads API (the DaemonSet, Deployment, ReplicaSet, and
 StatefulSet kinds) have been moved to the new apps/v1beta2 group version. This
-is the current version of the API, and the version we intend to promote to 
-GA in future releases. This version of the API introduces several deprecations 
-and behavioral changes, but its intention is to provide a stable, consistent 
+is the current version of the API, and the version we intend to promote to
+GA in future releases. This version of the API introduces several deprecations
+and behavioral changes, but its intention is to provide a stable, consistent
 API surface for promotion.
 
 - The roles based access control (RBAC) API group for managing API authorization
@@ -58,11 +58,12 @@ fundamental aspect of a secure cluster.
   autoscaling/v2beta1 to ensure that the new features are properly
   persisted.
 
-* The metrics APIs (`custom.metrics.metrics.k8s.io` and `metrics`) have
-  graduated from `v1alpha1` to `v1beta1`.  If you have deployed a custom
-  metrics adapter, ensure that it supports the new API version.  If you
-  have deployed Heapster in aggregated API server mode, ensure that you
-  upgrade Heapster as well.
+* The metrics APIs, `custom-metrics.metrics.k8s.io` and `metrics`, have
+  graduated from `v1alpha1` to `v1beta1`, and been renamed to
+  `custom.metrics.k8s.io` and `metrics.k8s.io`, respectively. If you have
+  deployed a custom metrics adapter, ensure that it supports the new API
+  version. If you have deployed Heapster in aggregated API server mode,
+  ensure that you upgrade Heapster as well.
 
 * Advanced auditing has graduated from `v1alpha1` to `v1beta1` with the
   following changes to the default behavior.
@@ -226,6 +227,18 @@ kind.
   beta.  The associated metrics APIs (custom metrics and resource/master
   metrics) are graduating to v1beta1.  See [Action Required Before
   Upgrading](#action-required-before-upgrading).
+
+* metrics-server is now the reccomended way to provide the resource
+  metrics API. It is deployable as an addon, similarly to how Heapster is
+  deployed.
+
+##### Cluster Autoscaler
+
+* Cluster autoscaler is now GA
+* Incresed cluster support size to 1000 nodes
+* Respect graceful pod termination of up to 10 minutes
+* Handle zone stock-outs and failures
+* Improved monitoring and error reporting
 
 ### Auth
 
