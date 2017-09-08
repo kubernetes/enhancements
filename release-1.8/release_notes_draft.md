@@ -39,9 +39,9 @@ please check out the [release notes guidance][] issue.
 
 - The kubernetes workloads API (the DaemonSet, Deployment, ReplicaSet, and
 StatefulSet kinds) have been moved to the new apps/v1beta2 group version. This
-is the current version of the API, and the version we intend to promote to 
-GA in future releases. This version of the API introduces several deprecations 
-and behavioral changes, but its intention is to provide a stable, consistent 
+is the current version of the API, and the version we intend to promote to
+GA in future releases. This version of the API introduces several deprecations
+and behavioral changes, but its intention is to provide a stable, consistent
 API surface for promotion.
 
 - The roles based access control (RBAC) API group for managing API authorization
@@ -207,6 +207,14 @@ kind.
 * metrics-server is now the reccomended way to provide the resource
   metrics API. It is deployable as an addon, similarly to how Heapster is
   deployed.
+
+##### Cluster Autoscaler
+
+* Cluster autoscaler is now GA
+* Incresed cluster support size to 1000 nodes
+* Respect graceful pod termination of up to 10 minutes
+* Handle zone stock-outs and failures
+* Improved monitoring and error reporting
 
 ### Auth
 
