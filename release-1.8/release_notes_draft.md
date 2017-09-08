@@ -72,22 +72,46 @@ fundamental aspect of a secure cluster.
   * The`--audit-policy-file` requires `kind` and `apiVersion` fields
     specifying what format version the `Policy` is using.
 
+* The deprecated ThirdPartyResource (TPR) API has been removed.
+  To avoid losing your TPR data, you must
+  [migrate to CustomResourceDefinition](https://kubernetes.io/docs/tasks/access-kubernetes-api/migrate-third-party-resource/)
+  **before upgrading to 1.8**.
+
+* The following deprecated flags have been removed from `kube-controller-manager`:
+
+  * `replication-controller-lookup-cache-size`
+  * `replicaset-lookup-cache-size`
+  * `daemonset-lookup-cache-size`
+
+  Do not use deprecated flags.
+
+* StatefulSet: The deprecated `pod.alpha.kubernetes.io/initialized` annotation for
+  interrupting StatefulSet Pod management is now ignored. If the annotation is set
+  to `true` or left blank, you won't see any change in behavior. If it's set to
+  `false`, previously dormant StatefulSets might become active after upgrading.
+
 ## **Known Issues**
 
 ## **Deprecations**
 
 ### Apps
- - The .spec.rollbackTo field of the Deployment kind is deprecated in the
- extensions/v1beta1 group version.
- - The pod.alpha.kubernetes.io/initialized has been removed.
+
+- The `.spec.rollbackTo` field of the Deployment kind is deprecated in the
+  extensions/v1beta1 group version.
+
+- The `kubernetes.io/created-by` annotation is now deprecated and will be removed in v1.9.
+  Use [ControllerRef](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/controller-ref.md)
+  instead to determine which controller, if any, owns an object.
 
 ### Scheduling
+
 - Opaque Integer Resources (OIRs) are deprecated and will be removed in
   v1.9. Extended Resources (ERs) are a drop-in replacement for OIRs. Users can use
   any domain name prefix outside of the `kubernetes.io/` domain instead of the
   previous `pod.alpha.kubernetes.io/opaque-int-resource-` prefix.
 
 ### Auth
+
 - With the introduction of RBAC v1, the RBAC v1alpha1 API group has been deprecated.
 
 ### Cluster Lifecycle
@@ -249,6 +273,18 @@ kind.
 * [beta] Support EgressRules in NetworkPolicy ([#51351](https://github.com/kubernetes/kubernetes/pull/51351), [@cmluciano](https://github.com/cmluciano))
 #### kube-proxy ipvs mode
 * [alpha] Support ipvs mode for kube-proxy([#46580](https://github.com/kubernetes/kubernetes/pull/46580), [@haibinxie](https://github.com/haibinxie))
+
+### API Machinery
+
+* [alpha] The CustomResourceDefinition API can now optionally
+  [validate custom objects](https://kubernetes.io/docs/tasks/access-kubernetes-api/extend-api-custom-resource-definitions/#validation)
+  based on a JSON schema provided in the CRD spec.
+  Enable this alpha feature with the `CustomResourceValidation` feature gate in `kube-apiserver`.
+
+* The garbage collector now supports custom APIs added via CustomResourceDefinition
+  or aggregated API servers. The garbage collector controller refreshes periodically.
+  Therefore, expect a latency of about 30 seconds between when the API is added and when
+  the garbage collector starts to manage it.
 
 ## External Dependencies
 Continuous integration builds have used Docker versions 1.11.2, 1.12.6, 1.13.1,
