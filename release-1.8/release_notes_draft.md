@@ -184,14 +184,60 @@ kind.
 
 #### CLI Changes
 
-- The kubectl rollout and rollback implementation is complete for StatefulSet.
-- The kubectl scale command will uses the Scale subresource for kinds in the
-  apps/v1beta2 group.
-- kubectl delete will no longer scale down workload API objects prior to
-  deletion. Users who depend on ordered termination for the Pods of their
-  StatefulSet’s must use kubectl scale to scale down the StatefulSet prior to
-  deletion.
-- `kubectl create configmap` and `kubectl create secret` subcommands now support the `--append-hash` flag, which enables unique yet deterministic naming for objects generated from files, e.g. via `--from-file`.
+- `kubectl rollout` and `rollback` now support StatefulSet.
+- `kubectl scale` now uses the Scale subresource for kinds in the apps/v1beta2 group.
+- `kubectl create configmap` and `kubectl create secret` subcommands now support
+  the `--append-hash` flag, which enables unique yet deterministic naming for
+  objects generated from files, e.g. via `--from-file`.
+- `kubectl run` learned how to set a service account name in the generated pod
+  spec with the `--serviceaccount` flag.
+- `kubectl proxy` will now correctly handle the `exec`, `attach`, and
+  `portforward` commands.  You must pass `--disable-filter` to the command in
+  order to allow these endpoints.
+- Added `cronjobs.batch` to all, so kubectl get all returns them.
+- The event table output under `kubectl describe` has been simplified to show
+  only the most essential info.
+- Allows kubectl to use http caching mechanism for the OpenAPI schema. The cache
+  directory can be configured through `--cache-dir` command line flag to kubectl.
+  If set to empty string, caching will be disabled.
+- Kubectl performs validation against OpenAPI schema rather than Swagger 1.2. If
+  OpenAPI is not available on the server, it falls back to the old Swagger 1.2.
+- Add flag `--include-uninitialized` to kubectl annotate, apply, edit-last-applied,
+  delete, describe, edit, get, label, set. "--include-uninitialized=true" makes
+  kubectl commands apply to uninitialized objects, which by default are ignored
+  if the names of the objects are not provided. "--all" also makes kubectl
+  commands apply to uninitialized objects. Please see the
+  [initializer](https://kubernetes.io/docs/admin/extensible-admission-controllers/)
+  doc for more details.
+- Add RBAC reconcile commands through kubectl auth reconcile -f FILE. When
+  passed a file which contains RBAC roles, rolebindings, clusterroles, or
+  clusterrolebindings, it will compute covers and add the missing rules.
+  The logic required to properly "apply" RBAC permissions is more complicated
+  that a json merge since you have to compute logical covers operations between
+  rule sets. This means that we cannot use kubectl apply to update RBAC roles
+  without risking breaking old clients (like controllers).
+- Add flag support to kubectl plugins
+- kubectl shows node role if defined.
+- Allow impersonate serviceaccount in kubectl.
+- kubectl zsh autocompletion now works with compinit.
+- Support completion for kubectl config delete-cluster.
+- `kubectl delete` no longer scales down workload API objects prior to deletion.
+  Users who depend on ordered termination for the Pods of their StatefulSet’s
+  must use kubectl scale to scale down the StatefulSet prior to deletion.
+- `kubectl run --env` no longer supports CSV parsing. To provide multiple env
+  vars, use the `--env` flag multiple times instead of having env vars separated
+  by commas. E.g. `--env ONE=1 --env TWO=2` instead of `--env ONE=1,TWO=2`.
+- `kubectl drain` no longer spins trying to delete pods that do not exist
+- `kubectl api-versions` now always fetches information about enabled API groups
+  and versions instead of using the local cache.
+- Remove deprecated command `kubectl stop`.
+- Add Italian translation for kubectl.
+- Add German translation for kubectl.
+- Fix kubectl bug that showed terminated/evicted pods even without `--show-all`.
+- Fix nil value issue when creating json merge patch.
+- Fixed a bug in strategic merge patch that caused kubectl apply to error under
+  some conditions
+- Fixed a bug that causes `kubectl logs -f` fail with `unexpected stream type ""`.
 
 #### Scheduling
 * [alpha] Support pod priority and creation of PriorityClasses ([design doc](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/pod-priority-api.md))
