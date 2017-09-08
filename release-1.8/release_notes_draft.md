@@ -92,6 +92,15 @@ fundamental aspect of a secure cluster.
   to `true` or left blank, you won't see any change in behavior. If it's set to
   `false`, previously dormant StatefulSets might become active after upgrading.
 
+* CronJobs has been promoted to `v1beta1` which is now turned on by default.
+  Although version `v2alpah1` is still available, it is deprecated.  Migrate to
+  `batch/v1beta1.CronJobs`.  Additionally, upgrading cluster in high-availability
+  configuration might return errors. The new controllers rely on the latest
+  version of the resources.  If the expected version is not found during rolling
+  upgrade, the system throws resource not found errors.
+* The `batch/v2alpha1.ScheduledJobs` has been removed.  Migrate to `batch/v1beta.CronJobs`
+  to continue managing time based jobs.
+
 ## **Known Issues**
 
 ## **Deprecations**
@@ -104,6 +113,11 @@ fundamental aspect of a secure cluster.
 - The `kubernetes.io/created-by` annotation is now deprecated and will be removed in v1.9.
   Use [ControllerRef](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/controller-ref.md)
   instead to determine which controller, if any, owns an object.
+
+ - The `batch/v2alpha1.CronJob` has been deprecated in favor of `batch/v1beta1`.
+
+ - The `batch/v2alpha1.ScheduledJobs` has been removed, use `batch/v1beta1.CronJobs` instead.
+
 
 ### Scheduling
 
@@ -183,9 +197,18 @@ kind.
  - The default spec.revisionHistoryLimit for all applicable kinds in the
  apps/v1beta2 group version has set to 10.
 
+### [Workload API (batch)]
+- CronJob has been promoted to `batch/v1beta1` ([#41039](https://github.com/kubernetes/kubernetes/issues/41039), [@soltysh](https://github.com/soltysh)).
+- `batch/v2alpha.CronJob` has been deprecated in favor of `batch/v1beta` and will be removed in future releases.
+- Job has now the ability to set a failure policy using `.spec.backoffLimit`.  The default value for this new field is set to 6. ([#30243](https://github.com/kubernetes/kubernetes/issues/30243), [@clamoriniere1A](https://github.com/clamoriniere1A)).
+- `batch/v2alpha1.ScheduledJobs` has been removed.
+- Job controller creates pods in batches instead of all at once ([#49142](https://github.com/kubernetes/kubernetes/pull/49142), [@joelsmith](https://github.com/joelsmith)).
+- Short `.spec.ActiveDeadlineSeconds` is properly applied to a job ([#48545](https://github.com/kubernetes/kubernetes/pull/48454), [@weiwei4](https://github.com/weiwei04)).
+
+
 #### CLI Changes
 
-- [alpha] `kubectl` plugins: `kubectl` now allows binary extensibility as an alpha 
+- [alpha] `kubectl` plugins: `kubectl` now allows binary extensibility as an alpha
   feature. Users can extend the default set of `kubectl` commands by writing plugins
   that provide new subcommands. Please refer to the documentation for more information.
 - `kubectl rollout` and `rollback` now support StatefulSet.
