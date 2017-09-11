@@ -67,6 +67,7 @@ fundamental aspect of a secure cluster.
 
 * Advanced auditing has graduated from `v1alpha1` to `v1beta1` with the
   following changes to the default behavior.
+  * Advanced auditing is enabled by default.
   * The webhook and log file now output the `v1beta1` event format.
   * The audit log file defaults to JSON encoding when using the advanced
     auditing feature gate.
