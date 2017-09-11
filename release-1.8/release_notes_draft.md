@@ -22,7 +22,7 @@ please check out the [release notes guidance][] issue.
 - [x] sig-network
 - [ ] sig-node
 - [ ] sig-on-premise
-- [ ] sig-openstack
+- [x] sig-openstack
 - [ ] sig-product-management
 - [ ] sig-release
 - [ ] sig-scalability
