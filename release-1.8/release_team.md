@@ -5,7 +5,7 @@
 |  Features | Ihor Dvoretskyi (idvoretskyi) | |
 |  Branch Manager | Adam Worrall (abgworrall) | |
 |  Test Infra | Sen Lu (krzyzacy) | | |
-|  Docs | Steve Perry (steveperry-53) | |
+|  Docs | Steve Perry (steveperry-53) | Zach Corleissen (zcorleissen) |
 |  Release Notes | Radhika Puthiyetath (radhikapc) | Jennifer Rondeau (jrondeau) |
 |  Bugs | Aaron Crickenberger (spiffxp) | | |
 |  Upgrade Testing / CI Signal| Eric Chiang (ericchiang) | | |
