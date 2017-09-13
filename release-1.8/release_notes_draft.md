@@ -50,6 +50,20 @@ promotion indicates RBAC's production readiness and adoption. Today, the
 authorizer is turned on by default by many distributions of Kubernetes, and is a
 fundamental aspect of a secure cluster.
 
+### SIG Node
+
+[SIG Node][] is responsible for the components which support the controlled 
+interactions between pods and host resources as well as managing the lifecycle
+of pods scheduled on a node. For the 1.8 release SIG node was focused on
+
+- improving node performance and reliability
+- improving multi-tennacy support 
+- improving container runtime portability
+- improving resource management
+- improving debuggability of node components
+
+[SIG Node]: https://github.com/kubernetes/community/tree/master/sig-node
+
 ## **Action Required Before Upgrading**
 
 * The autoscaling/v2alpha1 API has graduated to autoscaling/v2beta1.  The
