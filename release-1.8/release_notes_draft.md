@@ -151,6 +151,15 @@ incremental improvements to node reliability.
   - If you want to use an out-of-tree cloud provider in either version, you should use `--cloud-provider=external`
   - [PR #51312](https://github.com/kubernetes/kubernetes/pull/51312) and [announcement](https://groups.google.com/forum/#!topic/kubernetes-dev/UAxwa2inbTA)
 
+### Autoscaling
+
+- Consuming metrics directly from Heapster is now deprecated in favor of
+  consuming metrics via an aggregated version of the resource metrics API.
+  - In v1.8, this behavior can be enabled by setting the
+    `--horizontal-pod-autoscaler-use-rest-clients` flag to `true`.
+  - In v1.9, this behavior will be on by default, and must by explicitly
+    disabled by setting the above flag to `false`.
+
 ## **Notable Features**
 
 ### [Workload API (apps/v1beta2)](https://github.com/kubernetes/features/issues/353)
