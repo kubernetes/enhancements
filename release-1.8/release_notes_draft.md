@@ -63,6 +63,33 @@ incremental improvements to node reliability.
 
 [SIG Node]: https://github.com/kubernetes/community/tree/master/sig-node
 
+### SIG Autoscaling
+
+[SIG Autoscaling][] is responsible for autoscaling-related components,
+such as the Horizontal Pod Autoscaler and Cluster Autoscaler.
+
+For the 1.8 release, SIG Autoscaling continued focused on stabilizing
+features introduced in previous releases, such as the new version of the
+Horizontal Pod Autoscaler API (with support for custom metrics), as well
+as the Cluster Autoscaler (with improved performance and error reporting).
+
+
+[SIG Autoscaling]: https://github.com/kubernetes/community/tree/master/sig-autoscaling
+
+### SIG Instrumentation
+
+[SIG Instrumentation][] is responsible for metrics production and
+collection.
+
+For the 1.8 release, SIG Instrumentation focused on stabilizing the APIs
+and components required to support the new version of the Horizontal Pod
+Autoscaler API: the resource metrics API, custom metrics API, and
+metrics-server, the new replacement for Heapster in the default monitoring
+pipeline.
+
+
+[SIG Instrumentation]: https://github.com/kubernetes/community/tree/master/sig-instrumentation
+
 ## **Action Required Before Upgrading**
 
 * The autoscaling/v2alpha1 API has graduated to autoscaling/v2beta1.  The
