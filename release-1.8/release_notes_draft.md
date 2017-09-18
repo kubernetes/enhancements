@@ -13,15 +13,15 @@ please check out the [release notes guidance][] issue.
 - [ ] sig-big-data
 - [x] sig-cli
 - [x] sig-cluster-lifecycle
-- [ ] sig-cluster-ops
-- [ ] sig-contributor-experience
+- [x] sig-cluster-ops
+- [x] sig-contributor-experience
 - [x] sig-docs
 - [ ] sig-federation
-- [ ] sig-governance.md
+- [x] sig-governance.md
 - [x] sig-instrumentation
 - [x] sig-network
 - [ ] sig-node
-- [ ] sig-on-premise
+- [x] sig-on-premise
 - [x] sig-openstack
 - [x] sig-product-management
 - [x] sig-release
