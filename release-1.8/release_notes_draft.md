@@ -15,7 +15,7 @@ please check out the [release notes guidance][] issue.
 - [x] sig-cluster-lifecycle
 - [ ] sig-cluster-ops
 - [ ] sig-contributor-experience
-- [ ] sig-docs
+- [x] sig-docs
 - [ ] sig-federation
 - [ ] sig-governance.md
 - [x] sig-instrumentation
@@ -23,11 +23,11 @@ please check out the [release notes guidance][] issue.
 - [ ] sig-node
 - [ ] sig-on-premise
 - [x] sig-openstack
-- [ ] sig-product-management
-- [ ] sig-release
+- [x] sig-product-management
+- [x] sig-release
 - [ ] sig-scalability
 - [x] sig-scheduling
-- [ ] sig-service-catalog
+- [x] sig-service-catalog
 - [ ] sig-storage
 - [ ] sig-testing
 - [ ] sig-ui
