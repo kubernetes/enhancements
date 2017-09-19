@@ -52,24 +52,61 @@ fundamental aspect of a secure cluster.
 
 ### SIG Node
 
-[SIG Node][] is responsible for the components which support the controlled 
+[SIG Node][] is responsible for the components which support the controlled
 interactions between pods and host resources as well as managing the lifecycle
-of pods scheduled on a node. For the 1.8 release SIG Node continued to focus
+of pods scheduled on a node.
+
+For the 1.8 release SIG Node continued to focus
 on supporting the broadest set of workload types, including hardware and performance
 sensitive workloads such as data analytics and deep learning, while delivering
 incremental improvements to node reliability.
 
+[SIG Node]: https://github.com/kubernetes/community/tree/master/sig-node
+
+### SIG Network
+
+[SIG Network][] is responsible for networking components, APIs, and plugins in Kubernetes.
+
+For the 1.8 release, SIG Network enhanced the NetworkPolicy API to include support for pod egress traffic policies, and a match criteria that allows policy rules to match source or destination CIDR. Both of these enhancements are designated as beta. SIG Network also focused on improving the kube-proxy to include an alpha IPVS mode in addition to the current iptables and userspace modes.
+
+[SIG Network]: https://github.com/kubernetes/community/tree/master/sig-network
+
 ### SIG Storage
 
-[SIG Storage](https://github.com/kubernetes/community/tree/master/sig-storage) is
-responsible for storage and volume plugin components. For the 1.8 release, SIG Storage extends
-the Kubernetes storage API beyond just making volumes available to enabling volume resizing
-and snapshotting. Beyond these alpha/prototype features, the SIG, focused on providing users
-more control over their storage: with features like the ability to set requests & limits on
-ephemeral storage, the ability to specify mount options, more metrics, and improvments to
-Flex driver deployments.
+[SIG Storage][] is responsible for storage and volume plugin components. For the 1.8
+release, SIG Storage extends the Kubernetes storage API beyond just making volumes
+available to enabling volume resizing and snapshotting. Beyond these alpha/prototype
+features, the SIG, focused on providing users more control over their storage: with
+features like the ability to set requests & limits on ephemeral storage, the ability
+to specify mount options, more metrics, and improvments to Flex driver deployments.
 
-[SIG Node]: https://github.com/kubernetes/community/tree/master/sig-node
+[SIG Storage]: https://github.com/kubernetes/community/tree/master/sig-storage
+
+### SIG Autoscaling
+
+[SIG Autoscaling][] is responsible for autoscaling-related components,
+such as the Horizontal Pod Autoscaler and Cluster Autoscaler.
+
+For the 1.8 release, SIG Autoscaling continued focused on stabilizing
+features introduced in previous releases, such as the new version of the
+Horizontal Pod Autoscaler API (with support for custom metrics), as well
+as the Cluster Autoscaler (with improved performance and error reporting).
+
+[SIG Autoscaling]: https://github.com/kubernetes/community/tree/master/sig-autoscaling
+
+### SIG Instrumentation
+
+[SIG Instrumentation][] is responsible for metrics production and
+collection.
+
+For the 1.8 release, SIG Instrumentation focused on stabilizing the APIs
+and components required to support the new version of the Horizontal Pod
+Autoscaler API: the resource metrics API, custom metrics API, and
+metrics-server, the new replacement for Heapster in the default monitoring
+pipeline.
+
+
+[SIG Instrumentation]: https://github.com/kubernetes/community/tree/master/sig-instrumentation
 
 ## **Action Required Before Upgrading**
 
@@ -158,6 +195,15 @@ Flex driver deployments.
   - In v1.9, the default will be `""`, which means no built-in cloud provider extension will be enabled by default.
   - If you want to use an out-of-tree cloud provider in either version, you should use `--cloud-provider=external`
   - [PR #51312](https://github.com/kubernetes/kubernetes/pull/51312) and [announcement](https://groups.google.com/forum/#!topic/kubernetes-dev/UAxwa2inbTA)
+
+### Autoscaling
+
+- Consuming metrics directly from Heapster is now deprecated in favor of
+  consuming metrics via an aggregated version of the resource metrics API.
+  - In v1.8, this behavior can be enabled by setting the
+    `--horizontal-pod-autoscaler-use-rest-clients` flag to `true`.
+  - In v1.9, this behavior will be on by default, and must by explicitly
+    disabled by setting the above flag to `false`.
 
 ## **Notable Features**
 
@@ -273,8 +319,8 @@ kind.
 - Add German translation for kubectl.
 
 #### Scheduling
-* [alpha] Support pod priority and creation of PriorityClasses ([design doc](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/pod-priority-api.md))
-* [alpha] Support priority-based preemption of pods ([design doc](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/pod-preemption.md))
+* [alpha] Support pod priority and creation of PriorityClasses ([user doc](https://kubernetes.io/docs/concepts/configuration/pod-priority-preemption/))([design doc](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/pod-priority-api.md))
+* [alpha] Support priority-based preemption of pods ([user doc](https://kubernetes.io/docs/concepts/configuration/pod-priority-preemption/))([design doc](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/pod-preemption.md))
 * [alpha] Taint nodes by condition ([design doc](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/taint-node-by-condition.md))
 
 #### Storage
@@ -318,6 +364,8 @@ kind.
 * [alpha] Applications may now request pre-allocated hugepages by using the new `hugepages` resource in the container resource requests. ([#275](https://github.com/kubernetes/features/issues/275), [@derekwaynecarr](https://github.com/derekwaynecarr))
 
 * [alpha] Add support for dynamic Kubelet configuration ([#281](https://github.com/kubernetes/features/issues/281), [@mtaufen](https://github.com/mtaufen))
+
+* [stable] CRI-O support, it has passed all e2es. [@mrunalp]
 
 #### Autoscaling and Metrics
 
