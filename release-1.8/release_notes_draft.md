@@ -73,12 +73,14 @@ For the 1.8 release, SIG Network enhanced the NetworkPolicy API to include suppo
 
 ### SIG Storage
 
-[SIG Storage][] is responsible for storage and volume plugin components. For the 1.8
-release, SIG Storage extends the Kubernetes storage API, beyond just making volumes
-available, to enabling volume resizing and snapshotting. Beyond these alpha/prototype
-features, the SIG, focused on providing users more control over their storage: with
-features like the ability to set requests & limits on ephemeral storage, the ability
-to specify mount options, more metrics, and improvments to Flex driver deployments.
+[SIG Storage][] is responsible for storage and volume plugin components.
+
+For the 1.8 release, SIG Storage extends the Kubernetes storage API, beyond just
+making volumes available, to enabling volume resizing and snapshotting. Beyond these
+alpha/prototype features, the SIG, focused on providing users more control over their
+storage: with features like the ability to set requests & limits on ephemeral storage,
+the ability to specify mount options, more metrics, and improvments to Flex driver
+deployments.
 
 [SIG Storage]: https://github.com/kubernetes/community/tree/master/sig-storage
 
