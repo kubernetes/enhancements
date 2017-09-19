@@ -28,7 +28,7 @@ please check out the [release notes guidance][] issue.
 - [ ] sig-scalability
 - [x] sig-scheduling
 - [x] sig-service-catalog
-- [ ] sig-storage
+- [x] sig-storage
 - [ ] sig-testing
 - [ ] sig-ui
 - [ ] sig-windows
@@ -71,6 +71,19 @@ For the 1.8 release, SIG Network enhanced the NetworkPolicy API to include suppo
 
 [SIG Network]: https://github.com/kubernetes/community/tree/master/sig-network
 
+### SIG Storage
+
+[SIG Storage][] is responsible for storage and volume plugin components.
+
+For the 1.8 release, SIG Storage extends the Kubernetes storage API, beyond just
+making volumes available, to enabling volume resizing and snapshotting. Beyond these
+alpha/prototype features, the SIG, focused on providing users more control over their
+storage: with features like the ability to set requests & limits on ephemeral storage,
+the ability to specify mount options, more metrics, and improvments to Flex driver
+deployments.
+
+[SIG Storage]: https://github.com/kubernetes/community/tree/master/sig-storage
+
 ### SIG Autoscaling
 
 [SIG Autoscaling][] is responsible for autoscaling-related components,
@@ -80,7 +93,6 @@ For the 1.8 release, SIG Autoscaling continued focused on stabilizing
 features introduced in previous releases, such as the new version of the
 Horizontal Pod Autoscaler API (with support for custom metrics), as well
 as the Cluster Autoscaler (with improved performance and error reporting).
-
 
 [SIG Autoscaling]: https://github.com/kubernetes/community/tree/master/sig-autoscaling
 
@@ -315,18 +327,39 @@ kind.
 
 #### Storage
 
-* Capacity Isolation/Resource Management for Local Ephemeral Storage
-* Block Volumes Support
-* Enable containerization of mount dependencies
-* Support Attach/Detach for RWO volumes such as iSCSI, Fibre Channel and RBD
-* Volume Plugin Metrics
-* Snapshots
-* Resizing Volume Support
-* Exposing StorageClass Params To End Users (aka Provisioning configuration in PVC)
-* Mount Options to GA
-* Allow configuration of reclaim policy in StorageClass
-* Expose Storage Usage Metrics
-* PV spec refactoring for plugins that reference namespaced resources: Azure File, CephFS, iSCSI, Glusterfs
+* [stable] Mount Options
+  * Promote the ability to specify mount options for volumes from beta to stable.
+  * Introduce a new `MountOptions` field in the `PersistentVolume` spec to specify mount options (instead of an annotation).
+  * Introduce a new `MountOptions` field in the `StorageClass` spec to allow configuration of mount options for dynamically provisioned volumes.
+  enable k8s admins to control mount options being used in their clusters
+* [stable] Support Attach/Detach for RWO volumes iSCSI and Fibre Channel.
+* [stable] Expose Storage Usage Metrics
+  * Expose how much available capacity a given PV has through the Kubernetes metrics API.
+* [stable] Volume Plugin Metrics
+  * Expose success and latency metrics for all the Kubernetes mount/unmount/attach/detach/provision/delete calls through the Kubernetes metrics API.
+* [stable] Modify PV spec for Azure File, CephFS, iSCSI, Glusterfs to allow referencing namespaced resources.
+* [stable] Support customization of iSCSI initiator name per volume in iSCSI volume plugin.
+* [stable] Support WWID for volume identifier in Fibre Channel volume plugin.
+* [beta] Reclaim policy in StorageClass
+  * Allow configuration of reclaim policy in StorageClass, instead of always defaulting to `delete` for dynamically provisioned volumes.
+* [alpha] Volume resizing
+  * Enable increasing the size of a volume through the Kubernetes API.
+  * For alpha, this feature only increases the size of the underlying volume and does not do filesystem resizing.
+  * For alpha, this feature is only implmented for Gluster volumes.
+* [alpha] Provide Capacity Isolation/Resource Management for Local Ephemeral Storage
+  * Introduce ability to set container requests/limits, and node allocatable reservations for the new `ephemeral-storage` resource.
+  * The `ephemeral-storage` resource includes all the disk space space a container may use (via container overlay or scratch).
+* [alpha] Mount namespace propagation
+  * Introduce new `VolumeMount.Propagation` field for `VolumeMount` in pod containers.
+  * This field may be set to `Bidirectional` to enable a particular mount for a container to be propagated from the container to the host or other containers.
+* [alpha] Improve Flexvolume Deployment
+  * Simplify Flex volume driver deployment
+    * Automatically discover and initialize new driver files instead of requiring kubelet/controller-manager restart.
+    * Provide a sample DaemonSet that can be used to deploy Flexvolume drivers.
+* [prototype] Volume Snapshots
+  * Enable triggering the creation of a volume snapshot through the Kubernetes API.
+  * The prototype does not support quiescing before snapshot, so snapshots might be inconsistent.
+  * For the prototype phase, this feature is external to the core Kubernetes, and can be found at https://github.com/kubernetes-incubator/external-storage/tree/master/snapshot
 
 ### **Node Components**
 #### kubelet
