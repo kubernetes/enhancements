@@ -54,7 +54,9 @@ fundamental aspect of a secure cluster.
 
 [SIG Node][] is responsible for the components which support the controlled
 interactions between pods and host resources as well as managing the lifecycle
-of pods scheduled on a node. For the 1.8 release SIG Node continued to focus
+of pods scheduled on a node.
+
+For the 1.8 release SIG Node continued to focus
 on supporting the broadest set of workload types, including hardware and performance
 sensitive workloads such as data analytics and deep learning, while delivering
 incremental improvements to node reliability.
