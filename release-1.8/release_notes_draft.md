@@ -74,8 +74,8 @@ For the 1.8 release, SIG Network enhanced the NetworkPolicy API to include suppo
 ### SIG Storage
 
 [SIG Storage][] is responsible for storage and volume plugin components. For the 1.8
-release, SIG Storage extends the Kubernetes storage API beyond just making volumes
-available to enabling volume resizing and snapshotting. Beyond these alpha/prototype
+release, SIG Storage extends the Kubernetes storage API, beyond just making volumes
+available, to enabling volume resizing and snapshotting. Beyond these alpha/prototype
 features, the SIG, focused on providing users more control over their storage: with
 features like the ability to set requests & limits on ephemeral storage, the ability
 to specify mount options, more metrics, and improvments to Flex driver deployments.
@@ -336,6 +336,8 @@ kind.
 * [stable] Volume Plugin Metrics
   * Expose success and latency metrics for all the Kubernetes mount/unmount/attach/detach/provision/delete calls through the Kubernetes metrics API.
 * [stable] Modify PV spec for Azure File, CephFS, iSCSI, Glusterfs to allow referencing namespaced resources.
+* [stable] Support customization of iSCSI initiator name per volume in iSCSI volume plugin.
+* [stable] Support WWID for volume identifier in Fibre Channel volume plugin.
 * [beta] Reclaim policy in StorageClass
   * Allow configuration of reclaim policy in StorageClass, instead of always defaulting to `delete` for dynamically provisioned volumes.
 * [alpha] Volume resizing
@@ -354,7 +356,7 @@ kind.
     * Provide a sample DaemonSet that can be used to deploy Flexvolume drivers.
 * [prototype] Volume Snapshots
   * Enable triggering the creation of a volume snapshot through the Kubernetes API.
-  * The prototype does not support quiescing before snapshot, so snapshots maybe inconsistent.
+  * The prototype does not support quiescing before snapshot, so snapshots might be inconsistent.
   * For the prototype phase, this feature is external to the core Kubernetes, and can be found at https://github.com/kubernetes-incubator/external-storage/tree/master/snapshot
 
 ### **Node Components**
