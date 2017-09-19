@@ -59,17 +59,15 @@ on supporting the broadest set of workload types, including hardware and perform
 sensitive workloads such as data analytics and deep learning, while delivering
 incremental improvements to node reliability.
 
+[SIG Node]: https://github.com/kubernetes/community/tree/master/sig-node
+
 ### SIG Network
 
-The NetworkPolicy API has been enhanced to include support for policies which
-can apply to pod egress traffic, as well as a new match critera allowing
-policy rules to match on source or destination CIDR. In v1.8 both of these
-enhancements are designated as beta.
+[SIG Network][] is responsible for networking components, APIs, and plugins in Kubernetes.
 
-The kube-proxy has been enhanced to include an alpha IPVS mode in addition to
-the current iptables and userspace modes.
+For the 1.8 release, SIG Network enhanced the NetworkPolicy API to include support for pod egress traffic policies, and a match criteria that allows policy rules to match source or destination CIDR. Both of these enhancements are designated as beta. SIG Network also focused on improving the kube-proxy to include an alpha IPVS mode in addition to the current iptables and userspace modes.
 
-[SIG Node]: https://github.com/kubernetes/community/tree/master/sig-node
+[SIG Network]: https://github.com/kubernetes/community/tree/master/sig-network
 
 ### SIG Autoscaling
 
