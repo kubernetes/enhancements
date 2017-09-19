@@ -328,6 +328,8 @@ kind.
 
 * [alpha] Add support for dynamic Kubelet configuration ([#281](https://github.com/kubernetes/features/issues/281), [@mtaufen](https://github.com/mtaufen))
 
+* [stable] CRI-O support, it has passed all e2es. [@mrunalp]
+
 #### Autoscaling and Metrics
 
 * Support for custom metrics in the Horizontal Pod Autoscaler is moving to
