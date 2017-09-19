@@ -52,14 +52,22 @@ fundamental aspect of a secure cluster.
 
 ### SIG Node
 
-[SIG Node][] is responsible for the components which support the controlled 
+[SIG Node][] is responsible for the components which support the controlled
 interactions between pods and host resources as well as managing the lifecycle
 of pods scheduled on a node. For the 1.8 release SIG Node continued to focus
 on supporting the broadest set of workload types, including hardware and performance
 sensitive workloads such as data analytics and deep learning, while delivering
 incremental improvements to node reliability.
 
+### SIG Network
 
+The NetworkPolicy API has been enhanced to include support for policies which
+can apply to pod egress traffic, as well as a new match critera allowing
+policy rules to match on source or destination CIDR. In v1.8 both of these
+enhancements are designated as beta.
+
+The kube-proxy has been enhanced to include an alpha IPVS mode in addition to
+the current iptables and userspace modes.
 
 [SIG Node]: https://github.com/kubernetes/community/tree/master/sig-node
 
