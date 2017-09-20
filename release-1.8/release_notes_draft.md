@@ -50,6 +50,19 @@ promotion indicates RBAC's production readiness and adoption. Today, the
 authorizer is turned on by default by many distributions of Kubernetes, and is a
 fundamental aspect of a secure cluster.
 
+### SIG Cluster Lifecycle
+
+[SIG Cluster Lifecycle][] is responsible for the user experience of deploying,
+upgrading, and deleting clusters.
+
+For the 1.8 release SIG Cluster Lifecycle continued to focus on expanding the
+capabilities of kubeadm, which is both a user-facing tool to manage clusters
+and a building block for higher-level provisioning systems. Starting
+with the 1.8 release kubeadm supports a new upgrade command and has alpha
+support for self hosting the cluster control plane.
+
+[SIG Cluster Lifecycle]: https://github.com/kubernetes/community/tree/master/sig-cluster-lifecycle
+
 ### SIG Node
 
 [SIG Node][] is responsible for the components which support the controlled
