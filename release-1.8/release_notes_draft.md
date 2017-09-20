@@ -5,12 +5,12 @@ please check out the [release notes guidance][] issue.
 
 - [ ] sig-api-machinery
 - [ ] sig-apps
-- [ ] sig-architecture
+- [x] sig-architecture
 - [x] sig-auth
 - [x] sig-autoscaling
-- [ ] sig-aws
-- [ ] sig-azure
-- [ ] sig-big-data
+- [x] sig-aws
+- [x] sig-azure
+- [x] sig-big-data
 - [x] sig-cli
 - [x] sig-cluster-lifecycle
 - [x] sig-cluster-ops
@@ -30,8 +30,8 @@ please check out the [release notes guidance][] issue.
 - [x] sig-service-catalog
 - [x] sig-storage
 - [x] sig-testing
-- [ ] sig-ui
-- [ ] sig-windows
+- [x] sig-ui
+- [x] sig-windows
 
 [release notes guidance]: https://github.com/kubernetes/community/issues/484
 
