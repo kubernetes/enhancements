@@ -29,7 +29,7 @@ please check out the [release notes guidance][] issue.
 - [x] sig-scheduling
 - [x] sig-service-catalog
 - [x] sig-storage
-- [ ] sig-testing
+- [x] sig-testing
 - [ ] sig-ui
 - [ ] sig-windows
 
