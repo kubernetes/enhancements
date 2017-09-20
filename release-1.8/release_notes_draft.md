@@ -37,18 +37,23 @@ please check out the [release notes guidance][] issue.
 
 ## **Major Themes**
 
-- The kubernetes workloads API (the DaemonSet, Deployment, ReplicaSet, and
-StatefulSet kinds) have been moved to the new apps/v1beta2 group version. This
-is the current version of the API, and the version we intend to promote to
-GA in future releases. This version of the API introduces several deprecations
-and behavioral changes, but its intention is to provide a stable, consistent
-API surface for promotion.
+- The following Kubernetes objects are now part of the new apps/v1beta2 group and version:
+DaemonSet, Deployment, ReplicaSet, StatefulSet.
 
 - The roles based access control (RBAC) API group for managing API authorization
 has been promoted to v1. No changes were made to the API from v1beta1. This
 promotion indicates RBAC's production readiness and adoption. Today, the
 authorizer is turned on by default by many distributions of Kubernetes, and is a
 fundamental aspect of a secure cluster.
+
+### SIG Apps
+
+[SIG Apps][] focuses on the Kubernetes APIs and external tools required to deploy and operate a wide variety of workloads.
+
+For the 1.8 release, SIG Apps moved the kubernetes workloads API to the new apps/v1beta2 group and version. Though apps/v1beta2 group introduces several deprecations and behavioral changes, it provides developers with a stable and consistent API surface to build applications in Kubernetes. SIG Apps intends to promote this version to GA in a future release.
+
+
+[SIG Apps]: https://github.com/kubernetes/community/tree/master/sig-apps
 
 ### SIG Node
 
