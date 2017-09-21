@@ -4,7 +4,7 @@ you are finished. For guidance about what should have a release note
 please check out the [release notes guidance][] issue.
 
 - [ ] sig-api-machinery
-- [ ] sig-apps
+- [x] sig-apps
 - [x] sig-architecture
 - [x] sig-auth
 - [x] sig-autoscaling
@@ -174,6 +174,9 @@ pipeline.
 * The `batch/v2alpha1.ScheduledJobs` has been removed.  Migrate to `batch/v1beta.CronJobs`
   to continue managing time based jobs.
 
+* The APIs `rbac/v1alpha1`, `settings/v1alpha1`, and `scheduling/v1alpha1` are
+  disabled by default.
+
 ## **Known Issues**
 
 ## **Deprecations**
@@ -278,6 +281,8 @@ kind.
  defaulting is disabled.
  - The default spec.revisionHistoryLimit for all applicable kinds in the
  apps/v1beta2 group version has set to 10.
+ - The default spec.successfulJobsHistoryLimit is 3 and spec.failedJobsHistoryLimit
+   is 1 on CronJobs.
 
 ### [Workload API (batch)]
 - CronJob has been promoted to `batch/v1beta1` ([#41039](https://github.com/kubernetes/kubernetes/issues/41039), [@soltysh](https://github.com/soltysh)).
