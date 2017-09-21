@@ -4,10 +4,10 @@
 |  Secondary | Caleb Miles (calebamiles) | |
 |  Features | Ihor Dvoretskyi (idvoretskyi) | |
 |  Branch Manager | Adam Worrall (abgworrall) | |
-|  Test Infra | Sen Lu (krzyzacy) | | |
+|  Test Infra | Sen Lu (krzyzacy) | Aaron Crickenberger (spiffxp) |
 |  Docs | Steve Perry (steveperry-53) | Zach Corleissen (zcorleissen) |
 |  Release Notes | Radhika Puthiyetath (radhikapc) | Jennifer Rondeau (jrondeau) |
-|  Bugs | Aaron Crickenberger (spiffxp) | | |
-|  Upgrade Testing / CI Signal| Eric Chiang (ericchiang) | | |
+|  Bugs | Aaron Crickenberger (spiffxp) | Davanum Srinivas (dims) |
+|  Upgrade Testing / CI Signal| Eric Chiang (ericchiang) | |
 |  Patch Release Manager | Joe Betz (jpbetz) | |
 |  Marketing coordinator | Swarna Podila (swarnap) | |
