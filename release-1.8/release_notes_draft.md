@@ -25,7 +25,7 @@ please check out the [release notes guidance][] issue.
 - [x] sig-openstack
 - [x] sig-product-management
 - [x] sig-release
-- [ ] sig-scalability
+- [x] sig-scalability
 - [x] sig-scheduling
 - [x] sig-service-catalog
 - [x] sig-storage
@@ -128,6 +128,21 @@ pipeline.
 
 
 [SIG Instrumentation]: https://github.com/kubernetes/community/tree/master/sig-instrumentation
+
+### SIG Scalability
+
+[SIG Scalability][] is responsible for scalability testing, measuring and
+improving system performance, and answering questions related to scalability.
+
+For the 1.8 release, SIG Scalability focused on automating large cluster
+scalability testing in a continuous integration (CI) environment. In addition
+to defining a concrete process for scalability testing, SIG Scalability created
+documentation for the current scalability thresholds and defined a new set of
+Service Level Indicators (SLIs) and Service Level Objectives (SLOs) spanning
+across the system. Here's the release [scalability validation report].
+
+[SIG Scalability]: https://github.com/kubernetes/community/tree/master/sig-scalability
+[scalability validation report]: https://github.com/kubernetes/features/tree/master/release-1.8/scalability_validation_report.md
 
 ## **Action Required Before Upgrading**
 
