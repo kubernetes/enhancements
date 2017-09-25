@@ -226,7 +226,7 @@ across the system. Here's the release [scalability validation report].
   extensions/v1beta1 group version.
 
 - The `kubernetes.io/created-by` annotation is now deprecated and will be removed in v1.9.
-  Use [ControllerRef](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/controller-ref.md)
+  Use [ControllerRef](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/api-machinery/controller-ref.md)
   instead to determine which controller, if any, owns an object.
 
  - The `batch/v2alpha1.CronJob` has been deprecated in favor of `batch/v1beta1`.
@@ -385,7 +385,7 @@ kind.
 - Add German translation for kubectl.
 
 #### Scheduling
-* [alpha] Support pod priority and creation of PriorityClasses ([user doc](https://kubernetes.io/docs/concepts/configuration/pod-priority-preemption/))([design doc](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/pod-priority-api.md))
+* [alpha] Support pod priority and creation of PriorityClasses ([user doc](https://kubernetes.io/docs/concepts/configuration/pod-priority-preemption/))([design doc](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/scheduling/pod-priority-api.md))
 * [alpha] Support priority-based preemption of pods ([user doc](https://kubernetes.io/docs/concepts/configuration/pod-priority-preemption/))([design doc](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/pod-preemption.md))
 * [alpha] Taint nodes by condition ([design doc](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/taint-node-by-condition.md))
 
