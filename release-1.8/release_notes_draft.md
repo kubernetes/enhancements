@@ -253,6 +253,12 @@ across the system. Here's the release [scalability validation report].
   - In v1.9, the default will be `""`, which means no built-in cloud provider extension will be enabled by default.
   - If you want to use an out-of-tree cloud provider in either version, you should use `--cloud-provider=external`
   - [PR #51312](https://github.com/kubernetes/kubernetes/pull/51312) and [announcement](https://groups.google.com/forum/#!topic/kubernetes-dev/UAxwa2inbTA)
+- The `PersistentVolumeLabel` admission controller in the API Server is deprecated
+  - The replacement is running a cloud-specific controller-manager (often referred to as `cloud-controller-manager`) with the
+    `PersistentVolumeLabel` controller enabled. This new controller loop does exactly what this admission controller used to do.
+  - Do not use this admission controller in the configuration files and scripts unless you are dependent on the **in-tree** GCE and AWS cloud providers.
+  - The `PersistentVolumeLabel` admission controller will be removed in a future Kubernetes version, when the out-of-tree versions of the
+    GCE and AWS cloud providers move to GA (these are marked alpha in 1.9)
 
 ### Autoscaling
 
