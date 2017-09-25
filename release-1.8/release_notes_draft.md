@@ -168,16 +168,16 @@ across the system. Here's the release [scalability validation report].
   version. If you have deployed Heapster in aggregated API server mode,
   ensure that you upgrade Heapster as well.
 
-* Advanced auditing has graduated from `v1alpha1` to `v1beta1` with the
-  following changes to the default behavior.
-  * Advanced auditing is the default auditing mechanism, which changes the auditing behavior
-  * The `--audit-policy-file` is now required to enable auditing unless the `AdvancedAudit`
+* Advanced auditing has graduated from `v1alpha1` to `v1beta1`, and is now the default auditing
+  mechanism. It introduces the following changes:
+  * The `--audit-policy-file` is now required unless the `AdvancedAudit`
     feature is explicitly turned off on the API server. (`--feature-gates=AdvancedAudit=false`)
-  * The webhook and log file now output the `v1beta1` event format.
   * The audit log file defaults to JSON encoding when using the advanced
     auditing feature gate.
   * The `--audit-policy-file` requires `kind` and `apiVersion` fields
     specifying what format version the `Policy` is using.
+  * The webhook and log file now output the `v1beta1` event format.
+  * For more details, see [Advanced audit](https://kubernetes.io/docs/tasks/debug-application-cluster/audit/#advanced-audit)
 
 * The deprecated ThirdPartyResource (TPR) API has been removed.
   To avoid losing your TPR data, you must
