@@ -170,8 +170,8 @@ across the system. Here's the release [scalability validation report].
 
 * Advanced auditing has graduated from `v1alpha1` to `v1beta1` with the
   following changes to the default behavior.
-  * Advanced auditing is enabled by default.
-  * The `--audit-policy-file` is now required unless the `AdvancedAudit`
+  * Advanced auditing is the default auditing mechanism, which changes the auditing behavior
+  * The `--audit-policy-file` is now required to enable auditing unless the `AdvancedAudit`
     feature is explicitly turned off on the API server. (`--feature-gates=AdvancedAudit=false`)
   * The webhook and log file now output the `v1beta1` event format.
   * The audit log file defaults to JSON encoding when using the advanced
