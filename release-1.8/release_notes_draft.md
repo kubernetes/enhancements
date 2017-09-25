@@ -99,6 +99,18 @@ For the 1.8 release, SIG Network enhanced the NetworkPolicy API to include suppo
 
 [SIG Network]: https://github.com/kubernetes/community/tree/master/sig-network
 
+### SIG Scheduling
+
+[SIG Scheduling][] is responsible for generic scheduler and scheduling components.
+
+For the 1.8 release, SIG Scheduling extends the concept of cluster sharing by introducing
+pod priority and preemption. These features allow mixing various types of workloads in a single cluster and help reach
+higher levels of resource utilization and availability which were not acheivable in the past.
+These features are in alpha. SIG Scheduling also improved the internal APIs of scheduling and made them easier to use
+by other components and external schedulers.
+
+[SIG Scheduling]: https://github.com/kubernetes/community/tree/master/sig-scheduling
+
 ### SIG Storage
 
 [SIG Storage][] is responsible for storage and volume plugin components.
