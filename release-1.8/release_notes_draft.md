@@ -37,14 +37,11 @@ please check out the [release notes guidance][] issue.
 
 ## **Major Themes**
 
-- The following Kubernetes objects are now part of the new apps/v1beta2 group and version: DaemonSet, Deployment, ReplicaSet, StatefulSet.
+Kubernetes is developed by community members organized into
+[Special Interest Groups][]. For the 1.8 Release each SIG has provided the
+themes which guided their work.
 
-- The roles based access control (RBAC) API group for managing API authorization
-has been promoted to v1. No changes were made to the API from v1beta1. This
-promotion indicates RBAC's production readiness and adoption. Today, the
-authorizer is turned on by default by many distributions of Kubernetes, and is a
-fundamental aspect of a secure cluster.
-
+[Special Interest Groups]: https://github.com/kubernetes/community/blob/master/sig-list.md
 
 ### SIG Apps
 
