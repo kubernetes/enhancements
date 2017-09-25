@@ -47,7 +47,7 @@ themes which guided their work.
 
 [SIG Apps][] focuses on the Kubernetes APIs and external tools required to deploy and operate a wide variety of workloads.
 
-For the 1.8 release, SIG Apps moved the kubernetes workloads API to the new apps/v1beta2 group and version. Though apps/v1beta2 group introduces several deprecations and behavioral changes, it provides developers with a stable and consistent API surface to build applications in Kubernetes. SIG Apps intends to promote this version to GA in a future release.
+For the 1.8 release, SIG Apps moved the kubernetes workloads API to the new apps/v1beta2 group and version. This includes DaemonSet, Deployment, ReplicaSet, and StatefulSet. Though apps/v1beta2 group introduces several deprecations and behavioral changes, it provides developers with a stable and consistent API surface to build applications in Kubernetes. SIG Apps intends to promote this version to GA in a future release.
 
 
 [SIG Apps]: https://github.com/kubernetes/community/tree/master/sig-apps
