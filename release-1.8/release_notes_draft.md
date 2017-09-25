@@ -20,7 +20,7 @@ please check out the [release notes guidance][] issue.
 - [x] sig-governance.md
 - [x] sig-instrumentation
 - [x] sig-network
-- [ ] sig-node
+- [x] sig-node
 - [x] sig-on-premise
 - [x] sig-openstack
 - [x] sig-product-management
@@ -434,6 +434,8 @@ kind.
 * [alpha] Add support for dynamic Kubelet configuration ([#281](https://github.com/kubernetes/features/issues/281), [@mtaufen](https://github.com/mtaufen))
 
 * [alpha] Add CRI validation test suite and CRI CLI ([#292](https://github.com/kubernetes/features/issues/292), [@feiskyer](https://github.com/feiskyer))
+
+* [alpha] Add the Hardware Device Plugins API ([#368](https://github.com/kubernetes/features/issues/368), [@vishh], [@RenaudWasTaken])
 
 * [stable] CRI-O support, it has passed all e2es. [@mrunalp]
 
