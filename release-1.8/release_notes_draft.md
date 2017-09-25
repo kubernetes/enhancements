@@ -430,6 +430,8 @@ kind.
 
 * [alpha] Add support for dynamic Kubelet configuration ([#281](https://github.com/kubernetes/features/issues/281), [@mtaufen](https://github.com/mtaufen))
 
+* [alpha] Add CRI validation test suite and CRI CLI ([#292](https://github.com/kubernetes/features/issues/292), [@feiskyer](https://github.com/feiskyer))
+
 * [stable] CRI-O support, it has passed all e2es. [@mrunalp]
 
 #### Autoscaling and Metrics
