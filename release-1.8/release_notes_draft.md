@@ -37,30 +37,29 @@ please check out the [release notes guidance][] issue.
 
 ## **Major Themes**
 
-Kubernetes is developed by community members organized into
-[Special Interest Groups][]. For the 1.8 Release each SIG has provided the
-themes which guided their work.
+Kubernetes is developed by community members whose work is organized into
+[Special Interest Groups][]. For the 1.8 release, each SIG provides the
+themes that guided their work.
 
 [Special Interest Groups]: https://github.com/kubernetes/community/blob/master/sig-list.md
 
 ### SIG Apps
 
-[SIG Apps][] focuses on the Kubernetes APIs and external tools required to deploy and operate a wide variety of workloads.
+[SIG Apps][] focuses on the Kubernetes APIs and the external tools that are required to deploy and operate Kubernetes workloads.
 
-For the 1.8 release, SIG Apps moved the kubernetes workloads API to the new apps/v1beta2 group and version. This includes DaemonSet, Deployment, ReplicaSet, and StatefulSet. Though apps/v1beta2 group introduces several deprecations and behavioral changes, it provides developers with a stable and consistent API surface to build applications in Kubernetes. SIG Apps intends to promote this version to GA in a future release.
+For the 1.8 release, SIG Apps moved the Kubernetes workloads API to the new apps/v1beta2 group and version. The DaemonSet, Deployment, ReplicaSet, and StatefulSet objects are affected by this change. The new apps/v1beta2 group and version provide a stable and consistent API surface for building applications in Kubernetes. For details about deprecations and behavioral changes, see [Notable Features](#notable-features). SIG Apps intends to promote this version to GA in a future release.
 
 
 [SIG Apps]: https://github.com/kubernetes/community/tree/master/sig-apps
 
 ### SIG Auth
 
-[SIG Auth][] is responsible for Kubernetes authentication, authorization, and
+[SIG Auth][] is responsible for Kubernetes authentication and authorization, and for
 cluster security policies.
 
-For the 1.8 release SIG Auth focused on stablizing existing features introduced
-in previous releases. RBAC was promoted to v1 and advanced auditing was promoted
-to beta. Encryption of resources at rest, which remained alpha, began exploring
-integrations with external Key Management Systems.
+For the 1.8 release, SIG Auth focused on stablizing existing features that were introduced
+in previous releases. RBAC was moved from beta to v1, and advanced auditing was moved from alpha
+to beta. Encryption of resources stored on disk (resources at rest) remained in alpha, and the SIG began exploring integrations with external key management systems.
 
 [SIG Auth]: https://github.com/kubernetes/community/tree/master/sig-auth
 
@@ -69,25 +68,24 @@ integrations with external Key Management Systems.
 [SIG Cluster Lifecycle][] is responsible for the user experience of deploying,
 upgrading, and deleting clusters.
 
-For the 1.8 release SIG Cluster Lifecycle continued to focus on expanding the
+For the 1.8 release, SIG Cluster Lifecycle continued to focus on expanding the
 capabilities of kubeadm, which is both a user-facing tool to manage clusters
 and a building block for higher-level provisioning systems. Starting
-with the 1.8 release kubeadm supports a new upgrade command and has alpha
+with the 1.8 release, kubeadm supports a new upgrade command and includes alpha
 support for self hosting the cluster control plane.
 
 [SIG Cluster Lifecycle]: https://github.com/kubernetes/community/tree/master/sig-cluster-lifecycle
 
-
 ### SIG Node
 
-[SIG Node][] is responsible for the components which support the controlled
-interactions between pods and host resources as well as managing the lifecycle
+[SIG Node][] is responsible for the components that support the controlled
+interactions between pods and host resources, and manage the lifecycle
 of pods scheduled on a node.
 
-For the 1.8 release SIG Node continued to focus
-on supporting the broadest set of workload types, including hardware and performance
-sensitive workloads such as data analytics and deep learning, while delivering
-incremental improvements to node reliability.
+For the 1.8 release, SIG Node continued to focus
+on a broad set of workload types, including hardware and performance
+sensitive workloads such as data analytics and deep learning. The SIG also
+delivered incremental improvements to node reliability.
 
 [SIG Node]: https://github.com/kubernetes/community/tree/master/sig-node
 
@@ -95,7 +93,8 @@ incremental improvements to node reliability.
 
 [SIG Network][] is responsible for networking components, APIs, and plugins in Kubernetes.
 
-For the 1.8 release, SIG Network enhanced the NetworkPolicy API to include support for pod egress traffic policies, and a match criteria that allows policy rules to match source or destination CIDR. Both of these enhancements are designated as beta. SIG Network also focused on improving the kube-proxy to include an alpha IPVS mode in addition to the current iptables and userspace modes.
+For the 1.8 release, SIG Network enhanced the NetworkPolicy API to support pod egress traffic policies.
+The SIG also provided match criteria that allow policy rules to match a source or destination CIDR. Both features are in beta. SIG Network also improved the kube-proxy to include an alpha IPVS mode in addition to the current iptables and userspace modes.
 
 [SIG Network]: https://github.com/kubernetes/community/tree/master/sig-network
 
@@ -103,11 +102,10 @@ For the 1.8 release, SIG Network enhanced the NetworkPolicy API to include suppo
 
 [SIG Scheduling][] is responsible for generic scheduler and scheduling components.
 
-For the 1.8 release, SIG Scheduling extends the concept of cluster sharing by introducing
-pod priority and preemption. These features allow mixing various types of workloads in a single cluster and help reach
-higher levels of resource utilization and availability which were not acheivable in the past.
-These features are in alpha. SIG Scheduling also improved the internal APIs of scheduling and made them easier to use
-by other components and external schedulers.
+For the 1.8 release, SIG Scheduling extended the concept of cluster sharing by introducing
+pod priority and POD preemption. These features allow mixing various types of workloads in a single cluster, and help reach
+higher levels of resource utilization and availability.
+These features are in alpha. SIG Scheduling also improved the internal APIs for scheduling and made them easier for other components and external schedulers to use.
 
 [SIG Scheduling]: https://github.com/kubernetes/community/tree/master/sig-scheduling
 
@@ -115,12 +113,10 @@ by other components and external schedulers.
 
 [SIG Storage][] is responsible for storage and volume plugin components.
 
-For the 1.8 release, SIG Storage extends the Kubernetes storage API, beyond just
-making volumes available, to enabling volume resizing and snapshotting. Beyond these
-alpha/prototype features, the SIG, focused on providing users more control over their
-storage: with features like the ability to set requests & limits on ephemeral storage,
-the ability to specify mount options, more metrics, and improvements to Flex driver
-deployments.
+For the 1.8 release, SIG Storage extended the Kubernetes storage API. In addition to providing simple
+volume availability, the API now enables volume resizing and snapshotting. These features are in alpha. 
+The SIG also focused on providing more control over storage: the ability to set requests and
+limits on ephemeral storage, the ability to specify mount options, more metrics, and improvements to Flex driver deployments.
 
 [SIG Storage]: https://github.com/kubernetes/community/tree/master/sig-storage
 
@@ -129,10 +125,10 @@ deployments.
 [SIG Autoscaling][] is responsible for autoscaling-related components,
 such as the Horizontal Pod Autoscaler and Cluster Autoscaler.
 
-For the 1.8 release, SIG Autoscaling continued focused on stabilizing
-features introduced in previous releases, such as the new version of the
-Horizontal Pod Autoscaler API (with support for custom metrics), as well
-as the Cluster Autoscaler (with improved performance and error reporting).
+For the 1.8 release, SIG Autoscaling continued to focus on stabilizing
+features introduced in previous releases: the new version of the
+Horizontal Pod Autoscaler API, which supports custom metrics, and
+the Cluster Autoscaler, which provides improved performance and error reporting.
 
 [SIG Autoscaling]: https://github.com/kubernetes/community/tree/master/sig-autoscaling
 
@@ -142,11 +138,10 @@ as the Cluster Autoscaler (with improved performance and error reporting).
 collection.
 
 For the 1.8 release, SIG Instrumentation focused on stabilizing the APIs
-and components required to support the new version of the Horizontal Pod
+and components that are required to support the new version of the Horizontal Pod
 Autoscaler API: the resource metrics API, custom metrics API, and
-metrics-server, the new replacement for Heapster in the default monitoring
+metrics-server, which is the new replacement for Heapster in the default monitoring
 pipeline.
-
 
 [SIG Instrumentation]: https://github.com/kubernetes/community/tree/master/sig-instrumentation
 
@@ -156,11 +151,11 @@ pipeline.
 improving system performance, and answering questions related to scalability.
 
 For the 1.8 release, SIG Scalability focused on automating large cluster
-scalability testing in a continuous integration (CI) environment. In addition
-to defining a concrete process for scalability testing, SIG Scalability created
-documentation for the current scalability thresholds and defined a new set of
-Service Level Indicators (SLIs) and Service Level Objectives (SLOs) spanning
-across the system. Here's the release [scalability validation report].
+scalability testing in a continuous integration (CI) environment. The SIG
+defined a concrete process for scalability testing, created
+documentation for the current scalability thresholds, and defined a new set of
+Service Level Indicators (SLIs) and Service Level Objectives (SLOs) for the system. 
+Here's the release [scalability validation report].
 
 [SIG Scalability]: https://github.com/kubernetes/community/tree/master/sig-scalability
 [scalability validation report]: https://github.com/kubernetes/features/tree/master/release-1.8/scalability_validation_report.md
