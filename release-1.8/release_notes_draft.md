@@ -43,6 +43,15 @@ themes that guided their work.
 
 [Special Interest Groups]: https://github.com/kubernetes/community/blob/master/sig-list.md
 
+### SIG API Machinery
+
+[SIG API Machinery][] Covers all aspects of API server, persistent layer (etcd), and client libraries.
+
+For the 1.8 release, SIG API Machinery focus on stability and ecosystem enablement features such as paging support for list calls, validation for custom resources, and client side event spam filtering.
+
+
+[SIG API Machinery]: https://github.com/kubernetes/community/tree/master/sig-api-machinery
+
 ### SIG Apps
 
 [SIG Apps][] focuses on the Kubernetes APIs and the external tools that are required to deploy and operate Kubernetes workloads.
