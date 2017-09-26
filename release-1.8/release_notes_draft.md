@@ -425,6 +425,8 @@ kind.
   * Add hugepages support
   * Add CRI-O support
 
+* Sharing a PID namespace between containers in a pod is disabled by default in 1.8. To enable for a node, use the --docker-disable-shared-pid=false kubelet flag. Note that PID namespace sharing requires docker >= 1.13.1.
+
 * Implement StatsProvider interface using CRI stats [@yguo0905]
 
 * Fixed issues for the eviction manager
