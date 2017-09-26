@@ -45,19 +45,17 @@ themes that guided their work.
 
 ### SIG API Machinery
 
-[SIG API Machinery][] Covers all aspects of API server, persistent layer (etcd), and client libraries.
+[SIG API Machinery][] is responsible for all aspects of the API server: API registration and discovery, generic API CRUD semantics, admission control, encoding/decoding, conversion, defaulting, persistence layer (etcd), OpenAPI, third-party resources, garbage collection, and client libraries.
 
-For the 1.8 release, SIG API Machinery focus on stability and ecosystem enablement features such as paging support for list calls, validation for custom resources, and client side event spam filtering.
+For the 1.8 release, SIG API Machinery focused on stability and on ecosystem enablement. Features include the ability to break large LIST calls into smaller chunks, improved support for API server customization with either custom API servers or Custom Resource Definitions, and client side event spam filtering.
 
-
-[SIG API Machinery]: https://github.com/kubernetes/community/tree/master/sig-api-machinery
+[Sig API Machinery]: https://github.com/kubernetes/community/tree/master/sig-api-machinery
 
 ### SIG Apps
 
 [SIG Apps][] focuses on the Kubernetes APIs and the external tools that are required to deploy and operate Kubernetes workloads.
 
 For the 1.8 release, SIG Apps moved the Kubernetes workloads API to the new apps/v1beta2 group and version. The DaemonSet, Deployment, ReplicaSet, and StatefulSet objects are affected by this change. The new apps/v1beta2 group and version provide a stable and consistent API surface for building applications in Kubernetes. For details about deprecations and behavioral changes, see [Notable Features](#notable-features). SIG Apps intends to promote this version to GA in a future release.
-
 
 [SIG Apps]: https://github.com/kubernetes/community/tree/master/sig-apps
 
@@ -72,6 +70,18 @@ to beta. Encryption of resources stored on disk (resources at rest) remained in 
 
 [SIG Auth]: https://github.com/kubernetes/community/tree/master/sig-auth
 
+### SIG Autoscaling
+
+[SIG Autoscaling][] is responsible for autoscaling-related components,
+such as the Horizontal Pod Autoscaler and Cluster Autoscaler.
+
+For the 1.8 release, SIG Autoscaling continued to focus on stabilizing
+features introduced in previous releases: the new version of the
+Horizontal Pod Autoscaler API, which supports custom metrics, and
+the Cluster Autoscaler, which provides improved performance and error reporting.
+
+[SIG Autoscaling]: https://github.com/kubernetes/community/tree/master/sig-autoscaling
+
 ### SIG Cluster Lifecycle
 
 [SIG Cluster Lifecycle][] is responsible for the user experience of deploying,
@@ -84,6 +94,19 @@ with the 1.8 release, kubeadm supports a new upgrade command and includes alpha
 support for self hosting the cluster control plane.
 
 [SIG Cluster Lifecycle]: https://github.com/kubernetes/community/tree/master/sig-cluster-lifecycle
+
+### SIG Instrumentation
+
+[SIG Instrumentation][] is responsible for metrics production and
+collection.
+
+For the 1.8 release, SIG Instrumentation focused on stabilizing the APIs
+and components that are required to support the new version of the Horizontal Pod
+Autoscaler API: the resource metrics API, custom metrics API, and
+metrics-server, which is the new replacement for Heapster in the default monitoring
+pipeline.
+
+[SIG Instrumentation]: https://github.com/kubernetes/community/tree/master/sig-instrumentation
 
 ### SIG Node
 
@@ -107,12 +130,27 @@ The SIG also provided match criteria that allow policy rules to match a source o
 
 [SIG Network]: https://github.com/kubernetes/community/tree/master/sig-network
 
+### SIG Scalability
+
+[SIG Scalability][] is responsible for scalability testing, measuring and
+improving system performance, and answering questions related to scalability.
+
+For the 1.8 release, SIG Scalability focused on automating large cluster
+scalability testing in a continuous integration (CI) environment. The SIG
+defined a concrete process for scalability testing, created
+documentation for the current scalability thresholds, and defined a new set of
+Service Level Indicators (SLIs) and Service Level Objectives (SLOs) for the system. 
+Here's the release [scalability validation report].
+
+[SIG Scalability]: https://github.com/kubernetes/community/tree/master/sig-scalability
+[scalability validation report]: https://github.com/kubernetes/features/tree/master/release-1.8/scalability_validation_report.md
+
 ### SIG Scheduling
 
 [SIG Scheduling][] is responsible for generic scheduler and scheduling components.
 
 For the 1.8 release, SIG Scheduling extended the concept of cluster sharing by introducing
-pod priority and POD preemption. These features allow mixing various types of workloads in a single cluster, and help reach
+pod priority and pod preemption. These features allow mixing various types of workloads in a single cluster, and help reach
 higher levels of resource utilization and availability.
 These features are in alpha. SIG Scheduling also improved the internal APIs for scheduling and made them easier for other components and external schedulers to use.
 
@@ -128,46 +166,6 @@ The SIG also focused on providing more control over storage: the ability to set 
 limits on ephemeral storage, the ability to specify mount options, more metrics, and improvements to Flex driver deployments.
 
 [SIG Storage]: https://github.com/kubernetes/community/tree/master/sig-storage
-
-### SIG Autoscaling
-
-[SIG Autoscaling][] is responsible for autoscaling-related components,
-such as the Horizontal Pod Autoscaler and Cluster Autoscaler.
-
-For the 1.8 release, SIG Autoscaling continued to focus on stabilizing
-features introduced in previous releases: the new version of the
-Horizontal Pod Autoscaler API, which supports custom metrics, and
-the Cluster Autoscaler, which provides improved performance and error reporting.
-
-[SIG Autoscaling]: https://github.com/kubernetes/community/tree/master/sig-autoscaling
-
-### SIG Instrumentation
-
-[SIG Instrumentation][] is responsible for metrics production and
-collection.
-
-For the 1.8 release, SIG Instrumentation focused on stabilizing the APIs
-and components that are required to support the new version of the Horizontal Pod
-Autoscaler API: the resource metrics API, custom metrics API, and
-metrics-server, which is the new replacement for Heapster in the default monitoring
-pipeline.
-
-[SIG Instrumentation]: https://github.com/kubernetes/community/tree/master/sig-instrumentation
-
-### SIG Scalability
-
-[SIG Scalability][] is responsible for scalability testing, measuring and
-improving system performance, and answering questions related to scalability.
-
-For the 1.8 release, SIG Scalability focused on automating large cluster
-scalability testing in a continuous integration (CI) environment. The SIG
-defined a concrete process for scalability testing, created
-documentation for the current scalability thresholds, and defined a new set of
-Service Level Indicators (SLIs) and Service Level Objectives (SLOs) for the system. 
-Here's the release [scalability validation report].
-
-[SIG Scalability]: https://github.com/kubernetes/community/tree/master/sig-scalability
-[scalability validation report]: https://github.com/kubernetes/features/tree/master/release-1.8/scalability_validation_report.md
 
 ## Before Upgrading
 
