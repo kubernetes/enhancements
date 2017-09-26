@@ -165,68 +165,43 @@ across the system. Here's the release [scalability validation report].
 [SIG Scalability]: https://github.com/kubernetes/community/tree/master/sig-scalability
 [scalability validation report]: https://github.com/kubernetes/features/tree/master/release-1.8/scalability_validation_report.md
 
-## **Action Required Before Upgrading**
+## Before Upgrading
 
-* The autoscaling/v2alpha1 API has graduated to autoscaling/v2beta1.  The
-  form remains unchanged.  HorizontalPodAutoscalers making use of features
-  from the autoscaling/v2alpha1 API will need to be migrated to
-  autoscaling/v2beta1 to ensure that the new features are properly
-  persisted.
+Consider the following changes, limitations, and guidelines before you upgrade:
 
-* The metrics APIs, `custom-metrics.metrics.k8s.io` and `metrics`, have
-  graduated from `v1alpha1` to `v1beta1`, and been renamed to
-  `custom.metrics.k8s.io` and `metrics.k8s.io`, respectively. If you have
-  deployed a custom metrics adapter, ensure that it supports the new API
-  version. If you have deployed Heapster in aggregated API server mode,
-  ensure that you upgrade Heapster as well.
+* The `autoscaling/v2alpha1` API is now at `autoscaling/v2beta1`. However, the form of the API remains unchanged. Migrate the `HorizontalPodAutoscaler` resources to `autoscaling/v2beta1` to persist the `HorizontalPodAutoscaler` changes introduced in `autoscaling/v2alpha1`. The Horizontal Pod Autoscaler changes include support for status conditions, and autoscaling on memory and custom metrics.
 
-* Advanced auditing has graduated from `v1alpha1` to `v1beta1`, and is now the default auditing
-  mechanism. It introduces the following changes:
-  * The `--audit-policy-file` is now required unless the `AdvancedAudit`
-    feature is explicitly turned off on the API server. (`--feature-gates=AdvancedAudit=false`)
-  * The audit log file defaults to JSON encoding when using the advanced
-    auditing feature gate.
-  * The `--audit-policy-file` requires `kind` and `apiVersion` fields
-    specifying what format version the `Policy` is using.
+* The metrics APIs, `custom-metrics.metrics.k8s.io` and `metrics`, were moved from `v1alpha1` to `v1beta1`, and renamed to `custom.metrics.k8s.io` and `metrics.k8s.io`, respectively. If you have deployed a custom metrics adapter, ensure that it supports the new API version. If you have deployed Heapster in aggregated API server mode, upgrade Heapster to support the latest API version.
+
+* Advanced auditing is the default auditing mechanism at `v1beta1`. The new version introduces the following changes:
+
+  * The `--audit-policy-file` option is required if the `AdvancedAudit` feature is not explicitly turned off (`--feature-gates=AdvancedAudit=false`) on the API server.
+  * The audit log file defaults to JSON encoding when using the advanced auditing feature gate.
+  * The `--audit-policy-file` option requires `kind` and `apiVersion` fields specifying what format version the `Policy` is using.
   * The webhook and log file now output the `v1beta1` event format.
-  * For more details, see [Advanced audit](https://kubernetes.io/docs/tasks/debug-application-cluster/audit/#advanced-audit)
 
-* The deprecated ThirdPartyResource (TPR) API has been removed.
-  To avoid losing your TPR data, you must
-  [migrate to CustomResourceDefinition](https://kubernetes.io/docs/tasks/access-kubernetes-api/migrate-third-party-resource/)
-  **before upgrading to 1.8**.
+    For more details, see [Advanced audit](https://kubernetes.io/docs/tasks/debug-application-cluster/audit/#advanced-audit).
 
-* The following deprecated flags have been removed from `kube-controller-manager`:
+* The deprecated `ThirdPartyResource` (TPR) API was removed.
+  To avoid losing your TPR data, [migrate to CustomResourceDefinition](https://kubernetes.io/docs/tasks/access-kubernetes-api/migrate-third-party-resource/).
+
+* The following deprecated flags were removed from `kube-controller-manager`:
 
   * `replication-controller-lookup-cache-size`
   * `replicaset-lookup-cache-size`
   * `daemonset-lookup-cache-size`
 
-  Do not use deprecated flags.
+  Don't use these flags. Using deprecated flags causes the server to print a warning. Using a removed flag causes the server to abort the startup.
 
-* StatefulSet: The deprecated `pod.alpha.kubernetes.io/initialized` annotation for
-  interrupting StatefulSet Pod management is now ignored. If the annotation is set
-  to `true` or left blank, you won't see any change in behavior. If it's set to
-  `false`, previously dormant StatefulSets might become active after upgrading.
+* StatefulSet: The deprecated `pod.alpha.kubernetes.io/initialized` annotation for interrupting the StatefulSet Pod management is now ignored. StatefulSets with this annotation set to `true` or with no value will behave just as they did in previous versions. Dormant StatefulSets with the annotation set to `false` will become active after upgrading.
 
-* CronJobs has been promoted to `v1beta1` which is now turned on by default.
-  Although version `v2alpah1` is still available, it is deprecated.  Migrate to
-  `batch/v1beta1.CronJobs`.  Additionally, upgrading cluster in high-availability
-  configuration might return errors. The new controllers rely on the latest
-  version of the resources.  If the expected version is not found during rolling
-  upgrade, the system throws resource not found errors.
-* The `batch/v2alpha1.ScheduledJobs` has been removed.  Migrate to `batch/v1beta.CronJobs`
-  to continue managing time based jobs.
+* The CronJob object is now enabled by default at `v1beta1`. CronJob `v2alpha1` is still available, but it must be explicitly enabled. We recommend that you move any current CronJob objects to `batch/v1beta1.CronJob`. Be aware that if you specify the deprecated version, you may encounter Resource Not Found errors. These errors occur because the new controllers look for the new version during a rolling update.
 
-* The APIs `rbac/v1alpha1`, `settings/v1alpha1`, and `scheduling/v1alpha1` are
-  disabled by default.
+* The `batch/v2alpha1.ScheduledJob` was removed. Migrate to `batch/v1beta.CronJob` to continue managing time based jobs.
 
-* The `system:node` role is no longer automatically granted to the `system:nodes`
-  group in new clusters. It is recommended that nodes be authorized using the
-  `Node` authorization mode instead. Installations that wish to continue giving
-  all members of the `system:nodes` group the `system:node` role (which grants
-  broad read access, including all secrets and configmaps) must create an
-  installation-specific `ClusterRoleBinding`. ([#49638](https://github.com/kubernetes/kubernetes/pull/49638))
+* The `rbac/v1alpha1`, `settings/v1alpha1`, and `scheduling/v1alpha1` APIs are disabled by default.
+
+* The `system:node` role is no longer automatically granted to the `system:nodes` group in new clusters. The role gives broad read access to resources, including secrets and configmaps. Use the `Node` authorization mode to authorize the nodes in new clusters. To continue providing the `system:node` role to the members of the `system:nodes` group, create an installation-specific `ClusterRoleBinding` in the installation. ([#49638](https://github.com/kubernetes/kubernetes/pull/49638))
 
 ## **Known Issues**
 
@@ -243,7 +218,7 @@ across the system. Here's the release [scalability validation report].
 
  - The `batch/v2alpha1.CronJob` has been deprecated in favor of `batch/v1beta1`.
 
- - The `batch/v2alpha1.ScheduledJobs` has been removed, use `batch/v1beta1.CronJobs` instead.
+ - The `batch/v2alpha1.ScheduledJob` has been removed, use `batch/v1beta1.CronJob` instead.
 
 
 ### Scheduling
@@ -346,7 +321,7 @@ kind.
 - CronJob has been promoted to `batch/v1beta1` ([#41039](https://github.com/kubernetes/kubernetes/issues/41039), [@soltysh](https://github.com/soltysh)).
 - `batch/v2alpha.CronJob` has been deprecated in favor of `batch/v1beta` and will be removed in future releases.
 - Job has now the ability to set a failure policy using `.spec.backoffLimit`.  The default value for this new field is set to 6. ([#30243](https://github.com/kubernetes/kubernetes/issues/30243), [@clamoriniere1A](https://github.com/clamoriniere1A)).
-- `batch/v2alpha1.ScheduledJobs` has been removed.
+- `batch/v2alpha1.ScheduledJob` has been removed.
 - Job controller creates pods in batches instead of all at once ([#49142](https://github.com/kubernetes/kubernetes/pull/49142), [@joelsmith](https://github.com/joelsmith)).
 - Short `.spec.ActiveDeadlineSeconds` is properly applied to a job ([#48545](https://github.com/kubernetes/kubernetes/pull/48454), [@weiwei4](https://github.com/weiwei04)).
 
