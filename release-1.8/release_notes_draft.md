@@ -415,11 +415,34 @@ kind.
 
 * [alpha] Add support for dynamic Kubelet configuration ([#281](https://github.com/kubernetes/features/issues/281), [@mtaufen](https://github.com/mtaufen))
 
+* [alpha] Add the Hardware Device Plugins API ([#368](https://github.com/kubernetes/features/issues/368), [@jiayingz], [@RenaudWasTaken])
+
+* [stable] Upgrade cAdvisor to v0.27.1 with the enhancement for node monitoring [@dashpole]
+  * Fix journalctl leak
+  * Fix container memory rss
+  * Fix incorrect CPU usage with 4.7 kernel
+  * OOM parser uses kmsg
+  * Add hugepages support
+  * Add CRI-O support
+
+* Implement StatsProvider interface using CRI stats [@yguo0905]
+
+* Fixed issues for the eviction manager
+
+* Fixed inconsistent Prometheus cAdvisor metrics
+
+* Fixed issues for local storage allocatable feature
+
+#### Container Runtime Interface
 * [alpha] Add CRI validation test suite and CRI CLI ([#292](https://github.com/kubernetes/features/issues/292), [@feiskyer](https://github.com/feiskyer))
 
-* [alpha] Add the Hardware Device Plugins API ([#368](https://github.com/kubernetes/features/issues/368), [@vishh], [@RenaudWasTaken])
-
 * [stable] CRI-O support, it has passed all e2es. [@mrunalp]
+
+* [alpha] Kubernetes containerd integration [cri-containerd](https://github.com/kubernetes-incubator/cri-containerd) v1.0.0-alpha.0, [@Random-Liu]
+  * Feature complete. Support all features defined in CRI in Kubernetes v1.8.
+  * Pass all CRI validation test and regular node e2e test.
+  * An ansible playbook is provided to bring up a Kubernetes cri-containerd cluster with kubeadm.
+
 
 #### Autoscaling and Metrics
 
