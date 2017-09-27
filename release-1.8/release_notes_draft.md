@@ -205,7 +205,13 @@ Consider the following changes, limitations, and guidelines before you upgrade:
 
 * The `system:node` role is no longer automatically granted to the `system:nodes` group in new clusters. The role gives broad read access to resources, including secrets and configmaps. Use the `Node` authorization mode to authorize the nodes in new clusters. To continue providing the `system:node` role to the members of the `system:nodes` group, create an installation-specific `ClusterRoleBinding` in the installation. ([#49638](https://github.com/kubernetes/kubernetes/pull/49638))
 
-## **Known Issues**
+## Known Issues
+
+This section contains a list of known issues reported in Kubernetes 1.8 release. The content is populated via [v1.8.x known issues and FAQ accumulator](https://github.com/kubernetes/kubernetes/issues/53004).
+
+* minikube version less than or equal to 0.22.2 does not work with kubectl version greater than or equal to 1.8. This issue is caused by the presence of an unregistered type in the minikube API server. New versions of kubectl force validate the OpenAPI schema, which is not registered with all known types in the minikube API server.
+
+For more information, see [#1996](https://github.com/kubernetes/minikube/issues/1996).
 
 ## Deprecations
 
