@@ -35,7 +35,7 @@ please check out the [release notes guidance][] issue.
 
 [release notes guidance]: https://github.com/kubernetes/community/issues/484
 
-## **Major Themes**
+## Major Themes
 
 Kubernetes is developed by community members whose work is organized into
 [Special Interest Groups][]. For the 1.8 release, each SIG provides the
@@ -284,7 +284,7 @@ This section provides an overview of deprecated API versions, options, flags, an
     any domain name prefix outside of the `kubernetes.io/` domain instead of the
     `pod.alpha.kubernetes.io/opaque-int-resource-` prefix.
 
-## **Notable Features**
+## Notable Features
 
 ### Workloads API (apps/v1beta2)
 
@@ -307,25 +307,26 @@ kind.
 
 #### Behavioral Changes
 
- - For all kinds in the API group version, as it is incompatible with kubectl
- apply and strategic merge patch, spec.selector defaulting is disabled. Users
- must set the spec.selector in their manifests, and the creation of an object
- with a spec.selector that does not match the labels in its spec.template is
- considered to be invalid.
+ - For all kinds in the API group version, a spec.selector default value is no longer
+ available, because it's incompatible with `kubectl
+ apply` and strategic merge patch. You must explicitly set the spec.selector value
+ in your manifest. An object with a spec.selector value that does not match the labels in
+ its spec.template is invalid.
 
- - Because the controllers in the workloads API do not handle selector mutation in
- a consistent way, selector mutation is disabled for all kinds in the
- app/v1beta2 group version. This restriction may be lifted in the future, but
- it is likely that that selectors will remain immutable after v1 (GA) promotion.
- Users that have any code that depends on mutable selectors can continue to use
- the apps/v1beta1 API for this release, but they should begin migration to code
+ - Selector mutation is disabled for all kinds in the
+ app/v1beta2 group version, because the controllers in the workloads API do not handle
+ selector mutation in
+ a consistent way. This restriction may be lifted in the future, but
+ it is likely that that selectors will remain immutable after the move to v1.
+ You can continue to use code that depends on mutable selectors by calling
+ the apps/v1beta1 API in this release, but you should start planning for code
  that does not depend on mutable selectors.
 
  - Extended Resources are fully-qualified resource names outside the
  `kubernetes.io` domain. Extended Resource quantities must be integers.
- Users can use any resource name of the form `[aaa.]my-domain.bbb/ccc`
+ You can specify any resource name of the form `[aaa.]my-domain.bbb/ccc`
  in place of [Opaque Integer Resources](https://v1-6.docs.kubernetes.io/docs/concepts/configuration/manage-compute-resources-container/#opaque-integer-resources-alpha-feature).
- Extended resources cannot be overcommitted, so request and limit must be equal
+ Extended resources cannot be overcommitted, so make sure that request and limit are equal
  if both are present in a container spec.
 
  - The default Bootstrap Token created with `kubeadm init` v1.8 expires
@@ -336,13 +337,13 @@ kind.
  `kubeadm token delete`.
 
  - `kubeadm join` now delegates TLS Bootstrapping to the kubelet itself, instead
- of reimplementing that process. `kubeadm join` writes the bootstrap KubeConfig
+ of reimplementing the process. `kubeadm join` writes the bootstrap kubeconfig
  file to `/etc/kubernetes/bootstrap-kubelet.conf`.
 
 #### Defaults
 
  - The default spec.updateStrategy for the StatefulSet and DaemonSet kinds is
- RollingUpdate for the apps/v1beta2 group version. Users can explicitly set
+ RollingUpdate for the apps/v1beta2 group version. You can explicitly set
  the OnDelete strategy, and no strategy auto-conversion is applied to
  replace default values.
 
@@ -360,6 +361,7 @@ kind.
 - CronJob is now at `batch/v1beta1` ([#41039](https://github.com/kubernetes/kubernetes/issues/41039), [@soltysh](https://github.com/soltysh)).
 
 - `batch/v2alpha.CronJob` is deprecated in favor of `batch/v1beta` and will be removed in a future release.
+
 - Job can now set a failure policy using `.spec.backoffLimit`. The default value for this new field is 6. ([#30243](https://github.com/kubernetes/kubernetes/issues/30243), [@clamoriniere1A](https://github.com/clamoriniere1A)).
 
 - `batch/v2alpha1.ScheduledJob` is removed.
@@ -372,25 +374,32 @@ kind.
 
 #### CLI Changes
 
-- [alpha] `kubectl` plugins: `kubectl` now allows binary extensibility. Users can extend the default set of `kubectl` commands by writing plugins
+- [alpha] `kubectl` plugins: `kubectl` now allows binary extensibility. You can extend the default set of `kubectl` commands by writing plugins
   that provide new subcommands. Refer to the documentation for more information.
   
 - `kubectl rollout` and `rollback` now support StatefulSet.
+
 - `kubectl scale` now uses the Scale subresource for kinds in the apps/v1beta2 group.
+
 - `kubectl create configmap` and `kubectl create secret` subcommands now support
   the `--append-hash` flag, which enables unique but deterministic naming for
   objects generated from files, for example with `--from-file`.
+
 - `kubectl run` can set a service account name in the generated pod
   spec with the `--serviceaccount` flag.
+
 - `kubectl proxy` now correctly handles the `exec`, `attach`, and
   `portforward` commands.  You must pass `--disable-filter` to the command to allow these commands.
+
 - Added `cronjobs.batch` to "all", so that `kubectl get all` returns them.
+
 - Added flag `--include-uninitialized` to `kubectl annotate`, `apply`, `edit-last-applied`,
   `delete`, `describe`, `edit`, `get`, `label,` and `set`. `--include-uninitialized=true` makes
   kubectl commands apply to uninitialized objects, which by default are ignored
   if the names of the objects are not provided. `--all` also makes kubectl
   commands apply to uninitialized objects. See the
   [initializer documentation](https://kubernetes.io/docs/admin/extensible-admission-controllers/) for more details.
+
 - Added RBAC reconcile commands with `kubectl auth reconcile -f FILE`. When
   passed a file which contains RBAC roles, rolebindings, clusterroles, or
   clusterrolebindings, this command computes covers and adds the missing rules.
@@ -398,18 +407,25 @@ kind.
   than a JSON merge because you have to compute logical covers operations between
   rule sets. This means that we cannot use `kubectl apply` to update RBAC roles
   without risking breaking old clients, such as controllers.
+
 - `kubectl delete` no longer scales down workload API objects before deletion.
   Users who depend on ordered termination for the Pods of their StatefulSets
   must use `kubectl scale` to scale down the StatefulSet before deletion.
+
 - `kubectl run --env` no longer supports CSV parsing. To provide multiple environment
   variables, use the `--env` flag multiple times instead. Example: `--env ONE=1 --env TWO=2` instead of `--env ONE=1,TWO=2`.
+
 - Removed deprecated command `kubectl stop`.
+
 - Kubectl can now use http caching for the OpenAPI schema. The cache
   directory can be configured by passing the `--cache-dir` command line flag to kubectl.
   If set to an empty string, caching is disabled.
+
 - Kubectl now performs validation against OpenAPI schema instead of Swagger 1.2. If
   OpenAPI is not available on the server, it falls back to the old Swagger 1.2.
+
 - Added Italian translation for kubectl.
+
 - Added German translation for kubectl.
 
 #### Scheduling
@@ -422,71 +438,69 @@ kind.
 
 #### Storage
 
-* [stable] Mount Options
+* [stable] Mount options
 
-  * Promote the ability to specify mount options for volumes from beta to stable.
+  * The ability to specify mount options for volumes is moved from beta to stable.
 
-  * Introduce a new `MountOptions` field in the `PersistentVolume` spec to specify mount options, instead of an annotation.
+  * A new `MountOptions` field in the `PersistentVolume` spec is available to specify mount options. This field replaces an annotation.
 
-  * Introduce a new `MountOptions` field in the `StorageClass` spec to allow configuration of mount options for dynamically provisioned volumes.
-
-  * Enable Kubernetes admins to control the mount options used in their clusters.
+  * A new `MountOptions` field in the `StorageClass` spec allows configuration of mount options for dynamically provisioned volumes.
 
 * [stable] Support Attach and Detach operations for ReadWriteOnce (RWO) volumes that use iSCSI and Fibre Channel plugins.
 
-* [stable] Expose Storage Usage Metrics
+* [stable] Expose storage usage metrics
 
-  * Expose the available capacity of a given Persistent Volume (PV) by using the Kubernetes metrics API.
+  * The available capacity of a given Persistent Volume (PV) is available by calling the Kubernetes metrics API.
 
-* [stable] Volume Plugin Metrics
+* [stable] Volume plugin metrics
 
-  * Expose success and latency metrics for all Kubernetes calls by using the Kubernetes metrics API. The API calls are placed for the volume operations, including mount, unmount, attach, detach, provision, and delete.
+  * Success and latency metrics for all Kubernetes calls are available by calling the Kubernetes metrics API. You can request volume operations, including mount, unmount, attach, detach, provision, and delete.
 
-* [stable] Modify the PV spec for Azure File, CephFS, iSCSI, and Glusterfs to reference namespaced resources.
+* [stable] The PV spec for Azure File, CephFS, iSCSI, and Glusterfs is modified to reference namespaced resources.
 
-* [stable] Support customization of iSCSI initiator name per volume in the iSCSI volume plugin.
+* [stable] You can now customize the iSCSI initiator name per volume in the iSCSI volume plugin.
 
-* [stable] Support World Wide Identifier (WWID) for volume identifier in Fibre Channel volume plugin.
+* [stable] You can now specify the World Wide Identifier (WWID) for the volume identifier in the Fibre Channel volume plugin.
 
 * [beta] Reclaim policy in StorageClass
 
-  * Allow configuring reclaim policy in StorageClass, instead of defaulting to `delete` for dynamically provisioned volumes.
+  * You can now configure the reclaim policy in StorageClass, instead of defaulting to `delete` for dynamically provisioned volumes.
 
-* [alpha] Volume Resizing
+* [alpha] Volume resizing
 
-  * Enable increasing the size of a volume by using the Kubernetes API.
+  * You can now increase the size of a volume by calling the Kubernetes API.
 
-  * For alpha, this feature increases only the size of the underlying volume, and does not support resizing the file system.
+  * For alpha, this feature increases only the size of the underlying volume. It does not support resizing the file system.
 
-  * For alpha, Volume Resizing supports only Gluster volumes.
+  * For alpha, volume resizing supports only Gluster volumes.
 
-* [alpha] Provide Capacity Isolation and Resource Management for Local Ephemeral Storage
+* [alpha] Provide capacity isolation and resource management for local ephemeral storage
 
-  * Introduce the ability to set container requests and limits, and node allocatable reservations for the new `ephemeral-storage` resource.
+  * You can now set container requests, container limits, and node allocatable reservations for the new `ephemeral-storage` resource.
 
-  * The `ephemeral-storage` resource includes all the disk space a container may use via container overlay or scratch.
+  * The `ephemeral-storage` resource includes all the disk space a container might consume with container overlay or scratch.
 
 * [alpha] Mount namespace propagation
 
-  * Introduce the `VolumeMount.Propagation` field for `VolumeMount` in pod containers.
+  * The `VolumeMount.Propagation` field for `VolumeMount` in pod containers is now available.
 
-  * Set `VolumeMount.Propagation` to `Bidirectional` to enable a particular mount for a container to propagate itself to the host or other containers.
+  * You can now set `VolumeMount.Propagation` to `Bidirectional` to enable a particular mount for a container to propagate itself to the host or other containers.
 
-* [alpha] Improve Flexvolume Deployment
+* [alpha] Improve Flex volume deployment
 
-  * Simplify Flex volume driver deployment
+  * Flex volume driver deployment is simplified in the following ways:
 
-    * Automatically discover and initialize new driver files without requiring kubelet or controller-manager restart.
+    * New driver files can now be automatically discovered and initialized without requiring a kubelet or controller-manager restart.
 
-    * Provide a sample DaemonSet to deploy Flexvolume drivers.
+    * A sample DaemonSet to deploy Flexvolume drivers is now available.
 
-* [prototype] Volume Snapshots
+* [prototype] Volume snapshots
 
-  * Create a volume snapshot by using the Kubernetes API.
+  * You can now create a volume snapshot by calling the Kubernetes API.
 
-  * The prototype does not support quiescing before snapshot, so snapshots might be inconsistent.
+  * Note that the prototype does not support quiescing before snapshot, so snapshots might be inconsistent.
 
-  * For the prototype phase, this feature is external to the core Kubernetes, and can be found at https://github.com/kubernetes-incubator/external-storage/tree/master/snapshot
+  * In the prototype phase, this feature is external to the core Kubernetes. It's available at https://github.com/kubernetes-incubator/external-storage/tree/master/snapshot.
 
 ### Cluster Federation
 
