@@ -1,4 +1,4 @@
-## Introduction to 1.8
+## Introduction to v1.8.0
 
 Kubernetes version 1.8 includes new features and enhancements, as well as fixes to identified issues. The release notes contain a brief overview of the important changes introduced in this release. The content is organized by Special Interest Groups ([SIGs][]).
 
