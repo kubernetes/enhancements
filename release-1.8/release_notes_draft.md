@@ -454,6 +454,10 @@ kind.
 
   * For the prototype phase, this feature is external to the core Kubernetes, and can be found at https://github.com/kubernetes-incubator/external-storage/tree/master/snapshot
 
+### Cluster Federation
+
+You can now create a Federated Job that is automatically deployed to one or more federated clusters. Cluster selection and weighting references determine how Job parallelism and completions are spread across clusters. Federated Job status reflects the aggregate status across all underlying cluster jobs.
+
 ### Node Components
 
 #### Autoscaling and Metrics
