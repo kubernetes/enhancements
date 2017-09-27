@@ -286,20 +286,22 @@ This section provides an overview of deprecated API versions, options, flags, an
 
 ## **Notable Features**
 
-### Workload API (apps/v1beta2)(https://github.com/kubernetes/features/issues/353)
+### Workloads API (apps/v1beta2)
 
 Kubernetes 1.8 adds the apps/v1beta2 group and version, which now consists of the
 DaemonSet, Deployment, ReplicaSet and StatefulSet kinds. This group and version are part
-of the Kubernetes Workloads API. We
-plan to move them to v1 (GA) in an upcoming release, so you might want to plan your migration
-accordingly.
+of the Kubernetes Workloads API. We plan to move them to v1 in an upcoming release, so you might want to plan your migration accordingly.
+
+For more information, see [the issue that describes this work in detail](https://github.com/kubernetes/features/issues/353)
 
 #### API Object Additions and Migrations
 
 - The DaemonSet, Deployment, ReplicaSet, and StatefulSet kinds
   are now in the apps/v1beta2 group and version.
+
 - The apps/v1beta2 group version adds a Scale subresource for the StatefulSet
 kind.
+
 - All kinds in the apps/v1beta2 group version add a corresponding conditions
   kind.
 
@@ -310,6 +312,7 @@ kind.
  must set the spec.selector in their manifests, and the creation of an object
  with a spec.selector that does not match the labels in its spec.template is
  considered to be invalid.
+
  - Because the controllers in the workloads API do not handle selector mutation in
  a consistent way, selector mutation is disabled for all kinds in the
  app/v1beta2 group version. This restriction may be lifted in the future, but
@@ -317,18 +320,21 @@ kind.
  Users that have any code that depends on mutable selectors can continue to use
  the apps/v1beta1 API for this release, but they should begin migration to code
  that does not depend on mutable selectors.
+
  - Extended Resources are fully-qualified resource names outside the
  `kubernetes.io` domain. Extended Resource quantities must be integers.
  Users can use any resource name of the form `[aaa.]my-domain.bbb/ccc`
  in place of [Opaque Integer Resources](https://v1-6.docs.kubernetes.io/docs/concepts/configuration/manage-compute-resources-container/#opaque-integer-resources-alpha-feature).
  Extended resources cannot be overcommitted, so request and limit must be equal
  if both are present in a container spec.
+
  - The default Bootstrap Token created with `kubeadm init` v1.8 expires
  and is deleted after 24 hours by default to limit the exposure of the
  valuable credential. You can create a new Bootstrap Token with
  `kubeadm token create` or make the default token permanently valid by specifying
  `--token-ttl 0` to `kubeadm init`. The default token can later be deleted with
  `kubeadm token delete`.
+
  - `kubeadm join` now delegates TLS Bootstrapping to the kubelet itself, instead
  of reimplementing that process. `kubeadm join` writes the bootstrap KubeConfig
  file to `/etc/kubernetes/bootstrap-kubelet.conf`.
@@ -339,26 +345,36 @@ kind.
  RollingUpdate for the apps/v1beta2 group version. Users can explicitly set
  the OnDelete strategy, and no strategy auto-conversion is applied to
  replace default values.
+
  - As mentioned in [Behavioral Changes](#behavioral-changes), selector
  defaults are disabled.
+
  - The default spec.revisionHistoryLimit for all applicable kinds in the
  apps/v1beta2 group version is 10.
- - The default spec.successfulJobsHistoryLimit is 3 and spec.failedJobsHistoryLimit
-   is 1 on CronJobs.
+
+ - In a CronJob object, the default spec.successfulJobsHistoryLimit is 3, and
+ the default spec.failedJobsHistoryLimit is 1.
 
 ### Workloads API (batch)
+
 - CronJob is now at `batch/v1beta1` ([#41039](https://github.com/kubernetes/kubernetes/issues/41039), [@soltysh](https://github.com/soltysh)).
+
 - `batch/v2alpha.CronJob` is deprecated in favor of `batch/v1beta` and will be removed in a future release.
 - Job can now set a failure policy using `.spec.backoffLimit`. The default value for this new field is 6. ([#30243](https://github.com/kubernetes/kubernetes/issues/30243), [@clamoriniere1A](https://github.com/clamoriniere1A)).
+
 - `batch/v2alpha1.ScheduledJob` is removed.
+
 - The Job controller now creates pods in batches instead of all at once. ([#49142](https://github.com/kubernetes/kubernetes/pull/49142), [@joelsmith](https://github.com/joelsmith)).
-- Short `.spec.ActiveDeadlineSeconds` is properly applied to a Job. ([#48545](https://github.com/kubernetes/kubernetes/pull/48454), [@weiwei4](https://github.com/weiwei04)).
+
+- Short `.spec.ActiveDeadlineSeconds` is properly applied to a Job. ([#48545]
+(https://github.com/kubernetes/kubernetes/pull/48454), [@weiwei4](https://github.com/weiwei04)).
 
 
 #### CLI Changes
 
 - [alpha] `kubectl` plugins: `kubectl` now allows binary extensibility. Users can extend the default set of `kubectl` commands by writing plugins
   that provide new subcommands. Refer to the documentation for more information.
+  
 - `kubectl rollout` and `rollback` now support StatefulSet.
 - `kubectl scale` now uses the Scale subresource for kinds in the apps/v1beta2 group.
 - `kubectl create configmap` and `kubectl create secret` subcommands now support
@@ -397,9 +413,12 @@ kind.
 - Added German translation for kubectl.
 
 #### Scheduling
-* [alpha] Support pod priority and creation of PriorityClasses ([user doc](https://kubernetes.io/docs/concepts/configuration/pod-priority-preemption/))([design doc](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/scheduling/pod-priority-api.md))
-* [alpha] Support priority-based preemption of pods ([user doc](https://kubernetes.io/docs/concepts/configuration/pod-priority-preemption/))([design doc](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/scheduling/pod-preemption.md))
-* [alpha] Taint nodes by condition ([design doc](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/scheduling/taint-node-by-condition.md))
+
+* [alpha] This version now supports pod priority and creation of PriorityClasses ([user doc](https://kubernetes.io/docs/concepts/configuration/pod-priority-preemption/))([design doc](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/scheduling/pod-priority-api.md))
+
+* [alpha] This version now supports priority-based preemption of pods ([user doc](https://kubernetes.io/docs/concepts/configuration/pod-priority-preemption/))([design doc](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/scheduling/pod-preemption.md))
+
+* [alpha] Users can now add taints to nodes by condition ([design doc](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/scheduling/taint-node-by-condition.md))
 
 #### Storage
 
