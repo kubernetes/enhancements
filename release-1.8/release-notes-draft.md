@@ -108,6 +108,20 @@ pipeline.
 
 [SIG Instrumentation]: https://github.com/kubernetes/community/tree/master/sig-instrumentation
 
+### SIG Multi-cluster (formerly known as SIG Federation)
+
+[SIG Multi-cluster][] is responsible for infrastructure that supports
+the efficient and reliable management of multiple Kubernetes clusters,
+and applications that run in and across multiple clusters.
+
+For the 1.8 release, SIG Multicluster focussed on expanding the set of
+Kubernetes primitives that our Cluster Federation control plane
+supports, expanding the number of approaches taken to multi-cluster
+management (beyond our initial Federation approach), and preparing
+to release Federation for general availability ('GA').
+
+[SIG Multi-cluster]: https://github.com/kubernetes/community/tree/master/sig-federation
+
 ### SIG Node
 
 [SIG Node][] is responsible for the components that support the controlled
@@ -508,7 +522,26 @@ kind.
 
 ### Cluster Federation
 
-You can now create a Federated Job that is automatically deployed to one or more federated clusters. Cluster selection and weighting references determine how Job parallelism and completions are spread across clusters. Federated Job status reflects the aggregate status across all underlying cluster jobs.
+#### [alpha] Federated Jobs
+
+Federated Jobs that are automatically deployed to multiple clusters
+are now supported. Cluster selection and weighting determine how Job
+parallelism and completions are spread across clusters. Federated Job
+status reflects the aggregate status across all underlying cluster
+jobs.
+
+#### [alpha] Federated Horizontal Pod Autoscaling (HPA)
+
+Federated HPAs are similar to the traditional Kubernetes HPAs, except
+that they span multiple clusters. Creating a Federated HPA targeting
+multiple clusters ensures that cluster-level autoscalers are
+consistently deployed across those clusters, and dynamically managed
+to ensure that autoscaling can occur optimially in all clusters,
+within a set of global constraints on the the total number of replicas
+permitted across all clusters.  If replicas are not
+required in some clusters due to low system load or insufficient quota
+or capacity in those clusters, additional replicas are made available
+to the autoscalers in other clusters if required.
 
 ### Node Components
 
