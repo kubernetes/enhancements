@@ -139,7 +139,7 @@ For the 1.8 release, SIG Scalability focused on automating large cluster
 scalability testing in a continuous integration (CI) environment. The SIG
 defined a concrete process for scalability testing, created
 documentation for the current scalability thresholds, and defined a new set of
-Service Level Indicators (SLIs) and Service Level Objectives (SLOs) for the system. 
+Service Level Indicators (SLIs) and Service Level Objectives (SLOs) for the system.
 Here's the release [scalability validation report].
 
 [SIG Scalability]: https://github.com/kubernetes/community/tree/master/sig-scalability
@@ -161,7 +161,7 @@ These features are in alpha. SIG Scheduling also improved the internal APIs for 
 [SIG Storage][] is responsible for storage and volume plugin components.
 
 For the 1.8 release, SIG Storage extended the Kubernetes storage API. In addition to providing simple
-volume availability, the API now enables volume resizing and snapshotting. These features are in alpha. 
+volume availability, the API now enables volume resizing and snapshotting. These features are in alpha.
 The SIG also focused on providing more control over storage: the ability to set requests and
 limits on ephemeral storage, the ability to specify mount options, more metrics, and improvements to Flex driver deployments.
 
@@ -207,56 +207,64 @@ Consider the following changes, limitations, and guidelines before you upgrade:
 
 ## **Known Issues**
 
-## **Deprecations**
+## Deprecations
+
+This section provides an overview of deprecated API versions, options, flags, and arguments. Deprecated means that we intend to remove the capability from a future release. After removal, the capability will no longer work. The sections are organized by SIGs.
 
 ### Apps
 
-- The `.spec.rollbackTo` field of the Deployment kind is deprecated in the
-  extensions/v1beta1 group version.
+- The `.spec.rollbackTo` field of the Deployment kind is deprecated in `extensions/v1beta1`.
 
-- The `kubernetes.io/created-by` annotation is now deprecated and will be removed in v1.9.
-  Use [ControllerRef](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/api-machinery/controller-ref.md)
-  instead to determine which controller, if any, owns an object.
+- The `kubernetes.io/created-by` annotation is deprecated and will be removed in version 1.9.
+  Use [ControllerRef](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/api-machinery/controller-ref.md) instead to determine which controller, if any, owns an object.
 
- - The `batch/v2alpha1.CronJob` has been deprecated in favor of `batch/v1beta1`.
+ - The `batch/v2alpha1.CronJob` is deprecated in favor of `batch/v1beta1`.
 
- - The `batch/v2alpha1.ScheduledJob` has been removed, use `batch/v1beta1.CronJob` instead.
-
-
-### Scheduling
-
-- Opaque Integer Resources (OIRs) are deprecated and will be removed in
-  v1.9. Extended Resources (ERs) are a drop-in replacement for OIRs. Users can use
-  any domain name prefix outside of the `kubernetes.io/` domain instead of the
-  previous `pod.alpha.kubernetes.io/opaque-int-resource-` prefix.
+ - The `batch/v2alpha1.ScheduledJob` was removed. Use `batch/v1beta1.CronJob` instead.
 
 ### Auth
 
-- With the introduction of RBAC v1, the RBAC v1alpha1 API group has been deprecated.
-- The API server flag `--experimental-bootstrap-token-auth` is now deprecated in favor of `--enable-bootstrap-token-auth`. The `--experimental-bootstrap-token-auth` flag will be removed in 1.9.
+ - The RBAC v1alpha1 API group is deprecated in favor of RBAC v1.
+
+ - The API server flag `--experimental-bootstrap-token-auth` is deprecated in favor of `--enable-bootstrap-token-auth`. The `--experimental-bootstrap-token-auth` flag will be removed in version 1.9.
+
+### Autoscaling
+
+ - Consuming metrics directly from Heapster is deprecated in favor of
+   consuming metrics via an aggregated version of the resource metrics API.
+
+   - In version 1.8, enable this behavior by setting the
+     `--horizontal-pod-autoscaler-use-rest-clients` flag to `true`.
+
+   - In version 1.9, this behavior will be enabled by default, and must be explicitly
+     disabled by setting the `--horizontal-pod-autoscaler-use-rest-clients` flag to `false`.
 
 ### Cluster Lifecycle
 
 - The `auto-detect` behavior of the kubelet's `--cloud-provider` flag is deprecated.
-  - In v1.8, the default value for the kubelet's `--cloud-provider` flag is `auto-detect`. It only works on a few cloud providers though.
-  - In v1.9, the default will be `""`, which means no built-in cloud provider extension will be enabled by default.
-  - If you want to use an out-of-tree cloud provider in either version, you should use `--cloud-provider=external`
-  - [PR #51312](https://github.com/kubernetes/kubernetes/pull/51312) and [announcement](https://groups.google.com/forum/#!topic/kubernetes-dev/UAxwa2inbTA)
-- The `PersistentVolumeLabel` admission controller in the API Server is deprecated
-  - The replacement is running a cloud-specific controller-manager (often referred to as `cloud-controller-manager`) with the
-    `PersistentVolumeLabel` controller enabled. This new controller loop does exactly what this admission controller used to do.
-  - Do not use this admission controller in the configuration files and scripts unless you are dependent on the **in-tree** GCE and AWS cloud providers.
-  - The `PersistentVolumeLabel` admission controller will be removed in a future Kubernetes version, when the out-of-tree versions of the
-    GCE and AWS cloud providers move to GA (these are marked alpha in 1.9)
 
-### Autoscaling
+  - In version 1.8, the default value for the kubelet's `--cloud-provider` flag is `auto-detect`. Be aware that it works only on a few cloud providers.
 
-- Consuming metrics directly from Heapster is now deprecated in favor of
-  consuming metrics via an aggregated version of the resource metrics API.
-  - In v1.8, this behavior can be enabled by setting the
-    `--horizontal-pod-autoscaler-use-rest-clients` flag to `true`.
-  - In v1.9, this behavior will be on by default, and must by explicitly
-    disabled by setting the above flag to `false`.
+  - In version 1.9, the default will be `""`, which means no built-in cloud provider extension will be enabled by default.
+
+  - Enable an out-of-tree cloud provider with `--cloud-provider=external` in either version.
+
+    For more information on deprecating auto-detecting cloud providers in kubelet, see [PR #51312](https://github.com/kubernetes/kubernetes/pull/51312) and [announcement](https://groups.google.com/forum/#!topic/kubernetes-dev/UAxwa2inbTA).
+
+- The `PersistentVolumeLabel` admission controller in the API server is deprecated.
+
+  - The replacement is running a cloud-specific controller-manager (often referred to as `cloud-controller-manager`) with the `PersistentVolumeLabel` controller enabled. This new controller loop operates as the `PersistentVolumeLabel` admission controller did in previous versions.
+
+  - Do not use the `PersistentVolumeLabel` admission controller in the configuration files and scripts unless you are dependent on the in-tree GCE and AWS cloud providers.
+
+  - The `PersistentVolumeLabel` admission controller will be removed in a future release, when the out-of-tree versions of the GCE and AWS cloud providers move to GA. The cloud providers are marked alpha in version 1.9.
+
+### Scheduling
+
+  - Opaque Integer Resources (OIRs) are deprecated and will be removed in
+    version 1.9. Extended Resources (ERs) are a drop-in replacement for OIRs. You can use
+    any domain name prefix outside of the `kubernetes.io/` domain instead of the
+    `pod.alpha.kubernetes.io/opaque-int-resource-` prefix.
 
 ## **Notable Features**
 
