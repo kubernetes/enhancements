@@ -45,19 +45,17 @@ themes that guided their work.
 
 ### SIG API Machinery
 
-[SIG API Machinery][] Covers all aspects of API server, persistent layer (etcd), and client libraries.
+[SIG API Machinery][] is responsible for all aspects of the API server: API registration and discovery, generic API CRUD semantics, admission control, encoding/decoding, conversion, defaulting, persistence layer (etcd), OpenAPI, third-party resources, garbage collection, and client libraries.
 
-For the 1.8 release, SIG API Machinery focus on stability and ecosystem enablement features such as paging support for list calls, validation for custom resources, and client side event spam filtering.
+For the 1.8 release, SIG API Machinery focused on stability and on ecosystem enablement. Features include the ability to break large LIST calls into smaller chunks, improved support for API server customization with either custom API servers or Custom Resource Definitions, and client side event spam filtering.
 
-
-[SIG API Machinery]: https://github.com/kubernetes/community/tree/master/sig-api-machinery
+[Sig API Machinery]: https://github.com/kubernetes/community/tree/master/sig-api-machinery
 
 ### SIG Apps
 
 [SIG Apps][] focuses on the Kubernetes APIs and the external tools that are required to deploy and operate Kubernetes workloads.
 
 For the 1.8 release, SIG Apps moved the Kubernetes workloads API to the new apps/v1beta2 group and version. The DaemonSet, Deployment, ReplicaSet, and StatefulSet objects are affected by this change. The new apps/v1beta2 group and version provide a stable and consistent API surface for building applications in Kubernetes. For details about deprecations and behavioral changes, see [Notable Features](#notable-features). SIG Apps intends to promote this version to GA in a future release.
-
 
 [SIG Apps]: https://github.com/kubernetes/community/tree/master/sig-apps
 
@@ -72,6 +70,18 @@ to beta. Encryption of resources stored on disk (resources at rest) remained in 
 
 [SIG Auth]: https://github.com/kubernetes/community/tree/master/sig-auth
 
+### SIG Autoscaling
+
+[SIG Autoscaling][] is responsible for autoscaling-related components,
+such as the Horizontal Pod Autoscaler and Cluster Autoscaler.
+
+For the 1.8 release, SIG Autoscaling continued to focus on stabilizing
+features introduced in previous releases: the new version of the
+Horizontal Pod Autoscaler API, which supports custom metrics, and
+the Cluster Autoscaler, which provides improved performance and error reporting.
+
+[SIG Autoscaling]: https://github.com/kubernetes/community/tree/master/sig-autoscaling
+
 ### SIG Cluster Lifecycle
 
 [SIG Cluster Lifecycle][] is responsible for the user experience of deploying,
@@ -84,6 +94,19 @@ with the 1.8 release, kubeadm supports a new upgrade command and includes alpha
 support for self hosting the cluster control plane.
 
 [SIG Cluster Lifecycle]: https://github.com/kubernetes/community/tree/master/sig-cluster-lifecycle
+
+### SIG Instrumentation
+
+[SIG Instrumentation][] is responsible for metrics production and
+collection.
+
+For the 1.8 release, SIG Instrumentation focused on stabilizing the APIs
+and components that are required to support the new version of the Horizontal Pod
+Autoscaler API: the resource metrics API, custom metrics API, and
+metrics-server, which is the new replacement for Heapster in the default monitoring
+pipeline.
+
+[SIG Instrumentation]: https://github.com/kubernetes/community/tree/master/sig-instrumentation
 
 ### SIG Node
 
@@ -107,12 +130,27 @@ The SIG also provided match criteria that allow policy rules to match a source o
 
 [SIG Network]: https://github.com/kubernetes/community/tree/master/sig-network
 
+### SIG Scalability
+
+[SIG Scalability][] is responsible for scalability testing, measuring and
+improving system performance, and answering questions related to scalability.
+
+For the 1.8 release, SIG Scalability focused on automating large cluster
+scalability testing in a continuous integration (CI) environment. The SIG
+defined a concrete process for scalability testing, created
+documentation for the current scalability thresholds, and defined a new set of
+Service Level Indicators (SLIs) and Service Level Objectives (SLOs) for the system. 
+Here's the release [scalability validation report].
+
+[SIG Scalability]: https://github.com/kubernetes/community/tree/master/sig-scalability
+[scalability validation report]: https://github.com/kubernetes/features/tree/master/release-1.8/scalability_validation_report.md
+
 ### SIG Scheduling
 
 [SIG Scheduling][] is responsible for generic scheduler and scheduling components.
 
 For the 1.8 release, SIG Scheduling extended the concept of cluster sharing by introducing
-pod priority and POD preemption. These features allow mixing various types of workloads in a single cluster, and help reach
+pod priority and pod preemption. These features allow mixing various types of workloads in a single cluster, and help reach
 higher levels of resource utilization and availability.
 These features are in alpha. SIG Scheduling also improved the internal APIs for scheduling and made them easier for other components and external schedulers to use.
 
@@ -128,46 +166,6 @@ The SIG also focused on providing more control over storage: the ability to set 
 limits on ephemeral storage, the ability to specify mount options, more metrics, and improvements to Flex driver deployments.
 
 [SIG Storage]: https://github.com/kubernetes/community/tree/master/sig-storage
-
-### SIG Autoscaling
-
-[SIG Autoscaling][] is responsible for autoscaling-related components,
-such as the Horizontal Pod Autoscaler and Cluster Autoscaler.
-
-For the 1.8 release, SIG Autoscaling continued to focus on stabilizing
-features introduced in previous releases: the new version of the
-Horizontal Pod Autoscaler API, which supports custom metrics, and
-the Cluster Autoscaler, which provides improved performance and error reporting.
-
-[SIG Autoscaling]: https://github.com/kubernetes/community/tree/master/sig-autoscaling
-
-### SIG Instrumentation
-
-[SIG Instrumentation][] is responsible for metrics production and
-collection.
-
-For the 1.8 release, SIG Instrumentation focused on stabilizing the APIs
-and components that are required to support the new version of the Horizontal Pod
-Autoscaler API: the resource metrics API, custom metrics API, and
-metrics-server, which is the new replacement for Heapster in the default monitoring
-pipeline.
-
-[SIG Instrumentation]: https://github.com/kubernetes/community/tree/master/sig-instrumentation
-
-### SIG Scalability
-
-[SIG Scalability][] is responsible for scalability testing, measuring and
-improving system performance, and answering questions related to scalability.
-
-For the 1.8 release, SIG Scalability focused on automating large cluster
-scalability testing in a continuous integration (CI) environment. The SIG
-defined a concrete process for scalability testing, created
-documentation for the current scalability thresholds, and defined a new set of
-Service Level Indicators (SLIs) and Service Level Objectives (SLOs) for the system. 
-Here's the release [scalability validation report].
-
-[SIG Scalability]: https://github.com/kubernetes/community/tree/master/sig-scalability
-[scalability validation report]: https://github.com/kubernetes/features/tree/master/release-1.8/scalability_validation_report.md
 
 ## Before Upgrading
 
@@ -539,27 +537,26 @@ kind.
 
 ### API Machinery
 
-
 #### kube-apiserver
-* Fixes an issue with `APIService` auto-registration. This issue affected rolling restarts of HA API servers that added or removed API groups being served.([#51921](https://github.com/kubernetes/kubernetes/pull/51921))
+* Fixed an issue with `APIService` auto-registration. This issue affected rolling restarts of HA API servers that added or removed API groups being served.([#51921](https://github.com/kubernetes/kubernetes/pull/51921))
 
-* [Alpha] The Kubernetes API server now supports the ability to break large LIST calls into multiple smaller chunks.  A client can specify a limit to the number of results to return, and if more results exist a token will be returned that allows the client to continue the previous list call repeatedly until all results are retrieved.  The resulting list is identical to a list call that does not perform chunking thanks to capabilities provided by etcd3.  This allows the server to use less memory and CPU responding with very large lists.  This feature is gated as APIListChunking and is not enabled by default.  The 1.9 release will begin using this by default from all informers.([#48921](https://github.com/kubernetes/kubernetes/pull/48921))
+* [Alpha] The Kubernetes API server now supports the ability to break large LIST calls into multiple smaller chunks. A client can specify a limit to the number of results to return. If more results exist, a token is returned that allows the client to continue the previous list call repeatedly until all results are retrieved.  The resulting list is identical to a list call that does not perform chunking, thanks to capabilities provided by etcd3.  This allows the server to use less memory and CPU when very large lists are returned. This feature is gated as APIListChunking and is not enabled by default. The 1.9 release will begin using this by default.([#48921](https://github.com/kubernetes/kubernetes/pull/48921))
 
-* Ignore the pods marked for deletion that exceed their grace period in ResourceQuota.([#46542](https://github.com/kubernetes/kubernetes/pull/46542))
+* Pods that are marked for deletion and have exceeded their grace period, but are not yet deleted, no longer count toward the resource quota.([#46542](https://github.com/kubernetes/kubernetes/pull/46542))
 
 
 #### Dynamic Admission Control
 
 * Pod spec is mutable when the pod is uninitialized. The API server requires the pod spec to be valid even if it's uninitialized. Updating the status field of uninitialized pods is invalid.([#51733](https://github.com/kubernetes/kubernetes/pull/51733))
 
-* Use of the alpha initializers feature now requires enabling the `Initializers` feature gate. This feature gate is auto enabled if the `Initialzers` admission plugin is enabled.([#51436](https://github.com/kubernetes/kubernetes/pull/51436))
+* Use of the alpha initializers feature now requires enabling the `Initializers` feature gate. This feature gate is automatically enabled if the `Initializers` admission plugin is enabled.([#51436](https://github.com/kubernetes/kubernetes/pull/51436))
 
-* [Action required] validation rule on metadata.initializers.pending[x].name is tightened. The initializer name needs to contain at least three segments separated by dots. You can create objects with pending initializers and not rely on the API server to add pending initializers according to initializerconfiguration. If you do so, update the initializer name in the existing objects and the configuration files to comply to the new validation rule.([#51283](https://github.com/kubernetes/kubernetes/pull/51283))
+* [Action required] The validation rule for metadata.initializers.pending[x].name is tightened. The initializer name must contain at least three segments, separated by dots. You can create objects with pending initializers and not rely on the API server to add pending initializers according to `initializerConfiguration`. If you do so, update the initializer name in the existing objects and the configuration files to comply with the new validation rule.([#51283](https://github.com/kubernetes/kubernetes/pull/51283))
 
-* The webhook admission plugin now works even if the API server and the nodes are in two separate networks. For example, in GKE.
-Fixed the webhook admission plugin so that webhook author could use the DNS name of the service as the CommonName when generating the server cert for the webhook.
+* The webhook admission plugin now works even if the API server and the nodes are in two separate networks,for example, in GKE.
+The webhook admission plugin now lets the webhook author use the DNS name of the service as the CommonName when generating the server cert for the webhook.
 Action required:
-Regenerate the server cert for the admission webhooks. Previously, the CN value can be ignored while generating the server cert for the admission webhook. Now you must set it to the DNS name of the webhook service: `<service.Name>.<service.Namespace>.svc`.([#50476](https://github.com/kubernetes/kubernetes/pull/50476))
+Regenerate the server cert for the admission webhooks. Previously, the CN value could be ignored while generating the server cert for the admission webhook. Now you must set it to the DNS name of the webhook service: `<service.Name>.<service.Namespace>.svc`.([#50476](https://github.com/kubernetes/kubernetes/pull/50476))
 
 
 #### Custom Resource Definitions (CRDs)
@@ -569,9 +566,9 @@ Regenerate the server cert for the admission webhooks. Previously, the CN value 
   Enable this alpha feature with the `CustomResourceValidation` feature gate in `kube-apiserver`.
 
 #### Garbage Collector
-* The garbage collector now supports custom APIs added via CustomResourceDefinition
+* The garbage collector now supports custom APIs added via Custom Resource Definitions
   or aggregated API servers. The garbage collector controller refreshes periodically.
-  Therefore, expect a latency of about 30 seconds between when the API is added and when
+  Therefore, expect a latency of about 30 seconds between when an API is added and when
   the garbage collector starts to manage it.
 
 
