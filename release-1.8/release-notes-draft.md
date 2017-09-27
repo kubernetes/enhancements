@@ -209,11 +209,11 @@ Consider the following changes, limitations, and guidelines before you upgrade:
 
 This section contains a list of known issues reported in Kubernetes 1.8 release. The content is populated via [v1.8.x known issues and FAQ accumulator](https://github.com/kubernetes/kubernetes/issues/53004).
 
-* minikube version less than or equal to 0.22.2 does not work with kubectl version greater than or equal to 1.8. This issue is caused by the presence of an unregistered type in the minikube API server. New versions of kubectl force validate the OpenAPI schema, which is not registered with all known types in the minikube API server.
+* Minikube version 0.22.2 or lower does not work with kubectl version 1.8 or higher. This issue is caused by the presence of an unregistered type in the minikube API server. New versions of kubectl force validate the OpenAPI schema, which is not registered with all known types in the minikube API server.
 
 For more information, see [#1996](https://github.com/kubernetes/minikube/issues/1996).
 
-* Audit logs might impact the API server performance and the latency of large request and response calls. The issue is observed under the following conditions: `AdvancedAuditing` feature gate is enabled, which is the default case, audit logging uses the log backend in JSON format, and the audit policy records large API calls at request and response level.
+* Audit logs might impact the API server performance and the latency of large request and response calls. The issue is observed under the following conditions: if `AdvancedAuditing` feature gate is enabled, which is the default case, if audit logging uses the log backend in JSON format, or if the audit policy records large API calls for requests or responses.
 
 For more information, see [#51899](https://github.com/kubernetes/kubernetes/issues/51899).
 
@@ -221,9 +221,13 @@ For more information, see [#51899](https://github.com/kubernetes/kubernetes/issu
 
 For more information, see [#53154](https://github.com/kubernetes/kubernetes/issues/53154).
 
-* `kubectl set` commands placed on ReplicaSet and DaemonSet occasionally return version errors. All set commands, including set image, set env, set resources, and set serviceaccounts, are impacted.
+* `kubectl set` commands placed on ReplicaSet and DaemonSet occasionally return version errors. All set commands, including set image, set env, set resources, and set serviceaccounts, are affected.
 
 For more information, see [#53040](https://github.com/kubernetes/kubernetes/issues/53040).
+
+* Object quotas are not consistently charged or updated. Specifically, the object count quota does not reliably account for uninitialized objects. Some quotas are charged only when an object is initialized. Others are charged when an object is created, whether it is initialized or not. We plan to fix this issue in a future release.
+
+For more information, see [#53109](https://github.com/kubernetes/kubernetes/issues/53109).
 
 ## Deprecations
 
