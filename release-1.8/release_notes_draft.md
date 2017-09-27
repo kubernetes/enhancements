@@ -243,7 +243,7 @@ This section provides an overview of deprecated API versions, options, flags, an
 
 - The `auto-detect` behavior of the kubelet's `--cloud-provider` flag is deprecated.
 
-  - In version 1.8, the default value for the kubelet's `--cloud-provider` flag is `auto-detect`. Be aware that it works only on a few cloud providers.
+  - In version 1.8, the default value for the kubelet's `--cloud-provider` flag is `auto-detect`. Be aware that it works only on GCE, AWS and Azure.
 
   - In version 1.9, the default will be `""`, which means no built-in cloud provider extension will be enabled by default.
 
@@ -314,7 +314,7 @@ kind.
  of reimplementing that process. `kubeadm join` writes the bootstrap KubeConfig
  file to `/etc/kubernetes/bootstrap-kubelet.conf`.
 
- #### Defaults
+#### Defaults
 
  - The default spec.updateStrategy for the StatefulSet and DaemonSet kinds is
  RollingUpdate for the apps/v1beta2 group version. Users may specifically set
@@ -483,28 +483,47 @@ kind.
 ### Auth
 
 * [GA] The RBAC API group has been promoted from v1beta1 to v1. No API changes were introduced.
+
 * [beta] Advanced auditing has been promoted from alpha to beta. The webhook and logging policy formats have changed since alpha, and may require modification.
+
 * [beta] Kubelet certificate rotation through the certificates API has been promoted from alpha to beta. RBAC cluster roles for the certificates controller have been added for common uses of the certificates API, such as the kubelet's.
+
 * [beta] SelfSubjectRulesReview, an API that lets a user see what actions they can perform with a namespace, has been added to the authorization.k8s.io API group. This bulk query is intended to enable UIs to show/hide actions based on the end user, and for users to quickly reason about their own permissions.
+
 * [alpha] Building on the 1.7 work to allow encryption of resources such as secrets, a mechanism to store resource encryption keys in external Key Management Systems (KMS) was introduced. This complements the original file-based storage and allows integration with multiple KMS. A Google Cloud KMS plugin was added and will be usable once the Google side of the integration is complete.
 
 * Websocket requests may now authenticate to the API server by passing a bearer token in a websocket subprotocol of the form `base64url.bearer.authorization.k8s.io.<base64url-encoded-bearer-token>`. ([#47740](https://github.com/kubernetes/kubernetes/pull/47740) [@liggitt](https://github.com/liggitt))
+
 * Advanced audit now correctly reports impersonated user info. ([#48184], [@CaoShuFeng](https://github.com/CaoShuFeng))
+
 * Advanced audit policy now supports matching subresources and resource names, but the top level resource no longer matches the subresouce. For example "pods" no longer matches requests to the logs subresource of pods. Use "pods/logs" to match subresources. ([#48836](https://github.com/kubernetes/kubernetes/pull/48836), [@ericchiang](https://github.com/ericchiang))
+
 * Previously a deleted service account or bootstrapping token secret would be considered valid until it was reaped. It is now invalid as soon as the `deletionTimestamp` is set. ([#48343](https://github.com/kubernetes/kubernetes/pull/48343), [@deads2k](https://github.com/deads2k); [#49057](https://github.com/kubernetes/kubernetes/pull/49057), [@ericchiang](https://github.com/ericchiang))
+
 * The `--insecure-allow-any-token` flag has been removed from the API server. Users of the flag should use impersonation headers instead for debugging. ([#49045](https://github.com/kubernetes/kubernetes/pull/49045), [@ericchiang](https://github.com/ericchiang))
+
 * The NodeRestriction admission plugin now allows a node to evict pods bound to itself. ([#48707](https://github.com/kubernetes/kubernetes/pull/48707), [@danielfm](https://github.com/danielfm))
+
 * The OwnerReferencesPermissionEnforcement admission plugin now requires `update` permission on the `finalizers` subresource of the referenced owner in order to set `blockOwnerDeletion` on an owner reference. ([#49133](https://github.com/kubernetes/kubernetes/pull/49133), [@deads2k](https://github.com/deads2k))
+
 * The SubjectAccessReview API in the `authorization.k8s.io` API group now allows providing the user uid. ([#49677](https://github.com/kubernetes/kubernetes/pull/49677), [@dims](https://github.com/dims))
+
 * After a kubelet rotates its client cert, it now closes its connections to the API server to force a handshake using the new cert. Previously, the kubelet could keep its existing connection open, even if the cert used for that connection was expired and rejected by the API server. ([#49899](https://github.com/kubernetes/kubernetes/pull/49899), [@ericchiang](https://github.com/ericchiang))
+
 * PodSecurityPolicies can now specify a whitelist of allowed paths for host volumes. ([#50212](https://github.com/kubernetes/kubernetes/pull/50212), [@jhorwit2](https://github.com/jhorwit2))
+
 * API server authentication now caches successful bearer token authentication results for a few seconds. ([#50258](https://github.com/kubernetes/kubernetes/pull/50258), [@liggitt](https://github.com/liggitt))
+
 * The OpenID Connect authenticator can now use a custom prefix, or omit the default prefix, for username and groups claims through the --oidc-username-prefix and --oidc-groups-prefix flags. For example, the authenticator can map a user with the username "jane" to "google:jane" by supplying the "google:" username prefix. ([#50875](https://github.com/kubernetes/kubernetes/pull/50875), [@ericchiang](https://github.com/ericchiang))
+
 * The bootstrap token authenticator can now configure tokens with a set of extra groups in addition to `system:bootstrappers`. ([#50933](https://github.com/kubernetes/kubernetes/pull/50933), [@mattmoyer](https://github.com/mattmoyer))
-* Advanced audit allows logging failed login attempts. ([#51119](https://github.com/kubernetes/kubernetes/pull/51119), [@soltysh](https://github.com/soltysh))
+
+* Advanced audit allows logging failed login attempts.
+ ([#51119](https://github.com/kubernetes/kubernetes/pull/51119), [@soltysh](https://github.com/soltysh))
+
 * A `kubectl auth reconcile` subcommand has been added for applying RBAC resources. When passed a file which contains RBAC roles, rolebindings, clusterroles, or clusterrolebindings, it will compute covers and add the missing rules. ([#51636](https://github.com/kubernetes/kubernetes/pull/51636), [@deads2k](https://github.com/deads2k))
 
-### **Cluster Lifecycle**
+### Cluster Lifecycle
 
 #### kubeadm
 
@@ -518,15 +537,15 @@ kind.
 
 #### kops
 
-* [alpha] Added support for targeting bare metal (or non-cloudprovider) machines. ([#360](https://github.com/kubernetes/features/issues/360), [@justinsb](https://github.com/justinsb)).
+* [alpha] Add support for targeting bare metal (or non-cloudprovider) machines. ([#360](https://github.com/kubernetes/features/issues/360), [@justinsb](https://github.com/justinsb)).
 
 * [alpha] kops now supports [running as a server](https://github.com/kubernetes/kops/blob/master/docs/api-server/README.md). ([#359](https://github.com/kubernetes/features/issues/359), [@justinsb](https://github.com/justinsb)).
 
-* [beta] GCE support has been promoted from alpha to beta. ([#358](https://github.com/kubernetes/features/issues/358), [@justinsb](https://github.com/justinsb)).
+* [beta] GCE support is promoted from alpha to beta. ([#358](https://github.com/kubernetes/features/issues/358), [@justinsb](https://github.com/justinsb)).
 
 #### Cluster Discovery/Bootstrap
 
-* [beta] The authentication and verification mechanism called Bootstrap Tokens has been improved. Use Bootstrap Tokens to add new node identities to a cluster easily. ([#130](https://github.com/kubernetes/features/issues/130), [@luxas](https://github.com/luxas), [@jbeda](https://github.com/jbeda)).
+* [beta] The authentication and verification mechanism called Bootstrap Tokens is improved. Use Bootstrap Tokens to add new node identities to a cluster easily. ([#130](https://github.com/kubernetes/features/issues/130), [@luxas](https://github.com/luxas), [@jbeda](https://github.com/jbeda)).
 
 #### Multi-platform
 
@@ -534,14 +553,19 @@ kind.
 
 #### Cloud Providers
 
-* [alpha] Support for the pluggable, out-of-tree and out-of-core cloud providers, has been significantly improved. ([#88](https://github.com/kubernetes/features/issues/88), [@wlan0](https://github.com/wlan0))
+* [alpha] Support for the pluggable, out-of-tree and out-of-core cloud providers, is significantly improved. ([#88](https://github.com/kubernetes/features/issues/88), [@wlan0](https://github.com/wlan0))
 
-### **Network**
+### Network
+
 #### network-policy
+
 * [beta] Apply NetworkPolicy based on CIDR ([#50033](https://github.com/kubernetes/kubernetes/pull/50033), [@cmluciano](https://github.com/cmluciano))
+
 * [beta] Support EgressRules in NetworkPolicy ([#51351](https://github.com/kubernetes/kubernetes/pull/51351), [@cmluciano](https://github.com/cmluciano))
+
 #### kube-proxy ipvs mode
-* [alpha] Support ipvs mode for kube-proxy([#46580](https://github.com/kubernetes/kubernetes/pull/46580), [@haibinxie](https://github.com/haibinxie))
+
+[alpha] Support ipvs mode for kube-proxy([#46580](https://github.com/kubernetes/kubernetes/pull/46580), [@haibinxie](https://github.com/haibinxie))
 
 ### API Machinery
 
@@ -589,36 +613,52 @@ Regenerate the server cert for the admission webhooks. Previously, the CN value 
 
 
 ## External Dependencies
-Continuous integration builds have used Docker versions 1.11.2, 1.12.6, 1.13.1,
-and 17.03.2. These versions have been validated on Kubernetes 1.8. However,
+
+Continuous integration builds use Docker versions 1.11.2, 1.12.6, 1.13.1,
+and 17.03.2. These versions were validated on Kubernetes 1.8. However,
 consult an appropriate installation or upgrade guide before deciding what
 versions of Docker to use.
 
 - Docker 1.13.1 and 17.03.2
-    - Shared PID namespace, live-restore, and overlay2 have been validated.
+
+    - Shared PID namespace, live-restore, and overlay2 were validated.
+
     - **Known issues**
-        - The default iptables FORWARD policy has been changed from ACCEPT to
+
+        - The default iptables FORWARD policy was changed from ACCEPT to
           DROP, which causes outbound container traffic to stop working by
           default. See
           [#40182](https://github.com/kubernetes/kubernetes/issues/40182) for
           the workaround.
-        - The support for the v1 registries has been removed.
+
+        - The support for the v1 registries was removed.
+
 - Docker 1.12.6
-    - Overlay2 and live-restore have *not* been validated.
+
+    - Overlay2 and live-restore are not validated.
+
     - **Known issues**
+
         - Shared PID namespace does not work properly.
           ([#207](https://github.com/kubernetes/community/pull/207#issuecomment-281870043))
+
         - Docker reports incorrect exit codes for containers.
           ([#41516](https://github.com/kubernetes/kubernetes/issues/41516))
+
 - Docker 1.11.2
+
     - **Known issues**
+
         - Kernel crash with Aufs storage driver on Debian Jessie
-          ([#27885](https://github.com/kubernetes/kubernetes/issues/27885)),
-          which can be identified by the node problem detector.
+          ([#27885](https://github.com/kubernetes/kubernetes/issues/27885)).
+          The issue can be identified by using the node problem detector.
+
         - File descriptor leak on init/control.
           ([#275](https://github.com/containerd/containerd/issues/275))
+
         - Additional memory overhead per container.
           ([#21737](https://github.com/kubernetes/kubernetes/pull/21737))
-        - Processes may be leaked when Docker is killed repeatedly in a short
+
+        - Processes may be leaked when Docker is repeatedly terminated in a short
           time frame.
           ([#41450](https://github.com/kubernetes/kubernetes/issues/41450))
