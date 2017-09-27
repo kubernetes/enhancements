@@ -221,7 +221,7 @@ For more information, see [#51899](https://github.com/kubernetes/kubernetes/issu
 
 For more information, see [#53154](https://github.com/kubernetes/kubernetes/issues/53154).
 
-* `kubectl set` commands placed on ReplicaSet and DaemonSet occasionally returns version errors. All the set commands, including set image, set env, set resources, and set serviceaccounts, are impacted.
+* `kubectl set` commands placed on ReplicaSet and DaemonSet occasionally return version errors. All set commands, including set image, set env, set resources, and set serviceaccounts, are impacted.
 
 For more information, see [#53040](https://github.com/kubernetes/kubernetes/issues/53040).
 
