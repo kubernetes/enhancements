@@ -213,6 +213,18 @@ This section contains a list of known issues reported in Kubernetes 1.8 release.
 
 For more information, see [#1996](https://github.com/kubernetes/minikube/issues/1996).
 
+* Audit logs might impact the API server performance and the latency of large request and response calls. The issue is observed under the following conditions: `AdvancedAuditing` feature gate is enabled, which is the default case, audit logging uses the log backend in JSON format, and the audit policy records large API calls at request and response level.
+
+For more information, see [#51899](https://github.com/kubernetes/kubernetes/issues/51899).
+
+* The `ENABLE_APISERVER_BASIC_AUDIT` configuration parameter for GCE deployments is broken, but deprecated.
+
+For more information, see [#53154](https://github.com/kubernetes/kubernetes/issues/53154).
+
+* `kubectl set` commands placed on ReplicaSet and DaemonSet occasionally returns version errors. All the set commands, including set image, set env, set resources, and set serviceaccounts, are impacted.
+
+For more information, see [#53040](https://github.com/kubernetes/kubernetes/issues/53040).
+
 ## Deprecations
 
 This section provides an overview of deprecated API versions, options, flags, and arguments. Deprecated means that we intend to remove the capability from a future release. After removal, the capability will no longer work. The sections are organized by SIGs.
