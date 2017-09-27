@@ -537,27 +537,26 @@ kind.
 
 ### API Machinery
 
-
 #### kube-apiserver
-* Fixes an issue with `APIService` auto-registration. This issue affected rolling restarts of HA API servers that added or removed API groups being served.([#51921](https://github.com/kubernetes/kubernetes/pull/51921))
+* Fixed an issue with `APIService` auto-registration. This issue affected rolling restarts of HA API servers that added or removed API groups being served.([#51921](https://github.com/kubernetes/kubernetes/pull/51921))
 
-* [Alpha] The Kubernetes API server now supports the ability to break large LIST calls into multiple smaller chunks.  A client can specify a limit to the number of results to return, and if more results exist a token will be returned that allows the client to continue the previous list call repeatedly until all results are retrieved.  The resulting list is identical to a list call that does not perform chunking thanks to capabilities provided by etcd3.  This allows the server to use less memory and CPU responding with very large lists.  This feature is gated as APIListChunking and is not enabled by default.  The 1.9 release will begin using this by default from all informers.([#48921](https://github.com/kubernetes/kubernetes/pull/48921))
+* [Alpha] The Kubernetes API server now supports the ability to break large LIST calls into multiple smaller chunks. A client can specify a limit to the number of results to return. If more results exist, a token is returned that allows the client to continue the previous list call repeatedly until all results are retrieved.  The resulting list is identical to a list call that does not perform chunking, thanks to capabilities provided by etcd3.  This allows the server to use less memory and CPU when very large lists are returned. This feature is gated as APIListChunking and is not enabled by default. The 1.9 release will begin using this by default.([#48921](https://github.com/kubernetes/kubernetes/pull/48921))
 
-* Ignore the pods marked for deletion that exceed their grace period in ResourceQuota.([#46542](https://github.com/kubernetes/kubernetes/pull/46542))
+* Pods that are marked for deletion and have exceeded their grace period, but are not yet deleted, no longer count toward the resource quota.([#46542](https://github.com/kubernetes/kubernetes/pull/46542))
 
 
 #### Dynamic Admission Control
 
 * Pod spec is mutable when the pod is uninitialized. The API server requires the pod spec to be valid even if it's uninitialized. Updating the status field of uninitialized pods is invalid.([#51733](https://github.com/kubernetes/kubernetes/pull/51733))
 
-* Use of the alpha initializers feature now requires enabling the `Initializers` feature gate. This feature gate is auto enabled if the `Initialzers` admission plugin is enabled.([#51436](https://github.com/kubernetes/kubernetes/pull/51436))
+* Use of the alpha initializers feature now requires enabling the `Initializers` feature gate. This feature gate is automatically enabled if the `Initializers` admission plugin is enabled.([#51436](https://github.com/kubernetes/kubernetes/pull/51436))
 
-* [Action required] validation rule on metadata.initializers.pending[x].name is tightened. The initializer name needs to contain at least three segments separated by dots. You can create objects with pending initializers and not rely on the API server to add pending initializers according to initializerconfiguration. If you do so, update the initializer name in the existing objects and the configuration files to comply to the new validation rule.([#51283](https://github.com/kubernetes/kubernetes/pull/51283))
+* [Action required] The validation rule for metadata.initializers.pending[x].name is tightened. The initializer name must contain at least three segments, separated by dots. You can create objects with pending initializers and not rely on the API server to add pending initializers according to `initializerConfiguration`. If you do so, update the initializer name in the existing objects and the configuration files to comply with the new validation rule.([#51283](https://github.com/kubernetes/kubernetes/pull/51283))
 
-* The webhook admission plugin now works even if the API server and the nodes are in two separate networks. For example, in GKE.
-Fixed the webhook admission plugin so that webhook author could use the DNS name of the service as the CommonName when generating the server cert for the webhook.
+* The webhook admission plugin now works even if the API server and the nodes are in two separate networks,for example, in GKE.
+The webhook admission plugin now lets the webhook author use the DNS name of the service as the CommonName when generating the server cert for the webhook.
 Action required:
-Regenerate the server cert for the admission webhooks. Previously, the CN value can be ignored while generating the server cert for the admission webhook. Now you must set it to the DNS name of the webhook service: `<service.Name>.<service.Namespace>.svc`.([#50476](https://github.com/kubernetes/kubernetes/pull/50476))
+Regenerate the server cert for the admission webhooks. Previously, the CN value could be ignored while generating the server cert for the admission webhook. Now you must set it to the DNS name of the webhook service: `<service.Name>.<service.Namespace>.svc`.([#50476](https://github.com/kubernetes/kubernetes/pull/50476))
 
 
 #### Custom Resource Definitions (CRDs)
@@ -567,9 +566,9 @@ Regenerate the server cert for the admission webhooks. Previously, the CN value 
   Enable this alpha feature with the `CustomResourceValidation` feature gate in `kube-apiserver`.
 
 #### Garbage Collector
-* The garbage collector now supports custom APIs added via CustomResourceDefinition
+* The garbage collector now supports custom APIs added via Custom Resource Definitions
   or aggregated API servers. The garbage collector controller refreshes periodically.
-  Therefore, expect a latency of about 30 seconds between when the API is added and when
+  Therefore, expect a latency of about 30 seconds between when an API is added and when
   the garbage collector starts to manage it.
 
 
