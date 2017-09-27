@@ -532,7 +532,8 @@ You can now create a Federated Job that is automatically deployed to one or more
 * [alpha] Add a CRI validation test suite and CRI command-line tools. ([#292](https://github.com/kubernetes/features/issues/292), [@feiskyer](https://github.com/feiskyer))
 
 * [stable] [cri-o](https://github.com/kubernetes-incubator/cri-o): CRI implementation for OCI-based runtimes [@mrunalp]
-  * Pass all the Kubernetes end-to-end test suites. 
+  * Passes all the Kubernetes 1.7 end-to-end conformance test suites.
+  * Verification against Kubernetes 1.8 is planned soon after release.
 
 * [stable] [frakti](https://github.com/kubernetes/frakti): CRI implementation for hypervisor-based runtimes is now v1.1. [@feiskyer]
 
