@@ -1,3 +1,19 @@
+# Release Notes
+
+Kubernetes version 1.8 includes new features and enhancements, as well as fixes to identified issues. The release notes contain a brief overview of the important changes introduced in this release. The content is organized by Special Interest Groups ([SIGs]()).
+
+For initial installations, see the [Setup topics][] in the Kubernetes
+documentation.
+
+To upgrade to this release from a previous version, take any actions required
+[Before Upgrading](#before-upgrading).
+
+For more information about the release and for the latest documentation,
+see the [Kubernetes documentation](https://kubernetes.io/docs/home/).
+
+[Setup topics]: https://kubernetes.io/docs/setup/pick-right-solution/
+[SIGs]: https://github.com/kubernetes/community/blob/master/sig-list.md
+
 
 ## Major Themes
 
