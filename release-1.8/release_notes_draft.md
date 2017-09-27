@@ -422,17 +422,47 @@ kind.
   * The prototype does not support quiescing before snapshot, so snapshots might be inconsistent.
   * For the prototype phase, this feature is external to the core Kubernetes, and can be found at https://github.com/kubernetes-incubator/external-storage/tree/master/snapshot
 
-### **Node Components**
+### Node Components
+
+#### Autoscaling and Metrics
+
+* Support for custom metrics in the Horizontal Pod Autoscaler is now at v1beta1. The associated metrics APIs (custom metrics and resource/master metrics) were also moved to v1beta1. For more information, see [Before Upgrading](#before-upgrading).
+
+* `metrics-server` is now the recommended way to provide the resource
+  metrics API. Deploy `metrics-server` as an add-on in the same way that you deploy Heapster.
+
+##### Cluster Autoscaler
+
+* Cluster autoscaler is now GA
+* Cluster support size is increased to 1000 nodes
+* Respect graceful pod termination of up to 10 minutes
+* Handle zone stock-outs and failures
+* Improve monitoring and error reporting
+
+#### Container Runtime Interface
+
+* [alpha] Add CRI validation test suite and CRI CLI. ([#292](https://github.com/kubernetes/features/issues/292), [@feiskyer](https://github.com/feiskyer))
+
+* [stable] Add support for CRI-O. The feature has passed all the Kubernetes end-to-end test suites (e2es). [@mrunalp]
+
+* [alpha] Add Kubernetes containerd integration. [cri-containerd](https://github.com/kubernetes-incubator/cri-containerd) v1.0.0-alpha.0, [@Random-Liu]
+
+  * Feature is complete. All the features defined in CRI are supported in version 1.8.
+  * All the CRI validation tests and regular node e2e tests are passed.
+  * An ansible playbook is provided to configure a Kubernetes cri-containerd cluster with kubeadm.
+
 #### kubelet
-* [alpha] Kubelet now supports alternative container-level CPU affinity policies using the new CPU manager. ([#375](https://github.com/kubernetes/features/issues/375), [@sjenning](https://github.com/sjenning), [@ConnorDoyle](https://github.com/ConnorDoyle))
+
+* [alpha] Kubelet now supports alternative container-level CPU affinity policies by using the new CPU manager. ([#375](https://github.com/kubernetes/features/issues/375), [@sjenning](https://github.com/sjenning), [@ConnorDoyle](https://github.com/ConnorDoyle))
 
 * [alpha] Applications may now request pre-allocated hugepages by using the new `hugepages` resource in the container resource requests. ([#275](https://github.com/kubernetes/features/issues/275), [@derekwaynecarr](https://github.com/derekwaynecarr))
 
-* [alpha] Add support for dynamic Kubelet configuration ([#281](https://github.com/kubernetes/features/issues/281), [@mtaufen](https://github.com/mtaufen))
+* [alpha] Add support for dynamic Kubelet configuration. ([#281](https://github.com/kubernetes/features/issues/281), [@mtaufen](https://github.com/mtaufen))
 
-* [alpha] Add the Hardware Device Plugins API ([#368](https://github.com/kubernetes/features/issues/368), [@jiayingz], [@RenaudWasTaken])
+* [alpha] Add the Hardware Device Plugins API. ([#368](https://github.com/kubernetes/features/issues/368), [@jiayingz], [@RenaudWasTaken])
 
-* [stable] Upgrade cAdvisor to v0.27.1 with the enhancement for node monitoring [@dashpole]
+* [stable] Upgrade cAdvisor to v0.27.1 with the enhancement for node monitoring. [@dashpole]
+
   * Fix journalctl leak
   * Fix container memory rss
   * Fix incorrect CPU usage with 4.7 kernel
@@ -440,45 +470,15 @@ kind.
   * Add hugepages support
   * Add CRI-O support
 
-* Sharing a PID namespace between containers in a pod is disabled by default in 1.8. To enable for a node, use the --docker-disable-shared-pid=false kubelet flag. Note that PID namespace sharing requires docker >= 1.13.1.
+* Sharing a PID namespace between containers in a pod is disabled by default in version 1.8. To enable for a node, use the `--docker-disable-shared-pid=false` kubelet flag. Be aware that PID namespace sharing requires Docker version greater than or equal to 1.13.1.
 
-* Implement StatsProvider interface using CRI stats [@yguo0905]
+* Implement StatsProvider interface using CRI stats. [@yguo0905]
 
-* Fixed issues for the eviction manager
+* Fix issues related to the eviction manager.
 
-* Fixed inconsistent Prometheus cAdvisor metrics
+* Fix inconsistent Prometheus cAdvisor metrics.
 
-* Fixed issues for local storage allocatable feature
-
-#### Container Runtime Interface
-* [alpha] Add CRI validation test suite and CRI CLI ([#292](https://github.com/kubernetes/features/issues/292), [@feiskyer](https://github.com/feiskyer))
-
-* [stable] CRI-O support, it has passed all e2es. [@mrunalp]
-
-* [alpha] Kubernetes containerd integration [cri-containerd](https://github.com/kubernetes-incubator/cri-containerd) v1.0.0-alpha.0, [@Random-Liu]
-  * Feature complete. Support all features defined in CRI in Kubernetes v1.8.
-  * Pass all CRI validation test and regular node e2e test.
-  * An ansible playbook is provided to bring up a Kubernetes cri-containerd cluster with kubeadm.
-
-
-#### Autoscaling and Metrics
-
-* Support for custom metrics in the Horizontal Pod Autoscaler is moving to
-  beta.  The associated metrics APIs (custom metrics and resource/master
-  metrics) are graduating to v1beta1.  See [Action Required Before
-  Upgrading](#action-required-before-upgrading).
-
-* metrics-server is now the reccomended way to provide the resource
-  metrics API. It is deployable as an addon, similarly to how Heapster is
-  deployed.
-
-##### Cluster Autoscaler
-
-* Cluster autoscaler is now GA
-* Incresed cluster support size to 1000 nodes
-* Respect graceful pod termination of up to 10 minutes
-* Handle zone stock-outs and failures
-* Improved monitoring and error reporting
+* Fix issues related to the local storage allocatable feature.
 
 ### Auth
 
