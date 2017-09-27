@@ -7,12 +7,13 @@ Validated large cluster performance under the following configuration:
 - Master machine-type - [auto-calculated]; OS - gci; Disk size - [auto-calculated]
 - Any non-default config used:
   - KUBE_ENABLE_CLUSTER_MONITORING=none
-  - ENABLE_BIG_CLUSTER_SUBNETS=true
+  - ENABLE_APISERVER_ADVANCED_AUDIT=false
+  - APISERVER_TEST_ARGS=--max-requests-inflight=3000 --max-mutating-requests-inflight=1000
   - SCHEDULER_TEST_ARGS=--kube-api-qps=100
   - CONTROLLER_MANAGER_TEST_ARGS=--kube-api-qps=100 --kube-api-burst=100
-  - APISERVER_TEST_ARGS=--max-requests-inflight=3000 --max-mutating-requests-inflight=1000
   - TEST_CLUSTER_RESYNC_PERIOD=--min-resync-period=12h
   - TEST_CLUSTER_DELETE_COLLECTION_WORKERS=--delete-collection-workers=16
+  - ENABLE_BIG_CLUSTER_SUBNETS=true
 - Any important test details:
   - Services disabled in load test
   - SLO used for 99%ile for api call latency:
@@ -32,6 +33,7 @@ Validated large cluster correctness under the following configuration:
 - Master machine-type - [auto-calculated]; OS - gci; Disk size - [auto-calculated]
 - Any non-default config used:
   - KUBE_ENABLE_CLUSTER_MONITORING=standalone
+  - ENABLE_APISERVER_ADVANCED_AUDIT=true
   - APISERVER_TEST_ARGS=--max-requests-inflight=1500 --max-mutating-requests-inflight=500
   - (rest same as above)
 - Any important test details:
@@ -40,4 +42,4 @@ Validated large cluster correctness under the following configuration:
 - <job-name, run#> of the validating run (to know other specific details from the logs): https://k8s-gubernator.appspot.com/build/kubernetes-jenkins/logs/ci-kubernetes-e2e-gce-scale-correctness/13
 
 Misc:
-- Seeing a performance regression in density test on 5k-node with api call latency (most notably 'patch node-status') - [#51899](https://github.com/kubernetes/kubernetes/issues/51899)
+- We're seeing a performance regression in density test wrt api call latency for `delete pods` - [#51899](https://github.com/kubernetes/kubernetes/issues/51899)
