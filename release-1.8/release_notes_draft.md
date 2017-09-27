@@ -537,7 +537,7 @@ kind.
 
 #### kops
 
-* [alpha] Add support for targeting bare metal (or non-cloudprovider) machines. ([#360](https://github.com/kubernetes/features/issues/360), [@justinsb](https://github.com/justinsb)).
+* [alpha] Added support for targeting bare metal (or non-cloudprovider) machines. ([#360](https://github.com/kubernetes/features/issues/360), [@justinsb](https://github.com/justinsb)).
 
 * [alpha] kops now supports [running as a server](https://github.com/kubernetes/kops/blob/master/docs/api-server/README.md). ([#359](https://github.com/kubernetes/features/issues/359), [@justinsb](https://github.com/justinsb)).
 
@@ -545,7 +545,7 @@ kind.
 
 #### Cluster Discovery/Bootstrap
 
-* [beta] The authentication and verification mechanism called Bootstrap Tokens is improved. Use Bootstrap Tokens to add new node identities to a cluster easily. ([#130](https://github.com/kubernetes/features/issues/130), [@luxas](https://github.com/luxas), [@jbeda](https://github.com/jbeda)).
+* [beta] The authentication and verification mechanism called Bootstrap Tokens is improved. Use Bootstrap Tokens to easily add new node identities to a cluster. ([#130](https://github.com/kubernetes/features/issues/130), [@luxas](https://github.com/luxas), [@jbeda](https://github.com/jbeda)).
 
 #### Multi-platform
 
@@ -553,7 +553,7 @@ kind.
 
 #### Cloud Providers
 
-* [alpha] Support for the pluggable, out-of-tree and out-of-core cloud providers, is significantly improved. ([#88](https://github.com/kubernetes/features/issues/88), [@wlan0](https://github.com/wlan0))
+* [alpha] Support is improved for the pluggable, out-of-tree and out-of-core cloud providers. ([#88](https://github.com/kubernetes/features/issues/88), [@wlan0](https://github.com/wlan0))
 
 ### Network
 
