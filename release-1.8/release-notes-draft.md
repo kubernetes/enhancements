@@ -1,39 +1,3 @@
-# Checklist for SIGs and Release Team
-As SIGs fill out their sections by component, please check off that
-you are finished. For guidance about what should have a release note
-please check out the [release notes guidance][] issue.
-
-- [x] sig-api-machinery
-- [x] sig-apps
-- [x] sig-architecture
-- [x] sig-auth
-- [x] sig-autoscaling
-- [x] sig-aws
-- [x] sig-azure
-- [x] sig-big-data
-- [x] sig-cli
-- [x] sig-cluster-lifecycle
-- [x] sig-cluster-ops
-- [x] sig-contributor-experience
-- [x] sig-docs
-- [ ] sig-federation
-- [x] sig-governance.md
-- [x] sig-instrumentation
-- [x] sig-network
-- [x] sig-node
-- [x] sig-on-premise
-- [x] sig-openstack
-- [x] sig-product-management
-- [x] sig-release
-- [x] sig-scalability
-- [x] sig-scheduling
-- [x] sig-service-catalog
-- [x] sig-storage
-- [x] sig-testing
-- [x] sig-ui
-- [x] sig-windows
-
-[release notes guidance]: https://github.com/kubernetes/community/issues/484
 
 ## Major Themes
 
@@ -380,7 +344,7 @@ kind.
 
 - [alpha] `kubectl` plugins: `kubectl` now allows binary extensibility. You can extend the default set of `kubectl` commands by writing plugins
   that provide new subcommands. Refer to the documentation for more information.
-  
+
 - `kubectl rollout` and `rollback` now support StatefulSet.
 
 - `kubectl scale` now uses the Scale subresource for kinds in the apps/v1beta2 group.
@@ -532,7 +496,7 @@ You can now create a Federated Job that is automatically deployed to one or more
 * [alpha] Add a CRI validation test suite and CRI command-line tools. ([#292](https://github.com/kubernetes/features/issues/292), [@feiskyer](https://github.com/feiskyer))
 
 * [stable] [cri-o](https://github.com/kubernetes-incubator/cri-o): CRI implementation for OCI-based runtimes [@mrunalp]
-  * Pass all the Kubernetes end-to-end test suites. 
+  * Pass all the Kubernetes end-to-end test suites.
 
 * [stable] [frakti](https://github.com/kubernetes/frakti): CRI implementation for hypervisor-based runtimes is now v1.1. [@feiskyer]
 
