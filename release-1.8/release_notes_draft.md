@@ -445,6 +445,12 @@ kind.
 
 * [stable] Add support for CRI-O. The feature has passed all the Kubernetes end-to-end test suites (e2es). [@mrunalp]
 
+* [stable] Add support for the hypervisor-based container runtime. [Frakti](https://github.com/kubernetes/frakti) v1.1, [@feiskyer]
+
+  * Enhance CNI plugin compatibility, supports flannel, calico, weave and so on.
+  * Pass all CRI validation conformance tests and node e2e conformance tests.
+  * Add experimental unikernel support.
+
 * [alpha] Add Kubernetes containerd integration. [cri-containerd](https://github.com/kubernetes-incubator/cri-containerd) v1.0.0-alpha.0, [@Random-Liu]
 
   * Feature is complete. All the features defined in CRI are supported in version 1.8.
