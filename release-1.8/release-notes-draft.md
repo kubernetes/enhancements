@@ -481,23 +481,27 @@ You can now create a Federated Job that is automatically deployed to one or more
 * Handle zone stock-outs and failures
 * Improve monitoring and error reporting
 
-#### Container Runtime Interface
+#### Container Runtime Interface (CRI)
 
-* [alpha] Add CRI validation test suite and CRI CLI. ([#292](https://github.com/kubernetes/features/issues/292), [@feiskyer](https://github.com/feiskyer))
+* [alpha] Add a CRI validation test suite and CRI command-line tools. ([#292](https://github.com/kubernetes/features/issues/292), [@feiskyer](https://github.com/feiskyer))
 
-* [stable] Add support for CRI-O. The feature has passed all the Kubernetes end-to-end test suites (e2es). [@mrunalp]
+* [stable] [cri-o](https://github.com/kubernetes-incubator/cri-o): CRI implementation for OCI-based runtimes [@mrunalp]
+  * Pass all the Kubernetes end-to-end test suites. 
 
-* [stable] Add support for the hypervisor-based container runtime. [Frakti](https://github.com/kubernetes/frakti) v1.1, [@feiskyer]
+* [stable] [frakti](https://github.com/kubernetes/frakti): CRI implementation for hypervisor-based runtimes is now v1.1. [@feiskyer]
 
   * Enhance CNI plugin compatibility, supports flannel, calico, weave and so on.
-  * Pass all CRI validation conformance tests and node e2e conformance tests.
-  * Add experimental unikernel support.
+  * Pass all CRI validation conformance tests and node end-to-end conformance tests.
+  * Add experimental Unikernel support.
 
-* [alpha] Add Kubernetes containerd integration. [cri-containerd](https://github.com/kubernetes-incubator/cri-containerd) v1.0.0-alpha.0, [@Random-Liu]
+* [alpha] [cri-containerd](https://github.com/kubernetes-incubator/cri-containerd): CRI implementation for containerd is now v1.0.0-alpha.0, [@Random-Liu]
 
-  * Feature is complete. All the features defined in CRI are supported in version 1.8.
-  * All the CRI validation tests and regular node e2e tests are passed.
+  * Feature complete. Support the full CRI API defined in v1.8.
+  * Pass all the CRI validation tests and regular node end-to-end tests.
   * An ansible playbook is provided to configure a Kubernetes cri-containerd cluster with kubeadm.
+
+* Add support in Kubelet to consume container metrics via CRI. [@yguo0905]
+  * There are known bugs that result in errors when querying Kubelet's stats summary API. We expect to fix them in v1.8.1.
 
 #### kubelet
 
@@ -519,8 +523,6 @@ You can now create a Federated Job that is automatically deployed to one or more
   * Add CRI-O support
 
 * Sharing a PID namespace between containers in a pod is disabled by default in version 1.8. To enable for a node, use the `--docker-disable-shared-pid=false` kubelet flag. Be aware that PID namespace sharing requires Docker version greater than or equal to 1.13.1.
-
-* Implement StatsProvider interface using CRI stats. [@yguo0905]
 
 * Fix issues related to the eviction manager.
 
