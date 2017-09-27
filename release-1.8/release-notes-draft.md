@@ -286,17 +286,18 @@ This section provides an overview of deprecated API versions, options, flags, an
 
 ## **Notable Features**
 
-### [Workload API (apps/v1beta2)](https://github.com/kubernetes/features/issues/353)
+### Workload API (apps/v1beta2)(https://github.com/kubernetes/features/issues/353)
 
-Kubernetes 1.8 adds the apps/v1beta2 group version. This group version contains
-the Kubernetes workload API which consists of the DaemonSet, Deployment,
-ReplicaSet and StatefulSet kinds. It is the current version of the API, and we
-intend to promote it to GA in upcoming releases
+Kubernetes 1.8 adds the apps/v1beta2 group and version, which now consists of the
+DaemonSet, Deployment, ReplicaSet and StatefulSet kinds. This group and version are part
+of the Kubernetes Workloads API. We
+plan to move them to v1 (GA) in an upcoming release, so you might want to plan your migration
+accordingly.
 
 #### API Object Additions and Migrations
 
-- The current version DaemonSet, Deployment, ReplicaSet, and StatefulSet kinds
-  are now in the apps/v1beta2 group version.
+- The DaemonSet, Deployment, ReplicaSet, and StatefulSet kinds
+  are now in the apps/v1beta2 group and version.
 - The apps/v1beta2 group version adds a Scale subresource for the StatefulSet
 kind.
 - All kinds in the apps/v1beta2 group version add a corresponding conditions
@@ -309,13 +310,13 @@ kind.
  must set the spec.selector in their manifests, and the creation of an object
  with a spec.selector that does not match the labels in its spec.template is
  considered to be invalid.
- - As none of the controllers in the workloads API handle selector mutation in
- a consistent way, selector mutation is disabled in for all kinds in the
+ - Because the controllers in the workloads API do not handle selector mutation in
+ a consistent way, selector mutation is disabled for all kinds in the
  app/v1beta2 group version. This restriction may be lifted in the future, but
- it is likely that that selectors will remain immutable after GA promotion.
- Users that have any code that depends on mutable selectors may continue to use
+ it is likely that that selectors will remain immutable after v1 (GA) promotion.
+ Users that have any code that depends on mutable selectors can continue to use
  the apps/v1beta1 API for this release, but they should begin migration to code
- that does depend on mutable selectors.
+ that does not depend on mutable selectors.
  - Extended Resources are fully-qualified resource names outside the
  `kubernetes.io` domain. Extended Resource quantities must be integers.
  Users can use any resource name of the form `[aaa.]my-domain.bbb/ccc`
@@ -335,69 +336,65 @@ kind.
 #### Defaults
 
  - The default spec.updateStrategy for the StatefulSet and DaemonSet kinds is
- RollingUpdate for the apps/v1beta2 group version. Users may specifically set
- the OnDelete strategy, and no strategy auto-conversion will be applied to
- replace defaulted values.
+ RollingUpdate for the apps/v1beta2 group version. Users can explicitly set
+ the OnDelete strategy, and no strategy auto-conversion is applied to
+ replace default values.
  - As mentioned in [Behavioral Changes](#behavioral-changes), selector
- defaulting is disabled.
+ defaults are disabled.
  - The default spec.revisionHistoryLimit for all applicable kinds in the
- apps/v1beta2 group version has set to 10.
+ apps/v1beta2 group version is 10.
  - The default spec.successfulJobsHistoryLimit is 3 and spec.failedJobsHistoryLimit
    is 1 on CronJobs.
 
-### [Workload API (batch)]
-- CronJob has been promoted to `batch/v1beta1` ([#41039](https://github.com/kubernetes/kubernetes/issues/41039), [@soltysh](https://github.com/soltysh)).
-- `batch/v2alpha.CronJob` has been deprecated in favor of `batch/v1beta` and will be removed in future releases.
-- Job has now the ability to set a failure policy using `.spec.backoffLimit`.  The default value for this new field is set to 6. ([#30243](https://github.com/kubernetes/kubernetes/issues/30243), [@clamoriniere1A](https://github.com/clamoriniere1A)).
-- `batch/v2alpha1.ScheduledJob` has been removed.
-- Job controller creates pods in batches instead of all at once ([#49142](https://github.com/kubernetes/kubernetes/pull/49142), [@joelsmith](https://github.com/joelsmith)).
-- Short `.spec.ActiveDeadlineSeconds` is properly applied to a job ([#48545](https://github.com/kubernetes/kubernetes/pull/48454), [@weiwei4](https://github.com/weiwei04)).
+### Workloads API (batch)
+- CronJob is now at `batch/v1beta1` ([#41039](https://github.com/kubernetes/kubernetes/issues/41039), [@soltysh](https://github.com/soltysh)).
+- `batch/v2alpha.CronJob` is deprecated in favor of `batch/v1beta` and will be removed in a future release.
+- Job can now set a failure policy using `.spec.backoffLimit`. The default value for this new field is 6. ([#30243](https://github.com/kubernetes/kubernetes/issues/30243), [@clamoriniere1A](https://github.com/clamoriniere1A)).
+- `batch/v2alpha1.ScheduledJob` is removed.
+- The Job controller now creates pods in batches instead of all at once. ([#49142](https://github.com/kubernetes/kubernetes/pull/49142), [@joelsmith](https://github.com/joelsmith)).
+- Short `.spec.ActiveDeadlineSeconds` is properly applied to a Job. ([#48545](https://github.com/kubernetes/kubernetes/pull/48454), [@weiwei4](https://github.com/weiwei04)).
 
 
 #### CLI Changes
 
-- [alpha] `kubectl` plugins: `kubectl` now allows binary extensibility as an alpha
-  feature. Users can extend the default set of `kubectl` commands by writing plugins
-  that provide new subcommands. Please refer to the documentation for more information.
+- [alpha] `kubectl` plugins: `kubectl` now allows binary extensibility. Users can extend the default set of `kubectl` commands by writing plugins
+  that provide new subcommands. Refer to the documentation for more information.
 - `kubectl rollout` and `rollback` now support StatefulSet.
 - `kubectl scale` now uses the Scale subresource for kinds in the apps/v1beta2 group.
 - `kubectl create configmap` and `kubectl create secret` subcommands now support
-  the `--append-hash` flag, which enables unique yet deterministic naming for
-  objects generated from files, e.g. via `--from-file`.
-- `kubectl run` learned how to set a service account name in the generated pod
+  the `--append-hash` flag, which enables unique but deterministic naming for
+  objects generated from files, for example with `--from-file`.
+- `kubectl run` can set a service account name in the generated pod
   spec with the `--serviceaccount` flag.
-- `kubectl proxy` will now correctly handle the `exec`, `attach`, and
-  `portforward` commands.  You must pass `--disable-filter` to the command in
-  order to allow these endpoints.
-- Added `cronjobs.batch` to "all", so `kubectl get all` returns them.
-- Add flag `--include-uninitialized` to kubectl annotate, apply, edit-last-applied,
-  delete, describe, edit, get, label, set. "--include-uninitialized=true" makes
+- `kubectl proxy` now correctly handles the `exec`, `attach`, and
+  `portforward` commands.  You must pass `--disable-filter` to the command to allow these commands.
+- Added `cronjobs.batch` to "all", so that `kubectl get all` returns them.
+- Added flag `--include-uninitialized` to `kubectl annotate`, `apply`, `edit-last-applied`,
+  `delete`, `describe`, `edit`, `get`, `label,` and `set`. `--include-uninitialized=true` makes
   kubectl commands apply to uninitialized objects, which by default are ignored
-  if the names of the objects are not provided. "--all" also makes kubectl
-  commands apply to uninitialized objects. Please see the
-  [initializer](https://kubernetes.io/docs/admin/extensible-admission-controllers/)
-  doc for more details.
-- Add RBAC reconcile commands through `kubectl auth reconcile -f FILE`. When
+  if the names of the objects are not provided. `--all` also makes kubectl
+  commands apply to uninitialized objects. See the
+  [initializer documentation](https://kubernetes.io/docs/admin/extensible-admission-controllers/) for more details.
+- Added RBAC reconcile commands with `kubectl auth reconcile -f FILE`. When
   passed a file which contains RBAC roles, rolebindings, clusterroles, or
-  clusterrolebindings, it will compute covers and add the missing rules.
-  The logic required to properly "apply" RBAC permissions is more complicated
-  that a json merge since you have to compute logical covers operations between
-  rule sets. This means that we cannot use kubectl apply to update RBAC roles
-  without risking breaking old clients (like controllers).
-- `kubectl delete` no longer scales down workload API objects prior to deletion.
-  Users who depend on ordered termination for the Pods of their StatefulSet’s
-  must use kubectl scale to scale down the StatefulSet prior to deletion.
-- `kubectl run --env` no longer supports CSV parsing. To provide multiple env
-  vars, use the `--env` flag multiple times instead of having env vars separated
-  by commas. E.g. `--env ONE=1 --env TWO=2` instead of `--env ONE=1,TWO=2`.
-- Remove deprecated command `kubectl stop`.
-- Allows kubectl to use http caching mechanism for the OpenAPI schema. The cache
-  directory can be configured through `--cache-dir` command line flag to kubectl.
-  If set to empty string, caching will be disabled.
-- Kubectl performs validation against OpenAPI schema rather than Swagger 1.2. If
+  clusterrolebindings, this command computes covers and adds the missing rules.
+  The logic required to properly apply RBAC permissions is more complicated
+  than a JSON merge because you have to compute logical covers operations between
+  rule sets. This means that we cannot use `kubectl apply` to update RBAC roles
+  without risking breaking old clients, such as controllers.
+- `kubectl delete` no longer scales down workload API objects before deletion.
+  Users who depend on ordered termination for the Pods of their StatefulSets
+  must use `kubectl scale` to scale down the StatefulSet before deletion.
+- `kubectl run --env` no longer supports CSV parsing. To provide multiple environment
+  variables, use the `--env` flag multiple times instead. Example: `--env ONE=1 --env TWO=2` instead of `--env ONE=1,TWO=2`.
+- Removed deprecated command `kubectl stop`.
+- Kubectl can now use http caching for the OpenAPI schema. The cache
+  directory can be configured by passing the `--cache-dir` command line flag to kubectl.
+  If set to an empty string, caching is disabled.
+- Kubectl now performs validation against OpenAPI schema instead of Swagger 1.2. If
   OpenAPI is not available on the server, it falls back to the old Swagger 1.2.
-- Add Italian translation for kubectl.
-- Add German translation for kubectl.
+- Added Italian translation for kubectl.
+- Added German translation for kubectl.
 
 #### Scheduling
 * [alpha] Support pod priority and creation of PriorityClasses ([user doc](https://kubernetes.io/docs/concepts/configuration/pod-priority-preemption/))([design doc](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/scheduling/pod-priority-api.md))
