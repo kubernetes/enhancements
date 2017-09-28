@@ -22,7 +22,7 @@ please check out the [release notes guidance][] issue.
 - [x] sig-network
 - [ ] sig-node
 - [ ] sig-on-premise
-- [ ] sig-openstack
+- [x] sig-openstack
 - [ ] sig-product-management
 - [ ] sig-release
 - [ ] sig-scalability
@@ -97,6 +97,12 @@ fundamental aspect of a secure cluster.
   - In v1.9, the default will be `""`, which means no built-in cloud provider extension will be enabled by default.
   - If you want to use an out-of-tree cloud provider in either version, you should use `--cloud-provider=external`
   - [PR #51312](https://github.com/kubernetes/kubernetes/pull/51312) and [announcement](https://groups.google.com/forum/#!topic/kubernetes-dev/UAxwa2inbTA)
+
+### OpenStack
+
+- The `openstack-heat` provider for `kube-up` is deprecated and will be removed
+  in a future release. Refer to [Issue #49213](https://github.com/kubernetes/kubernetes/issues/49213)
+  for background information.
 
 ## **Notable Features**
 
