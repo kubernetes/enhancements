@@ -44,4 +44,6 @@ One (example) option (details not final or guaranteed to be accurate):
 
 Carrying over known issues from previous releases? (documenting fixes?)
 
+## Publishing process
 
+The release notes are published as part of the lengthy `changelog.md` file. Ideally, the release notes should be published along with the documentation on kubernetes.io. Considering the usability factors, release notes are not consumable in the current form.
