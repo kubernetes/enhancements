@@ -275,6 +275,12 @@ This section provides an overview of deprecated API versions, options, flags, an
 
   - The `PersistentVolumeLabel` admission controller will be removed in a future release, when the out-of-tree versions of the GCE and AWS cloud providers move to GA. The cloud providers are marked alpha in version 1.9.
 
+### OpenStack
+
+- The `openstack-heat` provider for `kube-up` is deprecated and will be removed
+  in a future release. Refer to [Issue #49213](https://github.com/kubernetes/kubernetes/issues/49213)
+  for background information.
+
 ### Scheduling
 
   - Opaque Integer Resources (OIRs) are deprecated and will be removed in
