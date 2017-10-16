@@ -2,7 +2,7 @@
 
 ## Gaps
 
-Much content does not indicate what changed in this release. Even detailed descriptions of features don't indicate reliably whether they are new, or changes to existing functionality. Missing also are explanations of why changes were made (or added), or any indication of a use case. Asking for use cases is probably reaching too far, especially at this late date, but some indication of how things changed is important.
+Much content does not indicate what changed in this release. Even detailed descriptions of features don't indicate reliably whether they are new, or changes to existing functionality. Missing also is explanations of why changes were made (or added), or any indication of a use case. Asking for use cases is probably reaching too far, especially at this late date, but some indication of how things changed is important.
 
 The writers propose to contact individual sig leads, or where known the original release note authors, to ask these questions one-on-one and expand the relevant release notes as we revise them. In some cases there's enough information in linked PRs or issues for us to investigate on our own, but we don't have time to go code diving.
 
