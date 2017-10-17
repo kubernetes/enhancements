@@ -19,7 +19,7 @@ The proposal below is similar in layout previous releases:
 - Nov 22nd (Weds): v1.9.0-alpha.4
 - Nov 22nd (Weds): Code Freeze 
 - Nov 29th (Weds): v1.9.0-beta.0, v1.10.0-alpha.0
-- Dec 6th (Fri): v1.9.0-beta.rc.1
+- Dec 6th (Fri): v1.9.0-rc.1
 - Dec 8th (Mon): v1.10.0-alpha.1
 - Dec 13th (Weds):  v1.9.0 release!
 
@@ -66,7 +66,7 @@ The proposal below is similar in layout previous releases:
 
 ### Dec 8th - Dec 13th
 - Dec 8th (Weds): End of Code Freeze
-  * v1.9.0-beta.rc.1 candidate cut
+  * v1.9.0-rc.1 candidate cut
 	  * RC means no known release-blockers outstanding.
 	  * Only accept cherrypicks for release-blockers.
 	  * Announce on mailing lists, Twitter, etc. to ask people to build and test the RC and submit feedback
