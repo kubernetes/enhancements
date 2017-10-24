@@ -1,104 +1,127 @@
-# Proposed timeline for 1.9
-We will begin the 1.9 release the first week of October 2017.
+# Release 1.9
 
-The proposal below is similar in layout previous releases:
-- as before, key days aren't Fridays, since it can be hard to end milestones right up against weekends
-- there are a number of North American holidays during Q4, so this release will
-  have reduced scope and fewer features
-- same as in 1.8
-  * alpha's should not be cut unless all master-release-blocking tests are passing
-  * release notes for planned features done 2 weeks out from feature freeze
-  * docs PRs deadlines ahead of release
+The 1.9 release cycle begins on Monday, October 2, 2017.
 
-## 1.9 Release Schedule Key Dates
-- Oct 4th (Wed) coding start
+* [Release Team](http://bit.ly/k8s19-team)
+* [Meeting Minutes](http://bit.ly/k8s19-minutes)
+* [Zoom](http://bit.ly/k8s19-zoom)
+* [Slack](https://kubernetes.slack.com/messages/sig-release/)
+* [Forum](https://groups.google.com/forum/#!forum/kubernetes-sig-release)
+* [Feature Tracking Sheet](http://bit.ly/k8s19-features)
+* [Milestone Process](https://github.com/kubernetes/community/blob/master/contributors/devel/release/issues.md)
 
-- Oct 25th (Weds): v1.9.0-alpha.2
-- Oct 27th (Fri): Feature Freeze
-- Nov 8th (Weds): v1.9.0-alpha.3
-- Nov 22nd (Weds): v1.9.0-alpha.4
-- Nov 22nd (Weds): Code Freeze 
-- Nov 29th (Weds): v1.9.0-beta.0, v1.10.0-alpha.0
-- Dec 6th (Fri): v1.9.0-rc.1
-- Dec 8th (Mon): v1.10.0-alpha.1
-- Dec 13th (Weds):  v1.9.0 release!
+## Notes
 
-## 1.9 Details
+* There are a number of holidays plus KubeCon during Q4, so this release will
+  need to have a reduced scope in order to meet the tight schedule.
+* Features that don't have complete code and tests by [Code Freeze](#code-freeze)
+  **may be disabled by the release team** before cutting the first beta.
+* The release team will escalate [release-master-blocking](https://k8s-testgrid.appspot.com/sig-release-master-blocking)
+  failures to SIGs throughout the cycle, not just near release cuts.
+* Key deliverables (e.g. release cuts) tend to be scheduled on Wednesdays
+  to maintain context while ramping up and then responding to any problems.
 
-### Oct 5 - Nov 22
-- 8 week coding period
-- Release 1.9 alphas every 2 weeks
-  - Alphas only cut if [release-master-blocking](https://k8s-testgrid.appspot.com/release-master-blocking) are passing
-- Oct 11th (Weds): v1.9.0-alpha.1
-- Oct 25th (Weds): v1.9.0-alpha.2
-- Oct 27th (Fri): 
-    * Feature Freeze: all features going into release should have an associated issue in the features repo
-    * Release talking points draft due
-    * Sig themes due in relnotes draft
-- Oct 31st (Tues): 
-    * First draft of feature related release notes due
-    * Blog post draft for release team review
-- Nov 8th (Weds): v1.9.0-alpha.3
-- Nov 15th (Weds): 
-    * Final draft of feature related release notes due
-    * Finalize release talking points
-- Nov 22nd (Weds): v1.9.0-alpha.4
+## Timeline
 
+* Mon Oct 2: Start of release cycle
+* **Fri Oct 27: [Feature Freeze](#feature-freeze)**
+  * All features must have tracking issues.
+* Wed Nov 1: v1.9.0-alpha.2
+* Wed Nov 15: v1.9.0-alpha.3
+* Thu Nov 16: v1.9.0-beta.0
+  * Create `release-1.9` branch and start daily `branchff`.
+  * Start setting up branch CI.
+* **Mon Nov 20: [Code Slush](#code-slush)**
+  * All PRs must be approved for the milestone to merge.
+* **Wed Nov 22: [Code Freeze](#code-freeze)**
+  * All features must be code-complete (*including tests*) and have docs PRs open.
+  * Only release-blocking bug fixes allowed after this point.
+* **Mon Nov 27: [Pruning](#pruning)**
+  * The release team may begin **disabling incomplete features** unless they've
+    been granted [exceptions](#exceptions).
+* Wed Nov 29: v1.9.0-beta.1
+  * Begin manual downgrade testing.
+* Fri Dec 1: Docs Deadline
+  * All docs PRs should be ready for review.
+* Wed Dec 6: v1.9.0-beta.2 (week of KubeCon)
+* **Mon Dec 11: End of Code Freeze**
+  * Perform final `branchff`.
+  * The `master` branch reopens for work targeting v1.10.
+  * PRs for v1.9.0 must now be cherry-picked to the `release-1.9` branch.
+* **Wed Dec 13: v1.9.0**
+* Thu Dec 14: v1.10.0-alpha.1
+* Thu Dec 21: Release retrospective (in community meeting slot)
 
-### Nov 22 (Wed) - Dec 8 (Weds)
-- Nov 22 Begin Code Slush
-  * Hard deadline for feature-related PRs to be in submit queue with LGTM and approved label
-  * Add milestone restriction on submit queue.
-  * Community Feature Burndown Meetings held two or three times until release week (then every day). For those interested in joining please join [Kubernetes Milestone Burndown Group](https://groups.google.com/forum/#!forum/kubernetes-milestone-burndown)
-  * Focus on bugfix, test flakes and stabilization
-  * Ensure docs and release notes are written
-  * Identify all features going into the release, and make sure alpha, beta, ga is marked in features repo
-  * Release team to create release notes draft doc and share broadly
-- Nov 29th (Weds): v1.9.0-beta.0
-  * Branch Manager to create `release-1.9` branch and tests should be targeted
-    to v1.9
-  * v1.10.0-alpha.0 is cut
-  * Test-infra lead to set up CI for release branch.
-  * Begin regular fast-forwards (at least daily to keep CI up-to-date)
-  * Manual downgrade work should begin
-- Dec 1 (Fri)
-  * All docs PRs must be open for tech review
+## Details
 
-### Dec 8th - Dec 13th
-- Dec 8th (Weds): End of Code Freeze
-  * v1.9.0-rc.1 candidate cut
-	  * RC means no known release-blockers outstanding.
-	  * Only accept cherrypicks for release-blockers.
-	  * Announce on mailing lists, Twitter, etc. to ask people to build and test the RC and submit feedback
-	  * Perhaps managed k8s providers make rc.1 available on early access channels.
-  * More RCs as needed to verify release-blocking fixes.
-  * Final fast-forward of release branch.
-  * sig-pm to make decisions regarding blog posts and marketing material
-    releases and timeline
-  * After this, all changes for the release must now be cherrypicked in batches by branch
-  manager.
-  * Remove milestone restriction on submit queue. 
-  * Bot drains backlog.
-  * Finalize blog post
-- Dec 8th (Fri)
-  * Docs PRs lgtm'd and ready for merge
-- Dec 13th: Release 1.9!
+### Feature Freeze
 
+All features going into the release must have an associated issue in the
+[features repo](https://github.com/kubernetes/features) by **Fri Oct 27**.
 
-### Post Release
-- Dec 21st: Retrospective for 1.9
+SIG PM will then review features and work with other SIGs to draft release notes
+and themes.
 
-# Key features
-[Feature tracking spreadsheet
-link](https://docs.google.com/spreadsheets/d/1WmMJmqLvfIP8ERqgLtkKuE_Q2sVxX8ZrEcNxlVIJnNc/edit#gid=0)
+### Code Slush
 
-## Operational Notes 
-1. For the 1.9 release, the [release team](https://github.com/kubernetes/features/blob/master/release-1.9/release_team.md)
-  will use the following procedure to identify release blocking issues
-  1. Any issues listed in the [v1.9 milestone](https://github.com/kubernetes/kubernetes/issues?utf8=%E2%9C%93&q=is%3Aissue%20is%3Aopen%20milestone%3Av1.9)
-     will be considered release blocking. It is everyone's responsibility to move non blocking issues out of the `v1.9` milestone. Items targeting 1.9 can be moved into the `v1.9` milestone.
-     milestones **or the release will not ship**
+Starting on **Mon Nov 20**, only PRs that are [approved for the milestone](https://github.com/kubernetes/community/blob/master/contributors/devel/release/issues.md)
+will be allowed to merge into the `master` branch.
+All others will be deferred until the end of [Code Freeze](#code-freeze),
+when `master` opens back up for the next release cycle.
 
-# Contact us
-- [via slack](https://kubernetes.slack.com/messages/sig-release/)
-- [via email](mailto:kubernetes-release@googlegroups.com)
+Code Slush begins prior to Code Freeze to help reduce noise from miscellaneous
+changes that aren't related to issues that SIGs have approved for the milestone.
+Feature work is still allowed at this point, but it must follow the process to
+get approved for the milestone.
+
+#### Exceptions
+
+Starting at Code Slush, the release team will solicit and rule on
+[exception requests](https://github.com/kubernetes/features/blob/master/EXCEPTIONS.md)
+for feature and test work that is unlikely to be done by Code Freeze.
+
+### Code Freeze
+
+All features going into the release must be code-complete (*including tests*)
+and have [docs PRs](https://kubernetes.io/docs/home/contribute/create-pull-request/)
+open by **Wed Nov 22**.
+
+The docs PRs don't have to be ready to merge, but it should be clear what the
+topic will be and who's responsible for writing it.
+
+After this point, only release-blocking issues and PRs will be allowed in the
+milestone. The milestone bot will remove anything that lacks the
+`priority/critical-urgent` label.
+
+### Pruning
+
+Features that are partially implemented and/or lack sufficient tests may be
+considered for pruning beginning on **Mon Nov 27**,
+unless they've been granted [exceptions](#exceptions).
+
+The release team will work with SIGs and feature owners to evaluate each case,
+but for example, pruning could include actions such as:
+* Disabling the use of a new API or field.
+* Switching the default value of a flag or field.
+* Moving a new API or field behind an Alpha feature gate.
+* Reverting commits or deleting code.
+
+This needs to occur before the first Beta so we have time to gather signal on
+whether the system is stable in this state.
+
+Pruning is intended to be a last resort that is rarely used.
+The goal is just to make code freeze somewhat enforceable despite the lack of a
+feature branch process.
+
+### Burndown
+
+Burndown meetings are held two or three times until the final release is near,
+and then every business day until the release.
+
+Join the [Kubernetes Milestone Burndown Group](https://groups.google.com/forum/#!forum/kubernetes-milestone-burndown)
+to get the calendar invite.
+
+* Focus on bugfix, test flakes and stabilization.
+* Ensure docs and release notes are written.
+* Identify all features going into the release, and make sure alpha, beta, ga is marked in features repo.
+
