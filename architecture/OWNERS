@@ -1,0 +1,6 @@
+reviewers:
+  - sig-architecture-leads
+approvers:
+  - sig-architecture-leads
+labels:
+  - sig/architecture

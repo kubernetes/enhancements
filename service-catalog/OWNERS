@@ -1,0 +1,6 @@
+reviewers:
+  - sig-service-catalog-leads
+approvers:
+  - sig-service-catalog-leads
+labels:
+  - sig/service-catalog
