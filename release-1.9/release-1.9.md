@@ -33,17 +33,20 @@ The 1.9 release cycle begins on Monday, October 2, 2017.
   * Start setting up branch CI.
 * **Mon Nov 20: [Code Slush](#code-slush)**
   * All PRs must be approved for the milestone to merge.
-* **Wed Nov 22: [Code Freeze](#code-freeze)**
-  * All features must be code-complete (*including tests*) and have docs PRs open.
-  * Only release-blocking bug fixes allowed after this point.
+  **Wed Nov 22: [Code Freeze](#code-freeze)**
+  * All features must be code-complete (including tests)
+  * All features must have docs PRs open
+  * Only release-blocking bug fixes allowed after this point
 * **Mon Nov 27: [Pruning](#pruning)**
   * The release team may begin **disabling incomplete features** unless they've
     been granted [exceptions](#exceptions).
 * Wed Nov 29: v1.9.0-beta.1
   * Begin manual downgrade testing.
-* Fri Dec 1: Docs Deadline
-  * All docs PRs should be ready for review.
+* **Fri Dec 1: [Docs Deadline](#docs)**
+  * All docs PRs must be ready for review
 * Wed Dec 6: v1.9.0-beta.2 (week of KubeCon)
+* Fri Dec 8: Docs Complete
+  * All docs PRs are LGTM and ready to merge
 * **Mon Dec 11: End of Code Freeze**
   * Perform final `branchff`.
   * The `master` branch reopens for work targeting v1.10.
@@ -113,6 +116,17 @@ Pruning is intended to be a last resort that is rarely used.
 The goal is just to make code freeze somewhat enforceable despite the lack of a
 feature branch process.
 
+## Docs
+
+If a feature needs documentation, enter `Yes` in the [feature tracking spreadsheet](https://docs.google.com/spreadsheets/d/1WmMJmqLvfIP8ERqgLtkKuE_Q2sVxX8ZrEcNxlVIJnNc/edit#gid=0) and add a link to the documentation PR. You can open documentation PRs in the [kubernetes/website](https://github.com/kubernetes/website) repository.
+
+For documentation PRs:
+- Open PRs against the `release-1.9` branch based off of the [1.9 release PR](https://github.com/kubernetes/website/pull/5978).
+
+    The documentation workflow uses feature branches for release documentation, rather than basing from master. Be sure to open your PR against the [release branch](https://github.com/kubernetes/website/pull/5978).
+
+- Add your PR to the [1.9 Release milestone](https://github.com/kubernetes/website/milestone/16).
+
 ### Burndown
 
 Burndown meetings are held two or three times until the final release is near,
@@ -124,4 +138,3 @@ to get the calendar invite.
 * Focus on bugfix, test flakes and stabilization.
 * Ensure docs and release notes are written.
 * Identify all features going into the release, and make sure alpha, beta, ga is marked in features repo.
-
