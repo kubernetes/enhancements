@@ -33,20 +33,20 @@ The 1.9 release cycle begins on Monday, October 2, 2017.
   * Start setting up branch CI.
 * **Mon Nov 20: [Code Slush](#code-slush)**
   * All PRs must be approved for the milestone to merge.
-  **Wed Nov 22: [Code Freeze](#code-freeze)**
-  * All features must be code-complete (including tests)
-  * All features must have docs PRs open
-  * Only release-blocking bug fixes allowed after this point
+* **Wed Nov 22: [Code Freeze](#code-freeze)**
+  * All features must be code-complete (including tests).
+  * All features must have docs PRs open.
+  * Only release-blocking bug fixes allowed after this point.
 * **Mon Nov 27: [Pruning](#pruning)**
   * The release team may begin **disabling incomplete features** unless they've
     been granted [exceptions](#exceptions).
 * Wed Nov 29: v1.9.0-beta.1
   * Begin manual downgrade testing.
 * **Fri Dec 1: [Docs Deadline](#docs)**
-  * All docs PRs must be ready for review
+  * All docs PRs must be ready for review.
 * Wed Dec 6: v1.9.0-beta.2 (week of KubeCon)
 * Fri Dec 8: Docs Complete
-  * All docs PRs are LGTM and ready to merge
+  * All docs PRs are LGTM and ready to merge.
 * **Mon Dec 11: End of Code Freeze**
   * Perform final `branchff`.
   * The `master` branch reopens for work targeting v1.10.
