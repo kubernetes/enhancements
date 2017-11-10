@@ -116,7 +116,7 @@ Pruning is intended to be a last resort that is rarely used.
 The goal is just to make code freeze somewhat enforceable despite the lack of a
 feature branch process.
 
-## Docs
+### Docs
 
 If a feature needs documentation, enter `Yes` in the [feature tracking spreadsheet](https://docs.google.com/spreadsheets/d/1WmMJmqLvfIP8ERqgLtkKuE_Q2sVxX8ZrEcNxlVIJnNc/edit#gid=0) and add a link to the documentation PR. You can open documentation PRs in the [kubernetes/website](https://github.com/kubernetes/website) repository.
 
