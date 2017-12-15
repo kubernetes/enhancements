@@ -36,6 +36,12 @@ The core workloads API, which is composed of the DaemonSet, Deployment, ReplicaS
 
 SIG Auth focused on extension-related authorization improvements. Permissions can now be added to the built-in RBAC admin/edit/view roles using [cluster role aggregation](https://kubernetes.io/docs/admin/authorization/rbac/#aggregated-clusterroles). [Webhook authorizers](https://kubernetes.io/docs/admin/authorization/webhook/) can now deny requests and short-circuit checking subsequent authorizers. Performance and usability of the beta [PodSecurityPolicy](https://kubernetes.io/docs/concepts/policy/pod-security-policy/) feature was also improved.
 
+### AWS
+
+In v1.9 SIG AWS has improved stability of EBS support across the board. Support for NVMe disks has been added to Kubernetes.  If a Volume is “stuck” in the attaching state to a node for too long a unschedulable taint will be applied to the node, so a Kubernetes admin can [take manual steps to correct the error](http://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ebs-attaching-volume.html).
+
+In addition, a service of type LoadBalancer can now be backed with an NLB instead of an ELB (alpha).
+
 ### Azure
 
 SIG Azure worked on improvements in the cloud provider, including significant work on the Azure Load Balancer implementation.
