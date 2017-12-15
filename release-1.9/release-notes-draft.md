@@ -4,7 +4,7 @@
 
 Before updating to 1.9, you are strongly recommended to back up your etcd data. Consult the installation procedure you are using (kargo, kops, kube-up, kube-aws, kubeadm etc) for specific advice.
 
-Kubernetes 1.9 now defaults to etcd 3.1. Some upgrade methods might upgrade etcd from 3.0 to 3.1 automatically when you upgrade from Kubernetes 1.8, unless you specify otherwise. Because [etcd does not support downgrading](https://coreos.com/etcd/docs/latest/upgrades/upgrade_3_1.html), you'll need to either remain on etcd 3.1 or restore from a backup if you want to downgrade back to Kubernetes 1.8.
+Some upgrade methods might upgrade etcd from 3.0 to 3.1 automatically when you upgrade from Kubernetes 1.8, unless you specify otherwise. Because [etcd does not support downgrading](https://coreos.com/etcd/docs/latest/upgrades/upgrade_3_1.html), you'll need to either remain on etcd 3.1 or restore from a backup if you want to downgrade back to Kubernetes 1.8.
 
 ## Introduction to 1.9.0
 
@@ -19,10 +19,7 @@ For more information about this release and for the latest documentation, see th
 ## Major themes
 
 Kubernetes is developed by community members whose work is organized into
-[Special Interest Groups][]. For the 1.9 release, SIGs provide the
-themes that guided their work.
-
-[Special Interest Groups]: https://github.com/kubernetes/community/blob/master/sig-list.md
+[Special Interest Groups](https://github.com/kubernetes/community/blob/master/sig-list.md), which provide the themes that guide their work. For the 1.9 release, these themes included:
 
 ### API Machinery
 
@@ -30,7 +27,7 @@ Extensibility. SIG API Machinery added a new class of admission control webhooks
 
 ### Apps
 
-The core workloads API, which is composed of the DaemonSet, Deployment, ReplicaSet, and StatefulSet kinds, has been promoted to GA stability in the apps/v1 group version. The apps/v1beta2 group version is deprecated. All new code should use the kinds in the apps/v1 group version. 
+The core workloads API, which is composed of the DaemonSet, Deployment, ReplicaSet, and StatefulSet kinds, has been promoted to GA stability in the apps/v1 group version. As such, the apps/v1beta2 group version is deprecated, and all new code should use the kinds in the apps/v1 group version. 
 
 ### Auth
 
@@ -38,9 +35,9 @@ SIG Auth focused on extension-related authorization improvements. Permissions ca
 
 ### AWS
 
-In v1.9 SIG AWS has improved stability of EBS support across the board. Support for NVMe disks has been added to Kubernetes.  If a Volume is “stuck” in the attaching state to a node for too long a unschedulable taint will be applied to the node, so a Kubernetes admin can [take manual steps to correct the error](http://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ebs-attaching-volume.html).
+In v1.9 SIG AWS has improved stability of EBS support across the board. If a Volume is “stuck” in the attaching state to a node for too long a unschedulable taint will be applied to the node, so a Kubernetes admin can [take manual steps to correct the error](http://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ebs-attaching-volume.html). Users are encouraged to ensure they are monitoring for the taint, and should consider automatically terminating instances in this state.
 
-In addition, a service of type LoadBalancer can now be backed with an NLB instead of an ELB (alpha).
+In addition, support for NVMe disks has been added to Kubernetes, and a service of type LoadBalancer can now be backed with an NLB instead of an ELB (alpha).
 
 ### Azure
 
@@ -48,7 +45,7 @@ SIG Azure worked on improvements in the cloud provider, including significant wo
 
 ### Cluster Lifecycle
 
-SIG Cluster Lifecycle has been focusing on improving kubeadm in order to bring it to GA in a future release and developing the [Cluster API](https://github.com/kubernetes/kube-deploy/tree/master/cluster-api). For kubeadm, most new features have gone in as alpha features, for instance support for CoreDNS, IPv6 and Dynamic Kubelet Configuration. We expect to graduate these features to beta and beyond in the next release. The initial Cluster API spec and GCE sample implementation were developed from scratch during this cycle, and we look forward to stabilizing them into something production-grade during 2018.
+SIG Cluster Lifecycle has been focusing on improving kubeadm in order to bring it to GA in a future release, as well as developing the [Cluster API](https://github.com/kubernetes/kube-deploy/tree/master/cluster-api). For kubeadm, most new features, such as support for CoreDNS, IPv6 and Dynamic Kubelet Configuration, have gone in as alpha features. We expect to graduate these features to beta and beyond in the next release. The initial Cluster API spec and GCE sample implementation were developed from scratch during this cycle, and we look forward to stabilizing them into something production-grade during 2018.
 
 ### Instrumentation
 
@@ -60,25 +57,25 @@ In v1.9 SIG Network has implemented alpha support for IPv6, and alpha support fo
 
 ### Node
 
-SIG Node iterated on the ability to support more workloads with better performance and improved reliability.  Alpha features were improved around hardware accelerator support, device plugins enablement, and cpu pinning policies to enable us to graduate these features to beta in a future release.  In addition a number of reliability and performance enhancements were made across the node to help operators in production. 
+SIG Node iterated on the ability to support more workloads with better performance and improved reliability.  Alpha features were improved around hardware accelerator support, device plugins enablement, and cpu pinning policies to enable us to graduate these features to beta in a future release.  In addition, a number of reliability and performance enhancements were made across the node to help operators in production. 
 
 ### OpenStack
 
-Configuration simplification through smarter defaults and the use of auto-detection wherever feasible (Block Storage API versions, Security Groups) as well as updating API support:
+In this cycle, SIG OpenStack focused on configuration simplification through smarter defaults and the use of auto-detection wherever feasible (Block Storage API versions, Security Groups) as well as updating API support, including:
 
 *   Block Storage (Cinder) V3 is now supported.
 *   Load Balancer (Octavia) V2 is now supported, in addition to Neutron LBaaS V2.
 *   Neutron LBaas V1 support has been removed.
 
-This allows Kubernetes to take full advantage of the relevant services as exposed by OpenStack clouds. Refer to the [Cloud Providers](https://kubernetes.io/docs/concepts/cluster-administration/cloud-providers/#openstack) documentation for more information.
+This work enables Kubernetes to take full advantage of the relevant services as exposed by OpenStack clouds. Refer to the [Cloud Providers](https://kubernetes.io/docs/concepts/cluster-administration/cloud-providers/#openstack) documentation for more information.
 
 ### Storage
 
 [SIG Storage](https://github.com/kubernetes/community/tree/master/sig-storage) is responsible for storage and volume plugin components.
 
-For the 1.9 release, SIG Storage made Kubernetes more pluggable and modular by introducing an alpha implementation of Container Storage Interface (CSI). CSI will make installing new volume plugins as easy as deploying a pod, and enable third-party storage providers to develop their plugins without the need to add code to the core Kubernetes codebase.
+For the 1.9 release, SIG Storage made Kubernetes more pluggable and modular by introducing an alpha implementation of the Container Storage Interface (CSI). CSI will make installing new volume plugins as easy as deploying a pod, and enable third-party storage providers to develop their plugins without the need to add code to the core Kubernetes codebase.
 
-The SIG also focused on adding functionality to the Kubernetes volume subsystem: alpha support for exposing volumes as block devices inside containers, extending the alpha volume-resizing support to more volume plugins, and topology aware volume scheduling.
+The SIG also focused on adding functionality to the Kubernetes volume subsystem, such as alpha support for exposing volumes as block devices inside containers, extending the alpha volume-resizing support to more volume plugins, and topology-aware volume scheduling.
 
 ### Windows
 
