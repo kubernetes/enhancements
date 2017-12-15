@@ -177,6 +177,10 @@ This section contains a list of known issues reported in Kubernetes 1.9 release.
 
   For more information, see [#47131](https://github.com/kubernetes/kubernetes/issues/47131)
 
+*   If a namespaced resource is owned by a cluster scoped resource, and the namespaced dependent is processed before the cluster scoped owner has ever been observed by the garbage collector, the dependent will be erroneously deleted.
+
+  For more information, see [#54940](https://github.com/kubernetes/kubernetes/issues/54940)
+
 ## Deprecations
 
 This section provides an overview of deprecated API versions, options, flags, and arguments. Deprecated means that we intend to remove the capability from a future release. After removal, the capability will no longer work. The sections are organized by SIGs.
@@ -518,6 +522,9 @@ As announced with the release of version 1.8, the Kubernetes Workloads API is at
 *   [stable] [frakti](https://github.com/kubernetes/frakti): CRI implementation for hypervisor-based runtimes is now v1.9. [[@resouer](https://github.com/resouer)]
     *   Added ARM64 release. Upgraded to CNI 0.6.0, added block device as Pod volume mode. Fixed CNI plugin compatibility.
     *   Passed all CRI validation conformance tests and node end-to-end conformance tests.
+*   [alpha] [rktlet](https://github.com/kubernetes-incubator/rktlet): CRI implementation for the rkt runtime is now v0.1.0. [[@iaguis](https://github.com/iaguis)]
+    *   This is the first release of rktlet and it implements support for the CRI including fetching images, running pods, CNI networking, logging and exec.
+This release passes 129/145 Kubernetes e2e conformance tests.
 *   Container Runtime Interface API change. [[@yujuhong](https://github.com/yujuhong)]
     *   A new field is added to CRI container log format to support splitting a long log line into multiple lines. ([#55922](https://github.com/kubernetes/kubernetes/pull/55922), [@Random-Liu](https://github.com/Random-Liu))
     *   CRI now supports debugging via a verbose option for status functions. ([#53965](https://github.com/kubernetes/kubernetes/pull/53965), [@Random-Liu](https://github.com/Random-Liu))
