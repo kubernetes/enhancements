@@ -12,7 +12,7 @@ Kubernetes version 1.9 includes new features and enhancements, as well as fixes 
 
 For initial installations, see the [Setup topics](https://kubernetes.io/docs/setup/pick-right-solution/) in the Kubernetes documentation.
 
-To upgrade to this release from a previous version, first take any actions required [Before Upgrading](https://github.com/kubernetes/kubernetes/blob/master/CHANGELOG-1.8.md#before-upgrading).
+To upgrade to this release from a previous version, first take any actions required [Before Upgrading](https://github.com/kubernetes/kubernetes/blob/master/CHANGELOG-1.9.md#before-upgrading).
 
 For more information about this release and for the latest documentation, see the [Kubernetes documentation](https://kubernetes.io/docs/home/).
 
@@ -68,7 +68,7 @@ This allows Kubernetes to take full advantage of the relevant services as expose
 
 For the 1.9 release, SIG Storage made Kubernetes more pluggable and modular by introducing an alpha implementation of Container Storage Interface (CSI). CSI will make installing new volume plugins as easy as deploying a pod, and enable third-party storage providers to develop their plugins without the need to add code to the core Kubernetes codebase.
 
-The SIG also focused on adding functionality to the Kubernetes volume subsystem: alpha support for exposing volumes as block devices inside containers, extending the alpha volume-resizing support to more volume plugins, and topology Aware volume scheduling.
+The SIG also focused on adding functionality to the Kubernetes volume subsystem: alpha support for exposing volumes as block devices inside containers, extending the alpha volume-resizing support to more volume plugins, and topology aware volume scheduling.
 
 ### Windows
 
@@ -101,11 +101,11 @@ Consider the following changes, limitations, and guidelines before you upgrade:
     *   You can manually set `--cloud-provider=auto-detect`, but be aware that this behavior will be removed completely in a future version.
     *   Best practice for version 1.9 and future versions is to explicitly set a cloud-provider. See [the documentation](https://kubernetes.io/docs/getting-started-guides/scratch/#cloud-providers)
 *   The kubeadm `--skip-preflight-checks` flag is now deprecated and will be removed in a future release.
-*   If you are using the cloud provider API to determine the external host address of the apiserver, set --external-hostname explicitly instead. The cloud provider detection has been deprecated and will be removed in the future ([#54516](https://github.com/kubernetes/kubernetes/pull/54516),[ @dims](https://github.com/dims))
+*   If you are using the cloud provider API to determine the external host address of the apiserver, set `--external-hostname` explicitly instead. The cloud provider detection has been deprecated and will be removed in the future ([#54516](https://github.com/kubernetes/kubernetes/pull/54516),[ @dims](https://github.com/dims))
 
 ### **Multicluster**
 
-*   Development of Kubernetes Federation has moved to github.com/kubernetes/federation. This move out of tree also means that Federation will begin releasing separately from Kubernetes. Impact: 
+*   Development of Kubernetes Federation has moved to [github.com/kubernetes/federation](github.com/kubernetes/federation). This move out of tree also means that Federation will begin releasing separately from Kubernetes. Impact: 
     *   Federation-specific behavior will no longer be included in kubectl
     *   kubefed will no longer be released as part of Kubernetes
     *   The Federation servers will no longer be included in the hyperkube binary and image. ([#53816](https://github.com/kubernetes/kubernetes/pull/53816),[ @marun](https://github.com/marun))
@@ -118,8 +118,8 @@ Consider the following changes, limitations, and guidelines before you upgrade:
 ### **Network**
 
 *   NetworkPolicy objects are now stored in etcd in v1 format. After you upgrade to version 1.9, make sure that all NetworkPolicy objects are migrated to v1. ([#51955](https://github.com/kubernetes/kubernetes/pull/51955), [@danwinship](https://github.com/danwinship))
-*   The API group/version for the kube-proxy configuration has changed from componentconfig/v1alpha1 to kubeproxy.config.k8s.io/v1alpha1. If you are using a config file for kube-proxy instead of the command line flags, you must change its apiVersion to kubeproxy.config.k8s.io/v1alpha1. ([#53645](https://github.com/kubernetes/kubernetes/pull/53645), [@xiangpengzhao](https://github.com/xiangpengzhao))
-*   The "ServiceNodeExclusion" feature gate must now be enabled in order for the alpha.service-controller.kubernetes.io/exclude-balancer annotation on nodes to be honored. ([#54644](https://github.com/kubernetes/kubernetes/pull/54644),[ @brendandburns](https://github.com/brendandburns))
+*   The API group/version for the kube-proxy configuration has changed from `componentconfig/v1alpha1` to `kubeproxy.config.k8s.io/v1alpha1`. If you are using a config file for kube-proxy instead of the command line flags, you must change its apiVersion to `kubeproxy.config.k8s.io/v1alpha1`. ([#53645](https://github.com/kubernetes/kubernetes/pull/53645), [@xiangpengzhao](https://github.com/xiangpengzhao))
+*   The "ServiceNodeExclusion" feature gate must now be enabled for the `alpha.service-controller.kubernetes.io/exclude-balancer` annotation on nodes to be honored. ([#54644](https://github.com/kubernetes/kubernetes/pull/54644),[ @brendandburns](https://github.com/brendandburns))
 
 ### **Scheduling**
 
@@ -146,7 +146,7 @@ Consider the following changes, limitations, and guidelines before you upgrade:
 
 ## Known Issues
 
-This section contains a list of known issues reported in Kubernetes 1.9 release. The content is populated from the `v1.9.x known issues and FAQ accumulator`([https://github.com/kubernetes/kubernetes/issues/57159](https://github.com/kubernetes/kubernetes/issues/57159)).
+This section contains a list of known issues reported in Kubernetes 1.9 release. The content is populated from the [v1.9.x known issues and FAQ accumulator](https://github.com/kubernetes/kubernetes/issues/57159](https://github.com/kubernetes/kubernetes/issues/57159).
 
 *   If you are adding Windows Server Virtual Machines as nodes to your Kubernetes environment, there is a compatibility issue with certain virtualization products. Specifically the Windows version of the kubelet.exe calls `GetPhysicallyInstalledSystemMemory` to get the physical memory installed on Windows machines and reports it as part of node metrics to heapster. This API call fails for VMware and VirtualBox virtualization environments. This issue is not present in bare metal Windows deployments, in Hyper-V, or on some of the popular public cloud providers.
 
@@ -176,20 +176,20 @@ This section provides an overview of deprecated API versions, options, flags, an
 
 ### **API Machinery**
 
-*   The kube-apiserver --etcd-quorum-read flag is deprecated and the ability to switch off quorum read will be removed in a future release. ([#53795](https://github.com/kubernetes/kubernetes/pull/53795),[ @xiangpengzhao](https://github.com/xiangpengzhao))
+*   The kube-apiserver `--etcd-quorum-read` flag is deprecated and the ability to switch off quorum read will be removed in a future release. ([#53795](https://github.com/kubernetes/kubernetes/pull/53795),[ @xiangpengzhao](https://github.com/xiangpengzhao))
 *   The `/ui` redirect in kube-apiserver is deprecated and will be removed in Kubernetes 1.10. ([#53046](https://github.com/kubernetes/kubernetes/pull/53046), [@maciaszczykm](https://github.com/maciaszczykm))
 *   `etcd2` as a backend is deprecated and support will be removed in Kubernetes 1.13.
 
 ### **Auth**
 
-*   Default controller-manager options for --cluster-signing-cert-file and --cluster-signing-key-file are deprecated and will be removed in a future release. ([#54495](https://github.com/kubernetes/kubernetes/pull/54495),[ @mikedanese](https://github.com/mikedanese))
+*   Default controller-manager options for `--cluster-signing-cert-file` and `--cluster-signing-key-file` are deprecated and will be removed in a future release. ([#54495](https://github.com/kubernetes/kubernetes/pull/54495),[ @mikedanese](https://github.com/mikedanese))
 *   RBAC objects are now stored in etcd in v1 format. After upgrading to 1.9, ensure all RBAC objects (Roles, RoleBindings, ClusterRoles, ClusterRoleBindings) are at v1. v1alpha1 support is deprecated and will be removed in a future release. ([#52950](https://github.com/kubernetes/kubernetes/pull/52950),[ @liggitt](https://github.com/liggitt))
 
 ### **Cluster Lifecycle**
 
-*   kube-apiserver: --ssh-user and --ssh-keyfile are now deprecated and will be removed in a future release. Users of SSH tunnel functionality in Google Container Engine for the Master -> Cluster communication should plan alternate methods for bridging master and node networks. ([#54433](https://github.com/kubernetes/kubernetes/pull/54433),[ @dims](https://github.com/dims))
+*   kube-apiserver: `--ssh-user` and `--ssh-keyfile` are now deprecated and will be removed in a future release. Users of SSH tunnel functionality in Google Container Engine for the Master -> Cluster communication should plan alternate methods for bridging master and node networks. ([#54433](https://github.com/kubernetes/kubernetes/pull/54433),[ @dims](https://github.com/dims))
 *   The kubeadm `--skip-preflight-checks` flag is now deprecated and will be removed in a future release.
-*   If you are using the cloud provider API to determine the external host address of the apiserver, set --external-hostname explicitly instead. The cloud provider detection has been deprecated and will be removed in the future ([#54516](https://github.com/kubernetes/kubernetes/pull/54516),[ @dims](https://github.com/dims))
+*   If you are using the cloud provider API to determine the external host address of the apiserver, set `--external-hostname` explicitly instead. The cloud provider detection has been deprecated and will be removed in the future ([#54516](https://github.com/kubernetes/kubernetes/pull/54516),[ @dims](https://github.com/dims))
 
 ### **Network**
 
@@ -201,11 +201,11 @@ This section provides an overview of deprecated API versions, options, flags, an
 
 ### **Scheduling**
 
-*   The kube-scheduler command now supports a --config flag, which is the location of a file containing a serialized scheduler configuration. Most other kube-scheduler flags are now deprecated. ([#52562](https://github.com/kubernetes/kubernetes/pull/52562),[ @ironcladlou](https://github.com/ironcladlou))
+*   The kube-scheduler command now supports a `--config` flag, which is the location of a file containing a serialized scheduler configuration. Most other kube-scheduler flags are now deprecated. ([#52562](https://github.com/kubernetes/kubernetes/pull/52562),[ @ironcladlou](https://github.com/ironcladlou))
 
 ### **Node**
 
-*   The kubelet's --enable-custom-metrics flag is now deprecated. ([#54154](https://github.com/kubernetes/kubernetes/pull/54154),[ @mtaufen](https://github.com/mtaufen))
+*   The kubelet's `--enable-custom-metrics` flag is now deprecated. ([#54154](https://github.com/kubernetes/kubernetes/pull/54154),[ @mtaufen](https://github.com/mtaufen))
 
 ## Notable Changes
 
@@ -238,19 +238,19 @@ As announced with the release of version 1.8, the Kubernetes Workloads API is at
 #### **Custom Resources**
 
 *   Validation of resources defined by a Custom Resource Definition (CRD) is now in beta ([#54647](https://github.com/kubernetes/kubernetes/pull/54647),[ @colemickens](https://github.com/colemickens))
-*   An example CRD controller has been added, at github.com/kubernetes/sample-controller. ([#52753](https://github.com/kubernetes/kubernetes/pull/52753),[ @munnerz](https://github.com/munnerz))
+*   An example CRD controller has been added, at [github.com/kubernetes/sample-controller](github.com/kubernetes/sample-controller). ([#52753](https://github.com/kubernetes/kubernetes/pull/52753),[ @munnerz](https://github.com/munnerz))
 *   Custom resources served by CustomResourceDefinition objects now support field selectors for `metadata.name` and `metadata.namespace`. Also fixed an issue with watching a single object; earlier versions could watch only a collection, and so a watch on an instance would fail.  ([#53345](https://github.com/kubernetes/kubernetes/pull/53345),[ @ncdc](https://github.com/ncdc))
 
 #### **Other**
 
 *   `kube-apiserver` now runs with the default value for `service-cluster-ip-range` ([#52870](https://github.com/kubernetes/kubernetes/pull/52870),[ @jennybuckley](https://github.com/jennybuckley))
-*   Add --etcd-compaction-interval to apiserver for controlling request of compaction to etcd3 from apiserver. ([#51765](https://github.com/kubernetes/kubernetes/pull/51765),[ @mitake](https://github.com/mitake))
+*   Add `--etcd-compaction-interval` to apiserver for controlling request of compaction to etcd3 from apiserver. ([#51765](https://github.com/kubernetes/kubernetes/pull/51765),[ @mitake](https://github.com/mitake))
 *   The httpstream/spdy calls now support CIDR notation for NO_PROXY ([#54413](https://github.com/kubernetes/kubernetes/pull/54413),[ @kad](https://github.com/kad))
 *   Code generation for CRD and User API server types is improved with the addition of two new scripts to k8s.io/code-generator: `generate-groups.sh` and `generate-internal-groups.sh`. ([#52186](https://github.com/kubernetes/kubernetes/pull/52186),[ @sttts](https://github.com/sttts))
 *   [beta] Flag `--chunk-size={SIZE}` is added to `kubectl get` to customize the number of results returned in large lists of resources. This reduces the perceived latency of managing large clusters because the server returns the first set of results to the client much more quickly. Pass 0 to disable this feature.([#53768](https://github.com/kubernetes/kubernetes/pull/53768),[ @smarterclayton](https://github.com/smarterclayton))
 *   [beta] API chunking via the limit and continue request parameters is promoted to beta in this release. Client libraries using the Informer or ListWatch types will automatically opt in to chunking. ([#52949](https://github.com/kubernetes/kubernetes/pull/52949),[ @smarterclayton](https://github.com/smarterclayton))
-*   The --etcd-quorum-read flag now defaults to true to ensure correct operation with HA etcd clusters. This flag is deprecated and the flag, as well as the ability to turn off this functionality, will be removed in future versions. ([#53717](https://github.com/kubernetes/kubernetes/pull/53717),[ @liggitt](https://github.com/liggitt))
-*   Add events.k8s.io api group with v1beta1 API containing redesigned Event type. ([#49112](https://github.com/kubernetes/kubernetes/pull/49112),[ @gmarek](https://github.com/gmarek))
+*   The `--etcd-quorum-read` flag now defaults to true to ensure correct operation with HA etcd clusters. This flag is deprecated and the flag will be removed in future versions, as well as the ability to turn off this functionality. ([#53717](https://github.com/kubernetes/kubernetes/pull/53717),[ @liggitt](https://github.com/liggitt))
+*   Add events.k8s.io api group with v1beta1 API containing redesigned event type. ([#49112](https://github.com/kubernetes/kubernetes/pull/49112),[ @gmarek](https://github.com/gmarek))
 *   Fixed a bug where API discovery failures were crashing the kube controller manager via the garbage collector. ([#55259](https://github.com/kubernetes/kubernetes/pull/55259),[ @ironcladlou](https://github.com/ironcladlou))
 *   `conversion-gen` is now usable in a context without a vendored k8s.io/kubernetes. The Kubernetes core API is removed from `default extra-peer-dirs`. ([#54394](https://github.com/kubernetes/kubernetes/pull/54394),[ @sttts](https://github.com/sttts))
 *   Fixed a bug where the `client-gen` tag for code-generator required a newline between a comment block and a statement.  tag shortcomings when newline is omitted ([#53893](https://github.com/kubernetes/kubernetes/pull/53893)) ([#55233](https://github.com/kubernetes/kubernetes/pull/55233),[ @sttts](https://github.com/sttts))
@@ -291,14 +291,14 @@ As announced with the release of version 1.8, the Kubernetes Workloads API is at
 *   Audit policy files without apiVersion and kind are treated as invalid. ([#54267](https://github.com/kubernetes/kubernetes/pull/54267),[ @ericchiang](https://github.com/ericchiang))
 *   Fixed a bug that where forbidden errors were encountered when accessing ReplicaSet and DaemonSets objects via the apps API group. ([#54309](https://github.com/kubernetes/kubernetes/pull/54309),[ @liggitt](https://github.com/liggitt))
 *   Improved PodSecurityPolicy admission latency. ([#55643](https://github.com/kubernetes/kubernetes/pull/55643),[ @tallclair](https://github.com/tallclair))
-*   kube-apiserver: --oidc-username-prefix and --oidc-group-prefix flags are now correctly enabled. ([#56175](https://github.com/kubernetes/kubernetes/pull/56175),[ @ericchiang](https://github.com/ericchiang))
+*   kube-apiserver: `--oidc-username-prefix` and `--oidc-group-prefix` flags are now correctly enabled. ([#56175](https://github.com/kubernetes/kubernetes/pull/56175),[ @ericchiang](https://github.com/ericchiang))
 *   If multiple PodSecurityPolicy objects allow a submitted pod, priority is given to policies that do not require default values for any fields in the pod spec. If default values are required, the first policy ordered by name that allows the pod is used. ([#52849](https://github.com/kubernetes/kubernetes/pull/52849),[ @liggitt](https://github.com/liggitt))
 *   A new controller automatically cleans up Certificate Signing Requests that are Approved and Issued, or Denied. ([#51840](https://github.com/kubernetes/kubernetes/pull/51840),[ @jcbsmpsn](https://github.com/jcbsmpsn))
 *   PodSecurityPolicies have been added for all in-tree cluster addons ([#55509](https://github.com/kubernetes/kubernetes/pull/55509),[ @tallclair](https://github.com/tallclair))
 
 #### **GCE**
 
-*   Added support for PodSecurityPolicy on GCE: ENABLE_POD_SECURITY_POLICY=true enables the admission controller, and installs policies for default addons. ([#52367](https://github.com/kubernetes/kubernetes/pull/52367),[ @tallclair](https://github.com/tallclair))
+*   Added support for PodSecurityPolicy on GCE: `ENABLE_POD_SECURITY_POLICY=true` enables the admission controller, and installs policies for default addons. ([#52367](https://github.com/kubernetes/kubernetes/pull/52367),[ @tallclair](https://github.com/tallclair))
 
 ### **Autoscaling**
 
@@ -336,7 +336,7 @@ As announced with the release of version 1.8, the Kubernetes Workloads API is at
 *   Azure-based clusters now support unlimited mount points. ([#54668](https://github.com/kubernetes/kubernetes/pull/54668)) ([#53629](https://github.com/kubernetes/kubernetes/pull/53629),[ @andyzhangx](https://github.com/andyzhangx))
 *   Load balancer reconciliation now considers NSG rules based not only on Name, but also on Protocol, SourcePortRange, DestinationPortRange, SourceAddressPrefix, DestinationAddressPrefix, Access, and Direction. This change makes it possible to update NSG rules under more conditions.  ([#55752](https://github.com/kubernetes/kubernetes/pull/55752),[ @kevinkim9264](https://github.com/kevinkim9264))
 *   Custom mountOptions for the azurefile StorageClass object are now respected. Specifically, `dir_mode` and `file_mode` can now be customized. ([#54674](https://github.com/kubernetes/kubernetes/pull/54674),[ @andyzhangx](https://github.com/andyzhangx))
-*   Azure Load Balancer Auto Mode: Services can be annotated to allow auto selection of available load balancers and to provide specific availability sets that host the load balancers. (e.g. service.beta.kubernetes.io/azure-load-balancer-mode=auto|as1,as2...)
+*   Azure Load Balancer Auto Mode: Services can be annotated to allow auto selection of available load balancers and to provide specific availability sets that host the load balancers (for example, `service.beta.kubernetes.io/azure-load-balancer-mode=auto|as1,as2...`)
 
 ### **CLI**
 
@@ -362,12 +362,12 @@ As announced with the release of version 1.8, the Kubernetes Workloads API is at
 
 #### **API Server**
 
-*   [alpha] Added an --endpoint-reconciler-type command-line argument to select the endpoint reconciler to use. The default is to use the 'master-count' reconciler which is the default for 1.9 and in use prior to 1.9. The 'lease' reconciler stores endpoints within the storage api for better cleanup of deleted (or removed) API servers. The 'none' reconciler is a no-op reconciler, which can be used in self-hosted environments.   ([#51698](https://github.com/kubernetes/kubernetes/pull/51698), [@rphillips](https://github.com/rphillips))
+*   [alpha] Added an `--endpoint-reconciler-type` command-line argument to select the endpoint reconciler to use. The default is to use the 'master-count' reconciler which is the default for 1.9 and in use prior to 1.9. The 'lease' reconciler stores endpoints within the storage api for better cleanup of deleted (or removed) API servers. The 'none' reconciler is a no-op reconciler, which can be used in self-hosted environments.   ([#51698](https://github.com/kubernetes/kubernetes/pull/51698), [@rphillips](https://github.com/rphillips))
 
 #### **Cloud Provider Integration**
 
 *   Added `cloud-controller-manager` to `hyperkube`. This is useful as a number of deployment tools run all of the kubernetes components from the `hyperkube `image/binary. It also makes testing easier as a single binary/image can be built and pushed quickly.  ([#54197](https://github.com/kubernetes/kubernetes/pull/54197),[ @colemickens](https://github.com/colemickens))
-*   Added the concurrent service sync flag to the Cloud Controller Manager to allow changing the number of workers. (--concurrent-service-syncs) ([#55561](https://github.com/kubernetes/kubernetes/pull/55561),[ @jhorwit2](https://github.com/jhorwit2))
+*   Added the concurrent service sync flag to the Cloud Controller Manager to allow changing the number of workers. (`--concurrent-service-syncs`) ([#55561](https://github.com/kubernetes/kubernetes/pull/55561),[ @jhorwit2](https://github.com/jhorwit2))
 *   kubelet's --cloud-provider flag no longer defaults to "auto-detect". If you want cloud-provider support in kubelet, you must set a specific cloud-provider explicitly. ([#53573](https://github.com/kubernetes/kubernetes/pull/53573),[ @dims](https://github.com/dims))
 
 #### **Kubeadm**
@@ -494,9 +494,9 @@ As announced with the release of version 1.8, the Kubernetes Workloads API is at
 
 #### **Kubelet**
 
-*   The EvictionHard, EvictionSoft, EvictionSoftGracePeriod, EvictionMinimumReclaim, SystemReserved, and KubeReserved fields in the KubeletConfiguration object (kubeletconfig/v1alpha1) are now of type map[string]string, which facilitates writing JSON and YAML files. ([#54823](https://github.com/kubernetes/kubernetes/pull/54823),[ @mtaufen](https://github.com/mtaufen))
-*   Relative paths in the Kubelet's local config files (--init-config-dir) will now be resolved relative to the location of the containing files. ([#55648](https://github.com/kubernetes/kubernetes/pull/55648),[ @mtaufen](https://github.com/mtaufen))
-*   It is now possible to set multiple manifest url headers via the Kubelet's --manifest-url-header flag. Multiple headers for the same key will be added in the order provided. The ManifestURLHeader field in KubeletConfiguration object (kubeletconfig/v1alpha1) is now a map[string][]string, which facilitates writing JSON and YAML files. ([#54643](https://github.com/kubernetes/kubernetes/pull/54643),[ @mtaufen](https://github.com/mtaufen))
+*   The EvictionHard, EvictionSoft, EvictionSoftGracePeriod, EvictionMinimumReclaim, SystemReserved, and KubeReserved fields in the KubeletConfiguration object (`kubeletconfig/v1alpha1`) are now of type map[string]string, which facilitates writing JSON and YAML files. ([#54823](https://github.com/kubernetes/kubernetes/pull/54823),[ @mtaufen](https://github.com/mtaufen))
+*   Relative paths in the Kubelet's local config files (`--init-config-dir`) will now be resolved relative to the location of the containing files. ([#55648](https://github.com/kubernetes/kubernetes/pull/55648),[ @mtaufen](https://github.com/mtaufen))
+*   It is now possible to set multiple manifest URL headers with the kubelet's `--manifest-url-header` flag. Multiple headers for the same key will be added in the order provided. The ManifestURLHeader field in KubeletConfiguration object (kubeletconfig/v1alpha1) is now a map[string][]string, which facilitates writing JSON and YAML files. ([#54643](https://github.com/kubernetes/kubernetes/pull/54643),[ @mtaufen](https://github.com/mtaufen))
 *   The Kubelet's feature gates are now specified as a map when provided via a JSON or YAML KubeletConfiguration, rather than as a string of key-value pairs, making them less awkward for users. ([#53025](https://github.com/kubernetes/kubernetes/pull/53025),[ @mtaufen](https://github.com/mtaufen))
 *   CRI now uses the correct localhost seccomp path when provided with input in the format of localhost//profileRoot/profileName. ([#55450](https://github.com/kubernetes/kubernetes/pull/55450),[ @feiskyer](https://github.com/feiskyer))
 
