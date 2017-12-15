@@ -50,6 +50,10 @@ SIG Azure worked on improvements in the cloud provider, including significant wo
 
 SIG Cluster Lifecycle has been focusing on improving kubeadm in order to bring it to GA in a future release and developing the [Cluster API](https://github.com/kubernetes/kube-deploy/tree/master/cluster-api). For kubeadm, most new features have gone in as alpha features, for instance support for CoreDNS, IPv6 and Dynamic Kubelet Configuration. We expect to graduate these features to beta and beyond in the next release. The initial Cluster API spec and GCE sample implementation were developed from scratch during this cycle, and we look forward to stabilizing them into something production-grade during 2018.
 
+### Instrumentation
+
+In v1.9 we focused on improving stability of the components owned by the SIG, including Heapster, Custom Metrics API adapters for Prometheus, and Stackdriver.
+
 ### Network
 
 In v1.9 SIG Network has implemented alpha support for IPv6, and alpha support for CoreDNS as a drop-in replacement for kube-dns. Additionally, SIG Network has begun the deprecation process for the extensions/v1beta1 NetworkPolicy API in favor of the networking.k8s.io/v1 equivalent.
@@ -184,7 +188,7 @@ This section provides an overview of deprecated API versions, options, flags, an
 
 *   The kube-apiserver `--etcd-quorum-read` flag is deprecated and the ability to switch off quorum read will be removed in a future release. ([#53795](https://github.com/kubernetes/kubernetes/pull/53795),[ @xiangpengzhao](https://github.com/xiangpengzhao))
 *   The `/ui` redirect in kube-apiserver is deprecated and will be removed in Kubernetes 1.10. ([#53046](https://github.com/kubernetes/kubernetes/pull/53046), [@maciaszczykm](https://github.com/maciaszczykm))
-*   `etcd2` as a backend is deprecated and support will be removed in Kubernetes 1.13.
+*   `etcd2` as a backend is deprecated and support will be removed in Kubernetes 1.13 or 1.14.
 
 ### **Auth**
 
@@ -423,7 +427,6 @@ As announced with the release of version 1.8, the Kubernetes Workloads API is at
 
 *   Fix a typo in prometheus-to-sd configuration, that drops some stackdriver metrics. ([#56473](https://github.com/kubernetes/kubernetes/pull/56473),[ @loburm](https://github.com/loburm))
 *   [fluentd-elasticsearch addon] Elasticsearch and Kibana are updated to version 5.6.4 ([#55400](https://github.com/kubernetes/kubernetes/pull/55400),[ @mrahbar](https://github.com/mrahbar))
-*   A new field is added to CRI container log format to support splitting a long log line into multiple lines. ([#55922](https://github.com/kubernetes/kubernetes/pull/55922),[ @Random-Liu](https://github.com/Random-Liu))
 *   fluentd now supports CRI log format. ([#54777](https://github.com/kubernetes/kubernetes/pull/54777),[ @Random-Liu](https://github.com/Random-Liu))
 *   Bring all prom-to-sd container to the same image version ([#54583](https://github.com/kubernetes/kubernetes/pull/54583))
     *   Reduce log noise produced by prometheus-to-sd, by bumping it to version 0.2.2. ([#54635](https://github.com/kubernetes/kubernetes/pull/54635),[ @loburm](https://github.com/loburm))
@@ -463,7 +466,6 @@ As announced with the release of version 1.8, the Kubernetes Workloads API is at
 
 *   Added iptables rules to allow Pod traffic even when default iptables policy is to reject. ([#52569](https://github.com/kubernetes/kubernetes/pull/52569),[ @tmjd](https://github.com/tmjd))
 *   You can once again use 0 values for conntrack min, max, max per core, tcp close wait timeout, and tcp established timeout; this functionality was broken in 1.8. ([#55261](https://github.com/kubernetes/kubernetes/pull/55261),[ @ncdc](https://github.com/ncdc))
-*   Session affinity will now work properly when using an external load balancer along with when ExternalTrafficPolicy=Local. ([#55519](https://github.com/kubernetes/kubernetes/pull/55519),[ @MrHohn](https://github.com/MrHohn))
 
 #### **CoreDNS**
 
@@ -504,7 +506,6 @@ As announced with the release of version 1.8, the Kubernetes Workloads API is at
 *   Relative paths in the Kubelet's local config files (`--init-config-dir`) will now be resolved relative to the location of the containing files. ([#55648](https://github.com/kubernetes/kubernetes/pull/55648),[ @mtaufen](https://github.com/mtaufen))
 *   It is now possible to set multiple manifest URL headers with the kubelet's `--manifest-url-header` flag. Multiple headers for the same key will be added in the order provided. The ManifestURLHeader field in KubeletConfiguration object (kubeletconfig/v1alpha1) is now a map[string][]string, which facilitates writing JSON and YAML files. ([#54643](https://github.com/kubernetes/kubernetes/pull/54643),[ @mtaufen](https://github.com/mtaufen))
 *   The Kubelet's feature gates are now specified as a map when provided via a JSON or YAML KubeletConfiguration, rather than as a string of key-value pairs, making them less awkward for users. ([#53025](https://github.com/kubernetes/kubernetes/pull/53025),[ @mtaufen](https://github.com/mtaufen))
-*   CRI now uses the correct localhost seccomp path when provided with input in the format of localhost//profileRoot/profileName. ([#55450](https://github.com/kubernetes/kubernetes/pull/55450),[ @feiskyer](https://github.com/feiskyer))
 
 ##### **Other**
 
@@ -522,14 +523,12 @@ As announced with the release of version 1.8, the Kubernetes Workloads API is at
 *   You can now disable AppArmor by setting the AppArmor profile to unconfined. ([#52395](https://github.com/kubernetes/kubernetes/pull/52395),[ @dixudx](https://github.com/dixudx))
 *   ImageGCManage now consumes ImageFS stats from StatsProvider rather than cadvisor. ([#53094](https://github.com/kubernetes/kubernetes/pull/53094),[ @yguo0905](https://github.com/yguo0905))
 *   Hyperkube now supports the support --experimental-dockershim kubelet flag. ([#54508](https://github.com/kubernetes/kubernetes/pull/54508),[ @ivan4th](https://github.com/ivan4th))
-*   CRI now supports debugging via a verbose option for status functions. ([#53965](https://github.com/kubernetes/kubernetes/pull/53965),[ @Random-Liu](https://github.com/Random-Liu))
 *   Kubelet no longer removes default labels from Node API objects on startup ([#54073](https://github.com/kubernetes/kubernetes/pull/54073),[ @liggitt](https://github.com/liggitt))
 *   The overlay2 container disk metrics for Docker and CRI-O now work properly. ([#54827](https://github.com/kubernetes/kubernetes/pull/54827),[ @dashpole](https://github.com/dashpole))
 *   Removed docker dependency during kubelet start up. ([#54405](https://github.com/kubernetes/kubernetes/pull/54405),[ @resouer](https://github.com/resouer))
 *   Added Windows support to the system verification check. ([#53730](https://github.com/kubernetes/kubernetes/pull/53730),[ @bsteciuk](https://github.com/bsteciuk))
 *   Kubelet no longer removes unregistered extended resource capacities from node status; cluster admins will have to manually remove extended resources exposed via device plugins when they the remove plugins themselves. ([#53353](https://github.com/kubernetes/kubernetes/pull/53353),[ @jiayingz](https://github.com/jiayingz))
 *   The stats summary network value now takes into account multiple network interfaces, and not just eth0. ([#52144](https://github.com/kubernetes/kubernetes/pull/52144),[ @andyxning](https://github.com/andyxning))
-*   Kubelet can now provide full summary api support for the CRI container runtime, with the exception of container log stats. ([#55810](https://github.com/kubernetes/kubernetes/pull/55810),[ @abhi](https://github.com/abhi))
 *   Base images have been bumped to Debian Stretch (9). ([#52744](https://github.com/kubernetes/kubernetes/pull/52744),[ @rphillips](https://github.com/rphillips))
 
 ### **OpenStack**
