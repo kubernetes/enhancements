@@ -500,6 +500,34 @@ As announced with the release of version 1.8, the Kubernetes Workloads API is at
 *   The device plugin Alpha API no longer supports returning artifacts per device as part of AllocateResponse. ([#53031](https://github.com/kubernetes/kubernetes/pull/53031),[ @vishh](https://github.com/vishh))
 *   Fix to ignore extended resources that are not registered with kubelet during container resource allocation. ([#53547](https://github.com/kubernetes/kubernetes/pull/53547),[ @jiayingz](https://github.com/jiayingz))
 
+
+#### **Container Runtime**
+*   [alpha] [cri-tools](https://github.com/kubernetes-incubator/cri-tools): CLI and validation tools for CRI is now v1.0.0-alpha.0. This release mainly focuses on UX improvements. [[@feiskyer](https://github.com/feiskyer)]
+    *   Make crictl command more user friendly and add more subcommands.
+    *   Integrate with CRI verbose option to provide extra debug information.
+    *   Update CRI to kubernetes v1.9.
+    *   Bug fixes in validation test suites.
+*   [beta] [cri-containerd](https://github.com/kubernetes-incubator/cri-containerd): CRI implementation for containerd is now v1.0.0-beta.0, [[@Random-Liu](https://github.com/Random-Liu)]
+    *   This release supports Kubernetes 1.9+ and containerd v1.0.0+.
+    *   Pass all Kubernetes 1.9 e2e test, node e2e test and CRI validation tests.
+    *   [Kube-up.sh integration](https://github.com/kubernetes-incubator/cri-containerd/blob/master/docs/kube-up.md).
+    *   [Full crictl integration including CRI verbose option.](https://github.com/kubernetes-incubator/cri-containerd/blob/master/docs/crictl.md)
+    *   Integration with cadvisor to provide better summary api support.
+*   [stable] [cri-o](https://github.com/kubernetes-incubator/cri-o): CRI implementation for OCI-based runtimes is now v1.9. [[@mrunalp](https://github.com/mrunalp)]
+    *   Pass all the Kubernetes 1.9 end-to-end test suites and now gating PRs as well
+    *   Pass all the CRI validation tests
+    *   Release has been focused on bug fixes, stability and performance with runc and Clear Containers
+    *   Minikube integration
+*   [stable] [frakti](https://github.com/kubernetes/frakti): CRI implementation for hypervisor-based runtimes is now v1.9. [[@resouer](https://github.com/resouer)]
+    *   Added ARM64 release. Upgraded to CNI 0.6.0, added block device as Pod volume mode. Fixed CNI plugin compatibility.
+    *   Passed all CRI validation conformance tests and node end-to-end conformance tests.
+*   Container Runtime Interface API change. [[@yujuhong](https://github.com/yujuhong)]
+    *   A new field is added to CRI container log format to support splitting a long log line into multiple lines. ([#55922](https://github.com/kubernetes/kubernetes/pull/55922), [@Random-Liu](https://github.com/Random-Liu))
+    *   CRI now supports debugging via a verbose option for status functions. ([#53965](https://github.com/kubernetes/kubernetes/pull/53965), [@Random-Liu](https://github.com/Random-Liu))
+    *   Kubelet can now provide full summary api support for the CRI container runtime, with the exception of container log stats. ([#55810](https://github.com/kubernetes/kubernetes/pull/55810), [@abhi](https://github.com/abhi))
+    *   CRI now uses the correct localhost seccomp path when provided with input in the format of localhost//profileRoot/profileName. ([#55450](https://github.com/kubernetes/kubernetes/pull/55450), [@feiskyer](https://github.com/feiskyer))
+
+
 #### **Kubelet**
 
 *   The EvictionHard, EvictionSoft, EvictionSoftGracePeriod, EvictionMinimumReclaim, SystemReserved, and KubeReserved fields in the KubeletConfiguration object (`kubeletconfig/v1alpha1`) are now of type map[string]string, which facilitates writing JSON and YAML files. ([#54823](https://github.com/kubernetes/kubernetes/pull/54823),[ @mtaufen](https://github.com/mtaufen))
