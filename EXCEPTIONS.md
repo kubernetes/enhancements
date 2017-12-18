@@ -36,6 +36,6 @@ Email them to:
 
 Requests for exceptions must be submitted before the first milestone burn down meeting. All requests for exception will be reviewed and either approved or rejected during the first meeting.
 
-Important dates for each release and information about the Release Team Lead can be found in the [feature repo](https://github.com/kubernetes/features). For the v1.5 release, for example, see [link](https://github.com/kubernetes/features/blob/master/release-1.5/release-1.5.md).
+Important dates for each release and information about the Release Team Lead can be found in the [sig-release repo](https://github.com/kubernetes/sig-release). For the v1.5 release, for example, see [link](https://github.com/kubernetes/sig-release/blob/master/release-1.5/release-1.5.md).
 
 Once an exception is approved, it should be broadcast broadly: send an email with the data and approval to kubernetes-dev@ and your SIG group, then follow up with a reply to that email once the feature is completed.
