@@ -1,7 +1,7 @@
 Scalability validation report for release-1.9
 =============================================
 
-Written as per [this template](https://github.com/kubernetes/community/blob/master/contributors/devel/release/scalability-validation.md#concretely-define-test-configuration).
+Written as per [this template](https://github.com/kubernetes/sig-release/blob/master/ephemera/scalability-validation.md#concretely-define-test-configuration).
 
 Large Cluster Performance
 -------------------------
