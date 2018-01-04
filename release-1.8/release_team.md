@@ -1,13 +1,3 @@
-|  **Role** | **Name** (**GitHub/Slack ID**)  | **Shadow Name(s) (GitHub/Slack ID), ...**
-|  ------ | ------ | ------ |
-|  Lead | Jaice Singer DuMars (jdumars) | |
-|  Secondary | Caleb Miles (calebamiles) | |
-|  Features | Ihor Dvoretskyi (idvoretskyi) | |
-|  Branch Manager | Adam Worrall (abgworrall) | |
-|  Test Infra | Sen Lu (krzyzacy) | Aaron Crickenberger (spiffxp) |
-|  Docs | Steve Perry (steveperry-53) | Zach Corleissen (zcorleissen) |
-|  Release Notes | Radhika Puthiyetath (radhikapc) | Jennifer Rondeau (jrondeau) |
-|  Bugs | Aaron Crickenberger (spiffxp) | Davanum Srinivas (dims) |
-|  Upgrade Testing / CI Signal| Eric Chiang (ericchiang) | |
-|  Patch Release Manager | Joe Betz (jpbetz) | |
-|  Marketing coordinator | Swarna Podila (swarnap) | |
+The original content of this file has been migrated to https://git.k8s.io/sig-release/releases/release-1.8/release_team.md
+
+This file is a placeholder to preserve links. Please remove after 3 months or the release of kubernetes 1.10, whichever comes first.

@@ -1,12 +1,3 @@
-|  **Role** | **Name** (**GitHub/Slack ID**)  | **Shadow Name(s) (GitHub/Slack ID), ...**
-|  ------ | ------ | ------ |
-|  Lead | Dawn Chen (dchen1107) | Maru Newby (marun) |
-|  Secondary | Caleb Miles (calebamiles)| |
-|  Features |Ihor Dvoretskyi (idvoretskyi) | |
-|  Branch Manager | Chao Xu  (caesarxuchao)| |
-|  Test Infra | Sen Lu (krzyzacy) | | |
-|  Docs |Andrew Chen (chenopis) | |
-|  Bugs | Maru Newby (marun) | | |
-|  CI Signal | Eric Chiang (ericchiang) | | |
-|  Upgrade Testing | Jeff Regan (monopole) | | |
-| Patch Release Manager | Wojciech Tyczynski (wojtek-t)| |
+The original content of this file has been migrated to https://git.k8s.io/sig-release/releases/release-1.7/release_team.md
+
+This file is a placeholder to preserve links. Please remove after 3 months or the release of kubernetes 1.10, whichever comes first.
