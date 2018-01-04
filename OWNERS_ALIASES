@@ -1,0 +1,29 @@
+# See the OWNERS docs: https://git.k8s.io/community/docs/devel/owners.md
+
+aliases:
+  patch-release-managers:
+    - enisoc
+    - fabioy
+    - jessfraz
+    - jpbetz
+    - mbohlool
+    - mwielgus
+    - roberthbailey
+    - saad-ali
+    - wojtek-t
+  release-team-leads:
+    - bgrant0607
+    - dchen1107
+    - enisoc
+    - erictune
+    - ethernetdan
+    - jdumars
+    - pwittrock
+    - saad-ali
+  sig-release-leads:
+    - calebamiles
+    - pwittrock
+  sig-pm-leads:
+    - apsinha
+    - calebamiles
+    - idvoretskyi
