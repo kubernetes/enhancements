@@ -1,18 +1,6 @@
 # See the OWNERS docs: https://git.k8s.io/community/docs/devel/owners.md
 
 aliases:
-  sig-release-leads:
-    - calebamiles
-    - pwittrock
-  release-team-leads:
-    - bgrant0607
-    - dchen1107
-    - enisoc
-    - erictune
-    - ethernetdan
-    - jdumars
-    - pwittrock
-    - saad-ali
   patch-release-managers:
     - enisoc
     - fabioy
@@ -23,3 +11,19 @@ aliases:
     - roberthbailey
     - saad-ali
     - wojtek-t
+  release-team-leads:
+    - bgrant0607
+    - dchen1107
+    - enisoc
+    - erictune
+    - ethernetdan
+    - jdumars
+    - pwittrock
+    - saad-ali
+  sig-release-leads:
+    - calebamiles
+    - pwittrock
+  sig-pm-leads:
+    - apsinha
+    - calebamiles
+    - idvoretskyi
