@@ -1,4 +1,4 @@
-# See the OWNERS docs: https://git.k8s.io/community/docs/devel/owners.md
+# See the OWNERS docs: https://github.com/kubernetes/community/blob/master/contributors/devel/owners.md
 
 approvers:
 - spiffxp
