@@ -1,6 +1,6 @@
 # Feature Tracking and Backlog
 
-Feature tracking repo for Kubernetes releases
+Feature tracking repo for Kubernetes releases. Owned by [Product Management SIG](https://github.com/kubernetes/community/blob/master/sig-product-management/README.md).
 
 This repo only contains issues. These issues are umbrellas for new features to be added to Kubernetes. A feature usually takes multiple releases to complete. And a feature can be tracked as backlog items before work begins. A feature may be filed once there is consensus in at least one [Kubernetes SIG](https://git.k8s.io/community/sig-list.md).
 
