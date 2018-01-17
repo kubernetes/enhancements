@@ -1,7 +1,6 @@
 # See the OWNERS docs: https://github.com/kubernetes/community/blob/master/contributors/devel/owners.md
 
 approvers:
-- spiffxp
 - release-team-leads
 - sig-release-leads
 - sig-pm-leads
