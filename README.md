@@ -55,3 +55,13 @@ Please comment on the feature issue to:
 
 Please do not comment on the feature issue to:
 - discuss a detail of the design, code or docs. Use a linked-to-issue or PR for that
+
+## Features Tracking Spreadsheet
+
+All the features from this repo are visualized in the Features Tracking Spreadhsheets.
+
+Links:
+*TBA*
+
+Procedure:
+*TBA*
