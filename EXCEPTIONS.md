@@ -10,6 +10,8 @@ Exceptions will be granted on the basis of *risk* and *length of exception requi
 
 The feature coming in late should represent a **low risk to the Kubernetes system** - it should not risk other areas of the code, and it should itself be well contained and tested.
 
+An issue must be opened for the feature in the [features repo](https://github.com/kubernetes/features/issues).
+
 The length of exception needed should be on the order of days, not weeks. If there are 3 PRs in and 1 still waiting review, that's a much stronger case than a feature that doesn't have any PRs out yet.
 
 ## Process to request an exception
@@ -19,7 +21,7 @@ To file for an exception, please fill out the questions below:
 * Feature name:
 * Feature status (alpha/beta/stable):
 * SIG:
-* Feature issue #:
+* K/Features repo issue #:
 * PR #’s:
 * Additional time needed (in days):
 * Reason this feature is critical for this milestone:
