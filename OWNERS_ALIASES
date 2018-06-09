@@ -1,6 +1,9 @@
 # See the OWNERS docs: https://git.k8s.io/community/docs/devel/owners.md
 
 aliases:
+  features-maintainers:
+    - idvoretskyi
+    - justaugustus
   patch-release-managers:
     - enisoc
     - fabioy
