@@ -24,7 +24,7 @@ It is unlikely a feature if it is:
 - adding error messages or events
 
 If you are not sure, ask someone in the SIG where you initially circulated the idea. If they aren't sure jump into
-[#kubernetes-pm](https://kubernetes.slack.com/messages/kubernetes-pm/) on Slack or ping someone listed in [OWNERS](https://github.com/kubernetes/features/blob/master/OWNERS).
+[#sig-pm](https://kubernetes.slack.com/messages/sig-pm/) on Slack or ping someone listed in [OWNERS](https://github.com/kubernetes/features/blob/master/OWNERS).
 
 ## When to Create a New Feature Issue
 
