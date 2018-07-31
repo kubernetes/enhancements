@@ -1,20 +1,31 @@
-## Contributing Guidelines
-This repo only contains issues. These issues are umbrellas for new features to be added to Kubernetes. All the contribution is done via GitHub. Please also read the contributors guide:
-https://git.k8s.io/community/contributors/guide/README.md
+# Contributing Guidelines
 
-## Sign the CLA
-Kubernetes projects require that you sign a Contributor License Agreement (CLA) before we can accept your pull requests. Please see https://git.k8s.io/community/CLA.md for more information
+Welcome to Kubernetes. We are excited about the prospect of you joining our [community](https://github.com/kubernetes/community)! The Kubernetes community abides by the CNCF [code of conduct](https://github.com/cncf/foundation/blob/master/code-of-conduct.md). Here is an excerpt:
 
-## Learn About Features
-If you want to learn about Features, please read through the doc:
-https://git.k8s.io/features/README.md
+_As contributors and maintainers of this project, and in the interest of fostering an open and welcoming community, we pledge to respect all people who contribute through reporting issues, posting feature requests, updating documentation, submitting pull requests or patches, and other activities._
 
-## Submitting a Pull Request (PR)
-1. Sign the CLA.
-2. Submit an issue by describing your proposed change to the repo in question.
-3. The repo owners will respond to your issue rapidly.
-4. Fork the repo, make your changes and test it.
-5. Submit a PR.
+## Getting Started
 
-## Code reviews
-All submissions, including submissions by project members, require review. We use GitHub pull requests for this purpose.
+We have full documentation on how to get started contributing here: 
+
+<!---
+If your repo has certain guidelines for contribution, put them here ahead of the general k8s resources
+-->
+
+- [Contributor License Agreement](https://git.k8s.io/community/CLA.md) Kubernetes projects require that you sign a Contributor License Agreement (CLA) before we can accept your pull requests
+- [Kubernetes Contributor Guide](http://git.k8s.io/community/contributors/guide) - Main contributor documentation, or you can just jump directly to the [contributing section](http://git.k8s.io/community/contributors/guide#contributing)
+- [Contributor Cheat Sheet](https://git.k8s.io/community/contributors/guide/contributor-cheatsheet.md) - Common resources for existing developers
+
+## Mentorship
+
+- [Mentoring Initiatives](https://git.k8s.io/community/mentoring) - We have a diverse set of mentorship programs available that are always looking for volunteers!
+
+<!---
+Custom Information - if you're copying this template for the first time you can add custom content here, for example:
+
+## Contact Information
+
+- [Slack channel](https://kubernetes.slack.com/messages/kubernetes-users) - Replace `kubernetes-users` with your slack channel string, this will send users directly to your channel. 
+- [Mailing list](URL) 
+
+-->
