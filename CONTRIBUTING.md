@@ -1,12 +1,13 @@
 ## Contributing Guidelines
-This repo only contains issues. These issues are umbrellas for new features to be added to Kubernetes. All the contribution is done via GitHub. Please also read the contributors guide: https://github.com/kubernetes/community/blob/master/contributors/guide/README.md
+This repo only contains issues. These issues are umbrellas for new features to be added to Kubernetes. All the contribution is done via GitHub. Please also read the contributors guide:
+https://git.k8s.io/community/contributors/guide/README.md
 
 ## Sign the CLA
-Kubernetes projects require that you sign a Contributor License Agreement (CLA) before we can accept your pull requests. Please see https://github.com/kubernetes/community/blob/master/CLA.md for more information
+Kubernetes projects require that you sign a Contributor License Agreement (CLA) before we can accept your pull requests. Please see https://git.k8s.io/community/CLA.md for more information
 
 ## Learn About Features
 If you want to learn about Features, please read through the doc:
-https://github.com/kubernetes/features/blob/master/README.md
+https://git.k8s.io/features/README.md
 
 ## Submitting a Pull Request (PR)
 1. Sign the CLA.
