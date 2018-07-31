@@ -58,7 +58,7 @@ Please do not comment on the feature issue to:
 
 ## Features Tracking Spreadsheet
 
-All the features from this repo are visualized in the Features Tracking Spreadhsheets.
+All the features from this repo are visualized in the Features Tracking Spreadsheets.
 
 Links:
 *TBA*
