@@ -65,3 +65,12 @@ Links:
 
 Procedure:
 *TBA*
+
+## Labels
+
+| Label Name | Purpose | How to use this label | Who should use this label |
+| ------ | ------ | ------ | ------ |
+| `sig/foo` | Denotes the SIG(s) which owns this feature e.g., `SIG Foo` | Set the label using the comment `/sig foo` (on a separate line) | Anyone |
+| `kind/feature` | Denotes that the issue should be tracked as a feature (All feature issues should be marked with this label) | Set the label using the comment `/kind feature` (on a separate line) | Anyone |
+| `tracked/yes` | Denotes an issue has been reviewed by a Feature Maintainer (SIG PM / SIG Release) and is actively tracked for the current milestone | Manually set | Feature Maintainers (SIG PM / SIG Release) ONLY |
+| `tracked/no` | Denotes an issue has been reviewed by a Feature Maintainer (SIG PM / SIG Release) and will not actively tracked for the current milestone | Manually set | Feature Maintainers (SIG PM / SIG Release) ONLY |
