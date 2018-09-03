@@ -1,0 +1,6 @@
+reviewers:
+  - sig-scalability-leads
+approvers:
+  - sig-scalability-leads
+labels:
+  - sig/scalability
