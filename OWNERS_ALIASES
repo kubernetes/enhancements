@@ -4,6 +4,7 @@ aliases:
   features-maintainers:
     - idvoretskyi
     - justaugustus
+    - kacole2
   sig-release-leads:
     - calebamiles
     - jdumars
