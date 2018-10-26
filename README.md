@@ -62,7 +62,8 @@ All the enhancements from this repo are visualized in the Enhancements Tracking 
 
 Links:
 
-[1.13 Milestone]()
+[1.13 Milestone](https://bit.ly/k8s113-features)
+[1.12 Milesonte](https://bit.ly/k8s112-features)
 
 Procedure:
 *TBA*
