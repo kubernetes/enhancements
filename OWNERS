@@ -1,9 +1,7 @@
-# See the OWNERS docs: https://git.k8s.io/community/contributors/guide/owners.md
-
 approvers:
-  - features-maintainers
-  - sig-release-leads
   - sig-pm-leads
+  - features-maintainers
+reviewers:
+  - sig-release-leads
 labels:
   - sig/pm
-  
