@@ -1,0 +1,15 @@
+reviewers:
+  - sig-architecture-leads
+  - calebamiles
+  - idvoretskyi
+  - jbeda
+  - justaugustus
+approvers:
+  - sig-architecture-leads
+  - calebamiles
+  - idvoretskyi
+  - jbeda
+labels:
+  - kind/kep
+  - sig/architecture
+  - sig/pm
