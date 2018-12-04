@@ -23,6 +23,7 @@ superseded-by:
 # Quotas for Ephemeral Storage
 
 ## Table of Contents
+
 <!-- markdown-toc start - Don't edit this section. Run M-x markdown-toc-generate-toc again -->
 **Table of Contents**
 
@@ -44,6 +45,8 @@ superseded-by:
             - [Determine Whether a Project ID Applies To a Directory](#determine-whether-a-project-id-applies-to-a-directory)
             - [Return a Project ID To the System](#return-a-project-id-to-the-system)
         - [Implementation Details/Notes/Constraints [optional]](#implementation-detailsnotesconstraints-optional)
+            - [Implementation Strategy](#implementation-strategy)
+                - [Future](#future)
             - [Notes on Implementation](#notes-on-implementation)
             - [Notes on Code Changes](#notes-on-code-changes)
             - [Testing Strategy](#testing-strategy)
@@ -254,6 +257,9 @@ consistent with the desired limit._  If we elect to use it as
 non-enforcing, we impose a large quota that in practice cannot be
 exceeded (2^63-1 bytes for XFS, 2^58-1 bytes for ext4fs).
 
+For discussion of the low level implementation strategy, [see
+below](#implementation-detailsnotesconstraints-optional).
+
 ### Control over Use of Quotas
 
 At present, two feature gates control operation of quotas:
@@ -370,8 +376,8 @@ quota ID.
 #### Determine Whether a Project ID Applies To a Directory
 
 It is possible to determine whether a directory has a project ID
-applied to it by requesting (via the `quotactl(2)` system call) the
-project ID associated with the directory.  Whie the specifics are
+applied to it by requesting (via the `lsattr(1)` command) the project
+ID associated with the directory.  Whie the specifics are
 filesystem-dependent, the basic method is the same for at least XFS
 and ext4fs.
 
@@ -403,8 +409,80 @@ this KEP that this mode of operation will be used, at least initially,
 this can be detected even on kubelet restart by looking at the
 reference count in `/etc/projects`.
 
-
 ### Implementation Details/Notes/Constraints [optional]
+
+#### Implementation Strategy
+
+The initial implementation will be done by shelling out to the
+`xfs_quota(8)` and `lsattr(1)` commands to manipulate quotas.  It is
+possible to use the `quotactl(2)` and `ioctl(2)` system calls to do
+this, but the `quotactl(2)` system call is not supported by Go at all,
+and `ioctl(2)` subcommands required for manipulating quotas are only
+partially supported.  Use of these system calls would require either
+use of [cgo](https://golang.org/cmd/cgo/), which is not supported in
+Kubernetes, or copying the necessary structure definitions and
+constants into the source.
+
+The use of Linux commands rather than system calls likely poses some
+efficiency issues, but these commands are only issued when ephemeral
+volumes are created and destroyed, or during monitoring, when they are
+called once per minute.  At present, monitoring is done by shelling
+out to the `du(1)` and `find(1)` commands, which are much less
+efficient, as they perform filesystem scans.  The one potential hazard
+with `xfs_quota(8)` is that it `stat(2)`s every mountpoint on the
+system, which could hang if there are e. g. hung NFS mounts.  We
+should recommend that systems with NFS mounts not use this mechanism,
+at least initially. *The performance of these commands must be
+measured under load prior to making this feature used by default.*
+
+All `xfs_quota(8)` commands are invoked as
+
+`xfs_quota -P/dev/null -D/dev/null -f <mountpoint> -c <command>`
+
+The -P and -D arguments tell xfs_quota not to read the usual
+`/etc/projid` and `/etc/projects` files, and to use the empty special
+file `/dev/null` as stand-ins.  `xfs_quota` reads the projid and
+projects files and attempts to access every listed mountpoint for
+every command.  As we use numeric project IDs for all purposes, it is
+not necessary to incur this overhead.
+
+The following operations are performed, with the listed commands
+(using `xfs_quota(8)` except as noted)
+
+* Determine whether quotas are enabled on the specified filesystem
+
+  `state -p`
+  
+* Apply a limit to a project ID (note that at present the largest
+  possible limit is applied, allowing the quota system to be used for
+  monitoring only)
+  
+  `limit -p bhard=<blocks> bsoft=<blocks> <projectID>`
+  
+* Apply a project ID to a directory, enabling a quota on that
+  directory
+  
+  `project -s -p <directory> <projectID>`
+  
+* Retrieve the number of blocks used by a given project ID
+
+  `quota -p -N -n -v -b <projectID>`
+  
+* Retrieve the number of inodes used by a given project ID
+
+  `quota -p -N -n -v -n <projectID>`
+  
+* Determine whether a specified directory has a quota ID applied to
+  it, and if so, what that ID is (using `lsattr(1)`)
+  
+  `lsattr -pd <path>`
+  
+##### Future
+
+In the long run, we should work to add the necessary constructs to the
+Go language, allowing direct use of the necessary system calls without
+the use of cgo.
+
 
 #### Notes on Implementation
 
