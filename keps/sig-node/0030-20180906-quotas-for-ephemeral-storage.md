@@ -428,16 +428,13 @@ efficiency issues, but these commands are only issued when ephemeral
 volumes are created and destroyed, or during monitoring, when they are
 called once per minute.  At present, monitoring is done by shelling
 out to the `du(1)` and `find(1)` commands, which are much less
-efficient, as they perform filesystem scans.  The one potential hazard
-with `xfs_quota(8)` is that it `stat(2)`s every mountpoint on the
-system, which could hang if there are e. g. hung NFS mounts.  We
-should recommend that systems with NFS mounts not use this mechanism,
-at least initially. *The performance of these commands must be
-measured under load prior to making this feature used by default.*
+efficient, as they perform filesystem scans.  *The performance of
+these commands must be measured under load prior to making this
+feature used by default.*
 
 All `xfs_quota(8)` commands are invoked as
 
-`xfs_quota -P/dev/null -D/dev/null -f <mountpoint> -c <command>`
+`xfs_quota -t <tmp_mounts_file> -P/dev/null -D/dev/null -f <mountpoint> -c <command>`
 
 The -P and -D arguments tell xfs_quota not to read the usual
 `/etc/projid` and `/etc/projects` files, and to use the empty special
@@ -445,6 +442,12 @@ file `/dev/null` as stand-ins.  `xfs_quota` reads the projid and
 projects files and attempts to access every listed mountpoint for
 every command.  As we use numeric project IDs for all purposes, it is
 not necessary to incur this overhead.
+
+The `-t` argument is to mitigate a hazard of `xfs_quota(8)` in the
+presence of stuck NFS (or similar) mounts.  By default, `xfs_quota(8)`
+`stat(2)`s every mountpoint on the system, which could hang on a stuck
+mount.  The `-t` option is used to pass in a temporary mounts file
+containing only the filesystem we care about.
 
 The following operations are performed, with the listed commands
 (using `xfs_quota(8)` except as noted)
