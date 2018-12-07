@@ -2,7 +2,7 @@
 
 Enhancement tracking repo for Kubernetes releases. Owned by [PM SIG](https://github.com/kubernetes/community/blob/master/sig-pm/README.md).
 
-This repo only contains issues. These issues are umbrellas for new enhancements to be added to Kubernetes. An enhancement usually takes multiple releases to complete. And an enhancement can be tracked as backlog items before work begins. An enhancement may be filed once there is consensus in at least one [Kubernetes SIG](https://git.k8s.io/community/sig-list.md).
+This repo contains issues and [KEPs](https://git.k8s.io/enhancements/keps). These issues are umbrellas for new enhancements to be added to Kubernetes. An enhancement usually takes multiple releases to complete. And an enhancement can be tracked as backlog items before work begins. An enhancement may be filed once there is consensus in at least one [Kubernetes SIG](https://git.k8s.io/community/sig-list.md).
 
 ## Is My Thing an Enhancement?
 
@@ -17,7 +17,7 @@ An enhancement is anything that:
 - users will notice and come to rely on
 
 It is unlikely an enhancement if it is:
-- implemented using `ThirdPartyResource` and/or in https://github.com/kubernetes/contrib
+- implemented using `CustomResourceDefinition` and/or in https://github.com/kubernetes/contrib
 - fixing a flaky test
 - refactoring code
 - performance improvements, which are only visible to users as faster API operations, or faster control loops
@@ -76,3 +76,4 @@ Procedure:
 | `kind/feature` | Denotes that the issue should be tracked as an enhancement (All enhancement issues should be marked with this label) | Set the label using the comment `/kind feature` (on a separate line) | Anyone |
 | `tracked/yes` | Denotes an issue has been reviewed by a Feature Maintainer (SIG PM / SIG Release) and is actively tracked for the current milestone | Manually set | Feature Maintainers (SIG PM / SIG Release) ONLY |
 | `tracked/no` | Denotes an issue has been reviewed by a Feature Maintainer (SIG PM / SIG Release) and will not actively tracked for the current milestone | Manually set | Feature Maintainers (SIG PM / SIG Release) ONLY |
+| `stage/{alpha,beta,stable}` | Denotes the stage of an issue in the features process. | Set the label using the comment `/stage alpha` (on a separate line) | Anyone |
