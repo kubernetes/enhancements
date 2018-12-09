@@ -1,7 +1,8 @@
 approvers:
   - sig-pm-leads
-  - features-maintainers
+  - pm-maintainers
 reviewers:
   - sig-release-leads
+  - features-maintainers
 labels:
   - sig/pm
