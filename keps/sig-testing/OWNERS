@@ -1,0 +1,6 @@
+reviewers:
+  - sig-testing-leads
+approvers:
+  - sig-testing-leads
+labels:
+  - sig/testing
