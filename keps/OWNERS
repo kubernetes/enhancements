@@ -13,3 +13,5 @@ labels:
   - kind/kep
   - sig/architecture
   - sig/pm
+options:
+  no_parent_owners: true

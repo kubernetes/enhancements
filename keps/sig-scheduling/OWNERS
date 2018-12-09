@@ -1,0 +1,6 @@
+reviewers:
+  - sig-scheduling-leads
+approvers:
+  - sig-scheduling-leads
+labels:
+  - sig/scheduling
