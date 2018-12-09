@@ -82,7 +82,7 @@ Controlled by [publishing kubernetes-rules-configmap](https://github.com/kuberne
 We want to remove any cloud provider specific logic from the kubernetes/kubernetes repo. We want to restructure the code
 to make it easy for any cloud provider to extend the kubernetes core in a consistent manner for their cloud. New cloud
 providers should look at the [Creating a Custom Cluster from Scratch](https://kubernetes.io/docs/getting-started-guides/scratch/#cloud-provider)
-and the [cloud provider interface](https://github.com/kubernetes/kubernetes/blob/master/pkg/cloudprovider/cloud.go#L31)
+and the [cloud provider interface](https://github.com/kubernetes/cloud-provider/blob/master/cloud.go#L43)
 which will need to be implemented.
 
 ## Motivation
