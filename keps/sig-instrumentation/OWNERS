@@ -1,0 +1,6 @@
+reviewers:
+  - sig-instrumentation-leads
+approvers:
+  - sig-instrumentation-leads
+labels:
+  - sig/instrumentation
