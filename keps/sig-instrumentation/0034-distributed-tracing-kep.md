@@ -47,16 +47,15 @@ This Kubernetes Enchancement Proposal (KEP) introduces a model for adding distri
 
 ## Motivation
 
-Debugging latency issues in Kubernetes is an involved process. There are existing tools which can be used to isolate these 
-issues in Kubernetes, but these methods fall short for various reasons. For instance:
+Debugging latency issues in Kubernetes is an involved process. There are existing tools which can be used to isolate these issues in Kubernetes, but these methods fall short for various reasons. For instance:
 
-* **Logs** are fragmented, and finding out which process was the bottleneck involves digging through troves of unstructured text. In addition, logs do not offer higher-level insight into overall system behavior without an extensive background on the process of interest. 
-* **Events** in Kubernetes are only kept for an hour by default, and don't integrate with visualization of analysis tools. To gain trace-like insights would require a large investment in custom tooling
-* **Latency metrics** are gathered in some places, but these don't provide understanding into _why_ a given process was slow
+* **Logs**: are fragmented, and finding out which process was the bottleneck involves digging through troves of unstructured text. In addition, logs do not offer higher-level insight into overall system behavior without an extensive background on the process of interest. 
+* **Events**: in Kubernetes are only kept for an hour by default, and don't integrate with visualization of analysis tools. To gain trace-like insights would require a large investment in custom tooling.
+* **Latency metrics**: are gathered in some places, but these don't provide understanding into _why_ a given process was slow.
 
-Distributed tracing, on the other hand, provides a single window into latency information from across many components and plugins. Trace data is structured, and there are numerous established backends for visualizing and querying over it. This KEP would make it possible to, for instance, retrieve and visualize all pod startups that took more than 30 seconds, involved an `nginx` container, and which mounted more than two volumes.
+Distributed tracing, on the other hand, provides a single window into latency information from across many components and plugins. Trace data is structured, and there are numerous established backends for visualizing and querying over it.
 
-In addition, due to the self-healing nature of Kubernetes, regressions wherein latencies are affected but the overall task is eventually accomplished are not uncommon. With our current monitoring architecture, these "soft regressions" are often difficult to observe and diagnose. Collecting structured trace data on per-object latencies would enable us to detect these long-term regressions automatically, and quickly determine their root causes.
+In addition, due to the self-healing nature of Kubernetes, regressions wherein latencies are affected but the overall task is eventually accomplished are not uncommon. With our current monitoring architecture, these "soft regressions" are often difficult to observe and understand. Collecting structured trace data on per-object latencies would enable us to detect these long-term regressions automatically, and quickly determine their root causes.
 
 
 ### Goals
@@ -112,6 +111,13 @@ This KEP proposes the use of the [OpenCensus tracing framework](https://opencens
 1) Provides concrete, tested implementations for creating and exporting spans to diverse backends, rather than providing an API specification, as is the case with [OpenTracing](https://opentracing.io/specification/)
 2) [Provides an agent](https://github.com/census-instrumentation/opencensus-service) which enables lazy configuration for exporters, batching of spans, and other features 
 
+This KEP suggests that we utilize the OpenCensus agent for the initial implementation. The alternatvies to this would be:
+
+1) To export spans from the instrumented components themselves, not using the agent, and exposing multiple trace sinks in the in-tree tracing library, or
+2) To make the agent one of the trace sinks included in the in-tree tracing library
+
+These are all viable options, but using the OpenCensus agent makes for the least invasive in-tree changes. Before this proposal graduates through its alpha-phase, however, and is no longer on an opt-in basis, we will have to reasess whether it is viable or worthwhile to run this agent on each node across the cluster as the default.
+
 #### Adding trace utility package
 
 This package will be able to create spans from the span context embedded in the `trace.kubernetes.io/context` object annotation, in addition to embedding context from spans back into the annotation. This package will facilitate tracing across Kubernetes watches. It will also provide an implementation for exporting the root span for a given reconciliation trace.
@@ -165,6 +171,7 @@ Before this proposal can be considered as a Beta feature, there are various item
 4) Determining the security implications of this trace instrumentation 
 5) Creation of user-facing documentation 
 6) Alpha-implementation as described above
+
 
 ## Implementation History
 
