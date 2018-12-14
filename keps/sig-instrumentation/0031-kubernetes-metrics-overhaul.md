@@ -3,6 +3,7 @@ kep-number: 0031
 title: Kubernetes Metrics Overhaul
 authors:
   - "@brancz"
+  - "@ehashman"
 owning-sig: sig-instrumentation
 participating-sigs:
   - sig-aaa
@@ -16,7 +17,7 @@ approvers:
 editor: @DirectXMan12
 creation-date: 2018-11-06
 last-updated: 2018-11-06
-status: provisional
+status: implementable
 ---
 
 # Kubernetes Metrics Overhaul
