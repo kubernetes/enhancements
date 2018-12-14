@@ -5,9 +5,6 @@ authors:
   - "@brancz"
   - "@ehashman"
 owning-sig: sig-instrumentation
-participating-sigs:
-  - sig-aaa
-  - sig-bbb
 reviewers:
   - "@piosz"
   - "@DirectXMan12"
