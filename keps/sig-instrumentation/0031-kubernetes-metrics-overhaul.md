@@ -96,6 +96,10 @@ https://github.com/kubernetes/kubernetes/issues/68522
 
 https://github.com/kubernetes/kubernetes/pull/63924
 
+#### Prober metrics
+
+Make prober metrics introduced in https://github.com/kubernetes/kubernetes/pull/61369 conform to the [Kubernetes instrumentation guidelines](https://github.com/kubernetes/community/blob/master/contributors/devel/instrumentation.md).
+
 ### Risks and Mitigations
 
 Risks include users upgrading Kubernetes, but not updating their usage of Kubernetes exposed metrics in alerting and dashboarding potentially causing incidents to go unnoticed.
