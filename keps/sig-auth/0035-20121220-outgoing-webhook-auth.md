@@ -100,6 +100,7 @@ Authorization: bearer <token>
 The client will check and refresh the token when necessary. The server can now check the token using a 
 [TokenReview](https://github.com/kubernetes/kubernetes/blob/master/pkg/apis/authentication/types.go#L45).
 
+The `AuthInfo` struct will also be added to the [ClientConfig](https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/api/auditregistration/v1alpha1/types.go#L134) in the auditregistration API.
 
 ### Risks and Mitigations
 
