@@ -1,6 +1,6 @@
 ---
-kep-number: 35
-title: Outgoing Webhook Authentication
+kep-number: 34
+title: API server authentication to webhooks
 authors:
   - "@pbarker"
   - "@mattmoyer"
@@ -25,11 +25,11 @@ replaces:
 superseded-by:
 ---
 
-# Outgoing Webhook Authentication
+# API server authentication to webhooks
 
 ## Table of Contents
 
-* [Outgoing Webhook Authentication](#outgoing-webhook-authentication)
+* [API server authentication to webhooks](#api-server-authentication-to-webhooks)
   * [Table of Contents](#table-of-contents)
   * [Summary](#summary)
   * [Motivation](#motivation)
@@ -81,7 +81,7 @@ A new struct will be added to the [client config](https://github.com/kubernetes/
 
 ```go
 type AuthInfo struct {
-  TokenRequest  *authenticationv1.TokenRequestSpec
+  ProvisionToken  bool
 }
 
 type ClientConfig struct {
@@ -92,7 +92,7 @@ type ClientConfig struct {
   Service  *ClientConfigService
 }
 ```
-If provided the client will provision a token and enhance the outgoing request with an an auth header:
+If enabled the client will provision a token and enhance the outgoing request with an an auth header:
 ```
 Authorization: bearer <token>
 ```
@@ -116,7 +116,8 @@ We will know if this has succeeded by telling whether it solves the majority of 
 
 ## Alternatives
 
-We alternatively explored allowing authentication info to be provided in a secret. However, this task becomes  
-difficult for the aggregate servers, many of which run in separate namespaces. It wasn't clear how a secret 
-could be shared reasonably between them. We haven't abandoned this idea entirely but feel the solution above 
-solves the majority of use cases.
+We alternatively explored allowing authentication info to be provided in a secret. However, this method breaks
+down in a couple scenarios. First, there is no way to differentiate between multiple API servers. This may be 
+sufficient in some use cases but is a security drawback in general. Next, the aggregate servers often listen in 
+different namespaces, and there is no clear path on how a single credential could be shared between them. We
+haven't abandoned this idea entirely, but feel the solution above solves the majority of use cases.
