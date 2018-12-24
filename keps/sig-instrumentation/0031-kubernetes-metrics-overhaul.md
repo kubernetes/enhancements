@@ -34,6 +34,7 @@ status: implementable
       * [Make metrics aggregatable](#make-metrics-aggregatable)
       * [Export less metrics](#export-less-metrics)
       * [Prevent apiserver's metrics from accidental registration](#prevent-apiservers-metrics-from-accidental-registration)
+      * [Prober metrics](#prober-metrics)
    * [Client-go metric changes](#client-go-metric-changes)
       * [Workqueue metrics](#workqueue-metrics)
    * [Risks and Mitigations](#risks-and-mitigations)
