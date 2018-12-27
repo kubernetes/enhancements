@@ -2,7 +2,7 @@
 kep-number: 0000
 title: Windows Group Managed Service Accounts for Container Identity
 authors:
-  - "@patricklang,@jeremmywx,@ddebroy"
+  - "@patricklang,@jeremywx,@ddebroy"
 owning-sig: "sig-windows"
 participating-sigs:
   - "sig-auth"
