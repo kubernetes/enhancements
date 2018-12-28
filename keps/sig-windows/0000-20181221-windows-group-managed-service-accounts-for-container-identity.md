@@ -17,7 +17,7 @@ approvers:
   - "sig-arch"
 editor: TBD
 creation-date: 2018-06-20
-last-updated: 2018-06-20
+last-updated: 2018-12-27
 status: provisional
 ---
 
@@ -66,7 +66,7 @@ There has been a lot of interest in supporting GMSA for Windows containers since
 
 ### Non-Goals
 
-- Running Linux applications using GMSA
+- Running Linux applications using GMSA or a general Kerberos based authentication system
 - Replacing any existing Kubernetes authorization or authentication controls
 - Providing unique container identities. By design, Windows GMSA are used where multiple nodes are running apps as the same Active Directory principal.
 - Isolation between container users and processes running as the GMSA. Windows already allows users and system services with sufficient privilege to create processes using a GMSA.
@@ -81,12 +81,12 @@ There has been a lot of interest in supporting GMSA for Windows containers since
 Windows applications and services typically use Active Directory identities to facilitate authentication and authorization between resources. In a traditional virtual machine scenario, the computer is joined to an Active Directory domain which enables it to use Kerberos, NTLM, and LDAP to identify and query for information about other resources in the domain. When a computer is joined to Active Directory, it is given an unique identity represented as a computer object in LDAP.
 
 #### What is a Windows service account?
-A Group Managed Service Account (gMSA) is a shared Active Directory identity that enables common scenarios such as authenticating and authorizing incoming requests and accessing downstream resources such as a database server, file share, or other workload. It can be used by multiple authorized users or computers at the same time.
+A Group Managed Service Account (GMSA) is a shared Active Directory identity that enables common scenarios such as authenticating and authorizing incoming requests and accessing downstream resources such as a database server, file share, or other workload. It can be used by multiple authorized users or computers at the same time.
 
 #### How is it applied to containers?
 To achieve the scale and speed required for containers, Windows uses a group managed service account in lieu of individual computer accounts to enable Windows containers to communicate with Active Directory. As of right now, Windows cannot use individual Active Directory computer & user accounts.
 
-Different containers on the same machine can use different gMSAs to represent the specific workload they are hosting, allowing operators to granularly control which resources a container has access to. However, to run a container with a gMSA identity, an additional parameter must be supplied to the Windows Host Compute Service to indicate the intended identity. This proposal seeks to add support in Kubernetes for this parameter to enable Windows containers to communicate with other enterprise resources.
+Different containers on the same machine can use different GMSAs to represent the specific workload they are hosting, allowing operators to granularly control which resources a container has access to. However, to run a container with a GMSA identity, an additional parameter must be supplied to the Windows Host Compute Service to indicate the intended identity. This proposal seeks to add support in Kubernetes for this parameter to enable Windows containers to communicate with other enterprise resources.
 
 It's also worth noting that Docker implements this in a different way that's not managed centrally. It requires dropping a file on the node and referencing it by name, eg: docker run --credential-spec='file://foo.json' . For more details see the Microsoft doc.
 
@@ -95,8 +95,6 @@ It's also worth noting that Docker implements this in a different way that's not
 
 
 #### Web Applications with MS SQL Server
-
-
 A developer has a Windows web app that they would like to deploy in a container with Kubernetes. For example, it may have a web tier that they want to scale out running ASP.Net hosted in the IIS web server. Backend data  is stored in a Microsoft SQL database, which all of the web servers need to access behind a load balancer. An Active Directory Group Managed Service Account is used to avoid hardcoded passwords, and the web servers run with that credential today. The SQL Database has a user with read/write access to that GMSA so the web servers can access it. When they move the web tier into a container, they want to preserve the existing authentication and authorization models.
 
 When this app moves to production on containers, the team will need to coordinate to make sure the right GMSA is carried over to the container deployment.
@@ -107,7 +105,7 @@ When this app moves to production on containers, the team will need to coordinat
   - Provision the service account and gives details to application admin.
   - Assign access to a security group to control what machines can use this service account. This group should include all authorized Kubernetes nodes.
 
-2. A Kubernetes admin will create a namespace, secret and service account:
+2. A Kubernetes admin will create a namespace, configmap and service account:
   - Create a unique Kubernetes [service account](https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/#use-multiple-service-accounts) as an identity for the application in Kubernetes. No rights to the cluster are assigned.
 
 ```
@@ -148,11 +146,11 @@ Example credspec.json
 }
 ```
 
-  - Create a secret in the namespace of type `WindowsCredentialSpec` with the contents of the JSON - `kubectl create secret -n ... generic webserverCredSpec --from-file credspec.json`
-  - Add the secret to the service account - `kubectl patch serviceaccount/webserver -p '{\"windowsCredentialSpec\": \"webserverCredSpec\"}'`
+  - Create a configmap in the namespace with the contents of the JSON - `kubectl create configmap webserverCredSpec --from-file=gmsa-cred-spec=/path/to/credspec.json`
+  - Add reference to the configmap in the service account - `kubectl patch serviceaccount/webserver -p '{\"windowsCredentialSpec\": \"webserverCredSpec\"}'`
 3. The Kubernetes admin gives a set of users rights to the namespace and service account
 4. Application admin deploys the app with `ServiceAccount: webserver` as part of the PodSpec
-5. The admission controller validates this user has access to the service account, and sets `PodSpec.windowsSecurityContext.CredentialSpec` to the contents of the secret
+5. The ServiceAccount admission controller validates this user has access to the service account, and sets `PodSpec.SecurityContext.WindowsGMSACredentialSpec` to the contents of the credspec configmap
 6. The Windows CRI implementation copies the credentialSpec to the [OCI windows.CredentialSpec](https://github.com/opencontainers/runtime-spec/blob/master/config-windows.md#credential-spec) field
 7. The Windows OCI implementation validates the credentialspec, and fails to start the container if its invalid or access to the GMSA from the node is denied
 8. The container starts with the Windows Group Managed Service Account as expected, and can authenticate to the database.
@@ -160,12 +158,17 @@ Example credspec.json
 
 ### Implementation Details/Notes/Constraints [optional]
 
-What are the caveats to the implementation?
-What are some important details that didn't come across above.
-Go in to as much detail as necessary here.
-This might be a good place to talk about core concepts and how they releate.
+#### Changes in ServiceAccount struct
+A new field `WindowsCredentialSpec String` will be added to `ServiceAccount` to point to the name of a config map with key `gmsa-cred-spec` and data populated with the credspec JSON corresponding to the GMSA.
 
-The Windows OCI runtime already has support for `windows.CredentialSpec` and is implemented in Moby. 
+#### Changes in SecurityContext struct
+A new field `WindowsGMSACredentialSpec String` will be added to `SecurityContext` to be populated with the credspec JSON corresponding to the GMSA.
+
+#### Changes in ServiceAccount Admission Controller
+If the `SecurityContext.WindowsGMSACredentialSpec` field of the pod being created is not populated, the ServiceAccount Admission Controller will lookup the `WindowsCredentialSpec` field of the Service Account configured for the pod. If not empty, the ServiceAccount Admission Controller will look up the configmap (pointed by the Service Account's `WindowsCredentialSpec` field) with key `gmsa-cred-spec` and use the value to populate `PodSpec.SecurityContext.WindowsGMSACredentialSpec` of the pod.
+
+#### Changes in Windows OCI runtime
+The Windows OCI runtime already has support for `windows.CredentialSpec` and is implemented in Moby (Docker). 
 
 
 ### Risks and Mitigations
