@@ -42,7 +42,7 @@ status: provisional
 
 ## Summary
 
-This Kubernetes Enchancement Proposal (KEP) introduces a model for adding distributed tracing to Kubernetes object lifecycles. The inclusion of this trace instrumentation will mark a significant step in making Kubernetes processes more observable, understandable, and debuggable.
+This Kubernetes Enhancement Proposal (KEP) introduces a model for adding distributed tracing to Kubernetes object lifecycles. The inclusion of this trace instrumentation will mark a significant step in making Kubernetes processes more observable, understandable, and debuggable.
 
 
 ## Motivation
@@ -51,11 +51,11 @@ Debugging latency issues in Kubernetes is an involved process. There are existin
 
 * **Logs**: are fragmented, and finding out which process was the bottleneck involves digging through troves of unstructured text. In addition, logs do not offer higher-level insight into overall system behavior without an extensive background on the process of interest. 
 * **Events**: in Kubernetes are only kept for an hour by default, and don't integrate with visualization of analysis tools. To gain trace-like insights would require a large investment in custom tooling.
-* **Latency metrics**: are gathered in some places, but these don't provide understanding into _why_ a given process was slow.
+* **Latency metrics**: can only supply limited metadata because of cardinality constraints.  They are useful for showing _that_ a process was slow, but don't provide insight into _why_ it was slow.  
 
 Distributed tracing, on the other hand, provides a single window into latency information from across many components and plugins. Trace data is structured, and there are numerous established backends for visualizing and querying over it.
 
-In addition, due to the self-healing nature of Kubernetes, regressions wherein latencies are affected but the overall task is eventually accomplished are not uncommon. With our current monitoring architecture, these "soft regressions" are often difficult to observe and understand. Collecting structured trace data on per-object latencies would enable us to detect these long-term regressions automatically, and quickly determine their root causes.
+Due to the self-healing nature of Kubernetes, failures are retried until they succeed, causing bugs to manifest as operations that take slightly longer. Our current testing and telemetry, such as e2e tests and SLO monitoring, ensure processes in Kubernetes complete successfully within a bounded amount of time.  While this is effective for catching major regressions and unrecoverable errors, smaller regressions often manifest as flakes in unrelated tests or are otherwise a pain to track down.  Collecting structured trace data allows us to detect such regressions automatically, and quickly determine their root causes.
 
 
 ### Goals
@@ -81,17 +81,28 @@ Kubernetes is unique in that it is constantly reconciling its actual state towar
 
 In this proposal, we choose to _only_ trace phases of an object's lifecycle wherein it's correcting from an undesired state to its desired state, and to end the trace when it enters this desired state. This means that the same object will export traces for each reconciliation it undergoes. This decision was made because:
 
-1) These reconciliation phases are where Kubernetes performs actual work that can be traced
-2) Prevents traces from spanning the entire life of an object, which can be indefninite
-3) Provides a consistent, concrete duration for the root span which remains applicable across object types
-4) The time required for Kubernetes controllers to reconcile desired and actual state is, by definition, a measurement of either latency experienced by end-users in the fulfillment of their requests, or down-time due to a disruption
+1. These reconciliation phases are where Kubernetes performs actual work that can be traced
+1. Prevents traces from spanning the entire life of an object, which can be indefinite
+1. Provides a consistent, concrete duration for the root span which remains applicable across object types
+1. The time required for Kubernetes controllers to reconcile desired and actual state is, by definition, a measurement of either latency experienced by end-users in the fulfillment of their requests, or down-time due to a disruption
+
+Concretely, when a component performs traced work, such as the kubelet creating a container, it uses the trace context associated with the version of the object it is performing the work based on.  For example:
+
+1. The kubelet observes a new pod assigned to it through its APIServer watch with a container using image A.
+1. The kubelet begins to perform traced actions, such as pulling image A, using the trace context obtained when it first observed the pod.
+1. The kubelet concurrently observes an update to the pod to use image B
+1. The kubelet continues the process it began above, and creates the container with image A.  *This action is still traced using the initial trace context from the pod when it was using image A*
+1. After concluding the previous process, the kubelet performs traced actions to update the image to image B, such as pulling the image, deleting the old container, and creating the new container.  *These actions are now traced using the new trace context from the pod after the update to image B*
+
+Components should plumb the context through reconciliation functions, rather than storing and looking up trace contexts globally so that each attempt to reconcile desired and actual state uses the context associated with _that_ desired state through the entire attempt.  If multiple components are involved in reconciling a single object, one may act on the new trace context before the other, but each trace is still representative of the work done to reconcile to the corresponding desired state. Given this model, we guarantee that each trace contains the actions taken to reconcile toward a single desired state.
+
+High-level processes, such as starting a pod or restarting a failed container, could be interrupted before completion by an update to the desired state. While this leaves a "partial" trace for the first process, it is the most accurate representation of the work and timing of reconciling desired and actual state.
 
 #### Root spans
 
-In the standard model for distributed tracing, there exists a span in each trace that all other spans are descendents of and which extends the length of the entire trace, called the `root span`. 
+In the standard model for distributed tracing, there exists a span in each trace that all other spans are descendents of and which extends the length of the entire trace, called the `root span`. While this is not a hard requirement, it makes traces interact better with visualization tools, and may have implications for analytical tools that expect a root span. For some processes, such as updates, the start time of the process is not stored with the object.  These processes do not have a root span in this version of the proposal.
 
-The Kubernetes component that kicks off an operation might not be the same component that ends it. In this proposal, when we are at the point where we want to end a root span, we craft a span to export which acts as the root span for the trace. For example, when the kubelet updates a pod from `Pending` to `Running`, it creates a root span using the start time of the pod as the start, and the current time as the end.
-
+The Kubernetes component that begins an operation is often not be the same component that ends it. In this proposal, when we are at the point where we want to end a root span, we craft a span to export which acts as the root span for the trace. For example, when the kubelet updates a pod from `Pending` to `Running`, it creates a root span using the start time of the pod as the start, and the current time as the end.  This works for processes where the start time is recorded, such as Creations and Deletions.
 
 #### Context propagation
 
@@ -99,8 +110,9 @@ To correlate work done between components as belonging to the same trace, we mus
 
 In this proposal, we choose to propagate this span context as an encoded string an object annotation called `trace.kubernetes.io/context`. This annotation value is regenerated and replaced when an object's trace ends, to achieve the desired behavior from [section one](#trace-lifecycle). 
 
-This proposal chooses to use annotations as a less invasive alternative to adding a field to object metadata, but as this proposal matures, adding trace context to the official API should be considered. 
+This proposal chooses to use annotations as a less invasive alternative to adding a field to object metadata, but as this proposal matures, adding trace context to the official API should be considered.
 
+The alpha design adds extra writes to the APIServer for updating the trace context, which will limit the scalability of clusters using this feature.  These extra writes must be eliminated for this feature to move to beta.
 
 ### In-tree changes
 
@@ -109,14 +121,14 @@ This proposal chooses to use annotations as a less invasive alternative to addin
 This KEP proposes the use of the [OpenCensus tracing framework](https://opencensus.io/) to create and export spans to configured backends. The OpenCensus framework was chosen for various reasons: 
 
 1) Provides concrete, tested implementations for creating and exporting spans to diverse backends, rather than providing an API specification, as is the case with [OpenTracing](https://opentracing.io/specification/)
-2) [Provides an agent](https://github.com/census-instrumentation/opencensus-service) which enables lazy configuration for exporters, batching of spans, and other features 
+2) [Provides an agent](https://github.com/census-instrumentation/opencensus-service) which enables lazy configuration for exporters, batching of spans, and other features.  The agent allows importing and configuring exporters to be done out-of-tree.
 
-This KEP suggests that we utilize the OpenCensus agent for the initial implementation. The alternatvies to this would be:
+This KEP suggests that we utilize the OpenCensus agent for the initial implementation to reduce the global changes required for alpha.  Alternative options include:
 
-1) To export spans from the instrumented components themselves, not using the agent, and exposing multiple trace sinks in the in-tree tracing library, or
-2) To make the agent one of the trace sinks included in the in-tree tracing library
-
-These are all viable options, but using the OpenCensus agent makes for the least invasive in-tree changes. Before this proposal graduates through its alpha-phase, however, and is no longer on an opt-in basis, we will have to reasess whether it is viable or worthwhile to run this agent on each node across the cluster as the default.
+1. Add configuration for exporters in-tree by vendoring in each "supported" exporter. 
+  a. This places the kubernetes community in the position of curating supported tracing backends
+  b. This eliminates the requirement to run to OpenCensus agent in order to use tracing
+2) Support *both* a curated set of in-tree exporters, and the agent exporter
 
 #### Adding trace utility package
 
@@ -132,8 +144,7 @@ OpenCensus ships with plugins to transport trace context across gRPC and HTTP bo
 
 In OpenCensus' Go implementation, span context is passed down through Go context. This will necessitate the threading of context across more of the Kubernetes codebase, which is a [desired outcome regardless](https://github.com/kubernetes/kubernetes/issues/815).
 
-Following these intial pod-related trace additions, trace instrumentation should be added in an ad-hoc fashion to the various Kubernetes components.
-
+Following these initial pod-related trace additions, trace instrumentation should be added in an ad-hoc fashion to the various Kubernetes components.
 
 ### Out-of-tree changes
 
@@ -165,12 +176,13 @@ Having these standards in place will ensure that our tracing instrumentation wor
 
 Before this proposal can be considered as a Beta feature, there are various items that must be resolved. 
 
-1) Benchmarking the performance impact of both the in-component instrumentation and running the per-node OpenCensus agent
-2) Handling owner relationships in these traces (e.g. tracing a replica set; do we append the associated pod traces to the replica set trace?)
-3) Ensuring the extensibility of this tracing model to other Kubernetes objects and CRDs
-4) Determining the security implications of this trace instrumentation 
-5) Creation of user-facing documentation 
-6) Alpha-implementation as described above
+1. Benchmarking the performance impact of both the in-component instrumentation and running the per-node OpenCensus agent
+1. Handling owner relationships in these traces (e.g. tracing a replica set; do we append the associated pod traces to the replica set trace?)
+1. Ensuring the extensibility of this tracing model to other Kubernetes objects and CRDs
+1. Determining the security implications of this trace instrumentation 
+1. Creation of user-facing documentation 
+1. Alpha-implementation as described above
+1. Tracing must not increase the number of requests to the APIServer, which likely requires moving trace context generation in-tree.
 
 
 ## Implementation History
