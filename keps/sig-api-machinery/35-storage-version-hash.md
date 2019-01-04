@@ -10,8 +10,8 @@ reviewers:
 approvers:
   - "@deads2k"
   - "@lavalamp"
-creation-date: 2010-01-02
-last-updated: 2018-xx-xx
+creation-date: 2019-01-02
+last-updated: 2019-01-04
 status: provisional
 ---
 
@@ -74,8 +74,10 @@ type APIResource struct {
         // The hash value of the storage version, the version this resource is
         // converted to when written to the data store. Value must be treated 
         // as opaque by clients. Only equality comparison on the value is valid.
-        // This field is of alpha quality and might be removed in the next
-        // release.
+	// This is an alpha feature and may change or be removed in the future.
+        // The field is populated by the apiserver only if the
+        // StorageVersionHash feature gate is enabled.
+        // This field will remain optional even if it graduates. 
         // +optional
         StorageVersionHash string `json:"storageVersionHash,omitempty"`
         // These are the existing fields.
@@ -122,10 +124,13 @@ The discovery API is read-only and the `StorageVersionHash` field is only
 intended to be used by the storage version migrator, the graduation story is
 simple.
 
-We will document the field as of alpha quality in 1.14. If we don't find any
-problem with the field, we will promote it to beta in 1.15 and GA in 1.16.
-Otherwise we just remove the field while keeping a tombstone for the protobuf
-tag.
+The field will be alpha in 1.14, protected by a feature flag. By default the
+`StorageVersionHash` is not shown in the discovery document as the feature flag
+is default to `False`.
+
+If we don't find any problem with the field, we will promote it to beta in 1.15
+and GA in 1.16. Otherwise we just remove the field while keeping a tombstone
+for the protobuf tag.
 
 The above is a simplified version of Kubernetes API change [guideline][].
 
@@ -137,7 +142,7 @@ The above is a simplified version of Kubernetes API change [guideline][].
 
 Kubernetes does not have a convergence mechanism for HA masters. During HA
 master rolling upgrade/downgrade, depending on which apiserver handles the
-request, the discovery document and the storage version might vary.
+request, the discovery document and the storage version may vary.
 
 This breaks the auto-triggered storage migration. For example, the storage
 version migrator gets the discovery document from an upgraded apiserver. The new
@@ -153,8 +158,14 @@ migrator waits for the masters to converge before starting migration. Before
 such a convergence mechanism exists, the auto-triggered storage version
 migration is **not** safe for HA masters.
 
-To workaround, the cluster admins of HA clusters can manually trigger migration
-after the rolling upgrade/downgrade is done.
+To workaround, the cluster admins of HA clusters need to
+* turn off the migration triggering controller, which is a standalone controller.
+* manually trigger migration after the rolling upgrade/downgrade is done.
+
+Though the `StorageVersionHash` cannot be used to automate HA cluster storage
+migration, manually triggered migration can determine use this information if
+the storage version for a particular resource has changed since the last run and
+skip unnecessary migrations.
 
 ## Alternatives
 1. We had considered triggering the storage version migrator by the change of
