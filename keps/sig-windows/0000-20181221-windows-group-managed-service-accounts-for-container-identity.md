@@ -173,12 +173,12 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
 ```
   
-4. Application admin deploys the application pods with `spec.securityContext.windows.credentialSpecConfig` set to the name of any authorized GMSA configmap (e.g. `webserver-credspec`) as part of the PodSpec
+4. Application admin deploys the application pods with `spec.securityContext.windows.credentialSpecConfig` set to the name of any authorized GMSA configmap (e.g. `webserver-credspec`) as part of the PodSpec.
 5. During pod creation, a new Admission Controller, GMSAAuthorizer, will ensure the `user` (and `spec.serviceAccountName` if specified) is authorized for the `use` verb on the GMSA configmap. If the authorization check fails due to absence of RBAC roles, the pod creation fails.
-6. The Windows CRI implementation accesses the configmap with the GMSA credspec and copies the contents of entry with key `gmsa-cred-spec` to the [OCI windows.CredentialSpec](https://github.com/opencontainers/runtime-spec/blob/master/config-windows.md#credential-spec) field
-7. The Windows OCI implementation validates the credspec and fails to start the container if its invalid or access to the GMSA from the node is denied
+6. The Windows CRI implementation accesses the configmap with the GMSA credspec and copies the contents of entry with key `gmsa-cred-spec` to the [OCI windows.CredentialSpec](https://github.com/opencontainers/runtime-spec/blob/master/config-windows.md#credential-spec) field.
+7. The Windows OCI implementation validates the credspec and fails to start the container if its invalid or access to the GMSA from the node is denied.
 8. The container starts with the Windows Group Managed Service Account as expected, and can authenticate to the database.
-9. During any subsequent pod update, GMSAAuthorizer blocks any changes to a pod's `spec.securityContext.windows.credentialSpecConfig`
+9. During any subsequent pod update, any changes to a pod's `securityContext` is blocked (as is the case today) by `ValidatePodUpdate`.
 
 
 ### Implementation Details/Notes/Constraints [optional]
@@ -191,7 +191,7 @@ A new admission controller, GMSAAuthorizer will be implemented to act on pod cre
 
 During pod creation, if the pod's `securityContext.windows.credentialSpecConfig` is populated, the admission controller will ensure the user of the request as well as any service account specified for the pod are authorized for a special `use` verb on the GMSA configmap whose name is specified in pod's `spec.securityContext.windows.credentialSpecConfig`. The admission controller will generate custom `AttributesRecord`s with `verb` set to `use`, `name` set to the GMSA configmap and `user` set to the user of the request as well as service account if specified. Next, the `AttributesRecord`s will be passed to authorizers to check against RBAC configurations.
 
-During pod updates, the admission controller will ensure the `spec.securityContext.windows.credentialSpecConfig` field is not changed for a pod.
+During pod updates, `ValidatePodUpdate` already ensures a pod's `securityContext` cannot be updated. So no further checks/blocks are necessary to prevent update operations on pods.
 
 #### Changes in CRI's WindowsContainerSecurityContext struct
 A new field `CredentialSpec String` will be added to `WindowsContainerSecurityContext`. It will be populated by `generateWindowsContainerConfig` for Windows containers with the contents of key `gmsa-cred-spec` in the GMSA configmap pointed to by `securityContext.windows.credentialSpecConfig` in the pod spec.
@@ -207,7 +207,7 @@ The Windows OCI runtime already has support for `windows.CredentialSpec` and is 
 #### Threat vectors and countermeasures
 1. Prevent an unauthorized user from referring to an existing GMSA configmap in the pod spec: The GMSAAuthorizer Admission Controller along with RBAC policies with the `use` verb on a GMSA configmap ensures only users allowed by the kubernetes admin can refer to the GMSA configmap in the pod spec.
 2. Prevent an unauthorized user from using an existing Service Account that is authorized to use an existing GMSA configmap: The GMSAAuthorizer Admission Controller checks the `user` as well as the service account associated with the pod have `use` rights on the GMSA configmap.
-3. Prevent an unauthorized user from reading the GMSA credspec and using it directly through docker on Windows worker hosts: RBAC policy on the GMSA configmaps should only allow `get` verb for authorized users.
+3. Prevent an unauthorized user from reading the GMSA credspec and using it directly through docker on Windows hosts connected to AD that user has access to: RBAC policy on the GMSA configmaps should only allow `get` verb for authorized users.
 
 ## Graduation Criteria
 
