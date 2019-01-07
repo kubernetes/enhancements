@@ -16,10 +16,10 @@ approvers:
   - "@soltysh"
 editor: TBD
 creation-date: 2018-11-07
-last-updated: yyyy-mm-dd
-status: pending
+last-updated: 2019-01-07
+status: implementable
 see-also:
-  - [KEP-0008](https://github.com/kubernetes/community/blob/master/keps/sig-cli/0008-kustomize.md)
+  - "[KEP-0008](https://github.com/kubernetes/community/blob/master/keps/sig-cli/0008-kustomize.md)"
 replaces:
   - n/a
 superseded-by:
@@ -49,7 +49,7 @@ superseded-by:
 [Tools for generating]: https://github.com/ekalinin/github-markdown-toc
 
 ## Summary
-[Kustomize](https://github.com/kubernetes-sigs/kustomize) is a tool developed to provide declarative support for kubernetes objects. It has been adopted by many projects and users. Having kustomize enabled in kubectl will address a list of long standing issues. This KEP describes how `kustomize` is integrated into kubectl subcommands with consistent UX.
+[Kustomize](https://github.com/kubernetes-sigs/kustomize) was developed as a distinct tool from kubectl to rapidly experiment on declarative configuration. The code was developed to solve some long standing, complex kubectl [issues](https://github.com/kubernetes/enhancements/blob/master/keps/sig-cli/0008-kustomize.md#long-standing-issues). The final step is to close the issues by bringing the code into kubectl. This KEP describes how to do this with consistent kubectl UX.
 
 ## Motivation
 
@@ -98,9 +98,8 @@ Kustomize has following subcommands:
 - Resolve variables and substitute them
 
 ```
-# TODO: currently kustomization.yaml is not versioned
-# Need to version this with apiVersion and Kind
-# https://github.com/kubernetes-sigs/kustomize/issues/588
+apiVersion: v1beta1
+kind: Kustomization
 namePrefix: alices-
 
 commonAnnotations:
@@ -197,14 +196,15 @@ There are two signals that can indicate the success of this integration.
 
 Most implementation will be in cli-runtime
 
-- vendor `kustomize/pkg` into kubernetes
-- copy `kustomize/k8sdeps` into cli-runtime
-- Implement a Visitor for kustomization directory which
+- [x] vendor `kustomize/pkg` into kubernetes
+- [x] copy `kustomize/k8sdeps` into cli-runtime
+- [x] Implement a Visitor for kustomization directory which
    - execute kustomize build to get a list of resources
    - write the output to a StreamVisitor
-- When parsing filename parameters in FilenameParam, look for kustomization directories
-- update the examples in kubectl commands
-- Improve help messages or documentations to list kubectl subcommands that can work with kustomization directories
+- [x] When parsing filename parameters in FilenameParam, look for kustomization directories
+- [ ] documentation:
+  - update the examples in kubectl commands
+  - Improve help messages or documentations to list kubectl subcommands that can work with kustomization directories
 
 ## Alternatives
 
