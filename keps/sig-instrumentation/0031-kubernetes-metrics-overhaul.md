@@ -34,6 +34,9 @@ status: implementable
       * [Make metrics aggregatable](#make-metrics-aggregatable)
       * [Export less metrics](#export-less-metrics)
       * [Prevent apiserver's metrics from accidental registration](#prevent-apiservers-metrics-from-accidental-registration)
+      * [Prober metrics](#prober-metrics)
+   * [Client-go metric changes](#client-go-metric-changes)
+      * [Workqueue metrics](#workqueue-metrics)
    * [Risks and Mitigations](#risks-and-mitigations)
 * [Graduation Criteria](#graduation-criteria)
 * [Implementation History](#implementation-history)
@@ -99,6 +102,18 @@ https://github.com/kubernetes/kubernetes/pull/63924
 #### Prober metrics
 
 Make prober metrics introduced in https://github.com/kubernetes/kubernetes/pull/61369 conform to the [Kubernetes instrumentation guidelines](https://github.com/kubernetes/community/blob/master/contributors/devel/instrumentation.md).
+
+### Client-go metric changes
+
+#### Workqueue metrics
+
+Workqueue metrics need follow prometheus best practices and naming conventions.
+
+* Instead of naming metrics based on the name of the workqueue, create metrics for workqueues that use name as a label. 
+* Use the recommended base units.
+* Change summaries to histograms.
+
+https://github.com/kubernetes/kubernetes/pull/71300
 
 ### Risks and Mitigations
 
