@@ -35,6 +35,9 @@ status: implementable
       * [Export less metrics](#export-less-metrics)
       * [Prevent apiserver's metrics from accidental registration](#prevent-apiservers-metrics-from-accidental-registration)
       * [Prober metrics](#prober-metrics)
+   * [Kube-scheduler metric changes](#kube-scheduler-metric-changes)
+   * [Kube-proxy metric changes](#kube-proxy-metric-changes)
+   * [Kube-apiserver metric changes](#kube-apiserver-metric-changes)
    * [Client-go metric changes](#client-go-metric-changes)
       * [Workqueue metrics](#workqueue-metrics)
    * [Risks and Mitigations](#risks-and-mitigations)
@@ -91,6 +94,9 @@ Currently, all Kubelet metrics are exposed as summary data types. This means tha
 
 Hence, where possible, we should change summaries to histograms, or provide histograms in addition to summaries like with the API server metrics.
 
+https://github.com/kubernetes/kubernetes/pull/72323
+https://github.com/kubernetes/kubernetes/pull/72470
+
 #### Export less metrics
 
 https://github.com/kubernetes/kubernetes/issues/68522
@@ -102,6 +108,18 @@ https://github.com/kubernetes/kubernetes/pull/63924
 #### Prober metrics
 
 Make prober metrics introduced in https://github.com/kubernetes/kubernetes/pull/61369 conform to the [Kubernetes instrumentation guidelines](https://github.com/kubernetes/community/blob/master/contributors/devel/instrumentation.md).
+
+### Kube-scheduler metric changes
+
+https://github.com/kubernetes/kubernetes/pull/72332
+
+### Kube-proxy metric changes
+
+https://github.com/kubernetes/kubernetes/pull/72334
+
+### Kube-apiserver metric changes
+
+https://github.com/kubernetes/kubernetes/pull/72336
 
 ### Client-go metric changes
 
