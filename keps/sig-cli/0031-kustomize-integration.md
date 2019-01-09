@@ -19,7 +19,7 @@ creation-date: 2018-11-07
 last-updated: yyyy-mm-dd
 status: pending
 see-also:
-  - [KEP-0008](https://github.com/kubernetes/community/blob/master/keps/sig-cli/0008-kustomize.md)
+  - "[KEP-0008](https://github.com/kubernetes/community/blob/master/keps/sig-cli/0008-kustomize.md)"
 replaces:
   - n/a
 superseded-by:
