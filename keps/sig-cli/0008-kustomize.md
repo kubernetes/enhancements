@@ -13,14 +13,14 @@ approvers:
   - "@soltysh"
 editor: "@droot"
 creation-date: 2018-05-05
-last-updated: 2018-05-23
+last-updated: 2019-01-09
 status: implemented
 see-also:
   - n/a
 replaces:
   - kinflate # Old name for kustomize
 superseded-by:
-  - n/a
+  - "[KEP-0008](https://github.com/kubernetes/enhancements/blob/master/keps/sig-cli/0031-kustomize.md)"
 ---
 
 # Kustomize
