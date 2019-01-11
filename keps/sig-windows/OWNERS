@@ -1,0 +1,6 @@
+reviewers:
+  - sig-windows-leads
+approvers:
+  - sig-windows-leads
+labels:
+  - sig/windows
