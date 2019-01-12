@@ -5,13 +5,14 @@ authors:
   - "@kgolab"
   - "@bskiba"
   - "@schylek"
-owning-sig: sig-architecture
+owning-sig: sig-autoscaling
 participating-sigs:
-  - sig-autoscaling
   - sig-node
   - sig-scheduling
 reviewers:
-  - TBD
+  - "@bsalamat"
+  - "@derekwaynecarr"
+  - "@dchen1107"
 approvers:
   - TBD
 editor: TBD
