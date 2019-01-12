@@ -2,8 +2,9 @@
 kep-number: 0
 title: Windows node support
 authors:
-  - "@benmoss"
   - "@astrieanna"
+  - "@benmoss"
+  - "@patricklang"
 owning-sig: sig-windows
 participating-sigs:
   - sig-architecture
@@ -96,7 +97,7 @@ As of 29-11-2018 much of the work for enabling Windows nodes has already been co
 
 ### Risks and Mitigations
 
-**Second class support**: Kubernetes contributors are likely to be thinking of Linux-based solutions to problems, as Linux remains the primary OS supported. Keeping Windows support working will be an ongoing burden potentially limiting the pace of development.
+**Second class support**: Kubernetes contributors are likely to be thinking of Linux-based solutions to problems, as Linux remains the primary OS supported. Keeping Windows support working will be an ongoing burden potentially limiting the pace of development. 
 
 **User experience**: Users today will need to use some combination of taints and node selectors in order to keep Linux and Windows workloads separated. In the best case this imposes a burden only on Windows users, but this is still less than ideal.
 
@@ -106,6 +107,36 @@ As of 29-11-2018 much of the work for enabling Windows nodes has already been co
 ## Implementation History
 
 
+## Testing Plan
+
+The testing for Windows nodes will include multiple approaches:
+
+1. [Adapting](#Adapting-existing-tests) some of the existing conformance tests to be able to pass on multiple node OS's
+2. Adding [substitute](#Substitute-test-cases) test cases where the first approach isn't feasible or would change the tests in a way is not approved by the owner. These will be tagged with `[SIG-Windows]`
+3. Last, gaps will be filled with [Windows specific tests](#Windows-specific-tests). These will also be tagged with `[SIG-Windows]`
+
+All test cases will be built in kubernetes/test/e2e, scheduled through [prow](github.com/kubernetes/test-infra/blob/master/config/jobs/kubernetes-sigs/sig-windows/sig-windows-config.yaml), and published on the [TestGrid SIG-Windows dashboard](https://testgrid.k8s.io/sig-windows) daily.
+
+Windows test setup scripts, container image source, and documentation will be kept in the [kubernetes-sigs/windows-testing](https://github.com/kubernetes-sigs/windows-testing) repo.
+
+### Adapting existing tests
+
+Over the course of v1.12/13, many conformance tests were adapted to be able to pass on either Linux or Windows nodes as long as matching OS containers are run. This was done by creating Windows equivalent containers from [kubernetes/test/images](https://github.com/kubernetes/kubernetes/tree/master/test/images). An additional parameter is needed for e2e.test/kubetest to change the container repos to the one containing Windows versions since they're not part of the Kubernetes build process yet.
+
+> TODO: include list of test cases from https://docs.google.com/document/d/1YkLZIYYLMQhxdI2esN5PuTkhQHhO0joNvnbHpW68yg8/edit#
+
+
+### Substitute test cases
+
+These are test cases that follow a similar flow to a conformance test that is dependent on Linux-specific functionality, but differs enough that the same test case cannot be used for both Windows & Linux. Examples include differences in file access permissions (UID/GID vs username, permission octets vs Windows ACLs), and network configuration (`/etc/resolv.conf` is used on Linux, but Windows DNS settings are stored in the Windows registry).
+
+> TODO: include list of test cases from open PRs
+
+### Windows specific tests
+
+We will also add Windows scenario-specific tests to cover more typical use cases and features specific to Windows. These tests will be in [kubernetes/test/e2e/windows](https://github.com/kubernetes/kubernetes/tree/master/test/e2e/windows). This will also include density and performance tests that are adjusted for Windows apps which have different image sizes and memory requirements.
+
+> TODO: new list here
 
 ## Other references
 
