@@ -2,8 +2,7 @@
 - One-line enhancement description (can be used as a release note):
 - Primary contact (assignee):
 - Responsible SIGs:
-- Design proposal link (community repo):
-- Link to e2e and/or unit tests:
+- KEP link: (link to kubernetes/enhancements, if no file yet, link to PR)
 - Reviewer(s) - (for LGTM) recommend having 2+ reviewers (at least one from code-area OWNERS file) agreed to review. Reviewers from multiple companies preferred:
 - Approver (likely from SIG/area to which enhancement belongs):
 - Enhancement target (which target equals to which milestone):
