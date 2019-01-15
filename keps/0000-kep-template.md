@@ -86,6 +86,22 @@ A table of contents is helpful for quickly jumping to sections of a KEP and for 
 
 [Tools for generating]: https://github.com/ekalinin/github-markdown-toc
 
+**ACTION REQUIRED (Seriously):** There must be an issue in [kubernetes/kubernetes](https://github.com/kubernetes/kubernetes/issues)
+referencing this KEP and targeted a release milestone *before the [feature freeze](https://github.com/kubernetes/sig-release/tree/master/releases)
+of the targeted release*.
+
+## Release Sign off Checklist
+
+Check these off as the are completed for the release team to track.  These must be updated for the feature to be
+released.
+
+- [ ] Issue in release milestone linked to KEP (insert link here)
+- [ ] Design
+- [ ] Test Plan
+- [ ] Graduation Plan
+- [ ] Implemented
+- [ ] Documented
+
 ## Summary
 
 The `Summary` section is incredibly important for producing high quality user focused documentation such as release notes or a development road map.
@@ -139,13 +155,71 @@ What are the risks of this proposal and how do we mitigate.
 Think broadly.
 For example, consider both security and how this will impact the larger kubernetes ecosystem.
 
-## Graduation Criteria
+How will security be reviewed and by whom?
+How will UX be reviewed and by whom?
 
-How will we know that this has succeeded?
+Consider including folks that also work outside the sig or subproject.
+
+## Design Details
+
+### Test Plan
+
+**Note:** *Section not required until targeted at a release.*
+
+What is the test plan for the component?  E2e, integration, unit testing.  How will it be tested in isolation vs
+with other components?
+
+No need to outline all of the test cases, just the general strategy.
+
+### Graduation Criteria
+
+**Note:** *Section not required until targeted at a release.*
+
+Define graduation milestones. These may be defined in terms of API maturity, or as something else.  Initial KEP should keep
+this high-level with a focus on what signals will be looked at to determine graduation.
+
+Clearly define what graduation means by either linking to the [API doc definition](https://kubernetes.io/docs/concepts/overview/kubernetes-api/#api-versioning),
+or by redefining what graduation means.
+
+Example 1:
+
+Alpha -> Beta Graduation:
+
+- Gather feedback from developers and surveys
+- Complete features A, B, C
+
+Example 2:
+
+Beta -> GA Graduation:
+
+- N examples of real world usage
+- N installs
+- Complete features D, E, F
+
+Example 3:
+
+kubectl flag Opt-in -> Opt-out
+
+- 2 versions passed since introducing flag (to address version skew)
+- Address feedback from opt-in usage provided on GitHub issues
+
 Gathering user feedback is crucial for building high quality experiences and SIGs have the important responsibility of setting milestones for stability and completeness.
 Hopefully the content previously contained in [umbrella issues][] will be tracked in the `Graduation Criteria` section.
 
 [umbrella issues]: https://github.com/kubernetes/kubernetes/issues/42752
+
+### Upgrade / Downgrade Strategy
+
+**Note:** *Section not required until targeted at a release.*
+
+If applicable, how will the component be upgraded and downgraded?  Make sure this is in the test plan.
+
+### Version Skew Strategy
+
+**Note:** *Section not required until targeted at a release.*
+
+If applicable, how will the component handle version skew with other components?  What are the guarantees?  Make sure
+this is in the test plan.
 
 ## Implementation History
 
