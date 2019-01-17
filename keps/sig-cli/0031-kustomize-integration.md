@@ -21,6 +21,7 @@ last-updated: 2019-01-09
 status: implementable
 see-also:
  - "[kustomize](https://github.com/kubernetes-sigs/kustomize/blob/master/docs/workflows.md)"
+ - "[KEP-0034](https://github.com/kubernetes/enhancements/blob/master/keps/sig-cli/0034-kustomize.md)" 
 replaces:
  - "[KEP-0008](https://github.com/kubernetes/enhancements/blob/master/keps/sig-cli/0008-kustomize.md)"
 superseded-by:
@@ -49,12 +50,17 @@ superseded-by:
 
 [Tools for generating]: https://github.com/ekalinin/github-markdown-toc
 
+Link to tracking issue: kubernetes/enhancements#633
+
+See [KEP FAQ](kep-faq.md) for "why not as as plugin".
+
 ## Summary
 
 [Kustomize](https://github.com/kubernetes-sigs/kustomize)
 was developed as a subproject of sig-cli by kubectl maintainers with the goal of addressing
-a collection of issues creating friction for declarative workflows in kubectl (e.g. `kubectl apply`).  The
-goal of Kustomize was to eventually bring this functionality back to kubectl in order to complement
+a collection of issues (See [motivation](#motivation)) creating friction for declarative workflows in kubectl
+(e.g. `kubectl apply`).  The
+goal of the kustomize subproject was to bring this functionality back to kubectl to better complement
 `kubectl apply` and other declarative workflow commands.
 
 - declaratively generating Resource config
@@ -62,21 +68,21 @@ goal of Kustomize was to eventually bring this functionality back to kubectl in 
 - composing collections of Resource config across files and directories
 - layering the above on top of one another
 
-It is independent of, but complementary to, the *server-side apply* initiative that was started later and targeted
-at a separate collection of `kubectl apply` issues.
+It is independent of, but complementary to, the [*server-side apply*](https://github.com/kubernetes/enhancements/issues/555)
+initiative that was started later and targeted at a separate collection of `kubectl apply` issues.
 
 **Note:**
-While most of the generation and transformation options supported by Kustomize are available either as
+While most of the generation and transformation options supported by kustomize are available either as
 imperative kubectl commands or as kubectl flags, the inverse is not true.  Only a subset of the kubectl
-imperative commands are available as declarative options through Kustomize.
+imperative commands are available as declarative options through kustomize.
 
-The Kustomize implementations of some generators and transformations were augmented to do more intelligent things
+The kustomize implementations of some generators and transformations were augmented to do more intelligent things
 when invoked from a declarative workflow involving multiple Resources that may reference one another.
 This is a more advanced approach to the imperative workflow, where transformations applied to Resources were largely
 independent of one another, and supports scenarios like a ConfigMap and Secret having a generated name-suffix that must be propagated to
 Resource Config that references them.
 
-Imperative kubectl commands / flags available through Kustomize:
+Imperative kubectl commands / flags available through kustomize:
 
 - `kubectl create configmap`
 - `kubectl create secret`
@@ -86,12 +92,12 @@ Imperative kubectl commands / flags available through Kustomize:
 - `-n` (namespace)
 - `-f <filename>` (kubectl processes files with lists of Resources)
 
-Kubectl commands / flags similar to what is available through Kustomize:
+Kubectl commands / flags similar to what is available through kustomize:
 
 - `-f <dir> -R` (kubectl - recursing through directories, kustomize may follow references)
-- `kubectl set image` (Kustomize directive to set the image tag only, not the image)
+- `kubectl set image` (kustomize directive to set the image tag only, not the image)
 
-Things in Kustomize that are not imperative kubectl commands / flags:
+Things in kustomize that are not imperative kubectl commands / flags:
 
 - `namePrefix` (prepend all resource names with this)
 - `nameSuffix` (append all resource names with this)
@@ -101,7 +107,7 @@ Things in Kustomize that are not imperative kubectl commands / flags:
 
 **Background:** Kubectl Apply
 
-Kubectl apply is intended to provide a declarative workflow for working with the Kubernetes API.  Similar to Kustomize,
+Kubectl apply is intended to provide a declarative workflow for working with the Kubernetes API.  Similar to kustomize,
 `apply` (client-side) pre-processes Resource Config and transforms it into Kubernetes patches sent to the
 apiserver (transformation is a function of live cluster state and Resource Config).  Apply addresses user friction
 such as:
@@ -113,9 +119,9 @@ such as:
 
 However apply does contain user friction in its declarative workflow, the majority of which could be either reduced
 or solved through augmenting and leveraging capabilities already present in kubectl imperative commands from a
-declarative context.  To this end, Kustomize was developed.
+declarative context.  To this end, kustomize was developed.
 
-Example GitHub issues addressed by Kustomize:
+Example GitHub issues addressed by kustomize:
 
 - Declarative Updates of Secrets + ConfigMaps
  [kubernetes/kubernetes#24744](https://github.com/kubernetes/kubernetes/issues/24744)
@@ -128,7 +134,7 @@ Example GitHub issues addressed by Kustomize:
 - Transformation (and propagation) of Names, Labels, Selectors
  [kubernetes/kubernetes#1698](https://github.com/kubernetes/kubernetes/issues/1698)
 
-Some of the solutions provided by Kustomize could also be done as bash scripts to generate and transform
+Some of the solutions provided by kustomize could also be done as bash scripts to generate and transform
 Resource config using either kubectl or other commands (e.g. creating a Secret from a file).
 
 As an example: [this](https://github.com/osixia/docker-openldap/tree/stable/example/kubernetes/using-secrets/environment)
@@ -141,12 +147,9 @@ invoke kubectl's patch and apply logic from a script (add-on manager circa 2016)
 
 Users have asked for a declarative script-free way to apply changes to Resource Config.
 
-Others solutions provided by Kustomize require broader context of the set of Resource Config
-(e.g. facilitating rolling update of a Secret or ConfigMap).
-
 ### Goals
 
-Solve common kubectl user friction (such as those defined in the Motivation section) by publishing Kustomize
+Solve common kubectl user friction (such as those defined in the Motivation section) by publishing kustomize
 functionality from kubectl to complement commands which are targeted at declarative workflows.
 
 - Complement commands targeted at declarative workflows: `kubectl apply`, `kubectl diff`
@@ -156,11 +159,11 @@ User friction solved through capabilities such as:
 
 - Generating Resource Config for Resources with data frequently populated from other sources - ConfigMap and Secret
 - Performing common cross-cutting transformations intended to be applied across Resource Configs - e.g.
- name prefixing / suffixing, labeling, annotating, namespacing, imageTag setting.
+  name prefixing / suffixing, labeling, annotating, namespacing, imageTag setting.
 - Performing flexible targeted transformations intended to be applied to specific Resource Configs - e.g.
- strategic patch, json patch
-- Composing and layering Resource Config and schema-aware transformations
-- Facilitating rolling updates to Resources such as ConfigMaps and Secrets
+  strategic patch, json patch
+- Composing and layering Resource Config with schema-aware transformations
+- Facilitating rolling updates to Resources such as ConfigMaps and Secrets via Resource Config transformations
 - Facilitating creation of Resources that require the creation to be ordered - e.g. namespaces, crds
 
 ### Non-Goals
@@ -168,149 +171,69 @@ User friction solved through capabilities such as:
 - Exposing all imperative kubectl commands as declarative options
 - Exposing all kubectl generators and schema-aware transformations
 - Providing simpler alternatives to the APIs for declaring Resource Config (e.g. a simple way to create deployments)
-- Providing a templating mechanism (e.g. for generating Resource Config)
-- Publishing with kubectl any other Kustomize sub-commands besides `build`
+- Providing a templating or general substitution mechanism (e.g. for generating Resource Config)
 
 ### Why should this be part of kubectl?
 
 - It was purposefully built to address user friction in kubectl declarative workflows. Leaving these issues unaddressed
- in the command itself reduces the quality of the product.
+  in the command itself reduces the quality of the product.
 - The techniques it uses to address the issues are based on the existing kubectl imperative commands.  It is
- consistent with the rest of kubectl.
+  consistent with the rest of kubectl.
 - Bridging the imperative and declarative workflows helps bring a more integrated feel and consistent story to
- kubectl's command set.
+  kubectl's command set.
 - Kustomize is already part of the Kubernetes project and owned by SIG CLI (the same sig that owns kubectl).
-- SIG CLI have expertise in the Kustomize codebase and is committed to maintaining this solution going forward.
-- Providing it as part of kubectl will ensure that it is available to users of kubectl apply.
+  SIG CLI members have expertise in the kustomize codebase and are committed to maintaining the solution going forward.
+- Providing it as part of kubectl will ensure that it is available to users of kubectl apply and simplify the
+  getting started experience.
 
 ## Proposal
 
-Do one or more of these.
+Kustomize Standalone Sub Command
 
-- [ ] A: `kubectl kustomize -f dir/ | kubectl apply -f -`
-- [ ] B: `kubectl apply -f dir/`
-- [ ] C: `kubectl apply -f dir/kustomization.yaml` (similar to B, but slightly different UX)
+Publish the `kustomize build` command as `kubectl kustomize`.  Update documentation demonstrate using kustomize as
+`kubectl kustomize <dir> | kubectl apply -f -`.
 
-### Option A: Kustomize Command
+`kubectl kustomize` takes a single argument with is the location of a directory containing a file named `Kustomization`
+and writes to stdout the kustomized Resource Config.
 
-Publish the `kustomize build` command as `kubectl kustomize`.  Update documentation demonstrate using Kustomize as
-`kubectl kustomize -f dir/ | kubectl kustomize -f -`.  Consider Option B as a follow up if there is consensus on
-the reason for doing so and trade-offs.
+If the directory does not contain a `Kustomization` file, it returns an error.
 
-#### Why we like this approach
+Defer deeper integration into ResourceBuilder (e.g. `kubectl apply -k <dir>`) as a follow up after discussing
+the precise UX and technical tradeoffs.  (i.e. deeper integration is more delicate and can be done independently.)
 
-Kustomize does more than the resource builder in kubectl (e.g. the thing that processes files provided with `-f`).
+### Justification for this approach
 
-- It is consistent with how tools that produce Resource Config but exist outside kubectl would integrate with
- `kubectl apply`
-- It is clear to the user that they are getting a new behavior than when they ran `kubectl apply -f dir/`
- which was relatively restrictive in terms of what it did.
-- Publishing it as a separate command keeps what the other kubectl commands do simpler
-- We have talked about moving towards this approach for how we teach users to work with imperative generators -
- e.g. `kubectl create deployment -o yaml --dry-run | kubectl apply -f -` (or something that doesn't exist yet like
-  - **Note:** this case still has friction (e.g. it defaults fields - such as creationTimestamp to null - yuck)
- `kubectl generate deployment | kubectl apply -f -`)
-- It makes more sense to first provide a command (Option A) and then integrate into resource builder (Option B)
-  than it does to do the reverse.
+The end goal is to have kustomize fully integrated into cli-runtime as part of the Resource processing
+libraries (e.g. ResourceBuilder) and supported by all commands that take the `-f` flag.
 
-#### Why don't like this approach
+Introducing it as a standalone subcommand first is a simple way of introducing kustomize functionality to kubectl,
+and will be desirable even after kustomize is integrated into cli-runtime.  The benefits of introducing it
+as a standalone command are:
+
+- Users can view the kustomize output (i.e. without invoking other commands in dry-run mode)
+  - Allows users to experiment with kustomizations
+  - Allows users to debug kustomizations
+  - It is easier to educate users about kustomizations when they can run it independently
+- The subcommand UX is simple and well defined
+- The technical integration is simple and well defined
+
+### Justification for follow up
 
 - It can't address user friction requiring deeper integration - e.g. produce meaningful line numbers in error
-  messages.
-- Most commands would require the same input pipe - e.g. get, delete, etc would all need pipes
+  messages and exit codes.
+- Most commands would require the same input pipe - e.g. get, delete, etc. would all need pipes.  Direct integration
+  is cleaner than always piping everything.
 - We haven't trained user with this pattern
  - We don't currently follow this pattern by default for other commands such as `kubectl create deployment`- which requires
    additional flags to output content to pipe `--dry-run -o yaml`
  - We don't do this for file, dir or url targets - e.g. we don't do `curl something | kubectl apply -f -`
-- When demoed, the UX was considered more complicated than directly integrating into the resource builder
-- It’s more typing for the user
-- Kustomize is the way we are addressing issues with declarative workflows so it should be integrated into them.
-
-### Option B / C: Integration into resource builder
-
-Integrate the kustomize preprocessor directly into the resource builder so it is run on kustomization.yaml
-
-#### UX
-
-When apply, get or delete is run on a directory, check if it contains a kustomization.yaml file. If there is, apply,
-get or delete the output of kustomize build. Kubectl behaves the same as current for directories without
-kustomization.yaml.
-
-##### apply
-The command visible to users is
-```
-kubectl apply -f <dir>
-```
-To view the objects in a kustomization without applying them to the cluster
-```
-kubectl apply -f <dir> --dry-run -o yaml|json
-```
-
-##### get
-The command visible to users is
-```
-kubectl get -f <dir>
-```
-To get the detailed objects in a kustomization
-```
-kubectl get -f <dir> --dry-run -o yaml|json
-```
-
-##### delete
-The command visible to users is
-
-```
-kubectl delete -f <dir>
-```
-
-#### Why we like this approach
-
-- It is capable of friction that requires deeper integration - such as producing errors referencing line
-  numbers of the original files (rather than the output files).
-- It integrates will all commands - get, delete, etc - would automatically work.
-- It is more consistent with UX workflow for commands that work directly off a target
-- It has a cleaner and simpler UX than Option A, fewer steps
-- It integrates the solution directly into the commands with issues instead of tacking it on as separate step
-- Users less likely to get confused and accidentally apply a directory with a kustomization.yaml and have
-  it do the wrong thing (it will do the right thing).
-
-#### Why don't like this approach
-
-- Kustomize does more than the resource builder currently does and this could surprise users
-- Commands are doing more than they were before
-
-### Why not as a kubectl plugin instead of compiled in?
-
-- The kubectl plugin mechanism does not provide a solution for distribution.  Because the functionality is intended as
- the project's solution to issues within kubectl, we want it to be available to users of kubectl without additional
- steps.  Having users manually download only Kustomize as a plugin might be ok, but it won't scale as a good approach
- as the set of commands grows.
-- The effort to build and test the tool for all targets, develop a release process, etc. would be much higher for SIG
-  CLI, also, and it would exacerbate kubectl's version-skew challenges.
-- It will not support integration at more than a surface level - such as into the resource builder
-  (which does not offer a plugin mechanism).
-    - It was previously decided we didn't want to add a plugin mechanism to the resource builder.
-      This could be reconsidered, but would need to think through it more and figure out how to address
-      previously brought up issues.  There may be other issues not listed here as well.
-      - https://github.com/kubernetes/kubernetes/issues/13241
-      - https://github.com/kubernetes/kubernetes/pull/14993
-      - https://github.com/kubernetes/kubernetes/pull/14918
-- There is a risk that publishing each command as a separately built binary could cause the aggregate download
-  size of the toolset to balloon.  The kubectl binary is *52M* and the kustomize binary is *31M*.  (extrapolate to
-  30+ commands x 30MB).  Before going down this route, we should consider how to we might want to design a solution
-  and the tradeoffs.    
-
-**AI's for kubectl extensibility:**
-
-- Clearly define the tradeoffs of designing kubectl around plugins - what are the benefits and what are the risks.
-- Evaluate approaches for distributing designing kubectl around a plugin architecture.
-- Evaluate approaches for building, testing, upgrading kubectl around a plugin architecture.
-- If feasible - prioritize and possibly come up with a roadmap for supporting these options towards this approach.
-- Evaluate good, low risk candidate commands.
+- When both subcommand and ResourceBuilder integration were demoed at sig-cli, the integrated UX was preferred
+- Kustomize is the way we are addressing issues with declarative workflows so we should make it as simple and easy
+  to use as raw Resource Config files.
 
 ## Kustomize Example
 
-Following is an example of a kustomization.yaml file used by Kustomize:
+Following is an example of a kustomization.yaml file used by kustomize:
 
 ```
 apiVersion: v1beta1
@@ -361,13 +284,13 @@ type: Opaque
 ### Implementation Details/Notes/Constraints
 
 In contrast to `kubectl apply`, which was developed directly in kubernetes/kubernetes and had minimal usage or
-real world experience prior, Kustomize was built as a outside of kubernetes/kubernetes in the
+real world experience prior, kustomize was built as an outside of kubernetes/kubernetes in the
 kubernetes-sigs/kustomize repo.  After `kubectl apply` was published, many issues were uncovered in it that should
-have been discovered earlier.  Implementing Kustomize independently allowed more time for gathering feedback and
+have been discovered earlier.  Implementing kustomize independently allowed more time for gathering feedback and
 identifying issues.
 
 Kustomize library code will be moved from its current repository (location) to the cli-runtime repository used by
-kubectl.  This will be started after cli-runtime has been fully moved out of staging.
+kubectl.
 
 ### Risks and Mitigations
 
@@ -380,14 +303,18 @@ Low:
 Low:
 
 - Kustomize has other porcelain commands to facilitate common workflows.  This proposal does not include integrating
-  them into kubectl.  Users would need to download Kustomize separate to get these benefits.
+  them into kubectl.  Users would need to download kustomize separate to get these benefits.
+  
+Low:
+
+- `kubectl kustomize <dir>` doesn't take a `-f` flag like the other commands.
 
 ## Graduation Criteria
 
-The API version for Kustomize is defined in the kustomization.yaml file.  The KEP is targeted `v1beta1`.
+The API version for kustomize is defined in the kustomization.yaml file.  The KEP is targeted `v1beta1`.
 
-The criteria for graduating from `v1beta1` for the Kustomize sub-command should be determined as part of
-evaluating the success and maturity of Kustomize as a command within kubectl.
+The criteria for graduating from `v1beta1` for the kustomize sub-command should be determined as part of
+evaluating the success and maturity of kustomize as a command within kubectl.
 
 Metrics for success and adoption could include but are not limited to:
 
@@ -401,6 +328,8 @@ Metrics for maturity and stability could include but are not limited to:
 - number and severity of kustomize related bugs filed that are intended to be fixed
 - the frequency of API changes and additions
 - understanding of relative use and importance of kustomize features
+
+**Note:** Being integrated into ResourceBuilder is *not* considered graduation and *not* gated on GA.
 
 ## Implementation History
 
@@ -432,7 +361,7 @@ kubernetes/staging and move to this as the source of truth.
  - We are trying to move code **out** of kubernetes/kubernetes.  This is doing the opposite.
  - We are trying to move kubectl **out** of kubernetes/kubernetes.  This is doing the opposite.
 
-### Leave Kustomize functionality separate from kubectl
+### Leave kustomize functionality separate from kubectl
 
 - Pros
   - It is (marginally) less engineering work
