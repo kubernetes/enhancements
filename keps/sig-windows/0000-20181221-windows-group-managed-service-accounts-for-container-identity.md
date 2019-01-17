@@ -127,7 +127,7 @@ A GMSACredSpec may be used by sidecar containers across different namespaces. Th
 
 3. A Kubernetes cluster admin will create a GMSACredSpec object populated with the credspec configuration associated with a desired GMSA:
 
-    - The cluster admin may run a Windows PowerShell script to generate the YAML definition of a GMSACredSpec object populated with the GMSA credspec details. This doesn't contain any passwords or crypto secrets. Example credspec.yaml for GMSA webapplication1:
+  - The cluster admin may run a Windows PowerShell script to generate the YAML definition of a GMSACredSpec object populated with the GMSA credspec details. This doesn't contain any passwords or crypto secrets. Example credspec.yaml for GMSA webapplication1:
 
 ```
 apiVersion: auth.k8s.io/v1alpha1
@@ -152,11 +152,11 @@ credspec:
     Sid: S-1-5-21-2126729477-2524075714-3094792973
 ```
   
-    - With the YAML from above (or generated manually), the cluster admin will create a GMSACredSpec object in the cluster.
+  - With the YAML from above (or generated manually), the cluster admin will create a GMSACredSpec object in the cluster.
 
 4. A Kubernetes cluster admin will configure RBAC for the GMSACredSpec so that only desired service accounts can use the GMSACredSpec:
 
-    - Create a cluster wide role to get and "use" the GMSACredSpec:
+  - Create a cluster wide role to get and "use" the GMSACredSpec:
 
 ```
 apiVersion: rbac.authorization.k8s.io/v1
@@ -170,7 +170,7 @@ rules:
   verbs: ["get", "use"]
 ```
 
-    - Create a rolebinding and assign desired service accounts to the above role:
+  - Create a rolebinding and assign desired service accounts to the above role:
 
 ```
 apiVersion: rbac.authorization.k8s.io/v1
@@ -190,21 +190,21 @@ roleRef:
   
 5. Application admins will deploy app pods that require a GMSA identity along with a Service Account authorized to use the GMSAs. There will be two ways to specify the GMSA credspec details for pods and containers. It is expected that users will typically use the first option as it is more user friendly. The second option is available mainly due to an artifact of the design choices made and described here for completeness.
 
-    - Specify the name of the desired GMSACredSpec object (e.g. `webapp1-credspec`): If an application administrator wants containers to be initialized with a GMSA identity, specifying the names of the desired GMSACredSpec objects is mandatory. In the alpha stage of this feature, the name of the desired GMSACredSpec can be set through an annotation on the pod (applicable to all containers): `pod.alpha.kubernetes.io/windows-gmsa-credspec-name` as well as for each container through annotations of the form: `container.windows-gmsa-credspec-name.alpha.kubernetes.io/container-name`. In the beta stage, the annotations will be promoted to a field in the securityContext of the pod: `podspec.securityContext.windows.gmsaCredSpecName` and in the securityContext of each container:  `podspec.container[i].securityContext.windows.gmsaCredSpecName`. The GMSACredSpec name for a container will override the GMSACredSpec name specified for the whole pod.
+  - Specify the name of the desired GMSACredSpec object (e.g. `webapp1-credspec`): If an application administrator wants containers to be initialized with a GMSA identity, specifying the names of the desired GMSACredSpec objects is mandatory. In the alpha stage of this feature, the name of the desired GMSACredSpec can be set through an annotation on the pod (applicable to all containers): `pod.alpha.kubernetes.io/windows-gmsa-credspec-name` as well as for each container through annotations of the form: `container.windows-gmsa-credspec-name.alpha.kubernetes.io/container-name`. In the beta stage, the annotations will be promoted to a field in the securityContext of the pod: `podspec.securityContext.windows.gmsaCredSpecName` and in the securityContext of each container:  `podspec.container[i].securityContext.windows.gmsaCredSpecName`. The GMSACredSpec name for a container will override the GMSACredSpec name specified for the whole pod.
 
-    - Specify the contents of the `credpec` field of GMSACredSpec that gets passed down to the runtime: Specifying the credpec contents in JSON form is optional. It will get automatically populated by GMSAAuthorizer as described in the next section based on the name of the GMSACredSpec object. In the alpha stage of this feature, a JSON representation of the contents of the desired GMSACredSpec can be set through an annotation on the pod (applicable to all containers): `pod.alpha.kubernetes.io/windows-gmsa-credspec` as well as for each container through annotations of the form: `container.windows-gmsa-credspec.alpha.kubernetes.io/container-name`. In the beta stage, the annotations will be promoted to a field the securityContext of the pod `podspec.securityContext.windows.gmsaCredSpec` and in the securityContext of each  container: `podspec.container[i].securityContext.windows.gmsaCredSpec`. The credpec JSON for a container will override the credpec JSON specified for the whole pod.
+  - Specify the contents of the `credpec` field of GMSACredSpec that gets passed down to the runtime: Specifying the credpec contents in JSON form is optional. It will get automatically populated by GMSAAuthorizer as described in the next section based on the name of the GMSACredSpec object. In the alpha stage of this feature, a JSON representation of the contents of the desired GMSACredSpec can be set through an annotation on the pod (applicable to all containers): `pod.alpha.kubernetes.io/windows-gmsa-credspec` as well as for each container through annotations of the form: `container.windows-gmsa-credspec.alpha.kubernetes.io/container-name`. In the beta stage, the annotations will be promoted to a field the securityContext of the pod `podspec.securityContext.windows.gmsaCredSpec` and in the securityContext of each  container: `podspec.container[i].securityContext.windows.gmsaCredSpec`. The credpec JSON for a container will override the credpec JSON specified for the whole pod.
 
-The ability to specify credspecs for each container within a pod aligns with how security attributes like `runAsGroup`, `runAsUser`, etc. can be specified at the pod level and overridden at the container level if desired.
+  The ability to specify credspecs for each container within a pod aligns with how security attributes like `runAsGroup`, `runAsUser`, etc. can be specified at the pod level and overridden at the container level if desired.
 
 6. A mutating webhook admission controller, GMSAAuthorizer, will act on pod creations and execute the following checks and actions:
 
-    - Check the pod spec for references to names of GMSACredSpec objects in the pod and per-container annotations [`pod.alpha.kubernetes.io/windows-gmsa-credspec-name` and `container.windows-gmsa-credspec-name.alpha.kubernetes.io/container-name` for Alpha] or securityContext fields [`podspec.securityContext.windows.gmsaCredSpecName` and `podspec.container[i].securityContext.windows.gmsaCredSpecName` Beta onwards]. Next, make sure the GMSACredSpec objects (referred to by name) do exist and prepare a JSON representation of the contents of the `credspec` field of the GMSACredSpec. If the specified names of GMSACredSpec cannot be resolved, pod creation will be failed by GMSAAuthorizer with 404: NotFound.
+  - Check the pod spec for references to names of GMSACredSpec objects in the pod and per-container annotations [`pod.alpha.kubernetes.io/windows-gmsa-credspec-name` and `container.windows-gmsa-credspec-name.alpha.kubernetes.io/container-name` for Alpha] or securityContext fields [`podspec.securityContext.windows.gmsaCredSpecName` and `podspec.container[i].securityContext.windows.gmsaCredSpecName` Beta onwards]. Next, make sure the GMSACredSpec objects (referred to by name) do exist and prepare a JSON representation of the contents of the `credspec` field of the GMSACredSpec. If the specified names of GMSACredSpec cannot be resolved, pod creation will be failed by GMSAAuthorizer with 404: NotFound.
 
-    - Check the pod spec for inlined credspec JSON in the pod and per-container annotations [`pod.alpha.kubernetes.io/windows-gmsa-credspec` and `container.windows-gmsa-credspec.alpha.kubernetes.io/container-name` for Alpha] or securityContext fields [`podspec.securityContext.windows.gmsaCredSpec` and `podspec.container[i].securityContext.windows.gmsaCredSpec` Beta onwards]. These may exist as a result of the app admin optionally specifying the credspec JSON (besides the name).
-      - If a credspec JSON is not specified already, GMSAAuthorizer will look up the corresponding GMSACredSpec name and use the credspec JSON prepared from the previous step to populate the annotations or securityContext fields for credspec JSON.
-      - If a credspec JSON is specified, look up the corresponding GMSACredSpec name and perform a deep equal check of the members of the specified credspec JSON and prepared credspec JSON from previous step. If the deep equal check fails, GMSAAuthorizer will be fail pod creation with 400: BadRequest.
+  - Check the pod spec for inlined credspec JSON in the pod and per-container annotations [`pod.alpha.kubernetes.io/windows-gmsa-credspec` and `container.windows-gmsa-credspec.alpha.kubernetes.io/container-name` for Alpha] or securityContext fields [`podspec.securityContext.windows.gmsaCredSpec` and `podspec.container[i].securityContext.windows.gmsaCredSpec` Beta onwards]. These may exist as a result of the app admin optionally specifying the credspec JSON (besides the name).
+    - If a credspec JSON is not specified already, GMSAAuthorizer will look up the corresponding GMSACredSpec name and use the credspec JSON prepared from the previous step to populate the annotations or securityContext fields for credspec JSON.
+    - If a credspec JSON is specified, look up the corresponding GMSACredSpec name and perform a deep equal check of the members of the specified credspec JSON and prepared credspec JSON from previous step. If the deep equal check fails, GMSAAuthorizer will be fail pod creation with 400: BadRequest.
 
-    - Check the specified ServiceAccount is authorized for the `use` verb on all specified GMSACredSpecs at the pod level and for each container. If the authorization check fails due to absence of requisite RBAC roles, the pod creation will be failed with a 403: Forbidden. 
+  - Check the specified ServiceAccount is authorized for the `use` verb on all specified GMSACredSpecs at the pod level and for each container. If the authorization check fails due to absence of requisite RBAC roles, the pod creation will be failed with a 403: Forbidden. 
 
 7. The Windows CRI implementation will access the credspec JSON through annotations [`container.windows-gmsa-credspec.alpha.kubernetes.io/container-name` for Alpha] or securityContext fields [`podspec.container[i].securityContext.windows.gmsaCredSpec` Beta onwards] for each container in a pod and copy the contents to the [OCI windows.CredentialSpec](https://github.com/opencontainers/runtime-spec/blob/master/config-windows.md#credential-spec) field. Please see the Implementation section below for details on the enhancements necessary.
 
@@ -226,20 +226,20 @@ Last State:         Terminated
 
 #### GMSA specification for pods and containers
 In the Alpha phase of this feature we will use the following annotations on a pod for GMSA credspec:
-    - References to names of GMSACredSpec objects will be specified through the following annotations:
-      - At the pod level: `pod.alpha.kubernetes.io/windows-gmsa-credspec-name`
-      - At the container level: `container.windows-gmsa-credspec-name.alpha.kubernetes.io/container-name`
-    - The contents of the credspec will be specified through or populated in the following annotations:
-      - At the pod level: `pod.alpha.kubernetes.io/windows-gmsa-credspec`
-      - At the container level: `container.windows-gmsa-credspec.alpha.kubernetes.io/container-name`
+  - References to names of GMSACredSpec objects will be specified through the following annotations:
+    - At the pod level: `pod.alpha.kubernetes.io/windows-gmsa-credspec-name`
+    - At the container level: `container.windows-gmsa-credspec-name.alpha.kubernetes.io/container-name`
+  - The contents of the credspec will be specified through or populated in the following annotations:
+    - At the pod level: `pod.alpha.kubernetes.io/windows-gmsa-credspec`
+    - At the container level: `container.windows-gmsa-credspec.alpha.kubernetes.io/container-name`
 
 In the Beta phase of this feature, the annotations will graduate to fields in the pod spec:
-    - References to names of GMSACredSpec objects will be specified through the following fields:
-      - At the pod level `podspec.securityContext.windows.gmsaCredSpecName`
-      - At the container level: `podspec.container[i].securityContext.windows.gmsaCredSpecName`
-    - The contents of the credspec will be specified through or populated in the following fields:
-      - At the pod level: `podspec.securityContext.windows.gmsaCredSpec`
-      - At the container level: `podspec.container[i].securityContext.windows.gmsaCredSpec`
+  - References to names of GMSACredSpec objects will be specified through the following fields:
+    - At the pod level `podspec.securityContext.windows.gmsaCredSpecName`
+    - At the container level: `podspec.container[i].securityContext.windows.gmsaCredSpecName`
+  - The contents of the credspec will be specified through or populated in the following fields:
+    - At the pod level: `podspec.securityContext.windows.gmsaCredSpec`
+    - At the container level: `podspec.container[i].securityContext.windows.gmsaCredSpec`
 
 #### GMSAAuthorizer Admission Controller Webhook
 A new admission controller webhook, GMSAAuthorizer, will be implemented to act on pod creation and updates.
