@@ -6,18 +6,20 @@ authors:
 owning-sig: "sig-windows"
 participating-sigs:
   - "sig-auth"
+  - "sig-node"
   - "sig-windows"
 reviewers:
-  - "sig-node"
-  - "sig-auth"
-  - "sig-arch"
+  - @liggitt
+  - @@mikedanese
+  - @yujuhong
+  - @patricklang
 approvers:
-  - "sig-node"
-  - "sig-auth"
-  - "sig-arch"
+  - @liggitt
+  - @yujuhong
+  - @patricklang
 editor: TBD
 creation-date: 2018-06-20
-last-updated: 2018-12-27
+last-updated: 2019-01-16
 status: provisional
 ---
 
@@ -62,12 +64,12 @@ There has been a lot of interest in supporting GMSA for Windows containers since
 
 - Windows users can run containers with an existing GMSA identity on Kubernetes
 - No extra files or Windows registry keys are needed on each Windows node. All needed data should flow through Kubernetes+Kubelet APIs
-- Prevent pods from being inadvertently scheduled with access to a GMSA that the operator shouldn't have rights to
+- Prevent pods from being inadvertently scheduled with service accounts that do not have access to a GMSA
 
 ### Non-Goals
 
 - Running Linux applications using GMSA or a general Kerberos based authentication system
-- Replacing any existing Kubernetes authorization or authentication controls
+- Replacing any existing Kubernetes authorization or authentication controls. Specifically, a subset of users cannot be restricted from creating pods with Service Accounts authorized to use certain GMSAs within a namespace if the users are already authorized to create pods within that namespace. Namespaces serve as the ACL boundary today in Kubernetes and we do not try to modify or enhance this in the context of GMSAs to prevent escalation of privilege through a service account authorized to use certain GMSAs.
 - Providing unique container identities. By design, Windows GMSA are used where multiple nodes are running apps as the same Active Directory principal.
 - Isolation between container users and processes running as the GMSA. Windows already allows users and system services with sufficient privilege to create processes using a GMSA.
 - Preventing the node from having access to the GMSA. Since the node already has authorization to access the GMSA, it can start processes or services using as the GMSA. Containers do not change this behavior.
@@ -99,105 +101,152 @@ A developer has a Windows web app that they would like to deploy in a container 
 
 When this app moves to production on containers, the team will need to coordinate to make sure the right GMSA is carried over to the container deployment.
 
-1. Active Directory domain administrator will:
+1. An Active Directory domain administrator will:
 
   - Join all Windows Kubernetes nodes to the Active Directory domain.
   - Provision the GMSA and gives details to application admin.
   - Assign access to a AD security group to control what machines can use this GMSA. The AD security group should include all authorized Kubernetes nodes.
 
-2. A Kubernetes admin will create a configmap (in the desired namespace) and populate it with configuration information associated with the GMSA:
-  - Run a Windows PowerShell script to verify the account exists, and capture enough data to uniquely identify the GMSA into a JSON file (credspec). This doesn't contain any passwords or crypto secrets.
-
-Example credspec.json
-```
-{
-  "CmsPlugins": [
-    "ActiveDirectory"
-  ],
-  "DomainJoinConfig": {
-    "DnsName": "contoso.com",
-    "Guid": "244818ae-87ca-4fcd-92ec-e79e5252348a",
-    "DnsTreeName": "contoso.com",
-    "NetBiosName": "DEMO",
-    "Sid": "S-1-5-21-2126729477-2524075714-3094792973",
-    "MachineAccountName": "WebApplication1"
-  },
-  "ActiveDirectoryConfig": {
-    "GroupManagedServiceAccounts": [
-      {
-        "Name": "WebApplication1",
-        "Scope": "DEMO"
-      },
-      {
-        "Name": "WebApplication1",
-        "Scope": "contoso.com"
-      }
-    ]
-  }
-}
-```
-
-  - Create a configmap in the namespace with the contents of the JSON - `kubectl create configmap webserver-credspec --from-file=gmsa-cred-spec=/path/to/credspec.json`
-
-3. Secure the configmap with the GMSA credspec so that only desired users/service accounts within a namespace can view, modify or use the GMSA configmap:
-  - Create a role to view, modify or use the GMSA configmap:
+2. A Kubernetes cluster admin (or cluster setup tools or an operator) will install a cluster scoped CRD (of kind GMSACredSpec) whose instances will be used to store GMSA credential spec configuration:
 
 ```
-kind: Role
-apiVersion: rbac.authorization.k8s.io/v1
+apiVersion: apiextensions.k8s.io/v1beta1
+kind: CustomResourceDefinition
 metadata:
-  namespace: default
-  name: webserver-gmsa-user
+  name: gmsacredspecs.auth.k8s.io
+spec:
+  group: auth.k8s.io
+  version: v1alpha1
+  names:
+    kind: GMSACredSpec
+    plural: gmsacredspecs
+  scope: Cluster
+```
+
+A GMSACredSpec may be used by sidecar containers across different namespaces. Therefore the CRD needs to be cluster scoped.
+
+3. A Kubernetes cluster admin will create a GMSACredSpec object populated with the credspec configuration associated with a desired GMSA:
+
+  - The cluster admin may run a Windows PowerShell script to generate the YAML definition of a GMSACredSpec object populated with the GMSA credspec details. This doesn't contain any passwords or crypto secrets.
+
+Example credspec.yaml for GMSA webapplication1:
+
+```
+apiVersion: auth.k8s.io/v1alpha1
+kind: GMSACredSpec
+metadata:
+  name: "webapp1-credspec"
+credspec:
+  ActiveDirectoryConfig:
+    GroupManagedServiceAccounts:
+    - Name: WebApplication1
+      Scope: DEMO
+    - Name: WebApplication1
+      Scope: contoso.com
+  CmsPlugins:
+  - ActiveDirectory
+  DomainJoinConfig:
+    DnsName: contoso.com
+    DnsTreeName: contoso.com
+    Guid: 244818ae-87ca-4fcd-92ec-e79e5252348a
+    MachineAccountName: WebApplication1
+    NetBiosName: DEMO
+    Sid: S-1-5-21-2126729477-2524075714-3094792973
+```
+  
+  - With the YAML from above (or generated manually), the cluster admin will create a GMSACredSpec object in the cluster.
+
+4. A Kubernetes cluster admin will configure RBAC for the GMSACredSpec so that only desired service accounts can use the GMSACredSpec:
+
+  - Create a cluster wide role to get and "use" the GMSACredSpec:
+
+```
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: webapp1-gmsa-user
 rules:
-- apiGroups: [""]
-  resources: ["configmaps"]
-  resourceNames: ["webserver-credspec"]
-  verbs: ["get", "patch", "delete", "update", "use"]
+- apiGroups: ["auth.k8s.io"]
+  resources: ["gmsacredspecs"]
+  resourceNames: ["webapp1-credspec"]
+  verbs: ["get", "use"]
 ```
 
-  - Create a rolebinding and assign desired users (for example, jane below) or service accounts to the above role:
+  - Create a rolebinding and assign desired service accounts to the above role:
 
 ```
-kind: RoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
 metadata:
-  name: use-webserver-gmsa
+  name: use-webapp1-gmsa
   namespace: default
 subjects:
-- kind: User
-  name: jane
+- kind: ServiceAccount
+  name: webapp-sa
   apiGroup: rbac.authorization.k8s.io
 roleRef:
   kind: Role
-  name: webserver-gmsa-user
+  name: webapp1-gmsa-user
   apiGroup: rbac.authorization.k8s.io
 ```
   
-4. Application admins deploy app pods with a reference to the name of an authorized GMSA configmap (e.g. `webserver-credspec`). In the alpha and beta stage of this feature, the reference to the GMSA configmap will be set through an annotation on the pod: `pod.[alpha|beta].kubernetes.io/windows-gmsa-config-map`. In the beta and GA stage, the reference to GMSA configmap may be set through `spec.securityContext.windows.credentialSpecConfig` in the pod spec.
-5. During pod creation, a new Admission Controller, GMSAAuthorizer, will ensure the `user` (and `spec.serviceAccountName` if specified) is authorized for the `use` verb on the GMSA configmap. If the authorization check fails due to absence of RBAC roles, the pod creation fails.
-6. The Windows CRI implementation accesses the configmap with the GMSA credspec and copies the contents of entry with key `gmsa-cred-spec` to the [OCI windows.CredentialSpec](https://github.com/opencontainers/runtime-spec/blob/master/config-windows.md#credential-spec) field.
-7. The Windows OCI implementation validates the credspec and fails to start the container if its invalid or access to the GMSA from the node is denied.
-8. The container starts with the Windows Group Managed Service Account as expected, and can authenticate to the database.
-9. During any subsequent pod update, any changes to a pod's `securityContext` is blocked (as is the case today) by `ValidatePodUpdate`.
+5. Application admins will deploy app pods that require a GMSA identity along with a Service Account authorized to use the GMSAs. There will be two options regarding how to specify the GMSACredSpec for pods and containers:
+
+  - Specify the name of the desired GMSACredSpec (e.g. `webapp1-credspec`): In the alpha stage of this feature, the name of the desired GMSACredSpec can be set through an annotation on the pod: `pod.alpha.kubernetes.io/windows-gmsa-credspec-name` as well as for each container through annotations of the form: `container.windows-gmsa-credspec-name.alpha.kubernetes.io/container-name`. In the beta stage, the annotations will be promoted to a field in the securityContext of the pod: `podspec.securityContext.windows.gmsaCredSpecName` and in the securityContext of each container:  `podspec.container[i].securityContext.windows.gmsaCredSpecName`. The GMSACredSpec name for a container will override the GMSACredSpec entries for the whole pod.
+
+  - Specify the contents of the `credpec` field of GMSACredSpec that gets passed down to the runtime: In the alpha stage of this feature, a JSON representation of the contents of the desired GMSACredSpec can be set through an annotation on the pod: `pod.alpha.kubernetes.io/windows-gmsa-credspec` as well as for each container through annotations of the form: `container.windows-gmsa-credspec.alpha.kubernetes.io/container-name`. In the beta stage, the annotations will be promoted to a field the securityContext of the pod `podspec.securityContext.windows.gmsaCredSpec` and in the securityContext of each  container: `podspec.container[i].securityContext.windows.gmsaCredSpec`.
+
+It is expected that users will typically use the first option as it is more user friendly. The ability to specify credspecs for each container within a pod aligns with how security attributes like `runAsGroup`, `runAsUser`, etc. can be specified at the pod level and overridden at the container level if necessary.
+
+6. A mutating webhook admission controller, GMSAAuthorizer, will act on pod creations and execute the following:
+
+  - Check the pod spec for references to names of GMSACredSpec objects in the pod (and per-container) annotations [for Alpha] or securityContext fields [Beta onwards]. Make sure the GMSACredSpec objects exist and use the contents of the `credspec` field of the GMSACredSpec to populate annotations `pod.alpha.kubernetes.io/windows-gmsa-credspec` and `container.windows-gmsa-credspec.alpha.kubernetes.io/container-name` [in Alpha] or `podspec.securityContext.windows.gmsaCredSpec` and `podspec.container[i].securityContext.windows.gmsaCredSpec` [Beta onwards]. If the specified names of GMSACredSpec cannot be resolved, pod creation will be failed with 404: Not Found.
+  
+  - Check the specified ServiceAccount is authorized for the `use` verb on all specified GMSACredSpecs at the pod level and for each container. If the authorization check fails due to absence of requisite RBAC roles, the pod creation will be failed with a 403: Forbidden. 
+
+7. The Windows CRI implementation accesses the `gmsaCredSpec` field for each container in a pod and copies the contents to the [OCI windows.CredentialSpec](https://github.com/opencontainers/runtime-spec/blob/master/config-windows.md#credential-spec) field.
+
+8. The Windows OCI implementation validates the credspec and fails to start the container if its invalid or access to the GMSA from the node is denied.
+
+9. The container starts with the Windows Group Managed Service Account as expected, and can authenticate to the database.
+
+10. During any subsequent pod update, any changes to a pod's `securityContext` will be blocked (as is the case today) by `ValidatePodUpdate`. Updates of the annotations for GMSACredSpec will be rejected by GMSAAuthorizer.
 
 
 ### Implementation Details/Notes/Constraints [optional]
 
-#### Reference to the GMSA configmap from pods
-In the Alpha and Beta phase of this feature, the reference to the GMSA configmap will be set through an annotation: `pod.[alpha|beta].kubernetes.io/windows-gmsa-config-map` on the pod. In the GA phase, a new Windows OS-specific field `CredentialSpecConfig String` will be added to `SecurityContext` to be populated with the name of the GMSA credspec configmap.
+#### GMSA specification for pods and containers
+In the Alpha phase of this feature we will use annotations on a pod:
+  - References to names of GMSACredSpec objects will be specified through the following annotations:
+    - At the pod level: `pod.alpha.kubernetes.io/windows-gmsa-credspec-name`
+    - At the container level: `container.windows-gmsa-credspec-name.alpha.kubernetes.io/container-name`
+  - The contents of the credspec will be specified through or populated in the following annotations:
+    - At the pod level: `pod.alpha.kubernetes.io/windows-gmsa-credspec`
+    - At the container level: `container.windows-gmsa-credspec.alpha.kubernetes.io/container-name`
 
-#### GMSAAuthorizer Admission Controller
-A new admission controller, GMSAAuthorizer will be implemented to act on pod creation and updates. 
+In the Beta phase of this feature, the annotations will graduate to fields in the pod spec:
+  - References to names of GMSACredSpec objects will be specified through the following fields:
+    - At the pod level `podspec.securityContext.windows.gmsaCredSpecName`
+    - At the container level: `podspec.container[i].securityContext.windows.gmsaCredSpecName`
+  - The contents of the credspec will be specified through or populated in the following fields:
+    - At the pod level: `podspec.securityContext.windows.gmsaCredSpec`
+    - At the container level: `podspec.container[i].securityContext.windows.gmsaCredSpec`
 
-During pod creation, the admission controller will first check if the reference to a GMSA configmap is set (either through annotation `pod.[alpha|beta].kubernetes.io/windows-gmsa-config-map` or pod's `securityContext.windows.credentialSpecConfig` [in GA]) on the pod. If set, the admission controller will ensure the user of the request as well as any service account specified for the pod are authorized for a special `use` verb on the GMSA configmap referenced from the pod. The admission controller will generate custom `AttributesRecord`s with `verb` set to `use`, `name` set to the GMSA configmap and `user` set to the user of the request as well as service account if specified. Next, the `AttributesRecord`s will be passed to authorizers to check against RBAC configurations.
+#### GMSAAuthorizer Admission Controller Webhook
+A new admission controller webhook, GMSAAuthorizer will be implemented to act on pod creation and updates.
 
-During pod updates, changes to the `pod.[alpha|beta].kubernetes.io/windows-gmsa-config-map` annotation will be blocked by `ValidatePodSpecificAnnotationUpdates`. `ValidatePodUpdate` already ensures a pod's `securityContext` cannot be updated. So no further checks/blocks are necessary to prevent update operations around the reference to the credspec configmap on pods in GA.
+During pod creation, GMSAAuthorizer will first check for references to names of GMSACredSpec objects either through annotations or podspec fields. Each reference will be looked up using the name. If the name is not found, pod creation is failed with a 404 Not Found error. If found, the contents of the `credspec` field of the GMSACredSpec object will be used to populate the annotations `pod.alpha.kubernetes.io/windows-gmsa-credspec` and `podspec.container[i].securityContext.windows.gmsaCredSpecName` [in Alpha] or fields `podspec.securityContext.windows.gmsaCredSpec` and `podspec.container[i].securityContext.windows.gmsaCredSpec` [Beta onwards]. 
 
-#### Changes in CRI's WindowsContainerSecurityContext struct
-A new field `CredentialSpec String` will be added to `WindowsContainerSecurityContext`. It will be populated by `generateWindowsContainerConfig` for Windows containers with the contents of key `gmsa-cred-spec` in the GMSA configmap reference from the pod (specified either through the annotation `pod.[alpha|beta].kubernetes.io/windows-gmsa-config-map` during alpha/beta stages or `securityContext.windows.credentialSpecConfig` in the pod spec at GA).
+Next, GMSAAuthorizer will ensure the service account specified for the pod is authorized for a special `use` verb on the GMSACredSpec objects whose `credspec` field has been used to populate the gmsaCredSpec annotations/fields in the podspec. GMSAAuthorizer will generate custom `AttributesRecord`s with `verb` set to `use`, `name` set to the GMSACredSpec object and `user` set to the service account of the pod. Finally, the `AttributesRecord`s will be passed to authorizers to check against RBAC configurations. A failure from the authorizes results in a 403: Forbidden.
+
+During pod updates, changes to the credspec annotations will be blocked by GMSAAuthorizer.
+
+#### Changes in CRI's WindowsContainerSecurityContext struct and DetermineEffectiveSecurityContext
+  - A new field `CredentialSpec String` will be added to `WindowsContainerSecurityContext`
+  - `DetermineEffectiveSecurityContext` will be enhanced to populate `CredentialSpec` for Windows containers based on credspec specification for containers and pod. It will need to obtain the credspec contents from the `pod.alpha.kubernetes.io/windows-gmsa-credspec` and `container.windows-gmsa-credspec.alpha.kubernetes.io/container-name` annotations during the Alpha phase. The enhancements will be enabled under a feature flag during Alpha phase of the feature.
 
 #### Changes in Dockershim
-The `applyWindowsContainerSecurityContext` function will create a temporary file with a unique name on the host file system with the contents of the credspec. The file path will be used to populate `HostConfig.SecurityOpt` with a credspec file specification. The credspec file will be deleted after `StartContainer` in invoked as well as in various error handling paths between container creation and start.
+The `applyWindowsContainerSecurityContext` function will create a temporary file with a unique name on the host file system with the contents of `WindowsContainerSecurityContext.CredentialSpec`. The file path will be used to populate `HostConfig.SecurityOpt` with a credspec file specification. The credspec file will be deleted after `StartContainer` in invoked as well as in various error handling paths between container creation and start.
 
 #### Changes in Windows OCI runtime
 The Windows OCI runtime already has support for `windows.CredentialSpec` and is implemented in Moby (Docker).
@@ -211,9 +260,9 @@ The Windows OCI runtime already has support for `windows.CredentialSpec` and is 
 
 ## Graduation Criteria
 
-- alpha - initial implementation
-- beta - design validated by two or more customer proof of concept deployments, recorded success in SIG-Windows meetings or mailing lists
-- ga - Node E2E tests in place, tagged with features GMSA & Windows
+- alpha - initial implementation with webhook and annotations on pods with CRI enhancements under feature flag disabled by default; manual e2e tests passing.
+- beta - annotations promoted to fields in podspec and CRI feature flag enabled by default; basic e2e test infrastructure in place in Azure with Windows Active Directory.
+- ga - e2e test enhancements and passing consistently 
 
 
 ## Implementation History
@@ -244,9 +293,19 @@ For cloud-native applications, there are other alternatives:
 - PKI - If you have a PKI infrastructure, you could choose to deploy application-specific certificates and change applications to trust specific public keys or intermediate certificates
 - Cloud-provider service accounts - there may be other token-based providers available in your cloud. Apps can be modified to use these tokens and APIs for authentication and authorization requests.
 
-### Associate GMSAs with Kubernetes Service Accounts
+### Injecting credentials from a volume
 
-We considered associating/mapping the GMSA credspec to Kubernetes Service Accounts. The problem with this approach is that there is no way to restrict a user from specifying service accounts to use for the application pods within a given namespace. We do not want a user who is not specifically authorized to use a GMSA credspec by kubernetes admins within a given namespace to be able to create pods with that GMSA credspec. If there is a mechanism to restrict users from being able to specify arbitrary service accounts (as part of podspec) in a namespace, this path maybe considered.
+For certain authentication use cases, a preferred approach may be to surface a volume to the pod with the necessary data that a pod needs to assume an identity injected in the volume. In case of GMSA support, nothing inside the containers of a pod perform any special steps around assuming an identity as that is taken care of by the container runtime at container startup. A container runtime driven solution like GMSA however does require CRI enhancements as mentioned earlier.
+
+### Specifying only the name of GMSACredSpec objects in pod spec fields/annotations
+
+To keep the pod spec changes minimal, we considered having a single field/annotation that specifies the name of the GMSACredSpec object (rather than an additional field that is populated with the contents of the credspec). This approach had the following drawbacks compared to retrieving and storing the credspec data inside annotations/fields:
+
+- Complicates the Windows CRI code with logic to look up GMSACredSpec objects which may be failure prone.
+- Requires the CRI code to be able to access GMSACredSpec objects which may require extra RBAC configuration in a locked down environment.
+- Contents of `credspec` in a GMSACredSpec object being referred to may change after pod creation. This leads to confusing behavior.
+
+
 
 <!-- end matter --> 
 <!-- references -->
