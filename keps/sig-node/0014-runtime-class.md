@@ -72,31 +72,6 @@ cluster-scoped resource tied to the runtime that can help solve these problems i
 - RuntimeClass is NOT "NodeClass". Although different nodes may run different runtimes, in general
   RuntimeClass should not be a cross product of runtime properties and node properties.
 
-The following goals are out-of-scope for the initial implementation, but may be explored in a future
-iteration:
-
-- Surfacing support for optional features by runtimes, and surfacing errors caused by
-  incompatible features & runtimes earlier.
-- Automatic runtime or feature discovery - initially RuntimeClasses are manually defined (by the
-  cluster admin or provider), and are asserted to be an accurate representation of the runtime.
-- Scheduling in heterogeneous clusters - it is possible to operate a heterogeneous cluster
-  (different runtime configurations on different nodes) through scheduling primitives like
-  `NodeAffinity` and `Taints+Tolerations`, but the user is responsible for setting these up and
-  automatic runtime-aware scheduling is out-of-scope.
-- Define standardized or conformant runtime classes - although I would like to declare some
-  predefined RuntimeClasses with specific properties, doing so is out-of-scope for this initial KEP.
-- [Pod Overhead][] - Although RuntimeClass is likely to be the configuration mechanism of choice,
-  the details of how pod resource overhead will be implemented is out of scope for this KEP.
-- Provide a mechanism to dynamically register or provision additional runtimes.
-- Requiring specific RuntimeClasses according to policy. This should be addressed by other
-  cluster-level policy mechanisms, such as PodSecurityPolicy.
-- "Fitting" a RuntimeClass to pod requirements - In other words, specifying runtime properties and
-  letting the system match an appropriate RuntimeClass, rather than explicitly assigning a
-  RuntimeClass by name. This approach can increase portability, but can be added seamlessly in a
-  future iteration.
-
-[Pod Overhead]: https://docs.google.com/document/d/1EJKT4gyl58-kzt2bnwkv08MIUZ6lkDpXcxkHqCvvAp4/edit
-
 ### User Stories
 
 - As a cluster operator, I want to provide multiple runtime options to support a wide variety of
@@ -162,21 +137,8 @@ type PodSpec struct {
 }
 ```
 
-The `legacy` RuntimeClass name is reserved. The legacy RuntimeClass is defined to be fully backwards
-compatible with current Kubernetes. This means that the legacy runtime does not specify any
-RuntimeHandler or perform any feature validation (all features are "supported").
-
-```go
-const (
-    // RuntimeClassNameLegacy is a reserved RuntimeClass name. The legacy
-    // RuntimeClass does not specify a runtime handler or perform any
-    // feature validation.
-    RuntimeClassNameLegacy = "legacy"
-)
-```
-
-An unspecified RuntimeClassName `""` is equivalent to the `legacy` RuntimeClass, though the field is
-not defaulted to `legacy` (to leave room for configurable defaults in a future update).
+An unspecified `nil` or empty `""` RuntimeClassName is equivalent to the backwards-compatible
+default behavior as if the RuntimeClass feature is disabled.
 
 #### Examples
 
@@ -371,10 +333,38 @@ Beta:
 
 ## Implementation History
 
+- 2018-09-27: RuntimeClass released as alpha with Kubernetes v1.12
 - 2018-06-11: SIG-Node decision to move forward with proposal
 - 2018-06-19: Initial KEP published.
 
 ## Appendix
+
+### Proposed Future Enhancements
+
+The following ideas may be explored in a future iteration:
+
+- Surfacing support for optional features by runtimes, and surfacing errors caused by
+  incompatible features & runtimes earlier.
+- Automatic runtime or feature discovery - initially RuntimeClasses are manually defined (by the
+  cluster admin or provider), and are asserted to be an accurate representation of the runtime.
+- Scheduling in heterogeneous clusters - it is possible to operate a heterogeneous cluster
+  (different runtime configurations on different nodes) through scheduling primitives like
+  `NodeAffinity` and `Taints+Tolerations`, but the user is responsible for setting these up and
+  automatic runtime-aware scheduling is out-of-scope.
+- Define standardized or conformant runtime classes - although I would like to declare some
+  predefined RuntimeClasses with specific properties, doing so is out-of-scope for this initial KEP.
+- [Pod Overhead][] - Although RuntimeClass is likely to be the configuration mechanism of choice,
+  the details of how pod resource overhead will be implemented is out of scope for this KEP.
+- Provide a mechanism to dynamically register or provision additional runtimes.
+- Requiring specific RuntimeClasses according to policy. This should be addressed by other
+  cluster-level policy mechanisms, such as PodSecurityPolicy.
+- "Fitting" a RuntimeClass to pod requirements - In other words, specifying runtime properties and
+  letting the system match an appropriate RuntimeClass, rather than explicitly assigning a
+  RuntimeClass by name. This approach can increase portability, but can be added seamlessly in a
+  future iteration.
+- The cluster admin can choose which RuntimeClass is the default in a cluster.
+
+[Pod Overhead]: https://docs.google.com/document/d/1EJKT4gyl58-kzt2bnwkv08MIUZ6lkDpXcxkHqCvvAp4/edit
 
 ### Examples of runtime variation
 
