@@ -307,29 +307,33 @@ RuntimeClasses.
 
 Alpha:
 
-- Everything described in the current proposal:
-  - Introduce the RuntimeClass API resource
-  - Add a RuntimeClassName field to the PodSpec
-  - Add a RuntimeHandler field to the CRI `RunPodSandboxRequest`
-  - Lookup the RuntimeClass for pods & plumb through the RuntimeHandler in the Kubelet (feature
+- [x] Everything described in the current proposal:
+  - [x] Introduce the RuntimeClass API resource
+  - [x] Add a RuntimeClassName field to the PodSpec
+  - [x] Add a RuntimeHandler field to the CRI `RunPodSandboxRequest`
+  - [x] Lookup the RuntimeClass for pods & plumb through the RuntimeHandler in the Kubelet (feature
     gated)
-- RuntimeClass support in at least one CRI runtime & dockershim
-  - Runtime Handlers can be statically configured by the runtime, and referenced via RuntimeClass
-  - An error is reported when the handler or is unknown or unsupported
-- Testing
-  - [CRI validation tests][cri-validation]
-  - Kubernetes E2E tests (only validating single runtime handler cases)
-
-[cri-validation]: https://github.com/kubernetes-sigs/cri-tools/blob/master/docs/validation.md
+- [x] RuntimeClass support in at least one CRI runtime & dockershim
+  - [x] Runtime Handlers can be statically configured by the runtime, and referenced via RuntimeClass
+  - [x] An error is reported when the handler or is unknown or unsupported
+- [x] Testing
+  - [x] Kubernetes E2E tests (only validating single runtime handler cases)
 
 Beta:
 
-- Most runtimes support RuntimeClass, and the current [untrusted annotations](#runtime-handler) are
+- [x] Several major runtimes support RuntimeClass, and the current [untrusted annotations](#runtime-handler) are
   deprecated.
-- RuntimeClasses are configured in the E2E environment with test coverage of a non-legacy RuntimeClass
-- The update & upgrade story is revisited, and a longer-term approach is implemented as necessary.
-- The cluster admin can choose which RuntimeClass is the default in a cluster.
-- Additional requirements TBD
+  - [x] [containerd](https://github.com/containerd/cri/pull/891)
+  - [x] [CRI-O](https://github.com/kubernetes-sigs/cri-o/pull/1847)
+  - [x] [dockershim](https://github.com/kubernetes/kubernetes/pull/67909)
+- [ ] Comprehensive test coverage
+  - [ ] [CRI validation tests][cri-validation]
+  - [ ] RuntimeClasses are configured in the E2E environment with test coverage of a non-default
+    RuntimeClass
+- [ ] Comprehensive coverage of RuntimeClass metrics. Details TBD. [#73058](http://issue.k8s.io/73058)
+- [ ] The update & upgrade story is revisited, and a longer-term approach is implemented as necessary.
+
+[cri-validation]: https://github.com/kubernetes-sigs/cri-tools/blob/master/docs/validation.md
 
 ## Implementation History
 
