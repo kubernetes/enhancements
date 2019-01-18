@@ -37,7 +37,9 @@ superseded-by:
       * [Proposal](#proposal)
          * [API Changes](#api-changes)
          * [Flow Control](#flow-control)
-         * [Notes](#notes)
+            * [Transitions of InPlaceResize condition](#transitions-of-inplaceresize-condition)
+            * [Notes](#notes)
+         * [Affected Components](#affected-components)
          * [Risks and Mitigations](#risks-and-mitigations)
       * [Graduation Criteria](#graduation-criteria)
       * [Implementation History](#implementation-history)
@@ -146,11 +148,115 @@ changes to available memory are more probable to require restarts.
 
 ### Flow Control
 
-TODO
+The following steps denote a positive flow of an in-place update,
+for a Pod having ResizingPolicy set to InPlace for all its Containers.
+Some alternative flows are given in indented steps,
+unless noted otherwise they abort the flow.
 
-### Notes
+1. The initiating actor updates ResourceRequirements using PATCH verb.
+1. API Server validates the new ResourceRequirements
+   (e.g. limits are not below requested resources, QoS class does not change).
+1. API Server calls all Admission Controllers to verify the Pod Update.
+   1. If any of the controllers rejects the update,
+      the InPlaceResize PodCondition is set to Rejected.
+1. API Server updates the PodSpec object and clears InPlaceResize condition.
+1. Scheduler observes that ResourceRequirements and ResourceAllocated differ.
+   It updates its resource cache to use max(ResourceRequirements, ResourceAllocated).
+   1. If required it pre-empts lower-priority Pods, setting
+      the InPlaceResize PodCondition to Awaiting.
+      Once the lower-priority Pods are evicted, Scheduler clears
+      the InPlaceResize PodCondition and the flow continues.
+1. Kubelet observes that ResourceRequirements and ResourceAllocated differ
+   and the InPlaceResize condition is clear.
+   This is done potentially prior to Scheduler pre-empting lower-priority Pods.
+   1. Kubelet checks that new ResourceRequirements do not fit Node’s
+      allocatable resources and sets the InPlaceResize condition to Failed.
+1. Kubelet applies new resource values to cgroups, updates values
+   in ResourceAllocated to match ResourceRequirements
+   and clears InPlaceResize condition.
+1. Scheduler observes that ResourceAllocated has changed.
+   It updates its resource cache to use new value of ResourceAllocated
+   for the given Pod.
+1. The initating actor observes that ResourceRequirements and
+   ResourceAllocated match again which signifies the completion of an update.
 
-TODO
+#### Transitions of InPlaceResize condition
+
+The following diagram shows possible transitions of InPlaceResize condition.
+
+```text
+                   +---------+
+       +-----------+         +-----------+
+       |           | (empty) |           |
+       | +--------->         <---------+ |
+       | |         +----+----+         | |
+      1| |2            3|             4| |5
+ +-----v-+--+           |          +---+-v--+
+ |          |           |          |        |
+ | Awaiting |           |          | Failed |
+ |          |           |          |        |
+ +-------+--+           |          +---+----+
+        3|              |              |3
+         |         +----v-----+        |
+         |         |          |        |
+         +---------> Rejected <--------+
+                   |          |
+                   +----------+
+```
+
+1. Scheduler, on pre-emption.
+1. Scheduler, after pre-emption finishes.
+1. Any Controller, on permanent issue.
+1. Kubelet, on successful retry.
+1. Kubelet, if not enough space on Node.
+
+#### Notes
+
+* In case when there is no pre-emption required, Kubelet and Scheduler
+  will pick up the ResourceRequirements change in parallel.
+* In case when there is pre-emption required Kubelet and Scheduler might
+  pick up the ResourceRequirements change in parallel,
+  Kubelet will then set the InPlaceResize condition to Failed
+  and Scheduler will clear it once pre-emption is done.
+* Kubelet might try to apply new resources also if InPlaceResize
+  condition is set to Failed, as a normal retry mechanism.
+* To avoid races and possible gamification, all components should use
+  max(ResourceRequirements, ResourceAllocated) when computing resources
+  used by a Pod. TBD if this can be weakened when InPlaceResize condition
+  is set to Rejected, or should the initiating actor update
+  ResourceRequirements back to reclaim resources.
+
+### Affected Components
+
+Pod v1 core API:
+* extended model,
+* added validation.
+
+Admission Controllers: LimitRanger, ResourceQuota need to support Pod Updates:
+* for ResourceQuota it should be enough to change podEvaluator.Handler
+  implementation to allow Pod updates; max(ResourceRequirements, ResourceAllocated)
+  should be used to be in line with current ResourceQuota behaviour
+  which blocks resources before they are used (e.g. for Pending Pods),
+* for LimitRanger TBD.
+
+Kubelet
+* support in-place resource management,
+* set ResourceRequirements on placing the Pod on Node.
+
+Scheduler:
+* update its caches with proper resources, depending on InPlaceResize condition.
+
+Other components:
+* check how the change of meaning of resource requests influence other kubernetes components.
+
+### Possible Extensions
+
+1. Allow resource limits to be updated too.
+1. Allow ResizingPolicy to be set on Pod level, acting as default if
+   (some of) the Containers do not have it set on their own.
+1. Extend ResizingPolicy flag to separately control resource increase and decrease
+   (e.g. a container can be given more memory in-place but
+   decreasing memory requires container restart).
 
 ### Risks and Mitigations
 
@@ -163,6 +269,7 @@ TODO
 ## Implementation History
 
 - 2018-11-06 - initial KEP draft created
+- 2019-01-18 - implementation proposal extended
 
 ## Alternatives
 
