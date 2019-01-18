@@ -1,5 +1,5 @@
 ---
-kep-number: 34
+kep-number: 35
 title: Integrate Kustomize into cli-runtime
 authors:
  - "@pwittrock"

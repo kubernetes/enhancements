@@ -1,5 +1,5 @@
 ---
-kep-number: 35
+kep-number: 34
 title: Enable kustomize in kubectl
 authors:
  - "@Liujingfang1"
