@@ -79,11 +79,16 @@ As of 29-11-2018 much of the work for enabling Windows nodes has already been co
 - `kubectl port-forward` hasn't been implemented due to lack of an `nsenter` equivalent to run a process inside a network namespace.
 - CRIs other than Dockershim: CRI-containerd support is forthcoming
 
-
 ### What will never work (without underlying OS changes)
 - Certain Pod functionality
     - Privileged containers
     - Reservations are not enforced by the OS, but overprovisioning could be blocked with `--enforce-node-allocatable=pods` (pending: tests needed)
+    - Certain volume mappings
+      - Single file & subpath volume mounting
+      - Host mount projection
+      - DefaultMode (due to UID/GID dependency)
+      - readOnly root filesystem. Mapped volumes still support readOnly
+    - Termination Message - these require single file mappings
 - CSI plugins, which require privileged containers
 - [Some parts of the V1 API](https://github.com/kubernetes/kubernetes/issues/70604)
 - Overlay networking support in Windows Server 1803 is not fully functional using the `win-overlay` CNI plugin. Specifically service IPs do not work on Windows nodes. This is currently specific to `win-overlay` - other CNI plugins (OVS, AzureCNI) work.
@@ -109,17 +114,26 @@ As of 29-11-2018 much of the work for enabling Windows nodes has already been co
 
 ## Testing Plan
 
+
+### Test Dashboard
+
+All test cases will be built in kubernetes/test/e2e, scheduled through [prow](github.com/kubernetes/test-infra/blob/master/config/jobs/kubernetes-sigs/sig-windows/sig-windows-config.yaml), and published on the [TestGrid SIG-Windows dashboard](https://testgrid.k8s.io/sig-windows) daily. This will be the master list of what needs to pass to be declared stable.
+
+
+### Test Approach
+
 The testing for Windows nodes will include multiple approaches:
 
 1. [Adapting](#Adapting-existing-tests) some of the existing conformance tests to be able to pass on multiple node OS's
 2. Adding [substitute](#Substitute-test-cases) test cases where the first approach isn't feasible or would change the tests in a way is not approved by the owner. These will be tagged with `[SIG-Windows]`
 3. Last, gaps will be filled with [Windows specific tests](#Windows-specific-tests). These will also be tagged with `[SIG-Windows]`
 
-All test cases will be built in kubernetes/test/e2e, scheduled through [prow](github.com/kubernetes/test-infra/blob/master/config/jobs/kubernetes-sigs/sig-windows/sig-windows-config.yaml), and published on the [TestGrid SIG-Windows dashboard](https://testgrid.k8s.io/sig-windows) daily.
+All of the test cases will be maintained within the kubernetes/kubernetes repo. SIG-Windows specific tests for 2/3 will be in [test/e2e/windows](https://github.com/kubernetes/kubernetes/tree/master/test/e2e/windows)
 
-Windows test setup scripts, container image source, and documentation will be kept in the [kubernetes-sigs/windows-testing](https://github.com/kubernetes-sigs/windows-testing) repo.
+Additional Windows test setup scripts, container image source code, and documentation will be kept in the [kubernetes-sigs/windows-testing](https://github.com/kubernetes-sigs/windows-testing) repo. One example is that the prow jobs need a list of repos to use for the test containers, and that will be maintained here - see [windows-testing#1](https://github.com/kubernetes-sigs/windows-testing/issues/1).
 
-### Adapting existing tests
+
+#### Adapting existing tests
 
 Over the course of v1.12/13, many conformance tests were adapted to be able to pass on either Linux or Windows nodes as long as matching OS containers are run. This was done by creating Windows equivalent containers from [kubernetes/test/images](https://github.com/kubernetes/kubernetes/tree/master/test/images). An additional parameter is needed for e2e.test/kubetest to change the container repos to the one containing Windows versions since they're not part of the Kubernetes build process yet.
 
@@ -286,17 +300,29 @@ Over the course of v1.12/13, many conformance tests were adapted to be able to p
 - [sig-storage] Secrets should be consumable from pods in volume with mappings [NodeConformance] [Conformance]
 - [sig-storage] Secrets should be consumable in multiple volumes in a pod [NodeConformance] [Conformance]
 
-### Substitute test cases
+#### Substitute test cases
 
 These are test cases that follow a similar flow to a conformance test that is dependent on Linux-specific functionality, but differs enough that the same test case cannot be used for both Windows & Linux. Examples include differences in file access permissions (UID/GID vs username, permission octets vs Windows ACLs), and network configuration (`/etc/resolv.conf` is used on Linux, but Windows DNS settings are stored in the Windows registry).
 
 > TODO: include list of test cases from open PRs
 
-### Windows specific tests
+
+TODO List:
+- [ ] DNS configuration is passed through CNI, not `/etc/resolv.conf` [67435](https://github.com/kubernetes/kubernetes/pull/67435)
+- [ ] Windows doesn't have CGroups, but nodeReserve and kubeletReserve are [implemented](https://github.com/kubernetes/kubernetes/pull/69960)
+
+
+
+
+#### Windows specific tests
 
 We will also add Windows scenario-specific tests to cover more typical use cases and features specific to Windows. These tests will be in [kubernetes/test/e2e/windows](https://github.com/kubernetes/kubernetes/tree/master/test/e2e/windows). This will also include density and performance tests that are adjusted for Windows apps which have different image sizes and memory requirements.
 
-> TODO: new list here
+Here's a list of functionality that needs tests written. 
+
+- [ ] System, pod & network stats are implemented in kubelet, not cadvisor [70212](https://github.com/kubernetes/kubernetes/pull/70121), [66427](https://github.com/kubernetes/kubernetes/pull/66427), [62266](https://github.com/kubernetes/kubernetes/pull/62266), [51152](https://github.com/kubernetes/kubernetes/pull/51152), [50396](https://github.com/kubernetes/kubernetes/pull/50396)
+- [ ] Windows uses username (string) or SID (binary) to define users, not UID/GID [64009](https://github.com/kubernetes/kubernetes/pull/64009)
+
 
 ## Other references
 
