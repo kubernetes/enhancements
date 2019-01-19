@@ -22,23 +22,31 @@ status: provisional
 
 
 ## Table of Contents
+<!-- TOC -->
 
-   * [Windows node support](#windows-node-support)
-      * [Table of Contents](#table-of-contents)
-      * [Summary](#summary)
-      * [Motivation](#motivation)
-         * [Goals](#goals)
-         * [Non-Goals](#non-goals)
-      * [Proposal](#proposal)
-         * [What works today](#what-works-today)
-         * [What will work eventually](#what-will-work-eventually)
-         * [What will never work (without underlying OS changes)](#what-will-never-work-without-underlying-os-changes)
-         * [Relevant resources/conversations](#relevant-resourcesconversations)
-         * [Risks and Mitigations](#risks-and-mitigations)
-      * [Graduation Criteria](#graduation-criteria)
-      * [Implementation History](#implementation-history)
-      * [Other references](#other-references)
+- [Windows node support](#windows-node-support)
+    - [Table of Contents](#table-of-contents)
+    - [Summary](#summary)
+    - [Motivation](#motivation)
+        - [Goals](#goals)
+        - [Non-Goals](#non-goals)
+    - [Proposal](#proposal)
+        - [What works today](#what-works-today)
+        - [What will work eventually](#what-will-work-eventually)
+        - [What will never work (without underlying OS changes)](#what-will-never-work-without-underlying-os-changes)
+        - [Relevant resources/conversations](#relevant-resourcesconversations)
+        - [Risks and Mitigations](#risks-and-mitigations)
+    - [Graduation Criteria](#graduation-criteria)
+    - [Implementation History](#implementation-history)
+    - [Testing Plan](#testing-plan)
+        - [Test Dashboard](#test-dashboard)
+        - [Test Approach](#test-approach)
+            - [Adapting existing tests](#adapting-existing-tests)
+            - [Substitute test cases](#substitute-test-cases)
+            - [Windows specific tests](#windows-specific-tests)
+    - [Other references](#other-references)
 
+<!-- /TOC -->
 
 ## Summary
 
@@ -117,7 +125,7 @@ As of 29-11-2018 much of the work for enabling Windows nodes has already been co
 
 ### Test Dashboard
 
-All test cases will be built in kubernetes/test/e2e, scheduled through [prow](github.com/kubernetes/test-infra/blob/master/config/jobs/kubernetes-sigs/sig-windows/sig-windows-config.yaml), and published on the [TestGrid SIG-Windows dashboard](https://testgrid.k8s.io/sig-windows) daily. This will be the master list of what needs to pass to be declared stable.
+All test cases will be built in kubernetes/test/e2e, scheduled through [prow](github.com/kubernetes/test-infra/blob/master/config/jobs/kubernetes-sigs/sig-windows/sig-windows-config.yaml), and published on the [TestGrid SIG-Windows dashboard](https://testgrid.k8s.io/sig-windows) daily. This will be the master list of what needs to pass to be declared stable and will include all tests tagged [SIG-Windows] along with the subset of conformance tests that can pass on Windows.
 
 
 ### Test Approach
