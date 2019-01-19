@@ -81,8 +81,6 @@ As of 29-11-2018 much of the work for enabling Windows nodes has already been co
 - Many<sup id="a1">[1]</sup> of the e2e conformance tests when run with [alternate Windows-based images](https://hub.docker.com/r/e2eteam/) which are being moved to [kubernetes-sigs/windows-testing](https://www.github.com/kubernetes-sigs/windows-testing)
 - Persistent storage: FlexVolume with [SMB + iSCSI](https://github.com/Microsoft/K8s-Storage-Plugins/tree/master/flexvolume/windows), and in-tree AzureFile and AzureDisk providers
  
-<sup id="a1">1</sup> This list should be available at https://k8s-testgrid.appspot.com/sig-windows but this test setup is not currently working. https://k8s-testgrid.appspot.com/google-windows#windows-prototype is also running against a Windows cluster.
-
 ### What will work eventually
 - `kubectl port-forward` hasn't been implemented due to lack of an `nsenter` equivalent to run a process inside a network namespace.
 - CRIs other than Dockershim: CRI-containerd support is forthcoming
@@ -128,11 +126,20 @@ As of 29-11-2018 much of the work for enabling Windows nodes has already been co
 All test cases will be built in kubernetes/test/e2e, scheduled through [prow](github.com/kubernetes/test-infra/blob/master/config/jobs/kubernetes-sigs/sig-windows/sig-windows-config.yaml), and published on the [TestGrid SIG-Windows dashboard](https://testgrid.k8s.io/sig-windows) daily. This will be the master list of what needs to pass to be declared stable and will include all tests tagged [SIG-Windows] along with the subset of conformance tests that can pass on Windows.
 
 
+Additional dashboard pages will be added over time as we run the same test cases with additional CRI, CNI and cloud providers. They reflect work that may be stabilized in v1.15 or later and is not strictly required for v1.14.
+
+- Windows Server 2019 on GCP - this is [in progress](https://k8s-testgrid.appspot.com/google-windows#windows-prototype), but not required for v1.14
+- Windows Server 2019 with OVN+OVS & Dockershim
+- Windows Server 2019 with OVN+OVS & CRI-ContainerD
+- Windows Server 2019 with Azure-CNI & CRI-ContainerD
+- Windows Server 2019 with Flannel & CRI-ContainerD
+
 ### Test Approach
 
 The testing for Windows nodes will include multiple approaches:
 
-1. [Adapting](#Adapting-existing-tests) some of the existing conformance tests to be able to pass on multiple node OS's
+1. [Adapting](#Adapting-existing-tests) some of the existing conformance tests to be able to pass on multiple node OS's. Tests that won't work will be [excluded](https://github.com/kubernetes/test-infra/blob/master/config/jobs/kubernetes-sigs/sig-windows/sig-windows-config.yaml#L69).
+  - [ ] TODO: switch to using a tag instead of a long exclusion list
 2. Adding [substitute](#Substitute-test-cases) test cases where the first approach isn't feasible or would change the tests in a way is not approved by the owner. These will be tagged with `[SIG-Windows]`
 3. Last, gaps will be filled with [Windows specific tests](#Windows-specific-tests). These will also be tagged with `[SIG-Windows]`
 
