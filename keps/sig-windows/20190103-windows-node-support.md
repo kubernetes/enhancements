@@ -7,10 +7,12 @@ authors:
 owning-sig: sig-windows
 participating-sigs:
   - sig-architecture
+  - sig-node
 reviewers:
-  - TBD
+  - sig-architecture
+  - sig-node
 approvers:
-  - TBD
+  - "@bgrant0607"
 editor: TBD
 creation-date: 2018-11-29
 last-updated: 2019-01-21
