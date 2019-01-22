@@ -49,8 +49,8 @@ aliases:
   sig-contributor-experience-leads:
     - Phillels
     - parispittman
-    - grodrigues3
     - cblecker
+    - nikhita
   sig-docs-leads:
     - chenopis
     - zacharysarah
@@ -88,7 +88,7 @@ aliases:
     - tpepper
   sig-scalability-leads:
     - wojtek-t
-    - countspongebob
+    - shyamjvs
   sig-scheduling-leads:
     - bsalamat
     - k82cn
@@ -173,10 +173,12 @@ aliases:
     - carolynvs
     - bradamant3
   features-maintainers:
-    - idvoretskyi
-    - justaugustus
-    - kacole2
+    - justaugustus # 1.12 Features Lead
+    - kacole2 # 1.13 Enhancements Lead
+    - claurence # 1.14 Enhancements Lead
   pm-maintainers:
-    - jdumars
-    - justaugustus
+    - calebamiles # SIG PM Lead
+    - idvoretskyi # SIG PM Lead
+    - jdumars # Program Mgmt Chair
+    - justaugustus # Product Mgmt Chair
 ## END CUSTOM CONTENT
