@@ -39,14 +39,11 @@ status: provisional
 - [Graduation Criteria](#graduation-criteria)
 - [Implementation History](#implementation-history)
 - [Testing Plan](#testing-plan)
-    - [Adapting existing tests](#adapting-existing-tests)
     - [Test Dashboard](#test-dashboard)
     - [Test Approach](#test-approach)
-        - [Adapting existing tests](#adapting-existing-tests-1)
-    - [Substitute test cases](#substitute-test-cases)
-        - [Substitute test cases](#substitute-test-cases-1)
-    - [Windows specific tests](#windows-specific-tests)
-        - [Windows specific tests](#windows-specific-tests-1)
+        - [Adapting existing tests](#adapting-existing-tests)
+        - [Substitute test cases](#substitute-test-cases)
+        - [Windows specific tests](#windows-specific-tests)
 - [Other references](#other-references)
 
 <!-- /TOC -->
@@ -123,19 +120,6 @@ As of 29-11-2018 much of the work for enabling Windows nodes has already been co
 
 ## Testing Plan
 
-<<<<<<< HEAD
-The testing for Windows nodes will include multiple approaches:
-
-1. [Adapting](#Adapting-existing-tests) some of the existing conformance tests to be able to pass on multiple node OS's
-2. Adding [substitute](#Substitute-test-cases) test cases where the first approach isn't feasible or would change the tests in a way is not approved by the owner. These will be tagged with `[SIG-Windows]`
-3. Last, gaps will be filled with [Windows specific tests](#Windows-specific-tests). These will also be tagged with `[SIG-Windows]`
-
-All test cases will be built in kubernetes/test/e2e, scheduled through [prow](github.com/kubernetes/test-infra/blob/master/config/jobs/kubernetes-sigs/sig-windows/sig-windows-config.yaml), and published on the [TestGrid SIG-Windows dashboard](https://testgrid.k8s.io/sig-windows) daily.
-
-Windows test setup scripts, container image source, and documentation will be kept in the [kubernetes-sigs/windows-testing](https://github.com/kubernetes-sigs/windows-testing) repo.
-
-### Adapting existing tests
-=======
 
 ### Test Dashboard
 
@@ -165,7 +149,6 @@ Additional Windows test setup scripts, container image source code, and document
 
 
 #### Adapting existing tests
->>>>>>> a8dcbdc65241ef129929ef0ac401a884965b2a08
 
 Over the course of v1.12/13, many conformance tests were adapted to be able to pass on either Linux or Windows nodes as long as matching OS containers are run. This was done by creating Windows equivalent containers from [kubernetes/test/images](https://github.com/kubernetes/kubernetes/tree/master/test/images). An additional parameter is needed for e2e.test/kubetest to change the container repos to the one containing Windows versions since they're not part of the Kubernetes build process yet.
 
@@ -332,23 +315,12 @@ Over the course of v1.12/13, many conformance tests were adapted to be able to p
 - [sig-storage] Secrets should be consumable from pods in volume with mappings [NodeConformance] [Conformance]
 - [sig-storage] Secrets should be consumable in multiple volumes in a pod [NodeConformance] [Conformance]
 
-<<<<<<< HEAD
-### Substitute test cases
-=======
 #### Substitute test cases
->>>>>>> a8dcbdc65241ef129929ef0ac401a884965b2a08
 
 These are test cases that follow a similar flow to a conformance test that is dependent on Linux-specific functionality, but differs enough that the same test case cannot be used for both Windows & Linux. Examples include differences in file access permissions (UID/GID vs username, permission octets vs Windows ACLs), and network configuration (`/etc/resolv.conf` is used on Linux, but Windows DNS settings are stored in the Windows registry).
 
 > TODO: include list of test cases from open PRs
 
-<<<<<<< HEAD
-### Windows specific tests
-
-We will also add Windows scenario-specific tests to cover more typical use cases and features specific to Windows. These tests will be in [kubernetes/test/e2e/windows](https://github.com/kubernetes/kubernetes/tree/master/test/e2e/windows). This will also include density and performance tests that are adjusted for Windows apps which have different image sizes and memory requirements.
-
-> TODO: new list here
-=======
 
 TODO List:
 - [ ] DNS configuration is passed through CNI, not `/etc/resolv.conf` [67435](https://github.com/kubernetes/kubernetes/pull/67435)
@@ -366,7 +338,6 @@ Here's a list of functionality that needs tests written.
 - [ ] System, pod & network stats are implemented in kubelet, not cadvisor [70212](https://github.com/kubernetes/kubernetes/pull/70121), [66427](https://github.com/kubernetes/kubernetes/pull/66427), [62266](https://github.com/kubernetes/kubernetes/pull/62266), [51152](https://github.com/kubernetes/kubernetes/pull/51152), [50396](https://github.com/kubernetes/kubernetes/pull/50396)
 - [ ] Windows uses username (string) or SID (binary) to define users, not UID/GID [64009](https://github.com/kubernetes/kubernetes/pull/64009)
 
->>>>>>> a8dcbdc65241ef129929ef0ac401a884965b2a08
 
 ## Other references
 
