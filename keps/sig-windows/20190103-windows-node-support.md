@@ -1,5 +1,4 @@
 ---
-kep-number: 0
 title: Windows node support
 authors:
   - "@astrieanna"
@@ -14,7 +13,7 @@ approvers:
   - TBD
 editor: TBD
 creation-date: 2018-11-29
-last-updated: 2019-01-03
+last-updated: 2019-01-21
 status: provisional
 ---
 
@@ -24,27 +23,29 @@ status: provisional
 ## Table of Contents
 <!-- TOC -->
 
-- [Windows node support](#windows-node-support)
-    - [Table of Contents](#table-of-contents)
-    - [Summary](#summary)
-    - [Motivation](#motivation)
-        - [Goals](#goals)
-        - [Non-Goals](#non-goals)
-    - [Proposal](#proposal)
-        - [What works today](#what-works-today)
-        - [What will work eventually](#what-will-work-eventually)
-        - [What will never work (without underlying OS changes)](#what-will-never-work-without-underlying-os-changes)
-        - [Relevant resources/conversations](#relevant-resourcesconversations)
-        - [Risks and Mitigations](#risks-and-mitigations)
-    - [Graduation Criteria](#graduation-criteria)
-    - [Implementation History](#implementation-history)
-    - [Testing Plan](#testing-plan)
-        - [Test Dashboard](#test-dashboard)
-        - [Test Approach](#test-approach)
-            - [Adapting existing tests](#adapting-existing-tests)
-            - [Substitute test cases](#substitute-test-cases)
-            - [Windows specific tests](#windows-specific-tests)
-    - [Other references](#other-references)
+- [Table of Contents](#table-of-contents)
+- [Summary](#summary)
+- [Motivation](#motivation)
+    - [Goals](#goals)
+    - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+    - [What works today](#what-works-today)
+    - [What will work eventually](#what-will-work-eventually)
+    - [What will never work (without underlying OS changes)](#what-will-never-work-without-underlying-os-changes)
+    - [Relevant resources/conversations](#relevant-resourcesconversations)
+    - [Risks and Mitigations](#risks-and-mitigations)
+- [Graduation Criteria](#graduation-criteria)
+- [Implementation History](#implementation-history)
+- [Testing Plan](#testing-plan)
+    - [Adapting existing tests](#adapting-existing-tests)
+    - [Test Dashboard](#test-dashboard)
+    - [Test Approach](#test-approach)
+        - [Adapting existing tests](#adapting-existing-tests-1)
+    - [Substitute test cases](#substitute-test-cases)
+        - [Substitute test cases](#substitute-test-cases-1)
+    - [Windows specific tests](#windows-specific-tests)
+        - [Windows specific tests](#windows-specific-tests-1)
+- [Other references](#other-references)
 
 <!-- /TOC -->
 
