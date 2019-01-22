@@ -61,6 +61,8 @@ But, many applications rely on software as a service (SaaS). The reason for this
 
 The problem is that one cannot deploy the same application in two different environments by two different providers, if the applications leverages services, with the same set of resources. This includes cases where the service being leveraged is common (e.g., MySQL as a Service). This problem limits application portability and sharing (e.g., in open source).
 
+And when you try to build a healthy ecossytem of OpenSource application (e.g. helm charts), you need to be able to define these dependencies in a standard way. Currently, helm charts are merely use as a nice starting point, but because of a lack of portability, people usually fork it, to adapt it to their environment.
+
 This KEP is looking to solve this problem by providing Kubernetes compatible objects, via CRDs and Secrets, that can be used in many environments by many providers to make working with common services easier. This can be used for services like database (e.g., MySQL, PostgreSQL), DNS, SMTP, and many others.
 
 ### Goals
@@ -94,6 +96,10 @@ As a cluster operator or application operator, I can discover controllers implem
 #### Story 4
 
 As a cluster operator or application operator, I can set default values and provider custom settings for a service. 
+
+#### Story 5
+
+As an open source kubernetes package maintainer (e.g. helm charts) I want to have a portable service definition to make these packages more usable.
 
 ### Implementation Details/Notes/Constraints
 
