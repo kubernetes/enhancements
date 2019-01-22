@@ -20,7 +20,7 @@ see-also:
 replaces:
   - kinflate # Old name for kustomize
 superseded-by:
-  - "[KEP-0008](https://github.com/kubernetes/enhancements/blob/master/keps/sig-cli/0031-kustomize.md)"
+  - "kustomize-subbcommand-integration.md"
 ---
 
 # Kustomize

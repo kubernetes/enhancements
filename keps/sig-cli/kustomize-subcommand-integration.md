@@ -1,5 +1,4 @@
 ---
-kep-number: 34
 title: Enable kustomize in kubectl
 authors:
  - "@Liujingfang1"
@@ -21,9 +20,9 @@ last-updated: 2019-01-17
 status: implementable
 see-also:
  - "[kustomize](https://github.com/kubernetes-sigs/kustomize/blob/master/docs/workflows.md)"
- - "[KEP-0034](https://github.com/kubernetes/enhancements/blob/master/keps/sig-cli/0034-kustomize.md)" 
+ - "kustomize-file-processing-integration.md" 
 replaces:
- - "[KEP-0008](https://github.com/kubernetes/enhancements/blob/master/keps/sig-cli/0008-kustomize.md)"
+ - "0008-kustomize.md"
 superseded-by:
  - n/a
 ---

@@ -1,5 +1,4 @@
 ---
-kep-number: 35
 title: Integrate Kustomize into cli-runtime
 authors:
  - "@pwittrock"
@@ -22,7 +21,7 @@ creation-date: 2019-01-17
 last-updated: 2019-01-17
 status: provisional
 see-also:
- - "[KEP-0031](https://github.com/kubernetes/enhancements/blob/master/keps/sig-cli/0031-kustomize.md)"
+ - "kustomize-subcommand-integration.md"
 replaces:
 superseded-by:
  - n/a
@@ -47,7 +46,7 @@ superseded-by:
 
 ## Summary
 
-This is a follow up to [KEP-0031](https://github.com/kubernetes/enhancements/blob/master/keps/sig-cli/0031-kustomize.md)
+This is a follow up to [KEP Kustomize Subcommand Integration](kustomize-subcommand-integration.md)
 
 [Kustomize](https://github.com/kubernetes-sigs/kustomize) is a subcommand of kubectl.  However it is
 not tightly integrated into the file processing libraries, creating user friction around error
