@@ -1,5 +1,4 @@
 ---
-kep-number: 0
 title: Kubernetes Dual Stack Support
 authors:
   - "leblancd@"
