@@ -1,5 +1,4 @@
 ---
-kep-number: draft-20181106
 title: In-place Update of Pod Resources
 authors:
   - "@kgolab"
@@ -70,7 +69,7 @@ Resources allocated to a Pod's Container can require a change for various reason
   and thus wasted,
 * Resources have simply been set improperly.
 
-Currently changing Resources allocation requires the Pod to be recreated since
+Currently changing Resource allocation requires the Pod to be recreated since
 the PodSpec is immutable.
 
 While many stateless workloads are designed to withstand such a disruption, some
@@ -99,7 +98,8 @@ actors which initiated the update.
 
 Other identified non-goals are:
 * allow to change Pod QoS class without a restart,
-* to change resources of Init Containers without a restart.
+* to change resources of Init Containers without a restart,
+* updating extended resources or any other resource types besides CPU, memory.
 
 ## Proposal
 
