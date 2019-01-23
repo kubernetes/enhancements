@@ -1,5 +1,5 @@
 ---
-title: Integrate Kustomize into cli-runtime
+title: Kustomize File Processing Integration
 authors:
  - "@pwittrock"
 owning-sig: sig-cli
@@ -27,7 +27,7 @@ superseded-by:
  - n/a
 ---
 
-# Enable kustomize subcommand in kubectl
+# Kustomize File Processing Integration
 
 ## Table of Contents
 * [Table of Contents](#table-of-contents)
@@ -48,9 +48,14 @@ superseded-by:
 
 This is a follow up to [KEP Kustomize Subcommand Integration](kustomize-subcommand-integration.md)
 
-[Kustomize](https://github.com/kubernetes-sigs/kustomize) is a subcommand of kubectl.  However it is
-not tightly integrated into the file processing libraries, creating user friction around error
-handling and messaging.
+[Kustomize](https://github.com/kubernetes-sigs/kustomize) was introduced as 
+subcommand of kubectl to allow users to build their kustomizations directly.
+However users need to pipe the kustomize output to other commands in order
+to use the kustomizations.
+
+This KEP proposes integrating the kustomization libraries into the cli-runtime
+file processing libraries.  Doing so will provide a cleaner, simpler UX
+and provide a path for addressing issues around error handling and messaging.
 
 ## Motivation
 
@@ -81,14 +86,18 @@ improved error handling and messaging.
 
 Example: `kubectl apply -k <dir-containing-kustomization>`
 
-Tools outside kubectl that use the cli-runtime to register file processing flags and build resources will get the
-`-k` by default, but can opt-out if they do not want the functionality.
+Tools outside kubectl that use the cli-runtime to register file processing
+flags and build resources will get the `-k` by default, but can opt-out if 
+they do not want the functionality.
+
+The `-f` and `-k` flags will be mutually exclusive and specifying both 
+will cause kubectl to exit with and error.
 
 ### Risks and Mitigations
 
 Low:
 
-When run against a kustomization.yaml with multiple bases, kubectl may perform multiple requests as part of the
+When run against a `kustomization.yaml` with multiple bases, kubectl may perform multiple requests as part of the
 preprocessing.  Since `-k` is a separate flag from `-f`, it is transparent to a user whether they are running
 against a kustomization file or a directory of Resource Config.
 
