@@ -1,5 +1,5 @@
 ---
-title: Enable kustomize in kubectl
+title: Kustomize Subcommand Integration
 authors:
  - "@Liujingfang1"
 owning-sig: sig-cli
@@ -27,7 +27,7 @@ superseded-by:
  - n/a
 ---
 
-# Enable kustomize in kubectl
+# Kustomize Subcommand Integration
 
 ## Table of Contents
 * [Table of Contents](#table-of-contents)
@@ -51,13 +51,16 @@ superseded-by:
 
 Link to tracking issue: kubernetes/enhancements#633
 
-See [KEP FAQ](kep-faq.md) for "why not as as plugin".
+See:
+
+- [KEP FAQ](kep-faq.md) for questions such as "why not as as plugin?".
+- [Why this should be part of kubectl](#why-this-should-be-part-of-kubectl)
 
 ## Summary
 
 [Kustomize](https://github.com/kubernetes-sigs/kustomize)
-was developed as a subproject of sig-cli by kubectl maintainers with the goal of addressing
-a collection of issues (See [motivation](#motivation)) creating friction for declarative workflows in kubectl
+was developed as a subproject of sig-cli by kubectl maintainers to address
+a collection of [issues](#motivation)) creating friction for declarative workflows in kubectl
 (e.g. `kubectl apply`).  The
 goal of the kustomize subproject was to bring this functionality back to kubectl to better complement
 `kubectl apply` and other declarative workflow commands.
@@ -68,18 +71,18 @@ goal of the kustomize subproject was to bring this functionality back to kubectl
 - layering the above on top of one another
 
 It is independent of, but complementary to, the [*server-side apply*](https://github.com/kubernetes/enhancements/issues/555)
-initiative that was started later and targeted at a separate collection of `kubectl apply` issues.
+initiative that was started later and targeted at a separate collection of
+`kubectl apply` issues.
 
-**Note:**
-While most of the generation and transformation options supported by kustomize are available either as
-imperative kubectl commands or as kubectl flags, the inverse is not true.  Only a subset of the kubectl
-imperative commands are available as declarative options through kustomize.
+Kustomize offers generators and transformations in a declarative form that 
+improve on functionality provided by existing imperative commands in kubectl.
 
-The kustomize implementations of some generators and transformations were augmented to do more intelligent things
-when invoked from a declarative workflow involving multiple Resources that may reference one another.
-This is a more advanced approach to the imperative workflow, where transformations applied to Resources were largely
-independent of one another, and supports scenarios like a ConfigMap and Secret having a generated name-suffix that must be propagated to
-Resource Config that references them.
+The declarative approach offers a clear path to accountability (all input can
+be kept in version control), can safely exploit a holistic, unbounded view of
+disparate resources and their interdependence (it's a plan about what to do, 
+not a direct action), and can be easily constrained to verifiable rules 
+across this view (all edits must be structured, no removal semantics, no 
+environment side-effects, etc.).
 
 Imperative kubectl commands / flags available through kustomize:
 
@@ -114,7 +117,7 @@ such as:
 - updating Resources from Resource Config without wiping out control-plane defined fields (e.g. Service clusterIp)
 - automatically deciding whether to create, update or delete Resources
 
-**Motivation:**
+**Present:**
 
 However apply does contain user friction in its declarative workflow, the majority of which could be either reduced
 or solved through augmenting and leveraging capabilities already present in kubectl imperative commands from a
@@ -172,7 +175,7 @@ User friction solved through capabilities such as:
 - Providing simpler alternatives to the APIs for declaring Resource Config (e.g. a simple way to create deployments)
 - Providing a templating or general substitution mechanism (e.g. for generating Resource Config)
 
-### Why should this be part of kubectl?
+### Why this should be part of kubectl
 
 - It was purposefully built to address user friction in kubectl declarative workflows. Leaving these issues unaddressed
   in the command itself reduces the quality of the product.
@@ -189,13 +192,14 @@ User friction solved through capabilities such as:
 
 Kustomize Standalone Sub Command
 
-Publish the `kustomize build` command as `kubectl kustomize`.  Update documentation demonstrate using kustomize as
-`kubectl kustomize <dir> | kubectl apply -f -`.
+Publish the `kustomize build` command as `kubectl kustomize`.  Update 
+documentation to demonstrate using kustomize as `kubectl kustomize <dir> | kubectl apply -f -`.
 
-`kubectl kustomize` takes a single argument with is the location of a directory containing a file named `Kustomization`
+`kubectl kustomize` takes a single argument with is the location of a directory containing a file named `kustomization.yaml`
 and writes to stdout the kustomized Resource Config.
 
-If the directory does not contain a `Kustomization` file, it returns an error.
+If the directory does not contain a `kustomization.yaml` file, it returns an 
+error.
 
 Defer deeper integration into ResourceBuilder (e.g. `kubectl apply -k <dir>`) as a follow up after discussing
 the precise UX and technical tradeoffs.  (i.e. deeper integration is more delicate and can be done independently.)
@@ -232,7 +236,7 @@ as a standalone command are:
 
 ## Kustomize Example
 
-Following is an example of a kustomization.yaml file used by kustomize:
+Following is an example of a `kustomization.yaml` file used by kustomize:
 
 ```
 apiVersion: v1beta1
@@ -244,40 +248,40 @@ commonAnnotations:
 
 configMapGenerator:
 - name: myJavaServerEnvVars
-literals:  
-- JAVA_HOME=/opt/java/jdk
-- JAVA_TOOL_OPTIONS=-agentlib:hprof
+  literals:  
+  - JAVA_HOME=/opt/java/jdk
+  - JAVA_TOOL_OPTIONS=-agentlib:hprof
 
 secretGenerator:
 - name: app-sec
-commands:
-  username: "echo admin"
-  password: "echo secret"
+  files:
+  - secret/password
+  - secret/username
 ```
 
 The result of running `kustomize build` on this sample kustomizaiton.yaml file is:
 
 ```
 apiVersion: v1
-data:
-JAVA_HOME: /opt/java/jdk
-JAVA_TOOL_OPTIONS: -agentlib:hprof
 kind: ConfigMap
 metadata:
-annotations:
-  oncallPager: 800-555-1212
-name: alices-myJavaServerEnvVars-7bc9c27cmf
+  name: alices-myJavaServerEnvVars-7bc9c27cmf
+  annotations:
+    oncallPager: 800-555-1212
+data:
+  JAVA_HOME: /opt/java/jdk
+  JAVA_TOOL_OPTIONS: -agentlib:hprof
 ---
 apiVersion: v1
-data:
-password: c2VjcmV0Cg==
-username: YWRtaW4K
 kind: Secret
 metadata:
-annotations:
-  oncallPager: 800-555-1212
-name: alices-app-sec-c7c5tbh526
+  name: alices-app-sec-c7c5tbh526
+  annotations:
+    oncallPager: 800-555-1212
 type: Opaque
+data:
+  password: c2VjcmV0Cg==
+  username: YWRtaW4K
 ```
 
 ### Implementation Details/Notes/Constraints
@@ -310,15 +314,15 @@ Low:
 
 ## Graduation Criteria
 
-The API version for kustomize is defined in the kustomization.yaml file.  The KEP is targeted `v1beta1`.
+The API version for kustomize is defined in the `kustomization.yaml` file.  The KEP is targeted `v1beta1`.
 
 The criteria for graduating from `v1beta1` for the kustomize sub-command should be determined as part of
 evaluating the success and maturity of kustomize as a command within kubectl.
 
 Metrics for success and adoption could include but are not limited to:
 
-- number of kustomization.yaml files seen on sources such as GitHub
-- complexity (required) of kustomization.yaml files seen on sources such as GitHub.
+- number of `kustomization.yaml` files seen on sources such as GitHub
+- complexity (required) of `kustomization.yaml` files seen on sources such as GitHub.
 - (if available) number of calls to `kubectl kustomize` being performed
 - adoption or integration of kustomize by other tools
 
@@ -336,6 +340,8 @@ Most implementation will be in cli-runtime
 
 - [ ] vendor `kustomize/pkg` into kubernetes
 - [ ] copy `kustomize/k8sdeps` into cli-runtime
+  - Once cli-runtime is out of k/k, move the kustomize libraries there (but 
+  not the commands)
 - [ ] Implement a function in cli-runtime to run kustomize build with input as fSys and/or path. 
    - execute kustomize build to get a list of resources
    - write the output to io.Writer
