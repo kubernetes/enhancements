@@ -1,5 +1,4 @@
 ---
-kep-number: 0034
 title: Leveraging Distributed Tracing to Understand Kubernetes Object Lifecycles
 authors:
   - "@Monkeyanator"
@@ -110,7 +109,7 @@ To correlate work done between components as belonging to the same trace, we mus
 
 In this proposal, we choose to propagate this span context as an encoded string an object annotation called `trace.kubernetes.io/context`. This annotation value is regenerated and replaced when an object's trace ends, to achieve the desired behavior from [section one](#trace-lifecycle). 
 
-This proposal chooses to use annotations as a less invasive alternative to adding a field to object metadata, but as this proposal matures, adding trace context to the official API should be considered.
+This proposal chooses to use annotations as a less invasive alternative to adding a field to object metadata, but as this proposal matures, we should propagate trace context through watch events.
 
 The alpha design adds extra writes to the APIServer for updating the trace context, which will limit the scalability of clusters using this feature.  These extra writes must be eliminated for this feature to move to beta.
 
@@ -129,6 +128,8 @@ This KEP suggests that we utilize the OpenCensus agent for the initial implement
   a. This places the kubernetes community in the position of curating supported tracing backends
   b. This eliminates the requirement to run to OpenCensus agent in order to use tracing
 2) Support *both* a curated set of in-tree exporters, and the agent exporter
+
+While this setup is suitable for an alpha stage, it will require further review from Sig-Instrumentation and Sig-Architecture for beta, as it introduces a dependency on the OC Agent.  It is also worth noting that OpenCensus still has many unresolved details on how to run the agent.
 
 #### Adding trace utility package
 
