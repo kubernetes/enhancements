@@ -208,6 +208,26 @@ These areas still need test cases written:
 
 This section provides an API by API list of Windows & Linux differences. Issue [#70604](https://github.com/kubernetes/kubernetes/issues/70604) will be used to track updating the generated API docs with notes on Windows support where needed.
 
+There are no differences in how most of the Kubernetes APIs work. The subtleties around what's different come down to differences in the OS and container runtime. Where a property on a workload API such as Pod or Container was designed with an assumption that it's implemented on Linux, then that may not hold true on Windows.
+
+At a high level, these OS concepts are different:
+
+- Identity - Linux uses userID (UID) and groupID (GID) which are represented as integer types. User and group names are not canonical - they are just an alias in /etc/groups or /etc/passwd back to UID+GID. Windows uses a larger binary security identifier (SID) which is stored in the Windows Security Access Manager (SAM) database. This database is not shared between the host and containers, or between containers.
+- File permissions - Windows uses an access control list based on SIDs, rather than a bitmask of permissions and UID+GID
+- File paths - convention on Windows is to use `\` instead of `/`. The Go IO libraries typically accept both and just make it work, but when you're setting a path or commandline that's interpreted inside a container, `\` may be needed.
+
+
+The Windows container runtime also has a few important differences:
+
+- Resource management and process isolation - Linux cgroups are used as a pod boundary for resource controls. Containers are created within that boundary for network, process and filesystem isolation. The cgroups APIs can be used to gather cpu/io/memory stats. Windows uses a Job object per container with a system namespace filter to contain all processes in a container and provide logical isolation from the host.
+  - There is no way to run a Windows container without the namespace filtering in place. This means that system privileges cannot be asserted in the context of the host, and privileged containers are not available on Windows. Containers cannot assume an identity from the host because the SAM is separate.
+- Filesystems - Windows has a layered filesystem driver to mount container layers and create a copy filesystem based on NTFS. All file paths in the container are resolved only within the context of that container. T
+  - Volume mounts can only target a directory in the container, and not an individual file.
+  - Volume mounts cannot project files or directories back to the host filesystem.  
+  - Read-only filesystems are not supported because write access is always required for the Windows registry and SAM database. Read-only volumes are supported
+  - Volume user-masks and permissions are not available. Because the SAM is not shared between the host & container, there's no mapping between them. All permissions are resolved within the context of the container.
+- Networking - The Windows host networking networking service and virtual switch implement namespacing and can create virtual NICs as needed for a pod or container. However, many configurations such as DNS, routes, and metrics are stored in the Windows registry database rather than /etc/... files as they are on Linux. The Windows registry for the container is separate from that of the host, so concepts like mapping /etc/resolv.conf from the host into a container don't have the same effect they would on Linux. These must be configured using Windows APIs run in the context of that container. Therefore CNI implementations need to call  the HNS instead of relying on file mappings to pass network details into the pod or container.
+
 
 ### Volumes
 
