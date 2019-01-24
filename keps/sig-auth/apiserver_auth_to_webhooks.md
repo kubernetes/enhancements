@@ -1,5 +1,4 @@
 ---
-kep-number: 34
 title: API server authentication to webhooks
 authors:
   - "@pbarker"
@@ -18,7 +17,7 @@ approvers:
   - "@liggitt"
 editor: TBD
 creation-date: 2018-12-20
-last-updated: 2018-12-20
+last-updated: 2018-01-23
 status: provisional
 see-also:
 replaces:
@@ -47,13 +46,13 @@ superseded-by:
 
 ## Summary
 
-We want to provide a means of authenticating outgoing webhooks from the apiserver and its aggregates.
+We want to provide a simple means of authenticating outgoing webhooks from the apiserver and its aggregates.
 
 ## Motivation
 
 Outgoing webhooks from the apiserver such as the ones found in [dynamic admission control](https://kubernetes.io/docs/reference/access-authn-authz/extensible-admission-controllers) and [dynamic audit](https://kubernetes.io/docs/tasks/debug-application-cluster/audit/#dynamic-backend) 
-suffer from a lack of authentication. The intention of this KEP is to provide a means for the receiving server 
-to authenticate the apiserver and its aggregates.
+suffer from a lack of easily configurable authentication. Currently, Dynamic Admission webhooks provide a mechanism for plugin authentication by a kubeconfig provisioned on the host. The intention of this KEP is to provide a simpler means for the receiving 
+server to authenticate the apiserver and its aggregates using the [Authentication API](https://github.com/kubernetes/kubernetes/blob/master/pkg/apis/authentication/types.go).
 
 ### Goals
 * A simple means of authenticating apiserver clients.
@@ -73,7 +72,7 @@ We propose a simple mechanism for authenticating webhooks using the token [Authe
 I am a cluster administrator using the dynamic auditing feature and want to make sure the logs I receive are from the apiserver.
 
 #### Story 2
-I am a cluster administrator using dynamic admission control and want to verify that only verified parties are using my token review endpoint.
+I am a plugin developer and want to easily authenticate the apiserver.
 
 ### Implementation Details/Notes/Constraints
 
@@ -92,7 +91,7 @@ type ClientConfig struct {
   Service  *ClientConfigService
 }
 ```
-If enabled the client will provision a token and enhance the outgoing request with an an auth header:
+If enabled the client will provision a token and enhance the outgoing request with an auth header:
 ```
 Authorization: bearer <token>
 ```
@@ -102,13 +101,19 @@ The client will check and refresh the token when necessary. The server can now c
 
 The `AuthInfo` struct will also be added to the [ClientConfig](https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/api/auditregistration/v1alpha1/types.go#L134) in the auditregistration API.
 
+The token audience would be that of the webhook name. The receiving server could verify that it is the intended 
+audience on receipt.
+
+It should be noted that this solution is meant to live alongside other outgoing webhook auth solutions. For static credentials,
+the existing method of [authenticating apiservers](https://kubernetes.io/docs/reference/access-authn-authz/extensible-admission-controllers/#authenticate-apiservers) by kubeconfig file will continue to serve that use case. The method presented is intended to ease the use of cluster aware webhooks, and can be provisioned in a dynamic manner.
+
 ### Risks and Mitigations
 
 Prevent server from becoming a confused deputy (making attacker-controlled call with apiserver creds).
 
 ## Graduation Criteria
 
-We will know if this has succeeded by telling whether it solves the majority of auth concerns around outgoing webhooks.
+We will know if this has succeeded by telling whether it solves the majority of auth concerns around outgoing webhooks in a simple manner.
 
 ## Implementation History
 
@@ -118,6 +123,6 @@ We will know if this has succeeded by telling whether it solves the majority of 
 
 We alternatively explored allowing authentication info to be provided in a secret. However, this method breaks
 down in a couple scenarios. First, there is no way to differentiate between multiple API servers. This may be 
-sufficient in some use cases but is a security drawback in general. Next, the aggregate servers often listen in 
+sufficient in some use cases but is a security drawback in general. Next, the aggregate servers often live in 
 different namespaces, and there is no clear path on how a single credential could be shared between them. We
 haven't abandoned this idea entirely, but feel the solution above solves the majority of use cases.
