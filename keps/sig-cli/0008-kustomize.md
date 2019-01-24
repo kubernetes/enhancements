@@ -13,14 +13,14 @@ approvers:
   - "@soltysh"
 editor: "@droot"
 creation-date: 2018-05-05
-last-updated: 2018-05-23
+last-updated: 2019-01-09
 status: implemented
 see-also:
   - n/a
 replaces:
   - kinflate # Old name for kustomize
 superseded-by:
-  - n/a
+  - "kustomize-subbcommand-integration.md"
 ---
 
 # Kustomize
