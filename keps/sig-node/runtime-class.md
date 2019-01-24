@@ -1,5 +1,4 @@
 ---
-kep-number: 14
 title: Runtime Class
 authors:
   - "@tallclair"
