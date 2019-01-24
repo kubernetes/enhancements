@@ -336,6 +336,8 @@ In the Beta phase of this feature, the annotations will graduate to fields in th
     - At the pod level: `podspec.securityContext.windows.gmsaCredentialSpec`
     - At the container level: `podspec.container[i].securityContext.windows.gmsaCredentialSpec`
 
+Note that the `windows.gmsaCredentialSpecName` and `windows.gmsaCredentialSpec` fields of the `securityContext` struct is speculative at the moment and may change in the future. The names/parents of the GMSA fields will depend on how the exact structure and representation of OS specific `securityContext` fields evolve.
+
 #### GMSAExpander and GMSAAuthorizer Webhooks
 Two new admission webhooks, GMSAExpander and GMSAAuthorizer will be implemented to act on pod creation and updates.
 
