@@ -206,7 +206,7 @@ These areas still need test cases written:
 
 ## API Reference
 
-This section provides an API by API list of Windows & Linux differences.
+This section provides an API by API list of Windows & Linux differences. Issue [#70604](https://github.com/kubernetes/kubernetes/issues/70604) will be used to track updating the generated API docs with notes on Windows support where needed.
 
 
 ### Volumes
