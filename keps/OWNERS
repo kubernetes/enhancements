@@ -1,14 +1,9 @@
-reviewers:
-  - sig-architecture-leads
-  - calebamiles
-  - idvoretskyi
-  - jbeda
-  - justaugustus
 approvers:
-  - sig-architecture-leads
-  - calebamiles
-  - idvoretskyi
-  - jbeda
+  - kep-approvers
+  - kep-process-approvers
+reviewers:
+  - kep-reviewers
+  - kep-process-reviewers
 labels:
   - kind/kep
   - sig/architecture

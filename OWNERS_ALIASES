@@ -172,13 +172,30 @@ aliases:
     - eparis
     - carolynvs
     - bradamant3
-  features-maintainers:
-    - justaugustus # 1.12 Features Lead
-    - kacole2 # 1.13 Enhancements Lead
-    - claurence # 1.14 Enhancements Lead
   pm-maintainers:
     - calebamiles # SIG PM Lead
     - idvoretskyi # SIG PM Lead
     - jdumars # Program Mgmt Chair
     - justaugustus # Product Mgmt Chair
+  features-maintainers:
+    - justaugustus # 1.12 Features Lead
+    - kacole2 # 1.13 Enhancements Lead
+    - claurence # 1.14 Enhancements Lead
+  kep-process-approvers:
+    - calebamiles
+    - idvoretskyi
+    - jdumars
+    - justaugustus
+  kep-process-reviewers:
+    - lachie83
+  kep-reviewers:
+    - bgrant0607
+    - jdumars
+    - jbeda
+    - mattfarina
+  kep-approvers:
+    - bgrant0607
+    - jdumars
+    - jbeda
+    - mattfarina
 ## END CUSTOM CONTENT
