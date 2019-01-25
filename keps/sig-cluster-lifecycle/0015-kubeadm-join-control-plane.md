@@ -137,8 +137,8 @@ capabilities like e.g. kubeadm upgrade for HA clusters.
 - This proposal doesn't provide an automated solution for transferring the CA key and other required
   certs from one control-plane instance to the other. More specifically, this proposal doesn't address
   the ongoing discussion about storage of kubeadm TLS assets in secrets and it is not planned
-  to provide support for clusters with TLS stored in secrets (but nothing in this
-  proposal should explicitly prevent us to reconsider this in the future as well).
+  to provide support for clusters with TLS stored in secrets, but nothing in
+  this proposal prevents us from reconsidering this in the future..
 
 - Nothing in this proposal should prevent practices that exist today.
 
@@ -190,8 +190,8 @@ control-plane instances, of which I know in advance the name and the IP.
 \* A new "control plane instance" is a new kubernetes node with
 `node-role.kubernetes.io/master=""` label and
 `node-role.kubernetes.io/master:NoSchedule` taint; a new instance of control plane
-components will be deployed on the new node; additonally, if the cluster uses local etcd mode
-(and so etcd is created and managed by kubeadm), a new etcd member will be
+components will be deployed on the new node; additonally, if the cluster uses local etcd mode,
+and etcd is created and managed by kubeadm, a new etcd member will be
 created on the joining machine as well.
 
 #### Add a new control-plane instance (dynamic workflow)
@@ -222,8 +222,8 @@ should copy control plane certificates from an existing control plane instance, 
 > NB. kubeadm is limited to execute actions *only*
 > in the machine where it is running, so it is not possible to copy automatically
 > certificates from remote locations.
-> NB. There are discussion about how to simplify certificate distribution, but this will be
-> described in following versions of this KEP
+> NB. https://github.com/kubernetes/enhancements/pull/713 is porposing a possible approach
+> for automatic copy of certificates across nodes
 
 Please note that strictly speaking only ca, front-proxy-ca certificate and service account key pair
 are required to be equal among all control plane instances. Accordingly:
