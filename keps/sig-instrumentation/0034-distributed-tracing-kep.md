@@ -5,13 +5,17 @@ authors:
 editors:
   - "@dashpole"
 owning-sig: sig-instrumentation
+participating-sigs:
+  - sig-architecture
+  - sig-node
 reviewers:
   - "@Random-Liu"
   - "@bogdandrutu"
 approvers:
   - "@brancz"
+  - "@piosz"
 creation-date: 2018-12-04
-last-updated: 2018-12-07
+last-updated: 2019-01-25
 status: provisional
 ---
 
@@ -175,18 +179,26 @@ Having these standards in place will ensure that our tracing instrumentation wor
 
 ### Graduation requirements
 
-Before this proposal can be considered as a Beta feature, there are various items that must be resolved. 
+Alpha
 
-1. Benchmarking the performance impact of both the in-component instrumentation and running the per-node OpenCensus agent
-1. Handling owner relationships in these traces (e.g. tracing a replica set; do we append the associated pod traces to the replica set trace?)
-1. Ensuring the extensibility of this tracing model to other Kubernetes objects and CRDs
-1. Determining the security implications of this trace instrumentation 
-1. Creation of user-facing documentation 
-1. Alpha-implementation as described above
-1. Tracing must not increase the number of requests to the APIServer, which likely requires moving trace context generation in-tree.
+- [] Alpha-implementation as described above
+- [] E2e testing of traces
+- [] User-facing documentation
 
+Beta
+
+- [] Security Review, including threat model
+- [] Tracing must not increase the number of requests to the APIServer, which likely requires moving trace context generation and propagation in-tree.
+- [] Deployment review including whether the [OC Agent](https://github.com/census-instrumentation/opencensus-service#opencensus-agent) is a required component
+- [] Benchmark kubernetes components using tracing, and determine resource requirements and scaling for any additional required components (e.g. OC Agent).
+
+GA
+
+- [] Generalize to other kubernetes objects and CRDs
+- [] Determine how to handle owner relationships in traces (e.g. tracing a replica set; do we append the associated pod traces to the replica set trace?)
 
 ## Implementation History
 
 * [Mutating admission webhook which injects trace context](https://github.com/Monkeyanator/mutating-trace-admission-controller)
 * [Instrumentation of Kubernetes components](https://github.com/Monkeyanator/kubernetes/pull/15)
+* [Instrumentation of Kubernetes components for 1/24/2019 community demo](https://github.com/kubernetes/kubernetes/compare/master...dashpole:tracing)
