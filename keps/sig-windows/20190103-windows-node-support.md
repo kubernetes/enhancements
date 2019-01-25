@@ -143,8 +143,8 @@ However, we understand that in certain cases customers have a pre-existing large
 nodeSelector:
     "beta.kubernetes.io/os": windows
 tolerations:
-    - key: "Os"
-      operator: "Equals"
+    - key: "os"
+      operator: "Equal"
       Value: “Windows”
       effect: "NoSchedule"
 ```
