@@ -197,6 +197,7 @@ These areas still need test cases written:
 - [ ] System, pod & network stats are implemented in kubelet, not cadvisor [70212](https://github.com/kubernetes/kubernetes/pull/70121), [66427](https://github.com/kubernetes/kubernetes/pull/66427), [62266](https://github.com/kubernetes/kubernetes/pull/62266), [51152](https://github.com/kubernetes/kubernetes/pull/51152), [50396](https://github.com/kubernetes/kubernetes/pull/50396)
 - [ ] Windows uses username (string) or SID (binary) to define users, not UID/GID [64009](https://github.com/kubernetes/kubernetes/pull/64009)
 - [ ] Create a `NodePort` service, and verify it's accessible on both Linux & Windows node IPs on the correct port [tracked as #73327](https://github.com/kubernetes/kubernetes/issues/73327)
+- [ ] Verify `ExternalPort` works from Windows pods [tracked as #73328](https://github.com/kubernetes/kubernetes/issues/73328)
 
 
 ## Conformance Testing
