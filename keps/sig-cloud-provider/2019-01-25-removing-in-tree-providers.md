@@ -116,32 +116,32 @@ In order to remove cloud provider code from kubernetes/kubernetes. A 3 phase app
 
 In Phase 1, all cloud provider code in `k8s.io/kubernetes/pkg/cloudprovider/providers` will be moved to `k8s.io/kubernetes/staging/k8s.io/cloud-provider/providers`. Moving code to a staging directory still allows us to build core Kubernetes components (`kube-controller-manager`, `kubelet`, etc) without interruption while also signalling to the community that in-tree provider code is slated for removal.
 
-The biggest challenge of this phase is to remove dependences to k8s.io/kubernetes in all the providers. This is required to avoid circular dependencies within the various Kubernetes repos. All other repos "staged" (`client-go`, `apimachinery`, `api`, etc) in Kubernetes follow the same pattern. Below are the current list of packges in `k8s.io/kubernetes` that we need to removed. Note that _some_ dependencies may need to be duplicated for the duration of this migration as other critical components of Kubernetes may share the same code but removing the dependency may not be trivial. In general, we will avoid duplicating code and only use it as a last resort to resolve circular dependencies to `kubernetes/kubernetes`.
+The biggest challenge of this phase is to remove dependences to k8s.io/kubernetes in all the providers. This is required to avoid circular dependencies within the various Kubernetes repos. All other repos "staged" (`client-go`, `apimachinery`, `api`, etc) in Kubernetes follow the same pattern. Below are the current list of packges in `k8s.io/kubernetes` that we need to remove. Note that _some_ dependencies may need to be duplicated for the duration of this migration as other critical components of Kubernetes may share the same code but removing the dependency may not be trivial. In general, we will avoid duplicating code and only use it as a last resort to resolve circular dependencies to `kubernetes/kubernetes`. Note that the list of dependencies below will change as this effort continues.
 
-| Dependency                        | Proposed Location            | Is duplicated? | Partial or Full? |
-|-----------------------------------|------------------------------|----------------|------------------|
-| pkg/api/service                   |                              |                |                  |
-| pkg/api/v1/service                |                              |                |                  |
-| pkg/apis/core/v1/helper           |                              |                |                  |
-| pkg/controller                    |                              |                |                  |
-| pkg/credentialprovider/aws        |                              |                |                  |
-| pkg/master/ports                  |                              |                |                  |
-| pkg/cloudprovider                 | k8s.io/cloud-provider        | No             | Full             |
-| pkg/features                      |                              |                |                  |
-| pkg/kubelet/apis                  |                              |                |                  |
-| pkg/util/file                     | k8s.io/utils/file            | No             | Full             |
-| pkg/util/keymutex                 | k8s.io/utils/keymutex        | No             | Full             |
-| pkg/util/io                       | k8s.io/utils/io              | No             | Full             |
-| pkg/util/mount                    |                              |                |                  |
-| pkg/util/net/sets                 | k8s.io/utils/netsets         | No             | Full             |
-| pkg/util/node                     | k8s.io/cloud-provider/node   | No             | Partial          |
-| pkg/util/nsenter                  | k8s.io/utils/nsenter         |                |                  |
-| pkg/util/parsers                  |                              |                |                  |
-| pkg/util/strings                  | k8s.io/utils/strings         | No             | Full             |
-| pkg/version                       |                              |                |                  |
-| pkg/volume                        | k8s.io/cloud-provider/volume | Yes            | Partial          |
-| pkg/volume/util                   | k8s.io/cloud-provider/volume | Yes            | Partial          |
-| pkg/volume/util/volumepathhandler | k8s.io/cloud-provider/volume | Yes            | Partial          |
+| Dependency                        | Proposed Location               | Is duplicated? | Partial or Full? |
+|-----------------------------------|---------------------------------|----------------|------------------|
+| pkg/api/service                   | TBD                             | TBD            | TBD              |
+| pkg/api/v1/service                | TBD                             | TBD            | TBD              |
+| pkg/apis/core/v1/helper           | TBD                             | TBD            | TBD              |
+| pkg/controller                    | TBD                             | TBD            | TBD              |
+| pkg/credentialprovider/aws        | pkg/cloudprovider/providers/aws | No             | Full             |
+| pkg/master/ports                  | TBD                             | TBD            | TBD              |
+| pkg/cloudprovider                 | k8s.io/cloud-provider           | No             | Full             |
+| pkg/features                      | TBD                             | TBD            | TBD              |
+| pkg/kubelet/apis                  | TBD                             | TBD            | TBD              |
+| pkg/util/file                     | k8s.io/utils/file               | No             | Full             |
+| pkg/util/keymutex                 | k8s.io/utils/keymutex           | No             | Full             |
+| pkg/util/io                       | k8s.io/utils/io                 | No             | Full             |
+| pkg/util/mount                    | TBD                             | TBD            | TBD              |
+| pkg/util/net/sets                 | k8s.io/utils/netsets            | No             | Full             |
+| pkg/util/node                     | k8s.io/cloud-provider/node      | No             | Partial          |
+| pkg/util/nsenter                  | k8s.io/utils/nsenter            | No             | Full             |
+| pkg/util/parsers                  | TBD                             | TBD            | TBD              |
+| pkg/util/strings                  | k8s.io/utils/strings            | No             | Full             |
+| pkg/version                       | TBD                             | TBD            | TBD              |
+| pkg/volume                        | k8s.io/cloud-provider/volume    | Yes            | Partial          |
+| pkg/volume/util                   | k8s.io/cloud-provider/volume    | Yes            | Partial          |
+| pkg/volume/util/volumepathhandler | k8s.io/cloud-provider/volume    | Yes            | Partial          |
 
 #### Phase 2 - Building CCM from Provider Repos
 
@@ -189,8 +189,8 @@ With the additions needed in the short term to make this work; the Staging area 
 
 #### Cloud Provider Instances
 
-Currently in K8s/K8s the cloud providers are actually included by including [providers.go](https://github.com/kubernetes/kubernetes/blob/master/pkg/cloudprovider/providers/providers.go)
-file which then includes each of the in-tree cloud providers. In the short term we would leave that file where it is
+Currently in K8s/K8s the cloud providers are actually included in the [providers.go](https://github.com/kubernetes/kubernetes/blob/master/pkg/cloudprovider/providers/providers.go)
+file which then includes each of the in-tree cloud providers. In the short term, we would leave that file where it is
 and adjust it to point at the new homes under Staging. For the K8s/cloud-provider repo, would have the following CCM
 wrapper file. (Essentially a modified copy of cmd/cloud-controller-manager/controller-manager.go) The wrapper for each
 cloud provider would import just their vendored cloud-provider implementation rather than providers.go file.
