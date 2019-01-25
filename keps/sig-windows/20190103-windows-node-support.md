@@ -25,29 +25,31 @@ status: provisional
 ## Table of Contents
 <!-- TOC -->
 
-- [Table of Contents](#table-of-contents)
-- [Summary](#summary)
-- [Motivation](#motivation)
-    - [Goals](#goals)
-    - [Non-Goals](#non-goals)
-- [Proposal](#proposal)
-    - [What works today](#what-works-today)
-    - [What will work eventually](#what-will-work-eventually)
-    - [What will never work (without underlying OS changes)](#what-will-never-work-without-underlying-os-changes)
-    - [Relevant resources/conversations](#relevant-resourcesconversations)
-    - [Risks and Mitigations](#risks-and-mitigations)
-- [Graduation Criteria](#graduation-criteria)
-- [Implementation History](#implementation-history)
-- [Testing Plan](#testing-plan)
-    - [Test Dashboard](#test-dashboard)
-    - [Test Approach](#test-approach)
-        - [Adapting existing tests](#adapting-existing-tests)
-        - [Substitute test cases](#substitute-test-cases)
-        - [Windows specific tests](#windows-specific-tests)
-- [Other references](#other-references)
-- [API Reference](#api-reference)
-    - [V1.Container](#v1container)
-    - [V1.Pod](#v1pod)
+- [Windows node support](#windows-node-support)
+    - [Table of Contents](#table-of-contents)
+    - [Summary](#summary)
+    - [Motivation](#motivation)
+        - [Goals](#goals)
+        - [Non-Goals](#non-goals)
+    - [Proposal](#proposal)
+        - [What works today](#what-works-today)
+        - [What will work eventually](#what-will-work-eventually)
+        - [What will never work (without underlying OS changes)](#what-will-never-work-without-underlying-os-changes)
+        - [Relevant resources/conversations](#relevant-resourcesconversations)
+        - [Risks and Mitigations](#risks-and-mitigations)
+    - [Graduation Criteria](#graduation-criteria)
+    - [Implementation History](#implementation-history)
+    - [Testing Plan](#testing-plan)
+        - [Test Dashboard](#test-dashboard)
+        - [Test Approach](#test-approach)
+            - [Adapting existing tests](#adapting-existing-tests)
+            - [Substitute test cases](#substitute-test-cases)
+            - [Windows specific tests](#windows-specific-tests)
+    - [Conformance Testing](#conformance-testing)
+    - [API Reference](#api-reference)
+        - [V1.Container](#v1container)
+        - [V1.Pod](#v1pod)
+    - [Other references](#other-references)
 
 <!-- /TOC -->
 
@@ -87,6 +89,7 @@ As of 29-11-2018 much of the work for enabling Windows nodes has already been co
 ### What will work eventually
 - `kubectl port-forward` hasn't been implemented due to lack of an `nsenter` equivalent to run a process inside a network namespace.
 - CRIs other than Dockershim: CRI-containerd support is forthcoming
+- Overlay networking support in progress for Windows Server 2019, but won't be complete for v1.14
 
 ### What will never work (without underlying OS changes)
 - Certain Pod functionality
@@ -98,9 +101,10 @@ As of 29-11-2018 much of the work for enabling Windows nodes has already been co
       - DefaultMode (due to UID/GID dependency)
       - readOnly root filesystem. Mapped volumes still support readOnly
     - Termination Message - these require single file mappings
-- CSI plugins, which require privileged containers
-- [Some parts of the V1 API](https://github.com/kubernetes/kubernetes/issues/70604)
-- Overlay networking support in Windows Server 1803 is not fully functional using the `win-overlay` CNI plugin. Specifically service IPs do not work on Windows nodes. This is currently specific to `win-overlay` - other CNI plugins (OVS, AzureCNI) work.
+- CSI plugins which require privileged containers. It will still be possible to run CSI plugins on the host that are called directly by the kubelet without a container.
+
+
+The [API Reference](#api-reference) later in the doc describes this at a lower level.
 
 ### Relevant resources/conversations
 
@@ -194,10 +198,9 @@ These areas still need test cases written:
 - [ ] Windows uses username (string) or SID (binary) to define users, not UID/GID [64009](https://github.com/kubernetes/kubernetes/pull/64009)
 
 
-## Other references
+## Conformance Testing
 
-[Past release proposal for v1.12/13](https://docs.google.com/document/d/1YkLZIYYLMQhxdI2esN5PuTkhQHhO0joNvnbHpW68yg8/edit#)
-
+There were lots of discussions with SIG-Architecture and the Conformance working group on what Windows means for conformance. For the purposes of this KEP - graduating Windows node support to stable does not require conformance testing for v1.14, and will be completed later. This also means that clusters with Windows nodes will not be eligible for the conformance logo. During v1.14, SIG-Windows will be finishing the right set of tests so that we can propose changes to existing tests to make them OS agnostic, and what additional Windows-specific tests are needed. With continued work through the conformance working group, our goal would be to move these into a Windows conformance profile for v1.15. This would mean clusters could be tested and certified with only Linux nodes for 1.15+, no different from how they were run in <= 1.14. Windows nodes could be added and tested against the new conformance profile, but not all clusters will require Windows.
 
 
 ## API Reference
@@ -272,3 +275,10 @@ References:
 - [FlexVolume does not work on Windows node](https://github.com/kubernetes/kubernetes/issues/56875)
 - [feature proposal add SMB(cifs) volume plugin](https://github.com/kubernetes/kubernetes/issues/56005)
 - [add NFS volume support for Windows](https://github.com/kubernetes/kubernetes/issues/56188)
+
+
+
+
+## Other references
+
+[Past release proposal for v1.12/13](https://docs.google.com/document/d/1YkLZIYYLMQhxdI2esN5PuTkhQHhO0joNvnbHpW68yg8/edit#)
