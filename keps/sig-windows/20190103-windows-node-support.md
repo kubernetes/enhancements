@@ -84,7 +84,7 @@ As of 29-11-2018 much of the work for enabling Windows nodes has already been co
     - Resource limits
     - Pod & container metrics
 - Windows Server 2019 is the only Windows operating system we will support at GA timeframe. Note above that the host operating system version and the container base image need to match. This is a Windows limitation and not one created by sig-windows.
-- Customers can deploy a hybrid cluster, with Windows and Linux compute nodes side-by-side and schedule Docker containers on both operating systems. Of course, Windows Server containers have to be scheduled on Windows and Linux containers on Linux
+- Customers can deploy a heterogeneous cluster, with Windows and Linux compute nodes side-by-side and schedule Docker containers on both operating systems. Of course, Windows Server containers have to be scheduled on Windows and Linux containers on Linux
 - Pod networking with [Azure-CNI](https://github.com/Azure/azure-container-networking/blob/master/docs/cni.md), [OVN-Kubernetes](https://github.com/openvswitch/ovn-kubernetes), [two CNI meta-plugins](https://github.com/containernetworking/plugins), [Flannel (VXLAN and Host-Gateway)](https://github.com/coreos/flannel) 
 - Dockershim CRI
 - Many<sup id="a1">[1]</sup> of the e2e conformance tests when run with [alternate Windows-based images](https://hub.docker.com/r/e2eteam/) which are being moved to [kubernetes-sigs/windows-testing](https://www.github.com/kubernetes-sigs/windows-testing)
@@ -126,30 +126,41 @@ As of 29-11-2018 much of the work for enabling Windows nodes has already been co
 **User experience**: Users today will need to use some combination of taints and node selectors in order to keep Linux and Windows workloads separated. In the best case this imposes a burden only on Windows users, but this is still less than ideal. The recommended approach is outlined below
 
 #### Ensuring OS-specific workloads land on appropriate container host
-- 
+As you can see below, we plan to document how Windows containers can be scheduled on the appropriate host using Taints and Tolerations. All nodes today have the following default labels
+- beta.kubernetes.io/os = [windows|linux]
+- beta.kubernetes.io/arch = [amd64|arm64|...]
 
+If a deployment does not specify a nodeSelector like `"beta.kubernetes.io/os": windows`, it is possible the PODs can be scheduled on any host, Windows of Linux. This can be problematic since a Windows container can only land on Windows and a Linux container can only land on Linux. The best practice we will recommend is to use a nodeSelector. 
 
+However, we understand that in certain cases customers have a pre-existing large number of deployments for Linux containers. Since they will not want to change all deployments to add nodeSelectors, the alternative is to use Taints. Because the kubelet can set Taints during registration, it could easily be modified to automatically add a taint when running on Windows only (`“--register-with-taints=’os=Windows:NoSchedule’” `). By adding a taint to all Windows nodes, nothing will be scheduled on them (that includes existing Linux PODs). In order for a Windows POD to be scheduled on a Windows node, it would need both the nodeSelector to choose Windows, and a toleration.
+```
+nodeSelector:
+    "beta.kubernetes.io/os": windows
+tolerations:
+    - key: "Os"
+      operator: "Equals"
+      Value: “Windows”
+      effect: "NoSchedule"
+```
 
 ## Graduation Criteria
-- 100% green conformance tests that are applicable to Windows (see the Testing Plan section for details on these tests)
+- 100% green/passing conformance tests that are applicable to Windows (see the Testing Plan section for details on these tests)
 - Comprehensive documentation that includes but is not limited to the following sections
--- Outline of Windows Server containers on Kubernetes
--- Getting Started Guide
---- Prerequisites
---- How to deploy Windows nodes in Kubernetes
---- How to build for Windows (for advanced users)
---- Overview of Networking on Windows
---- Links to documentation on how to deploy and use CNI plugins for Windows
---- How to schedule Windows Server containers, including examples
--- Advanced Functionality
---- How to use metrics and the Horizontal Pod Autoscaler
---- How to use Group Managed Service Accounts
---- How to use Taints and Tolerations for a Hybrid compute cluster
---- How to use Hyper-V isolation (not a stable feature yet)
--- Supported functionality (with examples where appropriate)
--- Known Limitations
--- Unsupported functionality
--- Resources for contributing and getting help
+1. Outline of Windows Server containers on Kubernetes
+2. Getting Started Guide, including Prerequisites
+3. How to deploy Windows nodes in Kubernetes
+4. Overview of Networking on Windows
+5. Links to documentation on how to deploy and use CNI plugins for Windows
+6. How to schedule Windows Server containers, including examples
+7. Advanced: How to use metrics and the Horizontal Pod Autoscaler
+8. Advanced: How to use Group Managed Service Accounts
+9. Advanced: How to use Taints and Tolerations for a heterogeneous compute cluster (Windows + Linux)
+10. Advanced: How to use Hyper-V isolation (not a stable feature yet)
+11. Advanced: How to build Kubernetes for Windows from source
+12. Supported functionality (with examples where appropriate)
+13. Known Limitations
+14. Unsupported functionality
+15. Resources for contributing and getting help
 
 ## Implementation History
 - Alpha was released with Kubernetes v.1.5
