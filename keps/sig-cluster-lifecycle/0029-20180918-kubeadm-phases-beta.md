@@ -78,7 +78,7 @@ duplication of code or in some case inconsistencies between the init and phase i
 - This proposal doesn't include any changes of improvements to the actual `kubeadm init`
   workflow.
 - This proposal doesn't include a plan for implementation of phases in workflows
-  different than the `kubeadm init`workflow; such plans will be defined by the sig 
+  different than the `kubeadm init` workflow; such plans will be defined by the sig 
   during release planning for each cycle, and then documented in this KEP.
   - v1.14 implementation of phases in the `kubeadm join` workflow (planned)
 
