@@ -2,39 +2,18 @@
 
 Authors: @msau42, @vishh, @dhirajh, @ianchakeres
 
+
+## Summary
+
 This document presents a detailed design for supporting persistent local storage,
 as outlined in [Local Storage Overview](local-storage-overview.md).
-Supporting all the use cases for persistent local storage will take many releases,
-so this document will be extended for each new release as we add more features.
 
-## Goals
+This KEP replaces the original [design
+proposal](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/local-storage-pv.md)
+and has been updated to reflect the current implementation.
 
-* Allow pods to mount any local block or filesystem based volume.
-* Allow pods to mount dedicated local disks, or channeled partitions as volumes for
-IOPS isolation.
-* Allow pods do access local volumes without root privileges.
-* Allow pods to access local volumes without needing to understand the storage
-layout on every node.
-* Persist local volumes and provide data gravity for pods.  Any pod
-using the local volume will be scheduled to the same node that the local volume
-is on.
-* Allow pods to specify local storage as part of a Deployment or StatefulSet.
-* Allow administrators to set up and configure local volumes with simple methods.
-* Do not require administrators to manage the local volumes once provisioned
-for a node.
 
-## Non-Goals
-
-* Node preparation to setup disks for an environment including, but not limited
-  to: partitioning, RAID, and formatting.
-* Allow pods to release their local volume bindings and lose that volume's data
-during failure conditions, such as node, storage or scheduling failures, where
-the volume is not accessible for some user-configurable time.
-* Dynamic provisioning of local volumes.
-* Provide data availability for a local volume beyond its local node.
-* Support the use of HostPath volumes and Local PVs on the same volume.
-
-## Background
+## Motivation
 
 In Kubernetes, there are two main types of storage: remote and local.
 
@@ -56,9 +35,39 @@ remote storage solutions.
 especially in bare metal environments.  Network storage can be expensive to
 setup and maintain, and it may not be necessary for certain applications.
 
-## Use Cases
+### Goals
 
-### Distributed filesystems and databases
+* Allow pods to mount any local block or filesystem based volume.
+* Allow pods to mount dedicated local disks, or channeled partitions as volumes for
+IOPS isolation.
+* Allow pods do access local volumes without root privileges.
+* Allow pods to access local volumes without needing to understand the storage
+layout on every node.
+* Persist local volumes and provide data gravity for pods.  Any pod
+using the local volume will be scheduled to the same node that the local volume
+is on.
+* Allow pods to specify local storage as part of a Deployment or StatefulSet.
+* Allow administrators to set up and configure local volumes with simple methods.
+* Do not require administrators to manage the local volumes once provisioned
+for a node.
+
+### Non-Goals
+
+* Node preparation to setup disks for an environment including, but not limited
+  to: partitioning, RAID, and formatting.
+* Allow pods to release their local volume bindings and lose that volume's data
+during failure conditions, such as node, storage or scheduling failures, where
+the volume is not accessible for some user-configurable time.
+* Dynamic provisioning of local volumes.
+* Provide data availability for a local volume beyond its local node.
+* Support the use of HostPath volumes and Local PVs on the same volume.
+
+
+## Background
+
+### Use Cases
+
+#### Distributed filesystems and databases
 
 Many distributed filesystem and database implementations, such as Cassandra and
 GlusterFS, utilize the local storage on each node to form a storage cluster.
@@ -83,7 +92,7 @@ nodes.  Therefore, they expect to have high priority and node resource
 guarantees.  They typically are deployed using StatefulSets, custom
 controllers, or operators.
 
-### Caching
+#### Caching
 
 Caching is one of the recommended use cases for ephemeral local storage.  The
 cached data is backed by persistent storage, so local storage data durability is
@@ -99,9 +108,9 @@ Content-serving applications and producer/consumer workflows commonly utilize
 caches for better performance.  They are typically deployed using Deployments,
 and could be isolated in its own cluster, or shared with other applications.
 
-## Environments
+### Environments
 
-### Baremetal
+#### Baremetal
 
 In a baremetal environment, nodes may be configured with multiple local disks of
 varying capacity, speeds and mediums.  Mediums include spinning disks (HDDs) and
@@ -117,7 +126,7 @@ Currently, the methods to use the additional disks are to:
 It is also possible to configure a NAS or SAN on a node as well.  Speeds and
 capacities will widely vary depending on the solution.
 
-### GCE/GKE
+#### GCE/GKE
 
 GCE and GKE both have a local SSD feature that can create a VM instance with up
 to 8 fixed-size 375GB local SSDs physically attached to the instance host and
@@ -128,7 +137,7 @@ encounters a non-recoverable error, then the SSD data will be lost.  If the
 guest OS reboots, or a live migration occurs, then the SSD data will be
 preserved.
 
-### EC2
+#### EC2
 
 In EC2, the instance store feature attaches local HDDs or SSDs to a new instance
 as additional disks.  HDD capacities can go up to 24 2TB disks for the largest
@@ -136,7 +145,7 @@ configuration.  SSD capacities can go up to 8 800GB disks or 2 2TB disks for the
 largest configurations.  Data on the instance store only persists across
 instance reboot.
 
-## Limitations of current volumes
+### Limitations of current volumes
 
 The following is an overview of existing volume types in Kubernetes, and how
 they cannot completely address the use cases for local persistent storage.
