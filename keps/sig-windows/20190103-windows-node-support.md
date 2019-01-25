@@ -150,6 +150,8 @@ tolerations:
 ```
 
 ## Graduation Criteria
+- All features and functionality under `What works today` is fully tested and vetted to be working by SIG-Windows
+- SIG-Windows has high confidence to the stability and reliability of Windows Server containers on Kubernetes
 - 100% green/passing conformance tests that are applicable to Windows (see the Testing Plan section for details on these tests)
 - Comprehensive documentation that includes but is not limited to the following sections
 1. Outline of Windows Server containers on Kubernetes
