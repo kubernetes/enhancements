@@ -18,9 +18,6 @@ layout on every node.
 * Persist local volumes and provide data gravity for pods.  Any pod
 using the local volume will be scheduled to the same node that the local volume
 is on.
-* Allow pods to release their local volume bindings and lose that volume's data
-during failure conditions, such as node, storage or scheduling failures, where
-the volume is not accessible for some user-configurable time.
 * Allow pods to specify local storage as part of a Deployment or StatefulSet.
 * Allow administrators to set up and configure local volumes with simple methods.
 * Do not require administrators to manage the local volumes once provisioned
@@ -28,6 +25,12 @@ for a node.
 
 ## Non-Goals
 
+* Node preparation to setup disks for an environment including, but not limited
+  to: partitioning, RAID, and formatting.
+* Allow pods to release their local volume bindings and lose that volume's data
+during failure conditions, such as node, storage or scheduling failures, where
+the volume is not accessible for some user-configurable time.
+* Dynamic provisioning of local volumes.
 * Provide data availability for a local volume beyond its local node.
 * Support the use of HostPath volumes and Local PVs on the same volume.
 
@@ -187,32 +190,6 @@ local disks, especially when compared to high-performance SSDs.
 
 Due to the current limitations in the existing volume types, a new method for
 providing persistent local storage should be considered.
-
-## Feature Plan
-
-A detailed implementation plan can be found in the
-[Storage SIG planning spreadsheet](https://docs.google.com/spreadsheets/d/1t4z5DYKjX2ZDlkTpCnp18icRAQqOE85C1T1r2gqJVck/view#gid=1566770776).
-The following is a high level summary of the goals in each phase.
-
-### Phase 1
-
-* Support Pod, Deployment, and StatefulSet requesting a single local volume
-* Support pre-configured, statically partitioned, filesystem-based local volumes
-
-### Phase 2
-
-* Block devices and raw partitions
-* Smarter PV binding to consider local storage and pod scheduling constraints,
-such as pod affinity/anti-affinity, and requesting multiple local volumes
-
-### Phase 3
-
-* Support common partitioning patterns
-* Volume taints and tolerations for unbinding volumes in error conditions
-
-### Phase 4
-
-* Dynamic provisioning
 
 ## Design
 
@@ -483,77 +460,7 @@ spec:
       serviceAccount: local-storage-admin
 ```
 
-##### Provisioner Boostrapper
-
-Manually setting up this DaemonSet spec can be tedious and it requires duplicate specification
-of the StorageClass -> directory mappings both in the ConfigMap and as hostPath volumes. To
-make it simpler and less error prone, a boostrapper application will be provided to generate
-and launch the provisioner DaemonSet based off of the ConfigMap.  It can also create a service
-account with all the required permissions.
-
-The boostrapper accepts the following optional arguments:
-
-* -image: Name of local volume provisioner image (default
-"quay.io/external_storage/local-volume-provisioner:latest")
-* -volume-config: Name of the local volume configuration configmap. The configmap must reside in the same
-namespace as the bootstrapper. (default "local-volume-default-config")
-* -serviceaccount: Name of the service account for local volume provisioner (default "local-storage-admin")
-
-The boostrapper requires the following permissions:
-
-* Get/Create/Update ConfigMap
-* Create ServiceAccount
-* Create ClusterRoleBindings
-* Create DaemonSet
-
-Since the boostrapper generates the DaemonSet spec, the ConfigMap can be simplified to just specify the
-host directories:
-
-```
-kind: ConfigMap
-metadata:
-  name: local-volume-config
-  namespace: kube-system
-data:
- storageClassMap: |
-    local-fast:
-      hostDir: "/mnt/ssds"
-    local-slow:
-      hostDir: "/mnt/hdds"
-```
-
-The boostrapper will update the ConfigMap with the generated `mountDir`.  It generates the `mountDir`
-by stripping off the initial "/" in `hostDir`, replacing the remaining "/" with "~", and adding the
-prefix path "/mnt/local-storage".
-
-In the above example, the generated `mountDir` is `/mnt/local-storage/mnt ~ssds` and
-`/mnt/local-storage/mnt~hdds`, respectively.
-
-#### Use Case Deliverables
-
-This alpha phase for Local PV support will provide the following capabilities:
-
-* Local directories to be specified as Local PVs with node affinity
-* Pod using a PVC that is bound to a Local PV will always be scheduled to that node
-* External static provisioner DaemonSet that discovers local directories, creates, cleans up,
-and deletes Local PVs
-
-#### Limitations
-
-However, some use cases will not work:
-
-* Specifying multiple Local PVCs in a pod.  Most likely, the PVCs will be bound to Local PVs on
-different nodes,
-making the pod unschedulable.
-* Specifying Pod affinity/anti-affinity with Local PVs.  PVC binding does not look at Pod scheduling
-constraints at all.
-* Using Local PVs in a highly utilized cluster.  PVC binding does not look at Pod resource requirements
-and Node resource availability.
-
-These issues will be solved in a future release with advanced storage topology scheduling.
-
-As a workaround, PVCs can be manually prebound to Local PVs to essentially manually schedule Pods to
-specific nodes.
+A Helm chart can be created to help generate the specs.
 
 #### Test Cases
 
@@ -743,21 +650,31 @@ and asynchronous cleaning logic. The tests include
 * Leverage block PV via PVC and validate that serially writes data in one pod, then reads and validates the data from a second pod.
 * Restart of the provisioner during cleaning operations, and validate that the PV is not recreated by the provisioner until cleaning has occurred.
 
-#### Provisioner redesign for stricter K8s API access control
+## Implementation History
 
-In 1.7, each instance of the provisioner on each node has full permissions to create and
-delete all PVs in the system.  This is unnecessary and potentially a vulnerability if the
-node gets compromised.
+### K8s 1.7: Alpha
 
-To address this issue, the provisioner will be redesigned into two major components:
+* Adds a `local` PersistentVolume source that allows specifying a directory
+or mount point with node affinity as an alpha annotation.
+* Limitations:
+    * Does not support specifying multiple local PVCs in a Pod.
+    * PVC binding does not consider pod scheduling requirements and may make suboptimal or incorrect decisions.
 
-1. A central manager pod that handles the creation and deletion of PV objects.
-This central pod can run on a trusted node and be given PV create/delete permissions.
-2. Worker pods on each node, run as a DaemonSet, that discovers and cleans up the local
-volumes on that node.  These workers do not interact with PV objects, however
-they still require permissions to be able to read the `Node.Labels` on their node.
+### K8s 1.9: Alpha
 
-The central manager will poll each worker for their discovered volumes and create PVs for
-them.  When a PV is released, then it will send the cleanup request to the worker.
+Still alpha, but with improved scheduler support
 
-Detailed design TBD
+* A new StorageClass `volumeBindingMode` parameter was added that
+enables delaying PVC binding until a pod is scheduled. This addresses the limitations from 1.7.
+
+### K8s 1.10: Beta
+
+* `NodeAffinity` beta field was added to PersistentVolume, and the alpha annotation was deprecated.
+    * A [one-time job](https://github.com/kubernetes-sigs/sig-storage-local-static-provisioner/blob/master/utils/update-pv-to-beta)
+was added to help users migrate from the alpha annotation to the beta field.
+* Raw block alpha support was added specified by PV.volumeMode = `Block`.
+
+### K8s 1.12: Beta
+
+* If PV.volumeMode = `Filesystem` but the local volume path was a block device, then Kubernetes will automatically
+format the device with the filesystem type specified in `FSType`.
