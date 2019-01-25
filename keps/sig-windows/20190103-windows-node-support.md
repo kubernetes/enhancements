@@ -116,7 +116,7 @@ As of 29-11-2018 much of the work for enabling Windows nodes has already been co
 - CSI plugins, which require privileged containers
 - Host networking is not available in Windows
 - [Some parts of the V1 API](https://github.com/kubernetes/kubernetes/issues/70604)
-- Overlay networking support in Windows Server 1803 is not fully functional using the `win-overlay` CNI plugin. Specifically service IPs do not work on Windows nodes. This is currently specific to `win-overlay` . other CNI plugins (OVS, AzureCNI) work. Since Windows Server 1803 is not supported for GA, this is mostly not applicable. We left it here since it impacts beta
+- Overlay networking support in Windows Server 1803 is not fully functional using the `win-overlay` CNI plugin. Specifically service IPs do not work on Windows nodes. This is currently specific to `win-overlay`; other CNI plugins (OVS, AzureCNI) work. Since Windows Server 1803 is not supported for GA, this is mostly not applicable. We left it here since it impacts beta
 
 ### Relevant resources/conversations
 
