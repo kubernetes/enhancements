@@ -81,7 +81,7 @@ As of 29-11-2018 much of the work for enabling Windows nodes has already been co
 ### What works today
 - Windows-based containers can be created by kubelet, [provided the host OS version matches the container base image](https://docs.microsoft.com/en-us/virtualization/windowscontainers/deploy-containers/version-compatibility)
     - Pod (single or multiple containers per Pod with process isolation), Deployment, ReplicaSet
-    - Services ClusterIP and LoadBalancer
+    - Services types NodePort, ClusterIP, LoadBalancer, and ExternalName
     - ConfigMap, Secrets: as environment variables or volumes
     - Resource limits
     - Pod & container metrics
