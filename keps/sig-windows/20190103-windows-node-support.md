@@ -315,7 +315,7 @@ Requests are subtracted from node available resources, so they can be used to av
 
 ### V1.Pod
 
-[source](https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/api/core/v1/types.go#L2743)
+> TODO: double check other fields in [source](https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/api/core/v1/types.go#L2743)
 
 
 `V1.Pod.hostIPC`, `v1.pod.hostpid` - host namespace sharing is not possible on Windows
