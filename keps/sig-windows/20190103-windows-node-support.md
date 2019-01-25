@@ -46,12 +46,8 @@ status: provisional
         - [Windows specific tests](#windows-specific-tests)
 - [Other references](#other-references)
 - [API Reference](#api-reference)
-    - [Volumes](#volumes)
-    - [V1.Pod.Resources & V1.Container.ResourceRequirements](#v1podresources--v1containerresourcerequirements)
-    - [Networking features](#networking-features)
-    - [IPC & Pid](#ipc--pid)
-    - [Security](#security)
-    - [User Mapping](#user-mapping)
+    - [V1.Container](#v1container)
+    - [V1.Pod](#v1pod)
 
 <!-- /TOC -->
 
@@ -229,29 +225,8 @@ The Windows container runtime also has a few important differences:
 - Networking - The Windows host networking networking service and virtual switch implement namespacing and can create virtual NICs as needed for a pod or container. However, many configurations such as DNS, routes, and metrics are stored in the Windows registry database rather than /etc/... files as they are on Linux. The Windows registry for the container is separate from that of the host, so concepts like mapping /etc/resolv.conf from the host into a container don't have the same effect they would on Linux. These must be configured using Windows APIs run in the context of that container. Therefore CNI implementations need to call  the HNS instead of relying on file mappings to pass network details into the pod or container.
 
 
-### Volumes
 
-`V1.Pod.Volumes`
-
-Out of the various volume types, these should all be possible on Windows but tests are lacking:
-
-- EmptyDirVolumeSource
-- Secret
-- hostPath
-
-The main gaps in Windows Server 2016 & 1709 are that symlinks are pretty much broken. The only ones that work are SMB/CIFS mount points. Workarounds need to be investigated.
-
-`V1.Container.volumeMounts`
-Mounting volumes across some (but not all) containers will need changes to Windows. Not ready in Windows Server 2016/1709.
-
-
-References: 
-
-- [FlexVolume does not work on Windows node](https://github.com/kubernetes/kubernetes/issues/56875)
-- [feature proposal add SMB(cifs) volume plugin](https://github.com/kubernetes/kubernetes/issues/56005)
-- [add NFS volume support for Windows](https://github.com/kubernetes/kubernetes/issues/56188)
-
-### V1.Pod.Resources & V1.Container.ResourceRequirements
+### V1.Container
 
 `V1.Container.ResourceRequirements.limits.cpu`
 `V1.Container.ResourceRequirements.limits.memory`
@@ -261,45 +236,39 @@ Windows schedules CPU based on CPU count & percentage of cores. We need this rep
 `V1.Container.ResourceRequirements.requests.cpu`
 `V1.Container.ResourceRequirements.requests.memory`
 
-Also of note, requests aren't supported. Will pod eviction policies in the kubelet ensure reserves are met by not overprovisioning the node?
-
-Windows can either expose a NUMA topology matching the host (best performance) or fake it to be 1 big NUMA node (suboptimal). We should think of a way to turn this on/off later - probably q2 2018
+Requests are subtracted from node available resources, so they can be used to avoid overprovisioning a node. However, they cannot be used to guarantee resources in an overprovisioned node. They should be applied to all containers as a best practice if the operator wants to avoid overprovisioning entirely.
 
 
-References:
+`V1.Container.SecurityContext.Capabilities` - not possible on Windows
+`V1.Container.SecurityContext.seLinuxOptions` - not possible on Windows
 
-- [Kubernetes Container Runtime Interface (CRI) doesn't support WindowsContainerConfig and WindowsContainerResources](https://github.com/kubernetes/kubernetes/issues/56734)
+`V1.Container.SecurityContext.readOnlyRootFilesystem` - not possible on Windows
 
-
-### Networking features
-
-`V1.Pod.dnsPolicy` - I think only ClusterFirst is implemented
-
-`V1.Pod.hostNetwork` - Not feasible on Windows Server 2016 / 1709
+`V1.Container.terminationMessagePath` - this has some limitations in that Windows doesn't support mapping single files. The default value is `/dev/termination-log`, which does work because it does not exist on Windows by default.
 
 
-### IPC & Pid
+`V1.Container.volumeMounts`
 
-`V1.Pod.hostIPC`, `v1.pod.hostpid`
+> TODO: check if mounting different volumes to containers in the same pod works. May need to go on test TODO list
 
-How important are these? They're not implemented in Windows Server 2016 / 1709, and I'm not too sure if they'd be helpful or not.
 
-For cases where a pod/container need to talk to the host docker / containerd daemon we could map a named pipe as a volume which would offer the same functionality as the unix socket to the Linux daemons. It works in moby but isn't hooked up in the kubelet yet.
+### V1.Pod
 
-### Security
+`V1.Pod.hostIPC`, `v1.pod.hostpid` - host namespace sharing is not possible on Windows
 
-- `V1.Container.SecurityContext.Capabilities`
-- `V1.Container.SecurityContext.seLinuxOptions`
+`V1.Pod.hostNetwork` - There is no Windows OS support to share the host network
 
-These don't have Windows equivalents since the permissions model is substantially different
+`V1.Pod.dnsPolicy` 
 
-`V1.Container.SecurityContext.readOnlyRootFilesystem`
+> TODO: I think only ClusterFirst is implemented - check for open issues? May need to go on test TODO list
 
-This is probably doable if needed but not possible in Windows Server 2016 / 1709.
+`V1.podSecurityContext.runAsUser` provides a UID, not available on Windows
+`V1.podSecurityContext.supplementalGroups` provides GID, not available on Windows
 
-### User Mapping
+`V1.Pod.Volumes` - EmptyDir, Secret, ConfigMap, HostPath - all work and have tests in TestGrid
 
-There are a few fields that refer to uid/gid. These probably need to be supplemented with a Windows SID (string) and username (string)
+References: 
 
-`V1.podSecurityContext.runAsUser` provides a UID
-`V1.podSecurityContext.supplementalGroups` provides GID
+- [FlexVolume does not work on Windows node](https://github.com/kubernetes/kubernetes/issues/56875)
+- [feature proposal add SMB(cifs) volume plugin](https://github.com/kubernetes/kubernetes/issues/56005)
+- [add NFS volume support for Windows](https://github.com/kubernetes/kubernetes/issues/56188)
