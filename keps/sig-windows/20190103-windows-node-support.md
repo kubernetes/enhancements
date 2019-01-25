@@ -31,32 +31,31 @@ status: provisional
 ## Table of Contents
 <!-- TOC -->
 
-- [Windows node support](#windows-node-support)
-    - [Table of Contents](#table-of-contents)
-    - [Summary](#summary)
-    - [Motivation](#motivation)
-        - [Goals](#goals)
-        - [Non-Goals](#non-goals)
-    - [Proposal](#proposal)
-        - [What works today](#what-works-today)
-        - [What will work eventually](#what-will-work-eventually)
-        - [What will never work (without underlying OS changes)](#what-will-never-work-without-underlying-os-changes)
-        - [Relevant resources/conversations](#relevant-resourcesconversations)
-        - [Risks and Mitigations](#risks-and-mitigations)
-            - [Ensuring OS-specific workloads land on appropriate container host](#ensuring-os-specific-workloads-land-on-appropriate-container-host)
-    - [Graduation Criteria](#graduation-criteria)
-    - [Implementation History](#implementation-history)
-    - [Testing Plan](#testing-plan)
-        - [Test Dashboard](#test-dashboard)
-        - [Test Approach](#test-approach)
-            - [Adapting existing tests](#adapting-existing-tests)
-            - [Substitute test cases](#substitute-test-cases)
-            - [Windows specific tests](#windows-specific-tests)
-    - [Conformance Testing](#conformance-testing)
-    - [API Reference](#api-reference)
-        - [V1.Container](#v1container)
-        - [V1.Pod](#v1pod)
-    - [Other references](#other-references)
+- [Table of Contents](#table-of-contents)
+- [Summary](#summary)
+- [Motivation](#motivation)
+    - [Goals](#goals)
+    - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+    - [What works today](#what-works-today)
+    - [What will work eventually](#what-will-work-eventually)
+    - [What will never work (without underlying OS changes)](#what-will-never-work-without-underlying-os-changes)
+    - [Relevant resources/conversations](#relevant-resourcesconversations)
+    - [Risks and Mitigations](#risks-and-mitigations)
+        - [Ensuring OS-specific workloads land on appropriate container host](#ensuring-os-specific-workloads-land-on-appropriate-container-host)
+- [Graduation Criteria](#graduation-criteria)
+- [Implementation History](#implementation-history)
+- [Testing Plan](#testing-plan)
+    - [Test Dashboard](#test-dashboard)
+    - [Test Approach](#test-approach)
+        - [Adapting existing tests](#adapting-existing-tests)
+        - [Substitute test cases](#substitute-test-cases)
+        - [Windows specific tests](#windows-specific-tests)
+- [Conformance Testing](#conformance-testing)
+- [API Reference](#api-reference)
+    - [V1.Container](#v1container)
+    - [V1.Pod](#v1pod)
+- [Other references](#other-references)
 
 <!-- /TOC -->
 
@@ -241,6 +240,10 @@ These test cases are in review:
 And these still need to be covered: 
 
 - [ ] DNS configuration is passed through CNI, not `/etc/resolv.conf` [67435](https://github.com/kubernetes/kubernetes/pull/67435)
+  - Test cases needed for `dnsPolicy`: Default, ClusterFirst, None
+  - Test cases needed for `dnsConfig`
+  - Test cases needed for `hostname`
+
 - [ ] Windows doesn't have CGroups, but nodeReserve and kubeletReserve are [implemented](https://github.com/kubernetes/kubernetes/pull/69960)
 
 
@@ -322,9 +325,7 @@ Requests are subtracted from node available resources, so they can be used to av
 
 `V1.Pod.hostNetwork` - There is no Windows OS support to share the host network
 
-`V1.Pod.dnsPolicy` 
-
-> TODO: I think only ClusterFirst is implemented - check for open issues? May need to go on test TODO list
+`V1.Pod.dnsPolicy` - ClusterFirstWithHostNet - is not supported because Host Networking is not supported on Windows.
 
 `V1.podSecurityContext.runAsUser` provides a UID, not available on Windows
 `V1.podSecurityContext.supplementalGroups` provides GID, not available on Windows
