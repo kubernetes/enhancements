@@ -1,27 +1,27 @@
 ---
-kep-number: 0000
 title: Windows Group Managed Service Accounts for Container Identity
 authors:
-  - "@patricklang,@jeremywx,@ddebroy"
-owning-sig: "sig-windows"
+  - "@ddebroy"
+  - "@jeremywx"
+  - "@patricklang"
+owning-sig: sig-windows
 participating-sigs:
-  - "sig-auth"
-  - "sig-node"
-  - "sig-windows"
-  - "sig-docs"
-  - "sig-arch"
+  - sig-auth
+  - sig-node
+  - sig-architecture
+  - sig-docs
 reviewers:
-  - @liggitt
-  - @mikedanese
-  - @yujuhong
-  - @patricklang
+  - "@liggitt"
+  - "@mikedanese"
+  - "@yujuhong"
+  - "@patricklang"
 approvers:
-  - @liggitt
-  - @yujuhong
-  - @patricklang
+  - "@liggitt"
+  - "@yujuhong"
+  - "@patricklang"
 editor: TBD
-creation-date: 2018-06-20
-last-updated: 2019-01-24
+creation-date: 2018-11-29
+last-updated: 2019-01-25
 status: provisional
 ---
 
@@ -29,21 +29,24 @@ status: provisional
 
 
 ## Table of Contents
+<!-- TOC -->
 
-* [Table of Contents](#table-of-contents)
-* [Summary](#summary)
-* [Motivation](#motivation)
-    * [Goals](#goals)
-    * [Non-Goals](#non-goals)
-* [Proposal](#proposal)
-    * [User Stories [optional]](#user-stories-optional)
-      * [Web Applications with MS SQL Server](#Web-Applications-with-MS-SQL-Server)
-    * [Implementation Details/Notes/Constraints [optional]](#implementation-detailsnotesconstraints-optional)
-    * [Risks and Mitigations](#risks-and-mitigations)
-* [Graduation Criteria](#graduation-criteria)
-* [Implementation History](#implementation-history)
-* [Drawbacks [optional]](#drawbacks-optional)
-* [Alternatives [optional]](#alternatives-optional)
+- [Table of Contents](#table-of-contents)
+- [Summary](#summary)
+- [Motivation](#motivation)
+    - [Goals](#goals)
+    - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+    - [User Stories [optional]](#user-stories-optional)
+      - [Web Applications with MS SQL Server](#Web-Applications-with-MS-SQL-Server)
+    - [Implementation Details/Notes/Constraints [optional]](#implementation-detailsnotesconstraints-optional)
+    - [Risks and Mitigations](#risks-and-mitigations)
+- [Graduation Criteria](#graduation-criteria)
+- [Implementation History](#implementation-history)
+- [Drawbacks [optional]](#drawbacks-optional)
+- [Alternatives [optional]](#alternatives-optional)
+
+<!-- /TOC -->
 
 ## Summary
 
