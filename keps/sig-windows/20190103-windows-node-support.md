@@ -4,6 +4,7 @@ authors:
   - "@astrieanna"
   - "@benmoss"
   - "@patricklang"
+  - "@michmike"
 owning-sig: sig-windows
 participating-sigs:
   - sig-architecture
@@ -11,11 +12,16 @@ participating-sigs:
 reviewers:
   - sig-architecture
   - sig-node
+  - sig-testing
+  - sig-release
 approvers:
   - "@bgrant0607"
+  - "@michmike"
+  - "@patricklang"
+  - "@spiffxp"
 editor: TBD
 creation-date: 2018-11-29
-last-updated: 2019-01-21
+last-updated: 2019-01-25
 status: provisional
 ---
 
@@ -55,17 +61,18 @@ There is strong interest in the community for adding support for workloads runni
 
 ## Motivation
 
-Windows-native workloads still account for a significant portion of the enterprise software space. While containerization technologies emerged first in the UNIX ecosystem, Microsoft has made investments in recent years to enable support for containers in its Windows OS. As users of Windows increasingly turn to containers as the preferred abstraction for running software, the Kubernetes ecosystem stands to benefit by becoming a cross-platform cluster manager.
+Windows-based workloads still account for a significant portion of the enterprise software space. While containerization technologies emerged first in the UNIX ecosystem, Microsoft has made investments in recent years to enable support for containers in its Windows OS. As users of Windows increasingly turn to containers as the preferred abstraction for running software and modernizing existing applications, the Kubernetes ecosystem stands to benefit by becoming a cross-platform cluster manager.
 
 ### Goals
 
-- Enable users to run nodes on Windows servers 
+- Enable users to schedule Windows Server containers in Kubernetes through the introduction of support for Windows compute nodes
 - Document the differences and limitations compared to Linux
-- Test results added to testgrid to prevent regression of functionality 
+- Create a test suite in testgrid to maintain high quality for this feature and prevent regression of functionality 
 
 ### Non-Goals
 
 - Adding Windows support to all projects in the Kubernetes ecosystem (Cluster Lifecycle, etc)
+- Enable the Kubernetes master components to run on Windows
 
 ## Proposal
 
@@ -76,14 +83,20 @@ As of 29-11-2018 much of the work for enabling Windows nodes has already been co
     - ConfigMap, Secrets: as environment variables or  volumes
     - Resource limits
     - Pod & container metrics
-- Pod networking with [Azure-CNI](https://github.com/Azure/azure-container-networking/blob/master/docs/cni.md), [OVN-Kubernetes](https://github.com/openvswitch/ovn-kubernetes), [two CNI meta-plugins](https://github.com/containernetworking/plugins), [Flannel](https://github.com/coreos/flannel) and [Calico](https://github.com/projectcalico/calico)
+- Windows Server 2019 is the only Windows operating system we will support at GA timeframe. Note above that the host operating system version and the container base image need to match. This is a Windows limitation and not one created by sig-windows.
+- Customers can deploy a hybrid cluster, with Windows and Linux compute nodes side-by-side and schedule Docker containers on both operating systems. Of course, Windows Server containers have to be scheduled on Windows and Linux containers on Linux
+- Pod networking with [Azure-CNI](https://github.com/Azure/azure-container-networking/blob/master/docs/cni.md), [OVN-Kubernetes](https://github.com/openvswitch/ovn-kubernetes), [two CNI meta-plugins](https://github.com/containernetworking/plugins), [Flannel (VXLAN and Host-Gateway)](https://github.com/coreos/flannel) 
 - Dockershim CRI
 - Many<sup id="a1">[1]</sup> of the e2e conformance tests when run with [alternate Windows-based images](https://hub.docker.com/r/e2eteam/) which are being moved to [kubernetes-sigs/windows-testing](https://www.github.com/kubernetes-sigs/windows-testing)
 - Persistent storage: FlexVolume with [SMB + iSCSI](https://github.com/Microsoft/K8s-Storage-Plugins/tree/master/flexvolume/windows), and in-tree AzureFile and AzureDisk providers
+- Windows Server containers can take advantage of StatefulSet functionality for stateful applications and distributed systems
+- Windows PODs can take advantage of DaemonSet, with the exception that privileged containers are not supported on Windows (more on that below)
  
 ### What will work eventually
+- Group Managed Service Accounts, a way to assign an Active Directory identity to a Windows container, is forthcoming with KEP `Windows Group Managed Service Accounts for Container Identity`
 - `kubectl port-forward` hasn't been implemented due to lack of an `nsenter` equivalent to run a process inside a network namespace.
 - CRIs other than Dockershim: CRI-containerd support is forthcoming
+- Some kubeadm work was done in the past to add Windows nodes to Kubernetes, but that effort has been dormant since. We will need to revisit that work and complete it in the future.
 
 ### What will never work (without underlying OS changes)
 - Certain Pod functionality
@@ -110,13 +123,37 @@ As of 29-11-2018 much of the work for enabling Windows nodes has already been co
 
 **Second class support**: Kubernetes contributors are likely to be thinking of Linux-based solutions to problems, as Linux remains the primary OS supported. Keeping Windows support working will be an ongoing burden potentially limiting the pace of development. 
 
-**User experience**: Users today will need to use some combination of taints and node selectors in order to keep Linux and Windows workloads separated. In the best case this imposes a burden only on Windows users, but this is still less than ideal.
+**User experience**: Users today will need to use some combination of taints and node selectors in order to keep Linux and Windows workloads separated. In the best case this imposes a burden only on Windows users, but this is still less than ideal. The recommended approach is outlined below
+
+#### Ensuring OS-specific workloads land on appropriate container host
+- 
+
+
 
 ## Graduation Criteria
-
+- 100% green conformance tests that are applicable to Windows (see the Testing Plan section for details on these tests)
+- Comprehensive documentation that includes but is not limited to the following sections
+-- Outline of Windows Server containers on Kubernetes
+-- Getting Started Guide
+--- Prerequisites
+--- How to deploy Windows nodes in Kubernetes
+--- How to build for Windows (for advanced users)
+--- Overview of Networking on Windows
+--- Links to documentation on how to deploy and use CNI plugins for Windows
+--- How to schedule Windows Server containers, including examples
+-- Advanced Functionality
+--- How to use metrics and the Horizontal Pod Autoscaler
+--- How to use Group Managed Service Accounts
+--- How to use Taints and Tolerations for a Hybrid compute cluster
+--- How to use Hyper-V isolation (not a stable feature yet)
+-- Supported functionality (with examples where appropriate)
+-- Known Limitations
+-- Unsupported functionality
+-- Resources for contributing and getting help
 
 ## Implementation History
-
+- Alpha was released with Kubernetes v.1.5
+- Beta was released with Kubernetes v.1.9
 
 ## Testing Plan
 
