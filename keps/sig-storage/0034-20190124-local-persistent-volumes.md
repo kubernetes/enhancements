@@ -265,15 +265,24 @@ comprehensive cleanup.
 All new changes are protected by a new feature gate, `PersistentLocalVolumes`.
 
 A new `LocalVolumeSource` type is added as a `PersistentVolumeSource`.
-The path can only be a mount point or a directory in a shared
-filesystem.
+The path can only be a mount point, a directory in a shared filesystem, or a
+block device.
+
+If it is a block device, then the filesystem type can be specified as well, and
+Kubernetes will format the filesystem on the device.
 
 ```
 type LocalVolumeSource struct {
-        // The full path to the volume on the node
-        // For alpha, this path must be a directory
-        // Once block as a source is supported, then this path can point to a block device
-        Path string
+    // The full path to the volume on the node
+    // It can be either a directory or block device (disk, partition, ...).
+    Path string
+
+    // Filesystem type to mount.
+    // It applies only when the Path is a block device.
+    // Must be a filesystem type supported by the host operating system.
+    // Ex. "ext4", "xfs", "ntfs". The default value is to auto-select a fileystem if unspecified.
+    // +optional
+    FSType *string
 }
 
 type PersistentVolumeSource struct {
@@ -351,7 +360,8 @@ PV creation does not operate on any informer events.  Instead, it periodically m
 directories, and will create a new PV for each path in the directory that is not in the PV cache.  It
 sets the "pv.kubernetes.io/provisioned-by" annotation so that it can distinguish which PVs it created.
 
-The allowed discovery file types are directories and mount points.  The PV capacity
+The allowed discovery file types are directories, mount points, and block
+devices.  The PV capacity
 will be the capacity of the underlying filesystem.  Therefore, PVs that are backed by shared
 directories will report its capacity as the entire filesystem, potentially causing overcommittment.
 Separate partitions are recommended for capacity isolation.
@@ -443,66 +453,6 @@ spec:
 
 A Helm chart can be created to help generate the specs.
 
-#### Test Cases
-
-##### API unit tests
-
-* LocalVolumeSource cannot be specified without the feature gate
-* Non-empty PV node affinity is required for LocalVolumeSource
-* Preferred node affinity is not allowed
-* Path is required to be non-empty
-* Invalid json representation of type NodeAffinity returns error
-
-##### PV node affinity unit tests
-
-* Nil or empty node affinity evaluates to true for any node
-* Node affinity specifying existing node labels evaluates to true
-* Node affinity specifying non-existing node label keys evaluates to false
-* Node affinity specifying non-existing node label values evaluates to false
-
-##### Local volume plugin unit tests
-
-* Plugin can support PersistentVolumeSource
-* Plugin cannot support VolumeSource
-* Plugin supports ReadWriteOnce access mode
-* Plugin does not support remaining access modes
-* Plugin supports Mounter and Unmounter
-* Plugin does not support Provisioner, Recycler, Deleter
-* Plugin supports readonly
-* Plugin GetVolumeName() returns PV name
-* Plugin ConstructVolumeSpec() returns PV info
-* Plugin disallows backsteps in the Path
-
-##### Local volume provisioner unit tests
-
-* Directory not in the cache and PV should be created
-* Directory is in the cache and PV should not be created
-* Directories created later are discovered and PV is created
-* Unconfigured directories are ignored
-* PVs are created with the configured StorageClass
-* PV name generation hashed correctly using node name, storageclass and filename
-* PV creation failure should not add directory to cache
-* Non-directory type should not create a PV
-* PV is released, PV should be deleted
-* PV should not be deleted for any other PV phase
-* PV deletion failure should not remove PV from cache
-* PV cleanup failure should not delete PV or remove from cache
-
-##### E2E tests
-
-* Pod that is bound to a Local PV is scheduled to the correct node
-and can mount, read, and write
-* Two pods serially accessing the same Local PV can mount, read, and write
-* Two pods simultaneously accessing the same Local PV can mount, read, and write
-* Test both directory-based Local PV, and mount point-based Local PV
-* Launch local volume provisioner, create some directories under the discovery path,
-and verify that PVs are created and a Pod can mount, read, and write.
-* After destroying a PVC managed by the local volume provisioner, it should cleanup
-the volume and recreate a new PV.
-* Pod using a Local PV with non-existent path fails to mount
-* Pod that sets nodeName to a different node than the PV node affinity cannot schedule.
-
-
 #### Block devices and raw partitions
 
 Pods accessing raw block storage is a new alpha feature in 1.9.  Changes are required in
@@ -512,7 +462,6 @@ PVs corresponding to those block devices. In addition, when a block device based
 released, the local volume provisioner will cleanup the block devices. The cleanup
 mechanism will be configurable and also customizable as no single mechanism covers all use
 cases.
-
 
 ##### Discovery
 
@@ -604,21 +553,75 @@ through custom resources, so no disk being cleaned will be re-created as a PV.
 The provisioner will also log events to let the user know that cleaning is in progress and it can
 take some time to complete.
 
-##### Testing
 
-The unit tests in the provisioner will be enhanced to test all the new block discover, block cleaning
-and asynchronous cleaning logic. The tests include
+#### Test Cases
+
+##### API unit tests
+
+* LocalVolumeSource cannot be specified without the feature gate
+* Non-empty PV node affinity is required for LocalVolumeSource
+* Preferred node affinity is not allowed
+* Path is required to be non-empty
+* Invalid json representation of type NodeAffinity returns error
+
+##### PV node affinity unit tests
+
+* Nil or empty node affinity evaluates to true for any node
+* Node affinity specifying existing node labels evaluates to true
+* Node affinity specifying non-existing node label keys evaluates to false
+* Node affinity specifying non-existing node label values evaluates to false
+
+##### Local volume plugin unit tests
+
+* Plugin can support PersistentVolumeSource
+* Plugin cannot support VolumeSource
+* Plugin supports ReadWriteOnce access mode
+* Plugin does not support remaining access modes
+* Plugin supports Mounter and Unmounter
+* Plugin does not support Provisioner, Recycler, Deleter
+* Plugin supports readonly
+* Plugin GetVolumeName() returns PV name
+* Plugin ConstructVolumeSpec() returns PV info
+* Plugin disallows backsteps in the Path
+
+##### Local volume provisioner unit tests
+
+* Directory not in the cache and PV should be created
+* Directory is in the cache and PV should not be created
+* Directories created later are discovered and PV is created
+* Unconfigured directories are ignored
+* PVs are created with the configured StorageClass
+* PV name generation hashed correctly using node name, storageclass and filename
+* PV creation failure should not add directory to cache
+* Non-directory type should not create a PV
+* PV is released, PV should be deleted
+* PV should not be deleted for any other PV phase
+* PV deletion failure should not remove PV from cache
+* PV cleanup failure should not delete PV or remove from cache
 * Validating that a discovery directory containing both block and file system volumes are appropriately discovered and have PVs created.
 * Validate that both success and failure of asynchronous cleanup processes are properly tracked by the provisioner
 * Ensure a new PV is not created while cleaning of volume behind the PV is still in progress
 * Ensure two simultaneous cleaning operations on the same PV do not occur
 
- In addition, end to end tests will be added to support block cleaning. The tests include:
+##### E2E tests
+
+* Pod that is bound to a Local PV is scheduled to the correct node
+and can mount, read, and write
+* Two pods serially accessing the same Local PV can mount, read, and write
+* Two pods simultaneously accessing the same Local PV can mount, read, and write
+* Test both directory-based Local PV, and mount point-based Local PV
+* Launch local volume provisioner, create some directories under the discovery path,
+and verify that PVs are created and a Pod can mount, read, and write.
+* After destroying a PVC managed by the local volume provisioner, it should cleanup
+the volume and recreate a new PV.
+* Pod using a Local PV with non-existent path fails to mount
+* Pod that sets nodeName to a different node than the PV node affinity cannot schedule.
 * Validate block PV are discovered and created
 * Validate cleaning of released block PV using each of the block cleaning scripts included.
 * Validate that file and block volumes in the same discovery path have correct PVs created, and that they are appropriately cleaned up.
 * Leverage block PV via PVC and validate that serially writes data in one pod, then reads and validates the data from a second pod.
 * Restart of the provisioner during cleaning operations, and validate that the PV is not recreated by the provisioner until cleaning has occurred.
+
 
 ## Implementation History
 
