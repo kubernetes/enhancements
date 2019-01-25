@@ -136,7 +136,7 @@ As you can see below, we plan to document how Windows containers can be schedule
 - beta.kubernetes.io/os = [windows|linux]
 - beta.kubernetes.io/arch = [amd64|arm64|...]
 
-If a deployment does not specify a nodeSelector like `"beta.kubernetes.io/os": windows`, it is possible the Pods can be scheduled on any host, Windows of Linux. This can be problematic since a Windows container can only land on Windows and a Linux container can only land on Linux. The best practice we will recommend is to use a nodeSelector. 
+If a deployment does not specify a nodeSelector like `"beta.kubernetes.io/os": windows`, it is possible the Pods can be scheduled on any host, Windows or Linux. This can be problematic since a Windows container can only run on Windows and a Linux container can only run on Linux. The best practice we will recommend is to use a nodeSelector. 
 
 However, we understand that in certain cases customers have a pre-existing large number of deployments for Linux containers. Since they will not want to change all deployments to add nodeSelectors, the alternative is to use Taints. Because the kubelet can set Taints during registration, it could easily be modified to automatically add a taint when running on Windows only (`“--register-with-taints=’os=Win1809:NoSchedule’” `). By adding a taint to all Windows nodes, nothing will be scheduled on them (that includes existing Linux Pods). In order for a Windows Pod to be scheduled on a Windows node, it would need both the nodeSelector to choose Windows, and a toleration.
 ```
