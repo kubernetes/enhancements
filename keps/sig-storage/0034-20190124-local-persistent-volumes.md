@@ -1,6 +1,79 @@
-# Local Storage Persistent Volumes
+---
+kep-number: 34
+title: Local Persistent Volumes
+authors:
+  - msau42
+  - vishh
+  - dhirajh
+  - ianchakeres
+owning-sig: sig-storage
+participating-sigs:
+  - sig-storage
+reviewers:
+  - saad-ali
+  - jsafrane
+  - gnufied
+approvers:
+  - saad-ali
+editor: TBD
+creation-date: 2019-01-24
+last-updated: 2019-01-24
+status: implementable
+see-also:
+  - [Volume topology proposal](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/volume-topology-scheduling.md)
+replaces:
+  - [Original design proposal](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/local-storage-pv.md)
+superseded-by:
+---
 
-Authors: @msau42, @vishh, @dhirajh, @ianchakeres
+# Local Persistent Volumes
+
+## Table of Contents
+
+* [Summary](#summary)
+* [Motivation](#motivation)
+   * [Goals](#goals)
+   * [Non-Goals](#non-goals)
+* [Background](#background)
+   * [Use Cases](#use-cases)
+      * [Distributed filesystems and databases](#distributed-filesystems-and-databases)
+      * [Caching](#caching)
+   * [Environments](#environments)
+      * [Baremetal](#baremetal)
+      * [GCE/GKE](#gcegke)
+      * [EC2](#ec2)
+   * [Limitations of current volumes](#limitations-of-current-volumes)
+* [Proposal](#proposal)
+   * [User Stories](#user-stories)
+      * [PVC Users](#pvc-users)
+      * [Cluster Administrator](#cluster-administrator)
+   * [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
+      * [Local Volume Plugin](#local-volume-plugin)
+         * [API Changes](#api-changes)
+      * [PersistentVolume Node Affinity](#persistentvolume-node-affinity)
+      * [Local volume initial configuration](#local-volume-initial-configuration)
+      * [Local volume management](#local-volume-management)
+         * [Packaging](#packaging)
+      * [Block devices and raw partitions](#block-devices-and-raw-partitions)
+         * [Discovery](#discovery)
+         * [Cleanup after Release](#cleanup-after-release)
+   * [Risks and Mitigations](#risks-and-mitigations)
+* [Test Plan](#test-plan)
+   * [API unit tests](#api-unit-tests)
+   * [PV node affinity unit tests](#pv-node-affinity-unit-tests)
+   * [Local volume plugin unit tests](#local-volume-plugin-unit-tests)
+   * [Local volume provisioner unit tests](#local-volume-provisioner-unit-tests)
+   * [E2E tests](#e2e-tests)
+   * [Stress tests](#stress-tests)
+* [Graduation Criteria](#graduation-criteria)
+   * [Alpha -&gt; Beta](#alpha---beta)
+   * [Beta -&gt; GA](#beta---ga)
+* [Implementation History](#implementation-history)
+   * [K8s 1.7: Alpha](#k8s-17-alpha)
+   * [K8s 1.9: Alpha](#k8s-19-alpha)
+   * [K8s 1.10: Beta](#k8s-110-beta)
+   * [K8s 1.12: Beta](#k8s-112-beta)
+* [Infrastructure Needed](#infrastructure-needed)
 
 
 ## Summary
@@ -200,7 +273,17 @@ local disks, especially when compared to high-performance SSDs.
 Due to the current limitations in the existing volume types, a new method for
 providing persistent local storage should be considered.
 
-## Design
+## Proposal
+
+### User Stories
+
+#### PVC Users
+A user can create a PVC and get access to a local disk just by specifying the appropriate StorageClass.
+
+#### Cluster Administrator
+A cluster administrator can easily expose local disks as PVs to their end users.
+
+### Implementation Details/Notes/Constraints
 
 #### Local Volume Plugin
 
@@ -349,9 +432,8 @@ To mitigate the amount of time an administrator has to spend managing Local volu
 a Local static provisioner application will be provided to handle common scenarios.  For
 uncommon scenarios, a specialized provisioner can be written.
 
-The Local static provisioner will be developed in the
-[kubernetes-incubator/external-storage](https://github.com/kubernetes-incubator)
-repository, and will loosely follow the external provisioner design, with a few differences:
+The Local static provisioner will be developed in an external repository,
+and will loosely follow the external provisioner design, with a few differences:
 
 * A provisioner instance needs to run on each node and only manage the local storage on its node.
 * It does not handle dynamic provisioning.  Instead, it performs static provisioning
@@ -562,10 +644,21 @@ through custom resources, so no disk being cleaned will be re-created as a PV.
 The provisioner will also log events to let the user know that cleaning is in progress and it can
 take some time to complete.
 
+### Risks and Mitigations
+There are some major risks of using this feature:
 
-#### Test Cases
+ * A pod's availability becomes tied to the node's availability. If the node where the local volume is
+located at becomes unavailable, the pod cannot be rescheduled since it's tied to that node's data.
+Users must be aware of this limitation and design their applications accordingly. Recovery from this
+kind of failure can be manual or automated with an operator tailored to the application's recovery process.
+* The underlying backing disk has its own varying durability guarantees that users must understand.
+For example, in many cloud environments, local disks are ephemeral and all data can be lost at any time.
+Just because we call it "PersistentVolume" in Kubernetes doesn't mean the underlying backing store provides
+strong data durability.
 
-##### API unit tests
+## Test Plan
+
+### API unit tests
 
 * LocalVolumeSource cannot be specified without the feature gate
 * Non-empty PV node affinity is required for LocalVolumeSource
@@ -573,14 +666,14 @@ take some time to complete.
 * Path is required to be non-empty
 * Invalid json representation of type NodeAffinity returns error
 
-##### PV node affinity unit tests
+### PV node affinity unit tests
 
 * Nil or empty node affinity evaluates to true for any node
 * Node affinity specifying existing node labels evaluates to true
 * Node affinity specifying non-existing node label keys evaluates to false
 * Node affinity specifying non-existing node label values evaluates to false
 
-##### Local volume plugin unit tests
+### Local volume plugin unit tests
 
 * Plugin can support PersistentVolumeSource
 * Plugin cannot support VolumeSource
@@ -593,7 +686,7 @@ take some time to complete.
 * Plugin ConstructVolumeSpec() returns PV info
 * Plugin disallows backsteps in the Path
 
-##### Local volume provisioner unit tests
+### Local volume provisioner unit tests
 
 * Directory not in the cache and PV should be created
 * Directory is in the cache and PV should not be created
@@ -612,7 +705,7 @@ take some time to complete.
 * Ensure a new PV is not created while cleaning of volume behind the PV is still in progress
 * Ensure two simultaneous cleaning operations on the same PV do not occur
 
-##### E2E tests
+### E2E tests
 
 * Pod that is bound to a Local PV is scheduled to the correct node
 and can mount, read, and write
@@ -631,6 +724,24 @@ the volume and recreate a new PV.
 * Leverage block PV via PVC and validate that serially writes data in one pod, then reads and validates the data from a second pod.
 * Restart of the provisioner during cleaning operations, and validate that the PV is not recreated by the provisioner until cleaning has occurred.
 
+### Stress tests
+
+* Create a few hundred local PVs and even more Pods, where each pod specifies a varying number of PVCs.
+Randomly create and delete Pods and their PVCs at varying intervals. All Pods should be schedulable as
+PVs get recycled. Test with and without the static provisioner.
+
+## Graduation Criteria
+
+### Alpha -> Beta
+* Basic unit and e2e tests as outlined in the test plan.
+* Metrics in k/k for volume mount/unmount, device mount/unmount operation
+  latency and error rates.
+* Metrics in local static provisioner for discovery and deletion operation
+  latency and error rates.
+
+### Beta -> GA
+* Stress tests to iron out possible race conditions in the scheduler.
+* Users deployed in production and have gone through at least one K8s upgrade.
 
 ## Implementation History
 
@@ -660,3 +771,10 @@ was added to help users migrate from the alpha annotation to the beta field.
 
 * If PV.volumeMode = `Filesystem` but the local volume path was a block device, then Kubernetes will automatically
 format the device with the filesystem type specified in `FSType`.
+
+## Infrastructure Needed
+
+* A new repository at [kubernetes-sigs/sig-storage-local-static-provisioner](https://github.com/kubernetes-sigs/sig-storage-local-static-provisioner)
+is needed to develop the static provisioner.
+* Build local static provisioner container images using prow.
+* Prow CI jobs for the local static provisioner.
