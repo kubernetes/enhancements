@@ -129,46 +129,7 @@ spec:
       properties:
         credspec:
           description: GMSA Credential Spec
-          properties:
-            ActiveDirectoryConfig:
-              description: Windows Active Directory configuration
-              properties:
-                GroupManagedServiceAccounts:
-                  description: GMSA names and scopes
-                  type: array
-                  items:
-                    Name:
-                      description: Name of the primary GMSA or additional accounts
-                      type: string
-                    Scope:
-                      description: DNSRoot or NetBIOS name of the above GMSA
-                      type: string
-                CmsPlugins:
-                  description: Always specify a single item ActiveDirectory
-                  type: array
-                  items:
-                    ActiveDirectory
-                DomainJoinConfig:
-                  description: Configuration to join AD domain
-                  properties:
-                    DnsName:
-                      description: Name of AD domain forest
-                      type: string
-                    DnsTreeName:
-                      description: DNS root of AD domain
-                      type: string
-                    Guid:
-                      description: GUID of AD domain
-                      type: string
-                    MachineAccountName:
-                      description: Name of GMSA
-                      type: string
-                    NetBiosName:
-                      description: NetBios name of AD Domain
-                      type: string
-                    Sid:
-                      description: Security identifier of AD Domain
-                      type: string
+          type: string
 ```
 
 A GMSACredentialSpec may be used by sidecar containers across different namespaces. Therefore the CRD needs to be cluster scoped.
@@ -186,7 +147,7 @@ credspec:
   ActiveDirectoryConfig:
     GroupManagedServiceAccounts:
     - Name: WebApplication1
-      Scope: DEMO
+      Scope: CONTOSO
     - Name: WebApplication1
       Scope: contoso.com
   CmsPlugins:
@@ -196,7 +157,7 @@ credspec:
     DnsTreeName: contoso.com
     Guid: 244818ae-87ca-4fcd-92ec-e79e5252348a
     MachineAccountName: WebApplication1
-    NetBiosName: DEMO
+    NetBiosName: CONTOSO
     Sid: S-1-5-21-2126729477-2524075714-3094792973
 ```
   
