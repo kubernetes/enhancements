@@ -193,14 +193,6 @@ providing persistent local storage should be considered.
 
 ## Design
 
-A high level proposal with user workflows is available in the
-[Local Storage Overview](local-storage-overview.md).
-
-This design section will focus on one phase at a time.  Each new release will
-extend this section.
-
-### Phase 1: 1.7 alpha
-
 #### Local Volume Plugin
 
 A new volume plugin will be introduced to represent logical block partitions and
@@ -272,8 +264,8 @@ comprehensive cleanup.
 
 All new changes are protected by a new feature gate, `PersistentLocalVolumes`.
 
-A new `LocalVolumeSource` type is added as a `PersistentVolumeSource`.  For this
-initial phase, the path can only be a mount point or a directory in a shared
+A new `LocalVolumeSource` type is added as a `PersistentVolumeSource`.
+The path can only be a mount point or a directory in a shared
 filesystem.
 
 ```
@@ -309,23 +301,13 @@ except instead of specifying which nodes a Pod has to be scheduled to, it specif
 a PersistentVolume can be attached and mounted to, influencing scheduling of Pods that
 use local volumes.
 
-For a Pod that uses a PV with node affinity, a new scheduler predicate
-will evaluate that node affinity against the node's labels.  For this initial phase, the
-PV node affinity is only considered by the scheduler for already-bound PVs.  It is not
-considered during the initial PVC/PV binding, which will be addressed in a future release.
+The scheduler will use a PV's node affinity to influence where a Pod can be
+scheduled, as well as which PVs can be bound to a PVC, taking into account all
+scheduling constraints on the Pod. For more details on this feature, see the
+[volume topology design
+proposal](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/volume-topology-scheduling.md).
 
-Only the `requiredDuringSchedulingIgnoredDuringExecution` field will be supported.
-
-##### API Changes
-
-For the initial alpha phase, node affinity is expressed as an optional
-annotation in the PersistentVolume object.
-
-```
-// AlphaStorageNodeAffinityAnnotation defines node affinity policies for a PersistentVolume.
-// Value is a string of the json representation of type NodeAffinity
-AlphaStorageNodeAffinityAnnotation = "volume.alpha.kubernetes.io/node-affinity"
-```
+Local volumes require PV node affinity to be set.
 
 #### Local volume initial configuration
 
@@ -338,14 +320,13 @@ like, with a few minimum requirements:
 
 * The paths to the mount points are always consistent, even across reboots or when storage
 is added or removed.
-* The paths are backed by a filesystem (block devices or raw partitions are not supported for
-the first phase)
+* The paths are backed by a filesystem
 * The directories have appropriate permissions for the provisioner to be able to set owners and
 cleanup the volume.
 
 #### Local volume management
 
-Local PVs are statically created and not dynamically provisioned for the first phase.
+Local PVs are statically created and not dynamically provisioned.
 To mitigate the amount of time an administrator has to spend managing Local volumes,
 a Local static provisioner application will be provided to handle common scenarios.  For
 uncommon scenarios, a specialized provisioner can be written.
@@ -355,7 +336,7 @@ The Local static provisioner will be developed in the
 repository, and will loosely follow the external provisioner design, with a few differences:
 
 * A provisioner instance needs to run on each node and only manage the local storage on its node.
-* For phase 1, it does not handle dynamic provisioning.  Instead, it performs static provisioning
+* It does not handle dynamic provisioning.  Instead, it performs static provisioning
 by discovering available partitions mounted under configurable discovery directories.
 
 The basic design of the provisioner will have two separate handlers: one for PV deletion and
@@ -370,7 +351,7 @@ PV creation does not operate on any informer events.  Instead, it periodically m
 directories, and will create a new PV for each path in the directory that is not in the PV cache.  It
 sets the "pv.kubernetes.io/provisioned-by" annotation so that it can distinguish which PVs it created.
 
-For phase 1, the allowed discovery file types are directories and mount points.  The PV capacity
+The allowed discovery file types are directories and mount points.  The PV capacity
 will be the capacity of the underlying filesystem.  Therefore, PVs that are backed by shared
 directories will report its capacity as the entire filesystem, potentially causing overcommittment.
 Separate partitions are recommended for capacity isolation.
@@ -521,17 +502,6 @@ the volume and recreate a new PV.
 * Pod using a Local PV with non-existent path fails to mount
 * Pod that sets nodeName to a different node than the PV node affinity cannot schedule.
 
-
-### Phase 2: 1.9 alpha
-
-#### Smarter PV binding
-
-The issue of PV binding not taking into account pod scheduling requirements affects any
-type of volume that imposes topology constraints, such as local storage and zonal disks.
-
-Because this problem affects more than just local volumes, it will be treated as a
-separate feature with a separate proposal.  Once that feature is implemented, then the
-limitations outlined above will be fixed.
 
 #### Block devices and raw partitions
 
