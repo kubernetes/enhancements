@@ -138,14 +138,14 @@ As you can see below, we plan to document how Windows containers can be schedule
 
 If a deployment does not specify a nodeSelector like `"beta.kubernetes.io/os": windows`, it is possible the Pods can be scheduled on any host, Windows of Linux. This can be problematic since a Windows container can only land on Windows and a Linux container can only land on Linux. The best practice we will recommend is to use a nodeSelector. 
 
-However, we understand that in certain cases customers have a pre-existing large number of deployments for Linux containers. Since they will not want to change all deployments to add nodeSelectors, the alternative is to use Taints. Because the kubelet can set Taints during registration, it could easily be modified to automatically add a taint when running on Windows only (`“--register-with-taints=’os=Windows:NoSchedule’” `). By adding a taint to all Windows nodes, nothing will be scheduled on them (that includes existing Linux Pods). In order for a Windows Pod to be scheduled on a Windows node, it would need both the nodeSelector to choose Windows, and a toleration.
+However, we understand that in certain cases customers have a pre-existing large number of deployments for Linux containers. Since they will not want to change all deployments to add nodeSelectors, the alternative is to use Taints. Because the kubelet can set Taints during registration, it could easily be modified to automatically add a taint when running on Windows only (`“--register-with-taints=’os=Win1809:NoSchedule’” `). By adding a taint to all Windows nodes, nothing will be scheduled on them (that includes existing Linux Pods). In order for a Windows Pod to be scheduled on a Windows node, it would need both the nodeSelector to choose Windows, and a toleration.
 ```
 nodeSelector:
     "beta.kubernetes.io/os": windows
 tolerations:
     - key: "os"
       operator: "Equal"
-      Value: “Windows”
+      Value: “Win1809”
       effect: "NoSchedule"
 ```
 
@@ -153,7 +153,7 @@ tolerations:
 - All features and functionality under `What works today` is fully tested and vetted to be working by SIG-Windows
 - SIG-Windows has high confidence to the stability and reliability of Windows Server containers on Kubernetes
 - 100% green/passing conformance tests that are applicable to Windows (see the Testing Plan section for details on these tests)
-- Comprehensive documentation that includes but is not limited to the following sections
+- Comprehensive documentation that includes but is not limited to the following sections. Documentation will reside at https://kubernetes.io/docs
 1. Outline of Windows Server containers on Kubernetes
 2. Getting Started Guide, including Prerequisites
 3. How to deploy Windows nodes in Kubernetes
