@@ -129,7 +129,7 @@ spec:
       properties:
         credspec:
           description: GMSA Credential Spec
-          type: string
+          type: object
 ```
 
 A GMSACredentialSpec may be used by sidecar containers across different namespaces. Therefore the CRD needs to be cluster scoped.
