@@ -118,6 +118,7 @@ As of 29-11-2018 much of the work for enabling Windows nodes has already been co
       - Host mount projection
       - DefaultMode (due to UID/GID dependency)
       - readOnly root filesystem. Mapped volumes still support readOnly
+      - Block device mapping
     - Termination Message - these require single file mappings
 - CSI plugins, which require privileged containers
 - Host networking is not available in Windows
@@ -307,11 +308,13 @@ Huge pages are not implemented in the Windows container runtime, and are not ava
 
 Requests are subtracted from node available resources, so they can be used to avoid overprovisioning a node. However, they cannot be used to guarantee resources in an overprovisioned node. They should be applied to all containers as a best practice if the operator wants to avoid overprovisioning entirely.
 
-`V1.Container.SecurityContext.Capabilities` - not possible on Windows
-`V1.Container.SecurityContext.seLinuxOptions` - not possible on Windows
-
-
-`V1.Container.SecurityContext.readOnlyRootFilesystem` - not possible on Windows
+`V1.Container.SecurityContext.allowPrivilegeEscalation` - not possible on Windows, none of the capabilies are hooked up
+`V1.Container.SecurityContext.Capabilities` - POSIX capabilities are not implemented on Windows
+`V1.Container.SecurityContext.privileged` - Windows doesn't support privileged containers
+`V1.Container.SecurityContext.readOnlyRootFilesystem` - not possible on Windows, write access is required for registry & system processes to run inside the container
+`V1.Container.SecurityContext.runAsGroup` - not possible on Windows, no GID support
+`V1.Container.SecurityContext.runAsUser` - not possible on Windows, no UID support as int. This needs to change to IntStr, see [64009](https://github.com/kubernetes/kubernetes/pull/64009), to support Windows users as strings, or another field is needed.
+`V1.Container.SecurityContext.seLinuxOptions` - not possible on Windows, no SELinux
 
 `V1.Container.terminationMessagePath` - this has some limitations in that Windows doesn't support mapping single files. The default value is `/dev/termination-log`, which does work because it does not exist on Windows by default.
 
@@ -337,7 +340,12 @@ Requests are subtracted from node available resources, so they can be used to av
 
 `V1.Pod.shareProcessNamespace` - this is an alpha feature, and depends on Linux cgroups which are not implemented on Windows
 
+`V1.Pod.volumeDevices` - this is an alpha feature, and is not implemented on Windows. Windows cannot attach raw block devices to pods.
+
 `V1.Pod.Volumes` - EmptyDir, Secret, ConfigMap, HostPath - all work and have tests in TestGrid
+
+`V1.VolumeMount.mountPropagation` - only MountPropagationHostToContainer is available. Windows cannot create mounts within a pod or project them back to the node.
+
 
 References: 
 
