@@ -243,6 +243,7 @@ And these still need to be covered:
   - Test cases needed for `dnsPolicy`: Default, ClusterFirst, None
   - Test cases needed for `dnsConfig`
   - Test cases needed for `hostname`
+  - Test cases needed for `subdomain`
 
 - [ ] Windows doesn't have CGroups, but nodeReserve and kubeletReserve are [implemented](https://github.com/kubernetes/kubernetes/pull/69960)
 
@@ -258,6 +259,8 @@ These areas still need test cases written:
 - [ ] Windows uses username (string) or SID (binary) to define users, not UID/GID [64009](https://github.com/kubernetes/kubernetes/pull/64009)
 - [ ] Create a `NodePort` service, and verify it's accessible on both Linux & Windows node IPs on the correct port [tracked as #73327](https://github.com/kubernetes/kubernetes/issues/73327)
 - [ ] Verify `ExternalPort` works from Windows pods [tracked as #73328](https://github.com/kubernetes/kubernetes/issues/73328)
+- [ ] Verify `imagePullPolicy` behaviors
+
 
 
 ## Conformance Testing
@@ -297,14 +300,16 @@ The Windows container runtime also has a few important differences:
 
 Windows schedules CPU based on CPU count & percentage of cores. We need this represented because it can help optimize app performance. CPU count is immutable once set but you can change % of core allocations.
 
+Huge pages are not implemented in the Windows container runtime, and are not available. They require [asserting a user privilege](https://docs.microsoft.com/en-us/windows/desktop/Memory/large-page-support) that's not configurable for containers.
+
 `V1.Container.ResourceRequirements.requests.cpu`
 `V1.Container.ResourceRequirements.requests.memory`
 
 Requests are subtracted from node available resources, so they can be used to avoid overprovisioning a node. However, they cannot be used to guarantee resources in an overprovisioned node. They should be applied to all containers as a best practice if the operator wants to avoid overprovisioning entirely.
 
-
 `V1.Container.SecurityContext.Capabilities` - not possible on Windows
 `V1.Container.SecurityContext.seLinuxOptions` - not possible on Windows
+
 
 `V1.Container.SecurityContext.readOnlyRootFilesystem` - not possible on Windows
 
@@ -329,6 +334,8 @@ Requests are subtracted from node available resources, so they can be used to av
 
 `V1.podSecurityContext.runAsUser` provides a UID, not available on Windows
 `V1.podSecurityContext.supplementalGroups` provides GID, not available on Windows
+
+`V1.Pod.shareProcessNamespace` - this is an alpha feature, and depends on Linux cgroups which are not implemented on Windows
 
 `V1.Pod.Volumes` - EmptyDir, Secret, ConfigMap, HostPath - all work and have tests in TestGrid
 
