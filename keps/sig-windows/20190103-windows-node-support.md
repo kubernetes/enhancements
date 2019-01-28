@@ -187,12 +187,12 @@ tolerations:
 
 ### Test Dashboard
 
-All test cases will be built in kubernetes/test/e2e, scheduled through [prow](github.com/kubernetes/test-infra/blob/master/config/jobs/kubernetes-sigs/sig-windows/sig-windows-config.yaml), and published on the [TestGrid SIG-Windows dashboard](https://testgrid.k8s.io/sig-windows) daily. This will be the master list of what needs to pass to be declared stable and will include all tests tagged [SIG-Windows] along with the subset of conformance tests that can pass on Windows.
+All test cases will be built in kubernetes/test/e2e, scheduled through [prow](https://github.com/kubernetes/test-infra/blob/master/config/jobs/kubernetes-sigs/sig-windows/sig-windows-config.yaml), and published on the [TestGrid SIG-Windows dashboard](https://testgrid.k8s.io/sig-windows) daily. This will be the master list of what needs to pass to be declared stable and will include all tests tagged [SIG-Windows] along with the subset of conformance tests that can pass on Windows. The current dashboard will be renamed "SIG-Windows Release" for clarity [see #10989](https://github.com/kubernetes/test-infra/issues/10989)
 
 
-Additional dashboard pages will be added over time as we run the same test cases with additional CRI, CNI and cloud providers. They reflect work that may be stabilized in v1.15 or later and is not strictly required for v1.14.
+Additional dashboard pages will be added over time as we run the same test cases with additional CRI, CNI and cloud providers. They are running the same test cases, and are not required for v1.14 graduation to stable.
 
-- Windows Server 2019 on GCP - this is [in progress](https://k8s-testgrid.appspot.com/google-windows#windows-prototype), but not required for v1.14
+- Windows Server 2019 on GCP - this is [in progress](https://k8s-testgrid.appspot.com/google-windows#windows-prototype)
 - Windows Server 2019 with OVN+OVS & Dockershim
 - Windows Server 2019 with OVN+OVS & CRI-ContainerD
 - Windows Server 2019 with Azure-CNI & CRI-ContainerD
@@ -209,6 +209,7 @@ The testing for Windows nodes will include multiple approaches:
 All of the test cases will be maintained within the kubernetes/kubernetes repo. SIG-Windows specific tests for 2/3 will be in [test/e2e/windows](https://github.com/kubernetes/kubernetes/tree/master/test/e2e/windows)
 
 Additional Windows test setup scripts, container image source code, and documentation will be kept in the [kubernetes-sigs/windows-testing](https://github.com/kubernetes-sigs/windows-testing) repo. One example is that the prow jobs need a list of repos to use for the test containers, and that will be maintained here - see [windows-testing#1](https://github.com/kubernetes-sigs/windows-testing/issues/1).
+Building these containers for Windows requires a Windows build machine, which isn't part of the Kubernetes PR or official builds. If the SIG is given access to a suitable GCR.io account, images can be pushed there. Otherwise, we'll use continue pushing to Docker Hub.
 
 
 #### Adapting existing tests
@@ -280,13 +281,20 @@ At a high level, these OS concepts are different:
 - Identity - Linux uses userID (UID) and groupID (GID) which are represented as integer types. User and group names are not canonical - they are just an alias in /etc/groups or /etc/passwd back to UID+GID. Windows uses a larger binary security identifier (SID) which is stored in the Windows Security Access Manager (SAM) database. This database is not shared between the host and containers, or between containers.
 - File permissions - Windows uses an access control list based on SIDs, rather than a bitmask of permissions and UID+GID
 - File paths - convention on Windows is to use `\` instead of `/`. The Go IO libraries typically accept both and just make it work, but when you're setting a path or commandline that's interpreted inside a container, `\` may be needed.
+- Signals - Windows interactive apps handle termination differently, and can implement one or more of these:
+  - A UI thread will handle well-defined messages including [WM_CLOSE](https://docs.microsoft.com/en-us/windows/desktop/winmsg/wm-close)
+  - Console apps will handle `ctrl-c` or `ctrl-break` using a [Control Handler](https://docs.microsoft.com/en-us/windows/console/registering-a-control-handler-function)
+  - Services will register a [Service Control Handler](https://docs.microsoft.com/en-us/windows/desktop/Services/service-control-handler-function) function that can accept `SERVICE_CONTROL_STOP` control codes
+
+These conventions are the same:
+- Exit Codes mostly follow the same convention where 0 is success, nonzero is failure. The [specific error codes](https://docs.microsoft.com/en-us/windows/desktop/Debug/system-error-codes--0-499-) may differ. Exit codes passed from the Kubernetes components (kubelet, kube-proxy) will be unchanged.
 
 
 The Windows container runtime also has a few important differences:
 
 - Resource management and process isolation - Linux cgroups are used as a pod boundary for resource controls. Containers are created within that boundary for network, process and filesystem isolation. The cgroups APIs can be used to gather cpu/io/memory stats. Windows uses a Job object per container with a system namespace filter to contain all processes in a container and provide logical isolation from the host.
   - There is no way to run a Windows container without the namespace filtering in place. This means that system privileges cannot be asserted in the context of the host, and privileged containers are not available on Windows. Containers cannot assume an identity from the host because the SAM is separate.
-- Filesystems - Windows has a layered filesystem driver to mount container layers and create a copy filesystem based on NTFS. All file paths in the container are resolved only within the context of that container. T
+- Filesystems - Windows has a layered filesystem driver to mount container layers and create a copy filesystem based on NTFS. All file paths in the container are resolved only within the context of that container.
   - Volume mounts can only target a directory in the container, and not an individual file.
   - Volume mounts cannot project files or directories back to the host filesystem.  
   - Read-only filesystems are not supported because write access is always required for the Windows registry and SAM database. Read-only volumes are supported
@@ -299,7 +307,9 @@ The Windows container runtime also has a few important differences:
 `V1.Container.ResourceRequirements.limits.cpu`
 `V1.Container.ResourceRequirements.limits.memory`
 
-Windows schedules CPU based on CPU count & percentage of cores. We need this represented because it can help optimize app performance. CPU count is immutable once set but you can change % of core allocations.
+
+Windows doesn't use hard limits for CPU allocations. Instead, a share system is used. The existing fields based on millicores are scaled into relative shares that are followed by the Windows scheduler. [see: kuberuntime/helpers_windows.go](https://github.com/kubernetes/kubernetes/blob/master/pkg/kubelet/kuberuntime/helpers_windows.go), [see: resource controls in Microsoft docs](https://docs.microsoft.com/en-us/virtualization/windowscontainers/manage-containers/resource-controls)
+When using Hyper-V isolation (alpha), the hypervisor also needs a number of CPUs assigned. The millicores used in the limit is divided by 1000 to get the number of cores required. The CPU count is a hard limit.
 
 Huge pages are not implemented in the Windows container runtime, and are not available. They require [asserting a user privilege](https://docs.microsoft.com/en-us/windows/desktop/Memory/large-page-support) that's not configurable for containers.
 
@@ -313,7 +323,8 @@ Requests are subtracted from node available resources, so they can be used to av
 `V1.Container.SecurityContext.privileged` - Windows doesn't support privileged containers
 `V1.Container.SecurityContext.readOnlyRootFilesystem` - not possible on Windows, write access is required for registry & system processes to run inside the container
 `V1.Container.SecurityContext.runAsGroup` - not possible on Windows, no GID support
-`V1.Container.SecurityContext.runAsUser` - not possible on Windows, no UID support as int. This needs to change to IntStr, see [64009](https://github.com/kubernetes/kubernetes/pull/64009), to support Windows users as strings, or another field is needed.
+`V1.Container.SecurityContext.runAsUser` - not possible on Windows, no UID support as int. This needs to change to IntStr, see [64009](https://github.com/kubernetes/kubernetes/pull/64009), to support Windows users as strings, or another field is needed. Work remaining tracked in [#73387](https://github.com/kubernetes/kubernetes/issues/73387)
+
 `V1.Container.SecurityContext.seLinuxOptions` - not possible on Windows, no SELinux
 
 `V1.Container.terminationMessagePath` - this has some limitations in that Windows doesn't support mapping single files. The default value is `/dev/termination-log`, which does work because it does not exist on Windows by default.
@@ -343,6 +354,7 @@ Requests are subtracted from node available resources, so they can be used to av
 `V1.Pod.volumeDevices` - this is an alpha feature, and is not implemented on Windows. Windows cannot attach raw block devices to pods.
 
 `V1.Pod.Volumes` - EmptyDir, Secret, ConfigMap, HostPath - all work and have tests in TestGrid
+  - `V1.EmptyDirVolumeSource` - the Node default medium is disk on Windows. `memory` is not supported, as Windows does not have a built-in RAM disk.
 
 `V1.VolumeMount.mountPropagation` - only MountPropagationHostToContainer is available. Windows cannot create mounts within a pod or project them back to the node.
 
