@@ -21,8 +21,8 @@ approvers:
   - "@spiffxp"
 editor: TBD
 creation-date: 2018-11-29
-last-updated: 2019-01-25
-status: provisional
+last-updated: 2019-01-29
+status: implementable
 ---
 
 # Windows node support
@@ -38,8 +38,10 @@ status: provisional
     - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
     - [What works today](#what-works-today)
-    - [What will work eventually](#what-will-work-eventually)
-    - [What will never work (without underlying OS changes)](#what-will-never-work-without-underlying-os-changes)
+    - [What we need to test and verify if it works or not for GA (Some items will be documented as unsupported, others will be documented as supported, and some will be bugs that will be fixed for GA)](#what-we-need-to-test-and-verify-if-it-works-or-not-for-ga-some-items-will-be-documented-as-unsupported-others-will-be-documented-as-supported-and-some-will-be-bugs-that-will-be-fixed-for-ga)
+    - [Windows Node Roadmap (post-GA work)](#windows-node-roadmap-post-ga-work)
+    - [What will never work (Note that some features are plain unsupported while some will not work without underlying OS changes)](#what-will-never-work-note-that-some-features-are-plain-unsupported-while-some-will-not-work-without-underlying-os-changes)
+    - [Windows Container Compatibility](#windows-container-compatibility)
     - [Relevant resources/conversations](#relevant-resourcesconversations)
     - [Risks and Mitigations](#risks-and-mitigations)
         - [Ensuring OS-specific workloads land on appropriate container host](#ensuring-os-specific-workloads-land-on-appropriate-container-host)
@@ -47,6 +49,7 @@ status: provisional
 - [Implementation History](#implementation-history)
 - [Testing Plan](#testing-plan)
     - [Test Dashboard](#test-dashboard)
+    - [Test Environment](#test-environment)
     - [Test Approach](#test-approach)
         - [Adapting existing tests](#adapting-existing-tests)
         - [Substitute test cases](#substitute-test-cases)
@@ -61,7 +64,7 @@ status: provisional
 
 ## Summary
 
-There is strong interest in the community for adding support for workloads running on Microsoft Windows. This is non-trivial due to the significant differences in the implementation of Windows from the Linux-based OSes that have so far been supported by Kubernetes.
+There is strong interest in the community for adding support for workloads running on Microsoft Windows. This is non-trivial due to the significant differences in the implementation of Windows from the Linux-based OSes that have so far been supported by Kubernetes. This KEP will allow Windows nodes to be added to a Kubernetes cluster as compute nodes. With the introduction of Windows nodes, developers will be able to schedule Windows Server containers and run Windows-based applications on Kubernetes.
 
 
 ## Motivation
@@ -86,20 +89,34 @@ As of 29-11-2018 much of the work for enabling Windows nodes has already been co
 
 ### What works today
 - Windows-based containers can be created by kubelet, [provided the host OS version matches the container base image](https://docs.microsoft.com/en-us/virtualization/windowscontainers/deploy-containers/version-compatibility)
-    - Pod (single or multiple containers per Pod with process isolation)
-    - Services types NodePort, ClusterIP, LoadBalancer, and ExternalName
+    - Pod (single or multiple containers per Pod with process isolation). There are no notable differences in Pod status fields between Linux and Windows containers
+    - Services types NodePort, ClusterIP, LoadBalancer, and ExternalName. Service environment variables.
     - Workload controllers ReplicaSet, ReplicationController, Deployments, StatefulSets, DaemonSet, Job, CronJob
-    - ConfigMap, Secrets: as environment variables or volumes
+    - ConfigMap, Secrets: as environment variables or volumes (Volume subpath does not work)
     - Resource limits
     - Pod & container metrics
-    - Horizontal Pod Autoscaling
+    - KubeCtl Exec
+    - Readiness and Liveness probes
+    - Volumes can be shared between containers in a Pod
+    - EmptyDir
 - Windows Server 2019 is the only Windows operating system we will support at GA timeframe. Note above that the host operating system version and the container base image need to match. This is a Windows limitation we cannot overcome.
 - Customers can deploy a heterogeneous cluster, with Windows and Linux compute nodes side-by-side and schedule Docker containers on both operating systems. Of course, Windows Server containers have to be scheduled on Windows and Linux containers on Linux
 - Out-of-tree Pod networking with [Azure-CNI](https://github.com/Azure/azure-container-networking/blob/master/docs/cni.md), [OVN-Kubernetes](https://github.com/openvswitch/ovn-kubernetes), [two CNI meta-plugins](https://github.com/containernetworking/plugins), [Flannel (VXLAN and Host-Gateway)](https://github.com/coreos/flannel) 
 - Dockershim CRI
 - Many<sup id="a1">[1]</sup> of the e2e conformance tests when run with [alternate Windows-based images](https://hub.docker.com/r/e2eteam/) which are being moved to [kubernetes-sigs/windows-testing](https://www.github.com/kubernetes-sigs/windows-testing)
 - Persistent storage: FlexVolume with [SMB + iSCSI](https://github.com/Microsoft/K8s-Storage-Plugins/tree/master/flexvolume/windows), and in-tree AzureFile and AzureDisk providers
- 
+
+### What we need to test and verify if it works or not for GA (Some items will be documented as unsupported, others will be documented as supported, and some will be bugs that will be fixed for GA)
+- Headless services (https://github.com/kubernetes/kubernetes/issues/73416)
+- OOM reporting (https://github.com/kubernetes/kubernetes/issues/73417)
+- QoS (guaranteed, burstable, best effort) (https://github.com/kubernetes/kubernetes/issues/73418)
+- Pod DNS configuration like hostname, subdomain, hostAliases, dnsConfig, dnsPolicy (https://github.com/kubernetes/kubernetes/issues/73414)
+- Mounting local volumes on Windows does not check if the volume path exists (https://github.com/kubernetes/kubernetes/issues/73332)
+- Fix run_as_username for Windows (https://github.com/kubernetes/kubernetes/issues/73387)
+- Container Lifecycle Events postStart and preStop (https://github.com/kubernetes/kubernetes/issues/73451)
+- Additional tickets/issues are tracked under [Backlog (v.1.14)](https://github.com/orgs/kubernetes/projects/8#column-4277556)
+- Horizontal Pod Autoscaling using all metrics (https://github.com/kubernetes/kubernetes/issues/73489 and https://github.com/kubernetes/kubernetes/issues/72788)
+
 ### Windows Node Roadmap (post-GA work)
 - Group Managed Service Accounts, a way to assign an Active Directory identity to a Windows container, is forthcoming with KEP `Windows Group Managed Service Accounts for Container Identity`
 - `kubectl port-forward` hasn't been implemented due to lack of an `nsenter` equivalent to run a process inside a network namespace.
@@ -107,24 +124,48 @@ As of 29-11-2018 much of the work for enabling Windows nodes has already been co
 - Some kubeadm work was done in the past to add Windows nodes to Kubernetes, but that effort has been dormant since. We will need to revisit that work and complete it in the future.
 - Calico CNI for Pod networking
 - Hyper-V isolation (Currently this is limited to 1 container per Pod and is an alpha feature)
+  - This could enable backwards compatibility likely as a RuntimeClass. This would allow running a container host OS that is newer in version than the container OS (visit this link for additional compatibility definitions https://docs.microsoft.com/en-us/virtualization/windowscontainers/deploy-containers/version-compatibility)
 - It is unclear if the RuntimeClass proposal from sig-node will simplify scheduled Windows containers. We will work with sig-node on this.
+- Properly implement terminationGracePeriodSeconds for Windows (https://github.com/moby/moby/issues/25982 and https://github.com/kubernetes/kubernetes/issues/73434)
+- Single file mapping and Termination message will work when we introduce CRI containerD support in Windows
 
-### What will never work (Note that some features are plain unsupported while some will not work without underlying OS changes)
+### What will never work
+Note that some features are plain unsupported while some will not work without underlying OS changes
 - Certain Pod functionality
-    - Privileged containers and other Pod security context privilege and access control settings
+    - Privileged containers
+    - Pod security context privilege and access control settings. Any Linux Capabilities, SELinux, AppArmor, Seccomp, Capabilities (POSIX Capabilities), and others are not supported 
     - Reservations are not enforced by the OS, but overprovisioning could be blocked with `--enforce-node-allocatable=pods` (pending: tests needed)
     - Certain volume mappings
-      - Single file & subpath volume mounting
+      - Subpath volume mounting
+      - Subpath volume mounting for Secrets
       - Host mount projection
       - DefaultMode (due to UID/GID dependency)
       - readOnly root filesystem. Mapped volumes still support readOnly
       - Block device mapping
-    - Termination Message - these require single file mappings
+    - HugePages
+    - Memory as the storage medium
 - CSI plugins, which require privileged containers
-- NFS based storage/volume support
+- File system features like uui/guid, per-user Linux filesystem permissions, and read-only root filesystems
+- NFS based storage/volume support (https://github.com/kubernetes/kubernetes/issues/56188)
 - Host networking is not available in Windows
-- [Some parts of the V1 API](https://github.com/kubernetes/kubernetes/issues/70604)
+- ClusterFirstWithHostNet is not supported for DNS. Windows treats all names with a `.` as a FQDN and skips PQDN resolution
+- Not all features of shared namespaces are supported. This is clarified in the API section below
+- The existing node problem detector is Linux-only and requires privileged containers. In general, we don't expect these to be used on Windows because there's no privileged support
 - Overlay networking support in Windows Server 1803 is not fully functional using the `win-overlay` CNI plugin. Specifically service IPs do not work on Windows nodes. This is currently specific to `win-overlay`; other CNI plugins (OVS, AzureCNI) work. Since Windows Server 1803 is not supported for GA, this is mostly not applicable. We left it here since it impacts beta
+
+### Windows Container Compatibility
+As noted above, there are compatibility issues enforced by Microsoft where the host OS version must match the container base image OS. Changes to this compatibility policy must come from Microsoft. For GA, since we will only support Windows Server 2019 (aka 1809), both `container host OS` and `container OS` must be running the same version of Windows, 1809. 
+
+Having said that, a customer can deploy Kubernetes v1.14 with Windows 1809.
+- We will support Windows 1809 with at least 2 additional Kuberneres minor releases (v1.15 and v.1.16)
+- It is possible additional Windows releases (for example Windows 1903) will be added to the support matrix of future Kubernetes releases and they will also be supported for the next 2 versions of Kubernetes after their initial support is announced
+- SIG-Windows will announce support for new Windows operating systems at most twice per year, based on Microsoft's published release cycle
+
+Kubernetes minor releases are only supported for 9 months (https://kubernetes.io/docs/setup/version-skew-policy/), which is a smaller support interval than the support interval for Windows bi-annual releases (https://docs.microsoft.com/en-us/windows-server/get-started/windows-server-release-info) 
+
+We don't expect all Windows customers to update the operating system for their apps twice a year. Upgrading your applications is what will dictate and necessitate upgrading or introducting new nodes to the cluster. For the customers that chose to upgrade their operating system for containers running on Kubernetes, we will offer guidance and step-by-step instructions when we add support for a new operating system version. This guidance will include recommended upgrade procedures for upgrading user applications together with cluster nodes.
+
+Windows nodes will adhere to Kubernetes version-skew policy (node to control plane versioning) the same way as Linux nodes do today (https://kubernetes.io/docs/setup/version-skew-policy/)
 
 ### Relevant resources/conversations
 
@@ -146,14 +187,14 @@ As you can see below, we plan to document how Windows containers can be schedule
 
 If a deployment does not specify a nodeSelector like `"beta.kubernetes.io/os": windows`, it is possible the Pods can be scheduled on any host, Windows or Linux. This can be problematic since a Windows container can only run on Windows and a Linux container can only run on Linux. The best practice we will recommend is to use a nodeSelector. 
 
-However, we understand that in many cases customers have a pre-existing large number of deployments for Linux containers, as well as an ecosystem of off-the-shelf configurations, such as community Helm charts, and programmatic pod generation cases, such as with Operators. Customers will be hesitant to make the configuration change to add nodeSelectors. Our proposal as an alternative is to use Taints. Because the kubelet can set Taints during registration, it could easily be modified to automatically add a taint when running on Windows only (`“--register-with-taints=’os=Win1809:NoSchedule’” `). By adding a taint to all Windows nodes, nothing will be scheduled on them (that includes existing Linux Pods). In order for a Windows Pod to be scheduled on a Windows node, it would need both the nodeSelector to choose Windows, and a toleration.
+However, we understand that in many cases customers have a pre-existing large number of deployments for Linux containers, as well as an ecosystem of off-the-shelf configurations, such as community Helm charts, and programmatic pod generation cases, such as with Operators. Customers will be hesitant to make the configuration change to add nodeSelectors. Our proposal as an alternative is to use Taints. Because the kubelet can set Taints during registration, it could easily be modified to automatically add a taint when running on Windows only (`--register-with-taints='os=Win1809:NoSchedule'`). By adding a taint to all Windows nodes, nothing will be scheduled on them (that includes existing Linux Pods). In order for a Windows Pod to be scheduled on a Windows node, it would need both the nodeSelector to choose Windows, and a toleration.
 ```
 nodeSelector:
     "beta.kubernetes.io/os": windows
 tolerations:
     - key: "os"
       operator: "Equal"
-      Value: “Win1809”
+      value: "Win1809"
       effect: "NoSchedule"
 ```
 
@@ -162,19 +203,19 @@ tolerations:
 - SIG-Windows has high confidence to the stability and reliability of Windows Server containers on Kubernetes
 - 100% green/passing conformance tests that are applicable to Windows (see the Testing Plan section for details on these tests). These tests are adequate, non flaky, and continuously run. The test results are publicly accessible, enabled as part of the release-blocking suite
 - Compatibility will not be broken, either for existing users/clusters/features or for the new features going forward, and we will adhere to the deprecation policy (https://kubernetes.io/docs/reference/using-api/deprecation-policy/).
-- Comprehensive documentation that includes but is not limited to the following sections. Documentation will reside at https://kubernetes.io/docs and will adequately cover end user and admin documentation that describes what the user does and how to use it
+- Comprehensive documentation that includes but is not limited to the following sections. Documentation will reside at https://kubernetes.io/docs and will adequately cover end user and admin documentation that describes what the user does and how to use it. Not all of the documentation will be under the Getting Started Guide for Windows. Part of it will reside in its own sections (like the Group Managed Service Accounts) and part will be in the Contributor development guide (like the instructions on how to build your own source code)
 1. Outline of Windows Server containers on Kubernetes
 2. Getting Started Guide, including Prerequisites
-3. How to deploy Windows nodes in Kubernetes
+3. How to deploy Windows nodes in Kubernetes and where to find the proper binaries (Listed under the changelog for every release. For example https://github.com/kubernetes/kubernetes/blob/master/CHANGELOG-1.13.md#server-binaries)
 4. Overview of Networking on Windows
 5. Links to documentation on how to deploy and use CNI plugins for Windows (example for OVN - https://github.com/openvswitch/ovn-kubernetes/tree/master/contrib)
 6. Links to documentation on how to deploy Windows nodes for public cloud providers or other Kubernetes distributions (example for Rancher - https://rancher.com/docs//rancher/v2.x/en/cluster-provisioning/rke-clusters/windows-clusters/)
 7. How to schedule Windows Server containers, including examples
-8. Advanced: How to use metrics and the Horizontal Pod Autoscaler
-9. Advanced: How to use Group Managed Service Accounts
-10. Advanced: How to use Taints and Tolerations for a heterogeneous compute cluster (Windows + Linux)
-11. Advanced: How to use Hyper-V isolation (not a stable feature yet)
-12. Advanced: How to build Kubernetes for Windows from source
+8. How to use metrics and the Horizontal Pod Autoscaler
+9. How to use Group Managed Service Accounts
+10. How to use Taints and Tolerations for a heterogeneous compute cluster (Windows + Linux)
+11. How to use Hyper-V isolation (not a stable feature yet)
+12. How to build Kubernetes for Windows from source
 13. Supported functionality (with examples where appropriate)
 14. Known Limitations
 15. Unsupported functionality
@@ -191,7 +232,6 @@ tolerations:
 
 All test cases will be built in kubernetes/test/e2e, scheduled through [prow](https://github.com/kubernetes/test-infra/blob/master/config/jobs/kubernetes-sigs/sig-windows/sig-windows-config.yaml), and published on the [TestGrid SIG-Windows dashboard](https://testgrid.k8s.io/sig-windows) daily. This will be the master list of what needs to pass to be declared stable and will include all tests tagged [SIG-Windows] along with the subset of conformance tests that can pass on Windows. The current dashboard will be renamed "SIG-Windows Release" for clarity [see #10989](https://github.com/kubernetes/test-infra/issues/10989)
 
-
 Additional dashboard pages will be added over time as we run the same test cases with additional CRI, CNI and cloud providers. They are running the same test cases, and are not required for v1.14 graduation to stable.
 
 - Windows Server 2019 on GCP - this is [in progress](https://k8s-testgrid.appspot.com/google-windows#windows-prototype)
@@ -199,6 +239,19 @@ Additional dashboard pages will be added over time as we run the same test cases
 - Windows Server 2019 with OVN+OVS & CRI-ContainerD
 - Windows Server 2019 with Azure-CNI & CRI-ContainerD
 - Windows Server 2019 with Flannel & CRI-ContainerD
+
+### Test Environment
+
+The primary test environment deployed by [kubetest](https://github.com/kubernetes/test-infra/blob/72c720f29cb43d923ac76b10d25a62c29662683d/kubetest/azure.go#L180) for v1.14 is a group of VMs deployed on Azure:
+
+- 1 Master VM running Ubuntu, size "Standard_D2s_v3"
+  - Moby v3.0.1 (https://packages.microsoft.com/ubuntu/16.04/prod/pool/main/m/moby-engine/)
+  - Azure CNI
+- 3 Windows nodes running Windows Server 2019, size "Standard_D2s_v3"
+  - Docker EE-Basic v.18.09
+  - Azure CNI
+
+Kubetest uses [aks-engine](https://github.com/Azure/aks-engine) to create the deployment template for each of those VMs that's passed on to Azure for deployment. Once the test pass is complete, kubetest deletes the cluster. The Azure subscription used for this test pass is managed by Lachie Evenson & Patrick Lang. The credentials needed were given to the k8s-infra-oncall team.
 
 ### Test Approach
 
@@ -226,7 +279,7 @@ These tests are already running and listed on the dashboard above, with a few ex
 
 
 And also some cleanup to simplify the test exclusions:
- - [ ] Skip Windows unrelated tests - [Issue #69871](https://github.com/kubernetes/kubernetes/issues/69871), [PR#69872](https://github.com/kubernetes/kubernetes/pull/69872)
+ - [ ] Skip Windows unrelated tests (those are tagged as `LinuxOnly`) - (https://github.com/kubernetes/kubernetes/pull/73204)
 
 #### Substitute test cases
 
@@ -263,7 +316,7 @@ These areas still need test cases written:
 - [ ] Windows uses username (string) or SID (binary) to define users, not UID/GID [64009](https://github.com/kubernetes/kubernetes/pull/64009)
 - [ ] Create a `NodePort` service, and verify it's accessible on both Linux & Windows node IPs on the correct port [tracked as #73327](https://github.com/kubernetes/kubernetes/issues/73327)
 - [ ] Verify `ExternalPort` works from Windows pods [tracked as #73328](https://github.com/kubernetes/kubernetes/issues/73328)
-- [ ] Verify `imagePullPolicy` behaviors
+- [ ] Verify `imagePullPolicy` behaviors. The reason behind needing a Windows specific test is because we may need to publish Windows-specific images for this validation. The current tests are pulling Linux images. Long term we will work with the team to use a universal/heterogeneous image if possible.
 
 
 
@@ -306,68 +359,34 @@ The Windows container runtime also has a few important differences:
 
 
 ### V1.Container
-`V1.Container.ResourceRequirements.limits.cpu`
-`V1.Container.ResourceRequirements.limits.memory`
 
-
-Windows doesn't use hard limits for CPU allocations. Instead, a share system is used. The existing fields based on millicores are scaled into relative shares that are followed by the Windows scheduler. [see: kuberuntime/helpers_windows.go](https://github.com/kubernetes/kubernetes/blob/master/pkg/kubelet/kuberuntime/helpers_windows.go), [see: resource controls in Microsoft docs](https://docs.microsoft.com/en-us/virtualization/windowscontainers/manage-containers/resource-controls)
+- `V1.Container.ResourceRequirements.limits.cpu` and `V1.Container.ResourceRequirements.limits.memory` - Windows doesn't use hard limits for CPU allocations. Instead, a share system is used. The existing fields based on millicores are scaled into relative shares that are followed by the Windows scheduler. [see: kuberuntime/helpers_windows.go](https://github.com/kubernetes/kubernetes/blob/master/pkg/kubelet/kuberuntime/helpers_windows.go), [see: resource controls in Microsoft docs](https://docs.microsoft.com/en-us/virtualization/windowscontainers/manage-containers/resource-controls)
 When using Hyper-V isolation (alpha), the hypervisor also needs a number of CPUs assigned. The millicores used in the limit is divided by 1000 to get the number of cores required. The CPU count is a hard limit.
-
-Huge pages are not implemented in the Windows container runtime, and are not available. They require [asserting a user privilege](https://docs.microsoft.com/en-us/windows/desktop/Memory/large-page-support) that's not configurable for containers.
-
-`V1.Container.ResourceRequirements.requests.cpu`
-`V1.Container.ResourceRequirements.requests.memory`
-
-Requests are subtracted from node available resources, so they can be used to avoid overprovisioning a node. However, they cannot be used to guarantee resources in an overprovisioned node. They should be applied to all containers as a best practice if the operator wants to avoid overprovisioning entirely.
-
-`V1.Container.SecurityContext.allowPrivilegeEscalation` - not possible on Windows, none of the capabilies are hooked up
-`V1.Container.SecurityContext.Capabilities` - POSIX capabilities are not implemented on Windows
-`V1.Container.SecurityContext.privileged` - Windows doesn't support privileged containers
-`V1.Container.SecurityContext.readOnlyRootFilesystem` - not possible on Windows, write access is required for registry & system processes to run inside the container
-`V1.Container.SecurityContext.runAsGroup` - not possible on Windows, no GID support
-`V1.Container.SecurityContext.runAsUser` - not possible on Windows, no UID support as int. This needs to change to IntStr, see [64009](https://github.com/kubernetes/kubernetes/pull/64009), to support Windows users as strings, or another field is needed. Work remaining tracked in [#73387](https://github.com/kubernetes/kubernetes/issues/73387)
-
-`V1.Container.SecurityContext.seLinuxOptions` - not possible on Windows, no SELinux
-
-`V1.Container.terminationMessagePath` - this has some limitations in that Windows doesn't support mapping single files. The default value is `/dev/termination-log`, which does work because it does not exist on Windows by default.
-
-
-`V1.Container.volumeMounts`
-
-> TODO: check if mounting different volumes to containers in the same pod works. May need to go on test TODO list
+  - Huge pages are not implemented in the Windows container runtime, and are not available. They require [asserting a user privilege](https://docs.microsoft.com/en-us/windows/desktop/Memory/large-page-support) that's not configurable for containers.
+- `V1.Container.ResourceRequirements.requests.cpu` and `V1.Container.ResourceRequirements.requests.memory` - Requests are subtracted from node available resources, so they can be used to avoid overprovisioning a node. However, they cannot be used to guarantee resources in an overprovisioned node. They should be applied to all containers as a best practice if the operator wants to avoid overprovisioning entirely.
+- `V1.Container.SecurityContext.allowPrivilegeEscalation` - not possible on Windows, none of the capabilies are hooked up
+- `V1.Container.SecurityContext.Capabilities` - POSIX capabilities are not implemented on Windows
+- `V1.Container.SecurityContext.privileged` - Windows doesn't support privileged containers
+- `V1.Container.SecurityContext.readOnlyRootFilesystem` - not possible on Windows, write access is required for registry & system processes to run inside the container
+- `V1.Container.SecurityContext.runAsGroup` - not possible on Windows, no GID support
+- `V1.Container.SecurityContext.runAsUser` - not possible on Windows, no UID support as int. This needs to change to IntStr, see [64009](https://github.com/kubernetes/kubernetes/pull/64009), to support Windows users as strings, or another field is needed. Work remaining tracked in [#73387](https://github.com/kubernetes/kubernetes/issues/73387)
+- `V1.Container.SecurityContext.seLinuxOptions` - not possible on Windows, no SELinux
+- `V1.Container.terminationMessagePath` - this has some limitations in that Windows doesn't support mapping single files. The default value is `/dev/termination-log`, which does work because it does not exist on Windows by default.
 
 
 ### V1.Pod
 
-> TODO: double check other fields in [source](https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/api/core/v1/types.go#L2743)
-
-
-`V1.Pod.hostIPC`, `v1.pod.hostpid` - host namespace sharing is not possible on Windows
-
-`V1.Pod.hostNetwork` - There is no Windows OS support to share the host network
-
-`V1.Pod.dnsPolicy` - ClusterFirstWithHostNet - is not supported because Host Networking is not supported on Windows.
-
-`V1.podSecurityContext.runAsUser` provides a UID, not available on Windows
-`V1.podSecurityContext.supplementalGroups` provides GID, not available on Windows
-
-`V1.Pod.shareProcessNamespace` - this is an alpha feature, and depends on Linux cgroups which are not implemented on Windows
-
-`V1.Pod.volumeDevices` - this is an alpha feature, and is not implemented on Windows. Windows cannot attach raw block devices to pods.
-
-`V1.Pod.Volumes` - EmptyDir, Secret, ConfigMap, HostPath - all work and have tests in TestGrid
-  - `V1.EmptyDirVolumeSource` - the Node default medium is disk on Windows. `memory` is not supported, as Windows does not have a built-in RAM disk.
-
-`V1.VolumeMount.mountPropagation` - only MountPropagationHostToContainer is available. Windows cannot create mounts within a pod or project them back to the node.
-
-
-References: 
-
-- [FlexVolume does not work on Windows node](https://github.com/kubernetes/kubernetes/issues/56875)
-- [feature proposal add SMB(cifs) volume plugin](https://github.com/kubernetes/kubernetes/issues/56005)
-- [add NFS volume support for Windows](https://github.com/kubernetes/kubernetes/issues/56188)
-
-
+- `V1.Pod.hostIPC`, `v1.pod.hostpid` - host namespace sharing is not possible on Windows
+- `V1.Pod.hostNetwork` - There is no Windows OS support to share the host network
+- `V1.Pod.dnsPolicy` - ClusterFirstWithHostNet - is not supported because Host Networking is not supported on Windows.
+- `V1.podSecurityContext.runAsUser` provides a UID, not available on Windows
+- `V1.podSecurityContext.supplementalGroups` provides GID, not available on Windows
+- `V1.Pod.shareProcessNamespace` - this is an beta feature, and depends on Linux namespaces which are not implemented on Windows. Windows cannot share process namespaces or the container's root filesystem. Only the network can be shared.
+- `V1.Pod.terminationGracePeriodSeconds` - this is not fully implemented in Docker on Windows, see: [reference](https://github.com/moby/moby/issues/25982). The behavior today is that the ENTRYPOINT process is sent `CTRL_SHUTDOWN_EVENT`, then Windows waits 5 seconds by hardcoded default, and finally shuts down all processes using the normal Windows shutdown behavior. The 5 second default is actually in the Windows registry [inside the container](https://github.com/moby/moby/issues/25982#issuecomment-426441183), so it can be overridden when the container is built. Runtime configuration will be feasible in CRI-ContainerD but not for v1.14. Issue [#73434](https://github.com/kubernetes/kubernetes/issues/73434) is tracking this for a later release.
+- `V1.Pod.volumeDevices` - this is an beta feature, and is not implemented on Windows. Windows cannot attach raw block devices to pods.
+- `V1.Pod.volumes` - EmptyDir, Secret, ConfigMap, HostPath - all work and have tests in TestGrid
+  - `V1.emptyDirVolumeSource` - the Node default medium is disk on Windows. `memory` is not supported, as Windows does not have a built-in RAM disk.
+- `V1.VolumeMount.mountPropagation` - only MountPropagationHostToContainer is available. Windows cannot create mounts within a pod or project them back to the node.
 
 
 ## Other references
