@@ -88,7 +88,7 @@ As of 29-11-2018 much of the work for enabling Windows nodes has already been co
 - Windows-based containers can be created by kubelet, [provided the host OS version matches the container base image](https://docs.microsoft.com/en-us/virtualization/windowscontainers/deploy-containers/version-compatibility)
     - Pod (single or multiple containers per Pod with process isolation)
     - Services types NodePort, ClusterIP, LoadBalancer, and ExternalName
-    - Controllers ReplicaSet, ReplicationController, Deployments, StatefulSets, DaemonSet (with some exceptions noted below)
+    - Workload controllers ReplicaSet, ReplicationController, Deployments, StatefulSets, DaemonSet, Job, CronJob
     - ConfigMap, Secrets: as environment variables or volumes
     - Resource limits
     - Pod & container metrics
@@ -99,7 +99,6 @@ As of 29-11-2018 much of the work for enabling Windows nodes has already been co
 - Dockershim CRI
 - Many<sup id="a1">[1]</sup> of the e2e conformance tests when run with [alternate Windows-based images](https://hub.docker.com/r/e2eteam/) which are being moved to [kubernetes-sigs/windows-testing](https://www.github.com/kubernetes-sigs/windows-testing)
 - Persistent storage: FlexVolume with [SMB + iSCSI](https://github.com/Microsoft/K8s-Storage-Plugins/tree/master/flexvolume/windows), and in-tree AzureFile and AzureDisk providers
-- Windows containers can take advantage of DaemonSet, with the exception that privileged containers are not supported on Windows (more on that below)
  
 ### Windows Node Roadmap (post-GA work)
 - Group Managed Service Accounts, a way to assign an Active Directory identity to a Windows container, is forthcoming with KEP `Windows Group Managed Service Accounts for Container Identity`
