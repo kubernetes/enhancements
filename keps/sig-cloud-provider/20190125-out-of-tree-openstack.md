@@ -6,10 +6,11 @@ owning-sig: sig-cloud-provider
 participating-sigs:
   - sig-openstack
 reviewers:
-  - TBD
+  - @dims
 approvers:
-  - TBD
-editor: TBD
+  - @hogepodge
+  - @flaper87
+editor: @hogepodge
 creation-date: 2019-01-25
 last-updated: 2019-01-25
 status: provisional
@@ -39,17 +40,18 @@ status: provisional
 ## Release Signoff Checklist
 
 - [X] k/enhancements issue in release milestone and linked to KEP (https://github.com/kubernetes/enhancements/issues/669)
-- [ ] KEP approvers have set the KEP status to `implementable`
-- [ ] Design details are appropriately documentedbs
-- [ ] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [X] KEP approvers have set the KEP status to `implementable`
+- [X] Design details are appropriately documented
+- [X] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
 - [ ] Graduation criteria is in place
 - [ ] "Implementation History" section is up-to-date for milestone
 - [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 ## Summary
 
-Build support for the out-of-tree OpenStack cloud provider. This involves a well-tested version of the cloud-controller-manager 
-that has feature parity to the kube-controller-manager. 
+Build support for the out-of-tree OpenStack cloud provider. This involves a well-tested version of the cloud-controller-manager
+that has feature parity to the kube-controller-manager. This KEP captures mostly implemented work already completed in the
+[Cloud Provider OpenStack repository](https://github.com/kubernetes/cloud-provider-openstack)
 
 ## Motivation
 
@@ -67,33 +69,37 @@ This KEP is specifically tracking progress for the OpenStack cloud provider.
 
 ## Proposal
 
+The OpenStack Cloud Provider is implemented, tested and documented. The next major steps are to migrate existing users of the in-tree provider to the external provider.
+
 ### Implementation Details/Notes/Constraints [optional]
 
-TODO for SIG-OpenStack
+Main provider work is completed. Removing in-tree Cinder code will piggyback on and be tracked through the
+[In-tree Storage Migration to CSI Plugin Migration](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/csi-migration.md)
+work. New features will need to follow the community KEP process.
 
 ### Risks and Mitigations
 
-TODO for SIG-OpenStack
+None known
 
 ## Design Details
 
 ### Test Plan
 
-TODO for SIG-OpenStack
+Third-party testing of the OpenStack Cloud Provider is handled by Open Lab and reports to testgrid.
 
 ### Graduation Criteria
 
-TODO for SIG-OpenStack
+This feature is complete and ready for graduation.
 
 ### Upgrade / Downgrade Strategy
 
-TODO for SIG-OpenStack
+Projects like OpenStack Magnum that depend on the in-tree cloud provider can retain support for older versions of the provider that ships with Kubernetes up to 1.13. New deployment tooling must migrate to the external provider for future Kubernetes releases.
 
 ### Version Skew Strategy
 
-TODO for SIG-OpenStack
+As such Cloud Provider OpenStack has no version skew strategy for migrating from in-tree to out-of-tree providers. Future skew will use the facilities available to the Cloud Controller Manager interface.
 
 ## Implementation History
 
-TODO for SIG-OpenStack
+Implementation and testing completed in 2018.
 
