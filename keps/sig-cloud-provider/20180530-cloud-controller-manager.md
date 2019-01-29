@@ -1,18 +1,16 @@
 ---
 kep-number: 2
-title: Cloud Provider Controller Manager
+title: Cloud Controller Manager
 authors:
   - "@cheftako"
   - "@calebamiles"
   - "@hogepodge"
 owning-sig: sig-apimachinery
 participating-sigs:
-  - sig-apps
   - sig-aws
   - sig-azure
   - sig-cloud-provider
   - sig-gcp
-  - sig-network
   - sig-openstack
   - sig-storage
 reviewers:
@@ -28,11 +26,11 @@ replaces:
   - contributors/design-proposals/cloud-provider/cloud-provider-refactoring.md
 ---
 
-# Remove Cloud Provider Code From Kubernetes Core
+# Cloud Controller Manager
 
 ## Table of Contents
 
-- [Remove Cloud Provider Code From Kubernetes Core](#remove-cloud-provider-code-from-kubernetes-core)
+- [Cloud Controller Manager](#cloud-controller-manager)
    - [Table of Contents](#table-of-contents)
    - [Summary](#summary)
    - [Motivation](#motivation)
@@ -55,35 +53,32 @@ replaces:
          - [Process Goals](#process-goals)
    - [Implementation History](#implementation-history)
    - [Alternatives](#alternatives)
-   
+
 ## Terms
 
-- **CCM**: Cloud Controller Manager - The controller manager responsible for running cloud provider dependent logic, 
+- **CCM**: Cloud Controller Manager - The controller manager responsible for running cloud provider dependent logic,
 such as the service and route controllers.
-- **KCM**: Kubernetes Controller Manager - The controller manager responsible for running generic Kubernetes logic, 
+- **KCM**: Kubernetes Controller Manager - The controller manager responsible for running generic Kubernetes logic,
 such as job and node_lifecycle controllers.
-- **KAS**: Kubernetes API Server - The core api server responsible for handling all API requests for the Kubernetes 
+- **KAS**: Kubernetes API Server - The core api server responsible for handling all API requests for the Kubernetes
 control plane. This includes things like namespace, node, pod and job resources.
 - **K8s/K8s**: The core kubernetes github repository.
-- **K8s/cloud-provider**: Any or all of the repos for each cloud provider. Examples include [cloud-provider-gcp](https://github.com/kubernetes/cloud-provider-gcp), 
-[cloud-provider-aws](https://github.com/kubernetes/cloud-provider-aws) and [cloud-provider-azure](https://github.com/kubernetes/cloud-provider-azure). 
-We have created these repos for each of the in-tree cloud providers. This document assumes in various places that the 
-cloud providers will place the relevant code in these repos. Whether this is a long-term solution to which additional 
-cloud providers will be added, or an incremental step toward moving out of the Kubernetes org is out of scope of this 
-document, and merits discussion in a broader forum and input from SIG-Architecture and Steering Committee. 
-- **K8s SIGs/library**: Any SIG owned repository. 
+- **K8s/cloud-provider**: Any or all of the repos for each cloud provider. Examples include [cloud-provider-gcp](https://github.com/kubernetes/cloud-provider-gcp),
+[cloud-provider-aws](https://github.com/kubernetes/cloud-provider-aws) and [cloud-provider-azure](https://github.com/kubernetes/cloud-provider-azure).
+We have created these repos for each of the in-tree cloud providers. This document assumes in various places that the
+cloud providers will place the relevant code in these repos. Whether this is a long-term solution to which additional
+cloud providers will be added, or an incremental step toward moving out of the Kubernetes org is out of scope of this
+document, and merits discussion in a broader forum and input from SIG-Architecture and Steering Committee.
+- **K8s SIGs/library**: Any SIG owned repository.
 - **Staging**: Staging: Separate repositories which are currently visible under the K8s/K8s repo, which contain code
-considered to be safe to be vendored outside of the K8s/K8s repo and which should eventually be fully separated from 
-the K8s/K8s repo. Contents of Staging are prevented from depending on code in K8s/K8s which are not in Staging. 
+considered to be safe to be vendored outside of the K8s/K8s repo and which should eventually be fully separated from
+the K8s/K8s repo. Contents of Staging are prevented from depending on code in K8s/K8s which are not in Staging.
 Controlled by [publishing kubernetes-rules-configmap](https://github.com/kubernetes/publishing-bot/blob/master/configs/kubernetes-rules-configmap.yaml)
 
 ## Summary
 
-We want to remove any cloud provider specific logic from the kubernetes/kubernetes repo. We want to restructure the code
-to make it easy for any cloud provider to extend the kubernetes core in a consistent manner for their cloud. New cloud
-providers should look at the [Creating a Custom Cluster from Scratch](https://kubernetes.io/docs/getting-started-guides/scratch/#cloud-provider)
-and the [cloud provider interface](https://github.com/kubernetes/cloud-provider/blob/master/cloud.go#L43)
-which will need to be implemented.
+This KEP outlines the architectural changes required to run the Cloud Controller Manager. This is part of a long-running effort
+to develop cloud provider specific features outside of Kubernetes core (kuberetes/kubernetes repo).
 
 ## Motivation
 
@@ -99,19 +94,17 @@ changes in to an official build. The relevant dependencies require changes in th
 - [Kubelet](https://kubernetes.io/docs/reference/generated/kubelet/) - Track usages of [KubeletFlags.CloudProvider](https://github.com/kubernetes/kubernetes/blob/master/cmd/kubelet/app/options/options.go)
 - [How Cloud Provider Functionality is deployed to and enabled in the cluster](https://kubernetes.io/docs/setup/pick-right-solution/#hosted-solutions) - Track usage from [PROVIDER_UTILS](https://github.com/kubernetes/kubernetes/blob/master/cluster/kube-util.sh)
 
-For the cloud providers who are in repo, moving out would allow them to more quickly iterate on their solution and
-decouple cloud provider fixes from open source releases. Moving the cloud provider code out of the open source
+For the cloud providers who are in repo (a.k.a in-tree), moving out would allow them to more quickly iterate on their solution and
+decouple cloud provider fixes from open source releases. Moving the cloud provider code out of the in-tree
 processes means that these processes do not need to load/run unnecessary code for the environment they are in.
-We would like to abstract a core controller manager library so help standardize the behavior of the cloud
+We would like to abstract a core controller manager library to help standardize the behavior of the cloud
 controller managers produced by each cloud provider. We would like to minimize the number and scope of controllers
 running in the cloud controller manager so as to minimize the surface area for per cloud provider deviation.
 
 ### Goals
 
-- Get to a point where we do not load the cloud interface for any of kubernetes core processes.
-- Remove all cloud provider specific code from kubernetes/kubernetes.
 - Have a generic controller manager library available for use by the per cloud provider controller managers.
-- Move the cloud provider specific controller manager logic into repos appropriate for those cloud providers.
+- Provide a mechanism to run out-of-tree provider that has feature parity to existing in-tree providers.
 
 ### Intermediary Goals
 
@@ -122,7 +115,7 @@ At intermediary points we may just move some of the cloud specific controllers o
 
 ### Non-Goals
 
-Forcing cloud providers to use the generic cloud manager.
+- Removing and fully deprecating in-tree cloud provider code. That will be coverd in KEP-0013.
 
 ## Proposal
 
@@ -196,13 +189,13 @@ Among these controller loops, the following are cloud provider dependent.
  - [serviceController](https://github.com/kubernetes/kubernetes/tree/release-1.9/pkg/controller/service)
 
 The nodeIpamController uses the cloudprovider to handle cloud specific CIDR assignment of a node. Currently the only
-cloud provider using this functionality is GCE. So the current plan is to break this functionality out of the common 
+cloud provider using this functionality is GCE. So the current plan is to break this functionality out of the common
 version of the nodeIpamController. Most cloud providers can just run the default version of this controller. However any
-cloud provider which needs cloud specific version of this functionality and disable the default version running in the 
+cloud provider which needs cloud specific version of this functionality and disable the default version running in the
 KCM and run their own version in the CCM.
 
-The nodeLifecycleController uses the cloudprovider to check if a node has been deleted from/exists in the cloud. 
-If cloud provider reports a node as deleted, then this controller immediately deletes the node from kubernetes. 
+The nodeLifecycleController uses the cloudprovider to check if a node has been deleted from/exists in the cloud.
+If cloud provider reports a node as deleted, then this controller immediately deletes the node from kubernetes.
 This check removes the need to wait for a specific amount of time to conclude that an inactive node is actually dead.
 The current plan is to move this functionality into its own controller, allowing the nodeIpamController to remain in
 K8s/K8s and the Kube Controller Manager.
@@ -344,8 +337,7 @@ additional feature that include but are not limited to:
 
 This purpose of these requirements is to define a common structure for the
 cloud provider repositories owned by current and future cloud provider SIGs.
-In accordance with the 
-[WG-Cloud-Provider Charter](https://docs.google.com/document/d/1m4Kvnh_u_9cENEE9n1ifYowQEFSgiHnbw43urGJMB64/edit#)
+In accordance with the [WG-Cloud-Provider Charter](https://docs.google.com/document/d/1m4Kvnh_u_9cENEE9n1ifYowQEFSgiHnbw43urGJMB64/edit#)
 to "define a set of common expected behaviors across cloud providers", this
 proposal defines the location and structure of commonly expected code.
 
@@ -360,7 +352,7 @@ This document may be amended with additional locations that relate to enabling
 consistent upstream testing, independent storage drivers, and other code with
 common integration hooks may be added
 
-The development of the 
+The development of the
 [Cloud Controller Manager](https://github.com/kubernetes/kubernetes/tree/master/cmd/cloud-controller-manager)
 and
 [Cloud Provider Interface](https://github.com/kubernetes/kubernetes/blob/master/pkg/cloudprovider/cloud.go)
@@ -380,7 +372,7 @@ is, we will create a consistent experience for:
 
 ##### Repository Timeline
 
-To facilitate community development, providers named in the 
+To facilitate community development, providers named in the
 [Makes SIGs responsible for implementations of `CloudProvider`](https://github.com/kubernetes/community/pull/1862)
 patch can immediately migrate their external provider work into their named
 repositories.
@@ -412,8 +404,6 @@ As part of the graduation to `stable` or General Availability (GA), we have set
 both process and technical goals.
 
 #### Process Goals
-
-- 
 
 We propose the following repository structure for the cloud providers which
 currently live in `kubernetes/pkg/cloudprovider/providers/*`
