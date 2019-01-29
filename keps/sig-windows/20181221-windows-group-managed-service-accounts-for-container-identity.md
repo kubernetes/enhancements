@@ -22,7 +22,7 @@ approvers:
 editor: TBD
 creation-date: 2018-11-29
 last-updated: 2019-01-25
-status: provisional
+status: implementable
 ---
 
 # Windows Group Managed Service Accounts for Container Identity
