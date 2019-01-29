@@ -78,7 +78,7 @@ As a CNCF Platinum member, Microsoft Azure is dedicated in providing users with 
 
 ### Testgrid Integration
  Azure Cloud Controller provider is reporting conformance test results to TestGrid as per the [Reporting Conformance Test Results to Testgrid KEP](https://github.com/kubernetes/enhancements/blob/master/keps/sig-cloud-provider/0018-testgrid-conformance-e2e.md).
- See [report](https://k8s-testgrid.appspot.com/conformance-AZURE #NEED INFO) for more details. //TODO
+ See [report](https://testgrid.k8s.io/sig-azure-master#azure-master-conformance) for more details.
 
 ### CNCF Certified Kubernetes
  Microsoft Azure cloud provider is accepted as part of the [Certified Kubernetes Conformance Program](https://github.com/cncf/k8s-conformance).
