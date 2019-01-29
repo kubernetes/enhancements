@@ -30,6 +30,7 @@ status: implementable
     * [Runtime Handler](#runtime-handler)
   * [Versioning, Updates, and Rollouts](#versioning-updates-and-rollouts)
   * [Implementation Details](#implementation-details)
+    * [Monitoring](#monitoring)
   * [Risks and Mitigations](#risks-and-mitigations)
 * [Graduation Criteria](#graduation-criteria)
 * [Implementation History](#implementation-history)
@@ -272,6 +273,32 @@ an error.
 
 [runpodsandbox]: https://github.com/kubernetes/kubernetes/blob/b05a61e299777c2030fbcf27a396aff21b35f01b/pkg/kubelet/apis/cri/runtime/v1alpha2/api.proto#L344
 
+#### Monitoring
+
+The first round of monitoring implementation for `RuntimeClass` covers the
+following two areas and is finished (tracked in
+[#73058](https://github.com/kubernetes/kubernetes/issues/73058)):
+
+- `how robust is every runtime?` A new metric
+  [RunPodSandboxErrors](https://github.com/kubernetes/kubernetes/blob/596a48dd64bcaa01c1d2515dc79a558a4466d463/pkg/kubelet/metrics/metrics.go#L351)
+  is added to track the RunPodSandbox operation errors, broken down by
+  RuntimeClass.
+- `how expensive is every runtime in terms of latency?` A new metric
+  [RunPodSandboxDuration](https://github.com/kubernetes/kubernetes/blob/596a48dd64bcaa01c1d2515dc79a558a4466d463/pkg/kubelet/metrics/metrics.go#L341)
+  is added to track the duration of RunPodSandbox operations, broken down by
+  RuntimeClass.
+
+The following monitoring areas will be skipped for now, but may be considered
+after the RuntimeClass scheduling is implemented:
+
+- how many runtimes does a cluster support?
+- how many scheduling failures were caused by unsupported runtimes or insufficient
+  resources of a certain runtime?
+
+Currently, we assume that all the nodes in a cluster are homogeneous. After
+heterogeneous clusters are implemented, we may need to monitor how many runtimes
+a node supports.
+
 ### Risks and Mitigations
 
 **Scope creep.** RuntimeClass has a fairly broad charter, but it should not become a default
@@ -329,7 +356,7 @@ Beta:
   - [ ] [CRI validation tests][cri-validation]
   - [ ] RuntimeClasses are configured in the E2E environment with test coverage of a non-default
     RuntimeClass
-- [ ] Comprehensive coverage of RuntimeClass metrics. Details TBD. [#73058](http://issue.k8s.io/73058)
+- [x] Comprehensive coverage of RuntimeClass metrics. [#73058](http://issue.k8s.io/73058)
 - [ ] The update & upgrade story is revisited, and a longer-term approach is implemented as necessary.
 
 [cri-validation]: https://github.com/kubernetes-sigs/cri-tools/blob/master/docs/validation.md
