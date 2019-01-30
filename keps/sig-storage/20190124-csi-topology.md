@@ -1,5 +1,5 @@
 ---
-title: CSI Volume Topology Support in Kubernetes
+title: CSI Volume Topology
 authors:
   - "@verult"
 owning-sig: sig-storage
@@ -25,7 +25,7 @@ superseded-by:
 
 # Title
 
-CSI Volume Topology Support in Kubernetes
+CSI Volume Topology
 
 ## Table of Contents
 

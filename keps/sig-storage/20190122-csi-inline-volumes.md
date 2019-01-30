@@ -1,6 +1,5 @@
 ---
-kep-number: 35
-title: Inline CSI Volumes Support
+title: Inline CSI Volumes
 authors:
   - "@vladimirvivien"
 owning-sig: sig-storage
@@ -18,7 +17,7 @@ creation-date: 2019-01-22
 status: implementable
 ---
 
-# Inline CSI volumes support
+# Inline CSI volumes
 
 ## Table of Contents
 

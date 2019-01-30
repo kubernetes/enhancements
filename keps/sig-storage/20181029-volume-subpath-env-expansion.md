@@ -1,6 +1,5 @@
 ---
-kep-number: 31
-title: VolumeSubpathEnvExpansion
+title: Volume Subpath Env Expansion
 authors:
   - "@kevtaylor"
 owning-sig: sig-storage
@@ -25,9 +24,7 @@ superseded-by:
   - n/a
 ---
 
-# Title
-
-VolumeSubpathEnvExpansion API change
+# Volume Subpath Env Expansion
 
 ## Table of Contents
 
