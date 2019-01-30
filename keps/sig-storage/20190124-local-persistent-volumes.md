@@ -1,5 +1,4 @@
 ---
-kep-number: 34
 title: Local Persistent Volumes
 authors:
   - msau42
@@ -20,9 +19,9 @@ creation-date: 2019-01-24
 last-updated: 2019-01-24
 status: implementable
 see-also:
-  - [Volume topology proposal](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/volume-topology-scheduling.md)
+  - https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/volume-topology-scheduling.md
 replaces:
-  - [Original design proposal](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/local-storage-pv.md)
+  - https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/local-storage-pv.md
 superseded-by:
 ---
 
