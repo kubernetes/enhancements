@@ -12,7 +12,7 @@ approvers:
   - "@d-nishi"
 editor: TBD
 creation-date: 2018-11-27
-last-updated: 2018-11-27
+last-updated: 2019-01-27
 status: provisional
 ---
 
@@ -49,6 +49,7 @@ AWS ALB Ingress Controller aims to enhance Ingress resource on AWS by leveraging
 * Support leverage feature set of ALB via custom annotations
 * Support integration with WAF
 * Support integration with Cognito
+* Support multiple ACM certificates via annotation or IngressTLS.
 
 ### Non-Goals
 
@@ -74,7 +75,11 @@ Developers from different teams create Ingress resources in different namespaces
 ## Graduation Criteria
 
 * AWS ALB Ingress Controller is widely used as Ingress controller for kubernetes clusters on AWS
+* Comprehensive documentation about features and use cases.
+* E2E tests are implemented and integrated with Prow and Testgrid.
 
 ## Implementation History
 - [community#2841](https://github.com/kubernetes/community/pull/2841) Design proposal
 - [aws-alb-ingress-controller#738](https://github.com/kubernetes-sigs/aws-alb-ingress-controller/pull/738) First stable release: v1.0.0
+- 2018-12-03 Alpha release with kuberentes 1.13
+- 2018-03-25 Beta release with kubernetes 1.14 (scheduled)
