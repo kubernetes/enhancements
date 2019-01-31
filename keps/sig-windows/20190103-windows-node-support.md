@@ -21,7 +21,7 @@ approvers:
   - "@spiffxp"
 editor: TBD
 creation-date: 2018-11-29
-last-updated: 2019-01-29
+last-updated: 2019-01-31
 status: implementable
 ---
 
@@ -38,11 +38,13 @@ status: implementable
     - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
     - [What works today](#what-works-today)
-    - [What we need to test and verify if it works or not for GA (Some items will be documented as unsupported, others will be documented as supported, and some will be bugs that will be fixed for GA)](#what-we-need-to-test-and-verify-if-it-works-or-not-for-ga-some-items-will-be-documented-as-unsupported-others-will-be-documented-as-supported-and-some-will-be-bugs-that-will-be-fixed-for-ga)
+    - [What we need to test and verify if it works or not for GA](#what-we-need-to-test-and-verify-if-it-works-or-not-for-ga)
     - [Windows Node Roadmap (post-GA work)](#windows-node-roadmap-post-ga-work)
-    - [What will never work (Note that some features are plain unsupported while some will not work without underlying OS changes)](#what-will-never-work-note-that-some-features-are-plain-unsupported-while-some-will-not-work-without-underlying-os-changes)
+    - [What will never work](#what-will-never-work)
     - [Windows Container Compatibility](#windows-container-compatibility)
     - [Relevant resources/conversations](#relevant-resourcesconversations)
+    - [API Changes Proposed](#api-changes-proposed)
+        - [Add V1.SecurityContext.WindowsOptions.runAsUsername](#add-v1securitycontextwindowsoptionsrunasusername)
     - [Risks and Mitigations](#risks-and-mitigations)
         - [Ensuring OS-specific workloads land on appropriate container host](#ensuring-os-specific-workloads-land-on-appropriate-container-host)
 - [Graduation Criteria](#graduation-criteria)
@@ -59,6 +61,7 @@ status: implementable
     - [V1.Container](#v1container)
     - [V1.Pod](#v1pod)
 - [Other references](#other-references)
+- [Revision History](#revision-history)
 
 <!-- /TOC -->
 
@@ -106,7 +109,10 @@ As of 29-11-2018 much of the work for enabling Windows nodes has already been co
 - Many<sup id="a1">[1]</sup> of the e2e conformance tests when run with [alternate Windows-based images](https://hub.docker.com/r/e2eteam/) which are being moved to [kubernetes-sigs/windows-testing](https://www.github.com/kubernetes-sigs/windows-testing)
 - Persistent storage: FlexVolume with [SMB + iSCSI](https://github.com/Microsoft/K8s-Storage-Plugins/tree/master/flexvolume/windows), and in-tree AzureFile and AzureDisk providers
 
-### What we need to test and verify if it works or not for GA (Some items will be documented as unsupported, others will be documented as supported, and some will be bugs that will be fixed for GA)
+### What we need to test and verify if it works or not for GA
+
+(Some items will be documented as unsupported, others will be documented as supported, and some will be bugs that will be fixed for GA)
+
 - Headless services (https://github.com/kubernetes/kubernetes/issues/73416)
 - OOM reporting (https://github.com/kubernetes/kubernetes/issues/73417)
 - QoS (guaranteed, burstable, best effort) (https://github.com/kubernetes/kubernetes/issues/73418)
@@ -173,6 +179,19 @@ Windows nodes will adhere to Kubernetes version-skew policy (node to control pla
 - [cncf-k8s-conformance thread](https://lists.cncf.io/g/cncf-k8s-conformance/topic/windows_conformance_tests/27913232)
 - [kubernetes/enhancements proposal](https://github.com/kubernetes/features/issues/116)
 
+### API Changes Proposed
+
+#### Add V1.SecurityContext.WindowsOptions.runAsUsername
+
+Linux uses userID (UID) and groupID (GID) which are represented as integer types. User and group names are not canonical - they are just an alias in /etc/groups or /etc/passwd back to UID+GID. Windows uses a larger binary security identifier (SID) which is stored in the Windows Security Access Manager (SAM) database. This database is not shared between the host and containers, or between containers.
+
+The Windows OCI spec and CRI can handle a username instead of UID, which is interpreted inside the container to create a process as the intended user. [64009](https://github.com/kubernetes/kubernetes/pull/64009) added this to the CRI and initially proposed changing the existing `V1.Container.SecurityContext.runAsUser` field to IntStr in a later PR. More discussion on [#73387](https://github.com/kubernetes/kubernetes/issues/73387) showed that would not work, so we're proposing to add `SecurityContext.WindowsOptions.RunAsUserName` as an alternative to support Windows users as strings. As [GMSA](https://github.com/kubernetes/enhancements/blob/master/keps/sig-windows/20181221-windows-group-managed-service-accounts-for-container-identity.md) graduates to beta, the field `CredentialSpec` could be added to the same object as well.
+
+On Windows, if `runAsUser` is set today, the container will not start with an error "run as uid (%d) is not supported on Windows" [src](https://github.com/kubernetes/kubernetes/blob/a5ade16abd07b938978d4876e4909b956d25c223/pkg/kubelet/kuberuntime/kuberuntime_container_windows.go#L88). This behavior will not change. Setting `runAsGroup` or `supplementalGroups` without `runAsUser` is invalid so the existing check is sufficient on Windows.
+
+The new field `runAsUserName` would not be implemented on Linux. Although the field `run_as_username` exists in CRI and the OCI container spec for Linux, it was [intended to be deprecated](https://github.com/kubernetes/kubernetes/pull/36542#discussion_r87922802) from CRI. It was never hooked up in the Kubernetes API and dockershim. We propose leaving it in the state it's in today and not adding this as a new feature on Linux. We can add a check at the same time so that if it is set on a Linux container, an error "run as username is not supported on Linux".
+
+PodSecurityPolicy will not be implemented for this change since it's going to be deprecated in favor of another solution. See [discussion](https://github.com/kubernetes/kubernetes/issues/64801#issuecomment-395240440) here.
 
 ### Risks and Mitigations
 
@@ -333,7 +352,7 @@ There are no differences in how most of the Kubernetes APIs work. The subtleties
 
 At a high level, these OS concepts are different:
 
-- Identity - Linux uses userID (UID) and groupID (GID) which are represented as integer types. User and group names are not canonical - they are just an alias in /etc/groups or /etc/passwd back to UID+GID. Windows uses a larger binary security identifier (SID) which is stored in the Windows Security Access Manager (SAM) database. This database is not shared between the host and containers, or between containers.
+- Identity - See [Add V1.SecurityContext.WindowsOptions.runAsUsername](#add-v1securitycontextwindowsoptionsrunasusername) above
 - File permissions - Windows uses an access control list based on SIDs, rather than a bitmask of permissions and UID+GID
 - File paths - convention on Windows is to use `\` instead of `/`. The Go IO libraries typically accept both and just make it work, but when you're setting a path or commandline that's interpreted inside a container, `\` may be needed.
 - Signals - Windows interactive apps handle termination differently, and can implement one or more of these:
@@ -369,7 +388,7 @@ When using Hyper-V isolation (alpha), the hypervisor also needs a number of CPUs
 - `V1.Container.SecurityContext.privileged` - Windows doesn't support privileged containers
 - `V1.Container.SecurityContext.readOnlyRootFilesystem` - not possible on Windows, write access is required for registry & system processes to run inside the container
 - `V1.Container.SecurityContext.runAsGroup` - not possible on Windows, no GID support
-- `V1.Container.SecurityContext.runAsUser` - not possible on Windows, no UID support as int. This needs to change to IntStr, see [64009](https://github.com/kubernetes/kubernetes/pull/64009), to support Windows users as strings, or another field is needed. Work remaining tracked in [#73387](https://github.com/kubernetes/kubernetes/issues/73387)
+- `V1.Container.SecurityContext.runAsUser` - not possible on Windows, no UID support as int. See [Add V1.SecurityContext.WindowsOptions.runAsUsername](#add-v1securitycontextwindowsoptionsrunasusername) above for more details.
 - `V1.Container.SecurityContext.seLinuxOptions` - not possible on Windows, no SELinux
 - `V1.Container.terminationMessagePath` - this has some limitations in that Windows doesn't support mapping single files. The default value is `/dev/termination-log`, which does work because it does not exist on Windows by default.
 
@@ -392,3 +411,10 @@ When using Hyper-V isolation (alpha), the hypervisor also needs a number of CPUs
 ## Other references
 
 [Past release proposal for v1.12/13](https://docs.google.com/document/d/1YkLZIYYLMQhxdI2esN5PuTkhQHhO0joNvnbHpW68yg8/edit#)
+
+## Revision History
+
+Status         | Date       | Description
+---------------|------------|-------------
+implementable  | 01/29/2019 | Initial version approved as `implementable`
+implementable  | 01/31/2019 | Adds new section _[Add V1.SecurityContext.WindowsOptions.runAsUsername](#add-v1securitycontextwindowsoptionsrunasusername)_ based on investigation of [#73387](https://github.com/kubernetes/kubernetes/issues/73387)
