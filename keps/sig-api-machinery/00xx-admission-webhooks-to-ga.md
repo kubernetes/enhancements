@@ -29,7 +29,6 @@ see-also:
 * [Proposal](#proposal)
   * [Object selector](#object-selector)
   * [Scope](#scope)
-  * [http for localhost](#http-for-localhost)
   * [timeout configuration](#timeout-configuration)
   * [Port configuration](#port-configuration)
   * [Plumbing existing objects to delete admission](#plumbing-existing-objects-to-delete-admission)
@@ -58,13 +57,13 @@ Based on the user feedback, These are the planned changes to current feature to 
 
 * Object Selector: Add a general selector for objects that a webhook can target.
 * Scope: Define the scope of the targeted objects, e.g. cluster vs. namespaced.
-* http for localhost: relax https constraint for localhost.
 * timeout configuration: Add a configuration field to shorten the timeout of the webhook call.
 * port configuration: Add a configuration field to change the service port from the default 443.
 * AdmissionReview version selection: Add a API field to set the AdmissionReview versions a webhook can understand.
 * Pass existing objects to delete admission webhooks
 * re-run mutating plugins if any webhook changed object to fix the plugin ordering problem
 * pass OperationOption (such as CreateOption/DeleteOption) to the webhook
+* make `Webhook.SideEffects` field required in `v1` API (look at [dryRun KEP(https://github.com/kubernetes/enhancements/blob/master/keps/sig-api-machinery/0015-dry-run.md#admission-controllers)] for more information on this item)
 
 ### Non-Goals
 
@@ -135,14 +134,6 @@ type Rule struct {
 }
 ```
 
-### http for localhost
-
-Admission Webhook requires https for all connections. This is not necessary when the webhook in running on the same machine as apiserver (like a side-car or static pod). By relaxing this restriction, it would be possible to run side-cars or static pods on the same machine without cert management. The API change for this feature is documentation and relaxing validation.
-
-Note that there must be caution around any validation relaxing in regard to rolling-back the cluster. It must be documented to the end user not to use the feature until they are not going to roll-back the cluster to a version that does not have this feature. 
-
-If users wants to rollback safely to a version of API Server that does not support this feature, they need to delete or update these webhook configuration as the old cluster does not allow running insecure webhooks as sidecar. To delete these configurations in an old API server, one must first fix the http validation problem otherwise finalizers would not allow deletion the object.
-
 ### timeout configuration
 
 Admission Webhook has a default timeout of 30 seconds today, but long running webhooks would result in a poor performance. By adding a timeout field to the configuration, the webhook author can limit the running time of the webhook that either result in failing the API call earlier or ignore the webhook call based on the failure policy. This feature, however, would not let the timeout to be extended more than 30 seconds and the timeout would be defaulted to a shorter value (e.g. 10 seconds) for v1 API while stays 30 second for v1beta API to keep backward compatibility.
@@ -170,7 +161,7 @@ type ServiceReference struct {
 
      // If specified, the port on the service that hosting webhook.
      // Default to 443 for backward compatibility.
-     // Port should be a non-zero positive number.
+     // `Port` should be a valid port number (1-65535, inclusive).
      // +optional
      Port *int32 `json:"port,omitempty" protobuf:"varint,4,opt,name=port"`
 }
@@ -195,7 +186,10 @@ type AdmissionRequest struct {
 ### Mutating Plugin ordering
 
 Current ordering of the plugins (including webhooks) is fixed but may not work for all cases (e.g. [this issue](https://github.com/kubernetes/kubernetes/issues/64333)). A mutating webhook can add a completely new structure to the object (e.g. a `Container`) and other mutating plugins may have opinion on those new structures (e.g. setting the image pull policy on all containers). Although this problem can go deeper than two level (if the second mutating webhook added a new structure based on the new `Container`), with current set of standard mutating plugins and use-cases, it look like a rerun of mutating plugins is a sufficient fix. The proposal is to rerun all mutating plugins (including webhooks) if there is any change by mutating webhooks. The assumption for this process is all mutating plugins are idempotent and this must be clearly documented to users.
+
 Mutations from in-tree plugins will not trigger this process as they are well-ordered but if there is any mutation by webhooks, all of the plugins including in-tree ones will be run again.
+
+This feature would be would be opt in and defaulted to false for `v1beta1`.
 
 ### Passing {Operation}Option to Webhook
 
@@ -467,9 +461,8 @@ type Webhook struct {
      // Webhooks with side effects MUST implement a reconciliation system, since a request may be
      // rejected by a future step in the admission change and the side effects therefore need to be undone.
      // Requests with the dryRun attribute will be auto-rejected if they match a webhook with
-     // sideEffects == Unknown or Some. Defaults to Unknown.
-     // +optional
-     SideEffects *SideEffectClass `json:"sideEffects,omitempty" protobuf:"bytes,6,opt,name=sideEffects,casttype=SideEffectClass"`
+     // sideEffects == Unknown or Some.
+     SideEffects SideEffectClass `json:"sideEffects" protobuf:"bytes,6,opt,name=sideEffects,casttype=SideEffectClass"`
 
      // ObjectSelector decides whether to run the webhook on an object based
      // on whether the object.metadata.labels matches the selector. A namespace object must
@@ -548,9 +541,6 @@ type WebhookClientConfig struct {
      // webhook. Such installs are likely to be non-portable, i.e., not easy
      // to turn up in a new cluster.
      //
-     // The scheme must be "https" and the URL must begin with "https://"
-     // except for localhost in any form (e.g. localhost, 127.0.0.1, ::1).
-     //
      // A path is optional, and if present may be any string permissible in
      // a URL. You may use the path to pass an arbitrary string to the
      // webhook, for example, a cluster identifier.
@@ -592,7 +582,7 @@ type ServiceReference struct {
 
      // If specified, the port on the service that hosting webhook.
      // Default to 443 for backward compatibility.
-     // Port should be a non-zero positive number.
+     // `Port` should be a valid port number (1-65535, inclusive).
      // +optional
      Port *int32 `json:"port,omitempty" protobuf:"varint,4,opt,name=port"`
 }
@@ -610,7 +600,6 @@ All of the proposed changes will be added to `v1beta1` for backward compatibilit
 These set of new validation will be applied to both v1 and v1beta1:
 
 * `Scope` field can only have `Cluster` or `Namespaced` values or be empty.
-* `https` validation is relaxed for localhost (and similar urls like `127.0.0.1`)
 * `Timeout` field must be between 1 and 30 seconds.
 * `AdmissionReviewVersions` list must have at least one version supported by the API Server serving it. Note that for downgrade compatibility, Webhook authors should always support as many `AdmissionReview` versions as possible.
 
@@ -624,7 +613,6 @@ To mark these as complete, all of the above features need to be implemented. An 
 
 There are still open questions that need to be addressed before graduating this KEP:
 
-* Do we need to make the mutating plugin rerunning an opt-in feature default to false in beta and true in alpha?
 * ConnectOptions is sent as the main object to the webhooks today (and it is mutable). Should we change that and send parent object as the main object?
 
 ## Post-GA tasks
