@@ -130,27 +130,36 @@ type Webhook struct {
 ### Scope
 
 Current webhook Rules applies to objects of all scopes. That means a Rule can use wildcards 
-to target both namespaced and cluster scoped objects. The proposal is to add a scope field 
+to target both namespaced and cluster-scoped objects. The proposal is to add a scope field 
 to Admission Webhook configuration to limit webhook target on namespaced object or cluster 
-scoped objects. This enables webhook developers to target all namespace objects or all 
-cluster-scoped objects. The field will be added to both v1 and v1beta1. The field is optional 
-and empty value means no scope restriction.
+scoped objects. This enables webhook developers to target all namespaced objects or all 
+cluster-scoped objects. Namespace objects themselves are cluster-scoped.
+The field will be added to both v1 and v1beta1.
+The field is optional and defaults to "*", meaning no scope restriction.
 
 ```golang
 type ScopeType string
 
 const (
-     // ClusterScope means that scope is limited to cluster objects.
+     // ClusterScope means that scope is limited to cluster-scoped objects.
+     // Namespace objects are cluster-scoped.
      ClusterScope ScopeType = "Cluster"
      // NamespacedScope means that scope is limited to namespaced objects.
      NamespacedScope ScopeType = "Namespaced"
+     // AllScopes means that all scopes are included.
+     AllScopes ScopeType = "*"
 )
 
 type Rule struct {
     ...
 
-     // Scope specifies the scope of this rule. If unespecified, the scope is
-     // not limited.
+     // Scope specifies the scope of this rule.
+     // Valid values are "Cluster", "Namespaced", and "*"
+     // "Cluster" means that only cluster-scoped resources will match this rule.
+     // Namespace API objects are cluster-scoped.
+     // "Namespaced" means that only namespaced resources will match this rule.
+     // "*" means that there are no scope restrictions.
+     // Default is "*".
      //
      // +optional
      Scope ScopeType `json:"scope,omitempty" protobuf:"bytes,3,opt,name=scope"`
@@ -314,10 +323,13 @@ package v1
 type ScopeType string
 
 const (
-     // ClusterScope means that scope is limited to cluster objects.
+     // ClusterScope means that scope is limited to cluster-scoped objects.
+     // Namespace API objects are cluster-scoped.
      ClusterScope ScopeType = "Cluster"
      // NamespacedScope means that scope is limited to namespaced objects.
      NamespacedScope ScopeType = "Namespaced"
+     // AllScopes means that all scopes are included.
+     AllScopes ScopeType = "*"
 )
 
 // Rule is a tuple of APIGroups, APIVersion, and Resources.It is recommended
@@ -350,8 +362,13 @@ type Rule struct {
      // Required.
      Resources []string `json:"resources,omitempty" protobuf:"bytes,3,rep,name=resources"`
 
-     // Scope specifies the scope of this rule. If unspecified, the scope is
-     // not limited.
+     // Scope specifies the scope of this rule.
+     // Valid values are "Cluster", "Namespaced", and "*"
+     // "Cluster" means that only cluster-scoped resources will match this rule.
+     // Namespace API objects are cluster-scoped.
+     // "Namespaced" means that only namespaced resources will match this rule.
+     // "*" means that there are no scope restrictions.
+     // Default is "*".
      //
      // +optional
      Scope ScopeType `json:"scope,omitempty" protobuf:"bytes,3,opt,name=scope"`
@@ -658,7 +675,7 @@ and also to keep roundtrip-ability between `v1` and `v1beta1`. The only differen
 
 These set of new validation will be applied to both v1 and v1beta1:
 
-* `Scope` field can only have `Cluster` or `Namespaced` values or be empty.
+* `Scope` field can only have `Cluster`, `Namespaced`, or `*` values (if empty, the field defaults to `*`).
 * `Timeout` field must be between 1 and 30 seconds.
 * `AdmissionReviewVersions` list must have at least one version supported by the API Server serving it. Note that for downgrade compatibility, Webhook authors should always support as many `AdmissionReview` versions as possible.
 
