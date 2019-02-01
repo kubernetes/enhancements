@@ -118,30 +118,31 @@ In Phase 1, all cloud provider code in `k8s.io/kubernetes/pkg/cloudprovider/prov
 
 The biggest challenge of this phase is to remove dependences to k8s.io/kubernetes in all the providers. This is required to avoid circular dependencies within the various Kubernetes repos. All other repos "staged" (`client-go`, `apimachinery`, `api`, etc) in Kubernetes follow the same pattern. Below are the current list of packges in `k8s.io/kubernetes` that we need to remove. Note that _some_ dependencies may need to be duplicated for the duration of this migration as other critical components of Kubernetes may share the same code but removing the dependency may not be trivial. In general, we will avoid duplicating code and only use it as a last resort to resolve circular dependencies to `kubernetes/kubernetes`. Note that the list of dependencies below will change as this effort continues.
 
-| Dependency                        | Proposed Location               | Is duplicated? | Partial or Full? |
-|-----------------------------------|---------------------------------|----------------|------------------|
-| pkg/api/service                   | TBD                             | TBD            | TBD              |
-| pkg/api/v1/service                | TBD                             | TBD            | TBD              |
-| pkg/apis/core/v1/helper           | TBD                             | TBD            | TBD              |
-| pkg/controller                    | TBD                             | TBD            | TBD              |
-| pkg/credentialprovider/aws        | pkg/cloudprovider/providers/aws | No             | Full             |
-| pkg/master/ports                  | TBD                             | TBD            | TBD              |
-| pkg/cloudprovider                 | k8s.io/cloud-provider           | No             | Full             |
-| pkg/features                      | TBD                             | TBD            | TBD              |
-| pkg/kubelet/apis                  | TBD                             | TBD            | TBD              |
-| pkg/util/file                     | k8s.io/utils/file               | No             | Full             |
-| pkg/util/keymutex                 | k8s.io/utils/keymutex           | No             | Full             |
-| pkg/util/io                       | k8s.io/utils/io                 | No             | Full             |
-| pkg/util/mount                    | TBD                             | TBD            | TBD              |
-| pkg/util/net/sets                 | k8s.io/utils/netsets            | No             | Full             |
-| pkg/util/node                     | k8s.io/cloud-provider/node      | No             | Partial          |
-| pkg/util/nsenter                  | k8s.io/utils/nsenter            | No             | Full             |
-| pkg/util/parsers                  | TBD                             | TBD            | TBD              |
-| pkg/util/strings                  | k8s.io/utils/strings            | No             | Full             |
-| pkg/version                       | TBD                             | TBD            | TBD              |
-| pkg/volume                        | k8s.io/cloud-provider/volume    | Yes            | Partial          |
-| pkg/volume/util                   | k8s.io/cloud-provider/volume    | Yes            | Partial          |
-| pkg/volume/util/volumepathhandler | k8s.io/cloud-provider/volume    | Yes            | Partial          |
+| Dependency                        | Proposed Location                     | Is duplicated? | Partial or Full? |
+|-----------------------------------|---------------------------------------|----------------|------------------|
+| pkg/api/service                   | k8s.io/cloud-provider/service/helpers | No             | Partial          |
+| pkg/api/v1/service                | k8s.io/cloud-provider/service/helpers | No             | Partial          |
+| pkg/apis/core/v1/helper           | k8s.io/cloud-provider/node/helpers    | No             | Partial          |
+| pkg/controller                    | k8s.io/cloud-provider/node/helpers    | Yes            | Partial          |
+| pkg/credentialprovider/aws        | pkg/cloudprovider/providers/aws       | No             | Full             |
+| pkg/master/ports                  | pkg/cloudprovider/providers/gce       | Yes            | Partial          |
+| pkg/cloudprovider                 | k8s.io/cloud-provider                 | No             | Full             |
+| pkg/features                      | k8s.io/cloud-provider/features        | No             | Partial          |
+| pkg/kubelet/apis                  | k8s.io/api/core/v1                    | No             | Partial          |
+| pkg/util/file                     | k8s.io/utils/file                     | No             | Full             |
+| pkg/util/keymutex                 | k8s.io/utils/keymutex                 | No             | Full             |
+| pkg/util/io                       | k8s.io/utils/io                       | No             | Full             |
+| pkg/util/mount                    | k8s.io/utils/mount                    | No             | Partial          |
+| pkg/util/net/sets                 | k8s.io/utils/net                      | No             | Full             |
+| pkg/util/node                     | k8s.io/cloud-provider/node/helpers    | No             | Partial          |
+| pkg/util/nsenter                  | k8s.io/utils/nsenter                  | No             | Full             |
+| pkg/util/strings                  | k8s.io/utils/strings                  | No             | Full             |
+| pkg/version                       | k8s.io/client-go/pkg/version          | No             | Full             |
+| pkg/volume                        | k8s.io/cloud-provider/volume/helpers  | Yes            | Partial          |
+| pkg/volume/util                   | k8s.io/cloud-provider/volume/helpers  | Yes            | Partial          |
+| pkg/volume/util/volumepathhandler | k8s.io/cloud-provider/volume/helpers  | Yes            | Partial          |
+
+* NOTE: transient dependencies are not included in the table above but will be removed along with direct dependencies.
 
 #### Phase 2 - Building CCM from Provider Repos
 
