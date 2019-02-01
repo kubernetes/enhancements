@@ -292,7 +292,7 @@ type Rule struct {
      // Required.
      Resources []string `json:"resources,omitempty" protobuf:"bytes,3,rep,name=resources"`
 
-     // Scope specifies the scope of this rule. If unespecified, the scope is
+     // Scope specifies the scope of this rule. If unspecified, the scope is
      // not limited.
      //
      // +optional
@@ -605,7 +605,7 @@ These set of new validation will be applied to both v1 and v1beta1:
 
 ## Risks and Mitigations
 
-The features proposed in this KEP are low risk and mostly bug fixes or new features. There is a small risk to the existing features. Exceptions are re-running plugins that may affect some webhooks specially if they are not idempotent. An opt-in mechanism is being considered for this and listed as an open question in next section.
+The features proposed in this KEP are low risk and mostly bug fixes or new features that should have little to no risk on existing features.
 
 ## Graduation Criteria
 
