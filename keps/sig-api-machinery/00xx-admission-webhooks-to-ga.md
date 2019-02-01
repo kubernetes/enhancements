@@ -204,6 +204,8 @@ This feature will add a port field to service based webhooks and allows specifyi
 other than 443 for service based webhooks. Specifying port should already be available for 
 URL based webhooks.
 
+The following field will be added to the `ServiceReference` types used by admission webhooks, `APIService`, and `AuditSink` configurations:
+
 ```golang
 type ServiceReference struct {
     ...
