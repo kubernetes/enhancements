@@ -207,7 +207,7 @@ As of today, a Kubernetes cluster should be initialized by running `kubeadm init
 first node, afterward referred as the bootstrap control plane.
 
 in order to support the `kubeadm join --control-plane` workflow a new Kubernetes cluster is
-expected to satisfy only the following condition:
+expected to satisfy the following condition:
 
 - The cluster must have a stable `controlplaneAddress` endpoint (aka the IP/DNS of the
   external load balancer)
@@ -334,7 +334,7 @@ is to add all the addresses of the control-plane nodes at `kubeadm init` time, a
 distribute the _same_ apiserver serving certificate among all the control plane instances.
 
 This was the approach originally suggest in the kubeadm high availability guides, but this
-prevents to add _unkwnow_ control-plane instances to the cluster.
+prevents to add _unknown_ control-plane instances to the cluster.
 
 Instead, the recommended approach suggested by this proposal is to let kubeadm take care of
 the creation of _many_ API server serving certificates, one for on each node.
