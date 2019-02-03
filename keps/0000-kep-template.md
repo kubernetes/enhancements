@@ -83,6 +83,7 @@ A table of contents is helpful for quickly jumping to sections of a KEP and for 
 * [Implementation History](#implementation-history)
 * [Drawbacks [optional]](#drawbacks-optional)
 * [Alternatives [optional]](#alternatives-optional)
+* [Infrastructure Needed [optional]](#infrastructure-needed-optional)
 
 [Tools for generating]: https://github.com/ekalinin/github-markdown-toc
 
