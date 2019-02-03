@@ -45,11 +45,15 @@ see-also:
 
 ## Summary
 
-Admission webhook is a way to extend kubernetes by putting hook on object creation/modification/deletion. Admission webhooks can mutate or validate the object. This feature has been Beta since Kubernetes 1.9. This document outline required steps to graduate it to GA.
+Admission webhook is a way to extend kubernetes by putting hook on object creation/modification/deletion.
+Admission webhooks can mutate or validate the object. This feature has been Beta since Kubernetes 1.9.
+This document outline required steps to graduate it to GA.
 
 ## Motivation
 
-Admission webhooks are currently widely used for extending kubernetes but has been in beta for 3 releases. Current set of feature requests and bug reports on the feature shows it is close to be stable and motivation of this KEP is to address those feature requests and bug reports to move this feature toward general availability (GA).
+Admission webhooks are currently widely used for extending kubernetes but has been in beta for 3 releases.
+Current set of feature requests and bug reports on the feature shows it is close to be stable and motivation
+of this KEP is to address those feature requests and bug reports to move this feature toward general availability (GA).
 
 ### Goals
 
@@ -78,17 +82,31 @@ This section describes each of the goals in the [Goals](#goals) section in more 
 
 ### Object selector
 
-Currently Admission Webhook supports namespace selectors, but that may not be enough for some cases that admission webhook need to be skipped on some objects. For example if the Admission Webhook is running inside cluster and its rules includes wildcards which match required API objects for its own execution, it won't work. An object selector would be useful exclude those objects. 
+Currently Admission Webhook supports namespace selectors, but that may not be enough 
+for some cases that admission webhook need to be skipped on some objects. For example 
+if the Admission Webhook is running inside cluster and its rules includes wildcards 
+which match required API objects for its own execution, it won't work. An object selector 
+would be useful exclude those objects. 
 
-Also in case of an optional webhooks, an object selector gives the end user ability to include or exclude an object without having access to admission webhook configuration which is normally restricted to cluster admins.
+Also in case of an optional webhooks, an object selector gives the end user ability to 
+include or exclude an object without having access to admission webhook configuration 
+which is normally restricted to cluster admins.
 
 Note that namespaced objects must match both the object selector (if specified) and namespace selector to be sent to the Webhook.
 
-The labels for ObjectSelector will be extracted at the admission time before running any plugins and will be used for all Webhooks during the admission process.
+The labels for ObjectSelector will be extracted at the admission time before running 
+any plugins and will be used for all Webhooks during the admission process.
 
-The object selector applies to an Object's labels. For create and update, the object is the new object. For delete, it is existing object (passed as `oldObject` in the `admissionRequest`). For sub-resources, if the subresource accepts the whole object and apply the changes to object's labels (e.g. `pods/status`) the labels on the new object will be used otherwise (e.g. `pods/proxy`) the labels on the existing parent object will be used. If subresource does not have a parent object, the Webhook call may fail or skipped based on the failure policy.
+The object selector applies to an Object's labels. For create and update, the object 
+is the new object. For delete, it is existing object (passed as `oldObject` in the 
+`admissionRequest`). For sub-resources, if the subresource accepts the whole object 
+and apply the changes to object's labels (e.g. `pods/status`) the labels on the new 
+object will be used otherwise (e.g. `pods/proxy`) the labels on the existing parent 
+object will be used. If subresource does not have a parent object, the Webhook call 
+may fail or skipped based on the failure policy.
 
-When deleting a collection, the webhook will get a filtered list of objects if the ObjectSelector is applied. The webhook may be called multiple times with sub-lists.
+When deleting a collection, the webhook will get a filtered list of objects if the 
+ObjectSelector is applied. The webhook may be called multiple times with sub-lists.
 
 The proposed change is to add an ObjectSelector to the webhook API both in v1 and v1beta1:
 
@@ -111,7 +129,12 @@ type Webhook struct {
 
 ### Scope
 
-Current webhook Rules applies to objects of all scopes. That means a Rule can uses wildcards to target both namespaced and cluster scoped objects. The proposal is to add a scope field to Admission Webhook configuration to limit webhook target on namespaced object or cluster scoped objects. This enables webhook developers to target all namespace objects or all cluster-scoped objects. The field will be added to both v1 and v1beta1. The field is optional and empty value means no scope restriction.
+Current webhook Rules applies to objects of all scopes. That means a Rule can use wildcards 
+to target both namespaced and cluster scoped objects. The proposal is to add a scope field 
+to Admission Webhook configuration to limit webhook target on namespaced object or cluster 
+scoped objects. This enables webhook developers to target all namespace objects or all 
+cluster-scoped objects. The field will be added to both v1 and v1beta1. The field is optional 
+and empty value means no scope restriction.
 
 ```golang
 type ScopeType string
@@ -136,7 +159,13 @@ type Rule struct {
 
 ### timeout configuration
 
-Admission Webhook has a default timeout of 30 seconds today, but long running webhooks would result in a poor performance. By adding a timeout field to the configuration, the webhook author can limit the running time of the webhook that either result in failing the API call earlier or ignore the webhook call based on the failure policy. This feature, however, would not let the timeout to be extended more than 30 seconds and the timeout would be defaulted to a shorter value (e.g. 10 seconds) for v1 API while stays 30 second for v1beta API to keep backward compatibility.
+Admission Webhook has a default timeout of 30 seconds today, but long running webhooks 
+would result in a poor performance. By adding a timeout field to the configuration, 
+the webhook author can limit the running time of the webhook that either result in 
+failing the API call earlier or ignore the webhook call based on the failure policy. 
+This feature, however, would not let the timeout to be extended more than 30 seconds 
+and the timeout would be defaulted to a shorter value (e.g. 10 seconds) for v1 API while 
+stays 30 second for v1beta API to keep backward compatibility.
 
 ```golang
 type Webhook struct {
@@ -153,7 +182,11 @@ type Webhook struct {
 
 ### Port configuration
 
-Today Admission Webhook port is always expected to be 443 on service reference. But this limitation was arbitrary and there are cases that Admission Webhook cannot use this port. This feature will add a port field to service based webhooks and allows specifying a port other than 443 for service based webhooks. Specifying port should already be available for URL based webhooks.
+Today Admission Webhook port is always expected to be 443 on service reference. But this 
+limitation was arbitrary and there are cases that Admission Webhook cannot use this port. 
+This feature will add a port field to service based webhooks and allows specifying a port 
+other than 443 for service based webhooks. Specifying port should already be available for 
+URL based webhooks.
 
 ```golang
 type ServiceReference struct {
@@ -169,7 +202,11 @@ type ServiceReference struct {
 
 ### Plumbing existing objects to delete admission
 
-Current admission webhooks can hook on `DELETE` events but they won't get any object in `oldObject` or `Object` field of `AdmissionRequest`. The proposal is to send them existing object(s) as the `oldObject`. This is also helpful for applying `ObjectSelector` to these webhooks. Note that `oldObject` when deleting a collection will be a `v1.List` of existing objects. API server may call the webhook multiple times with sub-lists. 
+Current admission webhooks can hook on `DELETE` events but they won't get any object in 
+`oldObject` or `Object` field of `AdmissionRequest`. The proposal is to send them existing 
+object(s) as the `oldObject`. This is also helpful for applying `ObjectSelector` to these 
+webhooks. Note that `oldObject` when deleting a collection will be a `v1.List` of existing 
+objects. API server may call the webhook multiple times with sub-lists. 
 
 There is no API change for this feature, only documentation:
 
@@ -185,15 +222,27 @@ type AdmissionRequest struct {
 
 ### Mutating Plugin ordering
 
-Current ordering of the plugins (including webhooks) is fixed but may not work for all cases (e.g. [this issue](https://github.com/kubernetes/kubernetes/issues/64333)). A mutating webhook can add a completely new structure to the object (e.g. a `Container`) and other mutating plugins may have opinion on those new structures (e.g. setting the image pull policy on all containers). Although this problem can go deeper than two level (if the second mutating webhook added a new structure based on the new `Container`), with current set of standard mutating plugins and use-cases, it look like a rerun of mutating plugins is a sufficient fix. The proposal is to rerun all mutating plugins (including webhooks) if there is any change by mutating webhooks. The assumption for this process is all mutating plugins are idempotent and this must be clearly documented to users.
+Current ordering of the plugins (including webhooks) is fixed but may not work for all cases 
+(e.g. [this issue](https://github.com/kubernetes/kubernetes/issues/64333)). A mutating webhook 
+can add a completely new structure to the object (e.g. a `Container`) and other mutating plugins 
+may have opinion on those new structures (e.g. setting the image pull policy on all containers). 
+Although this problem can go deeper than two level (if the second mutating webhook added a new 
+structure based on the new `Container`), with current set of standard mutating plugins and use-cases, 
+it look like a rerun of mutating plugins is a sufficient fix. The proposal is to rerun all mutating 
+plugins (including webhooks) if there is any change by mutating webhooks. The assumption for this 
+process is all mutating plugins are idempotent and this must be clearly documented to users.
 
-Mutations from in-tree plugins will not trigger this process as they are well-ordered but if there is any mutation by webhooks, all of the plugins including in-tree ones will be run again.
+Mutations from in-tree plugins will not trigger this process as they are well-ordered but if 
+there is any mutation by webhooks, all of the plugins including in-tree ones will be run again.
 
 This feature would be would be opt in and defaulted to false for `v1beta1`.
 
 ### Passing {Operation}Option to Webhook
 
-Each of the operations webhook can have an `Option` structure (e.g. `DeleteOption` or `CreateOption`) passed by the user. It is useful for some webhooks to know what are those options user requested to better modify or validate object. The proposal is to add those Options as an `Options` field to the `AdmissionRequest` API object.
+Each of the operations webhook can have an `Option` structure (e.g. `DeleteOption` or `CreateOption`) 
+passed by the user. It is useful for some webhooks to know what are those options user requested to 
+better modify or validate object. The proposal is to add those Options as an `Options` field to the 
+`AdmissionRequest` API object.
 
 ```golang
 type AdmissionRequest struct {
@@ -207,9 +256,17 @@ type AdmissionRequest struct {
 
 ### AdmissionReview v1
 
-The payload API server sends to Admission webhooks is called AdmissionReview which is `v1beta1` today. The proposal is to promote the API to v1 with no change to the API object definition. Because of different versions of Admission Webhooks, there must be a way for the webhook developer to specify which apiVersion of `AdmissionReview` they support. The field must be an ordered list which reflects the webhooks preference of `AdmissionReview` apiVersions.
-A version list will be added to webhook configuration that would be defaulted to `['v1beta1']` in v1beta1 API and will be a required field in `v1`.
-A webhook must respond with the same apiVersion of the AdmissionReview it received. For example, a webhook that registers admissionReviewVersions:["v1","v1beta1"] must be prepared to receive and respond with those versions. 
+The payload API server sends to Admission webhooks is called AdmissionReview which is `v1beta1` today.
+The proposal is to promote the API to v1 with no change to the API object definition. Because of different 
+versions of Admission Webhooks, there must be a way for the webhook developer to specify which apiVersion 
+of `AdmissionReview` they support. The field must be an ordered list which reflects the webhooks preference 
+of `AdmissionReview` apiVersions.
+
+A version list will be added to webhook configuration that would be defaulted to `['v1beta1']` in v1beta1 API 
+and will be a required field in `v1`.
+
+A webhook must respond with the same apiVersion of the AdmissionReview it received. 
+For example, a webhook that registers admissionReviewVersions:["v1","v1beta1"] must be prepared to receive and respond with those versions. 
 
 V1 API looks like this:
 
@@ -248,7 +305,8 @@ type Webhook struct {
 
 ## V1 API
 
-The currently planned `v1` API is described in this section. Please note that as long as there are open questions in the [Graduation Criteria](#graduation-criteria) section, this is not final.
+The currently planned `v1` API is described in this section.
+Please note that as long as there are open questions in the [Graduation Criteria](#graduation-criteria) section, this is not final.
 
 ```golang
 package v1
@@ -590,7 +648,8 @@ type ServiceReference struct {
 
 ## V1beta1 changes
 
-All of the proposed changes will be added to `v1beta1` for backward compatibility and also to keep roundtrip-ability between `v1` and `v1beta1`. The only difference are:
+All of the proposed changes will be added to `v1beta1` for backward compatibility 
+and also to keep roundtrip-ability between `v1` and `v1beta1`. The only difference are:
 
 * Default Value for `timeoutSeconds` field will be 30 seconds for `v1beta1`.
 * `AdmissionReviewVersions` list is optional in v1beta1 and defaulted to `['v1beta1']` while required in `v1`.
@@ -609,7 +668,9 @@ The features proposed in this KEP are low risk and mostly bug fixes or new featu
 
 ## Graduation Criteria
 
-To mark these as complete, all of the above features need to be implemented. An [umbrella issue](https://github.com/kubernetes/kubernetes/issues/73185) is tracking all of these changes. Also there need to be sufficient tests for any of these new features and all existing features and documentation should be completed for all features.
+To mark these as complete, all of the above features need to be implemented. 
+An [umbrella issue](https://github.com/kubernetes/kubernetes/issues/73185) is tracking all of these changes.
+Also there need to be sufficient tests for any of these new features and all existing features and documentation should be completed for all features.
 
 There are still open questions that need to be addressed before graduating this KEP:
 
