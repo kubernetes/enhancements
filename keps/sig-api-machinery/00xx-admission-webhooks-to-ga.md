@@ -12,8 +12,8 @@ approvers:
   - "@deads2k"
 editor: TBD
 creation-date: 2019-01-27
-last-updated: 2019-01-29
-status: provisional
+last-updated: 2019-02-04
+status: implementable
 see-also:
   - [Admission Control Webhook Beta Design Doc](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/api-machinery/admission-control-webhooks.md)
 ---
@@ -744,6 +744,6 @@ These are related Post-GA tasks:
 ## Implementation History
 
 * First version of the KEP being merged: Jan 29th, 2019
-* The proposal being approved: TBD
-* Implementation start for all approved changes: Jan 29th, 2019
+* The set of features for GA approved, initial set of features marked implementable: Feb 4th, 2019
+* Implementation start for all approved changes: Feb 4th, 2019
 * Target Kubernetes version for GA: TBD
