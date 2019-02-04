@@ -35,6 +35,7 @@ see-also:
   * [Mutating Plugin ordering](#mutating-plugin-ordering)
   * [Passing {Operation}Option to Webhook](#passing-operationoption-to-webhook)
   * [AdmissionReview v1](#admissionreview-v1)
+  * [Convert to webhook-requested version](#convert-to-webhook-requested-version)
 * [V1 API](#v1-api)
 * [V1beta1 changes](#v1beta1-changes)
 * [Validations](#validations)
@@ -68,6 +69,7 @@ Based on the user feedback, These are the planned changes to current feature to 
 * re-run mutating plugins if any webhook changed object to fix the plugin ordering problem
 * pass OperationOption (such as CreateOption/DeleteOption) to the webhook
 * make `Webhook.SideEffects` field required in `v1` API (look at [dryRun KEP(https://github.com/kubernetes/enhancements/blob/master/keps/sig-api-machinery/0015-dry-run.md#admission-controllers)] for more information on this item)
+* convert incoming objects to the webhook-requested group/version
 
 ### Non-Goals
 
@@ -255,6 +257,8 @@ there is any mutation by webhooks, all of the plugins including in-tree ones wil
 
 This feature would be would be opt in and defaulted to false for `v1beta1`.
 
+The API representation and behavior for this feature is still under design and will be updated/approved here prior to implementation.
+
 ### Passing {Operation}Option to Webhook
 
 Each of the operations webhook can have an `Option` structure (e.g. `DeleteOption` or `CreateOption`) 
@@ -320,6 +324,29 @@ type Webhook struct {
      AdmissionReviewVersions []string `json:"admissionReviewVersions,omitempty" protobuf:"bytes,9,rep,name=admissionReviewVersions"`
 }
 ```
+
+### Convert to webhook-requested version
+
+Webhooks currently register to intercept particular API group/version/resource combinations.
+
+Some resources can be accessed via different versions, or even different API 
+groups (for example, `apps/v1` and `extensions/v1beta1` Deployments). To 
+intercept a resource effectively, all accessible groups/versions/resources
+must be registered for and understood by the webhook.
+
+When upgrading to a new version of the apiserver, existing resources can be 
+made available via new versions (or even new groups). Ensuring all webhooks
+(and registered webhook configurations) have been updated to be able to 
+handle the new versions/groups in every upgrade is possible, but easy to 
+forget to do, or to do incorrectly. In the case of webhooks not authored 
+by the cluster-administrator, obtaining updated admission plugins that 
+understand the new versions could require significant effort and time.
+
+Since the apiserver can convert between all of the versions by which a resource 
+is made available, this situation can be improved by having the apiserver 
+convert resources to the group/versions a webhook registered for.
+
+The API representation and behavior for this feature is still under design and will be updated/approved here prior to implementation.
 
 ## V1 API
 
@@ -698,9 +725,11 @@ To mark these as complete, all of the above features need to be implemented.
 An [umbrella issue](https://github.com/kubernetes/kubernetes/issues/73185) is tracking all of these changes.
 Also there need to be sufficient tests for any of these new features and all existing features and documentation should be completed for all features.
 
-There are still open questions that need to be addressed before graduating this KEP:
+There are still open questions that need to be addressed and updated in this KEP before graduation:
 
 * ConnectOptions is sent as the main object to the webhooks today (and it is mutable). Should we change that and send parent object as the main object?
+* Update with design and test details for "convert to webhook-requested version"
+* Update with design and test details for "mutating plugin ordering"
 
 ## Post-GA tasks
 
