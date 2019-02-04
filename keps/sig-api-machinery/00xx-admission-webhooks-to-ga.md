@@ -130,11 +130,18 @@ type Webhook struct {
 ### Scope
 
 Current webhook Rules applies to objects of all scopes. That means a Rule can use wildcards 
-to target both namespaced and cluster-scoped objects. The proposal is to add a scope field 
-to Admission Webhook configuration to limit webhook target on namespaced object or cluster 
-scoped objects. This enables webhook developers to target all namespaced objects or all 
-cluster-scoped objects. Namespace objects themselves are cluster-scoped.
+to target both namespaced and cluster-scoped objects. 
+
+An evaluation of the targeting capabilities required by in-tree admission plugins showed that
+some plugins (like NamespaceLifecycle and ResourceQuota) require the ability to intercept
+all namespaced resources. This selection is currently inexpressible for webhook admission.
+
+The proposal is to add a scope field to Admission Webhook configuration to limit webhook 
+targeting to namespaced or cluster-scoped objects. This enables webhook developers to 
+target only namespaced objects or cluster-scoped objects, just like in-tree admission plugins can.
+
 The field will be added to both v1 and v1beta1.
+
 The field is optional and defaults to "*", meaning no scope restriction.
 
 ```golang
