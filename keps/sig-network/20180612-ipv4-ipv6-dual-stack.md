@@ -159,7 +159,7 @@ Given the scope of this enhancement, it has been suggested that we break the imp
 - Single-family services
 - Multi-family services
 
-These phases to not take cloud-provder implementation into consideration.
+These phases do not take cloud-provder implementation into consideration.
 
 ### Awareness of Multiple IPs per Pod
 
