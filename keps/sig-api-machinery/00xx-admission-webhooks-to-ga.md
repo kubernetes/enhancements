@@ -12,8 +12,8 @@ approvers:
   - "@deads2k"
 editor: TBD
 creation-date: 2019-01-27
-last-updated: 2019-01-29
-status: provisional
+last-updated: 2019-02-04
+status: implementable
 see-also:
   - [Admission Control Webhook Beta Design Doc](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/api-machinery/admission-control-webhooks.md)
 ---
@@ -35,6 +35,7 @@ see-also:
   * [Mutating Plugin ordering](#mutating-plugin-ordering)
   * [Passing {Operation}Option to Webhook](#passing-operationoption-to-webhook)
   * [AdmissionReview v1](#admissionreview-v1)
+  * [Convert to webhook-requested version](#convert-to-webhook-requested-version)
 * [V1 API](#v1-api)
 * [V1beta1 changes](#v1beta1-changes)
 * [Validations](#validations)
@@ -68,6 +69,7 @@ Based on the user feedback, These are the planned changes to current feature to 
 * re-run mutating plugins if any webhook changed object to fix the plugin ordering problem
 * pass OperationOption (such as CreateOption/DeleteOption) to the webhook
 * make `Webhook.SideEffects` field required in `v1` API (look at [dryRun KEP(https://github.com/kubernetes/enhancements/blob/master/keps/sig-api-machinery/0015-dry-run.md#admission-controllers)] for more information on this item)
+* convert incoming objects to the webhook-requested group/version
 
 ### Non-Goals
 
@@ -130,27 +132,43 @@ type Webhook struct {
 ### Scope
 
 Current webhook Rules applies to objects of all scopes. That means a Rule can use wildcards 
-to target both namespaced and cluster scoped objects. The proposal is to add a scope field 
-to Admission Webhook configuration to limit webhook target on namespaced object or cluster 
-scoped objects. This enables webhook developers to target all namespace objects or all 
-cluster-scoped objects. The field will be added to both v1 and v1beta1. The field is optional 
-and empty value means no scope restriction.
+to target both namespaced and cluster-scoped objects. 
+
+An evaluation of the targeting capabilities required by in-tree admission plugins showed that
+some plugins (like NamespaceLifecycle and ResourceQuota) require the ability to intercept
+all namespaced resources. This selection is currently inexpressible for webhook admission.
+
+The proposal is to add a scope field to Admission Webhook configuration to limit webhook 
+targeting to namespaced or cluster-scoped objects. This enables webhook developers to 
+target only namespaced objects or cluster-scoped objects, just like in-tree admission plugins can.
+
+The field will be added to both v1 and v1beta1.
+
+The field is optional and defaults to "*", meaning no scope restriction.
 
 ```golang
 type ScopeType string
 
 const (
-     // ClusterScope means that scope is limited to cluster objects.
+     // ClusterScope means that scope is limited to cluster-scoped objects.
+     // Namespace objects are cluster-scoped.
      ClusterScope ScopeType = "Cluster"
      // NamespacedScope means that scope is limited to namespaced objects.
      NamespacedScope ScopeType = "Namespaced"
+     // AllScopes means that all scopes are included.
+     AllScopes ScopeType = "*"
 )
 
 type Rule struct {
     ...
 
-     // Scope specifies the scope of this rule. If unespecified, the scope is
-     // not limited.
+     // Scope specifies the scope of this rule.
+     // Valid values are "Cluster", "Namespaced", and "*"
+     // "Cluster" means that only cluster-scoped resources will match this rule.
+     // Namespace API objects are cluster-scoped.
+     // "Namespaced" means that only namespaced resources will match this rule.
+     // "*" means that there are no scope restrictions.
+     // Default is "*".
      //
      // +optional
      Scope ScopeType `json:"scope,omitempty" protobuf:"bytes,3,opt,name=scope"`
@@ -187,6 +205,8 @@ limitation was arbitrary and there are cases that Admission Webhook cannot use t
 This feature will add a port field to service based webhooks and allows specifying a port 
 other than 443 for service based webhooks. Specifying port should already be available for 
 URL based webhooks.
+
+The following field will be added to the `ServiceReference` types used by admission webhooks, `APIService`, and `AuditSink` configurations:
 
 ```golang
 type ServiceReference struct {
@@ -236,6 +256,8 @@ Mutations from in-tree plugins will not trigger this process as they are well-or
 there is any mutation by webhooks, all of the plugins including in-tree ones will be run again.
 
 This feature would be would be opt in and defaulted to false for `v1beta1`.
+
+The API representation and behavior for this feature is still under design and will be updated/approved here prior to implementation.
 
 ### Passing {Operation}Option to Webhook
 
@@ -303,6 +325,29 @@ type Webhook struct {
 }
 ```
 
+### Convert to webhook-requested version
+
+Webhooks currently register to intercept particular API group/version/resource combinations.
+
+Some resources can be accessed via different versions, or even different API 
+groups (for example, `apps/v1` and `extensions/v1beta1` Deployments). To 
+intercept a resource effectively, all accessible groups/versions/resources
+must be registered for and understood by the webhook.
+
+When upgrading to a new version of the apiserver, existing resources can be 
+made available via new versions (or even new groups). Ensuring all webhooks
+(and registered webhook configurations) have been updated to be able to 
+handle the new versions/groups in every upgrade is possible, but easy to 
+forget to do, or to do incorrectly. In the case of webhooks not authored 
+by the cluster-administrator, obtaining updated admission plugins that 
+understand the new versions could require significant effort and time.
+
+Since the apiserver can convert between all of the versions by which a resource 
+is made available, this situation can be improved by having the apiserver 
+convert resources to the group/versions a webhook registered for.
+
+The API representation and behavior for this feature is still under design and will be updated/approved here prior to implementation.
+
 ## V1 API
 
 The currently planned `v1` API is described in this section.
@@ -314,10 +359,13 @@ package v1
 type ScopeType string
 
 const (
-     // ClusterScope means that scope is limited to cluster objects.
+     // ClusterScope means that scope is limited to cluster-scoped objects.
+     // Namespace API objects are cluster-scoped.
      ClusterScope ScopeType = "Cluster"
      // NamespacedScope means that scope is limited to namespaced objects.
      NamespacedScope ScopeType = "Namespaced"
+     // AllScopes means that all scopes are included.
+     AllScopes ScopeType = "*"
 )
 
 // Rule is a tuple of APIGroups, APIVersion, and Resources.It is recommended
@@ -350,8 +398,13 @@ type Rule struct {
      // Required.
      Resources []string `json:"resources,omitempty" protobuf:"bytes,3,rep,name=resources"`
 
-     // Scope specifies the scope of this rule. If unspecified, the scope is
-     // not limited.
+     // Scope specifies the scope of this rule.
+     // Valid values are "Cluster", "Namespaced", and "*"
+     // "Cluster" means that only cluster-scoped resources will match this rule.
+     // Namespace API objects are cluster-scoped.
+     // "Namespaced" means that only namespaced resources will match this rule.
+     // "*" means that there are no scope restrictions.
+     // Default is "*".
      //
      // +optional
      Scope ScopeType `json:"scope,omitempty" protobuf:"bytes,3,opt,name=scope"`
@@ -658,7 +711,7 @@ and also to keep roundtrip-ability between `v1` and `v1beta1`. The only differen
 
 These set of new validation will be applied to both v1 and v1beta1:
 
-* `Scope` field can only have `Cluster` or `Namespaced` values or be empty.
+* `Scope` field can only have `Cluster`, `Namespaced`, or `*` values (if empty, the field defaults to `*`).
 * `Timeout` field must be between 1 and 30 seconds.
 * `AdmissionReviewVersions` list must have at least one version supported by the API Server serving it. Note that for downgrade compatibility, Webhook authors should always support as many `AdmissionReview` versions as possible.
 
@@ -672,9 +725,11 @@ To mark these as complete, all of the above features need to be implemented.
 An [umbrella issue](https://github.com/kubernetes/kubernetes/issues/73185) is tracking all of these changes.
 Also there need to be sufficient tests for any of these new features and all existing features and documentation should be completed for all features.
 
-There are still open questions that need to be addressed before graduating this KEP:
+There are still open questions that need to be addressed and updated in this KEP before graduation:
 
 * ConnectOptions is sent as the main object to the webhooks today (and it is mutable). Should we change that and send parent object as the main object?
+* Update with design and test details for "convert to webhook-requested version"
+* Update with design and test details for "mutating plugin ordering"
 
 ## Post-GA tasks
 
@@ -689,6 +744,6 @@ These are related Post-GA tasks:
 ## Implementation History
 
 * First version of the KEP being merged: Jan 29th, 2019
-* The proposal being approved: TBD
-* Implementation start for all approved changes: Jan 29th, 2019
+* The set of features for GA approved, initial set of features marked implementable: Feb 4th, 2019
+* Implementation start for all approved changes: Feb 4th, 2019
 * Target Kubernetes version for GA: TBD
