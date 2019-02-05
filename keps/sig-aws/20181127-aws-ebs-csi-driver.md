@@ -98,7 +98,7 @@ This assumes user is already using some version of the driver.
 ### Upgrade
 This assumes user is already using Kubernetes 1.13 cluster. Otherwise, the existing cluster needs to be upgraded to 1.13+ in order to install the driver. Formal cluster upgrade process should be followed for upgrading cluster.
 
-Driver upgrade should be performed one version at a time. This means, if the current driver verison is 0.1, it can be upgraded to version 0.2 by following the upgrade process. And if the driver version that is required to upgrade to is 0.3, it should be upgraded to 0.2 first.
+Driver upgrade should be performed one version at a time. This means, if the current driver version is 0.1, it can be upgraded to version 0.2 by following the upgrade process. And if the driver version that is required to upgrade to is 0.3, it should be upgraded to 0.2 first.
 
 To upgrade the driver, perform following steps:
 1. Delete the old driver controller service and node service along with other resources including cluster roles, cluster role bindings and service accounts.

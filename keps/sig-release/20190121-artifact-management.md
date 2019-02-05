@@ -111,7 +111,7 @@ well as promoting them.
 
 ## Graduation Criteria
 
-This KEP will graduate when the process is implemented and has been sucessfully used to
+This KEP will graduate when the process is implemented and has been successfully used to
 manage the images for a Kubernetes release.
 
 ## Implementation History

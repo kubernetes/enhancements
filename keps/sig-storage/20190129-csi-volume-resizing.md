@@ -138,7 +138,7 @@ Before this feature goes GA - we need to handle recovering https://github.com/ku
 
 * Unit tests for external resize controller.
 * Add e2e tests in Kubernetes that use csi-mock driver for volume resizing.
-  - (postive) Give a plugin that supports both control plane and node size resize, CSI volume should be resizable and able to complete successfully.
+  - (positive) Give a plugin that supports both control plane and node size resize, CSI volume should be resizable and able to complete successfully.
   - (positive) Given a plugin that only requires control plane resize, CSI volume should be resizable and able to complete successfully.
   - (positive) Given a plugin that only requires node side resize, CSI volume should be resizable and able to complete successfully.
   - (positive) Given a plugin that support online resizing, CSI volume should be resizable and online resize operation be able to complete successfully. 

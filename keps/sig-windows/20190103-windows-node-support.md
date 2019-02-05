@@ -163,7 +163,7 @@ Having said that, a customer can deploy Kubernetes v1.14 with Windows 1809.
 
 Kubernetes minor releases are only supported for 9 months (https://kubernetes.io/docs/setup/version-skew-policy/), which is a smaller support interval than the support interval for Windows bi-annual releases (https://docs.microsoft.com/en-us/windows-server/get-started/windows-server-release-info) 
 
-We don't expect all Windows customers to update the operating system for their apps twice a year. Upgrading your applications is what will dictate and necessitate upgrading or introducting new nodes to the cluster. For the customers that chose to upgrade their operating system for containers running on Kubernetes, we will offer guidance and step-by-step instructions when we add support for a new operating system version. This guidance will include recommended upgrade procedures for upgrading user applications together with cluster nodes.
+We don't expect all Windows customers to update the operating system for their apps twice a year. Upgrading your applications is what will dictate and necessitate upgrading or introducing new nodes to the cluster. For the customers that chose to upgrade their operating system for containers running on Kubernetes, we will offer guidance and step-by-step instructions when we add support for a new operating system version. This guidance will include recommended upgrade procedures for upgrading user applications together with cluster nodes.
 
 Windows nodes will adhere to Kubernetes version-skew policy (node to control plane versioning) the same way as Linux nodes do today (https://kubernetes.io/docs/setup/version-skew-policy/)
 
