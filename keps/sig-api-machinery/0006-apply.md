@@ -15,7 +15,7 @@ approvers:
 editor: TBD
 creation-date: 2018-03-28
 last-updated: 2018-03-28
-status: provisional
+status: implementable
 see-also:
   - n/a
 replaces:
@@ -98,37 +98,45 @@ via CURL.)
 ### Non-Goals
 
 * Multi-object apply will not be changed: it remains client side for now
-* Providing an API for just performing merges (without affecting state in the
-  cluster) is left as future work.
 * Some sources of user confusion will not be addressed:
   * Changing the name field makes a new object rather than renaming an existing object
   * Changing fields that can’t really be changed (e.g., Service type).
 
 ## Proposal
 
-Some highlights of things we intend to change:
+(Please note that when this KEP was started, the KEP process was much less well
+defined and we have been treating this as a requirements / mission statement
+document; KEPs have evolved into more than that.)
 
-* Apply will be moved to the control plane: [overall design](https://goo.gl/UbCRuf).
-  * It will be invoked by sending a certain Content-Type with the verb PATCH.
-* The last-applied annotation will be promoted to a first-class citizen under
-  metadata. Multiple appliers will be allowed.
-* Apply will have user-targeted and controller-targeted variants.
-* The Go IDL will be fixed: [design](https://goo.gl/EBGu2V). OpenAPI data models will be fixed. Result: 2-way and
-  3-way merges can be implemented correctly.
-* 2-way and 3-way merges will be implemented correctly: [design](https://goo.gl/nRZVWL).
-* Dry-run will be implemented on control plane verbs (POST and PUT).
+A brief list of the changes:
+
+* Apply will be moved to the control plane.
+  * The [original design](https://goo.gl/UbCRuf) is in a google doc; joining the
+    kubernetes-dev or kubernetes-announce list will grant permission to see it.
+    Since then, the implementation has changed so this may be useful for
+    historical understanding. The test cases and examples there are still valid.
+  * Additionally, readable in the same way, is the [original design for structured diff and merge](https://goo.gl/nRZVWL);
+    we found in practice a better mechanism for our needs (tracking field
+    managers) but the formalization of our schema from that document is still
+    correct.
+* Apply is invoked by sending a certain Content-Type with the verb PATCH.
+* Instead of using a last-applied annotation, the control plane will track a
+  "manager" for every field.
+* Apply is for users and/or ci/cd systems. We modify the POST, PUT (and
+  non-apply PATCH) verbs so that when controllers or other systems make changes
+  to an object, they are made "managers" of the fields they change.
+* The things our "Go IDL" describes are formalized: [structured merge and diff](https://github.com/kubernetes-sigs/structured-merge-diff)
+* Existing Go IDL files will be fixed (e.g., by [fixing the directives](https://github.com/kubernetes/kubernetes/pull/70100/files))
+* Dry-run will be implemented on control plane verbs (POST, PUT, PATCH).
   * Admission webhooks will have their API appended accordingly.
-* The defaulting and conversion stack will be solidified to allow converting
-  partially specified objects.
 * An upgrade path will be implemented so that version skew between kubectl and
   the control plane will not have disastrous results.
-* Strategic Merge Patch and the existing merge key annotations will be
-  deprecated. Development on these will stop, but they will not be removed until
-  the v1 API goes away (i.e., likely 3+ years).
 
 The linked documents should be read for a more complete picture.
 
 ### Implementation Details/Notes/Constraints [optional]
+
+(TODO: update this section with current design)
 
 What are the caveats to the implementation?
 What are some important details that didn't come across above.
@@ -137,28 +145,30 @@ This might be a good place to talk about core concepts and how they releate.
 
 ### Risks and Mitigations
 
-There are many things that will need to change. We are considering using a
-feature branch.
+We used a feature branch to ensure that no partial state of this feature would
+be in master. We developed the new "business logic" in a
+[separate repo](https://github.com/kubernetes-sigs/structured-merge-diff) for
+velocity and reusability.
 
 ## Graduation Criteria
 
+An alpha version of this is targeted for 1.14.
+
 This can be promoted to beta when it is a drop-in replacement for the existing
-kubectl apply, which has no regressions (which aren't bug fixes).
+kubectl apply, and has no regressions (which aren't bug fixes). This KEP will be
+updated when we know the concrete things changing for beta.
 
 This will be promoted to GA once it's gone a sufficient amount of time as beta
-with no changes.
+with no changes. A KEP update will precede this.
 
 ## Implementation History
 
-Major milestones in the life cycle of a KEP should be tracked in `Implementation History`.
-Major milestones might include
+* Early 2018: @lavalamp begins thinking about apply and writing design docs
+* 2018Q3: Design shift from merge + diff to tracking field managers.
+* 2019Q1: Alpha.
 
-- the `Summary` and `Motivation` sections being merged signaling SIG acceptance
-- the `Proposal` section being merged signaling agreement on a proposed design
-- the date implementation started
-- the first Kubernetes release where an initial version of the KEP was available
-- the version of Kubernetes where the KEP graduated to general availability
-- when the KEP was retired or superseded
+(For more details, one can view the apply-wg recordings, or join the mailing list
+and view the meeting notes. TODO: links)
 
 ## Drawbacks
 
