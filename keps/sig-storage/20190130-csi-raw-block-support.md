@@ -104,7 +104,7 @@ and run the existing raw block tests on that CSI plugin.
 raw block volumes so the feature can be regression tested.
 * Enable e2e tests for raw block with CSI
 * At least 2 third party CSI plugins support raw block with CSI and pass e2e
-tests to confirm both that the interface is flexible enough to accomodate
+tests to confirm both that the interface is flexible enough to accommodate
 multiple implementations and that it's specific enough to not leave any
 ambiguity about how implementations should work.
 

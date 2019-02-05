@@ -147,7 +147,7 @@ kubeadm kubeadm join --control-plane --certificate-key={key from step above}
 
 The new `--certificate-key` will trigger following actions:
 
-1. The `kubeadm-certs` config will be retrived from the cluster
+1. The `kubeadm-certs` config will be retrieved from the cluster
 2. Cluster certificates will be decrypted using the provided key, and
    then stored on the disk
 
@@ -224,7 +224,7 @@ For example, in a cluster with local etcd the following certs/keys will be copie
 - Etcd CA ert and key (`/etc/kubernetes/pki/etcd/ca.crt` and `/etc/kubernetes/pki/etcd/ca.key`)
 
 Please note that client certificates are not part of the above list of certificates
-because `kubeadm join --control-plane` workoflow generates new client certificats taking
+because `kubeadm join --control-plane` workoflow generates new client certificates taking
 care of adding SANS specifically for the joining node.
 
 #### The TTL-token

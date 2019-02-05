@@ -107,7 +107,7 @@ The detailed design was originally implemented as a [design proposal](https://gi
 ### Risks and Mitigations
 
 * Performance risks as outlined in design proposal
-* ADC and Kubelet syncronization fairly complicated, upgrade path non-trivial - mitigation discussed in design proposal
+* ADC and Kubelet synchronization fairly complicated, upgrade path non-trivial - mitigation discussed in design proposal
 
 ## Graduation Criteria
 

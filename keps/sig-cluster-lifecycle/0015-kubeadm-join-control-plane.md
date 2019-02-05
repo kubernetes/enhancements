@@ -190,7 +190,7 @@ control-plane instances, of which I know in advance the name and the IP.
 \* A new "control plane instance" is a new kubernetes node with
 `node-role.kubernetes.io/master=""` label and
 `node-role.kubernetes.io/master:NoSchedule` taint; a new instance of control plane
-components will be deployed on the new node; additonally, if the cluster uses local etcd mode,
+components will be deployed on the new node; additionally, if the cluster uses local etcd mode,
 and etcd is created and managed by kubeadm, a new etcd member will be
 created on the joining machine as well.
 
