@@ -13,7 +13,7 @@ approvers:
 editor:
   - "@roberthbailey"
 creation-date: 2018-01-19
-last-updated: 2018-01-22
+last-updated: 2019-02-04
 ---
 
 # Kubernetes Cluster Management API
@@ -68,7 +68,7 @@ When another component needs to create or destroy virtual machines, like the nod
 * To add these cluster management APIs to Kubernetes core.
 * To support infrastructure that is irrelevant to Kubernetes clusters.
    * We are not aiming to create terraform-like capabilities of creating any arbitrary cloud resources, nor are we interested in supporting infrastructure used solely by applications deployed on Kubernetes. The goal is to support the infrastructure necessary for the cluster itself.
-* To convince every Kubernetes lifecycle product ([kops](https://github.com/kubernetes/kops), [kubespray](https://github.com/kubernetes-incubator/kubespray), [Google Kubernetes Engine](https://cloud.google.com/kubernetes-engine/), [Azure Container Service](https://azure.microsoft.com/en-us/services/container-service/), [Elastic Container Service for Kubernetes](https://aws.amazon.com/eks/), etc.) to support these APIs.
+* To convince every Kubernetes lifecycle product ([kops](https://github.com/kubernetes/kops), [kubespray](https://github.com/kubernetes-incubator/kubespray), [Google Kubernetes Engine](https://cloud.google.com/kubernetes-engine/), [Azure Kubernetes Service](https://azure.microsoft.com/en-us/services/kubernetes-service/), [Elastic Container Service for Kubernetes](https://aws.amazon.com/eks/), etc.) to support these APIs.
    * There is value in having consistency between installers and broad support for the cluster management APIs and in having common infrastructure reconcilers used post-installation, but 100% adoption isn't an immediate goal.
 * To model state that is purely internal to a deployer.
    * Many Kubernetes deployment tools have intermediate representations of resources and other internal state to keep track of. They should continue to use their existing methods to track internal state, rather than attempting to model it in these APIs.
