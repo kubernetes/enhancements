@@ -32,19 +32,14 @@ This is the title of the KEP.
 Keep it simple and descriptive.
 A good title can help communicate what the KEP is and should be considered as part of any review.
 
-The *filename* for the KEP should include the KEP number along with the title.
 The title should be lowercased and spaces/punctuation should be replaced with `-`.
-As the KEP is approved and an official KEP number is allocated, the file should be renamed.
 
 To get started with this template:
 1. **Pick a hosting SIG.**
   Make sure that the problem space is something the SIG is interested in taking up.
   KEPs should not be checked in without a sponsoring SIG.
-1. **Allocate a KEP number.**
-  Do this by (a) taking the next number in the `NEXT_KEP_NUMBER` file and (b) incrementing that number.
-  Include the updated `NEXT_KEP_NUMBER` file in your PR.
 1. **Make a copy of this template.**
-  Name it `NNNN-YYYYMMDD-my-title.md` where `NNNN` is the KEP number that was allocated.
+  Name it `YYYYMMDD-my-title.md`.
 1. **Fill out the "overview" sections.**
   This includes the Summary and Motivation sections.
   These should be easy if you've preflighted the idea of the KEP with the appropriate SIG.
