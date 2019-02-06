@@ -368,7 +368,7 @@ When using Hyper-V isolation (alpha), the hypervisor also needs a number of CPUs
 - `V1.Container.SecurityContext.allowPrivilegeEscalation` - not possible on Windows, none of the capabilies are hooked up
 - `V1.Container.SecurityContext.Capabilities` - POSIX capabilities are not implemented on Windows
 - `V1.Container.SecurityContext.privileged` - Windows doesn't support privileged containers
-- `V1.Conatiner.SecurityContext.procMount` - Windows doesn't have a `/proc` filesystem
+- `V1.Container.SecurityContext.procMount` - Windows doesn't have a `/proc` filesystem
 - `V1.Container.SecurityContext.readOnlyRootFilesystem` - not possible on Windows, write access is required for registry & system processes to run inside the container
 - `V1.Container.SecurityContext.runAsGroup` - not possible on Windows, no GID support
 - `V1.Container.SecurityContext.runAsNonRoot` - Windows does not have a root user. The closest equivalent is `ContainerAdministrator` which is an identity that doesn't exist on the node.
