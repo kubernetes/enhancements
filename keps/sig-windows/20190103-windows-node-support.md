@@ -58,6 +58,7 @@ status: implementable
 - [API Reference](#api-reference)
     - [V1.Container](#v1container)
     - [V1.Pod](#v1pod)
+    - [V1.PodSecurityContext](#v1podsecuritycontext)
 - [Other references](#other-references)
 
 <!-- /TOC -->
@@ -367,8 +368,10 @@ When using Hyper-V isolation (alpha), the hypervisor also needs a number of CPUs
 - `V1.Container.SecurityContext.allowPrivilegeEscalation` - not possible on Windows, none of the capabilies are hooked up
 - `V1.Container.SecurityContext.Capabilities` - POSIX capabilities are not implemented on Windows
 - `V1.Container.SecurityContext.privileged` - Windows doesn't support privileged containers
+- `V1.Conatiner.SecurityContext.procMount` - Windows doesn't have a `/proc` filesystem
 - `V1.Container.SecurityContext.readOnlyRootFilesystem` - not possible on Windows, write access is required for registry & system processes to run inside the container
 - `V1.Container.SecurityContext.runAsGroup` - not possible on Windows, no GID support
+- `V1.Container.SecurityContext.runAsNonRoot` - Windows does not have a root user. The closest equivalent is `ContainerAdministrator` which is an identity that doesn't exist on the node.
 - `V1.Container.SecurityContext.runAsUser` - not possible on Windows, no UID support as int. This needs to change to IntStr, see [64009](https://github.com/kubernetes/kubernetes/pull/64009), to support Windows users as strings, or another field is needed. Work remaining tracked in [#73387](https://github.com/kubernetes/kubernetes/issues/73387)
 - `V1.Container.SecurityContext.seLinuxOptions` - not possible on Windows, no SELinux
 - `V1.Container.terminationMessagePath` - this has some limitations in that Windows doesn't support mapping single files. The default value is `/dev/termination-log`, which does work because it does not exist on Windows by default.
@@ -379,14 +382,24 @@ When using Hyper-V isolation (alpha), the hypervisor also needs a number of CPUs
 - `V1.Pod.hostIPC`, `v1.pod.hostpid` - host namespace sharing is not possible on Windows
 - `V1.Pod.hostNetwork` - There is no Windows OS support to share the host network
 - `V1.Pod.dnsPolicy` - ClusterFirstWithHostNet - is not supported because Host Networking is not supported on Windows.
-- `V1.podSecurityContext.runAsUser` provides a UID, not available on Windows
-- `V1.podSecurityContext.supplementalGroups` provides GID, not available on Windows
+- `V1.Pod.podSecurityContext` - see [V1.PodSecurityContext](#v1podsecuritycontext)
 - `V1.Pod.shareProcessNamespace` - this is an beta feature, and depends on Linux namespaces which are not implemented on Windows. Windows cannot share process namespaces or the container's root filesystem. Only the network can be shared.
 - `V1.Pod.terminationGracePeriodSeconds` - this is not fully implemented in Docker on Windows, see: [reference](https://github.com/moby/moby/issues/25982). The behavior today is that the ENTRYPOINT process is sent `CTRL_SHUTDOWN_EVENT`, then Windows waits 5 seconds by hardcoded default, and finally shuts down all processes using the normal Windows shutdown behavior. The 5 second default is actually in the Windows registry [inside the container](https://github.com/moby/moby/issues/25982#issuecomment-426441183), so it can be overridden when the container is built. Runtime configuration will be feasible in CRI-ContainerD but not for v1.14. Issue [#73434](https://github.com/kubernetes/kubernetes/issues/73434) is tracking this for a later release.
 - `V1.Pod.volumeDevices` - this is an beta feature, and is not implemented on Windows. Windows cannot attach raw block devices to pods.
 - `V1.Pod.volumes` - EmptyDir, Secret, ConfigMap, HostPath - all work and have tests in TestGrid
   - `V1.emptyDirVolumeSource` - the Node default medium is disk on Windows. `memory` is not supported, as Windows does not have a built-in RAM disk.
 - `V1.VolumeMount.mountPropagation` - only MountPropagationHostToContainer is available. Windows cannot create mounts within a pod or project them back to the node.
+
+### V1.PodSecurityContext
+
+None of the PodSecurityContext fields work on Windows. They're listed here for reference.
+
+- `V1.PodSecurityContext.SELinuxOptions` - SELinux is not available on Windows
+- `V1.PodSecurityContext.RunAsUser` - provides a UID, not available on Windows
+- `V1.PodSecurityContext.RunAsGroup` - provides a GID, not available on Windows
+- `V1.PodSecurityContext.RunAsNonRoot` - Windows does not have a root user. The closest equivalent is `ContainerAdministrator` which is an identity that doesn't exist on the node.
+- `V1.PodSecurityContext.SupplementalGroups` - provides GID, not available on Windows
+- `V1.PodSecurityContext.Sysctls` - these are part of the Linux sysctl interface. There's no equivalent on Windows.
 
 
 ## Other references
