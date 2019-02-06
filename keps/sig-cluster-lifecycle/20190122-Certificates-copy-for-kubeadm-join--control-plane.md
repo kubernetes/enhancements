@@ -17,7 +17,7 @@ approvers:
 editor: TBD
 creation-date: 2019-01-22
 last-updated: 2019-01-22
-status: provisional
+status: implementable
 see-also:
   - KEP-0015
 replaces:
