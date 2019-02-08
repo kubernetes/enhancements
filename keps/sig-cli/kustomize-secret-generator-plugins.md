@@ -30,31 +30,63 @@ status: provisional
 
 ## Summary
 
-Kustomize removed the `commands` feature from `SecretGenerator` due to security concerns. This proposal is proposing a safe alternative using golang plugins.
+Kustomize wants to generate Kubernetes Secret objects from general key-value pairs where the value is supposed to be a secret. Currently Kustomize only supports reading secret values from local files which raises security concerns about file lifetime and access. Reading secret values from the execution of arbitrary "commands" in a kustomization.yaml file introduces concerns in a world where kustomization files can be used directly from the internet when a user runs `kustomize build`.
+
+This proposal describes obtaining secret values safely using golang [plugins](https://golang.org/pkg/plugin/).
 
 ## Motivation
 
-The `commands` feature allowed users to use exec to integrate `SecretGenerator` with their secret managment tools, and its removal requires hacky workarounds.
+Not having a way to integrate `SecretGenerator` with secret management tools requires hacky workarounds.
 
 ### Goals
 
-- Give users a way to intergrate `SecretGenerator` with their secret managment tools in a safe way.
+- Give users a way to intergrate `SecretGenerator` with secret management tools in a safe way.
 
 ### Non-Goals
 
-- Kustomize will not handle plugin installation/managment.
+- Kustomize will not handle plugin installation/management.
 
 ## Proposal
 
-In the proposed design `SecretGenerator` would load plugins from `~/.kustomization/plugins`. This would prevent malicious code from being included in a remote config since plugins don't live inside the kustomization directory (bases/overlays etc.).
+In the proposed design `SecretGenerator` would load golang plugins from `~/.kustomization/plugins`. This would limit the scope of what kustomize can execute to the plugins on the users machine. Also using golang plugins forces a strict interface with well-defined responsibilities.
 
-Having the flexibility to build custom plugins will also allow users to avoid using exec.
+The current API looks like this:
+
+```
+secretGenerator:
+- name: app-tls
+  files:
+  - secret/tls.cert
+  - secret/tls.key
+  type: "kubernetes.io/tls"
+
+- name: env_file_secret
+  env: env.txt
+  type: Opaque
+
+- name: myJavaServerEnvVars
+  literals:
+  - JAVA_HOME=/opt/java/jdk
+  - JAVA_TOOL_OPTIONS=-agentlib:hprof
+```
+
+The proposed API would look like this:
+
+```secretGenerator:
+- name: env-example
+  plugins:
+  - name: Env
+    args:
+    - EXAMPLE_ENV
+    - OTHER_EXAMPLE_ENV
+  type: Opaque
+```
 
 The implementation would look something like this:
 
 ```
-func keyValuesFromPlugins(ldr ifc.Loader, plugins []types.Plugin) ([]kv.KVPair, error) {
-	var allKvs []kv.KVPair
+func keyValuesFromPlugins(ldr ifc.Loader, plugins []types.Plugin) ([]kv.Pair, error) {
+	var allKvs []kv.Pair
 
 	for _, plugin := range plugins {
 		secretFunc, err := findPlugin(plugin.Name)
@@ -73,14 +105,14 @@ func keyValuesFromPlugins(ldr ifc.Loader, plugins []types.Plugin) ([]kv.KVPair, 
 	return allKvs, nil
 }
 
-func findPlugin(name string) (func(string, []string) ([]kv.KVPair, error), error) {
+func findPlugin(name string) (func(string, []string) ([]kv.Pair, error), error) {
 	allPlugins, err := filepath.Glob(os.ExpandEnv("$HOME/.kustomize/plugins/*.so"))
 	if err != nil {
 		return nil, fmt.Errorf("error loading plugins")
 	}
 
 	for _, filename := range allPlugins {
-		p, err := plugin.Open(fmt.Sprintf(filename))
+		p, err := plugin.Open(filename)
 		if err != nil {
 			return nil, err
 		}
@@ -90,7 +122,7 @@ func findPlugin(name string) (func(string, []string) ([]kv.KVPair, error), error
 			continue
 		}
 
-		if secretFunc, exists := symbol.(func(string, []string) ([]kv.KVPair, error)); exists {
+		if secretFunc, exists := symbol.(func(string, []string) ([]kv.Pair, error)); exists {
 			return secretFunc, nil
 		}
 	}
@@ -110,27 +142,29 @@ import (
 	"sigs.k8s.io/kustomize/pkg/kv"
 )
 
-func Env(root string, args []string) ([]kv.KVPair, error) {
-	var kvs []kv.KVPair
+func Env(root string, args []string) ([]kv.Pair, error) {
+	var kvs []kv.Pair
 	for _, arg := range args {
-		kvs = append(kvs, kv.KVPair{Key: arg, Value: os.Getenv(arg)})
+		kvs = append(kvs, kv.Pair{Key: arg, Value: os.Getenv(arg)})
 	}
 	return kvs, nil
 }
 ```
 
-It may also make sense to remove the other datasources `keyValuesFromEnvFile`, `keyValuesFromFileSources`, `keyValuesFromLiteralSources` in favor of plugins as well.
-
-Users would build the plugin with `go build -buildmode=plugin` and install by copying the .so file to `~/.kustomize/plugins`
+Users would install the plugin with `go build -buildmode=plugin ~/.kustomize/plugins/myplugin.so`
 
 ### Risks and Mitigations
 
-N/A
+No windows support for golang plugins.
 
 ## Graduation Criteria
 
-Convert the SecretGenerator into a plugin system.
+Many users have been requesting a better way to integrate with secret management tools https://github.com/kubernetes-sigs/kustomize/issues/692
+
+* A higher level feature test (like those in [pkg/target](https://github.com/kubernetes-sigs/kustomize/tree/master/pkg/target))
+* Documentation of fields in the [canonical example file](https://github.com/kubernetes-sigs/kustomize/blob/master/docs/kustomization.yaml)
+* Usage [example](https://github.com/kubernetes-sigs/kustomize/tree/master/examples)
 
 ## Implementation History
 
-This design uses the golang plugin system.
+This design uses the golang [plugin](https://golang.org/pkg/plugin/) system.
