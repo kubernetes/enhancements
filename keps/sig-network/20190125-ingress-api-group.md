@@ -147,16 +147,25 @@ objects to a CRD-based API.
 ### Potential pre-GA work
 
 Note: these items are NOT the main focus of this KEP, but recorded here for
-reference purposes. These items came up in discussions on the KEP:
+reference purposes. These items came up in discussions on the KEP (roughly
+sorted by practicality):
 
-* Path as a prefix
-* Formalize Ingress class
-* Some way to have backends be things other than a service (e.g. a GCS bucket)
-* Better status
-* Some way to restrict hostnames and.or URLs per namespace
-* Explicit sharing of external IPs (e.g. GCP HTTP LB)
-* Cross-namespace behavior
+* Spec path as a prefix, maybe as a new field
+* Rename `backend` to `defaultBackend` or something more obvious
 * Be more explicit about wildcard hostname support (I can create *.bar.com but
   in theory this is not supported)
+* Add health-checks API
+* Specify whether to accept just HTTPS or also allow bare HTTP
+* Better status
+* Formalize Ingress class
 * Reference a secret in a different namespace?  Use case: avoid copying wildcard
   certificates (generated with cert-manager for instance)
+* Add non-required features (levels of support)
+* Some way to have backends be things other than a service (e.g. a GCS bucket)
+* Some way to restrict hostnames and/or URLs per namespace
+* HTTP to HTTPS redirects
+* Explicit sharing or non-sharing of external IPs (e.g. GCP HTTP LB)
+* Affinity
+* Per-backend timeouts
+* Backend protocol
+* Cross-namespace backends
