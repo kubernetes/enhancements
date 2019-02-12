@@ -154,9 +154,9 @@ Note that some features are plain unsupported while some will not work without u
 - Not all features of shared namespaces are supported. This is clarified in the API section below
 - The existing node problem detector is Linux-only and requires privileged containers. In general, we don't expect these to be used on Windows because there's no privileged support
 - Overlay networking support in Windows Server 1803 is not fully functional using the `win-overlay` CNI plugin. Specifically service IPs do not work on Windows nodes. This is currently specific to `win-overlay`; other CNI plugins (OVS, AzureCNI) work. Since Windows Server 1803 is not supported for GA, this is mostly not applicable. We left it here since it impacts beta
-- Outbound communication using the ICMP protocol via the `win-overlay`, `win-bridge`, and `Azure-CNI` plugin. Specifically, the Windows datapath (VFP) doesn't support ICMP packet transpositions. This means:
-    - ICMP packets directed to addressses within the same network (e.g. pod to pod communication via ping) will work as expected and without any limitations
-    - TCP/UDP packets will work as expected and without limitations
+- Outbound communication using the ICMP protocol via the `win-overlay`, `win-bridge`, and `Azure-CNI` plugin. Specifically, the Windows data plane ([VFP](https://www.microsoft.com/en-us/research/project/azure-virtual-filtering-platform/)) doesn't support ICMP packet transpositions. This means:
+    - ICMP packets directed to destinations within the same network (e.g. pod to pod communication via ping) will work as expected and without any limitations
+    - TCP/UDP packets will work as expected and without any limitations
     - ICMP packets directed to pass through a remote network (e.g. pod to external internet communication via ping) cannot be transposed and thus will *not* be routed back to their source
 
 ### Windows Container Compatibility
