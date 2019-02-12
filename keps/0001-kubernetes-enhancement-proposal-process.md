@@ -236,8 +236,7 @@ A KEP has the following states
 
 ### Git and GitHub Implementation
 
-KEPs are checked into the community repo under the `/kep` directory.
-In the future, as needed we can add SIG specific subdirectories.
+KEPs are checked into the enhancements repo under the `/keps` directory.
 KEPs in SIG specific subdirectories have limited impact outside of the SIG and can leverage SIG specific OWNERS files.
 
 New KEPs can be checked in with a file name in the form of `draft-YYYYMMDD-my-title.md`.
