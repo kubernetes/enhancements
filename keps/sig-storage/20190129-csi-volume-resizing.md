@@ -72,10 +72,10 @@ The design of CSI volume resizing is made of two parts.
 
 ### External resize controller
 
-To support resizing of CSI volumes an external resize controller will monitor all PVCs.  If a PVC meets following criteria for resizing, it will be added to
+To support resizing of CSI volumes an external resize controller will monitor all changes to PVCs.  If a PVC meets following criteria for resizing, it will be added to
 controller's workqueue:
 
-- The driver name disovered from PVC should match name of driver currently known(by querying driver info via CSI RPC call) to external resize controller.
+- The driver name disovered from PVC(via corresponding PV) should match name of driver currently known(by querying driver info via CSI RPC call) to external resize controller.
 - Once it notices a PVC has been updated and by comparing old and new PVC object, it determines more space has been requested by the user.
 
 Once PVC gets picked from workqueue, the controller will also compare requested PVC size with actual size of volume in `PersistentVolume`
@@ -86,7 +86,7 @@ If `ControllerExpandVolume` call is successful and plugin implements `NodeExpand
 - if `ControllerExpandVolumeResponse` returns `true` in `node_expansion_required` then `FileSystemResizePending` condition will be added to PVC and `NodeExpandVolume` operation will be queued on kubelet. Also volume size reported by PV will be updated to new value.
 - if `ControllerExpandVolumeResponse` returns `false` in `node_expansion_required` then volume resize operation will be marked finished and both `pvc.Status.Capacity` and `pv.Spec.Capacity` will report updated value.
 
-If plugin does not implement `NodeExpandVolume` then volume resize operation will be marked as finished and both `pvc.Status.Capacity` and `pv.Spec.Capacity` will report updated value after successful completion of `ControllerExpandVolume` RPC call.
+If `ControllerExpandVolume` call is successful and plugin does not implement `NodeExpandVolume` call then volume resize operation will be marked as finished and both `pvc.Status.Capacity` and `pv.Spec.Capacity` will report updated value.
 
 If `ControllerExpandVolume`  call fails:
 - Then PVC will retain `Resizing` condition and will have appropriate events added to the PVC.
@@ -104,7 +104,7 @@ Currently Kubernetes supports two modes of performing volume resize on kubelet. 
 
 #### Offline volume resizing on kubelet:
 
-This is the default mode and in this mode `NodeExpandVolume` will only be called when volume is being mounted on the node. In other words, pod that was using the volume must be re-created for expansion on node to happen.
+This is the default mode and in this mode `NodeExpandVolume` will only be called when volume is being mounted on the node(or `MountVolume` operation in `operation_executor.go`). In other words, pod that was using the volume must be re-created for expansion on node to happen.
 
 When a pod that is using the PVC is started, kubelet will compare `pvc.spec.resources.requests.storage` and `pvc.Status.Capacity`. It also compares PVC's size with `pv.Spec.Capacity` and if it detects PV is reporting same size as pvc's spec but PVC's status is still reporting smaller value then it determines -
 a volume expansion is pending on the node.  At this point if plugin implements `NodeExpandVolume` RPC call then, kubelet will call it and:
@@ -159,12 +159,7 @@ Hopefully the content previously contained in [umbrella issues][] will be tracke
 
 ## Implementation History
 
-Major milestones in the life cycle of a KEP should be tracked in `Implementation History`.
-Major milestones might include
-
-- the `Summary` and `Motivation` sections being merged signaling SIG acceptance
-- the `Proposal` section being merged signaling agreement on a proposed design
-- the date implementation started
-- the first Kubernetes release where an initial version of the KEP was available
-- the version of Kubernetes where the KEP graduated to general availability
-- when the KEP was retired or superseded
+- 1.14 Implement CSI volume resizing as an alpha feature.
+- 1.11 Move in-tree volume expansion to beta.
+- 1.11 Implement online resizing feature for in-tree volume plugins as an alpha feature.
+- 1.8 Implement in-tree volume expansion an an alpha feature.
