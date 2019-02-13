@@ -8,6 +8,7 @@ owning-sig: sig-instrumentation
 participating-sigs:
   - sig-architecture
   - sig-node
+  - sig-api-machinery
 reviewers:
   - "@Random-Liu"
   - "@bogdandrutu"
