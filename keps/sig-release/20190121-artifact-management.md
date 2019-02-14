@@ -109,6 +109,28 @@ Importantly, if a project needs to roll-back or remove an artifact, the same pro
 occur, so that the promotion tool needs to be capable of deleting images and artifacts as
 well as promoting them.
 
+### HTTP Redirector Design
+To facilitate world-wide distribution of artifacts from a single (virtual) location we will
+ideally run a replicated redirector service in the United States, Europe and Asia.
+Each of these redirectors
+services will be deployed in a Kubernetes cluster and they will be exposed via a public IP
+address and a dns record indicating their location (e.g. `europe.artifacts.k8s.io`).
+
+We will use Geo DNS to route requests to `artifacts.k8s.io` to the correct redirector. This is necessary to ensure that we always route to a server which is accessible no matter what region we are in. We will need to extend or enhance the existing DNS synchronization tooling to handle creation of the GeoDNS records.
+
+#### Configuring the HTTP Redirector
+THe HTTP Redirector service will be driven from a YAML configuration that specifies a path to mirror
+mapping. For now the redirector will serve content based on continent, for example:
+
+```yaml
+/kops
+  - Americas: americas.artifacts.k8s.io
+  - Asia: asia.artifacts.k8s.io
+  - default: americas.artificats.k8s.io
+```
+
+The redirector will use this data to redirect a request to the relevant mirror using HTTP 302 responses. The implementation of the mirrors themselves are details left to the service implementor and may be different depending on the artifacts being exposed (binaries vs. container images)
+
 ## Graduation Criteria
 
 This KEP will graduate when the process is implemented and has been successfully used to
