@@ -3,12 +3,16 @@ title: Kustomize Secret Generator Plugins
 authors:
   - "@sethpollack"
 owning-sig: sig-cli
+participating-sigs:
+  - sig-apps
+  - sig-architecture
 reviewers:
   - "@monopole"
   - "@Liujingfang1"
 approvers:
   - "@monopole"
   - "@Liujingfang1"
+  - "@pwittrock"
 editor: "@sethpollack"
 creation-date: 2019-02-04
 last-updated: 2019-02-04
@@ -48,7 +52,7 @@ Not having a way to integrate `SecretGenerator` with secret management tools req
 
 ## Proposal
 
-In the proposed design `SecretGenerator` would load golang plugins from `~/.kustomization/plugins`. This would limit the scope of what kustomize can execute to the plugins on the users machine. Also using golang plugins forces a strict interface with well-defined responsibilities.
+In the proposed design `SecretGenerator` would load golang plugins from `~/.config/kustomization_plugins`. This would limit the scope of what kustomize can execute to the plugins on the users machine. Also using golang plugins forces a strict interface with well-defined responsibilities.
 
 The current API looks like this:
 
@@ -74,7 +78,7 @@ The proposed API would look like this:
 
 ```secretGenerator:
 - name: env-example
-  plugins:
+  goplugins:
   - name: Env
     args:
     - EXAMPLE_ENV
@@ -106,7 +110,7 @@ func keyValuesFromPlugins(ldr ifc.Loader, plugins []types.Plugin) ([]kv.Pair, er
 }
 
 func findPlugin(name string) (func(string, []string) ([]kv.Pair, error), error) {
-	allPlugins, err := filepath.Glob(os.ExpandEnv("$HOME/.kustomize/plugins/*.so"))
+	allPlugins, err := filepath.Glob(os.ExpandEnv("$HOME/.config/kustomization_plugins/*.so"))
 	if err != nil {
 		return nil, fmt.Errorf("error loading plugins")
 	}
@@ -151,7 +155,7 @@ func Env(root string, args []string) ([]kv.Pair, error) {
 }
 ```
 
-Users would install the plugin with `go build -buildmode=plugin ~/.kustomize/plugins/myplugin.so`
+Users would install the plugin with `go build -buildmode=plugin ~/.config/kustomization_plugins/myplugin.so`
 
 ### Risks and Mitigations
 
