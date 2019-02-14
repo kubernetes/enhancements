@@ -41,7 +41,7 @@ See [KEP-1](0001-kubernetes-enhancement-proposal-process.md) for more details.
 
 If the KEP is mainly restricted to one SIG's purview then it should be in a KEP directory for that SIG.
 If the KEP is widely impacting much of Kubernetes, it should be put at the root of this directory.
-If in doubt ask [SIG-Architecture](../sig-architecture/README.md) and they can advise.
+If in doubt ask [SIG-Architecture](https://git.k8s.io/community/sig-architecture/README.md) and they can advise.
 
 ### What will it take for KEPs to "graduate" out of "beta"?
 
@@ -55,5 +55,5 @@ Even so, the process can evolve. As we find new techniques we can improve our pr
 ### My FAQ isn't answered here!
 
 The KEP process is still evolving!
-If something is missing or not answered here feel free to reach out to [SIG-Architecture](../sig-architecture/README.md).
+If something is missing or not answered here feel free to reach out to [SIG-Architecture](https://git.k8s.io/community/sig-architecture/README.md).
 If you want to propose a change to the KEP process you can open a PR on [KEP-1](0001-kubernetes-enhancement-proposal-process.md) with your proposal.
