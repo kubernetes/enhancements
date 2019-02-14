@@ -1,5 +1,4 @@
 ---
-kep-number: 0
 title: kubernetes-csi release process
 authors:
   - "@pohly"
@@ -60,26 +59,29 @@ This document explains how these components are released.
 
 So far, the process for tagging and building components has been
 fairly manual, with some assistance by Travis CI. There has been no
-automatic end-to-end testing.
+automatic testing on a Kubernetes cluster, neither stand-alone
+deployment of individual components nor full end-to-end (E2E) testing
+of several Kubernetes-CSI components.
 
 With CSI support reaching GA in Kubernetes 1.13, it is time to define
 and follow a less work-intensive and more predictable approach.
 
 ### Goals
 
-- define what a "kubernetes-csi release" is
-- unit testing as mandatory pre-submit check for all components 
-- E2E testing as mandatory pre-submit check for components that get
+- define the release process for each component
+- unit testing as mandatory pre-submit check for all components
+- testing on Kubernetes as mandatory pre-submit check for components that get
   deployed in a cluster
-- define a release process for each component and a "kubernetes-csi release"
 
 ### Non-Goals
 
-- change responsibilities among the kubernetes-csi maintainers - as before, each
+- a combined "Kubernetes-CSI release": each component gets released separately.
+  It is the responsibility of a CSI driver maintainer pick and test sidecar releases
+  for a combined deployment of that driver.
+- change responsibilities among the kubernetes-csi maintainers: as before, each
   component will have some main maintainer who is responsible for releasing updates
   of that component
-- automatically generate release notes
-- automatically generate "kubernetes-csi release" artifacts - this will need further thoughts
+- automatically generate release notes: this will be covered by a separate, future KEP
 
 
 ## Proposal
@@ -87,8 +89,9 @@ and follow a less work-intensive and more predictable approach.
 ### Versionioning
 
 Each of the components has its own documentation, versioning and
-release notes. [Semantic versioning](https://semver.org/) is used for
-components that provide a stable API, like for example:
+release notes. [Semantic versioning](https://semver.org/) with `v`
+prefix (i.e. `v1.2.3`) is used for components that provide a stable
+API, like for example:
 - external-attacher
 - external-provisioner
 - external-snapshotter
@@ -101,34 +104,26 @@ Other components are internal utility packages that are
 not getting tagged:
 - csi-release-tools
 
-A "kubernetes-csi release" is a specific set of component
-releases. It's also called the "combined release". Documentation for
-combined releases is found on [kubernetes-csi
-docs](https://kubernetes-csi.github.io/docs/). The combined release is
-typically going to be prepared and announced less frequently than the
-individual component releases. It is therefore only a recommendation
-that downstream users use this combination of components. In
-particular, individual components might also get minor updates after a
-kubernetes-csi release without updating that combined release.
+An additional suffix like `-rc1` can be used to denote a pre-release.
 
-The
-[hostpath example deployment](https://github.com/kubernetes-csi/csi-driver-host-path/tree/master/deploy)
-defines the components that are part of a combined release. This
-implies that the hostpath driver repo must be updated and tagged to
-create a new combined release. Therefore the hostpath driver's version
-becomes the kubernetes-csi release version, which is increased
-according to the same rules as the individual components (major
-version bump when any of its components had a major change, etc.).
+The [hostpath example
+deployment](https://github.com/kubernetes-csi/csi-driver-host-path/tree/master/deploy)
+defines the exact release of each sidecar that is part of that
+deployment. When updating to newer sidecar releases, a new hostpath
+driver release is tagged with version numbers bumped according to the
+same rules as the individual components (major version bump when any
+of the sidecars had a major change, etc.).
 
 #### Release artifacts
 
-Tagging a component with a semantic version number triggers a release
-build for that component. The output is primarily the container image
+Tagging a component with a `v*` tag triggers a
+build for that component with that version. The output is primarily the container image
 for components that need to be deployed. Those images get published as
-`gcr.io/kubernetes-csi/<image>:<tag>` pending [issue
-158](https://github.com/kubernetes/k8s.io/issues/158).
+`gcr.io/kubernetes-csi/<image>:<tag>`, which depends on [issue
+158](https://github.com/kubernetes/k8s.io/issues/158) getting resolved.
 
-Only binaries provided as part of such a release should be considered
+Only binaries provided as part of a release with a semantic version tag without additional suffix
+should be considered
 production ready. Binaries are never going to be rebuilt, therefore an
 image like `csi-node-driver-registrar:v1.0.2` will always pull the
 same content and `imagePullPolicy: Always` can be omitted.
@@ -140,44 +135,90 @@ this KEP.
 
 #### Release process
 
-* A change is submitted against master.
+1. A change is submitted against the master branch.
 
-* A [Prow](https://github.com/kubernetes/test-infra/blob/master/prow/README.md)
-  job checks out the source of a modified component, rebuilds it and then
-  runs unit tests and E2E tests with it.
+1. A [Prow](https://github.com/kubernetes/test-infra/blob/master/prow/README.md)
+   job checks out the source of the modified component, rebuilds it and then
+   runs unit tests and E2E tests with it as defined below.
 
-* Maintainers accept changes into the master branch.
+1. Maintainers accept changes into the master branch.
 
-* The same Prow job runs for master and repeats the check. If it succeeds,
-  a new "canary" image is published for the component.
+1. The same Prow job runs for master and repeats the checks. If it succeeds,
+   a new "canary" image is published for the component.
 
-* In preparation for the release of a major new update, a feature freeze is
-  declared for the "master" branch and only changes relevant for that next
-  release are accepted.
+1. In preparation for the release of a major new update, a feature freeze is
+   declared for the "master" branch and only changes relevant for that next
+   release are accepted.
 
-* When all changes targeted for the release are in master, automatic
-  test results are okay and and potentially some more manual tests,
-  maintainers tag each component directly on the master branch.
+1. When all changes targeted for the release are in master, automatic
+   test results are okay and and potentially some more manual tests,
+   maintainers tag a new release directly on the master branch. This
+   can be a `-rc` test release or a normal release.
 
-* Maintenance releases are prepared by branching a "release-X.Y" branch from
-  release "vX.Y" and backporting relevant fixes from master. The same
-  prow job as for master also handles the maintenance branches, but potentially
-  with a different configuration.
+1. Maintenance releases are prepared by creating a "release-X.Y" branch based on
+   release "vX.Y" and backporting relevant fixes from master. The same
+   prow job as for master also handles the maintenance branches.
 
 
 ### Implementation Details
 
+For each component under kubernetes-csi (`external-attacher`,
+`csi-driver-host-path`, `csi-lib-utils`, etc.), these Prow jobs need
+to be defined:
+- `kubernetes-csi-<component>-pr: presubmit job
+- `kubernetes-csi-<component>-build: a postsubmits job that matches against
+  `v*` branches *and* tags (see https://github.com/kubernetes/test-infra/pull/10802#discussion_r248900281)
+
+A periodic job that does regular maintenance tasks (like checking for
+updated dependencies) might be added in the future.
+
+These `kubernetes-csi` Prow job all provide the same environment where
+the component is already checked out in the `GOPATH` at the desired
+revision (PR merged tentatively into a branch or a regular
+branch). This is provided by the
+[podutils](https://github.com/kubernetes/test-infra/blob/master/prow/pod-utilities.md)
+decorators. The base image is the latest
+[kubekins](https://github.com/kubernetes/test-infra/tree/master/images/kubekins-e2e)
+image.
+
+The Prow job transfers control to a `.prow.sh` shell script which must
+be present in a component that is configured to trigger the Prow job.
+
 Each component has its own release configuration (what to build and
 publish) and rules (scripts, makefile). The advantage is that those
-can be branched and tagged together with the component.
+can be branched and tagged together with the component. The version of
+Go to use for building is also part of that configuration. The
+requested version of Go will be installed from https://golang.org/dl/
+if different from what is installed already.
 
 To simplify maintenance and ensure consistency, the common parts can
 be shared via
 [csi-release-tools](https://github.com/kubernetes-csi/csi-release-tools/).
 
-The prow job then just provides a common execution environment, with
-the ability to bring up test cluster(s), publish container images on
-and other files.
+Unit testing is provided by `make test`. Images are pushed with `make
+push`, which already determines image tags automatically. For Prow,
+the image destination still needs to be determined
+(https://github.com/kubernetes/k8s.io/issues/158).
+
+For testing on Kubernetes, a real cluster can be brought up with
+[kubetest](https://github.com/kubernetes/test-infra/tree/master/kubetest). This
+might work with [kind](https://github.com/kubernetes-sigs/kind) and a
+locally built image can be pushed directly into that cluster with
+`docker save image | docker exec -it kind-control-plane docker load
+-` (to be tested).
+
+A shared E2E test could work like this:
+- build one CSI app from source
+- deploy the hostpath example with that locally build app and
+  everything else as defined in the current repository (i.e.
+  each repository must vendor, copy or check out the example from
+  `csi-drivers-host-path`)
+- check out a certain revision of the kubernetes repo and
+  run `go test ./test/e2e` with the parameter from https://github.com/kubernetes/kubernetes/pull/72836
+  to test the deployed example; alternatively, the test suite
+  can also be vendored, which would make the build self-contained
+  and allow extending the test suite
+
 
 ### Risks and Mitigations
 
@@ -190,16 +231,19 @@ multiple risks:
 - the wrong revision gets tagged by the maintainer
 - the build process itself is buggy and pushes a corrupt image
 
-The safeguard against such failures is that new CSI sidecar containers
-only get used in a production cluster after packagers of a CSI driver
-update the deployment files for their driver.
+To mitigate this, maintainers can do a trial release first by tagging
+a `-rc` version and doing additional manual tests with the result.
+
+But ultimately the safeguard against such failures is that new CSI
+sidecar containers only get used in a production cluster after
+packagers of a CSI driver update the deployment files for their
+driver.
 
 ## Graduation Criteria
 
-- E2E test results are visible in GitHub PRs and test failures block merging.
+- Test results are visible in GitHub PRs and test failures block merging.
 - All components have been converted to publishing images on `gcr.io` in addition
   to the traditional `quay.io`.
-- The example hostpath deployment works with those images.
 
 ## Implementation History
 
