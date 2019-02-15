@@ -9,7 +9,7 @@ This process is still in a _beta_ state and is opt-in for those that want to pro
 
 1. Socialize an idea with a sponsoring SIG.
    Make sure that others think the work is worth taking up and will help review the KEP and any code changes required.
-2. Follow the process outlined in the [KEP template](0000-kep-template.md)
+2. Follow the process outlined in the [KEP template](YYYYMMDD-kep-template.md)
 
 ## FAQs
 
