@@ -33,7 +33,7 @@ see-also:
   Aim for single topic PRs to keep discussions focused.
   If you disagree with what is already in a document, open a new PR with suggested changes.
 
-The canonical place for the latest set of instructions (and the likely source of this file) is [here](/keps/0000-kep-template.md).
+The canonical place for the latest set of instructions (and the likely source of this file) is [here](/keps/YYYYMMDD-kep-template.md).
 
 The `Metadata` section above is intended to support the creation of tooling around the KEP process.
 This will be a YAML section that is fenced as a code block.
