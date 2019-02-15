@@ -16,8 +16,8 @@ approvers:
 editors:
  - "@pwittrock"
 creation-date: 2018-11-07
-last-updated: 2019-01-17
-status: implementable
+last-updated: 2019-02-15
+status: implemented
 see-also:
  - "[kustomize](https://github.com/kubernetes-sigs/kustomize/blob/master/docs/workflows.md)"
  - "kustomize-file-processing-integration.md" 
