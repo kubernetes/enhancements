@@ -13,7 +13,7 @@ approvers:
   - "@kow3ns"
 editor: TBD
 creation-date: 2018-05-14
-last-updated: 2018-11-20
+last-updated: 2019-03-21
 status: provisional
 ---
 
@@ -67,7 +67,7 @@ Solve issues so that they don't require application modification:
 
 ## Non-Goals
 
-Allowing multiple containers to run at once during the init phase. //TODO See if we can solve this problem with this proposal
+Allowing multiple containers to run at once during the init phase - this could be solved using the same principal but can be implemented separately. //TODO write up how we could solve the init problem with this proposal
 
 ## Proposal
 
@@ -98,6 +98,7 @@ This will change the Pod startup to look like this:
 * Init containers start
 * Init containers finish
 * Sidecars start
+* Sidecars become ready
 * Containers start
 
 During pod termination sidecars will be terminated last:
@@ -107,25 +108,55 @@ During pod termination sidecars will be terminated last:
 If Containers don't exit before the end of the TerminationGracePeriod then they will be sent a SIGKIll as normal, Sidecars will then be sent a SIGTERM with a short grace period of 5/10 Seconds (up for debate) to give them a chance to cleanly exit.
 
 PreStop Hooks will be sent to sidecars and containers at the same time.
-This will be useful in scenarios such as when your sidecar is a proxy so that it knows to no longer accept inbound requests but can continue to allow outbound ones until the the primary containers have shut down.  //TODO Discuss whether this is a valid use case (dropping inbound requests can cause problems with load balancers)
+This will be useful in scenarios such as when your sidecar is a proxy so that it knows to no longer accept inbound requests but can continue to allow outbound ones until the the primary containers have shut down.
 
 To solve the problem of Jobs that don't complete: When RestartPolicy!=Always if all normal containers have reached a terminal state (Succeeded for restartPolicy=OnFailure, or Succeeded/Failed for restartPolicy=Never), then all sidecar containers will be sent a SIGTERM.
 
+Sidecars are just normal containers in almost all respects, they have all the same attributes, they are included in pod state, obey pod restart policy etc. The only differences are lifecycle related.
+
 ### Implementation Details/Notes/Constraints
 
-As this is a fairly large change I think it make sense to break this proposal down and phase in more functionality as we go, potential roadmap could look like:
+The proposal can broken down into four key pieces of implementation that all relatively separate from one another:
 
-* Add sidecar field, use it for the shutdown triggering when RestartPolicy!=Always
+* Shutdown triggering for sidecars when RestartPolicy!=Always
 * Pre-stop hooks sent to sidecars before non sidecar containers
 * Sidecars are terminated after normal containers
 * Sidecars start before normal containers
 
-
 As this is a change to the Container spec we will be using feature gating, you will be required to explicitly enable this feature on the api server as recommended [here](https://github.com/kubernetes/community/blob/master/contributors/devel/api_changes.md#adding-unstable-features-to-stable-versions).
+
+#### Kubelet Changes:
+Broad outline of what places could be modified to implement desired behaviour:
+
+##### Shutdown triggering
+Package `kuberuntime`
+
+Modify `kuberuntime_manager.go`, function `computePodActions`. Have a check in this function that will see if all the non-sidecars had permanently exited, if true: return all the running sidecars in `ContainersToKill`. These containers will then be killed via the `killContainer` function which sends preStop hooks, sig-terms and obeys grace period, thus giving the sidecars a chance to gracefully terminate.
+
+##### Sidecars terminated last
+Package `kuberuntime`
+
+Modify `kuberuntime_container.go`, function `killContainersWithSyncResult`. Break up the looping over containers so that it goes through killing the non-sidecars before terminating the sidecars.
+Note that the containers in this function are `kubecontainer.Container` instead of `v1.Container` so we would need to cross reference with the `v1.Pod` to check if they are sidecars or not. This Pod can be `nil` but only if it's not running, in which case we're not worried about ordering.
+
+##### Sidecars started first
+Package `kuberuntime`
+
+Modify `kuberuntime_manager.go`, function `computePodActions`. If pods has sidecars it will return these first in `ContainersToStart`, until they are all ready it will not return the non-sidecars. Readiness changes do not normally trigger a pod sync, so to avoid waiting for the Kubelet's `SyncFrequency` (default 1 minute) we can modify `HandlePodReconcile` in the `kubelet.go` to trigger a sync when the sidecars first become ready (ie only during startup).
+
+##### PreStop hooks sent to Sidecars first
+Package `kuberuntime`
+
+Modify `kuberuntime_container.go`, function `killContainersWithSyncResult`. Loop over sidecars and execute `executePreStopHook` on them before moving on to terminating the containers. This approach would assume that PreStop Hooks are idempotent as the sidecars would get sent the PreStop hook again when they are terminated.
+
+#### PoC and Demo
+There is a [PR here](https://github.com/kubernetes/kubernetes/pull/75099) with a working Proof of concept for this KEP, it's just a draft but should help illustrate what these changes would look like.
+
+Please view this [video](https://youtu.be/4hC8t6_8bTs) if you want to see what the PoC looks like in action.
 
 ### Risks and Mitigations
 
-You could set all containers to be `sidecar: true`, this seems wrong, so maybe the api should do a validation check that at least one container is not a sidecar.
+You could set all containers to be `sidecar: true`, this would cause strange behaviour in regards to shutting down the sidecars when all the non-sidecars have exited. To solve this the api could do a validation check that at least one container is not a sidecar.
 
 Init containers would be able to have `sidecar: true` applied to them as it's an additional field to the container spec, this doesn't currently make sense as init containers are ran sequentially. We could get around this by having the api throw a validation error if you try to use this field on an init container or just ignore the field.
 
@@ -143,8 +174,8 @@ Older Kubelets that don't implement the sidecar logic could have a pod scheduled
 
 ## Alternatives
 
-One alternative would be to have a new field in the Pod Spec of `sidecarContainers:` where you could define a list of sidecar containers, however this would require more work in terms of updating tooling to support this.
+One alternative would be to have a new field in the Pod Spec of `sidecarContainers:` where you could define a list of sidecar containers, however this would require more work in terms of updating tooling/kubelet to support this.
 
 Another alternative would be to change the Job Spec to have a `primaryContainer` field to tell it which containers are important. However I feel this is perhaps too specific to job when this Sidecar concept could be useful in other scenarios.
 
-Having it as a boolean could cause problems later down the line if more lifecycle related flags were added, perhaps it makes more sense to have something like `lifecycle: Sidecar` to make it more future proof.
+Having it as a boolean could cause problems later down the line if more lifecycle related flags were added, perhaps it makes more sense to have something like `containerLifecycle: Sidecar` to make it more future proof.
