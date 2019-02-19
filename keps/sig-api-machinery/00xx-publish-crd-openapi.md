@@ -143,7 +143,7 @@ In 1.14, publishing CRD OpenAPI should be e2e-tested to ensure:
 1. for CRD with validation schema
 
 * client-side validation (`kubectl create` and `kubectl apply`) works to:
-  * allow requests with known and required properites
+  * allow requests with known and required properties
   * reject requests with unknown properties when disallowed by the schema
   * reject requests without required properties
 
