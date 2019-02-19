@@ -110,7 +110,7 @@ Labels:
 
 Explicit timestamps (see the [prometheus exposition format docs](https://github.com/prometheus/docs/blob/master/content/docs/instrumenting/exposition_formats.md#comments-help-text-and-type-information)) will be added to metrics because metrics are (currently) collected out-of-band and cached.  We make no guarantees about the age of metrics, but include the timestamp to allow readers to correctly calculate rates, etc.  Timestamps are currently required because metrics are collected out-of-band by cAdvisor.  This deviates from the [prometheus best practices](https://prometheus.io/docs/instrumenting/writing_exporters/#scheduling), and we should attempt to migrate to synchronous collection during each scrape in the future.
 
-Use seperate metrics for node and containers to avoid “magic” container names, such as “machine”.
+Use separate metrics for node and containers to avoid “magic” container names, such as “machine”.
 
 Currently the Metrics Server uses a 10s average of CPU usage provided by the kubelet summary API.  The kubelet should provide the raw cumulative CPU usage so the metrics server can determine the time period over which it wants to take the rate.
 
@@ -211,7 +211,7 @@ Alpha:
 
 Beta/GA:
 
-- [ ] Determine whether a transition to OpenMetrics format is required, and make those changes if neccessary
+- [ ] Determine whether a transition to OpenMetrics format is required, and make those changes if necessary
 - [ ] Add node-e2e test to the node conformance tests
 
 ## Implementation History
