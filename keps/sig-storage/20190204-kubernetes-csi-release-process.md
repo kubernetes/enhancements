@@ -75,9 +75,14 @@ and follow a less work-intensive and more predictable approach.
 
 ### Non-Goals
 
-- a combined "Kubernetes-CSI release": each component gets released separately.
-  It is the responsibility of a CSI driver maintainer pick and test sidecar releases
-  for a combined deployment of that driver.
+- a combined "Kubernetes-CSI release": each component gets released
+  separately.  It is the responsibility of a CSI driver maintainer
+  pick and test sidecar releases for a combined deployment of that
+  driver. The [hostpath deployment
+  example](https://github.com/kubernetes-csi/csi-driver-host-path/tree/master/deploy)
+  can be used as a starting point, but it's not going to be able to
+  test all the possible combinations of features that a specific CSI
+  driver may need.
 - change responsibilities among the kubernetes-csi maintainers: as before, each
   component will have some main maintainer who is responsible for releasing updates
   of that component
@@ -166,8 +171,20 @@ For each component under kubernetes-csi (`external-attacher`,
 `csi-driver-host-path`, `csi-lib-utils`, etc.), these Prow jobs need
 to be defined:
 - `kubernetes-csi-<component>-pr: presubmit job
-- `kubernetes-csi-<component>-build: a postsubmits job that matches against
+- `kubernetes-csi-<component>-build`: a postsubmits job that matches against
   `v*` branches *and* tags (see https://github.com/kubernetes/test-infra/pull/10802#discussion_r248900281)
+
+In addition, for the `csi-driver-host-path` repo some more periodic
+jobs need to be defined:
+- `kubernetes-csi-stable`: deploys and tests the current hostpath
+  example (`csi-driver-host-path/deploy/stable`) from the master
+  branch on the latest Kubernetes development version
+- `kubernetes-csi-canary-1.13`: deploys and tests the canary hostpath
+  example (`csi-driver-host-path/deploy/canary`) from the master
+  branch on Kubernetes 1.13
+- `kubernetes-csi-canary-dev`: deploys and tests the canary hostpath
+  example from the master branch on the latest Kubernetes development
+  version
 
 A periodic job that does regular maintenance tasks (like checking for
 updated dependencies) might be added in the future.
@@ -208,8 +225,8 @@ locally built image can be pushed directly into that cluster with
 -` (to be tested).
 
 A shared E2E test could work like this:
-- build one CSI app from source
-- deploy the hostpath example with that locally build app and
+- build one component from source
+- deploy the hostpath example with that locally build component and
   everything else as defined in the current repository (i.e.
   each repository must vendor, copy or check out the example from
   `csi-drivers-host-path`)
@@ -242,6 +259,10 @@ driver.
 ## Graduation Criteria
 
 - Test results are visible in GitHub PRs and test failures block merging.
+- Test results are visible in the [SIG-Storage
+  testgrid](https://k8s-testgrid.appspot.com/sig-storage-kubernetes).
+- The Prow test output and/or metadata clearly shows what revisions of the
+  different components were tested.
 - All components have been converted to publishing images on `gcr.io` in addition
   to the traditional `quay.io`.
 
