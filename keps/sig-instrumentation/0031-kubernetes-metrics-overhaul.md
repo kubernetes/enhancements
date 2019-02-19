@@ -98,7 +98,10 @@ Currently, all Kubelet metrics are exposed as summary data types. This means tha
 Hence, where possible, we should change summaries to histograms, or provide histograms in addition to summaries like with the API server metrics.
 
 https://github.com/kubernetes/kubernetes/pull/72323
+
 https://github.com/kubernetes/kubernetes/pull/72470
+
+https://github.com/kubernetes/kubernetes/pull/73820
 
 #### Export less metrics
 
