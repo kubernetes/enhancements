@@ -43,6 +43,7 @@ Table of Contents
       * [Non-Goals](#non-goals)
    * [Proposal](#proposal)
       * [Risks and Mitigations](#risks-and-mitigations)
+      * [Testing Plan](#testing-plan)
    * [Graduation Criteria](#graduation-criteria)
    * [Implementation History](#implementation-history)
    * [Alternatives](#alternatives)
@@ -183,8 +184,6 @@ Once all the code changes are done, we will:
    We will reduce it further later.
    Note that it doesn't reduce frequency by which Kubelet sends "meaningful"
    changes - it only impacts the frequency of "lastHeartbeatTime" changes.
-   <br> TODO: That still results in higher average QPS. It should be acceptable but
-   needs to be verified.
 1. announce that we are going to reduce frequency of NodeStatus updates further
    and give people 1-2 releases to switch their code to use `Lease`
    object (if they relied on frequent NodeStatus changes)
@@ -233,6 +232,24 @@ relying on frequent Node object updates. However, in non-managed solutions, cust
 will still be able to restore previous behavior by setting appropriate flag values.
 Thus, changing defaults to what we recommend is the path to go with.
 
+### Testing Plan
+
+There is a set of dedicated end-to-end tests added for that feature excercising:
+- whether Lease object is being created and update by Kubelet
+  (gce-cos-master-default)
+- whether Kubelet is reducing frequency of node status updates appropriately
+  (gce-cos-master-default)
+- whether Lease object is deleted on node deletion (gce-cos-master-serial)
+
+Additionally, if the feature gate is switched on, all existing test suites are
+implicitly testing behavior of this feature, as this is then the signal for
+healthiness of nodes.
+
+Additionally, the main benefit from this feature is obviously performance and
+scalability. For this purpose, as part of all scalability tests, we are
+additionally measuring maximum etcd database size.
+
+
 ## Graduation Criteria
 
 The API can be immediately promoted to Beta, as the API is effectively a copy of
@@ -243,9 +260,21 @@ The changes in components logic (Kubelet, NodeController) should be done behind
 a feature gate. We suggest making that enabled by default once the feature is
 implemented.
 
+Beta:
+- Confirmed scalability/performance gain: decreased of total etcd size by 2x+ on
+5k-node clusters and no drop in any other scalability SLIs (in fact we observed
+decrease in API call latencies by up to 20-30% for some resources). Verified on
+both real clusters and Kubemark.
+
+GA:
+- Enabled by default for a release with no complaints.
+
+
 ## Implementation History
 
-- RRRR-MM-DD: KEP Summary, Motivation and Proposal merged
+- v1.11: KEP Summary, Motivation and Proposal merged
+- v1.13: Feature launched to Alpha (default: off)
+- v1.14: Feature launched to Beta (default: on)
 
 ## Alternatives
 
