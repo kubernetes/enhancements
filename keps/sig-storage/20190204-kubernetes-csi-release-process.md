@@ -170,7 +170,7 @@ this KEP.
 For each component under kubernetes-csi (`external-attacher`,
 `csi-driver-host-path`, `csi-lib-utils`, etc.), these Prow jobs need
 to be defined:
-- `kubernetes-csi-<component>-pr: presubmit job
+- `kubernetes-csi-<component>-pr`: presubmit job
 - `kubernetes-csi-<component>-build`: a postsubmits job that matches against
   `v*` branches *and* tags (see https://github.com/kubernetes/test-infra/pull/10802#discussion_r248900281)
 
@@ -179,9 +179,12 @@ jobs need to be defined:
 - `kubernetes-csi-stable`: deploys and tests the current hostpath
   example (`csi-driver-host-path/deploy/stable`) from the master
   branch on the latest Kubernetes development version
-- `kubernetes-csi-canary-1.13`: deploys and tests the canary hostpath
-  example (`csi-driver-host-path/deploy/canary`) from the master
-  branch on Kubernetes 1.13
+- `kubernetes-csi-canary-<k8s-release>`: deploys and tests the canary
+  hostpath example (`csi-driver-host-path/deploy/canary`) from the
+  master branch on a certain Kubernetes release (for example,
+  `<k8s-release>` = `1.13`), using the same image revisions for the
+  entire test run; initially we'll start with 1.13 and later will
+  add more stable releases and remove unsupported ones
 - `kubernetes-csi-canary-dev`: deploys and tests the canary hostpath
   example from the master branch on the latest Kubernetes development
   version
@@ -260,7 +263,8 @@ driver.
 
 - Test results are visible in GitHub PRs and test failures block merging.
 - Test results are visible in the [SIG-Storage
-  testgrid](https://k8s-testgrid.appspot.com/sig-storage-kubernetes).
+  testgrid](https://k8s-testgrid.appspot.com/sig-storage-kubernetes) or
+  a sub-dashboard.
 - The Prow test output and/or metadata clearly shows what revisions of the
   different components were tested.
 - All components have been converted to publishing images on `gcr.io` in addition
