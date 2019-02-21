@@ -129,7 +129,7 @@ This proposal aims to add "dual-stack pods / single-family services" support to 
   - Service addresses: 1 service IP address per service
 - Kube-DNS is expected to be End-of-Life soon, so dual-stack testing will be performed using coreDNS.
 - External load balancers that rely on Kubernetes services for load balancing functionality will only work with the IP family that matches the IP family of the cluster's service CIDR.
-- Dual-stack support for Kubernetes orchestration tools other than kubeadm (e.g. miniKube, KubeSpray, etc.) are considered outside of the scope of this proposal.
+- Dual-stack support for Kubernetes orchestration tools other than kubeadm (e.g. miniKube, KubeSpray, etc.) are considered outside of the scope of this proposal. Communication about how to enable dual-stack functionality will be documented appropriately in-order so that aformentioned tools may choose to enable it for use.
 
 ## Proposal
 
@@ -145,8 +145,8 @@ In order to support dual-stack in Kubernetes clusters, Kubernetes needs to have 
   - NodePort: Support listening on both IPv4 and IPv6 addresses
   - ExternalIPs: Can be IPv4 or IPv6
 - Kube-proxy IPVS mode will support dual-stack functionality similar to kube-proxy iptables mode as described above. IPVS kube-router support for dual stack, on the other hand, is considered outside of the scope of this proposal.
-- For health/liveness/readiness probe support, a kubelet configuration will be added to allow a cluster administrator to select a preferred IP family to use for implementing probes on dual-stack pods.
-- The pod status API changes will include a per-IP string map for arbitrary annotations, as a placeholder for future Kubernetes enhancements. This mapping is not required for this dual-stack design, but will allow future annotations, e.g. allowing a CNI network plugin to indicate to which network a given IP address applies.
+- For health/liveness/readiness probe support, the default behavior will not change and an additional optional field would be added to the pod specification and is respected by kubelet. This will allow application developers to select a preferred IP family to use for implementing probes on dual-stack pods.
+- The pod status API changes will include a per-IP string map for arbitrary annotations, as a placeholder for future Kubernetes enhancements. This mapping is not required for this dual-stack design, but will allow future annotations, e.g. allowing a CNI network plugin to indicate to which network a given IP address applies. The approriate hooks will be provided to enable CRI/CNI to provide these details.
 - Kubectl commands and output displays will need to be modified for dual-stack.
 - Kubeadm support will need to be added to enable spin-up of dual-stack clusters. Kubeadm support is required for implementing dual-stack continuous integration (CI) tests.
 - New e2e test cases will need to be added to test parallel IPv4/IPv6 connectivity between pods, nodes, and services.
@@ -158,8 +158,7 @@ Given the scope of this enhancement, it has been suggested that we break the imp
 - pod-to-pod dual-stack routing and non-vip services
 - Single-family services
 - Multi-family services
-
-These phases do not take cloud-provder implementation into consideration.
+- External dependencies, eg. cloud-provide, CNI, CRI, CoreDNS etc...
 
 ### Awareness of Multiple IPs per Pod
 
@@ -222,7 +221,7 @@ However, as a defensive coding measure and for future-proofing, the following AP
 ##### V1 to Core (Internal) Conversion
 - If only V1 PodIP is provided:
   - Copy V1 PodIP to core PodIPs[0]
-- Else if only V1 PodIPs[] is provided:
+- Else if only V1 PodIPs[] is provided: # Undetermined as to whether this can actually happen (@thockin)
   - Copy V1 PodIPs[] to core PodIPs[]
 - Else if both V1 PodIP and V1 PodIPs[] are provided:
   - Verify that V1 PodIP matches V1 PodIPs[0]
@@ -233,19 +232,23 @@ However, as a defensive coding measure and for future-proofing, the following AP
   - Copy core PodIPs[0] to V1 PodIP
   - Copy core PodIPs[] to V1 PodIPs[]
 
+### Awareness of Multiple NodeCIDRs per Node
+As with PodIP corresponding changes will need to be made to NodeCIDR. These changes are essentially the same as the aformentioned PodIP changes which create the pularalization of NodeCIDRs to a slice rather than a singular and making those changes across the internal representation and v1 with associated conversations as necessary 
+
+
 #### kubelet Startup Configuration for Dual-Stack Pod CIDRs
 The existing "--pod-cidr" option for the [kubelet startup configuration](https://kubernetes.io/docs/reference/command-line-tools-reference/kubelet/) will be modified to support multiple IP CIDRs in a comma-separated list (rather than a single IP string), i.e.:
 ```
   --pod-cidr  ipNetSlice   [IP CIDRs, comma separated list of CIDRs, Default: []]
 ```
-Only the first address of each IP family will be used; all others will be ignored.
+Only the first address of each IP family will be used; all others will be logged and ignored.
 
 #### kube-proxy Startup Configuration for Dual-Stack Pod CIDRs
 The existing "cluster-cidr" option for the [kube-proxy startup configuration](https://kubernetes.io/docs/reference/command-line-tools-reference/kube-proxy/) will be modified to support multiple cluster CIDRs in a comma-separated list (rather than a single IP string), i.e:
 ```
   --cluster-cidr  ipNetSlice   [IP CIDRs, comma separated list of CIDRs, Default: []]
 ```
-Only the first address of each IP family will be used; all others will be ignored.
+Only the first address of each IP family will be used; all others will be logged and ignored.
 
 #### 'kubectl get pods -o wide' Command Display for Dual-Stack Pod Addresses
 The output for the 'kubectl get pods -o wide' command will need to be modified to display a comma-separated list of IPs for each pod, e.g.:
@@ -448,19 +451,9 @@ Only the first CIDR for each IP family will be used; all others will be ignored.
 
 Since IPVS functionality does not yet include IPv6 support (see [cloudnativelabs/kube-router Issue #307](https://github.com/cloudnativelabs/kube-router/issues/307)), support for IPVS functionality in a dual-stack cluster is considered a "nice-to-have" or stretch goal.
 
-### Health/Liveness/Readiness Probes for Dual-Stack Pods
-
-Currently, health, liveness, and readiness probes are defined without any concern for IP addresses or families. For the first release of dual-stack support, a cluster administrator will be able to select the preferred IP family to use for probes when a pod has both IPv4 and IPv6 addresses. For this selection, a new "--preferred-probe-ip-family" argument for the for the [kubelet startup configuration](https://kubernetes.io/docs/reference/command-line-tools-reference/kubelet/) will be added:
-```
-  --preferred-probe-ip-family  string   ["ipv4", "ipv6", or "none". Default: "none", meaning use the pod's default IP]
-```
-When a pod has only one IP address, that address will be used for probes regardless of the "--preferred-probe-ip-family" setting.
-
-In the future, we may want to consider adding a "dual-stack" option for the "--preferred-probe-ip-family" argument, indicating that a kubelet should test for probes using both IPv4 and IPv6 addresses for a pod, and consider the probe successful if a response is received via either address.
-
 ### CoreDNS Operation
 
-It is not expected that any changes will be needed for CoreDNS in order to support this design. Some considerations of CoreDNS support for dual stack:
+CoreDNS will need to make changes in order to support the plural form of endpoint addresses. Some other considerations of CoreDNS support for dual stack:
 
 - Because service IPs will remain single-family, pods will continue to access the CoreDNS server via a single service IP. In other words, the nameserver entries in a pod's /etc/resolv.conf will typically be a single IPv4 or single IPv6 address, depending upon the IP family of the cluster's service CIDR.
 - Non-headless Kubernetes services: CoreDNS will resolve these services to either an IPv4 entry (A record) or an IPv6 entry (AAAA record), depending upon the IP family of the cluster's service CIDR.
@@ -495,7 +488,7 @@ The NodePort service type uses the nodes IP address, which can be dual stack, an
 
 #### Type Load Balancer
 
-The cloud provider will provision an external load balancer. If the cloud provider load balancer maps directly to the pod iP's then a dual stack load balancer could be used. Additional information may need to be provided to the cloud provider to configure dual stack.
+The cloud provider will provision an external load balancer. If the cloud provider load balancer maps directly to the pod iP's then a dual stack load balancer could be used. Additional information may need to be provided to the cloud provider to configure dual stack. See Implementation Plan for further details.
 
 ### Cloud Provider Plugins Considerations
 
@@ -533,11 +526,16 @@ Here is an example of how to define a pluralized MY_POD_IPS environmental variab
     valueFrom:
       fieldRef:
         fieldPath: status.podIPs
+  - name: MY_POD_IPS_PROPERTIES_0
+    valueFrom:
+      fieldRef:
+        fieldPath: status.podIPs[0].properties
 ```
 
 This definition will cause an environmental variable setting in the pod similar to the following:
 ```
 MY_POD_IPS=fd00:10:20:0:3::3,10.20.3.3
+MY_POD_IPS_PROPERTIES_<IP_index>=x:y #We assume that colon is not going to used in map values.
 ```
 
 ### Kubeadm Support
