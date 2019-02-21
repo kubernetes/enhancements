@@ -134,10 +134,11 @@ The actual package generation is a different problem that is discussed in [this 
 
 ```
 Scenario: Enduser installs a kubelet from the stable channel
-  Given a user has configured the officially documented package mirror for stable releases for a specific kubernetes minior version on their machine
-   When they use the systems package manager
-   Then they get the latest stable of the kubelet from this specific kubernetes minor version installed on the machine
-    But don't get the latest beta of the kubelet from this specific kubernetes minor version installed on the machine
+  Given a user has configured the officially documented package mirror for stable releases for a specific kubernetes minor version ("the minor") on their machine
+   When they use the system's package manager to query the list of kubelet packages available (e.g. apt-cache policy kubelet)
+   Then they see a list of all stable patch versions of the kubelet that stem from the minor and a preference to install the latest patch version of the kubelet
+    But don't see any alpha, beta, rc or nightly releases of the kubelet from this specific kubernetes minor version
+    And they don't see any packages of any other kubernetes minor release
 ```
 
 ```
@@ -149,18 +150,9 @@ Scenario: Release tools automatically publish new packages
 ```
 
 ```
-Scenario: Endusers can get all stable releases from the stable channel
-  Given a user subsrcibed to the latest package repository for a specific kubernete minor release
-   When they inspect the list of kubelet packages available
-   Then they see all the patch release of this specific kubernetes minor release
-    And they don't see any alpha, beta, rc or nightly releases
-    And they don't see any packages of any other kubernetes minor release
-```
-
-```
-Scenario: Endusers can get the public key the packages or the repository metadata is signed with
+Scenario: End users can get the public key the packages or the repository metadata is signed with
   Given a user has a system configured with not allowing unsigned untrusted package repositories
-    And they have a setup the officially documented repository for a specific kubernetes minor release 
+    And they have setup the officially documented repository for a specific kubernetes minor release
    When they download the public key from the location stated in the official documentation
     And they configure their system's package manager to use that key
     And they use their system's package manager to install a package from this specific kubernetes minor release
@@ -214,6 +206,9 @@ Therefore a configuration for package managers might look something like:
 
 Different architectures will be published into the same repos, it is up to the package managers to pull and install the correct package for the target platform.
 
+All architectures that are supported by the [package building tool][pkg-gen-kep] should be published.
+This KEP suggests to start with publishing a single supported architecture (e.g. `linux/amd64`) and extend that iteratively, when we verify that creating all packages for all architectures is fast enough to be done as part of the release process. If it turns out this step takes too long, we need to think about doing the package building & publishing asynchronous to the release process (see also: [Risks](#risks-and-mitigations)).
+
 
 Implementation steps:
 - [ ] get minimal infra in place
@@ -234,9 +229,9 @@ Implementation steps:
 
 > [color=#ff0000] **TODO**
 
-- *Risk*: We don't find a proper way to share secrets like the singing key*
+- *Risk*: We don't find a proper way to share secrets like the signing key*
   *Mitigation*: ...
-- *Risk*: Building all the packages for all the distributions and their version takes to long to be done nightly or via cutting the release
+- *Risk*: Building all the packages for all the distributions and their version takes too long to be done nightly or via cutting the release
   *Mitigation*: ...
 
 <!--
