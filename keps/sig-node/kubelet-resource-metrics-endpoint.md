@@ -12,7 +12,7 @@ approvers:
   - dchen1107
   - brancz
 creation-date: 2019-01-24
-status: draft
+status: implementable
 ---
 
 # Kubelet Resource Metrics Endpoint
