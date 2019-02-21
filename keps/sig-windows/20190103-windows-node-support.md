@@ -203,9 +203,9 @@ tolerations:
 
 #### Memory Overprovisioning
 
-Windows always treats all user-mode memory allocations as virtual, and pagefiles are mandatory. The net effect is that Windows won't reach out of memory conditions the same way Linux does, and processes will page to disk instead of being subject to out of memory (OOM) termination. There is no way to guarantee a physical memory allocation or reserve for a process. See [#73417](https://github.com/kubernetes/kubernetes/issues/73417) for more details on the investigation for 1.14.
+Windows always treats all user-mode memory allocations as virtual, and pagefiles are mandatory. The net effect is that Windows won't reach out of memory conditions the same way Linux does, and processes will page to disk instead of being subject to out of memory (OOM) termination. There is no way to guarantee a physical memory allocation or reserve for a process - only limits. See [#73417](https://github.com/kubernetes/kubernetes/issues/73417) for more details on the investigation for 1.14.
 
-Keeping memory usage within reasonable bounds is possible using a combination of kubelet parameters `--kubelet-reserve` / `--system-reserve`, and resource limits on containers. These will be documented as best practices for v1.14. The related kubelet parameters `--eviction-hard`, `--eviction-soft`, and `--enforce-node-allocatable` are invalid for v1.14.
+Keeping memory usage within reasonable bounds is possible with a two-step process. First, use the kubelet parameters `--kubelet-reserve` and/or `--system-reserve` to account for memory usage on the node (outside of containers). This will reduce [NodeAllocatable](https://kubernetes.io/docs/tasks/administer-cluster/reserve-compute-resources/#node-allocatable). As you deploy workloads, use resource limits and reserves on containers. This will also subtract from NodeAllocatable and prevent the scheduler from adding more pods once a node is full. These will be documented as best practices for v1.14. The related kubelet parameters `--eviction-hard`, `--eviction-soft`, and `--enforce-node-allocatable` are invalid for v1.14.
 
 For later releases, we can work on a configurable heuristic to detect memory pressure, report it through the kubelet `MemoryPressure` condition, and implement pod eviction. 
 
