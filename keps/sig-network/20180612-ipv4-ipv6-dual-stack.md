@@ -233,7 +233,7 @@ However, as a defensive coding measure and for future-proofing, the following AP
   - Copy core PodIPs[] to V1 PodIPs[]
 
 ### Awareness of Multiple NodeCIDRs per Node
-As with PodIP corresponding changes will need to be made to NodeCIDR. These changes are essentially the same as the aformentioned PodIP changes which create the pularalization of NodeCIDRs to a slice rather than a singular and making those changes across the internal representation and v1 with associated conversations as necessary 
+As with PodIP, corresponding changes will need to be made to NodeCIDR. These changes are essentially the same as the aformentioned PodIP changes which create the pularalization of NodeCIDRs to a slice rather than a singular and making those changes across the internal representation and v1 with associated conversations.
 
 
 #### kubelet Startup Configuration for Dual-Stack Pod CIDRs
@@ -446,10 +446,6 @@ A new [kube-proxy configuration](https://kubernetes.io/docs/reference/command-li
   --cluster-cidr  ipNetSlice   (IP CIDRs, in a comma separated list, Default: [])
 ```
 Only the first CIDR for each IP family will be used; all others will be ignored.
-
-### IPVS Support and Operation
-
-Since IPVS functionality does not yet include IPv6 support (see [cloudnativelabs/kube-router Issue #307](https://github.com/cloudnativelabs/kube-router/issues/307)), support for IPVS functionality in a dual-stack cluster is considered a "nice-to-have" or stretch goal.
 
 ### CoreDNS Operation
 
