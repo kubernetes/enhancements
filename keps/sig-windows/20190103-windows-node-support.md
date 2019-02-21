@@ -40,7 +40,7 @@ status: implementable
     - [What works today](#what-works-today)
     - [What we need to test and verify if it works or not for GA (Some items will be documented as unsupported, others will be documented as supported, and some will be bugs that will be fixed for GA)](#what-we-need-to-test-and-verify-if-it-works-or-not-for-ga-some-items-will-be-documented-as-unsupported-others-will-be-documented-as-supported-and-some-will-be-bugs-that-will-be-fixed-for-ga)
     - [Windows Node Roadmap (post-GA work)](#windows-node-roadmap-post-ga-work)
-    - [What will never work (Note that some features are plain unsupported while some will not work without underlying OS changes)](#what-will-never-work-note-that-some-features-are-plain-unsupported-while-some-will-not-work-without-underlying-os-changes)
+    - [What will never work](#what-will-never-work)
     - [Windows Container Compatibility](#windows-container-compatibility)
     - [Relevant resources/conversations](#relevant-resourcesconversations)
     - [Risks and Mitigations](#risks-and-mitigations)
@@ -231,11 +231,12 @@ tolerations:
 
 ### Test Dashboard
 
-All test cases will be built in kubernetes/test/e2e, scheduled through [prow](https://github.com/kubernetes/test-infra/blob/master/config/jobs/kubernetes-sigs/sig-windows/sig-windows-config.yaml), and published on the [TestGrid SIG-Windows dashboard](https://testgrid.k8s.io/sig-windows) daily. This will be the master list of what needs to pass to be declared stable and will include all tests tagged [SIG-Windows] along with the subset of conformance tests that can pass on Windows. The current dashboard will be renamed "SIG-Windows Release" for clarity [see #10989](https://github.com/kubernetes/test-infra/issues/10989)
+All test cases will be built in kubernetes/test/e2e, scheduled through [prow](https://github.com/kubernetes/test-infra/blob/master/config/jobs/kubernetes-sigs/sig-windows/sig-windows-config.yaml), and published on the [TestGrid SIG-Windows dashboard](https://testgrid.k8s.io/sig-windows#aks-engine-azure-windows-master) daily. This will be the master list of what needs to pass to be declared stable and will include all tests tagged [SIG-Windows] along with the subset of conformance tests that can pass on Windows. 
 
 Additional dashboard pages will be added over time as we run the same test cases with additional CRI, CNI and cloud providers. They are running the same test cases, and are not required for v1.14 graduation to stable.
 
-- Windows Server 2019 on GCP - this is [in progress](https://k8s-testgrid.appspot.com/google-windows#windows-prototype)
+- [Windows Server 2019 on GCE](https://testgrid.k8s.io/sig-windows#gce-windows-master)
+- [Windows Server 2019 with Flannel on vSphere](https://testgrid.k8s.io/sig-windows#cfcr-vsphere-windows-master)
 - Windows Server 2019 with OVN+OVS & Dockershim
 - Windows Server 2019 with OVN+OVS & CRI-ContainerD
 - Windows Server 2019 with Azure-CNI & CRI-ContainerD
