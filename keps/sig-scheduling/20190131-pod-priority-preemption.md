@@ -11,8 +11,8 @@ approvers:
   - "@liggitt"
 editor: Babak Salamat
 creation-date: 2019-01-31
-last-updated: 2017-01-31
-status: impementable
+last-updated: 2019-01-31
+status: implementable
 see-also:
 replaces:
 superseded-by:
