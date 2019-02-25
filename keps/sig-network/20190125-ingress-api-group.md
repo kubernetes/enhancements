@@ -81,6 +81,11 @@ entirely different API with a superset of features.
   (intent is to target a minimal set of bugfixes and non-breaking changes)
 * Announce `extensions/v1beta1` Ingress as deprecated (and announce plan for GA)
 
+#### Test plan
+
+* Copy existing Ingress tests, changing the resource type to the new group. Keep
+  existing tests as is.
+
 ### 1.15
 
 * Update API server to persist in networking.k8s.io/v1beta1
