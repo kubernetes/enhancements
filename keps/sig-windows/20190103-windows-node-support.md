@@ -158,6 +158,7 @@ Note that some features are plain unsupported while some will not work without u
     - ICMP packets directed to destinations within the same network (e.g. pod to pod communication via ping) will work as expected and without any limitations
     - TCP/UDP packets will work as expected and without any limitations
     - ICMP packets directed to pass through a remote network (e.g. pod to external internet communication via ping) cannot be transposed and thus will *not* be routed back to their source
+      - Since TCP/UDP packets can still be transposed, one can substitute `ping <destination>` with `curl <destination>` to be able to debug connectivity to the outside world.
 
 ### Windows Container Compatibility
 As noted above, there are compatibility issues enforced by Microsoft where the host OS version must match the container base image OS. Changes to this compatibility policy must come from Microsoft. For GA, since we will only support Windows Server 2019 (aka 1809), both `container host OS` and `container OS` must be running the same version of Windows, 1809. 
