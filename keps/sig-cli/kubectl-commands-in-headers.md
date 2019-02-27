@@ -87,8 +87,75 @@ Include in requests made from kubectl to the apiserver:
 
 - the kubectl subcommand
 - which flags were specified (but not the values)
-- whether or not specific flags had specific values - e.g. `-f -` for stdin
-  
+- enum values for stdin and stdout
+- a generated session id
+
+### Kubectl-Command Header
+
+The `Kubectl-Command` Header contains the kubectl sub command.  It contains
+the path to the subcommand (e.g. `kubectl apply`) to disambiguate sub commands
+that might have the same name and different paths.
+
+Examples:
+
+- `Kubectl-Command: kubectl apply`
+- `Kubectl-Command: kubectl create secret tls` 
+- `Kubectl-Command: kubectl delete`
+- `Kubectl-Command: kubectl get`
+
+### Kubectl-Flags Header
+
+The `Kubectl-Flags` Header contains a list of the kubectl flags that were provided to the sub
+command.  It does *not* contain the flag values, only the names of the flags.  It
+does not normalize into short or long form.  If a flag is provided multiple times
+it will appear multiple times in the list.  Flags are sorted alpha-numerically and
+separated by a ','.
+
+Examples:
+
+- `Kubectl-Flags: --filename,--recursive`
+- `Kubectl-Flags: -f,-f,-f,-R` 
+- `Kubectl-Flags: --dry-run,-o`
+
+### Kubectl-Input Header
+
+The `Kubectl-Input` Header contains the types of input used.  Because the flag values are not
+provided, this can be used to determine if the command input was from STDIN, Local Files or
+Remote Files.  Format is a list of the types of input provided.
+
+Examples:
+
+- `Kubectl-Input: stdin`
+- `Kubectl-Input: file` 
+- `Kubectl-Input: http`
+- `Kubectl-Input: file,stdin`
+- `Kubectl-Input: file,file,http`
+
+### Kubectl-Output Header
+
+The `Kubectl-Output` Header contains the type of output used.  Because the flag values are
+not provided, this can be used to determine if the output is yaml,json,go-template,wide.
+Note: it does *not* contain non-enumeration values, such as the custom-columns values for
+for custom-columns output.
+
+Examples:
+
+- `Kubectl-Output: yaml`
+- `Kubectl-Output: json`
+- `Kubectl-Output: wide`
+- `Kubectl-Output: default`
+- `Kubectl-Output: jsonpath`
+- `Kubectl-Output: custom-columns`
+- `Kubectl-Output: custom-columns-file`
+
+### Kubectl-Session Header
+
+The `Kubectl-Session` Header contains a Session ID that can be used to identify that multiple
+requests were made from the same kubectl command invocation.  The Session Header is generated
+once for each kubectl process.
+
+- `Kubectl-Session: 67b540bf-d219-4868-abd8-b08c77fefeca`
+
 ### Example
 
 ```sh
@@ -96,10 +163,11 @@ $ kubectl apply -f - -o yaml
 ```
 
 ```
-Kubectl-Command: apply
+Kubectl-Command: kubectl apply
 Kubectl-Flags: -f
 Kubectl-Input: stdin
 Kubectl-Output: yaml
+Kubectl-Session: 67b540bf-d219-4868-abd8-b08c77fefeca
 ```
 
 
@@ -108,12 +176,12 @@ $ kubectl apply -f ./local/file -o=custom-columns=NAME:.metadata.name
 ```
 
 ```
-Kubectl-Command: apply
+Kubectl-Command: kubectl apply
 Kubectl-Flags: -f;-o
-Kubectl-Input: local-files
+Kubectl-Input: file
 Kubectl-Output: custom-columns
+Kubectl-Session: 0087f200-3079-458e-ae9a-b35305fb7432
 ```
-
 
 ### Risks and Mitigations
 
