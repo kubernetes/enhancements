@@ -16,7 +16,7 @@ approvers:
 editor: "@sethpollack"
 creation-date: 2019-02-04
 last-updated: 2019-02-04
-status: provisional
+status: implementable
 ---
 
 # Kustomize Secret Generator Plugins
