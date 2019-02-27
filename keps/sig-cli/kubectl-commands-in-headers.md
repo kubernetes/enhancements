@@ -6,11 +6,12 @@ owning-sig: sig-cli
 participating-sigs:
   - sig-api-machinery
 reviewers:
-  - "@lavalamp"
+  - "@deads2k"
   - "@kow3ns"
+  - "@lavalamp"
 approvers:
-  - "@soltysh"
   - "@seans3"
+  - "@soltysh"
 editor: TBD
 creation-date: 2019-02-22
 last-updated: 2019-02-22
@@ -44,11 +45,14 @@ A table of contents is helpful for quickly jumping to sections of a KEP and for 
 
 ## Release Signoff Checklist
 
-- [ ] kubernetes/enhancements issue in release milestone, which links to KEP (this should be a link to the KEP location in kubernetes/enhancements, not the initial KEP PR)
+- [x] kubernetes/enhancements issue in release milestone, which links to KEP (this should be a link to the KEP location in kubernetes/enhancements, not the initial KEP PR)
+  - [#859](https://github.com/kubernetes/enhancements/issues/859)
 - [x] KEP approvers have set the KEP status to `implementable`
 - [x] Design details are appropriately documented
-- [ ] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [x] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+  - Standard Unit and Integration testing should be sufficient
 - [x] Graduation criteria is in place
+  - This is not a user facing API change
 - [ ] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
@@ -79,79 +83,62 @@ are interacting with the cluster.
 
 ### Non-Goals
 
-NA
+### Anti-Goals
+
+*We explicitly don't want the following*
+
+- Make decisions of any sort in the apiserver based on these headers.
+  - This information is intended to be used by humans-only, specifically **for debugging and telemetry**.
 
 ## Proposal
 
 Include in requests made from kubectl to the apiserver:
 
 - the kubectl subcommand
-- which flags were specified (but not the values)
-- enum values for stdin and stdout
+- which flags were specified as well as whitelisted enum values for flags (never arbitrary values)
 - a generated session id
+- never include the flag values directly, only use a predefined enumeration
+- never include arguments to the commands
 
 ### Kubectl-Command Header
 
 The `Kubectl-Command` Header contains the kubectl sub command.  It contains
-the path to the subcommand (e.g. `kubectl apply`) to disambiguate sub commands
+the path to the subcommand (e.g. `create secret tls`) to disambiguate sub commands
 that might have the same name and different paths.
 
 Examples:
 
-- `Kubectl-Command: kubectl apply`
-- `Kubectl-Command: kubectl create secret tls` 
-- `Kubectl-Command: kubectl delete`
-- `Kubectl-Command: kubectl get`
+- `Kubectl-Command: apply`
+- `Kubectl-Command: create secret tls` 
+- `Kubectl-Command: delete`
+- `Kubectl-Command: get`
 
 ### Kubectl-Flags Header
 
 The `Kubectl-Flags` Header contains a list of the kubectl flags that were provided to the sub
-command.  It does *not* contain the flag values, only the names of the flags.  It
-does not normalize into short or long form.  If a flag is provided multiple times
-it will appear multiple times in the list.  Flags are sorted alpha-numerically and
-separated by a ','.
+command.  It does *not* contain the raw flag values, but may contain enumerations for
+whitelisted flag values.  (e.g. for `-f` it may contain whether a local file, stdin, or remote file
+was provided).  It does not normalize into short or long form.  If a flag is
+provided multiple times it will appear multiple times in the list.  Flags are sorted
+alpha-numerically and separated by a ','.
 
 Examples:
 
-- `Kubectl-Flags: --filename,--recursive`
-- `Kubectl-Flags: -f,-f,-f,-R` 
-- `Kubectl-Flags: --dry-run,-o`
+- `Kubectl-Flags: --filename=local,--recursive,--context`
+- `Kubectl-Flags: -f=local,-f=local,-f=remote,-R` 
+- `Kubectl-Flags: -f=stdin` 
+- `Kubectl-Flags: --dry-run,-o=custom-columns`
 
-### Kubectl-Input Header
+#### Enumerated Flag Values
 
-The `Kubectl-Input` Header contains the types of input used.  Because the flag values are not
-provided, this can be used to determine if the command input was from STDIN, Local Files or
-Remote Files.  Format is a list of the types of input provided.
-
-Examples:
-
-- `Kubectl-Input: stdin`
-- `Kubectl-Input: file` 
-- `Kubectl-Input: http`
-- `Kubectl-Input: file,stdin`
-- `Kubectl-Input: file,file,http`
-
-### Kubectl-Output Header
-
-The `Kubectl-Output` Header contains the type of output used.  Because the flag values are
-not provided, this can be used to determine if the output is yaml,json,go-template,wide.
-Note: it does *not* contain non-enumeration values, such as the custom-columns values for
-for custom-columns output.
-
-Examples:
-
-- `Kubectl-Output: yaml`
-- `Kubectl-Output: json`
-- `Kubectl-Output: wide`
-- `Kubectl-Output: default`
-- `Kubectl-Output: jsonpath`
-- `Kubectl-Output: custom-columns`
-- `Kubectl-Output: custom-columns-file`
+- `-f`, `--filename`: `local`, `remote`, `stdin`
+- `-o`, `--output`: `json`,`yaml`,`wide`,`name`,`custom-columns`,`custom-columns-file`,`go-template`,`go-template-file`,`jsonpath`,`jsonpath-file`
+- `--type` (for patch subcommand): `json`, `merge`, `strategic`
 
 ### Kubectl-Session Header
 
 The `Kubectl-Session` Header contains a Session ID that can be used to identify that multiple
-requests were made from the same kubectl command invocation.  The Session Header is generated
+requests which were made from the same kubectl command invocation.  The Session Header is generated
 once for each kubectl process.
 
 - `Kubectl-Session: 67b540bf-d219-4868-abd8-b08c77fefeca`
@@ -163,10 +150,8 @@ $ kubectl apply -f - -o yaml
 ```
 
 ```
-Kubectl-Command: kubectl apply
-Kubectl-Flags: -f
-Kubectl-Input: stdin
-Kubectl-Output: yaml
+Kubectl-Command: apply
+Kubectl-Flags: -f=stdin,-o=yaml
 Kubectl-Session: 67b540bf-d219-4868-abd8-b08c77fefeca
 ```
 
@@ -176,24 +161,27 @@ $ kubectl apply -f ./local/file -o=custom-columns=NAME:.metadata.name
 ```
 
 ```
-Kubectl-Command: kubectl apply
-Kubectl-Flags: -f;-o
-Kubectl-Input: file
-Kubectl-Output: custom-columns
+Kubectl-Command: apply
+Kubectl-Flags: -f=local,-o=custom-columns
+Kubectl-Session: 0087f200-3079-458e-ae9a-b35305fb7432
+```
+
+```sh
+kubectl patch pod valid-pod --type='json' -p='[{"op": "replace", "path": "/spec/containers/0/image", "value":"new
+image"}]'
+```
+
+```
+Kubectl-Command: patch
+Kubectl-Flags: --type=json,-p
 Kubectl-Session: 0087f200-3079-458e-ae9a-b35305fb7432
 ```
 
 ### Risks and Mitigations
 
 Unintentionally including sensitive information in the request headers - such as local directory paths
-or cluster names.
-
-Mitigations: only include the following non-sensative information:
-
-- The sub command itself
-- Which flags were specified, but not their values.  e.g. `-f`, but not the argument
-- What type of input was specified (e.g. stdin, local files, remote files)
-- What type of output was specified (e.g. yaml, json, wide, default, name, etc)
+or cluster names.  This won't be a problem as the command arguments and flag values are never directly
+included.
 
 ## Design Details
 
@@ -201,6 +189,7 @@ Mitigations: only include the following non-sensative information:
 
 - Verify the Header is sent for commands and has the right value
 - Verify the Header is sent for flags and has the right value
+- Verify the Header is sent for the Session and has a legitimate value
 
 ### Graduation Criteria
 
