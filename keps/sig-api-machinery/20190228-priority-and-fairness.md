@@ -130,7 +130,20 @@ should be preventable when this KEP is in place.
   peers and the rest of the system.
 
 - Overbearing or buggy tenants.  In a multi-tenant scenario, we would
-  like to prevent some tenants from crowding out the others.
+  like to prevent some tenants from crowding out the others.  Various
+  usage scenarios involve identifying the tenant in the following
+  ways.
+  
+  - Each tenant corresponds with a kube API namespace.
+
+  - Each tenant corresponds with a user name.
+
+  - Each tenant corresponds with a prefix of the user name.
+
+  - Each tenant corresponds with a user's group.  Other groups may
+    exist.  There is a subset of the groups that serve to identify
+    tenants.  Each user belongs to exactly one of the
+    tenant-identifying groups.
 
 ### Non-Goals
 
@@ -164,6 +177,20 @@ stake in the ground.
   existing event rate limiting admission plugin.  Events are a
   somewhat special case.  For now we intend to simply leave the
   existing admission plugin in place.
+
+- This KEP will not attempt to protect against denial-of-service
+  attacks at lower levels in the stack; it is only about what can be
+  done at the identified point in the handler chain.
+
+- This KEP does not introduce threading of additional information
+  through webhooks and/or along other paths to support avoidance of
+  priority inversions.  While that is an attractive thing to consider
+  in the future, this KEP is deliberately limited in its ambition.
+  The intent for this KEP is to document that for the case of requests
+  that are secondary to some other requests the configuration should
+  identify those secondary requests and give them sufficiently high
+  priority to avoid priority inversion problems.  That will
+  necessarily be conservative, and we settle for that now.
   
 ## Proposal
 
@@ -345,6 +372,38 @@ packets, is lumpy we must average over many service times.  Approaches
 to this include: using a sequence of intervals, using a sliding
 window, and using an exponential decay.
 
+Another open issue is the categorization: what are the categories and
+how is a request assigned to a category?  We seem to be agreed on at
+least one important point: each request is assigned to exactly one
+category, and is handled by exactly one "bucket" or "queue".  We also
+seem to be converging toward a two-level hierarchy of categories,
+aligned with the handling outline discussed earlier: at the higher
+level there are priorities, and within each priority level there is a
+collection of flows that compete fairly.
+
+One question is whether the prioritization is strict, or there is some
+sort of leakage between priority levels.  Leakage is problematic
+because it weakens the semantics of priority.  Leakage may be
+motivated by thinking that some low priority requests should be
+handled instead of high priority requests in some circumstances.  Such
+circumstances should be clearly identified.  If the thinking is that
+priority inversions are impossible to avoid then that should be
+explained as such.
+
+For the higher level of categorization --- i.e., into priority levels
+--- the idea is that this is based on a configured set of predicate =>
+priority associations.  The predicate can test any authenticated
+request attribute --- notably including both client identity and the
+work being requested.  One issue to nail down is the question of what
+happens if multiple predicates match a given request; the handler
+should pick exactly one priority level for each request.
+
+Within a given priority level we want to give a fair division of
+capacity among several "flows"; the lower level of categorization is
+how to compute a flow identifier from a request.
+
+The handler may additionally hash the flows into queues, so that a
+more manageable number of queues is involved.
 
 ## Implementation History
 
