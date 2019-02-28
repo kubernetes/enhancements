@@ -252,7 +252,9 @@ something like the following.
 
 - We assume that when the requst-timeout handler aborts a request it
   is effective --- we assume the request stops consuming CPU and
-  memory at that point.
+  memory at that point.  We know that this is not actually true today,
+  but is intended; we leave fixing that to be independent work, and
+  for now this KEP simply ignores the gap.
 
 One of the biggest questions is how to formulate the scheduling
 parameters.  There are several related concepts in the state of the
