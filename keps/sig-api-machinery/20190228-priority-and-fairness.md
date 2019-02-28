@@ -200,23 +200,49 @@ There are likely others.
 We are still ironing out the high level goals and approach.  Following
 is an attempt to summarize the open issues and thinking on them.
 
-One of the biggest questions is how to formulate the controls.  There
-are several related concepts in the state of the art of scheduling,
-and we are trying to figure out what to adopt and/or invent.  We would
-prefer to invent as little as possible; it is a non-trivial thing to
-invent a new --- and sufficiently efficient --- scheduling algorithm
-and prove it correct.  The vmware product line uses scheduling
-parameters named "reservation", "limit", and "shares" for each class
-of workload.  The first two are known elsewhere as "assured" and
-"ceiling".  Finding a published algorithm that implements all three
-has not proven easy.  Alternatively, priorities are easy to implement
-and arguably more desirable --- provided there is some form of
-fairness within each priority level.  The current thinking is in that
-direction: use priorities, with simple equal fairness among some
-categories of requests in each priority level.  There are published
-scheduling algorithms that provide fairness, and we hope to use/adapt
-one of them to apply independently within the confines of each
-priroity level.
+Despite the open issues, we seem to be roughly agreed on an outline
+something like the following.
+
+- When a request arrives at the handler, the request is categorized
+  somehow.  The nature of the categories and the categorization
+  process is one open issue. Some proposals (not written yet) allow
+  for the request to be rejected upon arrival based on that
+  categorization and some local state.  Unless rejected, the request
+  is put into a FIFO queue.  That is one of many queues.  The queues
+  are associated with the categories somehow.  Some proposlas
+  contemplate ejecting less desirable requests to make room for the
+  newly queued request, if and when queue space is tight.
+
+- A request might also be rejected at a later time, based on other
+  criteria.  For example, as in the CoDel technique --- which will
+  reject a request at the head of the queue if the latency is found to
+  be too big at certain times.
+
+- Based on some resource limit (i.e., QPS or concurrency), requests
+  are dispatched from the queues to be served (i.e., continue down the
+  handler chain).
+
+- We assume that when the requst-timeout handler aborts a request it
+  is effective --- we assume the request stops consuming CPU and
+  memory at that point.
+
+One of the biggest questions is how to formulate the scheduling
+parameters.  There are several related concepts in the state of the
+art of scheduling, and we are trying to figure out what to adopt
+and/or invent.  We would prefer to invent as little as possible; it is
+a non-trivial thing to invent a new --- and sufficiently efficient ---
+scheduling algorithm and prove it correct.  The vmware product line
+uses scheduling parameters named "reservation", "limit", and "shares"
+for each class of workload.  The first two are known elsewhere as
+"assured" and "ceiling".  Finding a published algorithm that
+implements all three has not proven easy.  Alternatively, priorities
+are easy to implement and arguably more desirable --- provided there
+is some form of fairness within each priority level.  The current
+thinking is in that direction: use priorities, with simple equal
+fairness among some categories of requests in each priority level.
+There are published scheduling algorithms that provide fairness, and
+we hope to use/adapt one of them to apply independently within the
+confines of each priroity level.
 
 Another issue is whether to manage QPS or concurrency or what.
 Managing QPS leaps first to mind, perhaps because it is a simple
@@ -293,30 +319,6 @@ queue --- which is needed by the CoDel technique --- there have to be
 many requests served during an interval.  Because of this mismatch,
 and because equivalence of context has not been established, we are
 not agreed that the CoDel technique can be used.
-
-Despite the open issues above, we seem to be circling around the
-following outline.
-
-- When a request arrives at the handler, the request is categorized
-  somehow.  Some proposals call for the request to be rejected upon
-  arrival based on that categorization and some local state.  Unless
-  rejected, the request is put into a FIFO queue.  That is one of many
-  queues.  The queues are associated with the categories somehow.
-  Some proposlas contemplate ejecting less desirable requests to make
-  room for the newly queued request, if and when queue space is tight.
-
-- A request might also be rejected at a later time, based on other
-  criteria.  For example, as in the CoDel technique --- which will
-  reject a request at the head of the queue if the latency is found to
-  be too big at certain times.
-
-- Based on some resource limit (i.e., QPS or concurrency), requests
-  are dispatched from the queues to be served (i.e., continue down the
-  handler chain).
-
-- We assume that when the requst-timeout handler aborts a request it
-  is effective --- we assume the request stops consuming CPU and
-  memory at that point.
 
 
 ## Implementation History
