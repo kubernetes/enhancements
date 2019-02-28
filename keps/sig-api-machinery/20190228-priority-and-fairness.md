@@ -2,6 +2,7 @@
 title: Priority and Fairness for API Server Requests
 authors:
   - "@MikeSpreitzer"
+  - "@yue9944882"
 owning-sig: sig-api-machinery
 participating-sigs:
   - wg-multitenancy
@@ -159,9 +160,17 @@ stake in the ground.
   the administrator will configure each apiserver's capacity limit(s),
   analogously to how the max-in-flight limits are configured today.
 
+- This KEP will not attempt to reproduce the functionality of the
+  existing event rate limiting admission plugin.  Events are a
+  somewhat special case.  For now we intend to simply leave the
+  existing admission plugin in place.
+  
 ## Proposal
 
-Several proposals have been floated.  They include the following.
+We are still ironing out the high level goals and approach.  Several
+proposals have been floated, as listed next, and at least one more is
+coming.  See the [Design Details section](#design-details) for a
+discussion of the issues.
 
 - [Min Kim's original proposal](https://docs.google.com/document/d/12xAkRcSq9hZVEpcO56EIiEYmd0ivybWo4YRXV0Nfq-8)
 
@@ -172,6 +181,21 @@ Several proposals have been floated.  They include the following.
 Also notable are notes from a meeting on this subject, at
 https://docs.google.com/document/d/1bEh2BqfSSr3jyh1isnXDdmfe6koKd_kMXCFj08uldf8
 .
+
+### Implementation Details/Notes/Constraints
+
+TBD
+
+### Risks and Mitigations
+
+Implementing this KEP will increase the overhead in serving each
+request, perhaps to a degree that depends on some measure of system
+and/or workload size.  The additional overhead must be practically
+limited.
+
+There are likely others.
+
+## Design Details
 
 We are still ironing out the high level goals and approach.  Following
 is an attempt to summarize the open issues and thinking on them.
@@ -294,23 +318,6 @@ following outline.
   is effective --- we assume the request stops consuming CPU and
   memory at that point.
 
-
-### Implementation Details/Notes/Constraints
-
-TBD
-
-### Risks and Mitigations
-
-Implementing this KEP will increase the overhead in serving each
-request, perhaps to a degree that depends on some measure of system
-and/or workload size.  The additional overhead must be practically
-limited.
-
-There are likely others.
-
-## Design Details
-
-TBD
 
 ## Implementation History
 
