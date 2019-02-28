@@ -386,13 +386,7 @@ level there are priorities, and within each priority level there is a
 collection of flows that compete fairly.
 
 One question is whether the prioritization is strict, or there is some
-sort of leakage between priority levels.  Leakage is problematic
-because it weakens the semantics of priority.  Leakage may be
-motivated by thinking that some low priority requests should be
-handled instead of high priority requests in some circumstances.  Such
-circumstances should be clearly identified.  If the thinking is that
-priority inversions are impossible to avoid then that should be
-explained as such.
+sort of leakage between priority levels.
 
 For the higher level of categorization --- i.e., into priority levels
 --- the idea is that this is based on a configured set of predicate =>
