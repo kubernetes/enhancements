@@ -350,15 +350,17 @@ not agreed that the CoDel technique can be used.
 
 Note that the resource limit being applied is a distinct concept from
 the fairness criteria.  For example, in CPU scheduling there may be 4
-CPUs and 50 threads being scheduled onto those threads; we do not
-suppose the goal is to have each thread to be using 0.08 CPUs at each
-instant.  Similarly, in networking, a router may multiplex a thousand
-flows onto one link; the goal is not to have each flow use 1/1000th of
-the link at each instant.  Each CPU or link is used for just one thing
-at a time; this is the resource limit.  The fairness goal is about
-utilization observed over time.  So it is in our scenario too.  For
-example, we may have 5000 flows of requests and a concurrency limit of
-600 requests at any one time.  That does not mean that our goal is for
+CPUs and 50 threads being scheduled onto those CPUs; we do not suppose
+the goal is to have each thread to be using 0.08 CPUs at each instant;
+a thread uses eitehr 0 or 1 CPUs at a given instant.  Similarly, in
+networking, a router may multiplex a thousand flows onto one link; the
+goal is not to have each flow use 1/1000th of the link at each
+instant; a packet uses 0 links while queued and 1 link while being
+transmitted.  Each CPU or link is used for just one thing at a time;
+this is the resource limit.  The fairness goal is about utilization
+observed over time.  So it is in our scenario too.  For example, we
+may have 5000 flows of requests and a concurrency limit of 600
+requests at any one time.  That does not mean that our goal is for
 each flow to have 0.12 requests running at each instant.  Our goal is
 to limit the number of running requests to 600 at each instant and
 provide some fairness in utilization averaged over time.
