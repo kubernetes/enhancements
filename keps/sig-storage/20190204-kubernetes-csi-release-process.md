@@ -59,9 +59,12 @@ This document explains how these components are released.
 
 So far, the process for tagging and building components has been
 fairly manual, with some assistance by Travis CI. There has been no
-automatic testing on a Kubernetes cluster, neither stand-alone
-deployment of individual components nor full end-to-end (E2E) testing
-of several Kubernetes-CSI components.
+automatic testing of the release candidates on a Kubernetes cluster,
+neither as stand-alone deployment of individual components nor as full
+end-to-end (E2E) testing of several Kubernetes-CSI components. Testing
+the stable releases of the components is included in the automatic
+Kubernetes testing, but running those tests against pre-release
+components had to be done manually.
 
 With CSI support reaching GA in Kubernetes 1.13, it is time to define
 and follow a less work-intensive and more predictable approach.
@@ -77,7 +80,7 @@ and follow a less work-intensive and more predictable approach.
 
 - a combined "Kubernetes-CSI release": each component gets released
   separately.  It is the responsibility of a CSI driver maintainer
-  pick and test sidecar releases for a combined deployment of that
+  to pick and test sidecar releases for a combined deployment of that
   driver. The [hostpath deployment
   example](https://github.com/kubernetes-csi/csi-driver-host-path/tree/master/deploy)
   can be used as a starting point, but it's not going to be able to
@@ -114,10 +117,12 @@ An additional suffix like `-rc1` can be used to denote a pre-release.
 The [hostpath example
 deployment](https://github.com/kubernetes-csi/csi-driver-host-path/tree/master/deploy)
 defines the exact release of each sidecar that is part of that
-deployment. When updating to newer sidecar releases, a new hostpath
-driver release is tagged with version numbers bumped according to the
+deployment. When updating to newer sidecar releases, a new `csi-driver-host-path`
+release is tagged with version numbers bumped according to the
 same rules as the individual components (major version bump when any
-of the sidecars had a major change, etc.).
+of the sidecars had a major change, etc.). This will then also
+rebuild the hostpath driver binary itself with that version number
+embedded, regardless of whether its own source code has changed.
 
 #### Release artifacts
 
@@ -296,6 +301,14 @@ versions"](https://github.com/kubernetes-csi/csi-release-tools/issues/6)
 rejected that idea because of the risks associated with automatically
 changing versions in a production cluster.
 
+A new hostpath driver binary gets created also when only the
+deployment changes, for example because a sidecar gets updated. This
+is a result of treating the driver binary and its deployment as a unit
+with a single version number. The alternative would have been to
+maintain the deployment in a separate repository with its own
+independent versioning, but that has been rejected because it is more
+work and because driver and deployment always need to be updated
+together.
 
 ## Infrastructure Needed
 
