@@ -76,27 +76,29 @@ document, and merits discussion in a broader forum and input from SIG-Architectu
 considered to be safe to be vendored outside of the K8s/K8s repo and which should eventually be fully separated from
 the K8s/K8s repo. Contents of Staging are prevented from depending on code in K8s/K8s which are not in Staging.
 Controlled by [publishing kubernetes-rules-configmap](https://github.com/kubernetes/publishing-bot/blob/master/configs/kubernetes-rules-configmap.yaml)
+- **In-tree**: code that lives in the core Kubernetes repository [k8s.io/kubernetes](https://github.com/kubernetes/kubernetes/).
+- **Out-of-Tree**: code that lives in an external repository outside of [k8s.io/kubernetes](https://github.com/kubernetes/kubernetes/).
 
 ## Summary
 
-This is a proposal outlining steps to remove "in-tree" cloud provider code from the kubernetes/kubernetes repo.
+This is a proposal outlining steps to remove "in-tree" cloud provider code from the k8s.io/kubernetes repo while being
+as least disruptive to end users and other Kubernetes developers as possible.
 
 ## Motivation
 
 Motiviation behind this effort is to allow cloud providers to develop and make releases independent from the core
-Kubernetes release cycle. The de-coupling of provider code allows for separation of concern between the Kubernetes core
-and the initial cloud providers that are currently built into the project. Additionally, one of the goals of SIG Cloud
-Provider is to move all providers out-of-tree to promote a vendor neutral ecosystem.
+Kubernetes release cycle. The de-coupling of cloud provider code allows for separation of concern between "Kubernetes core"
+and the cloud providers within the ecosystem. In addition, this ensures all cloud providers in the ecosystem are integrating with
+Kubernetes in a consistent and extendable way.
 
-Having all cloud providers developed/released in their own external modules will result in the following benefits:
-* the core pieces of Kubernetes (kubelet, kube-apiserver, kube-controller-manager, etc) will no longer depend on cloud provider specific
+Having all cloud providers developed/released in their own external repos/modules will result in the following benefits:
+* The core pieces of Kubernetes (kubelet, kube-apiserver, kube-controller-manager, etc) will no longer depend on cloud provider specific
 APIs (and their dependencies). This results in smaller binaries and lowers the chance of security vulnerabilities via external dependencies.
-* each cloud provider is free to release features/bug fixes at their own schedule rather than relying on the core Kubernetes release cycle.
+* Each cloud provider is free to release features/bug fixes at their own schedule rather than relying on the core Kubernetes release cycle.
 
 ### Goals
 
-- Remove all cloud provider specific code from kubernetes/kubernetes.
-- Move the cloud provider specific controller manager logic into repos appropriate for those cloud providers.
+- Remove all cloud provider specific code from the `k8s.io/kubernetes` repository with minimal disruption to end users and developers.
 
 ### Non-Goals
 
@@ -106,17 +108,19 @@ APIs (and their dependencies). This results in smaller binaries and lowers the c
 
 ### Approach
 
-In order to remove cloud provider code from kubernetes/kubernetes. A 3 phase approach will be taken.
+In order to remove cloud provider code from `k8s.io/kubernetes`. A 3 phase approach will be taken.
 
-1. Move all code in `kubernetes/kubernetes/pkg/cloudprovider/providers` to `kubernetes/kubernetes/staging/cloud-provider-<provider>/`. This requires removing all dependencies in each cloud provider to `kubernetes/kubernetes`.
-2. Begin to build CCM from external repos (`kubernetes/cloud-provider-<provider>`) via code synced from `kubernetes/kubernetes/staging/cloud-provider-<provider>`. This allows us to develop providers "out-of-tree" while being able to build both in-tree components like kube-controller-manager and out-of-tree components like cloud-controller-manager. Development is still done in `kubernetes/kubernetes/staging/cloud-provider-<provider>` during this phase.
-3. Delete all code in `kubernetes/kubernetes/staging/cloud-provider-<provider>` and shift main development to `kubernetes/cloud-provider-<provider>`.
+1. Move all code in `k8s.io/kubernetes/pkg/cloudprovider/providers/<provider>` to `k8s.io/kubernetes/staging/src/k8s.io/cloud-provider-<provider>/`. This requires removing all internal dependencies in each cloud provider to `k8s.io/kubernetes`.
+2. Begin to build/release the CCM from external repos (`k8s.io/cloud-provider-<provider>`) via code synced from `k8s.io/kubernetes/staging/src/k8s.io/cloud-provider-<provider>`. This allows us to develop providers "out-of-tree" while being able to build both in-tree components like kube-controller-manager and out-of-tree components like cloud-controller-manager. Development is still done in `k8s.io/kubernetes/staging/src/k8s.io/cloud-provider-<provider>` during this phase.
+3. Delete all code in `k8s.io/kubernetes/staging/src/k8s.io/cloud-provider-<provider>` and shift main development to `k8s.io/cloud-provider-<provider>`.
 
 #### Phase 1 - Moving Cloud Provider Code to Staging
 
-In Phase 1, all cloud provider code in `k8s.io/kubernetes/pkg/cloudprovider/providers` will be moved to `k8s.io/kubernetes/staging/k8s.io/cloud-provider/providers`. Moving code to a staging directory still allows us to build core Kubernetes components (`kube-controller-manager`, `kubelet`, etc) without interruption while also signalling to the community that in-tree provider code is slated for removal.
+In Phase 1, all cloud provider code in `k8s.io/kubernetes/pkg/cloudprovider/providers/<provider>` will be moved to `k8s.io/kubernetes/staging/src/k8s.io/cloud-provider-<provider>/provider`. Reasons why we "stage" cloud providers as the first phase are:
+* A staged directory can be published to an external repo. This allows for continued development in `k8s.io/kubernetes` while also syncing any necessary code in-tree to their out-of-tree counterparts. This allows us to maintain a single source of truth for cloud providers rather than maintaining both an in-tree and out-of-tree component.
+* Staging the cloud providers indicates to the community that they are slated for removal in the future.
 
-The biggest challenge of this phase is to remove dependences to k8s.io/kubernetes in all the providers. This is required to avoid circular dependencies within the various Kubernetes repos. All other repos "staged" (`client-go`, `apimachinery`, `api`, etc) in Kubernetes follow the same pattern. Below are the current list of packges in `k8s.io/kubernetes` that we need to remove. Note that _some_ dependencies may need to be duplicated for the duration of this migration as other critical components of Kubernetes may share the same code but removing the dependency may not be trivial. In general, we will avoid duplicating code and only use it as a last resort to resolve circular dependencies to `kubernetes/kubernetes`. Note that the list of dependencies below will change as this effort continues.
+The biggest challenge of this phase is to remove dependences to `k8s.io/kubernetes` in all the providers. This is requirement of staging a repository and a best practice for consuming external dependencies. All other repos "staged" (`client-go`, `apimachinery`, `api`, etc) in Kubernetes follow the same pattern. Below are the current list of packges in `k8s.io/kubernetes` that we need to remove or migrate to an external repo. Note that _some_ dependencies may need to be duplicated for the duration of this migration as other critical components of Kubernetes may share the same code but removing the dependency may not be trivial (e.g. usage of internal APIs). In general, we will avoid duplicating code and only use it as a last resort to resolve circular dependencies to `k8s.io/kubernetes`. Note that the list of dependencies below will change as this effort continues.
 
 | Dependency                        | Proposed Location                     | Is duplicated? | Partial or Full? |
 |-----------------------------------|---------------------------------------|----------------|------------------|
@@ -146,11 +150,13 @@ The biggest challenge of this phase is to remove dependences to k8s.io/kubernete
 
 #### Phase 2 - Building CCM from Provider Repos
 
-In Phase 2, providers will be expected to build cloud controller manager from their respective provider repos (`kubernetes/cloud-provider-<provider>`). Provider repos will be frequently synced from their respective staging repos by the kubernetes publishing bot. Development of providers are still done in `kubernetes/kubernetes/staging/cloudprovider/providers`.
+In Phase 2, cloud providers will be expected to build the cloud controller manager from their respective provider repos (`k8s.io/cloud-provider-<provider>`). Provider repos will be frequently synced from their respective staging repos by the kubernetes publishing bot. Development of cloud provider implementations are still done in their respective staging directories in `k8s.io/kubernetes`. For example, changes to the GCE cloud provider will be done in `k8s.io/kubernetes/staging/src/k8s.io/cloud-provider-gce/provider`.
+
+The kube-controller-manager should use the cloud provider implementations in staging. The package location of the provider implementations will change because each staged directory will be "vendored" in from their respective staging directory. Ideally the only change in the kube-controller-manager is how the providers are imported. The kube-controller-manager should otherwise have no changes to how it implements each cloud provider.
 
 #### Phase 3 - Migrating Provider Code to Provider Repos
 
-In Phase 3, all code in `kubernetes/kubernetes/staging/cloud-provider-<provider>` will be removed and development of Kubernetes cloud providers should be done in provider specific repos. It's important that by this phase, both in-tree and out-of-tree cloud providers are tested and production ready. Ideally most Kubernetes clusters in production should be using the out-of-tree provider before in-tree support is removed.
+In Phase 3, all code in `k8s.io/kubernetes/staging/src/k8s.io/cloud-provider-<provider>/provider` will be removed and development of each cloud provider should be done in their respective external repos. It's important that by this phase, both in-tree and out-of-tree cloud providers are tested and production ready. Ideally most Kubernetes clusters in production should be using the out-of-tree provider before in-tree support is removed. A plan to migrate existing clusters from using the `kube-controller-manager` to the `cloud-controller-manager` is currently being developed. More details soon.
 
 ### Staging Directory
 
