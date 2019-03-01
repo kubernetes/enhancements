@@ -131,10 +131,9 @@ validation based on published openapi schemas. To ensure that publishing schemas
 for additional custom resources does not regress existing function, we will test
 creation of custom resources with and without validation with current and prior versions of kubectl.
 
-We will add a feature gate CustomResourceOpenAPI, which can be turned off to stop
-openapi creation & aggregation & publishing from happening. The feature gate
-will be defaulted to be True. The feature gate will be Beta in 1.14 and Stable
-in 1.15.
+We will add a feature gate CustomResourcePublishOpenAPI, which can be turned on to start CRD
+openapi creation & aggregation & publishing. The feature gate will be Alpha (defaulted to
+False) in 1.14, Beta (defaulted to True) in 1.15 and Stable in 1.16.
 
 ## Graduation Criteria
 
