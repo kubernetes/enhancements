@@ -47,8 +47,7 @@ This KEP proposes adding support for specifying existing PVCs in the DataSource 
 
 For the purpose of this KEP, a Clone is defined as a duplicate of an existing Kubernetes Volume that can be consumed as any standard Volume would be.  The only difference is that upon provisioning, rather than creating a "new" empty Volume, the back end device creates an exact duplicate of the specified Volume.
 
-Clones are different than Snapshots, a Clone is "another Volume", it counts against user volume quota, it follows the same create flow and validation checks as any other PVC request, it has the same life-cycle and work flow.  While Snapshots are unique objects with their own API, they're commonly used for backups.
-(See alternatives section for info regarding Snapshot implemented Clones).
+Clones are different than Snapshots. A Clone results in a new, duplicate volume being provisioned from an existing volume -- it counts against the users volume quota, it follows the same create flow and validation checks as any other volume provisioning request, it has the same life cycle and work flow. Snapshots, on the other hand, results in a point-in-time copy of a volume that is not, itself, a usable volume -- it can be used to either to provision a new volume (pre-populated with the snapshot data) or to restore the existing volume to a previous state (represented by the snapshot).
 
 ## Motivation
 
@@ -67,6 +66,7 @@ Features like Cloning are common in most storage devices, not only is the capabi
 * This KEP does NOT propose support for special cases like "out of band" cloning (support for back ends that don't have Cloning features), that sort of implementation would fall under Populators.
 * This KEP does NOT propose any ability to shrink a PVC during a Clone request (e.g. it's considered an invalid request to clone PVC-a with a size of 10Gib to a PVC with a requested size of less than 10Gib, expansion is "ok" if the driver supports it but it's not required)
 * This KEP does NOT propose adding any ability to transfer a Clone to a different Namespace, the new PVC (Clone) will be in the same Namespace as the origin that was specified.  This also means that since this is namespaced, a user can not request a Clone of a PVC that is another Namespace.  A user can only request a Clone of PVCs in his or her Namespace.
+* Cloning will only be available in CSI, cloning features will NOT be added to existing in-tree plugins or Flex drivers
 
 ## Proposal
 
@@ -110,17 +110,21 @@ This proposal requires adding PersistentVolumeClaims as allowed Object Types to 
 
 Currently the CSI provisioner already accepts the DataSource field in new provisioning requests.  The additional implementation that's needed is to add acceptance of PVC types in the current CSI external-provisioner.  Once that's added, the PVC info can then be passed to the CSI Plugin in the DataSource field and used to instruct the backend device to create a Clone.
 
+To emphasize above, this feature will ONLY be available for CSI.  This feature wil NOT be added to In-tree plugins or Flex drivers, this is strictly a CSI only feature.
+
 ### Risks and Mitigations
 
-The primary risk of this feature is a Plugin that doesn't handle Cloning in a safe way for running applications.  It's assumed that the responsibility for reporting Clone Capabilities in this case is up to the Plugin, and if a Plugin is reporting Clone support that implies that they can in fact Clone Volumes without disrupting or corrupting users that may be actively using the specified source volume.
+The primary risk of this feature is requesting a PVC DataSource when using a CSI Driver that doesn't handle Cloning in a safe way for running applications.  It's assumed that the responsibility for reporting Clone Capabilities in this case is up to the CSI Driver, and if a CSI Driver is reporting Clone support that implies that they can in fact Clone Volumes without disrupting or corrupting users that may be actively using the specified source volume.
 
-Due to the similarities between Clones and Snapshots, it is possible that some back ends may require queiscing in-use volumes before cloning.  This proposal suggests that initially, if a plugin is unable to safely perform the requested clone operation, it's the plugins responsibility to reject the request.  Going forward, when execution hooks are available (currently being proposed for consistent snapshots), that same mechanism should be made generally usable to apply to Clones as well.
+Due to the similarities between Clones and Snapshots, it is possible that some back ends may require queiscing in-use volumes before cloning.  This proposal suggests that initially, if a csi plugin is unable to safely perform the requested clone operation, it's the csi plugins responsibility to reject the request.  Going forward, when execution hooks are available (currently being proposed for consistent snapshots), that same mechanism should be made generally usable to apply to Clones as well.
 
 ## Graduation Criteria
 * API changes allowing specification of a PVC as a valid DataSource in a new PVC spec
 * Implementation of the PVC DataSource in the CSI external provisioner
 
-The API can be immediately promoted to Beta, as it's just an extension of the existing DataSource field.  There are no implementations or changes needed in Kubernetes other than accepting Object Types in the DataSource field.  This should be promoted to GA after a release assuming no major issues or changes were needed/required during the Beta stage.
+Currently the only feature gate related to DataSources is the VolumeSnapshotDataSource gate.  This KEP would require an additional Data Source related feature gate `VolumeDataSource`.  Going forward we may continue to add additional feature gates for new DataSource types.  This KEP proposes that feature for Alpha, then following through the standard process for graduation based on feedback and stability during it's alpha release cycle.
+
+Given that the only implementation changes in Kuberenetes is to enable the feature in the API (all of the actual Clone implementation is handled by the CSI Plugin and back end device) the main criteria for completion will be successful implementation and agreement from the CSI community regarding the Kubernetes API.
 
 ## Implementation History
 
@@ -128,7 +132,9 @@ The API can be immediately promoted to Beta, as it's just an extension of the ex
 
 ## Alternatives [optional]
 
-Snapshots and Clones are very closely related, in fact some back ends my implement cloning via snapshots (take a snapshot, create a volume from that snapshot).  Users can do this currently with Kubernetes, and it's good, however some back ends have specific clone functionality that is much more efficient, and even for those that don't, this proposal provides a simple one-step process for a user to request a Clone of a volume.
+Snapshots and Clones are very closely related, in fact some back ends my implement cloning via snapshots (take a snapshot, create a volume from that snapshot).  Plugins that provide true `smart clone` functionality are strongly discouraged from using this sort of an implementation, instead they should perform an actual clone if they have the ability to do so.
+
+Users can do this currently with Kubernetes, and it's good, however some back ends have specific clone functionality that is much more efficient, and even for those that don't, this proposal provides a simple one-step process for a user to request a Clone of a volume.  It's also important to note that using this work around requires management of two object for the user, and in some cases those two object are linked and the new volume isn't truly an independent entity.
 
 ## Infrastructure Needed [optional]
 
