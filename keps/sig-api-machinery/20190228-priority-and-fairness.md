@@ -32,8 +32,8 @@ Table of Contents
       * [Summary](#summary)
       * [Motivation](#motivation)
          * [Goals](#goals)
-         * [Non-Goals](#non-goals) 
-         * [Future Goals](#future-goals) 
+         * [Non-Goals](#non-goals)
+         * [Future Goals](#future-goals)
       * [Proposal](#proposal)
          * [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
          * [Risks and Mitigations](#risks-and-mitigations)
@@ -134,7 +134,7 @@ should be preventable when this KEP is in place.
   like to prevent some tenants from crowding out the others.  Various
   usage scenarios involve identifying the tenant in the following
   ways.
-  
+
   - Each tenant corresponds with a kube API namespace.
 
   - Each tenant corresponds with a user name.
@@ -231,7 +231,177 @@ TBD
 
 ### Implementation Details/Notes/Constraints
 
-TBD
+##### Definitions
+
+- *BucketBinding*: a set of rules defining how we bind an inbound request w/ a bucket.
+It works similar to \[Cluster\]RoleBinding in the RBAC world.
+- *Quota*: a request must acquire one quota before its execution. Basically,
+we have two kinds of quota: __reserved__ and __shared__. With reserved quota, the
+request can be executed immediately. A bucket's reserved quota is exclusively
+consumed by the request matches the bucket, while its shared quota can be consumed
+by the request matching higher or the same priority.
+- *Bucket*: a quota pool. The quota will be taken from the bucket when it's
+acquired by any request and will be returned to the bucket when the request
+finishes. A bucket has following attributes:
+  - *Priority*: a fixed/preset set of priorities ranged 1...N. The lower
+  number means higher priority. Each priority has one or more buckets providing
+  quotas and buckets from higher priority can "borrow" shared quotas from
+  the lowers.
+  - *Reserved Quota*: an initial guaranteed concurrency can be provided by
+  the bucket.
+  - *Shared Quota*: an initial shared concurrency can be provided by the bucket.
+  Shared quota cannot be consumed by requests queued at logically higher
+  (or numerically lower) priorities.
+  than the bucket's.
+  - *Weight*: only works for shared quota. The higher weight a bucket has,
+  the more chance the requests hitting the buckets can be executed from the
+  queue. Note that a zero weight means that the requests matches the bucket
+  cannot be executed by shared quotas, or rather, it can only be executed
+  by reserved quotas.
+
+- *Extra Shared Bucket / ESB*: a global logical bucket only providing shared
+quotas at a logical "lowest" priority (which is unreachable via external
+API requests). Requests doesn't match any priority will be queued in this
+logical "lowest" priority until the extra bucket distributes its quota to it.
+The extra shared quota can be consumed by requests from all priorities b/c
+it lies at the "lowest". In a high level, ESB defines a default common concurrency
+in the system and it's supposed to be auto-tunable by a moving average observed
+by the system. Note that requests queued in this extra bandwidth are popped
+strictly in a FIFO order.
+
+##### Bandwidth Goal
+
+We can define __Shared Bandwidth__ as a goal for priority band __p__, and
+we have N fixed priority:
+
+- *Shared Quota(p)*/ SQ: sum of shared quotas provided by
+buckets at Priority p.
+- *Total Shared Quota*/ TSQ: sum\[ SQ(i) over 1..N \] + ESB.sharedQuota
+- *Maximum Shared Quota(p)* / MSQ: TSB - sum\[MSQ(1..p-1)\]
+
+Generally, the system's total shared quota consists of a sum of shared
+quotas defined by all buckets and an auto-tunable extra shared quota. A
+request w/ higher priority can always be executed prior to the requests
+w/ lower priority. Which is, at worst case, when requests from top priority
+completely occupies the shared bandwidth, then requests from the rest lower
+bands can only be executed under its reserved quota.
+
+##### Overview
+
+Within each priority band, we have a set of buckets matching the priority and
+a bucket has its corresponding FIFO request queue. First we find a matched
+bucket for the request and put the request into its FIFO queue. The request
+will be finally executed until either one reserved quota from the bucket
+or one shared quota from the pool is distributed. Note that the reserved quota
+is distributed to bucket's FIFO queue straightly but the shared quota is
+distributed by polling requests w/ WRR strategy for each priority from higher
+to lower.
+
+All requests will be pre-processed before it's actually executed by several stages:
+
+0. We find a matched bucket by applying BucketBinding API.
+1. *Enqueue*: The request will be blocked until it's signal'd by one quota.
+2. *Distributing*: A daemon queue drainer finally assigns a reserved or
+shared quota to the request. Note that reserved quota is assigned prior than
+the shared to avoid competition, and this can be implemented by golang select
+channels' order.
+3. *Executing*: Actually run the delegation handlers.
+
+
+```
+Stages
+----
+                      Inbound Request
+<0>                         |
+                            v
+----                  ( matched bkt2 )
+<1>                         |
+----     +------------------|-----------------------+
+         | Priority P       |                       |
+         |                  v                       |
+         |   +-------+   +-------+   +-------+      |                            requests
+         |   | Bkt1  |   | Bkt2  |   | Bkt3  |      |   WRR polling               quota
+<2>      |   | FIFO  |   | FIFO  |   | FIFO  | .... | <------------- QueueDrainer -----> QuotaTracker
+         |   | Queue |   | Queue |   | Queue |      |                                   (tracks usage)
+         |   +-------+   +-------+   +-------+      |
+         |                  |                       |
+         |                  |                       |
+----     +------------------|-----------------------+
+                            |
+<3>                         v
+                        Executing
+----
+```
+
+
+##### API Model and APIServer flags
+
+
+
+```go
+type Bucket struct {
+    ...
+
+    // ReservedQuota defines a max concurrency of requests which is consumed
+    // by the bucket exclusively.
+    ReservedQuota int
+
+    // SharedQuota defines a shared concurrency which can be consumed by the
+    // buckets at its higher or same priority band.
+    SharedQuota int
+
+    // Priority assigns the bucket into a certain priority band.
+    Priority PriorityBand // Ranged in 1...N
+
+    // Weight defines how much weight its matched requests have in the queue.
+    // Note that a zero weight makes the buckets "unselectable" by WRR algorithm,
+    // which is, the requests matching the very bucket can only be executed under
+    // reserved quota. This is useful when we want those long-running requests
+    // like WATCH, PROXY strictly limitted.
+    Weight int
+}
+
+type BucketBinding struct {
+    ...
+
+    // Rules defines how we bind request to a bucket.
+    Rules []BucketBindingRule // WIP
+
+    // BucketRef references a bucket.
+    BucketRef *Bucket
+}
+```
+
+The extra bucket is defaulted by PostStartHook at the server's launching time
+just like those RBAC default policies. The priority band of the extra bucket
+is fixed to "Lowest" which is unreachable for other user-defined buckets.
+
+##### Implementation
+
+See a poc implementation at: [yue9944882/inflight-rate-limit](https://github.com/yue9944882/inflight-rate-limit)
+
+This working system works as a filter handler in generic apiserver, so it
+works both for kube-apiserver and aggregated apiservers:
+- The filter list-watches *Bucket* and *BucketBinding* API models and reloads
+ the buckets dynamically on events.
+on notification of changes.
+- The filter consists of one *quota tracker* and one *queue drainer*:
+  - *quota tracker*: list-watches *Bucket* API models and records status
+  of each bucket's reserved/shared quota in a map. The bucket's quota will
+  decrease one if any request claim the quota and being executed/queued.
+  And as a request completely finishes, its quota will be returned to the
+  bucket by increasing one. quota tracker keeps reading latest status of
+  each bucket and compare them w/ their last recorded status to distribute
+  the quota as soon as any quota is returned.
+  - *queue drainer*: works by polling requests from each priority and requesting
+  quota from tracker. It polls queuing requests from queues in an order
+  of "from priority 1 to priority p". Requests in the queue of priority
+  p are also weighted as defined in their bucket, and queue drainer are
+  taking request from the queue by applying WRR algorithm. Note that signal
+  from ESQ will be regarded as an "always-lowest" priority, so we poll all
+  queues in the system.
+  - *ESQ auto-tuner*: observes system loads by recoding a moving average.
+  It adjusts ESQ in a certain range to optimize the resource utilization.
 
 ### Risks and Mitigations
 
