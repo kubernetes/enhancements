@@ -76,14 +76,38 @@ secretGenerator:
 
 The proposed API would look like this:
 
-```secretGenerator:
-- name: env-example
-  goplugins:
-  - name: Env
+```
+secretGenerator:
+- name: app-tls
+  kvSources:
+  - pluginType: builtin  // builtin is the default value of pluginType
+    name: files
     args:
-    - EXAMPLE_ENV
-    - OTHER_EXAMPLE_ENV
-  type: Opaque
+    - secret/tls.cert
+    - secret/tls.key
+- name: env_file_secret
+  kvSources:
+  - name: env  // this is a builtin
+    args:
+    - env.txt
+- name: myJavaServerEnvVars
+  kvSources:
+  - name: literals    // this is a builtin
+    args:
+    - JAVA_HOME=/opt/java/jdk
+    - JAVA_TOOL_OPTIONS=-agentlib:hprof
+- name: secretFromPlugins
+  kvSources:
+  - pluginType: go      // described by this KEP
+    name: someLocalGoPlugin
+    args:
+    - someArg
+    - someOtherArg
+  - pluginType: kubectl      // some future KEP can write this
+    name: someKubectlPlugin
+    args:
+    - anotherArg
+    - yetAnotherArg
 ```
 
 The implementation would look something like this:
@@ -159,7 +183,65 @@ Users would install the plugin with `go build -buildmode=plugin ~/.config/kustom
 
 ### Risks and Mitigations
 
-No windows support for golang plugins.
+#### Several people want an _exec-style_ plugin
+_exec-style_ means execute arbitrary code from some file.
+
+Most the lines of code written to implement this KEP
+accomodate the notion of KV generation via a _generic_
+notion of a plugin, and a generic interface, in the
+kustomization file and associated structs and code.
+
+This code recharactizes the three existing KV
+generation methods as `pluginType: builtin`
+(_literals_, _env_ and _files_), introduces the new
+`pluginType: Go`, and leaves room for someone to easily
+add, say `pluginType: kubectl` to look for a kubectl
+plugin, and `pluginType: whatever` to handles some
+completely new style, e.g. look for the plugin name as
+an executable in some hardcoded location.
+
+Actual implementation of these other kinds of plugins
+are out of scope for this KEP, however this KEP's
+implementation will make it much easier to create other
+kinds of plugins.
+
+Go Plugins that become popular have a clear
+path to becoming a builting - so if someone writes, say,
+a general Exec plugin, we can easily promote it to a
+builtin (by virtue of the fact that it's written in Go,
+and because of the choices made in this KEP for
+describing a plugin in the kustomization file).
+
+#### No current windows support for golang plugins.
+This may be implemented by the Go team later in which
+case it will just work.
+
+Also, as noted above, someone can write an exec style plugin
+which will work on Windows.
+
+#### General symbol exection from the plugin
+A Go plugin will be cast to a particular hardcoded interface, e.g.
+
+```
+type KvSourcePlugin {
+	Get []kvPairs
+}
+```
+and accessed exclusively through that interface.
+
+#### Existing KV generators continue as an option
+We leave in place the existing three mechanisms
+(_literals_, _env_ and _files_) for generating KV pairs, but
+additionally allow these mechanisms to be expressed as
+`builtin` plugins (see example above).
+
+If plugins - both Go and other styles - prove unpopular
+or problematic, we can remove them per API change
+policies.
+
+If they do prove popular/useful, we can remove deprecate
+the legacy form for (_literals_, _env_ and _files_),
+and help people convert to the new "builtin" form.
 
 ## Graduation Criteria
 
