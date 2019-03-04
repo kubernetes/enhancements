@@ -187,7 +187,7 @@ Users would install the plugin with `go build -buildmode=plugin ~/.config/kustom
 _exec-style_ means execute arbitrary code from some file.
 
 Most the lines of code written to implement this KEP
-accomodate the notion of KV generation via a _generic_
+accommodate the notion of KV generation via a _generic_
 notion of a plugin, and a generic interface, in the
 kustomization file and associated structs and code.
 
@@ -219,7 +219,7 @@ case it will just work.
 Also, as noted above, someone can write an exec style plugin
 which will work on Windows.
 
-#### General symbol exection from the plugin
+#### General symbol execution from the plugin
 A Go plugin will be cast to a particular hardcoded interface, e.g.
 
 ```
