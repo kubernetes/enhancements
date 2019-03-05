@@ -13,8 +13,8 @@ approvers:
   - "@dchen1107" 
 editor: Derek Carr
 creation-date: 2019-01-29
-last-updated: 2019-01-29
-status: implementable
+last-updated: 2019-03-5
+status: implemented
 see-also: 
 replaces: 
 superseded-by:
@@ -152,6 +152,7 @@ Beta
 - ensure proper node e2e test coverage is integrated verifying cgroup settings
 - see testing:
 https://github.com/kubernetes/kubernetes/blob/master/test/e2e_node/pids_test.go
+https://k8s-testgrid.appspot.com/sig-node-kubelet#node-kubelet-serial&include-filter-by-regex=Feature%3ASupportPodPidsLimit
 
 GA
 - assuming no negative user feedback based on production experience, promote
@@ -181,6 +182,6 @@ GA
 
 ### Version 1.14
 
-- Plan to implement `SupportNodePidsLimit` as Alpha.
+- Implement `SupportNodePidsLimit` as Alpha.
 - Graduate `SupportPodPidsLimit` to Beta by adding node e2e test coverage for
   pid cgroup isolation, ensure PidPressure works as intended.
