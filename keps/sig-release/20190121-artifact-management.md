@@ -138,5 +138,36 @@ manage the images for a Kubernetes release.
 
 ## Implementation History
 
-None yet.
+### Milestone 0 ("MVP"): In progress
 
+(Described in terms of kops, our first candidate; other candidates welcome!)
+
+* k8s-infra creates a "staging" GCS bucket for each project
+  (e.g. `k8s-artifacts-staging-<project>`) and a "prod" GCS bucket for promoted
+  artifacts (e.g. `k8s-artifacts`, one bucket for all projects).
+* We grant write-access to the staging GCS bucket to trusted jobs / people in
+  each project (e.g. kops OWNERS and prow jobs can push to
+  `k8s-artifacts-staging-kops`).  We can encourage use of CI & reproducible
+  builds, but we do not block on it.
+* We grant write-access to the prod bucket only to the infra-admins & the
+  promoter process.
+* Promotion of artifacts to the "prod" GCS bucket is via a script / utility (as
+  we do today).  For v1 we can promote based on a sha256sum file (only copy the
+  files listed), similarly to the image promoter.  We will experiment to develop
+  that script / utility in this milestone, along with prow jobs (?) to publish
+  to the staging buckets, and to figure out how best to run the promoter.
+  Hopefully we can copy the image-promotion work closely.
+* We create a bucket-backed GCLB for serving, with a single url-map entry for
+  `binaries/` pointing to the prod bucket.  (The URL prefix gives us some
+  flexibility to e.g. add dynamic content later)
+* We create the artifacts.k8s.io DNS name pointing to the GCLB. (Unclear whether
+  we want one for staging, or just encourage pulling from GCS directly).
+* Projects start using the mirrors e.g. kops adds the
+  https://artifacts.k8s.io/binaries/kops mirror into the (upcoming) mirror-list
+  support, so that it will get real traffic but not break kops should this
+  infrastructure break
+* We start to collect data from the GCLB logs.  Questions we would like to
+  understand: What are the costs, and what would the costs be for localized
+  mirrors?  What is the performance impact (latency, throughput) of serving
+  everything from GCLB?  Is GCLB reachable from everywhere (including China)?
+  Can we support private mirrors (i.e. non-coordinated mirrors)?
