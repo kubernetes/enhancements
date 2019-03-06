@@ -93,13 +93,15 @@ As of 29-11-2018 much of the work for enabling Windows nodes has already been co
 ### What works today
 - Windows-based containers can be created by kubelet, [provided the host OS version matches the container base image](https://docs.microsoft.com/en-us/virtualization/windowscontainers/deploy-containers/version-compatibility)
     - Pod (single or multiple containers per Pod with process isolation). There are no notable differences in Pod status fields between Linux and Windows containers
-    - Services types NodePort, ClusterIP, LoadBalancer, and ExternalName. Service environment variables.
+      - Readiness and Liveness probes
+      - postStart & preStop container lifecycle events
+    - Services types NodePort, ClusterIP, LoadBalancer, and ExternalName. Service environment variables and headless services work.
     - Workload controllers ReplicaSet, ReplicationController, Deployments, StatefulSets, DaemonSet, Job, CronJob
+    - Scheduler preemption
     - ConfigMap, Secrets: as environment variables or volumes (Volume subpath does not work)
     - Resource limits
     - Pod & container metrics
     - KubeCtl Exec
-    - Readiness and Liveness probes
     - Volumes can be shared between containers in a Pod
     - EmptyDir
 - Windows Server 2019 is the only Windows operating system we will support at GA timeframe. Note above that the host operating system version and the container base image need to match. This is a Windows limitation we cannot overcome.
@@ -110,11 +112,7 @@ As of 29-11-2018 much of the work for enabling Windows nodes has already been co
 - Persistent storage: FlexVolume with [SMB + iSCSI](https://github.com/Microsoft/K8s-Storage-Plugins/tree/master/flexvolume/windows), and in-tree AzureFile and AzureDisk providers
 
 ### What we need to test and verify if it works or not for GA (Some items will be documented as unsupported, others will be documented as supported, and some will be bugs that will be fixed for GA)
-- Headless services (https://github.com/kubernetes/kubernetes/issues/73416)
-- QoS (guaranteed, burstable, best effort) (https://github.com/kubernetes/kubernetes/issues/73418)
 - Mounting local volumes on Windows does not check if the volume path exists (https://github.com/kubernetes/kubernetes/issues/73332)
-- Fix run_as_username for Windows (https://github.com/kubernetes/kubernetes/issues/73387)
-- Container Lifecycle Events postStart and preStop (https://github.com/kubernetes/kubernetes/issues/73451)
 - Additional tickets/issues are tracked under [Backlog (v.1.14)](https://github.com/orgs/kubernetes/projects/8#column-4277556)
 - Horizontal Pod Autoscaling using all metrics (https://github.com/kubernetes/kubernetes/issues/73489 and https://github.com/kubernetes/kubernetes/issues/72788)
 
@@ -130,6 +128,9 @@ As of 29-11-2018 much of the work for enabling Windows nodes has already been co
 - Properly implement terminationGracePeriodSeconds for Windows (https://github.com/moby/moby/issues/25982 and https://github.com/kubernetes/kubernetes/issues/73434)
 - Single file mapping and Termination message will work when we introduce CRI containerD support in Windows
 - Design and implement `--enforce-node-allocatable`, hard/soft eviction and `MemoryPressure` conditions. These all depend on cgroups in Linux, and the kubelet will need new work specific to Windows to raise and respond to memory pressure conditions. See [Memory Overprovisioning](#memory-overprovisioning) later in this doc.
+- Fix run_as_username for Windows (https://github.com/kubernetes/kubernetes/issues/73387)
+
+
 
 #### Custom DNS updates for CNI plugins
 
