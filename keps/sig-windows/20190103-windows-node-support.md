@@ -139,7 +139,7 @@ As part of Azure-CNI [PR#305](https://github.com/Azure/azure-container-networkin
 
 Tracking Issues:
 
-- win-bridge [#271](https://github.com/containernetworking/plugins/pull/271) - this is also used in the test passes for GCE
+- win-bridge [#271](https://github.com/containernetworking/plugins/pull/271) - this is also used in the test passes for GCE, see [gce-k8s-windows-testing#7](https://github.com/yujuhong/gce-k8s-windows-testing/pull/7)
 - Azure-CNI [PR#305](https://github.com/Azure/azure-container-networking/pull/305)
 
 ### What will never work
