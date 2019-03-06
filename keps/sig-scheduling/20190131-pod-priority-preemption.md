@@ -76,6 +76,23 @@ caused by this change.
 * Adequate documentation exists for the features.
 * Test coverage of the features is acceptable.
 
+## Testing Plan
+Pod priority and preemption have unit, integration, and e2e tests. These tests
+are run regularly as a part of Kubernetes presubmit and CI/CD pipeline.
+
+### Unit Tests
+Here is a list of unit tests for various modules of the feature:
+* [Priority admission controller tests](https://github.com/kubernetes/kubernetes/blob/master/plugin/pkg/admission/priority/admission_test.go)
+* [Priority aware scheduling queue tests](https://github.com/kubernetes/kubernetes/blob/master/pkg/scheduler/internal/queue/scheduling_queue_test.go)
+* [Scheduler preemption tests](https://github.com/kubernetes/kubernetes/blob/master/pkg/scheduler/core/generic_scheduler_test.go).
+This file includes other tests too.
+
+### Integration tests
+Integration tests for priority and preemption are [found here](https://github.com/kubernetes/kubernetes/blob/master/test/integration/scheduler/preemption_test.go).
+
+### E2E tests
+End to end tests for priority and preemption are [found here](https://github.com/kubernetes/kubernetes/blob/master/test/e2e/scheduling/preemption.go).
+
 ## Implementation History
 
 Pod Priority and Preemption are tracked as part of [enhancement#564](https://github.com/kubernetes/enhancements/issues/564).
