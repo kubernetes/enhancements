@@ -90,7 +90,7 @@ Windows-based workloads still account for a significant portion of the enterpris
 As of 29-11-2018 much of the work for enabling Windows nodes has already been completed. Both `kubelet` and `kube-proxy` have been adapted to work on Windows Server, and so the first goal of this KEP is largely already complete. 
 
 ### What works today
-- Windows-based containers can be created by kubelet, [provided the host OS version matches the container base image](https://docs.microsoft.com/en-us/virtualization/windowscontainers/deploy-containers/version-compatibility)
+- Windows-based containers can be created by kubelet, [provided the host OS version matches the container base image](https://docs.microsoft.com/en-us/virtualization/windowscontainers/deploy-containers/version-compatibility). Microsoft will distribute the operating system-dependent `pause` image.
     - Pod (single or multiple containers per Pod with process isolation). There are no notable differences in Pod status fields between Linux and Windows containers
       - Readiness and Liveness probes
       - postStart & preStop container lifecycle events
@@ -99,18 +99,20 @@ As of 29-11-2018 much of the work for enabling Windows nodes has already been co
     - Workload controllers ReplicaSet, ReplicationController, Deployments, StatefulSets, DaemonSet, Job, CronJob
     - Scheduler preemption
     - ConfigMap, Secrets: as environment variables or volumes (Volume subpath does not work)
-    - Resource limits
+    - Resource limits/quotas
     - Pod & container metrics
     - Horizontal Pod Autoscaling using all metrics
     - KubeCtl Exec
     - Volumes can be shared between containers in a Pod
     - EmptyDir
+    - Named pipe host mounts
 - Windows Server 2019 is the only Windows operating system we will support at GA timeframe. Note above that the host operating system version and the container base image need to match. This is a Windows limitation we cannot overcome.
 - Customers can deploy a heterogeneous cluster, with Windows and Linux compute nodes side-by-side and schedule Docker containers on both operating systems. Of course, Windows Server containers have to be scheduled on Windows and Linux containers on Linux
 - Out-of-tree Pod networking with [Azure-CNI](https://github.com/Azure/azure-container-networking/blob/master/docs/cni.md), [OVN-Kubernetes](https://github.com/openvswitch/ovn-kubernetes), [two CNI meta-plugins](https://github.com/containernetworking/plugins), [Flannel (VXLAN and Host-Gateway)](https://github.com/coreos/flannel) 
 - Dockershim CRI
 - Many<sup id="a1">[1]</sup> of the e2e conformance tests when run with [alternate Windows-based images](https://hub.docker.com/r/e2eteam/) which are being moved to [kubernetes-sigs/windows-testing](https://www.github.com/kubernetes-sigs/windows-testing)
 - Persistent storage: FlexVolume with [SMB + iSCSI](https://github.com/Microsoft/K8s-Storage-Plugins/tree/master/flexvolume/windows), and in-tree AzureFile and AzureDisk providers
+- Kube-Proxy support for L2Bridge and Overlay networks
 
 ### Windows Node Roadmap (post-GA work)
 - Group Managed Service Accounts, a way to assign an Active Directory identity to a Windows container, is forthcoming with KEP `Windows Group Managed Service Accounts for Container Identity`. This work will be released as alpha in v1.14 and is already merged.
@@ -153,10 +155,11 @@ Note that some features are plain unsupported while some will not work without u
       - DefaultMode (due to UID/GID dependency)
       - readOnly root filesystem. Mapped volumes still support readOnly
       - Block device mapping
+    - Expanding the mounted volume (resizefs)
     - HugePages
     - Memory as the storage medium
 - CSI plugins, which require privileged containers
-- File system features like uui/guid, per-user Linux filesystem permissions, and read-only root filesystems (see note later in the doc about read-only volumes)
+- File system features like uui/guid, per-user Linux filesystem permissions, and read-only root filesystems (see note above and also later in the doc about read-only volumes)
 - NFS based storage/volume support (https://github.com/kubernetes/kubernetes/issues/56188)
 - Host networking is not available in Windows
 - ClusterFirstWithHostNet is not supported for DNS. Windows treats all names with a `.` as a FQDN and skips PQDN resolution
