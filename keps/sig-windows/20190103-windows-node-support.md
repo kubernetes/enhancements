@@ -95,6 +95,7 @@ As of 29-11-2018 much of the work for enabling Windows nodes has already been co
       - Readiness and Liveness probes
       - postStart & preStop container lifecycle events
     - Services types NodePort, ClusterIP, LoadBalancer, and ExternalName. Service environment variables and headless services work.
+      - Cross operating system service connectivity
     - Workload controllers ReplicaSet, ReplicationController, Deployments, StatefulSets, DaemonSet, Job, CronJob
     - Scheduler preemption
     - ConfigMap, Secrets: as environment variables or volumes (Volume subpath does not work)
@@ -112,7 +113,7 @@ As of 29-11-2018 much of the work for enabling Windows nodes has already been co
 - Persistent storage: FlexVolume with [SMB + iSCSI](https://github.com/Microsoft/K8s-Storage-Plugins/tree/master/flexvolume/windows), and in-tree AzureFile and AzureDisk providers
 
 ### Windows Node Roadmap (post-GA work)
-- Group Managed Service Accounts, a way to assign an Active Directory identity to a Windows container, is forthcoming with KEP `Windows Group Managed Service Accounts for Container Identity`. This will work be alpha is v1.14 and is merged.
+- Group Managed Service Accounts, a way to assign an Active Directory identity to a Windows container, is forthcoming with KEP `Windows Group Managed Service Accounts for Container Identity`. This work will be released as alpha in v1.14 and is already merged.
 - `kubectl port-forward` hasn't been implemented due to lack of an `nsenter` equivalent to run a process inside a network namespace.
 - CRIs other than Dockershim: CRI-containerd support is forthcoming
 - Some kubeadm work was done in the past to add Windows nodes to Kubernetes, but that effort has been dormant since. We will need to revisit that work and complete it in the future.
@@ -124,6 +125,7 @@ As of 29-11-2018 much of the work for enabling Windows nodes has already been co
 - Single file mapping and Termination message will work when we introduce CRI containerD support in Windows
 - Design and implement `--enforce-node-allocatable`, hard/soft eviction and `MemoryPressure` conditions. These all depend on cgroups in Linux, and the kubelet will need new work specific to Windows to raise and respond to memory pressure conditions. See [Memory Overprovisioning](#memory-overprovisioning) later in this doc.
 - Fix run_as_username for Windows (https://github.com/kubernetes/kubernetes/issues/73387)
+- Support for Local Traffic Policy and DSR mode on Windows (https://github.com/kubernetes/kubernetes/issues/62046)
 
 
 
@@ -154,7 +156,7 @@ Note that some features are plain unsupported while some will not work without u
     - HugePages
     - Memory as the storage medium
 - CSI plugins, which require privileged containers
-- File system features like uui/guid, per-user Linux filesystem permissions, and read-only root filesystems
+- File system features like uui/guid, per-user Linux filesystem permissions, and read-only root filesystems (see note later in the doc about read-only volumes)
 - NFS based storage/volume support (https://github.com/kubernetes/kubernetes/issues/56188)
 - Host networking is not available in Windows
 - ClusterFirstWithHostNet is not supported for DNS. Windows treats all names with a `.` as a FQDN and skips PQDN resolution
