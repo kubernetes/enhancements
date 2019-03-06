@@ -46,6 +46,7 @@ status: implementable
     - [Relevant resources/conversations](#relevant-resourcesconversations)
     - [Risks and Mitigations](#risks-and-mitigations)
         - [Ensuring OS-specific workloads land on appropriate container host](#ensuring-os-specific-workloads-land-on-appropriate-container-host)
+        - [Memory Overprovisioning](#memory-overprovisioning)
 - [Graduation Criteria](#graduation-criteria)
 - [Implementation History](#implementation-history)
 - [Testing Plan](#testing-plan)
@@ -110,7 +111,6 @@ As of 29-11-2018 much of the work for enabling Windows nodes has already been co
 
 ### What we need to test and verify if it works or not for GA (Some items will be documented as unsupported, others will be documented as supported, and some will be bugs that will be fixed for GA)
 - Headless services (https://github.com/kubernetes/kubernetes/issues/73416)
-- OOM reporting (https://github.com/kubernetes/kubernetes/issues/73417)
 - QoS (guaranteed, burstable, best effort) (https://github.com/kubernetes/kubernetes/issues/73418)
 - Pod DNS configuration like hostname, subdomain, hostAliases, dnsConfig, dnsPolicy (https://github.com/kubernetes/kubernetes/issues/73414)
 - Mounting local volumes on Windows does not check if the volume path exists (https://github.com/kubernetes/kubernetes/issues/73332)
@@ -130,6 +130,8 @@ As of 29-11-2018 much of the work for enabling Windows nodes has already been co
 - It is unclear if the RuntimeClass proposal from sig-node will simplify scheduled Windows containers. We will work with sig-node on this.
 - Properly implement terminationGracePeriodSeconds for Windows (https://github.com/moby/moby/issues/25982 and https://github.com/kubernetes/kubernetes/issues/73434)
 - Single file mapping and Termination message will work when we introduce CRI containerD support in Windows
+- Design and implement `--enforce-node-allocatable`, hard/soft eviction and `MemoryPressure` conditions. These all depend on cgroups in Linux, and the kubelet will need new work specific to Windows to raise and respond to memory pressure conditions. See [Memory Overprovisioning](#memory-overprovisioning) later in this doc.
+
 
 ### What will never work
 Note that some features are plain unsupported while some will not work without underlying OS changes
@@ -204,6 +206,14 @@ tolerations:
       value: "Win1809"
       effect: "NoSchedule"
 ```
+
+#### Memory Overprovisioning
+
+Windows always treats all user-mode memory allocations as virtual, and pagefiles are mandatory. The net effect is that Windows won't reach out of memory conditions the same way Linux does, and processes will page to disk instead of being subject to out of memory (OOM) termination. There is no way to guarantee a physical memory allocation or reserve for a process - only limits. See [#73417](https://github.com/kubernetes/kubernetes/issues/73417) for more details on the investigation for 1.14.
+
+Keeping memory usage within reasonable bounds is possible with a two-step process. First, use the kubelet parameters `--kubelet-reserve` and/or `--system-reserve` to account for memory usage on the node (outside of containers). This will reduce [NodeAllocatable](https://kubernetes.io/docs/tasks/administer-cluster/reserve-compute-resources/#node-allocatable). As you deploy workloads, use resource limits and reserves on containers. This will also subtract from NodeAllocatable and prevent the scheduler from adding more pods once a node is full. These will be documented as best practices for v1.14. The related kubelet parameters `--eviction-hard`, `--eviction-soft`, and `--enforce-node-allocatable` are invalid for v1.14.
+
+For later releases, we can work on a configurable heuristic to detect memory pressure, report it through the kubelet `MemoryPressure` condition, and implement pod eviction. 
 
 ## Graduation Criteria
 - All features and functionality under `What works today` is fully tested and vetted to be working by SIG-Windows
