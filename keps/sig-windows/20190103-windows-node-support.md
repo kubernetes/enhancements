@@ -39,7 +39,6 @@ status: implementable
     - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
     - [What works today](#what-works-today)
-    - [What we need to test and verify if it works or not for GA (Some items will be documented as unsupported, others will be documented as supported, and some will be bugs that will be fixed for GA)](#what-we-need-to-test-and-verify-if-it-works-or-not-for-ga-some-items-will-be-documented-as-unsupported-others-will-be-documented-as-supported-and-some-will-be-bugs-that-will-be-fixed-for-ga)
     - [Windows Node Roadmap (post-GA work)](#windows-node-roadmap-post-ga-work)
     - [What will never work](#what-will-never-work)
     - [Windows Container Compatibility](#windows-container-compatibility)
@@ -101,6 +100,7 @@ As of 29-11-2018 much of the work for enabling Windows nodes has already been co
     - ConfigMap, Secrets: as environment variables or volumes (Volume subpath does not work)
     - Resource limits
     - Pod & container metrics
+    - Horizontal Pod Autoscaling using all metrics
     - KubeCtl Exec
     - Volumes can be shared between containers in a Pod
     - EmptyDir
@@ -111,13 +111,8 @@ As of 29-11-2018 much of the work for enabling Windows nodes has already been co
 - Many<sup id="a1">[1]</sup> of the e2e conformance tests when run with [alternate Windows-based images](https://hub.docker.com/r/e2eteam/) which are being moved to [kubernetes-sigs/windows-testing](https://www.github.com/kubernetes-sigs/windows-testing)
 - Persistent storage: FlexVolume with [SMB + iSCSI](https://github.com/Microsoft/K8s-Storage-Plugins/tree/master/flexvolume/windows), and in-tree AzureFile and AzureDisk providers
 
-### What we need to test and verify if it works or not for GA (Some items will be documented as unsupported, others will be documented as supported, and some will be bugs that will be fixed for GA)
-- Mounting local volumes on Windows does not check if the volume path exists (https://github.com/kubernetes/kubernetes/issues/73332)
-- Additional tickets/issues are tracked under [Backlog (v.1.14)](https://github.com/orgs/kubernetes/projects/8#column-4277556)
-- Horizontal Pod Autoscaling using all metrics (https://github.com/kubernetes/kubernetes/issues/73489 and https://github.com/kubernetes/kubernetes/issues/72788)
-
 ### Windows Node Roadmap (post-GA work)
-- Group Managed Service Accounts, a way to assign an Active Directory identity to a Windows container, is forthcoming with KEP `Windows Group Managed Service Accounts for Container Identity`
+- Group Managed Service Accounts, a way to assign an Active Directory identity to a Windows container, is forthcoming with KEP `Windows Group Managed Service Accounts for Container Identity`. This will work be alpha is v1.14 and is merged.
 - `kubectl port-forward` hasn't been implemented due to lack of an `nsenter` equivalent to run a process inside a network namespace.
 - CRIs other than Dockershim: CRI-containerd support is forthcoming
 - Some kubeadm work was done in the past to add Windows nodes to Kubernetes, but that effort has been dormant since. We will need to revisit that work and complete it in the future.
