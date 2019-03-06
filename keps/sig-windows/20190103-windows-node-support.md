@@ -112,7 +112,6 @@ As of 29-11-2018 much of the work for enabling Windows nodes has already been co
 ### What we need to test and verify if it works or not for GA (Some items will be documented as unsupported, others will be documented as supported, and some will be bugs that will be fixed for GA)
 - Headless services (https://github.com/kubernetes/kubernetes/issues/73416)
 - QoS (guaranteed, burstable, best effort) (https://github.com/kubernetes/kubernetes/issues/73418)
-- Pod DNS configuration like hostname, subdomain, hostAliases, dnsConfig, dnsPolicy (https://github.com/kubernetes/kubernetes/issues/73414)
 - Mounting local volumes on Windows does not check if the volume path exists (https://github.com/kubernetes/kubernetes/issues/73332)
 - Fix run_as_username for Windows (https://github.com/kubernetes/kubernetes/issues/73387)
 - Container Lifecycle Events postStart and preStop (https://github.com/kubernetes/kubernetes/issues/73451)
@@ -132,6 +131,16 @@ As of 29-11-2018 much of the work for enabling Windows nodes has already been co
 - Single file mapping and Termination message will work when we introduce CRI containerD support in Windows
 - Design and implement `--enforce-node-allocatable`, hard/soft eviction and `MemoryPressure` conditions. These all depend on cgroups in Linux, and the kubelet will need new work specific to Windows to raise and respond to memory pressure conditions. See [Memory Overprovisioning](#memory-overprovisioning) later in this doc.
 
+#### Custom DNS updates for CNI plugins
+
+For v1.14, custom pod DNS configuration tests are not running. Some CNI implementations updates are needed to Azure-CNI, win-bridge, OVN, and flannel which are out of the kubernetes/kubernetes tree. Once those are updated, the tests are tracked in [issue 73414](https://github.com/kubernetes/kubernetes/issues/73414)/[pr 74925](https://github.com/kubernetes/kubernetes/pull/74925) will be merged.
+
+As part of Azure-CNI [PR#305](https://github.com/Azure/azure-container-networking/pull/305), manual tests were run with Pod.Spec.DNSPolicy = DNSNone. Hostname, Subdomain, and DNSConfig.Nameservers, and DNSConfig.Searches were set correctly based on the Pod spec.
+
+Tracking Issues:
+
+- win-bridge [#271](https://github.com/containernetworking/plugins/pull/271) - this is also used in the test passes for GCE
+- Azure-CNI [PR#305](https://github.com/Azure/azure-container-networking/pull/305)
 
 ### What will never work
 Note that some features are plain unsupported while some will not work without underlying OS changes
