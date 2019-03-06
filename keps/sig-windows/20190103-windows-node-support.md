@@ -90,7 +90,7 @@ Windows-based workloads still account for a significant portion of the enterpris
 As of 29-11-2018 much of the work for enabling Windows nodes has already been completed. Both `kubelet` and `kube-proxy` have been adapted to work on Windows Server, and so the first goal of this KEP is largely already complete. 
 
 ### What works today
-- Windows-based containers can be created by kubelet, [provided the host OS version matches the container base image](https://docs.microsoft.com/en-us/virtualization/windowscontainers/deploy-containers/version-compatibility). Microsoft will distribute the operating system-dependent `pause` image.
+- Windows-based containers can be created by kubelet, [provided the host OS version matches the container base image](https://docs.microsoft.com/en-us/virtualization/windowscontainers/deploy-containers/version-compatibility). Microsoft will distribute the operating system-dependent `pause` image (mcr.microsoft.com/k8s/core/pause:1.0.0).
     - Pod (single or multiple containers per Pod with process isolation). There are no notable differences in Pod status fields between Linux and Windows containers
       - Readiness and Liveness probes
       - postStart & preStop container lifecycle events
