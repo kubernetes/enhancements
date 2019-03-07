@@ -22,7 +22,7 @@ approvers:
   - "@spiffxp"
 editor: TBD
 creation-date: 2018-11-29
-last-updated: 2019-02-11
+last-updated: 2019-03-06
 status: implementable
 ---
 
@@ -92,21 +92,24 @@ As of 29-11-2018 much of the work for enabling Windows nodes has already been co
 
 ### What works today
 - Windows-based containers can be created by kubelet, [provided the host OS version matches the container base image](https://docs.microsoft.com/en-us/virtualization/windowscontainers/deploy-containers/version-compatibility). Microsoft will distribute the operating system-dependent `pause` image (mcr.microsoft.com/k8s/core/pause:1.0.0).
-    - Pod (single or multiple containers per Pod with process isolation). There are no notable differences in Pod status fields between Linux and Windows containers
+    - Pod
+      - Single or multiple containers per Pod with process isolation
+      - There are no notable differences in Pod status fields between Linux and Windows containers
       - Readiness and Liveness probes
       - postStart & preStop container lifecycle events
+      - ConfigMap, Secrets: as environment variables or volumes (Volume subpath does not work)
+      - EmptyDir
+      - Named pipe host mounts
+      - Volumes can be shared between containers in a Pod
+      - Resource limits
     - Services types NodePort, ClusterIP, LoadBalancer, and ExternalName. Service environment variables and headless services work.
       - Cross operating system service connectivity
     - Workload controllers ReplicaSet, ReplicationController, Deployments, StatefulSets, DaemonSet, Job, CronJob
     - Scheduler preemption
-    - ConfigMap, Secrets: as environment variables or volumes (Volume subpath does not work)
-    - Resource limits/quotas
     - Pod & container metrics
     - Horizontal Pod Autoscaling using all metrics
     - KubeCtl Exec
-    - Volumes can be shared between containers in a Pod
-    - EmptyDir
-    - Named pipe host mounts
+    - Resource Quotas 
 - Windows Server 2019 is the only Windows operating system we will support at GA timeframe. Note above that the host operating system version and the container base image need to match. This is a Windows limitation we cannot overcome.
 - Customers can deploy a heterogeneous cluster, with Windows and Linux compute nodes side-by-side and schedule Docker containers on both operating systems. Of course, Windows Server containers have to be scheduled on Windows and Linux containers on Linux
 - Out-of-tree Pod networking with [Azure-CNI](https://github.com/Azure/azure-container-networking/blob/master/docs/cni.md), [OVN-Kubernetes](https://github.com/openvswitch/ovn-kubernetes), [two CNI meta-plugins](https://github.com/containernetworking/plugins), [Flannel (VXLAN and Host-Gateway)](https://github.com/coreos/flannel) 
