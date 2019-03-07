@@ -1,7 +1,7 @@
 ---
 kep-number: 33
 title: Topology-aware service routing
-status: Pending
+status: implementable
 authors:
     - "@m1093782566"
 owning-sig: sig-network

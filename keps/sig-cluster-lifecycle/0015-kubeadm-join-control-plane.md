@@ -20,12 +20,13 @@ approvers:
 editor:
   - "@fabriziopandini"
 creation-date: 2018-01-28
-last-updated: 2018-06-29
+last-updated: 2019-01-07
 see-also:
   - KEP 0004
 ```
 
 ## Table of Contents
+
 
 <!-- TOC -->
 
@@ -45,8 +46,7 @@ see-also:
             - [Initialize the Kubernetes cluster](#initialize-the-kubernetes-cluster)
             - [Preparing for execution of kubeadm join --control-plane](#preparing-for-execution-of-kubeadm-join---control-plane)
             - [The kubeadm join --control-plane workflow](#the-kubeadm-join---control-plane-workflow)
-            - [dynamic workflow (advertise-address == `controlplaneAddress`)](#dynamic-workflow-advertise-address--controlplaneaddress)
-            - [Static workflow (advertise-address != `controlplaneAddress`)](#static-workflow-advertise-address--controlplaneaddress)
+            - [Dynamic workflow vs static workflow)](#dynamic-workflow-vs-static-workflow)
             - [Strategies for deploying control plane components](#strategies-for-deploying-control-plane-components)
             - [Strategies for distributing cluster certificates](#strategies-for-distributing-cluster-certificates)
             - [`kubeadm upgrade` for HA clusters](#kubeadm-upgrade-for-ha-clusters)
@@ -56,8 +56,6 @@ see-also:
     - [Alternatives](#alternatives)
 
 <!-- /TOC -->
-
-## Summary
 
 We are extending the kubeadm distinctive `init` and `join` workflow, introducing the
 capability to add more than one control plane instance to an existing cluster by means of the
@@ -130,22 +128,17 @@ capabilities like e.g. kubeadm upgrade for HA clusters.
   The nodes must be created as a control plane instance or as workers and then are supposed to stick to the
   assigned role for their entire life cycle.
 
-- This proposal doesn't include a solution for etcd cluster management (but nothing in this proposal should
-  prevent to address this in future).
-
 - This proposal doesn't include a solution for API server load balancing (Nothing in this proposal
   should prevent users from choosing their preferred solution for API server load balancing).
 
-- This proposal doesn't address the ongoing discussion about kubeadm self-hosting; in light of
-  divide and conquer goal stated before, it is not planned to provide support for self-hosted clusters
-  neither in the initial proposal nor in the foreseeable future (but nothing in this proposal should
-  explicitly prevent to reconsider this in future as well).
+- This proposal doesn't include support for self-hosted clusters (but nothing in this proposal should
+  explicitly prevent us to reconsider this in the future as well).
 
 - This proposal doesn't provide an automated solution for transferring the CA key and other required
   certs from one control-plane instance to the other. More specifically, this proposal doesn't address
   the ongoing discussion about storage of kubeadm TLS assets in secrets and it is not planned
-  to provide support for clusters with TLS stored in secrets (but nothing in this
-  proposal should explicitly prevent to reconsider this in future).
+  to provide support for clusters with TLS stored in secrets, but nothing in
+  this proposal prevents us from reconsidering this in the future..
 
 - Nothing in this proposal should prevent practices that exist today.
 
@@ -197,10 +190,9 @@ control-plane instances, of which I know in advance the name and the IP.
 \* A new "control plane instance" is a new kubernetes node with
 `node-role.kubernetes.io/master=""` label and
 `node-role.kubernetes.io/master:NoSchedule` taint; a new instance of control plane
-components will be deployed on the new node.
-As described in goals/non goals, in this first release of the proposal
-creating a new control plane instance doesn't trigger the creation of a new etcd member on the
-same machine.
+components will be deployed on the new node; additionally, if the cluster uses local etcd mode,
+and etcd is created and managed by kubeadm, a new etcd member will be
+created on the joining machine as well.
 
 #### Add a new control-plane instance (dynamic workflow)
 
@@ -215,13 +207,12 @@ As of today, a Kubernetes cluster should be initialized by running `kubeadm init
 first node, afterward referred as the bootstrap control plane.
 
 in order to support the `kubeadm join --control-plane` workflow a new Kubernetes cluster is
-expected to satisfy following conditions :
+expected to satisfy the following condition:
 
 - The cluster must have a stable `controlplaneAddress` endpoint (aka the IP/DNS of the
   external load balancer)
-- The cluster must use an external etcd.
 
-All the above conditions/settings could be set by passing a configuration file to `kubeadm init`.
+The above condition/setting could be set by passing a configuration file to `kubeadm init`.
 
 #### Preparing for execution of kubeadm join --control-plane
 
@@ -231,6 +222,8 @@ should copy control plane certificates from an existing control plane instance, 
 > NB. kubeadm is limited to execute actions *only*
 > in the machine where it is running, so it is not possible to copy automatically
 > certificates from remote locations.
+> NB. https://github.com/kubernetes/enhancements/pull/713 is porposing a possible approach
+> for automatic copy of certificates across nodes
 
 Please note that strictly speaking only ca, front-proxy-ca certificate and service account key pair
 are required to be equal among all control plane instances. Accordingly:
@@ -262,8 +255,6 @@ The updated join workflow will be the following:
    > (the bootstrap control plane); And thus it acts as embedded mechanism for handling the sequence
    > `kubeadm init` and `kubeadm join` actions in case of parallel node creation.
 
-2. Executes the kubelet TLS bootstrap process [No changes to this step]:
-
 3. In case of `join --control-plane` [New step]
 
    1. Using the bootstrap token as identity, read the `kubeadm-config` configMap
@@ -275,7 +266,6 @@ The updated join workflow will be the following:
    2. Check if the cluster/the node is ready for joining a new control plane instance:
 
       a. Check if the cluster has a stable `controlplaneAddress`
-      a. Check if the cluster uses an external etcd
       a. Checks if the mandatory certificates exists on the file system
 
    3. Prepare the node for hosting a control plane instance:
@@ -283,10 +273,9 @@ The updated join workflow will be the following:
       a. Create missing certificates (in any).
          > please note that by creating missing certificates kubeadm can adapt seamlessly
          > to a dynamic workflow or to a static workflow (and to apiserver advertise address
-         > of the joining node). see following paragraphs for more details for additional info.
+         > of the joining node). see following paragraphs for additional info.
 
-      a. In case of control plane deployed as static pods, create related kubeconfig files
-      and static pod manifests.
+      a. Create static pod manifests for control-plane components and related kubeconfig files.
 
       > see "Strategies for deploying control plane components" paragraph
       > for additional info about this step.
@@ -299,45 +288,65 @@ The updated join workflow will be the following:
       > However, it is important to notice that this certificate should be treated securely
       > for avoiding to compromise the cluster.
 
-   5. Apply master taint and label to the node.
+3. Execute the kubelet TLS bootstrap process [No changes to this step]:
 
-   6. Update the `kubeadm-config` configMap with the information about the new control plane instance.
+4. In case of `join --control-plane` [New step]
 
-#### dynamic workflow (advertise-address == `controlplaneAddress`)
+   1. In case of local etcd:
 
-There are many ways to configure an highly available cluster.
+      a. Create static pod manifests for etcd
 
-Among them, the approach best suited for a dynamic bootstrap workflow requires the
-user to set the `--apiserver-advertise-address` of each kube-apiserver instance, including the in on the
-bootstrap control plane, _equal to the `controlplaneAddress` endpoint_ provided during kubeadm init
-(the IP/DNS of the external load balancer).
+      b. Announce the new etcd member to the etcd cluster
 
-By using the same advertise address for all the kube-apiserver instances, `kubeadm init` can create
-a unique API server serving certificate that could be shared across many control plane instances;
-no changes will be required to this certificate when adding/removing kube-apiserver instances.
+      > Important! Those operations must be executed after kubelet is already started in order to minimize the time
+      > between the new etcd member is announced and the start of the static pod running the new
+      > etcd member, because during this time frame etcd gets temporary not available
+      > (only when moving from 1 to 2 members in the etcd cluster).
+      > From https://coreos.com/etcd/docs/latest/v2/runtime-configuration.html
+      > "If you add a new member to a 1-node cluster, the cluster cannot make progress before
+      > the new member starts because it needs two members as majority to agree on the consensus.
+      > You will only see this behavior between the time etcdctl member add informs the cluster
+      > about the new member and the new member successfully establishing a connection to the existing one."
 
-Please note that:
+      > Important! In order to make possible adding a new etcd member, kubeadm is changing how local etcd is deployed
+      > using the `--apiserver-advertise-address` as additional `listen-client-urls`;
+      > Please note that re-using the `--apiserver-advertise-address` for etcd is a trade-off that
+      > allows to keep the kubeadm UX simple, considering the possible alternative require the user to
+      > specify another IP address for each joining control-plane node.
 
-- if the user is not planning to distribute the apiserver serving certificate among control plane instances,
-  kubeadm will generate a new apiserver serving certificate “almost equal” to the certificate
-  created on the bootstrap control plane (it differs only for the domain name of the joining node)
+      > This decision introduce also a limitation, because HA with local etcd won't be supported when the
+      > user sets the `--apiserver-advertise-address` of each kube-apiserver instance, including the
+      > instance on the bootstrap control plane, _equal to the `controlplaneAddress` endpoint_.
+   
+   2. Apply master taint and label to the node.
 
-#### Static workflow (advertise-address != `controlplaneAddress`)
+   3. Update the `kubeadm-config` configMap with the information about the new control plane instance.
 
-In case of a static bootstrap workflow the final layout of the control plane - the number, the
-name and the IP of control plane nodes - is know in advance.
+#### Dynamic workflow vs static workflow
 
-Given such information, the user can choose a different approach where each kube-apiserver instance has a
-specific apiserver advertise address different from the `controlplaneAddress`.
+Defining how to manage the API server serving certificate is one of the most relevant decision
+that impact how an Kubernetes cluster might change in future, because this certificate must include
+the `--apiserver-advertise-address` for control plane instances.
 
-Please note that:
+In a static bootstrap workflow the final layout of the control plane - the number, the
+name and the IP of control plane nodes - is known in advance. As a consequence a possible approach
+is to add all the addresses of the control-plane nodes at `kubeadm init` time, and then
+distribute the _same_ apiserver serving certificate among all the control plane instances.
 
-- if the user is not planning to distribute the apiserver certificate among control plane instances, kubeadm
-  will generate a new apiserver serving certificate with the SANS required for the joining control plane instance
-- if the user is planning to distribute the apiserver certificate among control plane instances, the
-  operator is required to provide during `kubeadm init` the list of the list of IP
-  addresses for all the kube-apiserver instances as alternative names for the API servers certificate, thus
-  allowing the proper functioning of all the API server instances that will join
+This was the approach originally suggest in the kubeadm high availability guides, but this
+prevents to add _unknown_ control-plane instances to the cluster.
+
+Instead, the recommended approach suggested by this proposal is to let kubeadm take care of
+the creation of _many_ API server serving certificates, one for on each node.
+
+As described in the previous paragraph, if the apiserver serving certificate is missing,
+`kubeadm join --control-plane` will generate a new certificate on the joining
+control-plane; however this certificate will be “almost equal” to the certificate created on
+the bootstrap control plane, because it should consider the name/address of the joining node.
+
+As a consequence, the new apiserver serving certificate is specific to the current node (it cannot
+be reused on other nodes) but this is considered an acceptable trade-offs as it allows kubeadm to
+adapt seamlessly to a dynamic workflow or to a static workflow.
 
 #### Strategies for deploying control plane components
 
@@ -346,11 +355,7 @@ As of today kubeadm supports two solutions for deploying control plane component
 1. Control plane deployed as static pods (current kubeadm default)
 2. Self-hosted control plane (currently alpha)
 
-The proposed solution for case 1. "Control plane deployed as static pods", assumes
-that the `kubeadm join --control plane` flow will take care of creating required kubeconfig
-files and required static pod manifests.
-
-As stated above, supporting for Self-hosted control plane is non goal for this
+As stated above, supporting for HA self-hosted control plane is non goal for this
 proposal.
 
 #### Strategies for distributing cluster certificates
@@ -358,7 +363,8 @@ proposal.
 As of today kubeadm supports two solutions for storing cluster certificates:
 
 1. Cluster certificates stored on file system (current kubeadm default)
-2. Cluster certificates stored in secrets (currently alpha)
+2. Cluster certificates stored in secrets (currently alpha and applicable only to
+   self-hosted control plane)
 
 The proposed solution for case 1. "Cluster certificates stored on file system",
 requires the user/the higher level tools to execute an additional action _before_
@@ -375,8 +381,8 @@ certificates from remote locations.
 Then, the `kubeadm join --control plane` flow will take care of checking certificates
 existence and conformance.
 
-As stated above, supporting for Cluster certificates stored in secrets is a non goal
-for this proposal.
+As stated above, supporting for Cluster certificates self-hosted control plane is a non goal
+for this proposal, and the same apply to Cluster certificates stored in secrets.
 
 #### `kubeadm upgrade` for HA clusters
 
@@ -389,21 +395,18 @@ one control plane instances, but with a new sub-step to be executed on secondary
 1. Upgrade the control plane
 
    1. Run `kubeadm upgrade apply` on a first control plane instance [No changes to this step]
-   1. Run `kubeadm upgrade node experimental-control-plane` on secondary control-plane instances [new step]
+   1. Run `kubeadm upgrade node` on secondary control-plane instances [modified to make additional
+      steps in case of secondary control-plane nodes vs "simple" worker nodes]
+
+      Nb. while this feature will be alpha, there will be a separated `kubeadm upgrade node experimental-control-plane`
+      command.
 
 1. Upgrade nodes/kubelet [No changes to this step]
 
-Further detail might be provided in a subsequent release of this KEP when all the detail
-of the `v1beta1` release of kubeadm api will be available (including a proper modeling
-of many control plane instances).
-
 ## Graduation Criteria
 
-- To create a periodic E2E test that bootstraps an HA cluster with kubeadm
-  and exercise the static bootstrap workflow
-- To create a periodic E2E test that bootstraps an HA cluster with kubeadm
-  and exercise the dynamic bootstrap workflow
-- To ensure upgradability of HA clusters (possibly with another E2E test)
+- To create a periodic E2E tests for HA clusters creation
+- To create a periodic E2E tests to ensure upgradability of HA clusters
 - To document the kubeadm support for HA in kubernetes.io
 
 ## Implementation History
@@ -412,11 +415,14 @@ of many control plane instances).
 - merged [Kubeadm HA design doc](https://goo.gl/QpD5h8)
 - HA prototype [demo](https://goo.gl/2WLUUc) and [notes](https://goo.gl/NmTahy)
 - [PR #58261](https://github.com/kubernetes/kubernetes/pull/58261) with the showcase implementation of the first release of this KEP
+- v1.12 first implementation of `kubeadm join --control plane`
+- v1.13 support for local/stacked etcd
 
 ## Drawbacks
 
 The `kubeadm join --control-plane` workflow requires that some condition are satisfied at `kubeadm init` time,
-that is to use a `controlplaneAddress` and use an external etcd.
+but the user will be informed about compliance/non compliance of such conditions only when running 
+`kubeadm join --control plane`.
 
 ## Alternatives
 

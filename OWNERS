@@ -1,8 +1,12 @@
+# See the OWNERS docs at https://go.k8s.io/owners
+
 approvers:
-  - sig-pm-leads
   - pm-maintainers
+  - sig-pm-leads
 reviewers:
-  - sig-release-leads
   - features-maintainers
+  - kep-process-approvers
+  - kep-process-reviewers
+  - sig-release-leads
 labels:
   - sig/pm

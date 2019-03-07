@@ -14,9 +14,11 @@ aliases:
     - mikedanese
     - enj
     - tallclair
+    - deads2k
+    - liggitt
+    - mikedanese
   sig-autoscaling-leads:
     - mwielgus
-    - directxman12
   sig-aws-leads:
     - justinsb
     - kris-nova
@@ -43,14 +45,11 @@ aliases:
     - roberthbailey
     - luxas
     - timothysc
-  sig-cluster-ops-leads:
-    - zehicle
-    - jdumars
   sig-contributor-experience-leads:
     - Phillels
     - parispittman
-    - grodrigues3
     - cblecker
+    - nikhita
   sig-docs-leads:
     - chenopis
     - zacharysarah
@@ -66,7 +65,7 @@ aliases:
     - brancz
   sig-multicluster-leads:
     - csbell
-    - quinton-hoole
+    - quinton-hoole-2
   sig-network-leads:
     - thockin
     - dcbw
@@ -76,8 +75,6 @@ aliases:
     - derekwaynecarr
   sig-openstack-leads:
     - hogepodge
-    - dklyle
-    - rjmorse
   sig-pm-leads:
     - apsinha
     - idvoretskyi
@@ -88,14 +85,14 @@ aliases:
     - tpepper
   sig-scalability-leads:
     - wojtek-t
-    - countspongebob
+    - shyamjvs
   sig-scheduling-leads:
     - bsalamat
     - k82cn
   sig-service-catalog-leads:
     - carolynvs
     - kibbles-n-bytes
-    - duglin
+    - jberkhahn
     - jboyd01
   sig-storage-leads:
     - saad-ali
@@ -106,8 +103,10 @@ aliases:
     - stevekuznetsov
     - timothysc
   sig-ui-leads:
-    - danielromlein
     - floreks
+    - maciaszczykm
+    - danielromlein
+    - jeefy
   sig-vmware-leads:
     - frapposelli
     - cantbewong
@@ -120,6 +119,10 @@ aliases:
     - garethr
   wg-apply-leads:
     - lavalamp
+  wg-component-standard-leads:
+    - luxas
+    - sttts
+    - mtaufen
   wg-container-identity-leads:
     - smarterclayton
     - destijl
@@ -128,9 +131,17 @@ aliases:
     - dejanb
     - ptone
     - cantbewong
+  wg-k8s-infra-leads:
+    - dims
+    - spiffxp
   wg-kubeadm-adoption-leads:
     - luxas
     - justinsb
+  wg-lts-leads:
+    - tpepper
+    - imkin
+    - quinton-hoole-2
+    - youngnick
   wg-machine-learning-leads:
     - vishh
     - kow3ns
@@ -172,11 +183,30 @@ aliases:
     - eparis
     - carolynvs
     - bradamant3
-  features-maintainers:
-    - idvoretskyi
-    - justaugustus
-    - kacole2
   pm-maintainers:
+    - calebamiles # SIG PM Lead
+    - idvoretskyi # SIG PM Lead
+    - jdumars # Program Mgmt Chair
+    - justaugustus # Product Mgmt Chair
+  features-maintainers:
+    - justaugustus # 1.12 Features Lead
+    - kacole2 # 1.13 Enhancements Lead
+    - claurence # 1.14 Enhancements Lead
+  kep-process-approvers:
+    - calebamiles
+    - idvoretskyi
     - jdumars
     - justaugustus
+  kep-process-reviewers:
+    - lachie83
+  kep-reviewers:
+    - bgrant0607
+    - jdumars
+    - jbeda
+    - mattfarina
+  kep-approvers:
+    - bgrant0607
+    - jdumars
+    - jbeda
+    - mattfarina
 ## END CUSTOM CONTENT

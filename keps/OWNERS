@@ -1,17 +1,12 @@
-reviewers:
-  - sig-architecture-leads
-  - calebamiles
-  - idvoretskyi
-  - jbeda
-  - justaugustus
+# See the OWNERS docs at https://go.k8s.io/owners
+
 approvers:
-  - sig-architecture-leads
-  - calebamiles
-  - idvoretskyi
-  - jbeda
+  - kep-approvers
+  - kep-process-approvers
+reviewers:
+  - kep-reviewers
+  - kep-process-reviewers
 labels:
   - kind/kep
-  - sig/architecture
-  - sig/pm
 options:
   no_parent_owners: true

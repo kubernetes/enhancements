@@ -15,7 +15,7 @@ approvers:
 editor:
  - "@fabriziopandini"
 creation-date: 2018-03-16
-last-updated: 2018-09-10
+last-updated: 2019-01-22
 status: provisional
 see-also:
  - KEP 0008
@@ -77,8 +77,10 @@ duplication of code or in some case inconsistencies between the init and phase i
 
 - This proposal doesn't include any changes of improvements to the actual `kubeadm init`
   workflow.
-- This proposal doesn't include implementation of workflows different than `kubeadm init`;
-  nevertheless, this proposal introduces a framework that will allow such implementation in future.
+- This proposal doesn't include a plan for implementation of phases in workflows
+  different than the `kubeadm init` workflow; such plans will be defined by the sig 
+  during release planning for each cycle, and then documented in this KEP.
+  - v1.14 implementation of phases in the `kubeadm join` workflow (planned)
 
 ## Proposal
 
@@ -90,6 +92,7 @@ duplication of code or in some case inconsistencies between the init and phase i
   of the `kubeadm init` workflow.
 - As a kubernetes administrator/IT automation tool, I want to run all the phases of
   the `kubeadm init` workflow except some phases.
+- Same as above, but for the `kubeadm join` workflow
 
 ### Implementation Details
 
@@ -154,19 +157,14 @@ workflows e.g. reuse of phase `certs` in both `kubeadm init` and `kubeadm join` 
 
 * [#61631](https://github.com/kubernetes/kubernetes/pull/61631) First prototype implementation 
   (now outdated)
+* v1.13 implementation of phases in the `kubeadm init` workflow
+* v1.14 implementation of phases in the `kubeadm join` workflow (planned)
 
 ## Drawbacks
 
-By merging phases into kubeadm workflows derives a reduced capability to customize
-the user interface for each phase. More specifically:
-
-- It would not be possible to provide any kind of advice to the user about which
-  flags are relevant for one specific phase (the help will always show all the flags).
-- It would not be possible to add long description and/or examples to each phase
-- It would not be possible to provide additional flags specific for one phase
-  (the flags are shared between init and all the phases).
-- It would not be possible to expose to the users phases which are not part of kubeadm workflows
-  ("extra" phases should be hosted on dedicated commands).
+It would not be possible to expose to the users phases which are not part of kubeadm workflows
+("extra" phases should be hosted on dedicated `kubeadm alpha` command and follow the normal
+graduation process).
 
 This is considered an acceptable trade-off in light of the benefits of the suggested
 approach.

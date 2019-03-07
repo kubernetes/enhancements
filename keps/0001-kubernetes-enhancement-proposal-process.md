@@ -139,7 +139,7 @@ These KEPs will be owned by SIG-architecture and should be seen as a way to comm
 
 ### KEP Template
 
-The template for a KEP is precisely defined [here](0000-kep-template.md)
+The template for a KEP is precisely defined [here](YYYYMMDD-kep-template.md)
 
 ### KEP Metadata
 
@@ -236,13 +236,11 @@ A KEP has the following states
 
 ### Git and GitHub Implementation
 
-KEPs are checked into the community repo under the `/kep` directory.
-In the future, as needed we can add SIG specific subdirectories.
+KEPs are checked into the enhancements repo under the `/keps` directory.
 KEPs in SIG specific subdirectories have limited impact outside of the SIG and can leverage SIG specific OWNERS files.
 
 New KEPs can be checked in with a file name in the form of `draft-YYYYMMDD-my-title.md`.
 As significant work is done on the KEP the authors can assign a KEP number.
-This is done by taking the next number in the NEXT_KEP_NUMBER file, incrementing that number, and renaming the KEP.
 No other changes should be put in that PR so that it can be approved quickly and minimize merge conflicts.
 The KEP number can also be done as part of the initial submission if the PR is likely to be uncontested and merged quickly.
 

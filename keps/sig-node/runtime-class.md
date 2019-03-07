@@ -1,5 +1,4 @@
 ---
-kep-number: 14
 title: Runtime Class
 authors:
   - "@tallclair"
@@ -31,6 +30,7 @@ status: implementable
     * [Runtime Handler](#runtime-handler)
   * [Versioning, Updates, and Rollouts](#versioning-updates-and-rollouts)
   * [Implementation Details](#implementation-details)
+    * [Monitoring](#monitoring)
   * [Risks and Mitigations](#risks-and-mitigations)
 * [Graduation Criteria](#graduation-criteria)
 * [Implementation History](#implementation-history)
@@ -71,31 +71,6 @@ cluster-scoped resource tied to the runtime that can help solve these problems i
 - RuntimeClass is NOT a general policy mechanism.
 - RuntimeClass is NOT "NodeClass". Although different nodes may run different runtimes, in general
   RuntimeClass should not be a cross product of runtime properties and node properties.
-
-The following goals are out-of-scope for the initial implementation, but may be explored in a future
-iteration:
-
-- Surfacing support for optional features by runtimes, and surfacing errors caused by
-  incompatible features & runtimes earlier.
-- Automatic runtime or feature discovery - initially RuntimeClasses are manually defined (by the
-  cluster admin or provider), and are asserted to be an accurate representation of the runtime.
-- Scheduling in heterogeneous clusters - it is possible to operate a heterogeneous cluster
-  (different runtime configurations on different nodes) through scheduling primitives like
-  `NodeAffinity` and `Taints+Tolerations`, but the user is responsible for setting these up and
-  automatic runtime-aware scheduling is out-of-scope.
-- Define standardized or conformant runtime classes - although I would like to declare some
-  predefined RuntimeClasses with specific properties, doing so is out-of-scope for this initial KEP.
-- [Pod Overhead][] - Although RuntimeClass is likely to be the configuration mechanism of choice,
-  the details of how pod resource overhead will be implemented is out of scope for this KEP.
-- Provide a mechanism to dynamically register or provision additional runtimes.
-- Requiring specific RuntimeClasses according to policy. This should be addressed by other
-  cluster-level policy mechanisms, such as PodSecurityPolicy.
-- "Fitting" a RuntimeClass to pod requirements - In other words, specifying runtime properties and
-  letting the system match an appropriate RuntimeClass, rather than explicitly assigning a
-  RuntimeClass by name. This approach can increase portability, but can be added seamlessly in a
-  future iteration.
-
-[Pod Overhead]: https://docs.google.com/document/d/1EJKT4gyl58-kzt2bnwkv08MIUZ6lkDpXcxkHqCvvAp4/edit
 
 ### User Stories
 
@@ -162,21 +137,8 @@ type PodSpec struct {
 }
 ```
 
-The `legacy` RuntimeClass name is reserved. The legacy RuntimeClass is defined to be fully backwards
-compatible with current Kubernetes. This means that the legacy runtime does not specify any
-RuntimeHandler or perform any feature validation (all features are "supported").
-
-```go
-const (
-    // RuntimeClassNameLegacy is a reserved RuntimeClass name. The legacy
-    // RuntimeClass does not specify a runtime handler or perform any
-    // feature validation.
-    RuntimeClassNameLegacy = "legacy"
-)
-```
-
-An unspecified RuntimeClassName `""` is equivalent to the `legacy` RuntimeClass, though the field is
-not defaulted to `legacy` (to leave room for configurable defaults in a future update).
+An unspecified `nil` or empty `""` RuntimeClassName is equivalent to the backwards-compatible
+default behavior as if the RuntimeClass feature is disabled.
 
 #### Examples
 
@@ -311,6 +273,32 @@ an error.
 
 [runpodsandbox]: https://github.com/kubernetes/kubernetes/blob/b05a61e299777c2030fbcf27a396aff21b35f01b/pkg/kubelet/apis/cri/runtime/v1alpha2/api.proto#L344
 
+#### Monitoring
+
+The first round of monitoring implementation for `RuntimeClass` covers the
+following two areas and is finished (tracked in
+[#73058](https://github.com/kubernetes/kubernetes/issues/73058)):
+
+- `how robust is every runtime?` A new metric
+  [RunPodSandboxErrors](https://github.com/kubernetes/kubernetes/blob/596a48dd64bcaa01c1d2515dc79a558a4466d463/pkg/kubelet/metrics/metrics.go#L351)
+  is added to track the RunPodSandbox operation errors, broken down by
+  RuntimeClass.
+- `how expensive is every runtime in terms of latency?` A new metric
+  [RunPodSandboxDuration](https://github.com/kubernetes/kubernetes/blob/596a48dd64bcaa01c1d2515dc79a558a4466d463/pkg/kubelet/metrics/metrics.go#L341)
+  is added to track the duration of RunPodSandbox operations, broken down by
+  RuntimeClass.
+
+The following monitoring areas will be skipped for now, but may be considered
+after the RuntimeClass scheduling is implemented:
+
+- how many runtimes does a cluster support?
+- how many scheduling failures were caused by unsupported runtimes or insufficient
+  resources of a certain runtime?
+
+Currently, we assume that all the nodes in a cluster are homogeneous. After
+heterogeneous clusters are implemented, we may need to monitor how many runtimes
+a node supports.
+
 ### Risks and Mitigations
 
 **Scope creep.** RuntimeClass has a fairly broad charter, but it should not become a default
@@ -345,36 +333,68 @@ RuntimeClasses.
 
 Alpha:
 
-- Everything described in the current proposal:
-  - Introduce the RuntimeClass API resource
-  - Add a RuntimeClassName field to the PodSpec
-  - Add a RuntimeHandler field to the CRI `RunPodSandboxRequest`
-  - Lookup the RuntimeClass for pods & plumb through the RuntimeHandler in the Kubelet (feature
+- [x] Everything described in the current proposal:
+  - [x] Introduce the RuntimeClass API resource
+  - [x] Add a RuntimeClassName field to the PodSpec
+  - [x] Add a RuntimeHandler field to the CRI `RunPodSandboxRequest`
+  - [x] Lookup the RuntimeClass for pods & plumb through the RuntimeHandler in the Kubelet (feature
     gated)
-- RuntimeClass support in at least one CRI runtime & dockershim
-  - Runtime Handlers can be statically configured by the runtime, and referenced via RuntimeClass
-  - An error is reported when the handler or is unknown or unsupported
-- Testing
-  - [CRI validation tests][cri-validation]
-  - Kubernetes E2E tests (only validating single runtime handler cases)
-
-[cri-validation]: https://github.com/kubernetes-sigs/cri-tools/blob/master/docs/validation.md
+- [x] RuntimeClass support in at least one CRI runtime & dockershim
+  - [x] Runtime Handlers can be statically configured by the runtime, and referenced via RuntimeClass
+  - [x] An error is reported when the handler or is unknown or unsupported
+- [x] Testing
+  - [x] Kubernetes E2E tests (only validating single runtime handler cases)
 
 Beta:
 
-- Most runtimes support RuntimeClass, and the current [untrusted annotations](#runtime-handler) are
+- [x] Several major runtimes support RuntimeClass, and the current [untrusted annotations](#runtime-handler) are
   deprecated.
-- RuntimeClasses are configured in the E2E environment with test coverage of a non-legacy RuntimeClass
-- The update & upgrade story is revisited, and a longer-term approach is implemented as necessary.
-- The cluster admin can choose which RuntimeClass is the default in a cluster.
-- Additional requirements TBD
+  - [x] [containerd](https://github.com/containerd/cri/pull/891)
+  - [x] [CRI-O](https://github.com/kubernetes-sigs/cri-o/pull/1847)
+  - [x] [dockershim](https://github.com/kubernetes/kubernetes/pull/67909)
+- [ ] Comprehensive test coverage
+  - [ ] [CRI validation tests][cri-validation]
+  - [ ] RuntimeClasses are configured in the E2E environment with test coverage of a non-default
+    RuntimeClass
+- [x] Comprehensive coverage of RuntimeClass metrics. [#73058](http://issue.k8s.io/73058)
+- [ ] The update & upgrade story is revisited, and a longer-term approach is implemented as necessary.
+
+[cri-validation]: https://github.com/kubernetes-sigs/cri-tools/blob/master/docs/validation.md
 
 ## Implementation History
 
+- 2018-09-27: RuntimeClass released as alpha with Kubernetes v1.12
 - 2018-06-11: SIG-Node decision to move forward with proposal
 - 2018-06-19: Initial KEP published.
 
 ## Appendix
+
+### Proposed Future Enhancements
+
+The following ideas may be explored in a future iteration:
+
+- Surfacing support for optional features by runtimes, and surfacing errors caused by
+  incompatible features & runtimes earlier.
+- Automatic runtime or feature discovery - initially RuntimeClasses are manually defined (by the
+  cluster admin or provider), and are asserted to be an accurate representation of the runtime.
+- Scheduling in heterogeneous clusters - it is possible to operate a heterogeneous cluster
+  (different runtime configurations on different nodes) through scheduling primitives like
+  `NodeAffinity` and `Taints+Tolerations`, but the user is responsible for setting these up and
+  automatic runtime-aware scheduling is out-of-scope.
+- Define standardized or conformant runtime classes - although I would like to declare some
+  predefined RuntimeClasses with specific properties, doing so is out-of-scope for this initial KEP.
+- [Pod Overhead][] - Although RuntimeClass is likely to be the configuration mechanism of choice,
+  the details of how pod resource overhead will be implemented is out of scope for this KEP.
+- Provide a mechanism to dynamically register or provision additional runtimes.
+- Requiring specific RuntimeClasses according to policy. This should be addressed by other
+  cluster-level policy mechanisms, such as PodSecurityPolicy.
+- "Fitting" a RuntimeClass to pod requirements - In other words, specifying runtime properties and
+  letting the system match an appropriate RuntimeClass, rather than explicitly assigning a
+  RuntimeClass by name. This approach can increase portability, but can be added seamlessly in a
+  future iteration.
+- The cluster admin can choose which RuntimeClass is the default in a cluster.
+
+[Pod Overhead]: https://docs.google.com/document/d/1EJKT4gyl58-kzt2bnwkv08MIUZ6lkDpXcxkHqCvvAp4/edit
 
 ### Examples of runtime variation
 

@@ -1,6 +1,5 @@
 ---
-kep-number: 31
-title: VolumeSubpathEnvExpansion
+title: Volume Subpath Env Expansion
 authors:
   - "@kevtaylor"
 owning-sig: sig-storage
@@ -10,12 +9,13 @@ participating-sigs:
 reviewers:
   - "@msau42"
   - "@thockin"
+  - "@liggitt"
 approvers:
-  - "@thockin"
+  - "@liggitt"
   - "@msau42"
 editor: TBD
 creation-date: 2018-10-29
-last-updated: 2018-10-29
+last-updated: 2018-03-04
 status: implementable
 see-also:
   - n/a
@@ -25,9 +25,7 @@ superseded-by:
   - n/a
 ---
 
-# Title
-
-VolumeSubpathEnvExpansion API change
+# Volume Subpath Env Expansion
 
 ## Table of Contents
 
@@ -257,6 +255,25 @@ The existing alpha feature introduced many tests to mitigate issues. These would
 
 [umbrella issues]: https://github.com/kubernetes/kubernetes/pull/49388
 
+The tests that have been approved for 1.14 Alpha include: 
+* Verification that a failing subpath expansion can be modified during the lifecycle of a container
+* Verification that subpaths can be written correctly
+* Verification that subpath mounts remain consistent on a container restart
+* Verification of consistency if environment variables change 
+
+Tests that have been operational for the initial feature gate since 1.11 include:
+* Substituting values in a volume subpath
+* Substituting values in a volume subpath with absolute path should fail
+* Substituting values in a volume subpath with backticks should fail
+
+Unless any edge cases are detected during alpha stage testing, these exercise paths through subpath mounts
+and ensure that no validation is violated and vulnerabilities are not introduced
+
+The node alpha suite tests paths through kubelet and maintains that the lifecycle follows that of subpaths
+
+Moving Alpha->Beta should be a simple migration step in 1.15 unless any edge cases are discovered outside of alpha test suites
+Beta->GA should occur in 1.17 after a period of Beta implmentation and not uncovering any issues
+
 ## Implementation History
 
 * Initial issue: https://github.com/kubernetes/kubernetes/issues/48677
@@ -264,6 +281,12 @@ The existing alpha feature introduced many tests to mitigate issues. These would
 * Alpha Implementation: https://github.com/kubernetes/kubernetes/pull/49388
 * Beta Issue: https://github.com/kubernetes/kubernetes/issues/64604
 * Beta PR and Discussion: https://github.com/kubernetes/kubernetes/pull/65769
+
+Alpha 1.14 milestones achieved:
+* Alpha implmentation: https://github.com/kubernetes/kubernetes/pull/71351
+* Documentation: https://github.com/kubernetes/website/pull/11843
+* Alpha test grid: https://k8s-testgrid.appspot.com/sig-storage-kubernetes#gce-alpha-features
+* Alpha node test grid: https://k8s-testgrid.appspot.com/sig-node-kubelet#node-kubelet-alpha
 
 ## Alternatives - Using subPathFrom
 A possible further implementation could derive directly from the `fieldRef` as

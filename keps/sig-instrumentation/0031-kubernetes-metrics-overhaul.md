@@ -38,9 +38,12 @@ status: implementable
    * [Kube-scheduler metric changes](#kube-scheduler-metric-changes)
    * [Kube-proxy metric changes](#kube-proxy-metric-changes)
    * [Kube-apiserver metric changes](#kube-apiserver-metric-changes)
+      * [Apiserver and etcd metrics](#apiserver-and-etcd-metrics)
+      * [Fix admission metrics in true units](#fix-admission-metrics-in-true-units)
    * [Client-go metric changes](#client-go-metric-changes)
       * [Workqueue metrics](#workqueue-metrics)
    * [Risks and Mitigations](#risks-and-mitigations)
+* [Deprecation Plan](#deprecation-plan)
 * [Graduation Criteria](#graduation-criteria)
 * [Implementation History](#implementation-history)
 
@@ -95,7 +98,10 @@ Currently, all Kubelet metrics are exposed as summary data types. This means tha
 Hence, where possible, we should change summaries to histograms, or provide histograms in addition to summaries like with the API server metrics.
 
 https://github.com/kubernetes/kubernetes/pull/72323
+
 https://github.com/kubernetes/kubernetes/pull/72470
+
+https://github.com/kubernetes/kubernetes/pull/73820
 
 #### Export less metrics
 
@@ -119,7 +125,13 @@ https://github.com/kubernetes/kubernetes/pull/72334
 
 ### Kube-apiserver metric changes
 
+#### Apiserver and etcd metrics
+
 https://github.com/kubernetes/kubernetes/pull/72336
+
+#### Fix admission metrics in true units
+
+https://github.com/kubernetes/kubernetes/pull/72343
 
 ### Client-go metric changes
 
@@ -138,6 +150,14 @@ https://github.com/kubernetes/kubernetes/pull/71300
 Risks include users upgrading Kubernetes, but not updating their usage of Kubernetes exposed metrics in alerting and dashboarding potentially causing incidents to go unnoticed.
 
 To prevent this, we will implement recording rules for Prometheus that allow best effort backward compatibility as well as update uses of breaking metric usages in the [Kubernetes monitoring mixin](https://github.com/kubernetes-monitoring/kubernetes-mixin), a widely used collection of Prometheus alerts and Grafana dashboards for Kubernetes.
+
+## Deprecation Plan
+
+In our efforts to change existing old metrics, we flag them `(Deprecated)` in the front of metrics help text.
+
+These old metrics will be deprecated in v1.14 and coexist with the new replacement metrics. Users can use this release to change related monitoring rules and dashboards.
+
+The release target of removing the deprecated metrics is v1.15.
 
 ## Graduation Criteria
 
