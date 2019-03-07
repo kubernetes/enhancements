@@ -64,8 +64,10 @@ A table of contents is helpful for quickly jumping to sections of a KEP and for 
 
 ## Summary
 
-Requests sent to the apiserver from kubectl include http request headers with context about the kubectl command that
-created the request.  This information could be used by cluster administrators for debugging or
+Requests sent to the apiserver from kubectl already include a User Agent header with
+information about the kubectl build.  This KEP proposes sending http request headers
+with additional context about the kubectl command that created the request.
+This information may be used by operators of clusters for debugging or
 to gather telemetry about how users are interacting with the cluster.
 
 
@@ -74,60 +76,90 @@ to gather telemetry about how users are interacting with the cluster.
 Kubectl generates requests sent to the apiserver for commands such as `apply`, `delete`, `edit`, `run`, however
 the context of the command for the requests is lost and unavailable to cluster administrators.  Context would be
 useful to cluster admins both for debugging the cause of requests as well as providing telemetry about how users
-are interacting with the cluster.
+are interacting with the cluster, which could be used for various purposes.
 
 ### Goals
 
 - Allow cluster administrators to identify how requests in the logs were generated from
   kubectl commands.
+  
+Possible applications of this information may include but are not limited to:
+
+- Organizations could learn how users are interacting will their clusters to inform what internal
+  tools they build and invest in or what gaps they may need to fill.
+- Organizations could identify if users are running deprecated commands that will be removed
+  when the version of kubectl is upgraded.  They could do this before upgrading kubectl.
+  - SIG-CLI could build tools that cluster admins run and perform this analysis
+    to them to help with understanding whether they will be impacted by command deprecation
+- Organizations could identify if users are running kubectl commands that are inconsistent with 
+  the organization's internal best practices and recommendations.
+- Organizations could voluntarily choose to bring back high-level learnings to SIG-CLI regarding
+  which and how commands are used.  This could be used by the SIG to inform where to invest resources
+  and whether to deprecate functionality that has proven costly to maintain.
+- Cluster admins debugging odd behavior caused by users running kubectl may more easily root cause issues
+  (e.g. knowing what commands were being run could make identifying miss-behaving scripts easier)
+- Organizations could build dashboards visualizing which kubectl commands where being run
+  against clusters and when.  This could be used to identify broader usage patterns within the
+  organization.
+
 
 ### Non-Goals
 
+*The following are not goals of this KEP, but could be considered in the future.*
+
+- Supply Headers for requests made by kubectl plugins.  Enforcing this would not be trivial.
+- Send Headers to the apiserver for kubectl command invocations that don't make requests - 
+  e.g. `--dry-run`
+
 ### Anti-Goals
 
-*We explicitly don't want the following*
+*The following should be actively discouraged.*
 
 - Make decisions of any sort in the apiserver based on these headers.
-  - This information is intended to be used by humans-only, specifically **for debugging and telemetry**.
+  - This information is intended to be used by humans for the purposes of developing a better understanding
+    of kubectl usage with their clusters, such as **for debugging and telemetry**.
 
 ## Proposal
 
-Include in requests made from kubectl to the apiserver:
+Include in http requests made from kubectl to the apiserver:
 
 - the kubectl subcommand
 - which flags were specified as well as whitelisted enum values for flags (never arbitrary values)
 - a generated session id
 - never include the flag values directly, only use a predefined enumeration
-- never include arguments to the commands
+- never include arguments to the commands, only the sub commands themselves
+- if the command is deprecated, add a header including when which release it will be removed in (if known)
+- allow users and organizations that compile their own kubectl binaries to define a build metadata header
 
-### Kubectl-Command Header
+### X-Kubectl-Command Header
 
-The `Kubectl-Command` Header contains the kubectl sub command.  It contains
-the path to the subcommand (e.g. `create secret tls`) to disambiguate sub commands
+The `X-Kubectl-Command` Header contains the kubectl sub command.
+
+It contains the path to the subcommand (e.g. `create secret tls`) to disambiguate sub commands
 that might have the same name and different paths.
 
 Examples:
 
-- `Kubectl-Command: apply`
-- `Kubectl-Command: create secret tls` 
-- `Kubectl-Command: delete`
-- `Kubectl-Command: get`
+- `X-Kubectl-Command: apply`
+- `X-Kubectl-Command: create secret tls` 
+- `X-Kubectl-Command: delete`
+- `X-Kubectl-Command: get`
 
-### Kubectl-Flags Header
+### X-Kubectl-Flags Header
 
-The `Kubectl-Flags` Header contains a list of the kubectl flags that were provided to the sub
+The `X-Kubectl-Flags` Header contains a list of the kubectl flags that were provided to the sub
 command.  It does *not* contain the raw flag values, but may contain enumerations for
 whitelisted flag values.  (e.g. for `-f` it may contain whether a local file, stdin, or remote file
 was provided).  It does not normalize into short or long form.  If a flag is
 provided multiple times it will appear multiple times in the list.  Flags are sorted
-alpha-numerically and separated by a ','.
+alpha-numerically and separated by a ',' to simplify human readability.
 
 Examples:
 
-- `Kubectl-Flags: --filename=local,--recursive,--context`
-- `Kubectl-Flags: -f=local,-f=local,-f=remote,-R` 
-- `Kubectl-Flags: -f=stdin` 
-- `Kubectl-Flags: --dry-run,-o=custom-columns`
+- `X-Kubectl-Flags: --filename=local,--recursive,--context`
+- `X-Kubectl-Flags: -f=local,-f=local,-f=remote,-R` 
+- `X-Kubectl-Flags: -f=stdin` 
+- `X-Kubectl-Flags: --dry-run,-o=custom-columns`
 
 #### Enumerated Flag Values
 
@@ -135,13 +167,38 @@ Examples:
 - `-o`, `--output`: `json`,`yaml`,`wide`,`name`,`custom-columns`,`custom-columns-file`,`go-template`,`go-template-file`,`jsonpath`,`jsonpath-file`
 - `--type` (for patch subcommand): `json`, `merge`, `strategic`
 
-### Kubectl-Session Header
+### X-Kubectl-Session Header
 
-The `Kubectl-Session` Header contains a Session ID that can be used to identify that multiple
+The `X-Kubectl-Session` Header contains a Session ID that can be used to identify that multiple
 requests which were made from the same kubectl command invocation.  The Session Header is generated
-once for each kubectl process.
+once and used for all requests for each kubectl process.
 
-- `Kubectl-Session: 67b540bf-d219-4868-abd8-b08c77fefeca`
+- `X-Kubectl-Session: 67b540bf-d219-4868-abd8-b08c77fefeca`
+
+### X-Kubectl-Deprecated Header
+
+The `X-Kubectl-Deprecated` Header is set to inform cluster admins that the command being run
+has been deprecated.  This may be used by organizations to determine if they are likely
+to be impacted by command deprecation and removal before they upgrade.
+
+The `X-Kubectl-Deprecated` Header is set if the command that was run is marked as deprecated.
+
+- The Header may have a value of `true` if the command has been deprecated, but has no removal date.
+- The Header may have a value of a specific Kubernetes release.  If it does, this is the release
+  that the command will be removed in.
+
+- `X-Kubectl-Deprecated: true`
+- `X-Kubectl-Deprecated: v1.16`
+
+
+### X-Kubectl-Build Header
+
+The `X-Kubectl-Build` Header may be set by building with a specific `-ldflags` value.  By default the Header
+is unset, but may be set if kubectl is built from source, forked, or vendored into another command.
+Organizations that distribute one or more versions of kubectl which they maintain internally may
+set a flag at build time and this header will be populated with the value.
+
+- `X-Kubectl-Build: some-value`
 
 ### Example
 
@@ -150,9 +207,9 @@ $ kubectl apply -f - -o yaml
 ```
 
 ```
-Kubectl-Command: apply
-Kubectl-Flags: -f=stdin,-o=yaml
-Kubectl-Session: 67b540bf-d219-4868-abd8-b08c77fefeca
+X-Kubectl-Command: apply
+X-Kubectl-Flags: -f=stdin,-o=yaml
+X-Kubectl-Session: 67b540bf-d219-4868-abd8-b08c77fefeca
 ```
 
 
@@ -161,9 +218,9 @@ $ kubectl apply -f ./local/file -o=custom-columns=NAME:.metadata.name
 ```
 
 ```
-Kubectl-Command: apply
-Kubectl-Flags: -f=local,-o=custom-columns
-Kubectl-Session: 0087f200-3079-458e-ae9a-b35305fb7432
+X-Kubectl-Command: apply
+X-Kubectl-Flags: -f=local,-o=custom-columns
+X-Kubectl-Session: 0087f200-3079-458e-ae9a-b35305fb7432
 ```
 
 ```sh
@@ -172,9 +229,21 @@ image"}]'
 ```
 
 ```
-Kubectl-Command: patch
-Kubectl-Flags: --type=json,-p
-Kubectl-Session: 0087f200-3079-458e-ae9a-b35305fb7432
+X-Kubectl-Command: patch
+X-Kubectl-Flags: --type=json,-p
+X-Kubectl-Session: 0087f200-3079-458e-ae9a-b35305fb7432
+```
+
+
+```sh
+kubectl run nginx --image nginx
+```
+
+```
+X-Kubectl-Command: run
+X-Kubectl-Flags: --image
+X-Kubectl-Session: 0087f200-3079-458e-ae9a-b35305fb7432
+X-Kubectl-Deprecated: true
 ```
 
 ### Risks and Mitigations
@@ -187,13 +256,20 @@ included.
 
 ### Test Plan
 
-- Verify the Header is sent for commands and has the right value
-- Verify the Header is sent for flags and has the right value
-- Verify the Header is sent for the Session and has a legitimate value
+- Verify the Command Header is sent for commands and has the correct value
+- Verify the Flags Header is sent for flags and has the correct value
+- Verify the Session Header is sent for the Session and has a legitimate value
+- Verify the Deprecation Header is sent for the deprecated commands and has the correct value
+- Verify the Build Header is sent when the binary is built with the correct ldflags value
+  specified and has the correct value
 
 ### Graduation Criteria
 
-NA
+- Determine if additional information would be valuable to operators of clusters.
+- Consider building and publishing tools for cluster operators to run which make use of the data
+  - Look for deprecated command invocations
+  - Build graphs of usage
+  - Identify most used commands
 
 ### Upgrade / Downgrade Strategy
 
