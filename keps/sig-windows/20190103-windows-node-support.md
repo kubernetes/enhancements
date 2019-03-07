@@ -40,6 +40,7 @@ status: implementable
 - [Proposal](#proposal)
     - [What works today](#what-works-today)
     - [Windows Node Roadmap (post-GA work)](#windows-node-roadmap-post-ga-work)
+        - [Custom DNS updates for CNI plugins](#custom-dns-updates-for-cni-plugins)
     - [What will never work](#what-will-never-work)
     - [Windows Container Compatibility](#windows-container-compatibility)
     - [Relevant resources/conversations](#relevant-resourcesconversations)
@@ -301,13 +302,13 @@ Over the course of v1.12/13, many conformance tests were adapted to be able to p
 
 These tests are already running and listed on the dashboard above, with a few exceptions:
 
-- [ ] "... should function for node-pod communication: udp" - issue [#72917](https://github.com/kubernetes/kubernetes/issues/72917) has a PR open
-- [ ] "should be able to pull image from docker hub" - [PR #72777](https://github.com/kubernetes/kubernetes/pull/72777) open
-- [ ] "should provide DNS for the cluster" - [PR #72729](https://github.com/kubernetes/kubernetes/pull/72729) open for issue [#70189](https://github.com/kubernetes/kubernetes/issues/70189)
+- [x] "... should function for node-pod communication: udp" - issue [#72917](https://github.com/kubernetes/kubernetes/issues/72917) has a PR open
+- [x] "should be able to pull image from docker hub" - [PR #72777](https://github.com/kubernetes/kubernetes/pull/72777) open
+- [x] "should provide DNS for the cluster" - [PR #72729](https://github.com/kubernetes/kubernetes/pull/72729) open for issue [#70189](https://github.com/kubernetes/kubernetes/issues/70189)
 
 
 And also some cleanup to simplify the test exclusions:
- - [ ] Skip Windows unrelated tests (those are tagged as `LinuxOnly`) - (https://github.com/kubernetes/kubernetes/pull/73204)
+ - [x] Skip Windows unrelated tests (those are tagged as `LinuxOnly`) - (https://github.com/kubernetes/kubernetes/pull/73204)
 
 #### Substitute test cases
 
@@ -316,21 +317,23 @@ These are test cases that follow a similar flow to a conformance test that is de
 These test cases are in review:
 
 
-- [ ] [sig-network] [sig-windows] Networking Granular Checks: Pods should function for intra-pod communication: http - [PR#71468](https://github.com/kubernetes/kubernetes/pull/71468)
-- [ ] [sig-network] [sig-windows] Networking Granular Checks: Pods should function for intra-pod communication: udp - [PR#71468](https://github.com/kubernetes/kubernetes/pull/71468)
-- [ ] [sig-network] [sig-windows] Networking Granular Checks: Pods should function for node-pod communication: udp - [PR#71468](https://github.com/kubernetes/kubernetes/pull/71468)
-- [ ] [sig-network] [sig-windows] Networking Granular Checks: Pods should function for node-pod communication: http - [PR#71468](https://github.com/kubernetes/kubernetes/pull/71468)
+- [x] [sig-network] [sig-windows] Networking Granular Checks: Pods should function for intra-pod communication: http - [PR#71468](https://github.com/kubernetes/kubernetes/pull/71468)
+- [x] [sig-network] [sig-windows] Networking Granular Checks: Pods should function for intra-pod communication: udp - [PR#71468](https://github.com/kubernetes/kubernetes/pull/71468)
+- [x] [sig-network] [sig-windows] Networking Granular Checks: Pods should function for node-pod communication: udp - [PR#71468](https://github.com/kubernetes/kubernetes/pull/71468)
+- [x] [sig-network] [sig-windows] Networking Granular Checks: Pods should function for node-pod communication: http - [PR#71468](https://github.com/kubernetes/kubernetes/pull/71468)
 
 
 And these still need to be covered: 
 
-- [ ] DNS configuration is passed through CNI, not `/etc/resolv.conf` [67435](https://github.com/kubernetes/kubernetes/pull/67435)
+- [x] DNS configuration is passed through CNI, not `/etc/resolv.conf` [67435](https://github.com/kubernetes/kubernetes/pull/67435)
   - Test cases needed for `dnsPolicy`: Default, ClusterFirst, None
   - Test cases needed for `dnsConfig`
   - Test cases needed for `hostname`
   - Test cases needed for `subdomain`
 
-- [ ] Windows doesn't have CGroups, but nodeReserve and kubeletReserve are [implemented](https://github.com/kubernetes/kubernetes/pull/69960)
+Tests will be merged once the CNI plugins are updated. See [Custom DNS updates for CNI plugins](#custom-dns-updates-for-cni-plugins) for full details.
+
+- [x] Windows doesn't have CGroups, but nodeReserve and kubeletReserve are [implemented](https://github.com/kubernetes/kubernetes/pull/69960)
 
 
 
@@ -340,11 +343,10 @@ We will also add Windows scenario-specific tests to cover more typical use cases
 
 These areas still need test cases written:
 
-- [ ] System, pod & network stats are implemented in kubelet, not cadvisor [70212](https://github.com/kubernetes/kubernetes/pull/70121), [66427](https://github.com/kubernetes/kubernetes/pull/66427), [62266](https://github.com/kubernetes/kubernetes/pull/62266), [51152](https://github.com/kubernetes/kubernetes/pull/51152), [50396](https://github.com/kubernetes/kubernetes/pull/50396)
-- [ ] Windows uses username (string) or SID (binary) to define users, not UID/GID [64009](https://github.com/kubernetes/kubernetes/pull/64009)
+- [x] System, pod & network stats are implemented in kubelet, not cadvisor [70121](https://github.com/kubernetes/kubernetes/pull/70121), [66427](https://github.com/kubernetes/kubernetes/pull/66427), [62266](https://github.com/kubernetes/kubernetes/pull/62266), [51152](https://github.com/kubernetes/kubernetes/pull/51152), [50396](https://github.com/kubernetes/kubernetes/pull/50396)
 - [ ] Create a `NodePort` service, and verify it's accessible on both Linux & Windows node IPs on the correct port [tracked as #73327](https://github.com/kubernetes/kubernetes/issues/73327)
-- [ ] Verify `ExternalPort` works from Windows pods [tracked as #73328](https://github.com/kubernetes/kubernetes/issues/73328)
-- [ ] Verify `imagePullPolicy` behaviors. The reason behind needing a Windows specific test is because we may need to publish Windows-specific images for this validation. The current tests are pulling Linux images. Long term we will work with the team to use a universal/heterogeneous image if possible.
+- [x] Verify `ExternalPort` works from Windows pods [tracked as #73328](https://github.com/kubernetes/kubernetes/issues/73328)
+- [x] Verify `imagePullPolicy` behaviors. The reason behind needing a Windows specific test is because we may need to publish Windows-specific images for this validation. The current tests are pulling Linux images. Long term we will work with the team to use a universal/heterogeneous image if possible.
 
 
 
