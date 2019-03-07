@@ -22,7 +22,7 @@ approvers:
   - "@spiffxp"
 editor: TBD
 creation-date: 2018-11-29
-last-updated: 2019-02-11
+last-updated: 2019-03-06
 status: implementable
 ---
 
@@ -39,8 +39,8 @@ status: implementable
     - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
     - [What works today](#what-works-today)
-    - [What we need to test and verify if it works or not for GA (Some items will be documented as unsupported, others will be documented as supported, and some will be bugs that will be fixed for GA)](#what-we-need-to-test-and-verify-if-it-works-or-not-for-ga-some-items-will-be-documented-as-unsupported-others-will-be-documented-as-supported-and-some-will-be-bugs-that-will-be-fixed-for-ga)
     - [Windows Node Roadmap (post-GA work)](#windows-node-roadmap-post-ga-work)
+        - [Custom DNS updates for CNI plugins](#custom-dns-updates-for-cni-plugins)
     - [What will never work](#what-will-never-work)
     - [Windows Container Compatibility](#windows-container-compatibility)
     - [Relevant resources/conversations](#relevant-resourcesconversations)
@@ -91,36 +91,35 @@ Windows-based workloads still account for a significant portion of the enterpris
 As of 29-11-2018 much of the work for enabling Windows nodes has already been completed. Both `kubelet` and `kube-proxy` have been adapted to work on Windows Server, and so the first goal of this KEP is largely already complete. 
 
 ### What works today
-- Windows-based containers can be created by kubelet, [provided the host OS version matches the container base image](https://docs.microsoft.com/en-us/virtualization/windowscontainers/deploy-containers/version-compatibility)
-    - Pod (single or multiple containers per Pod with process isolation). There are no notable differences in Pod status fields between Linux and Windows containers
-    - Services types NodePort, ClusterIP, LoadBalancer, and ExternalName. Service environment variables.
+- Windows-based containers can be created by kubelet, [provided the host OS version matches the container base image](https://docs.microsoft.com/en-us/virtualization/windowscontainers/deploy-containers/version-compatibility). Microsoft will distribute the operating system-dependent `pause` image (mcr.microsoft.com/k8s/core/pause:1.0.0).
+    - Pod
+      - Single or multiple containers per Pod with process isolation
+      - There are no notable differences in Pod status fields between Linux and Windows containers
+      - Readiness and Liveness probes
+      - postStart & preStop container lifecycle events
+      - ConfigMap, Secrets: as environment variables or volumes (Volume subpath does not work)
+      - EmptyDir
+      - Named pipe host mounts
+      - Volumes can be shared between containers in a Pod
+      - Resource limits
+    - Services types NodePort, ClusterIP, LoadBalancer, and ExternalName. Service environment variables and headless services work.
+      - Cross operating system service connectivity
     - Workload controllers ReplicaSet, ReplicationController, Deployments, StatefulSets, DaemonSet, Job, CronJob
-    - ConfigMap, Secrets: as environment variables or volumes (Volume subpath does not work)
-    - Resource limits
+    - Scheduler preemption
     - Pod & container metrics
+    - Horizontal Pod Autoscaling using all metrics
     - KubeCtl Exec
-    - Readiness and Liveness probes
-    - Volumes can be shared between containers in a Pod
-    - EmptyDir
+    - Resource Quotas 
 - Windows Server 2019 is the only Windows operating system we will support at GA timeframe. Note above that the host operating system version and the container base image need to match. This is a Windows limitation we cannot overcome.
 - Customers can deploy a heterogeneous cluster, with Windows and Linux compute nodes side-by-side and schedule Docker containers on both operating systems. Of course, Windows Server containers have to be scheduled on Windows and Linux containers on Linux
 - Out-of-tree Pod networking with [Azure-CNI](https://github.com/Azure/azure-container-networking/blob/master/docs/cni.md), [OVN-Kubernetes](https://github.com/openvswitch/ovn-kubernetes), [two CNI meta-plugins](https://github.com/containernetworking/plugins), [Flannel (VXLAN and Host-Gateway)](https://github.com/coreos/flannel) 
 - Dockershim CRI
 - Many<sup id="a1">[1]</sup> of the e2e conformance tests when run with [alternate Windows-based images](https://hub.docker.com/r/e2eteam/) which are being moved to [kubernetes-sigs/windows-testing](https://www.github.com/kubernetes-sigs/windows-testing)
 - Persistent storage: FlexVolume with [SMB + iSCSI](https://github.com/Microsoft/K8s-Storage-Plugins/tree/master/flexvolume/windows), and in-tree AzureFile and AzureDisk providers
-
-### What we need to test and verify if it works or not for GA (Some items will be documented as unsupported, others will be documented as supported, and some will be bugs that will be fixed for GA)
-- Headless services (https://github.com/kubernetes/kubernetes/issues/73416)
-- QoS (guaranteed, burstable, best effort) (https://github.com/kubernetes/kubernetes/issues/73418)
-- Pod DNS configuration like hostname, subdomain, hostAliases, dnsConfig, dnsPolicy (https://github.com/kubernetes/kubernetes/issues/73414)
-- Mounting local volumes on Windows does not check if the volume path exists (https://github.com/kubernetes/kubernetes/issues/73332)
-- Fix run_as_username for Windows (https://github.com/kubernetes/kubernetes/issues/73387)
-- Container Lifecycle Events postStart and preStop (https://github.com/kubernetes/kubernetes/issues/73451)
-- Additional tickets/issues are tracked under [Backlog (v.1.14)](https://github.com/orgs/kubernetes/projects/8#column-4277556)
-- Horizontal Pod Autoscaling using all metrics (https://github.com/kubernetes/kubernetes/issues/73489 and https://github.com/kubernetes/kubernetes/issues/72788)
+- Kube-Proxy support for L2Bridge and Overlay networks
 
 ### Windows Node Roadmap (post-GA work)
-- Group Managed Service Accounts, a way to assign an Active Directory identity to a Windows container, is forthcoming with KEP `Windows Group Managed Service Accounts for Container Identity`
+- Group Managed Service Accounts, a way to assign an Active Directory identity to a Windows container, is forthcoming with KEP `Windows Group Managed Service Accounts for Container Identity`. This work will be released as alpha in v1.14 and is already merged.
 - `kubectl port-forward` hasn't been implemented due to lack of an `nsenter` equivalent to run a process inside a network namespace.
 - CRIs other than Dockershim: CRI-containerd support is forthcoming
 - Some kubeadm work was done in the past to add Windows nodes to Kubernetes, but that effort has been dormant since. We will need to revisit that work and complete it in the future.
@@ -131,7 +130,21 @@ As of 29-11-2018 much of the work for enabling Windows nodes has already been co
 - Properly implement terminationGracePeriodSeconds for Windows (https://github.com/moby/moby/issues/25982 and https://github.com/kubernetes/kubernetes/issues/73434)
 - Single file mapping and Termination message will work when we introduce CRI containerD support in Windows
 - Design and implement `--enforce-node-allocatable`, hard/soft eviction and `MemoryPressure` conditions. These all depend on cgroups in Linux, and the kubelet will need new work specific to Windows to raise and respond to memory pressure conditions. See [Memory Overprovisioning](#memory-overprovisioning) later in this doc.
+- Fix run_as_username for Windows (https://github.com/kubernetes/kubernetes/issues/73387)
+- Support for Local Traffic Policy and DSR mode on Windows (https://github.com/kubernetes/kubernetes/issues/62046)
 
+
+
+#### Custom DNS updates for CNI plugins
+
+For v1.14, custom pod DNS configuration tests are not running. Some CNI implementations updates are needed to Azure-CNI, win-bridge, OVN, and flannel which are out of the kubernetes/kubernetes tree. Once those are updated, the tests are tracked in [issue 73414](https://github.com/kubernetes/kubernetes/issues/73414)/[pr 74925](https://github.com/kubernetes/kubernetes/pull/74925) will be merged.
+
+As part of Azure-CNI [PR#305](https://github.com/Azure/azure-container-networking/pull/305), manual tests were run with Pod.Spec.DNSPolicy = DNSNone. Hostname, Subdomain, and DNSConfig.Nameservers, and DNSConfig.Searches were set correctly based on the Pod spec.
+
+Tracking Issues:
+
+- win-bridge [#271](https://github.com/containernetworking/plugins/pull/271) - this is also used in the test passes for GCE, see [gce-k8s-windows-testing#7](https://github.com/yujuhong/gce-k8s-windows-testing/pull/7)
+- Azure-CNI [PR#305](https://github.com/Azure/azure-container-networking/pull/305)
 
 ### What will never work
 Note that some features are plain unsupported while some will not work without underlying OS changes
@@ -146,10 +159,11 @@ Note that some features are plain unsupported while some will not work without u
       - DefaultMode (due to UID/GID dependency)
       - readOnly root filesystem. Mapped volumes still support readOnly
       - Block device mapping
+    - Expanding the mounted volume (resizefs)
     - HugePages
     - Memory as the storage medium
 - CSI plugins, which require privileged containers
-- File system features like uui/guid, per-user Linux filesystem permissions, and read-only root filesystems
+- File system features like uui/guid, per-user Linux filesystem permissions, and read-only root filesystems (see note above and also later in the doc about read-only volumes)
 - NFS based storage/volume support (https://github.com/kubernetes/kubernetes/issues/56188)
 - Host networking is not available in Windows
 - ClusterFirstWithHostNet is not supported for DNS. Windows treats all names with a `.` as a FQDN and skips PQDN resolution
@@ -291,13 +305,13 @@ Over the course of v1.12/13, many conformance tests were adapted to be able to p
 
 These tests are already running and listed on the dashboard above, with a few exceptions:
 
-- [ ] "... should function for node-pod communication: udp" - issue [#72917](https://github.com/kubernetes/kubernetes/issues/72917) has a PR open
-- [ ] "should be able to pull image from docker hub" - [PR #72777](https://github.com/kubernetes/kubernetes/pull/72777) open
-- [ ] "should provide DNS for the cluster" - [PR #72729](https://github.com/kubernetes/kubernetes/pull/72729) open for issue [#70189](https://github.com/kubernetes/kubernetes/issues/70189)
+- [x] "... should function for node-pod communication: udp" - issue [#72917](https://github.com/kubernetes/kubernetes/issues/72917) has a PR open
+- [x] "should be able to pull image from docker hub" - [PR #72777](https://github.com/kubernetes/kubernetes/pull/72777) open
+- [x] "should provide DNS for the cluster" - [PR #72729](https://github.com/kubernetes/kubernetes/pull/72729) open for issue [#70189](https://github.com/kubernetes/kubernetes/issues/70189)
 
 
 And also some cleanup to simplify the test exclusions:
- - [ ] Skip Windows unrelated tests (those are tagged as `LinuxOnly`) - (https://github.com/kubernetes/kubernetes/pull/73204)
+ - [x] Skip Windows unrelated tests (those are tagged as `LinuxOnly`) - (https://github.com/kubernetes/kubernetes/pull/73204)
 
 #### Substitute test cases
 
@@ -306,21 +320,23 @@ These are test cases that follow a similar flow to a conformance test that is de
 These test cases are in review:
 
 
-- [ ] [sig-network] [sig-windows] Networking Granular Checks: Pods should function for intra-pod communication: http - [PR#71468](https://github.com/kubernetes/kubernetes/pull/71468)
-- [ ] [sig-network] [sig-windows] Networking Granular Checks: Pods should function for intra-pod communication: udp - [PR#71468](https://github.com/kubernetes/kubernetes/pull/71468)
-- [ ] [sig-network] [sig-windows] Networking Granular Checks: Pods should function for node-pod communication: udp - [PR#71468](https://github.com/kubernetes/kubernetes/pull/71468)
-- [ ] [sig-network] [sig-windows] Networking Granular Checks: Pods should function for node-pod communication: http - [PR#71468](https://github.com/kubernetes/kubernetes/pull/71468)
+- [x] [sig-network] [sig-windows] Networking Granular Checks: Pods should function for intra-pod communication: http - [PR#71468](https://github.com/kubernetes/kubernetes/pull/71468)
+- [x] [sig-network] [sig-windows] Networking Granular Checks: Pods should function for intra-pod communication: udp - [PR#71468](https://github.com/kubernetes/kubernetes/pull/71468)
+- [x] [sig-network] [sig-windows] Networking Granular Checks: Pods should function for node-pod communication: udp - [PR#71468](https://github.com/kubernetes/kubernetes/pull/71468)
+- [x] [sig-network] [sig-windows] Networking Granular Checks: Pods should function for node-pod communication: http - [PR#71468](https://github.com/kubernetes/kubernetes/pull/71468)
 
 
 And these still need to be covered: 
 
-- [ ] DNS configuration is passed through CNI, not `/etc/resolv.conf` [67435](https://github.com/kubernetes/kubernetes/pull/67435)
+- [x] DNS configuration is passed through CNI, not `/etc/resolv.conf` [67435](https://github.com/kubernetes/kubernetes/pull/67435)
   - Test cases needed for `dnsPolicy`: Default, ClusterFirst, None
   - Test cases needed for `dnsConfig`
   - Test cases needed for `hostname`
   - Test cases needed for `subdomain`
 
-- [ ] Windows doesn't have CGroups, but nodeReserve and kubeletReserve are [implemented](https://github.com/kubernetes/kubernetes/pull/69960)
+Tests will be merged once the CNI plugins are updated. See [Custom DNS updates for CNI plugins](#custom-dns-updates-for-cni-plugins) for full details.
+
+- [x] Windows doesn't have CGroups, but nodeReserve and kubeletReserve are [implemented](https://github.com/kubernetes/kubernetes/pull/69960)
 
 
 
@@ -330,11 +346,10 @@ We will also add Windows scenario-specific tests to cover more typical use cases
 
 These areas still need test cases written:
 
-- [ ] System, pod & network stats are implemented in kubelet, not cadvisor [70212](https://github.com/kubernetes/kubernetes/pull/70121), [66427](https://github.com/kubernetes/kubernetes/pull/66427), [62266](https://github.com/kubernetes/kubernetes/pull/62266), [51152](https://github.com/kubernetes/kubernetes/pull/51152), [50396](https://github.com/kubernetes/kubernetes/pull/50396)
-- [ ] Windows uses username (string) or SID (binary) to define users, not UID/GID [64009](https://github.com/kubernetes/kubernetes/pull/64009)
+- [x] System, pod & network stats are implemented in kubelet, not cadvisor [70121](https://github.com/kubernetes/kubernetes/pull/70121), [66427](https://github.com/kubernetes/kubernetes/pull/66427), [62266](https://github.com/kubernetes/kubernetes/pull/62266), [51152](https://github.com/kubernetes/kubernetes/pull/51152), [50396](https://github.com/kubernetes/kubernetes/pull/50396)
 - [ ] Create a `NodePort` service, and verify it's accessible on both Linux & Windows node IPs on the correct port [tracked as #73327](https://github.com/kubernetes/kubernetes/issues/73327)
-- [ ] Verify `ExternalPort` works from Windows pods [tracked as #73328](https://github.com/kubernetes/kubernetes/issues/73328)
-- [ ] Verify `imagePullPolicy` behaviors. The reason behind needing a Windows specific test is because we may need to publish Windows-specific images for this validation. The current tests are pulling Linux images. Long term we will work with the team to use a universal/heterogeneous image if possible.
+- [x] Verify `ExternalPort` works from Windows pods [tracked as #73328](https://github.com/kubernetes/kubernetes/issues/73328)
+- [x] Verify `imagePullPolicy` behaviors. The reason behind needing a Windows specific test is because we may need to publish Windows-specific images for this validation. The current tests are pulling Linux images. Long term we will work with the team to use a universal/heterogeneous image if possible.
 
 
 
