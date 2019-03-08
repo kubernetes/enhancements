@@ -19,7 +19,9 @@ last-updated: 2019-02-04
 status: implementable
 ---
 
-# Kustomize Secret Generator Plugins
+[execRemoval]: https://github.com/kubernetes-sigs/kustomize/issues/692
+
+# Kustomize Secret K:V Generator Plugins
 
 ## Table of Contents
 * [Table of Contents](#table-of-contents)
@@ -28,33 +30,77 @@ status: implementable
     * [Goals](#goals)
     * [Non-Goals](#non-goals)
 * [Proposal](#proposal)
-    * [Risks and Mitigations](#risks-and-mitigations)
+* [Risks and Mitigations](#risks-and-mitigations)
 * [Graduation Criteria](#graduation-criteria)
 * [Implementation History](#implementation-history)
 
 ## Summary
 
-Kustomize wants to generate Kubernetes Secret objects from general key-value pairs where the value is supposed to be a secret. Currently Kustomize only supports reading secret values from local files which raises security concerns about file lifetime and access. Reading secret values from the execution of arbitrary "commands" in a kustomization.yaml file introduces concerns in a world where kustomization files can be used directly from the internet when a user runs `kustomize build`.
+Kustomize users want to generate Kubernetes Secret
+objects from general key:value (KV) pairs where the
+value is supposed to be a secret.  Users want to
+generate these pairs through integration with secret
+management tools (e.g. see comments on
+[692][execRemoval]).
 
-This proposal describes obtaining secret values safely using golang [plugins](https://golang.org/pkg/plugin/).
+Currently Kustomize only supports reading secret values
+from local files which raises security concerns about
+file lifetime and access. Reading secret values from
+the execution of arbitrary "commands" in a
+kustomization.yaml file introduces concerns in a world
+where kustomization files can be used directly from the
+internet when a user runs `kustomize build`.  This
+proposal describes the syntax for a new key:value
+generator plugin framework supporting an arbitrary
+number of plugin types to generate key:value pairs.
 
 ## Motivation
 
-Not having a way to integrate `SecretGenerator` with secret management tools requires hacky workarounds.
+Not having a way to integrate `SecretGenerator` with
+secret management tools requires hacky, insecure
+workarounds.
 
 ### Goals
 
-- Give users a way to intergrate `SecretGenerator` with secret management tools in a safe way.
+- In the `GeneratorArgs` section of a kustomization
+  file, a user may specify a plugin type, and a
+  specific instance of that type, for generating
+  key:value pairs.
+
+- The specification will allow for any number of plugin
+  types, and any number of instances of those types.
+  
+- The first type supported will be
+  [goplugins](https://golang.org/pkg/plugin), to enable
+  kustomize source code contributors to add custom KV
+  generators without the need to maintain a kustomize
+  source code fork.
+  
+  Kustomize maintainers expect developers who use a
+  goplugin to understand that a kustomize binary and
+  any goplugins expected to work with it must be
+  compiled on the same machine with the same compiler
+  against the same set of (transitive) libraries.
+  _It's the developers responsibility to bundle the
+  binary and shared libraries together in a container
+  image for actual use._
+
+- Other kinds of plugins, e.g. an _execute this binary_
+  plugin, should be subsequently easy to add, and could
+  be appropriate for end user use (but would require
+  consideration in a KEP first).
+
 
 ### Non-Goals
 
-- Kustomize will not handle plugin installation/management.
+- Kustomize will not handle key:value generation plugin
+  installation/management, or seek to build a plugin
+  "ecosystem" of key:value generators.
+
 
 ## Proposal
 
-In the proposed design `SecretGenerator` would load golang plugins from `~/.config/kustomization_plugins`. This would limit the scope of what kustomize can execute to the plugins on the users machine. Also using golang plugins forces a strict interface with well-defined responsibilities.
-
-The current API looks like this:
+The current API of `SecretGenerator` looks like this:
 
 ```
 secretGenerator:
@@ -99,7 +145,7 @@ secretGenerator:
 - name: secretFromPlugins
   kvSources:
   - pluginType: go      // described by this KEP
-    name: someLocalGoPlugin
+    name: myplugin
     args:
     - someArg
     - someOtherArg
@@ -110,7 +156,30 @@ secretGenerator:
     - yetAnotherArg
 ```
 
-The implementation would look something like this:
+
+The `kvSources` specified with `pluginType: builtin` are
+reformulations of existing key:value generators currently
+invoked by the existing `dataSources` specification.
+
+A `kvSource` with `pluginType: Go` and `name: myplugin`
+would attempt to load the file
+
+```
+~/.config/kustomize/plugins/kvSources/myplugin.so
+```
+
+and access the loaded plugin via the interface
+
+```
+type KvSourcePlugin interface {
+	Get() []kv.Pair
+}
+```
+
+This clearly describes how the plugin must be formulated.
+
+
+The loading implementation would look something like this:
 
 ```
 func keyValuesFromPlugins(ldr ifc.Loader, plugins []types.Plugin) ([]kv.Pair, error) {
@@ -159,7 +228,7 @@ func findPlugin(name string) (func(string, []string) ([]kv.Pair, error), error) 
 }
 ```
 
-and an example plugin would look like this:
+An example plugin would look like this:
 
 ```
 package main
@@ -179,12 +248,28 @@ func Env(root string, args []string) ([]kv.Pair, error) {
 }
 ```
 
-Users would install the plugin with `go build -buildmode=plugin ~/.config/kustomization_plugins/myplugin.so`
 
-### Risks and Mitigations
+A developer - not an end user - would compile the
+goplugin and main program like this:
 
-#### Several people want an _exec-style_ plugin
-_exec-style_ means execute arbitrary code from some file.
+```
+go build -buildmode=plugin ~/.config/kustomize/plugins/kvSources/myplugin.so
+go get sigs.k8s.io/kubernetes-sigs/kustomize
+```
+
+then bake the build artifacts into a container image
+for use by an end user or continuous delivery bot.
+
+
+## Risks and Mitigations
+
+### Several people want an _exec-style_ plugin
+
+_exec-style_ means execute arbitrary code from some file,
+with key value pairs being captured from the `stdout`
+of a subprocess.
+
+##### mitigation
 
 Most the lines of code written to implement this KEP
 accommodate the notion of KV generation via a _generic_
@@ -201,56 +286,156 @@ completely new style, e.g. look for the plugin name as
 an executable in some hardcoded location.
 
 Actual implementation of these other kinds of plugins
-are out of scope for this KEP, however this KEP's
-implementation will make it much easier to create other
-kinds of plugins.
+are _out of scope for this KEP_.
 
-Go Plugins that become popular have a clear
-path to becoming a builting - so if someone writes, say,
-a general Exec plugin, we can easily promote it to a
-builtin (by virtue of the fact that it's written in Go,
-and because of the choices made in this KEP for
-describing a plugin in the kustomization file).
+The ability to write a goplugin very specifically
+targets a kustomize contributor who understands their
+limitations.  An exec-style plugin would enable a
+broader set of people, this time including end users.
+A KEP proposing such plugins would need to consider a
+different set of risks and maintenance requirements.
 
-#### No current windows support for golang plugins.
-This may be implemented by the Go team later in which
-case it will just work.
+### goplugin limitations
 
-Also, as noted above, someone can write an exec style plugin
-which will work on Windows.
+The first plugin mechanism will be goplugins, since by
+design they are trivial to make for a Go program (like
+kustomize).  However, they have limitations, and are
+to some extent an experimental feature of Go tooling.
 
-#### General symbol execution from the plugin
-A Go plugin will be cast to a particular hardcoded interface, e.g.
+#### Not shareable as object code
+
+The shared object (`.so`) files created via `go build
+-buildmode=plugin` cannot be reliably used by a loading
+program unless both the program and the plugin were
+compiled with the same version of Go, with the same
+transitive libs, on the same machine (see, e.g. [this
+golang
+issue](https://github.com/golang/go/issues/18827)).
+
+Therefore, the Go developer who elects to write their
+key:value generator as a goplugin is obligated to compile a
+new kustomize binary as well as the plugin.
+
+For this developer, this extra compilation step will be far
+easier than forking kustomize and modifying the code
+directly to introduce all the piping one would need to
+express a new key:value secret generation style in a
+kustomization file and integrate it with existing methods.
+
+The risk to not compiling, and, say using an `.so` that was
+compiled long ago and far away is that the program will
+panic when the `build` command is executed.
+
+##### mitigation
+
+An attempt to `kustomize build $target` that includes a
+kustomization file specifying a `pluginType: Go` will
+fail with an error message explaining the panic risk
+and demanding the additional use of the command line
+flag:
 
 ```
-type KvSourcePlugin {
-	Get []kvPairs
+kustomize build --alpha_enable_goplugin_and_accept_panic_risk $target
+```
+
+This flag signals that the feature 1) is alpha (it
+could be removed), and 2) the feature could panic if
+improperly used.
+
+As noted above, developers who elect to use kustomize
+plus goplugins should bundle all compilation artifacts
+into a container image for end use.  A bot using said
+image would always specify the flag.
+
+##### No current support for Windows
+
+This is mentioned in the
+[plugin package overview section](https://golang.org/pkg/plugin).
+
+##### mitigation
+
+The target use case for secret generation is gitops
+running in a container on any kubernetes cluster.
+
+Developers on their workstations are not a target use
+case, as they are less likely to have the security
+requirements that necessitate using a plugin based
+generator.
+
+If developers need this functionality, we need to
+better understand why. it is possible there is a better
+way of addressing their need. Of course, Windows users
+who want to support goplugins could contribute to the
+golang project.
+
+#### General symbol execution from the plugin
+
+##### mitigation
+
+A Go plugin, when loaded,
+will be cast to a particular hardcoded interface, e.g.
+
+```
+type KvSourcePlugin interface {
+	Get() []kv.Pair
 }
 ```
 and accessed exclusively through that interface.
 
-#### Existing KV generators continue as an option
-We leave in place the existing three mechanisms
-(_literals_, _env_ and _files_) for generating KV pairs, but
-additionally allow these mechanisms to be expressed as
-`builtin` plugins (see example above).
+### Two means to specify legacy KV generation
 
-If plugins - both Go and other styles - prove unpopular
-or problematic, we can remove them per API change
+The existing three mechanisms and syntax for generating KV
+pairs (_literals_, _env_ and _files_) remain active, but
+additionally the work for this KEP will allow these
+mechanisms to be expressed as `builtin` plugins (see example
+above).
+
+##### mitigation
+
+If plugins - both goplugins and other styles - prove
+unpopular or problematic, we can remove them per API change
 policies.
 
-If they do prove popular/useful, we can remove deprecate
-the legacy form for (_literals_, _env_ and _files_),
-and help people convert to the new "builtin" form.
+If they do prove popular/useful, we can deprecate the legacy
+form for (_literals_, _env_ and _files_), and help people
+convert to the new `builtin` form to access these KV sources.
 
-## Graduation Criteria
+## Graduation Criteria of plugin framework
 
-Many users have been requesting a better way to integrate with secret management tools https://github.com/kubernetes-sigs/kustomize/issues/692
+### Alpha status 
 
-* A higher level feature test (like those in [pkg/target](https://github.com/kubernetes-sigs/kustomize/tree/master/pkg/target))
-* Documentation of fields in the [canonical example file](https://github.com/kubernetes-sigs/kustomize/blob/master/docs/kustomization.yaml)
-* Usage [example](https://github.com/kubernetes-sigs/kustomize/tree/master/examples)
+The kustomization fields that support a general plugin
+framework (which could support many kinds of plugins in
+addition to goplugins) will be implemented but
+documented as an alpha feature, which could be removed
+per API change policies. Loading of goplugins
+themselves, as noted above, will be protected by a flag
+denoting their alpha status.  As these features
+target contributors, this will be mentioned
+in CONTRIBUTING.md.
+
+### Graduation to beta
+
+* Exec-style plugins approaching GA.
+
+  As goplugins are targeted to kustomize contributors,
+  we'd like to see development of an exec-style plugin
+  targeted to end users before deciding to graduate
+  the framework to beta/GA.
+  
+  For goplugins themselves to reach beta/GA, we'd
+  like exec-style based plugin implemented and still
+  see some preference for the Go based approach.
+
+* Testing and documentation.
+
+  * High level feature test
+    (like those in [pkg/target](https://github.com/kubernetes-sigs/kustomize/tree/master/pkg/target))
+  * Field documentarion in the 
+    [canonical example file](https://github.com/kubernetes-sigs/kustomize/blob/master/docs/kustomization.yaml)
+  * Usage [examples](https://github.com/kubernetes-sigs/kustomize/tree/master/examples).
+
 
 ## Implementation History
 
-This design uses the golang [plugin](https://golang.org/pkg/plugin/) system.
+(TODO add PR's here)
