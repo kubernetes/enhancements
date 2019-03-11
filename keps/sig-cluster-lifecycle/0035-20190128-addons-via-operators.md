@@ -1,5 +1,3 @@
-KEP: Addons via Operators
-
 ---
 kep-number: 35
 title: Addons via Operators
@@ -7,12 +5,14 @@ authors:
   - "@justinsb"
 owning-sig: sig-cluster-lifecycle
 reviewers:
-  - TBD
+  - @luxas
+  - @roberthbailey
+  - @timothysc
 approvers:
-  - TBD
+  - @timothysc
 editor: TBD
 creation-date: 2019-01-28
-last-updated: 2019-01-28
+last-updated: 2019-03-11
 status: provisional
 ---
 
@@ -40,10 +40,13 @@ its own CRD, and users will be able to perform limited tailoring of the addon
 the CR.  The operator encodes any special logic (e.g. dependencies) needed to
 install the addon.
 
+By creating a CRD per addon, we are able make use of the kubernetes API
+machinery for those per-addon options.
+
 We will create tooling to make it easy to build addon operators that follow the
 best practices we identify as part of this work.  For example, we expect that
-most addons will be declarative, and likely be specified as part of a “cluster
-bundle”, so we will make it easy to build basic addon operators that follow
+most addons will be declarative, and likely be specified as part of a "cluster
+bundle", so we will make it easy to build basic addon operators that follow
 these patterns.
 
 We hope that components will choose to maintain their own operators, encoding
@@ -94,7 +97,9 @@ we discover new requirements.
 
 * Extend kubebuilder & controller-runtime to make it easy to build operators for
   addons
-* Build addons for the primary addons currently in the cluster/ directory
+* Build addons for the primary addons currently in the cluster/ directory, at
+  least including those required to bring up a conformant cluster.  Proposed
+  list: CoreDNS, kube-proxy, dashboard, metrics-server, localdns-agent.
 * Plug in those addons operators into kube-up / cluster-api / kubeadm / kops /
   others (subject to those projects being interested)
 * Develop at least one addon operator outside of kubernetes/kubernetes
@@ -108,8 +113,13 @@ we discover new requirements.
   `kustomize`) to support advanced tailoring of addons.  The goal here is to
   make sure that everyone can use the addon operators, even if they “love it but
   just need to change one thing”.  This ensures that the addon operators
-  themselves can remain bounded in scope and complexity.
-
+  themselves can remain bounded in scope and complexity.  Patching will fail if
+  the underlying addon changes dramatically, so we'll likely have a "patch
+  incompatible with new version" error - and generally addons should avoid
+  gratuitously changing their structure.
+* We should develop a convention (labels / owner-refs) so that we are able to
+  discover which CRDs are cluster-addons, and there is no confusion with
+  application operators.
 
 We expect the following functionality to be common to all operators for addons:
 
@@ -130,7 +140,28 @@ We expect the following functionality to be common to all operators for addons:
 * Addon manifests are able express an operator minimum version requirement, so
   that an addon with new requirements can require that the operator be updated
   first
+* Airgapped operation should be possible by combining a registry mirror and
+  storage of the underlying manifest in the cluster itself.
 
+
+An example can make this easier to understand, here is what a CRD instance for
+kube-proxy might look like:
+
+```yaml
+apiVersion: addons.sigs.k8s.io/v1alpha1
+kind: KubeProxy
+metadata:
+  name: default
+  namespace: kube-system
+spec:
+  clusterCidr: 100.64.0.0/10
+  version: 1.14.4
+status:
+  healthy: true
+```
+
+This particular manifest is pinned to `version: 1.14.4`.  We could also
+subscribe to a stream of updates with a field like `channel: stable`.
 
 ### Risks and Mitigations
 
@@ -150,7 +181,7 @@ rollout.  We must also consider this a trade-off against the risk that without
 coordination each piece of tooling must reinvent the wheel; we expect more
 mistakes (even measured per cluster) in that scenario.
 
-## Graduation Criteria
+## Success Criteria
 
 We will succeed if addon operators are:
 
@@ -163,10 +194,20 @@ PRs to extend them
 * Federated: the components maintain their own operators, encoding their
 knowledge of how best to run their addon.
 
+## Graduation Criteria
+
+alpha: addon-operators are used to manage kube-proxy & CoreDNS:
+* in kube-up
+* in kubeadm (at least as an option)
+* in kops
+* in cluster-api-provider-aws & cluster-api-provider-gcp
+* adoption is documented for use by other tooling / self-managed clusters
+
+(post-alpha criteria will be added post-alpha)
 
 ## Implementation History
 
-Addon Operator session given by jrjohnson & justinsb at Kubecon NA - Dec 2018
+[Addon Operator session](https://www.youtube.com/watch?v=LPejvfBR5_w) given by jrjohnson & justinsb at Kubecon NA - Dec 2018
 KEP created - Jan 29 2019
 
 ## Infrastructure Needed
