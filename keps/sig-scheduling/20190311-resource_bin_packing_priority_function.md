@@ -53,30 +53,26 @@ While running Machine Learning workloads on kubernetes which use accelerator dev
 The plan is to add resource_bin_packing  as optional priority function. Add another argument resources of `type map[v1.ResourceName]int64{}` .This would allow users who want to bin pack a resource to use the function by setting the argument resources which would require them to specify weights for bin packing. For example
 
 ```yaml
-"priorities" : [
-    ...
-    {"name" : "ResourceBinPackingPriority", "weight": 5, "argument":
-     {
-        "resourceBinPacking": { 
-        "resources" : [{ "resource" : "intel.com/foo", "weight": 5 }, { "resource" : "intel.com/bar",
-                                "weight": 2 }]
-      }
-    }
-        ],
+"priorities": [
+    ... {
+        "name": "ResourceBinPackingPriority",
+        "weight": 5,
+        "argument": {
+            "resourceBinPacking": {
+                "resources": [{
+                    "resource": "intel.com/foo",
+                    "weight": 5
+                }, {
+                    "resource": "intel.com/bar",
+                    "weight": 2
+                }, {
+                    "resource": "cpu",
+                    "weight": 1
+                }]
+            }
+        }
+    ],
 
-```
-
-Or
-
-```yaml
-"priorities" : [{
-"name" : "ResourceBinPackingPriority", 
-"weight": 5, 
-"argument": {"resourceBinPacking": {
- "resources" : { "intel.com/foo" : 5} ,  { "memory" : 1}, { "cpu" : 3}
-}
-}
-}],
 ```
 
 The node score would be calculated as (requested+used) / available. The weights would be used to calculate the resulting node score in the following way.
