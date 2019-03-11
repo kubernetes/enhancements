@@ -134,7 +134,7 @@ a new PodCondition named ResourceResizeRequired is added, with the following sta
 To provide some fine-grained control to the user,
 PodSpec.Container.ResourceRequirements is extended with ResizePolicy flag
 for each resource type (CPU, memory) :
-* Update - the default value; resize the Container without restart,
+* NoRestart - the default value; resize the Container without restarting it,
 * RestartContainer - restart the Container in-place to apply new resource
   values (e.g. Java process needs to change its Xmx flag),
 * RestartPod - restart the whole Pod in-place to apply new resource values
@@ -150,6 +150,10 @@ at all (for example VPA might decide to evict Pod with RestartPod policy).
 Setting the flag to separately control CPU & memory is due to an observation
 that usually CPU can be added/removed without much problems whereas
 changes to available memory are more probable to require restarts.
+
+If more than one resource type with different policies are updated, then
+RestartPod policy takes precedence over RestartContainer, which in turn takes
+precedence over NoRestart policy.
 
 #### CRI Changes
 
@@ -191,12 +195,12 @@ with ResizePolicy set to Update for all its Containers.
    * Kubelet sees that new ResourceRequirements does not fit Node’s allocatable
      resources and sets the ResourceResizeRequired PodCondition to Failed. This
      can happen due to race-condition with multiple schedulers.
-1. Scheduler observes that ResourceAllocated has changed.
-   * Case 1: ResourceResizeRequired PodCondition is clear, and
-     ResourceRequirements matches ResourceAllocated, no action is needed.
-   * Case 2: ResourceResizeRequired PodCondition is Failed, Scheduler
-     updates its cache to use ResourceRequirements for Node allocatable
-     accounting.
+1. Scheduler observes that PodCondition has changed.
+   * Case 1: ResourceResizeRequired PodCondition is clear, ResourceRequirements
+     matches ResourceAllocated. Scheduler updates cache to use the updated
+     ResourceAllocated values.
+   * Case 2: ResourceResizeRequired PodCondition is Failed. Scheduler updates
+     its cache to use the unchanged ResourceAllocated values for accounting.
 1. The initiating actor observes that ResourceAllocated has changed.
    * Case 1: ResourceRequirements and ResourceAllocated match again, signifying
      a successful completion of Pod resources in-place resizing.
