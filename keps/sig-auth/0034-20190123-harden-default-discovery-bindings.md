@@ -114,3 +114,7 @@ Documentation regarding the [default RBAC discovery ClusterRole(Bindings)](https
 ## Implementation History
 
 2019-01-31: KEP submitted
+2019-02-06: [implementation PR opened](https://github.com/kubernetes/kubernetes/pull/73807)
+2019-02-27: [documentation PR opened](https://github.com/kubernetes/website/pull/12888)
+2019-03-01: implementation PR merged
+2019-03-11: documentation PR closed
