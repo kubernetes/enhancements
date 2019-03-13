@@ -33,7 +33,7 @@ status: provisional
 
 ## Summary
 
-Resource Bin Packing Priority Function allows users to use the best fit polices during scheduling. It allows users to apply bin packing on core resources like CPU, Memory as well as extended resources like accelerators.
+Resource Bin Packing Priority Function allows users to use the best fit polices during scheduling. It allows users to apply [bin packing](https://en.wikipedia.org/wiki/Bin_packing_problem) on core resources like CPU, Memory as well as extended resources like accelerators.
 
 ## Motivation
 
@@ -50,7 +50,7 @@ While running Machine Learning workloads on kubernetes which use accelerator dev
 
 ## Proposal
 
-The plan is to add resource_bin_packing  as optional priority function. Add another argument resources of `type map[v1.ResourceName]int64{}` .This would allow users who want to bin pack a resource to use the function by setting the argument resources which would require them to specify weights for bin packing. For example
+The plan is to add `resource_bin_packing`  as an optional priority function. Add another argument resources of type `map[v1.ResourceName]int64{}` .This would allow users who want to bin pack a resource to use the function by setting the argument resources which would require them to specify weights for bin packing. For example
 
 ```yaml
 "priorities": [
@@ -126,6 +126,12 @@ intel.com/foo : 2
 Memory: 256MB
 CPU: 2
 
+Resource Weights
+
+intel.com/foo : 5
+Memory: 1
+CPU: 3
+
 Node 1 Spec
 
 Available:
@@ -141,9 +147,11 @@ CPU: 1
 
 Node Score:
 
-((¾)*5+(512/1024)*1+(3/8)*3) / 9
+(((2 + 1)/4)*5 + ((256 + 256)/1024)*1 + ((2 + 1)/8)*3) / (5 + 1 + 3) * 10 
 
-6
+= 6
+
+
 Node 2 Spec
 
 Available:
@@ -157,9 +165,9 @@ intel.com/foo: 2
 Memory: 512MB
 CPU: 6
 
-((4/8)*5+(768/1024)*1+(8/8)*3)/9
+(((2 + 2)/8)*5 + ((256 + 512)/1024)*1 + ((2 + 6)/8)*3) / (5 + 1 + 3) * 10
 
-7
+= 7
 ```
 
 ## Implementation History
