@@ -50,7 +50,7 @@ While running Machine Learning workloads on kubernetes which use accelerator dev
 
 ## Proposal
 
-The plan is to add `resource_bin_packing`  as an optional priority function. Add another argument resources of type `map[v1.ResourceName]int64{}` .This would allow users who want to bin pack a resource to use the function by setting the argument resources which would require them to specify weights for bin packing. For example
+The plan is to modify  `requested_to_capacity_ratio` priority function to support an additional priority function `resource_bin_packing` along with `most_requested` and `least_requested`. Add another argument resources of type `map[v1.ResourceName]int64{}` .This would allow users who want to bin pack a resource to use the function by setting the argument resources which would require them to specify weights for bin packing. For example
 
 ```yaml
 "priorities": [
