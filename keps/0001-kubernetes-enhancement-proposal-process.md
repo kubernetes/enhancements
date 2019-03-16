@@ -25,6 +25,7 @@ status: implementable
   * [Table of Contents](#table-of-contents)
   * [Summary](#summary)
   * [Motivation](#motivation)
+  * [Stewardship](#stewardship)
   * [Reference-level explanation](#reference-level-explanation)
       * [What type of work should be tracked by a KEP](#what-type-of-work-should-be-tracked-by-a-kep)
       * [KEP Template](#kep-template)
@@ -103,8 +104,8 @@ for SIGs to deliberate.
 [road to Go 2]: https://blog.golang.org/toward-go2
 [design proposals]: /contributors/design-proposals
 
-## KEP Stewardship
-The following DACI model indentifies the responsible parties for the KEPs.
+## Stewardship
+The following DACI model indentifies the responsible parties for KEPs.
 
 **Workstream** | **Driver** | **Approver** | **Contributor** | **Informed**
 --- | --- | --- | --- | ---
