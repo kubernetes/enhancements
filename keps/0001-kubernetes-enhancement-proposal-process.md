@@ -1,5 +1,4 @@
 ---
-kep-number: 1
 title: Kubernetes Enhancement Proposal Process
 authors:
   - "@calebamiles"
@@ -104,6 +103,15 @@ for SIGs to deliberate.
 [road to Go 2]: https://blog.golang.org/toward-go2
 [design proposals]: /contributors/design-proposals
 
+## KEP Stewardship
+The following DACI model indentifies the responsible parties for the KEPs.
+
+**Workstream** | **Driver** | **Approver** | **Contributor** | **Informed**
+--- | --- | --- | --- | ---
+| KEP Process Stewardship | SIG PM | SIG PM | SIG PM / SIG Leadership | Community |
+| Enhancement delivery | Enhancement Owner |  SIG leadership (SIG Chairs + TLs) | Enhancement Implementer(s) (may overlap with Driver) | Community |
+
+
 
 ## Reference-level explanation
 
@@ -148,17 +156,6 @@ This will be used to support tooling around filtering and display.  It is also
 critical to clearly communicate the status of a KEP.
 
 Metadata items:
-* **kep-number** Required
-  * Each proposal has a number.  This is to make all references to proposals as
-    clear as possible.  This is especially important as we create a network
-    cross references between proposals.
-  * Before having the `Approved` status, the number for the KEP will be in the
-    form of `draft-YYYYMMDD`.  The `YYYYMMDD` is replaced with the current date
-    when first creating the KEP.  The goal is to enable fast parallel merges of
-    pre-acceptance KEPs.
-  * On acceptance a sequential dense number will be assigned.  This will be done
-    by the editor and will be done in such a way as to minimize the chances of
-    conflicts.  The final number for a KEP will have no prefix.
 * **title** Required
   * The title of the KEP in plain language.  The title will also be used in the
     KEP filename.  See the template for instructions and details.
