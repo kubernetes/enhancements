@@ -37,7 +37,7 @@ status: provisional
 We propose to use operators for managing cluster addons.  Each addon will have
 its own CRD, and users will be able to perform limited tailoring of the addon
 (install/don’t install, choose version, primary feature selection) by modifying
-the CR.  The operator encodes any special logic (e.g. dependencies) needed to
+the instance of the CRD.  The operator encodes any special logic (e.g. dependencies) needed to
 install the addon.
 
 By creating a CRD per addon, we are able make use of the kubernetes API
@@ -127,8 +127,8 @@ We expect the following functionality to be common to all operators for addons:
 * Common fields in spec that define the version and/or channel
 * Common fields in status that expose the current health & version information
   of the addon
-* Addons follow a common structure, with the CR as root object, an Application
-  CR, consistent labels of all objects
+* Addons follow a common structure, with an instance of the CRD as root object,
+  an Application CRD instance, consistent labels of all objects
 * Some form of protection or rapid reconciliation to prevent accidental
   modification of child objects
 * Operators are declaratively driven, and can source manifests via https
@@ -136,7 +136,7 @@ We expect the following functionality to be common to all operators for addons:
   (e.g. configmaps or cluster-bundle CRD, useful for airgapped)
 * Operators are able to expose different update behaviours: automatic immediate
   updates; notification of update-available in status; purely manual updates
-* Operators are able to observe other CRs to perform basic sequencing
+* Operators are able to observe other CRDs to perform basic sequencing
 * Addon manifests are able express an operator minimum version requirement, so
   that an addon with new requirements can require that the operator be updated
   first
@@ -181,6 +181,17 @@ rollout.  We must also consider this a trade-off against the risk that without
 coordination each piece of tooling must reinvent the wheel; we expect more
 mistakes (even measured per cluster) in that scenario.
 
+Test and release may become more complicated because of fragmentation across
+repos.  Mitigation: be disciplined about versioning of operators and addons and
+encourage installation tooling to pin to a particular version of both for a
+particular release.  We need to set up automated builds (with CI) for rapid
+releases so installation tooling is not blocked waiting for operator releases.
+We need to set up a mechanism so that addons can be updated without requiring an
+operator update.  With this, if tooling is able to pin to particular addon
+versions, that should be at parity with the "embedded manifest" approach that is
+widely used currently.  (We hope to enable usage that is less lock-step, but
+that itself will likely require new approaches for testing and release)
+
 ## Success Criteria
 
 We will succeed if addon operators are:
@@ -219,4 +230,4 @@ We should likely create a repo for holding the operators themselves.  Eventually
 we would hope these would migrate to the various addon components, so we could
 also just store these under e.g. cluster-api.
 
-Unclear whether this should be a subproject?
+We are requesting to be a subproject under sig-cluster-lifecycle.
