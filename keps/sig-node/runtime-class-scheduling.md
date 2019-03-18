@@ -88,11 +88,11 @@ date.
 ## Proposal
 
 A new optional `Topology` structure will be added to the RuntimeClass API. The
-topology includes both `NodeSelector` rules and `Tolerations` that are mixed in
-to a pod using that RuntimeClass. The mix-in happens in the mutating admission
-phase, and is performed by a new `RuntimeController` built-in admission
-plugin. The same admission controller is shared with the [Pod Overhead][]
-proposal.
+topology includes both `NodeSelectorTerm` rules and `Tolerations` that are mixed
+in to a pod using that RuntimeClass. The mix-in happens in the mutating
+admission phase, and is performed by a new `RuntimeController` built-in
+admission plugin. The same admission controller is shared with the [Pod
+Overhead][] proposal.
 
 [Pod Overhead]: https://github.com/kubernetes/enhancements/pull/887
 
@@ -138,10 +138,13 @@ The RuntimeClass definition is augmented with an optional `Topology` struct:
 
 ```go
 type Topology struct {
-    // nodeSelector selects the set of nodes that support this RuntimeClass.
+    // nodeSelectorTerm selects the set of nodes that support this RuntimeClass.
     // Pods using this RuntimeClass can only be scheduled to a node matched by this selector.
+    // The nodeSelectorTerm is merged with a pod's other node affinity match
+    // expressions by appending the additional requirements to each preexisting
+    // NodeSelectorTerm.
     // +optional
-    NodeSelector []corev1.NodeSelectorRequirement
+    NodeSelectorTerm []corev1.NodeSelectorRequirement
 
     // tolerations adds tolerations to pods running with this RuntimeClass.
     // +optional
@@ -190,8 +193,8 @@ inculde:
 ### RuntimeController
 
 RuntimeController is a new in-tree admission plugin that should eventually be
-enabled on almost Kubernetes clusters. The role of the controller for scheduling
-is to merge the topology constraints from the RuntimeClass into the
+enabled on almost every Kubernetes clusters. The role of the controller for
+scheduling is to merge the topology constraints from the RuntimeClass into the
 PodSpec. Eventually, the controller's responsibilities may grow, such as to
 merge in [pod overhead][] or validate feature compatibility.
 
