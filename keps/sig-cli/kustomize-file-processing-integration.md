@@ -18,8 +18,8 @@ approvers:
 editors:
  - "@pwittrock"
 creation-date: 2019-01-17
-last-updated: 2019-01-31
-status: implementable
+last-updated: 2019-03-18
+status: implemented
 see-also:
  - "kustomize-subcommand-integration.md"
 replaces:
