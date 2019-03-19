@@ -260,10 +260,10 @@ versions recorded in storageState.status.persistedStorageVersionHashes.
 ## Beta Graduation Criteria
 
 * Visibility
-  * metrics for the speed of migration 
-  * metrics for the number of migrated objects per resource
-  * metrics for pending, succeeded, and failed migrations
-  * metrics for the frequency of migrations per resource
+  * metrics for the number of migrated objects per resource. This metric also
+    indirectly manifests the speed migration per resource.
+  * metrics for pending, succeeded, and failed migrations. This metric also
+    indirectly manifests the frequency of migrations per resource.
 
 * End-to-end testing
   * testing migration for CRDs
