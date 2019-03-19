@@ -36,16 +36,16 @@ superseded-by:
 
 ## Summary
 
-[PriorityClasses](https://kubernetes.io/docs/concepts/configuration/pod-priority-preemption/) are a beta feature,
+[PriorityClasses](https://kubernetes.io/docs/concepts/configuration/pod-priority-preemption/) are a GA feature as on 1.14,
 which impact the scheduling and eviction of pods.
 Pods will be scheduled according to descending priority.
 If a pod cannot be scheduled due to insufficient resources,
-lower-priority pods will be descheduled to make room.
+lower-priority pods will be descheduled ("preempted") to make room.
 
-This proposal makes the pre-empting (descheduling) behavior optional,
+This proposal makes the preempting behavior optional for a PriorityClass,
 by adding a new field to PriorityClasses.
 If a PriorityClass does not have preemption enabled,
-the scheduler will not preempt pods in order to schedule a pod of that priority.
+a pod of that PriorityClass will not trigger preemption of other pods.
 
 ## Motivation
 
@@ -61,16 +61,28 @@ to enable or disable preemption for pods of that PriorityClass.
 
 ## Proposal
 
-Add a NonPreempting field to PriorityClasses.
-This field will default to false,
+Add a Preempting field to PriorityClasses.
+This field will default to true,
 for backwards compatibility.
 
-If NonPreempting is false,
+```
+type PriorityClass struct {
+	metav1.TypeMeta
+	metav1.ObjectMeta
+	Value int32
+	GlobalDefault bool
+	Description string
+	// New option
+	Preempting bool
+}
+```
+
+If Preempting is true for a pod,
 the scheduler will preempt lower priority pods to schedule this pod,
 as is current behavior.
 
-If NonPreempting is true,
-a pod of that class will not preempt other pods if it cannot be scheduled.
+If Preempting is false,
+a pod of that class will not preempt other pods.
 
 Update our documentation to reflect this new feature.
 
