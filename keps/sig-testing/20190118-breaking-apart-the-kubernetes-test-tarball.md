@@ -13,8 +13,8 @@ approvers:
   - "@tpepper"
 editor: TBD
 creation-date: 2019-01-18
-last-updated: 2019-02-04
-status: implementable
+last-updated: 2019-03-06
+status: implemented
 ---
 
 # Breaking apart the kubernetes test tarball
@@ -291,3 +291,7 @@ Similar discussion and work on the other release tarballs:
 - 2019-01-18: proposal on Slack and creation of the KEP
 - 2019-01-28: KEP announced on sig-testing and sig-release mailing lists
 - 2019-01-29: discussion at sig-testing weekly meeting
+- 2019-02-14: implementation https://github.com/kubernetes/kubernetes/pull/74065
+  created, deprecation notice included in mondo test tarball
+- 2019-02-22: implementation https://github.com/kubernetes/kubernetes/pull/74065
+  merged
