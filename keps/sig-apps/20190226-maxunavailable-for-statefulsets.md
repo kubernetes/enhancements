@@ -46,26 +46,26 @@ superseded-by:
 
 The purpose of this enhancement is to implement maxUnavailable for StatefulSet during RollingUpdate. When a StatefulSet’s 
 `.spec.updateStrategy.type` is set to `RollingUpdate`, the StatefulSet controller will delete and recreate each Pod 
-in the StatefulSet. The updating of each Pod currently happens one at a time when `spec.podManagementPolicy` is `OrderedReady`. 
-With support for `maxUnavailable`, the updating will proceed `maxUnavailable` number of pods at a time in `OrderedReady` case
-only.
+in the StatefulSet. The updating of each Pod currently happens one at a time. With support for `maxUnavailable`, the updating 
+will proceed `maxUnavailable` number of pods at a time. Note, that maxUnavailable does not affect podManagementPolicy which
+is only applicable during scaling.
 
 
 ## Motivation
 
 Consider the following scenarios:-
 
-1: My containers publish metrics to a time series system. If I am using a Deployment, each rolling update creates a new pod name and hence the metrics 
+1. My containers publish metrics to a time series system. If I am using a Deployment, each rolling update creates a new pod name and hence the metrics 
 published by these new pod starts a new time series which makes tracking metrics for the application difficult. While this could be mitigated, 
 it requires some tricks on the time series collection side. It would be so much better, If we could use a StatefulSet object so my object names doesnt 
 change and hence all metrics goes to a single time series. This will be easier if StatefulSet is at feature parity with Deployments.
-2: My Container does some initial startup tasks like loading up cache or something that takes a lot of time. If we used StatefulSet, we can only go one 
+2. My Container does some initial startup tasks like loading up cache or something that takes a lot of time. If we used StatefulSet, we can only go one 
 pod at a time which would result in a slow rolling update. If we did maxUnavailable for StatefulSet with a greater than 1 number, it would allow for a 
 faster rollout.
-3: My Stateful clustered application, has followers and leaders, with followers being many more than 1. My application can tolerate many followers going 
+3. My Stateful clustered application, has followers and leaders, with followers being many more than 1. My application can tolerate many followers going 
 down at the same time. I want to be able to do faster rollouts by bringing down 2 or more followers at the same time. This is only possible if StatefulSet
 supports maxUnavailable in Rolling Updates.
-4: Sometimes i just want easier tracking of revisions of a rolling update. Deployment does it through ReplicaSets and has its own nuances. Understanding 
+4. Sometimes i just want easier tracking of revisions of a rolling update. Deployment does it through ReplicaSets and has its own nuances. Understanding 
 that requires diving into the complicacy of hashing and how replicasets are named. Over and above that, there are some issues with hash collisions which 
 further complicate the situation(I know they were solved). StatefulSet introduced ControllerRevisions in 1.7 which I believe are easier to think and reason 
 about. They are used by DaemonSet and StatefulSet for tracking revisions. It would be so much nicer if all the use cases of Deployments can be met and we 
@@ -122,20 +122,25 @@ type RollingUpdateStatefulSetStrategy struct {
   will also help while upgrading from a release which doesnt support maxUnavailable to a release which supports this field.
 - If maxUnavailable is specified, it cannot be greater than total number of replicas.
 - If maxUnavailable is specified and partition is also specified, MaxUnavailable cannot be greater than `replicas-partition`
-- podManagementPolicy = OrderedReady
-  If a partition is specified, maxUnavailable will only apply to all the pods which are staged by the partition. Which means all Pods with 
-an ordinal that is greater than or equal to the partition will be updated when the StatefulSet’s .spec.template is updated. Lets say total 
-replicas is 5 and partition is set to 2 and maxUnavailable is set to 2. If the image is changed in this scenario, pods with ordinal 4 and 3 will go
-down at the same time(because of maxUnavailable), once they are running and ready, pods with ordinal 2 will go down. Pods with ordinal 0
-and 1 will remain untouched due the partition.
-- podManagementPolicy = [Parallel](https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/#parallel-pod-management)
-  here maxUnavailable does not make sense since in this policy, pods are launched or terminated in parallel and do not wait for pods to become
-  running and ready. So we will never know when two terminate the next batch of maxUnavailable pods.
-
+- If a partition is specified, maxUnavailable will only apply to all the pods which are staged by the partition. Which means all Pods 
+  with an ordinal that is greater than or equal to the partition will be updated when the StatefulSet’s .spec.template is updated. Lets 
+  say total replicas is 5 and partition is set to 2 and maxUnavailable is set to 2. If the image is changed in this scenario, following
+  are the behavior choices we have:-
+  -  pods with ordinal 4 and 3 will go down at the same time(because of maxUnavailable). Once they are both running and ready, pods with 
+     ordinal 2 will go down. Pods with ordinal 0 and 1 will remain untouched due the partition.
+  -  pods with ordinal 4 and 3 will go down at the same time(because of maxUnavailable). When any of 4 or 3 are running and ready, pods
+     with ordinal 2 will start going down. This could violate ordering guarantees, since if 3 is running and ready, then both 4 and 2
+     are terminating at the same time out of order.
+  -  pod with ordinal 4 and 3 will go down at the same time(because of maxUnavailable). When 4 is running and ready, 2 will go down. At
+     this time both 2 and 3 are terminating. If 3 is running and ready before 4, 2 wont go down to preserve ordering semantics. So at 
+     this time, only 1 is unavailable although we requested 2.
+- NOTE: The goal is faster updates of an application. In some cases , people would need both ordering and faster updates. In other cases 
+  they just need faster updates and they dont care about ordering as long as they get identity. We need to find which one users care
+  about more
 
 #### Implementation
 
-https://github.com/kubernetes/kubernetes/blob/master/pkg/controller/statefulset/stateful_set_control.go#L504
+https://github.com/kubernetes/kubernetes/blob/v1.13.0/pkg/controller/statefulset/stateful_set_control.go#L504
 ```go
 ...
 	podsDeleted := 0
@@ -193,13 +198,13 @@ tried this feature in Alpha, we would have time to fix issues.
 
 ### Tests
 
-- maxUnavailable =1, Same behavior as today in OrderedReady
-- maxUnavailable greater than 1 without partition in OrderedReady
-- maxUnavailable greater than replicas without partition in OrderedReady
-- maxUnavailable greater than 1 with partition and staged pods less then maxUnavailable in OrderedReady
-- maxUnavailable greater than 1 with partition and staged pods same as maxUnavailable in OrderedReady
-- maxUnavailable greater than 1 with partition and staged pods greater than maxUnavailable in OrderedReady
-- maxUnavailable greater than 1 with partition and maxUnavailable greater than replicas in OrderedReady
+- maxUnavailable =1, Same behavior as today
+- maxUnavailable greater than 1 without partition
+- maxUnavailable greater than replicas without partition
+- maxUnavailable greater than 1 with partition and staged pods less then maxUnavailable
+- maxUnavailable greater than 1 with partition and staged pods same as maxUnavailable
+- maxUnavailable greater than 1 with partition and staged pods greater than maxUnavailable
+- maxUnavailable greater than 1 with partition and maxUnavailable greater than replicas
 
 ## Graduation Criteria
 
