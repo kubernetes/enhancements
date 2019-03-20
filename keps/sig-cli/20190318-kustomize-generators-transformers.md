@@ -241,7 +241,7 @@ Steps for each `transformer`:
 1. Kustomize reads the `transformer` entry
 1. Kustomize uses the Resource's *Group* to find the plugin under `$XDG_CONFIG_HOME/kustomize/plugins/transformers/`
 1. Kustomize execs the plugin it finds, or exits non-0
-1. Kustomize writes the `transformer` Resource to the exec process STDIN (and `---` to mark its end)
+1. Kustomize writes the YAML-encoded `transformer` Resource to the exec process STDIN (and `---` to mark its end)
 1. Kustomize writes each input Resource (e.g. those from `resources`, `bases`, `generators`, `configMapGenerator`)
    to the exec process STDIN (separated by `---`)
 1. Kustomize reads the set of transformed Resources from the exec process STDOUT
