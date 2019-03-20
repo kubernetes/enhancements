@@ -87,9 +87,10 @@ We will add the following API fields to `JobSpec` (`Job`'s `.spec`).
 
 ```go
 type JobSpec struct {
-     // Optional duration in seconds relative to the startTime that the job needs to become active,
+     // Optional duration in seconds relative to the startTime that the job needs to become progressive,
      // otherwise the system will try to terminate it; value must be positive integer
-     // Job is `active` means all pods of the job are in `running` state.
+     // Job is `progressive` means at least one of the pods starts running or has finished (Completed or Failed),
+     // i.e., as long as one of the pods is making some progress, this Job should not be terminated.
      // +optional
      ProgressDeadlineSeconds *int64
 }
@@ -103,7 +104,7 @@ Job is `active` means all pods of the job are in `running` state.
 We'll check the job status, and if the following three criterions are met, the job is considered failure.
 *  job has not retried, i.e, the job is on its first run
 *  job has pending pods, i.e, not all pods are running
-*  job duration has exceeded `*job.Spec.ProgressDeadlineSeconds`
+*  the time from job's startTime until the moment the check if performed has exceeded `*job.Spec.ProgressDeadlineSeconds`
 
 #### Validation
 Need to check whether `*job.Spec.ProgressDeadlineSeconds` is a non-negative number.
