@@ -109,6 +109,7 @@ In addition to simply keeping up with the go ecosystem, go modules provide many 
 ### Select a versioning strategy for published modules
 
 As part of transitioning to go modules, we must select a versioning strategy. This section is in progress.
+Note that some versioning strategies allow transitioning to others at a later time.
 
 Current state:
 * `client-go` tags a major version on every kubernetes release
@@ -132,6 +133,8 @@ Possible go module versioning strategies:
     * compatibility implications
       * breaking go changes in each release impact consumers that have not pinned to particular tags/shas (as they do today)
       * conflicting version requirements (direct or transitive) can result in impossible-to-build or impossible-to-update dependencies (as they do today)
+    * allowed versioning changes
+      * modules published this way could transition to semantic import versioning
 
 2. tag major versions on every `kubernetes/kubernetes` release (similar to what client-go does), and use semantic import versioning
 
@@ -150,8 +153,11 @@ Possible go module versioning strategies:
     * compatibility implications
       * allows breaking go changes in each kubernetes "minor" release
       * no breaking go changes are allowed in a kubernetes patch releases (need tooling to enforce this)
+    * allowed versioning changes
+      * modules published this way would have to continue using semantic import versioning
+      * modules published this way could switch to incrementing major/minor versions at a difference cadence as needed
 
-3. tag minor versions on every `kubernetes/kubernetes` release
+3. tag minor versions on every `kubernetes/kubernetes` release, and use semantic import versioning
 
     * consumers
       * published modules import as a consistent version (e.g. `v1.15.0`)
@@ -170,8 +176,11 @@ Possible go module versioning strategies:
         * is there a tool to check go API compatibility between two commits?
         * how compatible has each component been historically?
         * what is the surface area of each component that would need to be maintained?
+    * allowed versioning changes
+      * modules published this way would have to continue using semantic import versioning
+      * modules published this way could switch to incrementing major/minor versions at a difference cadence as needed
 
-4. Tag major/minor versions as needed when incompatible changes are made
+4. Tag major/minor versions as needed when incompatible changes are made, and use semantic import versioning
 
     * consumers
       * published modules import as a mix of versions (e.g. `v11.0.0`, `v12.0.0`, `v12.2.0`)
@@ -187,6 +196,9 @@ Possible go module versioning strategies:
       * might require changes to build scripts to include version in built package path (needs research to verify)
       * requires tooling to detect when a breaking go change has occurred in a particular component relative to all tagged releases for the current major version
       * requires tooling to manage versions per component (instead of homogenous versions for staging components)
+    * allowed versioning changes
+      * modules published this way would have to continue using semantic import versioning
+      * modules published this way could switch to incrementing major/minor versions at a difference cadence as needed
 
 ### Build synthetic godeps.json files
 
