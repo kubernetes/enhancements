@@ -10,9 +10,9 @@ reviewers:
 approvers:
   - "@monopole"
 editor: TBD
-creation-date: yyyy-mm-dd
-last-updated: yyyy-mm-dd
-status: provisional
+creation-date: 2019-03-25
+last-updated: 2019-03-25
+status: implementable
 ---
 
 # Kustomize Generators and Transformers
@@ -70,31 +70,27 @@ Enable users to extend Kustomize *Transformers* and *Generators* through `exec` 
 provides Resource Config to plugins through STDIN, and plugins emit Resource Config back to Kustomize
 through STDOUT.
 
-This KEP adds 2 fields to `kustomization.yaml`
+- Add 2 fields to `kustomization.yaml`: `generators` and `transformers`
+- Plugins to actuate new fields have the path `$XDG_CONFIG_HOME/kustomize/plugins/<API group>`
 
-- `generators`
-  - plugins under `$XDG_CONFIG_HOME/kustomize/plugins/generators/<API group>`
-- `transformers`
-  - plugins under `$XDG_CONFIG_HOME/kustomize/plugins/transformers/<API group>`
+Much of the existing Kustomize functionality could be implemented through this plugin mechanism.
 
-Most, if not all, of the existing Kustomize functionality could be implemented through this plugin mechanism.
-
-Built-In Generators:
+Example Built-In Generators:
 
 - `resource`
 - `bases`
 - `secretGenerators`
 - `configMapGenerators`
 
-Built-In Transforms:
+Example Built-In Transforms:
 
 - `commonAnnotations`
 - `commonLabels`
 - `images`
-- `namePrefix`
-- `nameSuffix`
+- `namePrefix` # not supported in iteration 1 due to transformation restrictions
+- `nameSuffix` # not supported in iteration 1 due to transformation restrictions
 - `patches`
-- `namespace`
+- `namespace` # not supported in iteration 1 due to transformation restrictions
 
 
 ## Motivation
@@ -107,29 +103,32 @@ Built-In Transforms:
 
 ### Background
 
-Many users of Kubernetes require the ability to also write Config through high-level abstractions
-rather than only as low-level APIs.
+Many users of Kubernetes require the ability to also write Config through high-level abstractions rather
+than only as low-level APIs, or to configure Kubernetes through in-house developed platforms.
 
-- Numerous tools and DSLs have been developed in the ecosystem in order to address this need
+Authoring solutions have already been developed:
+
+- In the Ecosystem
   - Helm
   - Ksonnet
-- Organizations have built their own tooling for generating Kubernetes Resource Config
+- Internally by Organizations
   - [kube-gen] (AirBnB) 
 
-Support for connecting the tools developed by the ecosystem with kubectl relies on piping commands together,
-however pipes are an imperative technique.  This KEP proposes a declarative approach for composing tools built
-in the Kubernetes ecosystem or bespoke tools developed by organizations that are tightly coupled to their
-environments.
+Support for connecting the tools developed by the Ecosystem with kubectl relies on piping commands together,
+however pipes are an imperative technique that require their own scripting and tooling.
+
+This KEP proposes a declarative approach for connecting tools built in the Kubernetes ecosystem or bespoke
+internal tools developed by organizations.
 
 [kube-gen]: https://events.linuxfoundation.org/wp-content/uploads/2017/12/Services-for-All-How-To-Empower-Engineers-with-Kubernetes-Melanie-Cebula-Airbnb.pdf
 
 ### Goals
 
-- Allow config authoring solutions developed in the ecosystem to be integrated into kubectl as declarative
+- Allow Config authoring solutions developed in the ecosystem to be declaratively accessed by kubectl as
   Generators and Transformers
 - Allow users and organizations to develop their own custom config authoring solutions and integrate
   them into kubectl
-- Allow Kustomize power users to augment Kustomize's own Tranformers with their own
+- Allow Kustomize power users to augment Kustomize's Built-Tranformers
 - Allow users to perform client-side mutations so they they show up in diffs and are auditable
 
 ### Non-Goals
@@ -142,118 +141,149 @@ environments.
 
 ## Proposal
 
-Introduce 2 new types of `exec` plugins:
+Introduce an executable plugin that has 2 subcommands.
 
-- Transformers
-- Generators
+- `$ team.example.com generate`
+- `$ team.example.com transform`
+
+Introduce 2 new fields to `kustomization.yaml`
+
+- `generators`
+- `transformers`
 
 #### Terms
 
 - *Virtual Resource*
   - Resource that is not a server-side Kubernetes API object, but used to configure tools
   - Examples: kubeconfig, kustomization
-- *Generator*
-  - Kustomize directive that accepts a Virtual Resource as input, and emits non-Virtual Resources as output
+- *Generator* Kustomize directive
+  - Accepts Virtual Resources as input
+  - Emits generated non-Virtual Resources as output
   - Examples: `configMapGenerator`, `secretGenerator`
-- *Transformer*
-  - Kustomize directive that accepts 1 Virtual Resource *and* collection of non-Virtual Resources as input
-    and emits non-Virtual Resources as output.
-  - Examples: `commonAnnotations`, `namespace`
+- *Transformer* Kustomize directive
+  - Accepts Virtual Resources
+  - Accepts **all** non-Virtual Resources as input
+  - Emits modified non-Virtual Resources as output
+  - Examples: `commonAnnotations`, `namespace`, `namePrefix`, `secretGenerator` (for updating references to the generated secret)
 - *Built-In*
-  - Either a Transformer or Generator that is embedded directly in the `kustomization.yaml` rather than
-    as a separate API.
+  - Either a Transformer or Generator that is part of the `kustomization.yaml` rather than
+    as a separate Virtual Resource.
+- *Plugin*
+  - Either a Transformer or Generator that is *not* part of the `kustomization.yaml` and comes from a plugin.
 
-#### Generators
+#### Plugins
 
-Generators generate 0 or more Resources for some virtual Resource input.
+Generators and Transformers are Configured as Virtual Resources.
 
-Generator plugins are run immediately after built-in generators:
+Plugins implement Generators and Transformers.
 
-- `resources`
-- `bases`
-- `secretGenerator`
-- `configMapGenerator`
+- Plugins are installed `$XDG_CONFIG_HOME/kustomize/plugins/
+- Plugin executables names match the Virtual Resource API Group the own - e.g. `team.example.com`
+- Plugin executables have 2 subcommands - `generate` and `transform`
+- `generate`
+  - Accepts 0 or more Virtual Resources whose group matches the executable name on STDIN
+  - Emits 0 or more Non-Virtual Resources
+- `transform`
+  - Accepts 0 or more Virtual Resources whose group matches the executable name on STDIN
+  - Accepts 0 or more Non-Virtual Resources from all API groups
+  - Emits 0 or more Non-Virtual Resources
+- Generators and Transformers are configured as Virtual Resources and the `generators` and `transformers` fields
+  on `kustomization.yaml`.
+- Plugins working directory is the directory of the `kustomization.yaml` with the `generator` or `transformer`.
+  - Plugins should never be able to access files outside this directory structure (e.g. only child directories)
+- Plugins inherit kustomize process environment variables
 
-and before any built-in transformers such as:
+Plugin guidelines:
 
-- `namePrefix`
-- `commonAnnotations`
+- If executed with an unrecognized subcommand, plugins should exit `127` signalling to kustomize that the
+  operation is not supported.
+- Plugins should never change state.  They should be able to be executed with `kubectl apply -k --dry-run` or
+  `kubectl diff`.
+- Plugin output should be idempotent.
+
+#### Plugins: Generate
+
+Generators generate 0 or more Resources for some Virtual Resources.
 
 Example: Kustomize secretGenerators and configMapGenerators generate Secrets and ConfigMaps
 from a `kustomize.config.k8s.io/v1beta1/Kustomization` virtual Resource.
 
 Generators have 2 components:
 
-1. Generator virtual Resource API definition
-  - By convention, API has a field `generate`
-1. Generator executable plugin that reads the Resources on STDIN and emits generated Resources on STDOUT.
+1. Generator Config
+  - Virtual Resource
+  - Added to the `kustomization.yaml` field `generators`
+1. Generator Implementation
+  - Executable plugin
+  - Reads Virtual Resources
+  - Emits non-Virtual Resources
 
-- A Generator is installed by adding the generator executable to
-  `$XDG_CONFIG_HOME/kustomize/plugins/generators/<API group>`.
-  - The name of the generator executable is an API *Group*, and the Generator is is responsible for
-    all Virtual APIs in that group.
-  - Example Generator executable name: `team.example.com`
-- Generators are added as virtual Resources using the `kustomization.yaml` field `generators`
+1. Kustomize reads the `generators` Virtual Resources
+1. Kustomize maps the Virtual Resources to plugins by their *Group*
+   - Group matches the plugin name
+   - Exits non-0 if no plugins are found any generator entries
+1. For each Virtual Resource *Group*
+  1. Kustomize execs the plugin `generate` command
+  1. Kustomize writes the Virtual Resources in that Group to the process STDIN
+  1. Kustomize reads the set of generated Resources from the process STDOUT
+  1. Kustomize reads error messages from the exec process STDERR
+  1. Kustomize fails if the plugin exits non-0
+  1. Kustomize adds the emitted Resources to its set of Non-Virtual Resources (e.g. from `resources`, `bases`, etc).
 
-Steps for each `generator`:
+The order of plugin execution is arbitrary.
 
-1. Kustomize reads the `generator` entry
-1. Kustomize uses the Resource's *Group* to find the plugin under `$XDG_CONFIG_HOME/kustomize/plugins/generators/`
-1. Kustomize execs the plugin it finds, or exits non-0
-1. Kustomize writes the `generator` Resource to the exec process STDIN
-1. Kustomize reads the set of generated Resources from the exec process STDOUT
-1. Kustomize reads error messages from the exec process STDERR
-1. Kustomize fails if the plugin exits non-0
-1. Kustomize adds the emitted Resources to its set of input Resources (e.g. from `resources`, `bases`, etc).
+#### Plugins: Transform
 
-Notes:
-
-- Kustomize will not execute any plugins for the output Resources at this time.
-- If multiple generators are specified, they are run in the order they are listed.
-
-#### Transforms
-
-Transformers modify existing non-virtual Resources by modifying their fields or replacing them with new Resources.
-
-Transformer plugins are run immediately *before* built-in transformers:
-
-- `namePrefix`
-- `commonAnnotations`
-
-This ordering is so that built-in transformers will be applied to transformed Resources if any new Resources
-are added by Transformers.
+Transformers modify existing non-virtual Resources by modifying their fields.
 
 Transformers have 2 components:
 
-1. Transformer virtual Resource API definition
-  - By convention, API has a field `transform`
-1. Transformer executable plugin that reads the Resources on STDIN and emits generated Resources on STDOUT.
+1. Transformer Config
+  - Virtual Resource
+  - Added to the `kustomization.yaml` field `transformers`
+  - All `generators` are implicitly invoked as transformers
+1. Transformer Implementation
+  - Executable plugin
+  - Reads Virtual Resources
+  - Reads **all** non-Virtual Resources
+  - Emits non-Virtual Resources  
+  
+1. Kustomize reads the `transformers` *and* `generators` Virtual Resources
+  - `generators` can require transformation
+1. Kustomize maps the Virtual Resources to plugins by their *Group*
+   - Group matches the plugin name
+   - Exits non-0 if no plugins are found any generator entries
+1. For each Virtual Resource *Group*
+  1. Kustomize execs the plugin `transform` command
+  1. Kustomize writes the Virtual Resources in that Group to the process STDIN
+  1. Kustomize writes **all** non-Virtual Resources to the process STDIN
+  1. Kustomize reads the set of transformed Resources from the process STDOUT
+  1. Kustomize reads error messages from the exec process STDERR
+  1. Kustomize fails if the plugin exits non-0
+  1. Kustomize replaces its current set of non-Virtual Resources with the set of emitted Resources.
 
-- A Transformer is installed by adding the generator executable to
-  `$XDG_CONFIG_HOME/kustomize/plugins/transformers/<API group>`.
-  - The name of the transformer executable is an API *Group*, and the Transformer is is responsible for
-    all Virtual APIs in that group.
-  - Example Transformer executable name: `team.example.com`
-- Transformers are added as virtual Resources using the `kustomization.yaml` field `transformers`
+The order of plugin execution is arbitrary.
 
-Steps for each `transformer`:
+##### Restrictions
 
-1. Kustomize reads the `transformer` entry
-1. Kustomize uses the Resource's *Group* to find the plugin under `$XDG_CONFIG_HOME/kustomize/plugins/transformers/`
-1. Kustomize execs the plugin it finds, or exits non-0
-1. Kustomize writes the YAML-encoded `transformer` Resource to the exec process STDIN (and `---` to mark its end)
-1. Kustomize writes each input Resource (e.g. those from `resources`, `bases`, `generators`, `configMapGenerator`)
-   to the exec process STDIN (separated by `---`)
-1. Kustomize reads the set of transformed Resources from the exec process STDOUT
-1. Kustomize reads error messages from the exec process STDERR
-1. Kustomize fails if the plugin exits non-0
-1. Kustomize replaces its set of input Resources (e.g. from `resources`, `bases`, etc) with the transformed Resources. 
+For the initial iteration, transformers cannot add/remove Resources, or change their names/namespaces.
+The ability doing so would be significantly make complex ordering interactions much more likely.  E.g. transformers
+would need to keep and propagate transformations from other transformers.
 
-Notes:
+We are prioritizing a restrictive but predictable API over a powerful but complex one.
 
-- Transformers may delete, modify or add Resources.
-- If multiple transformers are specified, they are run in the order they are listed.
+### Phases
 
+Follow is the Kustomize workflow:
+
+1. Read all `generators` and `transformers`
+1. Read all `patches`
+1. Apply Virtual Resource `patches` to `generators` and `transformers`
+1. Generate non-Virtual Resource set from Built-In Generators `inputs`, `bases`, `secretGenerator`, etc
+1. Generate non-Virtual Resources from Plugin-Generators and add to non-Virtual Resource set
+1. Transform non-Virtual Resources using Plugin-Generators
+1. Transform non-Virtual Resources using Built-In Generators (including a second round of `patches`)
+1. Built-In Sorting
 
 ### User Stories [optional]
 
@@ -292,8 +322,11 @@ generators:
 - chart.yaml
 ```
 
-The `helm.kustomize.io` binary is invoked with the `chart.yaml` contents passed on STDIN.  Kustomize adds the emitted Resource
-to its set of Resources.
+`$ helm.kustomize.io generate` is invoked with the `chart.yaml` contents passed on STDIN.  Kustomize
+adds the emitted Resources to its set of Resources.
+
+Note, the `transform` subcommand will also be invoked, which the plugin may choose to pass-through
+by emitting its input.
 
 #### Bespoke Abstractions for Organizations
 
@@ -304,7 +337,7 @@ tools for generating standardized Resource Config based off of some inputs.
 Bob creates a new generator for his organization that allow higher level abstractions to be defined as
 new virtual Resource types that don't exist in the cluster, but are used to generate low-level types.
 
-1. Bob builds and installs the new generator plugin `$XDG_CONFIG_HOME/kustomize/plugins/generators/team.example.com`.
+1. Bob builds and installs the new generator plugin `$XDG_CONFIG_HOME/kustomize/plugins/team.example.com`.
 1. Bob creates the `app.yaml` Resource Config and adds it to his `kustomization.yaml`
 
 ```yaml
@@ -319,14 +352,12 @@ generate:
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-generators:
+transformers:
 - app.yaml
 ```
 
-The `team.example.com` binary is invoked with the `app.yaml` contents passed on STDIN.  Kustomize adds the
+`$ team.example.com transform` is invoked with the `app.yaml` contents passed on STDIN.  Kustomize adds the
 emitted Resource to its set of Resources.
-
-If multiple generators are specified, they are run in the order they are listed.
 
 #### Bespoke Configuration for Organizations
 
@@ -334,7 +365,7 @@ Alice's Organization requires that various fields are defaulted if unset.  SRE w
 the full Resources that are being Applied and have this auditable in an scm, such as git, rather than
 having Webhooks provide server-side mutions that are not capture in review or scm.
 
-1. Alice builds and installs the new transformer plugin at `$XDG_CONFIG_HOME/kustomize/plugins/transformers/team.example.com`
+1. Alice builds and installs the new transformer plugin at `$XDG_CONFIG_HOME/kustomize/plugins/team.example.com`
 1. Alice creates the `transform.yaml` Resource Config and adds it to her `kustomization.yaml` as a `transformers` entry.
 
 ```yaml
@@ -354,7 +385,7 @@ transformers:
 - transform.yaml
 ```
 
-The `team.example.com` binary is invoked with both the `transform.yaml` contents and the Resources passed on STDIN.
+`$ team.example.com` is invoked with both the `transform.yaml` contents and the Resources passed on STDIN.
 Kustomize replaces its Resources with the emitted Resources.
 
 ### Implementation Details/Notes/Constraints [optional]
@@ -373,6 +404,8 @@ TBD
 Consider:
 
 - Executing plugins for generated Resources
+- Supporting ordering
+- Additional phases - e.g. Plugin Transformers after Built-In Transformers
 
 ### Upgrade / Downgrade Strategy
 
@@ -387,9 +420,16 @@ NA - Client side only
 
 ## Drawbacks [optional]
 
-It allows users to do very complex thing with Kustomize.
+- It allows users to do complex thing with Kustomize.
+- Virtual Resources may be confusing
 
 ## Alternatives [optional]
 
 - Imperatively piping generator executables to kubectl apply
 - Writing scripts to invoke generator executables and piping them to kubectl apply
+- Create a new platform that is purely plug-in based, and rebase kustomize on top of this as a plugin
+- Support explicit ordering of plugin execution
+- Use separate plugins for Generators and Transformers
+- Allow arbitrary Transformation changes
+  - Increases complexity + interactions
+  - Reduces readability
