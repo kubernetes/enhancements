@@ -127,7 +127,7 @@ environments.
 
 - Allow config authoring solutions developed in the ecosystem to be integrated into kubectl as declarative
   Generators and Transformers
-- Allow users and organizations to develop their own custom configu authoring solutions and integrate
+- Allow users and organizations to develop their own custom config authoring solutions and integrate
   them into kubectl
 - Allow Kustomize power users to augment Kustomize's own Tranformers with their own
 - Allow users to perform client-side mutations so they they show up in diffs and are auditable
