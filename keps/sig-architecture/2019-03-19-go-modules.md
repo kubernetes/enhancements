@@ -10,6 +10,8 @@ participating-sigs:
 reviewers:
   - "@sttts"
   - "@lavalamp"
+  - "@cblecker"
+  - "@mattfarina"
 approvers:
   - "@smarterclayton"
   - "@thockin"
