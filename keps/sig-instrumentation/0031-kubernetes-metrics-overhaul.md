@@ -11,9 +11,11 @@ reviewers:
 approvers:
   - "@piosz"
   - "@DirectXMan12"
-editor: @DirectXMan12
+editors:
+  - "@DirectXMan12"
+  - "@danielqsj"
 creation-date: 2018-11-06
-last-updated: 2018-11-06
+last-updated: 2019-03-21
 status: implementable
 ---
 
@@ -37,11 +39,15 @@ status: implementable
       * [Prober metrics](#prober-metrics)
    * [Kube-scheduler metric changes](#kube-scheduler-metric-changes)
    * [Kube-proxy metric changes](#kube-proxy-metric-changes)
+      * [Change proxy metrics to conform metrics guidelines](#change-proxy-metrics-to-conform-metrics-guidelines)
+      * [Clean the deprecated metrics which introduced in v1.14](#clean-the-deprecated-metrics-which-introduced-in-v114)
    * [Kube-apiserver metric changes](#kube-apiserver-metric-changes)
       * [Apiserver and etcd metrics](#apiserver-and-etcd-metrics)
       * [Fix admission metrics in true units](#fix-admission-metrics-in-true-units)
+      * [Remove the deprecated admission metrics](#remove-the-deprecated-admission-metrics)
    * [Client-go metric changes](#client-go-metric-changes)
       * [Workqueue metrics](#workqueue-metrics)
+   * [Convert latency/latencies in metrics name to duration](#convert-latencylatencies-in-metrics-name-to-duration)
    * [Risks and Mitigations](#risks-and-mitigations)
 * [Deprecation Plan](#deprecation-plan)
 * [Graduation Criteria](#graduation-criteria)
@@ -121,7 +127,13 @@ https://github.com/kubernetes/kubernetes/pull/72332
 
 ### Kube-proxy metric changes
 
+#### Change proxy metrics to conform metrics guidelines
+
 https://github.com/kubernetes/kubernetes/pull/72334
+
+#### Clean the deprecated metrics which introduced in v1.14
+
+https://github.com/kubernetes/kubernetes/pull/75023
 
 ### Kube-apiserver metric changes
 
@@ -132,6 +144,10 @@ https://github.com/kubernetes/kubernetes/pull/72336
 #### Fix admission metrics in true units
 
 https://github.com/kubernetes/kubernetes/pull/72343
+
+#### Remove the deprecated admission metrics
+
+https://github.com/kubernetes/kubernetes/pull/75279
 
 ### Client-go metric changes
 
@@ -144,6 +160,10 @@ Workqueue metrics need follow prometheus best practices and naming conventions.
 * Change summaries to histograms.
 
 https://github.com/kubernetes/kubernetes/pull/71300
+
+### Convert latency/latencies in metrics name to duration
+
+https://github.com/kubernetes/kubernetes/pull/74418
 
 ### Risks and Mitigations
 
