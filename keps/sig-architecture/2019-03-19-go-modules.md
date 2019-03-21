@@ -108,8 +108,7 @@ In addition to simply keeping up with the go ecosystem, go modules provide many 
 
 ### Select a versioning strategy for published modules
 
-As part of transitioning to go modules, we must select a versioning strategy.
-Note that some versioning strategies allow transitioning to others at a later time.
+As part of transitioning to go modules, we can select a versioning strategy.
 
 Current state:
 * `client-go` tags a major version on every kubernetes release
@@ -117,80 +116,34 @@ Current state:
 * no import rewriting occurs
 * consumers can only make use of a single version of each component
 
-Possible go module versioning strategies:
-1. continue tagging as-is (`kubernetes-1.x.y` for most components, `vX.0.0` for client-go)
+This proposes continuing to tag published components as-is (`kubernetes-1.x.y` for most components, `vX.0.0` for client-go).
+This results in the following usage patterns:
 
-    * consumers
-      * GOPATH consumers
-        * import `k8s.io/apimachinery/...` (as they do today)
-        * `go get` behavior (e.g. `go get client-go`):
-          * uses latest commits of transitive `k8s.io/...` dependencies (likely to break, as today)
-          * uses latest commits of transitive non-module-based dependencies (likely to break, as today)
-      * module-based consumers
-        * reference published module versions as `v0.0.0-$date-$sha`
-        * import `k8s.io/apimachinery/...` (as they do today)
-        * `go get` behavior (e.g. `GO111MODULE=on go get client-go@v15.0.0`):
-          * uses go.mod-referenced versions of transitive `k8s.io/...` dependencies (unless overridden by top-level module, or conflicting peers referencing later versions)
-          * uses go.mod-referenced versions of transitive non-module-based dependencies (unless overridden by top-level module, or conflicting peers referencing later versions)
-      * consumers are limited to a single copy of kubernetes libraries among all dependencies (as they are today)
-    * kubernetes tooling
-      * minimal change
-    * compatibility implications
-      * breaking go changes in each release impact consumers that have not pinned to particular tags/shas (as they do today)
-      * conflicting version requirements (direct or transitive) can result in impossible-to-build or impossible-to-update dependencies (as they do today)
-    * allowed versioning changes
-      * modules published this way could transition to semantic import versioning
+Consumers:
+* GOPATH consumers
+  * import `k8s.io/apimachinery/...` (as they do today)
+  * `go get` behavior (e.g. `go get client-go`):
+    * uses latest commits of transitive `k8s.io/...` dependencies (likely to break, as today)
+    * uses latest commits of transitive non-module-based dependencies (likely to break, as today)
+* module-based consumers
+  * reference published module versions as `v0.0.0-$date-$sha`
+  * import `k8s.io/apimachinery/...` (as they do today)
+  * `go get` behavior (e.g. `GO111MODULE=on go get client-go@v15.0.0`):
+    * uses go.mod-referenced versions of transitive `k8s.io/...` dependencies (unless overridden by top-level module, or conflicting peers referencing later versions)
+    * uses go.mod-referenced versions of transitive non-module-based dependencies (unless overridden by top-level module, or conflicting peers referencing later versions)
+* consumers are limited to a single copy of kubernetes libraries among all dependencies (as they are today)
 
-2. tag major versions on every `kubernetes/kubernetes` release (similar to what client-go does), and use semantic import versioning
+Kubernetes tooling:
+* minimal changes required
 
-    * consumers
-      * GOPATH consumers
-        * import `k8s.io/apimachinery/...` (as they do today)
-        * are limited to a single copy of kubernetes libraries among all dependencies (as they are today)
-        * `go get` behavior (e.g. `go get client-go`):
-          * uses latest commits of transitive `k8s.io/...` dependencies (likely to break, as today)
-          * uses latest commits of transitive non-module-based dependencies (likely to break, as today)
-      * module-based consumers
-        * reference published modules versions as a consistent `vX.y.z` version (e.g. `v15.0.0`)
-        * import `k8s.io/apimachinery/v15/...` (have to rewrite kubernetes component imports on every major version bump)
-        * can have multiple copies of kubernetes libraries (though non-semantic-import-version transitive dependencies could still conflict)
-        * `go get` behavior (e.g. `GO111MODULE=on go get client-go@v15.0.0`):
-          * uses transitive `k8s.io/{component}/v15/...` dependencies
-          * uses go.mod-referenced versions of transitive non-module-based dependencies (unless overridden by top-level module, or conflicting peers referencing later versions)
-    * kubernetes tooling
-      * requires rewriting all `k8s.io/{component}/...` imports to `k8s.io/{component}/vX/...` at the start of each release
-      * requires updating code generation scripts to generate versioned imports for `k8s.io/{api,apimachinery,client-go}`, etc
-    * compatibility implications
-      * allows breaking go changes in each kubernetes "minor" release
-      * no breaking go changes are allowed in a kubernetes patch releases (need tooling to enforce this)
-    * allowed versioning changes
-      * modules published this way would have to continue using semantic import versioning
-      * modules published this way could switch to incrementing major/minor versions at a difference cadence as needed
+Compatibility implications:
+* breaking go changes in each release impact consumers that have not pinned to particular tags/shas (as they do today)
+* conflicting version requirements (direct or transitive) can result in impossible-to-build or impossible-to-update dependencies (as they do today)
 
-3. tag major/minor versions as needed when incompatible changes are made, and use semantic import versioning
+Allowed versioning changes:
+* modules published this way can transition to semantic import versioning in the future
 
-    * consumers
-      * GOPATH consumers
-        * import `k8s.io/apimachinery/...` (as they do today)
-        * are limited to a single copy of kubernetes libraries among all dependencies (as they are today)
-        * `go get` behavior (e.g. `go get client-go`):
-          * uses latest commits of transitive `k8s.io/...` dependencies (likely to break, as today)
-          * uses latest commits of transitive non-module-based dependencies (likely to break, as today)
-      * module-based consumers
-        * reference published modules versions as a variety of `vX.y.z` versions (e.g. `k8s.io/client-go@v15.0.0`, `k8s.io/apimachinery@v15.2.0`, `k8s.io/api@v17.0.0`)
-        * import `k8s.io/apimachinery/v15/...` (have to rewrite kubernetes component imports on every major version bump)
-        * can have multiple copies of kubernetes libraries (though non-semantic-import-version transitive dependencies could still conflict)
-        * `go get` behavior (e.g. `GO111MODULE=on go get client-go@v15.0.0`):
-          * uses transitive `k8s.io/{component}/vX/...` dependencies
-          * uses go.mod-referenced versions of transitive non-module-based dependencies (unless overridden by top-level module, or conflicting peers referencing later versions)
-    * kubernetes tooling
-      * requires rewriting all `k8s.io/{component}/vX/...` imports when a major version bump occurs
-      * requires updating code generation scripts to generate versioned imports for `k8s.io/{api,apimachinery,client-go}`, etc
-      * requires tooling to detect when a breaking go change has occurred in a particular component relative to all tagged releases for the current major version
-      * requires tooling to manage versions per component (instead of homogenous versions for staging components)
-    * allowed versioning changes
-      * modules published this way would have to continue using semantic import versioning
-      * modules published this way could switch to incrementing major/minor versions at a difference cadence as needed
+See the [Alternatives](#alternatives) section for other possible versioning strategies considered for the initial move to modules.
 
 ### Build synthetic godeps.json files
 
@@ -242,6 +195,62 @@ Not applicable
 * Move away from vendoring as part of the initial move to go modules
   * To ensure reproducible builds based solely on the published repositories, vendoring is still necessary
   * In go1.12.x, vendor-based builds are still the default when building a component located in the GOPATH, so producing components that work when built with go modules or with GOPATH+vendor maximizes interoperability
+
+* For versioning, switch to tagging major versions on every `kubernetes/kubernetes` release (similar to what client-go does), and use semantic import versioning.
+This remains a possibility in the future, but requires more tooling and consumer changes to accomodate rewritten imports,
+and doesn't fully allow multiple versions of kubernetes components to coexist as long as there are transitive non-module-based dependencies that change incompatibly over time.
+
+    * consumers
+      * GOPATH consumers
+        * import `k8s.io/apimachinery/...` (as they do today)
+        * are limited to a single copy of kubernetes libraries among all dependencies (as they are today)
+        * `go get` behavior (e.g. `go get client-go`):
+          * uses latest commits of transitive `k8s.io/...` dependencies (likely to break, as today)
+          * uses latest commits of transitive non-module-based dependencies (likely to break, as today)
+      * module-based consumers
+        * reference published modules versions as a consistent `vX.y.z` version (e.g. `v15.0.0`)
+        * import `k8s.io/apimachinery/v15/...` (have to rewrite kubernetes component imports on every major version bump)
+        * can have multiple copies of kubernetes libraries (though non-semantic-import-version transitive dependencies could still conflict)
+        * `go get` behavior (e.g. `GO111MODULE=on go get client-go@v15.0.0`):
+          * uses transitive `k8s.io/{component}/v15/...` dependencies
+          * uses go.mod-referenced versions of transitive non-module-based dependencies (unless overridden by top-level module, or conflicting peers referencing later versions)
+    * kubernetes tooling
+      * requires rewriting all `k8s.io/{component}/...` imports to `k8s.io/{component}/vX/...` at the start of each release
+      * requires updating code generation scripts to generate versioned imports for `k8s.io/{api,apimachinery,client-go}`, etc
+    * compatibility implications
+      * allows breaking go changes in each kubernetes "minor" release
+      * no breaking go changes are allowed in a kubernetes patch releases (need tooling to enforce this)
+    * allowed versioning changes
+      * modules published this way would have to continue using semantic import versioning
+      * modules published this way could switch to incrementing major/minor versions at a difference cadence as needed
+
+* For versioning, tag major/minor versions as needed when incompatible changes are made, and use semantic import versioning.
+This remains a possibility in the future, but requires more tooling and consumer changes to accomodate rewritten imports,
+and doesn't fully allow multiple versions of kubernetes components to coexist as long as there are transitive non-module-based dependencies that change incompatibly over time.
+
+    * consumers
+      * GOPATH consumers
+        * import `k8s.io/apimachinery/...` (as they do today)
+        * are limited to a single copy of kubernetes libraries among all dependencies (as they are today)
+        * `go get` behavior (e.g. `go get client-go`):
+          * uses latest commits of transitive `k8s.io/...` dependencies (likely to break, as today)
+          * uses latest commits of transitive non-module-based dependencies (likely to break, as today)
+      * module-based consumers
+        * reference published modules versions as a variety of `vX.y.z` versions (e.g. `k8s.io/client-go@v15.0.0`, `k8s.io/apimachinery@v15.2.0`, `k8s.io/api@v17.0.0`)
+        * import `k8s.io/apimachinery/v15/...` (have to rewrite kubernetes component imports on every major version bump)
+        * can have multiple copies of kubernetes libraries (though non-semantic-import-version transitive dependencies could still conflict)
+        * `go get` behavior (e.g. `GO111MODULE=on go get client-go@v15.0.0`):
+          * uses transitive `k8s.io/{component}/vX/...` dependencies
+          * uses go.mod-referenced versions of transitive non-module-based dependencies (unless overridden by top-level module, or conflicting peers referencing later versions)
+    * kubernetes tooling
+      * requires rewriting all `k8s.io/{component}/vX/...` imports when a major version bump occurs
+      * requires updating code generation scripts to generate versioned imports for `k8s.io/{api,apimachinery,client-go}`, etc
+      * requires tooling to detect when a breaking go change has occurred in a particular component relative to all tagged releases for the current major version
+      * requires tooling to manage versions per component (instead of homogenous versions for staging components)
+    * allowed versioning changes
+      * modules published this way would have to continue using semantic import versioning
+      * modules published this way could switch to incrementing major/minor versions at a difference cadence as needed
+
 
 ## Reference
 
