@@ -244,7 +244,226 @@ There are likely others.
 
 ## Design Details
 
-TBD
+We are still ironing out the high level goals and approach.  Several
+earlier proposals have been floated, as listed next.  This section
+contains a discussion of the issues.
+
+- [Min Kim's original proposal](https://docs.google.com/document/d/12xAkRcSq9hZVEpcO56EIiEYmd0ivybWo4YRXV0Nfq-8)
+
+- [Mike Spreitzer's first proposal](https://docs.google.com/document/d/1YW_rYH6tvW0fvny5b7yEZXvwDZ1-qtA-uMNnHW9gNpQ)
+
+- [Daniel Smith's proposal](https://docs.google.com/document/d/1BtwFyB6G3JgYOaTxPjQD-tKHXaIYTByKlwlqLE0RUrk)
+
+- [Mike's second proposal](https://docs.google.com/document/d/1c5SkLHvA4H25sY0lihJtu5ESHm36h786vi9LaQ8xdtY)
+
+- [Min's second proposal](https://github.com/kubernetes/enhancements/pull/864)
+
+- [Daniel's brain dump](https://docs.google.com/document/d/1cwNqMDeJ_prthk_pOS17YkTS_54D8PbFj_XwfJNe4mE)
+
+Also notable are notes from a meeting on this subject, at
+https://docs.google.com/document/d/1bEh2BqfSSr3jyh1isnXDdmfe6koKd_kMXCFj08uldf8
+.
+
+Following is an attempt to summarize the issues addressed in those
+proposals and the current thinking on them; the current proposal
+attempts to respond.
+
+Despite the open issues, we seem to be roughly agreed on an outline
+something like the following.
+
+- When a request arrives at the handler, the request is categorized
+  somehow.  The nature of the categories and the categorization
+  process is one open issue. Some proposals (not written yet) allow
+  for the request to be rejected upon arrival based on that
+  categorization and some local state.  Unless rejected, the request
+  is put into a FIFO queue.  That is one of many queues.  The queues
+  are associated with the categories somehow.  Some proposals
+  contemplate ejecting less desirable requests to make room for the
+  newly queued request, if and when queue space is tight.
+
+- A request might also be rejected at a later time, based on other
+  criteria.  For example, as in the CoDel technique --- which will
+  reject a request at the head of the queue if the latency is found to
+  be too big at certain times.
+
+- Based on some resource limit (e.g., QPS or concurrency) and with
+  regards to priority and fairness criteria, requests are dispatched
+  from the queues to be served (i.e., continue down the handler
+  chain).
+
+- We assume that when the requst-timeout handler aborts a request it
+  is effective --- we assume the request stops consuming CPU and
+  memory at that point.  We know that this is not actually true today,
+  but is intended; we leave fixing that to be independent work, and
+  for now this KEP simply ignores the gap.
+
+One of the biggest questions is how to formulate the scheduling
+parameters.  There are several related concepts in the state of the
+art of scheduling, and we are trying to figure out what to adopt
+and/or invent.  We would prefer to invent as little as possible; it is
+a non-trivial thing to invent a new --- and sufficiently efficient ---
+scheduling algorithm and prove it correct.  The vmware product line
+uses scheduling parameters named "reservation", "limit", and "shares"
+for each class of workload.  The first two are known elsewhere as
+"assured" and "ceiling".  Finding a published algorithm that
+implements all three has not proven easy.  Alternatively, priorities
+are easy to implement and arguably more desirable --- provided there
+is some form of fairness within each priority level.  The current
+thinking is in that direction: use priorities, with simple equal
+fairness among some categories of requests in each priority level.
+There are published scheduling algorithms that provide fairness, and
+we hope to use/adapt one of them to apply independently within the
+confines of each priroity level.
+
+Another issue is whether to manage QPS or concurrency or what.
+Managing QPS leaps first to mind, perhaps because it is a simple
+concept and perhaps because it is familiar from the self-restraint
+that clients apply today.  But we want to also take service time into
+account; a request flow with longer service times should get less QPS
+because its requests are "heavier" --- they impose more load on the
+apiserver.  A natural way to do this is with an inverse linear
+relation.  For example, when two CPU-bound request flows are getting
+equal CPU from the apiserver, and the first flow's requests have a
+service time that is X times the service time of the second flow's
+requests, the first flow's QPS is 1/X of the second's.  This is
+exactly analogous to what happens in networking: if two flows are
+getting the same bandwidth, and one flow's packets are X times as big
+as the second's, then the first flow's packets per second rate is 1/X
+that of the second flow.  This inverse linear relation amounts to
+managing the product of QPS * service time.  That is equivalent to
+managing concurrency.  Managing concurrency is an obvious choice for
+memory, and we now see it is a good choice for CPU too.  This is also
+a convenient choice because it is what the max-in-flight handler is
+doing today, so we would be making a relatively modest extension to
+that handler's conception.
+
+Compared to traditional scheduling problems, ours is harder because of
+the combination of these facts: (1) (unlike a router handling a
+packet) the apiserver does not know beforehand how long a request will
+take to serve nor how much memory it will consume, and (2) (unlike a
+CPU scheduler) the apiserver can not suspend and resume requests.
+Also, we are really loathe to abort a request once it has started
+being served.  We are leaning towards adapting well known and studied
+scheduling technique(s); but adaptation is a form of invention, and we
+have not converged yet on what to do here.
+
+Another issue is how to combine two goals: protection of CPU, and
+protection of memory.  A related issue is the fact that there are two
+stages of memory consumption: a request held in a queue holds some
+memory, and a request being served may use a lot more.  The current
+thinking seems to be focusing on using one QPS or concurrency limit on
+requests being served, on the expectation that this limit can be set
+to a value that provides reasonable protection for both CPU and memory
+without being too low for either.
+
+If we only limmit requests being served then the queues could cause
+two problems: consuming a lot of apiserver memory, and introducing a
+lot of latency.  For the latter we are aware of some solutions from
+the world of networking, [CoDel](https://en.wikipedia.org/wiki/CoDel)
+and
+[fq_codel](https://tools.ietf.org/html/draft-ietf-aqm-fq-codel-06).
+CoDel is a technique for ejecting requests from a queue for the
+purpose of keeping latency low, and fq_codel applies the CoDel
+technique in each of many queues.  CoDel is explicitly designed to
+work in the context of TCP flows on the Internet.  This KEP should be
+similarly explicit about the context, particularly including what is
+the feedback given to clients and how do they react and what is the
+net effect of all the interacting pieces.  No such analysis has yet
+been done for any of the proposals.
+
+The CoDel technique is described as parameterless but has two magic
+numbers: an "initial interval" of 100 ms and a "target" of 5 ms.  The
+initial interval is set based on round trip times in the Internet, and
+the target is set based on a desired limit on the latency at each hop.
+What are the analogous numbers for our scenario?  We do not have large
+numbers of hops; typically at most two (client to main apiserver and
+then main apiserver to aggregated apiserver).  What is analogous to
+network round trip time?  We have a latency goal of 1 second, and a
+request service time limit of 1 minute.  If we take 1 second as the
+initial interval then note that the maximum service time is much
+larger than the initial interval; by contrast, in networking, the
+maximum service time (i.e., packet length / link speed) is much
+smaller than the initial interval.  Even if we take 1 minute as our
+initial interval, we still do not have the sort of relationship that
+obtains in networking.  Note that in order to get good statistics on a
+queue --- which is needed by the CoDel technique --- there have to be
+many requests served during an interval.  Because of this mismatch,
+and because equivalence of context has not been established, we are
+not agreed that the CoDel technique can be used.
+
+Note that the resource limit being applied is a distinct concept from
+the fairness criteria.  For example, in CPU scheduling there may be 4
+CPUs and 50 threads being scheduled onto those CPUs; we do not suppose
+the goal is to have each thread to be using 0.08 CPUs at each instant;
+a thread uses either 0 or 1 CPUs at a given instant.  Similarly, in
+networking, a router may multiplex a thousand flows onto one link; the
+goal is not to have each flow use 1/1000th of the link at each
+instant; a packet uses 0 links while queued and 1 link while being
+transmitted.  Each CPU or link is used for just one thing at a time;
+this is the resource limit.  The fairness goal is about utilization
+observed over time.  So it is in our scenario too.  For example, we
+may have 5000 flows of requests and a concurrency limit of 600
+requests at any one time.  That does not mean that our goal is for
+each flow to have 0.12 requests running at each instant.  Our goal is
+to limit the number of running requests to 600 at each instant and
+provide some fairness in utilization averaged over time.
+
+That average over time must not be over too much or too little time.
+It would not make sense to average over all past time; that would
+allow a flow to build up a huge amount of credit, enabling it to crowd
+out other flows.  It also does not make sense for the average to cover
+a small amount of time.  Because serving requests, like transmitting
+packets, is lumpy we must average over many service times.  Approaches
+to this include: using a sequence of intervals, using a sliding
+window, and using an exponential decay.
+
+Another open issue is the categorization: what are the categories and
+how is a request assigned to a category?  We seem to be agreed on at
+least one important point: each request is assigned to exactly one
+category, and is handled by exactly one "bucket" or "queue".  We also
+seem to be converging toward a two-level hierarchy of categories,
+aligned with the handling outline discussed earlier: at the higher
+level there are priorities, and within each priority level there is a
+collection of flows that compete fairly.
+
+It is desired to allow lesser priority traffic to get some service
+even while higher priority traffic is arriving at a sufficient rate to
+entirely occupy the server.  There needs to be a quantitative
+definition of this relation between the priorities, and an
+implementation that (at least roughly) implements the desired
+quantitative relation.
+
+For the higher level of categorization --- i.e., into priority levels
+--- the idea is that this is based on a configured set of predicate =>
+priority associations.  The predicate can test any authenticated
+request attribute --- notably including both client identity and the
+work being requested.  One issue to nail down is the question of what
+happens if multiple predicates match a given request; the handler
+should pick exactly one priority level for each request.
+
+Within a given priority level we want to give a fair division of
+capacity among several "flows"; the lower level of categorization is
+how to compute a flow identifier from a request.
+
+The handler may additionally hash the flows into queues, so that a
+more manageable number of queues is involved.  Shuffle sharding can be
+used to make it more likely that a mouse can avoid being squashed by
+an elephant.
+
+Some of the proposals draw inspiration from deficit (weighted or not)
+round robin, and some from (weighted or not) fair queuing.  DRR has
+the advantage of O(1) time to make a decision --- but ONLY if the
+quantum is larger than the largest packet.  In our case that would be
+quite large indeed, since the timeout for a request is typically 1
+minute (it would be even worse if we wanted to handle WATCH requests).
+The dispatching of the DRR technique is bursty, and the size of the
+burst increases with the quantum.  The proposals based on DRR tend to
+go with a small quantum, presumably to combat the burstiness.  The
+logical extreme of this, in the unweighted case, is to use a quantum
+of 1 bit (in the terms of the original networking setting).  That is
+isomorphic to (unweighted) fair queuing!  The weighted versions, still
+with miniscule quanta, are also isomorphic.
+
 
 ## Implementation History
 
