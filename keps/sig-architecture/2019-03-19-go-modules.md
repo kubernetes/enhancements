@@ -183,7 +183,7 @@ Not applicable
 ## Alternatives
 
 * Continue using `godep` for vendor management. This is not viable for several reasons:
-  * The tool is unmaintained (the project readme states "Please use dep or another tool instead.")
+  * The tool is unmaintained (the project readme states "Please use dep or another tool instead."), and we have had to make our own fork to work around some edge cases.
   * There are significant performance problems (the pull-kubernetes-godeps CI job takes ~30 minutes to verify vendoring)
   * There are significant functional problems (the tool cannot be run in some environments, gets confused by diamond dependencies, etc)
 
@@ -194,6 +194,7 @@ Not applicable
 
 * Move away from vendoring as part of the initial move to go modules
   * To ensure reproducible builds based solely on the published repositories, vendoring is still necessary
+  * Moving away from vendoring is orthogonal to moving to go modules and could be investigated/pursued in the future if warranted.
   * In go1.12.x, vendor-based builds are still the default when building a component located in the GOPATH, so producing components that work when built with go modules or with GOPATH+vendor maximizes interoperability
 
 * For versioning, switch to tagging major versions on every `kubernetes/kubernetes` release (similar to what client-go does), and use semantic import versioning.
