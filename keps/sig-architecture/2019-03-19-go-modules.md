@@ -102,7 +102,9 @@ In addition to simply keeping up with the go ecosystem, go modules provide many 
 
 ### Manage vendor folders using go modules
 1. Make `k8s.io/kubernetes` and each staging component (like `k8s.io/client-go` and `k8s.io/api`) a distinct go module
-  * Pin dependencies to the same versions that are currently listed in Godeps.json
+  
+    * Pin dependencies to the same versions that are currently listed in Godeps.json
+
 2. Change vendor management and verification scripts in `kubernetes/kubernetes` to use go module commands
 3. Change the staging component publishing bot to modify the `go.mod` pinned versions of peer components, rather than rewriting Godeps.json files
 
@@ -198,7 +200,7 @@ Not applicable
   * In go1.12.x, vendor-based builds are still the default when building a component located in the GOPATH, so producing components that work when built with go modules or with GOPATH+vendor maximizes interoperability
 
 * For versioning, switch to tagging major versions on every `kubernetes/kubernetes` release (similar to what client-go does), and use semantic import versioning.
-This remains a possibility in the future, but requires more tooling and consumer changes to accomodate rewritten imports,
+This remains a possibility in the future, but requires more tooling and consumer changes to accommodate rewritten imports,
 and doesn't fully allow multiple versions of kubernetes components to coexist as long as there are transitive non-module-based dependencies that change incompatibly over time.
 
     * consumers
@@ -226,7 +228,7 @@ and doesn't fully allow multiple versions of kubernetes components to coexist as
       * modules published this way could switch to incrementing major/minor versions at a difference cadence as needed
 
 * For versioning, tag major/minor versions as needed when incompatible changes are made, and use semantic import versioning.
-This remains a possibility in the future, but requires more tooling and consumer changes to accomodate rewritten imports,
+This remains a possibility in the future, but requires more tooling and consumer changes to accommodate rewritten imports,
 and doesn't fully allow multiple versions of kubernetes components to coexist as long as there are transitive non-module-based dependencies that change incompatibly over time.
 
     * consumers
