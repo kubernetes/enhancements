@@ -206,12 +206,17 @@ A configuration for the package managers might look something like:
 Different architectures will be published into the same repos, it is up to the package managers to pull and install the correct package for the target platform.
 
 
-Ideally, publishing/promoting a package means to commit a change to a configuration file which triggers a tool similar to the [Image Promoter][img-promoter].
+Ideally, publishing/promoting a package means to commit a change to a configuration file which triggers a "package promotion tool".
 That tool ...
 - manages which packages need to go into which `${channel}` for which `${dist}` of which `${k8s_release}`
 - guard that by the packages checksum
-- is able to promote a package from a bucket and also from on `${channel}` to the other
-- work off a declarative configuration
+- is able to promote a package from a bucket and also from a `${channel}` to the other
+- work off of a declarative configuration
+
+This tool does for packages what the [Image Promoter][img-promoter] tool does
+for container images. Therefore, ideally, we can implement this work-flow as part
+of the [Image Promoter][img-promoter] or at least use its libraries.
+
 
 As soon as the [redirector] is in place the repositories should be mirrored and the [redirector] should be used.
 
