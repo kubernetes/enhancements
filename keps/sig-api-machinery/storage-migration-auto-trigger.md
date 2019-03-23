@@ -20,8 +20,12 @@ status: provisional
 * [API design](#api-design)
 * [Storage migration triggering controller](#storage-migration-triggering-controller)
 * [Implications to cluster operators](#implications-to-cluster-operators)
-* [Lifecycle of a StorageState object](#life-cycle-of-a-storagestate-object)
-* [Future work: HA clusters](#future-work-ha-clusters)
+* [Life-cycle of a StorageState object](#life-cycle-of-a-storagestate-object)
+* [Extended API proposal for HA cluster](#extended-api-proposal-for-ha-cluster)
+   * [Extending the storage state API](#extending-the-storage-state-api)
+   * [Extending the work flow of the triggering controller](#extending-the-work-flow-of-the-triggering-controller)
+   * [Case walkthrough](#case-walkthrough)
+   * [Pros and Cons](#pros-and-cons)
 * [Future work: persisted discovery document](#future-work-persisted-discovery-document)
 
 ## Goal
@@ -195,27 +199,6 @@ back to 1.14. The migration triggering controller sets the
 storageState.status.currentStorageVersionHash to batch/v2alpha1 and recreates the
 storageVersionMigration object to migrate to v2alpha1.
 
-## Future work: HA clusters
-
-When the masters of an HA cluster undergoes rolling upgrade, the storage
-versions might be configured differently in different API servers. Storage
-migration shouldn't start until the rolling upgrade is done.
-
-Ideally, for an HA cluster undergoing rolling upgrade, the following should
-happen for each resource: 
-* the discovery document should expose the lack of consensus by listing all
-  storage version hashes supported by different API servers.
-* the storage migration triggering controller should
-  * add all listed storage version hashes to
-    storageState.status.persistedStorageVersionHashes.
-  * set storageState.status.currentStorageVersionHash to `Unknown`.
-  * delete any in progress migration by deleting existing
-    storageVersionMigrations.
-
-After the API server rolling upgrade is done, the discovery document would
-expose the agreed storage version hashes, and the storage migration triggering
-controller will resume the work described in the [previous section][].
-
 [previous section]:storage-migration-triggering-controller
 
 How to develop a convergence mechanism for HA masters is beyond the scope of
@@ -224,6 +207,145 @@ clusters need to disable the triggering controller and start migration
 manually, e.g., deploying the [initializer][] manually.
 
 [initializer]:https://github.com/kubernetes-sigs/kube-storage-version-migrator/tree/master/cmd/initializer
+
+## Extended API proposal for HA cluster
+
+The proposed storage state and triggering controller are not guaranteed to work
+during the rolling upgrade of HA masters. The issue is detailed in the previous
+[KEP][]. Essentially, the migrator should abort ongoing storage version
+migrations when the HA masters are rolling upgrading, and restart the migration
+when the rolling upgrade is done. We propose the following changes to the
+storage state API and the triggering controller to detect if there is ongoing
+master rolling upgrade.
+
+Note that this design is based on the following two assumptions, which might
+not hold true in future HA deployments.
+* there is a triggering controller co-locates with every apiserver that
+consists the HA master.
+* the triggering controller only talks with the local apiserver.
+
+[KEP]:35-storage-version-hash.md#ha-masters
+
+### Extending the storage state API
+
+```golang
+// Remaining the same.
+type StorageState struct {
+  metav1.TypeMeta
+  metav1.ObjectMeta
+  Spec StorageStateSpec
+  Status StorageStateStatus
+}
+
+// Remaining the same.
+type StorageStateSpec {
+  Resource GroupResource
+}
+
+// Extended.
+type StorageStateStatus {
+  // Extended.
+  // A list of current storage version hashes. In case of HA setup, the
+  // storage version hashes exposed by all master instances are reported here.
+  // In case of non-HA setup, this list should only contain one element.
+  CurrentStorageVersionHashes []StorageVersionHash
+  // Remaining the same.
+  // +optional
+  PersistedStorageVersionHashes []string
+}
+
+// The storage version hash observed by the reporter at lastHeartbeatTime.
+type StorageVersionHash struct {
+  // The ID of the reporting triggering contoller. This should be the same ID
+  // that's used to contend for a lease, see https://github.com/kubernetes/kubernetes/blob/428a8e04d40ef01c28c66fcfd54f306a1aff9a28/staging/src/k8s.io/api/coordination/v1/types.go#L43.
+  // Required.
+  ReporterID string
+  // The hash value of the current storage version, as shown in the discovery
+  // document served by the API server local to the reporting controller.
+  CurrentStorageVersionHash string
+  // LastHeartbeatTime is the last time the reporting controller checks the
+  // storage version hash of this resource in the discovery document and updates
+  // this field.
+  // +optional
+  LastHeartbeatTime metav1.Time
+}
+``` 
+
+### Extending the work flow of the triggering controller
+
+Normally, HA controllers select a leader, and only the leader writes to the API
+to update status. In this case, we need every triggering controller to report
+its local storage version hash. Specifically, every 10 minutes, each instance of
+the triggering controller 
+* fetches the discovery doc from the local apiserver.
+* adds the storage version hash to PersistedStorageVersionHashes if the local
+  storage version hash is not present there yet.
+* updates (or creates) the element in status.storageVersionhashes with the
+  matching reporterID, recording the latest currentStorageVersionHash and
+  lastHeartbeatTime.
+* removes storageVersionHashes whose lastHeartbeatTime are more than 3 polling
+  periods (30 mins) old. This garbage collection is necessary because the
+  reporter ID [changes][] every time a process reboots. The garbage collection
+  happens 30 mins after lastHeartbeat to give the reporter a chance to recover
+  from transient errors that occur right before the reporter updating the
+  status.
+
+[changes]:https://github.com/kubernetes/kubernetes/blob/428a8e04d40ef01c28c66fcfd54f306a1aff9a28/cmd/kube-controller-manager/app/controllermanager.go#L238
+
+Only the leading triggering controller reacts to the storageState changes. The
+leading triggering controller
+* deletes pending storageVersionMigration objects to cancel any ongoing
+  migration, once the hashes in currentStorageVersionHashes stop being
+  identical.
+* creates a storageVersionMigration object to start migration, if
+  * persistedStorageVersionHashes has "Unknown" or has more than one version,
+  * **AND** the lastHeartbeatTime in all items of the CurrentStorageVersionHashes
+  are no older than 1 polling period (10 mins)
+  * **AND** the hashes in currentStorageVersionHashes have been identical in the
+    past two polls. In other words, the hashes have been held identical for at
+    least one polling period (10 minutes). The purpose is to give newly deployed
+    triggering controller a chance to report the hash.
+
+### Case walkthrough
+
+Case 1. Assuming the HA cluster consists of 3 apiservers. The cluster admin
+rolling upgrades them. The old storage version is v1, and becomes v2 after
+upgrades. The apiserver 3 fails after upgrades, so the cluster admin rolls it
+back at the 22nd minute.
+
+| time (min) | events                                                                                                                             | apiserver 1 sv<sup>1</sup>| apiserver 2 sv | apiserver 3 sv | CurrentSV<sup>2</sup> | PersistedSV<sup>3</sup> |
+|------------|------------------------------------------------------------------------------------------------------------------------------------|---------------------------|----------------|----------------|-----------------------|-------------------------|
+| 0          |                                                                                                                                    | v1                        | v1             | v1             | v1, v1, v1            | v1                      |
+| 3          | The cluster admin starts rolling upgrades from apiserver 1.                                                                        | v2                        | v1             | v1             | v1, v1, v1            | v1                      |
+| 10         | Triggering controllers update currentSV. The leader does not start migration because of the lack of consensus on storage version.  | v2                        | v1             | v1             | v2, v1, v1            | v1, v2                  |
+| 12         | Rolling upgrade continues, apiserver 2 is upgraded.                                                                                | v2                        | v2             | v1             | v2, v1, v1            | v1, v2                  |
+| 18         | Rolling upgrade is done, apiserver 3 is upgraded.                                                                                  | v2                        | v2             | v2             | v2, v1, v1            | v1, v2                  |
+| 20         | Triggering controllers update currentSV. The leader starts migration as apiservers have the same storage version.                  | v2                        | v2             | v2             | v2, v2, v2            | v1, v2                  |
+| 22         | The cluster admin rolls back apiserver 3.                                                                                          | v2                        | v2             | v1             | v2, v2, v2            | v1, v2                  |
+| 30         | The triggering controller co-locates with apiserver 3 adds v1 to currentSV and persistedSV. The leader cancels ongoing migration.  | v2                        | v2             | v1             | v2, v2, v1            | v1, v2                  |
+| 34         | The cluster admin upgrades apiserver 3 again.                                                                                      | v2                        | v2             | v2             | v2, v2, v1            | v1, v2                  |
+| 40         | The triggering controller co-locates with apiserver 3 sets currentSV to v2. The leader starts migration as consensus is reached.   | v2                        | v2             | v2             | v2, v2, v2            | v1, v2                  |
+| 45         | The migration has completed. The leader updates persistedSV to v2.                                                                 | v2                        | v2             | v2             | v2, v2, v2            | v2                      |
+
+1. sv: storage version.
+2. CurrentSV: currentStorageVersionHashes.
+3. PersistedSV: persistedStorageVersionHashes.
+
+### Pros and Cons
+Pros:
+1. The API changes are limited to the storage migration API, which is only used
+   by the migrator, so we have more flexibility to experiment.
+
+Cons:
+1. As mentioned earlier, the design is based on two assumptions that might not
+   hold in the future
+    * there is a triggering controller co-locates with every apiserver that
+      consists the HA master.
+    * the triggering controller only talks with the local apiserver.
+
+2. Reaching consensus on apiserver status is a general issue in Kubernetes HA
+   setup. The proposed solution only solves the consensus issue for the storage
+   version hash field. A generic solution would be preferred.
 
 ## Future work: persisted discovery document
 
