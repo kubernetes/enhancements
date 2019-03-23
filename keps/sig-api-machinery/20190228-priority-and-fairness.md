@@ -115,6 +115,12 @@ should be preventable when this KEP is in place.
   that the very load imposed by request A crowds out requests B
   involved in serving A.
 
+- Guaranteed capacity for Low Priority.  There can be thundering herds
+  with higher priority running many minutes in the cluster. In order
+  to prevent an outage for the normal users connecting the cluster,
+  requests with higher priority will not completely starve out the
+  whole capacity.
+
 - Garbage Collector crowded out.  The garbage collector should keep up
   with the workload, but in an overload situation today this is not
   assured to happen.
