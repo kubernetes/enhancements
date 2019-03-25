@@ -89,12 +89,12 @@ The motivation section can optionally provide links to [experience reports][] to
 
 This proposal aims to the following:
  - Possibility to mark one or more containers in a Pod as critical in the PodSpec
- - Replace the Pod if a critical container`s container restart count reaches a threshold
+ - Replace the Pod if a critical container`s container restart count reaches a threshold. Pod replacement in this context is the process when all containers including the infra (pause) is terminated and re-created from the PodSpec
 
 ### Non-Goals
 
 This proposal defers the following:
- - Restart all of the containers in a Pod without destroying the whole Pod
+ - Restart all of the containers in a Pod without destroying the whole Pod (and preserving the emptyDir volumes)
 
 ## Proposal
 
@@ -121,6 +121,7 @@ spec:
 ### Implementation Details/Notes/Constraints
 
 - It is an open question if the whole feature can be implemented in Kubelet or other components are also affected
+- The existing terminate and create procedures of the Pod donr by Kubelet should be used to implement the replacement of the Pod
 
 ### Risks and Mitigations
 
