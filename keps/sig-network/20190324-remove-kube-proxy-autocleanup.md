@@ -11,7 +11,7 @@ approvers:
   - "@thockin"
 editor: TBD
 creation-date: 2018-03-24
-last-updated: 2018-03-24
+last-updated: 2018-03-25
 status: provisional
 see-also:
 replaces:
@@ -27,8 +27,10 @@ Only clean up rules from running in other proxy modes when using the `--cleanup`
 
 ## Motivation
 
-kube-proxy's rule cleanup can substantially delay kube-proxy reboot time,
-and is not normally necessary.
+kube-proxy's rule cleanup is prone to bugs and delays when restarting,
+due to its complexity.
+This KEP aims to simplify cleanup logic,
+and make kube-proxy's behavior more predictable.
 
 ### Goals
 
