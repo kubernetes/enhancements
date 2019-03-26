@@ -13,7 +13,7 @@ approvers:
   - "@kow3ns"
 editor: TBD
 creation-date: 2018-05-14
-last-updated: 2019-03-21
+last-updated: 2019-04-08
 status: provisional
 ---
 
@@ -22,6 +22,7 @@ status: provisional
 ## Table of Contents
 
 * [Table of Contents](#table-of-contents)
+* [Release Signoff Checklist](#release-signoff-checklist)
 * [Summary](#summary)
 * [Motivation](#motivation)
     * [Goals](#goals)
@@ -29,9 +30,39 @@ status: provisional
 * [Proposal](#proposal)
     * [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
     * [Risks and Mitigations](#risks-and-mitigations)
-* [Graduation Criteria](#graduation-criteria)
+* [Design Details](#design-details)    
+  * [Graduation Criteria](#graduation-criteria)
+  * [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+  * [Version Skew Strategy](#version-skew-strategy)
 * [Implementation History](#implementation-history)
 * [Alternatives](#alternatives)
+
+## Release Signoff Checklist
+
+**ACTION REQUIRED:** In order to merge code into a release, there must be an issue in [kubernetes/enhancements] referencing this KEP and targeting a release milestone **before [Enhancement Freeze](https://github.com/kubernetes/sig-release/tree/master/releases)
+of the targeted release**.
+
+For enhancements that make changes to code or processes/procedures in core Kubernetes i.e., [kubernetes/kubernetes], we require the following Release Signoff checklist to be completed.
+
+Check these off as they are completed for the Release Team to track. These checklist items _must_ be updated for the enhancement to be released.
+
+- [ ] kubernetes/enhancements issue in release milestone, which links to KEP (this should be a link to the KEP location in kubernetes/enhancements, not the initial KEP PR)
+- [ ] KEP approvers have set the KEP status to `implementable`
+- [ ] Design details are appropriately documented
+- [ ] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [ ] Graduation criteria is in place
+- [ ] "Implementation History" section is up-to-date for milestone
+- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+
+**Note:** Any PRs to move a KEP to `implementable` or significant changes once it is marked `implementable` should be approved by each of the KEP approvers. If any of those approvers is no longer appropriate than changes to that list should be approved by the remaining approvers and/or the owning SIG (or SIG-arch for cross cutting KEPs).
+
+**Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
+
+[kubernetes.io]: https://kubernetes.io/
+[kubernetes/enhancements]: https://github.com/kubernetes/enhancements/issues
+[kubernetes/kubernetes]: https://github.com/kubernetes/kubernetes
+[kubernetes/website]: https://github.com/kubernetes/website
 
 ## Summary
 
@@ -107,7 +138,7 @@ During pod termination sidecars will be terminated last:
 
 If Containers don't exit before the end of the TerminationGracePeriod then they will be sent a SIGKIll as normal, Sidecars will then be sent a SIGTERM with a short grace period of 5/10 Seconds (up for debate) to give them a chance to cleanly exit.
 
-PreStop Hooks will be sent to sidecars and containers at the same time.
+PreStop Hooks will be sent to sidecars before containers are terminated.
 This will be useful in scenarios such as when your sidecar is a proxy so that it knows to no longer accept inbound requests but can continue to allow outbound ones until the the primary containers have shut down.
 
 To solve the problem of Jobs that don't complete: When RestartPolicy!=Always if all normal containers have reached a terminal state (Succeeded for restartPolicy=OnFailure, or Succeeded/Failed for restartPolicy=Never), then all sidecar containers will be sent a SIGTERM.
@@ -162,10 +193,30 @@ Init containers would be able to have `sidecar: true` applied to them as it's an
 
 Older Kubelets that don't implement the sidecar logic could have a pod scheduled on them that has the sidecar field. As this field is just an addition to the Container Spec the Kubelet would still be able to schedule the pod, treating the sidecars as if they were just a normal container. This could potentially cause confusion to a user as their pod would not behave in the way they expect, but would avoid pods being unable to schedule.
 
+## Design Details
 
-## Graduation Criteria
-
+### Test Plan
 //TODO
+
+### Graduation Criteria
+#### Alpha -> Beta Graduation
+* Addressed feedback from Alpha testers
+* Thorough E2E and Unit testing in place
+* The beta API either supports the important use cases discovered during alpha testing, or has room for further enhancements that would support them
+
+#### Beta -> GA Graduation
+* Sufficient number of end users are using the feature
+* We're confident that no further API changes will be needed to achieve the goals of the KEP
+* All known blocking bugs have been fixed
+
+### Upgrade / Downgrade Strategy
+When upgrading no changes should be needed to maintain existing behaviour as all of this behaviour is optional and disabled by default.
+To activate the feature they will need to enable the feature gate and mark their containers as sidecars in the container spec.
+
+When downgrading `kubectl`, users will need to remove the sidecar field from any of their Kubernetes manifest files as `kubectl` will refuse to apply manifests with an unknown field (unless you use `--validate=false`).
+
+### Version Skew Strategy
+Older Kubelets should still be able to schedule Pods that have sidecar containers however they will behave just like a normal container.
 
 ## Implementation History
 
