@@ -23,7 +23,7 @@ approvers:
 editor: TBD
 creation-date: 2018-11-29
 last-updated: 2019-03-06
-status: implementable
+status: implemented
 ---
 
 # Windows node support
