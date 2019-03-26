@@ -32,8 +32,8 @@ and is not normally necessary.
 
 ### Goals
 
-* Reduce the kube-proxy restart time,
-by avoiding unnecessary cleanup.
+* Avoid bugs where different proxier modules' rules overlap,
+causing user-visible impact between cleanup and full sync
 
 ### Non-goals
 
