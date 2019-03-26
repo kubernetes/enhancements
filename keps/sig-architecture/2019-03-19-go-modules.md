@@ -16,8 +16,8 @@ approvers:
   - "@smarterclayton"
   - "@thockin"
 creation-date: 2019-03-19
-last-updated: 2019-03-19
-status: provisional
+last-updated: 2019-03-26
+status: implementable
 ---
 
 # go modules
@@ -32,6 +32,7 @@ status: provisional
   - [Manage vendor folders using go modules](#manage-vendor-folders-using-go-modules)
   - [Publish staging component modules to individual repositories](#publish-staging-component-modules-to-individual-repositories)
   - [Select a versioning strategy for published modules](#select-a-versioning-strategy-for-published-modules)
+  - [Remove Godeps](#remove-godeps)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
@@ -51,8 +52,8 @@ of the targeted release**.
 
 These checklist items _must_ be updated for the enhancement to be released.
 
-- [ ] kubernetes/enhancements issue in release milestone, which links to KEP
-- [ ] KEP approvers have set the KEP status to `implementable`
+- [x] kubernetes/enhancements issue in release milestone, which links to KEP: https://github.com/kubernetes/enhancements/issues/917
+- [x] KEP approvers have set the KEP status to `implementable`
 - [ ] Design details are appropriately documented
 - [ ] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
 - [ ] Graduation criteria is in place
@@ -142,13 +143,8 @@ In addition to simply keeping up with the go ecosystem, go modules provide many 
 2. Change vendor creation and verification scripts in `kubernetes/kubernetes` to use go module commands to:
 
     * Sync dependency versions between `k8s.io/kubernetes` and in staging component `go.mod` files
-    * Build the vendor directory (e.g. `rm -fr vendor; go mod vendor`)
+    * Build the vendor directory (`go mod vendor`)
     * Generate the vendored `LICENSES` file
-
-3. Remove `Godeps.json` files from `kubernetes/kubernetes` and staging components.
-With the change to go modules, the only use for these is as a hint to non-module-based downstream consumers of the published staging components.
-
-4. Remove the custom `godep` fork from `kubernetes/kubernetes`
 
 See the [alternatives](#alternatives-to-vendoring-using-go-modules) section for other vendoring tools considered.
 
@@ -158,7 +154,10 @@ Update the staging component publishing bot:
 1. Rewrite the staging component `require` directives in `go.mod` files to require specific published versions (the same thing done today for `Godeps.json` files)
 2. Remove the staging component `replace` directives in `go.mod` files (relative path references don't make sense for independent repositories)
 3. Stop including `vendor` content in published modules. Vendor folders are ignored in non-top-level modules, and published `go.mod` files inform `go get` of desired versions of transitive dependencies.
-4. Generate synthetic `Godeps.json` files containing the SHA or git tag of module dependencies, for consumption by downstream consumers using dependency management tools like `glide`
+4. Generate synthetic `Godeps.json` files containing the SHA or git tag of module dependencies,
+for consumption by downstream consumers using dependency management tools like `glide`.
+Continue publishing these at least until our minimum supported version of go defaults to enabling
+module support (currently targeted for go 1.13, which is approximately Kubernetes 1.16-1.17 timeframe).
 
 See the [alternatives](#alternatives-to-publishing-staging-component-modules) section for other publishing methods considered.
 
@@ -201,6 +200,14 @@ Allowed versioning changes:
 
 See the [alternatives](#alternative-versioning-strategies) section for other possible versioning strategies considered for the initial move to modules.
 
+### Remove Godeps
+
+* Move aggregated `Godeps/LICENSES` file to `vendor/LICENSES` (and ensure it is packaged correctly in build artifacts)
+* Remove `Godeps.json` files from `kubernetes/kubernetes` and staging component directories.
+With the change to go modules, the only use for these is as a hint to non-module-based downstream consumers of the published staging components.
+* Remove the custom `Godeps` fork from `kubernetes/kubernetes`
+* Remove all other `Godeps` references in scripts, comments, and configurations files
+
 ## Design Details
 
 ### Test Plan
@@ -214,6 +221,7 @@ See the [alternatives](#alternative-versioning-strategies) section for other pos
 ### Graduation Criteria
 
 * `k8s.io/kubernetes` vendor management uses go modules
+  * CI verifies vendor management scripts succeed with `GOPATH` unset, in a directory structure not shaped like `$GOPATH`
 * there are documented processes for:
   * adding/pinning a new dependency
   * updating the pinned version of an existing dependency
@@ -233,6 +241,8 @@ Not applicable
 ## Implementation History
 
 - 2019-03-19: Created
+- 2019-03-26: Completed proposal
+- 2019-03-26: Marked implementable
 
 ## Alternatives
 
@@ -336,8 +346,9 @@ and doesn't fully allow multiple versions of kubernetes components to coexist as
 
 * [@rsc description of options for kubernetes versioning](https://github.com/kubernetes/kubernetes/pull/65683#issuecomment-403705882)
 * `go help modules`
-* https://github.com/golang/go/wiki/Modules
-  * Especially https://github.com/golang/go/wiki/Modules#semantic-import-versioning
+* https://github.com/golang/go/wiki/Modules, especially:
+  * https://github.com/golang/go/wiki/Modules#semantic-import-versioning
+  * https://github.com/golang/go/wiki/Modules#how-to-prepare-for-a-release
 * https://golang.org/cmd/go/#hdr-The_go_mod_file
 * https://golang.org/cmd/go/#hdr-Maintaining_module_requirements
 * https://golang.org/cmd/go/#hdr-Module_compatibility_and_semantic_versioning
