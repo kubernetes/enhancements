@@ -121,7 +121,7 @@ for watch bookmarks:
 ```
   type ListOptions struct {
     ...
-    AllowBookmarks bool
+    AllowWatchBookmarks bool
   }
 ```
 We consciously make it just a boolean flag - this gives kube-apiserver an
@@ -162,7 +162,8 @@ GA:
 
 ## Implementation History
 
-- RRRR-MM-DD: KEP Summary, Moativation and Proposal merged
+- 2019-02-12: KEP Summary, Moativation and Proposal merged
+- 2019-03-27: API changes approved in API review
 
 ## Rejected alternatives
 
