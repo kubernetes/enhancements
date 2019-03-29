@@ -43,9 +43,34 @@ This would also assist existing solutions already interacting with manifest file
 
 ## Proposal
 
-To realize the goals, we would add a field to either ObjectMeta or TypeMeta.
+To realize the goals, we would add a field to ObjectMeta called `manager`, right next to the existing `managedFields`.
 This field should not get persisted to storage and is solely for sending fieldManager information to the apiserver.
 When the field is not set, the apiserver would fallback onto current behavior and default the fieldManager (or fail).
+
+This means, we add a field that is optional metadata, write-only and non-persisted.
+The field should take a non empty string or be unset and should follow the same criteria as [ManagedFieldsEntry.Manager](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.14/#managedfieldsentry-v1-meta).
+
+Setting or not setting the field will cause the following behavior for both apply and non-apply operations:
+
+- If the fieldManager option is set for the request (for example through kubectl), it always takes precedence
+- If the newly introduced `manager` field is set in the received request, it will get used as manager
+- If none of the two options match, the fieldManager will default to the user-agent as it currently does
+
+This means, adding the field will only introduce another step for defaulting the fieldManager.
+
+Another option would be, to fail the request if both the field and the fieldManager option are set to different values (like kubectl currently does when setting a different namespace (through `--namespace`) than defined in the manifest file). This might cause more issues with compatibility so the first implementation would stick to the flow outlined above.
+
+An example of setting the field would be:
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: example
+  manager: jenkins
+data:
+  k: v
+```
 
 ### User Stories [optional]
 
@@ -95,7 +120,6 @@ TBD
 No fields get persisted.
 When the field is not set due to an old client, the current Server Side Apply defaulting is the fallback.
 When the field is set by a new client, it will get ignored by an old apiserver.
-When the field is set in a manifest that gets applied by a previous kubectl version, validation will fail.
 
 ### Version Skew Strategy
 
