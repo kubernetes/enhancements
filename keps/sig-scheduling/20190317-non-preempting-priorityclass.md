@@ -38,19 +38,33 @@ superseded-by:
 
 [PriorityClasses](https://kubernetes.io/docs/concepts/configuration/pod-priority-preemption/) are a GA feature as on 1.14,
 which impact the scheduling and eviction of pods.
-Pods will be scheduled according to descending priority.
+Pods are be scheduled according to descending priority.
 If a pod cannot be scheduled due to insufficient resources,
-lower-priority pods will be descheduled ("preempted") to make room.
+lower-priority pods will be preempted to make room.
 
 This proposal makes the preempting behavior optional for a PriorityClass,
-by adding a new field to PriorityClasses.
-If a PriorityClass does not have preemption enabled,
-a pod of that PriorityClass will not trigger preemption of other pods.
+by adding a new field to PriorityClasses,
+which in turn populates PodSpec.
+If a pod is waiting to be scheduled,
+and it does not have preemption enabled,
+it will not trigger preemption of other pods.
 
 ## Motivation
 
-High-priority, non-preempting workloads are a common data science use case.
-Preempting batch workloads is a waste, as the work unit must be repeated.
+Allowing PriorityClasses to be non-preempting is important for running batch workloads.
+
+Batch workloads typically have a backlog of work,
+with unscheduled pods.
+Higher-priority workloads can be assigned a higher priority via a PriorityClass,
+to ensure they go to the front of the scheduling queue.
+However,
+preempting batch workloads is undesirable,
+as all work done by the preempted pod is typically lost.
+
+Users could create a non-preempting PriorityClasses,
+to ensure their most time-sensitive workloads are scheduled before other queued pods,
+without risking discarding the work of running pods. 
+
 
 ### Goals
 
@@ -58,6 +72,8 @@ Add a boolean to PriorityClasses,
 to enable or disable preemption for pods of that PriorityClass.
 
 ### Non-Goals
+
+* Protecting pods from preemption. PodDisruptionBudget should be used.
 
 ## Proposal
 
@@ -124,8 +140,9 @@ and the existing preempting PriorityClass tests should be used to prove stabilit
 * Conformance requirements for non-preempting PriorityClasses are agreed upon.
 
 ## Testing Plan
-Add unit, integration e2e tests for nonpreempting PriorityClasses to the existing scheduler tests.
-Integration tests should be a focus.
+Add detailed unit and integration tests for nonpreempting workloads.
+
+Add basic e2e tests, to ensure all components are working together.
 
 Ensure existing tests (for preempting PriorityClasses) do not break.
 
