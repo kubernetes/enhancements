@@ -12,7 +12,7 @@ approvers:
   - "bsalamat"
 editor: Vallery Lancey
 creation-date: 2019-03-17
-last-updated: 2019-03-17
+last-updated: 2019-03-28
 status: implementable
 see-also:
 replaces:
@@ -61,10 +61,21 @@ to enable or disable preemption for pods of that PriorityClass.
 
 ## Proposal
 
-Add a Preempting field to PriorityClasses.
+Add a Preempting field to both PodSpec and PriorityClass.
 This field will default to true,
 for backwards compatibility.
 
+If Preempting is true for a pod,
+the scheduler will preempt lower priority pods to schedule this pod,
+as is current behavior.
+
+If Preempting is false,
+a pod of that priority will not preempt other pods.
+
+Setting the Preempting field in PriorityClass provides a straightforward interface,
+and allows ResourceQuotas to restrict preemption.
+
+PriorityClass type example:
 ```
 type PriorityClass struct {
 	metav1.TypeMeta
@@ -72,19 +83,29 @@ type PriorityClass struct {
 	Value int32
 	GlobalDefault bool
 	Description string
-	// New option
-	Preempting bool
+	Preempting *bool // New option
 }
 ```
 
-If Preempting is true for a pod,
-the scheduler will preempt lower priority pods to schedule this pod,
-as is current behavior.
+The Preempting field in PodSpec will be populated during pod admission,
+similarly to how the PriorityClass Value is populated.
+Storing the Preempting field in the pod spec has several benefits:
+* The scheduler does not need to be aware of PiorityClasses,
+as all relevant information is in the pod.
+* Mutating PriorityClass objects does not impact existing pods.
+* Kubelets can set Preempting on static pods.
 
-If Preempting is false,
-a pod of that class will not preempt other pods.
+PodSpec type example:
+```
+type PodSpec struct {
+    ...
+    Preempting *bool
+    ...
+}
+```
 
-Update our documentation to reflect this new feature.
+Documentation must be updated to reflect the new feature,
+and changes to PriorityClass/PodSpec fields.
 
 ### Risks and Mitigations
 
@@ -103,7 +124,8 @@ and the existing preempting PriorityClass tests should be used to prove stabilit
 * Conformance requirements for non-preempting PriorityClasses are agreed upon.
 
 ## Testing Plan
-Add unit and e2e tests for nonpreempting PriorityClasses to the existing scheduler tests.
+Add unit, integration e2e tests for nonpreempting PriorityClasses to the existing scheduler tests.
+Integration tests should be a focus.
 
 Ensure existing tests (for preempting PriorityClasses) do not break.
 
