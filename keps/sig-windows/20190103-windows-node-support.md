@@ -420,7 +420,7 @@ When using Hyper-V isolation (alpha), the hypervisor also needs a number of CPUs
 - `V1.Pod.volumeDevices` - this is an beta feature, and is not implemented on Windows. Windows cannot attach raw block devices to pods.
 - `V1.Pod.volumes` - EmptyDir, Secret, ConfigMap, HostPath - all work and have tests in TestGrid
   - `V1.emptyDirVolumeSource` - the Node default medium is disk on Windows. `memory` is not supported, as Windows does not have a built-in RAM disk.
-- `V1.VolumeMount.mountPropagation` - only MountPropagationHostToContainer is available. Windows cannot create mounts within a pod or project them back to the node.
+- `V1.VolumeMount.mountPropagation` - is not supported on Windows
 
 ### V1.PodSecurityContext
 
