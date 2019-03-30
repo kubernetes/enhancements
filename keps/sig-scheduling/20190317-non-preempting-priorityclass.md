@@ -56,15 +56,9 @@ Allowing PriorityClasses to be non-preempting is important for running batch wor
 Batch workloads typically have a backlog of work,
 with unscheduled pods.
 Higher-priority workloads can be assigned a higher priority via a PriorityClass,
-to ensure they go to the front of the scheduling queue.
-However,
-preempting batch workloads is undesirable,
-as all work done by the preempted pod is typically lost.
-
-Users could create a non-preempting PriorityClasses,
-to ensure their most time-sensitive workloads are scheduled before other queued pods,
-without risking discarding the work of running pods. 
-
+but this may result in pods with partially-completed work being preempted.
+Adding the non-preempting option allows users to prioritize the scheduling queue,
+without discarding incomplete work.
 
 ### Goals
 
@@ -120,20 +114,32 @@ type PodSpec struct {
 }
 ```
 
+This feature should be gated in alpha, provisionally under the gate `NonPreemptingPriority`.
+
 Documentation must be updated to reflect the new feature,
 and changes to PriorityClass/PodSpec fields.
 
 ### Risks and Mitigations
 
 The new feature may malfuction,
-or preemption may be accidentally impaired.
+or existing preemption functionality may be impaired.
 New tests (covering both nonpreepting workloads and mixed workloads),
 and the existing preempting PriorityClass tests should be used to prove stability.
 
 ## Graduation Criteria
 
-* Users are reporting that this resolves their workload priority use-cases
-(if not, additional enhancements would be tightly linked to this one).
+**Typical user story:**
+A user is running batch workloads on a cluster.
+The user has a high-priority job,
+that they wish to schedule before other workloads in the queue.
+As the user does not want to preempt running batch workloads and discard work,
+the user creates the new workload with a high-priority,
+non-preempting PriorityClass.
+The new workload's pods are scheduled ahead of the queue,
+without disrupting running workloads.
+
+* Users are able to run preempting and non-preempting workloads in a stable manner,
+and are not requesting additional changes.
 * The feature has been stable and reliable in at least 2 releases.
 * Adequate documentation exists for preemption and the optional field.
 * Test coverage includes non-preempting use cases.
