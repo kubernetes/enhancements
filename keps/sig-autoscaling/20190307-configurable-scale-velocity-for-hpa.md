@@ -34,7 +34,7 @@ superseded-by: TBD
     - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
       - [Algorithm pseudocode](#algorithm-pseudocode)
       - [Default values](#default-values)
-      - [Motivation for “pick the largest constraint” concept](#motivation-for-pick-the-largest-constraint-concept)
+      - [The motivation to “pick the largest constraint” concept](#the-motivation-to-pick-the-largest-constraint-concept)
       - [Stabilization Window](#stabilization-window)
       - [API Changes](#api-changes)
       - [HPA Controller State changes](#hpa-controller-state-changes)
@@ -47,12 +47,12 @@ superseded-by: TBD
 
 ## Motivation
 
-Different applications may have different business values, different logic and may require different scaling behaviours.
+Different applications may have different business values, different logic and may require different scaling behaviors.
 I can name at least three types of applications:
 
-- Applications that handles business-critical web traffic. They should scale up as fast as possible (false positive signals to scale up are ok), and scale down very slowly (waiting for another traffic spike).
-- Applications that process very important data. They should scale up as fast as possible (to reduce the data processing time), and scale down as soon as possible (to reduce the costs). False positives signals to scale up/down are ok.
-- Applications that process other data/web traffic. It is not that important, and may scale up and down in a usual way to minimize jitter.
+- Applications that handle business-critical web traffic. They should scale up as fast as possible (false positive signals to scale up are ok), and scale down very slowly (waiting for another traffic spike).
+- Applications that process critical data. They should scale up as fast as possible (to reduce the data processing time), and scale down as soon as possible (to reduce the costs). False positives signals to scale up/down are ok.
+- Applications that process normal data/web traffic. It is not that important and may scale up and down in a usual way to minimize jitter.
 
 At the moment, there’s only one cluster-level configuration parameter that influence how fast the cluster is scaled down:
 
@@ -63,7 +63,7 @@ And a couple of hard-coded constants that specify how fast the cluster can scale
 - [scaleUpLimitFactor][] = 2.0
 - [scaleUpLimitMinimum][] = 4.0
 
-As a result users can't influence the scale velocity and that is a problem for a lot of people. There're several open issues in tracker about that:
+As a result, users can't influence scale velocity, and that is a problem for many people. There're several open issues in tracker about that:
 
 - [#39090][]
 - [#65097][]
@@ -86,15 +86,15 @@ TBA
 
 ## Proposal
 
-We need to introduce an algorithm-agnostic HPA object configuration that will configure each particular HPA scaling behaviour.
+We need to introduce an algorithm-agnostic HPA object configuration that will configure each particular HPA scaling behavior.
 For both direction (scale up and scale down) there should be two parameters:
 
-- Parameter to specify the relative speed, in percentages:
+- A parameter to specify the relative speed, in percentages:
   - `ScaleUpPercent`
     i.e. if ScaleUpPercent = 150 , then we can add 150% more pods (10 -> 25 pods)
   - `ScaleDownPercent`
     i.e. if ScaleDownPercent = 60 , then we can remove 60% of pods (10 -> 4)
-- Parameter to specify the absolute speed, in number of pods:
+- A parameter to specify the absolute speed, in the number of pods:
   - `ScaleUpPods`
     i.e. if ScaleUpPods = 5 , then we can add 5 more pods (10 -> 15)
   - `ScaleDownPods`
@@ -104,21 +104,21 @@ All the parameters are per-minute and allow fraction values by using Quantity ty
 
 A user will specify the parameters for the HPA, thus controlling the HPA logic.
 
-If the user specify two parameters, two constraints are calculated, and the largest is used (see the [Motivation for pick the largest constraint][] section below).
+If the user specifies two parameters, two constraints are calculated, and the largest is used (see the [The motivation to pick the largest constraint][] section below).
 
 If the user doesn’t want to use some particular parameter (= user doesn’t want to use this particular constraint), the parameter should be set to -1 (or any negative number).
 
-[Motivation for pick the largest constraint]: #motivation-for-pick-the-largest-constraint-concept
+[The motivation to pick the largest constraint]: #the-motivation-to-pick-the-largest-constraint-concept
 
 ### User Stories
 
 #### Story 1: Scale up as fast as possible
 
-This mode is important when you want to quickly respond to a traffic increase.
+This mode is essential when you want to respond to a traffic increase quickly.
 
 Create an HPA with the following parameters:
 
-- `ScaleUpPercent = 900`    (i.e. increase number of pods 10 times per minute is ok).
+- `ScaleUpPercent = 900`    (i.e., to increase the number of pods 10 times per minute is ok).
 
 All other parameters are not specified (default values are used)
 
@@ -126,16 +126,16 @@ If the application is started with 1 pod, it will scale up with the following nu
 
     1 -> 10 -> 100 -> 1000
 
-So, it can reach the `maxReplicas` very fast.
+So, it can reach `maxReplicas` very fast.
 
-Scale down will be done a usual way (check stabilization window in the [Stabilization Window][] section below and in the [Algorithm details][] in the official HPA documentation)
+Scale down will be done a usual way (check stabilization window in the [Stabilization Window][] section below and the [Algorithm details][] in the official HPA documentation)
 
 [Stabilization Window]: #stabilization-window
 [Algorithm details]: https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#algorithm-details
 
 #### Story 2: Scale up as fast as possible, very gradual scale down
 
-This mode is important when you don’t want to risk scaling down very quickly.
+This mode is essential when you don’t want to risk scaling down very quickly.
 
 Create an HPA with the following parameters:
 
@@ -148,7 +148,7 @@ If the application is started with 1 pod, it will scale up with the following nu
 
     1 -> 10 -> 100 -> 1000
 
-So, it can reach the `maxReplicas` very fast.
+So, it can reach `maxReplicas` very fast.
 
 Scaling down will be by one pod each HPA controller cycle:
 
@@ -156,11 +156,11 @@ Scaling down will be by one pod each HPA controller cycle:
 
 #### Story 3: Scale up very gradually, usual scale down process
 
-This mode is important when you want to increase capacity, but you want it to be very pessimistic.
+This mode is essential when you want to increase capacity, but you want it to be very pessimistic.
 
 Create an HPA with the following parameters:
 
-- `ScaleUpPods = 1`    (i.e. increase only by one pod)
+- `ScaleUpPods = 1`    (i.e., increase only by one pod)
 
 All other parameters are not specified (default values are used)
 
@@ -174,14 +174,14 @@ Scale down will be done a usual way (check stabilization window in [Algorithm de
 
 #### Story 4: Scale up as usual, do not scale down
 
-This mode is important when you don’t want to risk scaling down at all.
+This mode is essential when you don’t want to risk scaling down at all.
 
 Create an HPA with the following parameters:
 
 - `ScaleDownPercent = 0`
 - `ScaleDownPods = 0`
 
-i.e. set both constraints to 0, so that the HPA controller would never scale the cluster down
+i.e., set both constraints to 0, so that the HPA controller would never scale the cluster down
 
 All other parameters are not specified (default values are used)
 
@@ -208,7 +208,7 @@ else if calculatedReplicas < CurReplicas:
   desiredReplicas = max(scaleDownLimit, calculatedReplicas)
 ```
 
-I.e. from the two provided limit parameters, chosen the most “soft” one (that limit less).
+I.e., from the two provided limit parameters, chosen the most “soft” one (that limitless).
 And that limit parameter limits the number of pods for any HPA algorithm.
 
 If you don’t want to scale, you should set both parameters to zero for the appropriate direction (Up/Down).
@@ -223,13 +223,13 @@ For smooth transition it makes sense to set the following default values:
 - `ScaleUpPercent = 100`
   i.e. allow to twice the number of pods per one HPA controller cycle
 - `ScaleDownPercent = -1` (is not defined)
-  i.e if the user doesn’t specify it, this parameter is not used
+  i.e. if the user doesn’t specify it, this parameter is not used
 - `ScaleUpPods = 4`
   i.e. allow adding up to 4 pods per one HPA controller cycle
 - `ScaleDownPods = 2`
   i.e. allow removing up to 2 pods per one HPA controller cycle
 
-#### Motivation for “pick the largest constraint” concept
+#### The motivation to “pick the largest constraint” concept
 
 Take a look at the example:
 
