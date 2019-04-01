@@ -28,13 +28,13 @@ superseded-by: TBD
   - [Proposal](#proposal)
     - [User Stories](#user-stories)
       - [Story 1: Scale up as fast as possible](#story-1-scale-up-as-fast-as-possible)
-      - [Story 2: Scale up as fast as possible, very gradual scale down](#story-2-scale-up-as-fast-as-possible-very-gradual-scale-down)
+      - [Story 2: Scale up as fast as possible, scale down very gradually](#story-2-scale-up-as-fast-as-possible-scale-down-very-gradually)
       - [Story 3: Scale up very gradually, usual scale down process](#story-3-scale-up-very-gradually-usual-scale-down-process)
       - [Story 4: Scale up as usual, do not scale down](#story-4-scale-up-as-usual-do-not-scale-down)
     - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
       - [Algorithm pseudocode](#algorithm-pseudocode)
       - [Default values](#default-values)
-      - [The motivation to “pick the largest constraint” concept](#the-motivation-to-pick-the-largest-constraint-concept)
+      - [The motivation to “pick the softest constraint” concept](#the-motivation-to-pick-the-softest-constraint-concept)
       - [Stabilization Window](#stabilization-window)
       - [API Changes](#api-changes)
       - [HPA Controller State changes](#hpa-controller-state-changes)
@@ -87,28 +87,21 @@ TBA
 ## Proposal
 
 We need to introduce an algorithm-agnostic HPA object configuration that will configure each particular HPA scaling behavior.
-For both direction (scale up and scale down) there should be two parameters:
+For both direction (scale up and scale down) there should be a `Constraint` field with three parameters:
 
-- A parameter to specify the relative speed, in percentages:
-  - `ScaleUpPercent`
-    i.e. if ScaleUpPercent = 150 , then we can add 150% more pods (10 -> 25 pods)
-  - `ScaleDownPercent`
-    i.e. if ScaleDownPercent = 60 , then we can remove 60% of pods (10 -> 4)
-- A parameter to specify the absolute speed, in the number of pods:
-  - `ScaleUpPods`
-    i.e. if ScaleUpPods = 5 , then we can add 5 more pods (10 -> 15)
-  - `ScaleDownPods`
-    i.e. if ScaleDownPods = 7 , then we can remove 7 pods (10 -> 3)
-
-All the parameters are per-minute and allow fraction values by using Quantity type.
+- `periodSeconds` - a parameter to specify the time period for the constraint, in seconds
+- `percent` - a parameter to specify the relative speed, in percentages:
+    i.e., if ScaleUpPercent = 150 , then we can add 150% more pods (10 -> 25 pods)
+- `pods` - a parameter to specify the absolute speed, in the number of pods:
+    i.e., if ScaleUpPods = 5 , then we can add 5 more pods (10 -> 15)
 
 A user will specify the parameters for the HPA, thus controlling the HPA logic.
 
-If the user specifies two parameters, two constraints are calculated, and the largest is used (see the [The motivation to pick the largest constraint][] section below).
+If the user specifies two parameters, two constraints are calculated, and the softest is used (see the [The motivation to pick the softest constraint][] section below).
 
 If the user doesn’t want to use some particular parameter (= user doesn’t want to use this particular constraint), the parameter should be set to -1 (or any negative number).
 
-[The motivation to pick the largest constraint]: #the-motivation-to-pick-the-largest-constraint-concept
+[The motivation to pick the softest constraint]: #the-motivation-to-pick-the-softest-constraint-concept
 
 ### User Stories
 
@@ -116,9 +109,11 @@ If the user doesn’t want to use some particular parameter (= user doesn’t wa
 
 This mode is essential when you want to respond to a traffic increase quickly.
 
-Create an HPA with the following parameters:
+Create an HPA with the following configuration:
 
-- `ScaleUpPercent = 900`    (i.e., to increase the number of pods 10 times per minute is ok).
+- `constraints`:
+  - `scaleUp`:
+    - `percent = 900`    (i.e., to increase the number of pods 10 times per minute is ok).
 
 All other parameters are not specified (default values are used)
 
@@ -133,14 +128,18 @@ Scale down will be done a usual way (check stabilization window in the [Stabiliz
 [Stabilization Window]: #stabilization-window
 [Algorithm details]: https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#algorithm-details
 
-#### Story 2: Scale up as fast as possible, very gradual scale down
+#### Story 2: Scale up as fast as possible, scale down very gradually
 
 This mode is essential when you don’t want to risk scaling down very quickly.
 
-Create an HPA with the following parameters:
+Create an HPA with the constraints:
 
-- `ScaleUpPercent = 900` (i.e. increase number of pods 10 times per minute is ok).
-- `ScaleDownPods = 100m` (=0.1 i.e. scale down one pod every 10 min)
+- `constraints`:
+  - `scaleUp`:
+    - `percent = 900` (i.e. increase number of pods 10 times per minute is ok).
+  - `scaleDown`:
+    - `pods = 1`
+    - `periodSeconds = 600` (i.e., scale down one pod every 10 min)
 
 All other parameters are not specified (default values are used)
 
@@ -150,17 +149,19 @@ If the application is started with 1 pod, it will scale up with the following nu
 
 So, it can reach `maxReplicas` very fast.
 
-Scaling down will be by one pod each HPA controller cycle:
+Scaling down will be by one pod each 10 min:
 
-    1000 -> 1000 -> 1000 -> … (7 more times) 999
+    1000 -> 1000 -> 1000 -> … (7 more min) -> 999
 
 #### Story 3: Scale up very gradually, usual scale down process
 
 This mode is essential when you want to increase capacity, but you want it to be very pessimistic.
 
-Create an HPA with the following parameters:
+Create an HPA with the constraints:
 
-- `ScaleUpPods = 1`    (i.e., increase only by one pod)
+- `constraints`:
+  - `scaleUp`:
+    - `pods = 1`    (i.e., increase only by one pod per minute)
 
 All other parameters are not specified (default values are used)
 
@@ -176,10 +177,12 @@ Scale down will be done a usual way (check stabilization window in [Algorithm de
 
 This mode is essential when you don’t want to risk scaling down at all.
 
-Create an HPA with the following parameters:
+Create an HPA with the following constraints:
 
-- `ScaleDownPercent = 0`
-- `ScaleDownPods = 0`
+- `constraints`:
+  - `scaleDown`:
+    - `percent = 0`
+    - `pods = 0`
 
 i.e., set both constraints to 0, so that the HPA controller would never scale the cluster down
 
@@ -208,59 +211,62 @@ else if calculatedReplicas < CurReplicas:
   desiredReplicas = max(scaleDownLimit, calculatedReplicas)
 ```
 
-I.e., from the two provided limit parameters, chosen the most “soft” one (that limitless).
-And that limit parameter limits the number of pods for any HPA algorithm.
+I.e., from the two provided constraints the softer one is chosen.
 
 If you don’t want to scale, you should set both parameters to zero for the appropriate direction (Up/Down).
 
-If only one parameter is given and the other is set to -1 (not defined), the case is obvious: don’t let number of replicas goes beyond the only threshold.
+If only one parameter is given and the other is set to -1 (not defined), the case is obvious: don’t let the number of replicas goes beyond the only threshold.
 
 If both parameters are set to -1 (not defined), we assume that no constraints are defined and the calculated number of replicas should be applied immediately.
 
 #### Default values
 
 For smooth transition it makes sense to set the following default values:
-- `ScaleUpPercent = 100`
-  i.e. allow to twice the number of pods per one HPA controller cycle
-- `ScaleDownPercent = -1` (is not defined)
-  i.e. if the user doesn’t specify it, this parameter is not used
-- `ScaleUpPods = 4`
-  i.e. allow adding up to 4 pods per one HPA controller cycle
-- `ScaleDownPods = 2`
-  i.e. allow removing up to 2 pods per one HPA controller cycle
 
-#### The motivation to “pick the largest constraint” concept
+- `constraints.scaleUp.periodSeconds = 60`, i.e., one minute period for scaleUp
+- `constraints.scaleDown.periodSeconds = 60`, i.e., one minute period for scaleDown
+- `constraints.scaleUp.percent = 100`, i.e., allow to twice the number of pods per min
+- `constraints.scaleUp.pods = 4`, i.e. allow adding up to 4 pods per one HPA controller cycle
+- `constraints.scaleDown.percent = -1` (is not defined), i.e., if the user doesn’t specify it, this parameter is not used
+- `constraints.scaleDown.pods = -1` (is not defined), i.e., if the user doesn’t specify it, this parameter is not used
+
+For the `scaleDown` constraint both `pods` and `percent` are not defined because currently (as of k8s-1.14)
+the scale down is only limited by [Stabilization window][]
+
+[Stabilization Window]: #stabilization-window
+
+#### The motivation to “pick the softest constraint” concept
 
 Take a look at the example:
 
 - `curReplicas = 10`
 - `calculatedReplicas = 20`
 
-The user specifies only one HPA parameter `ScaleUpPods = 5` and expects that number of replicas to be set to 15 during the next HPA controller loop.
-But the algorithm picks the largest change instead:
+The user specifies only one HPA parameter `constraints.scaleUp.pods = 5` and expects that number of replicas to be set to 15 during the next HPA controller loop.
+But the algorithm picks the softest (largest in this context) change instead:
 
-    Constraint1 = 10 * 2 = 20 (as ScaleUpPercent = 100 by default)
-    Constraint2 = 10 + 5 = 15 (as ScaleUpPods = 5, set by the user)
+    Constraint1 = 10 * 2 = 20 (as constraints.scaleUp.percent = 100 by default)
+    Constraint2 = 10 + 5 = 15 (as constraints.scaleUp.pods = 5, set by the user)
     scaleUpLimit = max(20, 15) = 20
     desiredReplicas = 20
 
 The user might expect that the autoscaler would use the smallest constraint (15), not the largest one (20). This is not intuitive, but it does make sense if considered thoroughly.
 
-The main idea of the HPA is to autoscale because of a load increase to avoid request failures. It should work on both small cluster and large ones. For small clusters, the absolute number constraint works better (ScaleUpPods), for large clusters the percentage works better (ScaleUpPercentage).
+The main idea of the HPA is to autoscale because of a load increase to avoid request failures. It should work on both small clusters and large ones. For small clusters, the absolute number constraint works better (ScaleUpPods), for large clusters the percentage works better (ScaleUpPercentage).
 
-Example: If the current cluster size is `1` and calculated cluster size for this particular load is `20`, than we should reach it ASAP.
+Example: If the current cluster size is `1` and calculated cluster size for this particular load is `20`, then we should reach it ASAP.
 
-For default values (ScaleUpPercent = 100, ScaleUpPods = 4) and “pick the largest constraint” concept, we’ll increase 1 -> 20 in 3 steps
+For default values (ScaleUpPercent = 100, ScaleUpPods = 4) and “pick the softest constraint” concept, we’ll increase 1 -> 20 in 3 steps
 
     1 -> 5 -> 10 -> 20
 
-The first step will use the “ScaleUpPods” limitation, next steps will use “ScaleUpPercent” limitation.
+The first step will use the “scaleUp.pods” constraint; the next steps will use “scaleUp.percent” one.
 
-In case of more intuitive “pick the smallest limit” concept, we’ll increase the cluster in 6 steps:
+In case of more intuitive “pick the hardest limit” concept, we’ll increase the cluster in 6 steps:
 
     1 -> 2 -> 4 -> 8 -> 12 -> 16 -> 20
 
-Given that each steps takes [90 sec in worst case], we’ll respond to the load increase in `(6-3)*90 sec = ~ 5 min`.
+Given that each step takes [90 sec in worst case], we’ll respond to the load increase in `(6-3)*90 sec = ~ 5 min`.
 
 That’s too much, we should respond faster than that.
 
@@ -269,10 +275,10 @@ That’s too much, we should respond faster than that.
 #### Stabilization Window
 
 Stabilization window ([PR][], [RFC][]) is used to gather “scale-down-recommendations” during some time (default is 5min),
-and new number of replicas is set to the maximum of all recommendations.
+and a new number of replicas is set to the maximum of all recommendations.
 It will be applied after all the “scaleDown parameters” described above.
-We may want to control stabilization window size in addition to configuring the scale velocity,
-but at the moment, the “stabilization window feature” is considered to be an internal feature and is not exposed via any configuration.
+We may want to control stabilization window size in addition to configuring the scale velocity.
+However, at the moment, the “stabilization window feature” is considered to be an internal feature and is not exposed via any configuration.
 
 I’d suggest allowing to change the window size or turn it off if needed, but it should be discussed in a separate RFC.
 
@@ -289,25 +295,25 @@ We should add `Scale{Up,Down}{Percent,Pods}` fields into the HPA spec
 The resulting solution will look like this:
 
 ```golang
-type HorizontalPodAutoscalerScaleConstraints struct {
-    ScaleUpPercent Quantity
-    ScaleDownPercent Quantity
-    ScaleUpPods Quantity
-    ScaleDownPods Quantity
+type HPAScaleConstraintValue struct {
+    Pods          int32
+    Percent       int32
+    PeriodSeconds int32
 }
 
 type HorizontalPodAutoscalerSpec struct {
     ScaleTargetRef CrossVersionObjectReference
-    MinReplicas *int32
-    MaxReplicas int32
-    Metrics []MetricSpec
-    ScaleConstraints HorizontalPodAutoscalerScaleConstraints
+    MinReplicas    *int32
+    MaxReplicas    int32
+    Metrics        []MetricSpec
+    ScaleUp        HPAScaleConstraintValue
+    ScaleDown      HPAScaleConstraintValue
 }
 ```
 
 #### HPA Controller State changes
 
-To store the information about last scale action the HPA need an additional fields (similar to the list of “recommendations”)
+To store the information about last scale action, the HPA need an additional field (similar to the list of “recommendations”)
 
 ```golang
 scaleEvents map[string][]timestampedScaleEvent
@@ -318,19 +324,19 @@ Where
 ```golang
 type timestampedScaleEvent struct {
     replicaChange int32
-    timestamp      time.Time
+    timestamp     time.Time
 }
 ```
 
 It will store last scale events, and it will be used to make decisions about next scale events.
 
 Say, if 30 seconds ago the number of replicas was increased by one, and we forbid to scale up for more than 1 pod per minute,
-then during the next 30 seconds we won’t scale up again.
+then during the next 30 seconds, we won’t scale up again.
 
-If the HPA is restarted, the state information is lost, so it might scale the cluster instantly after the restart.
-Though, I don’t think this is a large problem, as:
+If the HPA is restarted, the state information is lost so that it might scale the cluster instantly after the restart.
+Though, I don’t think this is a problem, as:
 
-- It shouldn’t happen often or you have some cluster problem
+- It shouldn’t happen often, or you have some cluster problem
 - It requires quite a lot of time to start an HPA pod, for HPA pod to become live and ready, to get and process metrics.
 - If you have a large discrepancy between what is a desired number of replicas according to metrics and what is your current number of replicas and you DON’T want to scale - probably, you shouldn’t want to use the HPA. As the HPA goal is the opposite.
 
