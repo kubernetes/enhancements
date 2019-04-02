@@ -377,9 +377,10 @@ concurrently.  The mutating and readonly requests are effectively
 commingled, with the readonly requests having width 1 and the mutating
 requests having width 2.  The primary resource limit applied is that
 at any moment in time the weighted sum `1 * (number of running
-readonly requests) + 2 * (number of running mutating requests)` should
-not exceed the concurrency limit.  Exceptions are granted only for
-requests of priority zero.
+non-zero priority readonly requests) + 2 * (number of running non-zero
+priority mutating requests)` should not exceed the concurrency limit.
+Requests of priority zero are neither counted nor limited, as in
+today's max-in-flight handler.
 
 At the first stage of development, an apiserver’s commingled
 concurrency limit will be derived from the existing configuration
@@ -427,12 +428,12 @@ Requests of priority zero are never held up in a queue; they are
 always dispatched immediately.  Following is how the other requests
 are dispatched at a given apiserver.
 
-Whenever the width-weighted sum of running requests is below the
-concurrency limit, it is time to consider dispatching another request
-for service.  This is done in two stages.  First, a priority level
-with non-empty queues is chosen. The logic for doing that makes use of
-each priority level's _assured concurrency value_ (ACV), which is
-calculated as follows.
+Whenever the width-weighted sum of running non-zero priority requests
+is below the concurrency limit, it is time to consider dispatching
+another request for service.  This is done in two stages.  First, a
+priority level with non-empty queues is chosen. The logic for doing
+that makes use of each priority level's _assured concurrency value_
+(ACV), which is calculated as follows.
 
 ```
 ACV(l) = ceil( SCL * ACS(l) / (100 + sum[priority levels k] ACS(k) ) )
