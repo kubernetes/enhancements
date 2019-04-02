@@ -233,7 +233,584 @@ yet but we think may be interesting to consider in the future.
 
 ## Proposal
 
-TBD
+In short, this proposal is about generalizing the existing
+max-in-flight request handler in apiservers to add more discriminating
+handling of requests.  The overall approach is that each request is
+categorized to a priority level and a queue within that priority
+level; each priority level dispatches to its own isolated concurrency
+pool; within each priority level queues compete with even fairness.
+
+### Request Categorization
+
+Upon arrival at the handler, a request is assigned to exactly one
+_priority level_ and exactly one _flow_ within that priority level.
+This is done by matching the request against a configured set of
+FlowSchema objects.  This will pick exactly one best matching
+FlowSchema, and that FlowSchema will identify a RequestPriority object
+and the way to compute the request’s flow identifier.
+
+A RequestPriority object has a priority level, which is a non-negative
+integer.  Zero is the logically highest priority.  No two
+RequestPriority objects can have the same priority level.
+
+It is expected that there will be only a few RequestPriority objects.
+It is expected that there may be a few tens of FlowSchema objects.  At
+one apiserver there may be tens of thousands of flow identifiers seen
+close enough in time to have some interaction.
+
+A flow is identified by a pair of strings: the name of the FlowSchema
+and a "flow distinguisher" string.  The flow distinguisher is computed
+from the request according to a rule that is configured in the
+FlowSchema.
+
+Each FlowSchema has:
+- A boolean test of an authenticated request;
+- A matching priority (default value is 1000);
+- A reference to a RequestPriority object; and
+- An optional rule for computing the request’s flow distinguisher; not
+  allowed for a FlowSchema that refers to the RequestPriority that has
+  level 0 or just one queue.
+
+Each RequestPriority has:
+- A priority level (non-negative integer).
+
+Each RequestPriority with a non-zero priority level also has:
+- A non-negative integer AssuredConcurrencyShares;
+- A number of queues; and
+- A queue length limit.
+
+Each RequestPriority with more than one queue also has:
+- A hand size (a small positive number).
+
+The best matching FlowSchema for a given request is one of those whose
+boolean test accepts the request.  It is a configuration error if
+there is no FlowSchema that matches every request.  In case multiple
+schemas accept the request, the best is one of those with the
+logically highest matching priority.  In case there are multiple of
+those the implementation is free to pick any of those as best.  A
+matching priority is an integer, and a numerically lower number
+indicates a logically higher priority.
+
+A FlowSchema’s boolean test is constructed from atomic tests.  Each
+atomic test compares an authenticated request attribute --- selected
+from _either_ the client identity attributes or those that
+characterize the work being requested --- with a literal value
+(scalar, pattern, or set).  For every available atomic test, its
+inverse is also available.  Atomic tests can be ANDed together.  Those
+conjunctions can then be ORed together.  The predicate of a FlowSchema
+is such a disjunction.
+
+A FlowSchema’s rule for computing the request’s flow distinguisher
+identifies a string attribute of the authenticated request and
+optionally includes a transformation.  The available string attributes
+are (1) namespace of a resource-oriented request (available only if
+the predicate accepts only resource-oriented requests) and (2)
+username.  If no transformation is indicated then the flow
+distinguisher is simply the selected request attribute.  There is only
+one transformation available, and it is based on a regex that is
+configured in the flow schema and contains a capturing group.  The
+transformation consists of doing a complete match against the regex
+and extracting submatch number 1; if the selected string does not
+match the regex then the transformation yields the empty string.
+
+### Assignment to a Queue
+
+A RequestPriority object also has a number of queues (we are talking
+about a number here, not the actual set of queues; the queues exist
+independently at each apiserver).  If the RequestPriority’s number of
+queues is more than one then the following logic is used to assign a
+request to a queue.
+
+For a given priority at a given apiserver, each queue is identified by
+a numeric index (starting at zero).  A RequestPriority has a hand size
+H (so called because the technique here is an application of shuffle
+sharding), a small positive number.  When a request arrives at an
+apiserver the request flow identifier’s string pair is hashed and the
+hash value is used to shuffle the queue indices and deal a hand of
+size H, as follows.  We use a hash function that produces at least 64
+bits, and 64 of those bits are taken as an unsigned integer we will
+call V.  The next step is finding the unique set of integers A[0] in
+[0, numQueues), A[1] in [0, numQueues-1), … A[H-1] in
+[0, numQueues-(H-1)), A[H] >= 0 such that V = sum[i=0, 1, ...H] A[i] *
+ff(numQueues, i), where ff(N, M) is the falling factorial N!/(N-M)!.
+The probability distributions of each of these A’s will not be
+perfectly even, but we constrain the configuration such that
+ff(numQueues, H) is less than 2^60 to keep the unevenness small.  Then
+the coefficients A[0], … A[H-1] are converted into queue indices I[0],
+… I[H-1] as follows.  I[0] = A[0].  I[1] is the A[1]’th entry in the
+list of queue indices excluding I[0].  I[2] is the A[2]’th entry in
+the list of queue indices excluding I[0] and I[1].  And so on.
+
+The lengths of the queues identified by I[0], I[1], … I[H-1] are
+examined, and the request is put in one of the shortest queues.
+
+For example, if a RequestPriority has numQueues=128 and handSize=6,
+the hash value V is converted into 6 unique queue indices plus
+3905000064000*A[6].  There are 128 choose 6, which is about 5.4
+billion, sets of 6 integers in the range [0,127].  Thus, if there is
+one heavy flow and many light flows, the probability of a given light
+flow hashing to the same set of 6 queues as the heavy flow is about
+one in 5.4 billion.
+
+It is the queues that compete fairly.
+
+### Resource Limits
+
+#### Primary CPU and Memory Protection
+
+This proposal controls both CPU and memory consumption of running
+requests by imposing a single concurrency limit per apiserver.  It is
+expected that this concurrency limit can be set to a value that
+provides effective protection of both CPU and memory while not being
+too low for either.
+
+The configuration of an apiserver includes a concurrency limit.  This
+is a number, whose units is a number of readonly requests served
+concurrently.  Unlike in today's max-in-flight handler, the mutating
+and readonly requests are commingled without distinction.  The primary
+resource limit applied is that at any moment in time the number of
+running non-zero priority requests should not exceed the concurrency
+limit.  Requests of priority zero are neither counted nor limited, as
+in today's max-in-flight handler.  For the remainder, each server's
+overall concurrency limit is divided among those non-zero priority
+levels and each enforces its own limit (independently of the other
+levels).
+
+At the first stage of development, an apiserver’s concurrency limit
+will be derived from the existing configuration options for
+max-mutating-in-flight and max-readonly-in-flight, by taking their
+sum.  Later we may migrate to a single direct configuration option.
+
+#### Secondary Memory Protection
+
+A RequestPriority is also configured with a limit on the number of
+requests that may be waiting in a given queue.
+
+#### Latency Protection
+
+An apiserver is also configured with a limit on the amount of time
+that a request may wait in its queue.  If this time passes while a
+request is still waiting for service then the request will be
+rejected.
+
+### Queuing
+
+Once a request is categorized and assigned to a queue the next
+decision is whether to reject or accept that request.
+
+A request of priority zero is never rejected and never waits in a
+queue; such a request is dispatched as soon as it arrives.
+
+For queuing requests of non-zero priority, the first step is to reject
+all the requests that have been waiting longer than the configured
+limit.  Once that is done, the newly arrived request is considered.
+This request is rejected if and only if the total number of requests
+waiting in its queue is at least the configured limit on that number.
+
+A possible alternative would accept the request unconditionally and,
+if that made the queue too long, reject the request at the head of the
+queue.  That would be the preferred design if we were confident that
+rejection will cause the client to slow down.  Lacking that
+confidence, we choose to reject the youngest rather than the oldest
+request of the queue, so that an investment in holding a request in a
+queue has a chance of eventually getting useful work done.
+
+### Dispatching
+
+Requests of priority zero are never held up in a queue; they are
+always dispatched immediately.  Following is how the other requests
+are dispatched at a given apiserver.
+
+The concurrency limit of an apiserver is divided among the non-zero
+priority levels in proportion to their assured concurrency shares.
+This produces the assured concurrency value (ACV) for each non-zero
+priority level:
+
+```
+ACV(l) = ceil( SCL * ACS(l) / ( sum[priority levels k] ACS(k) ) )
+```
+
+where SCL is the apiserver's concurrency limit and ACS(l) is the
+AssuredConcurrencyShares for priority level l.
+
+Dispatching is done independently for each priority level.  Whenever
+(1) a non-zero priority level's number of running requests is below
+the level's assured concurrency value and (2) that priority level has
+a non-empty queue, it is time to dispatch another request for service.
+The Fair Queuing for Server Requests algorithm below is used to pick a
+non-empty queue at that priority level.  Then the request at the head
+of that queue is dispatched.
+
+
+#### Fair Queuing for Server Requests
+
+This is based on fair queuing but is modified to deal with serving
+requests in an apiserver instead of transmitting packets in a router.
+You can find the original fair queuing paper at
+[ACM](https://dl.acm.org/citation.cfm?doid=75247.75248) or
+[MIT](http://people.csail.mit.edu/imcgraw/links/research/pubs/networks/WFQ.pdf),
+and an
+[implementation outline at Wikipedia](https://en.wikipedia.org/wiki/Fair_queuing).
+Our problem differs from the normal fair queuing problem in three
+ways.  One is that we are dispatching requests to be served rather
+than packets to be transmitted.  Another difference is that multiple
+requests may be served at once, with a mutating request taking twice
+as big a bite out of the concurrency limit as a read-only one.  We
+impose the restriction that for a given queue, either all the requests
+are mutating or all are read-only.  The third difference is that the
+actual service time (i.e., duration) is not known until a request is
+done being served.  The first two differences can easily be handled by
+straightforward adaptation of the concept called "R(t)" in the
+original paper and "virtual time" (read by `now()`) in the
+implementation outline.  In the original paper’s terms, "R(t)" is the
+number of "rounds" that have been completed at real time t, where a
+round consists of transmitting one bit from every non-empty queue in
+the router (regardless of which queue holds the packet currently being
+transmitted); in this conception, a packet is considered to be "in"
+its queue until the packet’s transmission is finished.  For our
+problem, we can define a round to be giving one nanosecond of CPU to
+every non-empty queue in the apiserver (where emptiness is judged
+based on both queued and executing requests from that queue), and
+define R(t) = (server start time) + (1 ns) * (number of rounds since
+server start).  Let us write NEQ(t) for that number of non-empty
+queues in the apiserver at time t, counting queues of mutating
+requests twice.  For a given queue "q", let us also write "reqs(q, t)"
+for the number of requests of that queue at that time --- again,
+regardless of whether running or waiting and double-counting the
+mutating requests.  Let us also write C for the concurrency limit.  At
+a particular time t, the partial derivative of R(t) with respect to t
+is
+
+```
+min(sum[over q] reqs(q, t), C) / NEQ(t) .
+```
+
+In terms of the implementation outline, this is the rate at which
+virtual time (`now()`) is advancing at time t.  Where the
+implementation outline adds packet size to a virtual time, in our
+version this corresponds to adding a service time (i.e., duration) to
+virtual time.
+
+The third difference is handled by modifying the algorithm to dispatch
+based on an initial guess at the request’s service time (duration) and
+then make the corresponding adjustments once the request’s actual
+service time is known.  This is similar, although not exactly
+isomorphic, to the original paper’s adjustment by δ for the sake of
+promptness.
+
+For implementation simplicity (see below), let us use the same initial
+service time guess for every request; call that duration G.  A good
+choice might be the service time limit (1 minute).  Different guesses
+will give slightly different dynamics, but any positive number can be
+used for G without ruining the long-term behavior.
+
+As in ordinary fair queuing, there is a bound on divergence from the
+ideal.  In plain fair queuing the bound is one packet; in our version
+it is C read-only requests.
+
+To support efficiently making the necessary adjustments once a
+request’s actual service time is known, the virtual finish time of a
+request and the last virtual finish time of a queue are not
+represented directly but instead computed from queue length, request
+position in the queue, and an alternate state variable that holds the
+queue’s virtual start time.  While the queue is empty and has no
+requests executing: the value of its virtual start time variable is
+ignored and its last virtual finish time is considered to be in the
+virtual past.  When a request arrives to an empty queue with no
+requests executing, the queue’s virtual start time is set to `now()`.
+The virtual finish time of request number J in the queue (counting
+from J=1 for the head) is J * G + (virtual start time).  While the
+queue is non-empty: the last virtual finish time of the queue is the
+virtual finish time of the last request in the queue.  While the queue
+is empty and has a request executing: the last virtual finish time is
+the queue’s virtual start time.  When a request is dequeued for
+service the queue’s virtual start time is advanced by G.  When a
+request finishes being served, and the actual service time was S, the
+queue’s virtual start time is decremented by G - S.
+
+### Example Configuration
+
+
+For requests from admins and requests in service of other, potentially
+system, requests.
+```yaml
+kind: RequestPriority
+meta:
+  name: system-top
+spec:
+  priorityLevel: 0
+```
+
+For system self-maintenance requests.
+```yaml
+kind: RequestPriority
+meta:
+  name: system-high
+spec:
+  priorityLevel: 1000
+  assuredConcurrencyShares: 100
+  queues: 128
+  handSize: 6
+  queueLengthLimit: 100
+```
+
+For the garbage collector.
+```yaml
+kind: RequestPriority
+meta:
+  name: system-low
+spec:
+  priorityLevel: 2000
+  assuredConcurrencyShares: 30
+  queues: 1
+  queueLengthLimit: 1000
+```
+
+For user requests from kubectl.
+```yaml
+kind: RequestPriority
+meta:
+  name: workload-high
+spec:
+  priorityLevel: 9000
+  assuredConcurrencyShares: 30
+  queues: 128
+  handSize: 6
+  queueLengthLimit: 100
+```
+
+For requests from controllers processing workload.
+```yaml
+kind: RequestPriority
+meta:
+  name: workload-low
+spec:
+  priorityLevel: 10000
+  assuredConcurrencyShares: 100
+  queues: 128
+  handSize: 6
+  queueLengthLimit: 100
+```
+
+Some flow schemata.
+
+```yaml
+kind: FlowSchema
+meta:
+  name: system-top
+spec:
+  requestPriority:
+    name: system-top
+  match:
+  - and: # writes by admins (does this cover loopback too?)
+    - superSet:
+      field: groups
+      set: [ "system:masters" ]
+```
+
+```yaml
+kind: FlowSchema
+meta:
+  name: system-high
+spec:
+  requestPriority:
+    name: system-high
+  flowDistinguisher:
+    source: user
+    # no transformation in this case
+  match:
+  - and: # heartbeats by nodes
+    - superSet:
+      field: groups
+      set: [ "system:nodes" ]
+    - equals:
+      field: resource
+      value: nodes
+  - and: # kubelet and kube-proxy ops on system objects
+    - superSet:
+      field: groups
+      set: [ "system:nodes" ]
+    - equals:
+      field: namespace
+      value: kube-system
+  - and: # leader elections for system controllers
+    - patternMatch:
+      field: user
+      pattern: system:controller:.*
+    - inSet:
+      field: resource
+      set: [ "endpoints", "configmaps", "leases" ]
+    - equals:
+      field: namespace
+      value: kube-system
+```
+
+```yaml
+kind: FlowSchema
+meta:
+  name: system-low
+spec:
+  matchingPriority: 900
+  requestPriority:
+    name: system-low
+  flowDistinguisher:
+    source: user
+    # no transformation in this case
+  match:
+  - and: # the garbage collector
+    - equals:
+      field: user
+      value: system:controller:garbage-collector
+```
+
+```yaml
+kind: FlowSchema
+meta:
+  name: workload-high
+spec:
+  requestPriority:
+    name: workload-high
+  flowDistinguisher:
+    source: namespace
+    # no transformation in this case
+  match:
+  - and: # users using kubectl
+    - notPatternMatch:
+      field: user
+      pattern: system:serviceaccount:.*
+```
+
+```yaml
+kind: FlowSchema
+meta:
+  name: workload-low
+spec:
+  matchingPriority: 9999
+  requestPriority:
+    name: workload-high
+  flowDistinguisher:
+    source: namespace
+    # no transformation in this case
+  match:
+  - and: [ ] # match everything
+```
+  
+Following is a FlowSchema that might be used for the requests by the
+aggregated apiservers of
+https://github.com/MikeSpreitzer/kube-examples/tree/add-kos/staging/kos
+to create TokenReview and SubjectAccessReview objects.
+
+
+```
+kind: FlowSchema
+meta:
+  name: system-top
+spec:
+  matchingPriority: 900
+  requestPriority:
+    name: system-top
+  flowDistinguisher:
+    source: user
+    # no transformation in this case
+  match:
+  - and:
+    - inSet:
+      field: resource
+      set: [ "tokenreviews", "subjectaccessreviews" ]
+    - superSet:
+      field: user
+      set: [ "system:serviceaccount:example-com:network-apiserver" ]
+```
+
+### Default Behavior
+
+There must be reasonable behavior "out of the box", and it should be
+at least a little difficult for an administrator to lock himself out
+of this subsystem.  To accomplish these things there are two levels of
+defaulting: one concerning behavior, and one concerning explicit API
+objects.
+
+The effective configuration is the union of (a) the actual API objects
+that exist and (b) implicitly generated backstop objects.  The latter
+are not actual API objects, and might not ever exist as identifiable
+objects in the implementation, but are figments of our imagination
+used to describe the behavior of this subsystem.  These backstop
+objects are implicitly present and affecting behavior when needed.
+There are two implicitly generated RequestFlow backstop objects.  One
+is equivalent to the `system-top` object exhibited above, and it
+exists while there is no actual RequestPriority object with priority
+level 0.  The other is equivalent to the `workload-low` object exhibited
+above, and exists while there is no RequestPriority object with
+non-zero priority.  There are also two implicitly generated FlowSchema
+backup objects.  Whenever a request whose groups include
+`system:masters` is not matched by any actual FlowSchema object, a
+backstop equivalent to the `system-top` object exhibited above is
+considered to exist.  Whenever a request whose groups do not include
+`system:masters` is not matched by any actual FlowSchema object, the
+following backstop object is considered to exist.
+
+```yaml
+kind: FlowSchema
+meta:
+  name: non-top-backstop
+spec:
+  matchingPriority: (doesn’t really matter)
+  requestPriority:
+    name: (name of the logically lowest effectively existing RequestPriority, whether that is real or backstop)
+  flowDistinguisher:
+    source: user
+    # no transformation in this case
+  match:
+  - and: [ ] # match everything
+```
+
+The other part of the defaulting story concerns making actual API
+objects exist, and it goes as follows.  Whenever there is no actual
+RequestPriority object with priority zero, the RequestPriority objects
+exhibited above are created --- except those with a name already in
+use by an existing RequestPriority object.  Whenever there is no
+actual FlowSchema object that refers to a RequestPriority object of
+priority zero, the schema objects shown above as examples are
+generated --- except those with a name already in use.
+
+### Prometheus Metrics
+
+Prior to this KEP, the relevant available metrics from an apiserver are:
+- apiserver_current_inflight_requests (gauge, broken down by mutating or not)
+- apiserver_longrunning_gauge
+- apiserver_request_count (cumulative number served)
+- apiserver_request_latencies (histogram)
+- apiserver_request_latencies_summary
+
+This KEP adds the following metrics.
+- apiserver_rejected_requests (count, broken down by priority, FlowSchema, when (arrival vs timeout))
+- apiserver_current_inqueue_requests (gauge, broken down by priority, FlowSchema)
+- apiserver_current_executing_requests (gauge, broken down by priority, FlowSchema)
+- apiserver_dispatched_requests (count, broken down by priority, FlowSchema)
+- apiserver_wait_duration (histogram, broken down by priority, FlowSchema)
+- apiserver_service_duration (histogram, broken down by priority, FlowSchema)
+
+### Testing
+
+There should be one or more end-to-end tests that exercise the
+functionality introduced by this KEP.  Following are a couple of
+suggestions.
+
+One simple test would be to use a client like
+https://github.com/MikeSpreitzer/k8api-scaletest/tree/master/cmdriverclosed
+to drive workload with more concurrency than is configured to be
+admitted, and see whether the amount admitted is as configured.
+
+A similar but more sophisticated test would be like the ConfigMap
+driver but would create/update/delete objects that have some
+non-trivial behavior associated with them.  One possibility would be
+ServiceAccount objects.  Creation of a ServiceAccount object implies
+creation of a Secret, and deletion also has an implication.  Thrashing
+such objects would test that the workload does not crowd out the
+garbage collector.
+
+
+
 
 ### Implementation Details/Notes/Constraints
 
