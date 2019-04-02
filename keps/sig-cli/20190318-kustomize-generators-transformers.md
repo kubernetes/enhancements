@@ -11,8 +11,8 @@ approvers:
   - "@monopole"
 editor: TBD
 creation-date: 2019-03-25
-last-updated: 2019-03-25
-status: implementable
+last-updated: 2019-04-02
+status: provisional
 ---
 
 # Kustomize Generators and Transformers
@@ -112,7 +112,7 @@ Authoring solutions have already been developed:
   - Helm
   - Ksonnet
 - Internally by Organizations
-  - [kube-gen] (AirBnB) 
+  - [kube-gen] (AirBnB)
 
 Support for connecting the tools developed by the Ecosystem with kubectl relies on piping commands together,
 however pipes are an imperative technique that require their own scripting and tooling.
@@ -246,8 +246,8 @@ Transformers have 2 components:
   - Executable plugin
   - Reads Virtual Resources
   - Reads **all** non-Virtual Resources
-  - Emits non-Virtual Resources  
-  
+  - Emits non-Virtual Resources
+
 1. Kustomize reads the `transformers` *and* `generators` Virtual Resources
   - `generators` can require transformation
 1. Kustomize maps the Virtual Resources to plugins by their *Group*
