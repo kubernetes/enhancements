@@ -249,9 +249,13 @@ FlowSchema objects.  This will pick exactly one best matching
 FlowSchema, and that FlowSchema will identify a RequestPriority object
 and the way to compute the request’s flow identifier.
 
-A RequestPriority object has a priority level, which is a non-negative
-integer.  Zero is the logically highest priority.  No two
-RequestPriority objects can have the same priority level.
+A RequestPriority object defines a priority level.  Each one is either
+_exempt_ or not.  There should be at most one exempt priority level.
+Being exempt means that requests of that priority are not subject to
+concurrency limits (and thus are never queued) and do not detract from
+the concurrency available for non-exempt requests.  In a more
+sophisticated system, the exempt priority level would be the highest
+priority level.
 
 It is expected that there will be only a few RequestPriority objects.
 It is expected that there may be a few tens of FlowSchema objects.  At
@@ -268,18 +272,20 @@ Each FlowSchema has:
 - A matching priority (default value is 1000);
 - A reference to a RequestPriority object; and
 - An optional rule for computing the request’s flow distinguisher; not
-  allowed for a FlowSchema that refers to the RequestPriority that has
-  level 0 or just one queue.
+  allowed for a FlowSchema that refers to a RequestPriority that is
+  exempt or has just one queue.
 
 Each RequestPriority has:
-- A priority level (non-negative integer).
+- An `exempt` boolean (which defaults to `false`).
+- A `catchAll` boolean (which defaults to `false`), which is relevant
+  only to default behavior.
 
-Each RequestPriority with a non-zero priority level also has:
+Each non-exempt RequestPriority also has:
 - A non-negative integer AssuredConcurrencyShares;
 - A number of queues; and
 - A queue length limit.
 
-Each RequestPriority with more than one queue also has:
+Each non-exempt RequestPriority with more than one queue also has:
 - A hand size (a small positive number).
 
 The best matching FlowSchema for a given request is one of those whose
@@ -315,11 +321,11 @@ match the regex then the transformation yields the empty string.
 
 ### Assignment to a Queue
 
-A RequestPriority object also has a number of queues (we are talking
-about a number here, not the actual set of queues; the queues exist
-independently at each apiserver).  If the RequestPriority’s number of
-queues is more than one then the following logic is used to assign a
-request to a queue.
+A non-exempt RequestPriority object also has a number of queues (we
+are talking about a number here, not the actual set of queues; the
+queues exist independently at each apiserver).  If the
+RequestPriority’s number of queues is more than one then the following
+logic is used to assign a request to a queue.
 
 For a given priority at a given apiserver, each queue is identified by
 a numeric index (starting at zero).  A RequestPriority has a hand size
@@ -369,10 +375,10 @@ is a number, whose units is a number of readonly requests served
 concurrently.  Unlike in today's max-in-flight handler, the mutating
 and readonly requests are commingled without distinction.  The primary
 resource limit applied is that at any moment in time the number of
-running non-zero priority requests should not exceed the concurrency
-limit.  Requests of priority zero are neither counted nor limited, as
-in today's max-in-flight handler.  For the remainder, each server's
-overall concurrency limit is divided among those non-zero priority
+running non-exempt requests should not exceed the concurrency limit.
+Requests of an exempt priority are neither counted nor limited, as in
+today's max-in-flight handler.  For the remainder, each server's
+overall concurrency limit is divided among those non-exempt priority
 levels and each enforces its own limit (independently of the other
 levels).
 
@@ -398,14 +404,15 @@ rejected.
 Once a request is categorized and assigned to a queue the next
 decision is whether to reject or accept that request.
 
-A request of priority zero is never rejected and never waits in a
+A request of an exempt priority is never rejected and never waits in a
 queue; such a request is dispatched as soon as it arrives.
 
-For queuing requests of non-zero priority, the first step is to reject
-all the requests that have been waiting longer than the configured
-limit.  Once that is done, the newly arrived request is considered.
-This request is rejected if and only if the total number of requests
-waiting in its queue is at least the configured limit on that number.
+For queuing requests of non-exempt priority, the first step is to
+reject all the requests that have been waiting longer than the
+configured limit.  Once that is done, the newly arrived request is
+considered.  This request is rejected if and only if the total number
+of requests waiting in its queue is at least the configured limit on
+that number.
 
 A possible alternative would accept the request unconditionally and,
 if that made the queue too long, reject the request at the head of the
@@ -417,13 +424,13 @@ queue has a chance of eventually getting useful work done.
 
 ### Dispatching
 
-Requests of priority zero are never held up in a queue; they are
+Requests of an exempt priority are never held up in a queue; they are
 always dispatched immediately.  Following is how the other requests
 are dispatched at a given apiserver.
 
-The concurrency limit of an apiserver is divided among the non-zero
+The concurrency limit of an apiserver is divided among the non-exempt
 priority levels in proportion to their assured concurrency shares.
-This produces the assured concurrency value (ACV) for each non-zero
+This produces the assured concurrency value (ACV) for each non-exempt
 priority level:
 
 ```
@@ -434,7 +441,7 @@ where SCL is the apiserver's concurrency limit and ACS(l) is the
 AssuredConcurrencyShares for priority level l.
 
 Dispatching is done independently for each priority level.  Whenever
-(1) a non-zero priority level's number of running requests is below
+(1) a non-exempt priority level's number of running requests is below
 the level's assured concurrency value and (2) that priority level has
 a non-empty queue, it is time to dispatch another request for service.
 The Fair Queuing for Server Requests algorithm below is used to pick a
@@ -538,7 +545,7 @@ kind: RequestPriority
 meta:
   name: system-top
 spec:
-  priorityLevel: 0
+  exempt: true
 ```
 
 For system self-maintenance requests.
@@ -547,7 +554,6 @@ kind: RequestPriority
 meta:
   name: system-high
 spec:
-  priorityLevel: 1000
   assuredConcurrencyShares: 100
   queues: 128
   handSize: 6
@@ -560,7 +566,6 @@ kind: RequestPriority
 meta:
   name: system-low
 spec:
-  priorityLevel: 2000
   assuredConcurrencyShares: 30
   queues: 1
   queueLengthLimit: 1000
@@ -572,7 +577,6 @@ kind: RequestPriority
 meta:
   name: workload-high
 spec:
-  priorityLevel: 9000
   assuredConcurrencyShares: 30
   queues: 128
   handSize: 6
@@ -585,7 +589,7 @@ kind: RequestPriority
 meta:
   name: workload-low
 spec:
-  priorityLevel: 10000
+  catchAll: true
   assuredConcurrencyShares: 100
   queues: 128
   handSize: 6
@@ -736,13 +740,13 @@ are not actual API objects, and might not ever exist as identifiable
 objects in the implementation, but are figments of our imagination
 used to describe the behavior of this subsystem.  These backstop
 objects are implicitly present and affecting behavior when needed.
-There are two implicitly generated RequestFlow backstop objects.  One
-is equivalent to the `system-top` object exhibited above, and it
-exists while there is no actual RequestPriority object with priority
-level 0.  The other is equivalent to the `workload-low` object exhibited
+There are two implicitly generated RequestPriority backstop objects.
+One is equivalent to the `system-top` object exhibited above, and it
+exists while there is no actual RequestPriority object with `exempt ==
+true`.  The other is equivalent to the `workload-low` object exhibited
 above, and exists while there is no RequestPriority object with
-non-zero priority.  There are also two implicitly generated FlowSchema
-backup objects.  Whenever a request whose groups include
+non-exempt priority.  There are also two implicitly generated
+FlowSchema backup objects.  Whenever a request whose groups include
 `system:masters` is not matched by any actual FlowSchema object, a
 backstop equivalent to the `system-top` object exhibited above is
 considered to exist.  Whenever a request whose groups do not include
@@ -756,7 +760,8 @@ meta:
 spec:
   matchingPriority: (doesn’t really matter)
   requestPriority:
-    name: (name of the logically lowest effectively existing RequestPriority, whether that is real or backstop)
+    name: (name of an effectively existing RequestPriority, whether
+	that is real or backstop, with catchAll==true)
   flowDistinguisher:
     source: user
     # no transformation in this case
@@ -766,11 +771,11 @@ spec:
 
 The other part of the defaulting story concerns making actual API
 objects exist, and it goes as follows.  Whenever there is no actual
-RequestPriority object with priority zero, the RequestPriority objects
-exhibited above are created --- except those with a name already in
-use by an existing RequestPriority object.  Whenever there is no
-actual FlowSchema object that refers to a RequestPriority object of
-priority zero, the schema objects shown above as examples are
+RequestPriority object with `exempt == true`, the RequestPriority
+objects exhibited above are created --- except those with a name
+already in use by an existing RequestPriority object.  Whenever there
+is no actual FlowSchema object that refers to an exempt
+RequestPriority object, the schema objects shown above as examples are
 generated --- except those with a name already in use.
 
 ### Prometheus Metrics
