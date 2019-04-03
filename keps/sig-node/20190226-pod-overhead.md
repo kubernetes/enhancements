@@ -129,29 +129,7 @@ several scenarios:
 
 ### RuntimeClass changes
 
-Expand the runtimeClass type to include sandbox overheads:
-
-```
-openAPIV3Schema:
-     properties:
-       spec:
-         properties:
-           runtimeHandler:
-             type: string
-             Pattern: '^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*)?$'
-+           runtimeCpuReqOverhead:
-+             type: string
-+             pattern: '^([0-9]+([.][0-9])?)|[0-9]+(m)$'
-+           runtimeCpuLimitOverhead:
-+             type: string
-+             pattern: '^([0-9]+([.][0-9])?)|[0-9]+(m)$'
-+           runtimeMemoryReqOverhead:
-+             type: string
-+             pattern: '^[0-9]+([.][0-9]+)+(Mi|Gi|M|G)$'
-+           runtimeMemoryLimitOverhead:
-+             type: string
-+             pattern: '^[0-9]+([.][0-9]+)+(Mi|Gi|M|G)$'
-```
+Expand the runtimeClass type to include sandbox overhead, `Overhead *ResourceRequirements.`
 
 ### RuntimeClass admission controller
 
