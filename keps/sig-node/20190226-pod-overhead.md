@@ -1,9 +1,11 @@
 ---
-title: KEP Template
+title: Pod Overhead
 authors:
   - "@egernst"
 owning-sig: sig-node
 participating-sigs:
+  - sig-scheduling
+  - sig-autoscaling
 reviewers:
   - "@tallclair"
   - "@derekwaynecarr"
@@ -12,17 +14,36 @@ approvers:
   - TBD
 editor: TBD
 creation-date: 2019-02-26
-last-updated: 2019-04-02
+last-updated: 2019-04-12
 status: provisional
 ---
 
-# pod overhead
+# Pod Overhead
 
 This includes the Summary and Motivation sections.
 
 ## Table of Contents
 
-Tools for generating: https://github.com/ekalinin/github-markdown-toc
+* [Release Signoff Checklist](#release-signoff-checklist)
+* [Summary](#summary)
+* [Motivation](#motivation)
+  + [Goals](#goals)
+  + [Non-Goals](#non-goals)
+* [Proposal](#proposal)
+  + [API Design](#api-design)
+    - [Pod overhead](#pod-overhead)
+  + [RuntimeClass admission controller](#runtimeclass-admission-controller)
+  + [Implementation Details](#implementation-details)
+  + [Risks and Mitigations](#risks-and-mitigations)
+* [Design Details](#design-details)
+  + [Graduation Criteria](#graduation-criteria)
+  + [Upgrade / Downgrade Strategy](#upgrade---downgrade-strategy)
+  + [Version Skew Strategy](#version-skew-strategy)
+* [Implementation History](#implementation-history)
+* [Drawbacks](#drawbacks)
+* [Alternatives](#alternatives)
+  + [Introduce pod level resource requirements](#introduce-pod-level-resource-requirements)
+  + [Leaving the PodSpec unchanged](#leaving-the-podspec-unchanged)
 
 ## Release Signoff Checklist
 
@@ -71,7 +92,10 @@ and scheduling.
 
 ### Non-Goals
 
-* Making runtimeClass selections
+* making runtimeClass selections
+* auto-detecting overhead
+* per-container overhead
+* creation of pod-level resource requirements
 
 ## Proposal
 
@@ -82,7 +106,7 @@ introduced which will update the `Overhead` field in the workload's `PodSpec` to
 what is provided for the selected RuntimeClass, if one is specified.
 
 Kubelet's creation of the pod cgroup will be calculated as the sum of container
-`ResourceRequirements` fields, plus the Overhead associated with the pod.
+`ResourceRequirements.Limits` fields, plus the Overhead associated with the pod.
 
 The scheduler, resource quota handling, and Kubelet's pod cgroup creation and eviction handling
 will take Overhead into account, as well as the sum of the pod's container requests.
@@ -93,157 +117,128 @@ so should not be impacted by pod Overhead.
 ### API Design
 
 #### Pod overhead
-Introduce a Pod.Spec.Resources field on the pod to specify the pods overhead.
+Introduce a Pod.Spec.Overhead field on the pod to specify the pods overhead.
 
 ```
 Pod {
   Spec PodSpec {
-    // Overhead is the resource overhead consumed by the Pod, not including
-    // container resource usage. Users should leave this field unset.
+    // Overhead is the resource overhead incurred from the runtime.
     // +optional
     Overhead *ResourceRequirements
   }
 }
-```
 
-For scheduling, the pod resource requests are added to the container resource requests.
+For scheduling, the pod `Overhead` resource requests are added to the container resource requests.
 
 We don't currently enforce resource limits on the pod cgroup, but this becomes feasible once
 pod overhead is accountable. If the pod specifies a resource limit, and all containers in the
 pod specify a limit, then the sum of those limits becomes a pod-level limit, enforced through the
 pod cgroup.
 
-Users are not expected to manually set the pod resources; if a runtimeClass is being utilized,
-the manual value will be discarded. See RuntimeController for the proposal for setting these
-resources.
+Users are not expected to manually set `Overhead`; any prior values will being set will result in the workload
+being rejected. If runtimeClass is configured and selected in the PodSpec, `Overhead` will be set to the value
+defined in the corresponding runtimeClass. This is described in detail in
+[RuntimeClass admission controller](#runtimeclass-admission-controller).
 
-Being able to specify resource requirements for a workload at the pod level instead of container level
-has been discussed, but isn't proposed in this KEP.
+Being able to specify resource requirements for a workload at the pod level instead of container
+level has been discussed, but isn't proposed in this KEP.
 
-In the event that pod-level requirements are introduced, pod overhead should be kept separate. This simplifies
-several scenarios:
- - overhead, once added to the spec, stays with the workload, even if runtimeClass is redefined or removed.
- - the pod spec can be referenced directly from scheduler, resourceQuote controller and kubelet, instead of referencing
- a runtimeClass object which could have possibly been removed.
+In the event that pod-level requirements are introduced, pod overhead should be kept separate. This
+simplifies several scenarios:
+ - overhead, once added to the spec, stays with the workload, even if runtimeClass is redefined
+ or removed.
+ - the pod spec can be referenced directly from scheduler, resourceQuota controller and kubelet,
+ instead of referencing a runtimeClass object which could have possibly been removed.
 
+#### Container Runtime Interface (CRI)
+
+The pod cgroup is managed by the Kubelet, so passing the pod-level resource to the CRI implementation
+is not strictly necessary. However, some runtimes may wish to take advantage of this information, for
+instance for sizing the Kata Container VM.
+
+LinuxContainerResources is added to the LinuxPodSandboxConfig for both overhead and container
+totals, as optional fields:
+
+type LinuxPodSandboxConfig struct {
+	Overhead *LinuxContainerResources
+	ContainerResources *LinuxContainerResources
+}
+
+WindowsContainerResources is added to a newly created WindowsPodSandboxConfig for both overhead and container
+totals, as optional fields:
+
+type WindowsPodSandboxConfig struct {
+	Overhead *WindowsContainerResources
+	ContainerResources *WindowsContainerResources
+}
+
+ContainerResources field in the LinuxPodSandboxConfig and WindowsPodSandboxConfig matches the pod-level limits
+(i.e. total of container limits). Overhead is tracked separately since the sandbox overhead won't necessarily
+guide sandbox sizing, but instead used for better management of the resulting sandbox on the host. 
+
+### ResourceQuota changes
+
+Pod overhead will be counted against an entity's ResourceQuota. The controller will be updated to
+add the pod `Overhead`to the container resource request summation.
 
 ### RuntimeClass changes
 
-Expand the runtimeClass type to include sandbox overhead, `Overhead *ResourceRequirements.`
+Expand the runtimeClass type to include sandbox overhead, `Overhead *Overhead`.
+
+```
+Where Overhead is defined as follows:
+
+```
+type Overhead struct {
+  PodFixed *ResourceRequirements
+}
+```
+In the future, the `Overhead` definition could be extended to include fields that describe a percentage
+based overhead (scale the overhead based on the size of the pod), or container-level overheads. These are
+left out of the scope of this proposal.
 
 ### RuntimeClass admission controller
 
 The pod resource overhead must be defined prior to scheduling, and we shouldn't make the user
-do it. To that end, we propose a new mutating admission controller: RuntimeClass. This admission controller
+do it. To that end, we propose a mutating admission controller: RuntimeClass. This admission controller
 is also proposed for the [native RuntimeClass scheduling KEP](https://github.com/kubernetes/enhancements/blob/master/keps/sig-node/runtime-class-scheduling.md).
 
 In the scope of this KEP, The RuntimeClass controller will have a single job: set the pod overhead field in the
 workload's PodSpec according to the runtimeClass specified.
 
-It is expected that only the RuntimeClass controller will set Pod.Spec.Overhead. If a value is provided
-which does not match what is defined in the runtimeClass, the pod will be rejected.
+It is expected that only the RuntimeClass controller will set Pod.Spec.Overhead. If a value is provided, the pod will
+be rejected.
 
 Going forward, I foresee additional controller scope around runtimeClass:
- -validating the runtimeClass selection: This would require applying some kind of pod-characteristic labels
+ - validating the runtimeClass selection: This would require applying some kind of pod-characteristic labels
  (runtimeClass selectors?) which would then be consumed by an admission controller and checked against known
  capabilities on a per runtimeClass basis. This is is beyond the scope of this proposal.
- -Automatic runtimeClass selection: A controller could exist which would attempt to automatically select the
+ - Automatic runtimeClass selection: A controller could exist which would attempt to automatically select the
  most appropriate runtimeClass for the given pod. This, again, is beyond the scope of this proposal.
 
-### User Stories [optional]
+### Implementation Details
 
-Detail the things that people will be able to do if this KEP is implemented.
-Include as much detail as possible so that people can understand the "how" of the system.
-The goal here is to make this feel real for users without getting bogged down.
-
-#### Story 2
-
-### Implementation Details/Notes/Constraints [optional]
-
-What are the caveats to the implementation?
-What are some important details that didn't come across above.
-Go in to as much detail as necessary here.
-This might be a good place to talk about core concepts and how they releate.
+With this proposal, the following changes are required:
+ - Add the new API to the pod spec and RuntimeClass
+ - Update the RuntimeClass controller to merge the overhead into the pod spec
+ - Update the ResourceQuota controller to account for overhead
+ - Update the scheduler to account for overhead
+ - Update the kubelet (admission, eviction, cgroup limits) to handle overhead
 
 ### Risks and Mitigations
 
-What are the risks of this proposal and how do we mitigate.
-Think broadly.
-For example, consider both security and how this will impact the larger kubernetes ecosystem.
-
-How will security be reviewed and by whom?
-How will UX be reviewed and by whom?
-
-Consider including folks that also work outside the SIG or subproject.
+This proposal introduces changes across several Kubernetes components and a change in behavior *if* Overhead fields
+are utilized. To help mitigate this risk, I propose that this be treated as a new feature with an independent feature gate.
 
 ## Design Details
 
-### Test Plan
-
-**Note:** *Section not required until targeted at a release.*
-
-Consider the following in developing a test plan for this enhancement:
-- Will there be e2e and integration tests, in addition to unit tests?
-- How will it be tested in isolation vs with other components?
-
-No need to outline all of the test cases, just the general strategy.
-Anything that would count as tricky in the implementation and anything particularly challenging to test should be called out.
-
-All code is expected to have adequate tests (eventually with coverage expectations).
-Please adhere to the [Kubernetes testing guidelines][testing-guidelines] when drafting this test plan.
-
-[testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
-
 ### Graduation Criteria
 
-**Note:** *Section not required until targeted at a release.*
+This KEP will be treated as a new feature, and will be introduced with a new feature gate, PodOverhead.
 
-Define graduation milestones.
+Plan to introduce this utilizing maturity levels: alpha, beta and stable.
 
-These may be defined in terms of API maturity, or as something else. Initial KEP should keep
-this high-level with a focus on what signals will be looked at to determine graduation.
-
-Consider the following in developing the graduation criteria for this enhancement:
-- [Maturity levels (`alpha`, `beta`, `stable`)][maturity-levels]
-- [Deprecation policy][deprecation-policy]
-
-Clearly define what graduation means by either linking to the [API doc definition](https://kubernetes.io/docs/concepts/overview/kubernetes-api/#api-versioning),
-or by redefining what graduation means.
-
-In general, we try to use the same stages (alpha, beta, GA), regardless how the functionality is accessed.
-
-[maturity-levels]: https://git.k8s.io/community/contributors/devel/sig-architecture/api_changes.md#alpha-beta-and-stable-versions
-[deprecation-policy]: https://kubernetes.io/docs/reference/using-api/deprecation-policy/
-
-#### Examples
-
-These are generalized examples to consider, in addition to the aforementioned [maturity levels][maturity-levels].
-
-##### Alpha -> Beta Graduation
-
-- Gather feedback from developers and surveys
-- Complete features A, B, C
-- Tests are in Testgrid and linked in KEP
-
-##### Beta -> GA Graduation
-
-- N examples of real world usage
-- N installs
-- More rigorous forms of testing e.g., downgrade tests and scalability tests
-- Allowing time for feedback
-
-**Note:** Generally we also wait at least 2 releases between beta and GA/stable, since there's no opportunity for user feedback, or even bug reports, in back-to-back releases.
-
-##### Removing a deprecated flag
-
-- Announce deprecation and support policy of the existing flag
-- Two versions passed since introducing the functionality which deprecates the flag (to address version skew)
-- Address feedback on usage/changed behavior, provided on GitHub issues
-- Deprecate the flag
-
-**For non-optional features moving to GA, the graduation criteria must include [conformance tests].**
-
-[conformance tests]: https://github.com/kubernetes/community/blob/master/contributors/devel/conformance-tests.md
+Graduation criteria between these levels to be determined.
 
 ### Upgrade / Downgrade Strategy
 
@@ -260,21 +255,13 @@ if a new version increases (rather than decreases) the required resources.
 
 ## Implementation History
 
-Major milestones in the life cycle of a KEP should be tracked in `Implementation History`.
-Major milestones might include
+- 2019-04-04: Initial KEP published.
 
-- the `Summary` and `Motivation` sections being merged signaling SIG acceptance
-- the `Proposal` section being merged signaling agreement on a proposed design
-- the date implementation started
-- the first Kubernetes release where an initial version of the KEP was available
-- the version of Kubernetes where the KEP graduated to general availability
-- when the KEP was retired or superseded
+## Drawbacks
 
-## Drawbacks [optional]
+This KEP introduces further complexity, and adds a field the PodSpec which users aren't expected to modify.
 
-This KEP introduceds further complexity, and adds a field the PodSpec which users aren't expected to modify.
-
-## Alternatives [optional]
+## Alternatives
 
 In order to achieve proper handling of sandbox runtimes, the scheduler/resourceQuota handling needs to take
 into account the overheads associated with running a particular runtimeClass.
@@ -292,7 +279,7 @@ Even if this were to be introduced, there is a benefit in keeping the overhead s
  runtime choice, but charge the user for the cpu/memory consumed independent of runtime choice.
 
 
-### Leaving the PodSpec unchaged
+### Leaving the PodSpec unchanged
 
 Instead of tracking the overhead associated with running a workload with a given runtimeClass in the PodSpec,
 the Kubelet (for pod cgroup creation), the scheduler (for honoring reqests overhead for the pod) and the resource
@@ -301,10 +288,10 @@ to add a sandbox overhead when applicable.
 
 Pros:
  * no changes to the pod spec
+ * user does not have the option of setting the overhead
  * no need for a mutating admission controller
 
 Cons:
  * handling of the pod overhead is spread out across a few components
  * Not user perceptible from a workload perspective.
  * very complicated if the runtimeClass policy changes after workloads are running
-
