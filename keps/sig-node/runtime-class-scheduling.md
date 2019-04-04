@@ -7,12 +7,13 @@ participating-sigs:
   - sig-scheduling
 reviewers:
   - yastij
+  - egernst
 approvers:
   - bsalamat
   - dchen1107
   - derekwaynecarr
 creation-date: 2019-03-14
-status: provisional
+status: implementable
 see-also:
   - "/keps/sig-node/runtime-class.md"
 replaces:
@@ -33,14 +34,16 @@ replaces:
       * [Sandboxed Nodes](#sandboxed-nodes)
   * [Design Details](#design-details)
     * [API](#api)
-    * [RuntimeController](#runtimecontroller)
-      * [Mix\-in](#mix-in)
+    * [Scheduler](#scheduler)
+    * [RuntimeClass Admission Controller](#runtimeclass-admission-controller)
     * [Labeling Nodes](#labeling-nodes)
     * [Graduation Criteria](#graduation-criteria)
   * [Implementation History](#implementation-history)
   * [Alternatives](#alternatives)
+    * [RuntimeController Mix\-in](#runtimecontroller-mix-in)
+      * [RuntimeController](#runtimecontroller)
+      * [Mix\-in](#mix-in)
     * [NodeSelector](#nodeselector)
-    * [RuntimeClass\-aware scheduling](#runtimeclass-aware-scheduling)
     * [Native RuntimeClass Reporting](#native-runtimeclass-reporting)
     * [Scheduling Policy](#scheduling-policy)
 
@@ -83,18 +86,15 @@ date.
 
 - Automatic topology discovery or node labeling
 - Automatically selecting a RuntimeClass for a pod based on node availability.
-- Defining official or revserved label or taint schemas or for RuntimeClasses.
+- Defining official or reserved label or taint schemas or for RuntimeClasses.
 
 ## Proposal
 
 A new optional `Topology` structure will be added to the RuntimeClass API. The
-topology includes both `NodeSelectorTerm` rules and `Tolerations` that are mixed
-in to a pod using that RuntimeClass. The mix-in happens in the mutating
-admission phase, and is performed by a new `RuntimeController` built-in
-admission plugin. The same admission controller is shared with the [Pod
-Overhead][] proposal.
-
-[Pod Overhead]: https://github.com/kubernetes/enhancements/pull/887
+topology includes both a `NodeSelector` and `Tolerations` that control how a pod
+using that RuntimeClass is scheduled. The NodeSelector rules are applied during
+scheduling, but the Tolerations are added to the PodSpec during admission by the
+new RuntimeClass admission controller.
 
 ### User Stories
 
@@ -115,7 +115,7 @@ Windows.
 - As a **developer** I want to ensure my Linux workloads are not accidentally
   scheduled to windows nodes.
 
-[Windows nodes]: https://github.com/kubernetes/enhancements/blob/master/keps/sig-windows/20190103-windows-node-support.md
+[Windows nodes]: ../sig-windows/20190103-windows-node-support.md
 
 #### Sandboxed Nodes
 
@@ -138,13 +138,12 @@ The RuntimeClass definition is augmented with an optional `Topology` struct:
 
 ```go
 type Topology struct {
-    // nodeSelectorTerm selects the set of nodes that support this RuntimeClass.
-    // Pods using this RuntimeClass can only be scheduled to a node matched by this selector.
-    // The nodeSelectorTerm is merged with a pod's other node affinity match
-    // expressions by appending the additional requirements to each preexisting
-    // NodeSelectorTerm.
+    // nodeSelector selects the set of nodes that support this RuntimeClass.
+    // Pods using this RuntimeClass can only be scheduled to a node matched by
+    // this selector. The nodeSelector is intersected (AND) with a pod's other
+    // node affinity or node selector requirements.
     // +optional
-    NodeSelectorTerm []corev1.NodeSelectorRequirement
+    NodeSelector corev1.NodeSelector
 
     // tolerations adds tolerations to pods running with this RuntimeClass.
     // +optional
@@ -158,16 +157,13 @@ The PodSpec's `NodeSelector` is a label `map[string]string` that must exactly
 match a subset of node labels. [NodeAffinity][] is a much more complex and
 expressive set of requirements and preferences. NodeSelectorRequirements are a
 small subset of the NodeAffinity rules, that place intersecting requirements on
-a NodeSelectorTerm. There is no way to logically intersect NodeAffinities, and
-intersecting the NodeAffinity.NodeSelector multiplies the number of terms. Using
-[native scheduler support](#runtimeclass-aware-scheduling) greatly simplifies
-the intersection logic.
+a NodeSelectorTerm.
 
-NodeSelectorRequirements fall in the sweet spot of being expressive enough to
-represent a variety of topologies while still being logically intersectable with
-other pod scheduling constraints. Including more advanced scheduling preferences
-for a RuntimeClass is a use case that is better suited to
-[SchedulingPolicy](#scheduling-policy).
+Since the RuntimeClass topology represents hard requirements (the node supports
+the RuntimeClass or it doesn't), the topology API should not include scheduling
+preferences, ruling out NodeAffinity. The NodeSelector type is much more
+expressive than the `map[string]string` selector, so the RuntimeClass topology
+embraces that more powerful API.
 
 [NodeAffinity]: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#affinity-and-anti-affinity
 
@@ -190,47 +186,64 @@ inculde:
   RuntimeClasses would need a toleration to enable them to be run on those
   nodes.
 
-### RuntimeController
+### Scheduler
 
-RuntimeController is a new in-tree admission plugin that should eventually be
-enabled on almost every Kubernetes clusters. The role of the controller for
-scheduling is to merge the topology constraints from the RuntimeClass into the
-PodSpec. Eventually, the controller's responsibilities may grow, such as to
-merge in [pod overhead][] or validate feature compatibility.
+A new scheduler predicate will manage the RuntimeClass topology. It will lookup
+the RuntimeClass associated with the pod being scheduled. If there is no
+RuntimeClass, or the RuntimeClass does not include a topology, then the
+predicate will permit the pod to be scheduled to the evaluated node. Otherwise,
+it will check whether the NodeSelector matches the node.
 
-Note that the RuntimeController is not needed if we implement [native scheduler
-support](#runtimeclass-aware-scheduling).
+Adding a dedicated RuntimeClass predicate rather than mixing the rules in to the
+NodeAffinity evaluation means that in the event a pod is unschedulable there
+will be a clear explanation of why. For example:
 
-#### Mix-in
-
-The RuntimeClass topology is merged with the pod's NodeSelector & Tolerations.
-
-**NodeSelectorRequirements**
-
-NodeSelectorRequirements are merged into the pod's node affinity scheduling requirements:
 ```
-pod.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution[*].matchExpressions
+0/10 Nodes are available: 5 nodes do not have enough memory, 5 nodes don't match RuntimeClass
 ```
 
-Since the `requiredDuringSchedulingIgnoredDuringExecution` NodeSelectorTerms are
-unioned (OR'd), intersecting the RuntimeClass's NodeSelectorRequirements means
-the requirements need to be appended to _every_ NodeSelectorTerm.
+If the pod's referenced RuntimeClass does not exist at scheduling time, the
+RuntimeClass predicate will fail. The scheduler will periodically retry, and
+once the RuntimeClass is (re)created, the pod will be scheduled.
 
-**Tolerations**
+### RuntimeClass Admission Controller
 
-Merging tolerations is much simpler as we want to _union_ the RuntimeClass
+The RuntimeClass admission controller is a new default-enabled in-tree admission
+plugin. The role of the controller for scheduling is to merge the Tolerations
+from the RuntimeClass into the PodSpec. Eventually, the controller's
+responsibilities may grow, such as to merge in [pod overhead][] or validate
+feature compatibility.
+
+Merging tolerations is straight forward, as we want to _union_ the RuntimeClass
 tolerations with the existing tolerations, which matches the default toleration
 composition logic. This means that RuntimeClass tolerations can simply be
 appended to the existing tolerations, but an [existing
 utilty][merge-tolerations] can reduce duplicates by merging equivalent
 tolerations.
 
+Merging tolerations during admission rather than scheduling has several
+advantages:
+
+1. Unlike the NodeSelector, Tolerations are also checked when managing
+   [TaintBasedEvictions]. As a RuntimeClass could be deleted after a pod has
+   already been created, the tolerations should be mixed into the PodSpec to
+   ensure that they stay attached to the running pod.
+2. Merging tolerations in admission enables other admission controllers (such as
+   a [scheduling policy][SchedulingPolicy] controller) to perform validation
+   based on those tolerations. This matters less for the NodeSelector, as that
+   is narrowing the scheduling domain rather than expanding it.
+
+If the pod's referenced RuntimeClass does not exist, the admission controller
+will reject the pod. This is necessary to ensure the pod is run with the
+expected behavior.
+
 [merge-tolerations]: https://github.com/kubernetes/kubernetes/blob/58021216b16ae6d5f24fb1c32ab541b2e79a365e/pkg/util/tolerations/tolerations.go#L62
+[TaintBasedEvictions]: https://kubernetes.io/docs/concepts/configuration/taint-and-toleration/#taint-based-evictions
 
 ### Labeling Nodes
 
 Node labeling & tainting is outside the scope of this proposal or feature. How
-to label nodes is very environment depnedent. Here are several examples:
+to label nodes is very environment dependent. Here are several examples:
 
 - If runtimes are setup as part of node setup, then the node template should
   include the appropriate labels & taints.
@@ -238,6 +251,13 @@ to label nodes is very environment depnedent. Here are several examples:
   that of the DaemonSet.
 - If runtimes are manually installed, or installed through some external
   process, that same process should apply an appropriate label to the node.
+
+If the RuntimeClass topology has security implications, special care should be
+taken when choosing labels. In particular, labels with the
+`[*.]node-restriction.kubernetes.io/` prefix cannot be added with the node's
+identity, and labels with the `[*.]k8s.io/` or `[*.]kubernetes.io/` prefixes
+cannot be modified by the node. For more details, see [Bounding Self-Labeling
+Kubelets](../sig-auth/0000-20170814-bounding-self-labeling-kubelets.md)
 
 ### Graduation Criteria
 
@@ -258,6 +278,59 @@ the alpha phase. This means the feature is expected to be beta quality at launch
 
 ## Alternatives
 
+### RuntimeController Mix-in
+
+Rather than resolving the topology in the scheduler, the `NodeSelectorTerm`
+rules and `Tolerations` are mixed in to the PodSpec. The mix-in happens in the
+mutating admission phase, and is performed by a new `RuntimeController` built-in
+admission plugin. The same admission controller is shared with the [Pod
+Overhead][] proposal.
+
+[Pod Overhead]: https://github.com/kubernetes/enhancements/pull/887
+
+#### RuntimeController
+
+RuntimeController is a new in-tree admission plugin that should eventually be
+enabled on almost every Kubernetes clusters. The role of the controller for
+scheduling is to merge the topology constraints from the RuntimeClass into the
+PodSpec. Eventually, the controller's responsibilities may grow, such as to
+merge in [pod overhead][] or validate feature compatibility.
+
+Note that the RuntimeController is not needed if we implement [native scheduler
+support](#runtimeclass-aware-scheduling).
+
+#### Mix-in
+
+The RuntimeClass topology is merged with the pod's NodeSelector & Tolerations.
+
+**NodeSelectorRequirements**
+
+To avoid multiplicitive scaling of the NodeSelectorTerms, the
+`RuntimeClass.Topology.NodeSelector *v1.NodeSelector` field is replaced with
+`NodeSelectorTerm *v1.NodeSelectorTerm`.
+
+The term's NodeSelectorRequirements are merged into the pod's node affinity
+scheduling requirements:
+
+```
+pod.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[*].matchExpressions
+```
+
+Since the `requiredDuringSchedulingIgnoredDuringExecution` NodeSelectorTerms are
+unioned (OR'd), intersecting the RuntimeClass's NodeSelectorTerm means
+the requirements need to be appended to _every_ NodeSelectorTerm.
+
+**Tolerations**
+
+Merging tolerations is much simpler as we want to _union_ the RuntimeClass
+tolerations with the existing tolerations, which matches the default toleration
+composition logic. This means that RuntimeClass tolerations can simply be
+appended to the existing tolerations, but an [existing
+utilty][merge-tolerations] can reduce duplicates by merging equivalent
+tolerations.
+
+[merge-tolerations]: https://github.com/kubernetes/kubernetes/blob/58021216b16ae6d5f24fb1c32ab541b2e79a365e/pkg/util/tolerations/tolerations.go#L62
+
 ### NodeSelector
 
 Replacing the NodeSelector's `[]NodeSelectorRequirements` type with the
@@ -268,33 +341,6 @@ NodeSelectorRequriments enables selections like:
 - Negative selection, such as "operating system is _not_ windows"
 - Numerical comparison, such as "runc version is _at least_ X" (although it doesn't currently support semver)
 - Set selection, such as "sandbox is _one of_ kata-cotainers or gvisor"
-
-### RuntimeClass-aware scheduling
-
-Rather than the proposed mix-in approach, the scheduler could have built in
-support for RuntimeClasses. When a pod is to be scheduled, the scheduler plugin
-would fetch the pod's RuntimeClass and determine which nodes are supported.
-
-**Advantages:**
-
-- Native scheduler support is required if we want to intersect more advanced
-  scheduling constraints, such as NodeAffinities.
-- Native scheduler support is required if we ever want a feedback loop between
-  the scheduling decision and the RuntimeClass selection. That is, if we want to
-  select a RuntimeClass based on where there is availibility.
-- Doesn't "pollute" the PodSpec with the RuntimeClass scheduling constraints.
-
-**Disadvantages:**
-
-- Adds complexity to the scheduler, which now needs to be able to lookup
-  RuntimeClasses and take those decisions into account.
-- Scheduling decision is more opaque, as there can be hidden constraints on the
-  RuntimeClass preventing a pod from being schedulable.
-
-Moving forward with the proposed mixin approach does not rule out native
-scheduler support in the future. If we decided the advantages outweigh the
-disadvantages in the future, we could seemlessly migrate to this approach
-without any action being required on the user side.
 
 ### Native RuntimeClass Reporting
 
