@@ -13,7 +13,7 @@ approvers:
   - dchen1107
   - derekwaynecarr
 creation-date: 2019-03-14
-status: provisional
+status: implementable
 see-also:
   - "/keps/sig-node/runtime-class.md"
 replaces:
