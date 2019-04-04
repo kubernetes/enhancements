@@ -3,17 +3,20 @@ kep-number: 3
 title: Kubernetes Cluster Management API
 status: provisional
 authors:
-    - "@roberthbailey"
-    - "@pipejakob"
+  - "@roberthbailey"
+  - "@pipejakob"
 owning-sig: sig-cluster-lifecycle
 reviewers:
-  - "@thockin"
+  - "@justinsb"
+  - "@timothysc"
 approvers:
-  - "@roberthbailey"
+  - "@justinsb"
+  - "@timothysc"
 editor:
-  - "@roberthbailey"
+  - "@justinsb"
+  - "@timothysc"
 creation-date: 2018-01-19
-last-updated: 2019-02-04
+last-updated: 2019-04-04
 ---
 
 # Kubernetes Cluster Management API
