@@ -170,6 +170,9 @@ Alpha
 Beta
 - ensure proper node e2e testing coverage to ensure a pod is unable to fork-bomb
   a node even when `pod-max-pids` is unbounded.
+- see testing:
+https://github.com/kubernetes/kubernetes/pull/73651/files#diff-7681b587a8fd514b312fa29c3acc669e
+
 
 GA
 - assuming no negative user feedback, promote after 1 release at beta.
@@ -185,3 +188,8 @@ GA
 - Implement `SupportNodePidsLimit` as Alpha.
 - Graduate `SupportPodPidsLimit` to Beta by adding node e2e test coverage for
   pid cgroup isolation, ensure PidPressure works as intended.
+  
+### Version 1.15
+
+- Graduate `SupportNodePidsLimit` to beta by adding node e2e test
+  coverage for node cgrop isoation.
