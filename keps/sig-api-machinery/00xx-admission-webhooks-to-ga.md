@@ -107,8 +107,8 @@ object will be used otherwise (e.g. `pods/proxy`) the labels on the existing par
 object will be used. If subresource does not have a parent object, the Webhook call 
 may fail or skipped based on the failure policy.
 
-When deleting a collection, the webhook will get a filtered list of objects if the 
-ObjectSelector is applied. The webhook may be called multiple times with sub-lists.
+When deleting a collection, the webhook gets called for each object matching the
+ObjectSelector.
 
 The proposed change is to add an ObjectSelector to the webhook API both in v1 and v1beta1:
 
@@ -225,8 +225,8 @@ type ServiceReference struct {
 Current admission webhooks can hook on `DELETE` events but they won't get any object in 
 `oldObject` or `Object` field of `AdmissionRequest`. The proposal is to send them existing 
 object(s) as the `oldObject`. This is also helpful for applying `ObjectSelector` to these 
-webhooks. Note that `oldObject` when deleting a collection will be a `v1.List` of existing 
-objects. API server may call the webhook multiple times with sub-lists. 
+webhooks. When deleting a collection, each matching object is sent as the `oldObject` to
+to webhooks in individual request.
 
 There is no API change for this feature, only documentation:
 
@@ -736,7 +736,6 @@ There are still open questions that need to be addressed and updated in this KEP
 These are related Post-GA tasks:
 
 * Allow mutating of existing objects in `DELETE` events
-  * Interaction with Delete Collection List is ugly (patch items[0]...) and potentially problematic (cross-item patches)
   * Should adding/removing existing finalizers in delete admission be allowed?
   * Should GC finalizers based on `DeleteOptions` happen before or after mutating admission?
 * If we have enough evidence, consider a better solution for plugin ordering like letting a webhook indicate how many times it should be rerun.
