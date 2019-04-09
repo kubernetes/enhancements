@@ -59,12 +59,13 @@ This KEP suggests another alternative but is very much in line with the spirit o
 
 ### Goals
 
- * Describe the various stability guarantees for control-plane metrics.
+ * Describe the various stability guarantees for the consumption of control-plane metrics.
  * Define a uniform mechanism for expressing metric stability.
 
 ### Non-Goals
 
-* We are __*not*__ defining which specific metrics are actually stable.
+* We are __*not*__ defining which specific control-plane metrics are actually stable.
+* We are __*not*__ providing guarantees around specific values in metrics; as such, breakages in alerting based of off assumptions on specific values in metrics are out-of-scope.
 
 ## Background
 
@@ -107,7 +108,7 @@ var deprecatedMetricDefinition = kubemetrics.CounterOpts{
 var alphaMetricDefinition = kubemetrics.CounterOpts{
     Name: "some_alpha_metric",
     Help: "some description",
-    IsAlpha: true, // this is also a custom metadata field
+    StabilityLevel: kubemetrics.ALPHA, // this is also a custom metadata field
 }
 ```
 
@@ -155,15 +156,15 @@ type Registry struct {
 // inject custom registration behavior into our registry wrapper
 func (r *Registry) MustRegister(metric kubemetrics.Metric) {
     // pretend we have a version comparison utility library
-    if metricutils.compare(metric.DeprecatedVersion).isEqual(r.KubeVersion) {
-		    // append deprecated text to description
-		    // emit warning in logs
-		    return
-	  } else if metricutils.compare(metric.DeprecatedVersion).isLessThan(r.KubeVersion)
-		    // check if binary has deprecated metrics enabled otherwise
-		    // no-op registration
-		    return
-	  }
+    if metricutils.compare(metric.DeprecatedVersion).isLessThan(r.KubeVersion) {
+        // check if binary has deprecated metrics enabled otherwise
+        // no-op registration
+        return
+    } else if metricutils.compare(metric.DeprecatedVersion).isEqual(r.KubeVersion) {
+        // append deprecated text to description
+        // emit warning in logs
+        // continue to actual registration
+    }
     // append alpha text to metric description if metric.isAlpha
     // fallback to original prometheus behavior
     r.promregistry.MustRegister(metric.realMetric)
@@ -218,18 +219,19 @@ Relative to a more hands-off approach, like one where we just document the metri
 
 Also, we should note that this approach can be manufactured in-place; this framework could be rolled out without actually introducing any backwards-incompatible changes (unlike moving stable metrics to a '/metrics/v1' endpoint).
 
+There is also some inflexibility in responding to the situation where code is re-architected in such a way that it's no longer feasible to provide a metric (e.g. there's no longer anything to measure). Generally, we would want to try to avoid this situation by not making a metric stable if there's any way for it to get refactored away. Currently, in this sort of case, the metrics stability proposal would only dictate that we continue to register the metric and undergo the normal metric deprecation policy, as it would be necessary for avoiding ingestion pipeline breakages (thanks @DirectXMan12 for pointing this out).
 
 ## Alternatives
 
-Using a more traditional versioned endpoint was one of the first suggested ideas. However, metrics basically form a single API group so making a change to a single (previously considered stable) metric would necessitate a version bump for all metrics. In the worst case, version bumps for metrics could occur with each release, which is undesirable from a consumption point of view. 
+Using a more traditional versioned endpoint was one of the first suggested ideas. However, metrics basically form a single API group so making a change to a single (previously considered stable) metric would necessitate a version bump for all metrics. In the worst case, version bumps for metrics could occur with each release, which is undesirable from a consumption point of view.
 
-It would also be possible to group metrics into distinct endpoints, in order to avoid global version bumps. However, this breaks the more common metrics ingestion patterns, i.e. as a consumer of metrics for a component, you would no longer be able to assume all of your relevant metrics come from one location. This is also a potentially confusing pattern for consumer of metrics, since you would have to manage a series of metrics for a given component and also be cognizant of the version for each of these components. It would be easy to get wrong. 
+It would also be possible to group metrics into distinct endpoints, in order to avoid global version bumps. However, this breaks the more common metrics ingestion patterns, i.e. as a consumer of metrics for a component, you would no longer be able to assume all of your relevant metrics come from one location. This is also a potentially confusing pattern for consumer of metrics, since you would have to manage a series of metrics for a given component and also be cognizant of the version for each of these components. It would be easy to get wrong.
 
-Alternatively, one lightweight solution which was previously suggested was documenting the metrics which have stability guarantees. However, this is prone to documentation rot and adds manual (and error-prone) overhead to the metrics process. 
+Alternatively, one lightweight solution which was previously suggested was documenting the metrics which have stability guarantees. However, this is prone to documentation rot and adds manual (and error-prone) overhead to the metrics process.
 
 ## Unresolved Questions
 
-Static analysis for validation - Having a set of wrappers in place which allows us to define custom metadata on metrics is quite powerful, since it enables a number of _theorectically possible_ features, like static analysis for verifying metric guarantees during a precommit phase. How we would actually go about doing this is TBD. It is possible to use the metrics registry to output metric descriptions in a separate endpoint; using static analysis we could validate metrics descriptions with our stability rules. 
+Static analysis for validation - Having a set of wrappers in place which allows us to define custom metadata on metrics is quite powerful, since it enables a number of _theorectically possible_ features, like static analysis for verifying metric guarantees during a precommit phase. How we would actually go about doing this is TBD. It is possible to use the metrics registry to output metric descriptions in a separate endpoint; using static analysis we could validate metrics descriptions with our stability rules.
 
 Initial alpha phase - Ideally, I would like to have alpha metrics disabled by default, but toggleable if explicit command-line flags are passed to the binary (i.e. '--enable-alpha-metrics=all-metrics'). This would be consistent with the traditional kubernetes definition of alpha features. However, since all control-plane metrics are currently in an alpha state (i.e. have no stability guarantees), disabling alpha metrics by default would entail that shipping this feature would mean no metrics would be enabled by default, which is obviously undesirable.
 
@@ -237,7 +239,7 @@ Beta metrics - Currently I am inclined to omit the beta stage from metric versio
 
 Prometheus labels - Having these series of wrappers in place allows us to potentially provide a custom wrapper struct around prometheus labels. This is particularly desirable because labels are shared across metrics and we may want to define uniform behavior for a given label ([constraining values for labels](https://github.com/kubernetes/kubernetes/issues/75839#issuecomment-478654080), [whitelisting values for a label](https://github.com/kubernetes/kubernetes/issues/76302)). Prometheus labels are pretty primitive (i.e. lists of strings) but potentially we may want an abstraction which more closely resembles [open-census tags](https://opencensus.io/tag/).
 
-Metrics which are added dynamically after application boot - Metrics which are dynamically added depending on things which occur during runtime should probably not be allowed to be considered stable metrics, since we can't rely on them to exist reliably. 
+Metrics which are added dynamically after application boot - Metrics which are dynamically added depending on things which occur during runtime should probably not be allowed to be considered stable metrics, since we can't rely on them to exist reliably.
 
 ## Implementation History
 
