@@ -187,8 +187,10 @@ __Alpha__ metrics have __*no*__ stability guarantees; as such they can be modifi
 __Stable__ metrics can be guaranteed to *not change*, except that the metric may become marked deprecated for a future kubernetes version. By *not change*, we mean three things:
 
 1. the metric itself will not be deleted
-2. the type of metric will not be modified
-3. no labels can be added or removed from this metric
+3. the type of metric will not be modified
+4. no labels can be added or removed from this metric
+
+As an aside, in this document, we consider metric renaming to be tantamount to deleting a metric and introducing a new one. Accordingly, metric renaming will also be disallowed for stable metrics. 
 
 From an ingestion point of view, it is backwards-compatible to add or remove possible __values__ for labels which already do exist (but __not__ labels themselves). Therefore, adding or removing __values__ from an existing label is permissible. Stable metrics can also be marked as __deprecated__ for a future kubernetes version, since this is a metadata field and does not actually change the metric itself.
 
