@@ -15,7 +15,7 @@ approvers:
 editor: TBD
 creation-date: 2019-03-22
 last-updated: 2019-03-22
-status: provisional
+status: implementable
 see-also:
   - "https://github.com/kubernetes/community/blob/master/contributors/design-proposals/api-machinery/server-get.md"
 replaces:
@@ -53,7 +53,7 @@ The user of server-side printing with CRDs and Aggregated APIs is common and is 
 
 ### Goals
 
-Server-side printing has no outstanding feature requests now that full WATCH support has been implemented in 1.15. It is ready to move to GA by promoting the resources.
+Server-side printing has no outstanding feature requests now that full [WATCH support has been implemented in 1.15](https://github.com/kubernetes/kubernetes/pull/71548). It is ready to move to GA by promoting the resources.
 
 PartialObjectMetadata exposes our full ObjectMeta interface and no API changes are anticipated. However, to prove their value one of the dynamic controllers should be ported in 1.15 to use PartialObjectMetadata instead of Unstructured objects to demonstrate the gains in performance. If successful PartialObjectMetadata would also be candidate for GA in 1.15.
 
@@ -67,7 +67,9 @@ PartialObjectMetadata exposes our full ObjectMeta interface and no API changes a
 ### 1.15
 
 * Copy `Table`, `PartialObjectMetadata` and `PartialObjectMetadataList` to `meta/v1` and expose the transformations in the API server.
+  * Update the serialization of `PartialObjectMetadataList` to use protobuf id `1` for `ListMeta` (it was added late in v1beta1)
 * Update at least one controller to use `PartialObjectMetadata` `v1beta1`.
+  * The garbage collector will be the primary target, we will remove the need to call `Update` and use a partial object metadata client.
 
 ### 1.16
 
@@ -88,6 +90,7 @@ Currently `v1beta1.Table` does not support Protobuf and the generators do not tr
 serialization of the cells. We need to decide on a serialization format for the Protobuf cells and
 ensure generators can be made to support it. This work does not need to block `v1` for Protobuf
 because the clients that access `Tables` are almost exclusively JSON clients (web consoles and CLIs).
+`PartialObjectMetadata*` will have a full protobuf implementation.
 
 ### Risks and Mitigations
 
