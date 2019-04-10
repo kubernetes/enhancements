@@ -33,6 +33,8 @@ status: provisional
     * [Metric Definition Phase](#metric-definition-phase)
     * [Metric Instantiation Phase](#metric-instantiation-phase)
     * [Metric Enrollment Phase](#metric-enrollment-phase)
+* [Stability Classes](#stability-classes)
+* [Deprecation Lifecycle](#deprecation-lifecycle)
 * [Design Details](#design-details)
   * [Test Plan](#test-plan)
   * [Graduation Criteria](#graduation-criteria)
@@ -44,7 +46,7 @@ status: provisional
 
 ## Summary
 
-Currently metrics emitted in the kubernetes control-plane do not offer any stability guarantees. This Kubernetes Enhancement Proposal (KEP) proposes a strategy and framework for programmatically expressing how stable a metric is. This KEP also defines the specific guarantees made for each enumerated level of stability. Since this document will likely evolve with ongoing discussion around metric stability, it will be updated accordingly.
+Currently metrics emitted in the kubernetes control-plane do not offer any stability guarantees. This Kubernetes Enhancement Proposal (KEP) proposes a strategy and framework for programmatically expressing how stable a metric is, i.e. whether a metric's name, type and [labels](https://prometheus.io/docs/practices/naming/#labels) (i.e. dimensions) is liable to change. Since this document will likely evolve with ongoing discussion around metric stability, it will be updated accordingly.
 
 ## Motivation
 
@@ -102,6 +104,7 @@ Since we are using the prometheus provided struct, we are constrained to prometh
 var deprecatedMetricDefinition = kubemetrics.CounterOpts{
     Name: "some_deprecated_metric",
     Help: "some description",
+    StabilityLevel: kubemetrics.STABLE, // this is also a custom metadata field
     DeprecatedVersion: "1.15", // this is a custom metadata field
 }
 
@@ -109,6 +112,7 @@ var alphaMetricDefinition = kubemetrics.CounterOpts{
     Name: "some_alpha_metric",
     Help: "some description",
     StabilityLevel: kubemetrics.ALPHA, // this is also a custom metadata field
+	DeprecatedVersion: "1.15", // this can optionally be included on alpha metrics, although there is no change to contractual stability guarantees
 }
 ```
 
@@ -180,28 +184,58 @@ kubemetrics.MustRegister(alphaMetric)
 
 ## Stability Classes
 
-This proposal introduces three stability classes for metrics: (1) Alpha, (2) Stable, (3) Deprecated. These classes are intended to make explicit the API contract between the control-plane and the ingester of control-plane metrics.
+This proposal introduces two stability classes for metrics: (1) Alpha, (2) Stable. These classes are intended to make explicit the API contract between the control-plane and the consumer of control-plane metrics.
 
 __Alpha__ metrics have __*no*__ stability guarantees; as such they can be modified or deleted at any time. At this time, all kubernetes metrics implicitly fall into this category.
 
 __Stable__ metrics can be guaranteed to *not change*, except that the metric may become marked deprecated for a future kubernetes version. By *not change*, we mean three things:
 
-1. the metric itself will not be deleted
+1. the metric itself will not be deleted ([or renamed](#metric-renaming))
 3. the type of metric will not be modified
 4. no labels can be added or removed from this metric
 
-As an aside, in this document, we consider metric renaming to be tantamount to deleting a metric and introducing a new one. Accordingly, metric renaming will also be disallowed for stable metrics. 
-
 From an ingestion point of view, it is backwards-compatible to add or remove possible __values__ for labels which already do exist (but __not__ labels themselves). Therefore, adding or removing __values__ from an existing label is permissible. Stable metrics can also be marked as __deprecated__ for a future kubernetes version, since this is a metadata field and does not actually change the metric itself.
 
-__Deprecated__ metrics are also guaranteed to *not change*. The purpose of deprecated metrics is to provide a reasonable window for consumers of control-plane metrics to make changes to their monitoring infrastructure (and also so that we do not handcuff control-plane developers to a set of stable metrics which they will have to then support for all time). Deprecated metrics can fall under one of two categories:
+As an aside, all metrics should be able to be individually disabled by the cluster administrator, regardless of stability class. By default, all non-deprecated metrics will be automatically registered to the metrics endpoint unless explicitly blacklisted via a command line flag (i.e. '--disable-metrics=somebrokenmetric,anothermetric').
 
- 1. _soft deprecated_ - this occurs when a stable metric has been recently deprecated; 'recently deprecated' is defined as when the metric's deprecated version is equal to the current kubernetes version
- 2. _hard deprecated_ - this occurs when the metric has been deprecated for > 1 release.
+## Deprecation Lifecycle
 
-Soft deprecated metrics will have their description text prefixed with a deprecation notice string '(Deprecated from x.y)' and a warning log will be emitted during metric registration (in the spirit of the official [kubernetes deprecation policy](https://kubernetes.io/docs/reference/using-api/deprecation-policy/#deprecating-a-flag-or-cli)). Like their stable metric counterparts, soft deprecated metrics will be automatically registered to the metrics endpoint.
+This proposal introduces deprecation metadata for metrics, to be used to define a deprecation lifecycle. Metrics can be annotated with a kubernetes version, from which point that metric will be considered deprecated. This allows us to indicate that a metric is slated for future removal and provides the consumer a reasonable window in which they can make changes to their monitoring infrastructure which depends on this metric. While deprecation policies only actually change stability guarantees for __stable__ metrics (and not __alpha__ ones), deprecation information may however be optionally provided on alpha metrics to help component owners inform users of future intent, to help with transition plans.
 
-Metrics are _hard deprecated_ once they have been deprecated for more than one release. _Unlike_ their soft deprecated counterparts, hard deprecated metrics will __*no longer be automatically registered*__ to the metrics endpoint. By default, hard deprecated metrics will not be registered unless explicitly instructed to do so through command line flag on the binary (i.e. '--enable-hard-deprecated-metrics=all-metrics'). It is expected that deprecated metrics will be removed once they have been deprecated for more than one release. As such, metrics which have been deprecated for more than one release will have __no__ stability guarantees.
+When a stable metric undergoes the deprecation process, we are signaling that the metric will eventually be deleted. The lifecyle looks roughly like this (each stage represents a kubernetes release):
+
+__Stable metric__ -> __Deprecated metric__ -> __Hidden metric__ -> __Deletion__
+
+__Deprecated__ metrics have the same stability guarantees of their counterparts. If a stable metric is deprecated, then a deprecated stable metric is guaranteed to *not change*. When deprecating a stable metric, a future kubernetes release is specified as the point from which the metric will be considered deprecated.
+
+```go
+var someCounter = kubemetrics.CounterOpts{
+    Name: "some_counter",
+    Help: "this counts things",
+    StabilityLevel: kubemetrics.STABLE,
+    DeprecatedVersion: "1.15", // this metric is deprecated when the kubernetes version == 1.15
+}
+````
+
+__Deprecated__ metrics will have their description text prefixed with a deprecation notice string '(Deprecated from x.y)' and a warning log will be emitted during metric registration (in the spirit of the official [kubernetes deprecation policy](https://kubernetes.io/docs/reference/using-api/deprecation-policy/#deprecating-a-flag-or-cli)).
+
+Before deprecation:
+
+```text
+# HELP some_counter this counts things
+# TYPE some_counter counter
+some_counter 0
+```
+
+During deprecation:
+```text
+# HELP some_counter (Deprecated from 1.15) this counts things
+# TYPE some_counter counter
+some_counter 0
+```
+Like their stable metric counterparts, deprecated metrics will be automatically registered to the metrics endpoint.
+
+On a subsequent release (when the metric's deprecatedVersion is equal to current_kubernetes_version - 1)), a deprecated metric will become a __hidden metric__. _Unlike_ their deprecated counterparts, hidden metrics will __*no longer be automatically registered*__ to the metrics endpoint (hence hidden). However, they can be explicitly enabled through a command line flag on the binary (i.e. '--enable-hidden-metrics=really_deprecated_metric'). This is to provide cluster admins an escape hatch to properly migrate off of a deprecated metric, if they were not able to react to the earlier deprecation warnings. Hidden metrics should be deleted after one release.
 
 ## Design Details
 
@@ -233,13 +267,19 @@ Alternatively, one lightweight solution which was previously suggested was docum
 
 ## Unresolved Questions
 
-Static analysis for validation - Having a set of wrappers in place which allows us to define custom metadata on metrics is quite powerful, since it enables a number of _theorectically possible_ features, like static analysis for verifying metric guarantees during a precommit phase. How we would actually go about doing this is TBD. It is possible to use the metrics registry to output metric descriptions in a separate endpoint; using static analysis we could validate metrics descriptions with our stability rules.
+### Static Analysis for Validation
 
-Initial alpha phase - Ideally, I would like to have alpha metrics disabled by default, but toggleable if explicit command-line flags are passed to the binary (i.e. '--enable-alpha-metrics=all-metrics'). This would be consistent with the traditional kubernetes definition of alpha features. However, since all control-plane metrics are currently in an alpha state (i.e. have no stability guarantees), disabling alpha metrics by default would entail that shipping this feature would mean no metrics would be enabled by default, which is obviously undesirable.
+Having a set of wrappers in place which allows us to define custom metadata on metrics is quite powerful, since it enables a number of _theorectically possible_ features, like static analysis for verifying metric guarantees during a precommit phase. How we would actually go about doing this is TBD. It is possible to use the metrics registry to output metric descriptions in a separate endpoint; using static analysis we could validate metrics descriptions with our stability rules.
 
-Beta metrics - Currently I am inclined to omit the beta stage from metric versioning if only to reduce initial complexity. It may however become more desirable to include this state in a later design/implementation phase.
+### Beta Stability Level
 
-Prometheus labels - Having these series of wrappers in place allows us to potentially provide a custom wrapper struct around prometheus labels. This is particularly desirable because labels are shared across metrics and we may want to define uniform behavior for a given label ([constraining values for labels](https://github.com/kubernetes/kubernetes/issues/75839#issuecomment-478654080), [whitelisting values for a label](https://github.com/kubernetes/kubernetes/issues/76302)). Prometheus labels are pretty primitive (i.e. lists of strings) but potentially we may want an abstraction which more closely resembles [open-census tags](https://opencensus.io/tag/).
+Currently I am inclined to omit the beta stage from metric versioning if only to reduce initial complexity. It may however become more desirable to include this state in a later design/implementation phase.
+
+### Prometheus Labels vs OpenCensus-type Tags
+
+Having these series of wrappers in place allows us to potentially provide a custom wrapper struct around prometheus labels. This is particularly desirable because labels are shared across metrics and we may want to define uniform behavior for a given label ([constraining values for labels](https://github.com/kubernetes/kubernetes/issues/75839#issuecomment-478654080), [whitelisting values for a label](https://github.com/kubernetes/kubernetes/issues/76302)). Prometheus labels are pretty primitive (i.e. lists of strings) but potentially we may want an abstraction which more closely resembles [open-census tags](https://opencensus.io/tag/).
+
+### Dynamically Registered Metrics
 
 Metrics which are added dynamically after application boot - Metrics which are dynamically added depending on things which occur during runtime should probably not be allowed to be considered stable metrics, since we can't rely on them to exist reliably.
 
@@ -249,4 +289,6 @@ TBD
 
 ## References
 
-1. [original proposal](https://docs.google.com/document/d/1CcbfC-M8CHDfq1rMAOtW0-LKHvermyUiV6BMXXYiqoM/edit#)
+#### Metric Renaming
+
+Metric renaming is be tantamount to deleting a metric and introducing a new one. Accordingly, metric renaming will also be disallowed for stable metrics.
