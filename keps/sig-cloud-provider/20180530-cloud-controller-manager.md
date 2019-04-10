@@ -316,7 +316,7 @@ Additionally, the repository should have:
 * A `docs/getting-started.md` file that describes the installation and basic
   operation of the cloud controller manager code.
 
-Where the provider has additional capabilities, the repository should have
+Where the provider has additional capabilities, the repository may have
 the following subdirectories that contain the common features:
 
 * `dns` for DNS provider code.
