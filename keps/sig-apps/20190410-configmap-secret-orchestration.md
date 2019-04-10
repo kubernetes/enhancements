@@ -91,7 +91,7 @@ We would like to solve these issues by adding support to the orchestration resou
 
 Currently there are a mismash of workarounds to the orchestration objects not supporting orchestration of configmaps/secrets.
 
-Helm recommends you take a checksum of the config and add it as an annotation to the orchestration object. This triggers and update of the workload when the content of the configmap changes. This does not properly work with roll backs. It also does not work if the configmap's definition is in a nested chart or provided outside the chart.
+Several different solutions or workarounds out of tree are being used. See Alternatives section for details. None of these are widely deployed. Since most workloads need this kind of orchestration, having it as a base Kubernetes functionality would be a significant benefit to users.
 
 ### Goals
 
@@ -116,7 +116,7 @@ snapshot can be either true or false. Watch can only be true if snapshot is also
 The fields will be ignored by all objects other then Deployment, DaemonSet and StatefulSet.
 
 DaemonSet/StatefulSet controllers will be modified such that:
- * During a "change", on seeing a snapshot=true flag on a configmap/secret, a copy of the configmap/secret will be made with a unique name. This unique name will be stored in the corresponding Controller revision.
+ * During a "change", on seeing a snapshot=true flag on a configmap/secret, a copy of the configmap/secret will be made with a unique name. This unique name will be stored in the corresponding ControllerRevision.
  * All pods created will reference the unique configmap/secret snapshot name, not the base name.
  * When a ControllerRevision is deleted, a deletion of the corresponding configmap/secret snapshots will also be issued.
  * When an object with a watch flag of true is created/updated, watches on the specified configmap/secret will be added. Any watch triggered will be treated as a "change" of the object.
@@ -126,7 +126,7 @@ The Deployment controller will be modified such that:
  * When a ReplicaSet is deleted, a deletion of the corresponding configmap/secret snapshots will also be issued.
  * When an object with a watch flag of true is created/updated, watches on the specified configmap/secret will be added. Any watch triggered will be treated as a "change" of the object.
 
-### User Stories [optional]
+### User Stories
 
 #### Story 1
 
@@ -204,7 +204,7 @@ There should be no version skew issues as the flags are only interpreted by the 
 
 This functionality requires more complexity to be added to orchestration controllers. People have, in some cases, worked around these problems successfully outside of Kubernetes.
 
-## Alternatives [optional]
+## Alternatives
 
 There are several external projects implementing various solutions or workarounds for this problem. This includes:
 * https://github.com/stakater/reloader
