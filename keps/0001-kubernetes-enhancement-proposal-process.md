@@ -36,6 +36,7 @@ status: implementable
       * [Prior Art](#prior-art)
   * [Drawbacks](#drawbacks)
   * [Alternatives](#alternatives)
+  * [GitHub issues vs. KEPs](#github-issues-vs-keps)
   * [Unresolved Questions](#unresolved-questions)
 
 ## Summary
