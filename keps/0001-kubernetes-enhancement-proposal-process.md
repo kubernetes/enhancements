@@ -21,7 +21,6 @@ status: implementable
 ## Table of Contents
 
 * [Kubernetes Enhancement Proposal Process](#kubernetes-enhancement-proposal-process)
-  * [Metadata](#metadata)
   * [Table of Contents](#table-of-contents)
   * [Summary](#summary)
   * [Motivation](#motivation)
@@ -35,11 +34,9 @@ status: implementable
       * [KEP Editor Role](#kep-editor-role)
       * [Important Metrics](#important-metrics)
       * [Prior Art](#prior-art)
-  * [Graduation Criteria](#graduation-criteria)
   * [Drawbacks](#drawbacks)
   * [Alternatives](#alternatives)
   * [Unresolved Questions](#unresolved-questions)
-  * [Mentors](#mentors)
 
 ## Summary
 
@@ -102,7 +99,7 @@ is intended to create high quality uniform design and implementation documents
 for SIGs to deliberate.
 
 [road to Go 2]: https://blog.golang.org/toward-go2
-[design proposals]: /contributors/design-proposals
+[design proposals]: https://github.com/kubernetes/community/tree/master/contributors/design-proposals
 
 ## Stewardship
 The following DACI model indentifies the responsible parties for KEPs.
