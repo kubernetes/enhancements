@@ -10,7 +10,7 @@ approvers:
 editor: TBD
 creation-date: 2019-03-24
 last-updated: yyyy-mm-dd
-status: provisional
+status: implemented
 ---
 
 # declarative-field-manager
