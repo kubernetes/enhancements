@@ -14,7 +14,7 @@ approvers:
 editor: TBD
 creation-date: 2019-02-12
 last-updated: 2019-02-13
-status: provisional
+status: implementable
 ---
 
 # Ephemeral Containers
@@ -76,9 +76,9 @@ For enhancements that make changes to code or processes/procedures in core Kuber
 
 Check these off as they are completed for the Release Team to track. These checklist items _must_ be updated for the enhancement to be released.
 
-- [ ] kubernetes/enhancements issue in release milestone, which links to KEP (this should be a link to the KEP location in kubernetes/enhancements, not the initial KEP PR)
-- [ ] KEP approvers have set the KEP status to `implementable`
-- [ ] Design details are appropriately documented
+- [x] kubernetes/enhancements issue in release milestone, which links to KEP (this should be a link to the KEP location in kubernetes/enhancements, not the initial KEP PR)
+- [x] KEP approvers have set the KEP status to `implementable`
+- [x] Design details are appropriately documented
 - [ ] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
 - [ ] Graduation criteria is in place
 - [ ] "Implementation History" section is up-to-date for milestone
@@ -273,9 +273,17 @@ can be viewed using `kubectl log`.
 
 ### Container Runtime Interface (CRI) changes
 
+Since Ephemeral Containers use the Container Runtime Interface, Ephemeral
+Containers will work for any runtime implementing the CRI, including Windows
+containers. It's worth noting that Ephemeral Containers are significantly more
+useful when the runtime implements [Process Namespace Sharing].
+
 The CRI requires no changes for basic functionality, but it will need to be
-updated to support container namespace targeting, as described in the
-[Shared PID Namespace Proposal](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/node/pod-pid-namespace.md#targeting-a-specific-containers-namespace).
+updated to support container namespace targeting, described fully in
+[Targeting a Namespace].
+
+[Process Namespace Sharing]: https://git.k8s.io/community/contributors/design-proposals/node/pod-pid-namespace.md
+[Targeting a Namespace]: https://git.k8s.io/community/contributors/design-proposals/node/pod-pid-namespace.md#targeting-a-specific-containers-namespace
 
 ### Creating Ephemeral Containers
 
