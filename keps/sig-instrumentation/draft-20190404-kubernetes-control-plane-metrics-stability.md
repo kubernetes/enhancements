@@ -46,7 +46,7 @@ status: provisional
 
 ## Summary
 
-Currently metrics emitted in the kubernetes control-plane do not offer any stability guarantees. This Kubernetes Enhancement Proposal (KEP) proposes a strategy and framework for programmatically expressing how stable a metric is, i.e. whether a metric's name, type and [labels](https://prometheus.io/docs/practices/naming/#labels) (i.e. dimensions) is liable to change. Since this document will likely evolve with ongoing discussion around metric stability, it will be updated accordingly.
+Currently metrics emitted in the Kubernetes control-plane do not offer any stability guarantees. This Kubernetes Enhancement Proposal (KEP) proposes a strategy and framework for programmatically expressing how stable a metric is, i.e. whether a metric's name, type and [labels](https://prometheus.io/docs/practices/naming/#labels) (i.e. dimensions) is liable to change. Since this document will likely evolve with ongoing discussion around metric stability, it will be updated accordingly.
 
 ## Motivation
 
@@ -71,12 +71,12 @@ This KEP suggests another alternative but is very much in line with the spirit o
 
 ## Background
 
-Kubernetes control-plane binaries (i.e. scheduler, kubelet, controller-manager, apiserver) use a prometheus client to export binary-specific metrics to a ‘/metrics’ endpoint in prometheus format. Metrics are first defined and then instantiated; later they are registered to a metrics registry. The http handler for the metrics endpoint then delegates responses to the underlying registry.
+Kubernetes control-plane binaries (i.e. scheduler, kubelet, controller-manager, apiserver) use a Prometheus client to export binary-specific metrics to a ‘/metrics’ endpoint in Prometheus format. Metrics are first defined and then instantiated; later they are registered to a metrics registry. The http handler for the metrics endpoint then delegates responses to the underlying registry.
 
 For the remainder of this document, I will refer to the following terms by these definitions:
 
-* __metric definition__ - this refers to defining a metric. In kubernetes, we use the standard prometheus pattern of using an options struct to define name, type, description of a metric.
-* __metric instantiation__ - this refers to creating an instance of a metric. A metric definition is passed into a metric constructor which, in kubernetes, is a prometheus metric constructor (example).
+* __metric definition__ - this refers to defining a metric. In Kubernetes, we use the standard Prometheus pattern of using an options struct to define name, type, description of a metric.
+* __metric instantiation__ - this refers to creating an instance of a metric. A metric definition is passed into a metric constructor which, in kubernetes, is a Prometheus metric constructor (example).
 * __metric enrollment__ - after being defined and created, individual metrics are officially enrolled to a metrics registry (currently a global one).
 * __metric registration process__ - I use this to refer to the entire lifecycle of a metric from definition, to instantiation, then enrollment.
 
@@ -99,7 +99,7 @@ var someMetricDefinition = prometheus.CounterOpts{
 }
 ```
 
-Since we are using the prometheus provided struct, we are constrained to prometheus provided fields. However, using a custom struct affords us the following:
+Since we are using the Prometheus provided struct, we are constrained to Prometheus provided fields. However, using a custom struct affords us the following:
 ```go
 var deprecatedMetricDefinition = kubemetrics.CounterOpts{
     Name: "some_deprecated_metric",
@@ -127,7 +127,7 @@ var someCounterVecMetric = prometheus.NewCounterVec(
 }
 ```
 
-Wrapping the prometheus constructors would allow us to take, as inputs, the modified metric definitions defined above, returning a custom kubernetes metric object which contains the metric which would have been instantiated as well as the custom metadata:
+Wrapping the Prometheus constructors would allow us to take, as inputs, the modified metric definitions defined above, returning a custom Kubernetes metric object which contains the metric which would have been instantiated as well as the custom metadata:
 
 ```go
 var deprecatedMetric = kubemetrics.NewCounterVec( // this is a wrapped initializer, which takes in our custom metric definitions
@@ -142,12 +142,12 @@ var alphaMetric = kubemetrics.NewCounterVec{
 
 ### Metric Enrollment Phase
 
-Currently, metric enrollment involves calls to a prometheus function which enrolls the metric in a global registry, like so:
+Currently, metric enrollment involves calls to a Prometheus function which enrolls the metric in a global registry, like so:
 ```go
 prometheus.MustRegister(someCounterVecMetric)
 ```
 
-Wrapping a prometheus registry with a kubernetes specific one, would allow us to take our custom metrics from our instantiation phase and execute custom logic based on our custom metadata. Our custom registry would hold a reference to a prometheus registry and defer metric enrollment unless preconditions were met:
+Wrapping a prometheus registry with a Kubernetes specific one, would allow us to take our custom metrics from our instantiation phase and execute custom logic based on our custom metadata. Our custom registry would hold a reference to a prometheus registry and defer metric enrollment unless preconditions were met:
 
 ```go
 import version "k8s.io/apimachinery/pkg/version"
@@ -186,38 +186,38 @@ kubemetrics.MustRegister(alphaMetric)
 
 This proposal introduces two stability classes for metrics: (1) Alpha, (2) Stable. These classes are intended to make explicit the API contract between the control-plane and the consumer of control-plane metrics.
 
-__Alpha__ metrics have __*no*__ stability guarantees; as such they can be modified or deleted at any time. At this time, all kubernetes metrics implicitly fall into this category.
+__Alpha__ metrics have __*no*__ stability guarantees; as such they can be modified or deleted at any time. At this time, all Kubernetes metrics implicitly fall into this category.
 
-__Stable__ metrics can be guaranteed to *not change*, except that the metric may become marked deprecated for a future kubernetes version. By *not change*, we mean three things:
+__Stable__ metrics can be guaranteed to *not change*, except that the metric may become marked deprecated for a future Kubernetes version. By *not change*, we mean three things:
 
 1. the metric itself will not be deleted ([or renamed](#metric-renaming))
 3. the type of metric will not be modified
 4. no labels can be added or removed from this metric
 
-From an ingestion point of view, it is backwards-compatible to add or remove possible __values__ for labels which already do exist (but __not__ labels themselves). Therefore, adding or removing __values__ from an existing label is permissible. Stable metrics can also be marked as __deprecated__ for a future kubernetes version, since this is a metadata field and does not actually change the metric itself.
+From an ingestion point of view, it is backwards-compatible to add or remove possible __values__ for labels which already do exist (but __not__ labels themselves). Therefore, adding or removing __values__ from an existing label is permissible. Stable metrics can also be marked as __deprecated__ for a future Kubernetes version, since this is a metadata field and does not actually change the metric itself.
 
 As an aside, all metrics should be able to be individually disabled by the cluster administrator, regardless of stability class. By default, all non-deprecated metrics will be automatically registered to the metrics endpoint unless explicitly blacklisted via a command line flag (i.e. '--disable-metrics=somebrokenmetric,anothermetric').
 
 ## Deprecation Lifecycle
 
-This proposal introduces deprecation metadata for metrics, to be used to define a deprecation lifecycle. Metrics can be annotated with a kubernetes version, from which point that metric will be considered deprecated. This allows us to indicate that a metric is slated for future removal and provides the consumer a reasonable window in which they can make changes to their monitoring infrastructure which depends on this metric. While deprecation policies only actually change stability guarantees for __stable__ metrics (and not __alpha__ ones), deprecation information may however be optionally provided on alpha metrics to help component owners inform users of future intent, to help with transition plans.
+This proposal introduces deprecation metadata for metrics, to be used to define a deprecation lifecycle. Metrics can be annotated with a Kubernetes version, from which point that metric will be considered deprecated. This allows us to indicate that a metric is slated for future removal and provides the consumer a reasonable window in which they can make changes to their monitoring infrastructure which depends on this metric. While deprecation policies only actually change stability guarantees for __stable__ metrics (and not __alpha__ ones), deprecation information may however be optionally provided on alpha metrics to help component owners inform users of future intent, to help with transition plans.
 
-When a stable metric undergoes the deprecation process, we are signaling that the metric will eventually be deleted. The lifecyle looks roughly like this (each stage represents a kubernetes release):
+When a stable metric undergoes the deprecation process, we are signaling that the metric will eventually be deleted. The lifecyle looks roughly like this (each stage represents a Kubernetes release):
 
 __Stable metric__ -> __Deprecated metric__ -> __Hidden metric__ -> __Deletion__
 
-__Deprecated__ metrics have the same stability guarantees of their counterparts. If a stable metric is deprecated, then a deprecated stable metric is guaranteed to *not change*. When deprecating a stable metric, a future kubernetes release is specified as the point from which the metric will be considered deprecated.
+__Deprecated__ metrics have the same stability guarantees of their counterparts. If a stable metric is deprecated, then a deprecated stable metric is guaranteed to *not change*. When deprecating a stable metric, a future Kubernetes release is specified as the point from which the metric will be considered deprecated.
 
 ```go
 var someCounter = kubemetrics.CounterOpts{
     Name: "some_counter",
     Help: "this counts things",
     StabilityLevel: kubemetrics.STABLE,
-    DeprecatedVersion: "1.15", // this metric is deprecated when the kubernetes version == 1.15
+    DeprecatedVersion: "1.15", // this metric is deprecated when the Kubernetes version == 1.15
 }
 ````
 
-__Deprecated__ metrics will have their description text prefixed with a deprecation notice string '(Deprecated from x.y)' and a warning log will be emitted during metric registration (in the spirit of the official [kubernetes deprecation policy](https://kubernetes.io/docs/reference/using-api/deprecation-policy/#deprecating-a-flag-or-cli)).
+__Deprecated__ metrics will have their description text prefixed with a deprecation notice string '(Deprecated from x.y)' and a warning log will be emitted during metric registration (in the spirit of the official [Kubernetes deprecation policy](https://kubernetes.io/docs/reference/using-api/deprecation-policy/#deprecating-a-flag-or-cli)).
 
 Before deprecation:
 
@@ -277,7 +277,7 @@ Currently I am inclined to omit the beta stage from metric versioning if only to
 
 ### Prometheus Labels vs OpenCensus-type Tags
 
-Having these series of wrappers in place allows us to potentially provide a custom wrapper struct around prometheus labels. This is particularly desirable because labels are shared across metrics and we may want to define uniform behavior for a given label ([constraining values for labels](https://github.com/kubernetes/kubernetes/issues/75839#issuecomment-478654080), [whitelisting values for a label](https://github.com/kubernetes/kubernetes/issues/76302)). Prometheus labels are pretty primitive (i.e. lists of strings) but potentially we may want an abstraction which more closely resembles [open-census tags](https://opencensus.io/tag/).
+Having these series of wrappers in place allows us to potentially provide a custom wrapper struct around Prometheus labels. This is particularly desirable because labels are shared across metrics and we may want to define uniform behavior for a given label ([constraining values for labels](https://github.com/kubernetes/kubernetes/issues/75839#issuecomment-478654080), [whitelisting values for a label](https://github.com/kubernetes/kubernetes/issues/76302)). Prometheus labels are pretty primitive (i.e. lists of strings) but potentially we may want an abstraction which more closely resembles [open-census tags](https://opencensus.io/tag/).
 
 ### Dynamically Registered Metrics
 
