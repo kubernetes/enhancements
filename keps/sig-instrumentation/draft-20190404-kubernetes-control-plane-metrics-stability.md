@@ -200,7 +200,9 @@ As an aside, all metrics should be able to be individually disabled by the clust
 
 ## Deprecation Lifecycle
 
-This proposal introduces deprecation metadata for metrics, to be used to define a deprecation lifecycle. Metrics can be annotated with a Kubernetes version, from which point that metric will be considered deprecated. This allows us to indicate that a metric is slated for future removal and provides the consumer a reasonable window in which they can make changes to their monitoring infrastructure which depends on this metric. While deprecation policies only actually change stability guarantees for __stable__ metrics (and not __alpha__ ones), deprecation information may however be optionally provided on alpha metrics to help component owners inform users of future intent, to help with transition plans.
+This proposal introduces deprecation metadata for metrics, to be used to define a deprecation lifecycle. Metrics can be annotated with a Kubernetes version, from which point that metric will be considered deprecated. This allows us to indicate that a metric is slated for future removal and provides the consumer a reasonable window in which they can make changes to their monitoring infrastructure which depends on this metric.
+
+While deprecation policies only actually change stability guarantees for __stable__ metrics (and not __alpha__ ones), deprecation information may however be optionally provided on alpha metrics to help component owners inform users of future intent, to help with transition plans (this change was made at the request of @dashpole, who helpfully pointed out that it would be nice to be able signal future intent even for alpha metrics).
 
 When a stable metric undergoes the deprecation process, we are signaling that the metric will eventually be deleted. The lifecyle looks roughly like this (each stage represents a Kubernetes release):
 
