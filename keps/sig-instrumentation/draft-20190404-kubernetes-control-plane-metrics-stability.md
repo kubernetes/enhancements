@@ -196,6 +196,8 @@ __Stable__ metrics can be guaranteed to *not change*, except that the metric may
 
 From an ingestion point of view, it is backwards-compatible to add or remove possible __values__ for labels which already do exist (but __not__ labels themselves). Therefore, adding or removing __values__ from an existing label is permissible. Stable metrics can also be marked as __deprecated__ for a future Kubernetes version, since this is a metadata field and does not actually change the metric itself.
 
+Removing or adding labels from stable metrics is not permissible. In order to add/remove a label to an existing stable metric, one would have to introduce a new metric and deprecate the stable one; otherwise this would violate compatibility agreements. Graduating a metric to a stable state is a contractual API agreement, as such, it would be desirable to require an api-review (to sig-instrumentation) for graduating or deprecating a metric (in line with current Kubernetes [api-review processes](https://github.com/kubernetes/community/blob/master/sig-architecture/api-review-process.md)).
+
 As an aside, all metrics should be able to be individually disabled by the cluster administrator, regardless of stability class. By default, all non-deprecated metrics will be automatically registered to the metrics endpoint unless explicitly blacklisted via a command line flag (i.e. '--disable-metrics=somebrokenmetric,anothermetric').
 
 ## Deprecation Lifecycle
