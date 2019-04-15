@@ -76,7 +76,7 @@ Kubernetes control-plane binaries (i.e. scheduler, kubelet, controller-manager, 
 For the remainder of this document, I will refer to the following terms by these definitions:
 
 * __metric definition__ - this refers to defining a metric. In Kubernetes, we use the standard Prometheus pattern of using an options struct to define name, type, description of a metric.
-* __metric instantiation__ - this refers to creating an instance of a metric. A metric definition is passed into a metric constructor which, in kubernetes, is a Prometheus metric constructor (example).
+* __metric instantiation__ - this refers to creating an instance of a metric. A metric definition is passed into a metric constructor which, in Kubernetes, is a Prometheus metric constructor (example).
 * __metric enrollment__ - after being defined and created, individual metrics are officially enrolled to a metrics registry (currently a global one).
 * __metric registration process__ - I use this to refer to the entire lifecycle of a metric from definition, to instantiation, then enrollment.
 
@@ -84,7 +84,7 @@ The fact that the metric registration process always involves these steps is sig
 
 ## Proposal
 
-This KEP proposes a programmatic mechanism to express the stability of a given control plane metric. Individual metrics would be quasi-versioned, i.e. they would have additional bits of metadata which would indicate whether that metric was alpha (not-stable), stable, or deprecated. Metric stability guarantees would depend on the values of those additional bits.
+This KEP proposes a programmatic mechanism to express the stability of a given control plane metric. Individual metrics would be quasi-versioned, i.e. they would have additional bits of metadata which would indicate whether that metric was alpha (not-stable), stable, or deprecated. Metric stability guarantees would depend on the values of those additional bits. This information would be represented to users in two primary ways: (1) metric stability information would be automatically to individual metrics help descriptions and (2) in the case of deprecated metrics, warning logs would be emitted on metric registration.
 
 Specifically, this would involve injecting custom behavior during metric registration process by wrapping metric definition, instantiation and enrollment.
 
