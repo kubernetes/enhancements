@@ -68,6 +68,7 @@ This KEP suggests another alternative but is very much in line with the spirit o
 
 * We are __*not*__ defining which specific control-plane metrics are actually stable.
 * We are __*not*__ providing guarantees around specific values in metrics; as such, breakages in alerting based of off assumptions on specific values in metrics are out-of-scope.
+* Defining the precise mechanism by which we will validate metric rule violations (i.e. static analysis) is also __*not*__ in scope.
 
 ## Background
 
@@ -196,9 +197,15 @@ __Stable__ metrics can be guaranteed to *not change*, except that the metric may
 
 From an ingestion point of view, it is backwards-compatible to add or remove possible __values__ for labels which already do exist (but __not__ labels themselves). Therefore, adding or removing __values__ from an existing label is permissible. Stable metrics can also be marked as __deprecated__ for a future Kubernetes version, since this is a metadata field and does not actually change the metric itself.
 
-Removing or adding labels from stable metrics is not permissible. In order to add/remove a label to an existing stable metric, one would have to introduce a new metric and deprecate the stable one; otherwise this would violate compatibility agreements. Graduating a metric to a stable state is a contractual API agreement, as such, it would be desirable to require an api-review (to sig-instrumentation) for graduating or deprecating a metric (in line with current Kubernetes [api-review processes](https://github.com/kubernetes/community/blob/master/sig-architecture/api-review-process.md)).
+Removing or adding labels from stable metrics is not permissible. In order to add/remove a label to an existing stable metric, one would have to introduce a new metric and deprecate the stable one; otherwise this would violate compatibility agreements.
 
 As an aside, all metrics should be able to be individually disabled by the cluster administrator, regardless of stability class. By default, all non-deprecated metrics will be automatically registered to the metrics endpoint unless explicitly blacklisted via a command line flag (i.e. '--disable-metrics=somebrokenmetric,anothermetric').
+
+## API Review
+
+Graduating a metric to a stable state is a contractual API agreement, as such, it would be desirable to require an api-review (to sig-instrumentation) for graduating or deprecating a metric (in line with current Kubernetes [api-review processes](https://github.com/kubernetes/community/blob/master/sig-architecture/api-review-process.md)). However, initiating or mandating such API review has historically been problematic for sig-instrumentation since, while a horizontal effort, is not automatically added as reviewers for metrics related changes.
+
+One possible solution is through something similar to the existing Kubernetes conformence test gates (thanks @liggit for pointing this one out). We will have a script which can generate a list of the current stable metrics (via static analysis). This list will be checked in. During the CI/CD flow, a verify script will run to generate a new list of stable metrics. If there is a diff present, then the verify script will fail, since the file should be updated and checked in. Thus, the file must be checked in and since the file will live in a directory owned by sig-instrumentation, sig-instrumentation approval on that PR will be required.
 
 ## Deprecation Lifecycle
 
