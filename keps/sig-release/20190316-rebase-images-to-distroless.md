@@ -166,7 +166,7 @@ It more or less depends on add-on OWNERs’ judge on whether/how the add-on imag
 
 #### Example
 
-[ingress-gce/fuzzer](https://github.com/kubernetes/ingress-gce/blob/64eee7e3521680057b071d5e9bebaa215086a4bc/Dockerfile.fuzzer) was based on alpine and can't be switched to distroless directly due to the fact that it needs shell to redirect the glog file. To allow the images to be based on distroless (which doesn't contain shell), we firstly need to remove the dependency on the shell (use klog instead of glog), and then rebase the image. (Related PR [pr/682](https://github.com/kubernetes/ingress-gce/pull/682]), [pr/666](https://github.com/kubernetes/ingress-gce/pull/666))
+[ingress-gce/fuzzer](https://github.com/kubernetes/ingress-gce/blob/64eee7e3521680057b071d5e9bebaa215086a4bc/Dockerfile.fuzzer) was based on alpine and can't be switched to distroless directly due to the fact that it needs shell to redirect the glog file. To allow the images to be based on distroless (which doesn't contain shell), we firstly need to remove the dependency on the shell (use klog instead of glog), and then rebase the image. (Related PR [pr/682](https://github.com/kubernetes/ingress-gce/pull/682), [pr/666](https://github.com/kubernetes/ingress-gce/pull/666))
 
 
 ## Graduation Criteria
