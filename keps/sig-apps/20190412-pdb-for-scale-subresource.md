@@ -65,7 +65,7 @@ As mentioned above, the PDB controller will check the desired number of replicas
 
 ### Risks and Mitigations
 
-The major risk with this change is the additional load on the apiserver since we can't use shared informers for scale subresources. As described above, we plan to mitigate this by only checking the scale subresource when neither of the kubernetes workload controllers is a match and use a cache to make sure we only need to look up each controller once per reconcile loop.
+The major risk with this change is the additional load on the apiserver since we can't use shared informers for scale subresources. As described above, we plan to mitigate this by only checking the scale subresource when the kind of the controller ref doesn't match any of the kubernetes workload controllers, and use a cache to make sure we only need to look up each controller once per reconcile loop.
 
 ## Design Details
 
