@@ -34,7 +34,7 @@ superseded-by: TBD
     - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
       - [Algorithm pseudocode](#algorithm-pseudocode)
       - [Default values](#default-values)
-      - [The motivation to “pick the softest constraint” concept](#the-motivation-to-pick-the-softest-constraint-concept)
+      - [The motivation to “pick the largest constraint” concept](#the-motivation-to-pick-the-largest-constraint-concept)
       - [Stabilization Window](#stabilization-window)
       - [API Changes](#api-changes)
       - [HPA Controller State changes](#hpa-controller-state-changes)
@@ -52,7 +52,7 @@ I can name at least three types of applications:
 
 - Applications that handle business-critical web traffic. They should scale up as fast as possible (false positive signals to scale up are ok), and scale down very slowly (waiting for another traffic spike).
 - Applications that process critical data. They should scale up as fast as possible (to reduce the data processing time), and scale down as soon as possible (to reduce the costs). False positives signals to scale up/down are ok.
-- Applications that process normal data/web traffic. It is not that important and may scale up and down in a usual way to minimize jitter.
+- Applications that process regular data/web traffic. It is not that important and may scale up and down in a usual way to minimize jitter.
 
 At the moment, there’s only one cluster-level configuration parameter that influence how fast the cluster is scaled down:
 
@@ -97,11 +97,12 @@ For both direction (scale up and scale down) there should be a `Constraint` fiel
 
 A user will specify the parameters for the HPA, thus controlling the HPA logic.
 
-If the user specifies two parameters, two constraints are calculated, and the softest is used (see the [The motivation to pick the softest constraint][] section below).
+If the user specifies two parameters, two constraints are calculated, and the largest is used (see the [The motivation to pick the largest constraint][] section below).
 
-If the user doesn’t want to use some particular parameter (= user doesn’t want to use this particular constraint), the parameter should be set to -1 (or any negative number).
+If the user doesn't specify any parameter, the default value for that parameter is used (see the [Default values][] section below).
 
-[The motivation to pick the softest constraint]: #the-motivation-to-pick-the-softest-constraint-concept
+[The motivation to pick the largest constraint]: #the-motivation-to-pick-the-largest-constraint-concept
+[Default values]: #default-values
 
 ### User Stories
 
@@ -207,7 +208,7 @@ if calculatedReplicas > curReplicas:
 else if calculatedReplicas < CurReplicas:
   constraint1 = curReplicas * (1 - ScaleDownPercent/100)
   constraint2 = CurReplicas - ScaleDownPods
-  scaleDownLimit = min(constraint1, constraint2)
+  scaleDownLimit = max(constraint1, constraint2)
   desiredReplicas = max(scaleDownLimit, calculatedReplicas)
 ```
 
@@ -235,7 +236,7 @@ the scale down is only limited by [Stabilization window][]
 
 [Stabilization Window]: #stabilization-window
 
-#### The motivation to “pick the softest constraint” concept
+#### The motivation to “pick the largest constraint” concept
 
 Take a look at the example:
 
@@ -243,7 +244,7 @@ Take a look at the example:
 - `calculatedReplicas = 20`
 
 The user specifies only one HPA parameter `constraints.scaleUp.pods = 5` and expects that number of replicas to be set to 15 during the next HPA controller loop.
-But the algorithm picks the softest (largest in this context) change instead:
+But the algorithm picks the largest change instead:
 
     Constraint1 = 10 * 2 = 20 (as constraints.scaleUp.percent = 100 by default)
     Constraint2 = 10 + 5 = 15 (as constraints.scaleUp.pods = 5, set by the user)
@@ -256,7 +257,7 @@ The main idea of the HPA is to autoscale because of a load increase to avoid req
 
 Example: If the current cluster size is `1` and calculated cluster size for this particular load is `20`, then we should reach it ASAP.
 
-For default values (ScaleUpPercent = 100, ScaleUpPods = 4) and “pick the softest constraint” concept, we’ll increase 1 -> 20 in 3 steps
+For default values (ScaleUpPercent = 100, ScaleUpPods = 4) and “pick the largest constraint” concept, we’ll increase 1 -> 20 in 3 steps
 
     1 -> 5 -> 10 -> 20
 
@@ -271,6 +272,8 @@ Given that each step takes [90 sec in worst case], we’ll respond to the load i
 That’s too much, we should respond faster than that.
 
 [90 sec in worst case]: https://dzone.com/articles/kubernetes-autoscaling-101-cluster-autoscaler-hori-1
+
+The scale down constraints are a method to prevent too rapid loss of capacity. Hence, it makes sense to pick the maximum of two constraints.
 
 #### Stabilization Window
 
@@ -296,8 +299,8 @@ The resulting solution will look like this:
 
 ```golang
 type HPAScaleConstraintValue struct {
-    Pods          int32
-    Percent       int32
+    Pods          *int32
+    Percent       *int32
     PeriodSeconds int32
 }
 
@@ -306,8 +309,8 @@ type HorizontalPodAutoscalerSpec struct {
     MinReplicas    *int32
     MaxReplicas    int32
     Metrics        []MetricSpec
-    ScaleUp        HPAScaleConstraintValue
-    ScaleDown      HPAScaleConstraintValue
+    ScaleUp        *HPAScaleConstraintValue
+    ScaleDown      *HPAScaleConstraintValue
 }
 ```
 
