@@ -48,8 +48,8 @@ _Authors:_
       * [New Interfaces](#new-interfaces)
     * [Changes to Existing Components](#changes-to-existing-components)
 * [Graduation Criteria](#graduation-criteria)
-  * [alpha (target v1.11)](#alpha-target-v1.11)
-  * [beta](#beta)
+  * [alpha (target v1.15)](#phase-1-alpha-target-v115)
+  * [beta](#phase-2-beta-later-versions)
   * [GA (stable)](#ga-stable)
 * [Challenges](#challenges)
 * [Limitations](#limitations)
@@ -245,7 +245,19 @@ _Figure: Topology Manager components._
 ![topology-manager-instantiation](https://user-images.githubusercontent.com/379372/47447526-945a7580-d772-11e8-9761-5213d745e852.png)
 
 _Figure: Topology Manager instantiation and inclusion in pod admit lifecycle._
+ 
+### Feature Gate and Kubelet Flags
+ 
+A new feature gate will be added to enable the Topology Manager feature. This feature gate will be enabled in Kubelet, and will be disabled by default in the Alpha release.  
 
+ * Proposed Feature Gate:  
+  `--feature-gate=TopologyManager=true`  
+ 
+ This will be also followed by a Kubelet Flag for the Topology Manager Policy, which is described above. The `preferred` policy will be the default policy.
+ 
+ * Proposed Policy Flag:  
+ `--topology-manager-policy=preferred|strict`  
+ 
 ### Changes to Existing Components
 
 1. Kubelet consults Topology Manager for pod admission (discussed above.)
@@ -263,6 +275,8 @@ _Figure: Topology Manager instantiation and inclusion in pod admit lifecycle._
        when enumerating supported devices. See the protocol diff below.
     1. Device Manager calls `GetAffinity()` method of Topology Manager when
        deciding device allocation.
+ 
+
 
 ```diff
 diff --git a/pkg/kubelet/apis/deviceplugin/v1beta1/api.proto b/pkg/kubelet/apis/deviceplugin/v1beta1/api.proto
@@ -301,7 +315,7 @@ _Figure: Topology Manager fetches affinity from hint providers._
 
 # Graduation Criteria
 
-## Phase 1: Alpha (target v1.13)
+## Phase 1: Alpha (target v1.15)
 
 * Feature gate is disabled by default.
 * Alpha-level documentation.
