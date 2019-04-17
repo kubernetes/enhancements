@@ -116,7 +116,7 @@ resources := make(map[v1.ResourceName]weight)
 nodeScore := 0
 weightSum := 0
 for resource, weight := range resources {
-  nodeScore += ((podRequest[resource]+ requested[resource])/allocatable[resource]) * weight
+  nodeScore += resourceScoringFunction((podRequest[resource]+ requested[resource]), allocatable[resource]) * weight
   weightSum += weight
 }
 nodeScore = (nodeScore / weightSum)* 10
@@ -148,7 +148,6 @@ The default scheduler in most cases will schedule the Pods as follows as there i
 The Scheduler should submit the 2 resource job on Node 3 as the utilization is higher. This would reduce the fragmentation of extended resource and reduce pods in the pending state.
 
 ![Extended Scheduler Behavior](20190311-resource_bin_packing_priority_function_extended.png)
-
 
 ### Test Plan
 
