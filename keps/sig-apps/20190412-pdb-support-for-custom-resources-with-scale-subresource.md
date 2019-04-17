@@ -1,5 +1,5 @@
 ---
-title: support-scale-subresource-in-pdbs
+title: pdb-support-for-custom-resources-with-scale-subresource
 authors:
   - "@mortent"
 owning-sig: sig-apps
@@ -21,7 +21,7 @@ replaces:
 superseded-by:
 ---
 
-# Support scale subresource in PDBs
+# PDB support for custom resources with scale subresource
 
 ## Table of Contents
 
@@ -46,7 +46,7 @@ The scale subresource allows any resource to specify its desired number of repli
 
 ## Motivation
 
-PDBs are an important tool to control the number of voluntary disruptions for workloads on Kubernetes. As more users start deploying custom controllers/operators based on CRDs, it is inconvenient that they cannot take advantage of PDBs. The scale subresource is already in use by the autoscaler and we should extend its use to PDBs.
+PDBs are an important tool to control the number of voluntary disruptions for workloads on Kubernetes. As more users start deploying custom controllers/operators based on CRDs (EtcdCluster, MySQLReplicaSet...), it is inconvenient that they cannot take advantage of PDBs. This doesn't work today because the PDB controller needs to know the desired number of replicas specified in a controller and the PDB controller only knows how to find this from the four Kubernetes workload controllers mentioned above. The scale subresource is already in use by the autoscaler and it provides a generic way to look up the desired number of replicas from any custom resource with a scale subresource. We can leverage this to support PDBs for custom controllers.
 
 ### Goals
 
@@ -71,14 +71,16 @@ The major risk with this change is the additional load on the apiserver since we
 
 ### Test Plan
 
-Additional tests are required to cover this additional feature of PDBs.
+* Unit tests covering the usage of PDBs with custom resources that is implementing the scale subresource.
+* Integration tests to make sure using the scale subresource endpoint from the PDB controller works as expected.
 
 ### Graduation Criteria
+
+This will be added as a beta enhancement to PDBs. It doesn't change the existing API or behvior but only adds an additional code path to handle non built-in types.
 
 [KEP](https://github.com/kubernetes/enhancements/pull/904) for graduating PDBs to GA is already underway. It involves a change to make PDBs mutable. [PR](https://github.com/kubernetes/kubernetes/pull/69867) for this is almost ready to merge. The goal is to get both that change and this one into the next version of Kubernetes (1.15), and unless any serious issues come up, promote PDBs to GA the following release (1.16).
 
 ## Implementation History
 
-- PodDisruptionBudget was introduced in Kubernetes 1.4 as an alpha version.
-- PodDisruptionBudget was graduated to beta in Kubernetes 1.5.
+- Initial PR: https://github.com/kubernetes/kubernetes/pull/76294
 
