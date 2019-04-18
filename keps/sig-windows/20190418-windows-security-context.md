@@ -114,6 +114,10 @@ type WindowsSecurityOptions struct {
 
 Field `WindowsOptions *WindowsSecurityOptions` will be added to `SecurityContext` and `PodSecurityContext` structs.
 
+#### Specification of both GMSA credspec and RunAsUserName
+
+Note that both GMSA credspec and RunAsUserName may be specified. Specification of one field is not mutually exclusive with the other. So Kubernetes won't enforce any rules around specification of these fields. RunAsUserName governs the local user identity used to log into the container. This is decoupled from the GMSA domain identity used to interact with network resources. To use GMSA identity, processes in the container should run as "Local System" or "Network Service" users.
+
 #### Changes in kubelet
 
 An effective value for a field in a container's `SecurityContext.WindowsOptions` will be determined by calling `DetermineEffectiveSecurityContext`. If a value is specified for a field in the pod's `PodSecurityContext.WindowsOptions`, `DetermineEffectiveSecurityContext` will apply it to the corresponding field in a container's `SecurityContext.WindowsOptions` unless that field is already set with a different value in the container's `SecurityContext.WindowsOptions`.
