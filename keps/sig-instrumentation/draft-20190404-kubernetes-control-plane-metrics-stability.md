@@ -9,14 +9,23 @@ participating-sigs:
   - sig-api-machinery
   - sig-node
 reviewers:
-  - TBD
+  - @brancz
+  - @x13n
+  - @DirectXMan12
+  - @lavalamp
+  - @dashpole
+  - @ehashman
+  - @mml
 approvers:
-  - TBD
-editor: TBD
+  - @brancz
+  - @x13n
+editor:
+  - @brancz
+  - @x13n
 creation-date: 2019-04-04
 see-also:
   - 0031-kubernetes-metrics-overhaul
-status: provisional
+status: implementable
 ---
 
 # Kubernetes Control-Plane Metrics Stability
@@ -256,7 +265,7 @@ Internal wrappers can be unit tested. There has been some discussion around prov
 
 ### Graduation Criteria
 
-TBD
+This feature enhancement will not require graduation criteria. We intend to isolate these changes into a sig-instrumentation repo, build out the framework and the static analysis validation piece (which will require it's own KEP) and then have another KEP which details migration strategy across the kubernetes codebase. Since this can be built in place without affecting any surrounding code, it is safe.
 
 ## Drawbacks
 
@@ -296,7 +305,7 @@ Metrics which are added dynamically after application boot - Metrics which are d
 
 ## Implementation History
 
-TBD
+TBD (since this is not yet implemented)
 
 ## References
 
