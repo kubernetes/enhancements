@@ -105,10 +105,10 @@ type WindowsSecurityOptions struct {
 	// GMSA credential spec named by the `GmsaCredentialSpecName` field.
 	// +optional
 	GMSACredentialSpec string
-    
-    // RunAsUserName is the local user context used to log in to the container
-    // +optional
-    RunAsUserName string
+
+	// RunAsUserName is the local user context used to log in to the container
+	// +optional
+	RunAsUserName string
 }
 ```
 
