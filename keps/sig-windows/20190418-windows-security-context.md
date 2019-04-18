@@ -116,7 +116,7 @@ Field `WindowsOptions *WindowsSecurityOptions` will be added to `SecurityContext
 
 #### Specification of both GMSA credspec and RunAsUserName
 
-Note that both GMSA credspec and RunAsUserName may be specified. Specification of one field is not mutually exclusive with the other. So Kubernetes won't enforce any rules around specification of these fields. RunAsUserName governs the local user identity used to log into the container. This is decoupled from the GMSA domain identity used to interact with network resources. To use GMSA identity, processes in the container should run as "Local System" or "Network Service" users.
+Note that both GMSA credspec and RunAsUserName may be specified. Specification of one field is not mutually exclusive with the other. RunAsUserName governs the local user identity used to log into the container. This is decoupled from the GMSA domain identity used to interact with network resources. To use GMSA identity, processes in the container should run as "Local System" or "Network Service" users. However Kubernetes won't enforce any rules around specification of these fields. For further details, please refer [here](https://docs.microsoft.com/en-us/virtualization/windowscontainers/manage-containers/manage-serviceaccounts#configuring-your-application-to-use-the-gmsa)
 
 #### Changes in kubelet
 
