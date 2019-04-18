@@ -172,6 +172,8 @@ intel.com/foo : 5
 Memory: 1
 CPU: 3
 
+FunctionShapePoint {{0, 0}, {100, 10}}
+
 Node 1 Spec
 
 Available:
@@ -187,9 +189,27 @@ CPU: 1
 
 Node Score:
 
-(((2 + 1)/4)*5 + ((256 + 256)/1024)*1 + ((2 + 1)/8)*3) / (5 + 1 + 3) * 10 
+intel.com/foo  = resourceScoringFunction((2+1),4)
+               =  (100 - ((4-3)*100/4)
+               =  (100 - 25)
+               =  75
+               =  rawScoringFunction(75)
+               = 7
 
-= 6
+Memory         = resourceScoringFunction((256+256),1024)
+               = (100 -((1024-512)*100/1024))
+               = 50
+               = rawScoringFunction(50)
+               = 5
+
+CPU            = resourceScoringFunction((2+1),8)
+               = (100 -((8-3)*100/8))
+               = 37.5
+               = rawScoringFunction(37.5)
+               = 4
+
+NodeScore   =  (7 * 5) + (5 * 1) + (4 * 3) / (5 + 1 + 3)
+            =  6
 
 
 Node 2 Spec
@@ -205,9 +225,31 @@ intel.com/foo: 2
 Memory: 512MB
 CPU: 6
 
-(((2 + 2)/8)*5 + ((256 + 512)/1024)*1 + ((2 + 6)/8)*3) / (5 + 1 + 3) * 10
 
-= 7
+Node Score:
+
+intel.com/foo  = resourceScoringFunction((2+2),8)
+               =  (100 - ((8-4)*100/8)
+               =  (100 - 25)
+               =  50
+               =  rawScoringFunction(50)
+               = 5
+
+Memory         = resourceScoringFunction((256+512),1024)
+               = (100 -((1024-768)*100/1024))
+               = 75
+               = rawScoringFunction(75)
+               = 7
+
+CPU            = resourceScoringFunction((2+6),8)
+               = (100 -((8-8)*100/8))
+               = 100
+               = rawScoringFunction(100)
+               = 10
+
+NodeScore   =  (5 * 5) + (7 * 1) + (10 * 3) / (5 + 1 + 3)
+            =  7
+
 ```
 
 ## Implementation History
