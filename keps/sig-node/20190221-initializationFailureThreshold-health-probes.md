@@ -12,7 +12,7 @@ approvers:
   - @RobertKrawitz
 editor: TBD
 creation-date: 2019-02-21
-last-updated: 2019-02-28
+last-updated: 2019-04-12
 status: provisional
 see-also:
 replaces:
@@ -42,7 +42,7 @@ superseded-by:
 
 ## Release Signoff Checklist
 
-- [ ] kubernetes/enhancements issue in release milestone, which links to KEP (this should be a link to the KEP location in kubernetes/enhancements, not the initial KEP PR)
+- [x] kubernetes/enhancements issue in release milestone, which links to KEP (this should be a link to the KEP location in kubernetes/enhancements, not the initial KEP PR)
 - [ ] KEP approvers have set the KEP status to `implementable`
 - [ ] Design details are appropriately documented
 - [ ] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
@@ -147,3 +147,6 @@ The following test cases can be covered by calling the `fakeExecProber` a number
 
 - 2018-11-27: prototype implemented in PR [#71449] under review
 - 2019-03-05: present KEP to sig-node
+- 2019-04-11: open issue in enhancements [#950]
+
+[#950]: https://github.com/kubernetes/enhancements/issues/950
