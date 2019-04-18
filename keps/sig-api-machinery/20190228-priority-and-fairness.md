@@ -461,42 +461,38 @@ and an
 Our problem differs from the normal fair queuing problem in three
 ways.  One is that we are dispatching requests to be served rather
 than packets to be transmitted.  Another difference is that multiple
-requests may be served at once, with a mutating request taking twice
-as big a bite out of the concurrency limit as a read-only one.  We
-impose the restriction that for a given queue, either all the requests
-are mutating or all are read-only.  The third difference is that the
+requests may be served at once.  The third difference is that the
 actual service time (i.e., duration) is not known until a request is
 done being served.  The first two differences can easily be handled by
 straightforward adaptation of the concept called "R(t)" in the
-original paper and "virtual time" (read by `now()`) in the
-implementation outline.  In the original paper’s terms, "R(t)" is the
-number of "rounds" that have been completed at real time t, where a
-round consists of transmitting one bit from every non-empty queue in
-the router (regardless of which queue holds the packet currently being
-transmitted); in this conception, a packet is considered to be "in"
-its queue until the packet’s transmission is finished.  For our
-problem, we can define a round to be giving one nanosecond of CPU to
-every non-empty queue in the apiserver (where emptiness is judged
-based on both queued and executing requests from that queue), and
-define R(t) = (server start time) + (1 ns) * (number of rounds since
-server start).  Let us write NEQ(t) for that number of non-empty
-queues in the apiserver at time t, counting queues of mutating
-requests twice.  For a given queue "q", let us also write "reqs(q, t)"
-for the number of requests of that queue at that time --- again,
-regardless of whether running or waiting and double-counting the
-mutating requests.  Let us also write C for the concurrency limit.  At
-a particular time t, the partial derivative of R(t) with respect to t
-is
+original paper and "virtual time" in the implementation outline.  In
+that implementation outline, the notation `now()` is used to mean
+reading the _virtual_ clock.  In the original paper’s terms, "R(t)" is
+the number of "rounds" that have been completed at real time t, where
+a round consists of virtually transmitting one bit from every
+non-empty queue in the router (regardless of which queue holds the
+packet that is really being transmitted at the moment); in this
+conception, a packet is considered to be "in" its queue until the
+packet’s transmission is finished.  For our problem, we can define a
+round to be giving one nanosecond of CPU to every non-empty queue in
+the apiserver (where emptiness is judged based on both queued and
+executing requests from that queue), and define R(t) = (server start
+time) + (1 ns) * (number of rounds since server start).  Let us write
+NEQ(t) for that number of non-empty queues in the apiserver at time t.
+For a given queue "q", let us also write "reqs(q, t)" for the number
+of requests of that queue at that time.  Let us also write C for the
+concurrency limit.  At a particular time t, the partial derivative of
+R(t) with respect to t is
 
 ```
 min(sum[over q] reqs(q, t), C) / NEQ(t) .
 ```
 
 In terms of the implementation outline, this is the rate at which
-virtual time (`now()`) is advancing at time t.  Where the
-implementation outline adds packet size to a virtual time, in our
-version this corresponds to adding a service time (i.e., duration) to
-virtual time.
+virtual time (`now()`) is advancing at time t (in virtual nanoseconds
+per real nanosecond).  Where the implementation outline adds packet
+size to a virtual time, in our version this corresponds to adding a
+service time (i.e., duration) to virtual time.
 
 The third difference is handled by modifying the algorithm to dispatch
 based on an initial guess at the request’s service time (duration) and
@@ -513,7 +509,7 @@ used for G without ruining the long-term behavior.
 
 As in ordinary fair queuing, there is a bound on divergence from the
 ideal.  In plain fair queuing the bound is one packet; in our version
-it is C read-only requests.
+it is C requests.
 
 To support efficiently making the necessary adjustments once a
 request’s actual service time is known, the virtual finish time of a
