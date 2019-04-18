@@ -1,5 +1,5 @@
 ---
-title: KEP Template
+title: Windows security context API changes
 authors:
   - "@ddebroy"
 owning-sig: sig-windows
