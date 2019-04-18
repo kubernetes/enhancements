@@ -200,7 +200,7 @@ stake in the ground.
   that are secondary to some other requests the configuration should
   identify those secondary requests and give them sufficiently high
   priority to avoid priority inversion problems.  That will
-  necessarily be conservative, and we settle for that now.
+  necessarily be approximate, and we settle for that now.
 
 ### Future Goals
 
@@ -248,6 +248,8 @@ We are still ironing out the high level goals and approach.  Several
 earlier proposals have been floated, as listed next.  This section
 contains a discussion of the issues.
 
+### References
+
 - [Min Kim's original proposal](https://docs.google.com/document/d/12xAkRcSq9hZVEpcO56EIiEYmd0ivybWo4YRXV0Nfq-8)
 
 - [Mike Spreitzer's first proposal](https://docs.google.com/document/d/1YW_rYH6tvW0fvny5b7yEZXvwDZ1-qtA-uMNnHW9gNpQ)
@@ -260,9 +262,16 @@ contains a discussion of the issues.
 
 - [Daniel's brain dump](https://docs.google.com/document/d/1cwNqMDeJ_prthk_pOS17YkTS_54D8PbFj_XwfJNe4mE)
 
-Also notable are notes from a meeting on this subject, at
-https://docs.google.com/document/d/1bEh2BqfSSr3jyh1isnXDdmfe6koKd_kMXCFj08uldf8
-.
+- [Mike's third proposal](https://github.com/kubernetes/enhancements/pull/930)
+
+- [Mike's proposed first cut](https://github.com/kubernetes/enhancements/pull/933)
+
+Also notable are the following notes from meetings on this subject.
+
+- https://docs.google.com/document/d/1bEh2BqfSSr3jyh1isnXDdmfe6koKd_kMXCFj08uldf8
+- https://docs.google.com/document/d/1P8NRaQaJBiBAP2Bb4qyunJpyQ-4JVzripfCi3UXG9zc
+
+### Design Considerations
 
 Following is an attempt to summarize the issues addressed in those
 proposals and the current thinking on them; the current proposal
@@ -273,13 +282,13 @@ something like the following.
 
 - When a request arrives at the handler, the request is categorized
   somehow.  The nature of the categories and the categorization
-  process is one open issue. Some proposals (not written yet) allow
-  for the request to be rejected upon arrival based on that
-  categorization and some local state.  Unless rejected, the request
-  is put into a FIFO queue.  That is one of many queues.  The queues
-  are associated with the categories somehow.  Some proposals
-  contemplate ejecting less desirable requests to make room for the
-  newly queued request, if and when queue space is tight.
+  process is one open issue. Some proposals allow for the request to
+  be rejected upon arrival based on that categorization and some local
+  state.  Unless rejected, the request is put into a FIFO queue.  That
+  is one of many queues.  The queues are associated with the
+  categories somehow.  Some proposals contemplate ejecting less
+  desirable requests to make room for the newly queued request, if and
+  when queue space is tight.
 
 - A request might also be rejected at a later time, based on other
   criteria.  For example, as in the CoDel technique --- which will
