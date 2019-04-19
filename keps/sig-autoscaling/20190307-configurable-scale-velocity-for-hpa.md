@@ -27,17 +27,19 @@ superseded-by: TBD
     - [Non-Goals](#non-goals)
   - [Proposal](#proposal)
     - [User Stories](#user-stories)
-      - [Story 1: Scale up as fast as possible](#story-1-scale-up-as-fast-as-possible)
-      - [Story 2: Scale up as fast as possible, scale down very gradually](#story-2-scale-up-as-fast-as-possible-scale-down-very-gradually)
-      - [Story 3: Scale up very gradually, usual scale down process](#story-3-scale-up-very-gradually-usual-scale-down-process)
-      - [Story 4: Scale up as usual, do not scale down](#story-4-scale-up-as-usual-do-not-scale-down)
+      - [Story 1: Scale Up As Fast As Possible](#story-1-scale-up-as-fast-as-possible)
+      - [Story 2: Scale Up As Fast As Possible, Scale Down Very Gradually](#story-2-scale-up-as-fast-as-possible-scale-down-very-gradually)
+      - [Story 3: Scale Up Very Gradually, Usual Scale Down Process](#story-3-scale-up-very-gradually-usual-scale-down-process)
+      - [Story 4: Scale Up As Usual, Do Not Scale Down](#story-4-scale-up-as-usual-do-not-scale-down)
+      - [Story 5: Delay Before Scaling Down](#story-5-delay-before-scaling-down)
     - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
-      - [Algorithm pseudocode](#algorithm-pseudocode)
-      - [Default values](#default-values)
-      - [The motivation to “pick the largest constraint” concept](#the-motivation-to-pick-the-largest-constraint-concept)
+      - [Algorithm Pseudocode](#algorithm-pseudocode)
+      - [Default Values](#default-values)
+      - [The Motivation To “Pick The Largest Constraint” Concept](#the-motivation-to-pick-the-largest-constraint-concept)
       - [Stabilization Window](#stabilization-window)
       - [API Changes](#api-changes)
-      - [HPA Controller State changes](#hpa-controller-state-changes)
+      - [HPA Controller State Changes](#hpa-controller-state-changes)
+      - [Command Line Options Changes](#command-line-options-changes)
 
 ## Summary
 
@@ -69,7 +71,7 @@ As a result, users can't influence scale velocity, and that is a problem for man
 - [#65097][]
 - [#69428][]
 
-[--horizontal-pod-autoscaler-downscale-stabilization-window]: https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#algorithm-details
+[--horizontal-pod-autoscaler-downscale-stabilization-window]: https://v1-14.docs.kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#algorithm-details
 [scaleUpLimitFactor]: https://github.com/kubernetes/kubernetes/blob/v1.13.4/pkg/controller/podautoscaler/horizontal.go#L55
 [scaleUpLimitMinimum]: https://github.com/kubernetes/kubernetes/blob/v1.13.4/pkg/controller/podautoscaler/horizontal.go#L56
 [#39090]: https://github.com/kubernetes/kubernetes/issues/39090
@@ -87,13 +89,14 @@ TBA
 ## Proposal
 
 We need to introduce an algorithm-agnostic HPA object configuration that will configure each particular HPA scaling behavior.
-For both direction (scale up and scale down) there should be a `Constraint` field with three parameters:
+For both direction (scale up and scale down) there should be a `Constraint` field with the following parameters:
 
 - `periodSeconds` - a parameter to specify the time period for the constraint, in seconds
 - `percent` - a parameter to specify the relative speed, in percentages:
     i.e., if ScaleUpPercent = 150 , then we can add 150% more pods (10 -> 25 pods)
 - `pods` - a parameter to specify the absolute speed, in the number of pods:
     i.e., if ScaleUpPods = 5 , then we can add 5 more pods (10 -> 15)
+- `delay` - a parameter to specify a delay between the first signal to change the number of pods and the real scaling. It works very similar to the [Stabilization Window][] approach.
 
 A user will specify the parameters for the HPA, thus controlling the HPA logic.
 
@@ -103,10 +106,11 @@ If the user doesn't specify any parameter, the default value for that parameter 
 
 [The motivation to pick the largest constraint]: #the-motivation-to-pick-the-largest-constraint-concept
 [Default values]: #default-values
+[Stabilization Window](#stabilization-window)
 
 ### User Stories
 
-#### Story 1: Scale up as fast as possible
+#### Story 1: Scale Up As Fast As Possible
 
 This mode is essential when you want to respond to a traffic increase quickly.
 
@@ -127,9 +131,9 @@ So, it can reach `maxReplicas` very fast.
 Scale down will be done a usual way (check stabilization window in the [Stabilization Window][] section below and the [Algorithm details][] in the official HPA documentation)
 
 [Stabilization Window]: #stabilization-window
-[Algorithm details]: https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#algorithm-details
+[Algorithm details]: https://v1-14.docs.kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#algorithm-details
 
-#### Story 2: Scale up as fast as possible, scale down very gradually
+#### Story 2: Scale Up As Fast As Possible, Scale Down Very Gradually
 
 This mode is essential when you don’t want to risk scaling down very quickly.
 
@@ -154,7 +158,7 @@ Scaling down will be by one pod each 10 min:
 
     1000 -> 1000 -> 1000 -> … (7 more min) -> 999
 
-#### Story 3: Scale up very gradually, usual scale down process
+#### Story 3: Scale Up Very Gradually, Usual Scale Down Process
 
 This mode is essential when you want to increase capacity, but you want it to be very pessimistic.
 
@@ -172,9 +176,9 @@ If the application is started with 1 pod, it will scale up very gradually:
 
 Scale down will be done a usual way (check stabilization window in [Algorithm details][])
 
-[Algorithm details]: https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#algorithm-details
+[Algorithm details]: https://v1-14.docs.kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#algorithm-details
 
-#### Story 4: Scale up as usual, do not scale down
+#### Story 4: Scale Up As Usual, Do Not Scale Down
 
 This mode is essential when you don’t want to risk scaling down at all.
 
@@ -191,9 +195,27 @@ All other parameters are not specified (default values are used)
 
 The cluster will scale up as usual (default values), but will never scale down.
 
+#### Story 5: Delay Before Scaling Down
+
+This mode is used when the user expects a lot of flapping
+or doesn't want to turn off pods too early expecting some late load spikes.
+
+Create an HPA with the following constraints:
+
+- `constraints`:
+  - `scaleDown`:
+    - `pods = 5`
+  - `delaySeconds = 600`
+
+i.e., the algorithm will:
+
+- gather recommendations for 600 seconds (by default: 300)
+- pick the largest one
+- turn off no more than 5 pods per minute
+
 ### Implementation Details/Notes/Constraints
 
-#### Algorithm pseudocode
+#### Algorithm Pseudocode
 
 The algorithm to find the number of pods will look like this:
 
@@ -212,31 +234,64 @@ else if calculatedReplicas < CurReplicas:
   desiredReplicas = max(scaleDownLimit, calculatedReplicas)
 ```
 
-I.e., from the two provided constraints the softer one is chosen.
+I.e., from the two provided constraints the larger one is used.
 
 If you don’t want to scale, you should set both parameters to zero for the appropriate direction (Up/Down).
 
-If only one parameter is given and the other is set to -1 (not defined), the case is obvious: don’t let the number of replicas goes beyond the only threshold.
+If only one parameter is given and the other is 0, then use the only defined constraint.
 
-If both parameters are set to -1 (not defined), we assume that no constraints are defined and the calculated number of replicas should be applied immediately.
+The algorithm for `delay` will look like this:
 
-#### Default values
+```golang
+for { // infinite cycle inside the HPA controller
+  desiredReplicas = calculateDesiredReplicas()
+  if desiredReplicas > curReplicas:
+    storeRecommendation(desiredReplicas, scaleUpRecommendations)
+    recommendations = getLastRecommendations(scaleUpRecommendations, ScaleUpDelaySeconds) // get recommendations for the last ScaleUpDelaySeconds
+    nextReplicas = min(recommendtaions)
+  if desiredReplicas < curReplicas:
+    storeRecommendation(desiredReplicas, scaleDownRecommendations)
+    recommendations = getLastRecommendations(scaleDownRecommendations, ScaleDownDelaySeconds) // get recommendations for the last ScaleDownDelaySeconds
+    nextReplicas = max(recommendtaions)
+  setReplicas(nextReplicas)
+  sleep(ControllerSleepTime)
+}
+```
 
-For smooth transition it makes sense to set the following default values:
-
-- `constraints.scaleUp.periodSeconds = 60`, i.e., one minute period for scaleUp
-- `constraints.scaleDown.periodSeconds = 60`, i.e., one minute period for scaleDown
-- `constraints.scaleUp.percent = 100`, i.e., allow to twice the number of pods per min
-- `constraints.scaleUp.pods = 4`, i.e. allow adding up to 4 pods per one HPA controller cycle
-- `constraints.scaleDown.percent = -1` (is not defined), i.e., if the user doesn’t specify it, this parameter is not used
-- `constraints.scaleDown.pods = -1` (is not defined), i.e., if the user doesn’t specify it, this parameter is not used
-
-For the `scaleDown` constraint both `pods` and `percent` are not defined because currently (as of k8s-1.14)
-the scale down is only limited by [Stabilization window][]
+Effectively, this is a full copy of the current [Stabilization Window][] algorithm.
 
 [Stabilization Window]: #stabilization-window
 
-#### The motivation to “pick the largest constraint” concept
+#### Default Values
+
+For smooth transition it makes sense to set the following default values:
+
+- `constraints.scaleUp.delaySeconds = 0`, the delay is not used, instantly scale up
+- `constraints.scaleDown.delaySeconds = 300`, wait 5 min for the largest recommendation and then scale down to that value.
+- `constraints.scaleUp.rate.periodSeconds = 60`, one minute period for scaleUp
+- `constraints.scaleDown.rate.periodSeconds = 60`, one minute period for scaleDown
+- `constraints.scaleUp.rate.percent = 100`, allow to twice the number of pods
+- `constraints.scaleUp.rate.pods = 4`, i.e. allow adding up to 4 pods
+- `constraints.scaleDown.rate.percent = 100`, allow to remove all the pods
+- `constraints.scaleDown.rate.pods = math.MaxInt32`, allow to remove all the pods
+
+Please note that:
+
+`constraints.ScaleDown.dealySeconds` value is picked in the following order:
+
+- from the HPA configuration, use that value
+- from the command-line option `--horizontal-pod-autoscaler-downscale-stabilization-window`.
+  Check the [Command Line Option Changes][] section.
+- from the hardcoded default value `300`.
+
+For the `scaleDown` constraint both `pods` and `percent` are set to maximum possible values.
+Because currently (as of k8s-1.14) the scale down is only limited by [Stabilization Window][].
+In order to repeat the default behavior we set `constraints.scaleDown.delaySeconds` to 5min
+(the default value for Stabilization window), and let it rule the number of pods.
+
+[Stabilization Window]: #stabilization-window
+
+#### The Motivation To “Pick The Largest Constraint” Concept
 
 Take a look at the example:
 
@@ -251,7 +306,7 @@ But the algorithm picks the largest change instead:
     scaleUpLimit = max(20, 15) = 20
     desiredReplicas = 20
 
-The user might expect that the autoscaler would use the smallest constraint (15), not the largest one (20). This is not intuitive, but it does make sense if considered thoroughly.
+The user might expect that the autoscaler would use the smallest constraint (15), not the largest one (20). This behavior is not intuitive, but it does make sense if considered thoroughly.
 
 The main idea of the HPA is to autoscale because of a load increase to avoid request failures. It should work on both small clusters and large ones. For small clusters, the absolute number constraint works better (ScaleUpPods), for large clusters the percentage works better (ScaleUpPercentage).
 
@@ -261,7 +316,7 @@ For default values (ScaleUpPercent = 100, ScaleUpPods = 4) and “pick the large
 
     1 -> 5 -> 10 -> 20
 
-The first step will use the “scaleUp.pods” constraint; the next steps will use “scaleUp.percent” one.
+The first step will use “scaleUp.pods” constraint; the next steps will use “scaleUp.percent” one.
 
 In case of more intuitive “pick the hardest limit” concept, we’ll increase the cluster in 6 steps:
 
@@ -277,17 +332,21 @@ The scale down constraints are a method to prevent too rapid loss of capacity. H
 
 #### Stabilization Window
 
-Stabilization window ([PR][], [RFC][]) is used to gather “scale-down-recommendations” during some time (default is 5min),
+Currently stabilization window ([PR][], [RFC][], [Algorithm Details][]) is used to gather “scale-down-recommendations” during some time (default is 5min),
 and a new number of replicas is set to the maximum of all recommendations.
-It will be applied after all the “scaleDown parameters” described above.
-We may want to control stabilization window size in addition to configuring the scale velocity.
-However, at the moment, the “stabilization window feature” is considered to be an internal feature and is not exposed via any configuration.
 
-I’d suggest allowing to change the window size or turn it off if needed, but it should be discussed in a separate RFC.
+It may be defined by command line option `--horizontal-pod-autoscaler-downscale-stabilization-window`.
+
+The same idea is used in the `DelaySeconds` parameter above:
+
+- While scaling up, we should pick the safest (largest) "desiredReplicas" number during last `delaySeconds`.
+- While scaling down, we should pick the safest (largest) "desiredReplicas" number during last `delaySeconds`.
+
+The “stabilization window" as a result becomes an alias for the `constraints.scaleDown.delaySeconds`.
 
 [PR]: https://github.com/kubernetes/kubernetes/pull/68122
 [RFC]: https://docs.google.com/document/d/1IdG3sqgCEaRV3urPLA29IDudCufD89RYCohfBPNeWIM/edit#heading=h.3tdw2jxiu42f
-
+[Algorithm Details]: https://v1-14.docs.kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#algorithm-details
 
 #### API Changes
 
@@ -299,9 +358,18 @@ The resulting solution will look like this:
 
 ```golang
 type HPAScaleConstraintValue struct {
-    Pods          *int32
+    Rate *HPAScaleConstraintRateValue
+    DelaySeconds *int32
+
+type HPAScaleConstraintRateValue struct {
+    Pods             *int32
     Percent       *int32
-    PeriodSeconds int32
+    PeriodSeconds * int32
+}
+
+type HPAScaleConstraints struct {
+       ScaleUp *HPAScaleConstraintValue
+       ScaleDown *HPAScaleConstraintValue
 }
 
 type HorizontalPodAutoscalerSpec struct {
@@ -309,12 +377,24 @@ type HorizontalPodAutoscalerSpec struct {
     MinReplicas    *int32
     MaxReplicas    int32
     Metrics        []MetricSpec
-    ScaleUp        *HPAScaleConstraintValue
-    ScaleDown      *HPAScaleConstraintValue
+    Constraints *HPAScaleConstraints
 }
 ```
 
-#### HPA Controller State changes
+#### HPA Controller State Changes
+
+To store not only scale down recommendations, we need to replace
+
+```golang
+    recommendations map[string][]timestampedRecommendation
+```
+
+with
+
+```golang
+    scaleUpRecommendations map[string][]timestampedRecommendation
+    scaleDownRecommendations map[string][]timestampedRecommendation
+```
 
 To store the information about last scale action, the HPA need an additional field (similar to the list of “recommendations”)
 
@@ -344,3 +424,12 @@ Though, I don’t think this is a problem, as:
 - If you have a large discrepancy between what is a desired number of replicas according to metrics and what is your current number of replicas and you DON’T want to scale - probably, you shouldn’t want to use the HPA. As the HPA goal is the opposite.
 
 As the added parameters have default values, we don’t need to update the API version, and may stay on the same `pkg/apis/autoscaling/v2beta2`.
+
+#### Command Line Options Changes
+
+Effectively, no command line options changes happen. But we should note that the
+current [--horizontal-pod-autoscaler-downscale-stabilization-window][] option
+defines the default value for the `constrains.scaleDown.delaySeconds`
+
+
+[--horizontal-pod-autoscaler-downscale-stabilization-window]: https://v1-14.docs.kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#algorithm-details
