@@ -16,7 +16,7 @@ approvers:
 editor: TBD
 creation-date: 2019-02-26
 last-updated: 2019-04-12
-status: provisional
+status: implementable
 ---
 
 # Pod Overhead
