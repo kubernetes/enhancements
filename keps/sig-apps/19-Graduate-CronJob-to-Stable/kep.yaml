@@ -1,0 +1,56 @@
+title: Graduate CronJob to Stable
+kep-number: 19
+authors:
+  - "@barney-s"
+  - "@soltysh"
+owning-sig: sig-apps
+participating-sigs:
+  - sig-scalability
+status: implementable
+creation-date: 2019-04-18
+reviewers:
+  - "@liggitt"
+  - "@kow3ns"
+  - "@janetkuo"
+  - “@mortent”
+  - "@wojtek-t"
+approvers:
+  - "@kow3ns"
+  - "@janetkuo"
+  - "@liggitt"
+  - "@wojtek-t"
+prr-approvers:
+  - "@wojtek-t"
+see-also:
+replaces:
+  - "https://github.com/kubernetes/community/blob/master/contributors/design-proposals/apps/cronjob.md"
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: beta
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.20"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.4"
+  beta: "v1.8"
+  stable: "v1.21"
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+  - name: CronJobControllerV2
+    components:
+      - kube-controller-manager
+disable-supported: true
+
+# The following PRR answers are required at beta release
+metrics:
+  - cronjob_controller_rate_limiter_use
+  - cronjob_job_creation_skew
+  - workqueue_depth
+  - workqueue_retries
+  - workqueue_adds_total
