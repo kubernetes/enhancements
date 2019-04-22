@@ -1,6 +1,6 @@
 ---
 kep-number: 23
-title: Kubeadm config file graduation to v1beta1
+title: Kubeadm config file graduation (v1beta2)
 authors:
   - "@fabriziopandini"
   - "@luxas"
@@ -9,46 +9,52 @@ reviewers:
  - "@chuckha"
  - "@detiber"
  - "@liztio"
- - "@neolit123"
 approvers:
  - "@luxas"
  - "@timothysc"
+ - "@fabriziopandini"
+ - "@neolit123"
 editor:
  - "@fabriziopandini"
+ - "@rosti"
 creation-date: 2018-08-01
-last-updated: 
+last-updated: 2019-04-18
 see-also:
  - KEP 0008
 ---
 
-# kubeadm Config file graduation to v1beta1
+# kubeadm Config file graduation (v1beta2)
 
 ## Table of Contents
 
 <!-- TOC -->
 
-- [kubeadm Config file graduation to v1beta1](#kubeadm-config-file-graduation-to-v1beta1)
+- [kubeadm Config file graduation (v1beta2)](#kubeadm-config-file-graduation-v1beta2)
     - [Table of Contents](#table-of-contents)
     - [Summary](#summary)
     - [Motivation](#motivation)
         - [Goals](#goals)
         - [Non-Goals](#non-goals)
     - [Proposal](#proposal)
-        - [Decoupling the kubeadm types from other ComponentConfig types](#decoupling-the-kubeadm-types-from-other-componentconfig-types)
-        - [Re-design how kubeadm configurations are persisted](#re-design-how-kubeadm-configurations-are-persisted)
-        - [Use substructures instead of the current "single flat object"](#use-substructures-instead-of-the-current-single-flat-object)
+        - [v1beta1](#v1beta1)
+            - [Decoupling the kubeadm types from other ComponentConfig types](#decoupling-the-kubeadm-types-from-other-componentconfig-types)
+            - [Re-design how kubeadm configurations are persisted](#re-design-how-kubeadm-configurations-are-persisted)
+            - [Use substructures instead of the old "single flat object"](#use-substructures-instead-of-the-old-single-flat-object)
+        - [v1beta2](#v1beta2)
+            - [Add config options for new and existing kubeadm features](#add-config-options-for-new-and-existing-kubeadm-features)
         - [Risks and Mitigations](#risks-and-mitigations)
     - [Graduation Criteria](#graduation-criteria)
     - [Implementation History](#implementation-history)
+        - [v1alpha3 released with Kubernetes 1.12](#v1alpha3-released-with-kubernetes-112)
+        - [v1beta1 released with Kubernetes 1.13](#v1beta1-released-with-kubernetes-113)
     - [Drawbacks](#drawbacks)
-    - [Alternatives](#alternatives)
 
 <!-- /TOC -->
 
 ## Summary
 
 This KEP is meant to describe design goal and the proposed solution for implementing the kubeadm
-config file `v1beta1` version.
+config file format.
 
 The kubeadm config file today is one of the first touch points with Kubernetes for many users and
 also for higher level tools leveraging kubeadm; as a consequence, providing a more stable and
@@ -74,12 +80,6 @@ Additionally, the kubeadm config file today acts also as a persistent representa
 specification that can be used at a any points in time after `kubeadm init` e.g. for executing
 `kubeadm upgrade` actions.
 
-The `v1beta1` version of kubeadm config file is a required, important consolidation step of the
-current config file format, aimed at rationalize the considerable number of attributes added in the
-past, provide a more robust and clean integration with the component config API, address the
-weakness of the current design for representing multi master clusters, and ultimately lay down
-a more sustainable foundation for the evolution of kubeadm itself.
-
 ### Goals
 
 - To provide a solution for decoupling the kubeadm ComponentConfig types from other Kubernetes
@@ -92,20 +92,28 @@ a more sustainable foundation for the evolution of kubeadm itself.
   by the current command but not persisted).
 
 - Improve the current kubeadm config file format by using specialized substructures instead
-  of the current "single flat object with only fields".
+  of the old "single flat object with only fields".
 
 ### Non-Goals
 
 - To steer/coordinate all the implementation efforts for adoption of ComponentConfig across all
   the different Kubernetes components.
 
-- To define a new home for the Bootstrap Token Go structs
+- To define a new home for the Bootstrap Token Go structs.
+
+- To address all possible proposed changes, that were proposed to the kubeadm config format.
+  Specifically we are trying to avoid changes, that have a fairly limited use cases.
 
 ## Proposal
 
-### Decoupling the kubeadm types from other ComponentConfig types
+### v1beta1
 
-The `v1alpha2` kubeadm config types currently embeds the ComponentConfig for
+This section outlines proposed changes to be made into v1beta1, possibly appearing in stages
+in alpha versions between v1alpha2 and v1beta1.
+
+#### Decoupling the kubeadm types from other ComponentConfig types
+
+The `v1alpha2` kubeadm config types embeds the ComponentConfig for
 kube-proxy and kubelet into the **MasterConfiguration** object; it is expected that also
 ComponentConfig for kube-controller manager, kube-scheduler and kube-apiserver will be added
 in future (non goal of this KEP).
@@ -121,14 +129,14 @@ from the _external_ kubeadm config types.
 Instead, the user will be allowed to pass other component’s ComponentConfig in separated YAML
 documents inside of the same YAML file given to `kubeadm init --config`.
 
-> please note that the _kubeadm internal config_ will continue to embed components config
-> for the foreseeable future because kubeadm requires the knowledge of such data structures e.g.
-> for propagating network configuration settings to kubelet, setting defaults, validating
-> or manipulating YAML etc.
+> please note that the _kubeadm internal config_ might continue to embed components config
+> for some time into the future because kubeadm uses its internal config to propagate the knowledge
+> of such data structures e.g. for propagating network configuration settings to kubelet, setting
+> defaults, validating or manipulating YAML etc.
 
-### Re-design how kubeadm configurations are persisted
+#### Re-design how kubeadm configurations are persisted
 
-Currently the kubeadm **MasterConfiguration** struct is persisted as a whole into the
+In `v1alpha2` the kubeadm **MasterConfiguration** struct is persisted as a whole into the
 `kubeadm-config` ConfigMap, but this situation has well know limitations/weaknesses:
 
 - There is no clear distinction between cluster wide settings (e.g. the kube-apiserver server
@@ -179,7 +187,7 @@ be adapted as described by following schemas:
 - [kubeadm upgrade node](0023-kubeadm-upgrade-node.png)
 - [kubeadm reset](0023-kubeadm-reset.png)
 
-### Use substructures instead of the current "single flat object"
+#### Use substructures instead of the old "single flat object"
 
 Even if with few exceptions, the kubeadm **MasterConfiguration** and **NodeConfiguration** types
 in `v1alpha1` and `v1alpha2` are basically single, flat objects that holds all the configuration
@@ -190,6 +198,25 @@ While redesigning the config file for addressing the main issues described in pr
 kubeadm will provide also a cleaner representation of attributes belonging to single component/used
 for a specific goal by creating dedicated objects, similarly to what’s already improved for
 etcd configuration in the `v1alpha2` version.
+
+### v1beta2
+
+This section outlines changes to be introduced in a second iteration of the kubeadm config format.
+
+#### Add config options for new and existing kubeadm features
+
+Over time kubeadm gains new features which may require the addition of new settings to the config
+format. One notable such feature, that was introduced after the release of `v1beta1` is the
+[Certificates copy for join --control-plane KEP](./20190122-Certificates-copy-for-kubeadm-join--control-plane.md).
+
+In addition to that, some new settings are added to the config format for existing features,
+improving the original design and addressing user feedbacks.
+These include an ability to specify the timeout that is used to wait for the API server to become
+active (a setting already introduced in `v1beta1`) and an ability to ignore some pre-flight errors
+(a setting to be introduced in `v1beta2`).
+
+Nevertheless, SIG Cluster Lifecycle should be careful not to add fields that are needed for fairly
+limited use cases.
 
 ### Risks and Mitigations
 
@@ -208,7 +235,7 @@ Above risks will be mitigated by:
 - writing a blog post before the release cut
 - providing adequate instructions in the release notes
 
-Impact on the code are considerable.
+Impact on the code is considerable.
 
 This risk will be mitigated by implementing the change according to following approach:
 
@@ -221,15 +248,26 @@ This risk will be mitigated by implementing the change according to following ap
 
 ## Graduation Criteria
 
-The kubeadm API group primarily used in kubeadm is `v1beta1` or higher. There is an upgrade path
-from earlier versions. The primary kinds that can be serialized/deserialized are `InitConfiguration`,
-`JoinConfiguration` and `ClusterConfiguration`. ComponentConfig structs for other Kubernetes
-components are supplied besides `ClusterConfiguration` in different YAML documents.
-SIG Cluster Life cycle is happy with the structure of the types.
+- There is an upgrade path from earlier versions.
+- The primary kinds that can be serialized/deserialized are `InitConfiguration`,
+  `JoinConfiguration` and `ClusterConfiguration`.
+- ComponentConfig structs for other Kubernetes components are supplied besides
+  `ClusterConfiguration` in different YAML documents.
+- SIG Cluster Life cycle is happy with the structure of the types.
 
 ## Implementation History
 
-TBD
+### v1alpha3 released with Kubernetes 1.12
+
+- The kubeadm own types were decoupled from the other component config types.
+- Clear distinction was introduced between cluster wide settings (stored on a config map in the
+  cluster), node only and runtime settings.
+
+### v1beta1 released with Kubernetes 1.13
+
+- Focus on providing more structure of the config format, in contrast with large and mostly flat
+  structures that deal with different kinds of settings.
+- Improved the config format with respect to HA.
 
 ## Drawbacks
 
@@ -237,8 +275,3 @@ The differences from the current kubeadm config are relevant and kubeadm users c
 
 The impacts on the current codebase are considerable it is required an high commitment from
 the SIG. This comes with a real opportunity cost.
-
-## Alternatives
-
-Graduate kubeadm GA with the current kubeadm config and eventually change afterward
-(respecting GA contract rules).
