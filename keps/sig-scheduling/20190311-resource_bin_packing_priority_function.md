@@ -43,7 +43,7 @@ While running workloads on kubernetes which use accelerator devices the default 
 
 ### Goals
 
-- Schedule Jobs using BestFit Policy using RequestedToCapacityRatio Priority Function for extended Resources
+- Schedule Pods using BestFit Policy using RequestedToCapacityRatio Priority Function for extended Resources
 - Reduce Fragmentation of scarce resources on the Cluster
 
 ### Non-Goals
@@ -119,10 +119,10 @@ for resource, weight := range resources {
   nodeScore += resourceScoringFunction((podRequest[resource]+ requested[resource]), allocatable[resource]) * weight
   weightSum += weight
 }
-nodeScore = (nodeScore / weightSum)* 10
+nodeScore = nodeScore / weightSum
 ```
 
-Update the  function `buildRequestedToCapacityRatioScorerFunction` defination as
+Update the  function `buildRequestedToCapacityRatioScorerFunction` definition as
 
 ```go
 func buildRequestedToCapacityRatioScorerFunction(scoringFunctionShape FunctionShape, resources []Resources) func(nodeInfo *schedulercache.NodeInfo) int64
