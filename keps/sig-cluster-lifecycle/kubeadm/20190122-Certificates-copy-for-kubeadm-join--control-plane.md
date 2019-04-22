@@ -16,7 +16,7 @@ approvers:
   - @luxas
 editor: TBD
 creation-date: 2019-01-22
-last-updated: 2019-01-22
+last-updated: 2019-04-18
 status: implementable
 see-also:
   - KEP-0015
@@ -56,7 +56,7 @@ superseded-by:
 
 - [x] k/enhancements [issue 357](https://github.com/kubernetes/enhancements/issues/357) in release
       milestone and linked to KEP
-- [ ] KEP approvers have set the KEP status to `implementable`
+- [x] KEP approvers have set the KEP status to `implementable`
 - [x] Design details are appropriately documented
 - [x] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
 - [x] Graduation criteria is in place
@@ -89,6 +89,13 @@ above and completing the kubeadm solution for creating HA clusters.
   familiar with.
 - Security: provide a solution that enables the secure copy of cluster certificates between
   control-plane nodes
+
+### Non Goals
+
+- Handle certificate copy in case of External CA.
+  If users decide to use an external CA with kubeadm without providing the CA keys, they will be required to create
+  signed certificates and all the kubeconfig files (including X.509 certificates) for the control plane nodes.
+  This is needed, because kubeadm cannot generate any certificates without the required CA keys.
 
 ## Proposal
 
@@ -325,7 +332,10 @@ affect component version or version skew policy)
 ## Implementation History
 
 - 22 Jan 2019 - first release of this KEP
-- v1.14 implementation (planned)
+- v1.14 implementation as alpha feature without
+  - Extension of the kubeadm config file for allowing usage of pre-generated certificate keys
+  - TokenCleaner enforcement
+  - E2E tests
 
 ## Alternatives
 

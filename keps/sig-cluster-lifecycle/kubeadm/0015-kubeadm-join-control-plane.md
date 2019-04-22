@@ -20,7 +20,7 @@ approvers:
 editor:
   - "@fabriziopandini"
 creation-date: 2018-01-28
-last-updated: 2019-01-07
+last-updated: 2019-04-18
 see-also:
   - KEP 0004
 ```
@@ -135,10 +135,8 @@ capabilities like e.g. kubeadm upgrade for HA clusters.
   explicitly prevent us to reconsider this in the future as well).
 
 - This proposal doesn't provide an automated solution for transferring the CA key and other required
-  certs from one control-plane instance to the other. More specifically, this proposal doesn't address
-  the ongoing discussion about storage of kubeadm TLS assets in secrets and it is not planned
-  to provide support for clusters with TLS stored in secrets, but nothing in
-  this proposal prevents us from reconsidering this in the future..
+  certs from one control-plane instance to the other. This is addressed in a separated KEP.
+  (see KEP [Certificates copy for join --control-plane](20190122-Certificates-copy-for-kubeadm-join--control-plane.md))
 
 - Nothing in this proposal should prevent practices that exist today.
 
@@ -366,20 +364,14 @@ As of today kubeadm supports two solutions for storing cluster certificates:
 2. Cluster certificates stored in secrets (currently alpha and applicable only to
    self-hosted control plane)
 
-The proposed solution for case 1. "Cluster certificates stored on file system",
-requires the user/the higher level tools to execute an additional action _before_
-invoking `kubeadm join --control plane`.
+There are two possible alternatives for case 1. "Cluster certificates stored on file system":
 
-More specifically, in case of cluster with "cluster certificates stored on file
-system", before invoking `kubeadm join --control plane`, the user/higher level tools
-should copy control plane certificates from an existing node, e.g. the bootstrap control plane
+- delegate to the user/the higher level tools the responsibility to copy certificates
+  from an existing node, e.g. the bootstrap control plane, to the joining node _before_
+  invoking `kubeadm join --control-plane`.
 
-> NB. kubeadm is limited to execute actions *only*
-in the machine where it is running, so it is not possible to copy automatically
-certificates from remote locations.
-
-Then, the `kubeadm join --control plane` flow will take care of checking certificates
-existence and conformance.
+- let kubeadm copy the certificates. This alternative is described in a separated KEP
+  (see KEP [Certificates copy for join --control-plane](20190122-Certificates-copy-for-kubeadm-join--control-plane.md))
 
 As stated above, supporting for Cluster certificates self-hosted control plane is a non goal
 for this proposal, and the same apply to Cluster certificates stored in secrets.
@@ -417,6 +409,8 @@ one control plane instances, but with a new sub-step to be executed on secondary
 - [PR #58261](https://github.com/kubernetes/kubernetes/pull/58261) with the showcase implementation of the first release of this KEP
 - v1.12 first implementation of `kubeadm join --control plane`
 - v1.13 support for local/stacked etcd
+- v1.14 implementation of automatic certificates copy
+  (see KEP [Certificates copy for join --control-plane](20190122-Certificates-copy-for-kubeadm-join--control-plane.md)).
 
 ## Drawbacks
 
