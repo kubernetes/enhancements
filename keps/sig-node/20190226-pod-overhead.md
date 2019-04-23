@@ -25,26 +25,29 @@ This includes the Summary and Motivation sections.
 
 ## Table of Contents
 
-* [Release Signoff Checklist](#release-signoff-checklist)
-* [Summary](#summary)
-* [Motivation](#motivation)
-  + [Goals](#goals)
-  + [Non-Goals](#non-goals)
-* [Proposal](#proposal)
-  + [API Design](#api-design)
+- [Release Signoff Checklist](#release-signoff-checklist)
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [API Design](#api-design)
     - [Pod overhead](#pod-overhead)
-  + [RuntimeClass admission controller](#runtimeclass-admission-controller)
-  + [Implementation Details](#implementation-details)
-  + [Risks and Mitigations](#risks-and-mitigations)
-* [Design Details](#design-details)
-  + [Graduation Criteria](#graduation-criteria)
-  + [Upgrade / Downgrade Strategy](#upgrade---downgrade-strategy)
-  + [Version Skew Strategy](#version-skew-strategy)
-* [Implementation History](#implementation-history)
-* [Drawbacks](#drawbacks)
-* [Alternatives](#alternatives)
-  + [Introduce pod level resource requirements](#introduce-pod-level-resource-requirements)
-  + [Leaving the PodSpec unchanged](#leaving-the-podspec-unchanged)
+    - [Container Runtime Interface (CRI)](#container-runtime-interface-cri)
+  - [ResourceQuota changes](#resourcequota-changes)
+  - [RuntimeClass changes](#runtimeclass-changes)
+  - [RuntimeClass admission controller](#runtimeclass-admission-controller)
+  - [Implementation Details](#implementation-details)
+  - [Risks and Mitigations](#risks-and-mitigations)
+- [Design Details](#design-details)
+  - [Graduation Criteria](#graduation-criteria)
+  - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+  - [Version Skew Strategy](#version-skew-strategy)
+- [Implementation History](#implementation-history)
+- [Drawbacks](#drawbacks)
+- [Alternatives](#alternatives)
+  - [Introduce pod level resource requirements](#introduce-pod-level-resource-requirements)
+  - [Leaving the PodSpec unchanged](#leaving-the-podspec-unchanged)
 
 ## Release Signoff Checklist
 
@@ -128,6 +131,7 @@ Pod {
     Overhead *ResourceRequirements
   }
 }
+```
 
 All PodSpec and RuntimeClass fields are immutable, including the `Overhead` field. For scheduling,
 the pod `Overhead` resource requests are added to the container resource requests.
@@ -137,7 +141,7 @@ pod overhead is accountable. If the pod specifies a resource limit, and all cont
 pod specify a limit, then the sum of those limits becomes a pod-level limit, enforced through the
 pod cgroup.
 
-Users are not expected to manually set `Overhead`; any prior values will being set will result in the workload
+Users are not expected to manually set `Overhead`; any prior values being set will result in the workload
 being rejected. If runtimeClass is configured and selected in the PodSpec, `Overhead` will be set to the value
 defined in the corresponding runtimeClass. This is described in detail in
 [RuntimeClass admission controller](#runtimeclass-admission-controller).
@@ -161,18 +165,22 @@ instance for sizing the Kata Container VM.
 LinuxContainerResources is added to the LinuxPodSandboxConfig for both overhead and container
 totals, as optional fields:
 
+```
 type LinuxPodSandboxConfig struct {
 	Overhead *LinuxContainerResources
 	ContainerResources *LinuxContainerResources
 }
+```
 
 WindowsContainerResources is added to a newly created WindowsPodSandboxConfig for both overhead and container
 totals, as optional fields:
 
+```
 type WindowsPodSandboxConfig struct {
 	Overhead *WindowsContainerResources
 	ContainerResources *WindowsContainerResources
 }
+```
 
 ContainerResources field in the LinuxPodSandboxConfig and WindowsPodSandboxConfig matches the pod-level limits
 (i.e. total of container limits). Overhead is tracked separately since the sandbox overhead won't necessarily
@@ -187,7 +195,6 @@ add the pod `Overhead`to the container resource request summation.
 
 Expand the runtimeClass type to include sandbox overhead, `Overhead *Overhead`.
 
-```
 Where Overhead is defined as follows:
 
 ```
@@ -195,6 +202,7 @@ type Overhead struct {
   PodFixed *ResourceRequirements
 }
 ```
+
 In the future, the `Overhead` definition could be extended to include fields that describe a percentage
 based overhead (scale the overhead based on the size of the pod), or container-level overheads. These are
 left out of the scope of this proposal.
