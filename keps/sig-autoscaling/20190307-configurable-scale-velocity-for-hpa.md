@@ -102,10 +102,10 @@ A user will specify the parameters for the HPA, thus controlling the HPA logic.
 
 If the user specifies two parameters, two constraints are calculated, and the largest is used (see the [The motivation to pick the largest constraint][] section below).
 
-If the user doesn't specify any parameter, the default value for that parameter is used (see the [Default values][] section below).
+If the user doesn't specify any parameter, the default value for that parameter is used (see the [Default Values][] section below).
 
 [The motivation to pick the largest constraint]: #the-motivation-to-pick-the-largest-constraint-concept
-[Default values]: #default-values
+[Default Values]: #default-values
 [Stabilization Window](#stabilization-window)
 
 ### User Stories
@@ -358,18 +358,18 @@ The resulting solution will look like this:
 
 ```golang
 type HPAScaleConstraintValue struct {
-    Rate *HPAScaleConstraintRateValue
+    Rate         *HPAScaleConstraintRateValue
     DelaySeconds *int32
 
 type HPAScaleConstraintRateValue struct {
-    Pods             *int32
+    Pods          *int32
     Percent       *int32
-    PeriodSeconds * int32
+    PeriodSeconds *int32
 }
 
 type HPAScaleConstraints struct {
-       ScaleUp *HPAScaleConstraintValue
-       ScaleDown *HPAScaleConstraintValue
+    ScaleUp   *HPAScaleConstraintValue
+    ScaleDown *HPAScaleConstraintValue
 }
 
 type HorizontalPodAutoscalerSpec struct {
@@ -377,7 +377,7 @@ type HorizontalPodAutoscalerSpec struct {
     MinReplicas    *int32
     MaxReplicas    int32
     Metrics        []MetricSpec
-    Constraints *HPAScaleConstraints
+    Constraints    *HPAScaleConstraints
 }
 ```
 
@@ -392,7 +392,7 @@ To store not only scale down recommendations, we need to replace
 with
 
 ```golang
-    scaleUpRecommendations map[string][]timestampedRecommendation
+    scaleUpRecommendations   map[string][]timestampedRecommendation
     scaleDownRecommendations map[string][]timestampedRecommendation
 ```
 
