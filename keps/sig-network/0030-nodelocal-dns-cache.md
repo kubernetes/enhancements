@@ -16,8 +16,8 @@ approvers:
   - "@bowei"
 editor: TBD
 creation-date: 2018-10-05
-last-updated: 2018-10-30
-status: provisional
+last-updated: 2019-04-25
+status: implemented
 ---
 
 # NodeLocal DNS Cache
@@ -199,6 +199,7 @@ This feature will be launched with Alpha support in the first release. Master ve
 
 * 2018-10-05 - Creation of the KEP
 * 2018-10-30 - Follow up comments and choice of cache agent
+* 2018-11-14 - [Changes](https://github.com/kubernetes/kubernetes/pull/70555) to support running NodeLocal DNSCache were merged.
 
 ## Drawbacks [optional]
 
