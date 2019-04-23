@@ -6,6 +6,7 @@ owning-sig: sig-node
 participating-sigs:
   - sig-scheduling
   - sig-autoscaling
+  - sig-windows
 reviewers:
   - "@tallclair"
   - "@derekwaynecarr"
@@ -15,7 +16,7 @@ approvers:
 editor: TBD
 creation-date: 2019-02-26
 last-updated: 2019-04-12
-status: provisional
+status: implementable
 ---
 
 # Pod Overhead
@@ -128,7 +129,8 @@ Pod {
   }
 }
 
-For scheduling, the pod `Overhead` resource requests are added to the container resource requests.
+All PodSpec and RuntimeClass fields are immutable, including the `Overhead` field. For scheduling,
+the pod `Overhead` resource requests are added to the container resource requests.
 
 We don't currently enforce resource limits on the pod cgroup, but this becomes feasible once
 pod overhead is accountable. If the pod specifies a resource limit, and all containers in the
