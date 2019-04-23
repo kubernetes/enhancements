@@ -258,7 +258,13 @@ for { // infinite cycle inside the HPA controller
 }
 ```
 
-Effectively, this is a full copy of the current [Stabilization Window][] algorithm.
+Effectively, this is a full copy of the current [Stabilization Window][] algorithm:
+
+- While scaling up, we should pick the safest (smallest) "desiredReplicas" number during last `delaySeconds`.
+- While scaling down, we should pick the safest (largest) "desiredReplicas" number during last `delaySeconds`.
+
+The “stabilization window" as a result becomes an alias for the `constraints.scaleDown.delaySeconds`.
+
 
 [Stabilization Window]: #stabilization-window
 
@@ -280,8 +286,7 @@ Please note that:
 `constraints.ScaleDown.dealySeconds` value is picked in the following order:
 
 - from the HPA configuration, use that value
-- from the command-line option `--horizontal-pod-autoscaler-downscale-stabilization-window`.
-  Check the [Command Line Option Changes][] section.
+- from the command-line options. Check the [Command Line Option Changes][] section.
 - from the hardcoded default value `300`.
 
 For the `scaleDown` constraint both `pods` and `percent` are set to maximum possible values.
@@ -336,13 +341,6 @@ Currently stabilization window ([PR][], [RFC][], [Algorithm Details][]) is used 
 and a new number of replicas is set to the maximum of all recommendations.
 
 It may be defined by command line option `--horizontal-pod-autoscaler-downscale-stabilization-window`.
-
-The same idea is used in the `DelaySeconds` parameter above:
-
-- While scaling up, we should pick the safest (largest) "desiredReplicas" number during last `delaySeconds`.
-- While scaling down, we should pick the safest (largest) "desiredReplicas" number during last `delaySeconds`.
-
-The “stabilization window" as a result becomes an alias for the `constraints.scaleDown.delaySeconds`.
 
 [PR]: https://github.com/kubernetes/kubernetes/pull/68122
 [RFC]: https://docs.google.com/document/d/1IdG3sqgCEaRV3urPLA29IDudCufD89RYCohfBPNeWIM/edit#heading=h.3tdw2jxiu42f
@@ -427,9 +425,20 @@ As the added parameters have default values, we don’t need to update the API v
 
 #### Command Line Options Changes
 
-Effectively, no command line options changes happen. But we should note that the
+First, we should note that the
 current [--horizontal-pod-autoscaler-downscale-stabilization-window][] option
-defines the default value for the `constrains.scaleDown.delaySeconds`
+defines the default value for the `constraints.scaleDown.delaySeconds`
+So, we should make it obsolete and warn users to switch to a new command line option described below.
 
+We should implement a new command line options
+
+- `--horizontal-pod-autoscaler-scale-down-delay-constraint`,
+    that will be an alias for the [--horizontal-pod-autoscaler-downscale-stabilization-window][] for now.
+    It will set the default delay for the scale down constraint.
+- `--horizontal-pod-autoscaler-scale-up-delay-constraint`
+    It will set the default delay for the scale up constraint.
+
+Check the [Default Values][] section for more information about how to determine the delay (priorities of options).
 
 [--horizontal-pod-autoscaler-downscale-stabilization-window]: https://v1-14.docs.kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#algorithm-details
+[DefaultValues]: #default-values
