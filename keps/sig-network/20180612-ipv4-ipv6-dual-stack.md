@@ -165,7 +165,32 @@ Given the scope of this enhancement, it has been suggested that we break the imp
 Since Kubernetes Version 1.9, Kubernetes users have had the capability to use dual-stack-capable CNI network plugins (e.g. Bridge + Host Local, Calico, etc.), using the 
 [0.3.1 version of the CNI Networking Plugin API](https://github.com/containernetworking/cni/blob/spec-v0.3.1/SPEC.md), to configure multiple IPv4/IPv6 addresses on pods. However, Kubernetes currently captures and uses only IP address from the pod's main interface.
 
-This proposal aims to extend the Kubernetes Pod Status API so that Kubernetes can track and make use of up to one IPv4 address and up to one IPv6 address assignment per pod.
+This proposal aims to extend the Kubernetes Pod Status and the Pod Network Status API so that Kubernetes can track and make use of one or many IPv4 addresses and one or many IPv6 address assignment per pod.
+
+CNI provides list of ips and their versions. Kubernetes currently just chooses to ignore this and use a single IP. This means this struct will need to follow the pod.Pod ip style of primary IP as is, and another slice of IPs, having Pod.IPs[0] == Pod.IP which will look like the following:
+
+    type PodNetworkStatus struct {
+      metav1.TypeMeta `json:",inline"`
+
+      // IP is the primary ipv4/ipv6 address of the pod. Among other things it is the address that -
+      //   - kube expects to be reachable across the cluster
+      //   - service endpoints are constructed with
+      //   - will be reported in the PodStatus.PodIP field (will override the IP reported by docker)
+      IP net.IP `json:"ip" description:"Primary IP address of the pod"`
+            IPs  []net.IP `json:"ips" description:"list of ips"`
+    }
+
+CNI as of today does not provide additional metadata to the IP. So this Properties field - speced in this KEP - will be empty until CNI spec includes properties. Although in theory we can copy the interface name, gateway etc. into this Properties map.
+
+### Required changes to Container Runtime Interface (CRI)
+
+The PLEG loop + status manager of kubelet makes an extensive use of PodSandboxStatus call to wire up PodIP to api server, as a patch call to Pod Resources. The problem with this is the response message wraps PodSandboxNetworkStatus struct and this struct only carries one IP. This will require a change similar to the change described above. We will work with the CRI team to coordinate this change.
+
+    type PodSandboxNetworkStatus struct {
+      // IP address of the PodSandbox.
+      Ip string `protobuf:"bytes,1,opt,name=ip,proto3" json:"ip,omitempty"`
+            Ips []string `protobuf:"bytes,1,opt,name=ip,proto3" json:"ip,omitempty"`
+    }
 
 #### Versioned API Change: PodStatus v1 core
 In order to maintain backwards compatibility for the core V1 API, this proposal retains the existing (singular) "PodIP" field in the core V1 version of the [PodStatus V1 core API](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.10/#podstatus-v1-core), and adds a new array of structures that store pod IPs along with associated metadata for that IP. The metadata for each IP (refer to the "Properties" map below) will not be used by the dual-stack feature, but is added as a placeholder for future enhancements, e.g. to allow CNI network plugins to indicate to which physical network that an IP is associated. Retaining the existing "PodIP" field for backwards compatibility is in accordance with the [Kubernetes API change quidelines](https://github.com/kubernetes/community/blob/master/contributors/devel/api_changes.md).
