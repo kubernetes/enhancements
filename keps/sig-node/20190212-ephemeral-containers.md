@@ -63,6 +63,7 @@ status: implementable
       * [Mutable Pod Spec Containers](#mutable-pod-spec-containers)
       * [Image Exec](#image-exec)
       * [Attaching Container Type Volume](#attaching-container-type-volume)
+      * [Using docker cp and exec](#using-docker-cp-and-exec)
       * [Inactive container](#inactive-container)
       * [Implicit Empty Volume](#implicit-empty-volume)
       * [Standalone Pod in Shared Namespace ("Debug Pod")](#standalone-pod-in-shared-namespace-debug-pod)
@@ -729,16 +730,17 @@ this simplifies the solution by working within the existing constraints of
 `kubectl exec`, it has a sufficient list of minor limitations (detailed in
 [#10834](https://issues.k8s.io/10834)) to result in a poor user experience.
 
-### Using docker cp & exec
+### Using docker cp and exec
 
 Instead of creating an additional container with a different image, `docker cp`
 could be used to add binaries into a running container before calling `exec` on
 the process. This approach would be feasible on Windows as it doesn't require
 process namespace sharing. It also doesn't involve the complexities with adding
-mounts as described in [#Attaching-Container-Type-Volume]. However, it doesn't
-provide a convenient way to package or distribute binaries as described in this
-KEP or the alternate [#Image-Exec] proposal. `docker cp` also doesn't have a
-CRI equivalent, so that would need to be addressed in an alternate proposal.
+mounts as described in [Attaching Container Type Volume](#attaching-container-type-volume).
+However, it doesn't provide a convenient way to package or distribute binaries
+as described in this KEP or the alternate [Image Exec](#image-exec) proposal.
+`docker cp` also doesn't have a CRI equivalent, so that would need to be
+addressed in an alternate proposal.
 
 ### Inactive container
 
