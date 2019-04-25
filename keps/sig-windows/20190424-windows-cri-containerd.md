@@ -53,10 +53,9 @@ status: provisional
     - [Design Details](#design-details)
         - [Test Plan](#test-plan)
         - [Graduation Criteria](#graduation-criteria)
-            - [Examples](#examples)
-                - [Alpha -> Beta Graduation](#alpha---beta-graduation)
+        - [Alpha release (proposed 1.15)](#alpha-release-proposed-115)
+        - [Alpha -> Beta Graduation](#alpha---beta-graduation)
                 - [Beta -> GA Graduation](#beta---ga-graduation)
-                - [Removing a deprecated flag](#removing-a-deprecated-flag)
         - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
         - [Version Skew Strategy](#version-skew-strategy)
     - [Implementation History](#implementation-history)
@@ -236,87 +235,46 @@ As mentioned earlier, builds are not yet available. We will publish the setup st
 
 ### Test Plan
 
-**Note:** *Section not required until targeted at a release.*
+The existing test cases running on Testgrid that cover Windows Server 2019 with Docker will be reused with CRI-ContainerD. Testgrid will be updated so that both ContainerD and dockershim results are visible. 
 
-Consider the following in developing a test plan for this enhancement:
-- Will there be e2e and integration tests, in addition to unit tests?
-- How will it be tested in isolation vs with other components?
-
-No need to outline all of the test cases, just the general strategy.
-Anything that would count as tricky in the implementation and anything particularly challenging to test should be called out.
-
-All code is expected to have adequate tests (eventually with coverage expectations).
-Please adhere to the [Kubernetes testing guidelines][testing-guidelines] when drafting this test plan.
-
-[testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
+Test cases that depend on ContainerD and won't pass with Dockershim will be marked with `[feature:windows-containerd]` until `dockershim` is deprecated.
 
 ### Graduation Criteria
 
-**Note:** *Section not required until targeted at a release.*
+### Alpha release (proposed 1.15)
 
-Define graduation milestones.
+- Windows Server 2019 containers can run with process level isolation
+- TestGrid has results for Kubernetes master branch. CRI-ContainerD and CNI built from source and may include non-upstream PRs.
+- Support RuntimeClass to enable Hyper-V isolation for Windows Server 2019 on 2019
 
-These may be defined in terms of API maturity, or as something else. Initial KEP should keep
-this high-level with a focus on what signals will be looked at to determine graduation.
 
-Consider the following in developing the graduation criteria for this enhancement:
-- [Maturity levels (`alpha`, `beta`, `stable`)][maturity-levels]
-- [Deprecation policy][deprecation-policy]
+### Alpha -> Beta Graduation
 
-Clearly define what graduation means by either linking to the [API doc definition](https://kubernetes.io/docs/concepts/overview/kubernetes-api/#api-versioning),
-or by redefining what graduation means.
+- Feature parity with dockershim, including:
+  - Group Managed Service Account support
+  - Named pipe & Unix domain socket mounts
+- Support RuntimeClass to enable Hyper-V isolation and run Windows Server 2019 containers on 19H1
+- Publically available builds (beta or better) of CRI-ContainerD, at least one CNI
+- TestGrid results for above builds with Kubernetes master branch
 
-In general, we try to use the same stages (alpha, beta, GA), regardless how the functionality is accessed.
-
-[maturity-levels]: https://git.k8s.io/community/contributors/devel/sig-architecture/api_changes.md#alpha-beta-and-stable-versions
-[deprecation-policy]: https://kubernetes.io/docs/reference/using-api/deprecation-policy/
-
-#### Examples
-
-These are generalized examples to consider, in addition to the aforementioned [maturity levels][maturity-levels].
-
-##### Alpha -> Beta Graduation
-
-- Gather feedback from developers and surveys
-- Complete features A, B, C
-- Tests are in Testgrid and linked in KEP
 
 ##### Beta -> GA Graduation
 
-- N examples of real world usage
-- N installs
-- More rigorous forms of testing e.g., downgrade tests and scalability tests
-- Allowing time for feedback
+- Stable release of CRI-ContainerD on Windows, at least one CNI
+- Master & release branches on TestGrid
 
-**Note:** Generally we also wait at least 2 releases between beta and GA/stable, since there's no opportunity for user feedback, or even bug reports, in back-to-back releases.
-
-##### Removing a deprecated flag
-
-- Announce deprecation and support policy of the existing flag
-- Two versions passed since introducing the functionality which deprecates the flag (to address version skew)
-- Address feedback on usage/changed behavior, provided on GitHub issues
-- Deprecate the flag
-
-**For non-optional features moving to GA, the graduation criteria must include [conformance tests].**
-
-[conformance tests]: https://github.com/kubernetes/community/blob/master/contributors/devel/conformance-tests.md
 
 ### Upgrade / Downgrade Strategy
 
-If applicable, how will the component be upgraded and downgraded? Make sure this is in the test plan.
+Because no Kubernetes API changes are expected, there is no planned upgrade/downgrade testing at the cluster level.
 
-Consider the following in developing an upgrade/downgrade strategy for this enhancement:
-- What changes (in invocations, configurations, API use, etc.) is an existing cluster required to make on upgrade in order to keep previous behavior?
-- What changes (in invocations, configurations, API use, etc.) is an existing cluster required to make on upgrade in order to make use of the enhancement?
+Node upgrade/downgrade is currently out of scope of the Kubernetes project, but we'll aim to include CRI-ContainerD in other efforts such as `kubeadm` bootstrapping for nodes.
+
+As discussed in SIG-Node, there's also no testing on switching CRI on an existing node. These are expected to be installed and configured as a prerequisite before joining a node to the cluster.
 
 ### Version Skew Strategy
 
-If applicable, how will the component handle version skew with other components? What are the guarantees? Make sure
-this is in the test plan.
-
-Consider the following in developing a version skew strategy for this enhancement:
-- Does this enhancement involve coordinating behavior in the control plane and in the kubelet? How does an n-2 kubelet without this feature available behave when this feature is used?
-- Will any other components on the node change? For example, changes to CSI, CRI or CNI may require updating that component before the kubelet.
+There's no version skew considerations needed for the same reasons described in upgrade/downgrade strategy.
 
 ## Implementation History
 
