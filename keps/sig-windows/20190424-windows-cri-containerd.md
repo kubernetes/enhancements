@@ -1,97 +1,70 @@
 ---
-title: KEP Template
+title: Supporting CRI-ContainerD on Windows
 authors:
-  - "@janedoe"
-owning-sig: sig-xxx
+  - "@patricklang"
+owning-sig: sig-windows
 participating-sigs:
-  - sig-aaa
-  - sig-bbb
+  - sig-node
 reviewers:
-  - TBD
-  - "@alicedoe"
+  - "@yujuhong"
+  - "@derekwaynecarr"
+  - "@tallclair"
 approvers:
   - TBD
-  - "@oscardoe"
 editor: TBD
-creation-date: yyyy-mm-dd
-last-updated: yyyy-mm-dd
-status: provisional|implementable|implemented|deferred|rejected|withdrawn|replaced
-see-also:
-  - "/keps/sig-aaa/20190101-we-heard-you-like-keps.md"
-  - "/keps/sig-bbb/20190102-everyone-gets-a-kep.md"
-replaces:
-  - "/keps/sig-ccc/20181231-replaced-kep.md"
-superseded-by:
-  - "/keps/sig-xxx/20190104-superceding-kep.md"
+creation-date: 2019-04-24
+last-updated: 2019-04-24
+status: provisional
 ---
 
-# Title
-
-This is the title of the KEP.
-Keep it simple and descriptive.
-A good title can help communicate what the KEP is and should be considered as part of any review.
-
-The title should be lowercased and spaces/punctuation should be replaced with `-`.
-
-To get started with this template:
-1. **Pick a hosting SIG.**
-  Make sure that the problem space is something the SIG is interested in taking up.
-  KEPs should not be checked in without a sponsoring SIG.
-1. **Make a copy of this template.**
-  Copy this template into the owning SIG's directory (or KEP root directory, as appropriate) and name it `YYYYMMDD-my-title.md`, where `YYYYMMDD` is the date the KEP was first drafted.
-1. **Fill out the "overview" sections.**
-  This includes the Summary and Motivation sections.
-  These should be easy if you've preflighted the idea of the KEP with the appropriate SIG.
-1. **Create a PR.**
-  Assign it to folks in the SIG that are sponsoring this process.
-1. **Create an issue in kubernetes/enhancements, if the enhancement will be targeting changes to kubernetes/kubernetes**
-  When filing an enhancement tracking issue, please ensure to complete all fields in the template.
-1. **Merge early.**
-  Avoid getting hung up on specific details and instead aim to get the goal of the KEP merged quickly.
-  The best way to do this is to just start with the "Overview" sections and fill out details incrementally in follow on PRs.
-  View anything marked as a `provisional` as a working document and subject to change.
-  Aim for single topic PRs to keep discussions focused.
-  If you disagree with what is already in a document, open a new PR with suggested changes.
-
-The canonical place for the latest set of instructions (and the likely source of this file) is [here](/keps/YYYYMMDD-kep-template.md).
-
-The `Metadata` section above is intended to support the creation of tooling around the KEP process.
-This will be a YAML section that is fenced as a code block.
-See the KEP process for details on each of these items.
+# Supporting CRI-ContainerD on Windows
 
 ## Table of Contents
 
-A table of contents is helpful for quickly jumping to sections of a KEP and for highlighting any additional information provided beyond the standard KEP template.
-[Tools for generating][] a table of contents from markdown are available.
+<!-- TOC -->
 
-- [Title](#title)
-  - [Table of Contents](#table-of-contents)
-  - [Release Signoff Checklist](#release-signoff-checklist)
-  - [Summary](#summary)
-  - [Motivation](#motivation)
-    - [Goals](#goals)
-    - [Non-Goals](#non-goals)
-  - [Proposal](#proposal)
-    - [User Stories [optional]](#user-stories-optional)
-      - [Story 1](#story-1)
-      - [Story 2](#story-2)
-    - [Implementation Details/Notes/Constraints [optional]](#implementation-detailsnotesconstraints-optional)
-    - [Risks and Mitigations](#risks-and-mitigations)
-  - [Design Details](#design-details)
-    - [Test Plan](#test-plan)
-    - [Graduation Criteria](#graduation-criteria)
-      - [Examples](#examples)
-        - [Alpha -> Beta Graduation](#alpha---beta-graduation)
-        - [Beta -> GA Graduation](#beta---ga-graduation)
-        - [Removing a deprecated flag](#removing-a-deprecated-flag)
-    - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
-    - [Version Skew Strategy](#version-skew-strategy)
-  - [Implementation History](#implementation-history)
-  - [Drawbacks [optional]](#drawbacks-optional)
-  - [Alternatives [optional]](#alternatives-optional)
-  - [Infrastructure Needed [optional]](#infrastructure-needed-optional)
+- [Supporting CRI-ContainerD on Windows](#supporting-cri-containerd-on-windows)
+    - [Table of Contents](#table-of-contents)
+    - [Release Signoff Checklist](#release-signoff-checklist)
+    - [Summary](#summary)
+    - [Motivation](#motivation)
+        - [Goals](#goals)
+        - [Non-Goals](#non-goals)
+    - [Proposal](#proposal)
+        - [User Stories](#user-stories)
+            - [Improving Kubernetes integration for Windows Server containers](#improving-kubernetes-integration-for-windows-server-containers)
+            - [Improved isolation and compatibility between Windows pods using Hyper-V](#improved-isolation-and-compatibility-between-windows-pods-using-hyper-v)
+            - [Improve Control over Memory & CPU Resources with Hyper-V](#improve-control-over-memory--cpu-resources-with-hyper-v)
+            - [Improved Storage Control with Hyper-V](#improved-storage-control-with-hyper-v)
+            - [Enable runtime resizing of container resources](#enable-runtime-resizing-of-container-resources)
+        - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
+            - [Proposal: Use Runtimeclass Scheduler to simplify deployments based on OS version requirements](#proposal-use-runtimeclass-scheduler-to-simplify-deployments-based-on-os-version-requirements)
+            - [Proposal: Standardize hypervisor annotations](#proposal-standardize-hypervisor-annotations)
+        - [Dependencies](#dependencies)
+                - [Windows Server 2019](#windows-server-2019)
+                - [CRI-ContainerD](#cri-containerd)
+                - [CNI: Flannel](#cni-flannel)
+                - [CNI: Kubenet](#cni-kubenet)
+                - [CNI: GCE](#cni-gce)
+                - [Storage: in-tree AzureFile, AzureDisk, Google PD](#storage-in-tree-azurefile-azuredisk-google-pd)
+                - [Storage: FlexVolume for iSCSI & SMB](#storage-flexvolume-for-iscsi--smb)
+        - [Risks and Mitigations](#risks-and-mitigations)
+            - [CRI-ContainerD availability](#cri-containerd-availability)
+    - [Design Details](#design-details)
+        - [Test Plan](#test-plan)
+        - [Graduation Criteria](#graduation-criteria)
+            - [Examples](#examples)
+                - [Alpha -> Beta Graduation](#alpha---beta-graduation)
+                - [Beta -> GA Graduation](#beta---ga-graduation)
+                - [Removing a deprecated flag](#removing-a-deprecated-flag)
+        - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+        - [Version Skew Strategy](#version-skew-strategy)
+    - [Implementation History](#implementation-history)
+    - [Alternatives](#alternatives)
+        - [CRI-O](#cri-o)
+    - [Infrastructure Needed](#infrastructure-needed)
 
-[Tools for generating]: https://github.com/ekalinin/github-markdown-toc
+<!-- /TOC -->
 
 ## Release Signoff Checklist
 
@@ -122,61 +95,142 @@ Check these off as they are completed for the Release Team to track. These check
 
 ## Summary
 
-The `Summary` section is incredibly important for producing high quality user-focused documentation such as release notes or a development roadmap.
-It should be possible to collect this information before implementation begins in order to avoid requiring implementors to split their attention between writing release notes and implementing the feature itself.
-KEP editors, SIG Docs, and SIG PM should help to ensure that the tone and content of the `Summary` section is useful for a wide audience.
+The ContainerD maintainers have been working on CRI support which is stable on Linux, but is not yet available for Windows as of ContainerD 1.2. Currently it’s planned for ContainerD 1.3, and the developers in the Windows container platform team have most of the key work merged into master already. Supporting CRI-ContainerD on Windows means users will be able to take advantage of the latest container platform improvements that shipped in Windows Server 2019 / 1809 and beyond.
 
-A good summary is probably at least a paragraph in length.
 
 ## Motivation
 
-This section is for explicitly listing the motivation, goals and non-goals of this KEP.
-Describe why the change is important and the benefits to users.
-The motivation section can optionally provide links to [experience reports][] to demonstrate the interest in a KEP within the wider Kubernetes community.
+Windows Server 2019 includes an updated host container service (HCS v2) that offers more control over how containers are managed. This can remove some limitations and improve some Kubernetes API compatibility. However, the current Docker EE 18.09 release has not been updated to work with the Windows HCSv2, only ContainerD has been migrated. Moving to CRI-ContainerD allows the Windows OS team and Kubernetes developers to focus on an interface designed to work with Kubernetes to improve compatibility and accelerate development.
 
-[experience reports]: https://github.com/golang/go/wiki/ExperienceReports
+Additionally, users could choose to run with only CRI-ContainerD instead of Docker EE if they wanted to reduce the install footprint or produce their own self-supported CRI-ContainerD builds.
 
 ### Goals
 
-List the specific goals of the KEP.
-How will we know that this has succeeded?
+- Improve the matrix of Kubernetes features that can be supported on Windows
+- Provide a path forward to implement Kubernetes-specific features that are not available in the Docker API today
+- Align with `dockershim` deprecation timelines once they are defined
 
 ### Non-Goals
 
-What is out of scope for this KEP?
-Listing non-goals helps to focus discussion and make progress.
+- Running Linux containers on Windows nodes
 
 ## Proposal
 
-This is where we get down to the nitty gritty of what the proposal actually is.
+### User Stories
 
-### User Stories [optional]
+#### Improving Kubernetes integration for Windows Server containers
 
-Detail the things that people will be able to do if this KEP is implemented.
-Include as much detail as possible so that people can understand the "how" of the system.
-The goal here is to make this feel real for users without getting bogged down.
+Moving to the new Windows HCSv2 platform and ContainerD would allow Kubernetes to add support for:
 
-#### Story 1
+- Mounting single files, not just folders, into containers
+- Termination messages (depends on single file mounts)
+- /etc/hosts (c:\windows\system32\drivers\etc\hosts) file mapping
 
-#### Story 2
+#### Improved isolation and compatibility between Windows pods using Hyper-V 
 
-### Implementation Details/Notes/Constraints [optional]
+Hyper-V enables each pod to run within it’s own hypervisor partition, with a separate kernel. This means that we can build forward-compatibility for containers across Windows OS versions - for example a container built using Windows Server 1809, could be run on a node running Windows Server 19H1. This pod would use the Windows Server 1809 kernel to preserve full compatibility, and other pods could run using either a shared kernel with the node, or their own isolated Windows Server 19H1 kernels. Containers requiring 1809 and 19H1 (or later) cannot be mixed in the same pod, they must be deployed in separate pods so the matching kernel may be used. Running Windows Server version 19H1 containers on a Windows Server 2019/1809 host will not work.
 
-What are the caveats to the implementation?
-What are some important details that didn't come across above.
-Go in to as much detail as necessary here.
-This might be a good place to talk about core concepts and how they releate.
+In addition, some customers may desire hypervisor-based isolation as an additional line of defense against a container break-out attack.
+
+Adding Hyper-V support would use [RuntimeClass](https://kubernetes.io/docs/concepts/containers/runtime-class/#runtime-class). 
+3 typical RuntimeClass names would be configured in CRI-ContainerD to support common deployments:
+- runhcs-wcow-process [default] - process isolation is used, container & node OS version must match
+- runhcs-wcow-hypervisor - Hyper-V isolation is used, Pod will be compatible with containers built with Windows Server 2019 / 1809. Physical memory overcommit is allowed with overages filled from pagefile.
+- runhcs-wcow-hypervisor-19H1 - Hyper-V isolation is used, Pod will be compatible with containers built with Windows Server 19H1. Physical memory overcommit is allowed with overages filled from pagefile.
+
+Using Hyper-V isolation does require some extra memory for the isolated kernel & system processes. This could be accounted for by implementing the [PodOverhead](https://kubernetes.io/docs/concepts/containers/runtime-class/#runtime-class) proposal for those runtime classes. We would include a recommended PodOverhead in the default CRDs, likely between 100-200M.
+
+
+#### Improve Control over Memory & CPU Resources with Hyper-V
+
+The Windows kernel itself cannot provide reserved memory for pods, containers or processes. They are always fulfilled using virtual allocations which could be paged out later. However, using a Hyper-V partition improves control over memory and CPU cores. Hyper-V can either allocate memory on-demand (while still enforcing a hard limit), or it can be reserved as a physical allocation up front. Physical allocations may be able to enable large page allocations within that range (to be confirmed) and improve cache coherency. CPU core counts may also be limited so a pod only has certain cores available, rather than shares spread across all cores, and applications can tune thread counts to the actually available cores.
+
+Operators could deploy additional RuntimeClasses with more granular control for performance critical workloads:
+- 2019-Hyper-V-Reserve: Hyper-V isolation is used, Pod will be compatible with containers built with Windows Server 2019 / 1809. Memory reserve == limit, and is guaranteed to not page out.
+  - 2019-Hyper-V-Reserve-<N>Core: Same as above, except all but <N> CPU cores are masked out.
+- 19H1-Hyper-V-Reserve: Hyper-V isolation is used, Pod will be compatible with containers built with Windows Server 19H1. Memory reserve == limit, and is guaranteed to not page out.
+  - 19H1-Hyper-V-Reserve-<N>Core: Same as above, except all but <N> CPU cores are masked out.
+
+
+#### Improved Storage Control with Hyper-V
+
+
+Hyper-V also brings the capability to attach storage to pods using block-based protocols (SCSI) instead of file-based protocols (host file mapping / NFS / SMB). These capabilities could be enabled in HCSv2 with CRI-ContainerD, so this could be an area of future work. Some examples could include:
+
+Attaching a "physical disk" (such as a local SSD, iSCSI target, Azure Disk or Google Persistent Disk) directly to a pod. It could be formatted and used within the pod without being mounted or accessible on the host.
+
+Creating [Persistent Local Volumes](https://kubernetes.io/docs/concepts/storage/volumes/#local) using a local virtual disk attached directly to a pod. This would create local, non-resilient storage that could be formatted from the pod without being mounted on the host. This could be used to build out more resource controls such as fixed disk sizes and QoS based on IOPs or throughput and take advantage of high speed local storage such as temporary SSDs offered by cloud providers.
+
+
+#### Enable runtime resizing of container resources
+
+With virtual-based allocations and Hyper-V, it should be possible to increase the limit for a running pod. This won’t give it a guaranteed allocation, but will allow it to grow without terminating and scheduling a new pod. This could be a path to vertical pod autoscaling.
+
+
+### Implementation Details/Notes/Constraints
+
+#### Proposal: Use Runtimeclass Scheduler to simplify deployments based on OS version requirements
+
+As of version 1.14, RuntimeClass is not considered by the Kubernetes scheduler. There’s no guarantee that a node can start a pod, and it could fail until it’s scheduled on an appropriate node. Additional node labels and nodeSelectors are required to avoid this problem. [RuntimeClass Scheduling](https://github.com/kubernetes/enhancements/blob/master/keps/sig-node/runtime-class-scheduling.md) proposes being able to add nodeSelectors automatically when using a RuntimeClass, simplifying the deployment.
+
+Windows forward compatibility will bring a new challenge as well because there are two ways a container could be run:
+- Constrained to the OS version it was designed for, using process-based isolation
+- Running on a newer OS version using Hyper-V.
+This second case could be enabled with a RuntimeClass. If a separate RuntimeClass was used based on OS version, this means the scheduler could find a node with matching class.
+
+#### Proposal: Standardize hypervisor annotations
+
+There are large number of [Windows annotations](https://github.com/Microsoft/hcsshim/blob/master/internal/oci/uvm.go#L15) defined that can control how Hyper-V will configure its hypervisor partition for the pod. Today, these could be set in the runtimeclasses defined in the CRI-ContainerD configuration file on the node, but it would be easier to maintain them if key settings around resources (cpu+memory+storage) could be aligned across multiple hypervisors and exposed in CRI.
+
+Doing this would make pod definitions more portable between different isolation types. It would also avoid the need for a "t-shirt size" list of RuntimeClass instances to choose from:
+- 1809-Hyper-V-Reserve-2Core-PhysicalMemory
+- 19H1-Hyper-V-Reserve-1Core-VirtualMemory
+- 19H1-Hyper-V-Reserve-4Core-PhysicalMemory
+...
+
+### Dependencies
+
+##### Windows Server 2019
+
+This work would be carried out and tested using the already-released Windows Server 2019. That will enable customers a migration path from Docker 18.09 to CRI-ContainerD if they want to get this new functionality. Windows Server 19H1 and later will also be supported once they’re tested.
+
+##### CRI-ContainerD
+
+It was announced that the upcoming 1.3 release would include Windows support, but that release and timeline are still in planning as of early April 2019.
+
+The code needed to run ContainerD is merged, and [experimental support in moby](https://github.com/moby/moby/pull/38541) has merged. The CRI plugin changes for Windows are still in a development branch [jterry75/cri](https://github.com/jterry75/cri/tree/windows_port/cmd/containerd) and don’t have an upstream PR open yet. 
+
+Code: mostly done
+CI+CD: lacking
+
+##### CNI: Flannel 
+Flannel isn’t expected to require any changes since the Windows-specific metaplugins ship outside of the main repo. However, there is still not a stable release supporting Windows so it needs to be built from source. Additionally, the Windows-specific metaplugins to support ContainerD are being developed in a new repo [Microsoft/windows-container-networking](https://github.com/Microsoft/windows-container-networking). It’s still TBD whether this code will be merged into [containernetworking/plugins](https://github.com/containernetworking/plugins/), or maintained in a separate repo.
+- Sdnbridge - this works with host-gw mode, replaces win-bridge
+- Sdnoverlay - this works with vxlan overlay mode, replaces win-overlay
+
+Code: in progress
+CI+CD: lacking
+
+##### CNI: Kubenet
+
+The same sdnbridge plugin should work with kubenet as well. If someone would like to use kubenet instead of flannel, that should be feasible.
+
+##### CNI: GCE
+
+GCE uses the win-bridge meta-plugin today for managing Windows network interfaces. This would also need to migrate to sdnbridge.
+
+##### Storage: in-tree AzureFile, AzureDisk, Google PD
+
+These are expected to work and the same tests will be run for both dockershim and CRI-ContainerD.
+
+##### Storage: FlexVolume for iSCSI & SMB
+These out-of-tree plugins are expected to work, and are not tested in prow jobs today. If they graduate to stable we’ll add them to testgrid.
 
 ### Risks and Mitigations
 
-What are the risks of this proposal and how do we mitigate.
-Think broadly.
-For example, consider both security and how this will impact the larger kubernetes ecosystem.
+#### CRI-ContainerD availability
 
-How will security be reviewed and by whom?
-How will UX be reviewed and by whom?
-
-Consider including folks that also work outside the SIG or subproject.
+As mentioned earlier, builds are not yet available. We will publish the setup steps required to build & test in the kubernetes-sigs/windows-testing repo during the course of alpha so testing can commence.
 
 ## Design Details
 
@@ -266,26 +320,14 @@ Consider the following in developing a version skew strategy for this enhancemen
 
 ## Implementation History
 
-Major milestones in the life cycle of a KEP should be tracked in `Implementation History`.
-Major milestones might include
+- 2014-04-24 - KEP started, based on the [earlier doc shared SIG-Windows and SIG-Node](https://docs.google.com/document/d/1NigFz1nxI9XOi6sGblp_1m-rG9Ne6ELUrNO0V_TJqhI/edit)
 
-- the `Summary` and `Motivation` sections being merged signaling SIG acceptance
-- the `Proposal` section being merged signaling agreement on a proposed design
-- the date implementation started
-- the first Kubernetes release where an initial version of the KEP was available
-- the version of Kubernetes where the KEP graduated to general availability
-- when the KEP was retired or superseded
+## Alternatives
 
-## Drawbacks [optional]
+### CRI-O
 
-Why should this KEP _not_ be implemented.
+[CRI-O](https://cri-o.io/) is another runtime that aims to closely support all the fields available in the CRI spec. Currently there aren't any maintainers porting it to Windows so it's not a viable alternative.
 
-## Alternatives [optional]
+## Infrastructure Needed
 
-Similar to the `Drawbacks` section the `Alternatives` section is used to highlight and record other possible approaches to delivering the value proposed by a KEP.
-
-## Infrastructure Needed [optional]
-
-Use this section if you need things from the project/SIG.
-Examples include a new subproject, repos requested, github details.
-Listing these here allows a SIG to get the process for these resources started right away.
+No new infrastructure is currently needed from the Kubernetes community. The existing test jobs using prow & testgrid will be copied and modified to test CRI-ContainerD in addition to dockershim.
