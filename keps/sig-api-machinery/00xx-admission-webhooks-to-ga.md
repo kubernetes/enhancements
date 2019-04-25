@@ -346,7 +346,115 @@ Since the apiserver can convert between all of the versions by which a resource
 is made available, this situation can be improved by having the apiserver 
 convert resources to the group/versions a webhook registered for.
 
-The API representation and behavior for this feature is still under design and will be updated/approved here prior to implementation.
+Because admission can be used for out-of-tree defaulting and field enforcement,
+admission plugins may intentionally target specific versions of resources.
+A `matchPolicy` field will be added to the webhook configuration object,
+allowing a configuration to specify whether the apiserver should only route requests
+which exactly match the specified rules to the webhook, or whether it should route
+requests for equivalent resources via different API groups or versions as well.
+For safety, this field defaults to `Exact` in `v1beta1`. In `v1`, we can default it to `Equivalent`.
+
+```golang
+// Webhook describes an admission webhook and the resources and operations it applies to.
+type Webhook struct {
+     ...
+     // matchPolicy defines how the "rules" field is applied when a request is made 
+     // to a different API group or version of a resource listed in "rules".
+     // Allowed values are "Exact" or "Equivalent".
+     // - Exact: match requests only if they exactly match a given rule. For example, if an object can be modified
+     // via API versions v1 and v2, and "rules" only includes "v1", do not send a request to "v2" to the webhook.
+     // - Equivalent: match requests if they modify a resource listed in rules via another API group or version.
+     // For example, if an object can be modified via API versions v1 and v2, and "rules" only includes "v1",
+     // a request to "v2" should be converted to "v1" and sent to the webhook.
+     // Defaults to "Exact"
+     // +optional
+     MatchPolicy *MatchPolicyType `json:"matchPolicy,omitempty"`
+```
+
+The apiserver will do the following:
+
+1. For each resource, compute the set of other resources that access or affect the same data, and the kind of the expected object. For example:
+  * `apps,v1,deployments` (`apiVersion: apps/v1, kind: Deployment`) is also available via:
+    * `apps,v1beta2,deployments` (`apiVersion: apps/v1beta2, kind: Deployment`)
+    * `apps,v1beta1,deployments` (`apiVersion: apps/v1beta1, kind: Deployment`)
+    * `extensions,v1beta1,deployments` (`apiVersion: extensions/v1beta1, kind: Deployment`)
+  * `apps,v1,deployments/scale` (`apiVersion: autoscaling/v1, kind: Scale`) is also available via:
+    * `apps,v1beta2,deployments/scale` (`apiVersion: apps/v1beta2, kind: Scale`)
+    * `apps,v1beta1,deployments/scale` (`apiVersion: apps/v1beta1, kind: Scale`)
+    * `extensions,v1beta1,deployments/scale` (`apiVersion: extensions/v1beta1, kind: Scale`)
+2. When evaluating whether to dispatch an incoming request to a webhook with 
+`matchPolicy: Equivalent`, check the request's resource *and* all equivalent 
+resources against the ones the webhook had registered for. If needed, convert 
+the incoming object to one the webhook indicated it understood.
+
+The `AdmissionRequest` sent to a webhook includes the fully-qualified
+kind (group/version/kind) and resource (group/version/resource):
+
+```golang
+type AdmissionRequest struct {
+     ...
+     // Kind is the type of object being manipulated.  For example: Pod
+     Kind metav1.GroupVersionKind `json:"kind" protobuf:"bytes,2,opt,name=kind"`
+     // Resource is the name of the resource being requested.  This is not the kind.  For example: pods
+     Resource metav1.GroupVersionResource `json:"resource" protobuf:"bytes,3,opt,name=resource"`
+     // SubResource is the name of the subresource being requested.  This is a different resource, scoped to the parent
+     // resource, but it may have a different kind. For instance, /pods has the resource "pods" and the kind "Pod", while
+     // /pods/foo/status has the resource "pods", the sub resource "status", and the kind "Pod" (because status operates on
+     // pods). The binding resource for a pod though may be /pods/foo/binding, which has resource "pods", subresource
+     // "binding", and kind "Binding".
+     // +optional
+     SubResource string `json:"subResource,omitempty" protobuf:"bytes,4,opt,name=subResource"`
+```
+
+Prior to this conversion feature, the resource and kind of the request made to the 
+API server, and the resource and kind sent in the AdmissionRequest were identical.
+
+When a conversion occurs and the object we send to the webhook is a different kind
+than was sent to the API server, or the resource the webhook registered for is different
+than the request made to the API server, we have three options for communicating that to the webhook:
+1. Do not expose that fact to the webhook:
+  * Set AdmissionRequest `kind` to the converted kind
+  * Set AdmissionRequest `resource` to the registered-for resource
+2. Expose that fact to the webhook using the existing fields:
+  * Set AdmissionRequest `kind` to the API request's kind (not matching the object in the AdmissionRequest)
+  * Set AdmissionRequest `resource` to the API request's resource (not matching the registered-for resource)
+3. Expose that fact to the webhook using new AdmissionRequest fields:
+  * Set AdmissionRequest `kind` to the converted kind
+  * Set AdmissionRequest `requestKind` to the API request's kind
+  * Set AdmissionRequest `resource` to the registered-for resource
+  * Set AdmissionRequest `requestResource` to the API request's resource
+
+Option 1 loses information the webhook could use (for example, to enforce different validation or defaulting rules for newer APIs).
+
+Option 2 risks breaking webhook logic by sending it resources it did not register for, and kinds it did not expect.
+
+Option 3 is preferred, and is the safest option that preserves information for use by the webhook.
+
+To support this, three fields will be added to AdmissionRequest, and populated with the original request's kind, resource, and subResource:
+
+```golang
+type AdmissionRequest struct {
+     ...
+     // RequestKind is the type of object being manipulated by the the original API request.  For example: Pod
+     // If this differs from the value in "kind", an equivalent match and conversion was performed.
+     // See documentation for the "matchPolicy" field in the webhook configuration type.
+     // +optional
+     RequestKind *metav1.GroupVersionKind `json:"requestKind,omitempty"`
+     // RequestResource is the name of the resource being requested by the the original API request.  This is not the kind.  For example: ""/v1/pods
+     // If this differs from the value in "resource", an equivalent match and conversion was performed.
+     // See documentation for the "matchPolicy" field in the webhook configuration type.
+     // +optional
+     RequestResource *metav1.GroupVersionResource `json:"requestResource,omitempty"`
+     // RequestSubResource is the name of the subresource being requested by the the original API request.  This is a different resource, scoped to the parent
+     // resource, but it may have a different kind. For instance, /pods has the resource "pods" and the kind "Pod", while
+     // /pods/foo/status has the resource "pods", the sub resource "status", and the kind "Pod" (because status operates on
+     // pods). The binding resource for a pod though may be /pods/foo/binding, which has resource "pods", subresource
+     // "binding", and kind "Binding".
+     // If this differs from the value in "subResource", an equivalent match and conversion was performed.
+     // See documentation for the "matchPolicy" field in the webhook configuration type.
+     // +optional
+     RequestSubResource string `json:"requestSubResource,omitempty"`
+```
 
 ## V1 API
 
@@ -409,6 +517,17 @@ type Rule struct {
      // +optional
      Scope ScopeType `json:"scope,omitempty" protobuf:"bytes,3,opt,name=scope"`
 }
+
+type ConversionPolicyType string
+
+const (
+     // ConversionIgnore means that requests that do not match a webhook's rules but could be 
+     // converted to a resource the webhook registered for, should be ignored.
+     ConversionIgnore ConversionPolicyType = "Ignore"
+     // ConversionConvert means that requests that do not match a webhook's rules but could be 
+     // converted to a resource the webhook registered for, should be converted and sent to the webhook.
+     ConversionConvert ConversionPolicyType = "Convert"
+)
 
 type FailurePolicyType string
 
@@ -515,6 +634,18 @@ type Webhook struct {
      // disabling the plugin, ValidatingAdmissionWebhooks and MutatingAdmissionWebhooks are never called
      // on admission requests for ValidatingWebhookConfiguration and MutatingWebhookConfiguration objects.
      Rules []RuleWithOperations `json:"rules,omitempty" protobuf:"bytes,3,rep,name=rules"`
+
+     // matchPolicy defines how the "rules" field is applied when a request is made 
+     // to a different API group or version of a resource listed in "rules".
+     // Allowed values are "Exact" or "Equivalent".
+     // - Exact: match requests only if they exactly match a given rule. For example, if an object can be modified
+     // via API version v1 and v2, and "rules" only includes "v1", do not send a request to "v2" to the webhook.
+     // - Equivalent: match requests if they modify a resource listed in rules via another API group or version.
+     // For example, if an object can be modified via API version v1 and v2, and "rules" only includes "v1",
+     // a request to "v2" should be converted to "v1" and sent to the webhook.
+     // Defaults to "Equivalent"
+     // +optional
+     MatchPolicy *MatchPolicyType `json:"matchPolicy,omitempty"`
 
      // FailurePolicy defines how unrecognized errors from the admission endpoint are handled -
      // allowed values are Ignore or Fail. Defaults to Ignore.
