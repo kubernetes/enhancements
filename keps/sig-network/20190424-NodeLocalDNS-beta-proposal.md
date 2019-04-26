@@ -72,7 +72,7 @@ Here are some failure modes for the node-cache pod:
 3) OOMKilled - node-local-dns gets OOMKilled due to its own memory usage or some other component using up all memory resources on the node. There is a chance this will cause other disruptions on the node in addition to DNS downtime though. 
 4) Upgrades to node-local-dns daemonset - There will be DNS downtime when node-local-dns pods shut down, until the new pods are up and running.
 
-We are proposing a solution that will help in all these cases.
+We are proposing a solution that will help in all these cases. For beta, we will start providing enablement for HA, full implementation will be a GA criterion.
  
 The proposal here is to use an additional listen IP for node-local-dns pod. The node-local-dns pod listens on the 169.254.20.10 IP address today. We will extend node-local-dns to listen on the kube-dns service IP as well. Requests to kube-dns service IP will be handled by node-local-dns pod when it is up. If it is unavailable, the requests will go to kube-dns endpoints instead. The determination of whether node-local-dns service is available will be done by an external component - This could be a new daemonset or new functionality in an existing daemonset that manages networking.
 
@@ -139,7 +139,7 @@ The benefits of this approach are:
 
 3) Disabling node-local-dns does not require any kubelet change either.
 
-We still need some component to dynamically determine when to use node-local-dns and when to flip to kube-dns endpoints. This logic can be separated out into an independent container/pod whose function is to query for dns records on 169.254.20.10:53 and follow some threshold to either install or remove the NOTRACK rules. This can be a new Daemonset or combined into an existing Daemonset that is in HostNetwork mode and manages iptables rules in some way - for instance a CNI Daemonset.
+We still need some component to dynamically determine when to use node-local-dns and when to flip to kube-dns endpoints. This logic can be separated out into an independent container/pod whose function is to query for dns records on 169.254.20.10:53 and follow some threshold to either install or remove the NOTRACK rules. This can be a new Daemonset or combined into an existing Daemonset that is in HostNetwork mode and manages iptables rules in some way - for instance a CNI Daemonset. This component will handle adding all iptables rules needed for node-local-dns.
 
 The caveat of this approach is that it only works in the iptables implementation of kube-proxy. 
 Another observation is that the upstream dns server IP used by node-local-dns will differ from one setup to another since it is a dynamically allocated service IP.  This doesn't appear to be a major concern.
@@ -151,15 +151,14 @@ Another observation is that the upstream dns server IP used by node-local-dns wi
   - [coredns-performance-nodecache](https://k8s-testgrid.appspot.com/sig-network-gce#gce-coredns-performance-nodecache)
   - [kube-dns-nodecache](https://k8s-testgrid.appspot.com/sig-network-gce#gci-gce-kube-dns-nodecache)
 
-* An additional automated test to verify the failover behavior will be a nice-to-have for beta.
 
 ### Graduation Criteria
 
-In order to graduate to beta,we need:
+In order to graduate to beta, we need:
 
-* HA implementation for NodeLocal DNSCache that covers upgrade scenario.
 * Lock down the node-local-dns configmap so that Corefile cannot be modified directly.
 
+* Enablement of HA for NodeLocal DNSCache. With this support, the iptables rules management can be separated out to a different component. node-local-dns pod will accept multiple listen IP addresses as well.
 
 ### Alternatives
 
@@ -167,6 +166,7 @@ One suggestion for HA that has come up is to list multiple nameservers in the cl
 This is not recommended because the behavior is inconsistent depending on the client library. glibc 2.16+ and musl implementations send queries in parallel to both nameservers, so if we use both kube-dns IP as well as the link-local IP used by NodeLocal DNSCache, we could make the DNS query explosion problem worse. More queries means more conntrack entries and more DNATs.
 This workaround could be viable for client implementations that do round-robin.
 
+Running 2 daemonsets of node-local-dns using the same listenIP - 169.254.20.10 via SO_REUSEPORT option. Upgrades will be done one daemonset at a time.
 
 ## Implementation History
 
