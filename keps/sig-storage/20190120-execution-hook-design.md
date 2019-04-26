@@ -19,7 +19,7 @@ approvers:
   - "@liyinan926"
 editor: TBD
 creation-date: 2019-1-20
-last-updated: 2019-4-14
+last-updated: 2019-4-25
 status: implementable
 see-also:
   - n/a
@@ -51,7 +51,7 @@ ExecutionHook API Design
 
 ## Summary
 
-This proposal is to introduce an API (ExecutionHook) for dynamically executing user’s commands in a or a group of pods/containers and a controller (ExecutionHookController) to manage the hook lifecycles. ExecutionHook provides a general mechanism for users to trigger hook commands in their containers for their different use cases. Different options have been evaluated to decide how this ExecutionHook should be managed and executed. The preferred option is described in the Proposal section. The other options are discussed in the Alternatives section.
+This proposal is to introduce an API (ExecutionHook) for dynamically executing user’s commands in a pod/container or a group of pods/containers and a controller (ExecutionHookController) to manage the hook lifecycles. ExecutionHook provides a general mechanism for users to trigger hook commands in their containers for their different use cases. Different options have been evaluated to decide how this ExecutionHook should be managed and executed. The preferred option is described in the Proposal section. The other options are discussed in the Alternatives section.
 
 ## Motivation
 
@@ -71,7 +71,7 @@ or after taking a snapshot while the container is still running.
 
 ### Goals
 
-`ExecutionHook` is introduced to define actions that can be taken on a or a group of containers. The ExecutionHook controller is responsible for triggering the commands in containers and updating the status whether the execution is succeeded or not. The controller will also garbage collect the hook objects based on some predefined policy.
+`ExecutionHook` is introduced to define actions that can be taken on a container or a group of containers. The ExecutionHook controller is responsible for triggering the commands in containers and updating the status on whether the execution is succeeded or not. The controller will also garbage collect the hook objects based on some predefined policy.
 
 ### Non-Goals
 
@@ -82,14 +82,14 @@ ApplicationSnapshot and GroupSnapshot will be mentioned in this proposal wheneve
 
 ## Proposal
 
-The general ExecutionHook API has two parts, spec and status. The hook spec has two piece of information, what are the commands to execute and where to execute them. In many use cases, different hooks share the same commands and user or controller will create many hooks for execution repeatedly. To reduce the work of copying the same execution commands in different hooks, we also propose a second API, PodAction to record the execution commands which can be referenced by ExecutionHook API. Both APIs are namespaced and they should be in the same namespace. 
+The general ExecutionHook API has two parts, spec and status. The hook spec has two piece of information, what are the commands to execute and where to execute them. In many use cases, different hooks share the same commands and user or controller will create many hooks for execution repeatedly. To reduce the work of copying the same execution commands in different hooks, we also propose a second API, HookAction to record the execution commands which can be referenced by ExecutionHook API. Both APIs are namespaced and they should be in the same namespace.
 
-The Create event of ExecutionHook will trigger the hook controller to run PodAction command. The status will be updated once it is available by controller. It is the caller's (user or controller) responsibility to delete the hook once the execution finishes (either succeeded or failed). Otherwise, executionHook controller will garbage collect them after a certain amount of time
+The Create event of ExecutionHook will trigger the hook controller to run HookAction command. The status will be updated once it is available by controller. It is the caller's (user or controller) responsibility to delete the hook once the execution finishes (either succeeded or failed). Otherwise, ExecutionHook controller will garbage collect them after a certain amount of time.
 
 Here is the definition of an ExecutionHook API object:
 
 ```
-// ExecutionHook is in the same namespace as VolumeSnapshot
+// ExecutionHook is in the tenant namespace
 type ExecutionHook struct {
         metav1.TypeMeta
         // +optional
@@ -108,9 +108,21 @@ type ExecutionHook struct {
 Here is the definition of the ExecutionHookSpec:
 
 ```
-// ExecutionHookTemplateName is copied to ExecutionHookSpec by the controller such as
+// HookActionName is copied to ExecutionHookSpec by the controller such as
 // the Snapshot Controller.
 type ExecutionHookSpec struct {
+        // PodSelection defines how to select pods and containers to run
+	// the executionhook. This field is required.
+        PodSelection PodSelection
+
+        // Name of the HookAction. This is required.
+        HookActionName string
+}
+
+// PodSelection contains two fields, PodContainerNamesList and PodContainerSelector,
+// where one of them must be defined so that the hook controller knows where to
+// run the hook.
+type PodSelection struct {
         // PodContainerNamesList lists the pods/containers on which the ExecutionHook
         // should be executed. If not specified, the ExecutionHook controller will find
         // all pods and containers based on PodContainerSelector.
@@ -119,14 +131,11 @@ type ExecutionHookSpec struct {
         // +optional
         PodContainerNamesList []PodContainerNames
 
-        // PodContainerSelector is for hook controller to find pods and containers based on the pod label
-	// selector and container names 
+        // PodContainerSelector is for hook controller to find pods and containers
+        // based on the pod label selector and container names
         // If PodContainerNamesList is specified, this field will not be used.
         // +optional
-        PodContainerSelector *podContaienrSelector
-
-	// Name of the PodActionName. This is required.
-	PodActionName string
+        PodContainerSelector *PodContainerSelector
 }
 
 type PodContainerNames struct {
@@ -135,8 +144,10 @@ type PodContainerNames struct {
 }
 
 type PodContainerSelector struct {
-	// A label query over a set of pods.
+	// PodSelector specifies a label query over a set of pods.
+        // +optional
 	PodSelector *metav1.LabelSelector
+
         // ContainerSelector is a selector which must be true for the hook to run on the container
         // Hook controller will find all containers in the selected pods based on ContainerSelector,
         // if specified.
@@ -145,16 +156,17 @@ type PodContainerSelector struct {
 	// the pod label selector will be selected.
         // +optional
         ContainerSelector map[string]string
-	
  }
 ```
+
 Here is the definition of the ExecutionHookStatus. This represents the current state of a hook for all selected containers in the selected pods.
+
 ```
 // ExecutionHookStatus represents the current state of a hook
 type ExecutionHookStatus struct {
         // This is a list of ContainerExecutionHookStatus, with each status representing information
-        // about how hook is executed in a container, including pod name, container name, preAction
-        // timestamp, ActionSucceed, etc.
+        // about how hook is executed in a container, including pod name, container name, ActionTimestamp,
+        // ActionSucceed, etc.
         // +optional
         ContainerExecutionHookStatuses []ContainerExecutionHookStatus
 
@@ -172,25 +184,51 @@ type ContainerExecutionHookStatus struct {
         // This field is required
         ContainerName string
 
-        ActionStatus *ExecutionHookActionStatus
+        // The current state of an hook action on a container
+        // +optional
+        HookActionStatus *HookActionStatus
  }
 
-type ExecutionHookActionStatus struct {
+type HookActionStatus struct {
         // If not set, it is nil, indicating Action has not started
         // If set, it means Action has started at the specified time
 	// +optional
         ActionTimestamp *int64
 
-        // +optional
         // If not set, it is nil, indicating Action is not complete on the specified container in the pod
+        // +optional
         ActionSucceed *bool
 
         // The last error encountered when running the action
 	// +optional
-        Error *HookError
+        HookError *HookError
 }
 
-type HookError storage.VolumeError
+type HookError struct {
+        // Type of the error
+        // This is required
+        ErrorType ErrorType
+
+        // Error message
+        // +optional
+        Message *string
+
+        // More detailed reason why error happens
+        // +optional
+        Reason *string
+}
+
+type ErrorType string
+
+// More error types could be added, e.g., ExecutionForbidden,
+// ExecutionUnauthorized, ExecutionAlreadyInProgress, etc.
+const (
+        // The execution hook times out
+        ExecutionTimeout ErrorType = "ExecutionTimeout"
+
+        // The execution hook fails with an error
+        ExecutionFailwithError ErrorType = "ExecutionFailwithError"
+)
 ```
 
 In the ExecutionHookStatus object, there is a list of ContainerExecutionHookStatus for all selected containers in the pods, each ContainerExecutionHookStatus represents the state of the hook on a specific container.
@@ -198,44 +236,40 @@ In the ExecutionHookStatus object, there is a list of ContainerExecutionHookStat
 The ActionSucceed field is a summary status field to indicate the final status of the Action in the hook after the commands are run on all selected containers. If not set, this field is nil, meaning the hook controller still needs to wait for the Action commands to finish running on all containers. If set, either true or false, it means the Action commands have finished running (or timeout) on all containers.
 
 
-Here is the definition for PodAction:
+Here is the definition of HookAction:
+
 ```
-// PodAction describes action commands to run on pods/containers based
-// on specified policies.
-// PodAction does not contain information on pods/containers because those are
+// HookAction describes action commands to run on pods/containers based
+// on specified policies. HookAction will be created by the user and
+// can be re-used later. Snapshot Controller will create ExecutionHooks
+// based on HookActions specified in the snapshot spec. For example,
+// two HookActions, preSnapshotExecutionHook and postSnapshotExecutionHook,
+// are expected in the snapshot spec.
+// HookAction does not contain information on pods/containers because those are
 // runtime info.
-// PodAction is namespaced
-type ExecutionHookTemplate struct {
+// HookAction is namespaced
+type HookAction struct {
         metav1.TypeMeta
         // +optional
         metav1.ObjectMeta
 
-        // Policy specifies whether to execute once on one selected pod or execute on all selected pods
-        // +optional
-        Policy *HookPolicy
-
+        // This contains the command to run on a container.
+	// The command should be idempotent.
         // This is required.
-        Action *ExecutionHookAction
+        Action core_v1.Handler
+
+        // ActionTimeoutSeconds defines when the execution hook controller should stop retrying.
+        // If execution fails, the execution hook controller will keep retrying until reaching
+        // ActionTimeoutSeconds. If execution still fails or hangs, execution hook controller
+        // stops retrying and updates executionhook status to failed.
+        // +optional
+        ActionTimeoutSeconds *int64
 }
 ```
 
-Here is the definition for HookPolicy:
-```
-type HookPolicy string
-
-// These are valid policies of ExecutionHook
-const (
-        // Execute commands only once on any one selected pod
-        HookExecuteOnce HookPolicy = "ExecuteOnce"
-        // Execute commands on all selected pods
-        HookExecuteAll HookPolicy = "ExecuteAll"
-)
-```
-
-
 `ExecutionHook` may be used for different cases, such as
 
-* application-consistency snapshotting
+* Application-consistency snapshotting
 * Upgrade
 * Rolling upgrade
 * Debugging
@@ -244,20 +278,21 @@ const (
 * Restart a container
 
 
-The following gives an eample of how to use ExecutionHook for application-consistency snapshotting use case.
+The following gives an example of how to use ExecutionHook for application-consistency snapshotting use case.
+
 ### Workflow
-* Snapshot API should carry two execution hook information (which will reference two PodAction) for quiescing and unquiescing application. 
-* Snapshot controller watches Snapshot objects. If there is a request to create a Snapshot, it checks if there is ExecutionHook Infomation defined in Snapshot.
+
+* Snapshot API should carry two execution hook information (which will reference two HookAction - preSnapshotExecutionHook and postSnapshotExecutionHook) for quiescing and unquiescing application.
+* Snapshot controller watches Snapshot objects. If there is a request to create a Snapshot, it checks if there is ExecutionHook Information defined in Snapshot.
 * If hook is defined in the snapshot, snapshot controller will create one or multiple ExecutionHooks for quiescing application if necessary, one for each command running in pods/containers.
 * Snapshot controller waits for all Action hooks to complete running before taking snapshot.
 * The ExecutionHook controller watches the ExecutionHook API object and take actions based on the object status and also update the status. 
 * Snapshot controller waits until hook is run on all pods (if more than 1 pod). No matter the Action succeeds or fails, snapshot controller should create execution hooks for unquiescing application. Snapshot controller can also decide when to delete those hooks.
 
-
-Here is an example of an PodAction:
+Here is an example of an HookAction:
 ```
 apiVersion: apps.k8s.io/v1alpha1
-kind: PodAction
+kind: HookAction
 metadata:
   name: action-demo
 Action:
@@ -280,10 +315,7 @@ spec:
     -podName: myPod2
       -containerName: myContainer3
       -containerName: myContainer4
-  Action:
-    exec:
-      command: [“run_quiesce.sh”]
-    actionTimeoutSeconds: 10
+  hookActionName: action-demo
 ```
 
 The following RBAC rules will be added for the ExecutionHook controller to run the hook through the pod subresource exec:
