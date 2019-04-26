@@ -14,7 +14,7 @@ approvers:
   - "@oscardoe"
 editor: "@CsatariGergely"
 creation-date: 2019-03-22
-last-updated: 2019-03-22
+last-updated: 2019-04-26
 status: implementable
 see-also:
 replaces:
@@ -95,6 +95,7 @@ This proposal aims to the following:
 
 This proposal defers the following:
  - Restart all of the containers in a Pod without destroying the whole Pod (and preserving the emptyDir volumes)
+ - Basic lifecycle management of Pods, like [Sidecar KEP API implementation](https://github.com/kubernetes/enhancements/pull/912) or [Sidecar Containers](https://github.com/kubernetes/enhancements/pull/912)
 
 ## Proposal
 
@@ -121,7 +122,7 @@ spec:
 ### Implementation Details/Notes/Constraints
 
 - It is an open question if the whole feature can be implemented in Kubelet or other components are also affected
-- The existing terminate and create procedures of the Pod donr by Kubelet should be used to implement the replacement of the Pod
+- The existing terminate and create procedures of the Pod done by Kubelet should be used to implement the replacement of the Pod
 
 ### Risks and Mitigations
 
