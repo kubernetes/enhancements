@@ -162,6 +162,8 @@ Optimized for small amount of images
 
 It can become difficult to maintain the list of whitelisted images without cluster maintenance in case of changing container images.
 
+This is already implemented in [pr 68549](https://github.com/kubernetes/kubernetes/pull/68549).
+
 #### Details of Story 2
 
 Optimized for big amount of images
