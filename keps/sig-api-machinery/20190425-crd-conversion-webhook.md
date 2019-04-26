@@ -6,13 +6,12 @@ authors:
 owning-sig: sig-api-machinery
 participating-sigs:
 reviewers:
-  - "@dbsmith"
+  - "@lavalamp"
   - "@deads2k"
   - "@sttts"
-  - "@liggit"
-  - "@enisoc"
+  - "@liggitt"
 approvers:
-  - "@dbsmith"
+  - "@lavalamp"
   - "@deads2k"
 creation-date: 2019-04-25
 last-updated: 2019-04-25
@@ -155,7 +154,7 @@ type CustomResourceDefinitionVersion struct {
 }
 
 Type CustomResourceConversion struct {
-  // Conversion strategy, either "nop” or "webhook”. If webhook is set, Webhook field is required.
+  // Conversion strategy, either "nop" or "webhook". If webhook is set, Webhook field is required.
   Strategy string
 
   // Additional information for external conversion if strategy is set to external
@@ -176,7 +175,7 @@ In *CRD v1beta1* (apiextensions.k8s.io/v1beta1) there are per-version schema, ad
 * Either top level X or per-version X can be set, but not both. This rule applies to individual X’s not the whole set. E.g. top level schema can be set while per-version subresources are set.
 * per-version X cannot be the same. E.g. if all per-version schema are the same, the CRD object will be rejected with an error message asking the user to use the top level schema.
 
-in *CRD v1* (apiextensions.k8s.io/v1), there will be only version list with no top level X. The second validation guarantees a clean moving to v1. These are conversion rules:
+In *CRD v1* (apiextensions.k8s.io/v1), there will be only version list with no top level X. The second validation guarantees a clean moving to v1. These are conversion rules:
 
 *v1beta1->v1:*
 
@@ -678,7 +677,7 @@ And create it:
 Kubectl create -f cr2.yaml
 ```
 
-**Step 5**: storage now has two custom resources in two different versions. To downgrade to previous CRD, one can apply crd1.yaml but that will fail as the status.storedVersions has both v1 and v2 and those cannot be removed from the spec.versions list. To downgrade, first create a crd2-b.yaml file that sets v1 as storage version and apply it, then follow "*Upgrade existing objects to a new stored version*“ in [this document](https://kubernetes.io/docs/tasks/access-kubernetes-api/custom-resources/custom-resource-definition-versioning/). After all CRs in the storage has v1 version, you can apply crd1.yaml.
+**Step 5**: storage now has two custom resources in two different versions. To downgrade to previous CRD, one can apply crd1.yaml but that will fail as the status.storedVersions has both v1 and v2 and those cannot be removed from the spec.versions list. To downgrade, first create a crd2-b.yaml file that sets v1 as storage version and apply it, then follow "*Upgrade existing objects to a new stored version*" in [this document](https://kubernetes.io/docs/tasks/access-kubernetes-api/custom-resources/custom-resource-definition-versioning/). After all CRs in the storage has v1 version, you can apply crd1.yaml.
 
 **Step 5 alternative**: create a crd1-b.yaml that has v2 but not served.
 
@@ -736,7 +735,26 @@ Consider including folks that also work outside the SIG or subproject.
 
 ## Graduation Criteria
 
+v1beta1:
 
+- Finalize validation restrictions on what metadata fields conversion is required to preserve (https://github.com/kubernetes/kubernetes/issues/72160).
+- Ensure the scenarios from (https://github.com/kubernetes/kubernetes/issues/64136) are tested:
+  - Ensure what is persisted in etcd matches the storage version
+  - Set up a CRD, persist some data, change the storage version, and ensure the previously persisted data is readable
+  - Ensure discovery docs track a CRD through creation, version addition, version removal, and deletion
+  - Ensure `spec.served` is respected
+- Error-case handling when calling conversion results in an error during 
+  - {get, list, create, update, patch, delete, deletecollection} calls to the primary resource
+  - {get, update, patch} calls to the status subresource
+  - {get, update, patch} calls to the scale subresource
+
+v1:
+
+- ConversionReview API v1 is stable (including fields that need to be updated for v1beta1 or v1)
+- Documented step-by-step CRD version migration workflow that covers the entire
+  process of migrating from one version to another (introduce a new CRD version,
+  add the converter, migrate clients, migrate to new storage version, all the
+  way to removing the old version)
 
 ## Implementation History
 
