@@ -103,7 +103,7 @@ Here is the definition of the ExecutionHookSpec:
 // the Snapshot Controller.
 type ExecutionHookSpec struct {
         // PodSelection defines how to select pods and containers to run
-	// the executionhook. If multiple pod/containers are selected, the action will exectued on them 
+	// the executionhook. If multiple pod/containers are selected, the action will executed on them
 	// asynchronously. If execution ordering is required, caller has to implement the logic and create
 	// different hooks in order.
 	// This field is required.
@@ -179,8 +179,8 @@ type ContainerExecutionHookStatus struct {
 	// +optional
         Timestamp *int64
 
-        // ActionSucceed is set to true when the action is executed in the container succesfully.
-	// It will be set to false if the action cannot be executed succesfully after ActionTimeoutSeconds passes.
+        // ActionSucceed is set to true when the action is executed in the container successfully.
+	// It will be set to false if the action cannot be executed successfully after ActionTimeoutSeconds passes.
         // +optional
         Succeed *bool
 
@@ -206,14 +206,13 @@ type HookError struct {
 
 type ErrorType string
 
-// More error types could be added, e.g., ExecutionForbidden,
-// ExecutionUnauthorized, ExecutionAlreadyInProgress, etc.
+// More error types could be added, e.g., Forbidden, Unauthorized, AlreadyInProgress, etc.
 const (
         // The execution hook times out
-        ExecutionTimeout ErrorType = "ExecutionTimeout"
+        Timeout ErrorType = "Timeout"
 
         // The execution hook fails with an error
-        ExecutionFailwithError ErrorType = "ExecutionFailwithError"
+        Error ErrorType = "Error"
 )
 ```
 
