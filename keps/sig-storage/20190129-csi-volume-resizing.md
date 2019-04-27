@@ -130,6 +130,32 @@ If `NodeExpandVolume` is successful:
 If `NodeExpandVolume` failed:
 - It will add a event to both PVC and Pod about failed resizing and resize operation will be retried.
 
+#### Supporting per-PVC secret refs
+
+To support per-PVC secrets for volume resizing, similar to CSI attach and detach - this proposal expands `CSIPersistentVolumeSource` object to contain `ControllerExpandSecretRef`. This API change will be gated by `ExpandCSIVolumes` feature gate currently in Alpha:
+
+```
+type CSIPersistentVolumeSource struct {
+    ....
+    // ControllerPublishSecretRef is a reference to the secret object containing
+    // sensitive information to pass to the CSI driver to complete the CSI controller publish
+    ControllerPublishSecretRef *SecretReference
+
+    // ControllerExpandSecretRef is a reference to secret object containing sensitive
+    // information to pass to the CSI driver to complete CSI controller expansion
+    ControllerExpandSecretRef *SecretReference
+}
+```
+
+Secrets will be fetched from StorageClass with parameters `csi.storage.k8s.io/controller-expand-secret-name` and `csi.storage.k8s.io/controller-expand-secret-namespace`. Resizing secrets will support same templating rules as attach and detach as documented - https://kubernetes-csi.github.io/docs/secrets-and-credentials.html#controller-publishunpublish-secret .
+
+Starting from 1.15 it is expected that all CSI volumes that require secrets for expansion will have `ControllerExpandSecretRef` field set. If not set
+`ControllerExpandVolume` CSI RPC call will be made without secret. Existing validation of `PersistentVolume` object will be relaxed to allow
+setting of `ControllerExpandSecretRef` for the first time so as CSI volume expansion can be supported for existing PVs.
+
+A similar field for `NodeExpandVolume` RPC call is not required because CSI `NodeExpandVolume` does not accepts secrets. It is also expected that
+Kubelet will not require access to `ControllerExpandSecretRef` field.
+
 ### Risks and Mitigations
 
 Before this feature goes GA - we need to handle recovering https://github.com/kubernetes/kubernetes/issues/73036.
@@ -141,7 +167,7 @@ Before this feature goes GA - we need to handle recovering https://github.com/ku
   - (positive) Give a plugin that supports both control plane and node size resize, CSI volume should be resizable and able to complete successfully.
   - (positive) Given a plugin that only requires control plane resize, CSI volume should be resizable and able to complete successfully.
   - (positive) Given a plugin that only requires node side resize, CSI volume should be resizable and able to complete successfully.
-  - (positive) Given a plugin that support online resizing, CSI volume should be resizable and online resize operation be able to complete successfully. 
+  - (positive) Given a plugin that support online resizing, CSI volume should be resizable and online resize operation be able to complete successfully.
   - (negative) If control resize fails, PVC should have appropriate events.
   - (neative) if node side resize fails, both pod and PVC should have appropriate events.
 
@@ -149,9 +175,11 @@ Before this feature goes GA - we need to handle recovering https://github.com/ku
 
 Once implemented CSI volumes should be resizable and in-line with current in-tree implementation of volume resizing.
 
-- *Alpha* : Initial support for CSI volume resizing. Released code will include an external CSI volume resize controller and changes to Kubelet. Implementation will have unit tests and csi-mock driver e2e tests.
-- *Beta*  : More robust support for CSI volume resizing, handle recovering from resize failures. Add e2e tests that use real drivers(`gce-pd`, `ebs` at minimum). Add metrics for volume resize operations.
-- *GA* : CSI resizing in general will only leave GA after existing [Volume expansion](https://github.com/kubernetes/enhancements/issues/284) feature leaves GA. Online resizing of CSI volumes depends on [Online resizing](https://github.com/kubernetes/enhancements/pull/737) feature and online resizing of CSI volumes will be available as a GA feature only when [Online resizing feature](https://github.com/kubernetes/enhancements/pull/737) goes GA.
+* *Alpha* :
+  - Kubernetes - 1.14:  Initial support for CSI volume resizing. Released code will include an external CSI volume resize controller and changes to Kubelet. Implementation will have unit tests and csi-mock driver e2e tests.
+  - Kubernetes - 1.15:  Add e2e tests that use real drivers(`gce-pd`, `ebs` at minimum). Add metrics for volume resize operations. Support per-PVC secret refs.
+* *Beta*  : More robust support for CSI volume resizing, handle recovering from resize failures.
+* *GA* : CSI resizing in general will only leave GA after existing [Volume expansion](https://github.com/kubernetes/enhancements/issues/284) feature leaves GA. Online resizing of CSI volumes depends on [Online resizing](https://github.com/kubernetes/enhancements/pull/737) feature and online resizing of CSI volumes will be available as a GA feature only when [Online resizing feature](https://github.com/kubernetes/enhancements/pull/737) goes GA.
 
 Hopefully the content previously contained in [umbrella issues][] will be tracked in the `Graduation Criteria` section.
 
