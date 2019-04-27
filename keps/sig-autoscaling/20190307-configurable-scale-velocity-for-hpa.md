@@ -283,7 +283,7 @@ For smooth transition it makes sense to set the following default values:
 
 Please note that:
 
-`constraints.ScaleDown.dealySeconds` value is picked in the following order:
+`constraints.ScaleDown.delaySeconds` value is picked in the following order:
 
 - from the HPA configuration, use that value
 - from the command-line options. Check the [Command Line Option Changes][] section.
@@ -425,18 +425,11 @@ As the added parameters have default values, we don’t need to update the API v
 
 #### Command Line Options Changes
 
-First, we should note that the
+It should be noted that the
 current [--horizontal-pod-autoscaler-downscale-stabilization-window][] option
 defines the default value for the `constraints.scaleDown.delaySeconds`
-So, we should make it obsolete and warn users to switch to a new command line option described below.
-
-We should implement a new command line options
-
-- `--horizontal-pod-autoscaler-scale-down-delay-constraint`,
-    that will be an alias for the [--horizontal-pod-autoscaler-downscale-stabilization-window][] for now.
-    It will set the default delay for the scale down constraint.
-- `--horizontal-pod-autoscaler-scale-up-delay-constraint`
-    It will set the default delay for the scale up constraint.
+As it becomes part of the HPA specification, the option is not needed anymore.
+So we should make it obsolete.
 
 Check the [Default Values][] section for more information about how to determine the delay (priorities of options).
 
