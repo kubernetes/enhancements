@@ -242,6 +242,7 @@ type HookAction struct {
         // This contains the command to run on a container.
 	// The command should be idempotent because the system does not guarantee exactly-once semantics.
 	// Any action may be triggered more than once but only the latest results will be logged in status.
+	// As alpha feature, only ExecAction type in Handler will be support, not the HTTPGETAction or TCPSocketAction.
         // This is required.
         Action core_v1.Handler
 
