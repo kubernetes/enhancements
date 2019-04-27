@@ -51,23 +51,14 @@ ExecutionHook API Design
 
 ## Summary
 
-This proposal is to introduce an API (ExecutionHook) for dynamically executing user’s commands in a pod/container or a group of pods/containers and a controller (ExecutionHookController) to manage the hook lifecycles. ExecutionHook provides a general mechanism for users to trigger hook commands in their containers for their different use cases. Different options have been evaluated to decide how this ExecutionHook should be managed and executed. The preferred option is described in the Proposal section. The other options are discussed in the Alternatives section.
+This proposal is to introduce an API (ExecutionHook) for dynamically executing user’s commands in a pod/container or a group of pods/containers and a controller (ExecutionHookController) to manage the hook lifecycle. ExecutionHook provides a general mechanism for users to trigger hook commands in their containers for their different use cases. Different options have been evaluated to decide how this ExecutionHook should be managed and executed. The preferred option is described in the Proposal section. The other options are discussed in the Alternatives section.
 
 ## Motivation
 
-The volume snapshot feature allows creating/deleting volume snapshots, and the
-ability to create new volumes from a snapshot natively using the Kubernetes API.
+The volume snapshot feature allows creating/deleting volume snapshots, and the ability to create new volumes from a snapshot natively using the Kubernetes API. However, application consistency is not guaranteed. An user has to figure out how
+to quiece an application before taking a snapshot and unquiece it after taking the snapshot.
 
-However, application consistency is not guaranteed. An user has to figure out how
-to quiece an application before taking a snapshot and unquiece it after taking
-the snapshot.
-
-So we want to introduce an `ExecutionHook` to facilitate the quiesce and unquiesce
-actions when taking a snapshot. There is an existing lifecycle hook in the `Container`
-struct. The lifecycle hook is called immediately after a container is created or
-immediately before a container is terminated. The proposed execution hook is not
-tied to the start or termination time of the container. Instead it is called before
-or after taking a snapshot while the container is still running.
+So we want to introduce an `ExecutionHook` to facilitate the quiesce and unquiesce actions when taking a snapshot. There is an existing lifecycle hook in the `Container` struct. The lifecycle hook is called immediately after a container is created or immediately before a container is terminated. The proposed execution hook is not tied to the start or termination time of the container. It can be triggered on demand by callers (users or controllers) and the status will be updated dynamically.
 
 ### Goals
 
@@ -112,11 +103,14 @@ Here is the definition of the ExecutionHookSpec:
 // the Snapshot Controller.
 type ExecutionHookSpec struct {
         // PodSelection defines how to select pods and containers to run
-	// the executionhook. This field is required.
+	// the executionhook. If multiple pod/containers are selected, the action will exectued on them 
+	// asynchronously. If execution ordering is required, caller has to implement the logic and create
+	// different hooks in order.
+	// This field is required.
         PodSelection PodSelection
 
         // Name of the HookAction. This is required.
-        HookActionName string
+        ActionName string
 }
 
 // PodSelection contains two fields, PodContainerNamesList and PodContainerSelector,
@@ -148,14 +142,10 @@ type PodContainerSelector struct {
         // +optional
 	PodSelector *metav1.LabelSelector
 
-        // ContainerSelector is a selector which must be true for the hook to run on the container
-        // Hook controller will find all containers in the selected pods based on ContainerSelector,
-        // if specified.
-        // The ContainerSeletor maps pod label to container name(s) so that the controller only select
-	// the containers that are listed in the map. Otherwise, all containers of the pods that match
-	// the pod label selector will be selected.
+        // If specified, controller only select the containers that are listed from the selected pods based on PodSelector. 
+	// Otherwise, all containers of the pods will be selected
         // +optional
-        ContainerSelector map[string]string
+        ContainerList []string
  }
 ```
 
@@ -168,7 +158,7 @@ type ExecutionHookStatus struct {
         // about how hook is executed in a container, including pod name, container name, ActionTimestamp,
         // ActionSucceed, etc.
         // +optional
-        ContainerExecutionHookStatuses []ContainerExecutionHookStatus
+        HookStatuses []ContainerExecutionHookStatus
 
         // Action Summary status
         // Default is nil
@@ -184,24 +174,20 @@ type ContainerExecutionHookStatus struct {
         // This field is required
         ContainerName string
 
-        // The current state of an hook action on a container
-        // +optional
-        HookActionStatus *HookActionStatus
- }
-
-type HookActionStatus struct {
         // If not set, it is nil, indicating Action has not started
         // If set, it means Action has started at the specified time
 	// +optional
-        ActionTimestamp *int64
+        Timestamp *int64
 
-        // If not set, it is nil, indicating Action is not complete on the specified container in the pod
+        // ActionSucceed is set to true when the action is executed in the container succesfully.
+	// It will be set to false if the action cannot be executed succesfully after ActionTimeoutSeconds passes.
         // +optional
-        ActionSucceed *bool
+        Succeed *bool
 
-        // The last error encountered when running the action
+        // The last error encountered when executing the action. The hook controller might update this field each time
+	// it retries the execution.
 	// +optional
-        HookError *HookError
+        Error *HookError
 }
 
 type HookError struct {
@@ -254,7 +240,8 @@ type HookAction struct {
         metav1.ObjectMeta
 
         // This contains the command to run on a container.
-	// The command should be idempotent.
+	// The command should be idempotent because the system does not guarantee exactly-once semantics.
+	// Any action may be triggered more than once but only the latest results will be logged in status.
         // This is required.
         Action core_v1.Handler
 
