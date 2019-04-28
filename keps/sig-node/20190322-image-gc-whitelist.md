@@ -170,7 +170,7 @@ Optimized for big amount of images
 
 There are two alternatives for implementation:
 * Define only the hostname part of the image URL in the command line parameter. So that all images tagged to the same (fake) remote repository will be whitelisted.
-* Define the whitelist with a regular expression. In this case all images matching the regexp will be whitelisted. A function to verify which images are matching would be usefull.
+* Define the whitelist with a regular expression. In this case all images matching the regexp will be whitelisted. A function to verify which images are matching would be useful.
 
 ### Risks and Mitigations
 
