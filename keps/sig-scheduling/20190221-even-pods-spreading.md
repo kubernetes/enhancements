@@ -11,8 +11,8 @@ approvers:
   - "@bsalamat"
   - "@k82cn"
 creation-date: 2019-02-21
-last-updated: 2019-04-11
-status: provisional
+last-updated: 2019-04-29
+status: implementable
 ---
 
 # Even Pods Spreading
@@ -140,10 +140,10 @@ nil.
 ```go
 type PodSpec struct {
     ......
-    // TopologySpreadConstraint describes how a group of pods are spread
-    // If specified, scheduler will enforce the constraint
+    // TopologySpreadConstraints describes how a group of pods are spread
+    // If specified, scheduler will enforce the constraints
     // +optional
-    TopologySpreadConstraint *TopologySpreadConstraint
+    TopologySpreadConstraints []TopologySpreadConstraint
     ......
 }
 ```
@@ -390,11 +390,26 @@ done
 
 ### Test Plan
 
-_To be filled until targeted at a release._
+To ensure this feature to be rolled out in high quality. Following tests are mandatory:
+
+- **Unit Tests:** All core changes must be covered by unit tests.
+- **Integration Tests / E2E Tests:** All user cases discussed in this KEP must
+  be covered by either integration tests or e2e tests.
+- **Benchmark Tests:** We can bear with slight performance overhead if users are
+  using this feature, but it shouldn't impose penalty to users who are not using
+  this feature. We will verify it by designing some benchmark tests.
 
 ### Graduation Criteria
 
-_To be filled until targeted at a release._
+Alpha:
+
+- [ ] This feature will be rolled out as an Alpha feature in v1.15
+- [ ] API changes and feature gating
+- [ ] Necessary defaulting, validation and generated code
+- [ ] Predicate implmentation
+- [ ] Priority implementation
+- [ ] Implementation of all scenarios discussed in this KEP
+- [ ] Minimum viable test cases mentioned in [Test Plan](#test-plan) section
 
 ## Alternatives
 
