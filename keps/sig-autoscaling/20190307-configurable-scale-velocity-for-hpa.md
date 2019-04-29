@@ -72,8 +72,8 @@ As a result, users can't influence scale velocity, and that is a problem for man
 - [#69428][]
 
 [--horizontal-pod-autoscaler-downscale-stabilization-window]: https://v1-14.docs.kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#algorithm-details
-[scaleUpLimitFactor]: https://github.com/kubernetes/kubernetes/blob/v1.13.4/pkg/controller/podautoscaler/horizontal.go#L55
-[scaleUpLimitMinimum]: https://github.com/kubernetes/kubernetes/blob/v1.13.4/pkg/controller/podautoscaler/horizontal.go#L56
+[scaleUpLimitFactor]: https://github.com/kubernetes/kubernetes/blob/release-1.14/pkg/controller/podautoscaler/horizontal.go#L55
+[scaleUpLimitMinimum]: https://github.com/kubernetes/kubernetes/blob/release-1.14/pkg/controller/podautoscaler/horizontal.go#L56
 [#39090]: https://github.com/kubernetes/kubernetes/issues/39090
 [#65097]: https://github.com/kubernetes/kubernetes/issues/65097
 [#69428]: https://github.com/kubernetes/kubernetes/issues/69428
@@ -96,7 +96,7 @@ For both direction (scale up and scale down) there should be a `Constraint` fiel
     i.e., if ScaleUpPercent = 150 , then we can add 150% more pods (10 -> 25 pods)
 - `pods` - a parameter to specify the absolute speed, in the number of pods:
     i.e., if ScaleUpPods = 5 , then we can add 5 more pods (10 -> 15)
-- `delay` - a parameter to specify a delay between the first signal to change the number of pods and the real scaling. It works very similar to the [Stabilization Window][] approach.
+- `delay` - a parameter to specify the window over which the max (or min) recommendation is used. It behaves the same as the [Stabilization Window][].
 
 A user will specify the parameters for the HPA, thus controlling the HPA logic.
 
@@ -104,9 +104,11 @@ If the user specifies two parameters, two constraints are calculated, and the la
 
 If the user doesn't specify any parameter, the default value for that parameter is used (see the [Default Values][] section below).
 
+If the user set both `percent` and `pods` to `0`, it means that the corresponding resource (e.g. `deploy`, `rs`) should not be scaled in that direction.
+
 [The motivation to pick the largest constraint]: #the-motivation-to-pick-the-largest-constraint-concept
 [Default Values]: #default-values
-[Stabilization Window](#stabilization-window)
+[Stabilization Window]: #stabilization-window
 
 ### User Stories
 
@@ -240,7 +242,9 @@ If you don’t want to scale, you should set both parameters to zero for the app
 
 If only one parameter is given and the other is 0, then use the only defined constraint.
 
-The algorithm for `delay` will look like this:
+If no value is given, the default one is chosen, see the [Default Values][] section.
+
+The algorithm for applying the `delay` will look like this:
 
 ```golang
 for { // infinite cycle inside the HPA controller
@@ -248,11 +252,11 @@ for { // infinite cycle inside the HPA controller
   if desiredReplicas > curReplicas:
     storeRecommendation(desiredReplicas, scaleUpRecommendations)
     recommendations = getLastRecommendations(scaleUpRecommendations, ScaleUpDelaySeconds) // get recommendations for the last ScaleUpDelaySeconds
-    nextReplicas = min(recommendtaions)
+    nextReplicas = min(recommendations)
   if desiredReplicas < curReplicas:
     storeRecommendation(desiredReplicas, scaleDownRecommendations)
     recommendations = getLastRecommendations(scaleDownRecommendations, ScaleDownDelaySeconds) // get recommendations for the last ScaleDownDelaySeconds
-    nextReplicas = max(recommendtaions)
+    nextReplicas = max(recommendations)
   setReplicas(nextReplicas)
   sleep(ControllerSleepTime)
 }
@@ -263,10 +267,10 @@ Effectively, this is a full copy of the current [Stabilization Window][] algorit
 - While scaling up, we should pick the safest (smallest) "desiredReplicas" number during last `delaySeconds`.
 - While scaling down, we should pick the safest (largest) "desiredReplicas" number during last `delaySeconds`.
 
-The “stabilization window" as a result becomes an alias for the `constraints.scaleDown.delaySeconds`.
-
+The “Stabilization Window" as a result becomes an alias for the `constraints.scaleDown.delaySeconds`.
 
 [Stabilization Window]: #stabilization-window
+[Default Values]: #default-values
 
 #### Default Values
 
@@ -278,8 +282,8 @@ For smooth transition it makes sense to set the following default values:
 - `constraints.scaleDown.rate.periodSeconds = 60`, one minute period for scaleDown
 - `constraints.scaleUp.rate.percent = 100`, allow to twice the number of pods
 - `constraints.scaleUp.rate.pods = 4`, i.e. allow adding up to 4 pods
-- `constraints.scaleDown.rate.percent = 100`, allow to remove all the pods
-- `constraints.scaleDown.rate.pods = math.MaxInt32`, allow to remove all the pods
+- `constraints.scaleDown.rate.percent = nil`, allow to remove all the pods
+- `constraints.scaleDown.rate.pods = nil`, allow to remove all the pods
 
 Please note that:
 
@@ -289,10 +293,15 @@ Please note that:
 - from the command-line options. Check the [Command Line Option Changes][] section.
 - from the hardcoded default value `300`.
 
-For the `scaleDown` constraint both `pods` and `percent` are set to maximum possible values.
+For the `scaleDown` constraint both `pods` and `percent` default values are set to maximum possible values.
 Because currently (as of k8s-1.14) the scale down is only limited by [Stabilization Window][].
 In order to repeat the default behavior we set `constraints.scaleDown.delaySeconds` to 5min
 (the default value for Stabilization window), and let it rule the number of pods.
+
+We should differentiate "not given" value and `0`-value.
+For `pods` and `percent`, `0`-value means that we shouldn't scale.
+While "not given" value means that we should use the default.
+Hence we should use pointers `*int32` ("nillable" type) instead of just `int32` for all the introduced values.
 
 [Stabilization Window]: #stabilization-window
 
