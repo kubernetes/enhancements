@@ -51,6 +51,7 @@ superseded-by:
 ### Goals
 
 * Plan to promote ResourceQuotaScopeSelectors to stable version.
+* Remove the limitation of creating critical pods only in `kube-system` namespace.
 
 ### Non-Goals
 
@@ -90,7 +91,8 @@ We should verify the automatic creation of quota and see if it causes any proble
 ### Graduation Criteria
 
 - [ ] Remove limitation of critical pod creation in `kube-system` namespace in pod priority admission plugin
-- [ ] Add a default quota with scope selector to restrict critical pods to `kube-system` namespace
+- [ ] Create a `AdmissionConfiguration` object with `limitedResources` to prevent creation of system critical pods in all namespaces
+- [ ] Add a default quota with scope selector to allow critical pods to be created in `kube-system` namespace only
 - [ ] Graduate ResourceQuotaScopeSelectors API to GA
 - [ ] Needs a conformance test
 - [ ] Update documents to reflect the changes
