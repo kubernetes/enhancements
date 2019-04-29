@@ -203,7 +203,7 @@ type HookError struct {
         // +optional
         Reason *string
 	
-        // It indicates when the error occured
+        // It indicates when the error occurred
 	// +optional
         Timestamp *int64
 }
@@ -253,6 +253,12 @@ type HookAction struct {
         // If execution fails, the execution hook controller will keep retrying until reaching
         // ActionTimeoutSeconds. If execution still fails or hangs, execution hook controller
         // stops retrying and updates executionhook status to failed.
+        // If controller loses its state, counter restarts. In this case, controller will retry
+        // for at least this long, before stopping.
+        // Once an action is started, controller has no way to stop it even if
+        // ActionTimeoutSeconds is exceeded. This simply controls if retry happens or not.
+        // retry is based on exponential backoff policy. If ActionTimeoutSeconds is not
+        // specified, it will retry until the hook object is deleted.
         // +optional
         ActionTimeoutSeconds *int64
 }
