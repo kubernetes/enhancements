@@ -227,13 +227,13 @@ Example for `CurReplicas = 10` and HPA controller cycle once per a minute:
 
     recommendations = [10, 9, 8, 9, 9, 8, 9, 8, 9, 8]
 
-  Now the algorithm peeks the largest one `10`. Hence it will not change number of replicas
+  Now the algorithm picks the largest one `10`. Hence it will not change number of replicas
 
 - On the 11th minute, we'll add one more recommendation (let it be `7`) and removes the first one to keep the same amount of recommendations:
 
     recommendations = [9, 8, 9, 9, 8, 9, 8, 9, 8, 7]
 
-  The algorithm peeks the largest value `9` and change the number of replicas `10 -> 9`
+  The algorithm picks the largest value `9` and change the number of replicas `10 -> 9`
 
 ### Implementation Details/Notes/Constraints
 
