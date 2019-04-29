@@ -202,6 +202,10 @@ type HookError struct {
         // More detailed reason why error happens
         // +optional
         Reason *string
+	
+        // It indicates when the error occured
+	// +optional
+        Timestamp *int64
 }
 
 type ErrorType string
