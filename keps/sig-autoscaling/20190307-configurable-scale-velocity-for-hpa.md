@@ -216,6 +216,25 @@ i.e., the algorithm will:
 - pick the largest one
 - turn off no more than 5 pods per minute
 
+Example for `CurReplicas = 10` and HPA controller cycle once per a minute:
+
+- First 9 minutes the algorithm will do nothing except gathering recommendations.
+  Let's imagine that we have the following recommendations
+
+    recommendations = [10, 9, 8, 9, 9, 8, 9, 8, 9]
+
+- On the 10th minute, we'll add one more recommendation (let it me `8`):
+
+    recommendations = [10, 9, 8, 9, 9, 8, 9, 8, 9, 8]
+
+  Now the algorithm peeks the largest one `10`. Hence it will not change number of replicas
+
+- On the 11th minute, we'll add one more recommendation (let it be `7`) and removes the first one to keep the same amount of recommendations:
+
+    recommendations = [9, 8, 9, 9, 8, 9, 8, 9, 8, 7]
+
+  The algorithm peeks the largest value `9` and change the number of replicas `10 -> 9`
+
 ### Implementation Details/Notes/Constraints
 
 #### Algorithm Pseudocode
