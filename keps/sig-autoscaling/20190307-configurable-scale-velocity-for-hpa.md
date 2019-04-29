@@ -34,6 +34,7 @@ superseded-by: TBD
       - [Story 5: Delay Before Scaling Down](#story-5-delay-before-scaling-down)
     - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
       - [Algorithm Pseudocode](#algorithm-pseudocode)
+      - [Introducing `delay` Option](#introducing-delay-option)
       - [Default Values](#default-values)
       - [The Motivation To “Pick The Largest Constraint” Concept](#the-motivation-to-pick-the-largest-constraint-concept)
       - [Stabilization Window](#stabilization-window)
@@ -222,21 +223,31 @@ i.e., the algorithm will:
 The algorithm to find the number of pods will look like this:
 
 ```golang
-desiredReplicas = 0
-calculatedReplicas = AnyAlgorithmInHPAController(...)
-if calculatedReplicas > curReplicas:
-  constraint1 = CurReplicas * (1 + ScaleUpPercent/100)
-  constraint2 = CurReplicas + ScaleUpPods
-  scaleUpLimit = max(constraint1, constraint2)
-  desiredReplicas = min(scaleUpLimit, calculatedReplicas)
-else if calculatedReplicas < CurReplicas:
-  constraint1 = curReplicas * (1 - ScaleDownPercent/100)
-  constraint2 = CurReplicas - ScaleDownPods
-  scaleDownLimit = max(constraint1, constraint2)
-  desiredReplicas = max(scaleDownLimit, calculatedReplicas)
+  for { // infinite cycle inside the HPA controller
+    desiredReplicas = AnyAlgorithmInHPAController(...)
+    if desiredReplicas > curReplicas:
+      constraint1 = CurReplicas * (1 + ScaleUpPercent/100)
+      constraint2 = CurReplicas + ScaleUpPods
+      scaleUpLimit = max(constraint1, constraint2)
+      limitedReplicas = min(scaleUpLimit, desiredReplicas)
+      storeRecommendation(limitedReplicas, scaleUpRecommendations)
+      recommendations = getLastRecommendations(scaleUpRecommendations, ScaleUpDelaySeconds) // get recommendations for the last ScaleUpDelaySeconds
+      nextReplicas = min(recommendations)
+    if desiredReplicas < curReplicas:
+      constraint1 = curReplicas * (1 - ScaleDownPercent/100)
+      constraint2 = CurReplicas - ScaleDownPods
+      scaleDownLimit = max(constraint1, constraint2)
+      limitedReplicas = max(scaleDownLimit, desiredReplicas)
+      storeRecommendation(limitedReplicas, scaleDownRecommendations)
+      recommendations = getLastRecommendations(scaleDownRecommendations, ScaleDownDelaySeconds) // get recommendations for the last ScaleDownDelaySeconds
+      nextReplicas = max(recommendations)
+    setReplicas(nextReplicas)
+    sleep(ControllerSleepTime)
+  }
+
 ```
 
-I.e., from the two provided constraints the larger one is used.
+I.e., from the two provided constraints the larger one is always used.
 
 If you don’t want to scale, you should set both parameters to zero for the appropriate direction (Up/Down).
 
@@ -244,32 +255,25 @@ If only one parameter is given and the other is 0, then use the only defined con
 
 If no value is given, the default one is chosen, see the [Default Values][] section.
 
-The algorithm for applying the `delay` will look like this:
+[Default Values]: #default-values
 
-```golang
-for { // infinite cycle inside the HPA controller
-  desiredReplicas = calculateDesiredReplicas()
-  if desiredReplicas > curReplicas:
-    storeRecommendation(desiredReplicas, scaleUpRecommendations)
-    recommendations = getLastRecommendations(scaleUpRecommendations, ScaleUpDelaySeconds) // get recommendations for the last ScaleUpDelaySeconds
-    nextReplicas = min(recommendations)
-  if desiredReplicas < curReplicas:
-    storeRecommendation(desiredReplicas, scaleDownRecommendations)
-    recommendations = getLastRecommendations(scaleDownRecommendations, ScaleDownDelaySeconds) // get recommendations for the last ScaleDownDelaySeconds
-    nextReplicas = max(recommendations)
-  setReplicas(nextReplicas)
-  sleep(ControllerSleepTime)
-}
-```
+#### Introducing `delay` Option
 
-Effectively, this is a full copy of the current [Stabilization Window][] algorithm:
+Effectively, the `delay` option is a full copy of the current [Stabilization Window][] algorithm:
 
 - While scaling up, we should pick the safest (smallest) "desiredReplicas" number during last `delaySeconds`.
 - While scaling down, we should pick the safest (largest) "desiredReplicas" number during last `delaySeconds`.
 
+Check the [Algorithm Pseudocode][] section if you need more details.
+
+If delay is `0`, it means that no delay should be used. And we should instantly change the number of replicas.
+
+If no delay is specified, the default value is used, see the [Default Values][] section.
+
 The “Stabilization Window" as a result becomes an alias for the `constraints.scaleDown.delaySeconds`.
 
 [Stabilization Window]: #stabilization-window
+[Algorithm Pseudocode]: #algorithm-pseudocode
 [Default Values]: #default-values
 
 #### Default Values
