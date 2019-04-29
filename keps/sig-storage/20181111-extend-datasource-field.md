@@ -12,8 +12,8 @@ approvers:
   - @thockin
 editor: @j-griffith
 creation-date: 2018-11-11
-last-updated: 2019-02-25
-status: provisional
+last-updated: 2019-04-29
+status: implementable
 see-also:
 replaces:
 superseded-by:
