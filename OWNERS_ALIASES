@@ -44,9 +44,9 @@ aliases:
     - hogepodge
     - jagosan
   sig-cluster-lifecycle-leads:
-    - roberthbailey
     - luxas
     - timothysc
+    - justinsb
   sig-contributor-experience-leads:
     - Phillels
     - parispittman
