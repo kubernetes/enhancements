@@ -17,8 +17,10 @@ approvers:
 editor:
  - "@fabriziopandini"
  - "@rosti"
+ - "@neolit123"
 creation-date: 2018-08-01
-last-updated: 2019-04-18
+last-updated: 2019-04-29
+status: implementable
 see-also:
  - KEP 0008
 ---
