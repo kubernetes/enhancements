@@ -136,8 +136,9 @@ pods regardless of the contents of the container images.
 
 On Windows, the minimal [Nano Server](https://hub.docker.com/_/microsoft-windows-nanoserver)
 image is the smallest available, which still retains the `cmd` shell and some
-common tools such as `curl.exe` which could be used to retrieve other binaries or
-scripts as needed. Windows cannot build containers `FROM scratch`.
+common tools such as `curl.exe`. This makes downloading debugger scripts and
+tools feasible today during a `kubectl exec` session without the need for a
+separate ephemeral container. Windows cannot build containers `FROM scratch`.
 
 ### Operations and Support
 
