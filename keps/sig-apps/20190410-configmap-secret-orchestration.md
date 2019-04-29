@@ -82,14 +82,14 @@ KEP editors, SIG Docs, and SIG PM should help to ensure that the tone and conten
 
 A good summary is probably at least a paragraph in length.
 
-Kubernetes added support for higher level orchestration in the form of ReplicaSets/Deployments/DaemonSets/Statefulsets. They implement best practices for things including performing rolling upgrades and ensuring the containers are immutable. The orchestration resources currently do not fully implement a flow that provides immutable infrastructure without extra careful work by the user. Config/Secrets are injected into the immutable containers but aren't tracked along with the roll-forward/roll-back. Since config/secrets can change over time, its often the case where the user updates the config/secret for the new revision of the Deplyment but rollbacks fail as they now reference the new config file instead of the one they were deployed with. The other problem with config/secret orchestration is that of orchestrated updates of the immutable infra can only be triggered manally by changes. A config/secret only change can not trigger an upgrade either manually or automatically without making an unnessisary change to the corresponding orchestration object.
+Kubernetes added support for higher level orchestration in the form of ReplicaSets/Deployments/DaemonSets/Statefulsets. They implement best practices for things including performing rolling upgrades and ensuring the containers are immutable. The orchestration resources currently do not fully implement a flow that provides immutable infrastructure without extra careful work by the user. Config/Secrets are injected into the immutable containers but aren't tracked along with the roll-forward/roll-back. Since config/secrets can change over time, its often the case where the user updates the config/secret for the new revision of the Deployment but rollbacks fail as they now reference the new config file instead of the one they were deployed with. The other problem with config/secret orchestration is that of orchestrated updates of the immutable infra can only be triggered manually by changes. A config/secret only change can not trigger an upgrade either manually or automatically without making an unnecessarily change to the corresponding orchestration object.
 
 We would like to solve these issues by adding support to the orchestration resources to support orchestration support around config/secrets.
 
 
 ## Motivation
 
-Currently there are a mismash of workarounds to the orchestration objects not supporting orchestration of configmaps/secrets.
+Currently there are a mishmash of workarounds to the orchestration objects not supporting orchestration of configmaps/secrets.
 
 Several different solutions or workarounds out of tree are being used. See Alternatives section for details. None of these are widely deployed. Since most workloads need this kind of orchestration, having it as a base Kubernetes functionality would be a significant benefit to users.
 
@@ -109,7 +109,7 @@ The ConfigMapVolumeSource and SecretVolumeSource objects will get two new, optio
  * snapshot: boolean
  * watch: boolean
 
-Both will default to false for compatability.
+Both will default to false for compatibility.
 
 snapshot can be either true or false. Watch can only be true if snapshot is also true. This ensures immutability.
 
