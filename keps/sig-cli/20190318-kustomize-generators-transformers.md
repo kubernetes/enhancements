@@ -11,7 +11,7 @@ approvers:
   - "@monopole"
 editor: TBD
 creation-date: 2019-03-25
-last-updated: 2019-03-25
+last-updated: 2019-04-30
 status: implementable
 ---
 
@@ -395,17 +395,20 @@ Kustomize replaces its Resources with the emitted Resources.
 ## Design Details
 
 ### Test Plan
-
+1. Add unit tests
+2. Add integration tests
+3. Add example tests
 
 ### Graduation Criteria
 
-TBD
+Alpha -> Beta Graduation
+1. Executing plugins for generated Resources
+2. Plugin Generators interact with Kustomize build-in transformers
 
-Consider:
+Beta -> GA Graduation
+1. Plugin Transformers after Built-in Transformers
+2. Support ordering
 
-- Executing plugins for generated Resources
-- Supporting ordering
-- Additional phases - e.g. Plugin Transformers after Built-In Transformers
 
 ### Upgrade / Downgrade Strategy
 
