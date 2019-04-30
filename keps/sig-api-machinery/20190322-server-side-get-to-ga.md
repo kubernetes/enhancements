@@ -68,16 +68,15 @@ PartialObjectMetadata exposes our full ObjectMeta interface and no API changes a
 
 * Copy `Table`, `PartialObjectMetadata` and `PartialObjectMetadataList` to `meta/v1` and expose the transformations in the API server.
   * Update the serialization of `PartialObjectMetadataList` to use protobuf id `1` for `ListMeta` (it was added late in v1beta1)
-* Update at least one controller to use `PartialObjectMetadata` `v1beta1`.
-  * The garbage collector will be the primary target, we will remove the need to call `Update` and use a partial object metadata client.
 
 ### 1.16
 
-* Announce deprecation of `v1beta1` objects and removal in 1.17. 
-* `kubectl` should switch to using `meta.k8s.io/v1` `Table` (supporting 1.15 and 1.16 clusters)
-* Update at least a second controller to use `PartialObjectMetadata` `v1` and move the previous
+* Update controllers to use `PartialObjectMetadata` `v1`.
+  * The garbage collector will be the primary target, we will remove the need to call `Update` and use a partial object metadata client.
+* Announce deprecation of `v1beta1` objects and removal in 1.19 
+* `kubectl` should switch to using `meta.k8s.io/v1` `Table` (supporting 1.15+ clusters)
 
-### 1.17
+### 1.19
 
 * Remove `meta.k8s.io/v1beta1`
 
