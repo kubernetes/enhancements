@@ -63,6 +63,7 @@ status: implementable
       * [Mutable Pod Spec Containers](#mutable-pod-spec-containers)
       * [Image Exec](#image-exec)
       * [Attaching Container Type Volume](#attaching-container-type-volume)
+      * [Using docker cp and exec](#using-docker-cp-and-exec)
       * [Inactive container](#inactive-container)
       * [Implicit Empty Volume](#implicit-empty-volume)
       * [Standalone Pod in Shared Namespace ("Debug Pod")](#standalone-pod-in-shared-namespace-debug-pod)
@@ -129,9 +130,15 @@ This confers several advantages:
 1.  **Smaller image size** reduces resource usage and speeds deployments.
 
 The disadvantage of using containers built `FROM scratch` is the lack of system
-binaries provided by an Operating System image makes it difficult to
+binaries provided by a Linux distro image makes it difficult to
 troubleshoot running containers. Kubernetes should enable one to troubleshoot
 pods regardless of the contents of the container images.
+
+On Windows, the minimal [Nano Server](https://hub.docker.com/_/microsoft-windows-nanoserver)
+image is the smallest available, which still retains the `cmd` shell and some
+common tools such as `curl.exe`. This makes downloading debugger scripts and
+tools feasible today during a `kubectl exec` session without the need for a
+separate ephemeral container. Windows cannot build containers `FROM scratch`.
 
 ### Operations and Support
 
@@ -163,6 +170,10 @@ kubelet changes required to enable such a debugging experience.
 A method for debugging using Ephemeral Containers should be proposed in a
 separate KEP or implemented via `kubectl` plugins.
 
+Pods running on Windows Server 2019 will not have feature parity and support
+all the user stories described here. Only the network troubleshooting user
+story detailed under [Operations](#operations) would be feasible.
+
 ## Proposal
 
 ### Kubernetes API Changes
@@ -170,7 +181,7 @@ separate KEP or implemented via `kubectl` plugins.
 Ephemeral Containers are implemented in the Core API to avoid new dependencies
 in the kubelet.  The API doesn't require an Ephemeral Container to be used for
 debugging. It's intended as a general purpose construct for running a
-short-lived process in a pod.
+short-lived container in a pod.
 
 #### Pod Changes
 
@@ -277,6 +288,8 @@ Since Ephemeral Containers use the Container Runtime Interface, Ephemeral
 Containers will work for any runtime implementing the CRI, including Windows
 containers. It's worth noting that Ephemeral Containers are significantly more
 useful when the runtime implements [Process Namespace Sharing].
+Windows Server 2019 does not support process namespace sharing
+(see [doc](https://kubernetes.io/docs/setup/windows/intro-windows-in-kubernetes/#v1-pod)).
 
 The CRI requires no changes for basic functionality, but it will need to be
 updated to support container namespace targeting, described fully in
@@ -412,10 +425,13 @@ Enter 'help' for a list of built-in commands.
 Note that running the commands referenced above requires `CAP_SYS_ADMIN` and
 `CAP_SYS_PTRACE`.
 
+This scenario also requires process namespace sharing which is not available
+on Windows.
+
 #### Automation
 
 Ginger is a security engineer tasked with running security audits across all of
-her company's running containers. Even though his company has no standard base
+her company's running containers. Even though her company has no standard base
 image, she's able to audit all containers using:
 
 ```
@@ -553,6 +569,7 @@ CRI is still in alpha.) Runtimes will be expected to handle an unknown
 - *2018-08-23*: Merged update to use `Container` in `Pod.Spec`
   [kubernetes/community#1269](https://github.com/kubernetes/community/pull/1269)
 - *2019-02-12*: Ported design proposal to KEP.
+- *2019-04-24*: Added notes on Windows feature compatibility
 
 ## Alternatives
 
@@ -713,6 +730,18 @@ attach a volume at a random path at run time, just in case it's needed. Though
 this simplifies the solution by working within the existing constraints of
 `kubectl exec`, it has a sufficient list of minor limitations (detailed in
 [#10834](https://issues.k8s.io/10834)) to result in a poor user experience.
+
+### Using docker cp and exec
+
+Instead of creating an additional container with a different image, `docker cp`
+could be used to add binaries into a running container before calling `exec` on
+the process. This approach would be feasible on Windows as it doesn't require
+process namespace sharing. It also doesn't involve the complexities with adding
+mounts as described in [Attaching Container Type Volume](#attaching-container-type-volume).
+However, it doesn't provide a convenient way to package or distribute binaries
+as described in this KEP or the alternate [Image Exec](#image-exec) proposal.
+`docker cp` also doesn't have a CRI equivalent, so that would need to be
+addressed in an alternate proposal.
 
 ### Inactive container
 
