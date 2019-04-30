@@ -3,21 +3,20 @@ kep-number: 0
 title: Quotas for Ephemeral Storage
 authors:
   - "@RobertKrawitz"
-owning-sig: sig-xxx
+owning-sig:
+  - sig-node
 participating-sigs:
   - sig-node
 reviewers:
-  - TBD
+  - "@dashpole"
+  - "@derekwaynecarr"
 approvers:
   - "@dchen1107"
   - "@derekwaynecarr"
 editor: TBD
-creation-date: yyyy-mm-dd
-last-updated: yyyy-mm-dd
-status: provisional
-see-also:
-replaces:
-superseded-by:
+creation-date: 2018-09-06
+last-updated: 2019-04-30
+status: implementable
 ---
 
 # Quotas for Ephemeral Storage
@@ -53,6 +52,7 @@ superseded-by:
         - [Risks and Mitigations](#risks-and-mitigations)
     - [Graduation Criteria](#graduation-criteria)
     - [Implementation History](#implementation-history)
+        - [Version 1.15](#version-115)
     - [Drawbacks [optional]](#drawbacks-optional)
     - [Alternatives [optional]](#alternatives-optional)
         - [Alternative quota-based implementation](#alternative-quota-based-implementation)
@@ -619,29 +619,28 @@ appropriate end to end tests.
 
 ## Graduation Criteria
 
-How will we know that this has succeeded?  Gathering user feedback is
-crucial for building high quality experiences and SIGs have the
-important responsibility of setting milestones for stability and
-completeness.  Hopefully the content previously contained in [umbrella
-issues][] will be tracked in the `Graduation Criteria` section.
+The following criteria applies to
+`LocalStorageCapacityIsolationFSMonitoring`:
+
+Alpha
+
+- Support integrated in kubelet
+
+Beta
+
+- TBD
+
+GA
+
+- TBD
 
 [umbrella issues]: N/A
 
 ## Implementation History
 
-Major milestones in the life cycle of a KEP should be tracked in
-`Implementation History`.  Major milestones might include
+### Version 1.15
 
-- the `Summary` and `Motivation` sections being merged signaling SIG
-  acceptance
-- the `Proposal` section being merged signaling agreement on a
-  proposed design
-- the date implementation started
-- the first Kubernetes release where an initial version of the KEP was
-  available
-- the version of Kubernetes where the KEP graduated to general
-  availability
-- when the KEP was retired or superseded
+` LocalStorageCapacityIsolationFSMonitoring` implemented at Alpha
 
 ## Drawbacks [optional]
 
