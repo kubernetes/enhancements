@@ -7,13 +7,15 @@ authors:
 owning-sig: sig-scheduling
 participating-sigs: []
 reviewers:
-  - TBD
+  - '@huang-wei'
+  - '@k82cn'
+  - '@ravisantoshgudimetla'
 approvers:
-  - TBD
+  - '@k82cn'
 editor: TBD
 creation-date: 2018-04-09
-last-updated: 2019-04-18
-status: draft
+last-updated: 2019-04-30
+status: implementable
 see-also: []
 replaces:
   - >-
@@ -60,6 +62,7 @@ superseded-by: []
   * [Coscheduling](#coscheduling)
   * [Dynamic Resource Binding](#dynamic-resource-binding)
   * [Custom Scheduler Plugins (out of tree)](#custom-scheduler-plugins-out-of-tree)
+* [TEST PLANS](#test-plans)
 * [GRADUATION CRITERIA](#graduation-criteria)
 * [IMPLEMENTATION HISTORY](#implementation-history)
 
@@ -652,9 +655,45 @@ The custom plugin would be enabled in the scheduler config.
 }
 ```
 
+# TEST PLANS
+
+The scheduling framework is expected to be backward compatible with the existing
+Kubernetes scheduler. As a result, we expect all the existing tests of the
+scheduler to pass during and after the framework is developed.
+
+* Unit Tests
+  * Each plugin developed for the framework is expected to have its own unit
+tests with reasonable coverage.
+
+* Integration Tests
+  * As we build extension points, we must add appropriate integration tests that
+ensure plugins registered at these extension points are invoked and
+the framework processes their return values correctly.
+  * If a plugin adds a new functionality that didn't exist in the past, it must be
+accompanied by integration tests with reasonable coverage.
+
+* End-to-end tests
+  * End-to-end tests should be added for new scheduling features and plugins that
+interact with external components of Kubernetes. For example, if a plugin needs
+to interact with the API server and Kubelets, end-to-end tests may be needed.
+End-to-end tests are not needed when integration tests can provided adequate coverage.  
+
 # GRADUATION CRITERIA
 
-TODO
+* Alpha
+  * Extension points for `Reserve`, `Unreserve`, and `Prebind` are built.
+  * Integration tests for these extension points are added.
+  
+* Beta
+  * All the extension points listed in this KEP and their corresponding tests
+  are added.
+  * Persistent dynamic volume binding logic is converted to a plugin.
+  
+* Stable
+  * Existing 'Predicate' and 'Priority' functions and preemption logic are
+  converted to plugins.
+  * No major bug in the implementation of the framework is reported in the past
+  three months.
 
 # IMPLEMENTATION HISTORY
 
