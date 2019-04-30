@@ -148,6 +148,13 @@ Finalizing the decision shouldn't block the initial version of this KEP.
 Sending "watch bookmarks" may break clients not understanding them.
 As a result, we make them explicitly opt-in.
 
+### Test Plan
+
+For `Alpha` a set of unit tests will be added to verify that bookmarks are
+send as assumed by the implementation.
+Given the nature of the feature (no guarantees that bookmarks will be send
+to the watcher), no e2e tests will be added.
+
 ## Graduation Criteria
 
 Beta:
@@ -164,6 +171,7 @@ GA:
 
 - 2019-02-12: KEP Summary, Moativation and Proposal merged
 - 2019-03-27: API changes approved in API review
+- 2019-04-16: Implementation merged
 
 ## Rejected alternatives
 
