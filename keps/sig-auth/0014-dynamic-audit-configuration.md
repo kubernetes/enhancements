@@ -48,6 +48,7 @@ status: implementable
         * [Leaked Resources](#leaked-resources)
         * [Webhook Authentication](#webhook-authentication)
         * [Performance](#performance)
+  * [Test Plan](#test-plan)
   * [Graduation Criteria](#graduation-criteria)
   * [Implementation History](#implementation-history)
   * [Alternatives](#alternatives)
@@ -249,6 +250,8 @@ progresses to beta.
 ## Test Plan
 
 There are tests for the [plugin](https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/apiserver/plugin/pkg/audit/dynamic/dynamic_test.go) and any other changes to the codebase. There is an [integration test](https://github.com/kubernetes/kubernetes/blob/master/test/integration/master/audit_dynamic_test.go) as well as an [e2e test](https://github.com/kubernetes/kubernetes/blob/master/test/e2e/auth/audit_dynamic.go).
+
+Before reaching GA, a scalability test should be in place.
 
 ## Graduation Criteria
 
