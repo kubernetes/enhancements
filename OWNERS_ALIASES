@@ -30,10 +30,6 @@ aliases:
     - dstrebel
     - khenidak
     - feiskyer
-  sig-big-data-leads:
-    - foxish
-    - erikerlandson
-    - liyinan926
   sig-cli-leads:
     - soltysh
     - seans3
@@ -44,16 +40,16 @@ aliases:
     - hogepodge
     - jagosan
   sig-cluster-lifecycle-leads:
+    - justinsb
     - luxas
     - timothysc
-    - justinsb
   sig-contributor-experience-leads:
     - Phillels
     - parispittman
     - cblecker
     - nikhita
   sig-docs-leads:
-    - chenopis
+    - jaredbhatti
     - zacharysarah
     - bradamant3
   sig-gcp-leads:
@@ -67,7 +63,7 @@ aliases:
     - brancz
   sig-multicluster-leads:
     - csbell
-    - quinton-hoole-2
+    - quinton-hoole
   sig-network-leads:
     - thockin
     - dcbw
@@ -77,10 +73,13 @@ aliases:
     - derekwaynecarr
   sig-openstack-leads:
     - hogepodge
+    - adisky
+    - chrigl
   sig-pm-leads:
-    - apsinha
-    - idvoretskyi
     - calebamiles
+    - idvoretskyi
+    - jdumars
+    - justaugustus
   sig-release-leads:
     - calebamiles
     - justaugustus
@@ -92,10 +91,9 @@ aliases:
     - bsalamat
     - k82cn
   sig-service-catalog-leads:
-    - carolynvs
-    - kibbles-n-bytes
+    #- kibbles-n-bytes # not an org member
     - jberkhahn
-    - jboyd01
+    #- jboyd01 # not an org member
   sig-storage-leads:
     - saad-ali
     - childsb
@@ -115,34 +113,24 @@ aliases:
   sig-windows-leads:
     - michmike
     - patricklang
-  wg-app-def-leads:
-    - ant31
-    - bryanl
-    - garethr
   wg-apply-leads:
     - lavalamp
   wg-component-standard-leads:
     - luxas
     - sttts
     - mtaufen
-  wg-container-identity-leads:
-    - smarterclayton
-    - destijl
   wg-iot-edge-leads:
-    - cindyxing
-    - dejanb
-    - ptone
+    #- cindyxing # not an org member
+    #- dejanb # not an org member
+    #- ptone # not an org member
     - cantbewong
   wg-k8s-infra-leads:
     - dims
     - spiffxp
-  wg-kubeadm-adoption-leads:
-    - luxas
-    - justinsb
   wg-lts-leads:
     - tpepper
     - imkin
-    - quinton-hoole-2
+    - quinton-hoole
     - youngnick
   wg-machine-learning-leads:
     - vishh
@@ -151,24 +139,40 @@ aliases:
     - ConnorDoyle
   wg-multitenancy-leads:
     - davidopp
-    - jessfraz
+    - tashimi
   wg-policy-leads:
-    - hannibalhuang
-    - tsandall
-    - easeway
-    - ericavonb
-    - mdelder
+    #- hannibalhuang # not an org member
+    #- tsandall # not an org member
+    #- easeway # not an org member
+    #- ericavonb # not an org member
+    #- mdelder # not an org member
   wg-resource-management-leads:
     - vishh
     - derekwaynecarr
   wg-security-audit-leads:
-    - aasmall
+    #- aasmall # not an org member
     - joelsmith
-    - cji
-## BEGIN CUSTOM CONTENT
-  steering-committee:
+    #- cji # not an org member
+    #- jaybeale # not an org member
+  ug-big-data-leads:
+    - foxish
+    - erikerlandson
+    - liyinan926
+  committee-code-of-conduct:
+    - jdumars
+    - parispittman
+    - carolynvs
+    - eparis
+    - bradamant3
+  committee-product-security:
+    - philips
+    - cjcullen
+    - tallclair
+    - liggitt
+    - joelsmith
+  committee-steering:
     - bgrant0607
-    - brendanburns
+    - brendandburns
     - derekwaynecarr
     - dims
     - jbeda
@@ -179,21 +183,16 @@ aliases:
     - smarterclayton
     - spiffxp
     - timothysc
-  code-of-conduct-committee:
-    - jdumars
-    - parispittman
-    - eparis
-    - carolynvs
-    - bradamant3
+## BEGIN CUSTOM CONTENT
   pm-maintainers:
-    - calebamiles # SIG PM Lead
-    - idvoretskyi # SIG PM Lead
-    - jdumars # Program Mgmt Chair
-    - justaugustus # Product Mgmt Chair
+    - calebamiles # SIG PM Chair
+    - idvoretskyi # SIG PM Chair
+    - jdumars # SIG PM Chair
+    - justaugustus # SIG PM Chair
   features-maintainers:
     - justaugustus # 1.12 Features Lead
-    - kacole2 # 1.13 Enhancements Lead
     - claurence # 1.14 Enhancements Lead
+    - kacole2 # 1.15 / 1.13 Enhancements Lead
   kep-process-approvers:
     - calebamiles
     - idvoretskyi
@@ -203,12 +202,16 @@ aliases:
     - lachie83
   kep-reviewers:
     - bgrant0607
-    - jdumars
+    - derekwaynecarr
+    - dims
     - jbeda
+    - jdumars
     - mattfarina
   kep-approvers:
     - bgrant0607
-    - jdumars
+    - derekwaynecarr
+    - dims
     - jbeda
+    - jdumars
     - mattfarina
 ## END CUSTOM CONTENT
