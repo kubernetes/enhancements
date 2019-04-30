@@ -4,17 +4,17 @@ authors:
   - "@patricklang"
 owning-sig: sig-windows
 participating-sigs:
-  - sig-node
+  - sig-windows
 reviewers:
   - "@yujuhong"
   - "@derekwaynecarr"
   - "@tallclair"
 approvers:
-  - TBD
+  - "@michmike"
 editor: TBD
 creation-date: 2019-04-24
 last-updated: 2019-04-24
-status: provisional
+status: implementable
 ---
 
 # Supporting CRI-ContainerD on Windows
@@ -103,6 +103,7 @@ Additionally, users could choose to run with only CRI-ContainerD instead of Dock
 ### Non-Goals
 
 - Running Linux containers on Windows nodes
+- Deprecating `dockershim`. This is out of scope for this KEP. The effort to migrate that code out of tree is in [KEP PR 866](https://github.com/kubernetes/enhancements/pull/866) and deprecation discussions will happen later.
 
 ## Proposal
 
@@ -253,7 +254,6 @@ Test cases that depend on ContainerD and won't pass with Dockershim will be mark
 
 - Stable release of CRI-ContainerD on Windows, at least one CNI
 - Master & release branches on TestGrid
-
 
 ### Upgrade / Downgrade Strategy
 
