@@ -3,26 +3,26 @@ kep-number: 0
 title: Quotas for Ephemeral Storage
 authors:
   - "@RobertKrawitz"
-owning-sig: sig-xxx
+owning-sig:
+  - sig-node
 participating-sigs:
   - sig-node
 reviewers:
-  - TBD
+  - "@dashpole"
+  - "@derekwaynecarr"
 approvers:
   - "@dchen1107"
   - "@derekwaynecarr"
 editor: TBD
-creation-date: yyyy-mm-dd
-last-updated: yyyy-mm-dd
-status: provisional
-see-also:
-replaces:
-superseded-by:
+creation-date: 2018-09-06
+last-updated: 2019-04-30
+status: implementable
 ---
 
 # Quotas for Ephemeral Storage
 
 ## Table of Contents
+
 <!-- markdown-toc start - Don't edit this section. Run M-x markdown-toc-generate-toc again -->
 **Table of Contents**
 
@@ -44,12 +44,15 @@ superseded-by:
             - [Determine Whether a Project ID Applies To a Directory](#determine-whether-a-project-id-applies-to-a-directory)
             - [Return a Project ID To the System](#return-a-project-id-to-the-system)
         - [Implementation Details/Notes/Constraints [optional]](#implementation-detailsnotesconstraints-optional)
+            - [Implementation Strategy](#implementation-strategy)
+                - [Future](#future)
             - [Notes on Implementation](#notes-on-implementation)
             - [Notes on Code Changes](#notes-on-code-changes)
             - [Testing Strategy](#testing-strategy)
         - [Risks and Mitigations](#risks-and-mitigations)
     - [Graduation Criteria](#graduation-criteria)
     - [Implementation History](#implementation-history)
+        - [Version 1.15](#version-115)
     - [Drawbacks [optional]](#drawbacks-optional)
     - [Alternatives [optional]](#alternatives-optional)
         - [Alternative quota-based implementation](#alternative-quota-based-implementation)
@@ -233,7 +236,7 @@ These goals apply only to local ephemeral storage, as described in
   usage, including e. g. images).
 * Enforcing limits on total pod storage consumption by any means, such
   that the pod would be hard restricted to the desired storage limit.
-  
+
 ### Future Work
 
 * _Enforce limits on per-volume storage consumption by using
@@ -254,20 +257,20 @@ consistent with the desired limit._  If we elect to use it as
 non-enforcing, we impose a large quota that in practice cannot be
 exceeded (2^63-1 bytes for XFS, 2^58-1 bytes for ext4fs).
 
+For discussion of the low level implementation strategy, [see
+below](#implementation-detailsnotesconstraints-optional).
+
 ### Control over Use of Quotas
 
 At present, two feature gates control operation of quotas:
 
 * `LocalStorageCapacityIsolation` must be enabled for any use of
   quotas.
-  
-* `LocalStorageCapacityIsolationFSMonitoring` must be enabled in addition.  If this is
+
+* `LocalStorageCapacityIsolationFSQuotaMonitoring` must be enabled in addition.  If this is
   enabled, quotas are used for monitoring, but not enforcement.  At
   present, this defaults to False, but the intention is that this will
   default to True by initial release.
-  
-* _`LocalStorageCapacityIsolationFSEnforcement` must be enabled, in addition to
-  `LocalStorageCapacityIsolationFSMonitoring`, to use quotas for enforcement._
 
 ### Operation Flow -- Applying a Quota
 
@@ -370,8 +373,8 @@ quota ID.
 #### Determine Whether a Project ID Applies To a Directory
 
 It is possible to determine whether a directory has a project ID
-applied to it by requesting (via the `quotactl(2)` system call) the
-project ID associated with the directory.  Whie the specifics are
+applied to it by requesting (via the `lsattr(1)` command) the project
+ID associated with the directory.  Whie the specifics are
 filesystem-dependent, the basic method is the same for at least XFS
 and ext4fs.
 
@@ -403,8 +406,83 @@ this KEP that this mode of operation will be used, at least initially,
 this can be detected even on kubelet restart by looking at the
 reference count in `/etc/projects`.
 
-
 ### Implementation Details/Notes/Constraints [optional]
+
+#### Implementation Strategy
+
+The initial implementation will be done by shelling out to the
+`xfs_quota(8)` and `lsattr(1)` commands to manipulate quotas.  It is
+possible to use the `quotactl(2)` and `ioctl(2)` system calls to do
+this, but the `quotactl(2)` system call is not supported by Go at all,
+and `ioctl(2)` subcommands required for manipulating quotas are only
+partially supported.  Use of these system calls would require either
+use of [cgo](https://golang.org/cmd/cgo/), which is not supported in
+Kubernetes, or copying the necessary structure definitions and
+constants into the source.
+
+The use of Linux commands rather than system calls likely poses some
+efficiency issues, but these commands are only issued when ephemeral
+volumes are created and destroyed, or during monitoring, when they are
+called once per minute.  At present, monitoring is done by shelling
+out to the `du(1)` and `find(1)` commands, which are much less
+efficient, as they perform filesystem scans.  *The performance of
+these commands must be measured under load prior to making this
+feature used by default.*
+
+All `xfs_quota(8)` commands are invoked as
+
+`xfs_quota -t <tmp_mounts_file> -P/dev/null -D/dev/null -f <mountpoint> -c <command>`
+
+The -P and -D arguments tell xfs_quota not to read the usual
+`/etc/projid` and `/etc/projects` files, and to use the empty special
+file `/dev/null` as stand-ins.  `xfs_quota` reads the projid and
+projects files and attempts to access every listed mountpoint for
+every command.  As we use numeric project IDs for all purposes, it is
+not necessary to incur this overhead.
+
+The `-t` argument is to mitigate a hazard of `xfs_quota(8)` in the
+presence of stuck NFS (or similar) mounts.  By default, `xfs_quota(8)`
+`stat(2)`s every mountpoint on the system, which could hang on a stuck
+mount.  The `-t` option is used to pass in a temporary mounts file
+containing only the filesystem we care about.
+
+The following operations are performed, with the listed commands
+(using `xfs_quota(8)` except as noted)
+
+* Determine whether quotas are enabled on the specified filesystem
+
+  `state -p`
+
+* Apply a limit to a project ID (note that at present the largest
+  possible limit is applied, allowing the quota system to be used for
+  monitoring only)
+
+  `limit -p bhard=<blocks> bsoft=<blocks> <projectID>`
+
+* Apply a project ID to a directory, enabling a quota on that
+  directory
+
+  `project -s -p <directory> <projectID>`
+
+* Retrieve the number of blocks used by a given project ID
+
+  `quota -p -N -n -v -b <projectID>`
+
+* Retrieve the number of inodes used by a given project ID
+
+  `quota -p -N -n -v -n <projectID>`
+
+* Determine whether a specified directory has a quota ID applied to
+  it, and if so, what that ID is (using `lsattr(1)`)
+
+  `lsattr -pd <path>`
+
+##### Future
+
+In the long run, we should work to add the necessary constructs to the
+Go language, allowing direct use of the necessary system calls without
+the use of cgo.
+
 
 #### Notes on Implementation
 
@@ -416,21 +494,21 @@ The primary new interface defined is the quota interface in
 * Assign a quota to a directory.  If a non-empty pod UID is provided,
   the quota assigned is that of any other directories under this pod
   UID; if an empty pod UID is provided, a unique quota is assigned.
-  
+
 * Retrieve the consumption of the specified directory.  If the quota
   code cannot handle it efficiently, it returns an error and the
   caller falls back on existing mechanism.
-  
+
 * Retrieve the inode consumption of the specified directory; same
   description as above.
-  
+
 * Remove quota from a directory.  If a non-empty pod UID is passed, it
   is checked against that recorded in-memory (if any).  The quota is
   removed from the specified directory.  This can be used even if
   AssignQuota has not been used; it inspects the directory and removes
   the quota from it.  This permits stale quotas from an interrupted
   kubelet to be cleaned up.
-  
+
 Two implementations are provided: `quota_linux.go` (for Linux) and
 `quota_unsupported.go` (for other operating systems).  The latter
 returns an error for all requests.
@@ -444,11 +522,11 @@ code, with two exceptions:
 
 * No operation exists to determine whether a quota can be applied
   (that is handled by the provider).
-  
+
 * An additional operation is provided to determine whether a given
   quota ID is in use within the filesystem (outside of `/etc/projects`
   and `/etc/projid`).
-  
+
 The two quota providers in the initial implementation are in
 `pkg/volume/util/quota/extfs` and `pkg/volume/util/quota/xfs`.  While
 some quota operations do require different system calls, a lot of the
@@ -467,14 +545,14 @@ required elsewhere:
   a quota.  The limit is passed as 0 (do not use quotas), _positive
   number (impose an enforcing quota if possible, measured in bytes),_
   or -1 (impose a non-enforcing quota, if possible) on the volume.
-  
+
   This requires changes to
   `pkg/volume/util/operationexecutor/operation_executor.go` (to add
   `DesiredSizeLimit` to `VolumeToMount`),
   `pkg/kubelet/volumemanager/cache/desired_state_of_world.go`, and
   `pkg/kubelet/eviction/helpers.go` (the latter in order to determine
   whether the volume is a local ephemeral one).
-  
+
 * The volume manager (in `pkg/volume/volume.go`) changes the
   `Mounter.SetUp` and `Mounter.SetUpAt` interfaces to take a new
   `MounterArgs` type rather than an `FsGroup` (`*int64`).  This is to
@@ -484,7 +562,7 @@ required elsewhere:
   small changes to all volume plugins and their tests, but will in the
   future allow adding additional data without having to change code
   other than that which uses the new information.
-  
+
 #### Testing Strategy
 
 The quota code is by an large not very amendable to unit tests.  While
@@ -513,7 +591,7 @@ appropriate end to end tests.
   to fail due to lack of filesystem space, which is effectively (and
   in some cases operationally) indistinguishable from exceeding quota,
   so even at present code must be able to handle those situations.
-  
+
 * Filesystem quotas may impact performance to an unknown degree.
   Information on that is hard to come by in general, and one of the
   reasons for using quotas is indeed to improve performance.  If this
@@ -523,7 +601,7 @@ appropriate end to end tests.
   (because project quotas are needed for other purposes), we should
   provide a way to disable use of quotas altogether via a feature
   gate.
-  
+
   A report <https://blog.pythonanywhere.com/110/> notes that an
   unclean shutdown on Linux kernel versions between 3.11 and 3.17 can
   result in a prolonged downtime while quota information is restored.
@@ -541,29 +619,28 @@ appropriate end to end tests.
 
 ## Graduation Criteria
 
-How will we know that this has succeeded?  Gathering user feedback is
-crucial for building high quality experiences and SIGs have the
-important responsibility of setting milestones for stability and
-completeness.  Hopefully the content previously contained in [umbrella
-issues][] will be tracked in the `Graduation Criteria` section.
+The following criteria applies to
+`LocalStorageCapacityIsolationFSMonitoring`:
+
+Alpha
+
+- Support integrated in kubelet
+
+Beta
+
+- TBD
+
+GA
+
+- TBD
 
 [umbrella issues]: N/A
 
 ## Implementation History
 
-Major milestones in the life cycle of a KEP should be tracked in
-`Implementation History`.  Major milestones might include
+### Version 1.15
 
-- the `Summary` and `Motivation` sections being merged signaling SIG
-  acceptance
-- the `Proposal` section being merged signaling agreement on a
-  proposed design
-- the date implementation started
-- the first Kubernetes release where an initial version of the KEP was
-  available
-- the version of Kubernetes where the KEP graduated to general
-  availability
-- when the KEP was retired or superseded
+` LocalStorageCapacityIsolationFSMonitoring` implemented at Alpha
 
 ## Drawbacks [optional]
 
@@ -751,51 +828,51 @@ quota system.
   cause a denial of service (system crash) or possibly gain privileges
   by interacting with a hugetlbfs filesystem, as demonstrated by a
   umount operation that triggers improper handling of quota data.
-  
+
   The issue is actually related to huge pages, not quotas
   specifically.  The demonstration of the vulnerability resulted in
   incorrect handling of quota data.
-  
+
 * *CVE-2012-3417* The good_client function in rquotad (rquota_svc.c)
   in Linux DiskQuota (aka quota) before 3.17 invokes the hosts_ctl
   function the first time without a host name, which might allow
   remote attackers to bypass TCP Wrappers rules in hosts.deny (related
   to rpc.rquotad; remote attackers might be able to bypass TCP
   Wrappers rules).
-  
+
   This issue is related to remote quota handling, which is not the use
   case for the proposal at hand.
-  
+
 #### Other Security Issues Without CVE
 
 * [Linux Kernel Quota Flaw Lets Local Users Exceed Quota Limits and
   Create Large Files](https://securitytracker.com/id/1002610)
-  
+
   A setuid root binary inheriting file descriptors from an
   unprivileged user process may write to the file without respecting
   quota limits.  If this issue is still present, it would allow a
   setuid process to exceed any enforcing limits, but does not affect
   the quota accounting (use of quotas for monitoring).
-  
+
 ### Other Linux Quota-Related Bugs Since 2012
 
 * [ext4: report delalloc reserve as non-free in statfs mangled by
   project quota](https://lore.kernel.org/patchwork/patch/884530/)
-  
+
   This bug, fixed in Feb. 2018, properly accounts for reserved but not
   committed space in project quotas.  At this point I have not
   determined the impact of this issue.
-  
+
 * [XFS quota doesn't work after rebooting because of
   crash](https://bugs.launchpad.net/ubuntu/+source/linux/+bug/1461730)
-  
+
   This bug resulted in XFS quotas not working after a crash or forced
   reboot.  Under this proposal, Kubernetes would fall back to du for
   monitoring should a bug of this nature manifest itself again.
-  
+
 * [quota can show incorrect filesystem
   name](https://bugzilla.redhat.com/show_bug.cgi?id=1326527)
-  
+
   This issue, which will not be fixed, results in the quota command
   possibly printing an incorrect filesystem name when used on remote
   filesystems.  It is a display issue with the quota command, not a
@@ -803,5 +880,5 @@ quota system.
   being reported.  As this proposal does not utilize the quota command
   or rely on filesystem name, or currently use quotas on remote
   filesystems, it should not be affected by this bug.
-  
+
 In addition, the e2fsprogs have had numerous fixes over the years.
