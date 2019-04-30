@@ -246,6 +246,10 @@ Benchmark testing will be required to understand the scope of the impact and wha
 is gated by opt-in feature flags, which allows it to move to alpha but these concerns must be tested and reconciled before it 
 progresses to beta.
 
+## Test Plan
+
+There are tests for the [plugin](https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/apiserver/plugin/pkg/audit/dynamic/dynamic_test.go) and any other changes to the codebase. There is an [integration test](https://github.com/kubernetes/kubernetes/blob/master/test/integration/master/audit_dynamic_test.go) as well as an [e2e test](https://github.com/kubernetes/kubernetes/blob/master/test/e2e/auth/audit_dynamic.go).
+
 ## Graduation Criteria
 
 Success will be determined by stability of the provided mechanisms and ease of understanding for the end user.
