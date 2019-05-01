@@ -99,13 +99,11 @@ This section describes the API fixes proposed for GA.
 1. Specify healthcheck behavior and be able to configure the healthcheck path
    and timeout.
 1. Improve the Ingress status field to be able to include additional
-   information. The current status currently only contains provisions the IP
-   address of the load balancer.
+   information. The current status currently only contains the
+   provisioned IP address(es) of the load balancer.
 1. Formalize the Ingress class annotation into a field and an associated
    `IngressClass` resource.
 1. Add support for non-Service Backend types.
-
-Note: this is a proposed list. Please discuss in the comments.
 
 ### Path as a prefix
 
@@ -128,138 +126,127 @@ Ingress providers) treats the path match as a prefix match. For
 example, a narrow interpretation of the specification would require
 all paths to end with `".*$"`.
 
-#### Proposal
+A detailed discussion of this issue can be found
+[here](https://github.com/kubernetes/ingress-nginx/issues/555).
 
-1. Clarify behavior of the existing path regex match and identify that use of
-   path regex is non-portable.
-1. Support prefix matching behavior as the portable alternative.
+#### Paths proposal
 
-Change specification of `ingress.spec.rules.http.paths.path` from the current
-text to indicate the non-portability of the value:
+1. Explicitly state the match mode of the path.
+1. Support the existing implementation-specific behavior.
+1. Support a portable prefix match and future expansion of behavior.
 
-> The matching behavior of Path is implementation specific. Path is either a
-> prefix or regular expression match.
-
-Add a field `ingress.spec.rules.http.paths.pathPrefix`:
+Add a field `ingress.spec.rules.http.paths.pathType` to indicate
+the desired interpretation of the meaning of the `path`:
 
 ```golang
 type HTTPIngressPath struct {
   ...
-  // PathPrefix matches the HTTP request if the request path begins with
-  // this string. For example, PathPrefix = "/foo" will match "/foo", "/foox",
-  // "/foo/bar".
+  // Path to match against. The interpretation of Path depends on
+  // the value of PathType.
   //
-  // Both Path and PathPrefix cannot be set (non-empty) at the same time.
-  PathPrefix string
+  // Defaults to "/".
+  //
+  // +Optional
+  Path string
+
+  // PathType determines the interpretation of the Path
+  // matching. PathType can be one of the following values:
+  //
+  // Prefix - matches based on a URL path prefix split
+  //   by '/'. This is not a substring match. For example:
+  //   "/foo/bar" will match "/foo/bar", "/foo/bar/abc", but
+  //   will not match "/foo/barzzz". A Prefix Path of "/" will
+  //   match any paths.
+  //
+  // ImplementationSpecific - interpretation of the Path
+  //   matching is up to the IngressClass.
+  //
+  // Defaults to "Prefix" if not set.
+  //
+  // +Optional
+  PathType string
+  ...
 }
 ```
 
-Interoperability between v1beta and v1 will work as follows:
+Interoperability between versions will be as follows:
 
-v1beta1 gets the `PathPrefix" field. v1 gets an annotation
-`ingress.kubernetes.io/non-portable-path-semantics`. If we create a v1 object
-from a v1beta1 where `path` was used, we set the annotation. We keep both Path
-and PathPrefix in the API.
-
-<!--
-1) v1beta1 gets a "PathPrefix" field, specced as a strict prefix, no
-trailing "*" or ".*" needed.  Document that Path is under-specified
-and implementation-specific.  Document that all implementations are
-expected to support PathPrefix with consistent semantics.  Path and
-PathPrefix can be mutually exclusive.  v1 gets either Path or
-PathPrefix (debatable) and an annotation
-"ingress.kubernetes.io/beta-path" which maps the new field to the old.
-That satisfies round-trip requirement but is kind of horrible.
-
-2) v1beta1 gets a "PathPrefix" field as above.  v1 gets an annotation
-"ingress.kubernetes.io/beta-path-semantics".  If we create a v1 object
-from a v1beta1 where `path` was used, we set the annotation.
-Validation logic will check the annotation to decide how to interpret
-and validate paths.  We'll have to keep it for a long while.  Maybe we
-can prevent new objects from being created with that annotation?  Now
-what if implementations want to offer "extended" semantics here?  Same
-validation problem.
-
-3)  v1beta1 gets a "PathPrefix" field as above.  v1 gets an annotation
-"ingress.kubernetes.io/non-portable-path-semantics".  If we create a
-v1 object from a v1beta1 where `path` was used, we set the annotation.
-We keep it forever.
-
-4) Same as 2 but we just don't validate Path at all.
--->
-
-#### Rejected alternatives
-
-##### Portable regex behavior
-
-The safest route for specifying the regex would be to state a limited
-subset that can be used in a portable way. Any expressions outside of
-the subset will have implementation specific behavior.
-
-Regular expression subset (derived from [re2][re2-syntax] syntax page)
-
-| Expression | description             |
-|------------|-------------------------|
-| `.`        | any character           |
-| `[xyz]`    | character class         |
-| `[^xyz]`   | negated character class |
-| `x*`       | 0 or more x's           |
-| `x+`       | 1 or more x's           |
-| `xy`       | x followed by y         |
-| `x|y`      | x or y (prefer x)       |
-| `(abc)`    | grouping                |
-
-Maintaining a regular expression subset is likely not worth the complexity and
-is likely impossible across the [many implementations][regex-survey].
+1. v1beta1 will default to `ImplementationSpecific`.
+1. v1 will default to `Prefix`.
 
 ### API field naming
 
 These are straightforwarding one-to-one renames to for consistency.
 
-| v1beta1 field  | ga field              | rationale                   |
-|----------------|-----------------------|-----------------------------|
-| `spec.backend` | `spec.defaultBackend` | Explicitly mentions default |
+| v1beta1        | v1                    | Rationale                  |
+|----------------|-----------------------|----------------------------|
+| `spec.backend` | `spec.defaultBackend` | Explicitly mention default |
 
 ### Hostname wildcards
 
 Most platforms support wildcarding for hostnames, e.g. syntax such as
-`*.foo.com` matches names `app1.foo.com`, `app2.foo.com`. The current spec
-states that `spec.rules.host` must be a FQDN of a network host. 
+`*.foo.com` matches names `app1.foo.com`, `app2.foo.com`. The current
+spec states that `spec.rules.host` must be an exact FQDN match of a
+network host.
 
-#### Proposal
+#### Hostname proposal
 
-This proposal would be a limited support for adding a single wildcard `*` as the
-first host label.
+Add support for a single wildcard `*` as the first host label.
 
-The `IngressRule.Host` comment would be changed to:
+The `IngressRule.Host` specification would be changed to:
 
-> `Host` can be a "precise host" which is an fully-qualified domain name without
-> the terminating dot of a network host (e.g. "foo.bar.com") or a "wildcard
-> host" domain name prefixed with a single wildcard label ("*.foo.com").
-> Requests will be matched against the `Host` field in the following way:
-> 
-> If `Host` is precise, the request matches the rule if the http host header
-> is equal to `Host`.
-> 
-> If `Host` is a wildcard, then request matches the rule if the http host header
-> is to equal to the suffix (removing the first label) of the wildcard rule.
-> E.g. wildcard "*.foo.com" matches "bar.foo.com" because they share an equal
-> suffix "foo.com".
+> `Host` can be "precise" which is an fully-qualified domain name
+> without the terminating dot of a network host (e.g. "foo.bar.com")
+> or "wildcard", which is a domain name prefixed with a single
+> wildcard label ("*.foo.com").
+>
+> Requests will be matched against the `Host` field in the following
+> way:
+>
+> If `Host` is precise, the request matches this rule if the http host
+> header is equal to `Host`.
+>
+> If `Host` is a wildcard, then the request matches this rule if the
+> http host header is to equal to the suffix (removing the first
+> label) of the wildcard rule. The wildcard character '*' must appear
+> by itself, be the first label and matches only a single label.
+>
+> Examples:
+>
+> - "*.foo.com" matches "bar.foo.com" because they share an equal
+>   suffix "foo.com".
+> - "*.foo.com" does not match "aaa.bbb.foo.com" as the wildcard only
+>   matches a single label.
+> - "*.foo.com" does not match "foo.com", as the wildcard must match a
+>   single label.
+>
+> Note: label refers to a "DNS label", e.g. the strings separated by
+> the dots "." in the domain name.
 
 ### Healthchecks
 
-The current spec does not have any provisions to customize appropriate
-healtchecks for referenced backends. Many users already have a healthcheck
-URLthat is lightweight and different from the HTTP root (e.g. `/`).
+The current spec does not have any provisions to customize healtchecks
+for referenced backends. Many users already have a healthcheck URL
+that is lightweight and different from the HTTP root (i.e. `/`).
 
-One option that has been explored is to infer the healthcheck URL from the
-Readiness probes on the Pods of the Service. This method has proven to be quite
-unstable: Every Pod in a Service can have a different Readiness probe definition
-and it's not clear which one should be used. Furthermore, the behavior is quite
-implicit and creates action-at-a-distance relationship between the Ingress and
-Pod resources.
+One obvious question that arises is why the Ingress healthcheck
+configuration is (a) is needed and (b) is different from the current
+Pod readiness and liveness checks. The Ingress healthcheck represents
+an end-to-end check from the proxy server to the backend.  The
+Kubelet-based service health check operates only within the VM and
+does not include the network path. A minor point is that it is also
+the case that some providers require a healthcheck to be specficied as
+part of load balancing.
 
-#### Proposal
+An option that has been explored is to infer the healthcheck URL from
+the Readiness/Liveness probes on the Pods of the Service. This method
+has proven to be unworkable: Every Pod in a Service can have a
+different Readiness probe definition and therefore it's not clear
+which one should be used. Furthermore, the behavior is implicit and
+creates action-at-a-distance relationship between the Ingress and Pod
+resources.
+
+#### Healthchecks proposal
 
 Add the following fields to `IngressBackend`:
 
@@ -295,7 +282,7 @@ type IngressBackendHTTPHealthcheck struct {
 
 If `Healthcheck` is nil, then the implementation default healthcheck will be
 configured, healthchecking the root `/` path. If `Healthcheck` is specfied,
-then the backend health will be checked using the parameters listed above. 
+then the backend health will be checked using the parameters listed above.
 
 ### Status
 
@@ -307,10 +294,10 @@ The `kubernetes.io/ingress.class` annotation is required for interoperation
 between various Ingress providers. As support for this annotation is universal,
 this concept should be promoted to an actual field.
 
-#### Proposal
+#### Ingress class proposal
 
-Promoting the annotation as is as an opaque string the most direct path, but
-precludes any future enhancements to the concept.
+Promoting the annotation as it is currently defined as an opaque string is the
+most direct path but precludes any future enhancements to the concept.
 
 An alternative is to create a new resource `IngressClass` to take its place.
 This resource will serve a couple of purposes:
@@ -321,6 +308,7 @@ This resource will serve a couple of purposes:
   associated with a given Ingress controller.
 
 Add a field to `ingress.spec`:
+
 ```golang
 type IngressSpec struct {
   ...
@@ -338,6 +326,7 @@ type IngressSpec struct {
 type IngressClass struct {
   metav1.TypeMeta
   metav1.ObjectMeta
+
   Spec IngressClassSpec
 }
 
@@ -358,7 +347,7 @@ At the same time, we do not expect to enumerate all possible backends that could
 arise, nor do we expect that naming of the resources will be uniform in schema,
 parameters etc. Similarly, many of the resources will be platform specific.
 
-#### Proposal
+#### Backend types proposal
 
 Add a field to the `IngressBackend` struct with an object reference:
 
@@ -397,7 +386,7 @@ type Bucket struct {
 
 type BucketSpec struct {
   Bucket string
-  Path   string 
+  Path   string
 }
 ```
 
@@ -520,6 +509,34 @@ KEP (roughly sorted by practicality):
 * Per-backend timeouts
 * Backend protocol
 * Cross-namespace backends
+
+### Rejected designs
+
+This section contains rejected design proposals for future reference.
+
+#### Portable regex for Path
+
+The safest route for specifying the regex would be to state a limited
+subset that can be used in a portable way. Any expressions outside of
+the subset will have implementation specific behavior.
+
+Regular expression subset (derived from [re2][re2-syntax] syntax page)
+
+| Expression | description             |
+|------------|-------------------------|
+| `.`        | any character           |
+| `[xyz]`    | character class         |
+| `[^xyz]`   | negated character class |
+| `x*`       | 0 or more x's           |
+| `x+`       | 1 or more x's           |
+| `xy`       | x followed by y         |
+| `x|y`      | x or y (prefer x)       |
+| `(abc)`    | grouping                |
+
+Maintaining a regular expression subset is not worth the complexity and
+is likely impossible across the [many implementations][regex-survey].
+
+<!-- References -->
 
 [aws-re]: https://docs.aws.amazon.com/elasticloadbalancing/latest/application/listener-update-rules.html
 [azure-re]: https://docs.microsoft.com/en-us/azure/application-gateway/application-gateway-create-url-route-portal
