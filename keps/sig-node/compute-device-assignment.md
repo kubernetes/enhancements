@@ -1,5 +1,4 @@
 ---
-kep-number: 18
 title: Kubelet endpoint for device assignment observation details 
 authors:
   - "@dashpole" 
@@ -16,8 +15,8 @@ editors:
   - "@dashpole"
   - "@vikaschoudhary16"
 creation-date: "2018-07-19"
-last-updated: "2018-07-19"
-status: provisional
+last-updated: "2019-04-30"
+status: implementable
 ---
 # Kubelet endpoint for device assignment observation details 
 
@@ -148,3 +147,20 @@ type Container struct {
 * Allows devices to potentially be assigned by a custom scheduler.
 * Serves as a permanent record of device assignments for the kubelet, and eliminates the need for the kubelet to maintain this state locally.
 
+## Graduation Criteria
+
+Alpha:
+- [x] Implement the endpoint as described above
+- [x] E2e node test tests the endpoint: https://k8s-testgrid.appspot.com/sig-node-kubelet#node-kubelet-serial&include-filter-by-regex=DevicePluginProbe
+
+Beta:
+- [x] Demonstrate in production environments that the endpoint can be used to replace in-tree GPU device metrics (NVIDIA, sig-node April 30, 2019).
+
+## Implementation History
+
+- 2018-09-11: Final version of KEP (proposing pod-resources endpoint) published and presented to sig-node.  [Slides](https://docs.google.com/presentation/u/1/d/1xz-iHs8Ec6PqtZGzsmG1e68aLGCX576j_WRptd2114g/edit?usp=sharing)
+- 2018-10-30: Demo with example gpu monitoring daemonset
+- 2018-11-10: KEP lgtm'd and approved
+- 2018-11-15: Implementation and e2e test merged before 1.13 release: kubernetes/kubernetes#70508
+- 2019-04-30: Demo of production GPU monitoring by NVIDIA
+- 2019-04-30: Agreement in sig-node to move feature to beta in 1.15
