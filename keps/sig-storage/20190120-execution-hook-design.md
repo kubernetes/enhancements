@@ -159,11 +159,6 @@ type ExecutionHookStatus struct {
         // ActionSucceed, etc.
         // +optional
         HookStatuses []ContainerExecutionHookStatus
-
-        // Action Summary status
-        // Default is nil
-        // +optional
-        ActionSucceed *bool
 }
 
 // ContainerExecutionHookStatus represents the current state of a hook for a specific container in a pod
@@ -221,9 +216,6 @@ const (
 ```
 
 In the ExecutionHookStatus object, there is a list of ContainerExecutionHookStatus for all selected containers in the pods, each ContainerExecutionHookStatus represents the state of the hook on a specific container.
-
-The ActionSucceed field is a summary status field to indicate the final status of the Action in the hook after the commands are run on all selected containers. If not set, this field is nil, meaning the hook controller still needs to wait for the Action commands to finish running on all containers. If set, either true or false, it means the Action commands have finished running (or timeout) on all containers.
-
 
 Here is the definition of HookAction:
 
