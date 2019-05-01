@@ -21,11 +21,12 @@ approvers:
   - "@bowei" - For networking/proxy portion of KEP
 editor: "@calebamiles"
 creation-date: 2019-02-25
-last-updated: 2019-02-26
-status: provisional
+last-updated: 2019-04-30
+status: implementable
 see-also:
   - "https://goo.gl/qiARUK - Network Proxy design proposal"
   - "https://goo.gl/ipwDkX - Explicit API server to node communications"
+  - "https://github.com/kubernetes-sigs/apiserver-network-proxy - Reference implementations of API Server Network Proxy"
 replaces:
 superseded-by:
 ---
@@ -36,7 +37,6 @@ superseded-by:
 
 - [API Server Network Proxy](#api-server-network-proxy)
   - [Table of Contents](#table-of-contents)
-  - [Release Signoff Checklist](#release-signoff-checklist)
   - [Summary](#summary)
   - [Motivation](#motivation)
     - [Goals](#goals)
@@ -67,36 +67,8 @@ superseded-by:
     - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
     - [Version Skew Strategy](#version-skew-strategy)
   - [Implementation History](#implementation-history)
-  - [Drawbacks [optional]](#drawbacks-optional)
   - [Alternatives [optional]](#alternatives-optional)
   - [Infrastructure Needed [optional]](#infrastructure-needed-optional)
-
-## Release Signoff Checklist
-
-**ACTION REQUIRED:** In order to merge code into a release, there must be an issue in [kubernetes/enhancements] referencing this KEP and targeting a release milestone **before [Enhancement Freeze](https://github.com/kubernetes/sig-release/tree/master/releases)
-of the targeted release**.
-
-For enhancements that make changes to code or processes/procedures in core Kubernetes i.e., [kubernetes/kubernetes], we require the following Release Signoff checklist to be completed.
-
-Check these off as they are completed for the Release Team to track. These checklist items _must_ be updated for the enhancement to be released.
-
-- [ ] kubernetes/enhancements issue in release milestone, which links to KEP (this should be a link to the KEP location in kubernetes/enhancements, not the initial KEP PR)
-- [ ] KEP approvers have set the KEP status to `implementable`
-- [ ] Design details are appropriately documented
-- [ ] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
-- [ ] Graduation criteria is in place
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
-
-**Note:** Any PRs to move a KEP to `implementable` or significant changes once it is marked `implementable` should be approved by each of the KEP approvers. If any of those approvers is no longer appropriate than changes to that list should be approved by the remaining approvers and/or the owning SIG (or SIG-arch for cross cutting KEPs).
-
-**Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
-
-[kubernetes.io]: https://kubernetes.io/
-[kubernetes/enhancements]: https://github.com/kubernetes/enhancements/issues
-[kubernetes/kubernetes]: https://github.com/kubernetes/kubernetes
-[kubernetes/website]: https://github.com/kubernetes/website
 
 ## Summary
 
@@ -160,11 +132,24 @@ Implies no overlapping (i.e. shared) IPs on the network.
 
 We will run a connectivity proxy inside the master network.
 It could work on either a HTTP Connect mechanism or gRPC.
-We will test HTTP Connect to determine scalability and error handling.
-If no issues with either multi-plexing (to prevent an proliferation of
-connections) or with handling connection errors and terminations, then we will
-go with HTTP Connect. We expect to handle metadata in this case using http 'X' headers.
-Alternately the connectivity proxy can expose a gRPC interface to the KAS.
+For the alpha version we will attempt to get this working with HTTP Connect.
+We will evaluate HTTP Connect for scalability, error handling and traffic types.
+For scalability we will be looking at the number of required open connections.
+Increasing usage of webhooks means we need better than 1 request per connection (multiplexing).
+We also need the tunnel to be tolerant of errors in the requests it is transporting.
+HTTP-Connect only supports HTTP requests and not things like DNS requests.
+We assume that for HTTP URL request,s it will be the proxy which does the DNS lookup.
+However this means that we cannot have the KAS perform a DNS request to then do a follow on request. 
+If no issues are found with HTTP Connect in these areas we will proceed with it.
+If an issue is found then we will update the KEP and switch the client to the gRPC solution.
+This should be as simple as switching the connection mode of the client code.
+
+It may be desirable to allow out of band data (metadata) to be transmitted from the KAS to the Proxy.
+We expect to handle metadata in the HTTP Connect case using http 'X' headers on the Connect request.
+This means that the metadata can only be sent when establishing a KAS to Proxy tunnel.
+For the GRPC case we just update the interface to the KAS.
+In this case the metadata can be sent even during tunnel usage.
+
 Each connectivity proxy allows secure connections to one or more cluster networks.
 Any network addressed by a connectivity proxy must be flat.
 Currently the only mechanism for handling overlapping IP ranges in Kubernetes is the Proxy.
@@ -368,7 +353,8 @@ This, in conjunction with a firewall or other network isolation, fixes the secur
 
 You may want to check the original design doc for alternatives and futures considered. https://goo.gl/qiARUK.
 Please make sure you are a member of kubernetes-dev@googlegroups.com to view the doc.
-
+It is also worth looking at https://github.com/kubernetes-sigs/apiserver-network-proxy as it contains the reference
+implementation of the API Server Network Proxy.
 
 ## User Stories
 
@@ -431,94 +417,23 @@ Please adhere to the [Kubernetes testing guidelines][testing-guidelines] when dr
 
 ### Graduation Criteria
 
-**Note:** *Section not required until targeted at a release.*
+Alpha:
 
-Define graduation milestones.
-
-These may be defined in terms of API maturity, or as something else. Initial KEP should keep
-this high-level with a focus on what signals will be looked at to determine graduation.
-
-Consider the following in developing the graduation criteria for this enhancement:
-- [Maturity levels (`alpha`, `beta`, `stable`)][maturity-levels]
-- [Deprecation policy][deprecation-policy]
-
-Clearly define what graduation means by either linking to the [API doc definition](https://kubernetes.io/docs/concepts/overview/kubernetes-api/#api-versioning),
-or by redefining what graduation means.
-
-In general, we try to use the same stages (alpha, beta, GA), regardless how the functionality is accessed.
-
-[maturity-levels]: https://git.k8s.io/community/contributors/devel/sig-architecture/api_changes.md#alpha-beta-and-stable-versions
-[deprecation-policy]: https://kubernetes.io/docs/reference/using-api/deprecation-policy/
-
-#### Examples
-
-These are generalized examples to consider, in addition to the aforementioned [maturity levels][maturity-levels].
-
-##### Alpha -> Beta Graduation
-
-- Gather feedback from developers and surveys
-- Complete features A, B, C
-- Tests are in Testgrid and linked in KEP
-
-##### Beta -> GA Graduation
-
-- N examples of real world usage
-- N installs
-- More rigorous forms of testing e.g., downgrade tests and scalability tests
-- Allowing time for feedback
-
-**Note:** Generally we also wait at least 2 releases between beta and GA/stable, since there's no opportunity for user feedback, or even bug reports, in back-to-back releases.
-
-##### Removing a deprecated flag
-
-- Announce deprecation and support policy of the existing flag
-- Two versions passed since introducing the functionality which deprecates the flag (to address version skew)
-- Address feedback on usage/changed behavior, provided on GitHub issues
-- Deprecate the flag
-
-**For non-optional features moving to GA, the graduation criteria must include [conformance tests].**
-
-[conformance tests]: https://github.com/kubernetes/community/blob/master/contributors/devel/conformance-tests.md
-
-### Upgrade / Downgrade Strategy
-
-If applicable, how will the component be upgraded and downgraded? Make sure this is in the test plan.
-
-Consider the following in developing an upgrade/downgrade strategy for this enhancement:
-- What changes (in invocations, configurations, API use, etc.) is an existing cluster required to make on upgrade in order to keep previous behavior?
-- What changes (in invocations, configurations, API use, etc.) is an existing cluster required to make on upgrade in order to make use of the enhancement?
-
-### Version Skew Strategy
-
-If applicable, how will the component handle version skew with other components? What are the guarantees? Make sure
-this is in the test plan.
-
-Consider the following in developing a version skew strategy for this enhancement:
-- Does this enhancement involve coordinating behavior in the control plane and in the kubelet? How does an n-2 kubelet without this feature available behave when this feature is used?
-- Will any other components on the node change? For example, changes to CSI, CRI or CNI may require updating that component before the kubelet.
+- Feature is turned off in the KAS by default. Enabled by adding ConnectivityServiceConfiguration.
+- Kubernetes will not ship with a network proxy. The feature will work with the sample network proxy in https://github.com/kubernetes-sigs/apiserver-network-proxy
+- Demonstrate that the API Server Network Proxy eliminates the need for the SSH Tunnels.
 
 ## Implementation History
 
-Major milestones in the life cycle of a KEP should be tracked in `Implementation History`.
-Major milestones might include
-
-- the `Summary` and `Motivation` sections being merged signaling SIG acceptance
-- the `Proposal` section being merged signaling agreement on a proposed design
-- the date implementation started
-- the first Kubernetes release where an initial version of the KEP was available
-- the version of Kubernetes where the KEP graduated to general availability
-- when the KEP was retired or superseded
-
-## Drawbacks [optional]
-
-Why should this KEP _not_ be implemented.
+- Feature goes Alpha in 1.15
 
 ## Alternatives [optional]
 
-Similar to the `Drawbacks` section the `Alternatives` section is used to highlight and record other possible approaches to delivering the value proposed by a KEP.
+- Leave SSH Tunnels (deprecated) in the KAS. Prevents us from making the KAS cloud provider agnostic. Blocks out of tree effort.
+- Build equivalent functionality into the KAS. Is not extensible. Essentially has the same issues as SSH Tunnels.
+- Use a socks5 proxy. No standard mTLS mechanism for securing traffic. Does not actually act as a standard. More complicated implementation.
 
 ## Infrastructure Needed [optional]
 
-Use this section if you need things from the project/SIG.
-Examples include a new subproject, repos requested, github details.
-Listing these here allows a SIG to get the process for these resources started right away.
+Any one wishing to use this feature will need to create network proxy images/pods on the master and set up the ConnectivityServiceConfiguration.
+The network proxy provided is meant as a reference implementation. Users as expected to extend it for their needs.
