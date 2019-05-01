@@ -151,11 +151,18 @@ The Scheduler should submit the 2 resource job on Node 3 as the utilization is h
 
 ### Test Plan
 
-_To be filled until targeted at a release._
+- **Unit Tests:** All changes must be covered by unit tests.
+- **Integration Tests:** The use cases discussed in this KEP must
+  be covered by integration tests.
 
 ### Graduation Criteria
 
-_To be filled until targeted at a release._
+Alpha:
+
+- [ ] This feature will be rolled out as an Alpha feature in v1.15
+- [ ] Necessary defaulting, validation
+- [ ] Adequate documentation for the changes
+- [ ] Minimum viable test cases mentioned in [Test Plan](#test-plan) section
 
 #### Examples
 
