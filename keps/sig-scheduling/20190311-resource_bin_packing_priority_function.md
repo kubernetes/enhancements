@@ -12,8 +12,8 @@ approvers:
   - "@k82cn"
   - "@bsalamat"
 creation-date: 2019-03-11
-last-updated: 2019-03-11
-status: provisional
+last-updated: 2019-05-01
+status: implementable
 ---
 
 # ExtendingRequestedToCapacityRatio Priority Function to support Resource Bin Packing of Extended Resources
