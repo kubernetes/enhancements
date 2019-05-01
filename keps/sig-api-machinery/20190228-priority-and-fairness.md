@@ -32,12 +32,29 @@ Table of Contents
       * [Summary](#summary)
       * [Motivation](#motivation)
          * [Goals](#goals)
-         * [Non-Goals](#non-goals) 
-         * [Future Goals](#future-goals) 
+         * [Non-Goals](#non-goals)
+         * [Future Goals](#future-goals)
       * [Proposal](#proposal)
+         * [Request Categorization](#request-categorization)
+         * [Assignment to a Queue](#assignment-to-a-queue)
+            * [Queue Assignment Proof of Concept](#queue-assignment-proof-of-concept)
+            * [Probability of Collisions](#probability-of-collisions)
+         * [Resource Limits](#resource-limits)
+            * [Primary CPU and Memory Protection](#primary-cpu-and-memory-protection)
+            * [Secondary Memory Protection](#secondary-memory-protection)
+            * [Latency Protection](#latency-protection)
+         * [Queuing](#queuing)
+         * [Dispatching](#dispatching)
+            * [Fair Queuing for Server Requests](#fair-queuing-for-server-requests)
+         * [Example Configuration](#example-configuration)
+         * [Default Behavior](#default-behavior)
+         * [Prometheus Metrics](#prometheus-metrics)
+         * [Testing](#testing)
          * [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
          * [Risks and Mitigations](#risks-and-mitigations)
       * [Design Details](#design-details)
+         * [References](#references)
+         * [Design Considerations](#design-considerations)
       * [Implementation History](#implementation-history)
       * [Drawbacks](#drawbacks)
       * [Alternatives](#alternatives)
@@ -360,6 +377,163 @@ one in 5.4 billion.
 
 It is the queues that compete fairly.
 
+Since the assignment to queues is based on flows, a useful
+configuration will be one in which flows are meaningful boundaries for
+confinement/competition.  For bad example, if a particular
+FlowSchema's flows are based on usernames and bad behavior correlates
+with namespace then the bad behavior will be spread among all the
+queues of that schema's priority.  Administrators need to make a good
+choice for how flows are distinguished.
+
+
+#### Queue Assignment Proof of Concept
+
+The following golang code shows a simple recursive technique to
+shuffle, deal, and pick.
+
+```go
+package main
+
+import (
+	"fmt"
+	"math"
+	"math/rand"
+)
+
+var numQueues uint64
+
+func shuffleDealAndPick(v, nq uint64,
+	mr func(int /*in [0, nq-1]*/) int, /*in [0, numQueues-1] and excluding previously determined members of I*/
+	nRem, minLen, bestIdx int) int {
+	if nRem < 1 {
+		return bestIdx
+	}
+	vNext := v / nq
+	ai := int(v - nq*vNext)
+	ii := mr(ai)
+	i := numQueues - nq // i is used only for debug printing
+	mrNext := func(a int /*in [0, nq-2]*/) int /*in [0, numQueues-1] and excluding I[0], I[1], ... ii*/ {
+		if a < ai {
+			fmt.Printf("mr[%v](%v) going low\n", i, a)
+			return mr(a)
+		}
+		fmt.Printf("mr[%v](%v) going high\n", i, a)
+		return mr(a + 1)
+	}
+	lenI := lengthOfQueue(ii)
+	fmt.Printf("Considering A[%v]=%v, I[%v]=%v, qlen[%v]=%v\n\n", i, ai, i, ii, i, lenI)
+	if lenI < minLen {
+		minLen = lenI
+		bestIdx = ii
+	}
+	return shuffleDealAndPick(vNext, nq-1, mrNext, nRem-1, minLen, bestIdx)
+}
+
+func lengthOfQueue(i int) int {
+	return i % 10 // hack for this PoC
+}
+
+func main() {
+	numQueues = uint64(128)
+	handSize := 6
+	hashValue := rand.Uint64()
+	queueIndex := shuffleDealAndPick(hashValue, numQueues, func(i int) int { return i }, handSize, math.MaxInt32, -1)
+	fmt.Printf("For V=%v, numQueues=%v, handSize=%v, chosen queue is %v\n", hashValue, numQueues, handSize, queueIndex)
+}
+```
+
+#### Probability of Collisions
+
+The following code tabulates some probabilities of collisions.
+Specifically, if there are `nHands` elephants, `probNextCovered` is
+the probability that a random mouse entirely collides with the
+elephants.  This is assuming fair dice and independent choices.  This
+is not exactly what we have, but is close.
+
+```go
+package main
+
+import (
+	"fmt"
+	"sort"
+)
+
+// sum computes the sum of the given slice of numbers
+func sum(v []float64) float64 {
+	c := append([]float64{}, v...)
+	sort.Float64s(c) // to minimize loss of accuracy when summing
+	var s float64
+	for i := 0; i < len(c); i++ {
+		s += c[i]
+	}
+	return s
+}
+
+// choose returns the number of subsets of size m of a set of size n
+func choose(n, m int) float64 {
+	if m == 0 || m == n {
+		return 1
+	}
+	var ans = float64(n)
+	for i := 1; i < m; i++ {
+		ans = ans * float64(n-i) / float64(i+1)
+	}
+	return ans
+}
+
+// nthDeal analyzes the result of another shuffle and deal in a series of shuffles and deals.
+// Each shuffle and deal randomly picks `handSize` distinct cards from a deck of size `deckSize`.
+// Each successive shuffle and deal is independent of previous deals.
+// `first` indicates that this is the first shuffle and deal.
+// `prevDist[nUnique]` is the probability that the number of unique cards previously dealt is `nUnique`,
+// and is unused when `first`.
+// `dist[nUnique]` is the probability that the number of unique cards dealt up through this deal is `nUnique`.
+// `distSum` is the sum of `dist`, and should be 1.
+// `expectedUniques` is the expected value of nUniques at the end of this deal.
+// `probNextCovered` is the probability that another shuffle and deal will deal only cards that have already been dealt.
+func nthDeal(first bool, handSize, deckSize int, prevDist []float64) (dist []float64, distSum, expectedUniques, probNextCovered float64) {
+	dist = make([]float64, deckSize+1)
+	expects := make([]float64, deckSize+1)
+	nexts := make([]float64, deckSize+1)
+	if first {
+		dist[handSize] = 1
+		expects[handSize] = float64(handSize)
+		nexts[handSize] = 1 / choose(deckSize, handSize)
+	} else {
+		for nUnique := handSize; nUnique <= deckSize; nUnique++ {
+			conts := make([]float64, handSize+1)
+			for news := 0; news <= handSize; news++ {
+				// one way to get to nUnique is for `news` new uniques to appear in this deal,
+				// and all the previous deals to have dealt nUnique-news unique cards.
+				prevUnique := nUnique - news
+				ways := choose(deckSize-prevUnique, news) * choose(prevUnique, handSize-news)
+				conts[news] = ways * prevDist[prevUnique]
+				//fmt.Printf("nUnique=%v, news=%v, ways=%v\n", nUnique, news, ways)
+			}
+			dist[nUnique] = sum(conts) / choose(deckSize, handSize)
+			expects[nUnique] = dist[nUnique] * float64(nUnique)
+			nexts[nUnique] = dist[nUnique] * choose(nUnique, handSize) / choose(deckSize, handSize)
+		}
+
+	}
+	return dist, sum(dist), sum(expects), sum(nexts)
+}
+
+func main() {
+	handSize := 7
+	deckSize := 256
+	fmt.Printf("choose(%v, %v) = %v\n", deckSize, handSize, choose(deckSize, handSize))
+	var dist []float64
+	var probNextCovered float64
+	for nHands := 1; probNextCovered < 0.01; nHands++ {
+		var distSum, expected float64
+		dist, distSum, expected, probNextCovered = nthDeal(nHands == 1, handSize, deckSize, dist)
+		fmt.Printf("After %v hands, distSum=%v, expected=%v, probNextCovered=%v, dist=%v\n", nHands, distSum, expected, probNextCovered, dist)
+	}
+}
+```
+
+
 ### Resource Limits
 
 #### Primary CPU and Memory Protection
@@ -386,6 +560,8 @@ At the first stage of development, an apiserver’s concurrency limit
 will be derived from the existing configuration options for
 max-mutating-in-flight and max-readonly-in-flight, by taking their
 sum.  Later we may migrate to a single direct configuration option.
+Even later we intend to automatomatically tune the setting of an
+apiserver's concurrency limit.
 
 #### Secondary Memory Protection
 
@@ -398,6 +574,10 @@ An apiserver is also configured with a limit on the amount of time
 that a request may wait in its queue.  If this time passes while a
 request is still waiting for service then the request will be
 rejected.
+
+This may mean we need to revisit the scalability tests --- this
+protection could keep us from violating latency SLOs even though we
+are dropping many requests.
 
 ### Queuing
 
@@ -757,7 +937,7 @@ spec:
   matchingPriority: (doesn’t really matter)
   requestPriority:
     name: (name of an effectively existing RequestPriority, whether
-	that is real or backstop, with catchAll==true)
+           that is real or backstop, with catchAll==true)
   flowDistinguisher:
     source: user
     # no transformation in this case
@@ -786,6 +966,9 @@ Prior to this KEP, the relevant available metrics from an apiserver are:
 This KEP adds the following metrics.
 - apiserver_rejected_requests (count, broken down by priority, FlowSchema, when (arrival vs timeout))
 - apiserver_current_inqueue_requests (gauge, broken down by priority, FlowSchema)
+- apiserver_request_queue_length (histogram, broken down by
+  RequestPriority name; buckets set at 0, 0.25, 0.5, 0.75, 0.9, 1.0
+  times the relevant queue length limit)
 - apiserver_current_executing_requests (gauge, broken down by priority, FlowSchema)
 - apiserver_dispatched_requests (count, broken down by priority, FlowSchema)
 - apiserver_wait_duration (histogram, broken down by priority, FlowSchema)
@@ -935,8 +1118,10 @@ the combination of these facts: (1) (unlike a router handling a
 packet) the apiserver does not know beforehand how long a request will
 take to serve nor how much memory it will consume, and (2) (unlike a
 CPU scheduler) the apiserver can not suspend and resume requests.
-Also, we are really loathe to abort a request once it has started
-being served.  We are leaning towards adapting well known and studied
+Also, we are generally loathe to abort a request once it has started
+being served.  We may some day consider doing this for low-priority
+long-running requests, but are not addressing long-running requests at
+first.  We are leaning towards adapting well known and studied
 scheduling technique(s); but adaptation is a form of invention, and we
 have not converged yet on what to do here.
 
