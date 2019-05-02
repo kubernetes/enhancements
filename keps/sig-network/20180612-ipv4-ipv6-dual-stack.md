@@ -125,7 +125,7 @@ This proposal aims to add "dual-stack pods / single-family services" support to 
 - CNI network plugins: Some plugins other than the Bridge, PTP, and Host-Local IPAM plugins may support Kubernetes dual stack, but the development and testing of dual stack support for these other plugins is considered outside of the scope of this proposal.
 - Multiple IPs vs. Dual-Stack: Code changes will be done in a way to facilitate future expansion to more general multiple-IPs-per-pod and multiple-IPs-per-node support. However, this initial release will impose "dual-stack-centric" IP address limits as follows:
   - Pod addresses: 1 IPv4 address and 1 IPv6 addresses per pod maximum
-  - Node addresses: 1 IPv4 address and 1 IPv6 addresses per pod maximum
+  - Node addresses: 1 IPv4 address and 1 IPv6 addresses per node maximum
   - Service addresses: 1 service IP address per service
 - Kube-DNS is expected to be End-of-Life soon, so dual-stack testing will be performed using coreDNS.
 - External load balancers that rely on Kubernetes services for load balancing functionality will only work with the IP family that matches the IP family of the cluster's service CIDR.
@@ -155,9 +155,20 @@ In order to support dual-stack in Kubernetes clusters, Kubernetes needs to have 
 
 Given the scope of this enhancement, it has been suggested that we break the implementation into descrete phases that may be spread out over the span of many release cycles. The phases are as follows:
 
-- pod-to-pod dual-stack routing and non-vip services
-- Single-family services
-- Multi-family services
+Phase 1
+- API type modifications
+   - Kubernetes types
+   - CRI types
+- dual-stack pod networking (multi-IP pod)
+- kubenet multi-family support
+
+Phase 2
+- Multi-family services including kube-proxy
+- Working with a CNI provider to enable dual-stack support
+- Change kubelet prober to support multi-address
+- Update component flags to support multiple `--bind-address`
+
+
 - External dependencies, eg. cloud-provide, CNI, CRI, CoreDNS etc...
 
 ### Awareness of Multiple IPs per Pod
@@ -539,7 +550,7 @@ The [container environmental variables](https://kubernetes.io/docs/concepts/cont
 
 Pod information is exposed through environmental variables on the pod. There are a few environmental variables that are automatically created, and some need to be specified in the pod definition, through the downward api.
 
-The Downward API [status.podIP](https://kubernetes.io/docs/tasks/inject-data-application/downward-api-volume-expose-pod-information/#capabilities-of-the-downward-api) will preserve the existing single IP address, and will be set to the default IP for each pod. A new environmental variable named status.podIPs will contain a comma-separated list of IP addresses. The new pod API will have a slice of structures for the additional IP addresses. Kubelet will translate the pod structures and return podIPs as a comma-delimited string.
+The Downward API [status.podIP](https://kubernetes.io/docs/tasks/inject-data-application/downward-api-volume-expose-pod-information/#capabilities-of-the-downward-api) will preserve the existing single IP address, and will be set to the default IP for each pod. A new environmental variable named status.podIPs will contain a space-separated list of IP addresses. The new pod API will have a slice of structures for the additional IP addresses. Kubelet will translate the pod structures and return podIPs as a comma-delimited string.
 
 Here is an example of how to define a pluralized MY_POD_IPS environmental variable in a pod definition yaml file:
 ```
@@ -659,10 +670,10 @@ Providing dual-stack service CIDRs would add the following functionality:
 
 * Build and add e2e tests to test-grid.
 * e2e tests should cover the following:
-  * multi-network, same family
-  * multi-network, dual-stack
-  * single network, ipv4
-  * single network, ipv6
+  * multi-IP, same family
+  * multi-IP, dual-stack
+  * single IP, ipv4
+  * single IP, ipv6
 
 ## Graduation Criteria
 
@@ -672,10 +683,11 @@ This capability will move to beta when the following criteria have been met.
 * CRI types finalized
 * Pods to support multi-IPs
 * Nodes to support multi-CIDRs
-* Service resource supports multi-network
+* Service resource supports pods with multi-IP
 * Kubenet to support multi-IPs
 
 This capability will move to stable when the following criteria have been met.
 
-* Support of at least one CNI plugin to provide multi-network
+* Support of at least one CNI plugin to provide multi-IP
 * e2e test successfully running on two platforms
+* testing ingress controller infrastructure with updated dual-stack services
