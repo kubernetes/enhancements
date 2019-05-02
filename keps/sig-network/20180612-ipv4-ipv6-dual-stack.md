@@ -15,8 +15,8 @@ approvers:
   - "thockin@"
 editor: TBD
 creation-date: 2018-05-21
-last-updated: 2019-02-04
-status: provisional
+last-updated: 2019-05-02
+status: implementable
 
 ---
 
