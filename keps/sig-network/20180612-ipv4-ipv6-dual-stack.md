@@ -654,3 +654,28 @@ Providing dual-stack service CIDRs would add the following functionality:
 - The service allocator: This would need to be modified to allocate a service IP from each service CIDR for each service that is created.
 - 'kubectl get service' command: The display output for this command would need to be modified to return multiple service IPs for each service.
 - CoreDNS may need to be modified to loop through both (IPv4 and IPv6) service IPs for each given Kubernetes service, and advertise both IPs as A and AAAA records accordingly in DNS responses.
+
+## Test Plan
+
+* Build and add e2e tests to test-grid.
+* e2e tests should cover the following:
+  * multi-network, same family
+  * multi-network, dual-stack
+  * single network, ipv4
+  * single network, ipv6
+
+## Graduation Criteria
+
+This capability will move to beta when the following criteria have been met.
+
+* Kubernetes types finalized
+* CRI types finalized
+* Pods to support multi-IPs
+* Nodes to support multi-CIDRs
+* Service resource supports multi-network
+* Kubenet to support multi-IPs
+
+This capability will move to stable when the following criteria have been met.
+
+* Support of at least one CNI plugin to provide multi-network
+* e2e test successfully running on two platforms
