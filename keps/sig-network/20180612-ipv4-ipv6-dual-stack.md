@@ -30,6 +30,7 @@ Table of Contents
       * [Goals](#goals)
       * [Non-Goals](#non-goals)
    * [Proposal](#proposal)
+      * [Implementation Plan](#implementation-plan)
       * [Awareness of Multiple IPs per Pod](#awareness-of-multiple-ips-per-pod)
          * [Versioned API Change: PodStatus v1 core](#versioned-api-change-podstatus-v1-core)
             * [Default Pod IP Selection](#default-pod-ip-selection)
