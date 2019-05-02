@@ -13,7 +13,7 @@ approvers:
   - @thockin
 editor: TBD
 creation-date: 2019-02-21
-last-updated: 2019-05-01
+last-updated: 2019-05-02
 status: implementable
 see-also:
 replaces:
@@ -133,7 +133,14 @@ The only way of killing the deadlocked container faster would be to have a state
 
 ### Test Plan
 
-TBD
+Unit tests will be implemented with `newTestWorker` and will check the following:
+
+- proper initialization of `hasStarted` to false
+- `hasStarted` becomes true as soon as `startupProbe` succeeds
+- `livenessProbe` and `readinessProbe` are disabled until `hasStarted` is true
+- `startupProbe` is disabled after `hasStarted` becomes true
+- `failureThreshold` exceeded for `startupProbe` kills the container
+- proper states are recovered after a kubelet restart
 
 ### Feature Gate
 
@@ -152,6 +159,7 @@ TBD
 - 2019-03-05: present KEP to sig-node
 - 2019-04-11: open issue in enhancements [#950]
 - 2019-05-01: redesign to additional probe after @thockin [proposal]
+- 2019-05-02: add test plan
 
 [#71449]: https://github.com/kubernetes/kubernetes/pull/71449
 [#950]: https://github.com/kubernetes/enhancements/issues/950
