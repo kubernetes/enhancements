@@ -60,7 +60,7 @@ Now the current QoS class considers all containers' resources, but as for sideca
 
 #### Story 1
 
-Considerd that there is a pod with one main container and one sidecar container and its resource quota is `4cores and 8Gi`. 
+Considered that there is a pod with one main container and one sidecar container and its resource quota is `4cores and 8Gi`. 
 
 As for main container:
 ```yaml
