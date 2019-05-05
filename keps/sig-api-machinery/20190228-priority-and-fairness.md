@@ -7,13 +7,15 @@ owning-sig: sig-api-machinery
 participating-sigs:
   - wg-multitenancy
 reviewers:
-  - TBD
+  - "@deads2k"
+  - "@lavalamp"
 approvers:
-  - TBD
+  - "@deads2k"
+  - "@lavalamp"
 editor: TBD
 creation-date: 2019-02-28
 last-updated: 2019-02-28
-status: provisional
+status: implementable
 see-also: []
 replaces: []
 superseded-by: []
@@ -55,6 +57,8 @@ Table of Contents
       * [Design Details](#design-details)
          * [References](#references)
          * [Design Considerations](#design-considerations)
+         * [Test Plan](#test-plan) 
+         * [Graduation Criteria](#graduation-criteria)
       * [Implementation History](#implementation-history)
       * [Drawbacks](#drawbacks)
       * [Alternatives](#alternatives)
@@ -1242,6 +1246,19 @@ of 1 bit (in the terms of the original networking setting).  That is
 isomorphic to (unweighted) fair queuing!  The weighted versions, still
 with miniscule quanta, are also isomorphic.
 
+### Test Plan
+
+- __Unit Tests__: All changes must be covered by unit tests. Additionally,
+ we need to test the evenness of dispatching algorithm.
+- __Integration Tests__: The use cases discussed in this KEP must be covered by integration tests.
+
+### Graduation Criteria
+
+Alpha:
+
+- Necessary defaulting, validation
+- Adequate documentation for the changes
+- Minimum viable test cases mentioned in Test Plan section
 
 ## Implementation History
 
