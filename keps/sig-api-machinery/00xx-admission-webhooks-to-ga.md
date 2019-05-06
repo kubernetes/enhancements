@@ -113,7 +113,7 @@ ObjectSelector.
 The proposed change is to add an ObjectSelector to the webhook API both in v1 and v1beta1:
 
 ```golang
-type Webhook struct {
+type {Validating,Mutating}Webhook struct {
     ...
      // ObjectSelector decides whether to run the webhook on an object based
      // on whether the object.metadata.labels matches the selector. A namespace object must
@@ -186,7 +186,7 @@ and the timeout would be defaulted to a shorter value (e.g. 10 seconds) for v1 A
 stays 30 second for v1beta API to keep backward compatibility.
 
 ```golang
-type Webhook struct {
+type {Validating,Mutating}Webhook struct {
     ...
      // TimeoutSeconds specifies the timeout for this webhook. After the timeout passes,
      // the webhook call will be ignored or the API call will fail based on the
@@ -242,22 +242,102 @@ type AdmissionRequest struct {
 
 ### Mutating Plugin ordering
 
-Current ordering of the plugins (including webhooks) is fixed but may not work for all cases 
-(e.g. [this issue](https://github.com/kubernetes/kubernetes/issues/64333)). A mutating webhook 
-can add a completely new structure to the object (e.g. a `Container`) and other mutating plugins 
-may have opinion on those new structures (e.g. setting the image pull policy on all containers). 
-Although this problem can go deeper than two level (if the second mutating webhook added a new 
-structure based on the new `Container`), with current set of standard mutating plugins and use-cases, 
-it look like a rerun of mutating plugins is a sufficient fix. The proposal is to rerun all mutating 
-plugins (including webhooks) if there is any change by mutating webhooks. The assumption for this 
-process is all mutating plugins are idempotent and this must be clearly documented to users.
+A single ordering of mutating admissions plugins (including webhooks) does not work for all cases
+(see https://issue.k8s.io/64333 as an example). A mutating webhook can add a new sub-structure 
+to the object (like adding a `container` to a pod), and other mutating plugins which have already 
+run may have opinions on those new structures (like setting an `imagePullPolicy` on all containers). 
 
-Mutations from in-tree plugins will not trigger this process as they are well-ordered but if 
-there is any mutation by webhooks, all of the plugins including in-tree ones will be run again.
+To allow mutating admission plugins to observe changes made by other plugins, regardless of order,
+admission will add the ability to re-run mutating plugins (including webhooks) a single time if 
+there is any change made by a mutating webhook on the first pass.
 
-This feature would be would be opt in and defaulted to false for `v1beta1`.
+1. Initial mutating admission pass
+2. If any webhook plugins returned patches modifying the object, do a second mutating admission pass
+   1. Run all in-tree mutating admission plugins
+   2. Run all applicable webhook mutating admission plugins that indicate they want to be reinvoked
 
-The API representation and behavior for this feature is still under design and will be updated/approved here prior to implementation.
+Mutating plugins that are reinvoked must be idempotent, able to successfully process an object they have already 
+admitted and potentially modified. This will be clearly documented in admission webhook documentation,
+examples, and test guidelines. Mutating admission webhooks *should* already support this (since any 
+change they can make in an object could already exist in the user-provided object), and any webhooks
+that do not are broken for some set of user input.
+
+Note that idempotence (whether a webhook can successfully operate on its own output) is distinct from
+the `sideEffects` indicator, which describes whether a webhook can safely be called in `dryRun` mode.
+
+The reinvocation behavior will be opt-in, so `reinvocationPolicy` defaults to `"Never"`.
+
+```golang
+type MutatingWebhook struct {
+    ...
+    // reinvocationPolicy indicates whether this webhook should be called multiple times as part of a single admission evaluation.
+    // Allowed values are "Never" and "IfNeeded".
+    //
+    // Never: the webhook will not be called more than once in a single admission evaluation.
+    //
+    // IfNeeded: the webhook will be called at least one additional time as part of the admission evaluation
+    // if the object being admitted is modified by other admission plugins after the initial webhook call.
+    // Webhooks that specify this option *must* be idempotent, able to process objects they previously admitted.
+    // Note:
+    // * the number of additional invocations is not guaranteed to be exactly one.
+    // * if additional invocations result in further modifications to the object, webhooks are not guaranteed to be invoked again.
+    // * webhooks that use this option may be reordered to minimize the number of additional invocations.
+    // * to validate an object after all mutations are guaranteed complete, use a validating admission webhook instead (recommended for webhooks with side-effects).
+    //
+    // Defaults to "Never".
+    // +optional
+    ReinvocationPolicy *ReinvocationPolicyType `json:"reinvocationPolicy,omitempty"`
+}
+
+type ReinvocationPolicyType string
+
+var (
+  NeverReinvocationPolicy ReinvocationPolicyType = "Never"
+  IfNeededReinvocationPolicy ReinvocationPolicyType = "IfNeeded"
+)
+```
+
+Although this problem can go deeper than two levels (for example, if the second mutating webhook added
+a new structure based on the new `container`), a single re-run is sufficient for the current set of 
+in-tree plugins and webhook use-cases. If future use cases require additional or more targeted reinvocations,
+the `AdmissionReview` response can be enhanced to provide information to target those reinvocations.
+
+Test scenarios:
+
+1. No reinvocation
+   * in-tree -> mutation
+   * webhook -> no mutation
+   * complete (no reinvocation needed)
+
+2. In-tree reinvocation only
+   * in-tree -> mutation
+   * webhook -> mutation
+   * reinvoke in-tree -> no mutation
+   * complete (in-tree didn't change anything, so no webhook reinvocation required)
+
+3. Full reinvocation
+   * in-tree -> mutation
+   * webhook -> mutation
+   * reinvoke in-tree -> mutation
+   * reinvoke webhook -> mutation
+   * complete (both reinvoked once, no additional loops)
+
+4. Multiple webhooks, partial reinvocation
+   * in-tree -> mutation
+   * webhook A -> mutation
+   * webhook B -> mutation
+   * reinvoke in-tree -> no mutation
+   * reinvoke webhook A -> no mutation
+   * complete (no mutations occurred after webhook B was called, no reinvocation required)
+
+5. Multiple webhooks, full reinvocation
+   * in-tree -> mutation
+   * webhook A -> mutation
+   * webhook B -> mutation
+   * reinvoke in-tree -> no mutation
+   * reinvoke webhook A -> mutation
+   * reinvoke webhook B -> mutation (webhook A mutated after webhook B was called, one reinvocation required)
+   * complete (both reinvoked once, no additional loops)
 
 ### Passing {Operation}Option to Webhook
 
@@ -319,7 +399,7 @@ For example, a webhook that registers admissionReviewVersions:["v1","v1beta1"] m
 V1 API looks like this:
 
 ```golang
-type Webhook struct {
+type {Validating,Mutating}Webhook struct {
     ...
 
      // AdmissionReviewVersions is an ordered list of preferred `AdmissionReview`
@@ -336,7 +416,7 @@ type Webhook struct {
 V1beta1 API looks like this:
 
 ```golang
-type Webhook struct {
+type {Validating,Mutating}Webhook struct {
     ...
 
      // AdmissionReviewVersions is an ordered list of preferred `AdmissionReview`
@@ -382,7 +462,7 @@ For safety, this field defaults to `Exact` in `v1beta1`. In `v1`, we can default
 
 ```golang
 // Webhook describes an admission webhook and the resources and operations it applies to.
-type Webhook struct {
+type {Validating,Mutating}Webhook struct {
      ...
      // matchPolicy defines how the "rules" field is applied when a request is made 
      // to a different API group or version of a resource listed in "rules".
@@ -594,7 +674,7 @@ type ValidatingWebhookConfiguration struct {
      // +optional
      // +patchMergeKey=name
      // +patchStrategy=merge
-     Webhooks []Webhook `json:"webhooks,omitempty" patchStrategy:"merge" patchMergeKey:"name" protobuf:"bytes,2,rep,name=Webhooks"`
+     Webhooks []ValidatingWebhook `json:"webhooks,omitempty" patchStrategy:"merge" patchMergeKey:"name" protobuf:"bytes,2,rep,name=Webhooks"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -608,6 +688,132 @@ type ValidatingWebhookConfigurationList struct {
      metav1.ListMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
      // List of ValidatingWebhookConfiguration.
      Items []ValidatingWebhookConfiguration `json:"items" protobuf:"bytes,2,rep,name=items"`
+}
+
+// ValidatingWebhook describes an admission ValidatingWebhook and the resources and operations it applies to.
+type ValidatingWebhook struct {
+     // The name of the admission webhook.
+     // Name should be fully qualified, e.g., imagepolicy.kubernetes.io, where
+     // "imagepolicy" is the name of the webhook, and kubernetes.io is the name
+     // of the organization.
+     // Required.
+     Name string `json:"name" protobuf:"bytes,1,opt,name=name"`
+
+     // ClientConfig defines how to communicate with the hook.
+     // Required
+     ClientConfig WebhookClientConfig `json:"clientConfig" protobuf:"bytes,2,opt,name=clientConfig"`
+
+     // Rules describes what operations on what resources/subresources the webhook cares about.
+     // The webhook cares about an operation if it matches _any_ Rule.
+     // However, in order to prevent ValidatingAdmissionWebhooks and MutatingAdmissionWebhooks
+     // from putting the cluster in a state which cannot be recovered from without completely
+     // disabling the plugin, ValidatingAdmissionWebhooks and MutatingAdmissionWebhooks are never called
+     // on admission requests for ValidatingWebhookConfiguration and MutatingWebhookConfiguration objects.
+     Rules []RuleWithOperations `json:"rules,omitempty" protobuf:"bytes,3,rep,name=rules"`
+
+     // matchPolicy defines how the "rules" field is applied when a request is made 
+     // to a different API group or version of a resource listed in "rules".
+     // Allowed values are "Exact" or "Equivalent".
+     // - Exact: match requests only if they exactly match a given rule. For example, if an object can be modified
+     // via API version v1 and v2, and "rules" only includes "v1", do not send a request to "v2" to the webhook.
+     // - Equivalent: match requests if they modify a resource listed in rules via another API group or version.
+     // For example, if an object can be modified via API version v1 and v2, and "rules" only includes "v1",
+     // a request to "v2" should be converted to "v1" and sent to the webhook.
+     // Defaults to "Equivalent"
+     // +optional
+     MatchPolicy *MatchPolicyType `json:"matchPolicy,omitempty"`
+
+     // FailurePolicy defines how unrecognized errors from the admission endpoint are handled -
+     // allowed values are Ignore or Fail. Defaults to Ignore.
+     // +optional
+     FailurePolicy *FailurePolicyType `json:"failurePolicy,omitempty" protobuf:"bytes,4,opt,name=failurePolicy,casttype=FailurePolicyType"`
+    
+     // NamespaceSelector decides whether to run the webhook on an object based
+     // on whether the namespace for that object matches the selector. If the
+     // object itself is a namespace, the matching is performed on
+     // object.metadata.labels. If the object is another cluster scoped resource,
+     // it never skips the webhook.
+     //
+     // For example, to run the webhook on any objects whose namespace is not
+     // associated with "runlevel" of "0" or "1";  you will set the selector as
+     // follows:
+     // "namespaceSelector": {
+     //   "matchExpressions": [
+     //     {
+     //       "key": "runlevel",
+     //       "operator": "NotIn",
+     //       "values": [
+     //      "0",
+     //      "1"
+     //       ]
+     //     }
+     //   ]
+     // }
+     //
+     // If instead you want to only run the webhook on any objects whose
+     // namespace is associated with the "environment" of "prod" or "staging";
+     // you will set the selector as follows:
+     // "namespaceSelector": {
+     //   "matchExpressions": [
+     //     {
+     //       "key": "environment",
+     //       "operator": "In",
+     //       "values": [
+     //      "prod",
+     //      "staging"
+     //       ]
+     //     }
+     //   ]
+     // }
+     //
+     // See
+     // https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
+     // for more examples of label selectors.
+     //
+     // Default to the empty LabelSelector, which matches everything.
+     // +optional
+     NamespaceSelector *metav1.LabelSelector `json:"namespaceSelector,omitempty" protobuf:"bytes,5,opt,name=namespaceSelector"`
+
+     // SideEffects states whether this webhookk has side effects.
+     // Acceptable values are: Unknown, None, Some, NoneOnDryRun
+     // Webhooks with side effects MUST implement a reconciliation system, since a request may be
+     // rejected by a future step in the admission change and the side effects therefore need to be undone.
+     // Requests with the dryRun attribute will be auto-rejected if they match a webhook with
+     // sideEffects == Unknown or Some.
+     SideEffects SideEffectClass `json:"sideEffects" protobuf:"bytes,6,opt,name=sideEffects,casttype=SideEffectClass"`
+
+     // ObjectSelector decides whether to run the webhook on an object based
+     // on whether the object.metadata.labels matches the selector. A namespace object must
+     // match both namespaceSelector (if present) and objectSelector (if present).
+     // For sub-resources, if the labels on the newObject is effective (e.g. pods/status)
+     // they will be used, otherwise the labels on the parent object will be used. If the
+     // sub-resource does not have a parent object, the call may fail or skipped based on
+     // the failure policy.
+     //
+     // See
+     // https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
+     // for more examples of label selectors.
+     //
+     // Default to the empty LabelSelector, which matches everything.
+     // +optional
+     ObjectSelector *metav1.LabelSelector `json:"objectSelector,omitempty" protobuf:"bytes,7,opt,name=objectSelector"`
+
+     // TimeoutSeconds specifies the timeout for this webhook. After the timeout passes,
+     // the webhook call will be ignored or the API call will fail based on the
+     // failure policy.
+     // The timeout value must be between 1 and 30 seconds.
+     // Default to 10 seconds.
+     // +optional
+     TimeoutSeconds *int32 `json:"timeout,omitempty" protobuf:"varint,8,opt,name=timeout"`
+
+     // AdmissionReviewVersions is an ordered list of preferred `AdmissionReview`
+     // versions the Webhook expects. API server will try to use first version in
+     // the list which it supports. If none of the versions specified in this list
+     // supported by API server, validation will fail for this object.
+     // If the webhook configuration has already been persisted, calls to the 
+     // webhook will fail and be subject to the failure policy.
+     // This field is required and cannot be empty.
+     AdmissionReviewVersions []string `json:"admissionReviewVersions" protobuf:"bytes,9,rep,name=admissionReviewVersions"`
 }
 
 // +genclient
@@ -624,7 +830,7 @@ type MutatingWebhookConfiguration struct {
      // +optional
      // +patchMergeKey=name
      // +patchStrategy=merge
-     Webhooks []Webhook `json:"webhooks,omitempty" patchStrategy:"merge" patchMergeKey:"name" protobuf:"bytes,2,rep,name=Webhooks"`
+     Webhooks []MutatingWebhook `json:"webhooks,omitempty" patchStrategy:"merge" patchMergeKey:"name" protobuf:"bytes,2,rep,name=Webhooks"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -640,8 +846,8 @@ type MutatingWebhookConfigurationList struct {
      Items []MutatingWebhookConfiguration `json:"items" protobuf:"bytes,2,rep,name=items"`
 }
 
-// Webhook describes an admission webhook and the resources and operations it applies to.
-type Webhook struct {
+// MutatingWebhook describes an admission MutatingWebhook and the resources and operations it applies to.
+type MutatingWebhook struct {
      // The name of the admission webhook.
      // Name should be fully qualified, e.g., imagepolicy.kubernetes.io, where
      // "imagepolicy" is the name of the webhook, and kubernetes.io is the name
@@ -678,6 +884,24 @@ type Webhook struct {
      // +optional
      FailurePolicy *FailurePolicyType `json:"failurePolicy,omitempty" protobuf:"bytes,4,opt,name=failurePolicy,casttype=FailurePolicyType"`
 
+     // reinvocationPolicy indicates whether this webhook should be called multiple times as part of a single admission evaluation.
+     // Allowed values are "Never" and "IfNeeded".
+     //
+     // Never: the webhook will not be called more than once in a single admission evaluation.
+     //
+     // IfNeeded: the webhook will be called at least one additional time as part of the admission evaluation
+     // if the object being admitted is modified by other admission plugins after the initial webhook call.
+     // Webhooks that specify this option *must* be idempotent, able to process objects they previously admitted.
+     // Note:
+     // * the number of additional invocations is not guaranteed to be exactly one.
+     // * if additional invocations result in further modifications to the object, webhooks are not guaranteed to be invoked again.
+     // * webhooks that use this option may be reordered to minimize the number of additional invocations.
+     // * to validate an object after all mutations are guaranteed complete, use a validating admission webhook instead.
+     //
+     // Defaults to "Never".
+     // +optional
+     ReinvocationPolicy *ReinvocationPolicyType `json:"reinvocationPolicy,omitempty"`
+    
      // NamespaceSelector decides whether to run the webhook on an object based
      // on whether the namespace for that object matches the selector. If the
      // object itself is a namespace, the matching is performed on
@@ -884,9 +1108,6 @@ Also there need to be sufficient tests for any of these new features and all exi
 
 There are still open questions that need to be addressed and updated in this KEP before graduation:
 
-* Update with design and test details for "convert to webhook-requested version"
-* Update with design and test details for "mutating plugin ordering"
-
 ## Post-GA tasks
 
 These are related Post-GA tasks:
@@ -901,4 +1122,5 @@ These are related Post-GA tasks:
 * First version of the KEP being merged: Jan 29th, 2019
 * The set of features for GA approved, initial set of features marked implementable: Feb 4th, 2019
 * Implementation start for all approved changes: Feb 4th, 2019
-* Target Kubernetes version for GA: TBD
+* Added details for auto-conversion: Apr 25th, 2019
+* Added details for mutating admission re-running: May 6th, 2019
