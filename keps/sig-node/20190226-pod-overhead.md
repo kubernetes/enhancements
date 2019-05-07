@@ -35,7 +35,10 @@ This includes the Summary and Motivation sections.
   - [API Design](#api-design)
     - [Pod overhead](#pod-overhead-1)
     - [Container Runtime Interface (CRI)](#container-runtime-interface-cri)
-  - [ResourceQuota changes](#resourcequota-changes)
+  - [Interactions with other resource features](#interactions-with-other-resource-features)
+    - [ResourceQuota](#resourcequota)
+    - [LimitRanger](#limitranger)
+    - [Quality of Service](#quality-of-service)
   - [RuntimeClass changes](#runtimeclass-changes)
   - [RuntimeClass admission controller](#runtimeclass-admission-controller)
   - [Implementation Details](#implementation-details)
@@ -188,10 +191,33 @@ ContainerResources field in the LinuxPodSandboxConfig and WindowsPodSandboxConfi
 (i.e. total of container limits). Overhead is tracked separately since the sandbox overhead won't necessarily
 guide sandbox sizing, but instead used for better management of the resulting sandbox on the host.
 
-### ResourceQuota changes
+### Interactions with other resource features
 
-Pod overhead will be counted against an entity's ResourceQuota. The controller will be updated to
+#### ResourceQuota
+
+**Decision:** Overhead (requests) _is_ accounted to the ResourceQuota. The ResourceQuota controller
 add the pod `Overhead` to the container resource request summation.
+
+**Justification:** Users running lots of small pods with a high-overhead runtime should be charged
+more than users running small pods with a low-overhead runtime.
+
+#### LimitRanger
+
+**Decision:** No change, limit ranges ignore overhead.
+
+**Justification:** LimitRanger is a policy control which can set default requests & limits or
+require requests to be a multiple of a limit. Since Overhead is set as part of the RuntimeClass
+specification, which we expect to be set up by cluster admins, it doesn't make sense to apply policy
+restrictions to the overhead.
+
+#### Quality of Service
+
+**Decision:** Overhead is ignored when computing the pod's QOSClass.
+
+**Justification:** Overhead is a property of the runtime, and should not affect whether a pod is run
+in BestEffort, Burstable or Guaranteed mode. For runtimes such as Kata-containers that may not be
+able to run in a regular best-effort, that should be enforced through a policy mechanism (such as
+limit-ranger), or the proposed runtime class "supported-features" mechanism.
 
 ### RuntimeClass changes
 
