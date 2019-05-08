@@ -430,6 +430,11 @@ backend:
 * Copy existing Ingress tests, changing the resource type to the new
   group. Keep existing tests as is.
 
+#### Test plan
+
+* Copy existing Ingress tests, changing the resource type to the new group. Keep
+  existing tests as is.
+
 ### 1.15
 
 * [ ] Update API server to persist in networking.k8s.io/v1beta1
