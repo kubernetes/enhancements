@@ -39,6 +39,7 @@ status: provisional
         * [Previous and related works](#previous-and-related-works)
         * [Buffered vs unbuffered](#buffered-vs-unbuffered)
         * [Parity with kubectl and versioned output](#parity-with-kubectl-and-versioned-output)
+        * [jq](#jq)
         * [A friendly bootstrap token struct](#a-friendly-bootstrap-token-struct)
         * [Go template functions](#go-template-functions)
         * [Kubeadm init JSON output](#kubeadm-init-json-output)
@@ -120,8 +121,9 @@ Without structured output, even the most seemingly innocuous changes could break
 
 ### User Stories
 
-The examples in the user stories are predicated on the existence of:
+The examples in the user stories are predicated on:
 
+* [Awareness of `jq`](#jq)
 * [A friendly bootstrap token struct](#a-friendly-bootstrap-token-struct)
 * [Additional functions for Go templates](#go-template-functions)
 
@@ -228,6 +230,8 @@ If a command is no longer in charge of rendering its output, how does a command 
 
 Please note that *buffered* and *unbuffered* relates to individual objects emitted by a command, not the entirety of a command's output. For example, the command `kubeadm token list` may elect to format a list of tokens as JSON after all of the tokens have been discovered, but the same command might also print each token as they are discovered. The behavior will depend on the command and its flags.
 
+For more clarificaton, please see [this example](https://play.golang.org/p/_CJLB7gdLZQ) that highlights how buffered printer output versus unbuffered printer output might behave in the context of this KEP.
+
 ##### Parity with kubectl and versioned output
 
 Parity with kubectl is defined as support for all of the output formats currently available to kubectl's `-o|--output` flag:
@@ -245,6 +249,9 @@ Parity with kubectl is defined as support for all of the output formats currentl
 The natural path to such parity would be to use the same mechanism in kubeadm as used by kubectl, the API machinery package `k8s.io/cli-runtime/pkg/printers`. However, the printers require input objects of type `runtime.Object`.
 
 Creating new or converting existing kubeadm objects to Kubernetes API-style objects has the immediate effect of introducing versioned output to kubeadm. It's the shared opinion of the authors of this KEP that versioned output should be a non-goal. This does not indicate an opinion on the value of versioned output, but rather acknowledges that such a design decision requires a much broader discussion.
+
+##### jq
+The program [`jq`](https://stedolan.github.io/jq/) is a performant, command-line solution for parsing and manipulating JSON.
 
 ##### A friendly bootstrap token struct
 
