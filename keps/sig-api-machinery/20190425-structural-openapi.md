@@ -16,7 +16,7 @@ approvers:
   - "@deads2k"
 editor: TBD
 creation-date: 2019-04-25
-last-updated: 2019-04-29
+last-updated: 2019-05-09
 status: implementable
 see-also:
   - "/keps/sig-api-machinery/20180415-crds-to-ga.md"
@@ -208,34 +208,35 @@ type Extensions struct {
 	// mutual exclusive.
 	XUnions []Union
 	
-        // x-kubernetes-preserve-unknown-fields stops the API server 
-        // decoding step from pruning fields which are not specified 
-        // in the schema. This affects fields recursively, but switches
-        // back to normal pruning behaviour if nested properties or 
-        // additionalProperties are specified in the schema.
+	// x-kubernetes-preserve-unknown-fields stops the API server
+	// decoding step from pruning fields which are not specified
+	// in the validation schema. This affects fields recursively,
+	// but switches back to normal pruning behaviour if nested
+	// properties or additionalProperties are specified in the schema.
         XPreserveUnknownFields bool
         
-        // x-kubernetes-embedded-resource defines that the value is an 
-        // embedded Kubernetes runtime.Object, with TypeMeta and 
-        // ObjectMeta. The type must be object. It is allowed to further
-        // restrict the embedded object. Both ObjectMeta and TypeMeta
-        // are validated automatically. x-kubernetes-preserve-unknown-fields
-        // must be true.
+	// x-kubernetes-embedded-resource defines that the value is an
+	// embedded Kubernetes runtime.Object, with TypeMeta and
+	// ObjectMeta. The type must be object. It is allowed to further
+	// restrict the embedded object. kind, apiVersion and metadata
+	// are validated automatically. x-kubernetes-preserve-unknown-fields
+	// is allowed to be true, but does not have to be if the object
+	// is fully specified (up to kind, apiVersion, metadata).
         XEmbeddedResource bool
         
-        // x-kubernetes-int-or-string specifies that this value is 
-        // either an integer or a string. If this is true, an empty
-        // type is allowed and type as child of anyOf is permitted
-        // if following one of the following patterns:
-        //
-        // 1) anyOf:
-        //    - type: integer
-        //    - type: string
-        // 2) allOf:
-        //    - anyOf:
-        //      - type: integer
-        //      - type: string
-        //    - <NestedValueValidation>
+	// x-kubernetes-int-or-string specifies that this value is
+	// either an integer or a string. If this is true, an empty
+	// type is allowed and type as child of anyOf is permitted
+	// if following one of the following patterns:
+	//
+	// 1) anyOf:
+	//    - type: integer
+	//    - type: string
+	// 2) allOf:
+	//    - anyOf:
+	//      - type: integer
+	//      - type: string
+	//    - ... zero or more
         XIntOrString bool
 }
 
@@ -314,7 +315,7 @@ We add the following additional validations for CRDs based on the representation
  
 1. **structurality:** both `ForbiddenGenerics` and `ForbiddenExtensions` only have zero values, with the two exceptions of (4).
 2. **completeness:** the schema is _structurally complete_
-3. **RawExtension:** for every schema with `x-kubernetes-embedded-resource: true`, `x-kubernetes-preserve-unknown-fields: true` and `type: object` are set
+3. **RawExtension:** for every schema with `x-kubernetes-embedded-resource: true`, `type: object` is set, and either properties are specified or `x-kubernetes-preserve-unknown-fields: true` is set.
 4. **IntOrString:** for `x-kubernetes-int-or-string: true` either `type` is empty under `anyOf` and `allOf` or the schema structure is either
  
    ```yaml
