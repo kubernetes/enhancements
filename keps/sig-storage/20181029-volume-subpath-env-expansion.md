@@ -283,10 +283,16 @@ Beta->GA should occur in 1.17 after a period of Beta implmentation and not uncov
 * Beta PR and Discussion: https://github.com/kubernetes/kubernetes/pull/65769
 
 Alpha 1.14 milestones achieved:
-* Alpha implmentation: https://github.com/kubernetes/kubernetes/pull/71351
+* Alpha implementation: https://github.com/kubernetes/kubernetes/pull/71351
 * Documentation: https://github.com/kubernetes/website/pull/11843
 * Alpha test grid: https://k8s-testgrid.appspot.com/sig-storage-kubernetes#gce-alpha-features
 * Alpha node test grid: https://k8s-testgrid.appspot.com/sig-node-kubelet#node-kubelet-alpha
+
+Beta 1.15 milestones achieved:
+* Beta implementation: https://github.com/kubernetes/kubernetes/pull/76546
+* Documentation: https://github.com/kubernetes/website/pull/13846
+* sig-storage test grid: https://testgrid.k8s.io/sig-storage-kubernetes#gce-slow
+* Node kubelet feature test grid: https://testgrid.k8s.io/sig-node-kubelet#node-kubelet-features
 
 ## Alternatives - Using subPathFrom
 A possible further implementation could derive directly from the `fieldRef` as
