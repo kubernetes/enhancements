@@ -299,7 +299,7 @@ Here, an admission webhook request for a node proxy connect operation will send
 have no common options, `AdmissionRequest.Options` will be absent.
 
 This is consistent with how kubernetes operations send the type specified by the
-OpenAPI `x-kubernetes-group-version-kind` peroperty as the
+OpenAPI `x-kubernetes-group-version-kind` property as the
 `AdmissionRequest.Object` to admission webhooks.
 
 ### AdmissionReview v1
