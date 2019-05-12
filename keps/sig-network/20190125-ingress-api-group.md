@@ -438,7 +438,7 @@ backend:
 ### 1.15
 
 * [x] Update API server to persist in networking.k8s.io/v1beta1 kubernetes/kubernetes#77139
-* [ ] Update in-tree controllers, examples, and clients to target kubernetes/kubernetes#77617
+* [x] Update in-tree controllers, examples, and clients to target kubernetes/kubernetes#77617
   `networking.k8s.io/v1beta1`
 * [ ] Update Ingress controllers in the kubernetes org to target
   `networking.k8s.io/v1beta1`
