@@ -56,7 +56,7 @@ superseded-by:
 
 ## Summary
 
-This KEP proposes a Kubernetes Stateful Application Data Management API consisting of a set of [CustomResourceDefinitions (CRD)](https://kubernetes.io/docs/concepts/extend-kubernetes/api-extension/custom-resources/) that collectively define the notion of stateful applications, i.e., applications that maintain persistent state, and a set of data management semantics on stateful applications such as snapshot, backup, restoration, and clone. A snapshot of a stateful application is defined as a point-in-time capture of the state of the application, taken in an application-consistent manner. It captures both the application configurations (definitions of Kubernetes resources that make up the application, e.g., StatefulSets, Services, ConfigMaps, Secrets, etc.) and persistent data contained within the application (via persistent volumes). A snasphot can also include optional tags in the form of key-value pairs for extra information about itself.
+This KEP proposes a Kubernetes Stateful Application Data Management API consisting of a set of [CustomResourceDefinitions (CRD)](https://kubernetes.io/docs/concepts/extend-kubernetes/api-extension/custom-resources/) that collectively define the notion of stateful applications, i.e., applications that maintain persistent state, and a set of data management semantics on stateful applications such as snapshot, backup, restoration, and clone. A snapshot of a stateful application is defined as a point-in-time capture of the state of the application, taken in an application-consistent manner. It captures both the application configurations (definitions of Kubernetes resources that make up the application, e.g., StatefulSets, Services, ConfigMaps, Secrets, etc.) and persistent data contained within the application (via persistent volumes). A snapshot can also include optional tags in the form of key-value pairs for extra information about itself.
 
 ## Motivation
 
@@ -66,7 +66,7 @@ Specifically, an application snapshot contains both a copy of the definitions of
 
 With the [VolumeSnapshot](https://kubernetes.io/docs/concepts/storage/volume-snapshots/) API and [ExecutionHook](https://github.com/kubernetes/enhancements/blob/master/keps/sig-storage/20190120-execution-hook-design.md) API, we have some of the necessary building blocks to perform application-level snapshot and restoration operations. However, application-level data management operations require higher-level workflows and automation. For example, taking an application snapshot is a multi-step workflow that does more than orchestrating volume snapshots and hook executions. As of today, there's no API in Kubernetes for application data management truly at the application-level.
 
-This proposal tries to close the gap by introducing a new Kubernetes API for supporting snapshot, backup, restoration, and clone semantics at the application-level in an application-consistent manner. This new API exposes application-level data management semantics through Kubernetes custom resources and provides a way to orchestrate volume-level snapshot operations and hook executions by automatically managing the lifecycle of `VolumeSnapshot` and `ExevcutionHook` API objects as part of some higher-level workflows. By modeling application snapshots and backups as declarative custom resources, they can be used as data sources for application restoration and cloning. Similarly, connections between snapshots and backups can be expressed to support operations such as exporting snapshots as backups and importing of backups into snapshots.
+This proposal tries to close the gap by introducing a new Kubernetes API for supporting snapshot, backup, restoration, and clone semantics at the application-level in an application-consistent manner. This new API exposes application-level data management semantics through Kubernetes custom resources and provides a way to orchestrate volume-level snapshot operations and hook executions by automatically managing the lifecycle of `VolumeSnapshot` and `ExecutionHook` API objects as part of some higher-level workflows. By modeling application snapshots and backups as declarative custom resources, they can be used as data sources for application restoration and cloning. Similarly, connections between snapshots and backups can be expressed to support operations such as exporting snapshots as backups and importing of backups into snapshots.
 
 ### Goals
 
@@ -131,36 +131,36 @@ The detailed definition of `StatefulApplication` is as follows.
 
 ```go
 type StatefulApplicationSpec struct {
-  // ApplicationClassName is the name of the StatefulApplicationClass to use creating the application,
+	// ApplicationClassName is the name of the StatefulApplicationClass to use creating the application,
 	// e.g., restoring the application from a data source. If this is not specified, the default one of
 	// the cluster is used.
 	// +optional
-  ApplicationClassName *string `json:"applicationClassName,omitempty"`
+	ApplicationClassName *string `json:"applicationClassName,omitempty"`
+	
+	// ApplicationName is the name of the Application (https://github.com/kubernetes-sigs/application)
+	// object, which represents an application and gives the list of Kubernetes resources that make up the
+	// application in its status. When doing an application restoration, this is the name of the Application
+	// resource to be created if set. The name of this StatefulApplication resource will be used if this is
+	// not set. It’s assumed that the Application resource is in the same namespace of it exists.
+	// +optional
+	ApplicationName *string `json:"applicationName,omitempty"`
   
-  // ApplicationName is the name of the Application (https://github.com/kubernetes-sigs/application)
-  // object, which represents an application and gives the list of Kubernetes resources that make up the
-  // application in its status. When doing an application restoration, this is the name of the Application
-  // resource to be created if set. The name of this StatefulApplication resource will be used if this is
-  // not set. It’s assumed that the Application resource is in the same namespace of it exists.
-  // +optional
-  ApplicationName *string `json:"applicationName,omitempty"`
-  
-  // Source specifies an optional data source from which the application and its data state is restored.
-  // +optional
-  Source *DataSource `json:"source,omitempty"`
+	// Source specifies an optional data source from which the application and its data state is restored.
+	// +optional
+	Source *DataSource `json:"source,omitempty"`
 
-  // ValueSubstitutionRules is a set of rules for value substitution when the application is restored
+	// ValueSubstitutionRules is a set of rules for value substitution when the application is restored
 	// from a data source.
 	// +optional
 	ValueSubstitutionRules []ValueSubstitutionRule `json:"valueSubstitutionRules,omitempty"`
 }
 
 type StatefulApplicationStatus struct {
-  // Conditions show the current condition of this application.
-  Conditions []ApplicationCondition `json:"conditions,omitempty"`
-  
-  // Source is a reference to the source from which the application was most recently restored or rolled back from.
-  Source *corev1.TypedLocalObjectReference `json:"source,omitempty"`
+	// Conditions show the current condition of this application.
+	Conditions []Condition `json:"conditions,omitempty"`
+
+	// Source is a reference to the source from which the application was most recently restored or rolled back from.
+	Source *corev1.TypedLocalObjectReference `json:"source,omitempty"`
 }
 
 // ValueSubstitutionRuleType is the type of ValueSubstitutionRules.
@@ -174,7 +174,7 @@ const (
 	ValueSubstitutionRuleTypeEnvVar     ValueSubstitutionRuleType = "EnvVar"
 )
 
-// ValueSubstitutionRule defines a rule for value sibstitution.
+// ValueSubstitutionRule defines a rule for value substitution.
 type ValueSubstitutionRule struct {
 	// Type is the type of this ValueSubstitutionRule.
 	Type ValueSubstitutionRuleType `json:"type"`
@@ -203,40 +203,35 @@ type DataSourceType string
 
 // Set of valid values of DataSourceType.
 const (
-  DataSourceSnapshot DataSourceType = "Snapshot"
-  DataSourceBackup   DataSourceType = "Backup"
+	// Restoring an application from a local snapshot.
+	DataSourceSnapshot DataSourceType = "Snapshot"
+	// Restoring an application from a remote backup.
+	DataSourceBackup DataSourceType = "Backup"
 )
 
 // DataSource defines a source from which a StatefulApplication and its data state can be restored.
 type DataSource struct {
-  // Type specifies the type of the data source.
-  Type DataSourceType `json:"type"`
+	// Type specifies the type of the data source.
+	Type DataSourceType `json:"type"`
   
-  // SnapshotRef specifies a reference to an ApplicationSnapshot as the data source for cases of
-  // restoring an application from a snapshot. This is required when Type is "Snapshot".
-  // +optional
-  SnapshotRef *corev1.ObjectReference `json:"snapshotRef,omitempty"`
+	// SnapshotRef specifies a reference to an ApplicationSnapshot as the data source for cases of
+	// restoring an application from a snapshot. This is required when Type is "Snapshot".
+	// +optional
+	SnapshotRef *corev1.ObjectReference `json:"snapshotRef,omitempty"`
   
-  // BackupRef specifies a reference to an ApplicationBackup as the data source for cases of
-  // restoring an application from a backup. This is required when Type is "Backup".
-  // +optional
-  BackupRef *corev1.ObjectReference `json:"backupRef,omitempty"`
+	// BackupRef specifies a reference to an ApplicationBackup as the data source for cases of
+	// restoring an application from a backup. This is required when Type is "Backup".
+	// +optional
+	BackupRef *corev1.ObjectReference `json:"backupRef,omitempty"`
 }
 
-// ConditionStatus is the status of a condition.
-type ConditionStatus string
+type ConditionType string
 
-// Set of valid values of ConditionStatus.
-const (
-  ConditionTrue    ConditionStatus = "True"
-  ConditionFalse   ConditionStatus = "False"
-  ConditionUnknown ConditionStatus = "Unknown"
-)
-
-// ApplicationCondition defines a condition of a StatefulApplication.
-type ApplicationCondition struct {
+// Condition defines a condition of a StatefulApplication or an operation on the StatefulApplication
+// , e.g., an ApplicationSnapshot or an ApplicationRollback.
+type Condition struct {
 	// Type is the type of the condition.
-	Type string `json:"type,omitempty"`
+	Type ConditionType `json:"type,omitempty"`
 
 	// Message is a human readable message indicating details about the condition’s last transition.
 	Message string `json:"message,omitempty"`
@@ -275,7 +270,7 @@ type StatefulApplicationClass struct {
 	// StatefulApplication of this class is to be provisioned.
 	Handler string `json:"handler"`
 
-	// Parameters are opaque parameters to the snapsohtter.
+	// Parameters are opaque parameters to the snapshotter.
 	// +optional
 	Parameters map[string]string `json:"parameters,omitempty"`
 
@@ -320,25 +315,22 @@ type ApplicationSnapshotSpec struct {
 	// +optional
 	SnapshotContentName *string `json:"snapshotContentName,omitempty"`
 
-  // VolumeSnapshotTimeoutSeconds is the timeout in seconds for VolumeSnapshots.
+	// VolumeSnapshotTimeoutSeconds is the timeout in seconds for VolumeSnapshots.
 	// If not all VolumeSnapshots become ready before the timeout happens, the snapshot process proceeds with
 	// execution of post-hooks (if any) to unfreeze the application. The Phase is set to Failed in this case.
-  VolumeSnapshotTimeoutSeconds *int64 `json:"volumeSnapshotTimeoutSeconds,omitempty"`
+	VolumeSnapshotTimeoutSeconds *int64 `json:"volumeSnapshotTimeoutSeconds,omitempty"`
   
-  // Time to live (TTL) of this resource after the snapshotting completed or failed. The ApplicationSnapshot 
-  // resource will be deleted after the given duration, if this is set.
+	// Time to live (TTL) of this resource after the snapshotting completed or failed. The ApplicationSnapshot 
+	// resource will be deleted after the given duration, if this is set.
 	// +optional
 	TTL *metav1.Duration `json:"ttl,omitempty"`
 }
 
 type ApplicationSnapshotStatus struct {
-	// Phease is the current phase of the snapshot process.
-	Phase SnapshotPhase `json:"phase,omitempty"`
+	// Conditions lists the current conditions of the snapshot.
+	Conditions []Condition `json:"conditions,omitempty"`
 
-	// LastTransitionTime is the last time the phase transitioned from one to another.
-	LastTransitionTime *metav1.Time `json:"lastTransitionTime,omitempty"`
-
-	// Error gives detailed information about the error that caused the failure if the snasphot process failed.
+	// Error gives detailed information about the error that caused the failure if the snapshot process failed.
 	Error *SnapshotError `json:"error,omitempty"`
 }
 
@@ -347,13 +339,17 @@ type SnapshotSourceType string
 
 // Set of valid values of SnapshotSourceType.
 const (
+	// Taking a local snapshot of an application.
 	SnapshotSourceApplication SnapshotSourceType = "Application"
-	SnapshotSourceBackup      SnapshotSourceType = "Backup"
+	// Importing a backup into a local snapshot.
+	SnapshotSourceBackup SnapshotSourceType = "Backup"
 )
 
 // SnapshotSource specifies the source where the snapshot is created from.
 type SnapshotSource struct {
 	// Type specifies the type of the snapshot source.
+	// When this is empty, it can represent an intention to bind the ApplicationSnapshot to an existing 
+	// ApplicationSnapshotContent object.
 	Type SnapshotSourceType `json:"type"`
 
 	// ApplicationName specifies the name of a StatefulApplication as the source of the snapshot for cases of taking
@@ -367,16 +363,20 @@ type SnapshotSource struct {
 	BackupName *string `json:"backupName,omitempty"`
 }
 
-// SnapshotPhase represents the current phase of the snapshot process.
-type SnapshotPhase string
-
-// Set of phases the snapshot process can have.
 const (
-	SnapshotPhaseNew              SnapshotPhase = "New"
-	SnapshotPhaseInProgress       SnapshotPhase = "InProgress"
-	SnapshotPhaseBound            SnapshotPhase = "Bound"
-	SnapshotPhaseFailed           SnapshotPhase = "Failed"
-	SnapshotPhaseFailedValidation SnapshotPhase = "FailedValidation"
+	// A condition indicating that application metadata has been successfully snapshotted.
+	MetadataSnapshotCompleted ConditionType = "MetadataSnapshotCompleted"
+	// A condition indicating that execution of pre-hooks (if any) has completed.
+	PreHookExecutionCompleted ConditionType = "PreHookExecutionCompleted"
+	// A condition indicating that all VolumeSnapshots (if any) have become ready.
+	VolumeSnapshotCompleted ConditionType = "VolumeSnapshotCompleted"
+	// A condition indicating that execution of post-hooks (if any) has completed.
+	PostHookExecutionCompleted ConditionType = "PostHookExecutionCompleted"
+	// A condition indicating that the snapshot failed to be taken.
+	// Details about the error that caused the failure is recorded in Error.
+	SnapshotFailed ConditionType = "SnapshotFailed"
+	// A condition indicating that the snapshot has been successfully taken and is ready to use.
+	SnapshotReady ConditionType = "SnapshotReady"
 )
 
 // SnapshotError gives detailed information about an error of a snapshot operation.
@@ -420,17 +420,18 @@ type ApplicationSnapshotClass struct {
 	// +optional
 	Parameters map[string]string `json:"parameters,omitempty"`
 
-  // PreHooks are an optional list of hooks to run to do application quiescing/flushing before
-	// taking an application snapshot. The hooks may return application-specific tags in JSON
-	// formatted key-value pairs, e.g., {“tag1”: “value1”, “tag2”: “value2”}. Each hook in the
-	// list is for a specific container of the application, and one container can have no more
-	// than one pre-hook.
+	// PreHooks are an optional list of hooks to run to do application quiescing/flushing before
+	// taking an application snapshot. Each hook in the list is for a specific container of the 
+	// application, and one container can have no more than one pre-hook. At runtime, an 
+	// ExecutionHook object will be created for each pre-hook based on information in the HookSpec.
+	// The ExecutionHook resource type is proposed in https://github.com/kubernetes/enhancements/blob/master/keps/sig-storage/20190120-execution-hook-design.md#implementation-history.
 	// +optional
 	PreHooks []HookSpec `json:"preHooks,omitempty"`
 
 	// PostHooks are an optional list of hooks  to run to do application unquiescing after taking
 	// an application snapshot. Each hook in the list is for a specific container of the application,
-	// and one container of the application can have no more than one post-hook.
+	// and one container of the application can have no more than one post-hook. At runtime, an 
+	// ExecutionHook object will be created for each post-hook based on information in the HookSpec.
 	// +optional
 	PostHooks []HookSpec `json:"postHooks,omitempty"`
 
@@ -445,7 +446,8 @@ type ApplicationSnapshotClass struct {
 
 // HookSpec defines a hook for quiescing or unquiescing an application.
 type HookSpec struct {
-	// Name is the name of the hook.
+	// Name is the name of the hook. This name will be used to construct the name of the ExecutionHook 
+	// object for this hook.
 	Name string `json:"name"`
 
 	// PodFilter is an optional label selector for filtering the pods to execute the hook in.
@@ -456,9 +458,9 @@ type HookSpec struct {
 	// container is selected.
 	// +optional
 	Container *string `json:"container,omitempty"`
-
-  // ActionName specifies the name of the HookAction that defines the action to take for this hook. 
-  // The HookAction resource type is proposed in https://github.com/kubernetes/enhancements/blob/master/keps/sig-storage/20190120-execution-hook-design.md#implementation-history.
+	
+	// ActionName specifies the name of the HookAction that defines the action to take for this hook. 
+	// The HookAction resource type is proposed in https://github.com/kubernetes/enhancements/blob/master/keps/sig-storage/20190120-execution-hook-design.md#implementation-history.
 	ActionName string `json:"actionName,omitempty"`
 }
 
@@ -511,8 +513,6 @@ type ApplicationSnapshotContentSpec struct {
 	DeletionPolicy *DeletionPolicy `json:"deletionPolicy,omitempty"`
 }
 
-type ApplicationSnapshotContentStatus struct {}
-
 // MetadataHandleType is the type of the application metadata handle.
 type MetadataHandleType string
 
@@ -542,7 +542,6 @@ type ApplicationSnapshotContent struct {
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
 	Spec   ApplicationSnapshotContentSpec   `json:"spec,omitempty"`
-	Status ApplicationSnapshotContentStatus `json:"status,omitempty"`
 }
 ```
 
@@ -553,8 +552,8 @@ To support application rollback, we propose a namespace-scoped CRD named `Applic
 ```go
 // ApplicationRollbackSpec defines the desired state of ApplicationRollback
 type ApplicationRollbackSpec struct {
-  // SnapshotClassName is the name of the ApplicationSnapshotClass object to use for snapshot-related operations.
-  SnapshotClassName string `json:"snapshotClassName"`
+	// SnapshotClassName is the name of the ApplicationSnapshotClass object to use for snapshot-related operations.
+	SnapshotClassName string `json:"snapshotClassName"`
   
 	// ApplicationName is the name of the StatefulApplication object that represents the application to rollback.
 	ApplicationName string `json:"applicationName"`
@@ -566,31 +565,12 @@ type ApplicationRollbackSpec struct {
 
 // ApplicationRollbackStatus defines the observed state of ApplicationRollback
 type ApplicationRollbackStatus struct {
-	// Phease is the current phase of the rollback process.
-	Phase RollbackPhase `json:"phase,omitempty"`
-
-	// LastTransitionTime is the last time the phase transitioned from one to another.
-	LastTransitionTime *metav1.Time `json:"lastTransitionTime,omitempty"`
-
-	// VolumeGroupRollbackName is the name of the VolumeGroupRollback resource created to perform volume
-	// group rollback when the rollback source is an ApplicationSnapshot.
-	VolumeGroupRollbackName *string `json:"volumeGroupRollbackName,omitempty"`
+	// Conditions lists the current conditions of the rollback.
+	Conditions []Condition `json:"conditions,omitempty"`
 
 	// Error gives detailed information about the error that caused the failure if the rollback process failed.
 	Error *RollbackError `json:"error,omitempty"`
 }
-
-// RollbackPhase represents the current phase of the rollback process.
-type RollbackPhase string
-
-// Set of phases the rollback process can have.
-const (
-	RollbackPhaseNew              RollbackPhase = "New"
-	RollbackPhaseInProgress       RollbackPhase = "InProgress"
-	RollbackPhaseCompleted        RollbackPhase = "Completed"
-	RollbackPhaseFailed           RollbackPhase = "Failed"
-	RollbackPhaseFailedValidation RollbackPhase = "FailedValidation"
-)
 
 // RollbackError gives detailed information about an error of a rollback operation.
 type RollbackError SnapshotError
@@ -683,7 +663,7 @@ spec:
       command:
       - "mongo"
       - "--eval"
-      - '"printjson(db.fsyncUnlock())"'      
+      - '"printjson(db.fsyncUnlock())"'
 ```
 
 To take a snapshot of a `StatefulApplication`, a user creates an `ApplicationSnapshot` resource that references the `StatefulApplication` object above in the `source` field, and expects the creation of both a set of `VolumeSnapshot` objects and an `ApplicationSnapshotContent` resource.
@@ -735,6 +715,26 @@ spec:
 Note that the definition above specifies two `ValueSubstitutionRules` that replaces `mongo` in names and values of label `app.kubernetes.io/name` in the application's Kubernetes resources with `mongo-clone`. Note that all appearances of label `app.kubernetes.io/name` are considered, including those in label selectors of certain resources, e.g., StatefulSets and Services.
 
 An application may be restored or cloned into a namespace that is different than the one it used to run and in which the snapshot or backup used for restoration or clone was taken. This requires support for cross-namespace transfer of `VolumeSnapshot`s, which is proposed in this [KEP](https://github.com/kubernetes/enhancements/pull/643).
+
+#### Binding an ApplicationSnapshot to an Existing ApplicationSnapshotContent
+
+To bind an `ApplicationSnapshot` object to an existing `ApplicationSnapshotContent` object that is currently not bound (`snapshotRef` not set), a user specifies the name of the `ApplicationSnapshotContent` in the `ApplicationSnapshot` object and leaves the `source` field empty, as the following example demonstrates.
+
+```yaml  
+apiVersion: apps.k8s.io/v1alpha1
+kind: ApplicationSnapshot
+metadata:
+  name: mongo-snapshot
+  namespace: default
+spec:
+  snapshotClassName: mongo-class
+  snapshotContentName: mongo-snapshot-content
+  tags:
+    "mongo-version": "4.0"
+  source: {}
+```
+
+Note that the binding will fail if the `ApplicationSnapshotClass` referenced in the `ApplicationSnapshot` is different from the one referenced in the `ApplicationSnapshotContent`.
 
 #### Rolling Back an Application to a Snapshot
 
