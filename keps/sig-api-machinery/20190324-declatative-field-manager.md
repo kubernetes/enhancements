@@ -97,11 +97,32 @@ All actors now can coexist and manage their set of fields without interfering wi
 ### Risks and Mitigations
 
 One risk might be, that introducing this change would mean there is a field that does not get persisted to storage.
-As a result, setting it results in different behavior on the apiserver, but does not reflect when reding the object back from the apiserver.
+As a result, setting it causes different behavior on the apiserver, but is not reflected when reading the object back from the apiserver.
 
 This can seem unintuitive and we need to make sure documentation is right on this.
 
 ## Design Details
+
+### Proposed API Change
+
+```go
+type ObjectMeta struct {
+...
+  // ManagedFields maps workflow-id and version to the set of fields
+  // that are managed by that workflow. This is mostly for internal
+  // housekeeping, and users typically shouldn't need to set or
+  // understand this field. A workflow can be the user's name, a
+  // controller's name, or the name of a specific apply path like
+  // "ci-cd". The set of fields is always in the version that the
+  // workflow used when modifying the object.
+  //
+  // This field is alpha and can be changed or removed without notice.
+  //
+  // +optional
+  ManagedFields []ManagedFieldsEntry `json:"managedFields,omitempty" protobuf:"bytes,17,rep,name=managedFields"`
+...
+}
+```
 
 ### Test Plan
 
