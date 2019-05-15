@@ -11,7 +11,7 @@ approvers:
   - "@bsalamat"
   - "@k82cn"
 creation-date: 2019-02-21
-last-updated: 2019-04-29
+last-updated: 2019-05-14
 status: implementable
 ---
 
@@ -19,6 +19,7 @@ status: implementable
 
 ## Table of Contents
 
+* [Release Signoff Checklist](#release-signoff-checklist)
 * [Terms](#terms)
 * [Summary](#summary)
 * [Motivation](#motivation)
@@ -41,6 +42,17 @@ status: implementable
 * [Alternatives](#alternatives)
 * [Impact to Other Features](#impact-to-other-features)
 * [Implementation History](#implementation-history)
+
+## Release Signoff Checklist
+
+- [x] kubernetes/enhancements issue in release milestone, which links to KEP (this should be a link to the KEP location in kubernetes/enhancements, not the initial KEP PR)
+- [x] KEP approvers have set the KEP status to `implementable`
+- [x] Design details are appropriately documented
+- [x] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [x] Graduation criteria is in place
+- [x] "Implementation History" section is up-to-date for milestone
+- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 ## Terms
 
@@ -492,3 +504,4 @@ extra benefit of this KEP.
 
 - 2019-02-21: Initial KEP sent out for review.
 - 2019-04-16: Initial KEP approved.
+- 2019-05-01: First [KEP implementation PR](https://github.com/kubernetes/kubernetes/pull/77327) sent out for review.
