@@ -1,5 +1,6 @@
 ---
 title: Kubernetes Control-Plane Metrics Stability
+number: 42
 authors:
   - "@logicalhan"
 owning-sig:
