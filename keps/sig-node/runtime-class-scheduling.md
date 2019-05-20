@@ -138,12 +138,13 @@ The RuntimeClass definition is augmented with an optional `Scheduling` struct:
 
 ```go
 type Scheduling struct {
-    // nodeSelector selects the set of nodes that support this RuntimeClass.
-    // Pods using this RuntimeClass can only be scheduled to a node matched by
-    // this selector. The nodeSelector is intersected (AND) with a pod's other
-    // node affinity or node selector requirements.
+    // nodeSelector lists labels that must be present on nodes that support this
+    // RuntimeClass. Pods using this RuntimeClass can only be scheduled to a
+    // node matched by this selector. The RuntimeClass nodeSelector is merged
+    // with a pod's existing nodeSelector. Any conflicts will cause the pod to
+    // be rejected in admission.
     // +optional
-    NodeSelector corev1.NodeSelector
+    NodeSelector map[string]string
 
     // tolerations adds tolerations to pods running with this RuntimeClass.
     // +optional
@@ -162,8 +163,9 @@ a NodeSelectorTerm.
 Since the RuntimeClass scheduling rules represent hard requirements (the node
 supports the RuntimeClass or it doesn't), the scheduling API should not include
 preferences, ruling out NodeAffinity. The NodeSelector type is much more
-expressive than the `map[string]string` selector, so the RuntimeClass scheduling
-rules embrace that more powerful API.
+expressive than the `map[string]string` selector, but the top-level union logic
+makes merging NodeSelectors messy (requires a cross-product). For simplicity,
+we went with the simple requirements.
 
 [NodeAffinity]: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#affinity-and-anti-affinity
 
@@ -186,33 +188,18 @@ inculde:
   RuntimeClasses would need a toleration to enable them to be run on those
   nodes.
 
-### Scheduler
-
-A new scheduler predicate will manage the RuntimeClass scheduling. It will
-lookup the RuntimeClass associated with the pod being scheduled. If there is no
-RuntimeClass, or the RuntimeClass does not include a scheduling struct, then the
-predicate will permit the pod to be scheduled to the evaluated node. Otherwise,
-it will check whether the NodeSelector matches the node.
-
-Adding a dedicated RuntimeClass predicate rather than mixing the rules in to the
-NodeAffinity evaluation means that in the event a pod is unschedulable there
-will be a clear explanation of why. For example:
-
-```
-0/10 Nodes are available: 5 nodes do not have enough memory, 5 nodes don't match RuntimeClass
-```
-
-If the pod's referenced RuntimeClass does not exist at scheduling time, the
-RuntimeClass predicate will fail. The scheduler will periodically retry, and
-once the RuntimeClass is (re)created, the pod will be scheduled.
-
 ### RuntimeClass Admission Controller
 
 The RuntimeClass admission controller is a new default-enabled in-tree admission
-plugin. The role of the controller for scheduling is to merge the Tolerations
-from the RuntimeClass into the PodSpec. Eventually, the controller's
+plugin. The role of the controller for scheduling is to merge the scheduling
+rules from the RuntimeClass into the PodSpec. Eventually, the controller's
 responsibilities may grow, such as to merge in [pod overhead][] or validate
 feature compatibility.
+
+Merging the RuntimeClass NodeSelector into the PodSpec NodeSelector is handled
+by adding the key-value pairs from the RuntimeClass version to the PodSpec
+version. If both have the same key with a different value, then the admission
+controller will reject the pod.
 
 Merging tolerations is straight forward, as we want to _union_ the RuntimeClass
 tolerations with the existing tolerations, which matches the default toleration
@@ -220,18 +207,6 @@ composition logic. This means that RuntimeClass tolerations can simply be
 appended to the existing tolerations, but an [existing
 utilty][merge-tolerations] can reduce duplicates by merging equivalent
 tolerations.
-
-Merging tolerations during admission rather than scheduling has several
-advantages:
-
-1. Unlike the NodeSelector, Tolerations are also checked when managing
-   [TaintBasedEvictions]. As a RuntimeClass could be deleted after a pod has
-   already been created, the tolerations should be mixed into the PodSpec to
-   ensure that they stay attached to the running pod.
-2. Merging tolerations in admission enables other admission controllers (such as
-   a [scheduling policy][SchedulingPolicy] controller) to perform validation
-   based on those tolerations. This matters less for the NodeSelector, as that
-   is narrowing the scheduling domain rather than expanding it.
 
 If the pod's referenced RuntimeClass does not exist, the admission controller
 will reject the pod. This is necessary to ensure the pod is run with the
@@ -277,6 +252,26 @@ the alpha phase. This means the feature is expected to be beta quality at launch
   published.
 
 ## Alternatives
+
+### Scheduler
+
+A new scheduler predicate could manage the RuntimeClass scheduling. It would
+lookup the RuntimeClass associated with the pod being scheduled. If there is no
+RuntimeClass, or the RuntimeClass does not include a scheduling struct, then the
+predicate would permit the pod to be scheduled to the evaluated node. Otherwise,
+it would check whether the NodeSelector matches the node.
+
+Adding a dedicated RuntimeClass predicate rather than mixing the rules in to the
+NodeAffinity evaluation means that in the event a pod is unschedulable there
+would be a clear explanation of why. For example:
+
+```
+0/10 Nodes are available: 5 nodes do not have enough memory, 5 nodes don't match RuntimeClass
+```
+
+If the pod's referenced RuntimeClass does not exist at scheduling time, the
+RuntimeClass predicate would fail. The scheduler would periodically retry, and
+once the RuntimeClass is (re)created, the pod would be scheduled.
 
 ### RuntimeController Mix-in
 
