@@ -90,11 +90,11 @@ date.
 
 ## Proposal
 
-A new optional `Topology` structure will be added to the RuntimeClass API. The
-topology includes both a `NodeSelector` and `Tolerations` that control how a pod
-using that RuntimeClass is scheduled. The NodeSelector rules are applied during
-scheduling, but the Tolerations are added to the PodSpec during admission by the
-new RuntimeClass admission controller.
+A new optional `Scheduling` structure will be added to the RuntimeClass API. The
+scheduling struct includes both a `NodeSelector` and `Tolerations` that control
+how a pod using that RuntimeClass is scheduled. The NodeSelector rules are
+applied during scheduling, but the Tolerations are added to the PodSpec during
+admission by the new RuntimeClass admission controller.
 
 ### User Stories
 
@@ -134,10 +134,10 @@ requirements about which trusted services are run on that node.
 
 ### API
 
-The RuntimeClass definition is augmented with an optional `Topology` struct:
+The RuntimeClass definition is augmented with an optional `Scheduling` struct:
 
 ```go
-type Topology struct {
+type Scheduling struct {
     // nodeSelector selects the set of nodes that support this RuntimeClass.
     // Pods using this RuntimeClass can only be scheduled to a node matched by
     // this selector. The nodeSelector is intersected (AND) with a pod's other
@@ -159,11 +159,11 @@ expressive set of requirements and preferences. NodeSelectorRequirements are a
 small subset of the NodeAffinity rules, that place intersecting requirements on
 a NodeSelectorTerm.
 
-Since the RuntimeClass topology represents hard requirements (the node supports
-the RuntimeClass or it doesn't), the topology API should not include scheduling
+Since the RuntimeClass scheduling rules represent hard requirements (the node
+supports the RuntimeClass or it doesn't), the scheduling API should not include
 preferences, ruling out NodeAffinity. The NodeSelector type is much more
-expressive than the `map[string]string` selector, so the RuntimeClass topology
-embraces that more powerful API.
+expressive than the `map[string]string` selector, so the RuntimeClass scheduling
+rules embrace that more powerful API.
 
 [NodeAffinity]: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#affinity-and-anti-affinity
 
@@ -175,7 +175,7 @@ from nodes. If every pod had a RuntimeClass and every RuntimeClass had a strict
 NodeSelector, then RuntimeClasses could use non-overlapping selectors in place
 of taints & tolerations. However the same could be said of regular pod
 selectors, yet taints & tolerations are still a useful addition. Examples of
-[use cases](#user-stories) for including tolerations in RuntimeClass topology
+[use cases](#user-stories) for including tolerations in RuntimeClass scheduling
 inculde:
 
 - Tainting Windows nodes with `windows.microsoft.com` to keep default linux pods
@@ -188,9 +188,9 @@ inculde:
 
 ### Scheduler
 
-A new scheduler predicate will manage the RuntimeClass topology. It will lookup
-the RuntimeClass associated with the pod being scheduled. If there is no
-RuntimeClass, or the RuntimeClass does not include a topology, then the
+A new scheduler predicate will manage the RuntimeClass scheduling. It will
+lookup the RuntimeClass associated with the pod being scheduled. If there is no
+RuntimeClass, or the RuntimeClass does not include a scheduling struct, then the
 predicate will permit the pod to be scheduled to the evaluated node. Otherwise,
 it will check whether the NodeSelector matches the node.
 
@@ -247,13 +247,13 @@ to label nodes is very environment dependent. Here are several examples:
 
 - If runtimes are setup as part of node setup, then the node template should
   include the appropriate labels & taints.
-- If runtimes are installed through a DaemonSet, then the topology should match
+- If runtimes are installed through a DaemonSet, then the scheduling should match
   that of the DaemonSet.
 - If runtimes are manually installed, or installed through some external
   process, that same process should apply an appropriate label to the node.
 
-If the RuntimeClass topology has security implications, special care should be
-taken when choosing labels. In particular, labels with the
+If the RuntimeClass scheduling rules have security implications, special care
+should be taken when choosing labels. In particular, labels with the
 `[*.]node-restriction.kubernetes.io/` prefix cannot be added with the node's
 identity, and labels with the `[*.]k8s.io/` or `[*.]kubernetes.io/` prefixes
 cannot be modified by the node. For more details, see [Bounding Self-Labeling
@@ -280,7 +280,7 @@ the alpha phase. This means the feature is expected to be beta quality at launch
 
 ### RuntimeController Mix-in
 
-Rather than resolving the topology in the scheduler, the `NodeSelectorTerm`
+Rather than resolving scheduling in the scheduler, the `NodeSelectorTerm`
 rules and `Tolerations` are mixed in to the PodSpec. The mix-in happens in the
 mutating admission phase, and is performed by a new `RuntimeController` built-in
 admission plugin. The same admission controller is shared with the [Pod
@@ -292,7 +292,7 @@ Overhead][] proposal.
 
 RuntimeController is a new in-tree admission plugin that should eventually be
 enabled on almost every Kubernetes clusters. The role of the controller for
-scheduling is to merge the topology constraints from the RuntimeClass into the
+scheduling is to merge the scheduling constraints from the RuntimeClass into the
 PodSpec. Eventually, the controller's responsibilities may grow, such as to
 merge in [pod overhead][] or validate feature compatibility.
 
@@ -301,12 +301,13 @@ support](#runtimeclass-aware-scheduling).
 
 #### Mix-in
 
-The RuntimeClass topology is merged with the pod's NodeSelector & Tolerations.
+The RuntimeClass scheduling rules are merged with the pod's NodeSelector &
+Tolerations.
 
 **NodeSelectorRequirements**
 
 To avoid multiplicitive scaling of the NodeSelectorTerms, the
-`RuntimeClass.Topology.NodeSelector *v1.NodeSelector` field is replaced with
+`RuntimeClass.Scheduling.NodeSelector *v1.NodeSelector` field is replaced with
 `NodeSelectorTerm *v1.NodeSelectorTerm`.
 
 The term's NodeSelectorRequirements are merged into the pod's node affinity
@@ -363,7 +364,7 @@ status. Taking this approach would require native RuntimeClass-aware scheduling.
 
 The visibility advantage could be achieved through different methods. For
 example, a special request or tool could be implemented that would list all the
-nodes that match a RuntimeClasess topology.
+nodes that match a RuntimeClasses scheduling rules.
 
 ### Scheduling Policy
 
