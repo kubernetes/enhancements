@@ -276,6 +276,32 @@ type AdmissionRequest struct {
 }
 ```
 
+#### Connection Options
+
+Each connect operation declares its own options type, which is sent as the
+`AdmissionRequest.Object` to admission webhooks. For example, the published
+OpenAPI for node proxy declares its connect operation as:
+
+```json
+"/api/v1/nodes/{name}/proxy": {
+  ...
+  "x-kubernetes-action": "connect",
+  "x-kubernetes-group-version-kind": {
+    "group": "",
+    "kind": "NodeProxyOptions",
+    "version": "v1"
+  }
+}
+```
+
+Here, an admission webhook request for a node proxy connect operation will send
+`NodeProxyOptions` as the `AdmissionRequest.Object` and since connect operations
+have no common options, `AdmissionRequest.Options` will be absent.
+
+This is consistent with how kubernetes operations send the type specified by the
+OpenAPI `x-kubernetes-group-version-kind` property as the
+`AdmissionRequest.Object` to admission webhooks.
+
 ### AdmissionReview v1
 
 The payload API server sends to Admission webhooks is called AdmissionReview which is `v1beta1` today.
@@ -858,7 +884,6 @@ Also there need to be sufficient tests for any of these new features and all exi
 
 There are still open questions that need to be addressed and updated in this KEP before graduation:
 
-* ConnectOptions is sent as the main object to the webhooks today (and it is mutable). Should we change that and send parent object as the main object?
 * Update with design and test details for "convert to webhook-requested version"
 * Update with design and test details for "mutating plugin ordering"
 
