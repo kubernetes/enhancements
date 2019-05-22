@@ -360,6 +360,48 @@ The additional validations have the following consequences:
 
 The second consequence means that we can correctly validate types and the existence of fields without understanding value validations (i.e. without rejecting an object as invalid which is actually valid). This is crucial for knowingly incomplete schema algorithms as used in pruning, defaulting, apply and elsewhere.
 
+### Metadata
+
+The `metadata` field at the object root is implicitly specified and validated. In order to enforce that every CustomResource is a good citizen in the API Machinery of the API server, i.e. that features like owner references, finalizers, server-side apply etc. work as designed, we do not want that CRDs restrict `metadata` fields other than `name` and `generateName`.
+
+Hence, we restrict
+
+1. that `properties[metadata]` at the root of the schema does not specify anything else than `type:object` and the properties `name` and `generateName`, i.e. at most:
+   ```yaml
+   properties:
+     metadata:
+       type: object
+       properties:
+         name: <any-schema>
+         generateName: <any-schema>
+         # nothing else here
+       # nothing else here
+     ...
+   ...
+   ```
+2. that `metadata` at the object root is not specified inside of `ValueValidation`, e.g.
+   ```yaml
+   anyOf:
+     properties:
+       metadata: <any-schema>
+   ...
+   ```
+   is forbidden, but
+   ```yaml
+   anyOf:
+     properties:
+       embedded:
+         x-kubernetes-embedded-resource: true
+         properties:
+           metadata: <any-schema>
+   ...
+   ```
+   is allowed.
+   
+The restrictions do not apply to embedded resources (specified via `x-kubernetes-embedded-resource`) as these are not instances yet which interact with API machinery beyond pure validation.
+
+Note, that it is discouraged to completely specify `metadata` for embedded resources, but only those restrictions which go beyond the implicit `metadata` validation induced by `x-kubernetes-embedded-resource`.
+
 ### Unfolding the Extensions
 
 During publishing we unfold the new `x-kubernetes-*` extensions:
