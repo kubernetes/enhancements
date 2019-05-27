@@ -13,7 +13,7 @@ approvers:
   - "@janetkuo"
 editor: TBD
 creation-date: 2019-05-23
-last-updated: 2019-05-23
+last-updated: 2019-05-27
 status: implementable
 see-also:
 replaces:
@@ -70,7 +70,7 @@ The major risk with this change is the additional load on the apiserver since we
 
 This will be added as a alpha enhancement to Job. It doesn't change the existing API or behvior but only adds an additional allocation index to pods.
 
-[KEP](https://github.com/kubernetes/enhancements/pull/904) for graduating PDBs to GA is already underway. It involves a change to make PDBs mutable. [PR](https://github.com/kubernetes/kubernetes/pull/69867) for this is almost ready to merge. The goal is to get both that change and this one into the next version of Kubernetes (1.15), and unless any serious issues come up, promote PDBs to GA the following release (1.16).
+[KEP](https://github.com/kubernetes/enhancements/pull/1072) for graduating Job to GA is already underway. It involves a change to make Job mutable. [PR](https://github.com/kubernetes/kubernetes/pull/66105) for this is almost ready to merge. The goal is to get both that change and this one into the next version of Kubernetes (1.16), and unless any serious issues come up, promote PDBs to GA the following release (1.17).
 
 ## Implementation History
 
