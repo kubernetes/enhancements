@@ -244,7 +244,8 @@ The `IngressRule.Host` comment would be changed to:
 > If `Host` is a wildcard, then request matches the rule if the http host header
 > is to equal to the suffix (removing the first label) of the wildcard rule.
 > E.g. wildcard "*.foo.com" matches "bar.foo.com" because they share an equal
-> suffix "foo.com".
+> suffix "foo.com" but does NOT match "baz.bar.foo.com" because only the first
+> label is removed for a match.
 
 ### Healthchecks
 
