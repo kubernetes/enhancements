@@ -249,8 +249,8 @@ The `IngressRule.Host` comment would be changed to:
 ### Healthchecks
 
 The current spec does not have any provisions to customize appropriate
-healtchecks for referenced backends. Many users already have a healthcheck
-URLthat is lightweight and different from the HTTP root (e.g. `/`).
+healthchecks for referenced backends. Many users already have a healthcheck
+URL that is lightweight and different from the HTTP root (e.g. `/`).
 
 One option that has been explored is to infer the healthcheck URL from the
 Readiness probes on the Pods of the Service. This method has proven to be quite
@@ -290,6 +290,27 @@ type IngressBackendHTTPHealthcheck struct {
   // FailureThreshold is the number of consecutive failures necesseary to
   // indicate a backend failure.
   FailureThreshold int
+  // TLS settings to use when healthchecking.
+  // +optional
+  TLS *IngressBackendHTTPHealthcheckTLS
+}
+
+// IngressBackendHTTPHealthcheckTLS is TLS settings for HTTP healthchecking.
+type IngressBackendHTTPHealthcheckTLS struct {
+  // InsecureSkipTLSVerify skips the validity check for the backend's certificate.
+  // This will make your HTTPS connections insecure.  If not specified, this
+  // field defaults to false.
+  // +optional
+  InsecureSkipTLSVerify bool
+  // CertificateAuthorityData contains PEM-encoded certificate authority certificates.
+  // This allows your healthcheck to trust privately issued backend certificates.
+  // +optional
+  CertificateAuthorityData []byte
+  // Name of a secret in the same namespace containing client credentials.
+  // e.g. Client Certificate+Key, Username/Password
+  // Format and contents of the Secret are implementation specific. 
+  // +optional
+  SecretName string
 }
 ```
 
