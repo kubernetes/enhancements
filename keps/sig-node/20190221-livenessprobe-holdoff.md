@@ -13,7 +13,7 @@ approvers:
   - @thockin
 editor: TBD
 creation-date: 2019-02-21
-last-updated: 2019-05-01
+last-updated: 2019-05-18
 status: implementable
 see-also:
 replaces:
@@ -33,8 +33,6 @@ superseded-by:
     - [Non-Goals](#non-goals)
   - [Proposal](#proposal)
     - [Implementation Details](#implementation-details)
-    - [Risks and Mitigations](#risks-and-mitigations)
-      - [Stateless kubelet](#stateless-kubelet)
   - [Design Details](#design-details)
     - [Test Plan](#test-plan)
     - [Feature Gate](#feature-gate)
@@ -47,11 +45,11 @@ superseded-by:
 
 - [x] kubernetes/enhancements issue in release milestone, which links to KEP (this should be a link to the KEP location in kubernetes/enhancements, not the initial KEP PR)
 - [X] KEP approvers have set the KEP status to `implementable`
-- [ ] Design details are appropriately documented
-- [ ] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
-- [ ] Graduation criteria is in place
+- [X] Design details are appropriately documented
+- [X] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [X] Graduation criteria is in place
 - [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [X] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 [kubernetes.io]: https://kubernetes.io/
@@ -87,14 +85,12 @@ However, none of these strategies provide an timely answer to slow starting cont
 - Improve `kubernetes.io/docs` section about Pod lifecycle:
   - Clearly state that PostStart handlers do not delay probe executions.
   - Introduce and explain this new probe.
-  - Document that `kubelet` does not save states, and what are the implications with this new probe (see Risks and Mitigations).
   - Document appropriate use cases for this new probe.
 
 ### Non-Goals
 
 - This proposal does not address the issue of pod load affecting startup (or any other probe that may be delayed due to load). It is acting strictly at the pod level, not the node level.
 - This proposal will only update the official Kubernetes documentation, excluding [A Pod's Life] and other well referenced pages explaining probes.
-- This proposal does not propose to change the stateless nature of the kubelet.
 
 [A Pod's Life]: https://blog.openshift.com/kubernetes-pods-life/
 
@@ -104,36 +100,32 @@ However, none of these strategies provide an timely answer to slow starting cont
 
 The proposed solution is to add a new probe named `startupProbe` in the container spec of a pod which will determine whether it has finished starting up.
 
-It also requires keeping the state of the container (has the `startupProbe` ever succeeded?) using a boolean `hasStarted` inside the kubelet worker.
+It also requires keeping the state of the container (has the `startupProbe` ever succeeded?) using a boolean `Started` inside the ContainerStatus struct.
 
-Depending on `hasStarted` the probing mechanism in `worker.go` might be altered:
+Depending on `Started` the probing mechanism in `worker.go` might be altered:
 
-- `hasStarted == true`: the kubelet worker works the same way as today
-- `hasStarted == false`: the kubelet worker only probes the `startupProbe`
+- `Started == true`: the kubelet worker works the same way as today
+- `Started == false`: the kubelet worker only probes the `startupProbe`
 
 If `startupProbe` fails more than `failureThreshold` times, the result is the same as today when `livenessProbe` fails: the container is killed and might be restarted depending on `restartPolicy`.
 
-If no `startupProbe` is defined, `hasStarted` is initialized with `true`.
-
-### Risks and Mitigations
-
-#### Stateless kubelet
-
-`kubelet` handles container/pod lifecycle-related functions by relying on the underlying container runtime to persist the states. For probes and/or lifecycle hooks, kubelet rely on in-memory states only.
-
-This means that the boolean `hasStarted` as well as all probe counters could be reset during the lifetime of a container. There are several cases to consider:
-
-- The container is starting: `hasStarted` was already false, which means the `startupProbe` will continue to be checked and hold off other probes until it succeeds or fails completely.
-- The container is running: `hasStarted` is reverted to false until the next `startupProbe` run which will succeed and reset it to true immediately after.
-- The container is deadlocked: `hasStarted` is reverted to false, which means the container will have a maximum downtime of `periodSeconds` times `failureThreshold` (from the `startupProbe`). This is also the case today when you need to set a high `failureThreshold` for the `livenessProbe`.
-
-The only way of killing the deadlocked container faster would be to have a stateful kubelet, which is not the purpose of this KEP.
+If no `startupProbe` is defined, `Started` is initialized with `true`.
 
 ## Design Details
 
 ### Test Plan
 
-TBD
+Unit tests will be implemented with `newTestWorker` and will check the following:
+
+- proper initialization of `Started` to false
+- `Started` becomes true as soon as `startupProbe` succeeds
+- `livenessProbe` and `readinessProbe` are disabled until `Started` is true
+- `startupProbe` is disabled after `Started` becomes true
+- `failureThreshold` exceeded for `startupProbe` kills the container
+
+E2e tests will also cover the main use-case for this probe:
+
+- `startupProbe` disables `livenessProbe` long enough to simulate a slow starting container, using a high `failureThreshold`
 
 ### Feature Gate
 
@@ -152,7 +144,12 @@ TBD
 - 2019-03-05: present KEP to sig-node
 - 2019-04-11: open issue in enhancements [#950]
 - 2019-05-01: redesign to additional probe after @thockin [proposal]
+- 2019-05-02: add test plan
+- 2019-05-13: redesign implemented in new PR [#77807]
+- 2019-05-13: related documentation added in PR [#14297]
 
 [#71449]: https://github.com/kubernetes/kubernetes/pull/71449
 [#950]: https://github.com/kubernetes/enhancements/issues/950
 [proposal]: https://github.com/kubernetes/kubernetes/issues/27114#issuecomment-437208330
+[#77807]: https://github.com/kubernetes/kubernetes/pull/77807
+[#14297]: https://github.com/kubernetes/website/pull/14297
