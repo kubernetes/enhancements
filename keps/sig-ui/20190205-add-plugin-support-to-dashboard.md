@@ -61,8 +61,7 @@ In general, users should be able to add functionality without modifying the dash
 <!-- List the specific goals of the KEP.
 How will we know that this has succeeded? -->
 
-- A user should be able to install a custom plugin to the dashboard extending its functionality in some way.
-- We need to provide an interface to the plugin so that it can interact with core dashboard services.
+- A 3rd party developer should be able to install a custom plugin to the dashboard extending its functionality in some way.
 
 <!-- ### Non-Goals -->
 
@@ -73,21 +72,36 @@ Listing non-goals helps to focus discussion and make progress. -->
 
 <!-- This is where we get down to the nitty gritty of what the proposal actually is. -->
 
-Proposed approach:
-- Define an interface for the plugin to register itself with the dashboard which the plugin should implement.
-  - Something like a `PluginService` instance can expose dashboard utilities to the plugin.
-- Generate and distribute the plugin bundle.
-- Mount the generated plugin bundle on demand in a dashboard view.
+The plugin mechanism will comprise of largely of backend resources and frontend abstration that will help 3rd party developers to write plugins independently and register them with the dashboard.  
 
-How can a plugin be registered?
-  - The dashboard could periodically scan `plugins` directory mounted into the pod for `YAMLs`, if there is a new plugin, register it with the dashboard.
+Following are the major areas of focus:  
+#### How can a plugin be registered?  
+- Plugin Discovery  
+  - A new kind called `Plugin` should be introduced which MUST have a property specifying the location of the plugin bundle.
+  - It will be the responsibility of a custom controller to fetch the plugin bundle and make it accessible for the dashboard.
+    - The dashboard can query the `Plugin` resource for list of installed plugins.
+- Plugin Management
+  - The plugins can be added, updated or removed just like any other kubernetes resource.
+  - It will be the responsibility of the custom controller to maintain the desired state of the plugins.
+- Plugin Versioning
+  - The plugin bundle location property can be used to specify the version of the plugin to be used.
 
-How can a plugin connect to external APIs?
-- `HttpClient` can be exposed via the `PluginService` instance for the plugin to use and make network calls.
-- CORS requests should be properly handled here.
+#### How can a plugin connect to K8s API server?
+- A `K8sAPIClient` interface will be exposed via the Angular Plugin Module for the custom plugin to use and make calls to the K8s API server.
 
-How can a plugin connect to a Go binary?
-- [Needs more thought]
+#### How can a plugin connect to external APIs?
+- An `HttpClient` interface will be exposed via the Angular Plugin Module for the custom plugin to use and make network calls.
+- The requests made through this client will be proxied via a backend server so that CORS issue can be avoided and request/response transformation can be done if required.
+
+#### How can a plugin connect to a Go binary?
+- Inside the `Plugin` kind it can be defined whether the plugin requires its own backend server. If yes, then deployment of the backend from an image can be specified along with the necessary configurations.
+
+#### How will a 3rd party developer write the plugin?
+A developer will be able to write the plugin just like any other Angular application. The source code must be compiled and bundled into a file.
+
+#### How will the Angular app mount these plugins?
+The Dashboard will use `SystemJS` to pick the plugins up and mount them at runtime using the `NgModuleFactory`.
+
 
 <!-- ### User Stories [optional] -->
 
