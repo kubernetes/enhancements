@@ -249,6 +249,16 @@ type ConversionResponse struct {
 
 If the conversion is failed, the webhook should fail the HTTP request with a proper error code and message that will be used to create a status error for the original API caller.
 
+### Metadata
+
+To ensure consistent behaviour of converted CRDs following the established API machinery semantics, we will
+
+* check that the returned list of converted objects has the same length and each object (at each index) has the same kind, name, namespace and UID as in the request object list (which ensures the same order), and fail the conversion otherwise
+* restrict which fields of `ObjectMeta` a conversion webhook can change to labels and annotations.
+
+  Mutations to other fields under `metadata` are ignored (i.e. restored to the values of the original object). This means that mutations to other fields also do not lead to an error (we do this because it is hard to define what a change to `ObjectMeta` actually is, with the known encoding issues of empty and undefined lists and maps in mind).
+  
+  Labels and annotations are validated with the usual API machinery ObjectMeta validation semantics.
 
 ### Monitorability
 
@@ -737,7 +747,7 @@ Consider including folks that also work outside the SIG or subproject.
 
 v1beta1:
 
-- Finalize validation restrictions on what metadata fields conversion is required to preserve (https://github.com/kubernetes/kubernetes/issues/72160).
+- Finalize validation restrictions on what metadata fields conversion is able to mutate (https://github.com/kubernetes/kubernetes/issues/72160).
 - Ensure the scenarios from (https://github.com/kubernetes/kubernetes/issues/64136) are tested:
   - Ensure what is persisted in etcd matches the storage version
   - Set up a CRD, persist some data, change the storage version, and ensure the previously persisted data is readable
