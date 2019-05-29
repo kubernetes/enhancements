@@ -104,7 +104,7 @@ and scheduling.
 ## Proposal
 
 Augment the RuntimeClass definition and the `PodSpec` to introduce
-the field `Overhead *ResourceRequirements`. This field represents the overhead associated
+the field `Overhead *ResourceList`. This field represents the overhead associated
 with running a pod for a given runtimeClass.  A mutating admission controller is
 introduced which will update the `Overhead` field in the workload's `PodSpec` to match
 what is provided for the selected RuntimeClass, if one is specified.
@@ -128,18 +128,18 @@ Pod {
   Spec PodSpec {
     // Overhead is the resource overhead incurred from the runtime.
     // +optional
-    Overhead *ResourceRequirements
+    Overhead *ResourceList
   }
 }
 ```
 
 All PodSpec and RuntimeClass fields are immutable, including the `Overhead` field. For scheduling,
-the pod `Overhead` resource requests are added to the container resource requests.
+the pod `Overhead` is added to the container resource requests.
 
-We don't currently enforce resource limits on the pod cgroup, but this becomes feasible once
-pod overhead is accountable. If the pod specifies a resource limit, and all containers in the
-pod specify a limit, then the sum of those limits becomes a pod-level limit, enforced through the
-pod cgroup.
+We don't currently enforce resource limits on the pod cgroup, but this becomes feasible once pod
+overhead is accountable. If the pod specifies an overhead, and all containers in the pod specify a
+limit, then the sum of those limits and overhead becomes a pod-level limit, enforced through the pod
+cgroup.
 
 Users are not expected to manually set `Overhead`; any prior values being set will result in the workload
 being rejected. If runtimeClass is configured and selected in the PodSpec, `Overhead` will be set to the value
@@ -184,12 +184,12 @@ type WindowsPodSandboxConfig struct {
 
 ContainerResources field in the LinuxPodSandboxConfig and WindowsPodSandboxConfig matches the pod-level limits
 (i.e. total of container limits). Overhead is tracked separately since the sandbox overhead won't necessarily
-guide sandbox sizing, but instead used for better management of the resulting sandbox on the host. 
+guide sandbox sizing, but instead used for better management of the resulting sandbox on the host.
 
 ### ResourceQuota changes
 
 Pod overhead will be counted against an entity's ResourceQuota. The controller will be updated to
-add the pod `Overhead`to the container resource request summation.
+add the pod `Overhead` to the container resource request summation.
 
 ### RuntimeClass changes
 
@@ -199,7 +199,7 @@ Where Overhead is defined as follows:
 
 ```
 type Overhead struct {
-  PodFixed *ResourceRequirements
+  PodFixed *ResourceList
 }
 ```
 
