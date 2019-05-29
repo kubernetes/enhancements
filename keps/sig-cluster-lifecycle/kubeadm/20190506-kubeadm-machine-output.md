@@ -6,10 +6,21 @@ authors:
 owning-sig: sig-cluster-lifecycle
 participating-sigs:
 reviewers:
+  - "@justinsb"
+  - "@tstromberg"
+  - "@timothysc"
+  - "@mtaufen"
+  - "@rosti"
+  - "@randomvariable"
+  - "@fabriziopandini"
+  - "@neolit123"
 approvers:
+  - "@timothysc"
+  - "@neolit123"
+  - "@fabriziopandini"
 editor:
 creation-date: 2019-05-06
-last-updated: 2019-05-06
+last-updated: 2019-05-29
 status: provisional
 ---
 
@@ -87,7 +98,7 @@ Kubeadm should support structured output, such as JSON, YAML, or a [Go template]
 
 ## Motivation
 
-While Kubernetes may be deployed manually, the de facto, if not de jeur, means of turning up a Kubernetes cluster is kubeadm. Popular systems management software, such as Terraform, rely on kubeadm in order to deploy Kubernetes. Planned enhancements to the Cluster API project include a composable package for bootstrapping Kubernetes with kubeadm and cloud-init.
+While Kubernetes may be deployed manually, the de facto, if not de jure, means of turning up a Kubernetes cluster is kubeadm. Popular systems management software, such as Terraform, rely on kubeadm in order to deploy Kubernetes. Planned enhancements to the Cluster API project include a composable package for bootstrapping Kubernetes with kubeadm and cloud-init.
 
 Without structured output, even the most seemingly innocuous changes could break Terraform, Cluster API, or other software that relies on the results of kubeadm.
 
@@ -137,13 +148,13 @@ The deployment of a multi-node Kubernetes cluster is automated by parsing [the J
 
 A script requires a list of token IDs.
 
-1. Run `kubeadm token list -o '{{range .}}{{println .ID}}{{end}}'`
+1. Run `kubeadm token list -o go-template='{{range .}}{{println .ID}}{{end}}'`
 
 #### Story 3
 
 A script returns a list of token IDs as they are discovered.
 
-1. Run `kubeadm token list --stream -o '{{println .ID}}'`
+1. Run `kubeadm token list --stream -o go-template='{{println .ID}}'`
 
 #### Story 4
 
@@ -329,7 +340,7 @@ The test plan involves:
 
 ### Graduation Criteria
 
-This proposal targets *Alpha* support for structured kubeadm output in the release of Kubernetes 1.15.
+This proposal targets *Alpha* support for structured kubeadm output in the release of Kubernetes 1.16.
 
 ##### Alpha -> Beta Graduation
 
