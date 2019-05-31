@@ -96,36 +96,35 @@ which is normally restricted to cluster admins.
 
 Note that namespaced objects must match both the object selector (if specified) and namespace selector to be sent to the Webhook.
 
-The labels for ObjectSelector will be extracted at the admission time before running 
-any plugins and will be used for all Webhooks during the admission process.
+The object selector applies to the labels of the Object and OldObject sent to the webhook.
 
-The object selector applies to an Object's labels. For create and update, the object 
-is the new object. For delete, it is existing object (passed as `oldObject` in the 
-`admissionRequest`). For sub-resources, if the subresource accepts the whole object 
-and apply the changes to object's labels (e.g. `pods/status`) the labels on the new 
-object will be used otherwise (e.g. `pods/proxy`) the labels on the existing parent 
-object will be used. If subresource does not have a parent object, the Webhook call 
-may fail or skipped based on the failure policy.
+An empty object selector matches all requests and objects.
 
-When deleting a collection, the webhook gets called for each object matching the
-ObjectSelector.
+A non-empty object selector is evaluated against the labels of both the old and new
+objects that would be sent to the webhook. If the selector matches against either
+set of labels, the selector is considered to match the request.
+
+If one of the objects is nil (like `OldObject` is for create requests, or `Object` is for delete requests),
+or cannot have labels (like a `DeploymentRollback` or `NodeProxyOptions` object), that object is not considered to match.
 
 The proposed change is to add an ObjectSelector to the webhook API both in v1 and v1beta1:
 
 ```golang
 type {Validating,Mutating}Webhook struct {
     ...
-     // ObjectSelector decides whether to run the webhook on an object based
-     // on whether the object.metadata.labels matches the selector. A namespace object must
-     // match both namespaceSelector (if present) and objectSelector (if present).
-     // For sub-resources, if the labels on the newObject is effective (e.g. pods/status)
-     // they will be used, otherwise the labels on the parent object will be used. If the
-     // sub-resource does not have a parent object, the call may fail or skipped based on
-     // the failure policy.
-     //
-     // Default to the empty LabelSelector, which matches everything.
-     // +optional
-     ObjectSelector *metav1.LabelSelector `json:"objectSelector,omitempty" protobuf:"bytes,7,opt,name=objectSelector"`
+    // ObjectSelector decides whether to run the webhook based on if the
+    // object has matching labels. objectSelector is evaluated against both
+    // the oldObject and newObject that would be sent to the webhook, and
+    // is considered to match if either object matches the selector. A null
+    // object (oldObject in the case of create, or newObject in the case of
+    // delete) or an object that cannot have labels (like a
+    // DeploymentRollback or a PodProxyOptions object) is not considered to
+    // match.
+    // Use the object selector only if the webhook is opt-in, because end
+    // users may skip the admission webhook by setting the labels.
+    // Default to the empty LabelSelector, which matches everything.
+    // +optional
+    ObjectSelector *metav1.LabelSelector `json:"objectSelector,omitempty"
 }
 ```
 
@@ -782,21 +781,19 @@ type ValidatingWebhook struct {
      // sideEffects == Unknown or Some.
      SideEffects SideEffectClass `json:"sideEffects" protobuf:"bytes,6,opt,name=sideEffects,casttype=SideEffectClass"`
 
-     // ObjectSelector decides whether to run the webhook on an object based
-     // on whether the object.metadata.labels matches the selector. A namespace object must
-     // match both namespaceSelector (if present) and objectSelector (if present).
-     // For sub-resources, if the labels on the newObject is effective (e.g. pods/status)
-     // they will be used, otherwise the labels on the parent object will be used. If the
-     // sub-resource does not have a parent object, the call may fail or skipped based on
-     // the failure policy.
-     //
-     // See
-     // https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
-     // for more examples of label selectors.
-     //
+     // ObjectSelector decides whether to run the webhook based on if the
+     // object has matching labels. objectSelector is evaluated against both
+     // the oldObject and newObject that would be sent to the webhook, and
+     // is considered to match if either object matches the selector. A null
+     // object (oldObject in the case of create, or newObject in the case of
+     // delete) or an object that cannot have labels (like a
+     // DeploymentRollback or a PodProxyOptions object) is not considered to
+     // match.
+     // Use the object selector only if the webhook is opt-in, because end
+     // users may skip the admission webhook by setting the labels.
      // Default to the empty LabelSelector, which matches everything.
      // +optional
-     ObjectSelector *metav1.LabelSelector `json:"objectSelector,omitempty" protobuf:"bytes,7,opt,name=objectSelector"`
+     ObjectSelector *metav1.LabelSelector `json:"objectSelector,omitempty"`
 
      // TimeoutSeconds specifies the timeout for this webhook. After the timeout passes,
      // the webhook call will be ignored or the API call will fail based on the
@@ -956,21 +953,19 @@ type MutatingWebhook struct {
      // sideEffects == Unknown or Some.
      SideEffects SideEffectClass `json:"sideEffects" protobuf:"bytes,6,opt,name=sideEffects,casttype=SideEffectClass"`
 
-     // ObjectSelector decides whether to run the webhook on an object based
-     // on whether the object.metadata.labels matches the selector. A namespace object must
-     // match both namespaceSelector (if present) and objectSelector (if present).
-     // For sub-resources, if the labels on the newObject is effective (e.g. pods/status)
-     // they will be used, otherwise the labels on the parent object will be used. If the
-     // sub-resource does not have a parent object, the call may fail or skipped based on
-     // the failure policy.
-     //
-     // See
-     // https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
-     // for more examples of label selectors.
-     //
+     // ObjectSelector decides whether to run the webhook based on if the
+     // object has matching labels. objectSelector is evaluated against both
+     // the oldObject and newObject that would be sent to the webhook, and
+     // is considered to match if either object matches the selector. A null
+     // object (oldObject in the case of create, or newObject in the case of
+     // delete) or an object that cannot have labels (like a
+     // DeploymentRollback or a PodProxyOptions object) is not considered to
+     // match.
+     // Use the object selector only if the webhook is opt-in, because end
+     // users may skip the admission webhook by setting the labels.
      // Default to the empty LabelSelector, which matches everything.
      // +optional
-     ObjectSelector *metav1.LabelSelector `json:"objectSelector,omitempty" protobuf:"bytes,7,opt,name=objectSelector"`
+     ObjectSelector *metav1.LabelSelector `json:"objectSelector,omitempty"`
 
      // TimeoutSeconds specifies the timeout for this webhook. After the timeout passes,
      // the webhook call will be ignored or the API call will fail based on the
