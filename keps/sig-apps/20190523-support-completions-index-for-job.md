@@ -40,10 +40,17 @@ superseded-by:
 
 [Job](https://kubernetes.io/docs/concepts/workloads/controllers/jobs-run-to-completion/)
 is a Kubernetes CRD that help us run task, Job allows a user to specify the task or parallel task through either `podTemplate` and `completions`; but i use parallel task i must ensure task unrepeat in myself application, this is diffcult; if job support sahrds, i can use shards index to implement task unrepeat is so easy;
+such as:
+we have million user, each user has different user results, i need push one article to user where has some result and i want to push speed is fast.
+we expected run these task in one platform，that platform must easy to use and in common use，so we choice k8s；and we don`t want to use more platform(because we need lower maintenance cost)
 
 ## Motivation
 
-I have a case need shards to job, i want to use kubernetes implement my case; i read the [document](https://kubernetes.io/docs/concepts/workloads/controllers/jobs-run-to-completion/#parallel-jobs), this is a not implement function, so i want implement it;
+I have a case need shards to job, i want to use kubernetes implement my case; 
+* i read the [document](https://kubernetes.io/docs/concepts/workloads/controllers/jobs-run-to-completion/#parallel-jobs), this is a not implement function
+* i think shared index is a general feature in job platform, i want to easy to use job when user have relate demand and maintenance platform less
+
+so i want implement it;
 
 ### Goals
 
@@ -53,11 +60,17 @@ I have a case need shards to job, i want to use kubernetes implement my case; i 
 
 ### Implementation Details/Notes/Constraints
 
-In the current implementation, the Job controller not allocation index on `.completions != nil`; in my implementation, when `.completions != nil` i will through completions value and succeeded pods get the available indexes, i will record index to the job create pods, and set env to the pod （user application get index is easy）; next i will allocation index to creating pod function, i will lock this step ensure not repeat index not more than one, if one index repeat, i will kill one on next this job created pod changes time;
+In the current implementation, the Job controller not allocation index on `.completions != nil`; in my implementation, when `.completions != nil` i will through completions value and succeeded pods get the available indexes, i will persist index (persist index to `job-completions-index` label) to the job create pods, and set `JOB_COMPLETIONS_INDEX` env to the pod （user application get index is easy）; next i will allocation index to creating pod function, i will lock this step ensure not repeat index not more than one, if one index repeat, i will kill one on next this job created pod changes time;
 
 ### Risks and Mitigations
 
 The major risk with this change is the additional load on the apiserver since we need frequent each pod for get succeeded index and error index.
+additional load:
+1. group with index on activePods
+2. remove duplicate index activePods
+3. allocation index need an lock
+
+The above three points is additional operation，i think that additional load is acceptable.
 
 ## Design Details
 
