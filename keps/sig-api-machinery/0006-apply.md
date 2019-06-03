@@ -134,6 +134,33 @@ A brief list of the changes:
 
 The linked documents should be read for a more complete picture.
 
+### Stripping ManagedFields from responses
+
+`ManagedFields` in metadata is omitted by default from all api-server
+responses. The field is entirely stripped before being returned by
+the api-server. This happens not only on GET and LIST but also
+UPDATE/CREATE/DELETE/PATCH.
+
+The reason for that is that the `ManagedFields` field is significant in size and
+number of fields and most clients don't actually need it. That field can
+actually be more than half the size of the full object, which means that it's a
+lot of fields and data that has to be serialized, deserialized and transferred
+potentially in both directions for a read-modify-write. And yet most use-cases
+don't need to have this data.
+
+All the verbs will have the option to get that field included if needed by having a
+`includeManagedFields` query-parameter to get it.
+
+The api-server knows how to deal with emptied `ManagedFields` which means that
+it's going to use the current version if the field is not present in the updated
+object.
+
+A flag will be implemented in kubectl to trigger that behavior.
+
+One of the downside of having this field hidden by default is that people can't
+access it unless they know the triggering flag, which might lead to confusing
+situations.
+
 ### Implementation Details/Notes/Constraints [optional]
 
 (TODO: update this section with current design)
