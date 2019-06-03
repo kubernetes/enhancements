@@ -113,8 +113,9 @@ reduce cost via platform-level over-commit policies.
 * Help cluster operators choose appropriate commit settings.
 * Automatically adjust commit settings to maximize utilization.
 * Replace VPA, HPA, or any other Pod-level right-sizing/auto-scaling API.
-  These APIs are complimentary: they help Pod owners optimize their footprint,
-  while `CommitClass` helps cluster operators optimize the cluster footprint.
+  These APIs are complimentary: they help Pod owners optimize their Pod
+  footprint, while `CommitClass` helps cluster operators optimize the cluster
+  footprint.
 
 ## Proposal
 
@@ -286,10 +287,10 @@ are managed by VPA, high cluster resource density may be achieved without
 over-commit.
 
 VPA is a powerful tool for right-sizing Pods, but is difficult to wield for the
-purposes of cluster footprint optimization:
+purposes of cluster-wide footprint optimization:
 
 - It is difficult to mandate VPA usage in a 'Namespace as a Service' style
-  Kubernetes platform.
+  Kubernetes platform, where such a mandate crosses ownership boundaries.
 - VPA complicates capacity planning for Pod owners, so not all Pod owners may
   want to use it.
 - VPA may increase platform exposure to application memory or CPU leaks, and so
