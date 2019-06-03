@@ -11,7 +11,7 @@ approvers:
   - TBD
 editor: TBD
 creation-date: 2019-05-30
-last-updated: 2019-04-12
+last-updated: 2019-06-03
 status: provisional
 ---
 
@@ -177,6 +177,35 @@ With this proposal, the following changes are required:
  - Determine a location in the Node API to record which `CommitClass` is in
    effect for that Node.
  - Change `kubelet` to record the `CommitClass` into that location.
+
+In more detail, first cut implementation idea:
+
+* Create a new kubelet manager, the `commitManager`. This manager should embed
+  an informer/lister for `CommitClass` objects.
+* Give the `commitManager` a func like `getNodeCommitSettings`. This func
+  should take a 'node' object and return a map of resource name to multiplier,
+  or nil.
+* Add a new 'getter' to the `nodestatus.MachineInfo` function factory called
+  `nodeCommitSettings`.  By default, this should be
+  `klet.commitManager.getNodeCommitSettings`. At the end of the error
+  checking `else` branch reading `machineInfoFunc()`, check the feature gate,
+  and if positive, invoke `nodeCommitSettings` and store output into a map with
+  function-level scope.
+* If nil, do nothing. If err, log err and do nothing. If we get a result,
+  iterate over the resulting map and multiply the value in
+  `node.Status.Capacity[rname]` by the multiplier for that `rname`. This goes
+  at the _end_ of the `else` clause so that it can touch all the different
+  resource kinds.
+* The system reserved resources should not be subject to CommitClass
+  compression, where the real capacity that '2 CPUs' represents is shifted into
+  '0.2 CPUs (or 2 vCPUs)' by `CommitClass` with 10x CPU commit. So
+  `nodeAllocatableReservationFunc()` `allocatableReservation` should also be
+  transformed by the `CommitClass` multipliers before writing to
+  `node.Status.Allocatable`: that way, 2 real CPUs reserved will be 20 reserved
+  vCPUs, which is a correct representation of the operator intent.
+
+* Also learn whether the Admit function in PredicateAdmitHandler needs to
+  apply the multipliers, or whether it uses the Node object already transformed.
 
 ### Risks and Mitigations
 
