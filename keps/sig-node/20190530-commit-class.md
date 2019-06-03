@@ -136,9 +136,15 @@ the Node names it applied to, but that interacts badly with Cluster autoscaler.
 
 Nodes should default to a `CommitClass` where all multipliers are '1'.
 
-Consideration: it is usually a bad idea to give a single VM more vCPUs than
-physical CPUs are available on the host system. Should that be reflected here
-somehow for containers?
+#### Consideration: container CPU requests vs host physical CPUs
+It is usually a bad idea to give a single VM more vCPUs than physical CPUs are
+available on the host system. Should that be reflected here somehow for
+containers?
+
+#### Consideration: system reserved
+System reserved resource slices should almost certainly not be subject to
+`CommitClass` multipliers, so that node health is not at risk under high
+multipliers ("just" workload health).
 
 ### API Design
 
