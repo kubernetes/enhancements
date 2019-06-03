@@ -310,3 +310,15 @@ Kubernetes project could take the position that Kubernetes clusters with an
 interest in platform-level cost optimization should run on top of a VM
 infrastructure, and thereby delegate the commit settings to the VM
 orchestrator.
+
+### Virtual Kubelet
+
+Virtual Kubelet is a project to allow non-Kubernetes platforms to masquerade as
+a Kubelet, so that the Kubernetes API may be used for orchestration. For
+example, this allows workloads to be scheduled to serverless platforms via the
+Kubernetes API.
+
+Virtual Kubelet is orthongonal to `CommitClass`: while the non-Kubelet
+providers may support over- or under-commit of platform resources, or very high
+workload/machine density (for example, 'scale to zero' serverless) , this is
+not a required characteristic of Virtual Kubelet providers.
