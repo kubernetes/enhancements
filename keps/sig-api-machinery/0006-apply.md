@@ -134,6 +134,18 @@ A brief list of the changes:
 
 The linked documents should be read for a more complete picture.
 
+### Tracking ManagedFields for Admission Controllers
+
+If the server-side apply feature is enabled, all mutating admission controllers are wrapped on install and before they are chained together to keep track of their mutations and reflect them in the objects managedFields.
+
+This is done by creating a copy of the object, running the mutation and then running an `Update` through the FieldManager which takes ownership of all fields the mutation touched with the plugin name as owner.
+
+This way users can keep track of which admission controller owns their fields and overwriting those fields through an apply operation would result in a conflict with the admission controller.
+
+**Optional**: For webhooks the plugins name is used, which could be improved to use the webhooks name instead or add ways to set the owner name when defining the webhook.
+
+A risk with this approach is, that for every admission controller an update operation has to run. This could impact performance and could be improved by only wrapping the final admission chain sacrificing details on which single controller owns which field.
+
 ### Implementation Details/Notes/Constraints [optional]
 
 (TODO: update this section with current design)
