@@ -41,6 +41,9 @@ status: implementable
         * [Example](#example)
 * [Graduation Criteria](#graduation-criteria)
 * [Implementation History](#implementation-history)
+    * [Status Updates](#status-updates)
+    * [Rebased Images](#rebased-images)
+
 
 ## Summary
 
@@ -146,7 +149,7 @@ This KEP is expected to rebase images for all three workflows. This requires eac
 
 ![Rebase Core Master](RebaseCoreMaster.png?raw=true "Rebase Core Master")
 
-#### Notifications to Cloud Providers (TODO: Email Announcement)
+#### Notifications to Cloud Providers
 
 - For log redirection, please use flag [`log-file`](https://kubernetes.io/docs/reference/command-line-tools-reference/kube-apiserver) (e.g. `--log-file=/var/log/kube-controller-manager.log`) and also disable standard output (e.g. `--logtostderr=false`)
 - When removing the shell from manifest command, please also update the parameter format to exec form.` [“executable”, “param1, “param2”]`
@@ -174,3 +177,45 @@ It more or less depends on add-on OWNERs’ judge on whether/how the add-on imag
 This KEP is targeted at v1.15 release. The full list of images switched to distroless/static will be updated later on.
 
 ## Implementation History
+
+### Status Updates
+- Rebased the [following images](#rebased-images) to `gcr.io/distroless/static:latest` or `k8s.gcr.io/debian-base:v1.0.0`.
+- Investigated [these images](https://github.com/kubernetes/sig-release/blob/master/release-engineering/baseimage-exception-list.md) as exceptions (can't based on distroless).
+- Triaged and fixed the following issues which blocked rebasing images:
+  * [Avoid log truncation due to log-rotation delays](https://github.com/kubernetes/klog/issues/55#issuecomment-481032528)
+  * [Log duplication with --log-file](https://github.com/kubernetes/klog/pull/65)
+  * [Fix MakeFile push workflow for metrics-server](https://github.com/kubernetes-incubator/metrics-server/pull/259)
+
+### Further work
+- Triage klog for the performance regression on core master containers:
+  * Affected images: kube-controller-manager, kube-scheduler, kube-apiserver
+  * Blocked PRs:
+     - [Update manifests to use klog --log-file](https://github.com/kubernetes/kubernetes/pull/78466)
+     - [Rebase core master images for both bazel and bash release](https://github.com/kubernetes/kubernetes/pull/75306)
+- Avoid using exec in kube-controller-manager for flexvolume.
+
+### Rebased Images
+
+| Component Name        |   on Master/Node         |  Previous Image --> Current Image   |      Image      |   Code Complete  |   Release Complete |    Contact        |
+| --------------------- | :-----------------------:|:-----------------------------------:|:---------------:|:----------------:|:------------------:|:------------------|
+|     addon-resize      |  Master + Node           |        Busybox  --> distroless      |  k8s.gcr.io/addon-resizer:1.8.5 |      Done        |   Done           |    @bskiba @yuwenma |
+|     cluster-proportional-autoscaler  |  Master + Node   |        scratch  --> distroless      |  k8s.gcr.io/cluster-proportional-autoscaler-arm:v1.6.0 |  Done | Done |  @yuwenma @MrHohn |
+|     cluster-proportional-vertical-autoscaler  |  Master + Node   |        scratch  --> distroless      |  k8s.gcr.io/cpvpa-amd64:v0.7.1 |  Done | Done |  @yuwenma @MrHohn |
+|     event-exporter  |  Master + Node   |        debian-base  --> distroless      |  k8s.gcr.io/event-exporter:v0.2.5 |  Done | Done |  @x13n @yuwenma |
+|     node-termination-handler  |  Master + Node   |        alpine  --> distroless      |  [k8s.gcr.io/gke-node-termination-handler](https://pantheon.corp.google.com/gcr/images/google-containers/GLOBAL/gke-node-termination-handler@sha256:aca12d17b222dfed755e28a44d92721e477915fb73211d0a0f8925a1fa847cca/details?tab=info) |  Done | Done |  @yuwenma |
+|     metadata-proxy  |  Master + Node   |        scratch  --> distroless       |  k8s.gcr.io/metadata-proxy:v0.1.12 |  Done | Done |  @dekkagaijin @yuwenma |
+|     metrics-server  |  Master + Node   |        busybox  --> distroless       |  k8s.gcr.io/metrics-server:v0.3.3 |  Done | Done |  @yuwenma @kawych  |
+|     prometheus-to-sd  |  Master + Node   |        debian-base  --> distroless       |  k8s.gcr.io/metrics-server:v0.5.2 |  Done | Done |  @loburm   |
+|     ip-masq-agent  |  Master + Node   |         busybox  --> debian-iptables       |  k8s.gcr.io/ip-masq-agent:v2.4.1 |  Done | Done |  @BenTheElder @yuwenma   |
+|     slo-monitor  |  Master   |        alpine  --> distroless       |  k8s.gcr.io/slo-monitor:0.11.2 |  Done | Done |  @yuwenma   |
+|     kubelet-to-gcm   |  Master   |        scratch  --> distroless       |  k8s.gcr.io/kubelet-to-gcm:v1.2.11 |  Done | wait for next release |  @yuwenma |
+|     etcd-version-monitor   |  Master   |        scratch  --> distroless       |  k8s.gcr.io/etcd-version-monitor:v0.1.3 |  Done | Done |  @yuwenma |
+|     etcd-empty-dir-cleanup   |  Master   |        busybox  --> distroless       |  k8s.gcr.io/etcd-empty-dir-cleanup:3.3.10.1 |  Done | Done |  @yuwenma |
+|     etcd |  Master   |        busybox  --> distroless       |  k8s.gcr.io/etcd:3.3.10-1 |  Done | Done |  @yuwenma |
+|     defaultbackend  |  Master + Node   | scratch  --> distroless  | Wait for next release  |  Done | targeting v1.16 | @rramkumar1 @yuwenma  |
+|     fuzzer   |  Master + Node   | alpine  --> distroless  | Wait for next release  |  Done | targeting v1.16 |  @rramkumar1 @yuwenma   |
+|     ingress-gce-glbc  |  Master + Node   | alpine  --> distroless  | Wait for next release |  Done | targeting v1.16 | @rramkumar1 @yuwenma    |
+|     k8s-dns-kube-dns  |  Master + Node   | alpine  --> debian-base  | k8s.gcr.io/k8s-dns-kube-dns:1.15.3 |  Done | Done | @yuwenma @prameshj  |
+|     k8s-dns-sidecar  |  Master + Node   | alpine  --> debian-base  | k8s.gcr.io/k8s-dns-sidecar:1.15.3 |  Done |Done  | @yuwenma @prameshj  |
+|     k8s-dns-dnsmasq-nanny |  Master + Node   | alpine  --> debian-base  | k8s.gcr.io/k8s-dns-dnsmasq-nanny:1.15.3  |  Done | Done   | @yuwenma @prameshj  |
+|     k8s-dns-node-cache |  Node   | debian:stable-slim  --> debian-base  | k8s.gcr.io/k8s-dns-node-cache:1.15.3 |  Done | Done | @yuwenma @prameshj  |
