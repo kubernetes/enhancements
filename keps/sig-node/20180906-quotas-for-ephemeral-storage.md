@@ -13,7 +13,7 @@ approvers:
   - "@derekwaynecarr"
 editor: TBD
 creation-date: 2018-09-06
-last-updated: 2019-04-30
+last-updated: 2019-06-04
 status: implementable
 ---
 
@@ -21,43 +21,53 @@ status: implementable
 
 ## Table of Contents
 
-<!-- toc -->
-- [Summary](#summary)
-  - [Project Quotas](#project-quotas)
-- [Motivation](#motivation)
-  - [Goals](#goals)
-  - [Non-Goals](#non-goals)
-  - [Future Work](#future-work)
-- [Proposal](#proposal)
-  - [Control over Use of Quotas](#control-over-use-of-quotas)
-  - [Operation Flow -- Applying a Quota](#operation-flow----applying-a-quota)
-  - [Operation Flow -- Retrieving Storage Consumption](#operation-flow----retrieving-storage-consumption)
-  - [Operation Flow -- Removing a Quota.](#operation-flow----removing-a-quota)
-  - [Operation Notes](#operation-notes)
-    - [Selecting a Project ID](#selecting-a-project-id)
-    - [Determine Whether a Project ID Applies To a Directory](#determine-whether-a-project-id-applies-to-a-directory)
-    - [Return a Project ID To the System](#return-a-project-id-to-the-system)
-  - [Implementation Details/Notes/Constraints [optional]](#implementation-detailsnotesconstraints-optional)
-    - [Implementation Strategy](#implementation-strategy)
-      - [Future](#future)
-    - [Notes on Implementation](#notes-on-implementation)
-    - [Notes on Code Changes](#notes-on-code-changes)
-    - [Testing Strategy](#testing-strategy)
-  - [Risks and Mitigations](#risks-and-mitigations)
-- [Graduation Criteria](#graduation-criteria)
-- [Implementation History](#implementation-history)
-  - [Version 1.15](#version-115)
-- [Drawbacks [optional]](#drawbacks-optional)
-- [Alternatives [optional]](#alternatives-optional)
-  - [Alternative quota-based implementation](#alternative-quota-based-implementation)
-  - [Alternative loop filesystem-based implementation](#alternative-loop-filesystem-based-implementation)
-- [Infrastructure Needed [optional]](#infrastructure-needed-optional)
-- [References](#references)
-  - [Bugs Opened Against Filesystem Quotas](#bugs-opened-against-filesystem-quotas)
-    - [CVE](#cve)
-    - [Other Security Issues Without CVE](#other-security-issues-without-cve)
-  - [Other Linux Quota-Related Bugs Since 2012](#other-linux-quota-related-bugs-since-2012)
-<!-- /toc -->
+<!-- markdown-toc start - Don't edit this section. Run M-x markdown-toc-generate-toc again -->
+**Table of Contents**
+
+- [Quotas for Ephemeral Storage](#quotas-for-ephemeral-storage)
+    - [Table of Contents](#table-of-contents)
+    - [Summary](#summary)
+        - [Project Quotas](#project-quotas)
+    - [Motivation](#motivation)
+        - [Goals](#goals)
+        - [Non-Goals](#non-goals)
+        - [Future Work](#future-work)
+    - [Proposal](#proposal)
+        - [Control over Use of Quotas](#control-over-use-of-quotas)
+        - [Operation Flow -- Applying a Quota](#operation-flow----applying-a-quota)
+        - [Operation Flow -- Retrieving Storage Consumption](#operation-flow----retrieving-storage-consumption)
+        - [Operation Flow -- Removing a Quota.](#operation-flow----removing-a-quota)
+        - [Operation Notes](#operation-notes)
+            - [Selecting a Project ID](#selecting-a-project-id)
+            - [Determine Whether a Project ID Applies To a Directory](#determine-whether-a-project-id-applies-to-a-directory)
+            - [Return a Project ID To the System](#return-a-project-id-to-the-system)
+        - [Implementation Details/Notes/Constraints [optional]](#implementation-detailsnotesconstraints-optional)
+            - [Implementation Strategy](#implementation-strategy)
+                - [Future](#future)
+            - [Notes on Implementation](#notes-on-implementation)
+            - [Notes on Code Changes](#notes-on-code-changes)
+            - [Testing Strategy](#testing-strategy)
+        - [Risks and Mitigations](#risks-and-mitigations)
+    - [Graduation Criteria](#graduation-criteria)
+    - [Phase 1: Alpha (1.15)](#phase-1-alpha-115)
+    - [Phase 2: Beta (target 1.16)](#phase-2-beta-target-116)
+    - [Phase 3: GA](#phase-3-ga)
+    - [Implementation History](#implementation-history)
+        - [Version 1.15](#version-115)
+    - [Drawbacks [optional]](#drawbacks-optional)
+    - [Alternatives [optional]](#alternatives-optional)
+        - [Alternative quota-based implementation](#alternative-quota-based-implementation)
+        - [Alternative loop filesystem-based implementation](#alternative-loop-filesystem-based-implementation)
+    - [Infrastructure Needed [optional]](#infrastructure-needed-optional)
+    - [References](#references)
+        - [Bugs Opened Against Filesystem Quotas](#bugs-opened-against-filesystem-quotas)
+            - [CVE](#cve)
+            - [Other Security Issues Without CVE](#other-security-issues-without-cve)
+        - [Other Linux Quota-Related Bugs Since 2012](#other-linux-quota-related-bugs-since-2012)
+
+<!-- markdown-toc end -->
+
+[Tools for generating]: https://github.com/ekalinin/github-markdown-toc
 
 ## Summary
 
@@ -613,15 +623,21 @@ appropriate end to end tests.
 The following criteria applies to
 `LocalStorageCapacityIsolationFSMonitoring`:
 
-Alpha
+## Phase 1: Alpha (1.15)
 
 - Support integrated in kubelet
+- Alpha-level documentation
+- Unit test coverage
+- Node e2e test
 
-Beta
+## Phase 2: Beta (target 1.16)
 
-- TBD
+- User feedback
+- Benchmarks to determine latency and overhead of using quotas
+  relative to existing monitoring solution
+- Cleanup
 
-GA
+## Phase 3: GA
 
 - TBD
 
