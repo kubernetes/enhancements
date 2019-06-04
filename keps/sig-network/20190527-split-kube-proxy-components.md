@@ -4,8 +4,7 @@ authors:
   - "@vllry"
 owning-sig: sig-network
 participating-sigs:
-  - sig-aaa
-  - sig-bbb
+  - sig-network
 reviewers:
   - "@cmluciano"
   - "@danwinship"
@@ -79,31 +78,37 @@ Check these off as they are completed for the Release Team to track. These check
 
 ## Summary
 
-Split kube-proxy into multiple,
-distinct components (1 for each ProxyMode).
-Each ProxyMode will take a specific ComponentConfig,
-rather than relying on flags for configuration.  
+Replace kube-proxy configuration flags with ComponentConfig.
+Use one ComponentConfig for each ProxyMode.
+
+In the background, split up per-ProxyMode code to be independent.
 
 ## Motivation
 
-* Separate distinct ProxyMode code in kube-proxy.
+* Implement WG-component-standard for config.
+* Clean up mode-specific code in kube-proxy.
     * kube-proxy has a history of bugs caused by overlap between ProxyMode functionality,
     EG https://github.com/kubernetes/kubernetes/issues/75360
-    * Some ProxyMode code (like Windows mode) is logically completely separate from the others.
-* Increase adoption of WG-component-standard implementations,
-over bespoke implementations.
-* Pave the way to cleanly separate kube-proxy from the kubernetes/kubernetes repo.
+    * Most ProxyMode code (like Windows mode) is already logically completely separate from the others.
 
 ### Goals
 
-* Implement ComponentConfig for kube-proxy config.
+* Replace kube-proxy flag configuration with ComponentConfig.
+Make ComponentConfig be distinct per-mode (EG iptables config vs IPVS config).
 * Split the startup and run code for each ProxyMode into distinct packages.
     * ProxyMode code should not import code from other ProxyModes.
 
 ### Non-Goals
 
+* Moving kube-proxy out of k/k (to be considered in a future enhancement).
+* Splitting kube-proxy into multiple binaries by mode (to be considered in a future enhancement).
 
 ## Proposal
+
+* Separate ProxyMode code internally into subpackages.
+    * Move any common logic into shared subpackages.
+* Introduce a ComponentConfig for each ProxyMode.
+* Shift users to using ComponentConfig and away from flags.
 
 ### Implementation Details/Notes/Constraints
 
@@ -140,4 +145,5 @@ TBD
 
 ## Alternatives
 
+* Adopt a single kube-proxy ComponentConfig, for use with any mode.
 * Split kube-proxy out of kubernetes/kubernetes first.
