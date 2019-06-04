@@ -157,6 +157,10 @@ object.
 
 A flag will be implemented in kubectl to trigger that behavior.
 
+For validating and mutating webhooks, the field is also going to be stripped,
+unless explicitly requested by the webhook through a new `IncludeManagedFields`
+boolean field in the ValidatingWebhook and MutatingWebhook configuration.
+
 One of the downside of having this field hidden by default is that people can't
 access it unless they know the triggering flag, which might lead to confusing
 situations.
