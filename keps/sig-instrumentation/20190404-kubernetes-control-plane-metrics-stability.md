@@ -305,7 +305,9 @@ Metrics which are added dynamically after application boot - Metrics which are d
 
 ## Implementation History
 
-TBD (since this is not yet implemented)
+- Wrappers added around prometheus registry and counter/counterVec metric type [PR-77037](https://github.com/kubernetes/kubernetes/pull/77037)
+- Wrappers added around prometheus gauge, histogram & summary metric types [PR-77618](https://github.com/kubernetes/kubernetes/pull/77618)
+- Make sig-instrumentation owners for component-base metrics directory [PR-77621](https://github.com/kubernetes/kubernetes/pull/77621)
 
 ## References
 
