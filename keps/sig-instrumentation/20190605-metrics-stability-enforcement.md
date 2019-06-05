@@ -1,31 +1,28 @@
 ---
 title: KEP Template
 authors:
-  - "@janedoe"
-owning-sig: sig-xxx
+  - "@solodov"
+  - "@logicalhan"
+owning-sig: sig-instrumentation
 participating-sigs:
-  - sig-aaa
-  - sig-bbb
+  - (?)
 reviewers:
   - TBD
-  - "@alicedoe"
 approvers:
   - TBD
-  - "@oscardoe"
 editor: TBD
-creation-date: yyyy-mm-dd
-last-updated: yyyy-mm-dd
-status: provisional|implementable|implemented|deferred|rejected|withdrawn|replaced
+creation-date: 2019-06-05
+last-updated: 2019-06-05
+status: provisional
 see-also:
-  - "/keps/sig-aaa/20190101-we-heard-you-like-keps.md"
-  - "/keps/sig-bbb/20190102-everyone-gets-a-kep.md"
+  - TBD
 replaces:
-  - "/keps/sig-ccc/20181231-replaced-kep.md"
+  - TBD
 superseded-by:
-  - "/keps/sig-xxx/20190104-superceding-kep.md"
+  - TBD
 ---
 
-# Title
+# Metrics Stability Enforcement Through Static Analysis
 
 This is the title of the KEP.
 Keep it simple and descriptive.
