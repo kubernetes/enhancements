@@ -299,18 +299,9 @@ type IngressBackendHTTPHealthcheck struct {
 type IngressBackendHTTPHealthcheckTLS struct {
   // InsecureSkipTLSVerify skips the validity check for the backend's certificate.
   // This will make your HTTPS connections insecure.  If not specified, this
-  // field defaults to false.
+  // field defaults to true.
   // +optional
   InsecureSkipTLSVerify bool
-  // CertificateAuthorityData contains PEM-encoded certificate authority certificates.
-  // This allows your healthcheck to trust privately issued backend certificates.
-  // +optional
-  CertificateAuthorityData []byte
-  // Name of a secret in the same namespace containing client credentials.
-  // e.g. Client Certificate+Key, Username/Password
-  // Format and contents of the Secret are implementation specific. 
-  // +optional
-  SecretName string
 }
 ```
 
