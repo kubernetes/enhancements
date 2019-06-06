@@ -1,5 +1,4 @@
 ---
-kep-number: 0031
 title: Kubernetes Metrics Overhaul
 authors:
   - "@brancz"
@@ -155,7 +154,7 @@ https://github.com/kubernetes/kubernetes/pull/75279
 
 Workqueue metrics need follow prometheus best practices and naming conventions.
 
-* Instead of naming metrics based on the name of the workqueue, create metrics for workqueues that use name as a label. 
+* Instead of naming metrics based on the name of the workqueue, create metrics for workqueues that use name as a label.
 * Use the recommended base units.
 * Change summaries to histograms.
 

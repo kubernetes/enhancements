@@ -1,5 +1,4 @@
 ---
-kep-number: 35
 title: Event series API
 authors:
   - "@gmarek"
