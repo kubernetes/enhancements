@@ -1,6 +1,5 @@
 ---
 title: Kubernetes Control-Plane Metrics Stability
-number: 42
 authors:
   - "@logicalhan"
 owning-sig:
@@ -25,7 +24,7 @@ editor:
   - @x13n
 creation-date: 2019-04-04
 see-also:
-  - 0031-kubernetes-metrics-overhaul
+  - 20181106-kubernetes-metrics-overhaul
 status: implementable
 ---
 
