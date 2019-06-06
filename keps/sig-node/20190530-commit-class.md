@@ -218,9 +218,6 @@ In more detail, first cut implementation idea:
   vCPUs, which is a correct representation of the operator intent. Need to
   think whether this should also be the case for under-commit percentages.
 
-* Also learn whether the Admit function in PredicateAdmitHandler needs to
-  apply the percentages, or whether it uses the Node object already transformed.
-
 ### Risks and Mitigations
 
 This proposal introduces new behavior to `kubelet` in a way which can
