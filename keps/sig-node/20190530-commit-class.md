@@ -11,7 +11,7 @@ approvers:
   - TBD
 editor: TBD
 creation-date: 2019-05-30
-last-updated: 2019-06-03
+last-updated: 2019-06-06
 status: provisional
 ---
 
@@ -122,8 +122,8 @@ reduce cost via platform-level over-commit policies.
 TODO
 
 Approximately: introduce a `CommitClass` cluster-scoped object which defines
-a node selector and a list of resource multipliers. All nodes which match the
-node selector should apply the multipliers to the associated resource when
+a node selector and a list of resource percentages. All nodes which match the
+node selector should apply the percentage to the associated resource when
 updating their Node API object.
 
 #### Open question: conflict between multiple CommitClasses
@@ -134,7 +134,7 @@ effect on a Node object so that it is clear to operators what's up. One
 alternative strategy would be to have a 'Binding' style object which enumerated
 the Node names it applied to, but that interacts badly with Cluster autoscaler.
 
-Nodes should default to a `CommitClass` where all multipliers are '1'.
+Nodes should default to a `CommitClass` where all percentages are '100'.
 
 #### Consideration: container CPU requests vs host physical CPUs
 It is usually a bad idea to give a single VM more vCPUs than physical CPUs are
@@ -143,8 +143,14 @@ containers?
 
 #### Consideration: system reserved
 System reserved resource slices should almost certainly not be subject to
-`CommitClass` multipliers, so that node health is not at risk under high
-multipliers ("just" workload health).
+`CommitClass` percentages, so that node health is not at risk under high
+percentages ("just" workload health). In practice this means that resource
+percentages > 100 (over-commit) should apply to system reserved calculation. In
+other words, if the reserved slice is 2 / 24 cores, and the commit percentage
+is 1000% (10x), the new reserved slice should be 20 / 240 cores.
+
+Should percentages < 100 (under-commit) also scale system reserved, or is that
+wasteful?
 
 ### API Design
 
@@ -165,9 +171,9 @@ spec:
       - compute-optimized
   resources:
   - name: cpu
-    multiplier: 10
+    percent: 1000 # 10x over-commit
   - name: memory
-    multiplier: 1.2
+    percent: 120
 ```
 
 ### Implementation Details
@@ -179,7 +185,7 @@ With this proposal, the following changes are required:
  - Add an informer for `CommitClass` objects to `kubelet`.
  - When updating the Node object with resources available for scheduling,
    `kubelet` should determine which `CommitClass` object is in effect, and use
-   the multipliers of that `CommitClass` to change the resource amount
+   the percent of that `CommitClass` to change the resource amount
    advertised.
  - Determine a location in the Node API to record which `CommitClass` is in
    effect for that Node.
@@ -190,7 +196,7 @@ In more detail, first cut implementation idea:
 * Create a new kubelet manager, the `commitManager`. This manager should embed
   an informer/lister for `CommitClass` objects.
 * Give the `commitManager` a func like `getNodeCommitSettings`. This func
-  should take a 'node' object and return a map of resource name to multiplier,
+  should take a 'node' object and return a map of resource name to percent,
   or nil.
 * Add a new 'getter' to the `nodestatus.MachineInfo` function factory called
   `nodeCommitSettings`.  By default, this should be
@@ -200,19 +206,20 @@ In more detail, first cut implementation idea:
   function-level scope.
 * If nil, do nothing. If err, log err and do nothing. If we get a result,
   iterate over the resulting map and multiply the value in
-  `node.Status.Capacity[rname]` by the multiplier for that `rname`. This goes
-  at the _end_ of the `else` clause so that it can touch all the different
-  resource kinds.
+  `node.Status.Capacity[rname]` by the percent commit level for that `rname`.
+  This goes at the _end_ of the `else` clause so that it can touch all the
+  different resource kinds.
 * The system reserved resources should not be subject to CommitClass
   compression, where the real capacity that '2 CPUs' represents is shifted into
   '0.2 CPUs (or 2 vCPUs)' by `CommitClass` with 10x CPU commit. So
   `nodeAllocatableReservationFunc()` `allocatableReservation` should also be
-  transformed by the `CommitClass` multipliers before writing to
+  transformed by the `CommitClass` percentages before writing to
   `node.Status.Allocatable`: that way, 2 real CPUs reserved will be 20 reserved
-  vCPUs, which is a correct representation of the operator intent.
+  vCPUs, which is a correct representation of the operator intent. Need to
+  think whether this should also be the case for under-commit percentages.
 
 * Also learn whether the Admit function in PredicateAdmitHandler needs to
-  apply the multipliers, or whether it uses the Node object already transformed.
+  apply the percentages, or whether it uses the Node object already transformed.
 
 ### Risks and Mitigations
 
@@ -229,8 +236,8 @@ criteria between levels.
 ### Upgrade / Downgrade Strategy
 
 No action is required to keep existing behavior on upgrade: kubelets should
-default (explicitly or implicitly) to a `CommitClass` where all multipliers are
-'1'.
+default (explicitly or implicitly) to a `CommitClass` where all percentages are
+'100'.
 
 A cluster operator may start using this enhancement by upgrading to a version
 of kubelet which supports it, and using the CommitClass API.
