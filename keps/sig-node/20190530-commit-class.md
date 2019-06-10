@@ -88,9 +88,9 @@ resource may be allocated multiple times to different workloads. Higher
 over-commit levels achieve better cost outcomes, but risk compromising service
 quality if the uncoordinated-spike hypothesis does not hold.
 
-Kubernetes currently provides for resource over-commit by allowing Pods to
-declare themselves 'Burstable' or 'Best Effort' via container resource
-request:limit ratios. This is a powerful approach, but achieving high
+Kubernetes currently provides for resource over-commit by allowing Pods to opt
+into 'Burstable' or 'Best Effort' quality of service classes via container
+resource request:limit ratios. This is a powerful approach, but achieving high
 utilization at the cluster level requires coordination across many authors of
 Pod specs, which is challenging in a 'Namespace as a Service' multi-tenant
 Kubernetes environment, or surprising when implemented by fiat as a mutating
@@ -144,7 +144,7 @@ spec:
 ```
 
 Nodes which match the `selector` will scale the resource amounts advertised in
-the `node.status` object by the `percent` for that resource.
+the `node.status.allocatable` object by the `percent` for that resource.
 
 Supported resources: **cpu**, **memory**, **ephemeral-storage**.
 
@@ -152,12 +152,6 @@ Supported resources: **cpu**, **memory**, **ephemeral-storage**.
 
 `CommitClass` is an operator-facing API. Therefore, user stories focus on
 cluster operator profiles.
-
-Implicit in each of these stories is a large, multi-tenant cluster where close
-coordination with all authors of Pod specs is infeasible. This is because small
-multi-tenant or single-tenant clusters can use Pod-oriented APIs, like VPA, to
-achieve good utilization; as such, the `CommitClass` API is likely not
-interesting.
 
 #### Kubernetes deployed on bare metal
 
