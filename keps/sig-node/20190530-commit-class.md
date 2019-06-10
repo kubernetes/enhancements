@@ -11,11 +11,11 @@ approvers:
   - TBD
 editor: TBD
 creation-date: 2019-05-30
-last-updated: 2019-06-06
+last-updated: 2019-06-10
 status: provisional
 ---
 
-# Commit Class
+# Commit Class: node-level resource overcommit
 
 ## Table of Contents
 
@@ -25,7 +25,7 @@ status: provisional
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [API Design](#api-design)
+  - [User Stories](#user-stories)
   - [Implementation Details](#implementation-details)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
@@ -114,19 +114,105 @@ reduce cost via platform-level over-commit policies.
 * Automatically adjust commit settings to maximize utilization.
 * Replace VPA, HPA, or any other Pod-level right-sizing/auto-scaling API.
   These APIs are complimentary: they help Pod owners optimize their Pod
-  footprint, while `CommitClass` helps cluster operators optimize the cluster
-  footprint.
+  footprint, while cluster-level over- or under-commit helps cluster operators
+  optimize the cluster footprint.
+* Replace Cluster Autoscaling. This is also complimentary: Cluster Autoscaling
+  changes the number of nodes based on resource allocation, while this KEP
+  changes the density of nodes.
 
 ## Proposal
 
-TODO
+A cluster-scoped `CommitClass` API will be added to the node API group:
 
-Approximately: introduce a `CommitClass` cluster-scoped object which defines
-a node selector and a list of resource percentages. All nodes which match the
-node selector should apply the percentage to the associated resource when
-updating their Node API object.
+```yaml
+kind: CommitClass
+apiVersion: node.k8s.io/v1alpha1
+metadata:
+    name: high-cpu-density
+spec:
+  selector:
+  - matchExpressions:
+    - key: beta.kubernetes.io/instance-type
+    operator: In
+    values:
+    - compute-optimized
+  resources:
+  - name: cpu
+    percent: 1000 # 10x over-commit
+  - name: memory
+    percent: 120
+```
 
-#### Open question: conflict between multiple CommitClasses
+Nodes which match the `selector` will scale the resource amounts advertised in
+the `node.status` object by the `percent` for that resource.
+
+Supported resources: **cpu**, **memory**, **ephemeral-storage**.
+
+### User Stories
+
+`CommitClass` is an operator-facing API. Therefore, user stories focus on
+cluster operator profiles.
+
+Implicit in each of these stories is a large, multi-tenant cluster where close
+coordination with all authors of Pod specs is infeasible. This is because small
+multi-tenant or single-tenant clusters can use Pod-oriented APIs, like VPA, to
+achieve good utilization; as such, the `CommitClass` API is likely not
+interesting.
+
+#### Kubernetes deployed on bare metal
+
+As an operator of Kubernetes on bare metal, the compute resources offered by my
+nodes represent a great deal of potential performance. However, picking an
+ideal resource request/limit is very challenging, so individual Pod authors are
+likely to overprovision their Pods. At scale, this results in resource waste
+and poor utilization of the cluster. This problem mirrors that of VM
+infrastructures, where VMs consumers might pick a VM profile with some
+'headroom' relative to workload needs.
+
+`CommitClass` would allow me to reclaim some of that 'headroom' for cluster
+capacity, so that my server purchasing decisions could be driven more by
+utilization than by distributed locally-optimal resource reservation.
+
+#### Kubernetes on VMs, control over hypervisor
+
+As an operator of Kubernetes on VMs with control over the hypervisor settings,
+I have a powerful tool in place to manage server footprint: the hypervisor
+overcommit settings. However, choosing the appropriate hypervisor commit level
+for a Kubernetes cluster is very challenging, because any overcommit level
+applies equally to user workloads and system- or kube- reserved resource
+slices. As a result, attempting to get high density at the VM level can result
+in unstable Kubernetes nodes.
+
+A more Kubernetes-aware commit level would let me isolate overcommit risk to
+user workloads: with `CommitClass` available, I could reduce (or eliminate) VM
+hypervisor overcommit.
+
+#### Kubernetes on VMs, no control over hypervisor / managed Kubernetes (cloud profile)
+
+As an operator of Kubernetes on VMs in the cloud, or of managed Kubernetes,
+I can use Cluster Autoscaling to ensure that my clusters are not provisioned
+wildly out of proportion to Pod resource requests. However, my toolset for
+achieving good utilization of my cluster is limited. A significant gap between
+Pod requests and Pod utilization aross the fleet will result in excessive
+cluster cost, as in other environments.
+
+Quoting from GKE's cluster autoscaling documentation:
+
+> Cluster autoscaler works based on **Pod resource requests**, based on how many
+> resources your Pods have *requested*. Cluster autoscaler does not take into
+> account the resources your Pods are actively *using*. Essentially, cluster
+> autoscaler trusts that the Pod resource requests you've provided are accurate
+> and schedules Pods on nodes based on that assumption.
+
+CommitClass would allow me to manage resource footprint in response to
+utilization, even as Cluster Autoscaler manages resource footprint in response
+to allocation.
+
+### Implementation Details
+
+#### Questions
+
+##### Conflict between multiple CommitClasses
 
 How do you resolve conflict if multiple nodes are selected by the same
 `CommitClass`? kubelet probably needs to record which `CommitClass` is in
@@ -136,49 +222,43 @@ the Node names it applied to, but that interacts badly with Cluster autoscaler.
 
 Nodes should default to a `CommitClass` where all percentages are '100'.
 
-#### Consideration: container CPU requests vs host physical CPUs
+##### Container CPU requests vs host physical CPUs
+
 It is usually a bad idea to give a single VM more vCPUs than physical CPUs are
 available on the host system. Should that be reflected here somehow for
 containers?
 
-#### Consideration: system reserved
-System reserved resource slices should almost certainly not be subject to
-`CommitClass` percentages, so that node health is not at risk under high
-percentages ("just" workload health). In practice this means that resource
-percentages > 100 (over-commit) should apply to system reserved calculation. In
-other words, if the reserved slice is 2 / 24 cores, and the commit percentage
-is 1000% (10x), the new reserved slice should be 20 / 240 cores.
+##### Limiting supported resource types
 
-Should percentages < 100 (under-commit) also scale system reserved, or is that
+The proposed implementation limits the resources which can be scaled to
+**cpu**, **memory**, and **ephemeral-storage**. This is not a technical
+limitation: any of the resources enumerated in the
+`node.status.capacity|allocatable` objects could be scaled. Should the resource
+types be limited to a 'sane' subset?
+
+##### kube- and system-reserved resources
+
+Reserved resource slices should not be subject to `CommitClass` percentages, so
+that node health is not at risk under high percentages ("just" workload
+health). In practice this means that resource percentages > 100 (over-commit)
+should apply to system reserved calculation. In other words, if the reserved
+slice is 2 / 24 cores, and the commit percentage is 1000% (10x), the new
+reserved slice should be 20 / 240 cores.
+
+Should percentages < 100 (under-commit) also scale reserved slices, or is that
 wasteful?
 
-### API Design
+##### Metrics
 
-TODO, perhaps something like:
+The active commit settings are a key metric for cluster operators and SREs to
+understand overload incidents.
 
-```yaml
-kind: CommitClass
-apiVersion: node.k8s.io/v1alpha1
-metadata:
-    name: high-cpu-density
-spec:
-  nodes:
-    nodeSelectorTerms:
-    - matchExpressions:
-      - key: beta.kubernetes.io/instance-type
-      operator: In
-      values:
-      - compute-optimized
-  resources:
-  - name: cpu
-    percent: 1000 # 10x over-commit
-  - name: memory
-    percent: 120
-```
+Are there other metrics that should be exposed?
 
-### Implementation Details
+#### Implementation plan
 
-(very approximate, my initial guess)
+Derived from a [rough
+prototype](https://github.com/kanatohodets/kubernetes/commits/btyler/commitclass).
 
 With this proposal, the following changes are required:
  - Introduce a new cluster-scoped API object, `CommitClass`.
@@ -187,9 +267,6 @@ With this proposal, the following changes are required:
    `kubelet` should determine which `CommitClass` object is in effect, and use
    the percent of that `CommitClass` to change the resource amount
    advertised.
- - Determine a location in the Node API to record which `CommitClass` is in
-   effect for that Node.
- - Change `kubelet` to record the `CommitClass` into that location.
 
 In more detail, first cut implementation idea:
 
@@ -209,7 +286,7 @@ In more detail, first cut implementation idea:
   `node.Status.Capacity[rname]` by the percent commit level for that `rname`.
   This goes at the _end_ of the `else` clause so that it can touch all the
   different resource kinds.
-* The system reserved resources should not be subject to CommitClass
+* The kube and system reserved resources should not be subject to CommitClass
   compression, where the real capacity that '2 CPUs' represents is shifted into
   '0.2 CPUs (or 2 vCPUs)' by `CommitClass` with 10x CPU commit. So
   `nodeAllocatableReservationFunc()` `allocatableReservation` should also be
