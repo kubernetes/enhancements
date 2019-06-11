@@ -902,6 +902,41 @@ spec:
       set: [ "system:serviceaccount:example-com:network-apiserver" ]
 ```
 
+### Reaction to Configuration Changes
+
+We do not seek to make our life easy by making any configuration
+object fields immutable.  Recall that objects can be deleted and
+replacements (with the same name) created, so server-enforced
+immutability of field values provides no useful guarantee to
+downstream consumers (such as the request filter here).  We could try
+to get useful guarantees by adding a finalizer per (config object,
+apiserver), but at this level of development we will not attempt that.
+
+Many details of the configuration are consumed only momentarily;
+changes in these pose no difficulty.  Challenging changes include
+changes in the number of queues, the queue length limit, or the
+assured concurrency value (which is derived from several pieces of
+config, as outlined elsewhere) of a request priority.
+
+An increase in the number of queues of a priority level is handled by
+simply adding queues.  A decrease is handled by making a distinction
+between the desired and the actual number of queues.  When the desired
+number drops below the actual number, the undesired queues are left in
+place until they are naturally drained; new requests are put in only
+the desired queues.  When an undesired queue becomes empty it is
+deleted.
+
+When the assured concurrency value of a priority level increases,
+additional requests are dispatched if possible.  When the assured
+concurrency value decreases, there is no immediate reaction --- this
+filter does not abort or suspend requests that are currently being
+served.
+
+When the queue length limit of a priority level increases, no
+immediate reaction is required.  When the queue length limit
+decreases, the queues are trimmed to the new length limit by rejecting
+requests from the young end of the queue.
+
 ### Default Behavior
 
 There must be reasonable behavior "out of the box", and it should be
