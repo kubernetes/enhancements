@@ -49,9 +49,13 @@ status: implementable
             - [Testing Strategy](#testing-strategy)
         - [Risks and Mitigations](#risks-and-mitigations)
     - [Graduation Criteria](#graduation-criteria)
-    - [Phase 1: Alpha (1.15)](#phase-1-alpha-115)
-    - [Phase 2: Beta (target 1.16)](#phase-2-beta-target-116)
-    - [Phase 3: GA](#phase-3-ga)
+        - [Phase 1: Alpha (1.15)](#phase-1-alpha-115)
+        - [Phase 2: Beta (target 1.16)](#phase-2-beta-target-116)
+        - [Phase 3: GA](#phase-3-ga)
+    - [Performance Benchmarks](#performance-benchmarks)
+        - [Elapsed Time](#elapsed-time)
+        - [User CPU Time](#user-cpu-time)
+        - [System CPU Time](#system-cpu-time)
     - [Implementation History](#implementation-history)
         - [Version 1.15](#version-115)
     - [Drawbacks [optional]](#drawbacks-optional)
@@ -623,25 +627,111 @@ appropriate end to end tests.
 The following criteria applies to
 `LocalStorageCapacityIsolationFSMonitoring`:
 
-## Phase 1: Alpha (1.15)
+### Phase 1: Alpha (1.15)
 
 - Support integrated in kubelet
 - Alpha-level documentation
 - Unit test coverage
 - Node e2e test
 
-## Phase 2: Beta (target 1.16)
+### Phase 2: Beta (target 1.16)
 
 - User feedback
 - Benchmarks to determine latency and overhead of using quotas
   relative to existing monitoring solution
 - Cleanup
 
-## Phase 3: GA
+### Phase 3: GA
 
 - TBD
 
-[umbrella issues]: N/A
+## Performance Benchmarks
+
+I performed a microbenchmark consisting of various operations on a
+directory containing 4096 subdirectories each containing 2048 1Kbyte
+files.  The operations performed were as follows, in sequence:
+
+* *Create Files*: Create 4K directories each containing 2K files as
+  described, in depth-first order.
+  
+* *du*: run `du` immediately after creating the files.
+
+* *quota*: where applicable, run `xfs_quota` immediately after `du`.
+
+* *du (repeat)*: repeat the `du` invocation.
+
+* *quota (repeat)*: repeat the `xfs_quota` invocation.
+
+* *du (after remount)*: run `mount -o remount <filesystem>`
+  immediately followed by `du`.
+  
+* *quota (after remount)*: run `mount -o remount <filesystem>`
+  immediately followed by `xfs_quota`.
+  
+* *unmount*: `umount` the filesystem.
+
+* *mount*: `mount` the filesystem.
+
+* *quota after umount/mount*: run `xfs_quota` after unmounting and
+  mounting the filesystem.
+
+* *du after umount/mount*: run `du` after unmounting and
+  mounting the filesystem.
+  
+* *Remove Files*: remove the test files.
+
+The test was performed on four separate filesystems:
+
+* XFS filesystem, with quotas enabled (256 GiB, 128 Mi inodes)
+* XFS filesystem, with quotas disabled (64 GiB, 32 Mi inodes)
+* ext4fs filesystem, with quotas enabled (250 GiB, 16 Mi inodes)
+* ext4fs filesystem, with quotas disabled (60 GiB, 16 Mi inodes)
+
+Other notes:
+
+* All filesystems reside on an otherwise idle HP EX920 1TB NVMe on a Lenovo ThinkPad P50 with 64 GB RAM and Intel Core i7-6820HQ CPU (4 cores/8 threads total) running Fedora 30 (5.1.5-300.fc30.x86_64)
+* Five runs were conducted with each combination; the median value is used.  All times are in seconds.
+* Space consumption was calculated with the filesystem hot (after files were created), warm (after `mount -o remount`), and cold (after umount/mount of the filesystem).
+* Note that in all cases xfs_quota consumed zero time as reported by `/usr/bin/time`.
+* User and system time are not available for file creation.
+* All calls to `xfs_quota` and `mount` consumed less than 0.01 seconds elapsed, user, and CPU time and are not reported here.
+* Removing files was consistently faster with quotas disabled than with quotas enabled.  With ext4fs, du was faster with quotas disabled than with quotas enabled.  With XFS, creating files may have been faster with quotas disabled than with quotas enabled, but the difference was small.  In other cases, the difference was within noise.
+
+### Elapsed Time
+
+| *Operation*                | *XFS+Quota* | *XFS*   | *Ext4fs+Quota* | *Ext4fs* |
+|--------------------------|-----------|-------|--------------|--------|
+| Create Files             | 435.0     | 419.0 | 348.0        | 343.0  |
+| du                       | 12.1      | 12.6  | 14.3         | 14.3   |
+| du (repeat)              | 12.0      | 12.1  | 14.1         | 14.0   |
+| du (after remount)       | 23.2      | 23.2  | 39.0         | 24.6   |
+| unmount                  | 12.2      | 12.1  | 9.8          | 9.8    |
+| du after umount/mount    | 103.6     | 138.8 | 40.2         | 38.8   |
+| Remove Files             | 196.0     | 159.8 | 105.2        | 90.4   |
+
+### User CPU Time
+
+All calls to `umount` consumed less than 0.01 second of user CPU time
+and are not reported here.
+
+| *Operation*                | *XFS+Quota* | *XFS*   | *Ext4fs+Quota* | *Ext4fs* |
+|--------------------------|-----------|-------|--------------|--------|
+| du                       | 3.7       | 3.7   | 3.7          | 3.7    |
+| du (repeat)              | 3.7       | 3.7   | 3.7          | 3.8    |
+| du (after remount)       | 3.3       | 3.3   | 3.7          | 3.6    |
+| du after umount/mount    | 8.1       | 10.2  | 3.9          | 3.7    |
+| Remove Files             | 4.3       | 4.1   | 4.2          | 4.3    |
+
+### System CPU Time
+
+| *Operation*                | *XFS+Quota* | *XFS*   | *Ext4fs+Quota* | *Ext4fs* |
+|--------------------------|-----------|-------|--------------|--------|
+| du                       | 8.3       | 8.6   | 10.5         | 10.5   |
+| du (repeat)              | 8.3       | 8.4   | 10.4         | 10.4   |
+| du (after remount)       | 19.8      | 19.8  | 28.8         | 20.9   |
+| unmount                  | 10.2      | 10.1  | 8.1          | 8.1    |
+| du after umount/mount    | 66.0      | 82.4  | 29.2         | 28.1   |
+| Remove Files             | 188.6     | 156.6 | 90.4         | 81.8   |
 
 ## Implementation History
 
@@ -657,7 +747,7 @@ The following criteria applies to
    * ext4fs filesystems must be created with additional options that
      are not enabled by default:
 ```
-mkfs.ext4 -O quota,project -Q usrquota,grpquota,prjquota _device_
+mkfs.ext4 -O quota,project -E quotatype=usrquota:grpquota:prjquota _device_
 ```
    * An additional option (`prjquota`) must be applied in `/etc/fstab`
    * If the root filesystem is to be quota-enabled, it must be set in
