@@ -934,8 +934,9 @@ served.
 
 When the queue length limit of a priority level increases, no
 immediate reaction is required.  When the queue length limit
-decreases, the queues are trimmed to the new length limit by rejecting
-requests from the young end of the queue.
+decreases, there is also no immediate reaction --- queues that are
+longer than the new length limit are left to naturally shrink as they
+are drained by dispatching and timeouts.
 
 ### Default Behavior
 
