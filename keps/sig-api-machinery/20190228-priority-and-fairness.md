@@ -924,7 +924,8 @@ between the desired and the actual number of queues.  When the desired
 number drops below the actual number, the undesired queues are left in
 place until they are naturally drained; new requests are put in only
 the desired queues.  When an undesired queue becomes empty it is
-deleted.
+deleted and the fair queuing round-robin pointer is advanced if it was
+pointing to that queue.
 
 When the assured concurrency value of a priority level increases,
 additional requests are dispatched if possible.  When the assured
