@@ -26,17 +26,15 @@ superseded-by:
 
 ## Table of Contents
 
-   * [Metrics Validation and Verification](#metrics-validation-and-verification)
-      * [Table of Contents](#table-of-contents)
-      * [Summary](#summary)
-      * [Motivation](#motivation)
-         * [Goals](#goals)
-         * [Non-Goals](#non-goals)
-      * [Proposal](#proposal)
-      * [Design Details](#design-details)
-         * [Graduation Criteria](#graduation-criteria)
-      * [Implementation History](#implementation-history)
-
+* [Table of Contents](#table-of-contents)
+* [Summary](#summary)
+* [Motivation](#motivation)
+   * [Goals](#goals)
+   * [Non-Goals](#non-goals)
+* [Proposal](#proposal)
+* [Design Details](#design-details)
+   * [Graduation Criteria](#graduation-criteria)
+* [Implementation History](#implementation-history)
 
 ## Summary
 
