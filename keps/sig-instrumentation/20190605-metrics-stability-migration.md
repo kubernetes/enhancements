@@ -45,31 +45,39 @@ We want to start using the metrics stability framework which was based off of [K
 
 ### Goals
 
- * Describe a migration strategy for moving metrics onto our metrics stability framework.
+Setup a strategy for migrating metrics to the stability framework. Also:
+
+ * Explicitly define a strategy for handling migration of shared metrics.
  * Maintain backwards compatibility through the migration path. This excludes metrics which are slated to be removed after deprecation due to metrics overhaul.
 
 ### Non-Goals
 
 * During migration, we will __*not*__ be determining whether a metric is considered stable. Any metrics which will be promoted to a stable status must be done post-migration.
+* Kubelet '/metrics/resource' and '/metrics/cadvisor' are out of scope for this migration.
 
-## Background
+## General Migration Strategy
 
-The [Kubernetes Control-Plane Metrics Stability KEP](https://github.com/kubernetes/enhancements/blob/master/keps/sig-instrumentation/20190404-kubernetes-control-plane-metrics-stability.md) outlined a framework which we will use to annotate Kubernetes metrics with stability and deprecation metadata. This KEP intends to address our migration strategy.
+To keep migration PRs limited in scope (i.e. ideally belonging to a single component owner at a time), we prefer to approach migration in a piecemeal fashion. Each metrics endpoint can be considered an atomic unit of migration. This will allow us to avoid migrating the entire codebase at once.
 
 Kubernetes control-plane binaries can expose one or more metrics endpoints:
 
-* controller-manager - [/metrics](https://github.com/kubernetes/kubernetes/blob/release-1.15/cmd/controller-manager/app/serve.go#L65)
-* kube-proxy - [/metrics](https://github.com/kubernetes/kubernetes/blob/release-1.15/cmd/kube-proxy/app/server.go#L570)
-* kube-apiserver - [/metrics](https://github.com/kubernetes/kubernetes/blob/release-1.15/staging/src/k8s.io/apiserver/pkg/server/routes/metrics.go#L36)
-* kubelet - [four metrics endpoints](https://github.com/kubernetes/kubernetes/blob/release-1.15/staging/src/k8s.io/apiserver/pkg/server/routes/metrics.go#L36)
+* one controller-manager metrics endpoint
+    * [/metrics](https://github.com/kubernetes/kubernetes/blob/release-1.15/cmd/controller-manager/app/serve.go#L65)
+* one kube-proxy metrics endpoint
+    * [/metrics](https://github.com/kubernetes/kubernetes/blob/release-1.15/cmd/kube-proxy/app/server.go#L570)
+* one kube-apiserver metrics endpoint
+    * [/metrics](https://github.com/kubernetes/kubernetes/blob/release-1.15/staging/src/k8s.io/apiserver/pkg/server/routes/metrics.go#L36)
+* [four kubelet metrics endpoints](https://github.com/kubernetes/kubernetes/blob/release-1.15/staging/src/k8s.io/apiserver/pkg/server/routes/metrics.go#L36)
     * [/metrics](https://github.com/kubernetes/kubernetes/blob/release-1.15/pkg/kubelet/server/server.go#L299)
     * [/metrics/cadvisor](https://github.com/kubernetes/kubernetes/blob/release-1.15/pkg/kubelet/server/server.go#L315)
     * [/metrics/resource](https://github.com/kubernetes/kubernetes/blob/release-1.15/pkg/kubelet/server/server.go#L321-L323)
     * [/metrics/probes](https://github.com/kubernetes/kubernetes/blob/release-1.15/pkg/kubelet/server/server.go#L329-L331)
 
-Ideally, we want to be able to migrate each metrics endpoint individually. Migration in a piecemeal fashion would allow us to avoid having to operate across the entire codebase at once.
+Following our desired approach, each of metrics endpoint above (except those out of scope) will be accompanied by an individual PR for migrating that endpoint.
 
-However, there are two major shared metric components across binaries:
+## Strategy Around Shared Metrics
+
+Shared metrics makes piecemeal migration potentially difficult because metrics in shared code will either be migrated or not, and a component which uses the shared metric can be in the opposite state. Currently, there are groups of metrics which are __*shared*__ across binaries:
 
 1. [Kubernetes build info metadata metric](https://github.com/kubernetes/kubernetes/blob/release-1.15/pkg/version/prometheus/prometheus.go#L26-L38) - used by kube-apiserver, controller-manager, hollow-node, kubelet, kube-proxy, scheduler.
 2. [Client-go metrics](https://github.com/kubernetes/kubernetes/blob/release-1.15/pkg/util/prometheusclientgo/adapters.go#L20-L24)
@@ -77,61 +85,11 @@ However, there are two major shared metric components across binaries:
     * [leader-election metrics](https://github.com/kubernetes/kubernetes/blob/release-1.15/pkg/util/prometheusclientgo/leaderelection/adapter.go#L27-L29)
     * [workqueue metrics](https://github.com/kubernetes/kubernetes/blob/release-1.15/pkg/util/workqueue/prometheus/prometheus.go)
 
-This potentially poses a challenge for piecemeal migration. How do we migrate these shared metrics so that we do not have to migrate every component which uses them at the same time?
+We should be able to migrate shared metrics in such a way that does not require migrating every component which consumes/uses these shared metrics simulaneously. There are a couple possible ways we can avoid this:
 
-Consider this:
-
-```golang
-func init() {
-  leaderelection.SetProvider(prometheusMetricsProvider{})
-}
-
-type prometheusMetricsProvider struct{}
-
-func (prometheusMetricsProvider) NewLeaderMetric() leaderelection.SwitchMetric {
-  leaderGauge := prometheus.NewGaugeVec(
-    prometheus.GaugeOpts{
-      Name: "leader_election_master_status",
-      Help: "Gauge of if the reporting system is master of the relevant lease, 0 indicates backup, 1 indicates master. 'name' is the string used to identify the lease. Please make sure to group by name.",
-    },
-    []string{"name"},
-  )
-  prometheus.Register(leaderGauge)
-  return &switchAdapter{gauge: leaderGauge}
-}
-```
-
-There are two distinct issues:
-
-1. the metrics provider is set in an `init` function which means that the metrics provider is set as a side effect of an import statement like this one:
-
-```golang
-import (
-  _ "k8s.io/kubernetes/pkg/util/prometheusclientgo/leaderelection" // for leader election metric registration
-)
-```
-This means we cannot use anything in this file without invoking the `init` function (which we would probably want to do in order to migrate metrics).
-
-2. The `NewLeaderMetric` metric creates a new metric and registers that metric to the default global prometheus registry. To enable piecemeal migration, we would want to be able configure a registry and a registerable metric so that we can toggle between using the global prom registry or our internal registry based on whether the component importing this shared metric is migrated or not.
-
-## Proposal
-
-We migrate each endpoint individually, starting with kubelet's metrics/probes endpoint, since it is a relatively thin metrics enpoint.
-
-### Graduation Criteria
-
-TBD
-
-## Drawbacks
-
-TBD
-
-## Alternatives
-
-TBD
+1. We can refactor the shared metrics code so that we can customize the metrics registration codepaths. This likely involves removing the `init` calls to set metricsProviders and reworking of the codepaths which register metrics to the global prometheus registry. This is invasive and potentially complicated.
+2. We can simply duplicate the file and create a version of the shared metrics which uses the new registries. When we migrate an endpoint, we can remove the import statements to the old file and replace it with references to our migrated variant. This has the additional benefit that once migration is complete, we can just delete the old variants of shared metrics.
 
 ## Implementation History
 
 TBD (since this is not yet implemented)
-
-## References
