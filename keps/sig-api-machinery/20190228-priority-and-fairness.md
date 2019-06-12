@@ -916,7 +916,8 @@ Many details of the configuration are consumed only momentarily;
 changes in these pose no difficulty.  Challenging changes include
 changes in the number of queues, the queue length limit, or the
 assured concurrency value (which is derived from several pieces of
-config, as outlined elsewhere) of a request priority.
+config, as outlined elsewhere) of a request priority --- as well as
+deletion of a priority level itself.
 
 An increase in the number of queues of a priority level is handled by
 simply adding queues.  A decrease is handled by making a distinction
@@ -938,6 +939,12 @@ immediate reaction is required.  When the queue length limit
 decreases, there is also no immediate reaction --- queues that are
 longer than the new length limit are left to naturally shrink as they
 are drained by dispatching and timeouts.
+
+When a request priority configuration object is deleted, in a given
+apiserver the corresponding implementation objects linger until all
+the queues of that priority level are empty.  A FlowSchema associated
+with one of these lingering undesired priority levels matches no
+requests.
 
 ### Default Behavior
 
