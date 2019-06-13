@@ -138,6 +138,11 @@ Name string
 Containers []Containers
 ```
 
+That immutable tag would be extensible in the future by adding extra-parameters if needed:
+```
+// +immutable=ignore
+```
+
 ### OpenAPI Extension
 
 Since the semantics of the "readOnly" tag in OpenAPI is not the one we're trying
