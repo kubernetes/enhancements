@@ -7,7 +7,7 @@ participating-sigs:
   - sig-api-machinery
 reviewers:
   - "@sttts"
-  - "@jbetz"
+  - "@jpbetz"
   - "@liggitt"
 approvers:
   - "@liggitt"
@@ -76,7 +76,7 @@ In v1, this annotation will be required in order to create a CRD for a resource 
 
 ### Behavior of new clusters
 1. Current CRD for a resource in the kube group already in API is missing valid `api-approved.kubernetes.io` - `KubeAPIApproved` condition will be false.
-2. CRD for a resource in the kube group creating via CRD.v1beta1 is missing valid `api-approved.kubernetes.io` - create as normal.  This ensures compatibility.
+2. CRD for a resource in the kube group creating via CRD.v1beta1 is missing valid `api-approved.kubernetes.io` - create as normal.  This ensures compatibility.  `KubeAPIApproved` condition will be false.
 3. CRD for a resource in the kube group creating via CRD.v1 is missing valid `api-approved.kubernetes.io` - fail validation and do not store in etcd.
 4. CRD for a resource outside the kube group creating via CRD.v1 is contains the `api-approved.kubernetes.io` - fail validation and do not store in etcd.
 5. In CRD.v1, remove a required `api-approved.kubernetes.io` - fail validation.
@@ -97,7 +97,7 @@ an inappropriate name.
 
 **blockers for GA:**
 
-* Document the in release notes.  The impact is very low
+* Document in the release notes.  The impact is very low
 
 ### Graduation Criteria
 
