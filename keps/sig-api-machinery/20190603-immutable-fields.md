@@ -49,10 +49,10 @@ https://github.com/kubernetes/kubernetes/issues/65973
 ### Goals
 
 The goals are mostly twofold:
-- Provide a mechanism to document APIs by having that additional marker provide
-  information to users,
-- Automatically provide logic for developers to guarantee immutability of
-  specific fields.
+- Provide a mechanism to document APIs (both built-in types and CRDs) by having
+  that additional marker provide information to users,
+- Automatically provide logic for developers (of core-types and CRDs) to
+  guarantee immutability of specific fields.
 
 ### Non-Goals
 
@@ -69,7 +69,7 @@ semantics. The proposal should not close the door to further improvements.
 
 ### Semantics
 
-We'll define immutable as "writeOnly", which means that the fields can only be
+We'll define immutable as "writeOnce", which means that the fields can only be
 set at creation time, and can never be updated after. Attempts to update an
 immutable field will result in an error (as opposed to being ignored), though we
 could potentially add that semantics later.
@@ -83,15 +83,18 @@ consider non-leaf fields like lists and maps.
 
 #### Field selection
 
-- Recursive:
-  - Scalar fields are immutable (they can't change). Changing the
-    "type" will also typically be considered an error: `14 -> 14.0`. The field
-    should be purely round-tripped and will be compared as-is.
-  - Lists and maps are immutable too, which means that none of their field can
-    change, and new fields are not accepted.
+Scalar fields have an obvious "selection" mechanism: they are either immutable
+or not. Things get more complicated for lists and maps, since we need to know if
+the flag applies to the list/map itself, to its members, or both.
+
+A few possible semantics are described here:
+
+- Non-recursive: For a list or a map, one can not remove or add new items, but
+  existing items can be modified.
+- Recursive: means that none of their field can change, and new fields are not
+  accepted.
 - Recursive with addition and/or deletion:
-  - Scalar fields are still immutable,
-  - New/delete fields in maps and lists are tolerated.
+  - New/deleted fields in maps and lists are tolerated.
   - The added/deleted type would probably be "Recursive" after the first level
     (addition/delete is not recursive).
   - For associative lists, keys are already "immutable" in a way (similar to how
@@ -115,7 +118,9 @@ have to either have two different markers (one for selection and one for
 behavior) or have a single field with multiple options.
 
 For the moment, we understand that "Recursive" is the most important and simple
-selection mechanism, and "error" is the most natural way to handle mutations.
+selection mechanism, and "error" is the most natural way to handle
+mutations. For this reason, this proposal focuses on providing those two options
+only, with the opportunity to extend this functionality later on.
 
 ### Go IDL
 
@@ -139,7 +144,7 @@ Since the semantics of the "readOnly" tag in OpenAPI is not the one we're trying
 to have here.  We propose a new Kubernetes specific extensions, which has to
 allow for further changes in the semantics of our immutable marker:
 ```
-X-Kubernetes-immutable: recursive,error
+"x-kubernetes-immutable": ["recursive", "error"]
 ```
 
 ### Mutating admission chain
@@ -150,12 +155,9 @@ mutations. On creation, mutation are permitted.
 
 ### Risks and Mitigations
 
-The risks are considered low. For CRDs, it would be possible for someone to set
-immutable fields on metadata, which could result in objects that can't be
-deleted or updated ever. For example, having finalizers, deletionTimestamp or
-managedFields set to immutable would make the object unusable.
-
-We can mitigate that by forbidding any of these annotations on metadata fields.
+One risk would have been to block updates to some metadata fields. But CRD
+validation already guarantees that this is not possible for CRDs.  For
+core-types, we would have to assert that `metadata` fields are not immutable.
 
 ## Design Details
 
