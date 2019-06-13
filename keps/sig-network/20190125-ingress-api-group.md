@@ -442,14 +442,19 @@ backend:
   `networking.k8s.io/v1beta1`
 * [ ] Update Ingress controllers in the kubernetes org to target
   `networking.k8s.io/v1beta1`
+  * [x] [ingress-nginx](https://github.com/kubernetes/ingress-nginx/pull/4127)
+  * [ ] [ingress-gce](https://github.com/kubernetes/ingress-gce/issues/770)
 * [x] Update documentation to recommend new users start with kubernetes/website#14239
   networking.k8s.io/v1beta1, but existing users stick with
   `extensions/v1beta1` until `networking.k8s.io/v1` is available.
 * [x] Update documentation to reference `networking.k8s.io/v1beta1` kubernetes/website#14239
+
+### 1.16
+
 * [ ] Meet graduation criteria and promote API to `networking.k8s.io/v1`
 * [ ] Announce `networking.k8s.io/v1beta1` Ingress as deprecated
 
-### 1.16
+### 1.17
 
 * [ ] Update API server to persist in `networking.k8s.io/v1`.
 * [ ] Update in-tree controllers, examples, and clients to target
