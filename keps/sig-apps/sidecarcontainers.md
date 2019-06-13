@@ -13,7 +13,7 @@ approvers:
   - "@kow3ns"
 editor: TBD
 creation-date: 2018-05-14
-last-updated: 2019-04-08
+last-updated: 2019-06-13
 status: provisional
 ---
 
@@ -30,7 +30,8 @@ status: provisional
 * [Proposal](#proposal)
     * [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
     * [Risks and Mitigations](#risks-and-mitigations)
-* [Design Details](#design-details)    
+* [Design Details](#design-details)  
+  * [Test Plan](#test-plan)  
   * [Graduation Criteria](#graduation-criteria)
   * [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   * [Version Skew Strategy](#version-skew-strategy)
@@ -196,7 +197,16 @@ Older Kubelets that don't implement the sidecar logic could have a pod scheduled
 ## Design Details
 
 ### Test Plan
-//TODO
+* Units test in kubelet package `kuberuntime` primarily in the same style as `TestComputePodActions` to test a variety of scenarios.
+* New E2E Tests to validate that pods with sidecars behave as expected e.g:
+ * Pod with sidecars starts sidecars containers before non-sidecars
+ * Pod with sidecars terminates non-sidecar containers before sidecars
+ * Pod with init containers and sidecars starts sidecars after init phase, before non-sidecars
+ * Termination grace period is still respected when terminating a Pod with sidecars
+ * Pod with sidecars terminates sidecars once non-sidecars have completed when `restartPolicy` != `Always`
+ * Pod phase should be `Failed` if any sidecar exits in failure when `restartPolicy` != `Always`
+ * Pod phase should be `Succeeded` if all containers, including sidecars, exit with success when `restartPolicy` != `Always`
+
 
 ### Graduation Criteria
 #### Alpha -> Beta Graduation
