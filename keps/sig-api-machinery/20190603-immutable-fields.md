@@ -50,7 +50,8 @@ https://github.com/kubernetes/kubernetes/issues/65973
 
 The goals are mostly twofold:
 - Provide a mechanism to document APIs (both built-in types and CRDs) by having
-  that additional marker provide information to users,
+  that additional marker provide information to users AND tools (including
+  generated documentation, kubectl explain),
 - Automatically provide logic for developers (of core-types and CRDs) to
   guarantee immutability of specific fields.
 
