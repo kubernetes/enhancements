@@ -181,10 +181,9 @@ Not ready yet
 
 ### Graduation Criteria
 
-This feature is mostly considered as a sub-feature of [Server-side
-apply](https://github.com/kubernetes/enhancement/pull/555) and will probably
-follow a very similar graduation line. It is expected to start directly as a
-beta feature and will graduate to GA along with Server-side apply.
+Because of the very limited risk and existing infra-structure set-up by
+server-side apply, this feature will start as Beta and be promoted to GA a few
+cycles later, based on the received feedback.
 
 ## Implementation History
 
