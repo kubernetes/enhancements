@@ -111,6 +111,18 @@ A few possible semantics are described here:
 - Ignored: mutation of the field (and/or sub-fields) are completely ignored, and
   not persisted. They do not trigger an error.
 
+#### Equality
+
+Equality of two fields is very important:
+- Scalar fields are compared directly: fields and values must exactly match from old
+  object to new object.
+- Lists fields are compared using the same logic currently used for native
+  kubernetes types: Empty and null lists are equal. A missing list is NOT equal
+  to a null or empty list.
+- Same rule for list applies to maps and struct: An empty map and a null map are
+  considered equal. The set of fields in the map must be the same. Values are
+  compared using this same set of rules.
+
 #### Proposal
 
 The behavior on mutation of immutable field is orthogonal to selection of
