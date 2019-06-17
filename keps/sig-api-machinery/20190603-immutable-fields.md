@@ -154,10 +154,18 @@ allow for further changes in the semantics of our immutable marker:
 ```
 
 ### Mutating admission chain
+
 Mutating admission chain would have the exact same effects as user changes,
 meaning that they wouldn't be able to change an object after creation. This is
 very similar to what is done today since validation for update is run AFTER all
 mutations. On creation, mutation are permitted.
+
+### Where does this happen
+
+This process is meant to happen right before the update validation and after
+mutating and validating webhooks, and only run on updates. This will allow us to
+keep the exact same behavior while removing the validation code that checks the
+immutability of fields.
 
 ### Risks and Mitigations
 
