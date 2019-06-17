@@ -41,10 +41,10 @@ users and help API developers by verifying these assertions automatically.
 
 ## Motivation
 
-The kubernetes model tend to promote "immutable" objects rather than "delete and
-recreate" on changes approach, and users have expressed the need for such a
-feature through this issue for example:
-https://github.com/kubernetes/kubernetes/issues/65973
+Kubernetes tend to encourage "immutable" objects rather than "delete and
+recreate" on changes approach. Users have expressed the need for automatically
+enforcing immutability of some fields and documentation of that behavior through
+this issue for example: https://github.com/kubernetes/kubernetes/issues/65973
 
 ### Goals
 
