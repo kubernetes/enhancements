@@ -122,8 +122,8 @@ Equality of two fields is very important:
   kubernetes types: Empty and null lists are equal. A missing list is NOT equal
   to a null or empty list.
 - Same rule for list applies to maps and struct: An empty map and a null map are
-  considered equal. The set of fields in the map must be the same. Values are
-  compared using this same set of rules.
+  considered equal. The keys in the map must be the same. Values are compared
+  using this same set of rules.
 
 #### Proposal
 
