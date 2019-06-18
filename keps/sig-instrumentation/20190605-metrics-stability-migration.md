@@ -1,5 +1,5 @@
 ---
-title: Control-Plane Metrics Stability Migration
+title: Metrics Stability Migration
 authors:
   - "@logicalhan"
   - "@solodov"
@@ -9,14 +9,17 @@ participating-sigs:
   - sig-scheduling
   - sig-node
   - sig-api-machinery
-  - sig-cli
+  - sig-cluster-lifecycle
   - sig-cloud-provider
 reviewers:
-  - TBD
+  - TBD from sig-instrumentation
+  - TBD from sig-node
+  - TBD from sig-api-machinery
+  - TBD from sig-cluster-lifecycle
+  - TBD from sig-cloud-provider
+  - TBD from sig-scheduling
 approvers:
-  - TBD
-editor:
-  - TBD
+  - "@brancz"
 creation-date: 2019-06-05
 see-also:
   - 20181106-kubernetes-metrics-overhaul
@@ -24,7 +27,7 @@ see-also:
 status: proposal
 ---
 
-# Control-Plane Metrics Stability Migration
+# Metrics Stability Migration
 
 ## Table of Contents
 
@@ -37,18 +40,19 @@ status: proposal
 
 ## Summary
 
-Currently metrics emitted in the Kubernetes control-plane do not offer any stability guarantees. This Kubernetes Enhancement Proposal (KEP) builds off of the framework proposed in the [Kubernetes Control-Plane Metrics Stability KEP](https://github.com/kubernetes/enhancements/blob/master/keps/sig-instrumentation/20190404-kubernetes-control-plane-metrics-stability.md) and proposes a migration strategy for the Kubernetes code base.
+This KEP intends to document and communicate the general strategy for migrating the control-plane metrics stability framework across the Kubernetes codebase. Most of the framework design decisions have been determined and outlined in [an earlier KEP](https://github.com/kubernetes/enhancements/blob/master/keps/sig-instrumentation/20190404-kubernetes-control-plane-metrics-stability.md).
 
 ## Motivation
 
-We want to start using the metrics stability framework which was based off of [Kubernetes Control-Plane Metrics Stability KEP](https://github.com/kubernetes/enhancements/blob/master/keps/sig-instrumentation/20190404-kubernetes-control-plane-metrics-stability.md).
+We want to start using the metrics stability framework built based off the [Kubernetes Control-Plane Metrics Stability KEP](https://github.com/kubernetes/enhancements/blob/master/keps/sig-instrumentation/20190404-kubernetes-control-plane-metrics-stability.md), so that we can define stability levels for metrics in the Kubernetes codebase.
 
 ### Goals
 
 Setup a strategy for migrating metrics to the stability framework. Also:
 
  * Explicitly define a strategy for handling migration of shared metrics.
- * Maintain backwards compatibility through the migration path. This excludes metrics which are slated to be removed after deprecation due to metrics overhaul.
+ * Maintain backwards compatibility through the migration path. *This excludes metrics which are slated to be removed after deprecation due to metrics overhaul.*
+ * Communicate upcoming changes to metrics to respective component owners.
 
 ### Non-Goals
 
@@ -75,7 +79,7 @@ Kubernetes control-plane binaries can expose one or more metrics endpoints:
 
 Following our desired approach, each of metrics endpoint above (except those out of scope) will be accompanied by an individual PR for migrating that endpoint.
 
-## Strategy Around Shared Metrics
+### Shared metrics
 
 Shared metrics makes piecemeal migration potentially difficult because metrics in shared code will either be migrated or not, and a component which uses the shared metric can be in the opposite state. Currently, there are groups of metrics which are __*shared*__ across binaries:
 
@@ -85,11 +89,16 @@ Shared metrics makes piecemeal migration potentially difficult because metrics i
     * [leader-election metrics](https://github.com/kubernetes/kubernetes/blob/release-1.15/pkg/util/prometheusclientgo/leaderelection/adapter.go#L27-L29)
     * [workqueue metrics](https://github.com/kubernetes/kubernetes/blob/release-1.15/pkg/util/workqueue/prometheus/prometheus.go)
 
-We should be able to migrate shared metrics in such a way that does not require migrating every component which consumes/uses these shared metrics simulaneously. There are a couple possible ways we can avoid this:
+Our strategy around shared metrics is to simply duplicate shared metric files and create a version of the shared metrics which uses the new registries. When we migrate an endpoint, we can remove the import statements to the old file and replace it with references to our migrated variant. This has the additional benefit that once migration is complete, we can just delete the old variants of shared metrics.
 
-1. We can refactor the shared metrics code so that we can customize the metrics registration codepaths. This likely involves removing the `init` calls to set metricsProviders and reworking of the codepaths which register metrics to the global prometheus registry. This is invasive and potentially complicated.
-2. We can simply duplicate the file and create a version of the shared metrics which uses the new registries. When we migrate an endpoint, we can remove the import statements to the old file and replace it with references to our migrated variant. This has the additional benefit that once migration is complete, we can just delete the old variants of shared metrics.
+### Deprecation of modified metrics from metrics overhaul KEP
+
+The [metrics overhaul KEP](https://github.com/kubernetes/enhancements/blob/master/keps/sig-instrumentation/20181106-kubernetes-metrics-overhaul.md) deprecates a number of metrics across the Kubernetes code-base. As a part of this migration, these metrics will be marked as deprecated since 1.16, meaning that they will be hidden automatically for 1.17. These metrics will be in a deprecated but 'hidden' state and will be able to be optionally enabled through command line flags for one release cycle, after which they will be permanently deleted.
 
 ## Implementation History
 
 TBD (since this is not yet implemented)
+
+## Graduating metrics
+
+
