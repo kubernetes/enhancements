@@ -467,3 +467,90 @@ Check the [Default Values][] section for more information about how to determine
 
 [--horizontal-pod-autoscaler-downscale-stabilization-window]: https://v1-14.docs.kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#algorithm-details
 [DefaultValues]: #default-values
+
+#### HPA Conditions Change
+
+HPA Controller stores conditions in its 
+[status](https://github.com/kubernetes/kubernetes/blob/a2afe453665ffd6611d8aaedbac341ee1c054260/pkg/apis/autoscaling/types.go#L262) 
+during its work.
+
+Let's consider how this conditions are changed in different cases.
+
+##### Case 1: Scale Up without limits to a desired number of replicas
+
+| ConditionType  | Condition Value | Reason              | Message |
+| -------------- | --------------- | ------------------- | ------- |
+| AbleToScale    | True            | SucceededGetScale   | the HPA controller was able to get the target's current scale |
+| ScalingActive  | True            | ValidMetricFound    | the HPA was able to successfully calculate a replica count from %v |
+| AbleToScale    | True            | ReadyForNewScale    | recommended size matches current size |
+| ScalingLimited | False           | DesiredWithinRange  | the desired count is within the acceptable range |
+| AbleToScale    | True            | SucceededRecale     | the HPA controller was able to update the target scale to %d
+
+
+##### Case 2: Scale Up with scaleUpLimit applied
+
+| ConditionType  | Condition Value | Reason              | Message |
+| -------------- | --------------- | ------------------- | ------- |
+| AbleToScale    | True            | SucceededGetScale   | the HPA controller was able to get the target's current scale |
+| ScalingActive  | True            | ValidMetricFound    | the HPA was able to successfully calculate a replica count from %v |
+| AbleToScale    | True            | ReadyForNewScale    | recommended size matches current size |
+| ScalingLimited | True            | ScaleUpLimit        | the desired replica count is increasing faster than the maximum scale rate |
+| AbleToScale    | True            | SucceededRecale     | the HPA controller was able to update the target scale to %d
+
+
+##### Case 3: Scale Up with hpaSpec.MaxReplica limit applied
+
+| ConditionType  | Condition Value | Reason              | Message |
+| -------------- | --------------- | ------------------- | ------- |
+| AbleToScale    | True            | SucceededGetScale   | the HPA controller was able to get the target's current scale |
+| ScalingActive  | True            | ValidMetricFound    | the HPA was able to successfully calculate a replica count from %v |
+| AbleToScale    | True            | ReadyForNewScale    | recommended size matches current size |
+| ScalingLimited | True            | TooManyReplicas     | the desired replica count is more than the maximum replica count |
+| AbleToScale    | True            | SucceededRecale     | the HPA controller was able to update the target scale to %d
+
+
+##### Case 4: Scale Down without limits to a desired number of replicas
+
+| ConditionType  | Condition Value | Reason              | Message |
+| -------------- | --------------- | ------------------- | ------- |
+| AbleToScale    | True            | SucceededGetScale   | the HPA controller was able to get the target's current scale |
+| ScalingActive  | True            | ValidMetricFound    | the HPA was able to successfully calculate a replica count from %v |
+| AbleToScale    | True            | ReadyForNewScale    | recommended size matches current size |
+| ScalingLimited | False           | DesiredWithinRange  | the desired count is within the acceptable range |
+| AbleToScale    | True            | SucceededRecale     | the HPA controller was able to update the target scale to %d
+
+
+##### Case 5: Scale Down with Stabilization Window limitation
+
+| ConditionType  | Condition Value | Reason              | Message |
+| -------------- | --------------- | ------------------- | ------- |
+| AbleToScale    | True            | SucceededGetScale   | the HPA controller was able to get the target's current scale |
+| ScalingActive  | True            | ValidMetricFound    | the HPA was able to successfully calculate a replica count from %v |
+| AbleToScale    | True            | ScaleDownStabilized | recent recommendations were higher than current one, applying the highest recent recommendation |
+| ScalingLimited | False           | DesiredWithinRange  | the desired count is within the acceptable range |
+| AbleToScale    | True            | SucceededRecale     | the HPA controller was able to update the target scale to %d
+
+
+##### Case 6: Scale Down with MinReplicas limitation
+
+| ConditionType  | Condition Value | Reason              | Message |
+| -------------- | --------------- | ------------------- | ------- |
+| AbleToScale    | True            | SucceededGetScale   | the HPA controller was able to get the target's current scale |
+| ScalingActive  | True            | ValidMetricFound    | the HPA was able to successfully calculate a replica count from %v |
+| AbleToScale    | True            | ReadyForNewScale    | recommended size matches current size |
+| ScalingLimited | True            | TooFewReplicas      | [several possible messages are possible, including incorrect ones, see comment below] |
+| AbleToScale    | True            | SucceededRecale     | the HPA controller was able to update the target scale to %d
+
+There are several message variants for the Reason "TooFewReplicas" 
+[according to the sources](https://github.com/kubernetes/kubernetes/blob/1efbde2815f90e6909f7d2d0ca35ee560522bd20/pkg/controller/podautoscaler/horizontal.go#L742):
+
+- If `hpa.Spec.MaxReplicas > scaleUpLimit`, then the message will equal "the desired replica count is increasing faster than the maximum scale rate".
+- Otherwise, it will be "the desired replica count is more than the maximum replica count"
+
+It is definitely a bug, and it will be fixed in the current work.
+
+Moreover, there're two other possible messages in the code that are not used at the moment and
+will be used in the new code:
+
+- "the desired replica count is zero"
+- "the desired replica count is less than the minimum replica count"
