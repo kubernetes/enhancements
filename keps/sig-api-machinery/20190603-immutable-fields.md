@@ -41,10 +41,12 @@ users and help API developers by verifying these assertions automatically.
 
 ## Motivation
 
-Kubernetes tend to encourage "immutable" objects rather than "delete and
-recreate" on changes approach. Users have expressed the need for automatically
-enforcing immutability of some fields and documentation of that behavior through
-this issue for example: https://github.com/kubernetes/kubernetes/issues/65973
+There are resources in Kubernetes which have immutable fields by design,
+i.e. after creation of an object, those fields cannot be mutated anymore. E.g. a
+pod's specification is mostly unchangeable once it is created. To change the
+pod, it must be deleted, recreated and rescheduled. Users want to implement the
+same kind of read-only semantics for CustomResources, for example:
+https://github.com/kubernetes/kubernetes/issues/65973
 
 ### Goals
 
