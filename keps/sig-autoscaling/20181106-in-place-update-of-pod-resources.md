@@ -122,9 +122,9 @@ Thanks to the above:
   held by the Pod and its Containers.
 
 In order to determine the state of a Pod resource resize, we add a new PodCondition
-named ResizingPod. This PodCondition describes status of the last resize request.
+named ResizingPod, which describes the status of the last resize request.
 
-The PodCondition ResizingPod can have the following values:
+This PodCondition can have the following values:
 * Status: false - Pod resize operation completed,
   - Reason: (empty) - Initial state, no resize requested since Pod creation,
   - Reason: Success - Pod and its Containers were successfully resized,
@@ -169,14 +169,14 @@ that is runtime agnostic.
 
 When a new Pod is created, Scheduler is responsible for selecting a suitable
 Node that accommodates the Pod. When a Pod resize is requested, Kubelet attempts
-to update the Pod and its Containers. If the Kubelet is unable to do so on its own,
-Scheduler helps, if possible, by evicting lower priority Pods from the Node.
+to update the Pod and its Containers. If required, Kubelet may evict lower
+priority Pods from the Node to make room for the resize. Scheduler observes the
+resize request, and updates the accounting in its cache.
 
 The following steps denote a typical flow of an in-place resize operation for a Pod
-with ResizePolicy set to Update for all its Containers.
+with ResizePolicy set to NoRestart for all its Containers.
 
-1. The initiating actor updates the Pod's Container.ResourceRequirements using
-   PATCH verb.
+1. Initiating actor updates Pod's Container.ResourceRequirements using PATCH verb.
 1. API Server validates the new ResourceRequirements (e.g. limits are not below
    requested resources, QoS class does not change, ResourceQuota not exceeded..).
 1. API Server calls all Admission Controllers to verify the Pod Update.
@@ -184,22 +184,27 @@ with ResizePolicy set to Update for all its Containers.
      appropriate error message.
 1. API Server updates PodSpec object with the new desired ResourceRequirements.
 1. Kubelet observes that Pod's Container.ResourceRequirements and
-   ContainerStatus.ResourcesAllocated differ.
-   It checks its Node allocatable resources to determine if new resources fit.
-   * _Case 1_: Kubelet finds new ResourceRequirements fit. It sets ResizingPod.Status
-     to true, and ResizingPod.Reason to InProgress, then applies resized cgroup
-     limits to the Pod and its Containers, and once successfully done, updates
-     Pod's ContainerStatus.ResourcesAllocated to reflect the new
-     ResourceRequirements. It then sets ResizingPod.Status to false, and
-     ResizingPod.Reason to Success.
+   ContainerStatus.ResourcesAllocated differ. It checks its Node allocatable
+   resources to determine if the new desired ResourceRequirements fit the Node.
+   * _Case 1_: Kubelet finds new ResourceRequirements fit. It sets
+     ResizingPod.Status to true, and ResizingPod.Reason to InProgress, then
+     applies resized cgroup limits to the Pod and its Containers, and once
+     successfully done, updates Pod's ContainerStatus.ResourcesAllocated to
+     reflect the desired ResourceRequirements. It then sets ResizingPod.Status
+     to false, and ResizingPod.Reason to Success.
      - If at the same time, a new Pod was scheduled against the capacity used by
        this resource resize, that Pod is rejected during Kubelet admission if
        Node has no more room.
-   * _Case 2_: Kubelet finds new ResourceRequirements don't fit Node’s allocatable
-     resources, and sets ResizingPod.Reason to FailedNodeCapacity, and
-     ResizingPod.Status to false.
-     - Kubelet uses max(ResourceRequirements, ResourcesAllocated) for Node
-       available resources accounting.
+   * _Case 2_: Kubelet finds that desired ResourceRequirements does not fit.
+     - Kubelet checks to see if evicting lower priority Pods on the Node can
+       successfully resize the Pod. If yes, it sets ResizingPod.Status to true,
+       ResizingPod.Reason to PreEmpting, and initiates pre-emption of lower
+       priority Pods via Eviction API. Once lower priority Pods have been
+       evicted, it sets ResizingPod.Reason to InProgress, and the flow
+       continues as above.
+     - If Kubelet is unable to create enough room by evicting lower priority
+       Pods, it sets ResizingPod.Reason to FailedNodeCapacity, and
+       ResizingPod.Status to false.
 1. Scheduler, in parallel, observes that Container.ResourceRequirements and
    ContainerStatus.ResourcesAllocated differ, and uses
    max(ResourceRequirements, ResourcesAllocated) when computing resources
@@ -212,72 +217,65 @@ with ResizePolicy set to Update for all its Containers.
      and Pod's Container.ResourceRequirements matches
      ContainerStatus.ResourcesAllocated. Scheduler updates its cache with resized
      ContainerStatus.ResourcesAllocated values.
-   * _Case 2_: ResizingPod.Status is false, ResizingPod.Reason is FailedNodeCapacity.
-     - If evicting lower priority Pods on the Node can successfully resize Pod,
-       it sets ResizingPod.Status to true, and ResizingPod.Reason to PreEmpting,
-       and initiates eviction of lower priority Pods. Once lower priority Pods
-       have been evicted, it sets ResizingPod.Reason to InProgress, and the flow
-       continues.
-     - If Scheduler cannot help, Kubelet is expected to retry the resize at a later
-       time, and optionally when other Pods depart the Node (thus creating room).
+   * _Case 2_: ResizingPod.Status is false, and ResizingPod.Reason is
+     FailedNodeCapacity. It continues account for Node resources using
+     max(ResourceRequirements, ResourcesAllocated), and by default Kubelet is
+     expected to backoff and retry the resize at a later time, or optionally
+     when Pods depart the Node (thus creating room).
 1. The initiating actor observes that ResizingPod.Reason and/or
    ContainerStatus.ResourcesAllocated fields have changed.
    * _Case 1_: ResizingPod.Status is false, ResizingPod.Reason is Success,
      and Pod's Container.ResourceRequirements matches
      ContainerStatus.ResourcesAllocated, signifying a successful completion of
      in-place Pod resources resizing.
-   * _Case 2_: ResizingPod.Status is false, ResizingPod.Reason is FailedNodeCapacity,
-     and the initiating actor may take alternative action. For example, based on
-     retry policy, initiating actor such as VPA may choose to:
+   * _Case 2_: ResizingPod.Status is false, and ResizingPod.Reason is
+     FailedNodeCapacity. The initiating actor may take alternative action.
+     For example, based on Retry policy, initiating actor (e.g VPA) may choose to:
      - Evict the Pod to trigger a replacement Pod with updated resources,
-     - Wait for Scheduler to evict lower priority Pods,
      - Do nothing, and let Kubelet backoff and retry in-place resize.
 
 #### Transitions of the ResizingPod PodCondition
 
-The following diagram shows possible transitions of ResizingPod PodCondition's
-Status and Reason fields respectively.
+The following diagram shows possible transitions of ResizingPod.Status and
+ResizingPod.Reason fields respectively.
 
 ```text
 
-    +------------------------------------+
-    |                                   2|
-    |                               +----v----+
-    |                               |         |
-    |         +---------------------+  false  |
-    |         |                     | Success |
-    |         |                     |         |
-    |         |                     +----+----+
-    |         |                          |
-    |        1|                         3|
-    |  +------v-----+         +----------v---------+
-    |  |            |         |                    |
-    +--+    true    <---------+        false       |
-       | InProgress |6        | FailedNodeCapacity |
-       |            |         |                    |
-       +------^-----+         +----------+---------+
-             5|                          |
-              |                         4|
-              |                   +------v-----+
-              |                   |            |
-              |                   |    true    |
-              +-------------------+ PreEmpting |
-                                  |            |
-                                  +------------+
+   +-------------------------------------+
+   |                                     |
+   |                                    2|
+   |                                +----v----+
+   |                                |         |
+   |          +---------------------+  false  +-------------------------+
+   |          |                     | Success |                         |
+   |          |                     |         |                         |
+   |          |                     +----+----+                         |
+   |          |                          |                              |
+   |         1|                         3|                             5|
+   |   +------v-----+             +------v-----+             +----------v---------+
+   |   |            |             |            |             |                    |
+   |   |    true    |4            |    true    |7            |        false       |
+   +---+ InProgress <-------------+ PreEmpting <-------------+ FailedNodeCapacity |
+       |            |             |            |             |                    |
+       +------^-----+             +------------+             +----------+---------+
+             6|                                                         |
+              |                                                         |
+              +---------------------------------------------------------+
 
 ```
 
 1. Kubelet, on initiating in-place resize.
 1. Kubelet, on successful completion of in-place resize.
-1. Kubelet, on Node not having capacity to resize.
-1. Scheduler, on initiating pre-emption of lower priority Pods.
-1. Scheduler, on completing pre-emption of lower priority Pods.
-1. Kubelet, on initiating in-place resize via retry.
+1. Kubelet, on initiating pre-emption of lower priority Pods.
+1. Kubelet, on completing pre-emption of lower priority Pods.
+1. Kubelet, on Node not having capacity to resize Pod.
+1. Kubelet, on initiating in-place resize retry.
+1. Kubelet, on initiating in-place resize retry with pre-emption.
 
 #### Container resource limit update ordering
 
 When in-place resize is desired for multiple Containers in a Pod, Kubelet updates
-resource limit for the Containers as detailed below:
+resource limit for the Pod and its Containers in the following manner:
   1. If resource resizing results in net-increase of a resource type (CPU or Memory),
      Kubelet first updates Pod-level cgroup limit for the resource type, and then
      updates the Container resource limit.
@@ -285,6 +283,7 @@ resource limit for the Containers as detailed below:
      updates the Container resource limit, and then updates Pod-level cgroup limit.
   1. If resource update results in no net change of a resource type, only the Container
      resource limits are updated.
+
 In all the above cases, Kubelet applies Container resource limit decreases before
 applying limit increases.
 
@@ -295,22 +294,20 @@ Container in-place to allow new limits to take effect, and the action is logged.
 
 #### Notes
 
-* As an alternative to Scheduler pre-empting Pods, Kubelet can identify Pods to
-  pre-empt and safely evict them via eviction API. Investigation TBD as to
-  whether this can be done by Kubelet same as Scheduler would.
+* We explored the option of Scheduler, instead of Kubelet, pre-empting lower
+  priority Pods. Pre-emption by Kubelet is simpler, and has lower latencies.
 * To avoid races and possible gamification, all components should use
   max(ResourceRequirements, ResourcesAllocated) when computing resources used by
   a Pod.
-* If another resource update arrives when a previous update is being handled,
-  that and all subsequent updates should be buffered at the Controller, and
-  applied upon success/failed completion of the update that is in progress.
+* If additional resize requests arrive when a Pod is being resized, those requests
+  are handled after completion of the resize that is in progress. And resize is
+  driven towards the latest desired state.
 * Lowering memory limits may not always work if the application is holding on
   to pages. Kubelet will use a control loop to set the memory limits near usage
   in order to force a reclaim, and update ContainerStatus.ResourcesAllocated
   only when limit is at desired value.
-* Impact of Pod Overhead: Scheduler adds Pod Overhead to the resize request
-  to determine if in-place resize is possible. Kubelet implements Pod Overhead
-  if the values have changed.
+* Impact of Pod Overhead: Kubelet adds Pod Overhead to the resize request to
+  determine if in-place resize is possible.
 * Impact of memory-backed emptyDir volumes: If memory-backed emptyDir is in use,
   Kubelet will clear out any files in emptyDir upon Container restart.
 
@@ -333,8 +330,7 @@ Kubelet:
 * change UpdateContainerResources CRI API so that it works for both Linux and Windows.
 
 Scheduler:
-* update its cache to use max(ResourceRequirements, ResourcesAllocated),
-* aid resize by evicting lower priority Pods on the Node.
+* update cache using max(ResourceRequirements, ResourcesAllocated).
 
 Controllers:
 * propagate Template resources update to running Pod instances.
