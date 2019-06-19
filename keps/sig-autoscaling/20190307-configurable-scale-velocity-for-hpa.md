@@ -19,28 +19,42 @@ superseded-by: TBD
 
 ## Table of Contents
 
-- [Configurable scale up/down velocity for HPA](#configurable-scale-updown-velocity-for-hpa)
-  - [Table of Contents](#table-of-contents)
-  - [Summary](#summary)
-  - [Motivation](#motivation)
-    - [Goals](#goals)
-    - [Non-Goals](#non-goals)
-  - [Proposal](#proposal)
-    - [User Stories](#user-stories)
-      - [Story 1: Scale Up As Fast As Possible](#story-1-scale-up-as-fast-as-possible)
-      - [Story 2: Scale Up As Fast As Possible, Scale Down Very Gradually](#story-2-scale-up-as-fast-as-possible-scale-down-very-gradually)
-      - [Story 3: Scale Up Very Gradually, Usual Scale Down Process](#story-3-scale-up-very-gradually-usual-scale-down-process)
-      - [Story 4: Scale Up As Usual, Do Not Scale Down](#story-4-scale-up-as-usual-do-not-scale-down)
-      - [Story 5: Delay Before Scaling Down](#story-5-delay-before-scaling-down)
-    - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
-      - [Algorithm Pseudocode](#algorithm-pseudocode)
-      - [Introducing `delay` Option](#introducing-delay-option)
-      - [Default Values](#default-values)
-      - [The Motivation To “Pick The Largest Constraint” Concept](#the-motivation-to-pick-the-largest-constraint-concept)
-      - [Stabilization Window](#stabilization-window)
-      - [API Changes](#api-changes)
-      - [HPA Controller State Changes](#hpa-controller-state-changes)
-      - [Command Line Options Changes](#command-line-options-changes)
+- [Configurable scale up/down velocity for HPA](#Configurable-scale-updown-velocity-for-HPA)
+  - [Table of Contents](#Table-of-Contents)
+  - [Summary](#Summary)
+  - [Motivation](#Motivation)
+    - [Goals](#Goals)
+    - [Non-Goals](#Non-Goals)
+  - [Proposal](#Proposal)
+    - [User Stories](#User-Stories)
+      - [Story 1: Scale Up As Fast As Possible](#Story-1-Scale-Up-As-Fast-As-Possible)
+      - [Story 2: Scale Up As Fast As Possible, Scale Down Very Gradually](#Story-2-Scale-Up-As-Fast-As-Possible-Scale-Down-Very-Gradually)
+      - [Story 3: Scale Up Very Gradually, Usual Scale Down Process](#Story-3-Scale-Up-Very-Gradually-Usual-Scale-Down-Process)
+      - [Story 4: Scale Up As Usual, Do Not Scale Down](#Story-4-Scale-Up-As-Usual-Do-Not-Scale-Down)
+      - [Story 5: Delay Before Scaling Down](#Story-5-Delay-Before-Scaling-Down)
+    - [Implementation Details/Notes/Constraints](#Implementation-DetailsNotesConstraints)
+      - [Algorithm Pseudocode](#Algorithm-Pseudocode)
+      - [Introducing `delay` Option (aka Stabilization)](#Introducing-delay-Option-aka-Stabilization)
+      - [Default Values](#Default-Values)
+      - [The Motivation To “Pick The Largest Constraint” Concept](#The-Motivation-To-Pick-The-Largest-Constraint-Concept)
+      - [Stabilization Window](#Stabilization-Window)
+      - [API Changes](#API-Changes)
+      - [HPA Controller State Changes](#HPA-Controller-State-Changes)
+      - [Command Line Options Changes](#Command-Line-Options-Changes)
+      - [HPA Conditions Change](#HPA-Conditions-Change)
+        - [Case 1: Scale Up without limits to a desired number of replicas](#Case-1-Scale-Up-without-limits-to-a-desired-number-of-replicas)
+        - [Case 2: Scale Up with stabilization applied](#Case-2-Scale-Up-with-stabilization-applied)
+        - [Case 3: Scale Up with a scaleUpLimit applied](#Case-3-Scale-Up-with-a-scaleUpLimit-applied)
+        - [Case 4: Scale Up with a scaleUpLimit applied together with stabilization](#Case-4-Scale-Up-with-a-scaleUpLimit-applied-together-with-stabilization)
+        - [Case 5: Scale Up with hpaSpec.MaxReplica limit applied](#Case-5-Scale-Up-with-hpaSpecMaxReplica-limit-applied)
+        - [Case 6: Scale Up with hpaSpec.MaxReplica limit applied together with stabilization](#Case-6-Scale-Up-with-hpaSpecMaxReplica-limit-applied-together-with-stabilization)
+        - [Case 7: Scale Down to a desired number of replicas](#Case-7-Scale-Down-to-a-desired-number-of-replicas)
+        - [Case 8: Scale Down to a desired number of replicas with stabilization applied](#Case-8-Scale-Down-to-a-desired-number-of-replicas-with-stabilization-applied)
+        - [Case 9: Scale Down with scaleDownLimit applied](#Case-9-Scale-Down-with-scaleDownLimit-applied)
+        - [Case 10: Scale Down with scaleDownLimit applied together with stabilization](#Case-10-Scale-Down-with-scaleDownLimit-applied-together-with-stabilization)
+        - [Case 11: Scale Down with MinReplicas limitation](#Case-11-Scale-Down-with-MinReplicas-limitation)
+        - [Case 11: Scale Down with MinReplicas limitation together with stabilization](#Case-11-Scale-Down-with-MinReplicas-limitation-together-with-stabilization)
+        - [TooFewReplicas incorrect messages bug](#TooFewReplicas-incorrect-messages-bug)
 
 ## Summary
 
@@ -276,7 +290,7 @@ If no value is given, the default one is chosen, see the [Default Values][] sect
 
 [Default Values]: #default-values
 
-#### Introducing `delay` Option
+#### Introducing `delay` Option (aka Stabilization)
 
 Effectively, the `delay` option is a full copy of the current [Stabilization Window][] algorithm:
 
@@ -470,13 +484,15 @@ Check the [Default Values][] section for more information about how to determine
 
 #### HPA Conditions Change
 
-HPA Controller stores conditions in its 
-[status](https://github.com/kubernetes/kubernetes/blob/a2afe453665ffd6611d8aaedbac341ee1c054260/pkg/apis/autoscaling/types.go#L262) 
+HPA Controller stores conditions in its
+[status](https://github.com/kubernetes/kubernetes/blob/a2afe453665ffd6611d8aaedbac341ee1c054260/pkg/apis/autoscaling/types.go#L262)
 during its work.
 
 Let's consider how this conditions are changed in different cases.
 
 ##### Case 1: Scale Up without limits to a desired number of replicas
+
+Previous State:
 
 | ConditionType  | Condition Value | Reason              | Message |
 | -------------- | --------------- | ------------------- | ------- |
@@ -484,10 +500,31 @@ Let's consider how this conditions are changed in different cases.
 | ScalingActive  | True            | ValidMetricFound    | the HPA was able to successfully calculate a replica count from %v |
 | AbleToScale    | True            | ReadyForNewScale    | recommended size matches current size |
 | ScalingLimited | False           | DesiredWithinRange  | the desired count is within the acceptable range |
-| AbleToScale    | True            | SucceededRecale     | the HPA controller was able to update the target scale to %d
+| AbleToScale    | True            | SucceededRescale    | the HPA controller was able to update the target scale to %d |
 
+New State 1: the same
 
-##### Case 2: Scale Up with scaleUpLimit applied
+##### Case 2: Scale Up with stabilization applied
+
+For this case the [Stabilization][] level is lower then the desired replicas number
+
+Previous State: was not possible (no stabilization for scaling up)
+
+New State:
+
+| ConditionType  | Condition Value | Reason              | Message |
+| -------------- | --------------- | ------------------- | ------- |
+| AbleToScale    | True            | SucceededGetScale   | the HPA controller was able to get the target's current scale |
+| ScalingActive  | True            | ValidMetricFound    | the HPA was able to successfully calculate a replica count from %v |
+| AbleToScale    | True            | ScaleUpStabilized   | recent recommendations were lower than current one, applying the lowest recent recommendation |
+| ScalingLimited | False           | DesiredWithinRange  | the desired count is within the acceptable range |
+| AbleToScale    | True            | SucceededRescale    | the HPA controller was able to update the target scale to %d |
+
+[Stabilization]: #Introducing-delay-Option-aka-Stabilization
+
+##### Case 3: Scale Up with a scaleUpLimit applied
+
+Previous State:
 
 | ConditionType  | Condition Value | Reason              | Message |
 | -------------- | --------------- | ------------------- | ------- |
@@ -495,10 +532,30 @@ Let's consider how this conditions are changed in different cases.
 | ScalingActive  | True            | ValidMetricFound    | the HPA was able to successfully calculate a replica count from %v |
 | AbleToScale    | True            | ReadyForNewScale    | recommended size matches current size |
 | ScalingLimited | True            | ScaleUpLimit        | the desired replica count is increasing faster than the maximum scale rate |
-| AbleToScale    | True            | SucceededRecale     | the HPA controller was able to update the target scale to %d
+| AbleToScale    | True            | SucceededRescale    | the HPA controller was able to update the target scale to %d |
 
+New State 1: the same
 
-##### Case 3: Scale Up with hpaSpec.MaxReplica limit applied
+##### Case 4: Scale Up with a scaleUpLimit applied together with stabilization
+
+For this case the [Stabilization][] level is lower then the desired replicas number but higher then the scaleUpLimit,
+i.e. `desiredReplicas > StabilizationLevel > scaleUpLimit`
+
+Previous State: was not possible (no stabilization for scaling up)
+
+| ConditionType  | Condition Value | Reason              | Message |
+| -------------- | --------------- | ------------------- | ------- |
+| AbleToScale    | True            | SucceededGetScale   | the HPA controller was able to get the target's current scale |
+| ScalingActive  | True            | ValidMetricFound    | the HPA was able to successfully calculate a replica count from %v |
+| AbleToScale    | True            | ScaleUpStabilized   | recent recommendations were lower than current one, applying the lowest recent recommendation |
+| ScalingLimited | True            | ScaleUpLimit        | the desired replica count is increasing faster than the maximum scale rate |
+| AbleToScale    | True            | SucceededRescale    | the HPA controller was able to update the target scale to %d |
+
+[Stabilization]: #Introducing-delay-Option-aka-Stabilization
+
+##### Case 5: Scale Up with hpaSpec.MaxReplica limit applied
+
+Previous State:
 
 | ConditionType  | Condition Value | Reason              | Message |
 | -------------- | --------------- | ------------------- | ------- |
@@ -506,10 +563,30 @@ Let's consider how this conditions are changed in different cases.
 | ScalingActive  | True            | ValidMetricFound    | the HPA was able to successfully calculate a replica count from %v |
 | AbleToScale    | True            | ReadyForNewScale    | recommended size matches current size |
 | ScalingLimited | True            | TooManyReplicas     | the desired replica count is more than the maximum replica count |
-| AbleToScale    | True            | SucceededRecale     | the HPA controller was able to update the target scale to %d
+| AbleToScale    | True            | SucceededRescale    | the HPA controller was able to update the target scale to %d |
 
+New State 1: the same
 
-##### Case 4: Scale Down without limits to a desired number of replicas
+##### Case 6: Scale Up with hpaSpec.MaxReplica limit applied together with stabilization
+
+For this case the [Stabilization][] level is lower then the desired replicas number but higher then the MaxReplicas,
+i.e. `desiredReplicas > StabilizationLevel > MaxReplicas`
+
+Previous State: was not possible (no stabilization for scaling up)
+
+| ConditionType  | Condition Value | Reason              | Message |
+| -------------- | --------------- | ------------------- | ------- |
+| AbleToScale    | True            | SucceededGetScale   | the HPA controller was able to get the target's current scale |
+| ScalingActive  | True            | ValidMetricFound    | the HPA was able to successfully calculate a replica count from %v |
+| AbleToScale    | True            | ScaleDownStabilized | recent recommendations were higher than current one, applying the highest recent recommendation |
+| ScalingLimited | True            | TooManyReplicas     | the desired replica count is more than the maximum replica count |
+| AbleToScale    | True            | SucceededRescale    | the HPA controller was able to update the target scale to %d |
+
+[Stabilization]: #Introducing-delay-Option-aka-Stabilization
+
+##### Case 7: Scale Down to a desired number of replicas
+
+Previous State:
 
 | ConditionType  | Condition Value | Reason              | Message |
 | -------------- | --------------- | ------------------- | ------- |
@@ -517,10 +594,16 @@ Let's consider how this conditions are changed in different cases.
 | ScalingActive  | True            | ValidMetricFound    | the HPA was able to successfully calculate a replica count from %v |
 | AbleToScale    | True            | ReadyForNewScale    | recommended size matches current size |
 | ScalingLimited | False           | DesiredWithinRange  | the desired count is within the acceptable range |
-| AbleToScale    | True            | SucceededRecale     | the HPA controller was able to update the target scale to %d
+| AbleToScale    | True            | SucceededRescale    | the HPA controller was able to update the target scale to %d |
+
+New State: the same
 
 
-##### Case 5: Scale Down with Stabilization Window limitation
+##### Case 8: Scale Down to a desired number of replicas with stabilization applied
+
+For this case the [Stabilization][] level is higher then the desired replicas number
+
+Previous State:
 
 | ConditionType  | Condition Value | Reason              | Message |
 | -------------- | --------------- | ------------------- | ------- |
@@ -528,29 +611,119 @@ Let's consider how this conditions are changed in different cases.
 | ScalingActive  | True            | ValidMetricFound    | the HPA was able to successfully calculate a replica count from %v |
 | AbleToScale    | True            | ScaleDownStabilized | recent recommendations were higher than current one, applying the highest recent recommendation |
 | ScalingLimited | False           | DesiredWithinRange  | the desired count is within the acceptable range |
-| AbleToScale    | True            | SucceededRecale     | the HPA controller was able to update the target scale to %d
+| AbleToScale    | True            | SucceededRescale    | the HPA controller was able to update the target scale to %d |
 
+New State: the same
 
-##### Case 6: Scale Down with MinReplicas limitation
+[Stabilization]: #Introducing-delay-Option-aka-Stabilization
+
+##### Case 9: Scale Down with scaleDownLimit applied
+
+Previous State: was not possible (no scale down limit)
+
+New State:
 
 | ConditionType  | Condition Value | Reason              | Message |
 | -------------- | --------------- | ------------------- | ------- |
 | AbleToScale    | True            | SucceededGetScale   | the HPA controller was able to get the target's current scale |
 | ScalingActive  | True            | ValidMetricFound    | the HPA was able to successfully calculate a replica count from %v |
 | AbleToScale    | True            | ReadyForNewScale    | recommended size matches current size |
-| ScalingLimited | True            | TooFewReplicas      | [several possible messages are possible, including incorrect ones, see comment below] |
-| AbleToScale    | True            | SucceededRecale     | the HPA controller was able to update the target scale to %d
+| ScalingLimited | True            | ScaleDownLimit      | the desired replica count is decreasing faster than the maximum scale rate |
+| AbleToScale    | True            | SucceededRescale    | the HPA controller was able to update the target scale to %d |
 
-There are several message variants for the Reason "TooFewReplicas" 
-[according to the sources](https://github.com/kubernetes/kubernetes/blob/1efbde2815f90e6909f7d2d0ca35ee560522bd20/pkg/controller/podautoscaler/horizontal.go#L742):
+##### Case 10: Scale Down with scaleDownLimit applied together with stabilization
 
-- If `hpa.Spec.MaxReplicas > scaleUpLimit`, then the message will equal "the desired replica count is increasing faster than the maximum scale rate".
-- Otherwise, it will be "the desired replica count is more than the maximum replica count"
+Previous State: was not possible (no scale down limit)
 
-It is definitely a bug, and it will be fixed in the current work.
+For this case the [Stabilization][] is applied as well. I.e. the stabilization level was higher then the scale down limit,
+i.e. `desiredReplicas < StabilizationLevel < scaleDownLimit`
 
-Moreover, there're two other possible messages in the code that are not used at the moment and
-will be used in the new code:
+| ConditionType  | Condition Value | Reason              | Message |
+| -------------- | --------------- | ------------------- | ------- |
+| AbleToScale    | True            | SucceededGetScale   | the HPA controller was able to get the target's current scale |
+| ScalingActive  | True            | ValidMetricFound    | the HPA was able to successfully calculate a replica count from %v |
+| AbleToScale    | True            | ScaleDownStabilized | recent recommendations were higher than current one, applying the highest recent recommendation |
+| ScalingLimited | True            | ScaleDownLimit      | the desired replica count is decreasing faster than the maximum scale rate |
+| AbleToScale    | True            | SucceededRescale    | the HPA controller was able to update the target scale to %d |
+
+[Stabilization]: #Introducing-delay-Option-aka-Stabilization
+
+##### Case 11: Scale Down with MinReplicas limitation
+
+Previous State:
+
+| ConditionType  | Condition Value | Reason              | Message |
+| -------------- | --------------- | ------------------- | ------- |
+| AbleToScale    | True            | SucceededGetScale   | the HPA controller was able to get the target's current scale |
+| ScalingActive  | True            | ValidMetricFound    | the HPA was able to successfully calculate a replica count from %v |
+| AbleToScale    | True            | ReadyForNewScale    | recommended size matches current size |
+| ScalingLimited | True            | TooFewReplicas      | **several possible messages, all of them are incorrect, see [the comment below]** |
+| AbleToScale    | True            | SucceededRescale    | the HPA controller was able to update the target scale to %d |
+
+New State 1: for the case when `hpa.Spec.MinReplicas == nil`
+
+| ConditionType  | Condition Value | Reason              | Message |
+| -------------- | --------------- | ------------------- | ------- |
+| AbleToScale    | True            | SucceededGetScale   | the HPA controller was able to get the target's current scale |
+| ScalingActive  | True            | ValidMetricFound    | the HPA was able to successfully calculate a replica count from %v |
+| AbleToScale    | True            | ReadyForNewScale    | recommended size matches current size |
+| ScalingLimited | True            | TooFewReplicas      | the desired replica count is zero |
+| AbleToScale    | True            | SucceededRescale    | the HPA controller was able to update the target scale to %d |
+
+New State 2: for the case when `hpa.Spec.MinReplicas != nil`
+
+| ConditionType  | Condition Value | Reason              | Message |
+| -------------- | --------------- | ------------------- | ------- |
+| AbleToScale    | True            | SucceededGetScale   | the HPA controller was able to get the target's current scale |
+| ScalingActive  | True            | ValidMetricFound    | the HPA was able to successfully calculate a replica count from %v |
+| AbleToScale    | True            | ReadyForNewScale    | recommended size matches current size |
+| ScalingLimited | True            | TooFewReplicas      | the desired replica count is less than the minimum replica count |
+| AbleToScale    | True            | SucceededRescale    | the HPA controller was able to update the target scale to %d |
+
+[the comment below]: #TooFewReplicas-incorrect-messages-bug
+
+##### Case 11: Scale Down with MinReplicas limitation together with stabilization
+
+Previous State:
+
+| ConditionType  | Condition Value | Reason              | Message |
+| -------------- | --------------- | ------------------- | ------- |
+| AbleToScale    | True            | SucceededGetScale   | the HPA controller was able to get the target's current scale |
+| ScalingActive  | True            | ValidMetricFound    | the HPA was able to successfully calculate a replica count from %v |
+| AbleToScale    | True            | ScaleDownStabilized | recent recommendations were higher than current one, applying the highest recent recommendation |
+| ScalingLimited | True            | TooFewReplicas      | **several possible messages, all of them are incorrect, see [the comment below][]** |
+| AbleToScale    | True            | SucceededRescale    | the HPA controller was able to update the target scale to %d |
+
+New State 1: for the case when `hpa.Spec.MinReplicas == nil`
+
+| ConditionType  | Condition Value | Reason              | Message |
+| -------------- | --------------- | ------------------- | ------- |
+| AbleToScale    | True            | SucceededGetScale   | the HPA controller was able to get the target's current scale |
+| ScalingActive  | True            | ValidMetricFound    | the HPA was able to successfully calculate a replica count from %v |
+| AbleToScale    | True            | ScaleDownStabilized | recent recommendations were higher than current one, applying the highest recent recommendation |
+| ScalingLimited | True            | TooFewReplicas      | the desired replica count is zero |
+| AbleToScale    | True            | SucceededRescale    | the HPA controller was able to update the target scale to %d |
+
+New State 2: for the case when `hpa.Spec.MinReplicas != nil`
+
+| ConditionType  | Condition Value | Reason              | Message |
+| -------------- | --------------- | ------------------- | ------- |
+| AbleToScale    | True            | SucceededGetScale   | the HPA controller was able to get the target's current scale |
+| ScalingActive  | True            | ValidMetricFound    | the HPA was able to successfully calculate a replica count from %v |
+| AbleToScale    | True            | ScaleDownStabilized | recent recommendations were higher than current one, applying the highest recent recommendation |
+| ScalingLimited | True            | TooFewReplicas      | the desired replica count is less than the minimum replica count |
+| AbleToScale    | True            | SucceededRescale    | the HPA controller was able to update the target scale to %d |
+
+[the comment below]: #TooFewReplicas-incorrect-messages-bug
+
+##### TooFewReplicas incorrect messages bug
+
+There are currently several variants of the message for the "TooFewReplicas" reason:
+
+- "the desired replica count is increasing faster than the maximum scale rate" for the case when `hpa.Spec.MaxReplicas > scaleUpLimit` (yes, this shouldn't influence the "TooFewReplicas" reason, but it works this way atm)
+- "the desired replica count is more than the maximum replica count" otherwise
+
+It is definitely a bug, and it will be fixed in the current work to the following variants:
 
 - "the desired replica count is zero"
 - "the desired replica count is less than the minimum replica count"
