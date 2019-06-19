@@ -103,7 +103,7 @@ Allowing multiple containers to run at once during the init phase - this could b
 
 ## Proposal
 
-Create a way to define containers as sidecars, this will be an additional field to the Container Spec: `sidecar: true`. //TODO Decide on the API (see [Alternatives](#alternatives))
+Create a way to define containers as sidecars, this will be an additional field to the `container.lifecycle` spec: `Type` which can be either `Standard` (default) or `Sidecar`.
 
 e.g:
 ```yaml
@@ -120,7 +120,8 @@ spec:
     command: ['do something']
   - name: sidecar
     image: sidecar-image
-    sidecar: true
+    lifecycle:
+      type: Sidecar
     command: ["do something to help my app"]
 
 ```
@@ -155,7 +156,33 @@ The proposal can broken down into four key pieces of implementation that all rel
 * Sidecars are terminated after normal containers
 * Sidecars start before normal containers
 
+#### API Changes:
 As this is a change to the Container spec we will be using feature gating, you will be required to explicitly enable this feature on the api server as recommended [here](https://github.com/kubernetes/community/blob/master/contributors/devel/api_changes.md#adding-unstable-features-to-stable-versions).
+
+New field `Type` will be added to the lifecycle struct:
+
+```go
+type Lifecycle struct {
+  // Type
+  // One of Standard, Sidecar.
+  // Defaults to Standard
+  // +optional
+  Type LifecycleType `json:"type,omitempty" protobuf:"bytes,3,opt,name=type,casttype=LifecycleType"`
+}
+```
+New type `LifecycleType` will be added with two constants:
+```go
+// LifecycleType describes the lifecycle behaviour of the container
+type LifecycleType string
+
+const (
+  // LifecycleTypeStandard is the default container lifecycle behaviour
+  LifecycleTypeStandard LifecycleType = "Standard"
+  // LifecycleTypeSidecar means that the container will start up before standard containers and be terminated after
+  LifecycleTypeSidecar LifecycleType = "Sidecar"
+)
+```
+Note that currently the `lifecycle` struct is only used for `preStop` and `postStop` so we will need to change its description to reflect the expansion of its uses.
 
 #### Kubelet Changes:
 Broad outline of what places could be modified to implement desired behaviour:
@@ -188,9 +215,9 @@ Please view this [video](https://youtu.be/4hC8t6_8bTs) if you want to see what t
 
 ### Risks and Mitigations
 
-You could set all containers to be `sidecar: true`, this would cause strange behaviour in regards to shutting down the sidecars when all the non-sidecars have exited. To solve this the api could do a validation check that at least one container is not a sidecar.
+You could set all containers to have `lifecycle.type: Sidecar`, this would cause strange behaviour in regards to shutting down the sidecars when all the non-sidecars have exited. To solve this the api could do a validation check that at least one container is not a sidecar.
 
-Init containers would be able to have `sidecar: true` applied to them as it's an additional field to the container spec, this doesn't currently make sense as init containers are ran sequentially. We could get around this by having the api throw a validation error if you try to use this field on an init container or just ignore the field.
+Init containers would be able to have `lifecycle.type: Sidecar` applied to them as it's an additional field to the container spec, this doesn't currently make sense as init containers are ran sequentially. We could get around this by having the api throw a validation error if you try to use this field on an init container or just ignore the field.
 
 Older Kubelets that don't implement the sidecar logic could have a pod scheduled on them that has the sidecar field. As this field is just an addition to the Container Spec the Kubelet would still be able to schedule the pod, treating the sidecars as if they were just a normal container. This could potentially cause confusion to a user as their pod would not behave in the way they expect, but would avoid pods being unable to schedule.
 
@@ -239,4 +266,4 @@ One alternative would be to have a new field in the Pod Spec of `sidecarContaine
 
 Another alternative would be to change the Job Spec to have a `primaryContainer` field to tell it which containers are important. However I feel this is perhaps too specific to job when this Sidecar concept could be useful in other scenarios.
 
-Having it as a boolean could cause problems later down the line if more lifecycle related flags were added, perhaps it makes more sense to have something like `containerLifecycle: Sidecar` to make it more future proof.
+A boolean flag of `sidecar: true` could be used to indicate which pods are sidecars, however this prevents additional ContainerLifecycles from being added in the future.
