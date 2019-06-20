@@ -946,6 +946,17 @@ the queues of that priority level are empty.  A FlowSchema associated
 with one of these lingering undesired priority levels matches no
 requests.
 
+The [Dispatching](#Dispatching) section prescribes how the assured
+concurrency value (`ACV`) is computed for each priority level, and the
+sum there is over all the _desired_ priority levels (i.e., excluding
+the lingering undesired priority levels).  For this reason and for
+others, at any given time this may compute for some priority level(s)
+an assured concurrency value that is lower than the number currently
+executing.  In these situations the total number allowed to execute
+will temporarily exceed the apiserver's configured concurrency limit
+(`SCL`) and will settle down to the configured limit as requests
+complete their service.
+
 ### Default Behavior
 
 There must be reasonable behavior "out of the box", and it should be
