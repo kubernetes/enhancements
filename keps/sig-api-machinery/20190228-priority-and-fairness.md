@@ -45,6 +45,7 @@ superseded-by: []
   - [Dispatching](#dispatching)
     - [Fair Queuing for Server Requests](#fair-queuing-for-server-requests)
   - [Example Configuration](#example-configuration)
+  - [Reaction to Configuration Changes](#reaction-to-configuration-changes)
   - [Default Behavior](#default-behavior)
   - [Prometheus Metrics](#prometheus-metrics)
   - [Testing](#testing)
