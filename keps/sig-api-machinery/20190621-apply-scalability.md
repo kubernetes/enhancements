@@ -22,17 +22,6 @@ see-also:
 
 - TODO
 
-## Release Signoff Checklist
-
-- [ ] kubernetes/enhancements issue in release milestone, which links to KEP (this should be a link to the KEP location in kubernetes/enhancements, not the initial KEP PR)
-- [ ] KEP approvers have set the KEP status to `implementable`
-- [ ] Design details are appropriately documented
-- [ ] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
-- [ ] Graduation criteria is in place
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
-
 ## Summary
 
 Serverside Apply (SSA) in its current implementation causes some serious scalability issues when the feature is enabled. Specifically, list operation duration was highly dependent on the number of updates happening. From our testing it seemed to be because of a large number of small object allocations.
