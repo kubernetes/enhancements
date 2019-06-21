@@ -44,12 +44,11 @@ This KEP intends to document and communicate the general strategy for migrating 
 
 ## Motivation
 
-We want to start using the metrics stability framework built based off the [Kubernetes Control-Plane Metrics Stability KEP](https://github.com/kubernetes/enhancements/blob/master/keps/sig-instrumentation/20190404-kubernetes-control-plane-metrics-stability.md), so that we can define stability levels for metrics in the Kubernetes codebase.
+We want to start using the metrics stability framework built based off the [Kubernetes Control-Plane Metrics Stability KEP](https://github.com/kubernetes/enhancements/blob/master/keps/sig-instrumentation/20190404-kubernetes-control-plane-metrics-stability.md), so that we can define stability levels for metrics in the Kubernetes codebase. These stability levels would provide API compatibility guarantees across version bumps.
 
 ### Goals
 
-Setup a strategy for migrating metrics to the stability framework. Also:
-
+ * Outline the general strategy for migrating metrics to the stability framework
  * Explicitly define a strategy for handling migration of shared metrics.
  * Maintain backwards compatibility through the migration path. *This excludes metrics which are slated to be removed after deprecation due to metrics overhaul.*
  * Communicate upcoming changes to metrics to respective component owners.
@@ -57,7 +56,7 @@ Setup a strategy for migrating metrics to the stability framework. Also:
 ### Non-Goals
 
 * During migration, we will __*not*__ be determining whether a metric is considered stable. Any metrics which will be promoted to a stable status must be done post-migration.
-* Kubelet '/metrics/resource' and '/metrics/cadvisor' are out of scope for this migration.
+* Kubelet '/metrics/resource' and '/metrics/cadvisor' are out of scope for this migration due to use of non-standard prometheus collectors.
 
 ## General Migration Strategy
 
@@ -99,6 +98,14 @@ The [metrics overhaul KEP](https://github.com/kubernetes/enhancements/blob/maste
 
 TBD (since this is not yet implemented)
 
-## Graduating metrics
+## Graduation Criteria
 
+- [ ] Prior to migrating a component, automated static analysis testing is in place to validate and verify API guarantees.
+- [ ] Adequate documentation exists for new flags on components.
+- [ ] Update instrumentation documents to reflect changes
 
+## Testing Plan
+
+- [ ] Prior to migrating a metric's endpoint, we will run local tests to verify that the same metrics are populated
+- [ ] All metrics framework code will have unit/integration tests
+- [ ] All validation and verification code will have unit/integration tests
