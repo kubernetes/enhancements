@@ -146,6 +146,99 @@ This way users can keep track of which admission controller owns their fields an
 
 A risk with this approach is, that for every admission controller an update operation has to run. This could impact performance and could be improved by only wrapping the final admission chain sacrificing details on which single controller owns which field.
 
+For example, starting with the following `managedFields` on a ConfigMap object:
+
+```yaml
+managedFields:
+- manager: kubectl
+  operation: Apply
+  apiVersion: v1
+  fields:
+    f:metadata:
+      f:labels:
+        f:example-label: {}
+        f:kubectl-label: {}
+```
+
+When the object passes through the admission chain and a webhook sets `.data.key` to some value, the resulting `managedFields` would be:
+
+```yaml
+managedFields:
+- manager: kubectl
+  operation: Apply
+  apiVersion: v1
+  fields:
+    f:metadata:
+      f:labels:
+        f:example-label: {}
+        f:kubectl-label: {}
+- manager: MutatingAdmissionWebhook
+  operation: Update
+  apiVersion: v1
+  time: "2019-06-22T11:50:20+00:00"
+  fields:
+    f:data:
+      f:key: {}
+```
+
+If another webhook **in the same request** would update `.metadata.labels.example-label` it would take ownership of this field from `kubectl` as well:
+
+```yaml
+managedFields:
+- manager: kubectl
+  operation: Apply
+  apiVersion: v1
+  fields:
+    f:metadata:
+      f:labels:
+        f:example-label: {}
+        f:kubectl-label: {}
+- manager: MutatingAdmissionWebhook
+  operation: Update
+  apiVersion: v1
+  time: "2019-06-22T11:50:20+00:00"
+  fields:
+    f:metadata:
+      f:labels:
+        f:example-label: {}
+    f:data:
+      f:key: {}
+```
+
+This is because the entire `MutatingAdmissionWebhook` plugin gets wrapped. To get a different behavior like the the optional part above, the webhook plugin would require changes to provide each webhook name to the update.
+
+When running both changes in separate requests, like updating the object again causing the webhook to change the label again (to a different value), would result in two `managedFields` entries:
+
+```yaml
+managedFields:
+- manager: kubectl
+  operation: Apply
+  apiVersion: v1
+  fields:
+    f:metadata:
+      f:labels:
+        f:example-label: {}
+        f:kubectl-label: {}
+- manager: MutatingAdmissionWebhook
+  operation: Update
+  apiVersion: v1
+  time: "2019-06-22T11:00:00+00:00"
+  fields:
+    f:metadata:
+      f:labels:
+        f:example-label: {}
+    f:data:
+      f:key: {}
+- manager: MutatingAdmissionWebhook
+  operation: Update
+  apiVersion: v1
+  time: "2019-06-22T12:00:00+00:00"
+  fields:
+    f:metadata:
+      f:labels:
+        f:example-label: {}
+```
+
 ### Implementation Details/Notes/Constraints [optional]
 
 (TODO: update this section with current design)
