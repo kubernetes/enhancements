@@ -420,10 +420,10 @@ backend:
   existing data and round-tripping with the extensions Ingress API,
   following the approach taken for all other `extensions/v1beta1`
   resources).
-* [ ] Develop a set of planned changes and GA graduation criteria with
+* [x] Develop a set of planned changes and GA graduation criteria with
   sig-network (intent is to target a minimal set of bugfixes and
   non-breaking changes)
-* [ ] Announce `extensions/v1beta1` Ingress as deprecated (and
+* [x] Announce `extensions/v1beta1` Ingress as deprecated (and
       announce plan for GA)
 
 #### Test plan
@@ -438,19 +438,24 @@ backend:
 
 ### 1.15
 
-* [ ] Update API server to persist in networking.k8s.io/v1beta1
-* [ ] Update in-tree controllers, examples, and clients to target
+* [x] Update API server to persist in networking.k8s.io/v1beta1 kubernetes/kubernetes#77139
+* [x] Update in-tree controllers, examples, and clients to target kubernetes/kubernetes#77617
   `networking.k8s.io/v1beta1`
 * [ ] Update Ingress controllers in the kubernetes org to target
   `networking.k8s.io/v1beta1`
-* [ ] Update documentation to recommend new users start with
+  * [x] [ingress-nginx](https://github.com/kubernetes/ingress-nginx/pull/4127)
+  * [ ] [ingress-gce](https://github.com/kubernetes/ingress-gce/issues/770)
+* [x] Update documentation to recommend new users start with kubernetes/website#14239
   networking.k8s.io/v1beta1, but existing users stick with
   `extensions/v1beta1` until `networking.k8s.io/v1` is available.
-* [ ] Update documentation to reference `networking.k8s.io/v1beta1`
-* [ ] Meet graduation criteria and promote API to `networking.k8s.io/v1`
-* [ ] Announce `newtorking.k8s.io/v1beta1` Ingress as deprecated
+* [x] Update documentation to reference `networking.k8s.io/v1beta1` kubernetes/website#14239
 
 ### 1.16
+
+* [ ] Meet graduation criteria and promote API to `networking.k8s.io/v1`
+* [ ] Announce `networking.k8s.io/v1beta1` Ingress as deprecated
+
+### 1.17
 
 * [ ] Update API server to persist in `networking.k8s.io/v1`.
 * [ ] Update in-tree controllers, examples, and clients to target
