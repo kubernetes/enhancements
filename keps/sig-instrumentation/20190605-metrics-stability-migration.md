@@ -70,11 +70,13 @@ Kubernetes control-plane binaries can expose one or more metrics endpoints:
     * [/metrics](https://github.com/kubernetes/kubernetes/blob/release-1.15/cmd/kube-proxy/app/server.go#L570)
 * one kube-apiserver metrics endpoint
     * [/metrics](https://github.com/kubernetes/kubernetes/blob/release-1.15/staging/src/k8s.io/apiserver/pkg/server/routes/metrics.go#L36)
+* one scheduler metrics endpoint
+    * [/metrics](https://github.com/kubernetes/kubernetes/blob/release-1.15/cmd/kube-scheduler/app/server.go#L289)
 * [four kubelet metrics endpoints](https://github.com/kubernetes/kubernetes/blob/release-1.15/staging/src/k8s.io/apiserver/pkg/server/routes/metrics.go#L36)
     * [/metrics](https://github.com/kubernetes/kubernetes/blob/release-1.15/pkg/kubelet/server/server.go#L299)
-    * [/metrics/cadvisor](https://github.com/kubernetes/kubernetes/blob/release-1.15/pkg/kubelet/server/server.go#L315)
-    * [/metrics/resource](https://github.com/kubernetes/kubernetes/blob/release-1.15/pkg/kubelet/server/server.go#L321-L323)
     * [/metrics/probes](https://github.com/kubernetes/kubernetes/blob/release-1.15/pkg/kubelet/server/server.go#L329-L331)
+    * (out of scope) ~~[/metrics/cadvisor](https://github.com/kubernetes/kubernetes/blob/release-1.15/pkg/kubelet/server/server.go#L315)~~
+    * (out of scope) ~~[/metrics/resource](https://github.com/kubernetes/kubernetes/blob/release-1.15/pkg/kubelet/server/server.go#L321-L323)~~
 
 Following our desired approach, each of metrics endpoint above (except those out of scope) will be accompanied by an individual PR for migrating that endpoint.
 
