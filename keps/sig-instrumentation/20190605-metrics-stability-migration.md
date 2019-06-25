@@ -12,12 +12,12 @@ participating-sigs:
   - sig-cluster-lifecycle
   - sig-cloud-provider
 reviewers:
-  - TBD from sig-instrumentation
-  - TBD from sig-node
-  - TBD from sig-api-machinery
-  - TBD from sig-cluster-lifecycle
+  - @brancz from sig-instrumentation
+  - @dashpole from sig-node
+  - @sttts from sig-api-machinery
+  - @DirectXMan12 from sig-cluster-lifecycle
+  - @bsalamat from sig-scheduling
   - TBD from sig-cloud-provider
-  - TBD from sig-scheduling
 approvers:
   - "@brancz"
 creation-date: 2019-06-05
@@ -92,7 +92,7 @@ Our strategy around shared metrics is to simply duplicate shared metric files an
 
 ### Deprecation of modified metrics from metrics overhaul KEP
 
-The [metrics overhaul KEP](https://github.com/kubernetes/enhancements/blob/master/keps/sig-instrumentation/20181106-kubernetes-metrics-overhaul.md) deprecates a number of metrics across the Kubernetes code-base. As a part of this migration, these metrics will be marked as deprecated since 1.16, meaning that they will be hidden automatically for 1.17. These metrics will be in a deprecated but 'hidden' state and will be able to be optionally enabled through command line flags for one release cycle, after which they will be permanently deleted.
+The [metrics overhaul KEP](https://github.com/kubernetes/enhancements/blob/master/keps/sig-instrumentation/20181106-kubernetes-metrics-overhaul.md) deprecates a number of metrics across the Kubernetes code-base. As a part of this migration, these metrics will be marked as deprecated since 1.16, meaning that they will be hidden automatically for 1.17. These metrics will be in a deprecated but 'hidden' state and will be able to be optionally enabled through command line flags for one release cycle, and they will be permanently deleted in 1.18.
 
 ## Implementation History
 
