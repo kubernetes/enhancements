@@ -58,18 +58,22 @@ For all these scenarios, we’ve created a deployment with 5,000 pods. Pods that
 All the following scenarios have been tested by LISTing all the pods, then running 250 patches per second while still LISTing the pods at the same time.
 
 1. Server-side apply disabled, 
-2. Server-side apply enabled, 
-3. Server-side apply disabled, but with an extra annotation. The annotation is about 5,000 bytes to compensate for the difference in object size with server-side apply.
-4. Server-side apply disabled, with 320 small annotations. Those annotations total about 5,000 bytes to simulate the small object allocation.
+1. Server-side apply enabled, 
+1. Server-side apply disabled, but with an extra annotation. The annotation is about 5,000 bytes to compensate for the difference in object size with server-side apply.
+1. Server-side apply disabled, with 320 small annotations. Those annotations total about 5,000 bytes to simulate the small object allocation.
+1. Server-side apply enabled, with metav1.Fields as a string instead of a nested map (So it doesn't have to be deserialized on LIST). The content of the string is serialized JSON of the same nested map.
+1. Server-side apply enabled, with metav1.Fields as a string instead of a nested map. The content of the string is a list of full field paths, instead of a trie.
 
 The average latency are as follows:
 
-| Scenario | LIST | PATCH | LIST while PATCH |
-|---|---|---|---|
-| 1. |360.4 ms | 8.0 ms | 361.0 ms |
-| 2. | 1294.5 ms | 38.5 ms | 2529.6 ms |
-| 3. | 480.8 ms | 11.3 ms | 500.2 ms |
-| 4. | 1260.1 ms | 9.7 ms | 1503.2 ms |
+| Scenario | Object Size | LIST | PATCH | LIST while PATCH |
+|---|---|---|---|---|
+| 1. | 8.1 KB | 360.4 ms | 8.0 ms | 361.0 ms |
+| 2. | 13.2 KB | 1294.5 ms | 38.5 ms | 2529.6 ms |
+| 3. | 13.2 KB | 480.8 ms | 11.3 ms | 500.2 ms |
+| 4. | 13.2 KB | 1260.1 ms | 9.7 ms | 1503.2 ms |
+| 5. | 13.7 KB | 544.0 ms | 26.6 ms | 735.1 ms |
+| 6. | 27.2 KB | 1791.3 ms | 39.7 ms | 3803.4 ms |
 
 ### Goals
 
