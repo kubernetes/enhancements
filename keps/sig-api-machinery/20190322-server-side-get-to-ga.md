@@ -72,7 +72,9 @@ PartialObjectMetadata exposes our full ObjectMeta interface and no API changes a
 ### 1.16
 
 * Update controllers to use `PartialObjectMetadata` `v1`.
-  * The garbage collector will be the primary target, we will remove the need to call `Update` and use a partial object metadata client.
+  * In the garbage collector, we will remove the need to call `Update` and use a partial object metadata client/informer
+  * In the namespace controller, we will use a partial object metadata informer
+  * In the quota counting code, we will use a partial object metadata informer
 * Announce deprecation of `v1beta1` objects and removal in 1.19 
 * `kubectl` should switch to using `meta.k8s.io/v1` `Table` (supporting 1.15+ clusters)
 
@@ -110,7 +112,7 @@ The following code changes must be made to take `PartialObjectMetadata` GA
 
 The following code changes should be made before `PartialObjectMetadata` is GA to get feedback
 
-* Update one of (GC, Namespace, Quota counting) to use a new PartialObjectMetadata specific typed client using protobuf.
+* Update all of (GC, Namespace, Quota counting) to use a new PartialObjectMetadata specific typed client using protobuf.
 
 ### Version Skew Strategy
 
@@ -119,3 +121,4 @@ We will support N-1 for both `kubectl` and participating controllers by introduc
 ## Implementation History
 
 * First version of this proposal merged.
+* Server-side GET objects moved to v1 in 1.15
