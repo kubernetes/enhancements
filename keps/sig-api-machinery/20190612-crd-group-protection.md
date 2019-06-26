@@ -5,6 +5,7 @@ authors:
 owning-sig: sig-api-machinery
 participating-sigs:
   - sig-api-machinery
+  - sig-architecture
 reviewers:
   - "@sttts"
   - "@jpbetz"
@@ -15,7 +16,7 @@ approvers:
 editor:
   name: "@deads2k"
 creation-date: 2019-06-12
-last-updated: 2019-06-12
+last-updated: 2019-06-26
 status: implementable
 ---
 
@@ -33,8 +34,8 @@ to ensure consistency and quality.  To avoid confusion in our API groups and pre
 space inside of the kubernetes API groups, the kube-apiserver needs to be updated to protect these reserved API groups.
 
 This KEP proposes adding an `api-approved.kubernetes.io` annotation to CustomResourceDefinition.  This is only needed if
-the CRD group is `k8s.io`, `kubernetes.io`, or ends with `.k8s.io`, `.kubernetes.io`.  The value should be a link to the
-pull request where the API has been approved.
+the CRD group is `k8s.io`, `kubernetes.io`, or ends with `.k8s.io`, `.kubernetes.io`.  The value should be a link to a
+to a URL where the current spec was approved, so updates to the spec should also update the URL.
  
 ```yaml
 metadata:
