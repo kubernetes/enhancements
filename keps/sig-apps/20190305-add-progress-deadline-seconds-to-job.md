@@ -54,7 +54,7 @@ We propose to add an optinal field `ProgressDeadlineSeconds` to `job`. Like `dep
 ## Motivation
 
 In [#48075][] and [#51153][] we've introduced backoff policy for job, which does not cover certain issues with erroneous jobs. 
-For example, we create a job with miss-typed pull spec, and will find out about it only when the job controller kicks a pod and the pod will result in ImagePullBackOff state. The job will remain active.
+For example, we create a job with miss-typed pod spec, and will find out about it only when the job controller kicks a pod and the pod will result in `pending` state with `ImagePullBackOff` reason. The job will remain active.
 Users would like to fail the job instead of having the job remain active if there's a typo, config error, not-pullable image etc.
 For detailed examples, please see the below user stories.
 
@@ -73,10 +73,13 @@ N/A
 
 ### User Stories
 
-* [#67828][] `Jobs with a container config error will never complete.` A job with a config error (pod: Warning Failed 22m (x8 over 24m) kubelet, minikube Error: container has runAsNonRoot and image will run as root), will never complete, the job will not have any success or fail status, and will have an 'activate' forever. While this should count as a failure, and take into account restartPolicy and backoffLimit.
+* [#67828][] `Jobs with a container config error will never complete.` A job with a config error will never complete. It will not have any success or failure status, but remains pending. This should count as a failure, and take into account restartPolicy and backoffLimit as well.
+
+By having `ProgressDeadlineSeconds`, this can be avoided if user configures `ProgressDeadlineSeconds` in the job's yaml. The job will only remain in `Pending` state with `CreateContainerConfigError` as the reason for maximum `ProgressDeadlineSeconds` seconds.
 * [#62816][] `Request for job failure on pod failure rather than job remaining active.` 
-I run a job with a volume that references a non-existent config map and get an error message like "MountVolume.SetUp failed for volume "some-volume" : configmaps "some-missing-config-map" not found". I expect the status returned by an API call to have "failed": 1.
-Would also like the job to fail if the container image can't be pulled. Would be nice to be able to specify in the job spec how many image pull attempts to make before failing. If I have a typo in the image name, or it's not accessible in my Docker registry, I want the job to fail so I can find that out immediately at job submission/creation time, without having to occasionally look through the job list in the dashboard to find ones with the failures recorded in their details.
+A job with a volume that references a non-existent config map will get an error message "configmap foo not found" and it will stuck at `Pending` state with `ContainerCreating` reason. Also, a job with an non-existent image will result in `Pending` state with `ErrImagePull` reasonn.
+
+With `ProgressDeadlineSeconds`, the above situations will be resolved as the job will be considered failed after `ProgressDeadlineSeconds` seconds. Users can find that out the state of the job at `ProgressDeadlineSeconds` time, without having to occasionally look through the job list in the dashboard to find ones with the failures recorded in their details.
 
 [#67828]: https://github.com/kubernetes/kubernetes/issues/67828
 [#62816]: https://github.com/kubernetes/kubernetes/issues/62816
@@ -91,12 +94,12 @@ type JobSpec struct {
      // otherwise the system will try to terminate it; value must be positive integer
      // Job is `progressive` means at least one of the pods starts running or has finished (Completed or Failed),
      // i.e., as long as one of the pods is making some progress, this Job should not be terminated.
+     // If this field is not specified, a job will fall back to its default behavior, i.e., it will remain in pending
+     // if there is any config error or a bad image name etc.
      // +optional
      ProgressDeadlineSeconds *int64
 }
 ```
-
-Job is `active` means all pods of the job are in `running` state.
 
 ### Implementation Details/Notes/Constraints
 
