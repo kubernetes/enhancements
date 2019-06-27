@@ -24,7 +24,7 @@ creation-date: 2019-06-05
 see-also:
   - 20181106-kubernetes-metrics-overhaul
   - 20190404-kubernetes-control-plane-metrics-stability
-status: proposal
+status: implementable
 ---
 
 # Metrics Stability Migration
