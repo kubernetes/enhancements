@@ -23,6 +23,14 @@ superseded-by:
 ## Table of Contents
 
 <!-- toc -->
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-goals](#non-goals)
+- [Proposal](#proposal)
+- [Graduation Criteria](#graduation-criteria)
+- [Implementation History](#implementation-history)
+- [Alternatives](#alternatives)
 <!-- /toc -->
 
 ## Summary

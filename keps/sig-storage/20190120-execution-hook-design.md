@@ -36,21 +36,25 @@ ExecutionHook API Design
 ## Table of Contents
 
 <!-- toc -->
-
-  * [Title](#title)
-      * [Table of Contents](#table-of-contents)
-      * [Summary](#summary)
-      * [Motivation](#motivation)
-         * [Goals](#goals)
-         * [Non-Goals](#non-goals)
-      * [Proposal](#proposal)
-         * [User Stories](#user-stories)
-      * [Workarounds](#workarounds)
-      * [Alternatives](#alternatives)
-         * [Risks and Mitigations](#risks-and-mitigations)
-      * [Graduation Criteria](#graduation-criteria)
-      * [Implementation History](#implementation-history)
-
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [Workflow](#workflow)
+  - [Risks and Mitigations](#risks-and-mitigations)
+- [Graduation Criteria](#graduation-criteria)
+- [Implementation History](#implementation-history)
+  - [User Stories](#user-stories)
+- [Workarounds](#workarounds)
+- [Alternatives](#alternatives)
+  - [Alternative Option 1a](#alternative-option-1a)
+  - [Alternative Option 1b](#alternative-option-1b)
+  - [Controller Handlings for Option 1a and 1b](#controller-handlings-for-option-1a-and-1b)
+  - [Alternative Option 2](#alternative-option-2)
+  - [Risks and Mitigations](#risks-and-mitigations-1)
+- [Graduation Criteria](#graduation-criteria-1)
+- [Implementation History](#implementation-history-1)
 <!-- /toc -->
 
 ## Summary

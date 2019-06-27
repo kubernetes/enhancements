@@ -28,29 +28,26 @@ superseded-by:
 ## Table of Contents
 
 <!-- toc -->
-
-* [Summary](#summary)
-* [Motivation](#motivation)
-   * [Goals](#goals)
-   * [Non-Goals](#non-goals)
-* [Proposal](#proposal)
-   * [Test Framework](#test-framework)
-   * [Test Rollout](#test-rollout)
-   * [Test Portability](#test-portability)
-   * [Test Cases](#test-cases)
-      * [Pod Startup](#pod-startup)
-   * [WIP Future Test Cases](#wip-future-test-cases)
-      * [Pod Teardown](#pod-teardown)
-      * [PV Binding Tests](#pv-binding-tests)
-      * [PV Provisioning Tests](#pv-provisioning-tests)
-      * [PV Deletion Tests](#pv-deletion-tests)
-* [Graduation Criteria](#graduation-criteria)
-   * [Phase 1](#phase-1)
-   * [Phase 2](#phase-2)
-   * [Phase 3](#phase-3)
-* [Implementation History](#implementation-history)
-
-
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [Test Framework](#test-framework)
+  - [Test Rollout](#test-rollout)
+  - [Test Portability](#test-portability)
+  - [Test Cases](#test-cases)
+    - [Pod Startup](#pod-startup)
+  - [WIP Future Test Cases](#wip-future-test-cases)
+    - [Pod Teardown](#pod-teardown)
+    - [PV Binding Tests](#pv-binding-tests)
+    - [PV Provisioning Tests](#pv-provisioning-tests)
+    - [PV Deletion Tests](#pv-deletion-tests)
+- [Graduation Criteria](#graduation-criteria)
+  - [Phase 1](#phase-1)
+  - [Phase 2](#phase-2)
+  - [Phase 3](#phase-3)
+- [Implementation History](#implementation-history)
 <!-- /toc -->
 
 ## Summary

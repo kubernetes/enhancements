@@ -30,31 +30,23 @@ see-also:
 ## Table of Contents
 
 <!-- toc -->
-
-<!-- TOC -->
-
-- [kubeadm Config file graduation (v1beta2)](#kubeadm-config-file-graduation-v1beta2)
-    - [Table of Contents](#table-of-contents)
-    - [Summary](#summary)
-    - [Motivation](#motivation)
-        - [Goals](#goals)
-        - [Non-Goals](#non-goals)
-    - [Proposal](#proposal)
-        - [v1beta1](#v1beta1)
-            - [Decoupling the kubeadm types from other ComponentConfig types](#decoupling-the-kubeadm-types-from-other-componentconfig-types)
-            - [Re-design how kubeadm configurations are persisted](#re-design-how-kubeadm-configurations-are-persisted)
-            - [Use substructures instead of the old "single flat object"](#use-substructures-instead-of-the-old-single-flat-object)
-        - [v1beta2](#v1beta2)
-            - [Add config options for new and existing kubeadm features](#add-config-options-for-new-and-existing-kubeadm-features)
-        - [Risks and Mitigations](#risks-and-mitigations)
-    - [Graduation Criteria](#graduation-criteria)
-    - [Implementation History](#implementation-history)
-        - [v1alpha3 released with Kubernetes 1.12](#v1alpha3-released-with-kubernetes-112)
-        - [v1beta1 released with Kubernetes 1.13](#v1beta1-released-with-kubernetes-113)
-    - [Drawbacks](#drawbacks)
-
-<!-- /TOC -->
-
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [v1beta1](#v1beta1)
+    - [Decoupling the kubeadm types from other ComponentConfig types](#decoupling-the-kubeadm-types-from-other-componentconfig-types)
+    - [Re-design how kubeadm configurations are persisted](#re-design-how-kubeadm-configurations-are-persisted)
+    - [Use substructures instead of the old &quot;single flat object&quot;](#use-substructures-instead-of-the-old-single-flat-object)
+  - [v1beta2](#v1beta2)
+    - [Add config options for new and existing kubeadm features](#add-config-options-for-new-and-existing-kubeadm-features)
+  - [Risks and Mitigations](#risks-and-mitigations)
+- [Graduation Criteria](#graduation-criteria)
+- [Implementation History](#implementation-history)
+  - [v1alpha3 released with Kubernetes 1.12](#v1alpha3-released-with-kubernetes-112)
+  - [v1beta1 released with Kubernetes 1.13](#v1beta1-released-with-kubernetes-113)
+- [Drawbacks](#drawbacks)
 <!-- /toc -->
 
 ## Summary

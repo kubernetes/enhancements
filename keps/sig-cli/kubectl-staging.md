@@ -22,17 +22,19 @@ status: implementable
 ## Table of Contents
 
 <!-- toc -->
-* [Table of Contents](#table-of-contents)
-* [Summary](#summary)
-* [Motivation](#motivation)
-    * [Goals](#goals)
-    * [Non-Goals](#non-goals)
-* [Proposal](#proposal)
-* [Risks and Mitigations](#risks-and-mitigations)
-* [Graduation Criteria](#graduation-criteria)
-* [Testing](#testing)
-* [Implementation History](#implementation-history)
-
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [Adding the staging repository in kubernetes/kubernetes:](#adding-the-staging-repository-in-kuberneteskubernetes)
+  - [Modify and Set-up the existing receiving kubernetes/kubectl repository](#modify-and-set-up-the-existing-receiving-kuberneteskubectl-repository)
+  - [Move <code>pkg/kubectl</code> Code](#move--code)
+  - [Timeframe](#timeframe)
+- [Risks and Mitigations](#risks-and-mitigations)
+- [Graduation Criteria](#graduation-criteria)
+- [Testing](#testing)
+- [Implementation History](#implementation-history)
 <!-- /toc -->
 
 ## Summary

@@ -26,16 +26,27 @@ status: implementable
 ## Table of Contents
 
 <!-- toc -->
-* [Table of Contents](#table-of-contents)
-* [Summary](#summary)
-* [Motivation](#motivation)
-    * [Goals](#goals)
-    * [Non-Goals](#non-goals)
-* [Proposal](#proposal)
-* [Risks and Mitigations](#risks-and-mitigations)
-* [Graduation Criteria](#graduation-criteria)
-* [Implementation History](#implementation-history)
-
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+- [Risks and Mitigations](#risks-and-mitigations)
+  - [Several people want an <em>exec-style</em> plugin](#several-people-want-an-exec-style-plugin)
+      - [mitigation](#mitigation)
+  - [goplugin limitations](#goplugin-limitations)
+    - [Not shareable as object code](#not-shareable-as-object-code)
+      - [mitigation](#mitigation-1)
+      - [No current support for Windows](#no-current-support-for-windows)
+      - [mitigation](#mitigation-2)
+    - [General symbol execution from the plugin](#general-symbol-execution-from-the-plugin)
+      - [mitigation](#mitigation-3)
+  - [Two means to specify legacy KV generation](#two-means-to-specify-legacy-kv-generation)
+      - [mitigation](#mitigation-4)
+- [Graduation Criteria of plugin framework](#graduation-criteria-of-plugin-framework)
+  - [Alpha status](#alpha-status)
+  - [Graduation to beta](#graduation-to-beta)
+- [Implementation History](#implementation-history)
 <!-- /toc -->
 
 ## Summary

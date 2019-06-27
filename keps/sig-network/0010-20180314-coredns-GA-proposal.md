@@ -24,16 +24,18 @@ see-also: https://github.com/kubernetes/community/pull/2167
 ## Table of Contents
 
 <!-- toc -->
-
-* [Summary](#summary)
-* [Motivation](#motivation)
-    * [Goals](#goals)
-    * [Non-Goals](#non-goals)
-* [Proposal](#proposal)
-    * [User Cases](#use-cases)
-* [Graduation Criteria](#graduation-criteria)
-* [Implementation History](#implementation-history)
-
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [Use Cases](#use-cases)
+    - [Configuring CoreDNS](#configuring-coredns)
+    - [Kubeadm](#kubeadm)
+    - [Kube-up](#kube-up)
+    - [Minikube](#minikube)
+- [Graduation Criteria](#graduation-criteria)
+- [Implementation History](#implementation-history)
 <!-- /toc -->
 
 ## Summary

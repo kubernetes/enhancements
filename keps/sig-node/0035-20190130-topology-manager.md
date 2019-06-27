@@ -36,28 +36,26 @@ _Authors:_
 ## Table of Contents
 
 <!-- toc -->
-
-* [Overview](#overview)
-* [Motivation](#motivation)
-  * [Goals](#goals)
-  * [Non-Goals](#non-goals)
-  * [User Stories](#user-stories)
-* [Proposal](#proposal)
-  * [User Stories](#user-stories)
-  * [Proposed Changes](#proposed-changes)
-    * [New Component: Topology Manager](#new-component-topology-manager)
-      * [Computing Preferred Affinity](#computing-preferred-affinity)
-      * [New Interfaces](#new-interfaces)
-    * [Changes to Existing Components](#changes-to-existing-components)
-* [Graduation Criteria](#graduation-criteria)
-  * [alpha (target v1.15)](#phase-1-alpha-target-v115)
-  * [beta](#phase-2-beta-later-versions)
-  * [GA (stable)](#ga-stable)
-* [Challenges](#challenges)
-* [Limitations](#limitations)
-* [Alternatives](#alternatives)
-* [Reference](#reference)
-
+- [Overview](#overview)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+  - [User Stories](#user-stories)
+- [Proposal](#proposal)
+  - [Proposed Changes](#proposed-changes)
+    - [New Component: Topology Manager](#new-component-topology-manager)
+      - [Computing Preferred Affinity](#computing-preferred-affinity)
+      - [New Interfaces](#new-interfaces)
+    - [Feature Gate and Kubelet Flags](#feature-gate-and-kubelet-flags)
+    - [Changes to Existing Components](#changes-to-existing-components)
+- [Graduation Criteria](#graduation-criteria)
+  - [Phase 1: Alpha (target v1.15)](#phase-1-alpha-target-v115)
+  - [Phase 2: Beta (later versions)](#phase-2-beta-later-versions)
+  - [GA (stable)](#ga-stable)
+- [Challenges](#challenges)
+- [Limitations](#limitations)
+- [Alternatives](#alternatives)
+- [References](#references)
 <!-- /toc -->
 
 # Overview

@@ -24,6 +24,15 @@ status: implementable
 ## Table of Contents
 
 <!-- toc -->
+- [Motivation](#motivation)
+  - [Capturing Dedicated Workloads](#capturing-dedicated-workloads)
+- [Proposal](#proposal)
+- [Implementation Timeline](#implementation-timeline)
+- [Alternatives Considered](#alternatives-considered)
+  - [File or flag-based configuration of the apiserver to allow specifying allowed labels](#file-or-flag-based-configuration-of-the-apiserver-to-allow-specifying-allowed-labels)
+  - [API-based configuration of the apiserver to allow specifying allowed labels](#api-based-configuration-of-the-apiserver-to-allow-specifying-allowed-labels)
+  - [Allow kubelets to add any labels they wish, and add NoSchedule taints if disallowed labels are added](#allow-kubelets-to-add-any-labels-they-wish-and-add-noschedule-taints-if-disallowed-labels-are-added)
+  - [Forbid all labels regardless of namespace except for a specifically allowed set](#forbid-all-labels-regardless-of-namespace-except-for-a-specifically-allowed-set)
 <!-- /toc -->
 
 ## Motivation

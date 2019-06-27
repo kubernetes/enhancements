@@ -29,22 +29,19 @@ see-also:
 ## Table of Contents
 
 <!-- toc -->
-
-   * [Defaulting for Custom Resources](#defaulting-for-custom-resources)
-      * [Table of Contents](#table-of-contents)
-      * [Summary](#summary)
-      * [Motivation](#motivation)
-         * [Goals](#goals)
-         * [Non-Goals](#non-goals)
-      * [Proposal](#proposal)
-         * [Examples](#examples)
-      * [References](#references)
-         * [Test Plan](#test-plan)
-         * [Graduation Criteria](#graduation-criteria)
-         * [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
-         * [Version Skew Strategy](#version-skew-strategy)
-      * [Implementation History](#implementation-history)
-
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [Examples](#examples)
+- [References](#references)
+  - [Test Plan](#test-plan)
+  - [Graduation Criteria](#graduation-criteria)
+  - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+  - [Version Skew Strategy](#version-skew-strategy)
+- [Alternatives considered](#alternatives-considered)
+- [Implementation History](#implementation-history)
 <!-- /toc -->
 
 ## Summary

@@ -42,22 +42,15 @@ See the KEP process for details on each of these items.
 ## Table of Contents
 
 <!-- toc -->
-
-A table of contents is helpful for quickly jumping to sections of a KEP and for highlighting any additional information provided beyond the standard KEP template.
-[Tools for generating][] a table of contents from markdown are available.
-
-- [Kubernetes Artifact Management](#kubernetes-artifact-management)
-  - [Table of Contents](#table-of-contents)
-  - [Summary](#summary)
-  - [Motivation](#motivation)
-    - [Goals](#goals)
-    - [Non-Goals](#non-goals)
-  - [Proposal](#proposal)
-  - [Graduation Criteria](#graduation-criteria)
-  - [Implementation History](#implementation-history)
-
-[Tools for generating]: https://github.com/ekalinin/github-markdown-toc
-
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [HTTP Redirector Design](#http-redirector-design)
+    - [Configuring the HTTP Redirector](#configuring-the-http-redirector)
+- [Graduation Criteria](#graduation-criteria)
+- [Implementation History](#implementation-history)
 <!-- /toc -->
 
 ## Summary

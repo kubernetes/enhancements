@@ -30,13 +30,11 @@ CSI Volume Topology
 ## Table of Contents
 
 <!-- toc -->
-
-  * [Title](#title)
-      * [Table of Contents](#table-of-contents)
-      * [Summary](#summary)
-      * [Test Plan](#test-plan)
-      * [Graduation Criteria](#graduation-criteria)
-
+- [Summary](#summary)
+- [Test Plan](#test-plan)
+- [Graduation Criteria](#graduation-criteria)
+  - [Alpha-&gt;Beta](#alpha-beta)
+  - [Beta-&gt;GA](#beta-ga)
 <!-- /toc -->
 
 ## Summary

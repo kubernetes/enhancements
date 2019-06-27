@@ -23,16 +23,20 @@ status: implementable
 ## Table of Contents
 
 <!-- toc -->
-
-* [Abstract](#abstract)
-* [Background](#background)
-* [Objectives](#objectives)
-* [User Journeys](#user-journeys)
-  * [Device Monitoring Agents](#device-monitoring-agents)
-* [Changes](#changes)
-* [Potential Future Improvements](#potential-future-improvements)
-* [Alternatives Considered](#alternatives-considered)
-
+- [Abstract](#abstract)
+- [Background](#background)
+- [Objectives](#objectives)
+- [User Journeys](#user-journeys)
+  - [Device Monitoring Agents](#device-monitoring-agents)
+- [Changes](#changes)
+  - [Potential Future Improvements](#potential-future-improvements)
+- [Alternatives Considered](#alternatives-considered)
+  - [Add v1alpha1 Kubelet GRPC service, at <code>/var/lib/kubelet/pod-resources/kubelet.sock</code>, which returns a list of <a href="https://github.com/kubernetes/kubernetes/blob/master/pkg/kubelet/apis/cri/runtime/v1alpha2/api.proto#L734">CreateContainerRequest</a>s used to create containers.](#add-v1alpha1-kubelet-grpc-service-at--which-returns-a-list-of-createcontainerrequests-used-to-create-containers)
+  - [Add a field to Pod Status.](#add-a-field-to-pod-status)
+  - [Use the Kubelet Device Manager Checkpoint file](#use-the-kubelet-device-manager-checkpoint-file)
+  - [Add a field to the Pod Spec:](#add-a-field-to-the-pod-spec)
+- [Graduation Criteria](#graduation-criteria)
+- [Implementation History](#implementation-history)
 <!-- /toc -->
 
 ## Abstract

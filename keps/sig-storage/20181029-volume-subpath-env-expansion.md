@@ -30,23 +30,19 @@ superseded-by:
 ## Table of Contents
 
 <!-- toc -->
-
-  * [Title](#title)
-      * [Table of Contents](#table-of-contents)
-      * [Summary](#summary)
-      * [Motivation](#motivation)
-         * [Goals](#goals)
-         * [Non-Goals](#non-goals)
-      * [Proposal](#proposal)
-         * [User Stories](#user-stories)
-      * [Current workarounds - k8s &lt;=1.9.3](#current-workarounds---k8s-193)
-      * [Workarounds - k8s &gt;1.9.3](#workarounds---k8s-193)
-      * [Alternatives - using subPath directly](#alternatives---using-subpath-directly)
-         * [Risks and Mitigations](#risks-and-mitigations)
-      * [Graduation Criteria](#graduation-criteria)
-      * [Implementation History](#implementation-history)
-      * [Alternatives - Using subPathFrom](#alternatives---using-subpathfrom)
-
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [User Stories](#user-stories)
+- [Current workarounds - k8s &lt;=1.9.3](#current-workarounds---k8s-193)
+- [Workarounds - k8s &gt;1.9.3](#workarounds---k8s-193)
+- [Alternatives - using subPath directly](#alternatives---using-subpath-directly)
+  - [Risks and Mitigations](#risks-and-mitigations)
+- [Graduation Criteria](#graduation-criteria)
+- [Implementation History](#implementation-history)
+- [Alternatives - Using subPathFrom](#alternatives---using-subpathfrom)
 <!-- /toc -->
 
 ## Summary

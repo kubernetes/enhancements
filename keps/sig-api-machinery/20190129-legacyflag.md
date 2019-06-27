@@ -25,25 +25,23 @@ see-also:
 ## Table of Contents
 
 <!-- toc -->
-
-* [Table of Contents](#table-of-contents)
-* [Summary](#summary)
-* [Motivation](#motivation)
-    * [Goals](#goals)
-    * [Non-Goals](#non-goals)
-* [Proposal](#proposal)
-    * [User Stories [optional]](#user-stories-optional)
-      * [Story 1](#story-1)
-      * [Story 2](#story-2)
-    * [Implementation Details](#implementation-details)
-    * [Risks and Mitigations](#risks-and-mitigations)
-* [Graduation Criteria](#graduation-criteria)
-* [Implementation History](#implementation-history)
-* [Drawbacks [optional]](#drawbacks-optional)
-* [Alternatives [optional]](#alternatives-optional)
-
-[Tools for generating]: https://github.com/ekalinin/github-markdown-toc
-
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [Requirements](#requirements)
+    - [General](#general)
+    - [Flag Registration](#flag-registration)
+    - [Flag Parsing](#flag-parsing)
+    - [Application of Parsed Flag Values](#application-of-parsed-flag-values)
+  - [Implementation Details](#implementation-details)
+    - [Code Location](#code-location)
+  - [Risks and Mitigations](#risks-and-mitigations)
+    - [Maintenance](#maintenance)
+    - [Migrating existing components](#migrating-existing-components)
+- [Graduation Criteria](#graduation-criteria)
+- [Implementation History](#implementation-history)
 <!-- /toc -->
 
 ## Summary

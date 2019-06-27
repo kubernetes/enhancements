@@ -23,14 +23,16 @@ status: provisional
 ## Table of Contents
 
 <!-- toc -->
-
-* [Summary](#summary)
-* [Goals](#goals)
-* [Proposal](#proposal)
-    * [User Cases](#use-cases)
-* [Graduation Criteria](#graduation-criteria)
-* [Implementation History](#implementation-history)
-
+- [Summary](#summary)
+- [Goals](#goals)
+- [Proposal](#proposal)
+  - [Use Cases](#use-cases)
+    - [Kubeadm](#kubeadm)
+    - [Kube-up](#kube-up)
+    - [Minikube](#minikube)
+    - [Kops](#kops)
+- [Graduation Criteria](#graduation-criteria)
+- [Implementation History](#implementation-history)
 <!-- /toc -->
 
 ## Summary

@@ -21,7 +21,6 @@ status: provisional
 ## Table of Contents
 
 <!-- toc -->
-- [Table of Contents](#table-of-contents)
 - [Summary](#summary)
 - [Motivation](#motivation)
   - [Goals](#goals)
@@ -30,11 +29,10 @@ status: provisional
   - [User Stories](#user-stories)
     - [Expose HTTP[s] API backed by kubernetes services](#expose-https-api-backed-by-kubernetes-services)
     - [Adjust ALB settings via annotation](#adjust-alb-settings-via-annotation)
-    - [Leverage WAF & Cognito](#leverage-waf--cognito)
+    - [Leverage WAF &amp; Cognito](#leverage-waf--cognito)
     - [Sharing single ALB among Ingresses across namespace](#sharing-single-alb-among-ingresses-across-namespace)
 - [Graduation Criteria](#graduation-criteria)
 - [Implementation History](#implementation-history)
-
 <!-- /toc -->
 
 ## Summary

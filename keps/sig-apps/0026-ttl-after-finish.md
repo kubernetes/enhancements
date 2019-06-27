@@ -28,33 +28,24 @@ superseded-by:
 ## Table of Contents
 
 <!-- toc -->
-
-A table of contents is helpful for quickly jumping to sections of a KEP and for highlighting any additional information provided beyond the standard KEP template.
-[Tools for generating][] a table of contents from markdown are available.
-
-   * [TTL After Finished Controller](#ttl-after-finished-controller)
-      * [Table of Contents](#table-of-contents)
-      * [Summary](#summary)
-      * [Motivation](#motivation)
-         * [Goals](#goals)
-      * [Proposal](#proposal)
-         * [Concrete Use Cases](#concrete-use-cases)
-         * [Detailed Design](#detailed-design)
-            * [Feature Gate](#feature-gate)
-            * [API Object](#api-object)
-               * [Validation](#validation)
-         * [User Stories](#user-stories)
-         * [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
-            * [TTL Controller](#ttl-controller)
-            * [Finished Jobs](#finished-jobs)
-            * [Finished Pods](#finished-pods)
-            * [Owner References](#owner-references)
-         * [Risks and Mitigations](#risks-and-mitigations)
-      * [Graduation Criteria](#graduation-criteria)
-      * [Implementation History](#implementation-history)
-
-[Tools for generating]: https://github.com/ekalinin/github-markdown-toc
-
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+- [Proposal](#proposal)
+  - [Concrete Use Cases](#concrete-use-cases)
+  - [Detailed Design](#detailed-design)
+    - [Feature Gate](#feature-gate)
+    - [API Object](#api-object)
+      - [Validation](#validation)
+  - [User Stories](#user-stories)
+  - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
+    - [TTL Controller](#ttl-controller)
+    - [Finished Jobs](#finished-jobs)
+    - [Finished Pods](#finished-pods)
+    - [Owner References](#owner-references)
+  - [Risks and Mitigations](#risks-and-mitigations)
+- [Graduation Criteria](#graduation-criteria)
+- [Implementation History](#implementation-history)
 <!-- /toc -->
 
 ## Summary

@@ -25,17 +25,20 @@ last-updated: 2018-01-23
 ## Table of Contents
 
 <!-- toc -->
-
-* [Summary](#summary)
-* [Objectives](#objectives)
-  * [Goals](#goals)
-  * [Non-Goals](#non-goals)
-* [Proposal](#proposal)
-  * [User Stories](#user-stories)
-* [Graduation Criteria](#graduation-criteria)
-* [Implementation History](#implementation-history)
-* [Unresolved Questions](#unresolved-questions)
-
+- [Summary](#summary)
+- [Objectives](#objectives)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [User Stories](#user-stories)
+    - [Pod Submission to Running](#pod-submission-to-running)
+    - [Pod Deletion](#pod-deletion)
+    - [Cold Start](#cold-start)
+  - [Implementation Constraints](#implementation-constraints)
+- [Graduation Criteria](#graduation-criteria)
+- [Testing](#testing)
+- [Implementation History](#implementation-history)
+- [Unresolved Questions](#unresolved-questions)
 <!-- /toc -->
 
 ## Summary

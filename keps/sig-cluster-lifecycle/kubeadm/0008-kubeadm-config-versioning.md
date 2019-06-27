@@ -23,30 +23,19 @@ superseded-by: []
 ## Table of Contents
 
 <!-- toc -->
-
-A table of contents is helpful for quickly jumping to sections of a KEP and for highlighting any additional information provided beyond the standard KEP template.
-
-<!-- markdown-toc start - Don't edit this section. Run M-x markdown-toc-refresh-toc -->
-**Table of Contents**
-
-- [Kubeadm Config to Beta](#kubeadm-config-to-beta)
-    - [Table of Contents](#table-of-contents)
-    - [Summary](#summary)
-    - [Motivation](#motivation)
-        - [Goals](#goals)
-        - [Non-Goals](#non-goals)
-    - [Proposal](#proposal)
-        - [User Stories [optional]](#user-stories-optional)
-            - [As a user upgrading with Kubeadm, I want the upgrade process to not fail with unfamiliar configuration.](#as-a-user-upgrading-with-kubeadm-i-want-the-upgrade-process-to-not-fail-with-unfamiliar-configuration)
-            - [As a infrastructure system using kubeadm, I want to be able to write configuration files that always work.](#as-a-infrastructure-system-using-kubeadm-i-want-to-be-able-to-write-configuration-files-that-always-work)
-        - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
-        - [Risks and Mitigations](#risks-and-mitigations)
-    - [Graduation Criteria](#graduation-criteria)
-    - [Implementation History](#implementation-history)
-    - [Alternatives](#alternatives)
-
-<!-- markdown-toc end -->
-
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [User Stories [optional]](#user-stories-optional)
+    - [As a user upgrading with Kubeadm, I want the upgrade process to not fail with unfamiliar configuration.](#as-a-user-upgrading-with-kubeadm-i-want-the-upgrade-process-to-not-fail-with-unfamiliar-configuration)
+    - [As a infrastructure system using kubeadm, I want to be able to write configuration files that always work.](#as-a-infrastructure-system-using-kubeadm-i-want-to-be-able-to-write-configuration-files-that-always-work)
+  - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
+  - [Risks and Mitigations](#risks-and-mitigations)
+- [Graduation Criteria](#graduation-criteria)
+- [Implementation History](#implementation-history)
+- [Alternatives](#alternatives)
 <!-- /toc -->
 
 ## Summary

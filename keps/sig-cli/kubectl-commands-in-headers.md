@@ -27,24 +27,27 @@ superseded-by:
 ## Table of Contents
 
 <!-- toc -->
-
-A table of contents is helpful for quickly jumping to sections of a KEP and for highlighting any additional information provided beyond the standard KEP template.
-[Tools for generating][] a table of contents from markdown are available.
-
-- [Table of Contents](#table-of-contents)
 - [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
 - [Motivation](#motivation)
-- [Goals](#goals)
-- [Non-Goals](#non-goals)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+  - [Anti-Goals](#anti-goals)
 - [Proposal](#proposal)
-- [Risks and Mitigations](#risks-and-mitigations)
+  - [X-Kubectl-Command Header](#x-kubectl-command-header)
+  - [X-Kubectl-Flags Header](#x-kubectl-flags-header)
+    - [Enumerated Flag Values](#enumerated-flag-values)
+  - [X-Kubectl-Session Header](#x-kubectl-session-header)
+  - [X-Kubectl-Deprecated Header](#x-kubectl-deprecated-header)
+  - [X-Kubectl-Build Header](#x-kubectl-build-header)
+  - [Example](#example)
+  - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
-- [Test Plan](#test-plan)
+  - [Test Plan](#test-plan)
+  - [Graduation Criteria](#graduation-criteria)
+  - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+  - [Version Skew Strategy](#version-skew-strategy)
 - [Implementation History](#implementation-history)
-
-[Tools for generating]: https://github.com/ekalinin/github-markdown-toc
-
 <!-- /toc -->
 
 ## Release Signoff Checklist

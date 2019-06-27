@@ -21,6 +21,16 @@ status: provisional
 ## Table of Contents
 
 <!-- toc -->
+- [Summary](#summary)
+- [Motivation](#motivation)
+- [Potential solutions](#potential-solutions)
+  - [Solution A - Extend Resource Quota Scopes](#solution-a---extend-resource-quota-scopes)
+    - [Pros](#pros)
+    - [Cons](#cons)
+  - [Solution B - Extend Resource Quota to include an explicit Node Selector field](#solution-b---extend-resource-quota-to-include-an-explicit-node-selector-field)
+  - [Solution C - CRD for expressing Resource Quota for extended resources](#solution-c---crd-for-expressing-resource-quota-for-extended-resources)
+    - [Pros](#pros-1)
+    - [Cons](#cons-1)
 <!-- /toc -->
 
 ## Summary

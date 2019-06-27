@@ -25,18 +25,18 @@ status: implementable
 ## Table of Contents
 
 <!-- toc -->
-
-* [Table of Contents](#table-of-contents)
-* [Summary](#summary)
-* [Motivation](#motivation)
-    * [Goals](#goals)
-    * [Non-Goals](#non-goals)
-* [Proposal](#proposal)
-    * [Implementation Details/Notes/Constraints [optional]](#implementation-detailsnotesconstraints-optional)
-    * [Risks and Mitigations](#risks-and-mitigations)
-* [Graduation Criteria](#graduation-criteria)
-* [Implementation History](#implementation-history)
-
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [Risks and Mitigations](#risks-and-mitigations)
+    - [Existing customization of <code>system:discovery</code>](#existing-customization-of-)
+    - [Dependence on existing unauthenticated behavior](#dependence-on-existing-unauthenticated-behavior)
+- [Graduation Criteria](#graduation-criteria)
+  - [Testing](#testing)
+  - [Documentation](#documentation)
+- [Implementation History](#implementation-history)
 <!-- /toc -->
 
 ## Summary

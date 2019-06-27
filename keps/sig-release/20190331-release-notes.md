@@ -24,21 +24,21 @@ status: provisional
 ## Table of Contents
 
 <!-- toc -->
-
-- [Title](#title)
-  - [Table of Contents](#table-of-contents)
-  - [Summary](#summary)
-  - [Motivation](#motivation)
-    - [Goals](#goals)
-    - [Non-Goals](#non-goals)
-  - [Proposal](#proposal)
-    - [Consolidation and Clean-Up](#consolidation-and-clean-up)
-    - [Automation](#automation)
-    - [Risks and Mitigations](#risks-and-mitigations)
-  - [Design Details](#design-details)
-    - [Graduation Criteria](#graduation-criteria)
-  - [Infrastructure Needed](#infrastructure-needed)
-
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [Consolidation and Clean-up](#consolidation-and-clean-up)
+    - [Updating Anago](#updating-anago)
+    - [Release Notes Website](#release-notes-website)
+  - [Automation](#automation)
+    - [Build additional labels](#build-additional-labels)
+    - [Automated release notes](#automated-release-notes)
+  - [Risks and Mitigations](#risks-and-mitigations)
+- [Design Details](#design-details)
+  - [Graduation Criteria](#graduation-criteria)
+- [Infrastructure Needed](#infrastructure-needed)
 <!-- /toc -->
 
 ## Summary

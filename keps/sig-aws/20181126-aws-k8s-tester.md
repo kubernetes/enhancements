@@ -20,21 +20,18 @@ status: provisional
 ## Table of Contents
 
 <!-- toc -->
-
-* [Table of Contents](#table-of-contents)
-* [Summary](#summary)
-* [Motivation](#motivation)
-    * [Goals](#goals)
-    * [Non-Goals](#non-goals)
-* [Proposal](#proposal)
-    * [User Stories](#user-stories)
-      * [Kubernetes E2E test workflow: upstream, Prod EKS builds](#kubernetes-e2e-test-workflow-upstream-prod-eks-builds)
-      * [Sub-project E2E test workflow: upstream, ALB Ingress Controller](#sub-project-e2e-test-workflow-upstream-alb-ingress-controller)
-    * [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
-    * [Risks and Mitigations](#risks-and-mitigations)
-* [Graduation Criteria](#graduation-criteria)
-* [Implementation History](#implementation-history)
-
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [User Stories](#user-stories)
+    - [Kubernetes E2E test workflow: upstream, Prod EKS builds](#kubernetes-e2e-test-workflow-upstream-prod-eks-builds)
+    - [Sub-project E2E test workflow: upstream, ALB Ingress Controller](#sub-project-e2e-test-workflow-upstream-alb-ingress-controller)
+  - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
+  - [Risks and Mitigations](#risks-and-mitigations)
+- [Graduation Criteria](#graduation-criteria)
+- [Implementation History](#implementation-history)
 <!-- /toc -->
 
 ## Summary

@@ -23,22 +23,20 @@ status: implementable
 ## Table of Contents
 
 <!-- toc -->
-
-* [Summary](#summary)
-* [Motivation](#motivation)
-  * [Goals](#goals)
-  * [Non-goals](#non-goals)
-* [Proposal](#proposal)
-* [Test Plan](#test-plan)
-   * [Unit tests](#unit-tests)
-   * [E2E tests](#e2e-tests)
-* [Graduation Criteria](#graduation-criteria)
-   * [Alpha -&gt; Beta](#alpha---beta)
-   * [Beta -&gt; GA](#beta---ga)
-* [Implementation History](#implementation-history)
-   * [K8s 1.12: Alpha](#k8s-112-alpha)
-   * [K8s 1.13: Alpha](#k8s-113-alpha)
-
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+- [Test Plan](#test-plan)
+  - [Unit tests](#unit-tests)
+  - [E2E tests](#e2e-tests)
+- [Graduation Criteria](#graduation-criteria)
+  - [Alpha -&gt; Beta](#alpha---beta)
+  - [Beta -&gt; GA](#beta---ga)
+- [Implementation History](#implementation-history)
+  - [K8s 1.12: Alpha](#k8s-112-alpha)
+  - [K8s 1.13: Alpha](#k8s-113-alpha)
 <!-- /toc -->
 
 ## Summary

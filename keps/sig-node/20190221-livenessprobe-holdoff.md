@@ -25,24 +25,18 @@ superseded-by:
 ## Table of Contents
 
 <!-- toc -->
-
-- [Add pod-startup liveness-probe holdoff for slow-starting pods](#add-pod-startup-liveness-probe-holdoff-for-slow-starting-pods)
-  - [Table of Contents](#table-of-contents)
-  - [Release Signoff Checklist](#release-signoff-checklist)
-  - [Summary](#summary)
-  - [Motivation](#motivation)
-    - [Goals](#goals)
-    - [Non-Goals](#non-goals)
-  - [Proposal](#proposal)
-    - [Implementation Details](#implementation-details)
-  - [Design Details](#design-details)
-    - [Test Plan](#test-plan)
-    - [Feature Gate](#feature-gate)
-    - [Graduation Criteria](#graduation-criteria)
-  - [Implementation History](#implementation-history)
-
-[Tools for generating]: https://github.com/ekalinin/github-markdown-toc
-
+- [Release Signoff Checklist](#release-signoff-checklist)
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [Implementation Details](#implementation-details)
+- [Design Details](#design-details)
+  - [Test Plan](#test-plan)
+  - [Feature Gate](#feature-gate)
+  - [Graduation Criteria](#graduation-criteria)
+- [Implementation History](#implementation-history)
 <!-- /toc -->
 
 ## Release Signoff Checklist

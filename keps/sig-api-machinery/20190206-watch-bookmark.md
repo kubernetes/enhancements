@@ -25,24 +25,18 @@ superseded-by:
 ## Table of Contents
 
 <!-- toc -->
-
-Table of Contents
-=================
-
-* [Watch bookmark](#watch-bookmark)
-   * [Table of Contents](#table-of-contents)
-   * [Summary](#summary)
-   * [Motivation](#motivation)
-      * [Goals](#goals)
-      * [Non-Goals](#non-goals)
-   * [Proposal](#proposal)
-      * [Risks and Mitigations](#risks-and-mitigations)
-   * [Graduation Criteria](#graduation-criteria)
-   * [Implementation History](#implementation-history)
-   * [Rejected alternatives](#rejected-alternatives)
-      * [Cache in kube-apiserver](#cache-in-kube-apiserver)
-      * [API for send bookmark](#api-for-send-bookmark)
-
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [Risks and Mitigations](#risks-and-mitigations)
+  - [Test Plan](#test-plan)
+- [Graduation Criteria](#graduation-criteria)
+- [Implementation History](#implementation-history)
+- [Rejected alternatives](#rejected-alternatives)
+  - [Cache in kube-apiserver](#cache-in-kube-apiserver)
+  - [API for send bookmark](#api-for-send-bookmark)
 <!-- /toc -->
 
 ## Summary

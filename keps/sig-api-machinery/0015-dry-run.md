@@ -29,6 +29,10 @@ for the request should be as close as possible to a non dry-run response.
 ## Table of Contents
 
 <!-- toc -->
+- [Specifying dry-run](#specifying-dry-run)
+- [Admission controllers](#admission-controllers)
+- [Generated values](#generated-values)
+- [Storage](#storage)
 <!-- /toc -->
 
 ## Specifying dry-run

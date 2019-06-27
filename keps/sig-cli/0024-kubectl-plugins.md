@@ -32,24 +32,21 @@ superseded-by:
 ## Table of Contents
 
 <!-- toc -->
-
-* [Table of Contents](#table-of-contents)
-* [Summary](#summary)
-* [Motivation](#motivation)
-    * [Limitations of the Existing Design](#limitations-of-the-existing-design)
-    * [Goals](#goals)
-    * [Non-Goals](#non-goals)
-* [Proposal](#proposal)
-    * [Scenarios](#scenarios)
-    * [Implementation Details/Design/Constraints](#implementation-detailsdesign)
-        * [Naming Conventions](#naming-conventions)
-    * [Implementation Notes/Constraints](#implementation-notesconstraints)
-    * [Risks and Mitigations](#risks-and-mitigations)
-* [Graduation Criteria](#graduation-criteria)
-* [Implementation History](#implementation-history)
-* [Drawbacks](#drawbacks)
-* [Future Improvements/Considerations](#future-improvementsconsiderations)
-
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Limitations of the Existing Design](#limitations-of-the-existing-design)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [Scenarios](#scenarios)
+  - [Implementation Details/Design](#implementation-detailsdesign)
+    - [Naming Conventions](#naming-conventions)
+  - [Implementation Notes/Constraints](#implementation-notesconstraints)
+  - [Risks and Mitigations](#risks-and-mitigations)
+- [Graduation Criteria](#graduation-criteria)
+- [Implementation History](#implementation-history)
+- [Drawbacks](#drawbacks)
+- [Future Improvements/Considerations](#future-improvementsconsiderations)
 <!-- /toc -->
 
 ## Summary

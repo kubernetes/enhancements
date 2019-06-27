@@ -21,24 +21,24 @@ status: implementable
 ## Table of Contents
 
 <!-- toc -->
-
-* [Summary](#summary)
-* [Motivation](#motivation)
-  * [Goals](#goals)
-  * [Non\-Goals](#non-goals)
-  * [User Stories](#user-stories)
-* [Proposal](#proposal)
-  * [API](#api)
-    * [Runtime Handler](#runtime-handler)
-  * [Versioning, Updates, and Rollouts](#versioning-updates-and-rollouts)
-  * [Implementation Details](#implementation-details)
-    * [Monitoring](#monitoring)
-  * [Risks and Mitigations](#risks-and-mitigations)
-* [Graduation Criteria](#graduation-criteria)
-* [Implementation History](#implementation-history)
-* [Appendix](#appendix)
-  * [Examples of runtime variation](#examples-of-runtime-variation)
-
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+  - [User Stories](#user-stories)
+- [Proposal](#proposal)
+  - [API](#api)
+    - [Examples](#examples)
+    - [Runtime Handler](#runtime-handler)
+  - [Versioning, Updates, and Rollouts](#versioning-updates-and-rollouts)
+  - [Implementation Details](#implementation-details)
+    - [Monitoring](#monitoring)
+  - [Risks and Mitigations](#risks-and-mitigations)
+- [Graduation Criteria](#graduation-criteria)
+- [Implementation History](#implementation-history)
+- [Appendix](#appendix)
+  - [Proposed Future Enhancements](#proposed-future-enhancements)
+  - [Examples of runtime variation](#examples-of-runtime-variation)
 <!-- /toc -->
 
 ## Summary

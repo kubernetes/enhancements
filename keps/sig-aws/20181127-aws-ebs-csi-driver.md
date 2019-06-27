@@ -20,24 +20,24 @@ status: provisional
 ## Table of Contents
 
 <!-- toc -->
-
-* [Table of Contents](#table-of-contents)
-* [Summary](#summary)
-* [Motivation](#motivation)
-    * [Goals](#goals)
-    * [Non-Goals](#non-goals)
-* [Proposal](#proposal)
-    * [User Stories](#user-stories)
-        * [Static Provisioning](#static-provisioning)
-        * [Dynamic Provisioning](#dynamic-provisioning)
-        * [Volume Scheduling](#volume-scheduling)
-        * [Mount Options](#mount-options)
-        * [Raw Block Volume](#raw-block-volume)
-        * [Offline Volume Resizing](#offline-volume-resizing)
-    * [Risks and Mitigations](#risks-and-mitigations)
-* [Graduation Criteria](#graduation-criteria)
-* [Implementation History](#implementation-history)
-
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [User Stories](#user-stories)
+    - [Static Provisioning](#static-provisioning)
+    - [Dynamic Provisioning](#dynamic-provisioning)
+    - [Volume Scheduling](#volume-scheduling)
+    - [Mount Options](#mount-options)
+    - [Raw Block Volume](#raw-block-volume)
+    - [Offline Volume Resizing](#offline-volume-resizing)
+  - [Risks and Mitigations](#risks-and-mitigations)
+- [Graduation Criteria](#graduation-criteria)
+- [Upgrade/Downgrade Process](#upgradedowngrade-process)
+  - [Upgrade](#upgrade)
+  - [Downgrade](#downgrade)
+- [Implementation History](#implementation-history)
 <!-- /toc -->
 
 ## Summary

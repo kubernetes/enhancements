@@ -32,32 +32,23 @@ superseded-by:
 ## Table of Contents
 
 <!-- toc -->
-* [Table of Contents](#table-of-contents)
-* [Summary](#summary)
-* [Motivation](#motivation)
-  * [Goals](#goals)
-  * [Non-Goals](#non-goals)
-* [Kustomize Introduction](#kustomize-introduction)   
-* [Proposal](#proposal)
-  * [UX](#UX)
-     * [apply](#apply)
-     * [get](#get)
-     * [delete](#delete)
-  * [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
-  * [Risks and Mitigations](#risks-and-mitigations)
-* [Graduation Criteria](#graduation-criteria)
-* [Implementation History](#implementation-history)
-* [Alternatives](#alternatives)
-
-[Tools for generating]: https://github.com/ekalinin/github-markdown-toc
-
-Link to tracking issue: kubernetes/enhancements#633
-
-See:
-
-- [KEP FAQ](kep-faq.md) for questions such as "why not as as plugin?".
-- [Why this should be part of kubectl](#why-this-should-be-part-of-kubectl)
-
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+  - [Why this should be part of kubectl](#why-this-should-be-part-of-kubectl)
+- [Proposal](#proposal)
+  - [Justification for this approach](#justification-for-this-approach)
+  - [Justification for follow up](#justification-for-follow-up)
+- [Kustomize Example](#kustomize-example)
+  - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
+  - [Risks and Mitigations](#risks-and-mitigations)
+- [Graduation Criteria](#graduation-criteria)
+- [Implementation History](#implementation-history)
+- [Alternatives](#alternatives)
+  - [Copy kustomize code into staging](#copy-kustomize-code-into-staging)
+  - [Leave kustomize functionality separate from kubectl](#leave-kustomize-functionality-separate-from-kubectl)
+  - [Build a separate tools targeted at Kubernetes declarative workflows.](#build-a-separate-tools-targeted-at-kubernetes-declarative-workflows)
 <!-- /toc -->
 
 ## Summary

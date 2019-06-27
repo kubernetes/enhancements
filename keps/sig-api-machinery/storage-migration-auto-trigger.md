@@ -17,15 +17,13 @@ status: provisional
 ## Table of Contents
 
 <!-- toc -->
-
-* [Goal](#goal)
-* [API design](#api-design)
-* [Storage migration triggering controller](#storage-migration-triggering-controller)
-* [Implications to cluster operators](#implications-to-cluster-operators)
-* [Lifecycle of a StorageState object](#life-cycle-of-a-storagestate-object)
-* [Future work: HA clusters](#future-work-ha-clusters)
-* [Future work: persisted discovery document](#future-work-persisted-discovery-document)
-
+- [Goal](#goal)
+- [API design](#api-design)
+- [Storage migration triggering controller](#storage-migration-triggering-controller)
+- [Implications to cluster operators](#implications-to-cluster-operators)
+- [Life-cycle of a StorageState object](#life-cycle-of-a-storagestate-object)
+- [Future work: HA clusters](#future-work-ha-clusters)
+- [Future work: persisted discovery document](#future-work-persisted-discovery-document)
 <!-- /toc -->
 
 ## Goal

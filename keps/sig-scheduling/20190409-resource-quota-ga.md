@@ -30,7 +30,6 @@ superseded-by:
 ## Table of Contents
 
 <!-- toc -->
-
 - [Summary](#summary)
 - [Motivation](#motivation)
   - [Goals](#goals)
@@ -39,9 +38,10 @@ superseded-by:
   - [Implementation Notes](#implementation-notes)
   - [Constraints](#constraints)
   - [Test Plan](#test-plan)
+    - [Existing Tests](#existing-tests)
+    - [Needed Tests](#needed-tests)
   - [Graduation Criteria](#graduation-criteria)
 - [Implementation History](#implementation-history)
-
 <!-- /toc -->
 
 ## Summary

@@ -24,8 +24,7 @@ status: implementable
 
 ## Table of Contents
 
-<!-- toc --> <!-- omit in toc -->
-
+<!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
 - [Motivation](#motivation)
@@ -46,7 +45,6 @@ status: implementable
   - [Alternatives to publishing staging component modules](#alternatives-to-publishing-staging-component-modules)
   - [Alternative versioning strategies](#alternative-versioning-strategies)
 - [Reference](#reference)
-
 <!-- /toc -->
 
 ## Release Signoff Checklist

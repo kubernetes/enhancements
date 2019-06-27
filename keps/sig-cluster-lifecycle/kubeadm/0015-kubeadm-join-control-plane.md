@@ -28,46 +28,26 @@ see-also:
 ## Table of Contents
 
 <!-- toc -->
-
-
-<!-- TOC -->
-
-- [kubeadm join --control-plane workflow](#kubeadm-join---control-plane-workflow)
-    - [Metadata](#metadata)
-    - [Table of Contents](#table-of-contents)
-    - [Summary](#summary)
-    - [Motivation](#motivation)
-        - [Goals](#goals)
-        - [Non-goals](#non-goals)
-        - [Challenges and Open Questions](#challenges-and-open-questions)
-    - [Proposal](#proposal)
-        - [User Stories](#user-stories)
-            - [Create a cluster with more than one control plane instance (static workflow)](#create-a-cluster-with-more-than-one-control-plane-instance-static-workflow)
-            - [Add a new control-plane instance (dynamic workflow)](#add-a-new-control-plane-instance-dynamic-workflow)
-        - [Implementation Details](#implementation-details)
-            - [Initialize the Kubernetes cluster](#initialize-the-kubernetes-cluster)
-            - [Preparing for execution of kubeadm join --control-plane](#preparing-for-execution-of-kubeadm-join---control-plane)
-            - [The kubeadm join --control-plane workflow](#the-kubeadm-join---control-plane-workflow)
-            - [Dynamic workflow vs static workflow)](#dynamic-workflow-vs-static-workflow)
-            - [Strategies for deploying control plane components](#strategies-for-deploying-control-plane-components)
-            - [Strategies for distributing cluster certificates](#strategies-for-distributing-cluster-certificates)
-            - [`kubeadm upgrade` for HA clusters](#kubeadm-upgrade-for-ha-clusters)
-    - [Graduation Criteria](#graduation-criteria)
-    - [Implementation History](#implementation-history)
-    - [Drawbacks](#drawbacks)
-    - [Alternatives](#alternatives)
-
-<!-- /TOC -->
-
-We are extending the kubeadm distinctive `init` and `join` workflow, introducing the
-capability to add more than one control plane instance to an existing cluster by means of the
-new `kubeadm join --control-plane` option (in alpha release the flag will be named --experimental-control-plane)
-
-As a consequence, kubeadm will provide a best-practice, “fast path” for creating a
-minimum viable, conformant Kubernetes cluster with one or more nodes hosting control-plane instances and
-zero or more worker nodes; as better detailed in following paragraphs, please note that
-this proposal doesn't solve every possible use case or even the full end-to-end flow automatically.
-
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-goals](#non-goals)
+  - [Challenges and Open Questions](#challenges-and-open-questions)
+- [Proposal](#proposal)
+  - [User Stories](#user-stories)
+    - [Create a cluster with more than one control plane instance (static workflow)](#create-a-cluster-with-more-than-one-control-plane-instance-static-workflow)
+    - [Add a new control-plane instance (dynamic workflow)](#add-a-new-control-plane-instance-dynamic-workflow)
+  - [Implementation Details](#implementation-details)
+    - [Initialize the Kubernetes cluster](#initialize-the-kubernetes-cluster)
+    - [Preparing for execution of kubeadm join --control-plane](#preparing-for-execution-of-kubeadm-join---control-plane)
+    - [The kubeadm join --control-plane workflow](#the-kubeadm-join---control-plane-workflow)
+    - [Dynamic workflow vs static workflow](#dynamic-workflow-vs-static-workflow)
+    - [Strategies for deploying control plane components](#strategies-for-deploying-control-plane-components)
+    - [Strategies for distributing cluster certificates](#strategies-for-distributing-cluster-certificates)
+    - [<code>kubeadm upgrade</code> for HA clusters](#-for-ha-clusters)
+- [Graduation Criteria](#graduation-criteria)
+- [Implementation History](#implementation-history)
+- [Drawbacks](#drawbacks)
+- [Alternatives](#alternatives)
 <!-- /toc -->
 
 ## Motivation

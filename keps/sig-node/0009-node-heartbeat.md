@@ -33,29 +33,22 @@ superseded-by:
 ## Table of Contents
 
 <!-- toc -->
-
-Table of Contents
-=================
-
-* [Efficient Node Heartbeats](#efficient-node-heartbeats)
-   * [Table of Contents](#table-of-contents)
-   * [Summary](#summary)
-   * [Motivation](#motivation)
-      * [Goals](#goals)
-      * [Non-Goals](#non-goals)
-   * [Proposal](#proposal)
-      * [Risks and Mitigations](#risks-and-mitigations)
-      * [Testing Plan](#testing-plan)
-   * [Graduation Criteria](#graduation-criteria)
-   * [Implementation History](#implementation-history)
-   * [Alternatives](#alternatives)
-      * [Dedicated “heartbeat” object instead of “leader election” one](#dedicated-heartbeat-object-instead-of-leader-election-one)
-      * [Events instead of dedicated heartbeat object](#events-instead-of-dedicated-heartbeat-object)
-      * [Reuse the Component Registration mechanisms](#reuse-the-component-registration-mechanisms)
-      * [Split Node object into two parts at etcd level](#split-node-object-into-two-parts-at-etcd-level)
-      * [Delta compression in etcd](#delta-compression-in-etcd)
-      * [Replace etcd with other database](#replace-etcd-with-other-database)
-
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [Risks and Mitigations](#risks-and-mitigations)
+  - [Testing Plan](#testing-plan)
+- [Graduation Criteria](#graduation-criteria)
+- [Implementation History](#implementation-history)
+- [Alternatives](#alternatives)
+  - [Dedicated “heartbeat” object instead of “leader election” one](#dedicated-heartbeat-object-instead-of-leader-election-one)
+  - [Events instead of dedicated heartbeat object](#events-instead-of-dedicated-heartbeat-object)
+  - [Reuse the Component Registration mechanisms](#reuse-the-component-registration-mechanisms)
+  - [Split Node object into two parts at etcd level](#split-node-object-into-two-parts-at-etcd-level)
+  - [Delta compression in etcd](#delta-compression-in-etcd)
+  - [Replace etcd with other database](#replace-etcd-with-other-database)
 <!-- /toc -->
 
 ## Summary

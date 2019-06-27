@@ -20,27 +20,25 @@ status: implementable
 ## Table of Contents
 
 <!-- toc -->
-
-* [Summary](#summary)
-* [Background](#background)
-* [Motivation](#motivation)
-  * [Goals](#goals)
-  * [Non\-Goals](#non-goals)
-* [Proposal](#proposal)
-  * [API](#api)
-* [Future Improvements](#future-improvements)
-* [Benchmarking](#benchmarking)
-  * [Round 1](#round-1)
-    * [Methods](#methods)
-    * [Results](#results)
-  * [Round 2](#round-2)
-    * [Methods](#methods)
-    * [Results](#results)
-* [Alternatives Considered](#alternatives-considered)
-  * [gRPC API](#grpc-api)
-* [Graduation Criteria](#graduation-criteria)
-* [Implementation History](#implementation-history)
-
+- [Summary](#summary)
+- [Background](#background)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [API](#api)
+- [Future Improvements](#future-improvements)
+- [Benchmarking](#benchmarking)
+  - [Round 1](#round-1)
+    - [Methods](#methods)
+    - [Results](#results)
+  - [Round 2](#round-2)
+    - [Methods](#methods-1)
+    - [Results](#results-1)
+- [Alternatives Considered](#alternatives-considered)
+  - [gRPC API](#grpc-api)
+- [Graduation Criteria](#graduation-criteria)
+- [Implementation History](#implementation-history)
 <!-- /toc -->
 
 ## Summary

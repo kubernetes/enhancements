@@ -25,21 +25,18 @@ status: implemented
 ## Table of Contents
 
 <!-- toc -->
-
-* [Table of Contents](#table-of-contents)
-* [Summary](#summary)
-* [Motivation](#motivation)
-  * [Goals](#goals)
-  * [Non-Goals](#non-goals)
-* [Proposal](#proposal)
-  * [Implementation Details/Notes/Constraints [optional]](#implementation-detailsnotesconstraints-optional)
-  * [Benefits](#benefits)
-  * [Risks and Mitigations](#risks-and-mitigations)
-* [Graduation Criteria](#graduation-criteria)
-* [Future evolutions](#future-evolutions)
-* [References](#references)
-* [Implementation History](#implementation-history)
-
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
+  - [Benefits](#benefits)
+  - [Risks and Mitigations](#risks-and-mitigations)
+- [Graduation Criteria](#graduation-criteria)
+- [Future evolutions](#future-evolutions)
+- [References](#references)
+- [Implementation History](#implementation-history)
 <!-- /toc -->
 
 ## Summary

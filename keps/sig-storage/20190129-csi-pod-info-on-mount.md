@@ -25,16 +25,12 @@ superseded-by:
 ## Table of Contents
 
 <!-- toc -->
-
-* [Summary](#summary)
-* [Test Plan](#test-plan)
-* [Graduation Criteria](#graduation-criteria)
-  * [Alpha tp Beta](#alpha-to-beta)
-  * [Beta to GA](#beta-to-ga)
-* [Implementation History](#implementation-history)
-
-[Tools for generating]: https://github.com/ekalinin/github-markdown-toc
-
+- [Summary](#summary)
+- [Test Plan](#test-plan)
+- [Graduation Criteria](#graduation-criteria)
+  - [Alpha to Beta](#alpha-to-beta)
+  - [Beta to GA](#beta-to-ga)
+- [Implementation History](#implementation-history)
 <!-- /toc -->
 
 ## Summary

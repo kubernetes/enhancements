@@ -21,22 +21,18 @@ status: implementable
 ## Table of Contents
 
 <!-- toc -->
-
-   * [Migrating API objects to latest storage version](#migrating-api-objects-to-latest-storage-version)
-      * [Table of Contents](#table-of-contents)
-      * [Summary](#summary)
-      * [Motivation](#motivation)
-         * [Goals](#goals)
-      * [Proposal](#proposal)
-         * [Alpha workflow](#alpha-workflow)
-         * [Alpha API](#alpha-api)
-         * [Failure recovery](#failure-recovery)
-         * [Beta workflow - Automation](#beta-workflow---automation)
-         * [Risks and Mitigations](#risks-and-mitigations)
-      * [Beta Graduation Criteria](#beta-graduation-criteria)
-      * [Alternatives](#alternatives)
-         * [update-storage-objects.sh](#update-storage-objectssh)
-
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+- [Proposal](#proposal)
+  - [Alpha workflow](#alpha-workflow)
+  - [Alpha API](#alpha-api)
+  - [Failure recovery](#failure-recovery)
+  - [Beta workflow - Automation](#beta-workflow---automation)
+  - [Risks and Mitigations](#risks-and-mitigations)
+- [Beta Graduation Criteria](#beta-graduation-criteria)
+- [Alternatives](#alternatives)
+  - [update-storage-objects.sh](#update-storage-objectssh)
 <!-- /toc -->
 
 ## Summary

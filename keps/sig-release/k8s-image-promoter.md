@@ -22,19 +22,15 @@ status: implementable
 ## Table of Contents
 
 <!-- toc -->
-
-* [Table of Contents](#table-of-contents)
-* [Summary](#summary)
-* [Motivation](#motivation)
-  * [Goals](#goals)
-* [Proposal](#proposal)
-  * [Staging Container Registry](#staging-container-registry)
-  * [Production Container Registry](#production-container-registry)
-  * [Promotion Process](#promotion-process)
-* [Graduation Criteria](#graduation-criteria)
-* [Infrastructure Needed](#infrastructure-needed)
-
-
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+- [Proposal](#proposal)
+  - [Staging Container Registry](#staging-container-registry)
+  - [Production Container Registry](#production-container-registry)
+  - [Promotion Process](#promotion-process)
+- [Graduation Criteria](#graduation-criteria)
+- [Infrastructure Needed](#infrastructure-needed)
 <!-- /toc -->
 
 ## Summary

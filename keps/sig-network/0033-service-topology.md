@@ -19,22 +19,18 @@ last-updated: 2018-12-03
 ## Table of Contents
 
 <!-- toc -->
-
-* [Motivation](#motivation)
-  * [Goals](#goals)
-  * [Non\-goals](#non-goals)
-  * [User cases](#user-cases)
-  * [Background](#background)
-* [Proposal](#proposal)
-* [Implementation History](#implementation-history)
-  * [Service API changes](#service-api-changes)
-  * [Endpoints API changes](#endpoints-api-changes)
-  * [Endpoints Controller changes](#endpoints-controller-changes)
-  * [Kube-proxy changes](#kube-proxy-changes)
-  * [DNS changes](#dns-changes)
-    * [CoreDNS changes](#coredns-changes)
-    * [Kube-dns changes](#kube-dns-changes)
-
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-goals](#non-goals)
+  - [User cases](#user-cases)
+  - [Background](#background)
+- [Proposal](#proposal)
+- [Implementation history](#implementation-history)
+  - [Service API changes](#service-api-changes)
+  - [New PodLocator resource](#new-podlocator-resource)
+  - [New PodLocator controller](#new-podlocator-controller)
+  - [Kube-proxy changes](#kube-proxy-changes)
+  - [DNS server changes (in beta stage)](#dns-server-changes-in-beta-stage)
 <!-- /toc -->
 
 ## Motivation
