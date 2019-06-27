@@ -30,6 +30,8 @@ status: implemented
 
 
 ## Table of Contents
+
+<!-- toc -->
 <!-- TOC -->
 
 - [Table of Contents](#table-of-contents)
@@ -64,6 +66,8 @@ status: implemented
 - [Other references](#other-references)
 
 <!-- /TOC -->
+
+<!-- /toc -->
 
 ## Summary
 

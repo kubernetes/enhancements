@@ -22,6 +22,8 @@ superseded-by:
 
 ## Table of Contents
 
+<!-- toc -->
+
 * [Table of Contents](#table-of-contents)
 * [Summary](#summary)
 * [Motivation](#motivation)
@@ -30,6 +32,8 @@ superseded-by:
 * [Proposal](#proposal)
     * [Risks and Mitigations](#risks-and-mitigations)
 * [Graduation Criteria](#graduation-criteria)
+
+<!-- /toc -->
 
 ## Summary
 

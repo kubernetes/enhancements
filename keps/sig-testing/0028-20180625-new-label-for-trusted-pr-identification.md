@@ -24,6 +24,8 @@ status: implemented
 
 ## Table of Contents
 
+<!-- toc -->
+
 * [Table of Contents](#table-of-contents)
 * [Summary](#summary)
 * [Motivation](#motivation)
@@ -37,6 +39,8 @@ status: implemented
 * [Future evolutions](#future-evolutions)
 * [References](#references)
 * [Implementation History](#implementation-history)
+
+<!-- /toc -->
 
 ## Summary
 

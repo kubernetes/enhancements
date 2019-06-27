@@ -23,6 +23,8 @@ superseded-by:
 
 ## Table of Contents
 
+<!-- toc -->
+
 - [Title](#title)
   - [Table of Contents](#table-of-contents)
   - [Release Signoff Checklist](#release-signoff-checklist)
@@ -42,6 +44,8 @@ superseded-by:
   - [Drawbacks [optional]](#drawbacks-optional)
   - [Alternatives [optional]](#alternatives-optional)
   - [Infrastructure Needed [optional]](#infrastructure-needed-optional)
+
+<!-- /toc -->
 
 ## Release Signoff Checklist
 

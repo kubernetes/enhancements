@@ -20,6 +20,8 @@ status: provisional
 
 ## Table of Contents
 
+<!-- toc -->
+
 * [Table of Contents](#table-of-contents)
 * [Motivation](#motivation)
 * [Function Detail](#function-detail)
@@ -39,6 +41,8 @@ status: provisional
 * [References](#references)
 
 [Tools for generating]: https://github.com/ekalinin/github-markdown-toc
+
+<!-- /toc -->
 
 ## Motivation
 

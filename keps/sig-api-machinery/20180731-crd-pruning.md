@@ -29,6 +29,8 @@ see-also:
 
 ## Table of Contents
 
+<!-- toc -->
+
    * [Pruning for Custom Resources](#pruning-for-custom-resources)
       * [Table of Contents](#table-of-contents)
       * [Summary](#summary)
@@ -46,6 +48,8 @@ see-also:
       * [Version Skew Strategy](#version-skew-strategy)
          * [Alternatives Considered](#alternatives-considered)
       * [Implementation History](#implementation-history)
+
+<!-- /toc -->
 
 ## Summary
 

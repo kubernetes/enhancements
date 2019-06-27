@@ -23,6 +23,8 @@ status: implementable
 
 ## Table of Contents
 
+<!-- toc -->
+
 - [Azure Availability Zones](#azure-availability-zones)
   - [Summary](#summary)
   - [Scopes and Non-scopes](#scopes-and-non-scopes)
@@ -39,6 +41,8 @@ status: implementable
     - [PersistentVolumeLabel](#persistentvolumelabel)
     - [StorageClass](#storageclass)
   - [Appendix](#appendix)
+
+<!-- /toc -->
 
 ## Summary
 

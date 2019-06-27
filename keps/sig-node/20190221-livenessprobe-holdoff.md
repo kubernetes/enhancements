@@ -24,6 +24,8 @@ superseded-by:
 
 ## Table of Contents
 
+<!-- toc -->
+
 - [Add pod-startup liveness-probe holdoff for slow-starting pods](#add-pod-startup-liveness-probe-holdoff-for-slow-starting-pods)
   - [Table of Contents](#table-of-contents)
   - [Release Signoff Checklist](#release-signoff-checklist)
@@ -40,6 +42,8 @@ superseded-by:
   - [Implementation History](#implementation-history)
 
 [Tools for generating]: https://github.com/ekalinin/github-markdown-toc
+
+<!-- /toc -->
 
 ## Release Signoff Checklist
 

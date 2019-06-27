@@ -30,6 +30,8 @@ superseded-by:
 
 ## Table of Contents
 
+<!-- toc -->
+
 [Certificates copy for join --control-plane](#certificates-copy-for-join---control-plane)
   * [1. <a name="user-content-TableofContents"></a>Table of Contents](#1-table-of-contents)
   * [2. <a name="user-content-ReleaseSignoffChecklist"></a>Release Signoff Checklist](#2-release-signoff-checklist)
@@ -51,6 +53,8 @@ superseded-by:
       * [6.4. <a name="user-content-VersionSkewStrategy"></a>Version Skew Strategy](#64-version-skew-strategy)
   * [7. <a name="user-content-ImplementationHistory"></a>Implementation History](#7-implementation-history)
   * [8. <a name="user-content-Alternatives"></a>Alternatives](#8-alternatives)
+
+<!-- /toc -->
 
 ## Release Signoff Checklist
 

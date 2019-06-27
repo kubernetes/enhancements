@@ -29,6 +29,8 @@ superseded-by:
 
 ## Table of Contents
 
+<!-- toc -->
+
   * [Title](#title)
       * [Table of Contents](#table-of-contents)
       * [Summary](#summary)
@@ -44,6 +46,8 @@ superseded-by:
       * [Graduation Criteria](#graduation-criteria)
       * [Implementation History](#implementation-history)
       * [Alternatives - Using subPathFrom](#alternatives---using-subpathfrom)
+
+<!-- /toc -->
 
 ## Summary
 

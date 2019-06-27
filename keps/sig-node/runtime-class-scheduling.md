@@ -24,6 +24,8 @@ replaces:
 
 ## Table of Contents
 
+<!-- toc -->
+
   * [Summary](#summary)
   * [Motivation](#motivation)
     * [Goals](#goals)
@@ -46,6 +48,8 @@ replaces:
     * [NodeSelector](#nodeselector)
     * [Native RuntimeClass Reporting](#native-runtimeclass-reporting)
     * [Scheduling Policy](#scheduling-policy)
+
+<!-- /toc -->
 
 ## Summary
 

@@ -22,6 +22,8 @@ status: implementable
 
 ## Table of Contents
 
+<!-- toc -->
+
 * [Summary](#summary)
 * [Motivation](#motivation)
   * [Goals](#goals)
@@ -36,6 +38,8 @@ status: implementable
 * [Implementation History](#implementation-history)
    * [K8s 1.12: Alpha](#k8s-112-alpha)
    * [K8s 1.13: Alpha](#k8s-113-alpha)
+
+<!-- /toc -->
 
 ## Summary
 

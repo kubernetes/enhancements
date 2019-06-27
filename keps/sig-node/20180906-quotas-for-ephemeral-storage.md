@@ -23,6 +23,8 @@ status: implementable
 
 ## Table of Contents
 
+<!-- toc -->
+
 <!-- markdown-toc start - Don't edit this section. Run M-x markdown-toc-generate-toc again -->
 **Table of Contents**
 
@@ -67,6 +69,8 @@ status: implementable
 <!-- markdown-toc end -->
 
 [Tools for generating]: https://github.com/ekalinin/github-markdown-toc
+
+<!-- /toc -->
 
 ## Summary
 

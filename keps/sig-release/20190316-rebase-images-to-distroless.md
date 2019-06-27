@@ -20,6 +20,8 @@ status: implementable
 
 ## Table of Contents
 
+<!-- toc -->
+
 * [Summary](#summary)
 * [Motivation](#motivation)
     * [Goals](#goals)
@@ -44,6 +46,8 @@ status: implementable
     * [Status Updates](#status-updates)
     * [Rebased Images](#rebased-images)
 
+
+<!-- /toc -->
 
 ## Summary
 

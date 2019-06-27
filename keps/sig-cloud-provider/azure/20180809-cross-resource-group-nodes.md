@@ -22,6 +22,8 @@ status: implementable
 
 ## Table of Contents
 
+<!-- toc -->
+
 <!-- TOC -->
 
 - [Cross resource group nodes](#cross-resource-group-nodes)
@@ -37,6 +39,8 @@ status: implementable
     - [Alternatives](#alternatives)
 
 <!-- /TOC -->
+
+<!-- /toc -->
 
 ## Summary
 

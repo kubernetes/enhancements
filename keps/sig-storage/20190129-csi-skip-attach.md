@@ -24,6 +24,8 @@ superseded-by:
 
 ## Table of Contents
 
+<!-- toc -->
+
 * [Table of Contents](#table-of-contents)
 * [Summary](#summary)
 * [Test Plan](#test-plan)
@@ -31,6 +33,8 @@ superseded-by:
    * [Alpha -&gt; Beta](#alpha---beta)
    * [Beta -&gt; GA](#beta---ga)
 * [Implementation History](#implementation-history)
+
+<!-- /toc -->
 
 ## Summary
 

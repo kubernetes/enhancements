@@ -23,6 +23,8 @@ superseded-by: []
 
 ## Table of Contents
 
+<!-- toc -->
+
  * [Metrics API watch support](#metrics-api-watch-support)
     * [Table of Contents](#table-of-contents)
     * [Summary](#summary)
@@ -43,6 +45,8 @@ superseded-by: []
     * [Implementation History](#implementation-history)
     * [Drawbacks [optional]](#drawbacks-optional)
  * [Related resources](#related-resources)
+
+<!-- /toc -->
 
 ## Summary
 

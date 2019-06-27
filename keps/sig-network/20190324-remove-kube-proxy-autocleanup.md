@@ -20,6 +20,11 @@ superseded-by:
 
 # Remove kube-proxy's automatic clean up logic
 
+## Table of Contents
+
+<!-- toc -->
+<!-- /toc -->
+
 ## Summary
 
 Remove any clean up functionality in kube-proxy that is done automatically/implicitly.

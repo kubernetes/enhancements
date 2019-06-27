@@ -24,6 +24,8 @@ replaces:
 
 ## Table of Contents
 
+<!-- toc -->
+
 * [Summary](#summary)
 * [Definitions](#definitions)
 * [Motivation](#motivation)
@@ -47,6 +49,8 @@ replaces:
 * [Implementation History](#implementation-history)
 * [Alternatives](#alternatives)
 
+
+<!-- /toc -->
 
 ## Summary
 

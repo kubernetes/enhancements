@@ -26,6 +26,8 @@ see-also:
 
 ## Table of Contents
 
+<!-- toc -->
+
   - [Table of Contents](#table-of-contents)
   - [Release Signoff Checklist](#release-signoff-checklist)
   - [Summary](#summary)
@@ -50,6 +52,8 @@ see-also:
   - [Infrastructure Needed [optional]](#infrastructure-needed)
 
 [Tools for generating]: https://github.com/ekalinin/github-markdown-toc
+
+<!-- /toc -->
 
 ## Release Signoff Checklist
 

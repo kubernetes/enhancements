@@ -34,6 +34,8 @@ last-updated: 2018-12-10
 
 ## Table of Contents
 
+<!-- toc -->
+
 - [Create a `k8s.io/component-base` repo](#create-a--k8sio-component--repo)
   - [Table of Contents](#table-of-contents)
   - [Abstract](#abstract)
@@ -59,6 +61,8 @@ last-updated: 2018-12-10
     - [Code structure](#code-structure)
     - [Timeframe and Implementation Order](#timeframe-and-implementation-order)
     - [OWNERS file for new packages](#owners-file-for-new-packages)
+
+<!-- /toc -->
 
 ## Abstract
 

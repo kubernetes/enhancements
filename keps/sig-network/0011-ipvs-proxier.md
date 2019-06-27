@@ -25,6 +25,8 @@ creation-date: 2018-03-21
 
 ## Table of Contents
 
+<!-- toc -->
+
 * [Summary](#summary)
 * [Motivation](#motivation)
   * [Goals](#goals)
@@ -47,6 +49,8 @@ creation-date: 2018-03-21
 * [Implementation History](#implementation-history)
 * [Drawbacks](#drawbacks)
 * [Alternatives](#alternatives)
+
+<!-- /toc -->
 
 ## Summary
 

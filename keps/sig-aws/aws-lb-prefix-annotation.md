@@ -22,6 +22,8 @@ superseded-by:
 
 ## Table of Contents
 
+<!-- toc -->
+
 * [Summary](#summary)
 * [Motivation](#motivation)
   * [Goals](#goals)
@@ -34,6 +36,8 @@ superseded-by:
 * [Implementation History](#implementation-history)
 * [Drawbacks [optional]](#drawbacks-optional)
 * [Alternatives [optional]](#alternatives-optional)
+
+<!-- /toc -->
 
 ## Summary
 AWS load balancer prefix annotation adds a control over the naming of the AWS ELB resources that are being generated when provisioning a Kubernetes service of type `LoadBalancer`. The current implementation provisions AWS ELB with a unique name based on the resource UID. The resulted unpredicted name makes it impossible to integrate the provisioning with existing IAM policies in situations when these two operations are controlled by two different groups. For example, IAM policies are defined and controlled by InfoSec team while provisioning of resources is under CloudOps team. The AWS IAM policies allow definition when only a prefix of the resource identifier is known. Using Kubernetes service with this annotation when it is provisioned in AWS, will allow an integration with existing IAM policies.

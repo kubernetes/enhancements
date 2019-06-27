@@ -30,6 +30,8 @@ replaces:
 
 ## Table of Contents
 
+<!-- toc -->
+
 - [Cloud Controller Manager](#cloud-controller-manager)
    - [Table of Contents](#table-of-contents)
    - [Summary](#summary)
@@ -53,6 +55,8 @@ replaces:
          - [Process Goals](#process-goals)
    - [Implementation History](#implementation-history)
    - [Alternatives](#alternatives)
+
+<!-- /toc -->
 
 ## Terms
 

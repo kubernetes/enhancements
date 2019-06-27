@@ -34,6 +34,8 @@ last-updated: 2018-08-10
 
 ## Table of Contents
 
+<!-- toc -->
+
  * [Moving ComponentConfig API types to staging repos](#moving-componentconfig-api-types-to-staging-repos)
     * [Table of Contents](#table-of-contents)
     * [Summary](#summary)
@@ -60,6 +62,8 @@ last-updated: 2018-08-10
           * [kube-apiserver changes](#kube-apiserver-changes)
        * [Timeframe and Implementation Order](#timeframe-and-implementation-order)
        * [OWNERS files for new packages and repos](#owners-files-for-new-packages-and-repos)
+
+<!-- /toc -->
 
 ## Summary
 

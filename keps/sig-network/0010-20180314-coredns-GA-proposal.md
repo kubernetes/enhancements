@@ -23,6 +23,8 @@ see-also: https://github.com/kubernetes/community/pull/2167
 
 ## Table of Contents
 
+<!-- toc -->
+
 * [Summary](#summary)
 * [Motivation](#motivation)
     * [Goals](#goals)
@@ -31,6 +33,8 @@ see-also: https://github.com/kubernetes/community/pull/2167
     * [User Cases](#use-cases)
 * [Graduation Criteria](#graduation-criteria)
 * [Implementation History](#implementation-history)
+
+<!-- /toc -->
 
 ## Summary
 

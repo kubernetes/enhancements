@@ -29,6 +29,8 @@ see-also:
 
 ## Table of Contents
 
+<!-- toc -->
+
    * [Publishing kubernetes packages](#publishing-kubernetes-packages)
       * [Table of Contents](#table-of-contents)
       * [Release Signoff Checklist](#release-signoff-checklist)
@@ -58,6 +60,8 @@ see-also:
 <!--
 [Tools for generating]: https://github.com/ekalinin/github-markdown-toc
 -->
+
+<!-- /toc -->
 
 ## Release Signoff Checklist
 

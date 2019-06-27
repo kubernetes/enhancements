@@ -32,6 +32,8 @@ superseded-by:
 
 ## Table of Contents
 
+<!-- toc -->
+
 Table of Contents
 =================
 
@@ -53,6 +55,8 @@ Table of Contents
       * [Split Node object into two parts at etcd level](#split-node-object-into-two-parts-at-etcd-level)
       * [Delta compression in etcd](#delta-compression-in-etcd)
       * [Replace etcd with other database](#replace-etcd-with-other-database)
+
+<!-- /toc -->
 
 ## Summary
 

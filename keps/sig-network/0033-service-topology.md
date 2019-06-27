@@ -18,6 +18,8 @@ last-updated: 2018-12-03
 
 ## Table of Contents
 
+<!-- toc -->
+
 * [Motivation](#motivation)
   * [Goals](#goals)
   * [Non\-goals](#non-goals)
@@ -32,6 +34,8 @@ last-updated: 2018-12-03
   * [DNS changes](#dns-changes)
     * [CoreDNS changes](#coredns-changes)
     * [Kube-dns changes](#kube-dns-changes)
+
+<!-- /toc -->
 
 ## Motivation
 

@@ -32,6 +32,8 @@ status: implementable
 
 ### Table of Contents
 
+<!-- toc -->
+
 * [Documentation Requirements for Kubernetes Cloud Providers](#documentation-requirements-for-kubernetes-cloud-providers)
    * [Table of Contents](#table-of-contents)
    * [Summary](#summary)
@@ -48,6 +50,8 @@ status: implementable
    * [Graduation Criteria](#graduation-criteria)
    * [Alternatives [optional]](#alternatives-optional)
 * [Implementation History](#implementation-history)
+
+<!-- /toc -->
 
 ### Summary
 This KEP describes the documentation requirements for both in-tree and out-of-tree cloud providers.

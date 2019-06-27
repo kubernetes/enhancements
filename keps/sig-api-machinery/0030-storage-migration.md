@@ -20,6 +20,8 @@ status: implementable
 
 ## Table of Contents
 
+<!-- toc -->
+
    * [Migrating API objects to latest storage version](#migrating-api-objects-to-latest-storage-version)
       * [Table of Contents](#table-of-contents)
       * [Summary](#summary)
@@ -34,6 +36,8 @@ status: implementable
       * [Beta Graduation Criteria](#beta-graduation-criteria)
       * [Alternatives](#alternatives)
          * [update-storage-objects.sh](#update-storage-objectssh)
+
+<!-- /toc -->
 
 ## Summary
 

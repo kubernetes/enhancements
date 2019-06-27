@@ -33,6 +33,8 @@ superseded-by:
 
 ## Table of Contents
 
+<!-- toc -->
+
 * [Table of Contents](#table-of-contents)
 * [Summary](#summary)
 * [Motivation](#motivation)
@@ -48,6 +50,8 @@ superseded-by:
 * [Implementation History](#implementation-history)
 * [Drawbacks [optional]](#drawbacks-optional)
 * [Alternatives [optional]](#alternatives-optional)
+
+<!-- /toc -->
 
 ## Summary
 

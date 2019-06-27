@@ -30,6 +30,8 @@ superseded-by:
 # Kustomize Subcommand Integration
 
 ## Table of Contents
+
+<!-- toc -->
 * [Table of Contents](#table-of-contents)
 * [Summary](#summary)
 * [Motivation](#motivation)
@@ -55,6 +57,8 @@ See:
 
 - [KEP FAQ](kep-faq.md) for questions such as "why not as as plugin?".
 - [Why this should be part of kubectl](#why-this-should-be-part-of-kubectl)
+
+<!-- /toc -->
 
 ## Summary
 

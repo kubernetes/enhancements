@@ -23,6 +23,8 @@ status: provisional
 
 ## Table of Contents
 
+<!-- toc -->
+
 - [Title](#title)
   - [Table of Contents](#table-of-contents)
   - [Summary](#summary)
@@ -36,6 +38,8 @@ status: provisional
   - [Design Details](#design-details)
     - [Graduation Criteria](#graduation-criteria)
   - [Infrastructure Needed](#infrastructure-needed)
+
+<!-- /toc -->
 
 ## Summary
 

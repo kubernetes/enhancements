@@ -30,6 +30,8 @@ OpenAPI has the goal of describing every API possible. CRDs have the goal of pre
 
 ## Table of Contents
 
+<!-- toc -->
+
    * [Vanilla CRD OpenAPI subset: structural schemas](#vanilla-crd-openapi-subset-structural-schemas)
       * [Table of Contents](#table-of-contents)
       * [Summary](#summary)
@@ -52,6 +54,8 @@ OpenAPI has the goal of describing every API possible. CRDs have the goal of pre
          * [Version Skew Strategy](#version-skew-strategy)
       * [Implementation History](#implementation-history)
       
+<!-- /toc -->
+
 ## Summary
 
 The CRD validation schemas today support nearly the whole OpenAPI v3 schema language. Here, we propose to impose a restriction called _structural schema_ to that language, which will 

@@ -25,6 +25,8 @@ status: implementable
 
 ## Table of Contents
 
+<!-- toc -->
+
 * [Kubeadm for Windows](#kubeadm-for-windows)
       * [Table of Contents](#table-of-contents)
       * [Release Signoff Checklist](#release-signoff-checklist)
@@ -53,6 +55,8 @@ status: implementable
       * [Drawbacks](#drawbacks)
          * [Non-identical flows for Linux and Windows](#non-identical-flows-for-linux-and-windows)
       * [Infrastructure Needed](#infrastructure-needed)
+
+<!-- /toc -->
 
 ## Release Signoff Checklist
 

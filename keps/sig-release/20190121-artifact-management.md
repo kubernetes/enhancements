@@ -41,6 +41,8 @@ See the KEP process for details on each of these items.
 
 ## Table of Contents
 
+<!-- toc -->
+
 A table of contents is helpful for quickly jumping to sections of a KEP and for highlighting any additional information provided beyond the standard KEP template.
 [Tools for generating][] a table of contents from markdown are available.
 
@@ -55,6 +57,8 @@ A table of contents is helpful for quickly jumping to sections of a KEP and for 
   - [Implementation History](#implementation-history)
 
 [Tools for generating]: https://github.com/ekalinin/github-markdown-toc
+
+<!-- /toc -->
 
 ## Summary
 This document describes how official artifacts (Container Images, Binaries) for the Kubernetes

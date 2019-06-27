@@ -29,6 +29,8 @@ see-also:
 
 ## Table of Contents
 
+<!-- toc -->
+
 <!-- TOC -->
 
 - [kubeadm Config file graduation (v1beta2)](#kubeadm-config-file-graduation-v1beta2)
@@ -52,6 +54,8 @@ see-also:
     - [Drawbacks](#drawbacks)
 
 <!-- /TOC -->
+
+<!-- /toc -->
 
 ## Summary
 

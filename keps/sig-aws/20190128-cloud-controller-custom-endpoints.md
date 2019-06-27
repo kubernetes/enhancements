@@ -23,6 +23,8 @@ superseded-by: []
 
 ## Table of Contents
 
+<!-- toc -->
+
 * [Summary](#summary)
 * [Motivation](#motivation)
     * [Goals](#goals)
@@ -31,6 +33,8 @@ superseded-by: []
     * [Risks and Mitigations](#risks-and-mitigations)
 * [Graduation Criteria](#graduation-criteria)
 * [Implementation History](#implementation-history)
+
+<!-- /toc -->
 
 ## Summary
 

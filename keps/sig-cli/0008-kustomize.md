@@ -27,6 +27,8 @@ superseded-by:
 
 ## Table of Contents
 
+<!-- toc -->
+
 - [Kustomize](#kustomize)
    - [Table of Contents](#table-of-contents)
    - [Summary](#summary)
@@ -42,6 +44,8 @@ superseded-by:
    - [Drawbacks](#drawbacks)
    - [Alternatives](#alternatives)
    - [FAQ](#faq)
+
+<!-- /toc -->
 
 ## Summary
 

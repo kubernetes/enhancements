@@ -24,6 +24,8 @@ superseded-by:
 
 ## Table of Contents
 
+<!-- toc -->
+
 Table of Contents
 =================
 
@@ -40,6 +42,8 @@ Table of Contents
    * [Rejected alternatives](#rejected-alternatives)
       * [Cache in kube-apiserver](#cache-in-kube-apiserver)
       * [API for send bookmark](#api-for-send-bookmark)
+
+<!-- /toc -->
 
 ## Summary
 

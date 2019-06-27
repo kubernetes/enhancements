@@ -25,6 +25,8 @@ superseded-by:
 
 ## Table of Contents
 
+<!-- toc -->
+
 Table of Contents
 =================
 
@@ -45,6 +47,8 @@ Table of Contents
       * [Graduation Criteria](#graduation-criteria)
       * [Implementation History](#implementation-history)
 
+
+<!-- /toc -->
 
 ## Summary
 

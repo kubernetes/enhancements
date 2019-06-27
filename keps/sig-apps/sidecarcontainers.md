@@ -21,6 +21,8 @@ status: provisional
 
 ## Table of Contents
 
+<!-- toc -->
+
 * [Table of Contents](#table-of-contents)
 * [Release Signoff Checklist](#release-signoff-checklist)
 * [Summary](#summary)
@@ -37,6 +39,8 @@ status: provisional
   * [Version Skew Strategy](#version-skew-strategy)
 * [Implementation History](#implementation-history)
 * [Alternatives](#alternatives)
+
+<!-- /toc -->
 
 ## Release Signoff Checklist
 

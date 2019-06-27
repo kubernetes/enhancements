@@ -22,12 +22,16 @@ status: provisional
 
 ## Table of Contents
 
+<!-- toc -->
+
 * [Summary](#summary)
 * [Goals](#goals)
 * [Proposal](#proposal)
     * [User Cases](#use-cases)
 * [Graduation Criteria](#graduation-criteria)
 * [Implementation History](#implementation-history)
+
+<!-- /toc -->
 
 ## Summary
 

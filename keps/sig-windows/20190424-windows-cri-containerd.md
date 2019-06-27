@@ -21,6 +21,8 @@ status: implementable
 
 ## Table of Contents
 
+<!-- toc -->
+
 <!-- TOC -->
 
 - [Table of Contents](#table-of-contents)
@@ -55,6 +57,8 @@ status: implementable
 - [Infrastructure Needed](#infrastructure-needed)
 
 <!-- /TOC -->
+
+<!-- /toc -->
 
 ## Release Signoff Checklist
 

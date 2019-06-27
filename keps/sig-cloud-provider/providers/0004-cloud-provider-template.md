@@ -33,6 +33,8 @@ This is a KEP template, outlining how to propose a new cloud provider into the K
 
 ## Table of Contents
 
+<!-- toc -->
+
 * [Table of Contents](#table-of-contents)
 * [Summary](#summary)
 * [Motivation](#motivation)
@@ -40,6 +42,8 @@ This is a KEP template, outlining how to propose a new cloud provider into the K
     * [Non-Goals](#non-goals)
 * [Requirements](#requirements)
 * [Proposal](#proposal)
+
+<!-- /toc -->
 
 ## Summary
 

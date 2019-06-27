@@ -29,6 +29,8 @@ status: implementable
 
 
 ## Table of Contents
+
+<!-- toc -->
 <!-- TOC -->
 
 - [Table of Contents](#table-of-contents)
@@ -47,6 +49,8 @@ status: implementable
 - [Alternatives [optional]](#alternatives-optional)
 
 <!-- /TOC -->
+
+<!-- /toc -->
 
 ## Summary
 

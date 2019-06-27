@@ -23,6 +23,8 @@ last-updated: 2019-04-04
 
 ## Table of Contents
 
+<!-- toc -->
+
 * [Kubernetes Cluster Management API](#kubernetes-cluster-management-api)
   * [Metadata](#metadata)
   * [Table of Contents](#table-of-contents)
@@ -45,6 +47,8 @@ last-updated: 2019-04-04
   * [Implementation History](#implementation-history)
   * [Drawbacks](#drawbacks)
   * [Alternatives](#alternatives)
+
+<!-- /toc -->
 
 ## Summary
 

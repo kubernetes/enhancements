@@ -34,6 +34,8 @@ status: implementable
 
 ## Table of Contents
 
+<!-- toc -->
+
    * [Removing In-Tree Cloud Provider Code](#removing-in-tree-cloud-provider-code)
       * [Table of Contents](#table-of-contents)
       * [Terms](#terms)
@@ -56,6 +58,8 @@ status: implementable
             * [Build K8s/Cloud-provider within K8s/K8s](#build-k8scloud-provider-within-k8sk8s)
          * [Config Alternatives](#config-alternatives)
             * [Use component config to determine where controllers run](#use-component-config-to-determine-where-controllers-run)
+
+<!-- /toc -->
 
 ## Terms
 

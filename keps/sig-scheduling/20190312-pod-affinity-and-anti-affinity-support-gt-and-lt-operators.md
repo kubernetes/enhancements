@@ -19,6 +19,8 @@ status: provisional
 
  ## Table of Contents
 
+<!-- toc -->
+
 * [Summary](#summary)
 * [Motivation](#motivation)
   * [Goals](#goals)
@@ -175,6 +177,8 @@ const (
  ### Test Plan
 
 The feature has correctness, integration, performance, and e2e tests. These tests are run regularly as a part of Kubernetes presubmit and CI/CD pipeline.
+
+<!-- /toc -->
 
 #### Correctness Tests
 Here is a list of unit tests for various modules of the feature:

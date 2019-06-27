@@ -18,6 +18,8 @@ status: provisional
 # Exposing storage versions in opaque values via the discovery API
 
 ## Table of Contents
+
+<!-- toc -->
    * [Table of Contents](#table-of-contents)
    * [Terms](#terms)
    * [Summary](#summary)
@@ -29,6 +31,8 @@ status: provisional
    * [Risks and mitigation](#risks-and-mitigation)
       * [HA masters](#ha-masters)
    * [Alternatives](#alternatives)
+
+<!-- /toc -->
 
 ## Terms
 

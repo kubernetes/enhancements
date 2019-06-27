@@ -25,6 +25,8 @@ superseded-by:
 
 ## Table of Contents
 
+<!-- toc -->
+
 * [Table of Contents](#table-of-contents)
 * [Summary](#summary)
 * [Motivation](#motivation)
@@ -41,6 +43,8 @@ superseded-by:
 * [Alternatives [optional]](#alternatives-optional)
 
 [Tools for generating]: https://github.com/ekalinin/github-markdown-toc
+
+<!-- /toc -->
 
 ## Summary
 

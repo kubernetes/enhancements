@@ -28,6 +28,8 @@ superseded-by:
 
 ## Table of Contents
 
+<!-- toc -->
+
 - [Apply](#apply)
    - [Table of Contents](#table-of-contents)
    - [Summary](#summary)
@@ -41,6 +43,8 @@ superseded-by:
    - [Implementation History](#implementation-history)
    - [Drawbacks](#drawbacks)
    - [Alternatives](#alternatives)
+
+<!-- /toc -->
 
 ## Summary
 

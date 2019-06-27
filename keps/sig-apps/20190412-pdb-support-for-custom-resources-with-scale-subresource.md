@@ -25,6 +25,8 @@ superseded-by:
 
 ## Table of Contents
 
+<!-- toc -->
+
 - [Summary](#summary)
 - [Motivation](#motivation)
   - [Goals](#goals)
@@ -36,6 +38,8 @@ superseded-by:
   - [Graduation Criteria](#graduation-criteria)
 - [Implementation History](#implementation-history)
 
+
+<!-- /toc -->
 
 ## Summary
 

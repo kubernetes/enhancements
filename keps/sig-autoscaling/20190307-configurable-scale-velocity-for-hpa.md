@@ -19,6 +19,8 @@ superseded-by: TBD
 
 ## Table of Contents
 
+<!-- toc -->
+
 - [Configurable scale up/down velocity for HPA](#configurable-scale-updown-velocity-for-hpa)
   - [Table of Contents](#table-of-contents)
   - [Summary](#summary)
@@ -41,6 +43,8 @@ superseded-by: TBD
       - [API Changes](#api-changes)
       - [HPA Controller State Changes](#hpa-controller-state-changes)
       - [Command Line Options Changes](#command-line-options-changes)
+
+<!-- /toc -->
 
 ## Summary
 

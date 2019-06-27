@@ -30,6 +30,8 @@ superseded-by:
 # Kustomize File Processing Integration
 
 ## Table of Contents
+
+<!-- toc -->
 * [Table of Contents](#table-of-contents)
 * [Summary](#summary)
 * [Motivation](#motivation)
@@ -43,6 +45,8 @@ superseded-by:
 * [Alternatives](#alternatives)
 
 [Tools for generating]: https://github.com/ekalinin/github-markdown-toc
+
+<!-- /toc -->
 
 ## Summary
 

@@ -24,6 +24,8 @@ superseded-by:
 
 ## Table of Contents
 
+<!-- toc -->
+
 
    * [Pid Limiting](#pid-limiting)
       * [Table of Contents](#table-of-contents)
@@ -46,6 +48,8 @@ superseded-by:
          * [Version 1.14](#version-114)
 
 Created by [gh-md-toc](https://github.com/ekalinin/github-markdown-toc)
+
+<!-- /toc -->
 
 ## Summary
 

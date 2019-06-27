@@ -23,6 +23,8 @@ This is a KEP for adding ```Cloud Provider for Alibaba Cloud``` into the Kuberne
 
 ## Table of Contents
 
+<!-- toc -->
+
 * [Table of Contents](#table-of-contents)
 * [Summary](#summary)
 * [Motivation](#motivation)
@@ -30,6 +32,8 @@ This is a KEP for adding ```Cloud Provider for Alibaba Cloud``` into the Kuberne
     * [Non-Goals](#non-goals)
 * [Requirements](#requirements)
 * [Proposal](#proposal)
+
+<!-- /toc -->
 
 ## Summary
 

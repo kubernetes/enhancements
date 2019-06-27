@@ -21,6 +21,11 @@ status: implementable
 
 # Bounding Self-Labeling Kubelets
 
+## Table of Contents
+
+<!-- toc -->
+<!-- /toc -->
+
 ## Motivation
 
 Today the node client has total authority over its own Node labels.

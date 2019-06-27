@@ -21,6 +21,8 @@ status: implemented
 
 ## Table of Contents
 
+<!-- toc -->
+
 - [Breaking apart the kubernetes test tarball](#breaking-apart-the-kubernetes-test-tarball)
   - [Table of Contents](#table-of-contents)
   - [Release Signoff Checklist](#release-signoff-checklist)
@@ -39,6 +41,8 @@ status: implemented
     - [Graduation Criteria](#graduation-criteria)
   - [References](#references)
   - [Implementation History](#implementation-history)
+
+<!-- /toc -->
 
 ## Release Signoff Checklist
 

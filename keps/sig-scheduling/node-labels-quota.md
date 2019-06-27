@@ -18,6 +18,11 @@ status: provisional
 
 # Resource Quota based on Node Labels
 
+## Table of Contents
+
+<!-- toc -->
+<!-- /toc -->
+
 ## Summary
 
 Allowing Resource Quota to be applied on pods based on their node selector configuration opens up a flexible interface for addressing some immediate and potential future use cases.

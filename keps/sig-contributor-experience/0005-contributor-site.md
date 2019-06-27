@@ -21,6 +21,8 @@ status: implementable
 
 ## Table of Contents
 
+<!-- toc -->
+
 * [Table of Contents](#table-of-contents)
 * [Summary](#summary)
 * [Motivation](#motivation)
@@ -32,6 +34,8 @@ status: implementable
 * [Implementation History](#implementation-history)
 * [Drawbacks](#drawbacks)
 * [Alternatives](#alternatives)
+
+<!-- /toc -->
 
 ## Summary
 

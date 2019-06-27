@@ -20,6 +20,8 @@ status: implementable
 
 ## Table of Contents
 
+<!-- toc -->
+
 * [Table of Contents](#table-of-contents)
 * [Summary](#summary)
 * [Motivation](#motivation)
@@ -34,6 +36,8 @@ status: implementable
     * [Specifying allowed inline drivers with PodSecurityPolicy](#specifying-allowed-inline-drivers-with-podSecuritypolicy)
     * [Ephemeral inline volume operations](#ephemeral-inline-volume-operations)
 * [Test plans](#test-plans) 
+
+<!-- /toc -->
 
 ## Summary
 Currently, volumes that are backed by CSI drivers can only be used with the `PersistentVolume` and `PersistentVolumeClaim` objects. This proposal is to implement support for the ability to nest CSI volume declarations within pod specs for ephemeral-style drivers.

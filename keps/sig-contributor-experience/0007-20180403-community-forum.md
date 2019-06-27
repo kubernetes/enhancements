@@ -23,6 +23,8 @@ status: implemented
 
 ## Table of Contents
 
+<!-- toc -->
+
 * [Table of Contents](#table-of-contents)
 * [Summary](#summary)
 * [Motivation](#motivation)
@@ -38,6 +40,8 @@ status: implemented
 * [Implementation History](#implementation-history)
 * [Drawbacks](#drawbacks)
 
+
+<!-- /toc -->
 
 ## Summary
 

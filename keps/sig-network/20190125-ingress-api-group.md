@@ -20,6 +20,11 @@ superseded-by:
 
 # Graduate Ingress to GA
 
+## Table of Contents
+
+<!-- toc -->
+<!-- /toc -->
+
 ## Summary
 
 * Move the Ingress resource from the current API group

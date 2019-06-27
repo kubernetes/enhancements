@@ -25,6 +25,8 @@ status: implementable
 
 ## Table of Contents
 
+<!-- toc -->
+
 * [Dynamic Audit Control](#dynamic-audit-control)
   * [Table of Contents](#table-of-contents)
   * [Summary](#summary)
@@ -54,6 +56,8 @@ status: implementable
   * [Alternatives](#alternatives)
       * [Generalized Dynamic Configuration](#generalized-dynamic-configuration)
       * [Policy Override](#policy-override)
+
+<!-- /toc -->
 
 ## Summary
 

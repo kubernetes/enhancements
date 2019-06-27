@@ -19,6 +19,8 @@ status: provisional
 
 ## Table of Contents
 
+<!-- toc -->
+
       * [Summary](#summary)
       * [Motivation](#motivation)
             * [Correctness](#correctness)
@@ -30,6 +32,8 @@ status: provisional
          * [Risks and Mitigations](#risks-and-mitigations)
       * [Graduation Criteria](#graduation-criteria)
       * [Alternatives](#alternatives)
+
+<!-- /toc -->
 
 ## Summary
 

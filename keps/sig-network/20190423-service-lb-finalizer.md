@@ -27,6 +27,8 @@ superseded-by:
 
 ## Table of Contents
 
+<!-- toc -->
+
 - [Title](#title)
   - [Table of Contents](#table-of-contents)
   - [Release Signoff Checklist](#release-signoff-checklist)
@@ -38,6 +40,8 @@ superseded-by:
     - [Test Plan](#test-plan)
     - [Graduation Criteria](#graduation-criteria)
   - [Implementation History](#implementation-history)
+
+<!-- /toc -->
 
 ## Release Signoff Checklist
 

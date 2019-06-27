@@ -20,6 +20,8 @@ status: implementable
 
 ## Table of Contents
 
+<!-- toc -->
+
 * [Kubernetes Enhancement Proposal Process](#kubernetes-enhancement-proposal-process)
   * [Table of Contents](#table-of-contents)
   * [Summary](#summary)
@@ -38,6 +40,8 @@ status: implementable
   * [Alternatives](#alternatives)
   * [GitHub issues vs. KEPs](#github-issues-vs-keps)
   * [Unresolved Questions](#unresolved-questions)
+
+<!-- /toc -->
 
 ## Summary
 

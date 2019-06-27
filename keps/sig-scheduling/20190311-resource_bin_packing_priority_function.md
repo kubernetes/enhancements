@@ -20,6 +20,8 @@ status: implementable
 
 ## Table of Contents
 
+<!-- toc -->
+
 - [Summary](#summary)
 - [Motivation](#motivation)
   - [Goals](#goals)
@@ -32,6 +34,8 @@ status: implementable
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
 - [Implementation History](#implementation-history)
+
+<!-- /toc -->
 
 ## Summary
 

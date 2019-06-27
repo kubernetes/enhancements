@@ -22,6 +22,8 @@ status: implementable
 # Kustomize Exec Secret Generator
 
 ## Table of Contents
+
+<!-- toc -->
 * [Table of Contents](#table-of-contents)
 * [Summary](#summary)
 * [Motivation](#motivation)
@@ -31,6 +33,8 @@ status: implementable
 * [Risks and Mitigations](#risks-and-mitigations)
 * [Graduation Criteria](#graduation-criteria)
 * [Implementation History](#implementation-history)
+
+<!-- /toc -->
 
 ## Summary
 

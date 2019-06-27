@@ -25,6 +25,8 @@ superseded-by:
 
 ## Table of Contents
 
+<!-- toc -->
+
 * [Promote sysctl annotations to fields](#promote-sysctl-annotations-to-fields)
    * [Table of Contents](#table-of-contents)
    * [Summary](#summary)
@@ -38,6 +40,8 @@ superseded-by:
       * [Risks and Mitigations](#risks-and-mitigations)
    * [Graduation Criteria](#graduation-criteria)
    * [Implementation History](#implementation-history)
+
+<!-- /toc -->
 
 ## Summary
 

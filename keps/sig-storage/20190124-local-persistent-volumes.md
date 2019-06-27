@@ -29,6 +29,8 @@ superseded-by:
 
 ## Table of Contents
 
+<!-- toc -->
+
 * [Summary](#summary)
 * [Motivation](#motivation)
    * [Goals](#goals)
@@ -74,6 +76,8 @@ superseded-by:
    * [K8s 1.12: Beta](#k8s-112-beta)
 * [Infrastructure Needed](#infrastructure-needed)
 
+
+<!-- /toc -->
 
 ## Summary
 

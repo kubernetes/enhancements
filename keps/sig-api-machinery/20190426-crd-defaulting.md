@@ -28,6 +28,8 @@ see-also:
 
 ## Table of Contents
 
+<!-- toc -->
+
    * [Defaulting for Custom Resources](#defaulting-for-custom-resources)
       * [Table of Contents](#table-of-contents)
       * [Summary](#summary)
@@ -42,6 +44,8 @@ see-also:
          * [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
          * [Version Skew Strategy](#version-skew-strategy)
       * [Implementation History](#implementation-history)
+
+<!-- /toc -->
 
 ## Summary
 

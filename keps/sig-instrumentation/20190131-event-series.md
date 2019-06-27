@@ -31,11 +31,15 @@ Event series API
 
 ## Table of Contents
 
+<!-- toc -->
+
 * [Graduation Criteria](#graduation-criteria)
 * [Implementation History](#implementation-history)
 
 
 This KEP wraps the already merged design doc under [kubernetes/community](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/instrumentation/events-redesign.md)
+
+<!-- /toc -->
 
 ## Graduation Criteria
 

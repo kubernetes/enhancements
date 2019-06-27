@@ -20,8 +20,10 @@ status: implementable
 ---
 # Kubelet endpoint for device assignment observation details 
 
-Table of Contents
-=================
+## Table of Contents
+
+<!-- toc -->
+
 * [Abstract](#abstract)
 * [Background](#background)
 * [Objectives](#objectives)
@@ -30,6 +32,8 @@ Table of Contents
 * [Changes](#changes)
 * [Potential Future Improvements](#potential-future-improvements)
 * [Alternatives Considered](#alternatives-considered)
+
+<!-- /toc -->
 
 ## Abstract
 In this document we will discuss the motivation and code changes required for introducing a kubelet endpoint to expose device to container bindings.

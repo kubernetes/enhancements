@@ -27,6 +27,8 @@ superseded-by:
 
 ## Table of Contents
 
+<!-- toc -->
+
 * [Summary](#summary)
 * [Motivation](#motivation)
    * [Goals](#goals)
@@ -48,6 +50,8 @@ superseded-by:
    * [Phase 3](#phase-3)
 * [Implementation History](#implementation-history)
 
+
+<!-- /toc -->
 
 ## Summary
 

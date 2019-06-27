@@ -19,6 +19,8 @@ status: implementable
 
 ## Table of Contents
 
+<!-- toc -->
+
 * [Summary](#summary)
 * [Background](#background)
 * [Motivation](#motivation)
@@ -38,6 +40,8 @@ status: implementable
   * [gRPC API](#grpc-api)
 * [Graduation Criteria](#graduation-criteria)
 * [Implementation History](#implementation-history)
+
+<!-- /toc -->
 
 ## Summary
 

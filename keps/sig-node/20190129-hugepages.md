@@ -25,6 +25,8 @@ superseded-by:
 
 ## Table of Contents
 
+<!-- toc -->
+
    * [HugePages](#hugepages)
       * [Table of Contents](#table-of-contents)
       * [Summary](#summary)
@@ -52,6 +54,8 @@ superseded-by:
          * [Version 1.14](#version-114)
 
 Created by [gh-md-toc](https://github.com/ekalinin/github-markdown-toc)
+
+<!-- /toc -->
 
 ## Summary
 

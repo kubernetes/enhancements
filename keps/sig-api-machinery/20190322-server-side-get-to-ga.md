@@ -26,6 +26,8 @@ superseded-by:
 
 ## Table of Contents
 
+<!-- toc -->
+
 - [Title](#title)
   - [Table of Contents](#table-of-contents)
   - [Release Signoff Checklist](#release-signoff-checklist)
@@ -42,6 +44,8 @@ superseded-by:
   - [Graduation Criteria](#graduation-criteria)
     - [Version Skew Strategy](#version-skew-strategy)
   - [Implementation History](#implementation-history)
+
+<!-- /toc -->
 
 ## Summary
 

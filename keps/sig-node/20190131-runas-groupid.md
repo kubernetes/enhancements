@@ -21,6 +21,8 @@ status: implementable
 
 ## Table of Contents
 
+<!-- toc -->
+
 * [Abstract](#abstract)
 * [Motivation](#motivation)
     * [What is the significance of Primary Group Id?](#what-is-the-significance-of-primary-id)
@@ -38,6 +40,8 @@ status: implementable
 * [Graduation Criteria](#graduation-criteria)
 * [Implementation History](#implementation-history)
 
+
+<!-- /toc -->
 
 ## Abstract
 As a Kubernetes User, we should be able to specify both user id and group id for the containers running 

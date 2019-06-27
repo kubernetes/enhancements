@@ -25,6 +25,8 @@ see-also:
 
 ## Table of Contents
 
+<!-- toc -->
+
 <!-- TOC -->
 
 - [kubeadm phases to beta](#kubeadm-phases-to-beta)
@@ -42,6 +44,8 @@ see-also:
     - [Alternatives](#alternatives)
 
 <!-- /TOC -->
+
+<!-- /toc -->
 
 ## Summary
 

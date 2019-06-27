@@ -22,6 +22,8 @@ see-also:
 
 ## Table of Contents
 
+<!-- toc -->
+
 * [Summary](#summary)
 * [Motivation](#motivation)
   * [Goals](#goals)
@@ -43,6 +45,8 @@ see-also:
 * [Graduation Criteria](#graduation-criteria)
 * [Post-GA tasks](#post-ga-tasks)
 * [Implementation History](#implementation-history)
+
+<!-- /toc -->
 
 ## Summary
 

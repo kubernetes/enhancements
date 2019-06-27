@@ -24,6 +24,8 @@ superseded-by:
 
 ## Table of Contents
 
+<!-- toc -->
+
 * [Summary](#summary)
 * [Test Plan](#test-plan)
 * [Graduation Criteria](#graduation-criteria)
@@ -32,6 +34,8 @@ superseded-by:
 * [Implementation History](#implementation-history)
 
 [Tools for generating]: https://github.com/ekalinin/github-markdown-toc
+
+<!-- /toc -->
 
 ## Summary
 

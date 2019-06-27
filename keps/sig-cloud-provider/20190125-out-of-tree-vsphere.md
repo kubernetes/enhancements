@@ -27,6 +27,8 @@ status: implementable
 
 ## Table of Contents
 
+<!-- toc -->
+
 - [Supporting Out-of-Tree vSphere Cloud Provider](#supporting-out-of-tree-vsphere-cloud-provider)
   - [Table of Contents](#table-of-contents)
   - [Release Signoff Checklist](#release-signoff-checklist)
@@ -43,6 +45,8 @@ status: implementable
     - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
     - [Version Skew Strategy](#version-skew-strategy)
   - [Implementation History](#implementation-history)
+
+<!-- /toc -->
 
 ## Release Signoff Checklist
 

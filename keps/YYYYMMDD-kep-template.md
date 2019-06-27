@@ -62,7 +62,10 @@ See the KEP process for details on each of these items.
 ## Table of Contents
 
 A table of contents is helpful for quickly jumping to sections of a KEP and for highlighting any additional information provided beyond the standard KEP template.
-[Tools for generating][] a table of contents from markdown are available.
+
+Ensure the TOC is wrapped with <code>&lt;!-- toc --&rt;&lt;!-- /toc --&rt;</code> tags, and then generate with `hack/update-toc.sh`.
+
+<!-- toc -->
 
 - [Title](#title)
   - [Table of Contents](#table-of-contents)
@@ -92,6 +95,8 @@ A table of contents is helpful for quickly jumping to sections of a KEP and for 
   - [Infrastructure Needed [optional]](#infrastructure-needed-optional)
 
 [Tools for generating]: https://github.com/ekalinin/github-markdown-toc
+
+<!-- /toc -->
 
 ## Release Signoff Checklist
 

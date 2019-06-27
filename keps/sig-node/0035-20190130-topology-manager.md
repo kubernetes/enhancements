@@ -33,7 +33,9 @@ _Authors:_
 * @balajismaniam - Balaji Subramaniam &lt;balaji.subramaniam@intel.com&gt;
 * @lmdaly - Louise M. Daly &lt;louise.m.daly@intel.com&gt;
 
-**Contents:**
+## Table of Contents
+
+<!-- toc -->
 
 * [Overview](#overview)
 * [Motivation](#motivation)
@@ -55,6 +57,8 @@ _Authors:_
 * [Limitations](#limitations)
 * [Alternatives](#alternatives)
 * [Reference](#reference)
+
+<!-- /toc -->
 
 # Overview
 

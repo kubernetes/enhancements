@@ -24,6 +24,8 @@ last-updated: 2018-01-23
 
 ## Table of Contents
 
+<!-- toc -->
+
 * [Summary](#summary)
 * [Objectives](#objectives)
   * [Goals](#goals)
@@ -33,6 +35,8 @@ last-updated: 2018-01-23
 * [Graduation Criteria](#graduation-criteria)
 * [Implementation History](#implementation-history)
 * [Unresolved Questions](#unresolved-questions)
+
+<!-- /toc -->
 
 ## Summary
 

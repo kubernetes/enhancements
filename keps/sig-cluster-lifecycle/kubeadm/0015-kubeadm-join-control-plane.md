@@ -27,6 +27,8 @@ see-also:
 
 ## Table of Contents
 
+<!-- toc -->
+
 
 <!-- TOC -->
 
@@ -65,6 +67,8 @@ As a consequence, kubeadm will provide a best-practice, “fast path” for crea
 minimum viable, conformant Kubernetes cluster with one or more nodes hosting control-plane instances and
 zero or more worker nodes; as better detailed in following paragraphs, please note that
 this proposal doesn't solve every possible use case or even the full end-to-end flow automatically.
+
+<!-- /toc -->
 
 ## Motivation
 

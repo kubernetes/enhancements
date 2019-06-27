@@ -20,6 +20,8 @@ status: implementable
 
 ## Table of Contents
 
+<!-- toc -->
+
 * [Summary](#summary)
 * [Motivation](#motivation)
   * [Goals](#goals)
@@ -36,6 +38,8 @@ status: implementable
 * [Implementation History](#implementation-history)
 * [Appendix](#appendix)
   * [Examples of runtime variation](#examples-of-runtime-variation)
+
+<!-- /toc -->
 
 ## Summary
 

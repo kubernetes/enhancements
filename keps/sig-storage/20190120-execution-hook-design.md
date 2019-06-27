@@ -35,6 +35,8 @@ ExecutionHook API Design
 
 ## Table of Contents
 
+<!-- toc -->
+
   * [Title](#title)
       * [Table of Contents](#table-of-contents)
       * [Summary](#summary)
@@ -48,6 +50,8 @@ ExecutionHook API Design
          * [Risks and Mitigations](#risks-and-mitigations)
       * [Graduation Criteria](#graduation-criteria)
       * [Implementation History](#implementation-history)
+
+<!-- /toc -->
 
 ## Summary
 

@@ -19,6 +19,8 @@ status: implementable
 
 ## Table of Contents
 
+<!-- toc -->
+
 * [Release Signoff Checklist](#release-signoff-checklist)
 * [Terms](#terms)
 * [Summary](#summary)
@@ -42,6 +44,8 @@ status: implementable
 * [Alternatives](#alternatives)
 * [Impact to Other Features](#impact-to-other-features)
 * [Implementation History](#implementation-history)
+
+<!-- /toc -->
 
 ## Release Signoff Checklist
 

@@ -22,8 +22,9 @@ status: implementable
 
 # IPv4/IPv6 Dual Stack
 
-Table of Contents
-=================
+## Table of Contents
+
+<!-- toc -->
 
    * [Summary](#summary)
    * [Motivation](#motivation)
@@ -86,6 +87,8 @@ Table of Contents
       * [Variation: Dual-Stack Service CIDRs (a.k.a. Full Dual Stack)](#variation-dual-stack-service-cidrs-aka-full-dual-stack)
          * [Benefits](#benefits)
          * [Changes Required](#changes-required)
+
+<!-- /toc -->
 
 ## Summary
 

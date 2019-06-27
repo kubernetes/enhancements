@@ -19,6 +19,8 @@ status: provisional
 
 ## Table of Contents
 
+<!-- toc -->
+
 * [Table of Contents](#table-of-contents)
 * [Summary](#summary)
 * [Motivation](#motivation)
@@ -35,6 +37,8 @@ status: provisional
     * [Risks and Mitigations](#risks-and-mitigations)
 * [Graduation Criteria](#graduation-criteria)
 * [Implementation History](#implementation-history)
+
+<!-- /toc -->
 
 ## Summary
 AWS EBS CSI Driver implements [Container Storage Interface](https://github.com/container-storage-interface/spec/tree/master) which is the standard of storage interface for container. It provides the same in-tree AWS EBS plugin features including volume creation, volume attachment, volume mounting and volume scheduling. It is also configurable on what is the EBS volume type to create, what is the file system file should be formatted, which KMS key to use to create encrypted volume, etc.

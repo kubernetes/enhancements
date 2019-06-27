@@ -22,6 +22,8 @@ superseded-by: []
 
 ## Table of Contents
 
+<!-- toc -->
+
 A table of contents is helpful for quickly jumping to sections of a KEP and for highlighting any additional information provided beyond the standard KEP template.
 
 <!-- markdown-toc start - Don't edit this section. Run M-x markdown-toc-refresh-toc -->
@@ -44,6 +46,8 @@ A table of contents is helpful for quickly jumping to sections of a KEP and for 
     - [Alternatives](#alternatives)
 
 <!-- markdown-toc end -->
+
+<!-- /toc -->
 
 ## Summary
 

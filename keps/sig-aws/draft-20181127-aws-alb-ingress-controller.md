@@ -19,6 +19,8 @@ status: provisional
 # AWS ALB Ingress Controller
 
 ## Table of Contents
+
+<!-- toc -->
 - [Table of Contents](#table-of-contents)
 - [Summary](#summary)
 - [Motivation](#motivation)
@@ -32,6 +34,8 @@ status: provisional
     - [Sharing single ALB among Ingresses across namespace](#sharing-single-alb-among-ingresses-across-namespace)
 - [Graduation Criteria](#graduation-criteria)
 - [Implementation History](#implementation-history)
+
+<!-- /toc -->
 
 ## Summary
 

@@ -25,6 +25,8 @@ This includes the Summary and Motivation sections.
 
 ## Table of Contents
 
+<!-- toc -->
+
 - [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
 - [Motivation](#motivation)
@@ -48,6 +50,8 @@ This includes the Summary and Motivation sections.
 - [Alternatives](#alternatives)
   - [Introduce pod level resource requirements](#introduce-pod-level-resource-requirements)
   - [Leaving the PodSpec unchanged](#leaving-the-podspec-unchanged)
+
+<!-- /toc -->
 
 ## Release Signoff Checklist
 

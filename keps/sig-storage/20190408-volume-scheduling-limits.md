@@ -28,6 +28,8 @@ superseded-by:
 
 ## Table of Contents
 
+<!-- toc -->
+
    * [Volume Scheduling Limits](#volume-scheduling-limits)
       * [Table of Contents](#table-of-contents)
       * [Release Signoff Checklist](#release-signoff-checklist)
@@ -55,6 +57,8 @@ superseded-by:
             * [Interaction with old AttachVolumeLimit implementation](#interaction-with-old-attachvolumelimit-implementation)
       * [Implementation History](#implementation-history)
    * [Alternatives](#alternatives)
+
+<!-- /toc -->
 
 ## Release Signoff Checklist
 

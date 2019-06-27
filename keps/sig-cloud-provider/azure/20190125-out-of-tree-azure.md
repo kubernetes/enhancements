@@ -27,6 +27,8 @@ status: provisional
 
 ## Table of Contents
 
+<!-- toc -->
+
 - [Supporting Out-of-Tree Azure Cloud Provider](#supporting-out-of-tree-azure-cloud-provider)
   - [Table of Contents](#table-of-contents)
   - [Release Signoff Checklist](#release-signoff-checklist)
@@ -49,6 +51,8 @@ status: provisional
   - [Technical Leads are members of the Kubernetes Organization](#technical-leads-are-members-of-the-kubernetes-organization)
   - [Subproject Leads](#subproject-leads)
   - [Meetings](#meetings)
+
+<!-- /toc -->
 
 ## Release Signoff Checklist
 

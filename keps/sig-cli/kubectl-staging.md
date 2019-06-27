@@ -20,6 +20,8 @@ status: implementable
 # Move Kubectl Code into Staging
 
 ## Table of Contents
+
+<!-- toc -->
 * [Table of Contents](#table-of-contents)
 * [Summary](#summary)
 * [Motivation](#motivation)
@@ -30,6 +32,8 @@ status: implementable
 * [Graduation Criteria](#graduation-criteria)
 * [Testing](#testing)
 * [Implementation History](#implementation-history)
+
+<!-- /toc -->
 
 ## Summary
 

@@ -35,6 +35,8 @@ superseded-by:
 
 ## Table of Contents
 
+<!-- toc -->
+
 - [API Server Network Proxy](#api-server-network-proxy)
   - [Table of Contents](#table-of-contents)
   - [Summary](#summary)
@@ -69,6 +71,8 @@ superseded-by:
   - [Implementation History](#implementation-history)
   - [Alternatives [optional]](#alternatives-optional)
   - [Infrastructure Needed [optional]](#infrastructure-needed-optional)
+
+<!-- /toc -->
 
 ## Summary
 

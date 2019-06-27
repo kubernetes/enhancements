@@ -25,6 +25,8 @@ superseded-by: []
 
 ## Table of Contents
 
+<!-- toc -->
+
 Table of Contents
 =================
 
@@ -64,6 +66,8 @@ Table of Contents
       * [Alternatives](#alternatives)
       * [Infrastructure Needed](#infrastructure-needed)
 
+
+<!-- /toc -->
 
 ## Release Signoff Checklist
 
