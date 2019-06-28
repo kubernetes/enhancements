@@ -13,8 +13,8 @@ approvers:
   - "@kow3ns"
 editor: TBD
 creation-date: 2018-05-14
-last-updated: 2019-06-13
-status: provisional
+last-updated: 2019-06-26
+status: implementable
 ---
 
 # Sidecar Containers
@@ -48,11 +48,11 @@ For enhancements that make changes to code or processes/procedures in core Kuber
 Check these off as they are completed for the Release Team to track. These checklist items _must_ be updated for the enhancement to be released.
 
 - [ ] kubernetes/enhancements issue in release milestone, which links to KEP (this should be a link to the KEP location in kubernetes/enhancements, not the initial KEP PR)
-- [ ] KEP approvers have set the KEP status to `implementable`
-- [ ] Design details are appropriately documented
-- [ ] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
-- [ ] Graduation criteria is in place
-- [ ] "Implementation History" section is up-to-date for milestone
+- [X] KEP approvers have set the KEP status to `implementable`
+- [X] Design details are appropriately documented
+- [X] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [X] Graduation criteria is in place
+- [X] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
@@ -221,6 +221,8 @@ Init containers would be able to have `lifecycle.type: Sidecar` applied to them 
 
 Older Kubelets that don't implement the sidecar logic could have a pod scheduled on them that has the sidecar field. As this field is just an addition to the Container Spec the Kubelet would still be able to schedule the pod, treating the sidecars as if they were just a normal container. This could potentially cause confusion to a user as their pod would not behave in the way they expect, but would avoid pods being unable to schedule.
 
+Shutdown ordering of Containers in a Pod can not be guaranteed when a node is being shutdown, this is due to the fact that the Kubelet is not responsible for stopping containers when the node shuts down, it is instead handed off to systemd (when on Linux) which would not be aware of the ordering requirements. Daemonset and static Pods would be the most effected as they are typically not drained from a node before it is shutdown. This could be seen as a larger issue with node shutdown (also effects things like termination grace period) and does not necessarily need to be addressed in this KEP , however it should be clear in the documentation what guarantees we can provide in regards to the ordering.
+
 ## Design Details
 
 ### Test Plan
@@ -258,7 +260,7 @@ Older Kubelets should still be able to schedule Pods that have sidecar container
 ## Implementation History
 
 - 14th May 2018: Proposal Submitted
-
+- 26th June 2019: KEP Marked as implementable
 
 ## Alternatives
 
