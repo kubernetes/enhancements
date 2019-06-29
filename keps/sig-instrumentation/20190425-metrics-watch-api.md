@@ -23,26 +23,26 @@ superseded-by: []
 
 ## Table of Contents
 
- * [Metrics API watch support](#metrics-api-watch-support)
-    * [Table of Contents](#table-of-contents)
-    * [Summary](#summary)
-    * [Motivation](#motivation)
-       * [Goals](#goals)
-       * [Non-Goals](#non-goals)
-    * [Proposal](#proposal)
-       * [User Stories](#user-stories)
-          * [HPA](#hpa)
-          * [Custom metrics provider](#custom-metrics-provider)
-       * [Implementation Details/Notes/Constraints [optional]](#implementation-detailsnotesconstraints-optional)
-       * [Risks and Mitigations](#risks-and-mitigations)
-    * [Design Details](#design-details)
-       * [Test Plan](#test-plan)
-       * [Graduation Criteria](#graduation-criteria)
-       * [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
-       * [Version Skew Strategy](#version-skew-strategy)
-    * [Implementation History](#implementation-history)
-    * [Drawbacks [optional]](#drawbacks-optional)
- * [Related resources](#related-resources)
+<!-- toc -->
+  - [Summary](#summary)
+  - [Motivation](#motivation)
+    - [Goals](#goals)
+    - [Non-Goals](#non-goals)
+  - [Proposal](#proposal)
+    - [User Stories](#user-stories)
+      - [HPA](#hpa)
+      - [Custom metrics provider](#custom-metrics-provider)
+    - [Implementation Details/Notes/Constraints [optional]](#implementation-detailsnotesconstraints-optional)
+    - [Risks and Mitigations](#risks-and-mitigations)
+  - [Design Details](#design-details)
+    - [Test Plan](#test-plan)
+    - [Graduation Criteria](#graduation-criteria)
+    - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+    - [Version Skew Strategy](#version-skew-strategy)
+  - [Implementation History](#implementation-history)
+  - [Drawbacks [optional]](#drawbacks-optional)
+- [Related resources](#related-resources)
+<!-- /toc -->
 
 ## Summary
 

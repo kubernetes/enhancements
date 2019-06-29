@@ -30,40 +30,38 @@ status: implemented
 
 
 ## Table of Contents
-<!-- TOC -->
 
-- [Table of Contents](#table-of-contents)
+<!-- toc -->
 - [Summary](#summary)
 - [Motivation](#motivation)
-    - [Goals](#goals)
-    - [Non-Goals](#non-goals)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-    - [What works today](#what-works-today)
-    - [Windows Node Roadmap (post-GA work)](#windows-node-roadmap-post-ga-work)
-        - [Custom DNS updates for CNI plugins](#custom-dns-updates-for-cni-plugins)
-    - [What will never work](#what-will-never-work)
-    - [Windows Container Compatibility](#windows-container-compatibility)
-    - [Relevant resources/conversations](#relevant-resourcesconversations)
-    - [Risks and Mitigations](#risks-and-mitigations)
-        - [Ensuring OS-specific workloads land on appropriate container host](#ensuring-os-specific-workloads-land-on-appropriate-container-host)
-        - [Memory Overprovisioning](#memory-overprovisioning)
+  - [What works today](#what-works-today)
+  - [Windows Node Roadmap (post-GA work)](#windows-node-roadmap-post-ga-work)
+    - [Custom DNS updates for CNI plugins](#custom-dns-updates-for-cni-plugins)
+  - [What will never work](#what-will-never-work)
+  - [Windows Container Compatibility](#windows-container-compatibility)
+  - [Relevant resources/conversations](#relevant-resourcesconversations)
+  - [Risks and Mitigations](#risks-and-mitigations)
+    - [Ensuring OS-specific workloads land on appropriate container host](#ensuring-os-specific-workloads-land-on-appropriate-container-host)
+    - [Memory Overprovisioning](#memory-overprovisioning)
 - [Graduation Criteria](#graduation-criteria)
 - [Implementation History](#implementation-history)
 - [Testing Plan](#testing-plan)
-    - [Test Dashboard](#test-dashboard)
-    - [Test Environment](#test-environment)
-    - [Test Approach](#test-approach)
-        - [Adapting existing tests](#adapting-existing-tests)
-        - [Substitute test cases](#substitute-test-cases)
-        - [Windows specific tests](#windows-specific-tests)
+  - [Test Dashboard](#test-dashboard)
+  - [Test Environment](#test-environment)
+  - [Test Approach](#test-approach)
+    - [Adapting existing tests](#adapting-existing-tests)
+    - [Substitute test cases](#substitute-test-cases)
+    - [Windows specific tests](#windows-specific-tests)
 - [Conformance Testing](#conformance-testing)
 - [API Reference](#api-reference)
-    - [V1.Container](#v1container)
-    - [V1.Pod](#v1pod)
-    - [V1.PodSecurityContext](#v1podsecuritycontext)
+  - [V1.Container](#v1container)
+  - [V1.Pod](#v1pod)
+  - [V1.PodSecurityContext](#v1podsecuritycontext)
 - [Other references](#other-references)
-
-<!-- /TOC -->
+<!-- /toc -->
 
 ## Summary
 

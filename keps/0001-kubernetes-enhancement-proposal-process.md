@@ -20,24 +20,24 @@ status: implementable
 
 ## Table of Contents
 
-* [Kubernetes Enhancement Proposal Process](#kubernetes-enhancement-proposal-process)
-  * [Table of Contents](#table-of-contents)
-  * [Summary](#summary)
-  * [Motivation](#motivation)
-  * [Stewardship](#stewardship)
-  * [Reference-level explanation](#reference-level-explanation)
-      * [What type of work should be tracked by a KEP](#what-type-of-work-should-be-tracked-by-a-kep)
-      * [KEP Template](#kep-template)
-      * [KEP Metadata](#kep-metadata)
-      * [KEP Workflow](#kep-workflow)
-      * [Git and GitHub Implementation](#git-and-github-implementation)
-      * [KEP Editor Role](#kep-editor-role)
-      * [Important Metrics](#important-metrics)
-      * [Prior Art](#prior-art)
-  * [Drawbacks](#drawbacks)
-  * [Alternatives](#alternatives)
-  * [GitHub issues vs. KEPs](#github-issues-vs-keps)
-  * [Unresolved Questions](#unresolved-questions)
+<!-- toc -->
+- [Summary](#summary)
+- [Motivation](#motivation)
+- [Stewardship](#stewardship)
+- [Reference-level explanation](#reference-level-explanation)
+  - [What type of work should be tracked by a KEP](#what-type-of-work-should-be-tracked-by-a-kep)
+  - [KEP Template](#kep-template)
+  - [KEP Metadata](#kep-metadata)
+  - [KEP Workflow](#kep-workflow)
+  - [Git and GitHub Implementation](#git-and-github-implementation)
+  - [KEP Editor Role](#kep-editor-role)
+  - [Important Metrics](#important-metrics)
+  - [Prior Art](#prior-art)
+- [Drawbacks](#drawbacks)
+- [Alternatives](#alternatives)
+  - [GitHub issues vs. KEPs](#github-issues-vs-keps)
+- [Unresolved Questions](#unresolved-questions)
+<!-- /toc -->
 
 ## Summary
 

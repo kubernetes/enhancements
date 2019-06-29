@@ -22,18 +22,21 @@ superseded-by:
 
 ## Table of Contents
 
-* [Summary](#summary)
-* [Motivation](#motivation)
-  * [Goals](#goals)
-  * [Non-Goals](#non-goals)
-* [Proposal](#proposal)
-  * [User Stories [optional]](#user-stories)
-  * [Implementation Details/Notes/Constraints [optional]](#implementation-detailsnotesconstraints-optional)
-  * [Risks and Mitigations](#risks-and-mitigations)
-* [Graduation Criteria](#graduation-criteria)
-* [Implementation History](#implementation-history)
-* [Drawbacks [optional]](#drawbacks-optional)
-* [Alternatives [optional]](#alternatives-optional)
+<!-- toc -->
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [User Stories [optional]](#user-stories-optional)
+  - [Implementation Details/Notes/Constraints [optional]](#implementation-detailsnotesconstraints-optional)
+  - [Risks and Mitigations](#risks-and-mitigations)
+- [Graduation Criteria](#graduation-criteria)
+- [Implementation History](#implementation-history)
+- [Drawbacks [optional]](#drawbacks-optional)
+- [Alternatives [optional]](#alternatives-optional)
+- [Infrastructure Needed [optional]](#infrastructure-needed-optional)
+<!-- /toc -->
 
 ## Summary
 AWS load balancer prefix annotation adds a control over the naming of the AWS ELB resources that are being generated when provisioning a Kubernetes service of type `LoadBalancer`. The current implementation provisions AWS ELB with a unique name based on the resource UID. The resulted unpredicted name makes it impossible to integrate the provisioning with existing IAM policies in situations when these two operations are controlled by two different groups. For example, IAM policies are defined and controlled by InfoSec team while provisioning of resources is under CloudOps team. The AWS IAM policies allow definition when only a prefix of the resource identifier is known. Using Kubernetes service with this annotation when it is provisioned in AWS, will allow an integration with existing IAM policies.

@@ -33,13 +33,24 @@ This is a KEP template, outlining how to propose a new cloud provider into the K
 
 ## Table of Contents
 
-* [Table of Contents](#table-of-contents)
-* [Summary](#summary)
-* [Motivation](#motivation)
-    * [Goals](#goals)
-    * [Non-Goals](#non-goals)
-* [Requirements](#requirements)
-* [Proposal](#proposal)
+<!-- toc -->
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Prerequisites](#prerequisites)
+  - [Repository Requirements](#repository-requirements)
+  - [User Experience Reports](#user-experience-reports)
+  - [Testgrid Integration](#testgrid-integration)
+  - [CNCF Certified Kubernetes](#cncf-certified-kubernetes)
+  - [Documentation](#documentation)
+  - [Technical Leads are members of the Kubernetes Organization](#technical-leads-are-members-of-the-kubernetes-organization)
+- [Proposal](#proposal)
+  - [Subproject Leads](#subproject-leads)
+  - [Repositories](#repositories)
+  - [Meetings](#meetings)
+  - [Others](#others)
+<!-- /toc -->
 
 ## Summary
 

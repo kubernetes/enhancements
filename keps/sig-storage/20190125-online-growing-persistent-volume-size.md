@@ -26,22 +26,24 @@ superseded-by:
 
 ## Table of Contents
 
-* [Table of Contents](#table-of-contents)
-* [Summary](#summary)
-* [Motivation](#motivation)
-    * [Goals](#goals)
-    * [Non-Goals](#non-goals)
-* [Proposal](#proposal)
-    * [User Stories [optional]](#user-stories)
-      * [Story 1](#story-1)
-      * [Story 2](#story-2)
-    * [Notes](#notes)
-    * [Implementation Details](#implementation-details)
-    * [Risks and Mitigations](#risks-and-mitigations)
-* [Graduation Criteria](#graduation-criteria)
-* [Implementation History](#implementation-history)
-
-[Tools for generating]: https://github.com/ekalinin/github-markdown-toc
+<!-- toc -->
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [User Stories](#user-stories)
+    - [Story 1](#story-1)
+    - [Story 2](#story-2)
+  - [Notes](#notes)
+  - [Implementation Details](#implementation-details)
+  - [Risks and Mitigations](#risks-and-mitigations)
+- [Test Plan](#test-plan)
+- [Graduation Criteria](#graduation-criteria)
+  - [Alpha to Beta](#alpha-to-beta)
+  - [Beta to GA](#beta-to-ga)
+- [Implementation History](#implementation-history)
+<!-- /toc -->
 
 ## Summary
 

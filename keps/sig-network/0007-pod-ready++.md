@@ -25,18 +25,27 @@ status: provisional
 
 ## Table of Contents
 
-* [Table of Contents](#table-of-contents)
-* [Summary](#summary)
-* [Motivation](#motivation)
-    * [Goals](#goals)
-    * [Non-Goals](#non-goals)
-* [Proposal](#proposal)
-    * [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints-optional)
-    * [Risks and Mitigations](#risks-and-mitigations)
-* [Graduation Criteria](#graduation-criteria)
-* [Implementation History](#implementation-history)
-* [Alternatives](#alternatives-optional)
-
+<!-- toc -->
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [PodSpec](#podspec)
+    - [Constraints:](#constraints)
+  - [Pod Readiness](#pod-readiness)
+  - [Custom Pod Condition](#custom-pod-condition)
+  - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
+      - [Workloads](#workloads)
+      - [Kubelet](#kubelet)
+  - [Feature Integration](#feature-integration)
+  - [Risks and Mitigations](#risks-and-mitigations)
+- [Graduation Criteria](#graduation-criteria)
+- [Implementation History](#implementation-history)
+- [Alternatives](#alternatives)
+      - [Why not fix the workloads?](#why-not-fix-the-workloads)
+      - [Why not extend container readiness?](#why-not-extend-container-readiness)
+<!-- /toc -->
 
 ## Summary
 

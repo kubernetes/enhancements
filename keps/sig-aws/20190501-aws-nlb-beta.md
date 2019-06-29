@@ -23,7 +23,7 @@ superseded-by:
 
 ## Table of Contents
 
-- [Table of Contents](#table-of-contents)
+<!-- toc -->
 - [Summary](#summary)
 - [Motivation](#motivation)
   - [Goals](#goals)
@@ -38,6 +38,7 @@ superseded-by:
   - [1.16](#116)
   - [1.18](#118)
 - [Implementation History](#implementation-history)
+<!-- /toc -->
 
 ## Summary
 

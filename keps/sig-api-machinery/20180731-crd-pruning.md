@@ -29,23 +29,23 @@ see-also:
 
 ## Table of Contents
 
-   * [Pruning for Custom Resources](#pruning-for-custom-resources)
-      * [Table of Contents](#table-of-contents)
-      * [Summary](#summary)
-      * [Motivation](#motivation)
-         * [Goals](#goals)
-         * [Non-Goals](#non-goals)
-      * [Proposal](#proposal)
-         * [Excluding values from Pruning](#excluding-values-from-pruning)
-         * [Examples](#examples)
-         * [Opt-in and Opt-out of Pruning on CRD Level](#opt-in-and-opt-out-of-pruning-on-crd-level)
-         * [References](#references)
-         * [Test Plan](#test-plan)
-         * [Graduation Criteria](#graduation-criteria)
-         * [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
-      * [Version Skew Strategy](#version-skew-strategy)
-         * [Alternatives Considered](#alternatives-considered)
-      * [Implementation History](#implementation-history)
+<!-- toc -->
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [Excluding values from Pruning](#excluding-values-from-pruning)
+  - [Examples](#examples)
+  - [Opt-in and Opt-out of Pruning on CRD Level](#opt-in-and-opt-out-of-pruning-on-crd-level)
+  - [References](#references)
+  - [Test Plan](#test-plan)
+  - [Graduation Criteria](#graduation-criteria)
+  - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+  - [Version Skew Strategy](#version-skew-strategy)
+- [Alternatives Considered](#alternatives-considered)
+- [Implementation History](#implementation-history)
+<!-- /toc -->
 
 ## Summary
 

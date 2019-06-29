@@ -30,19 +30,24 @@ superseded-by:
 # Kustomize File Processing Integration
 
 ## Table of Contents
-* [Table of Contents](#table-of-contents)
-* [Summary](#summary)
-* [Motivation](#motivation)
-  * [Goals](#goals)
-  * [Non-Goals](#non-goals)
-* [Proposal](#proposal)
-  * [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
-  * [Risks and Mitigations](#risks-and-mitigations)
-* [Graduation Criteria](#graduation-criteria)
-* [Implementation History](#implementation-history)
-* [Alternatives](#alternatives)
 
-[Tools for generating]: https://github.com/ekalinin/github-markdown-toc
+<!-- toc -->
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [Specifics](#specifics)
+  - [Risks and Mitigations](#risks-and-mitigations)
+- [Graduation Criteria](#graduation-criteria)
+  - [Evaluate and decide](#evaluate-and-decide)
+  - [Implement](#implement)
+- [Docs](#docs)
+- [Test plan](#test-plan)
+  - [Version Skew Tests](#version-skew-tests)
+- [Implementation History](#implementation-history)
+- [Alternatives](#alternatives)
+<!-- /toc -->
 
 ## Summary
 

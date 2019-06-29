@@ -21,23 +21,25 @@ status: implementable
 
 ## Table of Contents
 
-* [Abstract](#abstract)
-* [Motivation](#motivation)
-    * [What is the significance of Primary Group Id?](#what-is-the-significance-of-primary-id)
-* [Goals](#goals)
-* [Use Cases](#use-cases)
-    * [Use Case 1](#use-case-1)
-    * [Use Case 2](#use-case-2)
-* [Design](#design)
-    * [Model](#model)
-        * [SecurityContext](#securitycontext)
-        * [PodSecurityContext](#podsecuritycontext)
-        * [PodSecurityPolicy](#podsecuritypolicy)
-* [Behavior](#behavior)
-* [Summary of Changes needed](#summary-of-changes-needed)
-* [Graduation Criteria](#graduation-criteria)
-* [Implementation History](#implementation-history)
-
+<!-- toc -->
+- [Abstract](#abstract)
+- [Motivation](#motivation)
+  - [What is the significance of Primary Group Id?](#what-is-the-significance-of-primary-group-id)
+- [Goals](#goals)
+- [Use Cases](#use-cases)
+  - [Use Case 1:](#use-case-1)
+  - [Use Case 2:](#use-case-2)
+- [Design](#design)
+  - [Model](#model)
+    - [SecurityContext](#securitycontext)
+    - [PodSecurityContext](#podsecuritycontext)
+    - [PodSecurityPolicy](#podsecuritypolicy)
+- [Behavior](#behavior)
+  - [Note About RunAsNonRoot field](#note-about-runasnonroot-field)
+- [Summary of Changes needed](#summary-of-changes-needed)
+- [Graduation Criteria](#graduation-criteria)
+- [Implementation History](#implementation-history)
+<!-- /toc -->
 
 ## Abstract
 As a Kubernetes User, we should be able to specify both user id and group id for the containers running 

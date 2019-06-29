@@ -24,18 +24,20 @@ see-also:
 
 ## Table of Contents
 
-* [Table of Contents](#table-of-contents)
-* [Summary](#summary)
-* [Motivation](#motivation)
-    * [Goals](#goals)
-* [Proposal](#proposal)
-    * [Build Schema/Definition](#build-schemadefinition)
-    * [Build Spec](#build-spec)
-    * [Aggregate and Publish Spec from apiextensions-apiserver](#aggregate-and-publish-spec-from-apiextensions-apiserver)
-    * [Aggregate and Publish Spec from kube-aggregator](#aggregate-and-publish-spec-from-kube-aggregator)
-    * [Risks and Mitigations](#risks-and-mitigations)
-* [Graduation Criteria](#graduation-criteria)
-* [Implementation History](#implementation-history)
+<!-- toc -->
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [Build Schema/Definition](#build-schemadefinition)
+  - [Build Spec](#build-spec)
+  - [Aggregate and Publish Spec from apiextensions-apiserver](#aggregate-and-publish-spec-from-apiextensions-apiserver)
+  - [Aggregate and Publish Spec from kube-aggregator](#aggregate-and-publish-spec-from-kube-aggregator)
+  - [Risks and Mitigations](#risks-and-mitigations)
+- [Graduation Criteria](#graduation-criteria)
+- [Implementation History](#implementation-history)
+<!-- /toc -->
 
 ## Summary
 

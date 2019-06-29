@@ -25,23 +25,19 @@ see-also:
 
 ## Table of Contents
 
-<!-- TOC -->
-
-- [kubeadm phases to beta](#kubeadm-phases-to-beta)
-    - [Table of Contents](#table-of-contents)
-    - [Summary](#summary)
-    - [Motivation](#motivation)
-        - [Goals](#goals)
-        - [Non-goals](#non-goals)
-    - [Proposal](#proposal)
-        - [User Stories](#user-stories)
-        - [Implementation Details](#implementation-details)
-    - [Graduation Criteria](#graduation-criteria)
-    - [Implementation History](#implementation-history)
-    - [Drawbacks](#drawbacks)
-    - [Alternatives](#alternatives)
-
-<!-- /TOC -->
+<!-- toc -->
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-goals](#non-goals)
+- [Proposal](#proposal)
+  - [User Stories](#user-stories)
+  - [Implementation Details](#implementation-details)
+- [Graduation Criteria](#graduation-criteria)
+- [Implementation History](#implementation-history)
+- [Drawbacks](#drawbacks)
+- [Alternatives](#alternatives)
+<!-- /toc -->
 
 ## Summary
 

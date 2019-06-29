@@ -19,17 +19,19 @@ status: provisional
 
 ## Table of Contents
 
-      * [Summary](#summary)
-      * [Motivation](#motivation)
-            * [Correctness](#correctness)
-            * [Efficiency](#efficiency)
-      * [Goals](#goals)
-      * [Proposal](#proposal)
-         * [API changes to the discovery API](#api-changes-to-the-discovery-api)
-         * [Implementation details](#implementation-details)
-         * [Risks and Mitigations](#risks-and-mitigations)
-      * [Graduation Criteria](#graduation-criteria)
-      * [Alternatives](#alternatives)
+<!-- toc -->
+- [Summary](#summary)
+- [Motivation](#motivation)
+    - [Correctness](#correctness)
+    - [Efficiency](#efficiency)
+- [Goals](#goals)
+- [Proposal](#proposal)
+  - [API changes to the discovery API](#api-changes-to-the-discovery-api)
+  - [Implementation details](#implementation-details)
+  - [Risks and Mitigations](#risks-and-mitigations)
+- [Graduation Criteria](#graduation-criteria)
+- [Alternatives](#alternatives)
+<!-- /toc -->
 
 ## Summary
 

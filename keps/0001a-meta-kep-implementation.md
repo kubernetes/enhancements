@@ -30,7 +30,7 @@ superseded-by:
 
 ## Table of Contents
 
-- [Table of Contents](#table-of-contents)
+<!-- toc -->
 - [Summary](#summary)
 - [Motivation](#motivation)
   - [Why another KEP?](#why-another-kep)
@@ -43,6 +43,7 @@ superseded-by:
     - [Constraints](#constraints)
 - [Graduation Criteria](#graduation-criteria)
 - [Implementation History](#implementation-history)
+<!-- /toc -->
 
 ## Summary
 

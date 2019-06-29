@@ -25,6 +25,7 @@ This includes the Summary and Motivation sections.
 
 ## Table of Contents
 
+<!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
 - [Motivation](#motivation)
@@ -32,7 +33,7 @@ This includes the Summary and Motivation sections.
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [API Design](#api-design)
-    - [Pod overhead](#pod-overhead)
+    - [Pod overhead](#pod-overhead-1)
     - [Container Runtime Interface (CRI)](#container-runtime-interface-cri)
   - [ResourceQuota changes](#resourcequota-changes)
   - [RuntimeClass changes](#runtimeclass-changes)
@@ -48,6 +49,7 @@ This includes the Summary and Motivation sections.
 - [Alternatives](#alternatives)
   - [Introduce pod level resource requirements](#introduce-pod-level-resource-requirements)
   - [Leaving the PodSpec unchanged](#leaving-the-podspec-unchanged)
+<!-- /toc -->
 
 ## Release Signoff Checklist
 

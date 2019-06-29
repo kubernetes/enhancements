@@ -32,22 +32,21 @@ status: implementable
 
 ### Table of Contents
 
-* [Documentation Requirements for Kubernetes Cloud Providers](#documentation-requirements-for-kubernetes-cloud-providers)
-   * [Table of Contents](#table-of-contents)
-   * [Summary](#summary)
-   * [Motivation](#motivation)
-      * [Goals](#goals)
-      * [Non-Goals](#non-goals)
-   * [Proposal](#proposal)
-      * [Proposed Format for Documentation](#proposed-format-for-documetation)
-      * [Requirement 1: Example Manifests](#requirement-1-example-manifests)
-      * [Requirement 2: Resource Management](#requirement-2-resource-management)
-      * [Requirement 3: Kubeadm Setup Guide](#requirement-3-kubeadm-setup-guide)
-   * [Implementation Details/Notes/Constraints [optional]](#implementation-detailsnotesconstraints-optional)
-   * [Risks and Mitigations](#risks-and-mitigations)
-   * [Graduation Criteria](#graduation-criteria)
-   * [Alternatives [optional]](#alternatives-optional)
-* [Implementation History](#implementation-history)
+<!-- toc -->
+  - [Summary](#summary)
+  - [Motivation](#motivation)
+    - [Goals](#goals)
+    - [Non-Goals](#non-goals)
+  - [Proposal](#proposal)
+    - [Proposed Format for Documentation](#proposed-format-for-documentation)
+    - [Requirement 1: Example Manifests](#requirement-1-example-manifests)
+    - [Requirement 2: Resource Management](#requirement-2-resource-management)
+  - [Implementation Details/Notes/Constraints [optional]](#implementation-detailsnotesconstraints-optional)
+  - [Risks and Mitigations](#risks-and-mitigations)
+  - [Graduation Criteria](#graduation-criteria)
+  - [Alternatives [optional]](#alternatives-optional)
+- [Implementation History](#implementation-history)
+<!-- /toc -->
 
 ### Summary
 This KEP describes the documentation requirements for both in-tree and out-of-tree cloud providers.

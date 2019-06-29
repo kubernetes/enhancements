@@ -25,18 +25,20 @@ see-also:
 
 ## Table of Contents
 
-* [Table of Contents](#table-of-contents)
-* [Summary](#summary)
-* [Glossary](#glossary)
-* [Motivation](#motivation)
-    * [Goals](#goals)
-    * [Non-Goals](#non-goals)
-* [Proposal](#proposal)
-    * [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
-    * [Risks and Mitigations](#risks-and-mitigations)
-* [Graduation Criteria](#graduation-criteria)
-* [Implementation History](#implementation-history)
-
+<!-- toc -->
+- [Summary](#summary)
+  - [Glossary](#glossary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
+  - [Risks and Mitigations](#risks-and-mitigations)
+- [Graduation Criteria](#graduation-criteria)
+  - [Alpha -&gt; Beta](#alpha---beta)
+  - [Beta -&gt; GA](#beta---ga)
+- [Implementation History](#implementation-history)
+<!-- /toc -->
 
 ## Summary
 

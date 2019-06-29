@@ -18,17 +18,19 @@ status: provisional
 # Exposing storage versions in opaque values via the discovery API
 
 ## Table of Contents
-   * [Table of Contents](#table-of-contents)
-   * [Terms](#terms)
-   * [Summary](#summary)
-   * [Motivation](#motivation)
-   * [Proposal](#proposal)
-      * [API changes to the discovery API](#api-changes-to-the-discovery-api)
-      * [Implementation details](#implementation-details)
-   * [Graduation Criteria](#graduation-criteria)
-   * [Risks and mitigation](#risks-and-mitigation)
-      * [HA masters](#ha-masters)
-   * [Alternatives](#alternatives)
+
+<!-- toc -->
+- [Terms](#terms)
+- [Summary](#summary)
+- [Motivation](#motivation)
+- [Proposal](#proposal)
+  - [API changes to the discovery API](#api-changes-to-the-discovery-api)
+  - [Implementation details](#implementation-details)
+- [Graduation Criteria](#graduation-criteria)
+- [Risks and mitigation](#risks-and-mitigation)
+  - [HA masters](#ha-masters)
+- [Alternatives](#alternatives)
+<!-- /toc -->
 
 ## Terms
 

@@ -24,13 +24,14 @@ superseded-by:
 
 ## Table of Contents
 
-* [Table of Contents](#table-of-contents)
-* [Summary](#summary)
-* [Test Plan](#test-plan)
-* [Graduation Criteria](#graduation-criteria)
-   * [Alpha -&gt; Beta](#alpha---beta)
-   * [Beta -&gt; GA](#beta---ga)
-* [Implementation History](#implementation-history)
+<!-- toc -->
+- [Summary](#summary)
+- [Test Plan](#test-plan)
+- [Graduation Criteria](#graduation-criteria)
+  - [Alpha -&gt; Beta](#alpha---beta)
+  - [Beta -&gt; GA](#beta---ga)
+- [Implementation History](#implementation-history)
+<!-- /toc -->
 
 ## Summary
 

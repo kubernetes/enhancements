@@ -23,22 +23,24 @@ status: implementable
 
 ## Table of Contents
 
-- [Azure Availability Zones](#azure-availability-zones)
-  - [Summary](#summary)
-  - [Scopes and Non-scopes](#scopes-and-non-scopes)
-    - [Scopes](#scopes)
-    - [Non-scopes](#non-scopes)
-  - [AZ label format](#az-label-format)
-  - [Cloud provider options](#cloud-provider-options)
-  - [Node registration](#node-registration)
-    - [Get by instance metadata](#get-by-instance-metadata)
-    - [Get by Go SDK](#get-by-go-sdk)
-  - [LoadBalancer and PublicIP](#loadbalancer-and-publicip)
-  - [AzureDisk](#azuredisk)
-    - [PVLabeler](#pvlabeler)
-    - [PersistentVolumeLabel](#persistentvolumelabel)
-    - [StorageClass](#storageclass)
-  - [Appendix](#appendix)
+<!-- toc -->
+- [Summary](#summary)
+- [Scopes and Non-scopes](#scopes-and-non-scopes)
+  - [Scopes](#scopes)
+  - [Non-scopes](#non-scopes)
+- [AZ label format](#az-label-format)
+- [Cloud provider options](#cloud-provider-options)
+- [Node registration](#node-registration)
+  - [Get by instance metadata](#get-by-instance-metadata)
+  - [Get by Go SDK](#get-by-go-sdk)
+- [LoadBalancer and PublicIP](#loadbalancer-and-publicip)
+- [AzureDisk](#azuredisk)
+  - [PVLabeler interface](#pvlabeler-interface)
+  - [PersistentVolumeLabel admission controller](#persistentvolumelabel-admission-controller)
+  - [StorageClass](#storageclass)
+- [Implementation History](#implementation-history)
+- [Appendix](#appendix)
+<!-- /toc -->
 
 ## Summary
 

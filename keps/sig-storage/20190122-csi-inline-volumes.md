@@ -20,20 +20,25 @@ status: implementable
 
 ## Table of Contents
 
-* [Table of Contents](#table-of-contents)
-* [Summary](#summary)
-* [Motivation](#motivation)
-    * [Goals](#goals)
-    * [Non-Goals](#non-goals)
-* [User Stories](#user-stories)
-    * [Examples](#examples)
-* [Ephemeral inline volume proposal](#ephemeral-inline-volume-proposal)
-    * [VolumeHandle generation](#volumehandle-generation)
-    * [API updates](#api-updates)
-    * [Secret reference](#secret-reference)
-    * [Specifying allowed inline drivers with PodSecurityPolicy](#specifying-allowed-inline-drivers-with-podSecuritypolicy)
-    * [Ephemeral inline volume operations](#ephemeral-inline-volume-operations)
-* [Test plans](#test-plans) 
+<!-- toc -->
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-goals](#non-goals)
+- [User stories](#user-stories)
+  - [Examples](#examples)
+- [Ephemeral inline volume proposal](#ephemeral-inline-volume-proposal)
+  - [VolumeHandle generation](#volumehandle-generation)
+  - [API updates](#api-updates)
+  - [Driver mode](#driver-mode)
+  - [Secret reference](#secret-reference)
+  - [Specifying allowed inline drivers with <code>PodSecurityPolicy</code>](#specifying-allowed-inline-drivers-with-)
+  - [Ephemeral inline volume operations](#ephemeral-inline-volume-operations)
+- [Test plans](#test-plans)
+  - [All unit tests](#all-unit-tests)
+  - [Ephemeral inline volumes unit tests](#ephemeral-inline-volumes-unit-tests)
+  - [E2E tests](#e2e-tests)
+<!-- /toc -->
 
 ## Summary
 Currently, volumes that are backed by CSI drivers can only be used with the `PersistentVolume` and `PersistentVolumeClaim` objects. This proposal is to implement support for the ability to nest CSI volume declarations within pod specs for ephemeral-style drivers.

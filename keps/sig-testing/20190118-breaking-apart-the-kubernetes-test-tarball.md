@@ -21,24 +21,24 @@ status: implemented
 
 ## Table of Contents
 
-- [Breaking apart the kubernetes test tarball](#breaking-apart-the-kubernetes-test-tarball)
-  - [Table of Contents](#table-of-contents)
-  - [Release Signoff Checklist](#release-signoff-checklist)
-  - [Summary](#summary)
-  - [Motivation](#motivation)
-    - [Goals](#goals)
-    - [Non-Goals](#non-goals)
-  - [Proposal](#proposal)
-    - [Internal structure of the test tarball](#internal-structure-of-the-test-tarball)
-      - [Binary artifacts](#binary-artifacts)
-      - [Portable sources](#portable-sources)
-    - [Updating dependencies on `kubernetes-test.tar.gz`](#updating-dependencies-on-kubernetes-testtargz)
-      - [Dependencies outside the Kubernetes organization](#dependencies-outside-the-kubernetes-organization)
-    - [Risks and Mitigations](#risks-and-mitigations)
-    - [Test Plan](#test-plan)
-    - [Graduation Criteria](#graduation-criteria)
-  - [References](#references)
-  - [Implementation History](#implementation-history)
+<!-- toc -->
+- [Release Signoff Checklist](#release-signoff-checklist)
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [Internal structure of the test tarball](#internal-structure-of-the-test-tarball)
+    - [Binary artifacts](#binary-artifacts)
+    - [Portable sources](#portable-sources)
+  - [Updating dependencies on <code>kubernetes-test.tar.gz</code>](#updating-dependencies-on-)
+    - [Dependencies outside the Kubernetes organization](#dependencies-outside-the-kubernetes-organization)
+  - [Risks and Mitigations](#risks-and-mitigations)
+  - [Test Plan](#test-plan)
+  - [Graduation Criteria](#graduation-criteria)
+- [References](#references)
+- [Implementation History](#implementation-history)
+<!-- /toc -->
 
 ## Release Signoff Checklist
 

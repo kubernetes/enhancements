@@ -21,19 +21,23 @@ status: implementable
 
 ## Table of Contents
 
-* [Table of Contents](#table-of-contents)
-* [Summary](#summary)
-* [Motivation](#motivation)
-    * [Goals](#goals)
-    * [Non-Goals](#non-goals)
-* [Proposal](#proposal)
-    * [Pod API examples](#pod-api-examples)
-    * [API changes](#api-changes)
-    * [Test Plan](#test-plan)
-* [Graduation Criteria](#graduation-criteria)
-* [Implementation History](#implementation-history)
-
-[Tools for generating]: https://github.com/ekalinin/github-markdown-toc
+<!-- toc -->
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [Pod API examples](#pod-api-examples)
+    - [Host <code>/etc/resolv.conf</code>](#host-)
+    - [Override DNS server and search paths](#override-dns-server-and-search-paths)
+    - [Overriding <code>ndots</code>](#overriding-)
+  - [API changes](#api-changes)
+    - [Semantics](#semantics)
+    - [Invalid configurations](#invalid-configurations)
+  - [Test Plan](#test-plan)
+- [Graduation Criteria](#graduation-criteria)
+- [Implementation History](#implementation-history)
+<!-- /toc -->
 
 ## Summary
 

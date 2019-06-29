@@ -22,15 +22,33 @@ status: implementable
 # Kustomize Exec Secret Generator
 
 ## Table of Contents
-* [Table of Contents](#table-of-contents)
-* [Summary](#summary)
-* [Motivation](#motivation)
-    * [Goals](#goals)
-    * [Non-Goals](#non-goals)
-* [Proposal](#proposal)
-* [Risks and Mitigations](#risks-and-mitigations)
-* [Graduation Criteria](#graduation-criteria)
-* [Implementation History](#implementation-history)
+
+<!-- toc -->
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [New Flags](#new-flags)
+  - [Example](#example)
+    - [Default Path](#default-path)
+    - [Flag Defined Absolute Path](#flag-defined-absolute-path)
+    - [Flag Defined Relative Path](#flag-defined-relative-path)
+    - [Not Enabled](#not-enabled)
+- [Risks and Mitigations](#risks-and-mitigations)
+  - [Security](#security)
+- [Alternatives Considered](#alternatives-considered)
+  - [Git Style Plugins](#git-style-plugins)
+    - [Enable Plugins with Environment Variables](#enable-plugins-with-environment-variables)
+- [Graduation Criteria](#graduation-criteria)
+  - [Graduation to GA](#graduation-to-ga)
+    - [Audit Command](#audit-command)
+    - [More OS Specific install locations](#more-os-specific-install-locations)
+- [Testing and documentation.](#testing-and-documentation)
+  - [Testing](#testing)
+  - [Documentation](#documentation)
+- [Implementation History](#implementation-history)
+<!-- /toc -->
 
 ## Summary
 

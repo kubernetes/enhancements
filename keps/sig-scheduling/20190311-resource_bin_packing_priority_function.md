@@ -20,18 +20,23 @@ status: implementable
 
 ## Table of Contents
 
+<!-- toc -->
 - [Summary](#summary)
 - [Motivation](#motivation)
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
+  - [Argument Input Scenarios](#argument-input-scenarios)
+  - [Design Details](#design-details)
   - [User Stories](#user-stories)
     - [Story 1](#story-1)
-- [Design Details](#design-details)
-  - [Examples](#examples)
+    - [Default Behavior](#default-behavior)
+    - [Extender Resource Scheduler Behavior](#extender-resource-scheduler-behavior)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
+    - [Examples](#examples)
 - [Implementation History](#implementation-history)
+<!-- /toc -->
 
 ## Summary
 

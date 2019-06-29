@@ -24,28 +24,26 @@ superseded-by:
 
 ## Table of Contents
 
-
-   * [Pid Limiting](#pid-limiting)
-      * [Table of Contents](#table-of-contents)
-      * [Summary](#summary)
-      * [Motivation](#motivation)
-         * [Goals](#goals)
-         * [Non-Goals](#non-goals)
-      * [Proposal](#proposal)
-         * [User Stories [optional]](#user-stories-optional)
-         * [Implementation Details/Notes/Constraints [optional]](#implementation-detailsnotesconstraints-optional)
-            * [Pod to Pod Isolation](#pod-to-pod-isolation)
-            * [Node to Pod Isolation](#node-to-pod-isolation)
-            * [Cgroup Enforcement](#cgroup-enforcement)
-         * [Risks and Mitigations](#risks-and-mitigations)
-      * [Graduation Criteria](#graduation-criteria)
-         * [Pod to Pod pid isolation](#pod-to-pod-pid-isolation)
-         * [Node to Pod pid isolation](#node-to-pod-pid-isolation)
-      * [Implementation History](#implementation-history)
-         * [Version 1.10](#version-110)
-         * [Version 1.14](#version-114)
-
-Created by [gh-md-toc](https://github.com/ekalinin/github-markdown-toc)
+<!-- toc -->
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [User Stories [optional]](#user-stories-optional)
+  - [Implementation Details/Notes/Constraints [optional]](#implementation-detailsnotesconstraints-optional)
+    - [Pod to Pod Isolation](#pod-to-pod-isolation)
+    - [Node to Pod Isolation](#node-to-pod-isolation)
+    - [Cgroup Enforcement](#cgroup-enforcement)
+  - [Risks and Mitigations](#risks-and-mitigations)
+- [Graduation Criteria](#graduation-criteria)
+  - [Pod to Pod pid isolation](#pod-to-pod-pid-isolation)
+  - [Node to Pod pid isolation](#node-to-pod-pid-isolation)
+- [Implementation History](#implementation-history)
+  - [Version 1.10](#version-110)
+  - [Version 1.14](#version-114)
+  - [Version 1.15](#version-115)
+<!-- /toc -->
 
 ## Summary
 

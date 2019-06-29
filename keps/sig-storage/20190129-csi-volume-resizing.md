@@ -25,26 +25,22 @@ superseded-by:
 
 ## Table of Contents
 
-Table of Contents
-=================
-
-   * [Support for CSI volume resizing](#support-for-csi-volume-resizing)
-      * [Table of Contents](#table-of-contents)
-   * [Table of Contents](#table-of-contents-1)
-      * [Summary](#summary)
-      * [Motivation](#motivation)
-         * [Goals](#goals)
-         * [Non-Goals](#non-goals)
-      * [Proposal](#proposal)
-         * [External resize controller](#external-resize-controller)
-         * [Expansion on Kubelet](#expansion-on-kubelet)
-             * [Offline volume resizing on kubelet:](#offline-volume-resizing-on-kubelet)
-             * [Online volume resizing on kubelet:](#online-volume-resizing-on-kubelet)
-         * [Risks and Mitigations](#risks-and-mitigations)
-      * [Test Plan](#test-plan)
-      * [Graduation Criteria](#graduation-criteria)
-      * [Implementation History](#implementation-history)
-
+<!-- toc -->
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [External resize controller](#external-resize-controller)
+  - [Expansion on Kubelet](#expansion-on-kubelet)
+    - [Offline volume resizing on kubelet:](#offline-volume-resizing-on-kubelet)
+    - [Online volume resizing on kubelet:](#online-volume-resizing-on-kubelet)
+    - [Supporting per-PVC secret refs](#supporting-per-pvc-secret-refs)
+  - [Risks and Mitigations](#risks-and-mitigations)
+- [Test Plan](#test-plan)
+- [Graduation Criteria](#graduation-criteria)
+- [Implementation History](#implementation-history)
+<!-- /toc -->
 
 ## Summary
 

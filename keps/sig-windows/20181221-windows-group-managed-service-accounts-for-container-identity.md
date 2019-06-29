@@ -29,24 +29,40 @@ status: implementable
 
 
 ## Table of Contents
-<!-- TOC -->
 
-- [Table of Contents](#table-of-contents)
+<!-- toc -->
 - [Summary](#summary)
 - [Motivation](#motivation)
-    - [Goals](#goals)
-    - [Non-Goals](#non-goals)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-    - [User Stories [optional]](#user-stories-optional)
-      - [Web Applications with MS SQL Server](#Web-Applications-with-MS-SQL-Server)
-    - [Implementation Details/Notes/Constraints [optional]](#implementation-detailsnotesconstraints-optional)
-    - [Risks and Mitigations](#risks-and-mitigations)
+  - [Background](#background)
+    - [What is Active Directory?](#what-is-active-directory)
+    - [What is a Windows service account?](#what-is-a-windows-service-account)
+    - [How is it applied to containers?](#how-is-it-applied-to-containers)
+  - [User Stories](#user-stories)
+    - [Web Applications with MS SQL Server](#web-applications-with-ms-sql-server)
+  - [Implementation Details/Notes/Constraints [optional]](#implementation-detailsnotesconstraints-optional)
+    - [GMSA specification for pods and containers](#gmsa-specification-for-pods-and-containers)
+    - [GMSAExpander webhook](#gmsaexpander-webhook)
+    - [GMSAExpander and GMSAAuthorizer Webhooks](#gmsaexpander-and-gmsaauthorizer-webhooks)
+    - [Changes in Kubelet/kuberuntime for Windows:](#changes-in-kubeletkuberuntime-for-windows)
+    - [Changes in CRI API:](#changes-in-cri-api)
+    - [Changes in Dockershim](#changes-in-dockershim)
+    - [Changes in CRIContainerD](#changes-in-cricontainerd)
+    - [Changes in Windows OCI runtime](#changes-in-windows-oci-runtime)
+  - [Risks and Mitigations](#risks-and-mitigations)
+    - [Threat vectors and countermeasures](#threat-vectors-and-countermeasures)
+    - [Transitioning from Alpha annotations to Beta/Stable fields](#transitioning-from-alpha-annotations-to-betastable-fields)
 - [Graduation Criteria](#graduation-criteria)
 - [Implementation History](#implementation-history)
 - [Drawbacks [optional]](#drawbacks-optional)
-- [Alternatives [optional]](#alternatives-optional)
-
-<!-- /TOC -->
+- [Alternatives](#alternatives)
+  - [Other authentication methods](#other-authentication-methods)
+  - [Injecting credentials from a volume](#injecting-credentials-from-a-volume)
+  - [Specifying only the name of GMSACredentialSpec objects in pod spec fields/annotations](#specifying-only-the-name-of-gmsacredentialspec-objects-in-pod-spec-fieldsannotations)
+  - [Enforce presence of GMSAAuthorizer and RBAC mode to enable GMSA functionality in Kubelet](#enforce-presence-of-gmsaauthorizer-and-rbac-mode-to-enable-gmsa-functionality-in-kubelet)
+<!-- /toc -->
 
 ## Summary
 

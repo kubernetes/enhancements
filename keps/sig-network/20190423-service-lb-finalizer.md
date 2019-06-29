@@ -27,17 +27,19 @@ superseded-by:
 
 ## Table of Contents
 
-- [Title](#title)
-  - [Table of Contents](#table-of-contents)
-  - [Release Signoff Checklist](#release-signoff-checklist)
-  - [Summary](#summary)
-  - [Motivation](#motivation)
-    - [Goals](#goals)
-  - [Proposal](#proposal)
-    - [Risks and Mitigations](#risks-and-mitigations)
-    - [Test Plan](#test-plan)
-    - [Graduation Criteria](#graduation-criteria)
-  - [Implementation History](#implementation-history)
+<!-- toc -->
+- [Release Signoff Checklist](#release-signoff-checklist)
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+- [Proposal](#proposal)
+  - [Risks and Mitigations](#risks-and-mitigations)
+    - [n+2 upgrade/downgrade is not supported](#n2-upgradedowngrade-is-not-supported)
+  - [Other notes](#other-notes)
+  - [Test Plan](#test-plan)
+  - [Graduation Criteria](#graduation-criteria)
+- [Implementation History](#implementation-history)
+<!-- /toc -->
 
 ## Release Signoff Checklist
 

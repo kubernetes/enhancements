@@ -25,19 +25,19 @@ superseded-by:
 
 ## Table of Contents
 
-* [Promote sysctl annotations to fields](#promote-sysctl-annotations-to-fields)
-   * [Table of Contents](#table-of-contents)
-   * [Summary](#summary)
-   * [Motivation](#motivation)
-      * [Promote annotations to fields](#promote-annotations-to-fields)
-      * [Promote --experimental-allowed-unsafe-sysctls kubelet flag to kubelet config api option](#promote---experimental-allowed-unsafe-sysctls-kubelet-flag-to-kubelet-config-api-option)
-      * [Gate the feature](#gate-the-feature)
-   * [Proposal](#proposal)
-      * [User Stories](#user-stories)
-      * [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
-      * [Risks and Mitigations](#risks-and-mitigations)
-   * [Graduation Criteria](#graduation-criteria)
-   * [Implementation History](#implementation-history)
+<!-- toc -->
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Promote annotations to fields](#promote-annotations-to-fields)
+  - [Promote <code>--experimental-allowed-unsafe-sysctls</code> kubelet flag to kubelet config api option](#promote--kubelet-flag-to-kubelet-config-api-option)
+  - [Gate the feature](#gate-the-feature)
+- [Proposal](#proposal)
+  - [User Stories](#user-stories)
+  - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
+  - [Risks and Mitigations](#risks-and-mitigations)
+- [Graduation Criteria](#graduation-criteria)
+- [Implementation History](#implementation-history)
+<!-- /toc -->
 
 ## Summary
 

@@ -29,35 +29,30 @@ see-also:
 
 ## Table of Contents
 
-   * [Publishing kubernetes packages](#publishing-kubernetes-packages)
-      * [Table of Contents](#table-of-contents)
-      * [Release Signoff Checklist](#release-signoff-checklist)
-      * [Summary](#summary)
-      * [Motivation](#motivation)
-         * [Goals](#goals)
-         * [Non-Goals](#non-goals)
-      * [Proposal](#proposal)
-         * [User Stories](#user-stories)
-         * [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
-         * [Risks and Mitigations](#risks-and-mitigations)
-      * [Design Details](#design-details)
-         * [Test Plan](#test-plan)
-         * [Graduation Criteria](#graduation-criteria)
-            * [Alpha](#alpha)
-            * [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
-            * [Beta -&gt; GA Graduation](#beta---ga-graduation)
-            * [Removing deprecated publishing artifacts](#removing-deprecated-publishing-artifacts)
-         * [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
-         * [Version Skew Strategy](#version-skew-strategy)
-      * [Implementation History](#implementation-history)
-      * [Drawbacks [optional]](#drawbacks-optional)
-      * [Alternatives [optional]](#alternatives-optional)
-      * [Infrastructure Needed](#infrastructure-needed)
-
-
-<!--
-[Tools for generating]: https://github.com/ekalinin/github-markdown-toc
--->
+<!-- toc -->
+- [Release Signoff Checklist](#release-signoff-checklist)
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [User Stories](#user-stories)
+  - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
+  - [Risks and Mitigations](#risks-and-mitigations)
+- [Design Details](#design-details)
+  - [Test Plan](#test-plan)
+  - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
+    - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
+    - [Beta -&gt; GA Graduation](#beta---ga-graduation)
+    - [Removing deprecated publishing artifacts](#removing-deprecated-publishing-artifacts)
+  - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+  - [Version Skew Strategy](#version-skew-strategy)
+- [Implementation History](#implementation-history)
+- [Drawbacks [optional]](#drawbacks-optional)
+- [Alternatives [optional]](#alternatives-optional)
+- [Infrastructure Needed](#infrastructure-needed)
+<!-- /toc -->
 
 ## Release Signoff Checklist
 
