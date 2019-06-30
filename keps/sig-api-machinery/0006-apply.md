@@ -34,6 +34,9 @@ superseded-by:
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [Implementation Details/Notes/Constraints [optional]](#implementation-detailsnotesconstraints-optional)
+    - [Status Wiping](#status-wiping)
+      - [Current Behavior](#current-behavior)
+      - [Proposed Change](#proposed-change)
     - [API Topology](#api-topology)
       - [Lists](#lists)
       - [Maps and structs](#maps-and-structs)
@@ -143,10 +146,33 @@ The linked documents should be read for a more complete picture.
 
 (TODO: update this section with current design)
 
-What are the caveats to the implementation?
-What are some important details that didn't come across above.
-Go in to as much detail as necessary here.
-This might be a good place to talk about core concepts and how they releate.
+#### Status Wiping
+
+##### Current Behavior
+
+Right before being persisted to etcd, resources in the apiserver undergo a preparation mechanism that is custom for every resource kind and takes care of things like incrementing object generation and status wiping. This happens through this [interface](https://github.com/kubernetes/kubernetes/blob/bc1360ab158d524c5a7132c8dd9dc7f7e8889af1/staging/src/k8s.io/apiserver/pkg/registry/rest/update.go#L49) for update and [this](https://github.com/kubernetes/kubernetes/blob/bc1360ab158d524c5a7132c8dd9dc7f7e8889af1/staging/src/k8s.io/apiserver/pkg/registry/rest/create_update.go#L37) for create.
+
+The problem status wiping at this level creates is, that when a user applies a field that gets wiped later on, it gets owned by said user. The apply mechanism (FieldManager) can not know which fields get wiped for which resource and therefor can not ignore those. Additionally ignoring status as a whole is not enough, as it should be possible to own status (and other fields) in some occasions. More conversation on this can be found in the [GitHub issue](https://github.com/kubernetes/kubernetes/issues/75564) where the problem got reported.
+
+##### Proposed Change
+
+From looking at various implementations of `PrepareForUpdate` throughout the current resource kinds, the two main actions found were wiping fields (including status) and incrementing generation.
+
+This can be separated into actions that should/can only be executed once per request (incrementing generation) and actions that can be executed multiple times (wiping).
+
+The proposed change here is, to split what happens in `PrepareForUpdate` accordingly and add an interface that allows FieldManager to call the wiping functionality itself before updating field ownership. Later on, where it happens right now, before persisting the object, both the wiping and the generation incrementing code can be run together.
+
+The wiping interface is proposed as:
+
+```go
+# staging/src/k8s.io/apimachinery/pkg/runtime/interfaces.go
+type ObjectWiper interface {
+  // WipeFields takes an Object (must be a pointer) and wipes any fields that are not allowed to be changed by a user
+  WipeFields(in Object)
+}
+```
+
+TODO: add example implementation and describe how this will be available to both the fieldManager and storage.
 
 #### API Topology
 
