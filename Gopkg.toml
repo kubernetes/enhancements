@@ -1,6 +1,7 @@
 required = [
   "github.com/client9/misspell/cmd/misspell",
-  "github.com/tallclair/mdtoc"
+  "github.com/tallclair/mdtoc",
+  "github.com/chuckha/kepview"
 ]
 
 [prune]

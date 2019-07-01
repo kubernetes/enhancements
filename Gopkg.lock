@@ -10,6 +10,19 @@
   version = "v0.3.1"
 
 [[projects]]
+  branch = "master"
+  digest = "1:dae70dd90d4778dfb750806d9da1132d0476d7624667c8c028957290fd29b7c0"
+  name = "github.com/chuckha/kepview"
+  packages = [
+    ".",
+    "cmd/kepval",
+    "keps",
+    "keps/validations",
+  ]
+  pruneopts = "NUT"
+  revision = "1c4a214e81dc19d5904c635e4b7840fd15341800"
+
+[[projects]]
   digest = "1:a58083c7c5f9e83cc3bc1af06f53b92693ed6cbdf691a1f3a14dcb2bcee2f53c"
   name = "github.com/client9/misspell"
   packages = [
@@ -45,6 +58,14 @@
   version = "v2.0.46"
 
 [[projects]]
+  digest = "1:14715f705ff5dfe0ffd6571d7d201dd8e921030f8070321a79380d8ca4ec1a24"
+  name = "github.com/pkg/errors"
+  packages = ["."]
+  pruneopts = "NUT"
+  revision = "ba968bfe8b2f7e042a574c888954fccecfa385b4"
+  version = "v0.8.1"
+
+[[projects]]
   branch = "master"
   digest = "1:fb6bf60699d5d6e82e587b28fbb12972c4b2afe1ff787997be7edbe2af85705e"
   name = "github.com/tallclair/mdtoc"
@@ -52,10 +73,20 @@
   pruneopts = "NUT"
   revision = "4dc3d6f908138504b02a1766f1f8ea282d6bdd7c"
 
+[[projects]]
+  digest = "1:18108594151654e9e696b27b181b953f9a90b16bf14d253dd1b397b025a1487f"
+  name = "gopkg.in/yaml.v2"
+  packages = ["."]
+  pruneopts = "NUT"
+  revision = "51d6538a90f86fe93ac480b35f37b2be17fef232"
+  version = "v2.2.2"
+
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
   input-imports = [
+    "github.com/chuckha/kepview",
+    "github.com/chuckha/kepview/cmd/kepval",
     "github.com/client9/misspell/cmd/misspell",
     "github.com/tallclair/mdtoc",
   ]
