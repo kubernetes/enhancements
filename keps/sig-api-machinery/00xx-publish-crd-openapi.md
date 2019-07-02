@@ -17,7 +17,7 @@ creation-date: 2019-02-07
 last-updated: 2019-02-13
 status: implementable
 see-also:
-  - [Validation for CustomResources design doc](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/api-machinery/customresources-validation.md)
+  - "[Validation for CustomResources design doc](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/api-machinery/customresources-validation.md)"
 ---
 
 # Publish CRD OpenAPI

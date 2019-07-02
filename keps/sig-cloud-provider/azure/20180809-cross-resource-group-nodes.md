@@ -7,10 +7,10 @@ owning-sig: sig-azure
 participating-sigs:
   - sig-azure
 reviewers:
-  - name: "@khenidak"
-  - name: "@justaugustus"
+  - "@khenidak"
+  - "@justaugustus"
 approvers:
-  - name: "@brendanburns"
+  - "@brendanburns"
 editor: 
   - "@feiskyer"
 creation-date: 2018-08-09

@@ -1,19 +1,19 @@
 ---
 title: Certificates copy for join --control-plane
 authors:
-  - @fabriziopandini
+  - "@fabriziopandini"
 owning-sig: sig-clusterlifecycle
 participating-sigs:
-  - 
+  -
 reviewers:
-  - @neolit123 
-  - @detiber 
-  - @mattmoyer 
-  - @chuckha 
-  - @liztio 
+  - "@neolit123"
+  - "@detiber"
+  - "@mattmoyer"
+  - "@chuckha"
+  - "@liztio"
 approvers:
-  - @timothysc
-  - @luxas
+  - "@timothysc"
+  - "@luxas"
 editor: TBD
 creation-date: 2019-01-22
 last-updated: 2019-04-18
@@ -21,9 +21,9 @@ status: implementable
 see-also:
   - KEP-0015
 replaces:
-  - 
+  -
 superseded-by:
-  - 
+  -
 ---
 
 # Certificates copy for join --control-plane

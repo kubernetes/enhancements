@@ -5,11 +5,11 @@ authors:
   - "@justinsb"
 owning-sig: sig-cluster-lifecycle
 reviewers:
-  - @luxas
-  - @roberthbailey
-  - @timothysc
+  - "@luxas"
+  - "@roberthbailey"
+  - "@timothysc"
 approvers:
-  - @timothysc
+  - "@timothysc"
 editor: TBD
 creation-date: 2019-01-28
 last-updated: 2019-03-11

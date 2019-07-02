@@ -22,8 +22,7 @@ approvers:
   - "@thockin"
   - "@jbeda"
   - "@deads2k"
-editor:
-  name: "@luxas"
+editor: "@luxas"
 creation-date: 2018-07-07
 last-updated: 2018-08-10
 ---

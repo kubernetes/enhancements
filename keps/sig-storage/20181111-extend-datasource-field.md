@@ -8,9 +8,9 @@ participating-sigs:
 reviewers:
   - TBD
 approvers:
-  - @saad-ali
-  - @thockin
-editor: @j-griffith
+  - "@saad-ali"
+  - "@thockin"
+editor: "@j-griffith"
 creation-date: 2018-11-11
 last-updated: 2019-04-29
 status: implementable

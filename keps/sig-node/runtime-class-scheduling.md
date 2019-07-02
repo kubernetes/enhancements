@@ -17,7 +17,7 @@ status: implementable
 see-also:
   - "/keps/sig-node/runtime-class.md"
 replaces:
-  - [RuntimeClass Scheduling Brainstorm](https://docs.google.com/document/d/1W51yBNTvp0taeEss56GTk8jczqFJ2d6jBeN6sCSlYZU/edit#)
+  - "[RuntimeClass Scheduling Brainstorm](https://docs.google.com/document/d/1W51yBNTvp0taeEss56GTk8jczqFJ2d6jBeN6sCSlYZU/edit#)"
 ---
 
 # RuntimeClass Scheduling

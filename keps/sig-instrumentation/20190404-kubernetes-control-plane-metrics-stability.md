@@ -9,19 +9,19 @@ participating-sigs:
   - sig-api-machinery
   - sig-node
 reviewers:
-  - @brancz
-  - @x13n
-  - @DirectXMan12
-  - @lavalamp
-  - @dashpole
-  - @ehashman
-  - @mml
+  - "@brancz"
+  - "@x13n"
+  - "@DirectXMan12"
+  - "@lavalamp"
+  - "@dashpole"
+  - "@ehashman"
+  - "@mml"
 approvers:
-  - @brancz
-  - @x13n
+  - "@brancz"
+  - "@x13n"
 editor:
-  - @brancz
-  - @x13n
+  - "@brancz"
+  - "@x13n"
 creation-date: 2019-04-04
 see-also:
   - 20181106-kubernetes-metrics-overhaul

@@ -14,8 +14,7 @@ reviewers:
 approvers:
   - "@yujuhong"
   - "@roberthbailey"
-editor:
-  name: "@timothysc"
+editor: "@timothysc"
 creation-date: 2017-10-20
 last-updated: 2018-01-23
 ---
