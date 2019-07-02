@@ -33,6 +33,7 @@ fi
 EXCLUDED_PATTERNS=(
   "verify-all.sh"                # this script calls the make rule and would cause a loop
   "verify-*-dockerized.sh"       # Don't run any scripts that intended to be run dockerized
+  "verify-all-metadata.sh"       # TODO: this can be removed once all old metadata is fixed
   )
 
 EXCLUDED_CHECKS=$(ls ${EXCLUDED_PATTERNS[@]/#/${KUBE_ROOT}\/hack\/} 2>/dev/null || true)
