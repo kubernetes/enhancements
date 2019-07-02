@@ -7,11 +7,10 @@ owning-sig: sig-architecture
 participating-sigs:
   - kubernetes-wide
 reviewers:
-  - name: "@timothysc"
+  - "@timothysc"
 approvers:
-  - name: "@bgrant0607"
-editor:
-  name: "@jbeda"
+  - "@bgrant0607"
+editor: "@jbeda"
 creation-date: 2017-08-22
 status: implementable
 ---

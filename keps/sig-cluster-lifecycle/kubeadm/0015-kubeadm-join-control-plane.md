@@ -11,9 +11,9 @@ authors:
   - "@fabriziopandini"
 owning-sig: sig-cluster-lifecycle
 reviewers:
-  - "@chuckha”
+  - "@chuckha"
   - "@detiber"
-  - "@luxas" 
+  - "@luxas"
 approvers:
   - "@luxas"
   - "@timothysc"
@@ -23,6 +23,7 @@ creation-date: 2018-01-28
 last-updated: 2019-04-18
 see-also:
   - KEP 0004
+---
 ```
 
 ## Table of Contents

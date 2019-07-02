@@ -1,7 +1,7 @@
 ---
 title: Support Out-of-Tree AWS Cloud Provider
 authors:
-  - @andrewsykim
+  - "@andrewsykim"
 owning-sig: sig-cloud-provider
 participating-sigs:
   - sig-aws

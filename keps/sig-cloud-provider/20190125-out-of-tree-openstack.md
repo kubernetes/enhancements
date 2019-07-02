@@ -1,7 +1,7 @@
 ---
 title: Support Out-of-Tree OpenStack Cloud Provider
 authors:
-  - @andrewsykim
+  - "@andrewsykim"
 owning-sig: sig-cloud-provider
 participating-sigs:
   - sig-openstack

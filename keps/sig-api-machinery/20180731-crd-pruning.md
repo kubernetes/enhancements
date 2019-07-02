@@ -15,8 +15,7 @@ reviewers:
 approvers:
   - "@deads2k"
   - "@lavalamp"
-editor:
-  name: "@sttts"
+editor: "@sttts"
 creation-date: 2018-07-31
 last-updated: 2019-04-30
 status: implementable

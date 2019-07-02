@@ -9,7 +9,7 @@ reviewers:
   - "@msau42"
   - "@saad-ali"
 approvers:
-  - name: "@saad-ali"
+  - "@saad-ali"
 editor: TBD
 creation-date: 2019-01-30
 last-updated: 2019-02-01

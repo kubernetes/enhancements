@@ -12,12 +12,12 @@ participating-sigs:
   - sig-cluster-lifecycle
   - sig-cloud-provider
 reviewers:
-  - @brancz from sig-instrumentation
-  - @dashpole from sig-node
-  - @sttts from sig-api-machinery
-  - @DirectXMan12 from sig-cluster-lifecycle
-  - @bsalamat from sig-scheduling
-  - @andrewsykim from sig-cloud-provider
+  - "@brancz from sig-instrumentation"
+  - "@dashpole from sig-node"
+  - "@sttts from sig-api-machinery"
+  - "@DirectXMan12 from sig-cluster-lifecycle"
+  - "@bsalamat from sig-scheduling"
+  - "@andrewsykim from sig-cloud-provider"
 approvers:
   - "@brancz"
 creation-date: 2019-06-05

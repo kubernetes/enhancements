@@ -22,8 +22,7 @@ approvers:
   - "@jbeda"
   - "@bgrant0607"
   - "@smarterclayton"
-editor:
-  name: "@luxas"
+editor: "@luxas"
 creation-date: 2018-11-27
 last-updated: 2018-12-10
 ---

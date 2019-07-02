@@ -7,10 +7,10 @@ participating-sigs:
   - sig-apps
   - sig-architecture
 reviewers:
-  - @thockin
+  - "@thockin"
 approvers:
-  - @derekwaynecarr
-  - @thockin
+  - "@derekwaynecarr"
+  - "@thockin"
 editor: TBD
 creation-date: 2019-02-21
 last-updated: 2019-05-18

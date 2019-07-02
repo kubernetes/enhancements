@@ -8,10 +8,10 @@ participating-sigs:
   - sig-azure
   - sig-storage
 reviewers:
-  - name: "@khenidak"
-  - name: "@colemickens"
+  - "@khenidak"
+  - "@colemickens"
 approvers:
-  - name: "@brendanburns"
+  - "@brendanburns"
 editor:
   - "@feiskyer"
 creation-date: 2018-07-11

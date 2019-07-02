@@ -17,7 +17,7 @@ approvers:
   - "@khenidak"
   - "@hogepodge"
   - "@jagosan"
-editor: @feiskyer
+editor: "@feiskyer"
 creation-date: 2019-01-29
 last-updated: 2019-05-06
 status: provisional
