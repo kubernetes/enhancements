@@ -90,6 +90,16 @@ In v1, this annotation will be required in order to create a CRD for a resource 
 This doesn't actively prevent bad actors from simply setting the annotation, but it does prevent accidentally claiming
 an inappropriate name. 
 
+### What to do if you accidentally put an unapproved API in a protected group
+1. Get the current state and future changes approved.  For community projects, this is the best choice if the current state
+   is approvable.
+2. If there are structural problems with the API's current state that prevent approval, you have two choices.
+   1. restructure in a new version, maintaining a conversion webhook, and plan to stop serving the old version.  There are
+      some cases where this may not work if the changes are not roundtrippable, but they should be rare.
+   2. restructure in a new API group. There will be no connection to existing data.  This may be disruptive for non-alpha APIs, but these 
+      names are reserved and the process of API review has been in place for some time.  The expectation is that this is
+      the exceptional case of an exceptional case.
+
 ## References
 
 * [Accidental name in Kanary](https://libraries.io/github/AmadeusITGroup/kanary))
