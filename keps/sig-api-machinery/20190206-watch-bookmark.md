@@ -153,6 +153,10 @@ send as assumed by the implementation.
 Given the nature of the feature (no guarantees that bookmarks will be send
 to the watcher), no e2e tests will be added.
 
+For `Beta` a metrics exposing number of processed `init events` is gathered
+by our scalability test framework so that the impact can be clearly proved
+on our dashboards.
+
 ## Graduation Criteria
 
 Beta:
@@ -170,6 +174,7 @@ GA:
 - 2019-02-12: KEP Summary, Moativation and Proposal merged
 - 2019-03-27: API changes approved in API review
 - 2019-04-16: Implementation merged
+- v1.15: Launched in `Alpha`
 
 ## Rejected alternatives
 
