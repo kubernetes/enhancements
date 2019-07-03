@@ -1,30 +1,29 @@
 ---
 title: Kustomize File Processing Integration
 authors:
- - "@pwittrock"
+  - "@pwittrock"
 owning-sig: sig-cli
 participating-sigs:
- - sig-cli
+  - sig-cli
 reviewers:
- - "@liggitt"
- - "@seans3"
- - "@soltysh"
- - "@monopole"
+  - "@liggitt"
+  - "@seans3"
+  - "@soltysh"
+  - "@monopole"
 approvers:
- - "@liggitt"
- - "@seans3"
- - "@soltysh"
- - "@monopole"
-editors:
- - "@pwittrock"
+  - "@liggitt"
+  - "@seans3"
+  - "@soltysh"
+  - "@monopole"
+editor: "@pwittrock"
 creation-date: 2019-01-17
 last-updated: 2019-03-18
 status: implemented
 see-also:
- - "kustomize-subcommand-integration.md"
+  - "kustomize-subcommand-integration.md"
 replaces:
 superseded-by:
- - n/a
+  - n/a
 ---
 
 # Kustomize File Processing Integration

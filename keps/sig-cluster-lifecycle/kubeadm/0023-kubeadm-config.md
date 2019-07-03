@@ -1,28 +1,24 @@
 ---
-kep-number: 23
 title: Kubeadm config file graduation (v1beta2)
 authors:
   - "@fabriziopandini"
   - "@luxas"
 owning-sig: sig-cluster-lifecycle
 reviewers:
- - "@chuckha"
- - "@detiber"
- - "@liztio"
+  - "@chuckha"
+  - "@detiber"
+  - "@liztio"
 approvers:
- - "@luxas"
- - "@timothysc"
- - "@fabriziopandini"
- - "@neolit123"
-editor:
- - "@fabriziopandini"
- - "@rosti"
- - "@neolit123"
+  - "@luxas"
+  - "@timothysc"
+  - "@fabriziopandini"
+  - "@neolit123"
+editor: "@fabriziopandini"
 creation-date: 2018-08-01
 last-updated: 2019-04-29
 status: implementable
 see-also:
- - KEP 0008
+  - KEP 0008
 ---
 
 # kubeadm Config file graduation (v1beta2)

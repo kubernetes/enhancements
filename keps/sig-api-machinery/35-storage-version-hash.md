@@ -1,5 +1,4 @@
 ---
-kep-number: 35
 title: exposing hashed storage versions via the discovery API
 authors:
   - "@xuchao"

@@ -14,9 +14,9 @@ editor: TBD
 creation-date: 2019-04-25
 last-updated: 2019-04-29
 status: provisional
-see-also: []
-replaces: []
-superseded-by: []
+see-also:
+replaces:
+superseded-by:
 ---
 
 # Metrics API watch support

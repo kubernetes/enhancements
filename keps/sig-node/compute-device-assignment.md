@@ -1,7 +1,7 @@
 ---
-title: Kubelet endpoint for device assignment observation details 
+title: Kubelet endpoint for device assignment observation details
 authors:
-  - "@dashpole" 
+  - "@dashpole"
   - "@vikaschoudhary16"
 owning-sig: sig-node
 reviewers:
@@ -11,9 +11,7 @@ reviewers:
   - "@vishh"
 approvers:
   - "@sig-node-leads"
-editors:
-  - "@dashpole"
-  - "@vikaschoudhary16"
+editor: "@dashpole"
 creation-date: "2018-07-19"
 last-updated: "2019-04-30"
 status: implementable

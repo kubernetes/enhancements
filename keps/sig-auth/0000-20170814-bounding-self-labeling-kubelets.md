@@ -1,5 +1,4 @@
 ---
-kep-number: 0
 title: Bounding Self-Labeling Kubelets
 authors:
   - "@mikedanese"

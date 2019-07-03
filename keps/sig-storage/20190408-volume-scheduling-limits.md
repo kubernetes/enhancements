@@ -19,8 +19,8 @@ creation-date: 2019-04-08
 last-updated: 2019-04-08
 status: implementable
 see-also:
- - https://github.com/kubernetes/enhancements/blob/master/keps/sig-storage/20190129-csi-migration.md
-replaces: https://github.com/kubernetes/enhancements/pull/730
+  - "https://github.com/kubernetes/enhancements/blob/master/keps/sig-storage/20190129-csi-migration.md"
+replaces:
 superseded-by:
 ---
 

@@ -3,8 +3,7 @@ title: Metrics Stability Migration
 authors:
   - "@logicalhan"
   - "@solodov"
-owning-sig:
-  - sig-instrumentation
+owning-sig: sig-instrumentation
 participating-sigs:
   - sig-scheduling
   - sig-node
@@ -21,10 +20,11 @@ reviewers:
 approvers:
   - "@brancz"
 creation-date: 2019-06-05
+last-updated: 2019-07-02
+status: implementable
 see-also:
   - 20181106-kubernetes-metrics-overhaul
   - 20190404-kubernetes-control-plane-metrics-stability
-status: implementable
 ---
 
 # Metrics Stability Migration

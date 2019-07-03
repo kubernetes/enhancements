@@ -1,5 +1,4 @@
 ---
-kep-number: 0018
 title: Reporting Conformance Test Results to Testgrid
 authors:
   - "@andrewsykim"
@@ -21,7 +20,6 @@ editor: TBD
 creation-date: 2018-06-06
 last-updated: 2018-11-16
 status: implementable
-
 ---
 
 # Reporting Conformance Test Results to Testgrid

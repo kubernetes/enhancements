@@ -1,5 +1,4 @@
 ---
-kep-number: 31
 title: Make kube-proxy service abstraction optional
 authors:
   - "@bradhoekstra"

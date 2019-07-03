@@ -1,5 +1,4 @@
 ---
-kep-number: 10
 title: Graduate CoreDNS to GA
 authors:
   - "@johnbelamaric"
@@ -16,9 +15,10 @@ editor: "@rajansandeep"
 creation-date: 2018-03-21
 last-updated: 2018-05-18
 status: provisional
-see-also: https://github.com/kubernetes/community/pull/2167
+see-also:
+  - "https://github.com/kubernetes/community/pull/2167"
 ---
- 
+
 # Graduate CoreDNS to GA
 
 ## Table of Contents

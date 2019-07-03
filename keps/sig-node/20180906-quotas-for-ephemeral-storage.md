@@ -1,10 +1,8 @@
 ---
-kep-number: 0
 title: Quotas for Ephemeral Storage
 authors:
   - "@RobertKrawitz"
-owning-sig:
-  - sig-node
+owning-sig: sig-node
 participating-sigs:
   - sig-node
 reviewers:

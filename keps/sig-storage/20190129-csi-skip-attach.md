@@ -15,7 +15,7 @@ creation-date: 2019-01-29
 last-updated: 2019-01-29
 status: implementable
 see-also:
-  - https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/container-storage-interface-skip-attach.md
+  - "https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/container-storage-interface-skip-attach.md"
 replaces:
 superseded-by:
 ---

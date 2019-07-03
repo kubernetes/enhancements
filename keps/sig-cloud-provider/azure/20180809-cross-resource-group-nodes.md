@@ -1,5 +1,4 @@
 ---
-kep-number: 25
 title: Cross resource group nodes
 authors:
   - "@feiskyer"
@@ -11,8 +10,7 @@ reviewers:
   - "@justaugustus"
 approvers:
   - "@brendanburns"
-editor: 
-  - "@feiskyer"
+editor: "@feiskyer"
 creation-date: 2018-08-09
 last-updated: 2018-09-29
 status: implementable

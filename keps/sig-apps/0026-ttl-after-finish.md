@@ -1,5 +1,4 @@
 ---
-kep-number: 26
 title: TTL After Finished
 authors:
   - "@janetkuo"

@@ -13,9 +13,9 @@ approvers:
 editor: "@pwittrock"
 creation-date: 2019-03-12
 last-updated: 2019-03-12
-see-also:
-  - https://github.com/kubernetes/enhancements/blob/master/keps/sig-cli/kustomize-secret-generator-plugins.md
 status: implementable
+see-also:
+  - "https://github.com/kubernetes/enhancements/blob/master/keps/sig-cli/kustomize-secret-generator-plugins.md"
 ---
 
 

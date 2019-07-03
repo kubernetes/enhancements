@@ -1,5 +1,4 @@
 ---
-kep-number: 8
 title: Kustomize
 authors:
   - "@pwittrock"

@@ -1,5 +1,4 @@
 ---
-kep-number: 30
 title: Migrating API objects to latest storage version
 authors:
   - "@xuchao"

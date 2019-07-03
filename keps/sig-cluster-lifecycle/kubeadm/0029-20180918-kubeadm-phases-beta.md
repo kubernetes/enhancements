@@ -1,24 +1,22 @@
 ---
-kep-number: 29
 title: kubeadm phases to beta
 authors:
   - "@fabriziopandini"
 owning-sig: sig-cluster-lifecycle
 reviewers:
- - "@chuckha"
- - "@detiber"
- - "@liztio"
- - "@neolit123"
+  - "@chuckha"
+  - "@detiber"
+  - "@liztio"
+  - "@neolit123"
 approvers:
- - "@luxas"
- - "@timothysc"
-editor:
- - "@fabriziopandini"
+  - "@luxas"
+  - "@timothysc"
+editor: "@fabriziopandini"
 creation-date: 2018-03-16
 last-updated: 2019-01-22
 status: provisional
 see-also:
- - KEP 0008
+  - KEP 0008
 ---
 
 # kubeadm phases to beta

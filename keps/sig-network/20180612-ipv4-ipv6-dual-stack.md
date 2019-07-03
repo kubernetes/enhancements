@@ -17,7 +17,6 @@ editor: TBD
 creation-date: 2018-05-21
 last-updated: 2019-05-02
 status: implementable
-
 ---
 
 # IPv4/IPv6 Dual Stack

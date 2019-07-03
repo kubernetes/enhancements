@@ -17,7 +17,7 @@ creation-date: 2019-04-25
 last-updated: 2019-04-25
 status: implemented
 replaces:
-  - (https://github.com/kubernetes/community/blob/master/contributors/design-proposals/api-machinery/customresource-conversion-webhook.md)
+  - "(https://github.com/kubernetes/community/blob/master/contributors/design-proposals/api-machinery/customresource-conversion-webhook.md)"
 ---
 
 # CustomResourceDefinition Conversion Webhook

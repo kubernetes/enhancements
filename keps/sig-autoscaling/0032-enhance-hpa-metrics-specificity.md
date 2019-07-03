@@ -1,5 +1,4 @@
 ---
-kep-number: 0032
 title: Enhance HPA Metrics Specificity
 authors:
   - "@directxman12"
@@ -15,6 +14,7 @@ approvers:
   - "@directxman12"
 editor: "@directxman12"
 creation-date: 2018-04-19
+last-updated: 2019-06-27
 status: implemented
 ---
 

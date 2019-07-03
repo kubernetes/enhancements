@@ -1,5 +1,4 @@
 ---
-kep-number: TBD
 title: AWS LoadBalancer Prefix
 authors:
   - "@minherz"

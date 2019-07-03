@@ -1,5 +1,4 @@
 ---
-kep-number: 18
 title: Azure Availability Zones
 authors:
   - "@feiskyer"
@@ -12,8 +11,7 @@ reviewers:
   - "@colemickens"
 approvers:
   - "@brendanburns"
-editor:
-  - "@feiskyer"
+editor: "@feiskyer"
 creation-date: 2018-07-11
 last-updated: 2018-09-29
 status: implementable

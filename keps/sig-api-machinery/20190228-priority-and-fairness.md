@@ -16,9 +16,9 @@ editor: TBD
 creation-date: 2019-02-28
 last-updated: 2019-02-28
 status: implementable
-see-also: []
-replaces: []
-superseded-by: []
+see-also:
+replaces:
+superseded-by:
 ---
 
 # Priority and Fairness for API Server Requests

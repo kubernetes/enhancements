@@ -17,8 +17,8 @@ creation-date: 2019-02-04
 last-updated: 2019-03-01
 status: implementable
 see-also:
-- https://github.com/kubernetes/community/blob/master/sig-scalability/slos/pod_startup_latency.md
-- https://github.com/kubernetes/perf-tests/blob/master/clusterloader2/docs/design.md
+  - "https://github.com/kubernetes/community/blob/master/sig-scalability/slos/pod_startup_latency.md"
+  - "https://github.com/kubernetes/perf-tests/blob/master/clusterloader2/docs/design.md"
 replaces:
 superseded-by:
 ---

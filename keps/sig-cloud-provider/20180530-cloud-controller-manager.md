@@ -1,5 +1,4 @@
 ---
-kep-number: 2
 title: Cloud Controller Manager
 authors:
   - "@cheftako"
@@ -21,6 +20,8 @@ reviewers:
 approvers:
   - "@thockin"
 editor: TBD
+creation-date: 2018-01-09
+last-updated: 2019-06-27
 status: provisional
 replaces:
   - contributors/design-proposals/cloud-provider/cloud-provider-refactoring.md

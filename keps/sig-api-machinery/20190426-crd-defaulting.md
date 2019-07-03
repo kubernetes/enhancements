@@ -19,8 +19,8 @@ creation-date: 2019-04-26
 last-updated: 2019-05-01
 status: implementable
 see-also:
- - "/keps/sig-api-machinery/20180731-crd-pruning.md"
- - "/keps/sig-api-machinery/20190425-structural-openapi.md"
+  - "/keps/sig-api-machinery/20180731-crd-pruning.md"
+  - "/keps/sig-api-machinery/20190425-structural-openapi.md"
 ---
 
 # Defaulting for Custom Resources

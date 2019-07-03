@@ -12,7 +12,7 @@ editor: TBD
 creation-date: 2019-03-07
 last-updated: 2019-03-07
 status: provisional
-superseded-by: TBD
+superseded-by:
 ---
 
 # Configurable scale up/down velocity for HPA

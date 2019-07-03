@@ -1,5 +1,4 @@
 ---
-kep-number: 34
 title: HugePages
 authors:
   - "@derekwaynecarr"
@@ -11,13 +10,13 @@ participating-sigs:
 reviewers:
   - "@vishnu"
 approvers:
-  - "@dawnchen" 
+  - "@dawnchen"
 editor: Derek Carr
 creation-date: 2019-01-29
 last-updated: 2019-03-05
 status: implemented
-see-also: 
-replaces: 
+see-also:
+replaces:
 superseded-by:
 ---
 

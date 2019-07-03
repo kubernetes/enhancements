@@ -1,5 +1,4 @@
 ---
-kep-number: 0
 title: Publish CRD OpenAPI
 authors:
   - "@roycaihw"

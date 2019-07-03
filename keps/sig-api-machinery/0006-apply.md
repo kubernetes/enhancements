@@ -1,5 +1,4 @@
 ---
-kep-number: 6
 title: Apply
 authors:
   - "@lavalamp"

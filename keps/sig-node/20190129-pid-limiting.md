@@ -1,5 +1,4 @@
 ---
-kep-number: 34
 title: Pid Limiting
 authors:
   - "@derekwaynecarr"
@@ -10,13 +9,13 @@ reviewers:
   - "@dashpole"
 approvers:
   - "@dashpole"
-  - "@dchen1107" 
+  - "@dchen1107"
 editor: Derek Carr
 creation-date: 2019-01-29
-last-updated: 2019-03-5
+last-updated: 2019-06-27
 status: implemented
-see-also: 
-replaces: 
+see-also:
+replaces:
 superseded-by:
 ---
 

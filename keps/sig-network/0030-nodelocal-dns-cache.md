@@ -1,5 +1,4 @@
 ---
-kep-number: 30
 title: NodeLocal DNS Cache
 authors:
   - "@prameshj"

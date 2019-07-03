@@ -1,9 +1,7 @@
 ---
-kep-number: 33
 title: Topology-aware service routing
-status: implementable
 authors:
-    - "@m1093782566"
+  - "@m1093782566"
 owning-sig: sig-network
 reviewers:
   - "@thockin"
@@ -12,6 +10,7 @@ approvers:
   - "@thockin"
 creation-date: 2018-10-24
 last-updated: 2018-12-03
+status: implementable
 ---
 
 # Topology-aware service routing

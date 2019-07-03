@@ -1,5 +1,4 @@
 ---
-kep-number: 34
 title: Enabling clients to tell if resource endpoints serve the same set of objects
 authors:
   - "@xuchao"
@@ -11,7 +10,7 @@ approvers:
   - "@deads2k"
   - "@lavalamp"
 creation-date: 2018-10-12
-last-updated: 2018-xx-xx
+last-updated: 2019-06-27
 status: provisional
 ---
 

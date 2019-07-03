@@ -1,30 +1,29 @@
 ---
 title: Kustomize Subcommand Integration
 authors:
- - "@Liujingfang1"
+  - "@Liujingfang1"
 owning-sig: sig-cli
 participating-sigs:
- - sig-cli
+  - sig-cli
 reviewers:
- - "@liggitt"
- - "@seans3"
- - "@soltysh"
+  - "@liggitt"
+  - "@seans3"
+  - "@soltysh"
 approvers:
- - "@liggitt"
- - "@seans3"
- - "@soltysh"
-editors:
- - "@pwittrock"
+  - "@liggitt"
+  - "@seans3"
+  - "@soltysh"
+editor: "@pwittrock"
 creation-date: 2018-11-07
 last-updated: 2019-02-15
 status: implemented
 see-also:
- - "[kustomize](https://github.com/kubernetes-sigs/kustomize/blob/master/docs/workflows.md)"
- - "kustomize-file-processing-integration.md" 
+  - "[kustomize](https://github.com/kubernetes-sigs/kustomize/blob/master/docs/workflows.md)"
+  - "kustomize-file-processing-integration.md"
 replaces:
- - "0008-kustomize.md"
+  - "0008-kustomize.md"
 superseded-by:
- - n/a
+  - n/a
 ---
 
 # Kustomize Subcommand Integration

@@ -1,9 +1,7 @@
 ---
-kep-number: TBD
 title: IPVS Load Balancing Mode in Kubernetes
-status: implemented
 authors:
-    - "@rramkumar1"
+  - "@rramkumar1"
 owning-sig: sig-network
 reviewers:
   - "@thockin"
@@ -11,10 +9,10 @@ reviewers:
 approvers:
   - "@thockin"
   - "@m1093782566"
-editor:
-  - "@thockin"
-  - "@m1093782566"
+editor: "@thockin"
 creation-date: 2018-03-21
+last-updated: 2019-06-27
+status: implemented
 ---
 
 # IPVS Load Balancing Mode in Kubernetes

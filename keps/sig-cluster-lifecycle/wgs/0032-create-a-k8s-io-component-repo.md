@@ -1,6 +1,5 @@
 ---
 title: Create a `k8s.io/component-base` repo
-status: implementable
 authors:
   - "@luxas"
   - "@sttts"
@@ -25,6 +24,7 @@ approvers:
 editor: "@luxas"
 creation-date: 2018-11-27
 last-updated: 2018-12-10
+status: implementable
 ---
 
 # Create a `k8s.io/component-base` repo
