@@ -17,8 +17,8 @@ reviewers:
   - "@krousey"
   - "@khenidak"
 approvers:
-  - "@deads2k" - For Kube API Server portion of KEP
-  - "@bowei" - For networking/proxy portion of KEP
+  - "@deads2k - For Kube API Server portion of KEP"
+  - "@bowei - For networking/proxy portion of KEP"
 editor: "@calebamiles"
 creation-date: 2019-02-25
 last-updated: 2019-04-30

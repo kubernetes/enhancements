@@ -1,26 +1,24 @@
 ---
-kep-number: 34
 title: Scheduling Framework
 authors:
-  - '@bsalamat'
-  - '@misterikkit'
+  - "@bsalamat"
+  - "@misterikkit"
 owning-sig: sig-scheduling
-participating-sigs: []
+participating-sigs:
 reviewers:
-  - '@huang-wei'
-  - '@k82cn'
-  - '@ravisantoshgudimetla'
+  - "@huang-wei"
+  - "@k82cn"
+  - "@ravisantoshgudimetla"
 approvers:
-  - '@k82cn'
+  - "@k82cn"
 editor: TBD
 creation-date: 2018-04-09
 last-updated: 2019-04-30
 status: implementable
-see-also: []
+see-also:
 replaces:
-  - >-
-    https://github.com/kubernetes/community/blob/master/contributors/design-proposals/scheduling/scheduling-framework.md
-superseded-by: []
+  - "https://github.com/kubernetes/community/blob/master/contributors/design-proposals/scheduling/scheduling-framework.md"
+superseded-by:
 ---
 # Scheduling Framework
 

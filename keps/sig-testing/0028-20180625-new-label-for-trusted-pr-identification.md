@@ -1,5 +1,4 @@
 ---
-kep-number: 28
 title: New label for trusted PR identification
 authors:
   - "@matthyx"

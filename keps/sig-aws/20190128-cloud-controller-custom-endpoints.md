@@ -14,9 +14,9 @@ editor: "@micahhausler"
 creation-date: 2019-01-28
 last-updated: 2019-01-28
 status: provisional
-see-also: []
-replaces: []
-superseded-by: []
+see-also:
+replaces:
+superseded-by:
 ---
 
 # Custom endpoint support for AWS Cloud Provider

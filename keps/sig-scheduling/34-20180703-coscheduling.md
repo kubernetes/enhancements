@@ -1,5 +1,4 @@
 ---
-kep-number: 34
 title: Coscheduling
 authors:
   - "@k82cn"
@@ -12,7 +11,7 @@ reviewers:
 approvers:
   - "@bsalamat"
 creation-date: 2018-07-03
-last-updated: 2019-1-3
+last-updated: 2019-01-03
 status: provisional
 ---
 

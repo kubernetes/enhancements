@@ -1,5 +1,4 @@
 ---
-kep-number: 8
 title: Efficient Node Heartbeat
 authors:
   - "@wojtek-t"
@@ -20,8 +19,8 @@ creation-date: 2018-04-27
 last-updated: 2018-04-27
 status: implementable
 see-also:
-  - https://github.com/kubernetes/kubernetes/issues/14733
-  - https://github.com/kubernetes/kubernetes/pull/14735
+  - "https://github.com/kubernetes/kubernetes/issues/14733"
+  - "https://github.com/kubernetes/kubernetes/pull/14735"
 replaces:
   - n/a
 superseded-by:

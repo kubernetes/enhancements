@@ -1,7 +1,5 @@
 ---
-kep-number: 3
 title: Kubernetes Cluster Management API
-status: provisional
 authors:
   - "@roberthbailey"
   - "@pipejakob"
@@ -12,11 +10,10 @@ reviewers:
 approvers:
   - "@justinsb"
   - "@timothysc"
-editor:
-  - "@justinsb"
-  - "@timothysc"
+editor: "@justinsb"
 creation-date: 2018-01-19
 last-updated: 2019-04-04
+status: provisional
 ---
 
 # Kubernetes Cluster Management API

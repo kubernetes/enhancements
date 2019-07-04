@@ -42,6 +42,7 @@ func main() {
 		if kep.Error == nil {
 			continue
 		}
+
 		fmt.Printf("%v has an error: %q\n", filename, kep.Error.Error())
 		exit = 1
 	}

@@ -1,5 +1,4 @@
 ---
-kep-number: 13
 title: Removing In-Tree Cloud Providers
 authors:
   - "@andrewsykim"
@@ -26,8 +25,9 @@ approvers:
   - "@thockin"
   - "@liggit"
 editor: TBD
+creation-date: 2018-12-18
+last-updated: 2019-04-11
 status: implementable
-
 ---
 
 # Removing In-Tree Cloud Provider Code

@@ -1,5 +1,4 @@
 ---
-kep-number: 28
 title: Optional Service Environment Variables
 authors:
   - "@bradhoekstra"
@@ -15,7 +14,7 @@ creation-date: 2018-09-25
 last-updated: 2018-09-25
 status: provisional
 see-also:
-  - https://github.com/kubernetes/community/pull/1249
+  - "https://github.com/kubernetes/community/pull/1249"
 replaces:
 superseded-by:
 ---

@@ -1,5 +1,4 @@
 ---
-kep-number: 32
 title: Data Driven Commands for Kubectl
 authors:
   - "@pwittrock"

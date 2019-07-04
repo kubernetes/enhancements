@@ -1,5 +1,4 @@
 ---
-kep-number: 24
 title: Kubectl Plugins
 authors:
   - "@juanvallejo"

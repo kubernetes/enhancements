@@ -13,7 +13,6 @@ editor: TBD
 creation-date: 2019-01-25
 last-updated: 2019-01-25
 status: provisional
-
 ---
 
 # Supporting Out-of-Tree IBM Cloud Provider

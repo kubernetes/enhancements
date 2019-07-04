@@ -3,7 +3,7 @@ title: graduate-aws-nlb-to-beta
 authors:
   - "@M00nF1sh"
 owning-sig: sig-aws
-participating-sigs: null
+participating-sigs:
 reviewers:
   - "@dnishi"
 approvers:
@@ -14,7 +14,6 @@ creation-date: 2019-05-01
 last-updated: 2019-05-01
 status: implementable
 see-also:
-  - 
 replaces:
 superseded-by:
 ---

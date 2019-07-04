@@ -1,5 +1,4 @@
 ---
-kep-number: draft-20181127
 title: AWS ALB Ingress Controller
 authors:
   - "@M00nF1sh"

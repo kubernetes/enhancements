@@ -1,5 +1,4 @@
 ---
-kep-number: 1a
 title: Meta KEP Implementation
 authors:
   - "@justaugustus"

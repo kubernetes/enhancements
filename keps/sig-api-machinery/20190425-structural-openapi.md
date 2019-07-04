@@ -1,5 +1,5 @@
 ---
-title: Vanilla CRD OpenAPI Subset: Structural Schemas
+title: "Vanilla CRD OpenAPI Subset: Structural Schemas"
 authors:
   - "@sttts"
   - "@mbohlool"

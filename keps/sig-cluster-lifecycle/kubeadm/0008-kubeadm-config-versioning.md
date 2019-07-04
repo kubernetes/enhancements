@@ -1,10 +1,9 @@
 ---
-kep-number: draft-20180412
 title: Kubeadm Config versioning
 authors:
   - "@liztio"
 owning-sig: sig-cluster-lifecycle
-participating-sigs: []
+participating-sigs:
 reviewers:
   - "@timothysc"
 approvers:
@@ -13,9 +12,9 @@ editor: TBD
 creation-date: 2018-04-12
 last-updated: 2018-04-12
 status: draft
-see-also: []
-replaces: []
-superseded-by: []
+see-also:
+replaces:
+superseded-by:
 ---
 
 # Kubeadm Config Versioning

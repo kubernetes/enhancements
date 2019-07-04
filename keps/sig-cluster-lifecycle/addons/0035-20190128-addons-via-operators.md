@@ -1,5 +1,4 @@
 ---
-kep-number: 35
 title: Addons via Operators
 authors:
   - "@justinsb"

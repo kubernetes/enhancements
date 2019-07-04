@@ -2,8 +2,7 @@
 title: Kubernetes Control-Plane Metrics Stability
 authors:
   - "@logicalhan"
-owning-sig:
-  - sig-instrumentation
+owning-sig: sig-instrumentation
 participating-sigs:
   - sig-instrumentation
   - sig-api-machinery
@@ -19,13 +18,12 @@ reviewers:
 approvers:
   - "@brancz"
   - "@x13n"
-editor:
-  - "@brancz"
-  - "@x13n"
+editor: "@brancz"
 creation-date: 2019-04-04
+last-updated: 2019-06-05
+status: implementable
 see-also:
   - 20181106-kubernetes-metrics-overhaul
-status: implementable
 ---
 
 # Kubernetes Control-Plane Metrics Stability

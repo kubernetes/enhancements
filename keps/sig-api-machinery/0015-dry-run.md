@@ -1,5 +1,4 @@
 ---
-kep-number: 15
 title: Dry-run
 authors:
   - "@apelisse"

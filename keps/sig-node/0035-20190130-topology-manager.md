@@ -1,5 +1,4 @@
 ---
-kep-number: 35
 title: Node Topology Manager
 authors:
   - "@ConnorDoyle"
@@ -20,8 +19,8 @@ editor: Louise Daly
 creation-date: 2019-01-30
 last-updated: 2019-01-30
 status: implementable
-see-also: 
-replaces: 
+see-also:
+replaces:
 superseded-by:
 ---
 

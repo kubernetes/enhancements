@@ -1,22 +1,22 @@
 ---
 title: Support for CSI volume resizing
 authors:
-  - "@gnufied
+  - "@gnufied"
 owning-sig: sig-storage
 participating-sigs:
   - sig-storage
 reviewers:
-  - @saad-ali
-  - @jsafrane
+  - "@saad-ali"
+  - "@jsafrane"
 approvers:
-  - @saad-ali
-  - @childsb
+  - "@saad-ali"
+  - "@childsb"
 creation-date: 2019-01-29
 last-updated: 2019-01-29
 status: implementable
 see-also:
-    - [Kubernetes Volume expansion](https://github.com/kubernetes/enhancements/issues/284)
-    - [Online resizing design](https://github.com/kubernetes/enhancements/pull/737)
+  - "[Kubernetes Volume expansion](https://github.com/kubernetes/enhancements/issues/284)"
+  - "[Online resizing design](https://github.com/kubernetes/enhancements/pull/737)"
 replaces:
 superseded-by:
 ---

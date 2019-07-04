@@ -1,5 +1,4 @@
 ---
-kep-number: 11
 title: Switch CoreDNS to the default DNS
 authors:
   - "@johnbelamaric"

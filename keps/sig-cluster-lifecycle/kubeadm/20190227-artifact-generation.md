@@ -16,7 +16,7 @@ approvers:
   - "@timothysc"
 editor: "@Klaven"
 creation-date: 2019-02-15
-last-updated: yyyy-mm-dd
+last-updated: 2019-02-27
 status: implementable
 see-also:
   - "https://github.com/kubernetes/enhancements/pull/843"

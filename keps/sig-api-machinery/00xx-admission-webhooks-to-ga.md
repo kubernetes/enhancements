@@ -1,5 +1,4 @@
 ---
-kep-number: 36
 title: Graduate Admission Webhooks to GA
 authors:
   - "@mbohlool"

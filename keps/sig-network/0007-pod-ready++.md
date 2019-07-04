@@ -1,5 +1,4 @@
 ---
-kep-number: 1
 title: Pod Ready++
 authors:
   - "freehan@"
@@ -13,11 +12,10 @@ reviewers:
 approvers:
   - thockin@
   - dchen1107@
-editor: freehan@
+editor: "freehan@"
 creation-date: 2018-04-01
 last-updated: 2018-04-01
 status: provisional
-
 ---
 
 # Pod Ready++

@@ -19,15 +19,16 @@ set -o nounset
 set -o pipefail
 
 export KUBE_ROOT=$(dirname "${BASH_SOURCE}")/..
+cd ${KUBE_ROOT}
 
 go install ./vendor/github.com/chuckha/kepview/cmd/kepval
-if ! which kepview >/dev/null 2>&1; then
-    echo "Can't find kepview - is your GOPATH 'bin' in your PATH?" >&2
+if ! which kepval >/dev/null 2>&1; then
+    echo "Can't find kepval - is your GOPATH 'bin' in your PATH?" >&2
     echo "  GOPATH: ${GOPATH}" >&2
     echo "  PATH:   ${PATH}" >&2
     exit 1
 fi
 
-# TODO: perhaps there is a way to make the template valid while still
-# communicating the expected date format.
-grep --recursive --files-with-matches --regexp '---' --include='*.md' keps | grep --invert-match "YYYYMMDD-kep-template.md" | xargs kepval
+# * ignore "0023-documentation-for-images.md" because it is not a real KEP
+# * ignore "YYYYMMDD-kep-template.md" because it is not a real KEP
+grep --recursive --files-with-matches --regexp '---' --include='*.md' keps | grep --invert-match "YYYYMMDD-kep-template.md" | grep --invert-match "0023-documentation-for-images.md" | xargs kepval

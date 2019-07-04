@@ -1,7 +1,5 @@
 ---
-kep-number: 4
 title: Kubernetes Bootstrap Checkpointing Proposal
-status: implemented
 authors:
   - "@timothysc"
 owning-sig: sig-cluster-lifecycle
@@ -17,6 +15,7 @@ approvers:
 editor: "@timothysc"
 creation-date: 2017-10-20
 last-updated: 2018-01-23
+status: implemented
 ---
 
 # Kubernetes Bootstrap Checkpointing Proposal

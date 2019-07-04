@@ -15,7 +15,7 @@ creation-date: 2019-01-29
 last-updated: 2019-01-29
 status: implementable
 see-also:
-  - https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/container-storage-interface-pod-information.md
+  - "https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/container-storage-interface-pod-information.md"
 replaces:
 superseded-by:
 ---

@@ -1,5 +1,4 @@
 ---
-kep-number: 0007
 title: A community forum for Kubernetes
 authors:
   - "@castrojo"
@@ -12,7 +11,6 @@ reviewers:
 approvers:
   - "@parispittman"
   - "@grodrigues3"
-  
 editor: TBD
 creation-date: 2018-04-03
 last-updated: 2018-04-17

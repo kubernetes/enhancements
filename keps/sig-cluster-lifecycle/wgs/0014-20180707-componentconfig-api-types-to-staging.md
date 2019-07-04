@@ -1,7 +1,5 @@
 ---
-kep-number: 17
 title: Moving ComponentConfig API types to staging repos
-status: implementable
 authors:
   - "@luxas"
   - "@sttts"
@@ -25,6 +23,7 @@ approvers:
 editor: "@luxas"
 creation-date: 2018-07-07
 last-updated: 2018-08-10
+status: implementable
 ---
 
 # Moving ComponentConfig API types to staging repos

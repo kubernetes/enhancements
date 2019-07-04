@@ -1,5 +1,4 @@
 ---
-kep-number: 8
 title: Protomote sysctl annotations to fields
 authors:
   - "@ingvagabund"

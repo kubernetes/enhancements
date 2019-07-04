@@ -13,9 +13,9 @@ approvers:
 editor: TBD
 creation-date: 2019-01-30
 last-updated: 2019-02-01
-see-also:
-  - https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/raw-block-pv.md
 status: implementable
+see-also:
+  - "https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/raw-block-pv.md"
 ---
 
 # CSI Raw Block Volumes

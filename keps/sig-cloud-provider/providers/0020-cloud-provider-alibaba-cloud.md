@@ -1,5 +1,4 @@
 ---
-kep-number: 20
 title: Cloud Provider for Alibaba Cloud
 authors:
   - "@aoxn"
@@ -14,7 +13,6 @@ editor: TBD
 creation-date: 2018-06-20
 last-updated: 2018-06-20
 status: provisional
-
 ---
 
 # Cloud Provider for Alibaba Cloud

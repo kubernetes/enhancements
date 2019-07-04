@@ -19,9 +19,9 @@ creation-date: 2019-01-24
 last-updated: 2019-01-24
 status: implementable
 see-also:
-  - https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/volume-topology-scheduling.md
+  - "https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/volume-topology-scheduling.md"
 replaces:
-  - https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/local-storage-pv.md
+  - "https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/local-storage-pv.md"
 superseded-by:
 ---
 

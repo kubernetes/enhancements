@@ -16,8 +16,8 @@ creation-date: 2019-01-25
 last-updated: 2019-02-01
 status: implementable
 see-also:
-  - https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/grow-volume-size.md
-  - https://github.com/kubernetes/community/pull/1535
+  - "https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/grow-volume-size.md"
+  - "https://github.com/kubernetes/community/pull/1535"
 replaces:
 superseded-by:
 ---

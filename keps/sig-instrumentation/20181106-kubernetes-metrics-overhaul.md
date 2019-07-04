@@ -10,9 +10,7 @@ reviewers:
 approvers:
   - "@piosz"
   - "@DirectXMan12"
-editors:
-  - "@DirectXMan12"
-  - "@danielqsj"
+editor: "@DirectXMan12"
 creation-date: 2018-11-06
 last-updated: 2019-03-21
 status: implementable

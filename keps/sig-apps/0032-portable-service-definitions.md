@@ -1,7 +1,6 @@
 # KEP: Portable Service Definitions
 
 ---
-kep-number: 31
 title: Portable Service Definitions
 authors:
   - "@mattfarina"
@@ -26,7 +25,6 @@ status: provisional
 see-also:
 replaces:
 superseded-by:
-
 ---
 
 # Portable Service Definitions

@@ -4,9 +4,7 @@
 
 ```yaml
 ---
-kep-number: 15
-title: kubeadm join --control-plane workflow
-status: accepted
+title: "kubeadm join --control-plane workflow"
 authors:
   - "@fabriziopandini"
 owning-sig: sig-cluster-lifecycle
@@ -17,10 +15,10 @@ reviewers:
 approvers:
   - "@luxas"
   - "@timothysc"
-editor:
-  - "@fabriziopandini"
+editor: "@fabriziopandini"
 creation-date: 2018-01-28
 last-updated: 2019-04-18
+status: accepted
 see-also:
   - KEP 0004
 ---

@@ -1,5 +1,4 @@
 ---
-kep-number: 5
 title: Contributor Site
 authors:
   - "@jbeda"
