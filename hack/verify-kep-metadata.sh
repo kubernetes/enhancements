@@ -29,6 +29,6 @@ if ! which kepval >/dev/null 2>&1; then
     exit 1
 fi
 
-# TODO: perhaps there is a way to make the template valid while still
-# communicating the expected date format.
+# * ignore "0023-documentation-for-images.md" because it is not a real KEP
+# * ignore "YYYYMMDD-kep-template.md" because it is not a real KEP
 grep --recursive --files-with-matches --regexp '---' --include='*.md' keps | grep --invert-match "YYYYMMDD-kep-template.md" | grep --invert-match "0023-documentation-for-images.md" | xargs kepval
