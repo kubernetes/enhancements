@@ -11,7 +11,7 @@ approvers:
   - "@deads2k"
   - "@lavalamp"
 creation-date: 2019-02-06
-last-updated: 2019-07-02
+last-updated: 2019-04-30
 status: implementable
 see-also:
   - "https://github.com/kubernetes/kubernetes/issues/73585"

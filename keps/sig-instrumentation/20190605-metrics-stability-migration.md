@@ -20,7 +20,7 @@ reviewers:
 approvers:
   - "@brancz"
 creation-date: 2019-06-05
-last-updated: 2019-07-02
+last-updated: 2019-06-27
 status: implementable
 see-also:
   - 20181106-kubernetes-metrics-overhaul

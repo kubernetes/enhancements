@@ -21,7 +21,7 @@ approvers:
   - "@thockin"
 editor: TBD
 creation-date: 2018-01-09
-last-updated: 2019-06-27
+last-updated: 2019-04-10
 status: provisional
 replaces:
   - contributors/design-proposals/cloud-provider/cloud-provider-refactoring.md
