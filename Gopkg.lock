@@ -11,7 +11,7 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:dae70dd90d4778dfb750806d9da1132d0476d7624667c8c028957290fd29b7c0"
+  digest = "1:ec85bf30d11286b143ce17bbc6534782c2c426e5566cc6df5e7568b4db320856"
   name = "github.com/chuckha/kepview"
   packages = [
     ".",
@@ -20,7 +20,7 @@
     "keps/validations",
   ]
   pruneopts = "NUT"
-  revision = "1c4a214e81dc19d5904c635e4b7840fd15341800"
+  revision = "b97ce7d3f1daca6bc79d60952e461df3ffa88a5b"
 
 [[projects]]
   digest = "1:a58083c7c5f9e83cc3bc1af06f53b92693ed6cbdf691a1f3a14dcb2bcee2f53c"

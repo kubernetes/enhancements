@@ -73,7 +73,17 @@ func ValidateStructure(parsed map[interface{}]interface{}) error {
 
 		// figure out the types
 		switch strings.ToLower(k) {
-		case "title", "owning-sig", "editor", "status", "creation-date", "last-updated":
+		// optional strings
+		case "editor":
+			if empty {
+				continue
+			}
+			fallthrough
+		case "title", "owning-sig", "status", "creation-date", "last-updated":
+			switch v := value.(type) {
+			case []interface{}:
+				return &ValueMustBeString{k, v}
+			}
 			v, ok := value.(string)
 			if !ok && v == "" {
 				return &MustHaveOneValue{k}
@@ -86,13 +96,22 @@ func ValidateStructure(parsed map[interface{}]interface{}) error {
 			if empty {
 				continue
 			}
+			switch v := value.(type) {
+			case []interface{}:
+				if len(v) == 0 {
+					continue
+				}
+			case interface{}:
+				continue
+			}
 			fallthrough
 		case "authors", "reviewers", "approvers":
-			v, ok := value.([]interface{})
-			if !ok && len(v) == 0 {
-				return &MustHaveAtLeastOneValue{k}
-			}
-			if !ok {
+			switch v := value.(type) {
+			case []interface{}:
+				if len(v) == 0 {
+					return &MustHaveAtLeastOneValue{k}
+				}
+			case interface{}:
 				return &ValueMustBeListOfStrings{k, v}
 			}
 		}

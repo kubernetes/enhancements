@@ -20,7 +20,6 @@ import (
 	"bufio"
 	"io"
 	"strings"
-	"time"
 
 	"github.com/chuckha/kepview/keps/validations"
 	"github.com/pkg/errors"
@@ -34,19 +33,19 @@ func (p *Proposals) AddProposal(proposal *Proposal) {
 }
 
 type Proposal struct {
-	Title             string    `yaml:"title"`
-	Authors           []string  `yaml:,flow`
-	OwningSIG         string    `yaml:"owning-sig"`
-	ParticipatingSIGs []string  `yaml:"participating-sigs",flow`
-	Reviewers         []string  `yaml:,flow`
-	Approvers         []string  `yaml:,flow`
-	Editor            string    `yaml:"editor"`
-	CreationDate      time.Time `yaml:"creation-date"`
-	LastUpdated       time.Time `yaml:"last-updated"`
-	Status            string    `yaml:"status"`
-	SeeAlso           []string  `yaml:"see-also"`
-	Replaces          []string  `yaml:"replaces"`
-	SupersededBy      []string  `yaml:"superseded-by"`
+	Title             string   `yaml:"title"`
+	Authors           []string `yaml:,flow`
+	OwningSIG         string   `yaml:"owning-sig"`
+	ParticipatingSIGs []string `yaml:"participating-sigs",flow,omitempty`
+	Reviewers         []string `yaml:,flow`
+	Approvers         []string `yaml:,flow`
+	Editor            string   `yaml:"editor,omitempty"`
+	CreationDate      string   `yaml:"creation-date"`
+	LastUpdated       string   `yaml:"last-updated"`
+	Status            string   `yaml:"status"`
+	SeeAlso           []string `yaml:"see-also,omitempty"`
+	Replaces          []string `yaml:"replaces,omitempty"`
+	SupersededBy      []string `yaml:"superseded-by,omitempty"`
 
 	Filename string `yaml:"-"`
 	Error    error  `yaml:"-"`
@@ -64,11 +63,12 @@ func (p *Parser) Parse(in io.Reader) *Proposal {
 			count++
 			continue
 		}
+		if count == 1 {
+			metadata = append(metadata, []byte(line)...)
+		}
 		if count == 2 {
 			break
 		}
-		metadata = append(metadata, []byte(line)...)
-
 	}
 	proposal := &Proposal{}
 	if err := scanner.Err(); err != nil {
