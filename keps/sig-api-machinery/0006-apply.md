@@ -150,25 +150,31 @@ The linked documents should be read for a more complete picture.
 
 ##### Current Behavior
 
-Right before being persisted to etcd, resources in the apiserver undergo a preparation mechanism that is custom for every resource kind and takes care of things like incrementing object generation and status wiping. This happens through this [interface](https://github.com/kubernetes/kubernetes/blob/bc1360ab158d524c5a7132c8dd9dc7f7e8889af1/staging/src/k8s.io/apiserver/pkg/registry/rest/update.go#L49) for update and [this](https://github.com/kubernetes/kubernetes/blob/bc1360ab158d524c5a7132c8dd9dc7f7e8889af1/staging/src/k8s.io/apiserver/pkg/registry/rest/create_update.go#L37) for create.
+Right before being persisted to etcd, resources in the apiserver undergo a preparation mechanism that is custom for every resource kind.
+It takes care of things like incrementing object generation and status wiping.
+This happens through [PrepareForUpdate](https://github.com/kubernetes/kubernetes/blob/bc1360ab158d524c5a7132c8dd9dc7f7e8889af1/staging/src/k8s.io/apiserver/pkg/registry/rest/update.go#L49)
+for update and [PrepareForCreate](https://github.com/kubernetes/kubernetes/blob/bc1360ab158d524c5a7132c8dd9dc7f7e8889af1/staging/src/k8s.io/apiserver/pkg/registry/rest/create_update.go#L37) for create.
 
-The problem status wiping at this level creates is, that when a user applies a field that gets wiped later on, it gets owned by said user. The apply mechanism (FieldManager) can not know which fields get wiped for which resource and therefor can not ignore those. Additionally ignoring status as a whole is not enough, as it should be possible to own status (and other fields) in some occasions. More conversation on this can be found in the [GitHub issue](https://github.com/kubernetes/kubernetes/issues/75564) where the problem got reported.
+The problem status wiping at this level creates is, that when a user applies a field that gets wiped later on, it gets owned by said user.
+The apply mechanism (FieldManager) can not know which fields get wiped for which resource and therefor can not ignore those.
+
+Additionally ignoring status as a whole is not enough, as it should be possible to own status (and other fields) in some occasions. More conversation on this can be found in the [GitHub issue](https://github.com/kubernetes/kubernetes/issues/75564) where the problem got reported.
 
 ##### Proposed Change
 
-From looking at various implementations of `PrepareForUpdate` throughout the current resource kinds, the two main actions found were wiping fields (including status) and incrementing generation.
+From looking at various implementations of `PrepareForUpdate` and `PrepareForCreate` throughout the current resource kinds, the two main actions found were resetting fields (including status) and updating fields (like incrementing generation).
 
-This can be separated into actions that should/can only be executed once per request (incrementing generation) and actions that can be executed multiple times (wiping).
+This can be separated into actions that should/can only be executed once per request (updates) and actions that can be executed multiple times (resets).
 
-The proposed change here is, to split what happens in `PrepareForUpdate` accordingly and add an interface that allows FieldManager to call the wiping functionality itself before updating field ownership. Later on, where it happens right now, before persisting the object, both the wiping and the generation incrementing code can be run together.
+The proposed change here is, to split what happens in `PrepareForUpdate` and `PrepareForCreate` accordingly and add an interface that allows FieldManager to call the resetting functionality itself before updating field ownership. Later on, where it happens right now, before persisting the object, both the resetting and the updating code can be run together.
 
-The wiping interface is proposed as:
+The resetting interface is proposed as:
 
 ```go
 # staging/src/k8s.io/apimachinery/pkg/runtime/interfaces.go
-type ObjectWiper interface {
-  // WipeFields takes an Object (must be a pointer) and wipes any fields that are not allowed to be changed by a user
-  WipeFields(in Object)
+type ObjectResetter interface {
+  // ResetFields takes an Object (must be a pointer) and resets any fields that are not allowed to be changed by a user
+  ResetFields(in Object)
 }
 ```
 
