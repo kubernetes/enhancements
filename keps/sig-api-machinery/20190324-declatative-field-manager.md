@@ -18,7 +18,7 @@ status: implemented
 ## Summary
 
 Enable users to set the fieldManager, introduced with Server Side Apply, declaratively when sending the object to the apiserver.
-The Server Side Apply feature introduced ownership of fields to improve merging and improve the object lifecycle when multiple actors interact with the same object.
+The Server Side Apply feature introduced ownership of fields to improve merging and the object lifecycle when multiple actors interact with the same object.
 
 While currently the identifier of the current actor (fieldManager) is set through an request option or the request user-agent,
 this KEP aims to provide a declarative way of setting the current fieldManager through a field in the object itself.
@@ -43,17 +43,18 @@ This would also assist existing solutions already interacting with manifest file
 
 ## Proposal
 
-To realize the goals, we would add a field to ObjectMeta called `fieldManager`, right next to the existing `managedFields`.
-This field should not get persisted to storage and is solely for sending fieldManager information to the apiserver.
-When the field is not set, the apiserver would fallback onto current behavior and default the fieldManager (or fail).
+To achieve the goals, we would add a field to ObjectMeta called `options`, this field would contain options for the api server being only `fieldManager` for now, but might get extended in the future.
+
+This field should not get persisted to storage and is solely for sending request options information to the apiserver.
+When the `options.fieldManager` field is not set, the apiserver would fallback onto current behavior and default the fieldManager (or fail).
 
 This means, we add a field that is optional metadata, write-only and non-persisted.
-The field should take a non empty string or be unset and should follow the same criteria as [ManagedFieldsEntry.Manager](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.14/#managedfieldsentry-v1-meta).
+The `options.fieldManager` should take a non empty string or be unset and should follow the same criteria as [ManagedFieldsEntry.Manager](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.14/#managedfieldsentry-v1-meta).
 
 Setting or not setting the field will cause the following behavior for both apply and non-apply operations:
 
-- If the fieldManager option is set for the request (for example through kubectl), it will get used as manager
-- If the newly introduced `fieldManager` field is set in the received request, it will get used as manager
+- If the fieldManager request option is set for the request (for example through kubectl), it will get used as manager
+- If the newly introduced `options.fieldManager` field is set in the received request, it will get used as manager
 - If both of the  two options are set and do not match, the request will get rejected.
 
 An example of setting the field would be:
@@ -63,7 +64,8 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: example
-  fieldManager: jenkins
+  options:
+    fieldManager: jenkins
 data:
   k: v
 ```
@@ -94,12 +96,18 @@ As the actor now only updates annotations not already owned by the `configManage
 
 All actors now can coexist and manage their set of fields without interfering with each other.
 
+#### Kustomize
+
+In reference to the above workflow, it would be possible to override `options.fieldManager` for differen Kustomize overlays and therefor separate ownership depending on the actor currently active.
+
+This means, updating single fields by using a Kustomize overlay (like updating images, labels or annotations) as part of a CI/CD pipeline could easily contain the fieldManager information without any changes to Kustomize (or similar tools) itself.
+
 ### Risks and Mitigations
 
 One risk might be, that introducing this change would mean there is a field that does not get persisted to storage.
 As a result, setting it causes different behavior on the apiserver, but is not reflected when reading the object back from the apiserver.
 
-This can seem unintuitive and we need to make sure documentation is right on this.
+This can seem unintuitive but should be solved by proper documentation.
 
 ## Design Details
 
@@ -108,19 +116,27 @@ This can seem unintuitive and we need to make sure documentation is right on thi
 ```go
 type ObjectMeta struct {
 ...
-  // ManagedFields maps workflow-id and version to the set of fields
-  // that are managed by that workflow. This is mostly for internal
-  // housekeeping, and users typically shouldn't need to set or
-  // understand this field. A workflow can be the user's name, a
-  // controller's name, or the name of a specific apply path like
-  // "ci-cd". The set of fields is always in the version that the
-  // workflow used when modifying the object.
+  // Options used by the apiserver when handling the object.
+  // This field is write-only, non-persisted and optional.
+  Options *MetaOptions `json:"options,omitempty" protobuf:"bytes,18,opt,name=options"`
+...
+}
+
+type MetaOptions struct {
+  // FieldManager is a name associated with the actor or entity that is responsible for the currently taking place
+  // interaction with the object.
+  // This field is write-only, non-persisted and optional.
+  // It is only used by the apiserver on create, apply and update operations, to set the ManagedFields accordingly.
+  // The value must be unset or less than or 128 characters long, and only contain printable characters, as defined by https://golang.org/pkg/unicode/#IsPrint.
+  //
+  // If the field is unset, the apiserver will default to the request user-agent.
+  // If the request contains the fieldManager option, it acts like this field.
+  // If both this field or the requests fieldManager option are set, but not equal the apply and non-apply operation will fail.
   //
   // This field is alpha and can be changed or removed without notice.
   //
   // +optional
-  ManagedFields []ManagedFieldsEntry `json:"managedFields,omitempty" protobuf:"bytes,17,rep,name=managedFields"`
-...
+  FieldManager string `json:"fieldManager,omitempty" protobuf:"bytes,19,opt,name=fieldManager"`
 }
 ```
 
@@ -143,6 +159,7 @@ When the field is set by a new client, it will get ignored by an old apiserver.
 ## Implementation History
 
 - 30. Mar 2019: @kwiesmueller started implementing the [KEP](https://github.com/kubernetes/kubernetes/pull/75917)
+- 05. July 2019: changes to the field name and location were made in response to PR feedback
 
 ## Drawbacks [optional]
 
