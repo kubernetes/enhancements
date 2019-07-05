@@ -1,22 +1,21 @@
 ---
-kep-number: 37
 title: Kubernetes Image Builder
-status: provisional
 authors:
   - "@timothysc"
   - "@moshloop"
 owning-sig: sig-cluster-lifecycle
 reviewers:
-  - "TBD"
+  - "@justinsb"
+  - "@luxas" 
+  - "@astrieanna"
 approvers:
   - "@justinsb"
   - "@timothysc"
   - "@luxas"
-editor:
-  - "@moshloop"
-  - "@timothysc"
+editor: "@timothysc"
 creation-date: 2019-06-11
-last-updated: 2019-06-11
+last-updated: 2019-07-05
+status: provisional
 ---
 
 # Kubernetes Image Builder
@@ -36,12 +35,12 @@ last-updated: 2019-06-11
   * [Alternatives](#alternatives)
 
 ## Summary
-It is common for modern cloud based software deployments to follow immutable patterns. One of the foundational pieces to this idea is the creation of immutable images. There are already several tools that create images in the kubernetes ecosystem, which include: [Wardroom](https://github.com/heptiolabs/wardroom), [Cluster API AWS](https://github.com/kubernetes-sigs/cluster-api-provider-aws/tree/master/build), [Cluster API vSphere](https://github.com/kubernetes-sigs/cluster-api-provider-vsphere/tree/master/docs/ova), [amazon-eks-ami](https://github.com/awslabs/amazon-eks-ami), [talos](https://docs.talos-systems.com/), [LinuxKit](https://github.com/linuxkit/linuxkit), etc. The purpose of this proposal is to distill down the common requirements and provide the Kubernetes ecosystem with a standard image building utility that can be leveraged by the Kubernetes ecosystem.  
+It is common for modern cloud based software deployments to follow immutable patterns. One of the foundational pieces to this idea is the creation of immutable images. There are already several tools that create images in the Kubernetes ecosystem, which include: [Wardroom](https://github.com/heptiolabs/wardroom), [Cluster API AWS](https://github.com/kubernetes-sigs/cluster-api-provider-aws/tree/master/build), [Cluster API vSphere](https://github.com/kubernetes-sigs/cluster-api-provider-vsphere/tree/master/docs/ova), [amazon-eks-ami](https://github.com/awslabs/amazon-eks-ami), [talos](https://docs.talos-systems.com/), [LinuxKit](https://github.com/linuxkit/linuxkit),[kube-deploy](https://github.com/kubernetes/kube-deploy/tree/master/imagebuilder), etc. The purpose of this proposal is to distill down the common requirements and provide an image building utility that can be leveraged by the Kubernetes ecosystem.  
 
 The purpose of this document is to request the creation of a sub-project of sig-cluster-lifecycle to address this space. 
 
 ## Motivation
-There exists a need in the Kubernetes ecosystem to be able to create repeatable IaaS images across providers for the explicit purpose of being able to deploy a Kubernetes cluster.
+There exists a need to be able to create repeatable IaaS images across providers for the explicit purpose of being able to deploy a Kubernetes cluster.
 
 ### Goals 
 * To build images for Kubernetes-conformant clusters in a consistent way across infrastructures, providers, and business needs.
@@ -63,7 +62,7 @@ There exists a need in the Kubernetes ecosystem to be able to create repeatable 
     * The purpose of the tool is to take an existing image and make it Kubernetes ready.
 
 ## Proposal 
-The Image Builder will start from one image in a supported format and create a new image in the same format specifically for the purpose of creating Kubernetes clusters.  In surveying the landscape of tooling it becomes readily apparent that there are a plethora of tools that provide an opinionated end-to-end user story around image creation, but we’ve observed it can be decomposed into a series of steps, or phases.  By decomposing the problem we can provide a rallying point for different tools to integrate, and provide the kubernetes ecosystem with a common utility and user experience across those tools.
+The Image Builder will start from one image in a supported format and create a new image in the same format specifically for the purpose of creating Kubernetes clusters.  In surveying the landscape of tooling it becomes readily apparent that there are a plethora of tools that provide an opinionated end-to-end user story around image creation, but we’ve observed it can be decomposed into a series of steps, or phases.  By decomposing the problem we can provide a rallying point for different tools to integrate, and provide the Kubernetes ecosystem with a common utility and user experience across those tools.
 
 As a precondition the Image Builder will require a bootable disk image as an input, with native support for the cloud images published by the supported distributions.  However any external process or tool can be used to create the initial disk image from other sources including [ISO](https://packer.io)’s, file trees and [docker](https://github.com/iximiuz/docker-to-linux) images. Existing disk images can also be customized using tools like [virt-customize](http://libguestfs.org/virt-customize.1.html) before being fed into the Image Builder.
 
@@ -88,7 +87,7 @@ Images are verified and cached by looking for a SHA256SUMS, sha256sum.txt file i
 
 **Output:** Running shell inside the root filesystem
 
-Phase 0 will kickoff Phase 1, by either chrooting into the disk or using nested virtualization to boot the image and then SSH into it.
+Phase 0 will kickoff Phase 1, for example by chrooting into the disk or using nested virtualization to boot the image and then SSH into it.
 
 #### Phase 1 (Software Installation / Customization)
 
@@ -112,6 +111,8 @@ alpha: Adoption across Cluster API providers.
 
 ## Implementation History
 KEP created - Jun 12 2019 
+Vote approved - Jul 02 2019 
+
 
 ## Infrastructure Needed
 None at this time, but it's possible this tool could become a critical piece of the test-automation for kubernetes, or Cluster API. 
