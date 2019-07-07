@@ -20,24 +20,20 @@ status: provisional
 
 ## Table of Contents
 
-
 * [Presubmit config inside the tested repo](#presubmit-config-inside-the-tested-repo)
-* [Table of Contents](#table-of-contents)
-* [Release Signoff Checklist](#release-signoff-checklist)
-* [Summary](#summary)
-* [Motivation](#motivation)
-   * [Goals](#goals)
-   * [Non-Goals](#non-goals)
-* [Proposal](#proposal)
-   * [prow/config adjustments](#prowconfig-adjustments)
-   * [New prow/inrepoconfig/api package](#new-prowinrepoconfigapi-package)
-   * [New prow/inrepoconfig package](#new-prowinrepoconfig-package)
-   * [Extend prow/config with configuration to opt-in to this feature](#extend-prowconfig-with-configuration-to-opt-in-to-this-feature)
-   * [Add code to tide and the trigger plugin so they will use presubmits from a prow.yaml if the feature is activated](#add-code-to-tide-and-the-trigger-plugin-so-they-will-use-presubmits-from-a-prowyaml-if-the-feature-is-activated)
-* [Risks and Mitigations](#risks-and-mitigations)
-   * [Plugins may have an inconsitent view on what presubmits exist for a repo](#plugins-may-have-an-inconsitent-view-on-what-presubmits-exist-for-a-repo)
-   * [Someone could accidentally delete all presubmits in prow.yaml and have their PR instantly merged](#someone-could-accidentally-delete-all-presubmits-in-prowyaml-and-have-their-pr-instantly-merged)
-* [Implementation History](#implementation-history)
+   * [Table of Contents](#table-of-contents)
+   * [Release Signoff Checklist](#release-signoff-checklist)
+   * [Summary](#summary)
+   * [Motivation](#motivation)
+      * [Goals](#goals)
+      * [Non-Goals](#non-goals)
+   * [Proposal](#proposal)
+      * [Risks and Mitigations](#risks-and-mitigations)
+         * [Security](#security)
+         * [Components that need the Presubmit configuration but do not have a PullRequest](#components-that-need-the-presubmit-configuration-but-do-not-have-a-pullrequest)
+         * [Running Prow against a platform other than GitHub](#running-prow-against-a-platform-other-than-github)
+   * [Implementation History](#implementation-history)
+
 
 ## Release Signoff Checklist
 
@@ -88,6 +84,9 @@ poses severall challenges:
   Otherwise it is easely possible that the presubmit becomes incompatible with one of the branches
   it is used in, because somone makes a change to its config and forgets to test against all branches.
   This is an additional step maintainers have to remember when branching off.
+* If the `test-infra` repository is not public, outside collaborators are unable to change job configs. This
+  may happen if an organization that uses Prow has a mixture of public and private repositories and chooses
+  not to bear the maintenance overhead of multiple Prow instances
 
 
 ### Goals
@@ -110,6 +109,8 @@ poses severall challenges:
 * Tide executes the presubmits that are defined inside the code repository when it re-tests
 * Renamed blocking presubmits added via pull request trigger a migration on all in-flight PRs
 * Removed blocking presubmits via pull request trigger a status retire on all in-flight PRs
+* All existing functionality except for what is listed in the [Risks and Mitigations](#Risks-and-Mitigations) section will continue to work when `inrepoconfig` is enabled
+* All existing functionality will continue to work when `inrepoconfig` is not enabled
 
 ### Non-Goals
 
@@ -118,160 +119,74 @@ poses severall challenges:
 
 ## Proposal
 
-It is proposed to introduce a the option to configure additional presubmits inside the code
-repositories that are tested by prow via a file named `prow.yaml`
+It is proposed to introduce a the option to configure additional presubmits inside
+the code repositories that are tested by prow via a file named `prow.yaml`.
 
-The minimum part of Prow this has to be integrated with is:
+This requires to change the existing `Config` struct to not expose a `Presubmits`
+property anymore, but instead getter functions to get all Presubmits with the
+ones from the `prow.yaml` added, if applicable.
 
-* The `trigger` plugin as it manages the triggering of Jobs upon Pull Request Events or commands
-* `Tide`, as it re-excutes jobs when the base branch for a pull request changed after it was
-  tested
-
-The following changes will be required:
-
-#### `prow/config` adjustments
-
-The `prow/config` package needs to unite its various defaulting and
-validation funcs for presubmits so that in the end a func can be
-exported that will be used both in case of config reload and
-when additional presubmits are loaded from a `prow.yaml`.
-
-*Open question:* What would be the best signature for such a function?
-It must be able to optionally accept additional presubmits for one repo
-
-#### New `prow/inrepoconfig/api` package
-
-A new package `prow/inrepoconfig/api` will be added which contains all
-the functionality needed by everything that wants to make use of the
-presubmits in `prow.yaml`. It will
-
-* Export a `type InRepoConfig` that will be used to unmarshal the contents of `prow.yaml` into
-* Export a `func New(log *logrus.Entry, c *config.Config, gc *git.Client, org, repo, baseRef string, headRefs []string) (*InRepoConfig, error)`
-
-The `func New` uses the passed in `*git.Client` to fetch the `baseRef`
-and all `headRefs` of the repo and merges them together using the
-appropriate strategy. The appropriate strategy can be found out by leveraging `*Config.Tide.MergeMethod(org, repo)`.
-Using the `*git.Client` has the advantage that it can do caching, which
-is very important for bigger repositories.
-After the merge was done, it is checked if a `prow.yaml` exists.
-Its absence will not be considered an error and an empty `InrepoConfig`
-will get returned.
-If `prow.yaml` exists, it will be unmarshalled using `yaml.UnmarshalStrict`
-to avoid human errors like typos in map keys. If that was successful,
-all presubmits found will be defaulted and validated using the exported
-logic from the `prow/config` package.
-
-*Alternative:* The whole logic for fetching and parsing the `prow.yaml`
-could be put into the `prow/config` package
-
-#### New `prow/inrepoconfig` package
-
-A new package `prow/inrepoconfig` will be added that exports a
-`func HandlePullRequest(log *logrus.Entry, c *config.Config, ghc githubClient, gc *git.Client, pr github.PullRequest)`. It:
-* Is intended to be used by the `trigger` plugin only
-* Initially creates a github status context to prevent merges while
-  fetching and parsing of `prow.yaml` is still in progress
-* Fetches and parses the `prow.yaml` using the `prow/inrepoconfig/api`
-  package
-* Posts a comment to GitHub if an error occurs
-* Updates the status context to `failure` or `success` after the
-  `prow.yaml` parsing is done
-* Has functionality to remove status contexts that existed in an older
-  `baseRef` and got removed in a newer one. This could be done by:
-    * Recognizing status contexts created by Prow  using a combination
-      of a static list (e.G. `tide`) and for the remaining contexts by
-      comparing their `targetURL` with what is configured in Prow as
-      `jobURLPrefix`. If the `targetURL` starts with `jobURlPrefix`
-      and the context does not belong to one of the known presubmits,
-      the status context will be retired.
-    * Leveraging the `status-reconciler`. The `status-reconciler`
-      is edge-driven, meaning whenever there is a configuration change
-      it will use the delta to find presubmits that got removed, then
-      check on all pull requests if they contain a status context for
-      a removed presubmit. To make this work for `prow.yaml`, we would
-      have to extend the `status-reconciler` to get an event from GitHub
-      whenever there is a pushevent to the base branch of any open
-      pull request, so that it can find out if a presubmit defined in
-      `prow.yaml` got removed
-
-
-*Alternative:* This could be put into the `prow/plugins/trigger` package
- as that is the only consumer for this functionality
-
-#### Extend `prow/config` with configuration to opt-in to this feature
-
-This feature should be opt-in to avoid surprises. To achieve that, the
-`ProwConfig` struct in the `prow/config` package has to be extend with
-a `InRepoConfig     map[string]InRepoConfig` property. Also, a
-`func (pc *ProwConfig) InRepoConfigFor(org, repo string) InRepoConfig`
-has to be added that can be used to determine if this functionality is
-enabled. Initially, the `InRepoConfig` struct will be defined as follows:
-
-```
-type InRepoConfig struct {
-  Enabled bool `json:"enabled,omitempty"`
-}
-```
-
-This allows to add further configuration options to this feature in the
-future if needed.
-
-#### Add code to `tide` and the `trigger` plugin so they will use presubmits from a `prow.yaml` if the feature is activated
-
-Both `tide` and the `trigger` plugin will need some code that checks
-if the `prow.yaml` feature is activated and if yes, amend the presubmits
-from it to the presubmits that are configured in the `infra-config` repo.
-
-In `tide` this is very simple, we can just use the `prow/inrepoconfig/api` package to figure out the additional presubmits.
-
-*Open question:* What happens if the merged `prow.yaml` becomes invalid?
-Is tide able to recover from that?
-
-In the `trigger` plugin, we have to check if the `prow.yaml` feature is
-enabled and if yes, use the functionality described from the new `prow/inrepoconfig`
-package to fetch additional presubmits from it.
-
+Additionally, all components that need to access the `Presubmit` configuration need
+to be changed to use the new getters and in most cases, to contain a git client
+which can be used to fetch the `prow.yaml`.
 
 ### Risks and Mitigations
 
-#### Plugins may have an inconsitent view on what presubmits exist for a repo
+#### Security
 
-Currently, the presubmit config is exported as a `map[string][]Presubmit`. With the approach outlined above, plugins have to opt-in
-to see presubmits defined in `prow.yaml`.
+The current attack vector to get credentials out of Prow is a rogue pull requestor
+changing the scripts that are being executed during a test run to print or upload
+credentials that are passed into the job.
 
-A possible mitigation for this could be to unexport the `map[string][]presubmit`
-and replace it with a `func (c* Config) Presubmits(org, repo, baseRef string, headRefs []string) ([]Presubmit, error)`.
-This would require adjusments in all plugins that use the presubmit config.
+With `inrepoconfig` a pull requestor could additionally create new Jobs that use
+credentials that are previously not passed into any job of the repo or that are
+executed on a different Kubernetes cluster which contains higher-privilege credentials.
 
-*Open question with this approach:* What do we do about Prow components that
-require the presubmit config but do not have a revision they work on,
-like e.G `branchprotector`?
+Both the exiting attack vector and the changes introduced via `inrepoconfig` require
+the pull requestor to be an org member or to get an org member to approve the pull
+request for testing.
 
-#### Someone could accidentally delete all presubmits in `prow.yaml` and have their PR instantly merged
+There are several possible approaches to mitigate the added security risk, for
+example:
 
-Pull requests are expected to require a review and a reviewer is expected
-to catch this situation. If there is reason to assume this may not always
-work out, a presubmit could be added in the `infra-config` repo that checks
-if the content of `prow.yaml` matches expectiations.
+* Extend the configuration for `inrepoconfig` to allow/deny specific values for
+	various job properties. Easy to setup, but requires code for every possible
+	property
+* Maintain an allow/deny list for users that are allowed to change job configs
+* Allow operators to configure a webhook, which will then receive all pull request
+	events and their changes to `prow.yaml`. The webhook can then allow or deny that.
+	This is the most flexible solution and would even allow to connect the permission
+	management for `inrepoconfig` to a third-party system like LDAP. It has the drawback
+	that its more complicated to set up and introduces a new SPOF into Prow
 
-#### Security implications
+Finding the best solution to mitigate the security risk added by `inrepoconfig` will
+not be part of its first iteration, because that problem is considered to be much
+easier to solve than finding an agreeable solution on how to implement `inrepoconfig`
+itself.
 
-Today its already possible for someone that can get their pull request tested to hijack credentials by
-changing one of the scripts that is executed by a job that has access to credentials.
+#### Components that need the `Presubmit` configuration but do not have a PullRequest
 
-On top of that, these additional attack vectors would be introduced by a `prow.yaml` feature:
-* It is possible to add additional credentials to a job
-* It is possible to set very high resource requests on a job
-* It is possible to create a high number of jobs, resulting in DOS on the Prow build cluster
-* It is possible to configure arbitrary `build` clusters on a job
+Components that need the `Presubmit` config but do not have a pull request at hand
+can not work as before with `inrepoconfig`. Today, the only component for which this
+applies is the `branchprotector`. This limitation will be documented.
 
-All of these scenarios still require to be an org member or having an org member
-using `/ok-to-test`, thought.
+#### Running Prow against a platform other than GitHub
 
-In a future iteration we can think about configuration options to limit the credentials, resources,
-number of jobs or build clusters that users can allocate via `prow.yaml`
+`inrepoconfig` will be developed to work with `GitHub` only because `Prow` does not
+currently include the needed abstractions to make it easely possible to get it to work
+with other platforms. In particular what is missing is:
+
+* Support for something other than GitHub in the `prow/git` client
+* A reporting abstraction that can report back error conditions to the user
+
+This is a known limitation that will be documented. Should the needed infrastructure
+to integrate `inrepoconfig` with other platforms be available, an inegration should
+be easely possible.
 
 ## Implementation History
 
-A [prototype](https://github.com/kubernetes/test-infra/pull/12836) for this feature was created that
-served as basis for this KEP.
+* A basic but functioning [prototype](https://github.com/kubernetes/test-infra/pull/12836)
+  for this feature was created that served as initial basis for this KEP.
+* A non-working [sketch pull request](https://github.com/kubernetes/test-infra/pull/13342) that shows which parts of Prow need to be touched
+	and how the signatures for the newly-added functions look like was created to
+	be the basis for a discussion on how exactly an implementation could look like
