@@ -185,8 +185,8 @@ To control which CSI driver is allowed to be use ephemeral inline volumes within
   type PodSecurityPolicySpec struct {
 	// <snip>
 
-	// AllowedCSIDrivers is a whitelist of allowed CSI drivers used inline in a pod spec.  Empty or nil indicates that all
-	// CSI drivers may be used.  This parameter is effective only when the usage of the CSI plugin
+	// AllowedCSIDrivers is a whitelist of allowed CSI drivers used inline in a pod spec.  Empty or nil indicates that no
+	// CSI drivers may be used in this way. This parameter is effective only when the usage of the CSI plugin
 	// is allowed in the "Volumes" field.
 	// +optional
 	AllowedCSIDrivers []AllowedCSIDriver
