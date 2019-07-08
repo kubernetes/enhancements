@@ -206,25 +206,45 @@ package topologymanager
 // TopologyManager helps to coordinate local resource alignment
 // within the Kubelet.
 type Manager interface {
-  lifecycle.PodAdmitHandler
-  Store
-  AddHintProvider(HintProvider)
-  RemovePod(podName string)
+    // Implements pod admit handler interface
+    lifecycle.PodAdmitHandler
+    // Adds a hint provider to manager to indicate the hint provider
+    //wants to be consoluted when making topology hints
+    AddHintProvider(HintProvider)
+    // Adds pod to Manager for tracking
+    AddContainer(pod *v1.Pod, containerID string) error
+    // Removes pod from Manager tracking
+    RemoveContainer(containerID string) error
+    // Interface for storing pod topology hints
+    Store
 }
 
 // SocketMask is a bitmask-like type denoting a subset of available sockets.
-type SocketMask struct{} // TBD
-
-// TopologyHints encodes locality to local resources.
-type TopologyHints struct {
-  Sockets []SocketMask
+type SocketMask interface {
+    Add(sockets ...int) error
+    Remove(sockets ...int) error
+    And(masks ...SocketMask)
+    Or(masks ...SocketMask)
+    Clear()
+    Fill()
+    IsEqual(mask SocketMask) bool
+    IsEmpty() bool
+    IsSet(socket int) bool
+    IsNarrowerThan(mask SocketMask) bool
+    String() string
+    Count() int
+    GetSockets() []int
 }
+func NewSocketMask(sockets ...int) (SocketMask, error) { ... }
 
-// HintStore manages state related to the Topology Manager.
-type Store interface {
-  // GetAffinity returns the preferred affinity for the supplied
-  // pod and container.
-  GetAffinity(podName string, containerName string) TopologyHints
+// TopologyHint encodes locality to local resources. Each HintProvider provides
+// a list of these hints to the TopoologyManager for each container at pod
+// admission time.
+type TopologyHint struct {
+    SocketAffinity socketmask.SocketMask
+    // Preferred is set to true when the SocketMask encodes a preferred
+    // allocation for the Container. It is set to false otherwise.
+    Preferred bool
 }
 
 // HintProvider is implemented by Kubelet components that make
@@ -232,8 +252,16 @@ type Store interface {
 // hint provider at pod admission time.
 type HintProvider interface {
   // Returns hints if this hint provider has a preference; otherwise
-  // returns `_, false` to indicate "don't care".
-  GetTopologyHints(pod v1.Pod, containerName string) (TopologyHints, bool)
+  // returns `nil` to indicate "don't care".
+  GetTopologyHints(pod v1.Pod, containerName string) []TopologyHint
+}
+
+// Store manages state related to the Topology Manager.
+type Store interface {
+  // GetAffinity returns the preferred affinity as calculated by the
+  // TopologyManager across all hint providers for the supplied pod and
+  // container.
+  GetAffinity(podName string, containerName string) TopologyHint
 }
 ```
 
@@ -277,8 +305,6 @@ A new feature gate will be added to enable the Topology Manager feature. This fe
     1. Device Manager calls `GetAffinity()` method of Topology Manager when
        deciding device allocation.
  
-
-
 ```diff
 diff --git a/pkg/kubelet/apis/deviceplugin/v1beta1/api.proto b/pkg/kubelet/apis/deviceplugin/v1beta1/api.proto
 index efbd72c133..f86a1a5512 100644
