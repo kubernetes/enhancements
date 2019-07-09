@@ -251,9 +251,11 @@ type TopologyHint struct {
 // topology-related resource assignments. The Topology Manager consults each
 // hint provider at pod admission time.
 type HintProvider interface {
-  // Returns hints if this hint provider has a preference; otherwise
-  // returns `nil` to indicate "don't care".
-  GetTopologyHints(pod v1.Pod, containerName string) []TopologyHint
+  // Returns hints if this hint provider has a preference for any of the
+  // resource types that it governs; otherwise returns `nil` to indicate "don't
+  // care". Hints for different resource types are indexed by their name in the
+  // returned map.
+  GetTopologyHints(pod v1.Pod, containerName string) map[string][]TopologyHint
 }
 
 // Store manages state related to the Topology Manager.
