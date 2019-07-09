@@ -37,11 +37,13 @@ see-also:
     - [Use substructures instead of the old &quot;single flat object&quot;](#use-substructures-instead-of-the-old-single-flat-object)
   - [v1beta2](#v1beta2)
     - [Add config options for new and existing kubeadm features](#add-config-options-for-new-and-existing-kubeadm-features)
+  - [Public types extraction](#public-types-extraction)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Graduation Criteria](#graduation-criteria)
 - [Implementation History](#implementation-history)
   - [v1alpha3 released with Kubernetes 1.12](#v1alpha3-released-with-kubernetes-112)
   - [v1beta1 released with Kubernetes 1.13](#v1beta1-released-with-kubernetes-113)
+  - [v1beta2 released with Kubernetes 1.15](#v1beta2-released-with-kubernetes-115)
 - [Drawbacks](#drawbacks)
 <!-- /toc -->
 
@@ -212,6 +214,22 @@ active (a setting already introduced in `v1beta1`) and an ability to ignore some
 Nevertheless, SIG Cluster Lifecycle should be careful not to add fields that are needed for fairly
 limited use cases.
 
+### Public types extraction
+
+Currently, the kubeadm public API types are housed along with conversion and static defaulting code.
+This brings on unnecessary dependencies to vendoring users of those types. Those dependencies are
+mainly on the kubeadm internal types and packages.
+
+To counter this, the public types have to be extracted in separate packages - one for each supported
+version of the kubeadm configuration. Along with those types, the generated deep copy code needs to
+be moved too along with the schema registration code and documentation.
+The old packages are going to reference the new ones and house the conversion and static defaulting code.
+The chosen location for the extracted APIs is [k/kubeadm](https://github.com/kubernetes/kubeadm).
+
+No code changes, other than replacing the import paths, should be required from users in order to use
+the extracted public types.
+In particular, no changes to the public types should happen as part of extraction process.
+
 ### Risks and Mitigations
 
 This is a change mostly driven by kubeadm maintainers, without an explicit buy-in from customers
@@ -245,6 +263,7 @@ This risk will be mitigated by implementing the change according to following ap
 - There is an upgrade path from earlier versions.
 - The primary kinds that can be serialized/deserialized are `InitConfiguration`,
   `JoinConfiguration` and `ClusterConfiguration`.
+- The versioned types are suitable for vendoring and don't bring internal dependencies with them.
 - ComponentConfig structs for other Kubernetes components are supplied besides
   `ClusterConfiguration` in different YAML documents.
 - SIG Cluster Life cycle is happy with the structure of the types.
@@ -262,6 +281,11 @@ This risk will be mitigated by implementing the change according to following ap
 - Focus on providing more structure of the config format, in contrast with large and mostly flat
   structures that deal with different kinds of settings.
 - Improved the config format with respect to HA.
+
+### v1beta2 released with Kubernetes 1.15
+
+- Added new fields for specifying the encryption key for certificates and for specifying which pre-flight errors to be ignored.
+- **omitempty** has a wider use, but is removed from the *taints* field of NodeRegistrationOptions.
 
 ## Drawbacks
 
