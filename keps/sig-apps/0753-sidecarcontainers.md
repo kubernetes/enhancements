@@ -170,7 +170,9 @@ spec:
     command: ["do something else to help my app"]
 
 ```
-Sidecars will be started before normal containers but after init, so that they are ready before your main processes start.
+PreSidecars will be started before normal containers but after init, so that they are ready before your main processes start.
+
+PostSidecars will be started after normal containers, so that they could do something updation after your main processes start. For example, as for Java application, when we built a stable image for normal container, we find some war files need to be updated. we could do that normal container and postSidecar share one volume, when postSidecar started, it will update war file in the shared volume. That means, normal container's old war would have been updated without building new images. Some other similar examples are applied to update css files for web application.
 
 This will change the Pod startup to look like this:
 * Init containers start
@@ -178,6 +180,7 @@ This will change the Pod startup to look like this:
 * PreSidecars start
 * PreSidecars become ready
 * Containers start
+* Containers become ready
 * PostSidecars start
 * PostSidecars become ready
 
