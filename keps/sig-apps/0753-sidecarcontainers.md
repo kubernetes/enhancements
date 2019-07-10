@@ -3,6 +3,8 @@ title: Sidecar Containers
 authors:
   - "@joseph-irving"
   - "@rata"
+  - "@dixudx"
+  - "@zhangxiaoyu-zidif"
 owning-sig: sig-apps
 participating-sigs:
   - sig-apps
@@ -18,7 +20,7 @@ approvers:
   - "@dchen1107"
 editor: TBD
 creation-date: 2018-05-14
-last-updated: 2020-06-24
+last-updated: 2020-07-15
 status: provisional
 ---
 
@@ -42,8 +44,9 @@ status: provisional
     - [Kubelet Changes:](#kubelet-changes)
       - [Shutdown triggering](#shutdown-triggering)
       - [Sidecars terminated last](#sidecars-terminated-last)
-      - [Sidecars started first](#sidecars-started-first)
-      - [PreStop hooks sent to Sidecars first](#prestop-hooks-sent-to-sidecars-first)
+      - [PreSidecars started first](#presidecars-started-first)
+      - [PreStop hooks sent to PreSidecars and PostSidecars first](#prestop-hooks-sent-to-presidecars-and-postsidecars-first)
+      - [PostSidecars started last](#postsidecars-started-last)
     - [PoC and Demo](#poc-and-demo)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
@@ -128,7 +131,6 @@ An application that has a proxy container acting as a sidecar may fail when it s
 ### Shutdown
 Applications that rely on sidecars may experience a high amount of errors when shutting down as the sidecar may terminate before the application has finished what it's doing.
 
-
 ## Goals
 
 Solve issues so that they don't require application modification:
@@ -141,7 +143,7 @@ Allowing multiple containers to run at once during the init phase - this could b
 
 ## Proposal
 
-Create a way to define containers as sidecars, this will be an additional field to the `container.lifecycle` spec: `Type` which can be either `Standard` (default) or `Sidecar`.
+Create a way to define containers as sidecars, this will be an additional field to the `container.lifecycle` spec: `Type` which can be either `Standard` (default), `PreSidecar` or `PostSidecar`.
 
 e.g:
 ```yaml
@@ -156,11 +158,16 @@ spec:
   - name: myapp
     image: myapp
     command: ['do something']
-  - name: sidecar
-    image: sidecar-image
+  - name: presidecar
+    image: presidecar-image
     lifecycle:
-      type: Sidecar
+      type: PreSidecar
     command: ["do something to help my app"]
+  - name: postsidecar
+    image: postsidecar-image
+    lifecycle:
+      type: PostSidecar
+    command: ["do something else to help my app"]
 
 ```
 Sidecars will be started before normal containers but after init, so that they are ready before your main processes start.
@@ -168,11 +175,13 @@ Sidecars will be started before normal containers but after init, so that they a
 This will change the Pod startup to look like this:
 * Init containers start
 * Init containers finish
-* Sidecars start
-* Sidecars become ready
+* PreSidecars start
+* PreSidecars become ready
 * Containers start
+* PostSidecars start
+* PostSidecars become ready
 
-During pod termination sidecars will be terminated last:
+During pod termination, `PreSidecar` and `PostSidecar` containers are considered equally and will be terminated last:
 * Containers sent SIGTERM
 * Once all Containers have exited: Sidecars sent SIGTERM
 
@@ -204,13 +213,13 @@ New field `Type` will be added to the lifecycle struct:
 ```go
 type Lifecycle struct {
   // Type
-  // One of Standard, Sidecar.
+  // One of Standard, PreSidecar, PostSidecar.
   // Defaults to Standard
   // +optional
   Type LifecycleType `json:"type,omitempty" protobuf:"bytes,3,opt,name=type,casttype=LifecycleType"`
 }
 ```
-New type `LifecycleType` will be added with two constants:
+New type `LifecycleType` will be added with three constants:
 ```go
 // LifecycleType describes the lifecycle behaviour of the container
 type LifecycleType string
@@ -218,8 +227,10 @@ type LifecycleType string
 const (
   // LifecycleTypeStandard is the default container lifecycle behaviour
   LifecycleTypeStandard LifecycleType = "Standard"
-  // LifecycleTypeSidecar means that the container will start up before standard containers and be terminated after
-  LifecycleTypeSidecar LifecycleType = "Sidecar"
+  // LifecycleTypePreSidecar means that the container will start up before standard containers and be terminated after
+  LifecycleTypePreSidecar LifecycleType = "PreSidecar"
+  // LifecycleTypePostSidecar means that the container will start up after standard containers and be terminated after
+  LifecycleTypePostSidecar LifecycleType = "PostSidecar"
 )
 ```
 Note that currently the `lifecycle` struct is only used for `preStop` and `postStop` so we will need to change its description to reflect the expansion of its uses.
@@ -238,15 +249,20 @@ Package `kuberuntime`
 Modify `kuberuntime_container.go`, function `killContainersWithSyncResult`. Break up the looping over containers so that it goes through killing the non-sidecars before terminating the sidecars.
 Note that the containers in this function are `kubecontainer.Container` instead of `v1.Container` so we would need to cross reference with the `v1.Pod` to check if they are sidecars or not. This Pod can be `nil` but only if it's not running, in which case we're not worried about ordering.
 
-##### Sidecars started first
+##### PreSidecars started first
 Package `kuberuntime`
 
-Modify `kuberuntime_manager.go`, function `computePodActions`. If pods has sidecars it will return these first in `ContainersToStart`, until they are all ready it will not return the non-sidecars. Readiness changes do not normally trigger a pod sync, so to avoid waiting for the Kubelet's `SyncFrequency` (default 1 minute) we can modify `HandlePodReconcile` in the `kubelet.go` to trigger a sync when the sidecars first become ready (ie only during startup).
+Modify `kuberuntime_manager.go`, function `computePodActions`. If pods has `PreSidecars` it will return these first in `ContainersToStart`, until they are all ready it will not return the non-sidecars. Readiness changes do not normally trigger a pod sync, so to avoid waiting for the Kubelet's `SyncFrequency` (default 1 minute) we can modify `HandlePodReconcile` in the `kubelet.go` to trigger a sync when the `PreSidecars` first become ready (ie only during startup).
 
-##### PreStop hooks sent to Sidecars first
+##### PreStop hooks sent to PreSidecars and PostSidecars first
 Package `kuberuntime`
 
 Modify `kuberuntime_container.go`, function `killContainersWithSyncResult`. Loop over sidecars and execute `executePreStopHook` on them before moving on to terminating the containers. This approach would assume that PreStop Hooks are idempotent as the sidecars would get sent the PreStop hook again when they are terminated.
+
+##### PostSidecars started last
+Package `kuberuntime`
+
+Modify `kuberuntime_manager.go`, function `computePodActions`. If pods has `PostSidecars`, it will append these to the last of `ContainersToStart`. PostSidecars will not get created until standard containers are all ready. Readiness changes do not normally trigger a pod sync, so to avoid waiting for the Kubelet's `SyncFrequency` (default 1 minute) we can modify `HandlePodReconcile` in the `kubelet.go` to trigger a sync when the `PostSidecars` first become ready (ie only during startup).
 
 #### PoC and Demo
 There is a [PR here](https://github.com/kubernetes/kubernetes/pull/75099) with a working Proof of concept for this KEP, it's just a draft but should help illustrate what these changes would look like.
@@ -255,9 +271,9 @@ Please view this [video](https://youtu.be/4hC8t6_8bTs) if you want to see what t
 
 ### Risks and Mitigations
 
-You could set all containers to have `lifecycle.type: Sidecar`, this would cause strange behaviour in regards to shutting down the sidecars when all the non-sidecars have exited. To solve this the api could do a validation check that at least one container is not a sidecar.
+You could set all containers to have `lifecycle.type: PreSidecar` or `lifecycle.type: PostSidecar`, this would cause strange behaviour in regards to shutting down the sidecars when all the non-sidecars have exited. To solve this the api could do a validation check that at least one container is not a sidecar.
 
-Init containers would be able to have `lifecycle.type: Sidecar` applied to them as it's an additional field to the container spec, this doesn't currently make sense as init containers are ran sequentially. We could get around this by having the api throw a validation error if you try to use this field on an init container or just ignore the field.
+Init containers would be able to have `lifecycle.type: PreSidecar` or `lifecycle.type: PostSidecar` applied to them as it's an additional field to the container spec, this doesn't currently make sense as init containers are ran sequentially. We could get around this by having the api throw a validation error if you try to use this field on an init container or just ignore the field.
 
 Older Kubelets that don't implement the sidecar logic could have a pod scheduled on them that has the sidecar field. As this field is just an addition to the Container Spec the Kubelet would still be able to schedule the pod, treating the sidecars as if they were just a normal container. This could potentially cause confusion to a user as their pod would not behave in the way they expect, but would avoid pods being unable to schedule.
 
@@ -312,6 +328,8 @@ Older Kubelets should still be able to schedule Pods that have sidecar container
   KEP will be evolved with, at least, some already discussed changes.
 
 [stalled]: https://github.com/kubernetes/enhancements/issues/753#issuecomment-597372056
+
+- 15th July 2020: Supports `PreSidecars` and `PostSidecars`
 
 ## Alternatives
 
