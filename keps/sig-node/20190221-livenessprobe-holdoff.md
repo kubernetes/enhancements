@@ -32,6 +32,8 @@ superseded-by:
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [Implementation Details](#implementation-details)
+  - [Why a new probe instead of initializationFailureThreshold](#why-a-new-probe-instead-of-initializationfailurethreshold)
+  - [Configuration example](#configuration-example)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
   - [Feature Gate](#feature-gate)
@@ -108,6 +110,48 @@ Depending on `Started` the probing mechanism in `worker.go` might be altered:
 If `startupProbe` fails more than `failureThreshold` times, the result is the same as today when `livenessProbe` fails: the container is killed and might be restarted depending on `restartPolicy`.
 
 If no `startupProbe` is defined, `Started` is initialized with `true`.
+
+### Why a new probe instead of initializationFailureThreshold
+
+While trying to merge PR [#1014] in time for code-freeze, @thockin has make the following points which I agree with:
+
+> I feel pretty strongly that something like a startupProbe would be net simpler to comprehend than a new field on liveness.
+>
+> In [issuecomment-437208330] we looked at a different take on this API - it is more precise in its meaning and rather than add yet another behavior modifier to probe, it can reuse the probe structure directly.
+
+Here is the excerpt of [issuecomment-437208330] talking about the design:
+
+> An idea that I toyed with but never pursued was a StartupProbe - all the other probes would wait on it at pod startup. It could poll on a relatively short period with a long FailureThreshold. Once it is satisfied, the other probes can start.
+
+I also think the third probe gives more flexibility if we find other good reasons to inhibit `livenessProbe` or `readinessProbe` before something occurs during container startup.
+
+[#1014]: https://github.com/kubernetes/enhancements/pull/1014
+[issuecomment-437208330]: https://github.com/kubernetes/kubernetes/issues/27114#issuecomment-437208330
+
+### Configuration example
+
+This example shows how startupProbe can be used to emulate the functionality of `initializationFailureThreshold` as it was proposed before:
+
+```yaml
+ports:
+- name: liveness-port
+  containerPort: 8080
+  hostPort: 8080
+
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: liveness-port
+  failureThreshold: 1
+  periodSeconds: 10
+
+startupProbe:
+  httpGet:
+    path: /healthz
+    port: liveness-port
+  failureThreshold: 30 (=initializationFailureThreshold)
+  periodSeconds: 10
+```
 
 ## Design Details
 
