@@ -34,6 +34,8 @@ superseded-by:
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [Implementation Details/Notes/Constraints [optional]](#implementation-detailsnotesconstraints-optional)
+    - [Kubectl](#kubectl)
+      - [Server-side Apply](#server-side-apply)
   - [Risks and Mitigations](#risks-and-mitigations)
   - [Testing Plan](#testing-plan)
 - [Graduation Criteria](#graduation-criteria)
@@ -142,6 +144,24 @@ What are the caveats to the implementation?
 What are some important details that didn't come across above.
 Go in to as much detail as necessary here.
 This might be a good place to talk about core concepts and how they releate.
+
+#### Kubectl
+##### Server-side Apply
+Since server-side apply is currently in the Alpha phase, it is not
+enabled by default on kubectl. To use server-side apply on servers
+with the feature, run the command 
+`kubectl apply --experimental-server-side ...`.
+
+If the feature is not available or enabled on the server, the command
+will fail rather than fall-back on client-side apply due to significant
+semantical differences.
+
+As the feature graduates to the Beta phase, the flag will be renamed to `--server-side`.
+
+The long-term plan for this feature is to be the default apply on all
+Kubernetes clusters. The semantical differences between server-side
+apply and client-side apply will make a smooth roll-out difficult, so
+the best way to achieve this has not been decided yet.
 
 ### Risks and Mitigations
 
