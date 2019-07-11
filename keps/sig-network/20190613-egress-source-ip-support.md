@@ -68,7 +68,7 @@ The words "outside k8s cluster" here includes both (1) private network where k8s
 
 ## Motivation
 
-In k8s, egress traffic has its source IP translated (SNAT) to appear as the node IP when it leaves the cluster. However, there are many devices and software that use IP based ACLs to restrict incoming traffic for security reasons and bandwidth limitations. As a result, this kind of ACLs outside k8s cluster will block packets from the pod, which causes a connectivity issue. To resolve this issue, we need a feature to assign a particular static egress source IP to one or more particular pods.
+Egress source IP from pod to outside Kubernetes cluster is not a fixed value. Pod IP can change across pod restart. In addition, when packets leave the cluster, some CNI plugins translate(SNAT) it to appear as the node IP, which can also change across pod restart. However, there are many devices and software that use IP based ACLs to restrict incoming traffic for security reasons and bandwidth limitations. As a result, this kind of ACLs outside k8s cluster will block packets from the pod, which causes a connectivity issue. To resolve this issue, we need a feature to assign a particular static egress source IP to one or more particular pods.
 
 Related discussions are done in [here](https://github.com/kubernetes/kubernetes/issues/12265) and [here](https://github.com/cloudnativelabs/kube-router/issues/434).
 
