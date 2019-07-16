@@ -96,7 +96,7 @@ It is problematic for CSI (`MaxCSIVolumeCountPred`) outlined in [#730](https://g
 - Scheduler does not increase its CPU consumption. Any regression must be approved by sig-scheduling.
   - Scheduler benchmark must be extended to schedule pods with volumes as part of this KEP.
 
-Note: Although we are saying existing predicates will become ``NOOP` in this section and elsewhere, existing predicates still have to look up `CSINode`
+Note: Although we are saying existing predicates will become `NOOP` in this section and elsewhere, existing predicates still have to look up `CSINode`
 object and return early as applicable.
 
 ### Non-Goals
@@ -201,7 +201,9 @@ For brevity - "old predicates" refers to now deprecated cloudprovider specific p
     * Especially, `kubelet --kube-reserved` or `--system-reserved` cannot be used to "reserve" volumes for kubelet or the OS. It is not possible with existing kubelet and this KEP does not change it. We expect that CSI drivers will have configuration options / cmdline arguments to reserve some volumes and they will report their limit already reduced by that reserved amount.
 * Scheduler will respect `Node.status.allocatable` and `Node.status.capacity` for CSI volumes if `CSINode` object is not available or has missing entry in `CSINode.spec.drivers[xyz].allocatable` during a deprecation period but kubelet will stop populating `Node.status.allocatable` and `Node.status.capacity` for CSI volumes.
   * After deprecation period for CSI volumes, limits coming from `Node.status.allocatable` and `Node.status.capacity` will be completely ignored by the scheduler.
-  * After deprecation period, scheduler won't schedule any pods that use CSI volumes to a node with missing `CSINode` instance or missing driver in `CSINode.Spec.Drivers`.
+* Scheduler won't schedule pods with volumes (in-tree or CSI) for which migration has been enabled and driver is not installed on the node yet.
+  * Volumes for which there is no in-tree to CSI migration plan will follow a deprecation cycle before.
+  * Important: this can only be implemented once volume limits are integrated with the cluster autoscaler.
 
 #### Implementation detail for in-tree Drivers with CSI migration disabled
 
@@ -212,14 +214,11 @@ For brevity - "old predicates" refers to now deprecated cloudprovider specific p
 ##### When CSI driver for same underlying storage type is installed on the node.
 
 * For Azure, GCEPD, AWS and Cinder - in-tree volume plugins will report their limits via `Node` object same as before.
-* Old predicates will be modified to perform an additional check of `CSINode` at very beginning of their code. If they detect that `CSINode` object contains limit of same underlying volume type, they will return early(with success) and `MaxCSIVolumeCountPred` will be responsible for counting both CSI and in-tree volumes of same type.
-
 
 #### Implementation detail for in-tree Drivers with CSI migration enabled
 
 * For Azure, GCEPD, AWS and Cinder - in-tree volume plugins will report their limits via `Node` object same as before.
-* As described in section above - old predicates will be modified to perform an additional check of `CSINode` object at very beginning of their code. If they detect that `CSINode` object contains limit of same underlying volume type or CSI migration has been enabled for the volume, the old predicate will return early(with success) and `MaxCSIVolumeCountPred` will be responsible for counting both CSI and in-tree volumes of same type.
-* `MaxCSIVolumeCountPred` will be updated to prevent scheduling of pods with volumes(in-tree or CSI) for which CSI migration has been enabled and driver is not installed yet. Please note this is different from other CSI drivers(for which there is no in-tree to CSI migration plan) where we will follow a deprecation cycle before preventing pod scheduling for unavailable CSI drivers.
+* Old predicates will be modified to perform an additional check of `CSINode`. If they detect that the CSI migration has been enabled for the volume, the old predicate will return early (with success) and `MaxCSIVolumeCountPred` will be responsible for counting both CSI and in-tree volumes of same type.
 
 ### User Stories
 
