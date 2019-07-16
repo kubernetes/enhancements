@@ -85,6 +85,7 @@ spec:
       - name: vol
         csi:
           driver: inline.storage.kubernetes.io
+          # Passed as NodePublishVolumeRequest.volume_context.
           volumeAttributes:
               foo: bar
 ```
@@ -157,14 +158,14 @@ type CSIVolumeSource struct {
 ```
 
 ### Driver mode
-To indicate that the driver will support ephemeral inline volume requests, the existing `CSIDriver` object will be extended to include attribute `Mode`.  Currently the only modes that will be supported are `persistent` and `ephemeral`.  
+To indicate that the driver will support ephemeral inline volume requests, the existing `CSIDriver` object will be extended to include attribute `Mode`.  Currently the only modes that will be supported are `persistent` (the default if not set), `ephemeral`, and `persistent+ephemeral` (both).
 
-When `CSIDriver.Mode == <not specified>` or when `CSIDriver.Mode == persistent`, the driver will function as normal supporting only PV/PVC-requested volumes and
-will receive all persistent volume operation calls (i.e. provision/delete, attach/detach, mount/unmount, etc).
+When `CSIDriver.Mode` is not specified, `persistent`, or `persistent+ephemeral`, the driver can be used normally in PV/PVC-requested volumes and
+will then receive all persistent volume operation calls (i.e. provision/delete, attach/detach, mount/unmount, etc).
 
-When `CSIDriver.Mode == ephemeral` the followings are assumed:
+When `CSIDriver.Mode` is set to `ephemeral` or `persistent+ephemeral`, the following approach is supported:
 * Volume requests will originate from pod specs.
-* The driver will only receive volume operation calls during mount/unmount phase.
+* The driver will only receive volume operation calls during mount/unmount phase (`NodePublishVolume`, `NodeUnpublishVolume`)
 * The driver will not receive separate gRPC calls for provisioning, attaching, detaching, and deleting of volumes.
 * The driver is responsible for implementing steps to ensure the volume is created and made available to the pod during mount call.
 * The Kubelet may attempt to mount a path, with the same generated volumeHandle, more than once. If that happens, the driver should be able to handle such cases gracefully.
@@ -172,6 +173,14 @@ When `CSIDriver.Mode == ephemeral` the followings are assumed:
 * The Kubelet may attempt to call unmount, with the same generated volumeHandle, more than once. If that happens, the driver should be able to handle such cases gracefully.
 
 A misconfigured driver (i.e. a persistent PV/PVC-supported driver with `Mode==ephemeral` or an inline driver with `Mode == persistent`) will not work properly and may cause the driver to fail during operations.  
+
+A driver that supports both modes may need to distinguish in
+`NodePublishVolume` whether the volume is ephemeral or persistent.
+This can be done by enabling the "[pod info on
+mount](https://kubernetes-csi.github.io/docs/csi-driver-object.html#what-fields-does-the-csidriver-object-have)"
+feature which then, in addition to information about the pod, will
+also set an entry with this key in the `NodePublishRequest.volume_context`:
+* `csi.storage.k8s.io/ephemeral`: `true` for ephemeral inline volumes, `false` otherwise
 
 ### Secret reference
 The secret reference declared in an ephemeral inline volume can only be used with namespaces from pods where it is referenced.  The `NodePublishSecretRef` is stored in a `LocalObjectReference` value:
@@ -185,8 +194,8 @@ To control which CSI driver is allowed to be use ephemeral inline volumes within
   type PodSecurityPolicySpec struct {
 	// <snip>
 
-	// AllowedCSIDrivers is a whitelist of allowed CSI drivers used inline in a pod spec.  Empty or nil indicates that all
-	// CSI drivers may be used.  This parameter is effective only when the usage of the CSI plugin
+	// AllowedCSIDrivers is a whitelist of allowed CSI drivers used inline in a pod spec.  Empty or nil indicates that no
+	// CSI drivers may be used in this way. This parameter is effective only when the usage of the CSI plugin
 	// is allowed in the "Volumes" field.
 	// +optional
 	AllowedCSIDrivers []AllowedCSIDriver
