@@ -1,0 +1,350 @@
+---
+title: Seccomp to GA
+authors:
+  - "@tallclair"
+owning-sig: sig-node
+participating-sigs:
+  - sig-apimachinery
+  - sig-auth
+reviewers:
+  - "@liggitt"
+  - TBD
+approvers:
+  - TBD
+editor: TBD
+creation-date: 2019-07-17
+status: provisional
+---
+
+# Seccomp to GA
+
+## Table of Contents
+
+<!-- toc -->
+- [Release Signoff Checklist](#release-signoff-checklist)
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [API](#api)
+    - [Pod API](#pod-api)
+    - [PodSecurityPolicy API](#podsecuritypolicy-api)
+- [Design Details](#design-details)
+  - [Version Skew Strategy](#version-skew-strategy)
+    - [Pod Creation](#pod-creation)
+    - [Pod Update](#pod-update)
+    - [PodSecurityPolicy Creation](#podsecuritypolicy-creation)
+    - [PodSecurityPolicy Update](#podsecuritypolicy-update)
+    - [PodTemplates](#podtemplates)
+  - [Test Plan](#test-plan)
+  - [Graduation Criteria](#graduation-criteria)
+  - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+- [Implementation History](#implementation-history)
+- [Drawbacks](#drawbacks)
+- [Alternatives](#alternatives)
+- [References](#references)
+<!-- /toc -->
+
+## Release Signoff Checklist
+
+**ACTION REQUIRED:** In order to merge code into a release, there must be an issue in [kubernetes/enhancements] referencing this KEP and targeting a release milestone **before [Enhancement Freeze](https://github.com/kubernetes/sig-release/tree/master/releases)
+of the targeted release**.
+
+For enhancements that make changes to code or processes/procedures in core Kubernetes i.e., [kubernetes/kubernetes], we require the following Release Signoff checklist to be completed.
+
+Check these off as they are completed for the Release Team to track. These checklist items _must_ be updated for the enhancement to be released.
+
+- [ ] kubernetes/enhancements issue in release milestone, which links to KEP (this should be a link to the KEP location in kubernetes/enhancements, not the initial KEP PR)
+- [ ] KEP approvers have set the KEP status to `implementable`
+- [ ] Design details are appropriately documented
+- [ ] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [ ] Graduation criteria is in place
+- [ ] "Implementation History" section is up-to-date for milestone
+- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+
+**Note:** Any PRs to move a KEP to `implementable` or significant changes once it is marked `implementable` should be approved by each of the KEP approvers. If any of those approvers is no longer appropriate than changes to that list should be approved by the remaining approvers and/or the owning SIG (or SIG-arch for cross cutting KEPs).
+
+**Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
+
+[kubernetes.io]: https://kubernetes.io/
+[kubernetes/enhancements]: https://github.com/kubernetes/enhancements/issues
+[kubernetes/kubernetes]: https://github.com/kubernetes/kubernetes
+[kubernetes/website]: https://github.com/kubernetes/website
+
+## Summary
+
+This is a proposal to upgrade the seccomp annotation on pods & pod security policies to a field, and
+mark the feature as GA. This proposal aims to do the _bare minimum_ to clean up the feature, without
+blocking future enhancements.
+
+## Motivation
+
+Docker started enforcing a default seccomp profile in v1.10. At the time, Kubernetes (in v1.2)
+didn't have a way to control the seccomp profile, so the profile was disabled (set to `unconfined`)
+to prevent a regression (see https://github.com/kubernetes/kubernetes/pull/21790). In Kubernetes
+v1.3, annotations were added to give users some control over the profile:
+
+```
+seccomp.security.alpha.kubernetes.io/pod: {unconfined,docker/default,localhost/<path>}
+container.seccomp.security.alpha.kubernetes.io/<container_name>: ...
+```
+
+The feature has been more or less unchanged ever since. Also note that the addition predates feature
+gates or our modern concept of feature lifecycle. So, even though the annotations include `alpha` in
+the key, this is entirely useable on any production GA cluster.
+
+There have been multiple attempts to [change the default
+profile](https://github.com/kubernetes/kubernetes/issues/39845) or [formally spec the Kubernetes
+seccomp profile](https://github.com/kubernetes/kubernetes/issues/39128), but both efforts were
+abandoned due to friction and lack of investment.
+
+Despite the `alpha` label, I think this feature needs to be treated as GA, and we're doing our users
+a disservice by leaving it in this weird limbo state. As much as I would like to see seccomp support
+fully fleshed out, if we block GA on those enhancements we will remain stuck in the current state
+indefinitely. Therefore, I'm proposing we do the absolute minimum to clean up the current
+implementation all accurately declare the feature "GA". Future enhancements can follow the standard
+alpha -> beta -> GA feature process.
+
+_NOTE: AppArmor is in a very similar state, but with some subtle differences. Promoting AppArmor to
+GA will be covered by a separate KEP._
+
+### Goals
+
+- Declare seccomp GA
+- Fully document and formally spec the feature support
+- Migrate the annotations to standard API fields
+- Deprecate the seccomp annotations
+
+### Non-Goals
+
+This KEP proposes the absolute minimum to get seccomp to GA, therefore all functional enhancements
+are out of scope, including:
+
+- Changing the default seccomp profile from `unconfined`
+- Defining any standard "Kubernetes branded" seccomp profiles
+- Formally speccing the seccomp profile format in Kubernetes
+- Providing mechanisms for loading profiles from outside the static seccomp node directory
+- Changing the semantics around seccomp support
+
+## Proposal
+
+### API
+
+The seccomp API will be functionally equivalent to the current alpha API. This includes the Pod API,
+which specifies what profile the pod & containers run with, and the PodSecurityPolicy API which
+specifies allowed profiles & a default profile.
+
+#### Pod API
+
+The Pod Seccomp API is immutable.
+
+```go
+type PodSecurityContext struct {
+    ...
+    // The seccomp options to use by the containers in this pod.
+    // +optional
+    Seccomp  *SeccompOptions
+    ...
+}
+
+type SecurityContext struct {
+    ...
+    // The seccomp options to use by this container. If seccomp options are
+    // provided at both the pod & container level, the container options
+    // override the pod options.
+    // +optional
+    Seccomp  *SeccompOptions
+    ...
+}
+
+type SeccompOptions struct {
+    // The seccomp profile to run with.
+    SeccompProfile
+}
+
+// Only one profile source may be set.
+// +union
+type SeccompProfile struct {
+    // No seccomp profile should be set.
+    // +optional
+    Unconfined *bool
+    // Use a predefined profile defined by the runtime.
+    // Most runtimes only support "default"
+    // +optional
+    RuntimeProfile *string
+    // Load a profile defined in static file on the node.
+    // The profile must be preconfigured on the node to work.
+    // +optional
+    LocalhostProfile *string
+}
+```
+
+This API makes the options more explicit than the stringly-typed annotation values, and leaves room
+for new profile sources to be added in the future (e.g. Kubernetes predefined profiles or ConfigMap
+profiles). The seccomp options struct leaves room for future extensions, such as defining the
+behavior when a profile cannot be set.
+
+#### PodSecurityPolicy API
+
+```go
+type PodSecurityPolicySpec struct {
+    ...
+    // seccomp is the strategy that will dictate allowable and default seccomp
+    // profiles for the pod.
+    // +optional
+    Seccomp *SeccompStrategyOptions
+    ...
+}
+
+type SeccompStrategyOptions struct {
+    // The default profile to set on the pod, if non is specified.
+    // The default MUST be allowed by the allowedProfiles.
+    // +optional
+    DefaultProfile *v1.SeccompProfile
+
+    // The set of profiles that may be set on the pod or containers.
+    // If unspecified, seccomp profiles are unrestricted by this policy.
+    // +optional
+    AllowedProfiles *SeccompProfileSet
+}
+
+// A set of seccomp profiles. This struct should be a plural of v1.SeccompProfile.
+// All values are optional, and an unspecified field excludes all profiles of
+// that type from the set.
+type SeccompProfileSet struct {
+    // Whether the unconfined profile is included in this set.
+    // +optional
+    Unconfined *bool
+    // The allowed runtimeProfiles. A value of '*' allows all runtimeProfiles.
+    // +optional
+    RuntimeProfiles []string
+    // The allowed localhostProfiles. Values may end in '*' to include all
+    // localhostProfiles with a prefix.
+    // +optional
+    LocalhostProfiles []string
+}
+```
+
+## Design Details
+
+### Version Skew Strategy
+
+Because the API is currently represented as (mutable) annotations, care must be taken for migrating
+to the API fields. The cases to consider are: pod create, pod update, PSP create, PSP update.
+
+All API skew is resolved in the API server. New Kubelets will only use the seccomp values specified
+in the fields, and ignore the annotations.
+
+The PodSecurityPolicy admission controller **must continue to check for annotations** if the fields
+are unset, in order to handle upgrade & version skew scenarios.
+
+#### Pod Creation
+
+If no seccomp annotations or fields are specified, no action is necessary.
+
+If _only_ seccomp fields are specified, add the corresponding annotations. This ensures that the
+fields are enforced even if the node version trails the API version. Since [we
+support](https://kubernetes.io/docs/setup/release/version-skew-policy/) up to 2 minor releases of
+version skew between the master and node, this behavior will be removed in version N+2 (where N is
+the release with the upgraded seccomp support).
+
+If _only_ seccomp annotations are specified, copy the values into the corresponding fields. This
+ensures that existing applications continue to enforce seccomp, and prevents the kubelet from
+needing to resolve annotations & fields.
+
+If both seccomp annotations _and_ fields are specified, the values MUST match. This will be enforced
+in API validation.
+
+#### Pod Update
+
+The seccomp fields on a pod are immutable.
+
+The behavior on annotation update is currently ill-defined: the annotation update is allowed, but
+the new value will not be used until the container is restarted. There is no way to tell (from the
+API) what value a container is using.
+
+Therefore, seccomp annotation updates will be ignored. This maintains backwards API compatibility
+(no tightening validation), and makes a small stabilizing change to behavior (new Kubelets will
+ignore the update).
+
+#### PodSecurityPolicy Creation
+
+_Similar policy to [Pod Creation](#pod-creation)_
+
+If no seccomp annotations or fields are specified, no action is necessary.
+
+If _only_ seccomp fields are specified, add the corresponding annotations. This ensures that the
+fields are enforced even in skewed high-availability environments. Since [we
+support](https://kubernetes.io/docs/setup/release/version-skew-policy/) up to 1 minor release of
+version skew between the HA masters, this behavior will be removed in version N+1 (where N is the
+release with the upgraded seccomp support).
+
+If _only_ seccomp annotations are specified, copy the values into the corresponding fields. This
+smooths the migration for a future release that removes annotation support, and frees tools from
+needing to check annotations.
+
+If both seccomp annotations _and_ fields are specified, the values MUST match. This will be enforced
+in API validation.
+
+#### PodSecurityPolicy Update
+
+If the old pod did not specify any seccomp options (fields or annotations), follow the same rules as
+for creation.
+
+If only the fields or only the annotations are changed, take the new value and copy it to both the
+corresponding fields & annotations (even if one was previously unset).
+
+If both the fields _and_ annotations are changed, the new values MUST match. Enforced in API
+validation.
+
+#### PodTemplates
+
+PodTemplates (e.g. ReplaceSets, Deployments, StatefulSets, etc.) will be ignored. The
+field/annotation resolution will happen on template instantiation.
+
+### Test Plan
+
+Seccomp already has [E2E tests][], but the tests are guarded by the `[Feature:Seccomp]` tag and not
+run in the standard test suites.
+
+Prior to being marked GA, the feature tag will be removed from the seccomp tests, and the tests will
+be migrated to the new fields API.
+
+New tests will be added covering the annotation/field conflict cases described under
+[Version Skew Strategy](#version-skew-strategy).
+
+Test coverage for localhost profiles will be added, unless we decide to [keep localhost support in
+alpha](#alternatives).
+
+[E2E tests]: https://github.com/kubernetes/kubernetes/blob/5db091dde4d7de74283ca94870958acf63010c0a/test/e2e/node/security_context.go#L147
+
+### Graduation Criteria
+
+_This section is excluded, as it is the subject of the entire proposal._
+
+### Upgrade / Downgrade Strategy
+
+See [Version Skew Strategy](#version-skew-strategy).
+
+## Implementation History
+
+- 2019-07-17: Initial KEP
+
+## Drawbacks
+
+Promoting seccomp as-is to GA may be seen as "blessing" the current functionality, and make it
+harder to make some of the enhancements listed under [Non-Goals](#non-goals). Since the current
+behavior is unguarded, I think we already need to treat the behavior as GA (which is why it's been
+so hard to change the default profile), so I do not think these changes will actually increase the
+friction.
+
+## Alternatives
+
+The localhost feature currently depends on an alpha Kubelet flag. We could therefore label the
+localhostProfile source as an alpha field, and keep it's functionality in an alpha state.
+
+## References
+
+- [Original seccomp proposal](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/node/seccomp.md)
