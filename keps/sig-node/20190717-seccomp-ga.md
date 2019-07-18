@@ -36,6 +36,7 @@ status: provisional
     - [Pod Update](#pod-update)
     - [PodSecurityPolicy Creation](#podsecuritypolicy-creation)
     - [PodSecurityPolicy Update](#podsecuritypolicy-update)
+    - [PodSecurityPolicy Enforcement](#podsecuritypolicy-enforcement)
     - [PodTemplates](#podtemplates)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
@@ -237,9 +238,6 @@ to the API fields. The cases to consider are: pod create, pod update, PSP create
 All API skew is resolved in the API server. New Kubelets will only use the seccomp values specified
 in the fields, and ignore the annotations.
 
-The PodSecurityPolicy admission controller **must continue to check for annotations** if the fields
-are unset, in order to handle upgrade & version skew scenarios.
-
 #### Pod Creation
 
 If no seccomp annotations or fields are specified, no action is necessary.
@@ -298,6 +296,19 @@ corresponding fields & annotations (even if one was previously unset).
 
 If both the fields _and_ annotations are changed, the new values MUST match. Enforced in API
 validation.
+
+#### PodSecurityPolicy Enforcement
+
+The PodSecurityPolicy admission controller must continue to check the PSP object for annotations if
+the fields are unset, in order to handle upgrade & version skew scenarios.
+
+When setting default profiles, PSP only needs to set the field. The API machinery will handle
+setting the annotation as necessary.
+
+When enforcing allowed profiles, the PSP should check BOTH the annotations & fields. In most cases,
+they should be consistent. On pod update, the seccomp annotations may differ from the fields. In
+that case, the PSP enforcement should check both values as the effective value depends on the node
+version running the pod.
 
 #### PodTemplates
 
