@@ -13,8 +13,8 @@ approvers:
   - "@deads2k"
   - "@lavalamp"
 creation-date: 2019-03-27
-last-updated: 2019-03-27
-status: provisional
+last-updated: 2019-07-19
+status: implementable
 see-also:
   - TODO
 replaces:
@@ -125,6 +125,7 @@ different formats, based on it's:
 - group and version
 - subresource
 - output media type
+
 However, group, version and subresource are reflected in the `SelfLink` of
 returned object. As a result, for a given (potentially unversioned) object,
 we can identify all its possible serializations by (SelfLink, media-type)
@@ -232,16 +233,19 @@ a single huge Endpoints object: [#75294#comment-472728088][]
 
 ### Risks and Mitigations
 
-Given this proposal doesn't introduce any user visible change, the only risk
-are bugs in implementation. Fortunately, the serialization code is widely
-used by all end-to-end tests, so any bugs should be catched by those or
-unit tests of newly added logic.
+The proposal doesn't introduce any user visible change - the only risk is
+related to bugs in implementation. Even though, the serialization code is
+widely user by all end-to-end tests and bugs should be catched by those
+or unit tests of newly added logic, we will try to mitigate the risk by
+introducing a feature gate and hiding the logic of using the newly introduced
+object behind this feature gate.
 
 ## Design Details
 
 ### Test Plan
 
-* Unit tests covering all corner cases.
+* Unit tests covering all corner cases of logic of newly introduced objects.
+* Unit test to detect races of newly introduced objects
 * Regular e2e tests are passing.
 
 ### Graduation Criteria
@@ -249,21 +253,26 @@ unit tests of newly added logic.
 * All existing e2e tests are passing.
 * Scalability tests confirm gains of that change.
 
-Given it is purely implementation detail, we are not going to expose it
-to users via flag or feature-gate (though the implementation will be done
-behind some kind of hard-coded guard).
+We're planning to enable this feature by default, but a feature gate to
+disable it is the mitigation strategy if bugs will be discovered after
+release.
 
 ### Upgrade / Downgrade Strategy
 
-Not applicable
+This feature doesn't change any persistent state of the cluster, just the
+in-memory representation of objects, upgrade/downgrade strategy is not
+relevant to this feature.
 
 ### Version Skew Strategy
 
-Not applicable
+The feature is only changing in-memory representation of objects only in
+kube-apiserver, so version skew strategy is not relevant.
 
 ## Implementation History
 
-- 2019-03-27: Created
+- 2019-03-27: KEP Created
+- 2019-07-18: KEP Merged
+- 2019-07-19: KEP updated with test plan and moved to implementaable state.
 
 ## Alternatives
 
