@@ -630,26 +630,23 @@ is necessary in order to avoid modifying code in `vendor/k8s.io/kubernetes`.
 
 ```go
 import (
-   "k8s.io/kubernetes/pkg/scheduler/plugins"
-   scheduler "k8s.io/kubernetes/cmd/kube-scheduler/app"
+    scheduler "k8s.io/kubernetes/cmd/kube-scheduler/app"
 )
 
 func main() {
-   registry := plugins.NewRegistry()
-   registry.Add("MyPlugin", NewMyPlugin)
-   scheduler.Main(registry)
+    command := scheduler.NewSchedulerCommand(
+            scheduler.WithPlugin("example-plugin1", ExamplePlugin1),
+            scheduler.WithPlugin("example-plugin2", ExamplePlugin2))
+    if err := command.Execute(); err != nil {
+        fmt.Fprintf(os.Stderr, "%v\n", err)
+        os.Exit(1)
+    }
 }
 ```
 
-*Note: The above code is an example, and might not match the implemented API.*
+*Note: The above code is an example, and might not match the latest implemented API.*
 
-The custom plugin would be enabled in the scheduler config.
-
-```json
-{
-   "name": "MyPlugin"
-}
-```
+The custom plugins would be enabled as normal plugins in the scheduler config, see [Configuring Plugins](#configuring-plugins).
 
 # TEST PLANS
 
