@@ -26,6 +26,7 @@ superseded-by:
     - [Categorize the fields of PodSpec](#categorize-the-fields-of-podspec)
     - [Expand some fields of Container](#expand-some-fields-of-container)
     - [Order fields of VolumeMount](#order-fields-of-volumemount)
+- [Compatibility](#compatibility)
 <!-- /toc -->
 
 ## Summary
