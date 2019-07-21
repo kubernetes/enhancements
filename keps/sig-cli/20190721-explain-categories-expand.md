@@ -8,7 +8,7 @@ reviewers: TBD
 approvers: TBD
 editor: TBD
 creation-date: 2019-07-21
-last-updated: 
+last-updated: 2019-07-21
 status: provisional
 see-also:
 replaces:
@@ -31,7 +31,7 @@ superseded-by:
 
 ## Summary
 
-Acutally, documentation (especially `kubectl explain`) describing Kinds of the Kubernetes API
+Actually, documentation (especially `kubectl explain`) describing Kinds of the Kubernetes API
 lists all the fields of a Kind in the alphabetic order, and there is not enough information in the declaration of these fields to list them in a specific order.
 
 We propose to add an annotation `x-kubernetes-explain-category` applicable to fields, that represents both
@@ -190,6 +190,6 @@ With the annotations, the fields can now be displayed in this order:
 
 In order to maintain compatibility with `types.go` that do not use 
 these annotations or use them partially, the non annotated fields 
-should be implicitely affected to a category `99.other` by `kubectl explain` or other documentation systems. So, these fields would be placed after the annotated ones, in alphabetic order.
+should be implicitly affected to a category `99.other` by `kubectl explain` or other documentation systems. So, these fields would be placed after the annotated ones, in alphabetic order.
 
-If no category is explicitely defined for a Kind, the OTHER category will be the only one. In this case, the category name of this unique "OTHER" category should not be printed by `kubectl explain`.
+If no category is explicitly defined for a Kind, the OTHER category will be the only one. In this case, the category name of this unique "OTHER" category should not be printed by `kubectl explain`.
