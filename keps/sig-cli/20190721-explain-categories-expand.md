@@ -4,8 +4,10 @@ authors:
   - "@feloy"
 owning-sig: sig-cli
 participating-sigs:
-reviewers: TBD
-approvers: TBD
+reviewers:
+  - TBD
+approvers:
+  - TBD
 editor: TBD
 creation-date: 2019-07-21
 last-updated: 2019-07-21
