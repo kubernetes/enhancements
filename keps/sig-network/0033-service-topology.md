@@ -2,6 +2,7 @@
 title: Topology-aware service routing
 authors:
   - "@m1093782566"
+  - "@imroc"
 owning-sig: sig-network
 reviewers:
   - "@thockin"
@@ -9,7 +10,7 @@ reviewers:
 approvers:
   - "@thockin"
 creation-date: 2018-10-24
-last-updated: 2018-12-03
+last-updated: 2019-07-22
 status: implementable
 ---
 
@@ -24,12 +25,15 @@ status: implementable
   - [User cases](#user-cases)
   - [Background](#background)
 - [Proposal](#proposal)
-- [Implementation history](#implementation-history)
   - [Service API changes](#service-api-changes)
-  - [New PodLocator resource](#new-podlocator-resource)
-  - [New PodLocator controller](#new-podlocator-controller)
+  - [Topology Infomation](#topology-infomation)
   - [Kube-proxy changes](#kube-proxy-changes)
   - [DNS server changes (in beta stage)](#dns-server-changes-in-beta-stage)
+  - [Graduation Criteria](#graduation-criteria)
+    -  [Alpha](#alpha)
+    -  [Alpha -&gt; Beta](#alpha---beta)
+    -  [Beta -&gt; GA Graduation](#beta---ga-graduation)
+  
 <!-- /toc -->
 
 ## Motivation
@@ -83,8 +87,6 @@ If multiple endpoints satisfy the "hard" or "soft" topology requirement, we will
 Routing decision is expected to be implemented by kube-proxy and kube-dns/coredns for headless service.
 
 
-## Implementation history
-
 ### Service API changes
 
 Users need a way to declare what service is local and the definition of local backends for the particular service.
@@ -108,49 +110,19 @@ kind: Service
 metadata:
   name: service-local
 spec:
-  topologyKeys: ["host", "zone"]
+  topologyKeys: ["kubernetes.io/hostname", "failure-domain.beta.kubernetes.io/zone", "failure-domain.beta.kubernetes.io/region"]
 ```
 
 
 In our example above, we will firstly try to find the backends in the same host. If no backends match, we will then try the lucky of same zone. If finally we can't find any backends in the same host or same zone, then we say the service has no satisfied backends and connections will fail.
 
-If we configure topologyKeys as `["host", ""]`, we just do the effort to find the backends in the same host and will not fail the connection if no matched backends found.
+If we configure topologyKeys as `["kubernetes.io/hostname", ""]`, we just do the effort to find the backends in the same host and will not fail the connection if no matched backends found.
 
-### New PodLocator resource
+### Topology Infomation
 
-As EndpointAddress already contains nodeName field, we can build a service that will precook Pod to its topologies mapping. Then let all interested components(at least kube-proxy and kube-dns and coredns) just watch that precooked object and do necessary mapping internally. Given that we don't know which labels are topology labels, we are going to copy all node labels.
+The alpha release of Service Topology will have a simple implementation where kube-proxy and any other consumers of `topologyKeys` will determine the locality of backends
+by filtering Endpoints and Nodes in-memory from client-go's cache informer/lister, which means kube-proxy will watch node resource if this feature is enabled. The beta release of Service Topology will consuming  `EndpointSlice` which introduced in this [Proposal](https://github.com/freehan/enhancements/blob/master/keps/sig-network/20190603-EndpointSlice-API.md) (It is still at a very early stage when writing this proposal), and do not watch node anymore.
 
-```
-// PodLocator represents information about where a pod exists in arbitrary space.  This is useful for things like
-// being able to reverse-map pod IPs to topology labels, without needing to watch all Pods or all Nodes.
-type PodLocator struct {
-    metav1.TypeMeta
-    // +optional
-    metav1.ObjectMeta
-
-    // NOTE: Fields in this resource must be relatively small and relatively low-churn.
-
-    IPs []PodIPInfo // being added for dual-stack support
-    NodeName string
-    NodeLabels map[string]string
-}
-```
-
-In order to reference PodLocator back to a Pod easily, PodLocator namespace and name would be 1:1 with Pod namespace and name. In other words, PodLocator is a lightweight object which stores Pod location/topology information
-
-### New PodLocator controller
-
-A new PodLocator controller will watch and cache all Pods and Nodes. Then pre-cook pod name to {pod IPs, node name, node labels} mapping. 
-
-When a Pod is added, PodLocator controller will created a new PodLocator object whose namespace and name are 1:1 with Pod namespace and name. Then it will populate the Pod's IP(s), node name and labels into the new object.
-
-When a Pod is updated, PodLocator controller will first check if IPs or Spec.NodeName are changed. If changed, PodLocator controller will update the corresponding PodLocator object accordingly, otherwise will ignore this change.
-
-When a Pod is deleted, PodLocator controller will delete the corresponding PodLocator object.
-
-When a Node is updated, PodLocator controller will first check if its labels are changed. If changed, will update all the PodLocators whose corresponding Pods running on it.
-
-When a Node is deleted, PodLocator controller will reset the NodeName and NodeLabels of all the PodLocators whose corresponding Pods running on it.
 
 ### Kube-proxy changes
 
@@ -158,10 +130,29 @@ Kube-proxy will respect topology keys for each service, so kube-proxy on differe
 
 Kube-proxy will watch its own node and will find the endpoints that are in the same topological domain as the node if `service.TopologyKeys` is not empty.
 
-Kube-proxy will watch PodLocator apart from Service and Endpoints. For each Endpoints object, kube-proxy will find the original Pod via EndpointAddress.TargetRef, therefore will get PodLocator object and its topology information. Kube-proxy will only create proxy rules for endpoints that are in the same topological domain as the node running kube-proxy.
+Kube-proxy will only create proxy rules for endpoints that are in the same topological domain as the node running kube-proxy. For Alpha, kube-proxy will watch Node apart from Service and Endpoints to get topology infomation in Alpha, kube-proxy will find the Node where the Endpoint is located via EndpointAddress.NodeName, therefore will get its topology information by Node's labels. For Beta, kube-proxy will watch EndpointSlice instead of Node which already contains Endpoint's topology infomation.
+ 
 
 ### DNS server changes (in beta stage)
 
 We should consider this kind of topology support for headless service in coredns and kube-dns. As the DNS servers will respect topology keys for each headless service, different clients/pods on different nodes may get different dns response.
 
-In order to handle headless services, the DNS server needs to know the node corresponding to the client IP address in the DNS request - i.e, it needs to map PodIP -> Node. Kubernetes DNS servers(include kube-dns and CoreDNS) will watch PodLocator object. When a client/pod request a headless service domain to DNS server, dns server will retrieve the node labels of both client and the backend Pods via PodLocator. DNS server will only select the IPs of backend Pods which are in the same topological domain with client Pod, and then write A record.
+In order to handle headless services, the DNS server needs to know the node corresponding to the client IP address in the DNS request - i.e, it needs to map PodIP -> Node. Kubernetes DNS servers(include kube-dns and CoreDNS) will watch EndpointSlice object. When a client/pod request a headless service domain to DNS server, dns server will retrieve the node labels of both client and the backend Pods via EndpointSlice. DNS server will only select the IPs of backend Pods which are in the same topological domain with client Pod, and then write A record.
+
+
+### Graduation Criteria
+
+#### Alpha
+
+- topologyKeys field is added to the Service API
+- kube-proxy implements service topology in-memory by watching Node only enabled by `TopoloyAwareServiceRouting` feature gate.
+
+#### Alpha -> Beta
+
+- kube-proxy is updated to watch `EndpointSlice` for topology filtering of endpoints.
+- coredns/kube-dns watches `EndpointSlice` objets and performs topology-aware headless services.
+- E2E tests exist for service topology.
+
+##### Beta -> GA Graduation
+
+TODO: after beta
