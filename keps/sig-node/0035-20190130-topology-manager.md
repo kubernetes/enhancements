@@ -43,7 +43,9 @@ _Authors:_
 - [Proposal](#proposal)
   - [Proposed Changes](#proposed-changes)
     - [New Component: Topology Manager](#new-component-topology-manager)
-      - [Computing Preferred Affinity](#computing-preferred-affinity)
+      - [Topology Policy](#topology-policy)
+        - [Best-Effort Policy](#best-effort-policy)
+        - [Strict Policy](#strict-policy)
       - [New Interfaces](#new-interfaces)
     - [Feature Gate and Kubelet Flags](#feature-gate-and-kubelet-flags)
     - [Changes to Existing Components](#changes-to-existing-components)
@@ -170,33 +172,59 @@ interface and participates in Kubelet pod admission. When the `Admit()`
 function is called, the Topology Manager collects topology hints from other
 Kubelet components.
 
+The Topology Manager calculates the best hint with the following algorithm:
+
+1. Iterate over the permutations of hints.
+1. Execute the policy.Merge and returns the merged hint.
+1. Select the better hint with better preference and narrower SocketAffinity.
+
 If the hints are not compatible, the Topology Manager may choose to
 reject the pod. Behavior in this case depends on a new Kubelet configuration
-value to choose the topology policy. The Topology Manager supports two
-modes: `strict` and `preferred` (default). In `strict` mode, the pod is
-rejected if alignment cannot be satisfied. The Topology Manager could
-use `softAdmitHandler` to keep the pod in `Pending` state.
+value to choose the topology policy.
 
 The Topology Manager component will be disabled behind a feature gate until
 graduation from alpha to beta.
 
-#### Computing Preferred Affinity
+#### Topology Policy
 
 A topology hint indicates a preference for some well-known local resources.
 Initially, the only supported reference resource is a mask of CPU socket IDs.
-After collecting hints from all providers, the Topology Manager chooses some
-mask that is present in all lists. Here is a sketch:
+After collecting hints from all resources, the Topology Manager using the
+Topology Policy selects the best hint.
 
-1. Apply a partial order on each list: number of bits set in the
-   mask, ascending. This biases the result to be more precise if
-   possible.
-1. Iterate over the permutations of preference lists and compute
-   bitwise-and over the masks in each permutation.
-1. Store the first non-empty result and break out early.
-1. If no non-empty result exists, return an error.
+As described above, the policy controls on how to merge the permutation of hints,
+and if to reject or not the pod when the best hint is not preferred. In the future
+we may add additional policies per use-cases and users requirements.
 
-The behavior when a match does not exist is configurable, as described
-above.
+The following sections describe policies algorithms:
+
+##### Best-Effort Policy
+
+The best-effort policy tries to align all resources to one NUMA Node. Theses hints
+are marked as preferred.
+
+Here is a sketch:
+
+1. Iterate over the hints in the permutation and set the merged hint to preferred
+   if all hints are preferred.
+1. Bitwise-and over the hints in each permutation using best-effort policy.Merge.
+1. Select the better hint with better preference and narrower SocketAffinity.
+
+The behavior when the best hint is not preferred it to admit the pod.
+
+
+##### Strict Policy
+
+The strict policy aligns all resources to one NUMA Node. Theses hints
+are marked as preferred.
+
+Here is a sketch:
+
+1. Bitwise-or over the hints in each permutation using strict policy.Merge.
+1. Set preferred if merged hint SocketAffinity count is one.
+1. Select the better hint with better preference and narrower SocketAffinity.
+
+The behavior when the best hint is not preferred it to reject the pod.
 
 #### New Interfaces
 
@@ -263,6 +291,17 @@ type Store interface {
   // container.
   GetAffinity(podName string, containerName string) TopologyHint
 }
+
+//Policy interface deinfes the merge hint algorithm and if we can admit pod.
+type Policy interface {
+        // Returns Policy Name
+        Name() string
+        // Returns Pod Admit Handler Response based on hints and policy type
+        CanAdmitPodResult(admit bool) lifecycle.PodAdmitResult
+        // Returns merged TopologyHint based on permutation of hints
+        Merge(permutation map[string]TopologyHint) TopologyHint
+}
+
 ```
 
 _Listing: Topology Manager and related interfaces (sketch)._
