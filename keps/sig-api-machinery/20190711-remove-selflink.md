@@ -13,8 +13,8 @@ approvers:
   - "@deads2k"
 editor: "@wojtek-t"
 creation-date: 2019-07-11
-last-updated: 2019-07-16
-status: provisional
+last-updated: 2019-07-24
+status: implementable
 ---
 
 # Deprecate and Remove SelfLink
@@ -199,4 +199,5 @@ itself will be removed.
 
 ## Implementation History
 
-2019-07-16: KEP merged.
+2019-07-23: KEP merged.
+2019-07-24: KEP move to implementable.
