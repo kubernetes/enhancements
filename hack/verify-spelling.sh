@@ -18,8 +18,6 @@ set -o errexit
 set -o nounset
 set -o pipefail
 
-TOOL_VERSION="v0.3.4"
-
 # cd to the root path
 ROOT=$(dirname "${BASH_SOURCE}")/..
 cd ${ROOT}
@@ -34,7 +32,7 @@ exitHandler() (
 )
 trap exitHandler EXIT
 
-GO111MODULE=on go get "github.com/client9/misspell/cmd/misspell@${TOOL_VERSION}"
+go install ./vendor/github.com/client9/misspell/cmd/misspell
 
 # check spelling
 RES=0

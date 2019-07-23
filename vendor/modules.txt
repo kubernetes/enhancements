@@ -5,7 +5,8 @@ github.com/chuckha/kepval
 github.com/chuckha/kepval/keps
 github.com/chuckha/kepval/keps/validations
 # github.com/client9/misspell v0.3.4
-github.com/client9/misspell/
+github.com/client9/misspell/cmd/misspell
+github.com/client9/misspell
 # github.com/gomarkdown/markdown v0.0.0-20190222000725-ee6a7931a1e4
 github.com/gomarkdown/markdown/ast
 github.com/gomarkdown/markdown/html

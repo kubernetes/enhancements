@@ -18,13 +18,11 @@ set -o errexit
 set -o nounset
 set -o pipefail
 
-TOOL_VERSION=b97ce7d3f1daca6bc79d60952e461df3ffa88a5b
-
 # cd to the root path
 ROOT=$(dirname "${BASH_SOURCE}")/..
 cd ${ROOT}
 
-GO111MODULE=on go get "github.com/chuckha/kepview/cmd/kepval@${TOOL_VERSION}"
+go install ./vendor/github.com/chuckha/kepval
 
 echo "Checking metadata validity..."
 # * ignore "0023-documentation-for-images.md" because it is not a real KEP
