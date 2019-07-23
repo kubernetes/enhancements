@@ -18,20 +18,32 @@ set -o errexit
 set -o nounset
 set -o pipefail
 
-export KUBE_ROOT=$(dirname "${BASH_SOURCE}")/..
+TOOL_VERSION="v0.3.4"
 
-# Install tools we need, but only from vendor/...
-cd ${KUBE_ROOT}
-go install ./vendor/github.com/client9/misspell/cmd/misspell
-if ! which misspell >/dev/null 2>&1; then
-    echo "Can't find misspell - is your GOPATH 'bin' in your PATH?" >&2
-    echo "  GOPATH: ${GOPATH}" >&2
-    echo "  PATH:   ${PATH}" >&2
-    exit 1
+# cd to the root path
+ROOT=$(dirname "${BASH_SOURCE}")/..
+cd ${ROOT}
+
+# create a temporary directory
+TMP_DIR=$(mktemp -d)
+
+# cleanup
+exitHandler() (
+  echo "Cleaning up..."
+  rm -rf "${TMP_DIR}"
+)
+trap exitHandler EXIT
+
+GO111MODULE=on go get "github.com/client9/misspell/cmd/misspell@${TOOL_VERSION}"
+
+# check spelling
+RES=0
+echo "Checking spelling..."
+ERROR_LOG="${TMP_DIR}/errors.log"
+git ls-files | grep -v vendor | xargs misspell > "${ERROR_LOG}"
+if [[ -s "${ERROR_LOG}" ]]; then
+  sed 's/^/error: /' "${ERROR_LOG}" # add 'error' to each line to highlight in e2e status
+  echo "Found spelling errors!"
+  RES=1
 fi
-
-# Spell checking
-# All the skipping files are defined in hack/.spelling_failures
-skipping_file="${KUBE_ROOT}/hack/.spelling_failures"
-failing_packages=$(echo `cat ${skipping_file}` | sed "s| | -e |g")
-git ls-files | grep -v -e ${failing_packages} | xargs misspell -i "" -error -o stderr
+exit "${RES}"
