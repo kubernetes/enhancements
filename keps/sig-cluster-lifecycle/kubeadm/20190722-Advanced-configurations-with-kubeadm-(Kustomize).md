@@ -57,7 +57,7 @@ status: implementable
 - [x] KEP approvers have set the KEP status to `implementable`
 - [x] Design details are appropriately documented
 - [x] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
-- [x] Graduation criteria is in place
+- [ ] Graduation criteria is in place
 - [x] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
@@ -92,6 +92,7 @@ that allows mostly cluster-wide configurations on control-plane/etcd args only -
 
 With this new feature users should not be required anymore to manually alter static
 pod manifests stored into `/etc/kubernetes/manifests` after kubeadm init/join.
+
 ### Goals
 
 Considering the complexity of this topic, this document is expected to be subject
@@ -113,7 +114,7 @@ to some iterations. The goal of the current iteration is to:
   consistency, of “advanced configurations” for control-plane/etcd settings. 
   As it is already for `extraArgs` fields in the kubeadm component configuration or in the
   Kubelet/KubeProxy component config, the responsibility of proper usage of those 
-  advanced configuration options belongs to higher-level tools/user's.
+  advanced configuration options belongs to higher-level tools/users.
 - To deprecate the Kubeadm component configuration because:
   - The component configuration provides an abstraction well suited for most common use
     cases (that can be addressed with cluster-wide configurations on control-plane/etcd command line args only)
