@@ -1,0 +1,22 @@
+# github.com/BurntSushi/toml v0.3.1
+github.com/BurntSushi/toml
+# github.com/chuckha/kepval v0.0.0-20190723035440-652e07e70444
+github.com/chuckha/kepval
+github.com/chuckha/kepval/keps
+github.com/chuckha/kepval/keps/validations
+# github.com/client9/misspell v0.3.4
+github.com/client9/misspell/
+# github.com/gomarkdown/markdown v0.0.0-20190222000725-ee6a7931a1e4
+github.com/gomarkdown/markdown/ast
+github.com/gomarkdown/markdown/html
+github.com/gomarkdown/markdown/parser
+# github.com/mmarkdown/mmark v2.0.40+incompatible
+github.com/mmarkdown/mmark/mparser
+github.com/mmarkdown/mmark/mast
+github.com/mmarkdown/mmark/mast/reference
+# github.com/pkg/errors v0.8.1
+github.com/pkg/errors
+# github.com/tallclair/mdtoc v0.0.0-20190627191617-4dc3d6f90813
+github.com/tallclair/mdtoc
+# gopkg.in/yaml.v2 v2.2.2
+gopkg.in/yaml.v2
