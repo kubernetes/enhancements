@@ -6,13 +6,15 @@ owning-sig: sig-testing
 participating-sigs:
   - sig-testing
 reviewers:
-  - TBD
+  - "@stevekuznetsov"
+  - "@cjwagner"
 approvers:
-  - TBD
+  - "@stevekuznetsov"
+  - "@cjwagner"
 editor: TBD
 creation-date: 2019-06-04
-last-updated: 2019-06-05
-status: provisional
+last-updated: 2019-07-24
+status: implementable
 ---
 
 # Presubmit config inside the tested repo
@@ -30,8 +32,7 @@ status: provisional
    * [Proposal](#proposal)
       * [Risks and Mitigations](#risks-and-mitigations)
          * [Security](#security)
-         * [Components that need the Presubmit configuration but do not have a PullRequest](#components-that-need-the-presubmit-configuration-but-do-not-have-a-pullrequest)
-         * [Running Prow against a platform other than GitHub](#running-prow-against-a-platform-other-than-github)
+         * [Components that need the Presubmit configuration but do not have a git ref to work on](#components-that-need-the-presubmit-configuration-but-do-not-have-a-git-ref-to-work-on)
    * [Implementation History](#implementation-history)
 
 
@@ -86,7 +87,7 @@ poses severall challenges:
   This is an additional step maintainers have to remember when branching off.
 * If the `test-infra` repository is not public, outside collaborators are unable to change job configs. This
   may happen if an organization that uses Prow has a mixture of public and private repositories and chooses
-  not to bear the maintenance overhead of multiple Prow instances
+  not to bear the maintenance overhead of multiple Prow instances.
 
 
 ### Goals
@@ -102,10 +103,8 @@ poses severall challenges:
   all jobs that are managed inside the code repository
 * All the existing defaulting and validation for Presubmit jobs is being used to default and validate
   jobs that are managed inside the code repository
-* If there is an error parsing, defaulting or validating the presubmits that are managed inside the
-  code repository, a comment will be posted to GitHub stating the error
-* Pull Requests on which an error occurred during parsing, defaulting or validation the presubmits that
-  are managed in the code repository are not consideres as merge candidates by Tide
+* Pull Requests on which an error occurred during parsing, defaulting or validation of presubmits that
+  are managed in the code repository are not considered as merge candidates by Tide
 * Tide executes the presubmits that are defined inside the code repository when it re-tests
 * Renamed blocking presubmits added via pull request trigger a migration on all in-flight PRs
 * Removed blocking presubmits via pull request trigger a status retire on all in-flight PRs
@@ -127,8 +126,8 @@ property anymore, but instead getter functions to get all Presubmits with the
 ones from the `prow.yaml` added, if applicable.
 
 Additionally, all components that need to access the `Presubmit` configuration need
-to be changed to use the new getters and in most cases, to contain a git client
-which can be used to fetch the `prow.yaml`.
+to be changed to use the new getters and  to contain a git client which can be used
+to fetch the `Presubmit` config from inside the repo.
 
 ### Risks and Mitigations
 
@@ -164,24 +163,11 @@ not be part of its first iteration, because that problem is considered to be muc
 easier to solve than finding an agreeable solution on how to implement `inrepoconfig`
 itself.
 
-#### Components that need the `Presubmit` configuration but do not have a PullRequest
+#### Components that need the `Presubmit` configuration but do not have a `git ref` to work on
 
-Components that need the `Presubmit` config but do not have a pull request at hand
-can not work as before with `inrepoconfig`. Today, the only component for which this
-applies is the `branchprotector`. This limitation will be documented.
-
-#### Running Prow against a platform other than GitHub
-
-`inrepoconfig` will be developed to work with `GitHub` only because `Prow` does not
-currently include the needed abstractions to make it easely possible to get it to work
-with other platforms. In particular what is missing is:
-
-* Support for something other than GitHub in the `prow/git` client
-* A reporting abstraction that can report back error conditions to the user
-
-This is a known limitation that will be documented. Should the needed infrastructure
-to integrate `inrepoconfig` with other platforms be available, an inegration should
-be easely possible.
+Components that need the `Presubmit` config but do not have a git reference at hand
+can not work as before with `inrepoconfig` because the list of Presubmits depends on
+the `ref`. This limitation will be documented.
 
 ## Implementation History
 
@@ -190,3 +176,4 @@ be easely possible.
 * A non-working [sketch pull request](https://github.com/kubernetes/test-infra/pull/13342) that shows which parts of Prow need to be touched
 	and how the signatures for the newly-added functions look like was created to
 	be the basis for a discussion on how exactly an implementation could look like
+* Current work is being tracked via a [GitHub tracking issue](https://github.com/kubernetes/test-infra/issues/13370)
