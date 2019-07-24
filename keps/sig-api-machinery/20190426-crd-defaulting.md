@@ -16,7 +16,7 @@ approvers:
   - "@lavalamp"
 editor: "@sttts"
 creation-date: 2019-04-26
-last-updated: 2019-05-01
+last-updated: 2019-07-29
 status: implementable
 see-also:
   - "/keps/sig-api-machinery/20180731-crd-pruning.md"
@@ -33,6 +33,8 @@ see-also:
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
+  - [Validation](#validation)
+  - [Behaviour of Embedded Resource ObjectMeta Defaults](#behaviour-of-embedded-resource-objectmeta-defaults)
   - [Examples](#examples)
 - [References](#references)
   - [Test Plan](#test-plan)
@@ -120,6 +122,23 @@ Defaulting happens top-down, i.e. we apply defaults for an object first, then di
 The `default` field in the CRD types is considered alpha quality. We will add a `CustomResourceDefaulting` feature gate. Values for `default` will be rejected if the gate is not enabled and there have not been `default` values set before (ratcheting validation). 
 
 [Kubebuilder's crd-gen](https://github.com/kubernetes-sigs/controller-tools/tree/master/cmd/crd) can make use of this feature by adding another tag, e.g. `// +default=<arbitrary-json-value>`. Defaults are arbitrary JSON values, which must also validate (types are checked during CRD creation and update, value validation is checked for requests, but not for etcd reads) and are not subject to pruning (defaulting happens after pruning).
+
+### Validation
+
+Default values must be pruned, i.e. must not have fields which are not specified by the given structural schema (including support for `x-kubernetes-preserve-unknown-fields` to exclude nodes from being pruned), with the exception of
+ 
+* defaults inside of `.metadata` of an embedded resource (`x-kubernetes-embedded-resource: true`)
+* defaults which span `.metadata` of an embedded resource.
+
+Values conflicting with this are rejected when creating or updating a CRD. 
+
+Defaults are validated against the schema (including embedded `ObjectMeta` validation).
+
+Defaults inside `.metadata` at the root are not allowed.
+
+### Behaviour of Embedded Resource ObjectMeta Defaults
+
+While defaults for `ObjectMeta` fields are not checked for being pruned during CRD creation and update (previous section), we do pruning of default values on CR storage creation. That way no user-provided default values are lost, but the pruning step during storage creation ensures that no unknown or invalid defaulted values are persisted during CR creation or update.
 
 ### Examples
 
@@ -285,7 +304,21 @@ The `default` field in the CRD types is considered alpha quality. We will add a 
 
 **blockers for beta:**
 
-* no new tests
+* add tests for default value validation:
+  * CRD schema with defaults containing unknown fields inside metadata
+      * new CRD (allowed)
+      * updated CRD where existing CRD did contain the unknown field (allowed)
+      * updated CRD where existing CRD did not contain the unknown field (allowed)
+      * building CR storage from persisted CRD discards unknown fields
+  * CRD schema with defaults containing schema-invalid fields inside metadata (e.g. finalizers: 1)
+    * new CRD (forbidden)
+    * updated CRD where existing CRD did contain the invalid field (allowed)
+    * updated CRD where existing CRD did not contain the invalid field (forbidden)
+    * building CR storage from persisted CRD discards schema invalid fields from defaults.
+  * CRD schema with defaults containing unknown fields outside of metadata is
+    * accepted if they fall under the scope of `x-kubernetes-preserve-unknown-fields: true`
+    * rejected otherwise.
+
 * we are happy with the API and its behaviour
 
 **blockers for GA:**
