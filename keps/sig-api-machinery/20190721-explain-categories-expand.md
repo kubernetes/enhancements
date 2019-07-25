@@ -2,15 +2,16 @@
 title: Explain Categories and Expand
 authors:
   - "@feloy"
-owning-sig: sig-cli
+owning-sig: sig-api-machinery
 participating-sigs:
+  - sig-cli
 reviewers:
   - TBD
 approvers:
   - TBD
 editor: TBD
 creation-date: 2019-07-21
-last-updated: 2019-07-21
+last-updated: 2019-07-25
 status: provisional
 see-also:
 replaces:
