@@ -171,6 +171,10 @@ This has some implications:
 4. as a consequence of the previous point, higher-level tools/users are not
    requested to take care of defining `kustomization.yaml` files nor to define
    a local folder structure.
+5. `patchesJson6902` can't be used without a `kustomization.yaml` file defining `target`
+   for a patch; this limitation is not considered blocking for starting implementation;
+   however a solution for this problem should be defined before graduating to beta
+   (e.g. require `kustomization.yaml` in case the users want to use `patchesJson6902`).
 
 Additionally, in order to simplify the first implementation of this KEP, this 
 proposal is going to assume that Kustomize patches for kubeadm are always defined
@@ -178,6 +182,59 @@ specifically for the node where kubeadm is going to be executed.
 
 This point could be reconsidered in the future, by e.g. introducing cluster-wide
 patches and/or patches for a subset of nodes.
+
+The resulting workflow for using in kustomize will be the following
+
+1. Create a folder with some patches, e.g.
+
+```
+mkdir kubeadm-patches
+
+cat <<EOF >./kubeadm-patches/patch1.yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: kube-apiserver
+  namespace: kube-system
+{your kube-apiserver patch here}
+EOF
+
+cat <<EOF >./kubeadm-patches/patch2.yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: kube-controller-manager
+  namespace: kube-system
+{your kube-controller-manager patch here}
+EOF
+```
+
+2. Run kubeadm passing the new patch, e.g.
+
+```
+kubeadm init --experimental-kustomize kubeadm-patches/
+or 
+kubeadm init phase control-plane ...  --experimental-kustomize kubeadm-patches/
+```
+or
+```
+kubeadm join --experimental-kustomize kubeadm-patches/
+or
+kubeadm join phase control-plane-prepare control-plane --experimental-kustomize kubeadm-patches/
+```
+or
+```
+kubeadm upgrade apply --experimental-kustomize kubeadm-patches/
+```
+or
+```
+kubeadm upgrade node --experimental-kustomize kubeadm-patches/
+or 
+kubeadm upgrade node phase control-plane  --experimental-kustomize kubeadm-patches/
+```
+
+NB1. `--experimental-kustomize` is the proposed name for the flag to be renamed to --kustomize`
+when beta is reached. `-k` abbreviation can be reserved or even fully connected.
 
 #### Providing and storing Kustomize patches to kubeadm
 
@@ -245,6 +302,13 @@ some patches will not cleanly apply anymore.
 The kubeadm maintainers will work on release notes to make potential breaking changes more visible;
 additionally, upgrade instructions will be updated adding the recommendation to --dry-run and check
 expected changes before upgrades.
+
+_Kustomize errors during kubeadm workflows_
+When executing “advanced configurations”/kustomize patches within kubeadm workflows, we are introducing
+an external element that can potentially generate errors during commands execution.
+
+Error management should be adapted to this new possible risk, ensuring that the node remains in a
+consistent state in case of errors.
 
 ## Design Details
 
