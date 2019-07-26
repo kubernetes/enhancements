@@ -93,7 +93,7 @@ List of skipped directories:
 ### Format of defining stable metrics
 
 To simplify static analysis implementation and reduce chance of missing metrics, we will restrict how stable metrics can be defined.
-Stable metrics will use exactly the same functions as normal once, but code defining them will need to comply to specific format:
+Stable metrics will use exactly the same functions as normal ones, but code defining them will need to comply to the specific format:
 
 * Metric options (`CounterOpts`) needs to be directly passed to function (`kubemetrics.NewCounterVec`).
 * Metric arguments can only be set to values. Fields cannot be set to const, variables or function result (apart of `kubemetrics.STABLE`). 
