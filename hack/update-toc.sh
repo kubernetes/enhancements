@@ -18,17 +18,10 @@ set -o errexit
 set -o nounset
 set -o pipefail
 
-export KUBE_ROOT=$(dirname "${BASH_SOURCE}")/..
-
-# Install tools we need, but only from vendor/...
-cd ${KUBE_ROOT}
-go install ./vendor/github.com/tallclair/mdtoc
-if ! which mdtoc >/dev/null 2>&1; then
-    echo "Can't find mdtoc - is your GOPATH 'bin' in your PATH?" >&2
-    echo "  GOPATH: ${GOPATH}" >&2
-    echo "  PATH:   ${PATH}" >&2
-    exit 1
-fi
+# cd to the root path
+ROOT=$(dirname "${BASH_SOURCE}")/..
+cd ${ROOT}
 
 # Update tables of contents if necessary.
-grep --include='*.md' -rl keps -e '<!-- toc -->' | xargs mdtoc --inplace
+export GO111MODULE=on
+grep --include='*.md' -rl keps -e '<!-- toc -->' | xargs go run github.com/tallclair/mdtoc --inplace

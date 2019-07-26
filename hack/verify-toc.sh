@@ -18,13 +18,7 @@ set -o errexit
 set -o nounset
 set -o pipefail
 
-TOOL_VERSION=4dc3d6f908138504b02a1766f1f8ea282d6bdd7c
-
-# cd to the root path
-ROOT=$(dirname "${BASH_SOURCE}")/..
-cd ${ROOT}
-GO111MODULE=on go get "github.com/tallclair/mdtoc@${TOOL_VERSION}"
-
 echo "Checking table of contents are up to date..."
 # Verify tables of contents are up-to-date
-grep --include='*.md' -rl keps -e '<!-- toc -->' | xargs mdtoc --inplace --dryrun
+export GO111MODULE=on
+grep --include='*.md' -rl keps -e '<!-- toc -->' | xargs go run github.com/tallclair/mdtoc --inplace --dryrun
