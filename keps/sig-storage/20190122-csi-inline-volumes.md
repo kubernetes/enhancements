@@ -2,6 +2,7 @@
 title: Ephemeral Inline CSI Volumes
 authors:
   - "@vladimirvivien"
+  - "@pohly"
 owning-sig: sig-storage
 participating-sigs:
   - sig-storage
@@ -13,7 +14,7 @@ approvers:
   - "@thockin"
   - "@saad-ali"
 creation-date: 2019-01-22
-last-updated: 2019-01-30
+last-updated: 2019-07-25
 status: implementable
 ---
 
@@ -39,6 +40,7 @@ status: implementable
   - [All unit tests](#all-unit-tests)
   - [Ephemeral inline volumes unit tests](#ephemeral-inline-volumes-unit-tests)
   - [E2E tests](#e2e-tests)
+- [Implementation History](#implementation-history)
 <!-- /toc -->
 
 ## Summary
@@ -84,8 +86,9 @@ spec:
   volumes:
       - name: vol
         csi:
-          driver: inline.storage.kubernetes.io
-          # Passed as NodePublishVolumeRequest.volume_context.
+          driver: some-csi-driver.example.com
+          # Passed as NodePublishVolumeRequest.volume_context,
+          # valid options depend on the driver.
           volumeAttributes:
               foo: bar
 ```
@@ -225,19 +228,41 @@ Since ephemeral volume requests will participate in only the mount/unmount volum
 * Volume operation that use CSIVolumeSource can only work with proper feature gate enabled
 
 ### Ephemeral inline volumes unit tests
-* Ensure required fields are provided
-* Mount/Unmount should be triggered with CSIVolumeSource
-* Expected generated volumeHandle is created properly
-* Ensure volumeHandle conforms to resource naming format
-* CSIVolumeSource info persists in CSI json file during mount/unmount
-* Ensure Kubelet skips attach/detach when `CSIDriver.Mode = ephemeral`
-* Ensure Kubelet skips inline logic when `CSIDriver.Mode = persistent` or `CSIDriver.Mode is empty` 
+* Ensure required fields are provided: csi.storage.k8s.io/ephemeral (https://github.com/pohly/kubernetes/blob/4bc5d065c919fc239e2c8b40e6a96e409ca011fd/pkg/volume/csi/csi_mounter_test.go#L140-L146)
+* Mount/Unmount should be triggered with CSIVolumeSource: https://github.com/kubernetes/kubernetes/blob/10005d2e1e1425904f8c7bf5615e730fb0fea7c9/pkg/volume/csi/csi_mounter_test.go#L386
+* Expected generated volumeHandle is created properly: https://github.com/kubernetes/kubernetes/blob/10005d2e1e1425904f8c7bf5615e730fb0fea7c9/pkg/volume/csi/csi_plugin_test.go#L177
+* Ensure that CSIDriver.Spec.Mode field is validated properly: https://github.com/kubernetes/kubernetes/pull/80568
+* Ensure volumeHandle conforms to resource naming format: TODO
+* CSIVolumeSource info persists in CSI json file during mount/unmount: TODO
+* Ensure Kubelet skips attach/detach when `CSIDriver.Mode = ephemeral`: TODO
+* Ensure Kubelet skips inline logic when `CSIDriver.Mode = persistent` or `CSIDriver.Mode is empty`: covered by existing tests
 
 ### E2E tests
-* Pod spec with an ephemeral inline volume request can be mounted/unmounted
-* Two pods accessing the same ephemeral inline volumes
-* Single pod referencing two distinct inline volume request from the same driver 
-* CSI Kubelet code invokes driver operations during mount for ephemeral volumes
-* CSI Kubelet code invokes driver operation during unmount of ephemeral volumes
-* CSI Kubelet cleans up ephemeral volume paths once pod goes away
-* Apply PodSecurity settings for allowed CSI drivers
+* Pod spec with an ephemeral inline volume request can be mounted/unmounted: https://github.com/pohly/kubernetes/blob/4bc5d065c919fc239e2c8b40e6a96e409ca011fd/test/e2e/storage/csi_mock_volume.go#L356-L371, https://github.com/pohly/kubernetes/blob/4bc5d065c919fc239e2c8b40e6a96e409ca011fd/test/e2e/storage/testsuites/ephemeral.go#L110-L115
+* Two pods accessing an ephemeral inline volume which has the same attributes in both pods: "should support two pods which share the same data" in `ephemeral.go` (upcoming PR)
+* Single pod referencing two distinct inline volume request from the same driver: "should support multiple inline ephemeral volumes" in `ephemeral.go` (upcoming PR)
+* CSI Kubelet code invokes driver operations during mount for ephemeral volumes: `checkPodLogs` in `csi_mock_volume.go` (upcoming PR)
+* CSI Kubelet code invokes driver operation during unmount of ephemeral volumes: `checkPodLogs` in `csi_mock_volume.go` (upcoming PR)
+* CSI Kubelet cleans up ephemeral volume paths once pod goes away: TODO
+* Apply PodSecurity settings for allowed CSI drivers: TODO
+* Enable testing of an external ephemeral CSI driver: https://github.com/kubernetes/kubernetes/pull/79983/files#diff-e5fc8d9911130b421b74b1ebc273f458
+* Enable testing of the csi-host-path-driver in ephemeral mode in Kubernetes-CSI Prow jobs and Kubernetes itself: TODO
+
+
+## Implementation History
+
+1.15:
+- Alpha status
+- `CSIDriver.Mode` not added yet
+- a CSI driver deployment can only be used for ephemeral inline
+  volumes or persistent volumes, but not both, because the driver
+  cannot determine the mode in its `NodePublishVolume` implementation
+
+1.16:
+- the same CSI driver deployment can support both modes by enabling
+  the pod info feature and checking the value of
+  `csi.storage.k8s.io/ephemeral`
+  (https://github.com/kubernetes/kubernetes/pull/79983, merged)
+- `CSIDriver.Mode` added and checked before calling a CSI driver for
+  an ephemeral inline volume
+  (https://github.com/kubernetes/kubernetes/pull/80568, pending)
