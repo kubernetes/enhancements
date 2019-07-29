@@ -119,7 +119,7 @@ List of skipped directories:
 To simplify static analysis implementation and reduce chance of missing metrics, we will restrict how stable metrics can be defined.
 Stable metrics will use exactly the same functions as normal ones, but code defining them will need to comply to the specific format:
 
-* Metric options (`CounterOpts`) needs to be directly passed to function (`kubemetrics.NewCounterVec`).
+* Metric options (e.g. `CounterOpts`) needs to be directly passed to function (e.g. 1`kubemetrics.NewCounterVec`).
 * Metric arguments can only be set to values. Fields cannot be set to const, variables or function result (apart of `kubemetrics.STABLE`).
 ```go
 var someCounterVecMetric = kubemetrics.NewCounterVec(
@@ -157,7 +157,7 @@ Every change to metric definition will require updating this file, thus a review
 It will be up to reviewer to decide which changes are backward compatible and which not.
 
 Metric information stored in file should be in easly readable and reviewable format.
-For that `yaml` will be used. Example:
+For that `yaml` will be used (thanks for suggestion @ehashman). Example:
 ```yaml
 - deprecatedVersion: "1.16"
   help: "some help information about the metric"
