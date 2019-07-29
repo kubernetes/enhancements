@@ -6,7 +6,8 @@ owning-sig: sig-apps
 participating-sigs:
   - TBD
 reviewers:
-  - TBD
+  - @janetkuo
+  - @kow3ns
 approvers:
   - TBD
 editor: TBD
