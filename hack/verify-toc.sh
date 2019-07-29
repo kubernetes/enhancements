@@ -21,9 +21,25 @@ set -o pipefail
 TOOL_VERSION=4dc3d6f908138504b02a1766f1f8ea282d6bdd7c
 
 # cd to the root path
-ROOT=$(dirname "${BASH_SOURCE}")/..
-cd ${ROOT}
-GO111MODULE=on go get "github.com/tallclair/mdtoc@${TOOL_VERSION}"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+cd "${ROOT}"
+
+# create a temporary directory
+TMP_DIR=$(mktemp -d)
+
+# cleanup
+exitHandler() (
+  echo "Cleaning up..."
+  rm -rf "${TMP_DIR}"
+)
+trap exitHandler EXIT
+
+# perform go get in a temp dir as we are not tracking this version in a go module
+# if we do the go get in the repo, it will create / update a go.mod and go.sum
+cd "${TMP_DIR}"
+GO111MODULE=on GOBIN="${TMP_DIR}" go get "github.com/tallclair/mdtoc@${TOOL_VERSION}"
+export PATH="${TMP_DIR}:${PATH}"
+cd "${ROOT}"
 
 echo "Checking table of contents are up to date..."
 # Verify tables of contents are up-to-date

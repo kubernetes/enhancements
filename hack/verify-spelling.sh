@@ -21,8 +21,8 @@ set -o pipefail
 TOOL_VERSION="v0.3.4"
 
 # cd to the root path
-ROOT=$(dirname "${BASH_SOURCE}")/..
-cd ${ROOT}
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+cd "${ROOT}"
 
 # create a temporary directory
 TMP_DIR=$(mktemp -d)
@@ -34,7 +34,12 @@ exitHandler() (
 )
 trap exitHandler EXIT
 
-GO111MODULE=on go get "github.com/client9/misspell/cmd/misspell@${TOOL_VERSION}"
+# perform go get in a temp dir as we are not tracking this version in a go module
+# if we do the go get in the repo, it will create / update a go.mod and go.sum
+cd "${TMP_DIR}"
+GO111MODULE=on GOBIN="${TMP_DIR}" go get "github.com/client9/misspell/cmd/misspell@${TOOL_VERSION}"
+export PATH="${TMP_DIR}:${PATH}"
+cd "${ROOT}"
 
 # check spelling
 RES=0
