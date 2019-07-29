@@ -18,6 +18,7 @@ set -o errexit
 set -o nounset
 set -o pipefail
 
+# keep in sync with hack/verify-toc.sh
 TOOL_VERSION=4dc3d6f908138504b02a1766f1f8ea282d6bdd7c
 
 # cd to the root path
