@@ -21,10 +21,25 @@ set -o pipefail
 TOOL_VERSION=v0.1.0
 
 # cd to the root path
-ROOT=$(dirname "${BASH_SOURCE}")/..
-cd ${ROOT}
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+cd "${ROOT}"
 
-GO111MODULE=on go get "github.com/chuckha/kepview/cmd/kepval@${TOOL_VERSION}"
+# create a temporary directory
+TMP_DIR=$(mktemp -d)
+
+# cleanup
+exitHandler() (
+  echo "Cleaning up..."
+  rm -rf "${TMP_DIR}"
+)
+trap exitHandler EXIT
+
+# perform go get in a temp dir as we are not tracking this version in a go module
+# if we do the go get in the repo, it will create / update a go.mod and go.sum
+cd "${TMP_DIR}"
+GO111MODULE=on GOBIN="${TMP_DIR}" go get "github.com/chuckha/kepview/cmd/kepval@${TOOL_VERSION}"
+export PATH="${TMP_DIR}:${PATH}"
+cd "${ROOT}"
 
 echo "Checking metadata validity..."
 # * ignore "0023-documentation-for-images.md" because it is not a real KEP
