@@ -9,7 +9,8 @@ reviewers:
   - @janetkuo
   - @kow3ns
 approvers:
-  - TBD
+  - @janetkuo
+  - @kow3ns
 editor: TBD
 creation-date: 2019-07-16
 last-updated: 2019-07-16
