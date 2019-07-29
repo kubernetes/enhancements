@@ -38,9 +38,9 @@ superseded-by:
   - [Graduation Criteria](#graduation-criteria)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
-- [Implementation History](#implementation-history)
-- [Drawbacks [optional]](#drawbacks-optional)
-- [Alternatives](#alternatives)
+  - [Implementation History](#implementation-history)
+  - [Drawbacks [optional]](#drawbacks-optional)
+  - [Alternatives](#alternatives)
 - [Infrastructure Needed [optional]](#infrastructure-needed-optional)
 <!-- /toc -->
 
