@@ -17,62 +17,58 @@ limitations under the License.
 package main
 
 import (
-	"fmt"
-	"io/ioutil"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/pkg/errors"
 )
 
-func TestIntegration(t *testing.T) {
-	tempDir, err := ioutil.TempDir(".", "test")
-	if err != nil {
-		t.Fatalf("%+v", errors.WithStack(err))
-	}
-	defer os.RemoveAll(tempDir)
-	fmt.Println("Cloning...")
-	cmd := exec.Command("git", "clone", "https://github.com/kubernetes/enhancements")
-	cmd.Dir = tempDir
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		fmt.Println(string(out))
-		t.Fatalf("%+v", errors.WithStack(err))
-	}
-	fmt.Println("Building...")
-	cmd = exec.Command("go", "build", "-o", filepath.Join(tempDir, "kepval"), ".")
-	if out, err := cmd.CombinedOutput(); err != nil {
-		fmt.Println(string(out))
-		t.Fatal(err)
-	}
-	fmt.Println("Walking...")
-	if filepath.Walk(
-		filepath.Join(tempDir, "enhancements", "keps"),
+const (
+	kepsDir = "keps"
+)
+
+// This is the actual validation check of all keps in this repo
+func TestValidation(t *testing.T) {
+	// Find all the keps
+	files := []string{}
+	err := filepath.Walk(
+		filepath.Join("..", "..", kepsDir),
 		func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
 			if info.IsDir() {
 				return nil
-			}
-			if err != nil {
-				t.Fatalf("%+v", err)
 			}
 			if ignore(info.Name()) {
 				return nil
 			}
-			cmd = exec.Command(filepath.Join(tempDir, "kepval"), path)
-			if out, err := cmd.CombinedOutput(); err != nil {
-				fmt.Println(string(out))
-				t.Fatal(err)
-			}
+			files = append(files, path)
 			return nil
 		},
-	) != nil {
+	)
+	// This indicates a problem walking the filepath, not a validation error.
+	if err != nil {
 		t.Fatal(err)
+	}
+
+	if len(files) == 0 {
+		t.Fatal("must find more than 0 keps")
+	}
+
+	// Overwrite the command line argument for the run() function
+	os.Args = []string{"", ""}
+	for _, file := range files {
+		t.Run(file, func(t *testing.T) {
+			os.Args[1] = file
+			if exit := run(); exit != 0 {
+				t.Fatalf("exit code was %d and not 0. Please see output.", exit)
+			}
+		})
 	}
 }
 
+// ignore certain files in the keps/ subdirectory
 func ignore(name string) bool {
 	if !strings.HasSuffix(name, "md") {
 		return true

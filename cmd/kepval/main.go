@@ -17,7 +17,6 @@ limitations under the License.
 package main
 
 import (
-	"flag"
 	"fmt"
 	"os"
 
@@ -25,16 +24,16 @@ import (
 )
 
 func main() {
-	list := flag.NewFlagSet("list", flag.ExitOnError)
-	list.Parse(os.Args[1:])
+	os.Exit(run())
+}
 
+func run() int {
 	parser := &keps.Parser{}
-	exit := 0
-	for _, filename := range list.Args() {
+	for _, filename := range os.Args[1:] {
 		file, err := os.Open(filename)
 		if err != nil {
 			fmt.Printf("could not open file: %v", err)
-			os.Exit(1)
+			return 1
 		}
 		defer file.Close()
 		kep := parser.Parse(file)
@@ -44,11 +43,9 @@ func main() {
 		}
 
 		fmt.Printf("%v has an error: %q\n", filename, kep.Error.Error())
-		exit = 1
+		return 1
 	}
 
-	if exit == 0 {
-		fmt.Println("No validation errors")
-	}
-	os.Exit(exit)
+	fmt.Println("No validation errors")
+	return 0
 }
