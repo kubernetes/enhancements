@@ -38,6 +38,7 @@ status: provisional
     - [PodSecurityPolicy Update](#podsecuritypolicy-update)
     - [PodSecurityPolicy Enforcement](#podsecuritypolicy-enforcement)
     - [PodTemplates](#podtemplates)
+    - [Upgrade / Downgrade](#upgrade--downgrade)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
@@ -115,7 +116,7 @@ GA will be covered by a separate KEP._
 
 - Declare seccomp GA
 - Fully document and formally spec the feature support
-- Migrate the annotations to standard API fields
+- Add equivalent API fields to replace seccomp annotations
 - Deprecate the seccomp annotations
 
 ### Non-Goals
@@ -128,6 +129,7 @@ are out of scope, including:
 - Formally speccing the seccomp profile format in Kubernetes
 - Providing mechanisms for loading profiles from outside the static seccomp node directory
 - Changing the semantics around seccomp support
+- Windows support (seccomp is very linux-specific)
 
 ## Proposal
 
@@ -139,7 +141,7 @@ specifies allowed profiles & a default profile.
 
 #### Pod API
 
-The Pod Seccomp API is immutable.
+The Pod Seccomp API is immutable, except in [`PodTemplates`](#podtemplates).
 
 ```go
 type PodSecurityContext struct {
@@ -200,7 +202,7 @@ type PodSecurityPolicySpec struct {
 }
 
 type SeccompStrategyOptions struct {
-    // The default profile to set on the pod, if non is specified.
+    // The default profile to set on the pod, if none is specified.
     // The default MUST be allowed by the allowedProfiles.
     // +optional
     DefaultProfile *v1.SeccompProfile
@@ -315,13 +317,21 @@ version running the pod.
 PodTemplates (e.g. ReplaceSets, Deployments, StatefulSets, etc.) will be ignored. The
 field/annotation resolution will happen on template instantiation.
 
+#### Upgrade / Downgrade
+
+Nodes do not currently support in-place upgrades, so pods will be recreated on node upgrade and
+downgrade. No special handling or consideration is needed to support this.
+
+On the API server side, we've already taken version skew in HA clusters into account. The same
+precautions make upgrade & downgrade handling a non-issue.
+
 ### Test Plan
 
 Seccomp already has [E2E tests][], but the tests are guarded by the `[Feature:Seccomp]` tag and not
 run in the standard test suites.
 
 Prior to being marked GA, the feature tag will be removed from the seccomp tests, and the tests will
-be migrated to the new fields API.
+be migrated to the new fields API. Tests will be tagged as `[LinuxOnly]`.
 
 New tests will be added covering the annotation/field conflict cases described under
 [Version Skew Strategy](#version-skew-strategy).
