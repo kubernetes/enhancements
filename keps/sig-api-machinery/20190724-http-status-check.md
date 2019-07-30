@@ -171,12 +171,12 @@ If probe result HTTP code in the list of ExpectHTTPCodes. We say it match the Ex
 ```
 How to match ExpectHTTPContent:
 We support use globbing patterns test probe result content is match ExpectHTTPContent or not, for example:
-probe content	|   ExpectHTTPContent	| resuilt
-      -	    	|         -         	|   -
-  helloworld	|      helloworld 	| match
-  helloworld    |      helloworl* 	| match
-  helloworld    |      helleworld	| mismatch
-  hellworld	|      hellawor*	| mismatch
+|probe content	|   ExpectHTTPContent	| resuilt|
+      -:    	|         :-:         	|   :-
+|  helloworld	|      helloworld 	| match	|
+|  helloworld   |      helloworl\*	| match	|
+|  helloworld   |       helleworld	| mismatch|
+|  hellworld	|      hellawor\*	| mismatch|
 
 We introduce a new feature gate named `HTTPProbeEnhancement`. It will do flow the condition.
 1. If user not enable feature gate. It works as normal. If HTTP status code between 200 and 400. return Probe.Success.
