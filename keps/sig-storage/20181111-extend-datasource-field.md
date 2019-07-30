@@ -12,7 +12,7 @@ approvers:
   - "@thockin"
 editor: "@j-griffith"
 creation-date: 2018-11-11
-last-updated: 2019-04-29
+last-updated: 2019-07-17
 status: implementable
 see-also:
 replaces:
@@ -69,6 +69,7 @@ Features like Cloning are common in most storage devices, not only is the capabi
 * This KEP does NOT propose any ability to shrink a PVC during a Clone request (e.g. it's considered an invalid request to clone PVC-a with a size of 10Gib to a PVC with a requested size of less than 10Gib, expansion is "ok" if the driver supports it but it's not required)
 * This KEP does NOT propose adding any ability to transfer a Clone to a different Namespace, the new PVC (Clone) will be in the same Namespace as the origin that was specified.  This also means that since this is namespaced, a user can not request a Clone of a PVC that is another Namespace.  A user can only request a Clone of PVCs in his or her Namespace.
 * Cloning will only be available in CSI, cloning features will NOT be added to existing in-tree plugins or Flex drivers
+* Cloning will only be available within the same storage class (see [Implementation Details](#implementation-detailsnotesconstraints-optional) section for more info)
 
 ## Proposal
 
@@ -114,6 +115,8 @@ Currently the CSI provisioner already accepts the DataSource field in new provis
 
 To emphasize above, this feature will ONLY be available for CSI.  This feature wil NOT be added to In-tree plugins or Flex drivers, this is strictly a CSI only feature.
 
+It's important to note that we intentionally require that a source PVC be in the same StorageClass as the PVC being created.  This is currently required because the StorageClass determintes characteristics for a volume like `fsType`.  Performing a clone from an xfs volume to an ext4 volume for example would not be acceptable, given that a storageClass can have unique information, cloning across storage classes is not something we're able to try and determine safely at this time.
+
 ### Risks and Mitigations
 
 The primary risk of this feature is requesting a PVC DataSource when using a CSI Driver that doesn't handle Cloning in a safe way for running applications.  It's assumed that the responsibility for reporting Clone Capabilities in this case is up to the CSI Driver, and if a CSI Driver is reporting Clone support that implies that they can in fact Clone Volumes without disrupting or corrupting users that may be actively using the specified source volume.
@@ -129,6 +132,8 @@ Currently the only feature gate related to DataSources is the VolumeSnapshotData
 Given that the only implementation changes in Kuberenetes is to enable the feature in the API (all of the actual Clone implementation is handled by the CSI Plugin and back end device) the main criteria for completion will be successful implementation and agreement from the CSI community regarding the Kubernetes API.
 
 ## Implementation History
+
+1.15 - Alpha status
 
 ## Drawbacks [optional]
 
