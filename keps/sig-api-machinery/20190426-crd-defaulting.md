@@ -64,7 +64,9 @@ properties:
 
 This KEP proposes to apply these default values during deserialization, in the same way as native resources do. We assume _structural schemas_ as defined in [KEP Vanilla OpenAPI Subset: Structural Schema](/keps/sig-api-machinery/20190425-structural-openapi.md).
 
-This feature starts behind a feature gate `CustomResourceDefaulting`, disabled by default as alpha.
+This feature starts behind a feature gate `CustomResourceDefaulting`, disabled by default as alpha in 1.15.
+
+It will graduate to GA in `apiextensions.k8s.io/v1` for 1.16. Defaults can only be set on creation via the v1 API.
 
 ## Motivation
 
@@ -124,6 +126,8 @@ The `default` field in the CRD types is considered alpha quality. We will add a 
 [Kubebuilder's crd-gen](https://github.com/kubernetes-sigs/controller-tools/tree/master/cmd/crd) can make use of this feature by adding another tag, e.g. `// +default=<arbitrary-json-value>`. Defaults are arbitrary JSON values, which must also validate (types are checked during CRD creation and update, value validation is checked for requests, but not for etcd reads) and are not subject to pruning (defaulting happens after pruning).
 
 ### Validation
+
+CRDs with defaults can only be created via `apiextensions.k8s.io/v1`. They are rejected for `v1beta1` on creation (updates keep working). 
 
 Default values must be pruned, i.e. must not have fields which are not specified by the given structural schema (including support for `x-kubernetes-preserve-unknown-fields` to exclude nodes from being pruned), with the exception of
  
@@ -322,7 +326,8 @@ While defaults for `ObjectMeta` fields are not checked for being pruned during C
 * we are happy with the API and its behaviour
 
 **blockers for GA:**
-
+* add tests for default value validation:
+  * CRD schema with defaults is rejected on creation via the `v1beta1` endpoints, but updates via `v1beta1` are still possible.
 * we verified that performance of defaulting is adequate and not considerably reducing throughput. As a rule of thumb, we expect defaulting to be considerably faster than a deep copy.
 
 ### Graduation Criteria
@@ -334,6 +339,7 @@ While defaults for `ObjectMeta` fields are not checked for being pruned during C
 * defaults cannot be set in 1.14 CRDs.
 * CRDs created in 1.15 will keep defaults when downgrading to 1.14 (because we have them in our `v1beta1` types already). They won't be effective and the CRD will not validate anymore. This is acceptable for an alpha feature.
 * CRDs created in 1.15 with the feature gate enabled will keep working the same way when upgrading to 1.16, or conversely during downgrade from 1.16 to 1.15 as we do ratcheting validation.
+* Creation of CRDs with defaults via `v1beta1` API will be disabled, even if the feature gate is explicitly enabled.
 
 ### Version Skew Strategy
 
