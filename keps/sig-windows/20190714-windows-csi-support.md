@@ -17,8 +17,8 @@ approvers:
   - "@msau42"
 editor: TBD
 creation-date: 2019-07-14
-last-updated: 2019-07-14
-status: provisional
+last-updated: 2019-07-29
+status: implementable
 see-also:
   - "NA"
 replaces:
@@ -44,11 +44,17 @@ superseded-by:
     - [Enhancements in Kubelet Plugin Watcher](#enhancements-in-kubelet-plugin-watcher)
     - [Enhancements in CSI Node Driver Registrar](#enhancements-in-csi-node-driver-registrar)
     - [New Component: CSI Proxy](#new-component-csi-proxy)
+      - [CSI Proxy Named Pipes](#csi-proxy-named-pipes)
+      - [CSI Proxy Configuration](#csi-proxy-configuration)
+      - [CSI Proxy GRPC API](#csi-proxy-grpc-api)
+      - [CSI Proxy GRPC API Graduation and Deprecation Policy](#csi-proxy-grpc-api-graduation-and-deprecation-policy)
+      - [CSI Proxy Event Logs](#csi-proxy-event-logs)
     - [Enhancements in Kubernetes/Utils/mounter](#enhancements-in-kubernetesutilsmounter)
     - [Enhancements in CSI Node Plugins](#enhancements-in-csi-node-plugins)
   - [Risks and Mitigations](#risks-and-mitigations)
     - [Mitigation using PSP](#mitigation-using-psp)
     - [Mitigation using a webhook](#mitigation-using-a-webhook)
+    - [Comparison of risks with CSI Node Plugins in Linux](#comparison-of-risks-with-csi-node-plugins-in-linux)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
@@ -190,12 +196,12 @@ spec:
             - name: plugin-dir
               mountPath: C:\csi
             - name: csi-proxy-pipe
-              mountPath: \\.\pipe\csi-proxy
+              mountPath: \\.\pipe\csi-proxy-v1alpha1
       volumes:
         - name: csi-proxy-pipe
           hostPath: 
-            path: \\.\pipe\csi-proxy
-            type: null
+            path: \\.\pipe\csi-proxy-v1alpha1
+            type: ""
         - name: registration-dir
           hostPath:
             path: C:\var\lib\kubelet\plugins_registry\
@@ -280,7 +286,7 @@ CSI Node Plugins listen on domain sockets and respond to CSI API requests sent o
 
 Support for Unix Domain Sockets has been introduced in Windows Server 2019 and works across containers as well as host and container as long as the processes running in containers are listening on the socket. If a process from within a container wishes to connect to a domain socket that a process on the host OS is listening on, Windows returns a permission error. This scenario however does not arise in the context of interactions between Kubelet, CSI Node Driver Registrar and CSI Node Plugin as these involve a process in a container listening on a domain socket (CSI Node Driver Registrar or CSI Node Plugin) that a process on the host (Kubelet) connects to.
 
-Golang supports domain socket operations for Windows since go version 1.12. It was found that in Windows, `os.ModeSocket` is not set on the `os.FileMode` associated with domain socket files in Windows. Therefore determining whether a file is a domain socket file using `os.ModeSocket` does not work on Windows.
+Golang supports domain socket operations for Windows since go version 1.12. It was found that in Windows, `os.ModeSocket` is not set on the `os.FileMode` associated with domain socket files in Windows. This issue is tracked [here](https://github.com/golang/go/issues/33357). Therefore determining whether a file is a domain socket file using `os.ModeSocket` does not work on Windows right now. We can potentially work around this by sending down a FSCTL to the file and evaluating the Windows reparse points to determine if the file is backed by a domain socket.
 
 Based on the above, we can conclude that some of the fundamental support in the OS and compiler with regards to domain sockets in the context of CSI plugin discovery and a channel for API invocation is present in a stable state in Windows Server 2019 today. Although there are some observed limitations with respect to domain sockets in Windows Server 2019, they are not major blockers in the context of CSI Node Plugins. In the section below, we call out the components in the context of CSI Node Plugins in Kubernetes that will need to be enhanced to properly account for Windows paths and make use of domain sockets in Windows in a manner very similar to Linux.
 
@@ -290,7 +296,7 @@ CSI Node Plugins need to execute certain privileged operations at the host level
 
 Registration of CSI Node Plugins on a Kubernetes node is handled by the Kubelet plugin watcher using the fsnotify package. This component needs to convert paths detected by fsnotify to Windows paths in handleCreateEvent() and handleDeleteEvent() before the paths are passed to AddOrUpdatePlugin() RemovePlugin() routines in desiredStateOfTheWorld. A new utility function, NormalizeWindowsPath(), will be added in utils to handle this.
 
-Given `os.ModeSocket` is not set on a socket file's `os.FileMode` in Windows, a specific check for `os.ModeSocket` in handleCreateEvent() will need to be relaxed.
+Given `os.ModeSocket` is not set on a socket file's `os.FileMode` in Windows (due to golang [issue](https://github.com/golang/go/issues/33357)), a specific check for `os.ModeSocket` in handleCreateEvent() will need to be relaxed for Windows until the golang issue is addressed.
 
 #### Enhancements in CSI Node Driver Registrar
 
@@ -302,18 +308,27 @@ Once compiled for Windows, container images based on Window Base images (like Na
 
 A "privileged proxy" binary, csi-proxy.exe, will need to be developed and maintained by the Kubernetes CSI community to allow containerized CSI Node Plugins to perform privileged operations at the Windows host OS layer. Kubernetes administrators will need to install and maintain csi-proxy.exe on all Windows nodes in a manner similar to dockerd.exe today or containerd.exe in the future. A Windows node will typically be expected to be configured to run only one instance of csi-proxy.exe as a Windows Service that can be used by all CSI Node Plugins.
 
-A CSI Node Plugin will interact with csi-proxy.exe using named pipe: `\\.\pipe\csi-proxy-v[N]` (exposed by csi-proxy.exe). The `v[N]` suffix in the pipe name corresponds to the version of the CSIProxyService (described below) that is required by the CSI plugin. Specific example of named pipes corresponding to versions include: `\\.\pipe\csi-proxy-v1`, `\\.\pipe\csi-proxy-v2alpha1`, `\\.\pipe\csi-proxy-v3beta1`, etc. The pipe will need to be mounted into the Node Plugin container from the host using the pod's volume mount specifications. Note that domain sockets cannot be used in this scenario since Windows blocks a containerized process from interacting with a host process that is listening on a domain socket.
+##### CSI Proxy Named Pipes
+A CSI Node Plugin will interact with csi-proxy.exe using named pipe: `\\.\pipe\csi-proxy-v[N]` (exposed by csi-proxy.exe). The `v[N]` suffix in the pipe name corresponds to the version of the CSIProxyService (described below) that is required by the CSI plugin. Specific example of named pipes corresponding to versions include: `\\.\pipe\csi-proxy-v1`, `\\.\pipe\csi-proxy-v2alpha1`, `\\.\pipe\csi-proxy-v3beta1`, etc. The pipe will need to be mounted into the Node Plugin container from the host using the pod's volume mount specifications. Note that domain sockets cannot be used in this scenario since Windows blocks a containerized process from interacting with a host process that is listening on a domain socket. If such support is enabled on Windows in the future, we may consider switching CSI Proxy to use domain sockets however Windows named pipes is a common mechanism used by containers today to interact with host processes like docker daemon.
 
-![Kubernetes CSI Node Components and Interactions](https://ddebroywin1.s3-us-west-2.amazonaws.com/csi-proxy2.png "Kubernetes CSI Node Components and Interactions")
+![Kubernetes CSI Node Components and Interactions](csi-proxy3.png?raw=true "Kubernetes CSI Node Components and Interactions")
 
 A GRPC based interface, CSIProxyService, will be used by CSI Node Plugins to invoke privileged operations on the host through csi-proxy.exe. CSIProxyService will be versioned and any release of csi-proxy.exe binary will strive to maintain backward compatibility across as many prior stable versions of the API as possible. This avoids having to run multiple versions of the csi-proxy.exe binary on the same Windows host if multiple CSI Node Plugins (that do not depend on APIs in Alpha or Beta versions) have been configured and the version of the csi-proxy API required by the plugins are different. For every version of the API supported, csi-proxy.exe will first probe for and then expose a `\\.\pipe\csi-proxy-v[N]` pipe where v[N] can be v1, v2alpha1, v3beta1, etc. If during the initial probe phase, csi-proxy.exe determines that another process is already listening on a `\\.\pipe\csi-proxy-v[N]` named pipe, it will not try to create and listen on that named pipe. This allows multiple versions of csi-proxy.exe to run side-by-side if absolutely necessary to support multiple CSI Node Plugins that require widely different versions of CSIProxyService that no single version of csi-proxy.exe can support.
 
-If an old stable version of CSIProxyService, say vN, can no longer be supported, support for it may be dropped from the latest version of csi-proxy.exe. To continue running CSI Node Plugins that depend on the old version vN, Kubernetes administrators will be required to run the latest version of the csi-proxy.exe (that will be used by CSI Node Plugins that use versions of CSIProxyService more recent than vN) along with an old version of csi-proxy.exe that does support vN.
+##### CSI Proxy Configuration
+There will be two command line parameters that may be passed to csi-proxy.exe:
+1. kubernetes-csi-plugins-path: String parameter pointing to the path used by Kubernetes CSI plugins. Will default to: `C:\var\lib\kubelet\plugins\kubernetes.io\csi`. All requests for creation and deletion of paths through the CSIProxyService RPCs (detailed below) will need to be under this path.
 
-The following are the main RPC calls that will comprise a v1 version of the CSIProxyService API:
+2. container-runtime-storage-path: String parameter pointing to the path used by the container runtime to store images, snapshots and other data related to containers. Possible values could be: `F:\ProgramData\docker`, `C:\ProgramData\containerd` or corresponding paths used by a Windows runtime. Parameters to `LinkVolume` (detailed below) will need to be under this path.
+
+##### CSI Proxy GRPC API
+The following are the main RPC calls that will comprise a v1alpha1 version of the CSIProxyService API. A preliminary structure for Request and Response associated with each RPC is described below. Note that the specific structures as well as restrictions on them are expected to evolve during Alpha phase and are expected to be in a final form at the end of Beta. As the API evolves, the section below will be kept up-to-date
 
 ```
 service CSIProxyService {
+
+    // PathExists checks if the given path exists in the host already
+    rpc PathExists(PathExistsRequest) returns (PathExistsResponse) {}
 
     // Mkdir creates a directory at the requested absolute path in the host. Relative path is not supported.
     rpc Mkdir(MkdirRequest) returns (MkdirResponse) {}
@@ -339,23 +354,386 @@ service CSIProxyService {
     // MountISCSILun mounts a remote LUN over iSCSI and returns the OS disk device number.
     rpc MountISCSILun(MountISCSILunRequest) returns (MountISCSILunResponse) {}
 
-    // LinkVolume invokes mklink on the global staging path of a volume linking it to a path within a container
-    rpc LinkVolume(LinkVolumeRequest) returns (LinkVolumeResponse) {}
+    // LinkPath invokes mklink on the global staging path of a volume linking it to a path within a container
+    rpc LinkPath(LinkPathRequest) returns (LinkPathResponse) {}
 
-    // GetDiskLocations returns locations <Bus, Target, LUN ID> of all disk devices enumerated by Windows
-    rpc GetDiskLocations(GetDiskLocationsRequest) returns (GetDiskLocationsResponse) {}
+    // ListDiskLocations returns locations <Bus, Target, LUN ID> of all disk devices enumerated by Windows
+    rpc ListDiskLocations(ListDiskLocationsRequest) returns (ListDiskLocationsResponse) {}
 
-    // GetDiskIDs returns all IDs (from IOCTL_STORAGE_QUERY_PROPERTY) of all disk devices enumerated by Windows
-    rpc GetDiskIDs(GetDiskIDsRequest) returns (GetDiskIDsResponse) {}
+    // ListDiskIDs returns all IDs (from IOCTL_STORAGE_QUERY_PROPERTY) of all disk devices enumerated by Windows
+    rpc ListDiskIDs(GetDiskIDsRequest) returns (ListDiskIDsResponse) {}
+
+    // ListDiskVolumeMappings returns a map of all disk devices and volumes GUIDs
+    rpc ListDiskVolumeMappings(ListDiskVolumeMappingsRequest) returns (ListDiskVolumeMappingsResponse) {}
 
     // ResizeVolume performs resizing of the partition and file system for a block based volume
     rpc ResizeVolume(ResizeVolumeRequest) returns (ResizeVolumeResponse) {}
+
+    // DismountVolume gracefully dismounts a volume
+    rpc DismountVolume(DismountVolumeRequest) return (DismountVolumeResponse) {}
 }
+
+message PathExistsRequest {
+    // The path to check in the host filesystem.
+    string path = 1;
+}
+
+message PathExistsResponse {
+    // Whether path already exists in host or not
+    bool exists = 1;
+}
+
+// Context of the paths used for path prefix validation
+enum PathContext {
+    // plugin maps to the configured kubernetes-csi-plugins-path path prefix
+    PLUGIN = 0;
+    // container maps to the configured container-runtime-storage-path path prefix
+    CONTAINER = 1;
+}
+
+message MkdirRequest {
+    // The path to create in the host filesystem.
+    // All special characters allowed by Windows in path names will be allowed
+    // except for restrictions noted below. For details, please check:
+    // https://docs.microsoft.com/en-us/windows/win32/fileio/naming-a-file
+    // Non-existent parent directories in the path will NOT be created.
+    // Directories will be created with Read and Write privileges of the Windows
+    // User account under which csi-proxy is started (typically LocalSystem).
+    //
+    // Restrictions:
+    // Needs to be an absolute path under kubernetes-csi-plugins-path
+    // or container-runtime-storage-path based on context
+    // Cannot exist already in host
+    // Path needs to be specified with drive letter prefix: "X:\".
+    // UNC paths of the form "\\server\share\path\file" are not allowed.
+    // All directory separators need to be backslash character: "\".
+    // Characters: .. / : | ? * in the path are not allowed.
+    // Maximum path length will be capped to 260 characters (MAX_PATH).
+    string path = 1;
+
+    // Context of the path creation used for path prefix validation
+    PathContext context = 2;
+}
+
+message MkdirResponse {
+    // Windows error code
+    // Success is represented as 0
+    int32 error_code = 1;
+}
+
+message RmdirRequest {
+    // The path to remove in the host filesystem
+    // All special characters allowed by Windows in path names will be allowed
+    // except for restrictions noted below. For details, please check:
+    // https://docs.microsoft.com/en-us/windows/win32/fileio/naming-a-file
+    //
+    // Restrictions:
+    // Needs to be an absolute path under kubernetes-csi-plugins-path
+    // or container-runtime-storage-path based on context
+    // Path needs to be specified with drive letter prefix: "X:\".
+    // UNC paths of the form "\\server\share\path\file" are not allowed.
+    // All directory separators need to be backslash character: "\".
+    // Characters: .. / : | ? * in the path are not allowed.
+    // Path cannot be a file of type symlink
+    // Path needs to be a directory that is empty
+    // Maximum path length will be capped to 260 characters (MAX_PATH).
+    string path = 1;
+
+    // Context of the path creation used for path prefix validation
+    PathContext context = 2;
+}
+
+message RmdirResponse {
+    // Windows error code
+    // Success is represented as 0
+    int32 error_code = 1;
+}
+
+message RescanRequest {
+    // Intentionally empty.
+}
+
+message RescanResponse {
+    // Windows error code
+    // Success is represented as 0
+    int32 error_code = 1;
+}
+
+message PartitionDiskRequest {
+    // The Windows disk device to partition and the paritioning mode: MBR/GPT.
+    // The whole disk will be partitioned
+    //
+    // Restrictions:
+    // Disk device needs to follow Win32 format for device names: \\.\PhysicalDriveX
+    // The prefix has to be: \\.\PhysicalDrive and the suffix is an integer in range:
+    // 0 to maximum number drives allowed by Windows OS.
+    string disk_device = 1;
+
+    // Disk partition type
+    enum ParitionType {
+        MBR = 0;
+        GPT = 1;
+    }
+    PartitionType type = 2;
+}
+
+message PartitionDiskResponse {
+    // Volume device resulting from the partition
+    // Volume device will follow Win32 namespaced GUID format for volumes: \\?\Volume\{GUID}
+    // The prefix has to be: \\?\Volume\ and the suffix to be a GUID enclosed with {}
+    string volume_device = 1;
+
+    // Windows error code
+    // Success is represented as 0
+    int32 error_code = 2;
+}
+
+message FormatVolumeRequest {
+    // The Windows volume device to format
+    // Typically Volume Device returned by PartitionDiskResponse
+    //
+    // Restrictions:
+    // Volume device needs to follow Win32 namespaced GUID format for volumes: \\?\Volume\{GUID}
+    // The prefix has to be: \\?\Volume\ and the suffix to be a GUID enclosed with {}
+    string volume_device = 1;
+
+    // FileSystem type
+    enum FileSystemType {
+        NTFS = 0;
+        FAT = 1;
+    }
+    FileSystemType type = 2;
+}
+
+message FormatVolumeResponse {
+    // Windows error code
+    // Success is represented as 0
+    int32 error_code = 1;
+}
+
+message MountSMBShareRequest {
+    // A remote SMB share to mount
+    // All unicode characters allowed in SMB server name specifications are
+    // permitted except for restrictions below
+    //
+    // Restrictions:
+    // SMB share specified in the format: \\server-name\sharename, \\server.fqdn\sharename or \\a.b.c.d\sharename
+    // If not an IP address, share name has to be a valid DNS name.
+    // UNC specifications to local paths or prefix: \\?\ is not allowed.
+    // Characters: + [ ] " / : ; | < > , ? * = $ are not allowed.
+    string remote_share = 1;
+
+    // Local path in the host to stage the SMB share.
+    // All special characters allowed by Windows in path names will be allowed
+    // except for restrictions noted below. For details, please check:
+    // https://docs.microsoft.com/en-us/windows/win32/fileio/naming-a-file
+    //
+    // Restrictions:
+    // Needs to be an absolute path under kubernetes-csi-plugins-path.
+    // Needs to exist already in host
+    // Path needs to be specified with drive letter prefix: "X:\".
+    // UNC paths of the form "\\server\share\path\file" are not allowed.
+    // All directory separators need to be backslash character: "\".
+    // Characters: .. / : | ? * in the path are not allowed.
+    // Maximum path length will be capped to 260 characters (MAX_PATH).
+    string host_path = 2;
+
+    // Mount the share read-only
+    bool readonly = 3;
+
+    // Username credential associated with the share
+    string username = 4;
+
+    // Password credential associated with the share
+    string password = 5;
+}
+
+message MountSMBShareResponse {
+    // Windows error code
+    // Success is represented as 0
+    int32 error_code = 1;
+}
+
+message MountISCSILunRequest {
+    // IQN address
+    // follows IQN format: iqn.yyyy-mm.naming-authority:unique name
+    string node_iqn = 1;
+
+    // Authentication Type
+    enum AuthType {
+        None = 0;
+        OneWay = 1;
+        Mutual = 2;
+    }
+    AuthType auth_type = 2;
+
+    // Discovery CHAP username
+    string discovery_chap_username = 3;
+
+    // Discovery CHAP secret
+    string discovery_chap_secret = 4;
+
+    // Session CHAP username
+    string session_chap_username = 5;
+
+    // Session CHAP secret
+    string session_chap_secret = 6;
+
+    // TargetPortal address
+    string target_portal_address = 7;
+
+    // TargetPortal port
+    string target_portal_port = 8;
+
+    // Readonly mount
+    bool readonly = 9;
+}
+
+message MountISCSILunResponse {
+    // Windows error code
+    // Success is represented as 0
+    int32 error_code = 1;
+}
+
+message LinkPathRequest {
+    // Source of MkLink call to Windows
+    // All special characters allowed by Windows in path names will be allowed
+    // except for restrictions noted below. For details, please check:
+    // https://docs.microsoft.com/en-us/windows/win32/fileio/naming-a-file
+    //
+    // Restrictions:
+    // Needs to be an absolute path under container-runtime-storage-path
+    // Needs to exist already in host
+    // Path needs to be specified with drive letter prefix: "X:\".
+    // UNC paths of the form "\\server\share\path\file" are not allowed.
+    // All directory separators need to be backslash character: "\".
+    // Characters: .. / : | ? * in the path are not allowed.
+    // Maximum path length will be capped to 260 characters (MAX_PATH).
+    string source_path = 1;
+
+    // Target of MkLink call to Windows
+    // All special characters allowed by Windows in path names will be allowed
+    // except for restrictions noted below. For details, please check:
+    // https://docs.microsoft.com/en-us/windows/win32/fileio/naming-a-file
+    //
+    // Restrictions:
+    // Needs to be an absolute path under kubernetes-csi-plugins-path.
+    // Needs to exist already in host
+    // Path needs to be specified with drive letter prefix: "X:\".
+    // UNC paths of the form "\\server\share\path\file" are not allowed.
+    // All directory separators need to be backslash character: "\".
+    // Characters: .. / : | ? * in the path are not allowed.
+    // Maximum path length will be capped to 260 characters (MAX_PATH).
+    string target_path = 2;
+}
+
+message LinkPathResponse {
+    // Windows error code
+    // Success is represented as 0
+    int32 error_code = 1;
+}
+
+message ListDiskLocationsRequest {
+    // Intentionally empty
+}
+
+message ListDiskLocationsResponse {
+    // Map of disk device objects and <bus, target, lun ID> associated with each disk device
+    map <string, DiskLocation> disk_locations = 1;
+
+    // Windows error code
+    // Success is represented as 0
+    int32 error_code = 2;
+}
+
+message DiskLocation {
+    string Bus = 1;
+    string Target = 2;
+    string LUNID = 3;
+}
+
+message ListDiskIDsRequest {
+    // Intentionally empty
+}
+
+message ListDiskIDsResponse {
+    // Map of disk device objects and IDs associated with each disk device
+    map <string, DiskIDs> disk_id = 1;
+
+    // Windows error code
+    // Success is represented as 0
+    int32 error_code = 2;
+}
+
+message DiskIDs {
+    // list of Disk IDs of ascii characters associated with disk device
+    repeated strings IDs = 1;
+}
+
+message ListDiskVolumeMappingsRequest {
+    // Intentionally empty
+}
+
+message ListDiskVolumeMappingsResponse {
+    // Map of disk devices and volume objects of the form \\?\volume\{GUID} on the disk
+    map <string, string> disk_volume_pair = 1;
+
+    // Windows error code
+    // Success is represented as 0
+    int32 error_code = 2;
+}
+
+message ResizeVolumeRequest {
+    // The Win32 volume device to resize
+    //
+    // Restrictions:
+    // Volume device needs to follow Win32 namespaced GUID format for volumes: \\?\Volume\{GUID}
+    // The prefix has to be: \\?\Volume\ and the suffix to be a GUID enclosed with {}
+    string volume_device = 1;
+
+    // New size to resize FS to
+    int64 new_size = 2;
+}
+
+message ResizeVolumeResponse {
+    // Windows error code
+    // Success is represented as 0
+    int32 error_code = 1;
+}
+
+message DismountVolumeRequest {
+    // The Win32 volume device to dismount gracefully
+    //
+    // Restrictions:
+    // Volume device needs to follow Win32 namespaced GUID format for volumes: \\?\Volume\{GUID}
+    // The prefix has to be: \\?\Volume\ and the suffix to be a GUID enclosed with {}
+    string volume_device = 1;
+}
+
+message DismountVolumeResponse {
+    // Windows error code
+    // Success is represented as 0
+    int32 error_code = 1;
+}
+
 ```
+
+##### CSI Proxy GRPC API Graduation and Deprecation Policy
 
 In accordance with standard Kubernetes conventions, the above API will be introduced as v1alpha1 and graduate to v1beta1 and v1 as the feature graduates. Beyond a vN release in the future, new RPCs and enhancements to parameters will be introduced through vN+1alpha1 and graduate to vN+1beta1 and vN+1 stable versions as the new APIs mature.
 
+Members of CSIProxyService API may be deprecated and then removed from csi-proxy.exe in a manner similar to Kubernetes deprecation (policy)[https://kubernetes.io/docs/reference/using-api/deprecation-policy/] although maintainers will make an effort to ensure such deprecation is as rare as possible. After their announced deprecation, a member of CSIProxyService API must be supported:
+1. 12 months or 3 releases (whichever is longer) if the API member is part of a Stable/vN version.
+2. 9 months or 3 releases (whichever is longer) if the API member is part of a Beta/vNbeta1 version.
+3. 0 releases if the API member is part of an Alpha/vNalpha1 version.
+
+To continue running CSI Node Plugins that depend on an old version of csi-proxy.exe, vN, some of whose members have been removed, Kubernetes administrators will be required to run the latest version of the csi-proxy.exe (that will be used by CSI Node Plugins that use versions of CSIProxyService more recent than vN) along with an old version of csi-proxy.exe that does support vN.
+
 Introduction of new RPCs or enhancements to parameters is expected to be inspired by new requirements from plugin authors as well as CSI functionality enhancement.
+
+##### CSI Proxy Event Logs
+
+For all RPC invocations, csi-proxy.exe will log events to the Windows application event log. This will act as an audit trail that may be correlated with audit logs from Kubeneretes around operations involving PV creation to track potential unexpected invocation of CSIProxyService by a malicious pod or process.
 
 #### Enhancements in Kubernetes/Utils/mounter
 
@@ -371,7 +749,7 @@ New YAMLs for DaemonSets associated with CSI Node Plugins needs to be authored t
 
 ### Risks and Mitigations
 
-Any pod on a Windows node can be configured to mount `\\.\pipe\csi-proxy-v[N]` and perform privileged operations. Thus csi-proxy presents a potential security risk. To mitigate the risk, here are some options:
+Any pod on a Windows node can be configured to mount `\\.\pipe\csi-proxy-v[N]` and perform privileged operations. Thus csi-proxy presents a potential security risk. To mitigate the risk, some options are described below:
 
 #### Mitigation using PSP
 Administrators can enable Pod Security Policy (PSP) in their cluster and configure PSPs to:
@@ -380,7 +758,10 @@ Administrators can enable Pod Security Policy (PSP) in their cluster and configu
 Support will need to be implemented in AllowsHostVolumePath to handle Windows pipe paths.
 
 #### Mitigation using a webhook
-An admission webhook can be implemented and deployed in clusters with Windows nodes that will reject all containers that mount `\\.\pipe\csi-proxy` as a hostPath volume but does not have privileged flag set in the pod's securityContext specification. This allows the privileged setting to be used for Windows pods as an indication the container will perform privileged operations. Other cluster-wide policies (e.g. PSP) that act on the privileged setting in a container's securityContext can enforce the same for CSI Node plugins targeting Windows nodes. Note that this does not in any way change how the privileged setting is used today for Linux nodes. If in the future, full privileged container support is introduced in Windows (as in Linux today), functionality of existing CSI Node Plugin DaemonSets (targeting Windows) with the privileged flag set should not get negatively impacted as they will be launched as privileged containers.
+An admission webhook can be implemented and deployed in clusters with Windows nodes that will reject all containers that mount paths with prefix `\\.\pipe\csi-proxy` as a hostPath volume but does not have privileged flag set in the pod's securityContext specification. This allows the privileged setting to be used for Windows pods as an indication the container will perform privileged operations. Other cluster-wide policies (e.g. PSP) that act on the privileged setting in a container's securityContext can enforce the same for CSI Node plugins targeting Windows nodes. Note that this does not in any way change how the privileged setting is used today for Linux nodes. If in the future, full privileged container support is introduced in Windows (as in Linux today), functionality of existing CSI Node Plugin DaemonSets (targeting Windows) with the privileged flag set should not get negatively impacted as they will be launched as privileged containers.
+
+#### Comparison of risks with CSI Node Plugins in Linux
+In Linux nodes, CSI Node Plugins typically surface a domain socket used by the kubelet to invoke CSI API calls on the node plugin. This socket may also be mounted by a malicious pod to invoke CSI API calls that may be potentially destructive - for example a Node Stage API call that leads to a volume being formatted. The malicious pod will have to correctly guess the parameters for the CSI API calls for a particular node plugin in order to influence it's behavior as well as circumvent validation checks (or exploit logical vulnerabilities/bugs) in the plugin's code. In case of Windows, a malicious pod can perform destructive actions using the csi-proxy pipe with far less barriers in the absence of the above mitigations. However the overall attack surface of using a mounted domain socket in Linux or a named pipe in Windows from a malicious pod is similar.
 
 ## Design Details
 
