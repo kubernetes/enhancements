@@ -4,17 +4,16 @@ authors:
   - "@awly"
 owning-sig: sig-auth
 participating-sigs:
-  - TBD
+  - sig-cli, sig-api-machinery
 reviewers:
   - "@liggitt"
   - "@mikedanese"
 approvers:
   - "@liggitt"
   - "@mikedanese"
-editor: TBD
 creation-date: 2019-07-11
 last-updated: 2019-07-11
-status: provisional
+status: implementable
 ---
 
 # External credential providers
@@ -110,7 +109,7 @@ users:
   user:
     exec:
       # API version to use when decoding the ExecCredentials resource. Required.
-      apiVersion: "client.authentication.k8s.io/v1beta1"
+      apiVersion: "client.authentication.k8s.io/<version>"
 
       # Command to execute. Required.
       command: "example-client-go-exec-plugin"
@@ -152,7 +151,7 @@ variables set in the client process are not passed.
 
 ```
 {
-  "apiVersion": "client.authentication.k8s.io/v1",
+  "apiVersion": "client.authentication.k8s.io/<version>",
   "kind": "ExecCredential"
 }
 ```
@@ -163,7 +162,7 @@ Provider can safely ignore `stdin` since input object doesn't carry any data.
 
 ```
 {
-  "apiVersion": "client.authentication.k8s.io/v1",
+  "apiVersion": "client.authentication.k8s.io/<version>",
   "kind": "ExecCredential",
   "status": {
     "expirationTimestamp": "$EXPIRATION",
@@ -174,9 +173,8 @@ Provider can safely ignore `stdin` since input object doesn't carry any data.
 }
 ```
 
-`EXPIRATION` contains the RFC3339 timestamp with credential expiry. This field
-is not set in `handshaker` mode. Client can cache provided credentials until
-this time.
+`EXPIRATION` contains the RFC3339 timestamp with credential expiry. Client can
+cache provided credentials until this time.
 
 After `EXPIRATION`, client must execute the provider again for any new
 connections. For `client_key` mode, this applies even if returned certificate
@@ -193,8 +191,8 @@ credentials are used for mTLS handshakes.
 
 #### Client authentication to the binary
 
-Credential provider binary does not do any authentication/authorization of the
-caller. Caller of the binary does not pass any credentials either.
+Credential provider can authenticate the caller via env vars or arguments
+specified in its `kubeconfig`. This is optional.
 
 It is recommended to restrict access to the binary using exec Unix permissions.
 
