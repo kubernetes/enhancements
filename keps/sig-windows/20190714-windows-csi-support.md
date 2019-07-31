@@ -317,9 +317,9 @@ A GRPC based interface, CSIProxyService, will be used by CSI Node Plugins to inv
 
 ##### CSI Proxy Configuration
 There will be two command line parameters that may be passed to csi-proxy.exe:
-1. kubernetes-csi-plugins-path: String parameter pointing to the path used by Kubernetes CSI plugins. Will default to: `C:\var\lib\kubelet\plugins\kubernetes.io\csi`. All requests for creation and deletion of paths through the CSIProxyService RPCs (detailed below) will need to be under this path.
+1. kubelet-csi-plugins-path: String parameter pointing to the path used by Kubernetes CSI plugins on each node. Will default to: `C:\var\lib\kubelet\plugins\kubernetes.io\csi`. All requests for creation and deletion of paths through the CSIProxyService RPCs (detailed below) will need to be under this path.
 
-2. container-runtime-storage-path: String parameter pointing to the path used by the container runtime to store images, snapshots and other data related to containers. Possible values could be: `F:\ProgramData\docker`, `C:\ProgramData\containerd` or corresponding paths used by a Windows runtime. Parameters to `LinkVolume` (detailed below) will need to be under this path.
+2. kubelet-pod-path: String parameter pointing to the path used by the kubelet to store pod specific information. This should map to the value returned by [getPodsDir](https://github.com/kubernetes/kubernetes/blob/e476a60ccbe25581f5a6a9401081dcee311a066e/pkg/kubelet/kubelet_getters.go#L48). By default it will be set to: `C:\var\lib\kubelet\pods` Parameters to `LinkPath` (detailed below) will need to be under this path.
 
 ##### CSI Proxy GRPC API
 The following are the main RPC calls that will comprise a v1alpha1 version of the CSIProxyService API. A preliminary structure for Request and Response associated with each RPC is described below. Note that the specific structures as well as restrictions on them are expected to evolve during Alpha phase and are expected to be in a final form at the end of Beta. As the API evolves, the section below will be kept up-to-date
@@ -357,7 +357,7 @@ service CSIProxyService {
     // LinkPath invokes mklink on the global staging path of a volume linking it to a path within a container
     rpc LinkPath(LinkPathRequest) returns (LinkPathResponse) {}
 
-    // ListDiskLocations returns locations <Bus, Target, LUN ID> of all disk devices enumerated by Windows
+    // ListDiskLocations returns locations <Adapter, Bus, Target, LUN ID> of all disk devices enumerated by Windows
     rpc ListDiskLocations(ListDiskLocationsRequest) returns (ListDiskLocationsResponse) {}
 
     // ListDiskIDs returns all IDs (from IOCTL_STORAGE_QUERY_PROPERTY) of all disk devices enumerated by Windows
@@ -385,9 +385,9 @@ message PathExistsResponse {
 
 // Context of the paths used for path prefix validation
 enum PathContext {
-    // plugin maps to the configured kubernetes-csi-plugins-path path prefix
+    // plugin maps to the configured kubelet-csi-plugins-path path prefix
     PLUGIN = 0;
-    // container maps to the configured container-runtime-storage-path path prefix
+    // container maps to the configured kubelet-pod-path path prefix
     CONTAINER = 1;
 }
 
@@ -401,8 +401,8 @@ message MkdirRequest {
     // User account under which csi-proxy is started (typically LocalSystem).
     //
     // Restrictions:
-    // Needs to be an absolute path under kubernetes-csi-plugins-path
-    // or container-runtime-storage-path based on context
+    // Needs to be an absolute path under kubelet-csi-plugins-path
+    // or kubelet-pod-path based on context
     // Cannot exist already in host
     // Path needs to be specified with drive letter prefix: "X:\".
     // UNC paths of the form "\\server\share\path\file" are not allowed.
@@ -428,8 +428,8 @@ message RmdirRequest {
     // https://docs.microsoft.com/en-us/windows/win32/fileio/naming-a-file
     //
     // Restrictions:
-    // Needs to be an absolute path under kubernetes-csi-plugins-path
-    // or container-runtime-storage-path based on context
+    // Needs to be an absolute path under kubelet-csi-plugins-path
+    // or kubelet-pod-path based on context
     // Path needs to be specified with drive letter prefix: "X:\".
     // UNC paths of the form "\\server\share\path\file" are not allowed.
     // All directory separators need to be backslash character: "\".
@@ -529,7 +529,7 @@ message MountSMBShareRequest {
     // https://docs.microsoft.com/en-us/windows/win32/fileio/naming-a-file
     //
     // Restrictions:
-    // Needs to be an absolute path under kubernetes-csi-plugins-path.
+    // Needs to be an absolute path under kubelet-csi-plugins-path.
     // Needs to exist already in host
     // Path needs to be specified with drive letter prefix: "X:\".
     // UNC paths of the form "\\server\share\path\file" are not allowed.
@@ -602,7 +602,7 @@ message LinkPathRequest {
     // https://docs.microsoft.com/en-us/windows/win32/fileio/naming-a-file
     //
     // Restrictions:
-    // Needs to be an absolute path under container-runtime-storage-path
+    // Needs to be an absolute path under kubelet-pod-path
     // Needs to exist already in host
     // Path needs to be specified with drive letter prefix: "X:\".
     // UNC paths of the form "\\server\share\path\file" are not allowed.
@@ -617,7 +617,7 @@ message LinkPathRequest {
     // https://docs.microsoft.com/en-us/windows/win32/fileio/naming-a-file
     //
     // Restrictions:
-    // Needs to be an absolute path under kubernetes-csi-plugins-path.
+    // Needs to be an absolute path under kubelet-csi-plugins-path.
     // Needs to exist already in host
     // Path needs to be specified with drive letter prefix: "X:\".
     // UNC paths of the form "\\server\share\path\file" are not allowed.
@@ -638,7 +638,7 @@ message ListDiskLocationsRequest {
 }
 
 message ListDiskLocationsResponse {
-    // Map of disk device objects and <bus, target, lun ID> associated with each disk device
+    // Map of disk device objects and <adapter, bus, target, lun ID> associated with each disk device
     map <string, DiskLocation> disk_locations = 1;
 
     // Windows error code
@@ -647,6 +647,7 @@ message ListDiskLocationsResponse {
 }
 
 message DiskLocation {
+    string Adapter = 0;
     string Bus = 1;
     string Target = 2;
     string LUNID = 3;
