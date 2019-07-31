@@ -71,7 +71,7 @@ As a cluster user, I want to create a secret with credentials to an image regist
 As a cluster user, I want to pull my private image from a non-Docker registry with my credentials.
 
 #### Story 3
-As a cluster user, I want to pull my images from my on-prem image registry that.
+As a cluster user, I want to pull my images from my on-prem image registry.
 
 ### Implementation Details 
 
