@@ -75,7 +75,7 @@ Additionally, two derived minor improvements are proposed to better support this
 Currently if any schedule misses, cronjob controller will skip it immediately no matter what concurrency policy is in use.
 This behavior, however, does not fit for cronjobs that need to know the exact time range of the data they are going to process.
 For example, I have a cronjob that runs hourly and only processes the logs within the previous hour.
-Say the job now takes 3 hours to run due to a bug, then many jobs will be skipped sporadically,
+Say the job now takes 2.5 hours to run due to a bug, then many jobs will be skipped sporadically,
 and users have to manually find out and backfill the missing pieces in the middle.
 
 In fact this type of stateful behavior is yet supported in Kubernetes at the moment,
