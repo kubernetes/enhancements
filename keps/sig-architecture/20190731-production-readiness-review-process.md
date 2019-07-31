@@ -80,7 +80,7 @@ event they cause increased failures in production.
 ## Motivation
 
 Kubernetes has grown quickly and organically. The KEP process introduced a
-mechanism to help build concensus and ensure the community supports the
+mechanism to help build consensus and ensure the community supports the
 direction and implementation of various features. It provides a way to document
 release and graduation criteria, but it leaves that criteria up to the KEP
 authors and approvers to define. Because these are normally the developers and
