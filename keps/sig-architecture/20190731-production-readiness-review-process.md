@@ -6,12 +6,13 @@ owning-sig: sig-architecture
 participating-sigs:
   - sig-release
 reviewers:
-  - TBD
+  - "@derekwaynecarr"
+  - "@vishh"
 approvers:
   - TBD
 editor: TBD
 creation-date: 2019-07-31
-last-updated: 2019-07-31
+last-updated: 2019-08-01
 status: provisional
 ---
 
@@ -28,18 +29,8 @@ status: provisional
 - [Proposal](#proposal)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
-  - [Test Plan](#test-plan)
-  - [Graduation Criteria](#graduation-criteria)
-    - [Examples](#examples)
-      - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
-      - [Beta -&gt; GA Graduation](#beta---ga-graduation)
-      - [Removing a deprecated flag](#removing-a-deprecated-flag)
-  - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
-  - [Version Skew Strategy](#version-skew-strategy)
 - [Implementation History](#implementation-history)
-- [Drawbacks [optional]](#drawbacks-optional)
-- [Alternatives [optional]](#alternatives-optional)
-- [Infrastructure Needed [optional]](#infrastructure-needed-optional)
+- [Infrastructure Needed](#infrastructure-needed)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -110,11 +101,23 @@ all new features, at a level appropriate to the features' maturity levels.
   specified for different feature maturity levels.
 
 * Develop a production readiness questionnaire to ensure that the feature
-  authors consider and document operational aspects of the feature. Example
-  items:
-  * Feature enablement
-    - How can this feature be disabled in a live cluster? Will that require
-      downtime for the control plane?
+  authors consider and document operational aspects of the feature. The results
+  of this questionnaire will be included in playbook for the feature (the
+  creation of this playbook should be one of the production readiness criteria).
+
+  The actual questionnaire will be part of the implementation of this KEP, but
+  some example items include:
+  * Feature enablement and rollback
+    - How can this feature be enabled / disabled in a live cluster?
+    - Can the feature be disabled once it has been enabled (i.e., can we roll
+      back the enablement)?
+    - Will enabling / disabling the feature require downtime for the control
+      plane?
+    - Will enabling / disabling the feature require downtime or reprovisioning
+      of a node?
+    - What happens if a cluster with this feature enabled is rolled back? What
+      happens if it is subsequently upgraded again?
+    - Are there tests for this?
   * Dependencies
     - Does this feature depend on any specific services running in the cluster
       (e.g., a metrics service)?
@@ -128,7 +131,10 @@ all new features, at a level appropriate to the features' maturity levels.
     - What are the service level indicators an operator can use to determine the
       health of the service?
     - What are reasonable service level objectives for the feature?
-  * Debugging
+  * Troubleshooting
+    - What are the known failure modes?
+    - How can those be detected via metrics or logs?
+    - What are the most useful log messages and what logging levels do they require?
   * etc.
 
 * Establish a production readiness review team, label, and CI check to prevent
@@ -136,123 +142,29 @@ all new features, at a level appropriate to the features' maturity levels.
 
 ### Risks and Mitigations
 
-What are the risks of this proposal and how do we mitigate.
-Think broadly.
-For example, consider both security and how this will impact the larger kubernetes ecosystem.
-
-How will security be reviewed and by whom?
-How will UX be reviewed and by whom?
-
-Consider including folks that also work outside the SIG or subproject.
+The primary risk is the slowing of feature merges. When this is due to the need
+for the developers to improve the quality of the feature, that is appropriate.
+When this is due to lack of bandwidth in the production readiness review team,
+that is harmful. To mitigate this, the implementation of this process must
+include a means of:
+ * Identifying potential community members for participation in the team
+ * A shadow program or other mechanism for preparing those individuals for
+   membership on the team
+ * Clear criteria for when one of these individuals is ready to become a full
+   participant
+ * Measurement of:
+   - Review throughput for production readiness reviews
+   - Team bench depth and size
 
 ## Design Details
 
-### Test Plan
-
-**Note:** *Section not required until targeted at a release.*
-
-Consider the following in developing a test plan for this enhancement:
-- Will there be e2e and integration tests, in addition to unit tests?
-- How will it be tested in isolation vs with other components?
-
-No need to outline all of the test cases, just the general strategy.
-Anything that would count as tricky in the implementation and anything particularly challenging to test should be called out.
-
-All code is expected to have adequate tests (eventually with coverage expectations).
-Please adhere to the [Kubernetes testing guidelines][testing-guidelines] when drafting this test plan.
-
-[testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
-
-### Graduation Criteria
-
-**Note:** *Section not required until targeted at a release.*
-
-Define graduation milestones.
-
-These may be defined in terms of API maturity, or as something else. Initial KEP should keep
-this high-level with a focus on what signals will be looked at to determine graduation.
-
-Consider the following in developing the graduation criteria for this enhancement:
-- [Maturity levels (`alpha`, `beta`, `stable`)][maturity-levels]
-- [Deprecation policy][deprecation-policy]
-
-Clearly define what graduation means by either linking to the [API doc definition](https://kubernetes.io/docs/concepts/overview/kubernetes-api/#api-versioning),
-or by redefining what graduation means.
-
-In general, we try to use the same stages (alpha, beta, GA), regardless how the functionality is accessed.
-
-[maturity-levels]: https://git.k8s.io/community/contributors/devel/sig-architecture/api_changes.md#alpha-beta-and-stable-versions
-[deprecation-policy]: https://kubernetes.io/docs/reference/using-api/deprecation-policy/
-
-#### Examples
-
-These are generalized examples to consider, in addition to the aforementioned [maturity levels][maturity-levels].
-
-##### Alpha -> Beta Graduation
-
-- Gather feedback from developers and surveys
-- Complete features A, B, C
-- Tests are in Testgrid and linked in KEP
-
-##### Beta -> GA Graduation
-
-- N examples of real world usage
-- N installs
-- More rigorous forms of testing e.g., downgrade tests and scalability tests
-- Allowing time for feedback
-
-**Note:** Generally we also wait at least 2 releases between beta and GA/stable, since there's no opportunity for user feedback, or even bug reports, in back-to-back releases.
-
-##### Removing a deprecated flag
-
-- Announce deprecation and support policy of the existing flag
-- Two versions passed since introducing the functionality which deprecates the flag (to address version skew)
-- Address feedback on usage/changed behavior, provided on GitHub issues
-- Deprecate the flag
-
-**For non-optional features moving to GA, the graduation criteria must include [conformance tests].**
-
-[conformance tests]: https://github.com/kubernetes/community/blob/master/contributors/devel/conformance-tests.md
-
-### Upgrade / Downgrade Strategy
-
-If applicable, how will the component be upgraded and downgraded? Make sure this is in the test plan.
-
-Consider the following in developing an upgrade/downgrade strategy for this enhancement:
-- What changes (in invocations, configurations, API use, etc.) is an existing cluster required to make on upgrade in order to keep previous behavior?
-- What changes (in invocations, configurations, API use, etc.) is an existing cluster required to make on upgrade in order to make use of the enhancement?
-
-### Version Skew Strategy
-
-If applicable, how will the component handle version skew with other components? What are the guarantees? Make sure
-this is in the test plan.
-
-Consider the following in developing a version skew strategy for this enhancement:
-- Does this enhancement involve coordinating behavior in the control plane and in the kubelet? How does an n-2 kubelet without this feature available behave when this feature is used?
-- Will any other components on the node change? For example, changes to CSI, CRI or CNI may require updating that component before the kubelet.
+TBD - this section should include the label name and the description of prow
+configuration that is needed
 
 ## Implementation History
 
-Major milestones in the life cycle of a KEP should be tracked in `Implementation History`.
-Major milestones might include
+- 2019-07-31: Created
 
-- the `Summary` and `Motivation` sections being merged signaling SIG acceptance
-- the `Proposal` section being merged signaling agreement on a proposed design
-- the date implementation started
-- the first Kubernetes release where an initial version of the KEP was available
-- the version of Kubernetes where the KEP graduated to general availability
-- when the KEP was retired or superseded
+## Infrastructure Needed
 
-## Drawbacks [optional]
-
-Why should this KEP _not_ be implemented.
-
-## Alternatives [optional]
-
-Similar to the `Drawbacks` section the `Alternatives` section is used to highlight and record other possible approaches to delivering the value proposed by a KEP.
-
-## Infrastructure Needed [optional]
-
-Use this section if you need things from the project/SIG.
-Examples include a new subproject, repos requested, github details.
-Listing these here allows a SIG to get the process for these resources started right away.
+TBD
