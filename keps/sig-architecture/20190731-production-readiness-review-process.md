@@ -64,9 +64,9 @@ Check these off as they are completed for the Release Team to track. These check
 
 This proposal introduces a production readiness review process for features
 merging as alpha or graduating to beta or GA. The review process is intended to
-ensure that features merging into Kubernetes are supportable, can be safely
-operated in production environments, and can be disabled or rolled back in the
-event they cause increased failures in production.
+ensure that features merging into Kubernetes are observable and supportable,
+can be safely operated in production environments, and can be disabled or rolled
+back in the event they cause increased failures in production.
 
 ## Motivation
 
