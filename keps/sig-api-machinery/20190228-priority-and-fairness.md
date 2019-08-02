@@ -286,7 +286,7 @@ FlowSchema.
 
 Each FlowSchema has:
 - A boolean test of an authenticated request;
-- A matching priority (default value is 1000);
+- A matching precedence;
 - A reference to a RequestPriority object; and
 - An optional rule for computing the request’s flow distinguisher; not
   allowed for a FlowSchema that refers to a RequestPriority that is
@@ -309,10 +309,19 @@ The best matching FlowSchema for a given request is one of those whose
 boolean test accepts the request.  It is a configuration error if
 there is no FlowSchema that matches every request.  In case multiple
 schemas accept the request, the best is one of those with the
-logically highest matching priority.  In case there are multiple of
+logically highest matching precedence.  In case there are multiple of
 those the implementation is free to pick any of those as best.  A
-matching priority is an integer, and a numerically lower number
-indicates a logically higher priority.
+matching precedence is an integer, and a numerically lower number
+indicates a logically higher precedence.  The administrators should
+consciously design a matching order for FlowSchema objects.  These are
+not like process "nice" levels in unix, which corresponds more closely
+to concurrency shares in this feature, but rather are more like
+firewall rules.  Various rules can have overlapping matching sets and
+very different consequences, so should be explicitly ordered.  Even if
+there are two rules that do not overlap, it is dangerous to give them
+the same matching precedence value because that causes a problem for
+someone who later wants to add a FlowSchema that overlaps both in
+matching set and needs to go between them in the matching order.
 
 A FlowSchema’s boolean test is constructed from atomic tests.  Each
 atomic test compares an authenticated request attribute --- selected
@@ -779,6 +788,7 @@ kind: FlowSchema
 meta:
   name: system-top
 spec:
+  matchingPrecedence: 1500
   requestPriority:
     name: system-top
   match:
@@ -793,6 +803,7 @@ kind: FlowSchema
 meta:
   name: system-high
 spec:
+  matchingPrecedence: 2500
   requestPriority:
     name: system-high
   flowDistinguisher:
@@ -830,7 +841,7 @@ kind: FlowSchema
 meta:
   name: system-low
 spec:
-  matchingPriority: 900
+  matchingPrecedence: 3500
   requestPriority:
     name: system-low
   flowDistinguisher:
@@ -848,6 +859,7 @@ kind: FlowSchema
 meta:
   name: workload-high
 spec:
+  matchingPrecedence: 5500
   requestPriority:
     name: workload-high
   flowDistinguisher:
@@ -865,7 +877,7 @@ kind: FlowSchema
 meta:
   name: workload-low
 spec:
-  matchingPriority: 9999
+  matchingPrecedence: 7500
   requestPriority:
     name: workload-high
   flowDistinguisher:
@@ -886,7 +898,7 @@ kind: FlowSchema
 meta:
   name: system-top
 spec:
-  matchingPriority: 900
+  matchingPrecedence: 1600
   requestPriority:
     name: system-top
   flowDistinguisher:
@@ -934,7 +946,7 @@ kind: FlowSchema
 meta:
   name: non-top-backstop
 spec:
-  matchingPriority: (doesn’t really matter)
+  matchingPrecedence: (doesn’t really matter)
   requestPriority:
     name: (name of an effectively existing RequestPriority, whether
            that is real or backstop, with catchAll==true)
