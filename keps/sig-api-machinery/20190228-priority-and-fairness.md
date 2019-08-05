@@ -46,6 +46,8 @@ superseded-by:
     - [Fair Queuing for Server Requests](#fair-queuing-for-server-requests)
   - [Example Configuration](#example-configuration)
   - [Default Behavior](#default-behavior)
+    - [Default Behavior Regarding Configuration Objects](#default-behavior-regarding-configuration-objects)
+    - [APIServer Startup](#apiserver-startup)
   - [Prometheus Metrics](#prometheus-metrics)
   - [Testing](#testing)
   - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
@@ -904,6 +906,14 @@ spec:
 
 ### Default Behavior
 
+There are two default behavior problems to solve: one concerns how the
+filter reacts to the set of configuration API objects that exist at
+any moment, and the other concerns how the filter behaves during
+apiserver startup --- before it has had a chance to read all the
+configuration API objects.
+
+#### Default Behavior Regarding Configuration Objects
+
 There must be reasonable behavior "out of the box", and it should be
 at least a little difficult for an administrator to lock himself out
 of this subsystem.  To accomplish these things there are two levels of
@@ -953,6 +963,30 @@ already in use by an existing RequestPriority object.  Whenever there
 is no actual FlowSchema object that refers to an exempt
 RequestPriority object, the schema objects shown above as examples are
 generated --- except those with a name already in use.
+
+#### APIServer Startup
+
+It must be remembered that there can be multiple apiservers, and each
+can be restarted after the system has been in operation for a while.
+The startup of one apiserver is not the same problem as startup of a
+cluster.  The startup of one apiserver has the interesting problem
+that this apiserver has to handle requests before any local code has
+finished querying apiservers for configuration objects (e.g., when
+this is the only apiserver).  To solve that circular dependency
+problem, the filter of this KEP starts out behaving as if the example
+configuration objects exhibited above is the set of objects that exist
+--- before even attempting to find out what configuration objects
+actually exist.  The filter of this KEP has a local configuration
+controller that works much like a regular controller.  In particular,
+it waits for its informers on configuration objects to be synced
+before starting worker threads.  There is just one worker thread, and
+just one value put in the work queue; processing that involves
+digesting all the config objects into the data structure used by the
+filter to handle requests.  Thus, the behavior starts out as if the
+configuration is the example configuration, and then it shifts to the
+full configured behavior (in the normal way it responds to
+configuration changes).
+
 
 ### Prometheus Metrics
 
