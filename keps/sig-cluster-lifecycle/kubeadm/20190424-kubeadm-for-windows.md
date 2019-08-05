@@ -245,7 +245,7 @@ The CI signal will be owned by SIG Windows.
 
 ### Graduation Criteria
 
-This proposal targets *Alpha* support for kubeadm based Windows worker nodes in the release of Kubernetes 1.15.
+This proposal targets *Alpha* support for kubeadm based Windows worker nodes in the release of Kubernetes 1.16.
 
 
 ##### Alpha -> Beta Graduation
@@ -266,7 +266,7 @@ Documentation is complete.
 
 ### Upgrade / Downgrade Strategy
 
-Upgrades and downgrades are out of scope for this proposal for 1.15 but will be revisited in future iterations.
+Upgrades and downgrades are out of scope for this proposal for 1.16 but will be revisited in future iterations.
 
 ### Version Skew Strategy
 
@@ -276,9 +276,16 @@ If the users applies manual skew by diverging from the recommended setup, the no
 
 ## Implementation History
 
-April 2019 (1.14) KEP was created. 
-May 1, 2019       KEP was updated to address PR feedback
-May 3, 2019       KEP was updated to address PR feedback
+* April 2019 (1.14) KEP was created. 
+* May 1, 2019       KEP was updated to address PR feedback
+* May 3, 2019       KEP was updated to address PR feedback
+* May 17, 2019      [PR 77989](https://github.com/kubernetes/kubernetes/pull/77989) Remove Powershell dependency for IsPrivilegedUser check on Windows
+* May 24, 2019      [PR 78053](https://github.com/kubernetes/kubernetes/pull/78053) Implement CRI detection for Windows
+* May 29, 2019      [PR 1136](https://github.com/coreos/flannel/pull/1136) Add net-config-path to FlannelD
+* May 31, 2019      [PR 78189](https://github.com/kubernetes/kubernetes/pull/78189) Use Service Control Manager as the Windows Initsystem
+* June 3, 2019      [PR 78612](https://github.com/kubernetes/kubernetes/pull/78612) Remove dependency on Kube-Proxy to start after FlannelD
+* July 20,2019      KEP was updated to target Alpha for 1.16
+
 
 ## Drawbacks 
 
@@ -289,4 +296,6 @@ There is overhead to maintaining two different methods for joining a node to a c
 
 SIG Windows to provide:
 * Azure based infrastructure for testing kubeadm worker nodes.
-* A kubernetes/ org based repository to host the download / wrapper script.
+
+SIG Windows has provided:
+* A kubernetes/ org based repository to host the download / wrapper script: [sig-windows-tools](https://github.com/kubernetes-sigs/sig-windows-tools)
