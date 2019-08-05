@@ -13,7 +13,7 @@ approvers:
   - TBD
 editor: TBD
 creation-date: 2019-07-15
-last-updated: 2019-07-15
+last-updated: 2019-08-05
 status: provisional
 see-also:
   - n/a
@@ -74,13 +74,15 @@ Consider the following scenarios:-
 - Add new fields `Selector` and `Partition` for existing RollingUpdateDaemonSet.
 
 ### Non-Goals
-- This inplement is only implemeted to affect to update strategy of Daemonset. No other behaviors of Daemonset will be changed.
+- This implement is only implemeted to affect to update strategy of Daemonset. No other behaviors of Daemonset will be changed.
 
 ## Proposal
 
 ### User Stories
 
 #### Story 1
+In some end users' clusters, they deploy DNS resolver and other containers serving infrastructure by daemonset in every nodes. To an online e-commercial services which serve 200K+ QPS, it must cause cascading disaster to stop those infrastructure services even in a very short time by current Daemonset RollingUpdate strategy. So surgingRollingUpdate is a necessary strategy for our production environment. 
+As a solution for above case, if end users are not sure whether SurgeingRollingUpdate are suitable for their production environment or cause other resource conflicts, e.g. hostport, they can use 'Selector' or 'Partition' to do some experimental update.
 
 ### Implementation Details
 
