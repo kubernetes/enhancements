@@ -403,7 +403,7 @@ import (
 var numQueues uint64
 
 func shuffleDealAndPick(v, nq uint64,
-	mr func(int /*in [0, nq-1]*/) int, /*in [0, numQueues-1] and excluding previously determined members of I*/
+	mr func( /*in [0, nq-1]*/ int) /*in [0, numQueues-1] and excluding previously determined members of I*/ int,
 	nRem, minLen, bestIdx int) int {
 	if nRem < 1 {
 		return bestIdx
@@ -412,7 +412,7 @@ func shuffleDealAndPick(v, nq uint64,
 	ai := int(v - nq*vNext)
 	ii := mr(ai)
 	i := numQueues - nq // i is used only for debug printing
-	mrNext := func(a int /*in [0, nq-2]*/) int /*in [0, numQueues-1] and excluding I[0], I[1], ... ii*/ {
+	mrNext := func(a /*in [0, nq-2]*/ int) /*in [0, numQueues-1] and excluding I[0], I[1], ... ii*/ int {
 		if a < ai {
 			fmt.Printf("mr[%v](%v) going low\n", i, a)
 			return mr(a)
