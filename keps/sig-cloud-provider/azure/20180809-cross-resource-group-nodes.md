@@ -20,18 +20,23 @@ status: implementable
 
 ## Table of Contents
 
-<!-- toc -->
-- [Summary](#summary)
-- [Motivation](#motivation)
-  - [Assumptions](#assumptions)
-  - [Non-Goals](#non-goals)
-- [Design](#design)
-- [Implementation](#implementation)
-  - [Cross-RG nodes](#cross-rg-nodes)
-  - [On-prem nodes](#on-prem-nodes)
-- [Implementation History](#implementation-history)
-- [Alternatives](#alternatives)
-<!-- /toc -->
+<!-- TOC -->
+
+- [Cross resource group nodes](#cross-resource-group-nodes)
+    - [Table of Contents](#table-of-contents)
+    - [Summary](#summary)
+    - [Motivation](#motivation)
+        - [Assumptions](#assumptions)
+        - [Non-Goals](#non-goals)
+    - [Design](#design)
+    - [Implementation](#implementation)
+        - [Cross-RG nodes](#cross-rg-nodes)
+        - [On-prem nodes](#on-prem-nodes)
+    - [Graduation Criteria](#graduation-criteria)
+    - [Implementation History](#implementation-history)
+    - [Alternatives](#alternatives)
+
+<!-- /TOC -->
 
 ## Summary
 
@@ -160,6 +165,12 @@ spec:
  - key: kubernetes.azure.com/managed
    effect: NoSchedule
 ```
+
+## Graduation Criteria
+
+- [ ] Feature complete
+- [ ] Documentation should be added
+- [ ] E2e tests should cover the feature
 
 ## Implementation History
 
