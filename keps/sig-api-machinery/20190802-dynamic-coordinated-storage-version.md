@@ -25,25 +25,28 @@ status: provisional
 * [Changes to API servers](#changes-to-api-servers)
    * [Curating a list of participating API servers in HA master](#curating-a-list-of-participating-api-servers-in-ha-master)
    * [Voting for Storage Version](#voting-for-storage-version)
-   * [A nice property of the selected storage version](#a-nice-property-of-the-selected-storage-version)
+   * [Voting in action](#voting-in-action)
+   * [The selected storage version is supported by all API servers during upgrades/downgrades](#the-selected-storage-version-is-supported-by-all-api-servers-during-upgradesdowngrades)
    * [Garbage collection of the StorageVersion objects of removed resources](#garbage-collection-of-the-storageversion-objects-of-removed-resources)
    * [Using the selected storage version when serializing data for etcd](#using-the-selected-storage-version-when-serializing-data-for-etcd)
    * [Updating the discovery document](#updating-the-discovery-document)
    * [CRDs](#crds)
    * [Aggregated API servers](#aggregated-api-servers)
 * [Backwards Compatibility](#backwards-compatibility)
+* [Risks](#risks)
 * [Graduation Plan](#graduation-plan)
 * [FAQ](#faq)
-* [Future work](#future-work)
+* [Future work: solving other coordination problems](#future-work-solving-other-coordination-problems)
 * [Alternatives](#alternatives)
-   * [Exposing if API servers in a HA setup are using the same storage version](#exposing-if-api-servers-in-a-ha-setup-are-using-the-same-storage-version)
+   * [Exposing if API servers in an HA setup are using the same storage version](#exposing-if-api-servers-in-an-ha-setup-are-using-the-same-storage-version)
    * [Letting the storage migrator detect if API server instances are in agreement](#letting-the-storage-migrator-detect-if-api-server-instances-are-in-agreement)
+* [References](#references)
 
 ## Overview
 
 During the rolling update of an HA master, API server instances *i)* use
 different storage versions for a built-in API resource, and *ii)* show different
-storageVersionHash in the discovery document. These fact make the storage
+storageVersionHash in the discovery documents. These facts make the storage
 migrator not working properly ([details][]).
 
 [storageVersionHash]:https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/apimachinery/pkg/apis/meta/v1/types.go#L979
@@ -68,7 +71,7 @@ type StorageVersion struct {
   ObjectMeta
   // The selected storage version. All API server intances encode the resource
   // objects in this version when committing it to etcd.
-  Selectedversion string
+  SelectedVersion string
   // Proposed storage version candidate, keyed by the ID of the proposing API
   // server.
   CandidateVersions []VersionCandidate
@@ -104,47 +107,66 @@ servers in etcd.
 During bootstrap, for each resource, the kube-apiserver 
 * gets the StorageVersion object for this resource,
   * if the object does not exist, creates one, setting this kube-apiserver's
-  preferred storage version as the Selectedversion, also adding its preferred
-  storage version to the CandidateVersions list. Then jumps to the last step.
+  preferred storage version as the SelectedVersion, also adding its preferred
+  storage version to the CandidateVersions list. Then jumps to the last step
+  (installing the resource handler).
 * gets the list of participating API servers,
 * updates the StorageVersion locally. Specifically,
-  * creates or updates the CandidateVersions. 
+  * creates or updates the CandidateVersions, to express this kube-apiserver's
+    preferred storage version.
   * checks if there is any version candidate whose APIServerID is not a
     participating API server. This means the API server has gone and the entry
     is stale. Removes such entries.
-  * checks if all participating API server votes for the same version. If so,
-    sets the version as the Selectedversion.
+  * checks if all participating API servers vote for the same version. If so,
+    sets the version as the SelectedVersion.
 * updates the StorageVersion object, using the resourceVersion in the first step
   to avoid conflicting with other API servers.
-* installs the resource handler
+* installs the resource handler. Uses the SelectedVersion as the storage
+  version.
 
 We need to make sure that an API server establishes its membership in the list
 of participating API servers before reporting its preferred storage version via
 the StorageVersion API. Then the above procedure makes it impossible to mistake
 a new CandidateVersions entry as a stale one.
 
-### A nice property of the selected storage version
+### Voting in action
+
+**Scenario 1**, rolling upgrading HA API servers to a release that starts using
+the storage version voting.
+
+In this case, the first upgraded API server sets its preferred storage version as
+the selected version. Because the other not-upgraded-yet API servers do not
+respect the voting system, they might use a different version as the storage
+version. When they get upgraded, they will use the selected version as the
+storage version.
+
+**Scenario 2**, rolling upgrading HA API servers that have already enabled the
+storage version voting.
+
+In this case, the API servers will keep using the old selected storage version
+until all instances are upgraded to the new release. The last upgraded API
+server will change the selected version to the new storage version, and all API
+servers start to use the new version.
+
+### The selected storage version is supported by all API servers during upgrades/downgrades
 
 A nice property of the selected storage version is that it is supported by all
 API servers during rolling upgrades/downgrades. This means that the proposed
 dynamic storage version mechanism does not introduce any API server downtime.
 
-The property is a by-product of the Kubernetes API [deprecation policy][] rule
-`#4a` and `#4b`. The following spreadsheet illustrates the fastest possible
-evolution of the storage version of a resource. It's easy to see in the
-spreadsheet that the "preferred storage version" of release *n* is part of the
-"supported versions" in releases *n±1*.
+The speed of Kubernetes API evolution is restricted by the [deprecation
+policy][] rule `#4a` and `#4b`. The following table illustrates the
+fastest possible evolution of the storage version of a resource.
 
 |                           | release x | release x+1 | release x+2 | release x+3 |
 |---------------------------|-----------|-------------|-------------|-------------|
 | supported versions        | v1        | v1, v2      | v1, v2      | v2          |
 | preferred storage version | v1        | v1          | v2          | v2          |
 
-This fact, together with the following two facts, guarantee the "nice property".
-* if in an HA master, all API servers are of the same version, then the
-   preferred storage version is the same as the selected storage version;
-* during rolling upgrades/downgrades, the maximum version skew between any two
-   API servers is one.
+Note that the selected storage version only changes between release x+1 and x+2.
+Because both releases support both v1 and v2, during the rolling
+upgrade/downgrade, all API server instances support the selected storage
+version.
 
 ### Garbage collection of the StorageVersion objects of removed resources
 
@@ -159,7 +181,7 @@ During bootstrap, the kube-apiserver
 Depending on how strict the guarantee we want to provide, we have two
 alternative designs.
 
-1. strict guarantee: kube-apiserver always use the selected storage version
+**1. strict guarantee:** kube-apiserver always use the selected storage version
 
 To guarantee this, kube-apiserver needs to add a transaction condition to the
 write requests, to make sure the version it uses to serialize the API object is
@@ -177,8 +199,8 @@ version from etcd, re-serializes the data and retries the commit. The
 kube-apiserver will use this latest selected storage version in the following
 operations.
 
-2. loose guarantee: kube-apiserver has a very high probability to use the
-   selected storage version 1 minute after the version is selected in etcd.
+**2. loose guarantee:** kube-apiserver has a very high probability to use the
+selected storage version 1 minute after the version is selected in etcd.
 
 To guarantee this, the kube-apiserver can rely on a watch channel to deliver
 the latest storage version within 1 minute. 
@@ -228,6 +250,21 @@ API servers using the library will get the same behavior.
 Clients do not see any behavioral change, so there is no backwards compatibility
 concern.
 
+## Risks
+
+1. If an operator jumps versions (e.g., upgrade directly from v1.15 to v1.17)
+   when rolling upgrade its HA master, and if the new API server does not
+   support the old SelectedVersion, then there are two consequences:
+
+   a. during the rolling upgrade, an upgraded API server does not support the
+   SelectedVersion. Depending on the implementation, it may either rejects all
+   write operation to that resource, or use a different storage version. Neither
+   is great.
+
+   b. after the rolling upgrade is done, because the existing data in etcd is
+   encoded in the old storage version, which is not supported by the API
+   servers, no one can read or write the existing data.
+
 ## Graduation Plan
 
 * Alpha: in 1.16, the newly added API, including the `DiscoveryDocHashes` and
@@ -244,21 +281,33 @@ concern.
    the object to be encoded as v1 in etcd.
 
    A: Unless API servers support transactions, the race is inevitable, and
-   exists in all parts of Kubernetes API. Client-side coordination is necessary
+   exists in all parts of Kubernetes API. Operators' involvement is necessary
    to overcome the race. Let's take the storage migrator as an example. For the
-   storage migrator to work properly, the required client-side coordination is
-   that at most one master version change could happen in any 5 minute window.
-   Then, the storage migrator just checks the discovery document every 5
-   minutes, as long as the storage version in the discovery document hasn't
-   changed, the storage migrator can safely assume that the API servers have
-   only used this storage version in this 5 minute window.
+   storage migrator to work properly, operators needs to make sure that at most
+   one master version change could happen in any 5 minute window. Then, the
+   storage migrator just checks the discovery document every 5 minutes, as long
+   as the storage version in the discovery document hasn't changed, the storage
+   migrator can safely assume that the API servers have only used this storage
+   version in this 5 minute window.
 
-## Future work
+## Future work: solving other coordination problems
 
-The voting mechanism and the dynamic storage version changing mechanism can be
-used to solve other consistency issues facing the HA master. For example,
-kube-apiservers can vote on what API are served, and only serve the API that are
+The storage version selection and the coordinated storage version switching
+isn't required to make the storage migrator work properly. In the alternative
+[KEP][], API servers expose if they use the same storage version, and the
+storage migrator only takes action when API servers are in agreement. That
+mechanism requires the client, the storage migrator, to deal with the internals
+of HA API servers, thus the mechanism is not extensible to solve other
+coordination issues.
+
+On the other hand, the voting mechanism and the coordinated storage version
+switching mechanism in this KEP hides all the internal coordination from the
+clients. The semantics is more intuitive. The mechanisms can be extended to
+solve other coordination issues facing the HA master. For example,
+kube-apiservers can vote on what API is served, and only serve the API that is
 supported by all servers.
+
+[KEP]:https://github.com/kubernetes/enhancements/pull/1176
 
 ## Alternatives
 
