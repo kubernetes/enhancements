@@ -167,7 +167,7 @@ services.
 
 ### Graduation Criteria
 
-Beta: Allow Alpha ("remove finalzier") to soak for at least one release, then
+Beta: Allow Alpha ("remove finalizer") to soak for at least one release, then
 switch the "add finalizer" logic to be on by default.
 
 GA: TBD
@@ -179,3 +179,4 @@ GA: TBD
 - 2018-07-06 - Split finalizer cleanup logic to a separate PR
 (https://github.com/kubernetes/kubernetes/pull/65912)
 - 2019-04-23 - Creation of the KEP
+- 2019-05-23 - PR merged for adding finalizer support in LoadBalancer services (https://github.com/kubernetes/kubernetes/pull/78262)
