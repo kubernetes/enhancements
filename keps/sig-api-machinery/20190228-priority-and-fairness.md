@@ -45,6 +45,7 @@ superseded-by:
   - [Dispatching](#dispatching)
     - [Fair Queuing for Server Requests](#fair-queuing-for-server-requests)
   - [Example Configuration](#example-configuration)
+  - [Reaction to Configuration Changes](#reaction-to-configuration-changes)
   - [Default Behavior](#default-behavior)
   - [Prometheus Metrics](#prometheus-metrics)
   - [Testing](#testing)
@@ -901,6 +902,61 @@ spec:
       field: user
       set: [ "system:serviceaccount:example-com:network-apiserver" ]
 ```
+
+### Reaction to Configuration Changes
+
+We do not seek to make our life easy by making any configuration
+object fields immutable.  Recall that objects can be deleted and
+replacements (with the same name) created, so server-enforced
+immutability of field values provides no useful guarantee to
+downstream consumers (such as the request filter here).  We could try
+to get useful guarantees by adding a finalizer per (config object,
+apiserver), but at this level of development we will not attempt that.
+
+Many details of the configuration are consumed only momentarily;
+changes in these pose no difficulty.  Challenging changes include
+changes in the number of queues, the queue length limit, or the
+assured concurrency value (which is derived from several pieces of
+config, as outlined elsewhere) of a request priority --- as well as
+deletion of a priority level itself.
+
+An increase in the number of queues of a priority level is handled by
+simply adding queues.  A decrease is handled by making a distinction
+between the desired and the actual number of queues.  When the desired
+number drops below the actual number, the undesired queues are left in
+place until they are naturally drained; new requests are put in only
+the desired queues.  When an undesired queue becomes empty it is
+deleted and the fair queuing round-robin pointer is advanced if it was
+pointing to that queue.
+
+When the assured concurrency value of a priority level increases,
+additional requests are dispatched if possible.  When the assured
+concurrency value decreases, there is no immediate reaction --- this
+filter does not abort or suspend requests that are currently being
+served.
+
+When the queue length limit of a priority level increases, no
+immediate reaction is required.  When the queue length limit
+decreases, there is also no immediate reaction --- queues that are
+longer than the new length limit are left to naturally shrink as they
+are drained by dispatching and timeouts.
+
+When a request priority configuration object is deleted, in a given
+apiserver the corresponding implementation objects linger until all
+the queues of that priority level are empty.  A FlowSchema associated
+with one of these lingering undesired priority levels matches no
+requests.
+
+The [Dispatching](#Dispatching) section prescribes how the assured
+concurrency value (`ACV`) is computed for each priority level, and the
+sum there is over all the _desired_ priority levels (i.e., excluding
+the lingering undesired priority levels).  For this reason and for
+others, at any given time this may compute for some priority level(s)
+an assured concurrency value that is lower than the number currently
+executing.  In these situations the total number allowed to execute
+will temporarily exceed the apiserver's configured concurrency limit
+(`SCL`) and will settle down to the configured limit as requests
+complete their service.
 
 ### Default Behavior
 
