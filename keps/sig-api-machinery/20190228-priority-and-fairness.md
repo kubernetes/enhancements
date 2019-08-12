@@ -404,6 +404,7 @@ import (
 var numQueues uint64
 
 func shuffleDealAndPick(v, nq uint64,
+	lengthOfQueue func(int) int,
 	mr func( /*in [0, nq-1]*/ int) /*in [0, numQueues-1] and excluding previously determined members of I*/ int,
 	nRem, minLen, bestIdx int) int {
 	if nRem < 1 {
@@ -427,18 +428,14 @@ func shuffleDealAndPick(v, nq uint64,
 		minLen = lenI
 		bestIdx = ii
 	}
-	return shuffleDealAndPick(vNext, nq-1, mrNext, nRem-1, minLen, bestIdx)
-}
-
-func lengthOfQueue(i int) int {
-	return i % 10 // hack for this PoC
+	return shuffleDealAndPick(vNext, nq-1, lengthOfQueue, mrNext, nRem-1, minLen, bestIdx)
 }
 
 func main() {
 	numQueues = uint64(128)
 	handSize := 6
 	hashValue := rand.Uint64()
-	queueIndex := shuffleDealAndPick(hashValue, numQueues, func(i int) int { return i }, handSize, math.MaxInt32, -1)
+	queueIndex := shuffleDealAndPick(hashValue, numQueues, func (idx int) int {return idx % 10}, func(i int) int { return i }, handSize, math.MaxInt32, -1)
 	fmt.Printf("For V=%v, numQueues=%v, handSize=%v, chosen queue is %v\n", hashValue, numQueues, handSize, queueIndex)
 }
 ```
