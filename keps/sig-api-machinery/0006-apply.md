@@ -163,6 +163,9 @@ Kubernetes clusters. The semantical differences between server-side
 apply and client-side apply will make a smooth roll-out difficult, so
 the best way to achieve this has not been decided yet.
 
+A new update to the implementation of server-side apply prevents objects with managed
+fields set to anything other than nil or empty from being applied.
+
 ### Risks and Mitigations
 
 We used a feature branch to ensure that no partial state of this feature would
