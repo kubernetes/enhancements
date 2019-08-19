@@ -295,8 +295,6 @@ Each FlowSchema has:
 
 Each RequestPriority has:
 - An `exempt` boolean (which defaults to `false`).
-- A `catchAll` boolean (which defaults to `false`), which is relevant
-  only to default behavior.
 
 Each non-exempt RequestPriority also has:
 - A non-negative integer AssuredConcurrencyShares;
@@ -712,18 +710,27 @@ queue’s virtual start time is decremented by G - S.
 ### Example Configuration
 
 
-For requests from admins and requests in service of other, potentially
-system, requests.
+For kube-apiserver self-maintaining, solving priority-inversion, including requests from: 
+
+1. kubectl requests from admin
+2. apiserver loopback requests
+3. delegated auth/admission requests
+
 ```yaml
 kind: RequestPriority
 meta:
-  name: system-top
+  name: exempt
 spec:
   exempt: true
 ```
 
-For system self-maintenance requests.
+For kubernetes cluster self-maintaining, including requests from:
+
+1. node group, i.e kubelet, kube-proxy. 
+2. controller/scheduler leases
+
 ```yaml
+# 
 kind: RequestPriority
 meta:
   name: system-high
@@ -734,7 +741,11 @@ spec:
   queueLengthLimit: 100
 ```
 
-For the garbage collector.
+For the other essential system in the kubernetes cluster. covering requests from:
+
+1. controllers from kube-controller-manager 
+2. kube-scheduler
+
 ```yaml
 kind: RequestPriority
 meta:
@@ -745,11 +756,12 @@ spec:
   queueLengthLimit: 1000
 ```
 
-For user requests from kubectl.
+For normal workloads:
+
 ```yaml
 kind: RequestPriority
 meta:
-  name: workload-high
+  name: workload
 spec:
   assuredConcurrencyShares: 30
   queues: 128
@@ -761,9 +773,8 @@ For requests from controllers processing workload.
 ```yaml
 kind: RequestPriority
 meta:
-  name: workload-low
+  name: default
 spec:
-  catchAll: true
   assuredConcurrencyShares: 100
   queues: 128
   handSize: 6
@@ -777,13 +788,26 @@ kind: FlowSchema
 meta:
   name: system-top
 spec:
-  requestPriority:
-    name: system-top
-  match:
-  - and: # writes by admins (does this cover loopback too?)
-    - superSet:
-      field: groups
-      set: [ "system:masters" ]
+  matchingPrecedence: 1500
+  priorityLevelConfiguration:
+    name: exempt
+  rules:
+  - rule:
+      verbs: ['*']
+      apiGroups: ['*']
+      resources: ['*']
+    subjects:
+    - kind: Group
+      name: "system:masters"
+  - rule:
+      verbs: ['*']
+      apiGroups: ['authentication.k8s.io', 'authorization.k8s.io']
+      resources: ['*']
+    subjects:
+    - kind: Group
+      name: "system:authenticated"     
+    - kind: Group
+      name: "system:unauthenticated"     
 ```
 
 ```yaml
@@ -791,36 +815,34 @@ kind: FlowSchema
 meta:
   name: system-high
 spec:
-  requestPriority:
+  matchingPrecedence: 2500
+  priorityLevelConfiguration:
     name: system-high
-  flowDistinguisher:
-    source: user
-    # no transformation in this case
-  match:
-  - and: # heartbeats by nodes
-    - superSet:
-      field: groups
-      set: [ "system:nodes" ]
-    - equals:
-      field: resource
-      value: nodes
-  - and: # kubelet and kube-proxy ops on system objects
-    - superSet:
-      field: groups
-      set: [ "system:nodes" ]
-    - equals:
-      field: namespace
-      value: kube-system
-  - and: # leader elections for system controllers
-    - patternMatch:
-      field: user
-      pattern: system:controller:.*
-    - inSet:
-      field: resource
-      set: [ "endpoints", "configmaps", "leases" ]
-    - equals:
-      field: namespace
-      value: kube-system
+  distinguisherMethod:
+    type: ByUser
+  rules:  
+  - rule:
+      verbs: ['*']
+      apiGroups: ['*']
+      resources: ['*']
+    subjects:
+    - kind: Group
+      name: "system:nodes"
+  - rule:
+      verbs: ['*']
+      nonResourceURLs: ['*']
+    subjects:
+    - kind: Group
+      name: "system:nodes"    
+  - rule:
+      verbs: ['*']
+      apiGroups: ['coordination.k8s.io']
+      resources: ['leases']
+    subjects:
+    - kind: User
+      name: "system:kube-controller-manager"    
+    - kind: User
+      name: "system:kube-scheduler" 
 ```
 
 ```yaml
@@ -828,76 +850,85 @@ kind: FlowSchema
 meta:
   name: system-low
 spec:
-  matchingPriority: 900
-  requestPriority:
+  matchingPrecedence: 3500
+  priorityLevelConfiguration:
     name: system-low
-  flowDistinguisher:
-    source: user
-    # no transformation in this case
-  match:
-  - and: # the garbage collector
-    - equals:
-      field: user
-      value: system:controller:garbage-collector
+  distinguisherMethod:
+    type: ByUser
+  rules:  
+  - rule:
+      verbs: ['*']
+      apiGroups: ['*']
+      resources: ['*']
+    subjects:
+    - kind: User
+      name: "system:kube-controller-manager"    
+    - kind: User
+      name: "system:kube-scheduler"    
+  - rule:
+      verbs: ['*']
+      nonResourceURLs: ['*']
+    subjects:
+    - kind: User
+      name: "system:kube-controller-manager"    
+    - kind: User
+      name: "system:kube-scheduler"         
 ```
 
 ```yaml
 kind: FlowSchema
 meta:
-  name: workload-high
+  name: workload
 spec:
-  requestPriority:
-    name: workload-high
-  flowDistinguisher:
-    source: namespace
-    # no transformation in this case
-  match:
-  - and: # users using kubectl
-    - notPatternMatch:
-      field: user
-      pattern: system:serviceaccount:.*
+  matchingPrecedence: 7500
+  priorityLevelConfiguration:
+    name: workload
+  distinguisherMethod:
+    type: ByNamespace
+  rules:  
+  - rule:
+      verbs: ['*']
+      apiGroups: ['*']
+      resources: ['*']
+    subjects:
+    - kind: Group
+      name: "system:serviceaccounts"
+  - rule:
+      verbs: ['*']
+      nonResourceURLs: ['*']
+    subjects:
+    - kind: Group
+      name: "system:serviceaccounts"      
 ```
 
 ```yaml
 kind: FlowSchema
 meta:
-  name: workload-low
+  name: catch-all
 spec:
-  matchingPriority: 9999
-  requestPriority:
-    name: workload-high
-  flowDistinguisher:
-    source: namespace
-    # no transformation in this case
-  match:
-  - and: [ ] # match everything
-```
-  
-Following is a FlowSchema that might be used for the requests by the
-aggregated apiservers of
-https://github.com/MikeSpreitzer/kube-examples/tree/add-kos/staging/kos
-to create TokenReview and SubjectAccessReview objects.
-
-
-```
-kind: FlowSchema
-meta:
-  name: system-top
-spec:
-  matchingPriority: 900
-  requestPriority:
-    name: system-top
-  flowDistinguisher:
-    source: user
-    # no transformation in this case
-  match:
-  - and:
-    - inSet:
-      field: resource
-      set: [ "tokenreviews", "subjectaccessreviews" ]
-    - superSet:
-      field: user
-      set: [ "system:serviceaccount:example-com:network-apiserver" ]
+  matchingPrecedence: 10000
+  priorityLevelConfiguration:
+    name: default
+  distinguisherMethod:
+    type: ByUser
+  rules:  
+  - rule:
+      verbs: ['*']
+      apiGroups: ['*']
+      resources: ['*']
+    subjects:
+    - kind: Group
+      name: "system:authenticated"
+    - kind: Group
+      name: "system:unauthenticated"
+  - rule:
+      verbs: ['*']
+      nonResourceURLs: ['*']
+    subjects:
+    - kind: Group
+      name: "system:authenticated"
+    - kind: Group
+      name: "system:unauthenticated"      
 ```
 
 ### Reaction to Configuration Changes
@@ -963,49 +994,42 @@ of this subsystem.  To accomplish these things there are two levels of
 defaulting: one concerning behavior, and one concerning explicit API
 objects.
 
-The effective configuration is the union of (a) the actual API objects
-that exist and (b) implicitly generated backstop objects.  The latter
-are not actual API objects, and might not ever exist as identifiable
-objects in the implementation, but are figments of our imagination
-used to describe the behavior of this subsystem.  These backstop
-objects are implicitly present and affecting behavior when needed.
-There are two implicitly generated RequestPriority backstop objects.
-One is equivalent to the `system-top` object exhibited above, and it
-exists while there is no actual RequestPriority object with `exempt ==
-true`.  The other is equivalent to the `workload-low` object exhibited
-above, and exists while there is no RequestPriority object with
-non-exempt priority.  There are also two implicitly generated
-FlowSchema backup objects.  Whenever a request whose groups include
-`system:masters` is not matched by any actual FlowSchema object, a
-backstop equivalent to the `system-top` object exhibited above is
-considered to exist.  Whenever a request whose groups do not include
-`system:masters` is not matched by any actual FlowSchema object, the
-following backstop object is considered to exist.
+The effective configuration is the union of (a) preserving configuration 
+objects and (b) all the exhibited default configurations above. The 
+request-management system uses the preserving configuration as its initial 
+state on launching when not all the default configuration present in the 
+apiserver's storage and won't reload until ensuring/observing the preserving 
+objects exists. The default configurations will always be created everytime 
+an kube-apiserver restarts.
 
-```yaml
+Additionally, if an administrator disagrees with the default settings and
+feel like replacing with a complete new set. To avoid re-creation of the  
+system defaults above, the administrator is expected to update the objects
+to mute those configurations doesn't meet expectation.
+Administrators who wish to operate with a different configuration can create, 
+update, and delete additional configuration objects and edit the predefined 
+ones; the predefined ones can not be deleted but they can be modified to 
+minimize their effects. In particular, to mute a FlowSchema, you can modify 
+to match no requests. To mute a PriorityLevelConfiguration modify 
+AssuredConcurrencyShares=1. For example:
+
+```
 kind: FlowSchema
 meta:
-  name: non-top-backstop
+  name: matches-nothing
 spec:
-  matchingPriority: (doesn’t really matter)
-  requestPriority:
-    name: (name of an effectively existing RequestPriority, whether
-           that is real or backstop, with catchAll==true)
-  flowDistinguisher:
-    source: user
-    # no transformation in this case
-  match:
-  - and: [ ] # match everything
+  matchingPrecedence: 5000
+  priorityLevelConfiguration:
+    name: default
+  rules:  
+  - rule:
+      verbs: ['*']
+      apiGroups: ['*']
+      resources: ['*']
+    subjects:
+    - kind: User
+      name: "" # unreachable username
 ```
-
-The other part of the defaulting story concerns making actual API
-objects exist, and it goes as follows.  Whenever there is no actual
-RequestPriority object with `exempt == true`, the RequestPriority
-objects exhibited above are created --- except those with a name
-already in use by an existing RequestPriority object.  Whenever there
-is no actual FlowSchema object that refers to an exempt
-RequestPriority object, the schema objects shown above as examples are
-generated --- except those with a name already in use.
 
 ### Prometheus Metrics
 
