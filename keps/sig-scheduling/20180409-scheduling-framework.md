@@ -35,7 +35,6 @@ superseded-by:
     - [Filter](#filter)
     - [Post-filter](#post-filter)
     - [Scoring](#scoring)
-    - [Normalize scoring](#normalize-scoring)
     - [Reserve](#reserve)
     - [Permit](#permit)
     - [Pre-bind](#pre-bind)
@@ -198,49 +197,50 @@ post-filter extension point.
 
 ### Scoring
 
-These plugins are used to rank nodes that have passed the filtering phase. The
-scheduler will call each scoring plugin for each node. There will be a well
-defined range of integers representing the minimum and maximum scores. After the
-[normalize scoring](#normalize-scoring) phase, the scheduler will combine node
-scores from all plugins according to the configured plugin weights.
+These plugins have two phases:
 
-### Normalize scoring
+1. The first phase is called "score" which is used to rank nodes that have passed 
+the filtering phase. The scheduler will call `Score` of each scoring plugin for
+each node.
+2. The second phase is "normalize scoring" which is used to modify scores before
+the scheduler computes a final ranking of Nodes, and each score plugin receives
+scores given by the same plugin to all nodes in "normalize scoring" phase. 
+`NormalizeScore` is called once per plugin per scheduling cycle right after 
+"score" phase.
 
-These plugins are used to modify scores before the scheduler computes a final
-ranking of Nodes. A plugin that registers for this extension point will be
-called with the [scoring](#scoring) results from the same plugin. This is called
-once per plugin per scheduling cycle.
+The output of a score plugin must be an integer in range of
+**[MinNodeScore, MaxNodeScore]**. if not, the scheduling cycle is aborted.
+This is the output after running the optional NormalizeScore function of the
+plugin. If NormalizeScore is not provided, the output of Score must be in this range.
+After the optional NormalizeScore, the scheduler will combine node scores from all
+plugins according to the configured plugin weights.
 
 For example, suppose a plugin `BlinkingLightScorer` ranks Nodes based on how
 many blinking lights they have.
 
 ```go
-func ScoreNode(_ *v1.Pod, n *v1.Node) (int, error) {
-   return getBlinkingLightCount(n)
+func (*BlinkingLightScorer) Score(pc *PluginContext, _ *v1.Pod, nodeName string) (int, *Status) {
+   return getBlinkingLightCount(nodeName)
 }
 ```
 
 However, the maximum count of blinking lights may be small compared to
-`NodeScoreMax`. To fix this, `BlinkingLightScorer` should also register for this
-extension point.
+`MaxNodeScore`. To fix this, `BlinkingLightScorer` should also implement `NormalizeScore`.
 
 ```go
-func NormalizeScores(scores map[string]int) {
+func (*BlinkingLightScorer) NormalizeScore(pc *PluginContext, _ *v1.Pod, nodeScores NodeScoreList) *Status {
    highest := 0
-   for _, score := range scores {
-      highest = max(highest, score)
+   for _, nodeScore := range nodeScores {
+      highest = max(highest, nodeScore.Score)
    }
-   for node, score := range scores {
-      scores[node] = score*NodeScoreMax/highest
+   for i, nodeScore := range nodeScores {
+      nodeScores[i].Score = nodeScore.Score*MaxNodeScore/highest
    }
+   return nil
 }
 ```
 
-If any normalize-scoring plugin returns an error, the scheduling cycle is
-aborted.
-
-**Note:** Plugins wishing to perform "pre-reserve" work should use the
-normalize-scoring extension point.
+If either `Score` or `NormalizeScore` returns an error, the scheduling cycle is aborted.
 
 ### Reserve
 
@@ -471,7 +471,6 @@ type Plugins struct {
     Filter         []Plugin
     PostFilter     []Plugin
     Score          []Plugin
-    NormalizeScore []Plugin
     Reserve        []Plugin
     Permit         []Plugin
     PreBind        []Plugin
