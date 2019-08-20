@@ -4,13 +4,13 @@ authors:
   - "@kwiesmueller"
 owning-sig: sig-api-machinery
 reviewers:
-  - TBD
+  - "@apelisse"
+  - "@lavalamp"
 approvers:
-  - TBD
-editor: TBD
+  - "@lavalamp"
 creation-date: 2019-03-24
 last-updated: yyyy-mm-dd
-status: implemented
+status: provisional
 ---
 
 # declarative-field-manager
@@ -122,6 +122,10 @@ type ObjectMeta struct {
 ...
 }
 
+// MetaOptions allow to set options used by the apiserver when handling objects.
+// This field is write-only, non-persisted and optional.
+// Options here are defined respective to their apiserver query parameters. Setting either one of them should cause the same effects. Setting MetaOptions and query parameters to different values, should fail the request.
+// Setting options that are not known by the apiserver will have no effect and unknown fields get discarded.
 type MetaOptions struct {
   // FieldManager is a name associated with the actor or entity that is responsible for the currently taking place
   // interaction with the object.
