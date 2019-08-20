@@ -710,11 +710,13 @@ queue’s virtual start time is decremented by G - S.
 ### Example Configuration
 
 
-For kube-apiserver self-maintaining, solving priority-inversion, including requests from: 
+For kube-apiserver self-maintaining, solving priority-inversion, including requests 
+from: 
 
-1. kubectl requests from admin
-2. apiserver loopback requests
-3. delegated auth/admission requests
+1. requests from system-privileged group, including kubectl requests from admin and 
+apiserver loopback requests.
+2. delegated authentication/authorization API groups, including delegated delegated 
+authentication/authorization requests.
 
 ```yaml
 kind: RequestPriority
@@ -733,7 +735,7 @@ For kubernetes cluster self-maintaining, including requests from:
 # 
 kind: RequestPriority
 meta:
-  name: system-high
+  name: system
 spec:
   assuredConcurrencyShares: 100
   queues: 128
@@ -749,7 +751,7 @@ For the other essential system in the kubernetes cluster. covering requests from
 ```yaml
 kind: RequestPriority
 meta:
-  name: system-low
+  name: workload-high
 spec:
   assuredConcurrencyShares: 30
   queues: 1
@@ -761,7 +763,7 @@ For normal workloads:
 ```yaml
 kind: RequestPriority
 meta:
-  name: workload
+  name: workload-low
 spec:
   assuredConcurrencyShares: 30
   queues: 128
@@ -786,20 +788,20 @@ Some flow schemata.
 ```yaml
 kind: FlowSchema
 meta:
-  name: system-top
+  name: exempt
 spec:
   matchingPrecedence: 1500
   priorityLevelConfiguration:
     name: exempt
   rules:
-  - rule:
+  - rule: # All resource requests from system-privileged group
       verbs: ['*']
       apiGroups: ['*']
       resources: ['*']
     subjects:
     - kind: Group
       name: "system:masters"
-  - rule:
+  - rule: # Delegated auth[n/z] requests
       verbs: ['*']
       apiGroups: ['authentication.k8s.io', 'authorization.k8s.io']
       resources: ['*']
@@ -813,28 +815,41 @@ spec:
 ```yaml
 kind: FlowSchema
 meta:
-  name: system-high
+  name: nodes
 spec:
   matchingPrecedence: 2500
   priorityLevelConfiguration:
-    name: system-high
+    name: system
   distinguisherMethod:
     type: ByUser
   rules:  
-  - rule:
+  - rule: # All resource requests from node group
       verbs: ['*']
       apiGroups: ['*']
       resources: ['*']
     subjects:
     - kind: Group
       name: "system:nodes"
-  - rule:
+  - rule: # All non-resource requests from node group
       verbs: ['*']
       nonResourceURLs: ['*']
     subjects:
     - kind: Group
       name: "system:nodes"    
-  - rule:
+```
+
+```yaml
+kind: FlowSchema
+meta:
+  name: leader-election
+spec:
+  matchingPrecedence: 2500
+  priorityLevelConfiguration:
+    name: system
+  distinguisherMethod:
+    type: ByUser
+  rules:  
+  - rule: # Leader-election requests from kube-controller-manager/kube-scheduler
       verbs: ['*']
       apiGroups: ['coordination.k8s.io']
       resources: ['leases']
@@ -848,29 +863,207 @@ spec:
 ```yaml
 kind: FlowSchema
 meta:
-  name: system-low
+  name: kube-manager-controller
 spec:
   matchingPrecedence: 3500
   priorityLevelConfiguration:
-    name: system-low
+    name: workload-high
   distinguisherMethod:
-    type: ByUser
+    type: ByNamespace
   rules:  
-  - rule:
+  - rule: # All resource requests from kube-controller-manager
       verbs: ['*']
       apiGroups: ['*']
       resources: ['*']
     subjects:
     - kind: User
       name: "system:kube-controller-manager"    
-    - kind: User
-      name: "system:kube-scheduler"    
-  - rule:
+    - kind: ServiceAccount 
+      namespace: kube-system
+      name: attachdetach-controller
+    - kind: ServiceAccount 
+      namespace: kube-system
+      name: certificate-controller
+    - kind: ServiceAccount 
+      namespace: kube-system
+      name: clusterrole-aggregation-controller
+    - kind: ServiceAccount 
+      namespace: kube-system
+      name: cronjob-controller
+    - kind: ServiceAccount 
+      namespace: kube-system
+      name: daemon-set-controller
+    - kind: ServiceAccount 
+      namespace: kube-system
+      name: deployment-controller
+    - kind: ServiceAccount 
+      namespace: kube-system
+      name: disruption-controller
+    - kind: ServiceAccount 
+      namespace: kube-system
+      name: endpoint-controller
+    - kind: ServiceAccount 
+      namespace: kube-system
+      name: expand-controller
+    - kind: ServiceAccount 
+      namespace: kube-system
+      name: generic-garbage-collector
+    - kind: ServiceAccount 
+      namespace: kube-system
+      name: horizontal-pod-autoscaler
+    - kind: ServiceAccount 
+      namespace: kube-system
+      name: job-controller
+    - kind: ServiceAccount 
+      namespace: kube-system
+      name: namespace-controller
+    - kind: ServiceAccount 
+      namespace: kube-system
+      name: node-controller
+    - kind: ServiceAccount 
+      namespace: kube-system
+      name: persistent-volume-binder
+    - kind: ServiceAccount 
+      namespace: kube-system
+      name: pod-garbage-collector
+    - kind: ServiceAccount 
+      namespace: kube-system
+      name: pv-protection-controller
+    - kind: ServiceAccount 
+      namespace: kube-system
+      name: pvc-protection-controller
+    - kind: ServiceAccount 
+      namespace: kube-system
+      name: replicaset-controller
+    - kind: ServiceAccount 
+      namespace: kube-system
+      name: replication-controller
+    - kind: ServiceAccount 
+      namespace: kube-system
+      name: resourcequota-controller
+    - kind: ServiceAccount 
+      namespace: kube-system
+      name: route-controller
+    - kind: ServiceAccount 
+      namespace: kube-system
+      name: service-account-controller
+    - kind: ServiceAccount 
+      namespace: kube-system
+      name: service-controller
+    - kind: ServiceAccount 
+      namespace: kube-system
+      name: statefulset-controller
+    - kind: ServiceAccount 
+      namespace: kube-system
+      name: ttl-controller
+  - rule: # All non-resource requests from kube-controller-manager
       verbs: ['*']
       nonResourceURLs: ['*']
     subjects:
     - kind: User
       name: "system:kube-controller-manager"    
+    - kind: ServiceAccount 
+      namespace: kube-system
+      name: attachdetach-controller
+    - kind: ServiceAccount 
+      namespace: kube-system
+      name: certificate-controller
+    - kind: ServiceAccount 
+      namespace: kube-system
+      name: clusterrole-aggregation-controller
+    - kind: ServiceAccount 
+      namespace: kube-system
+      name: cronjob-controller
+    - kind: ServiceAccount 
+      namespace: kube-system
+      name: daemon-set-controller
+    - kind: ServiceAccount 
+      namespace: kube-system
+      name: deployment-controller
+    - kind: ServiceAccount 
+      namespace: kube-system
+      name: disruption-controller
+    - kind: ServiceAccount 
+      namespace: kube-system
+      name: endpoint-controller
+    - kind: ServiceAccount 
+      namespace: kube-system
+      name: expand-controller
+    - kind: ServiceAccount 
+      namespace: kube-system
+      name: generic-garbage-collector
+    - kind: ServiceAccount 
+      namespace: kube-system
+      name: horizontal-pod-autoscaler
+    - kind: ServiceAccount 
+      namespace: kube-system
+      name: job-controller
+    - kind: ServiceAccount 
+      namespace: kube-system
+      name: namespace-controller
+    - kind: ServiceAccount 
+      namespace: kube-system
+      name: node-controller
+    - kind: ServiceAccount 
+      namespace: kube-system
+      name: persistent-volume-binder
+    - kind: ServiceAccount 
+      namespace: kube-system
+      name: pod-garbage-collector
+    - kind: ServiceAccount 
+      namespace: kube-system
+      name: pv-protection-controller
+    - kind: ServiceAccount 
+      namespace: kube-system
+      name: pvc-protection-controller
+    - kind: ServiceAccount 
+      namespace: kube-system
+      name: replicaset-controller
+    - kind: ServiceAccount 
+      namespace: kube-system
+      name: replication-controller
+    - kind: ServiceAccount 
+      namespace: kube-system
+      name: resourcequota-controller
+    - kind: ServiceAccount 
+      namespace: kube-system
+      name: route-controller
+    - kind: ServiceAccount 
+      namespace: kube-system
+      name: service-account-controller
+    - kind: ServiceAccount 
+      namespace: kube-system
+      name: service-controller
+    - kind: ServiceAccount 
+      namespace: kube-system
+      name: statefulset-controller
+    - kind: ServiceAccount 
+      namespace: kube-system
+      name: ttl-controller      
+```
+
+```yaml
+kind: FlowSchema
+meta:
+  name: kube-scheduler
+spec:
+  matchingPrecedence: 3500
+  priorityLevelConfiguration:
+    name: workload-high
+  distinguisherMethod:
+    type: ByNamespace
+  rules:  
+  - rule: # All resource requests from kube-scheduler
+      verbs: ['*']
+      apiGroups: ['*']
+      resources: ['*']
+    subjects:
+    - kind: User
+      name: "system:kube-scheduler"    
+  - rule: # All non-resource requests from kube-scheduler
+      verbs: ['*']
+      nonResourceURLs: ['*']
+    subjects:
     - kind: User
       name: "system:kube-scheduler"         
 ```
@@ -878,22 +1071,22 @@ spec:
 ```yaml
 kind: FlowSchema
 meta:
-  name: workload
+  name: serviceaccounts
 spec:
   matchingPrecedence: 7500
   priorityLevelConfiguration:
-    name: workload
+    name: workload-low
   distinguisherMethod:
     type: ByNamespace
   rules:  
-  - rule:
+  - rule: # All in-cluster resource requests from service-account tokens
       verbs: ['*']
       apiGroups: ['*']
       resources: ['*']
     subjects:
     - kind: Group
       name: "system:serviceaccounts"
-  - rule:
+  - rule: # All in-cluster non-requests from service-account tokens
       verbs: ['*']
       nonResourceURLs: ['*']
     subjects:
@@ -904,15 +1097,15 @@ spec:
 ```yaml
 kind: FlowSchema
 meta:
-  name: catch-all
+  name: default
 spec:
   matchingPrecedence: 10000
   priorityLevelConfiguration:
     name: default
   distinguisherMethod:
-    type: ByUser
+    type: ByNamespace
   rules:  
-  - rule:
+  - rule: # All resource requests
       verbs: ['*']
       apiGroups: ['*']
       resources: ['*']
@@ -921,7 +1114,7 @@ spec:
       name: "system:authenticated"
     - kind: Group
       name: "system:unauthenticated"
-  - rule:
+  - rule: # All non-resource requests
       verbs: ['*']
       nonResourceURLs: ['*']
     subjects:
@@ -1004,21 +1197,22 @@ an kube-apiserver restarts.
 
 Additionally, if an administrator disagrees with the default settings and
 feel like replacing with a complete new set. To avoid re-creation of the  
-system defaults above, the administrator is expected to update the objects
-to mute those configurations doesn't meet expectation.
+system defaults above,  the administrators have to update the undesired 
+objects to have no effects
+
 Administrators who wish to operate with a different configuration can create, 
 update, and delete additional configuration objects and edit the predefined 
 ones; the predefined ones can not be deleted but they can be modified to 
-minimize their effects. In particular, to mute a FlowSchema, you can modify 
-to match no requests. To mute a PriorityLevelConfiguration modify 
-AssuredConcurrencyShares=1. For example:
+minimize their effects. In particular, to minimize the effects of a FlowSchema,
+you can modify to match no requests. To minimize the effects of a 
+PriorityLevelConfiguration modify AssuredConcurrencyShares=1. For example:
 
 ```
 kind: FlowSchema
 meta:
   name: matches-nothing
 spec:
-  matchingPrecedence: 5000
+  matchingPrecedence: 20000 # either logically lower than "default" flow-schema which catches all requests
   priorityLevelConfiguration:
     name: default
   rules:  
@@ -1028,7 +1222,7 @@ spec:
       resources: ['*']
     subjects:
     - kind: User
-      name: "" # unreachable username
+      name: "null" # or assign it any unreachable username
 ```
 
 ### Prometheus Metrics
