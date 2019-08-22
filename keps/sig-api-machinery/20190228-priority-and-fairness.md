@@ -287,7 +287,7 @@ FlowSchema.
 
 Each FlowSchema has:
 - A boolean test of an authenticated request;
-- A matching priority (default value is 1000);
+- A matching precedence (default value is 1000);
 - A reference to a RequestPriority object; and
 - An optional rule for computing the request’s flow distinguisher; not
   allowed for a FlowSchema that refers to a RequestPriority that is
@@ -310,10 +310,10 @@ The best matching FlowSchema for a given request is one of those whose
 boolean test accepts the request.  It is a configuration error if
 there is no FlowSchema that matches every request.  In case multiple
 schemas accept the request, the best is one of those with the
-logically highest matching priority.  In case there are multiple of
+logically highest matching precedence.  In case there are multiple of
 those the implementation is free to pick any of those as best.  A
-matching priority is an integer, and a numerically lower number
-indicates a logically higher priority.
+matching precedence is an integer, and a numerically lower number
+indicates a logically higher precedence.
 
 A FlowSchema’s boolean test is constructed from atomic tests.  Each
 atomic test compares an authenticated request attribute --- selected
