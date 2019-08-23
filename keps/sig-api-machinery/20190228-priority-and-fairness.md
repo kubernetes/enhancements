@@ -47,6 +47,9 @@ superseded-by:
   - [Example Configuration](#example-configuration)
   - [Reaction to Configuration Changes](#reaction-to-configuration-changes)
   - [Default Behavior](#default-behavior)
+    - [Default Cluster Configuration](#default-cluster-configuration)
+    - [API Server Initial Behavior](#api-server-initial-behavior)
+    - [Default Request Handling](#default-request-handling)
   - [Prometheus Metrics](#prometheus-metrics)
   - [Testing](#testing)
   - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
@@ -717,7 +720,7 @@ system, requests.
 ```yaml
 kind: RequestPriority
 meta:
-  name: system-top
+  name: exempt
 spec:
   exempt: true
 ```
@@ -757,11 +760,12 @@ spec:
   queueLengthLimit: 100
 ```
 
-For requests from controllers processing workload.
+For requests from controllers processing workload, and anything else
+that does not go in a logically higher priority.
 ```yaml
 kind: RequestPriority
 meta:
-  name: workload-low
+  name: default
 spec:
   catchAll: true
   assuredConcurrencyShares: 100
@@ -775,10 +779,10 @@ Some flow schemata.
 ```yaml
 kind: FlowSchema
 meta:
-  name: system-top
+  name: exempt
 spec:
   requestPriority:
-    name: system-top
+    name: exempt
   match:
   - and: # writes by admins (does this cover loopback too?)
     - superSet:
@@ -861,7 +865,7 @@ spec:
 ```yaml
 kind: FlowSchema
 meta:
-  name: workload-low
+  name: default
 spec:
   matchingPriority: 9999
   requestPriority:
@@ -882,11 +886,11 @@ to create TokenReview and SubjectAccessReview objects.
 ```
 kind: FlowSchema
 meta:
-  name: system-top
+  name: kos-top
 spec:
   matchingPriority: 900
   requestPriority:
-    name: system-top
+    name: exempt
   flowDistinguisher:
     source: user
     # no transformation in this case
@@ -957,55 +961,90 @@ complete their service.
 
 ### Default Behavior
 
-There must be reasonable behavior "out of the box", and it should be
-at least a little difficult for an administrator to lock himself out
-of this subsystem.  To accomplish these things there are two levels of
-defaulting: one concerning behavior, and one concerning explicit API
-objects.
+There are three default behavior questions to answer: (1) what is the
+default configuration of a cluster, (2) how does an apiserver treat
+requests before it has had a chance to read the configuration and
+ensure it is reasonable, and (3) how is a request handled if it does
+not match any FlowSchema?
 
-The effective configuration is the union of (a) the actual API objects
-that exist and (b) implicitly generated backstop objects.  The latter
-are not actual API objects, and might not ever exist as identifiable
-objects in the implementation, but are figments of our imagination
-used to describe the behavior of this subsystem.  These backstop
-objects are implicitly present and affecting behavior when needed.
-There are two implicitly generated RequestPriority backstop objects.
-One is equivalent to the `system-top` object exhibited above, and it
-exists while there is no actual RequestPriority object with `exempt ==
-true`.  The other is equivalent to the `workload-low` object exhibited
-above, and exists while there is no RequestPriority object with
-non-exempt priority.  There are also two implicitly generated
-FlowSchema backup objects.  Whenever a request whose groups include
-`system:masters` is not matched by any actual FlowSchema object, a
-backstop equivalent to the `system-top` object exhibited above is
-considered to exist.  Whenever a request whose groups do not include
-`system:masters` is not matched by any actual FlowSchema object, the
-following backstop object is considered to exist.
+#### Default Cluster Configuration
 
-```yaml
+There is a _predefined_ set of configuration objects, and it consists
+of the objects exhibited in the
+[Example Configuration](#example-configuration) section above.
+
+Whenever a kube-apiserver starts up, it ensures that the predefined
+configuration objects are persisted.  That is: for each predefined
+object, the apiserver will create that object if there is not already
+an object with the same GroupKind and name.  Note that mere existence
+is enough; the apiserver does not insist that the spec matches its
+predefined content.
+
+Administrators can choose to persist a partially or almost completely
+different set of configuration API objects than the predefined set
+(but remember that the behavior of the apiserver before it has had a
+chance to read the persisted configuration API objects is a different
+matter). Additional objects can be created, updated, and deleted. The
+predefined objects can be updated and even deleted --- but they will
+re-appear at the next kube-apiserver startup.  Thus, administrators
+can not permanently remove the predefined objects.  If the predefined
+objects are not desired then the administrators must update the
+predefined objects to minimize their effects. A
+PriorityLevelConfiguration can be set to have just 1 assured
+concurrency share; care should be taken to do this only after its
+queues have drained, otherwise this setting may greatly slow down the
+rate at which the queues drain. A FlowSchema can be updated to match
+no requests; following is an example.
+
+```
 kind: FlowSchema
 meta:
-  name: non-top-backstop
+  name: matches-nothing
 spec:
-  matchingPriority: (doesn’t really matter)
-  requestPriority:
-    name: (name of an effectively existing RequestPriority, whether
-           that is real or backstop, with catchAll==true)
-  flowDistinguisher:
-    source: user
-    # no transformation in this case
-  match:
-  - and: [ ] # match everything
+  matchingPrecedence:...
+  priorityLevelConfiguration: ...
+  rules:
+  - rule:
+      verbs: ['*']
+      apiGroups: ['*']
+      resources: ['*']
+    subjects:
+    - kind: Group
+      name: "system:reserved" # a group name that we presume will never be used
 ```
 
-The other part of the defaulting story concerns making actual API
-objects exist, and it goes as follows.  Whenever there is no actual
-RequestPriority object with `exempt == true`, the RequestPriority
-objects exhibited above are created --- except those with a name
-already in use by an existing RequestPriority object.  Whenever there
-is no actual FlowSchema object that refers to an exempt
-RequestPriority object, the schema objects shown above as examples are
-generated --- except those with a name already in use.
+#### API Server Initial Behavior
+
+As it starts up, an apiserver has to start handling requests before
+the filter discussed here has had a chance to read the persisted
+configuration API objects.  Indeed, that reading will have to be done
+through the very same filter (at least in the first apiserver in a
+cluster)!  The initial request handling also precedes persisting the
+default configuration API objects for the cluster.
+
+When the apiserver first starts up, the filter behaves as if the
+configuration consists of just (1) the predefined
+PriorityLevelConfiguration objects named `exempt` and `default`, and
+(2) the predefined FlowSchema objects named `exempt` and `default`.
+
+A kube-apiserver maintains this initial behavior until it has had a
+chance to read all the persisted configuration API objects and create
+any missing ones (see
+[the logic above](#default-cluster-configuration)).
+
+An aggregated apiserver maintains this initial behavior until it has
+had a chance to read all the persisted configuration API objects and
+finds the four named `exempt` or `default` among them.
+
+After the initial behavior period is over, regular behavior begins.
+
+#### Default Request Handling
+
+It is possible that the administrators can modify the configuration
+API objects to create a situation where some requests will not match
+any FlowSchema.  Once the initial behavior period is over, any request
+that does not match a FlowSchema object is rejected.
+
 
 ### Prometheus Metrics
 
