@@ -973,45 +973,22 @@ There is a _predefined_ set of configuration objects, and it consists
 of the objects exhibited in the
 [Example Configuration](#example-configuration) section above.
 
-Whenever a kube-apiserver starts up, it ensures that the predefined
-configuration objects are persisted.  That is: for each predefined
+Whenever a kube-apiserver starts up, it checks whether there is a
+PriorityLevelConfiguration object with `Spec.Exempt==true`.  If not
+then the apiserver attempts to create the predefined configuration objects, the
+exempt PriorityLevelConfiguration last.  In this case: for each predefined
 object, the apiserver will create that object if there is not already
-an object with the same GroupKind and name.  Note that mere existence
+an object with the same GroupKind and name; note that mere existence
 is enough; the apiserver does not insist that the spec matches its
 predefined content.
 
-Administrators can choose to persist a partially or almost completely
-different set of configuration API objects than the predefined set
-(but remember that the behavior of the apiserver before it has had a
-chance to read the persisted configuration API objects is a different
-matter). Additional objects can be created, updated, and deleted. The
-predefined objects can be updated and even deleted --- but they will
-re-appear at the next kube-apiserver startup.  Thus, administrators
-can not permanently remove the predefined objects.  If the predefined
-objects are not desired then the administrators must update the
-predefined objects to minimize their effects. A
-PriorityLevelConfiguration can be set to have just 1 assured
-concurrency share; care should be taken to do this only after its
-queues have drained, otherwise this setting may greatly slow down the
-rate at which the queues drain. A FlowSchema can be updated to match
-no requests; following is an example.
-
-```
-kind: FlowSchema
-meta:
-  name: matches-nothing
-spec:
-  matchingPrecedence:...
-  priorityLevelConfiguration: ...
-  rules:
-  - rule:
-      verbs: ['*']
-      apiGroups: ['*']
-      resources: ['*']
-    subjects:
-    - kind: Group
-      name: "system:reserved" # a group name that we presume will never be used
-```
+Administrators can choose to persist a partially or completely
+different set of configuration API objects than the predefined set ---
+so long as the persisted set includes a PriorityLevelConfiguration
+object with `Spec.Exempt==true`.  (Remember that the behavior of the
+apiserver before it has had a chance to read the persisted
+configuration API objects is a different matter.)  Any configuration
+object can be created, updated, and deleted.
 
 #### API Server Initial Behavior
 
@@ -1019,22 +996,17 @@ As it starts up, an apiserver has to start handling requests before
 the filter discussed here has had a chance to read the persisted
 configuration API objects.  Indeed, that reading will have to be done
 through the very same filter (at least in the first apiserver in a
-cluster)!  The initial request handling also precedes persisting the
-default configuration API objects for the cluster.
+cluster)!  The initial request handling also applies while an
+apiserver is persisting the default configuration API objects for the
+cluster.
 
-When the apiserver first starts up, the filter behaves as if the
+When the apiserver first starts up, it behaves as if the
 configuration consists of just (1) the predefined
 PriorityLevelConfiguration objects named `exempt` and `default`, and
 (2) the predefined FlowSchema objects named `exempt` and `default`.
 
-A kube-apiserver maintains this initial behavior until it has had a
-chance to read all the persisted configuration API objects and create
-any missing ones (see
-[the logic above](#default-cluster-configuration)).
-
-An aggregated apiserver maintains this initial behavior until it has
-had a chance to read all the persisted configuration API objects and
-finds the four named `exempt` or `default` among them.
+An apiserver maintains this initial behavior until it has had a
+chance to read all the persisted configuration API objects.
 
 After the initial behavior period is over, regular behavior begins.
 
@@ -1042,8 +1014,30 @@ After the initial behavior period is over, regular behavior begins.
 
 It is possible that the administrators can modify the configuration
 API objects to create a situation where some requests will not match
-any FlowSchema.  Once the initial behavior period is over, any request
-that does not match a FlowSchema object is rejected.
+any FlowSchema.  This is also the situation before the cluster has
+been given its initial load of configuration API objects.  Once the
+initial behavior period is over, any request that does not match a
+FlowSchema object is handled as follows.
+
+If an unmatched request has `system:masters` among its user groups
+then the request is considered exempt and is assigned to one of the
+exempt priority levels.  If no PriorityLevelConfiguration object has
+`Spec.Exempt==true` then the apiserver acts as if there is an
+additional PriorityLevelConfiguration object with `Spec.Exempt==true`;
+for the rest of the `Spec` the apiserver will use either (a) what it
+most recently saw associated with `Exempt==true` or (b) the
+configuration as shown for the `exempt` PriorityLevelConfiguration
+above.
+
+An unmatched request that is not exempt is assigned to one of the
+priority levels with the "catchAll" bit set to true, with a flow
+identifier consisting of an unreal scheme name and the username.  If
+there is no PriorityLevelConfiguration object with the "catchAll" bit
+set to true then the apiserver acts as if there is an additional one
+with "catchAll" set to true; for the rest of the `Spec` the apiserver
+will use either (a) what it last saw associated with true "catchAll"
+or (b) the Spec of the `default` PriorityLevelConfiguration shown
+above.
 
 
 ### Prometheus Metrics
