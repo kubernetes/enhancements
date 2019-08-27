@@ -52,16 +52,16 @@ in polluted migration.  ([details][]).
 [storageVersionHash]:https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/apimachinery/pkg/apis/meta/v1/types.go#L979
 [details]:https://github.com/kubernetes/enhancements/blob/master/keps/sig-api-machinery/35-storage-version-hash.md#ha-masters
 
-We propose a mechanism for HA API servers to expose if they have unanimously
-agreed on the storage version, so that the storage migrator can defer migration
-until an agreement has been reached.
+We propose a way to show what storage versions all API servers are using, so
+that the storage migrator can defer migration until an agreement has been
+reached.
 
 ## API changes
 
 ### Resource Version API
 
 We introduce a new API `StorageVersion`, in a new API group
-`apiserver.internal.k8s.io/v1alpha1`. 
+`internal.apiserver.k8s.io/v1alpha1`.
 
 ```golang
 //  Storage version of a specific resource.
@@ -195,7 +195,7 @@ details.
 
 To accurately reflect the storage version being used, the apiextension-apiserver
 needs to update the storageVersion object when it [creates][] the custom
-resource handler.
+resource handler upon CRD creation or changes.
 
 [creates]:https://github.com/kubernetes/kubernetes/blob/220498b83af8b5cbf8c1c1a012b64c956d3ebf9b/staging/src/k8s.io/apiextensions-apiserver/pkg/apiserver/customresource_handler.go#L721
 
@@ -233,27 +233,23 @@ concern.
 
 ## Graduation Plan
 
-* Alpha: in 1.16, the newly added API, including the `DiscoveryDocHashes` and
-  the `Consistent` field, will be feature gated by the
-  `EnableCoordinatedDiscoveryDocument` flag.
-
-* Beta & GA: if we don't find problems, we will graduate the API quarterly.
+* alpha: in 1.17, the StorageVersion API and related mechanism will be feature
+  gated by the `ExposeStorageVersion` flag.
+* beta1 in 1.18, beta2 in 1.19. We make two beta releases to allow more time for
+  feedback.
+* GA in 1.20.
 
 ## FAQ
 
 1. Q: if an API server is rolled back when the migrator is in the middle of
    migration, how to prevent corruption? ([original question][])
 
-   A: Unlike the discovery document, the new StorageVersion API supports watch,
-   so the storage migrator can detect the disagreement in storage version
-   quickly, instead of polling the discovery document with a fixed interval. 
-
-   The migrator will abort ongoing migration. Furthermore, to counter the delay
-   in the watch, the migrator can conservatively fail migration that has
-   recently finished. For example, assuming the watch event of the storage
-   version disagreement is delivered at time `t`, and assuming the delay of
-   watch is less than 1 minute in most cases, then the migrator will fail
-   the migration for this resource if it finishes between `t-1` and `t`.
+   A: Unlike the discovery document, the new StorageVersion API is persisted in
+   etcd and has the resourceVersion(RV) field, so the migrator can determine if
+   the storage version has changed in the middle of migration by comparing the
+   RV of the storageVersion object before and after the migration. Also, as an
+   optimization, the migrator can fail quickly by aborting the ongoing migration
+   if it receives a storageVersion change event via WATCH.
 
    [original question]:https://github.com/kubernetes/enhancements/pull/1176#discussion_r307977970
 
