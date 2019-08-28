@@ -36,6 +36,7 @@ superseded-by:
   - [Implementation Details/Notes/Constraints [optional]](#implementation-detailsnotesconstraints-optional)
     - [Kubectl](#kubectl)
       - [Server-side Apply](#server-side-apply)
+    - [Apiserver](#apiserver)
   - [Risks and Mitigations](#risks-and-mitigations)
   - [Testing Plan](#testing-plan)
 - [Graduation Criteria](#graduation-criteria)
@@ -163,8 +164,9 @@ Kubernetes clusters. The semantical differences between server-side
 apply and client-side apply will make a smooth roll-out difficult, so
 the best way to achieve this has not been decided yet.
 
-A new update to the implementation of server-side apply prevents objects with managed
-fields set to anything other than nil or empty from being applied.
+#### Apiserver
+Restrictions to objects being applied:
+  * Object being applied must not have `ManagedFields`
 
 ### Risks and Mitigations
 
