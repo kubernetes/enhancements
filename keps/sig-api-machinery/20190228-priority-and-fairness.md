@@ -45,6 +45,8 @@ superseded-by:
   - [Dispatching](#dispatching)
     - [Fair Queuing for Server Requests](#fair-queuing-for-server-requests)
   - [Example Configuration](#example-configuration)
+    - [Design Rationale](#design-rationale)
+    - [Example Configuration Objects](#example-configuration-objects)
   - [Reaction to Configuration Changes](#reaction-to-configuration-changes)
   - [Default Behavior](#default-behavior)
   - [Prometheus Metrics](#prometheus-metrics)
@@ -726,6 +728,60 @@ queue’s virtual start time is decremented by G - S.
 
 ### Example Configuration
 
+#### Design Rationale
+
+Exhibited below is an example configuration that divides traffic into
+the following five priority levels, listed in decreasing order of
+logical priority.
+
+- An exempt priority level for requests from administrators and
+  requests that are in service of other requests.  To avoid priority
+  inversions it is necessary that any request S that is in service of
+  some other request R be given at least as high a priority as R.
+  Since many such requests S do not indicate what they are serving in
+  a way that can be scrutinized here, we assign them all to the exempt
+  priority level.  As shown in
+  [Observed Requests](#observed-requests), SubjectAccessReview (and
+  thus presumably TokenReview) requests are not well distinguished by
+  the issuing user --- rather they need to be identified according to
+  the object they access.
+
+- Next comes a priority level for system self-maintenance.  This
+  includes:
+
+  - heartbeats by nodes;
+
+  - kubelet and kube-proxy operations on system objects (identified by
+    the namespace of the object operated on); and
+
+  - leader elections for system controllers (which can be identified
+    by the namespace of their service account or the object used for
+    the election).
+
+- Next comes a priority level for the generic object garbage
+  collector.  This serves both system self-maintenance and ordinary
+  workload --- in an integrated way, so it does not make sense to try
+  to differentiate its traffic.  Instead we prioritize it between the
+  two.  We expect the higher priority levels can tolerate garbage
+  collector latency, since there is no promise about that.
+
+At this point we have covered the "system" traffic, and what is left
+is ordinary workload.  We divide it into two priority levels as
+follows.
+
+- A high workload priority level for requests from users using kubectl
+  and from external clients.  There are no authenticated attributes
+  that positively identify this traffic, but there _is_ an attribute
+  that identifies its complement.  That complement is requests from
+  controllers, and they can be identified by the fact that they are
+  using a service account.  So the higher priority workload traffic is
+  identified as that _not_ using a service account.
+
+- The lowest priority level is used for requests from controllers.
+  These are identified by the fact that they are using a service
+  account.
+
+#### Example Configuration Objects
 
 For requests from admins and requests in service of other, potentially
 system, requests.
