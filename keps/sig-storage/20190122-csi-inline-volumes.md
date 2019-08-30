@@ -14,7 +14,7 @@ approvers:
   - "@thockin"
   - "@saad-ali"
 creation-date: 2019-01-22
-last-updated: 2019-07-25
+last-updated: 2019-08-30
 status: implementable
 ---
 
@@ -32,7 +32,7 @@ status: implementable
 - [Ephemeral inline volume proposal](#ephemeral-inline-volume-proposal)
   - [VolumeHandle generation](#volumehandle-generation)
   - [API updates](#api-updates)
-  - [Driver mode](#driver-mode)
+  - [Support for inline CSI volumes](#support-for-inline-csi-volumes)
   - [Secret reference](#secret-reference)
   - [Specifying allowed inline drivers with <code>PodSecurityPolicy</code>](#specifying-allowed-inline-drivers-with-)
   - [Ephemeral inline volume operations](#ephemeral-inline-volume-operations)
@@ -40,6 +40,7 @@ status: implementable
   - [All unit tests](#all-unit-tests)
   - [Ephemeral inline volumes unit tests](#ephemeral-inline-volumes-unit-tests)
   - [E2E tests](#e2e-tests)
+- [Alternatives](#alternatives)
 - [Implementation History](#implementation-history)
 <!-- /toc -->
 
@@ -160,13 +161,20 @@ type CSIVolumeSource struct {
 }
 ```
 
-### Driver mode
-To indicate that the driver will support ephemeral inline volume requests, the existing `CSIDriver` object will be extended to include attribute `Mode`.  Currently the only modes that will be supported are `persistent` (the default if not set), `ephemeral`, and `persistent+ephemeral` (both).
+### Support for inline CSI volumes
 
-When `CSIDriver.Mode` is not specified, `persistent`, or `persistent+ephemeral`, the driver can be used normally in PV/PVC-requested volumes and
-will then receive all persistent volume operation calls (i.e. provision/delete, attach/detach, mount/unmount, etc).
+To indicate that the driver will support ephemeral inline volume requests, the existing `CSIDriver` object will be extended to include attribute `VolumeLifecycleModes`,
+a list of strings. That list may contain:
+- `persistent` if the driver supports normal, persistent volumes (i.e. the normal CSI API); this is the default if nothing is specified
+- `ephemeral` if the driver supports inline CSI volumes
 
-When `CSIDriver.Mode` is set to `ephemeral` or `persistent+ephemeral`, the following approach is supported:
+Kubelet will check for support for ephemeral volumes before invoking
+the CSI driver as described next. This prevents accidentally using a
+CSI driver in a way which it doesn't support. This is important
+because using a driver incorrectly might end up causing data loss or
+other problems.
+
+When a CSI driver supports it, the following approach is used:
 * Volume requests will originate from pod specs.
 * The driver will only receive volume operation calls during mount/unmount phase (`NodePublishVolume`, `NodeUnpublishVolume`)
 * The driver will not receive separate gRPC calls for provisioning, attaching, detaching, and deleting of volumes.
@@ -174,8 +182,11 @@ When `CSIDriver.Mode` is set to `ephemeral` or `persistent+ephemeral`, the follo
 * The Kubelet may attempt to mount a path, with the same generated volumeHandle, more than once. If that happens, the driver should be able to handle such cases gracefully.
 * The driver is responsible for implementing steps to delete and clean up any volume and resources during the unmount call.
 * The Kubelet may attempt to call unmount, with the same generated volumeHandle, more than once. If that happens, the driver should be able to handle such cases gracefully.
-
-A misconfigured driver (i.e. a persistent PV/PVC-supported driver with `Mode==ephemeral` or an inline driver with `Mode == persistent`) will not work properly and may cause the driver to fail during operations.  
+* `CSIVolumeSource.FSType` is mapped to `NodePublishVolumeRequest.access_type.mount.fs_type`.
+* All other parameters that a driver might need (like volume size)
+  have to be specified in `CSIVolumeSource.VolumeAttributes` and will be passed in
+  `NodePublishVolumeRequest.volume_context`. What those parameters are is entirely
+  up to the CSI driver.
 
 A driver that supports both modes may need to distinguish in
 `NodePublishVolume` whether the volume is ephemeral or persistent.
@@ -248,6 +259,16 @@ Since ephemeral volume requests will participate in only the mount/unmount volum
 * Enable testing of an external ephemeral CSI driver: https://github.com/kubernetes/kubernetes/pull/79983/files#diff-e5fc8d9911130b421b74b1ebc273f458
 * Enable testing of the csi-host-path-driver in ephemeral mode in Kubernetes-CSI Prow jobs and Kubernetes itself: TODO
 
+## Alternatives
+
+Instead of allowing CSI drivers that support both ephemeral and
+persistent volumes and passing the `csi.storage.k8s.io/ephemeral`
+hint, a simpler solution would have been to require that a driver gets
+deployed twice, once for for each kind of volume. That was rejected
+because a driver might manage some resource that is shared between
+both kinds of volumes, like local disks (LVM) or persistent memory
+(PMEM). Having to deploy the driver twice would have made the driver
+implementation more complex.
 
 ## Implementation History
 
@@ -259,10 +280,11 @@ Since ephemeral volume requests will participate in only the mount/unmount volum
   cannot determine the mode in its `NodePublishVolume` implementation
 
 1.16:
+- Beta status
 - the same CSI driver deployment can support both modes by enabling
   the pod info feature and checking the value of
   `csi.storage.k8s.io/ephemeral`
   (https://github.com/kubernetes/kubernetes/pull/79983, merged)
-- `CSIDriver.Mode` added and checked before calling a CSI driver for
+- `CSIDriver.VolumeLifecycleMode` added and checked before calling a CSI driver for
   an ephemeral inline volume
-  (https://github.com/kubernetes/kubernetes/pull/80568, pending)
+  (https://github.com/kubernetes/kubernetes/pull/80568, merged)
