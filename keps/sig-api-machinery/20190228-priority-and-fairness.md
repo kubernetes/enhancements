@@ -930,7 +930,7 @@ changes in these pose no difficulty.  Challenging changes include
 changes in the number of queues, the queue length limit, or the
 assured concurrency value (which is derived from several pieces of
 config, as outlined elsewhere) of a request priority --- as well as
-deletion of a priority level itself.
+deletion of a priority level itself or changing whether it is exempt.
 
 An increase in the number of queues of a priority level is handled by
 simply adding queues.  A decrease is handled by making a distinction
@@ -959,16 +959,29 @@ the queues of that priority level are empty.  A FlowSchema associated
 with one of these lingering undesired priority levels matches no
 requests.
 
+At a given apiserver, when a priority level changes from having no
+queues to being non-exempt (and thus needing queues): queues are
+created for that priority level and it begins regular queuing behavior
+for the requests subsequently received; requests received while the
+priority level was exempt continue to execute until they complete.
+When a priority level with queues becomes exempt, those queues linger
+until they naturally drain --- similarly to what happens when a
+priority level is deleted; in this case the number of assured
+concurrency shares used is the last value seen while the priority
+level was not exempt.  In all situations, a request that arrived while
+its priority level was exempt never counts against any concurrency
+limit for that priority level.
+
 The [Dispatching](#Dispatching) section prescribes how the assured
 concurrency value (`ACV`) is computed for each priority level, and the
-sum there is over all the _desired_ priority levels (i.e., excluding
-the lingering undesired priority levels).  For this reason and for
-others, at any given time this may compute for some priority level(s)
-an assured concurrency value that is lower than the number currently
-executing.  In these situations the total number allowed to execute
-will temporarily exceed the apiserver's configured concurrency limit
-(`SCL`) and will settle down to the configured limit as requests
-complete their service.
+sum there is over all the priority levels that have queues ---
+including lingering deleted ones and newly exempt ones.  For this
+reason and for others, at any given time this may compute for some
+priority level(s) an assured concurrency value that is lower than the
+number currently executing.  In these situations the total number
+allowed to execute will temporarily exceed the apiserver's configured
+concurrency limit (`SCL`) and will settle down to the configured limit
+as requests complete their service.
 
 ### Default Behavior
 
