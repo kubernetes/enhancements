@@ -17,7 +17,7 @@ approvers:
   - "@luxas"
 editor: "@fabriziopandini"
 creation-date: 2019-07-22
-last-updated: 2019-07-22
+last-updated: 2019-09-02
 status: implementable
 ---
 
@@ -168,13 +168,6 @@ This has some implications:
    this point is going to be further discussed in the following paragraphs.
 3. Kubeadm is responsible for coordinating the execution of Kustomize within the
    init/join/upgrade workflows
-4. as a consequence of the previous point, higher-level tools/users are not
-   requested to take care of defining `kustomization.yaml` files nor to define
-   a local folder structure.
-5. `patchesJson6902` can't be used without a `kustomization.yaml` file defining `target`
-   for a patch; this limitation is not considered blocking for starting implementation;
-   however a solution for this problem should be defined before graduating to beta
-   (e.g. require `kustomization.yaml` in case the users want to use `patchesJson6902`).
 
 Additionally, in order to simplify the first implementation of this KEP, this 
 proposal is going to assume that Kustomize patches for kubeadm are always defined
@@ -185,7 +178,7 @@ patches and/or patches for a subset of nodes.
 
 The resulting workflow for using in kustomize will be the following
 
-1. Create a folder with some patches, e.g.
+1 - Create a folder with some patches, e.g.
 
 ```
 mkdir kubeadm-patches
@@ -209,7 +202,17 @@ metadata:
 EOF
 ```
 
-2. Run kubeadm passing the new patch, e.g.
+In case higher-level tools/users are providing only strategic merge patches, like in the example above,
+it is not requested to take care of defining a `kustomization.yaml` file. In case the `kustomization.yaml` 
+is missing kubeadm will create it on the fly using all the patches in the folder. 
+
+If instead higher-level tools/users are providing a `kustomization.yaml` file, kubeadm will use it.
+This scenario allows e.g. usage of `patchesJson6902`/other kustomize features.
+
+> In case a `kustomization.yaml` file exist, kubeadm ignores the `resource` value and replaces it with 
+> the static pod file manifest that should be kustomized by each phase.
+
+2 - Run kubeadm passing the folder where kustomization patches exist, e.g.
 
 ```
 kubeadm init --experimental-kustomize kubeadm-patches/
@@ -347,6 +350,9 @@ Tuesday, July 30, 2019
 - the `Summary` and `Motivation` sections being merged signaling SIG acceptance
 - the `Proposal` section being merged signaling agreement on a proposed design
 - the date implementation started
+
+v1.16
+- first implementation (alpha)
 
 ## Drawbacks
 
