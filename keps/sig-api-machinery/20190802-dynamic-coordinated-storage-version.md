@@ -68,7 +68,6 @@ We introduce a new API `StorageVersion`, in a new API group
 type StorageVersion struct {
   TypeMeta
   // The name is <group>.<resource>.
-  // TODO: use the ResourceID [1] as the name to avoid duplicates. 
   ObjectMeta
   
   // Spec is omitted because there is no spec field.
@@ -83,18 +82,18 @@ type StorageVersion struct {
 // encode objects to when persisting objects in the backend.
 type StorageVersionStatus struct {
   // The reported versions per API server instance.
+  // +optional
   ServerStorageVersions []ServerStorageVersion
-  // If all API server instances agree on the same encoding storage version, then
-  // this field is set to that version. Otherwise this field is set to
-  // NoAgreedVersion.
+  // If all API server instances agree on the same encoding storage version,
+  // then this field is set to that version. Otherwise this field is left empty.
+  // +optional
   AgreedEncodingVersion string
-}
 
-const (
-  // The API server instances haven't reached agreement on the encoding storage
-  // version.
-  NoAgreedVersion = "No Agreed Version"
-)
+  // The latest available observations of the storageVersion's state.
+  // +optional
+  Conditions []StorageVersionCondition
+  
+}
 
 // An API server instance reports the version it can decode and the version it
 // encodes objects to when persisting objects in the backend.
@@ -111,9 +110,30 @@ type ServerStorageVersion struct {
   // The encodingVersion must be included in the decodableVersions.
   DecodableVersions []string
 }
-```
 
-[1]: [ReousrceID](https://github.com/kubernetes/enhancements/blob/master/keps/sig-api-machinery/34-storage-hash.md#api-changes-to-the-discovery-api)
+
+const (
+  // Indicates that storage versions reported by all servers are equal.
+  AllEncondingVersionsEqual StorageVersionConditionType = "AllEncodingVersionsEqual"
+)
+
+// Describes the state of the storageVersion at a certain point.
+type StorageVersionCondition struct {
+	// Type of the condition.
+	Type StorageVersionConditionType
+	// Status of the condition, one of True, False, Unknown.
+	Status corev1.ConditionStatus
+	// The last time this condition was updated.
+	// +optional
+	LastUpdateTime metav1.Time
+	// The reason for the condition's last transition.
+	// +optional
+	Reason string
+	// A human readable message indicating details about the transition.
+	// +optional
+	Message string
+}
+```
 
 ## Changes to API servers
 
@@ -144,7 +164,8 @@ During bootstrap, for each resource, the API server
     in the list of participating API servers, such entries are stale.
   * checks if all participating API servers agree on the same storage version.
     If so, sets the version as the status.agreedEncodingVersion. If not, sets
-    the status.agreedEncodingVersion to "No Agreed Version".
+    the status.agreedEncodingVersion to empty. The "AllEncodingVersionsEqual"
+    status.condition is updated accordingly as well.
 * updates the storageVersion object, using the rv in the first step
   to avoid conflicting with other API servers.
 * installs the resource handler.
@@ -172,7 +193,8 @@ performs the following actions for each storageVersion object:
 * locally, removes the stale entries (1st kind of garbage) in
   storageVersion.status.serverStorageVersions,
   * after the removal, if all participating API servers have the same
-    encodingVersion, then sets storageVersion.status.AgreedEncodingVersion. 
+    encodingVersion, then sets storageVersion.status.AgreedEncodingVersion and
+    status.condtion. 
 * checks if the storageVersion.status.serverStorageVersions is empty,
   * if empty, deletes the storageVersion object (2nd kind of garbage),
   * otherwise updates the storageVersion object,
@@ -214,7 +236,7 @@ migrator
 * starts migration if the storageVersion.status.agreedEncodingVersion differs
   from the storageState.status.[persistedStorageVersionHashes][],
 * aborts ongoing migration if the storageVersion.status.agreedEncodingVersion is
-  "No Agreed Version".
+  empty.
 
 [persistedStorageVersionHashes]:https://github.com/kubernetes-sigs/kube-storage-version-migrator/blob/60dee538334c2366994c2323c0db5db8ab4d2838/pkg/apis/migration/v1alpha1/types.go#L164
 
