@@ -193,7 +193,7 @@ Having these standards in place will ensure that our tracing instrumentation wor
 
 #### Mutating admission webhook
 
-For spans to be correlated as part of the same trace, we must generate a `span context`, serialize it, and embed it in target traced objects. To accomplish this, we have introduced an [out-of-tree mutating admission webhook](https://github.com/Monkeyanator/mutating-trace-admission-controller/tree/review).
+For spans to be correlated as part of the same trace, we must generate a `span context`, serialize it, and embed it in target traced objects. To accomplish this, we have introduced an [out-of-tree mutating admission webhook](https://github.com/kubernetes-sigs/mutating-trace-admission-controller).
 
 This mutating admission webhook generates a `span context`, which is the base64 encoded version of [this wire format](https://github.com/census-instrumentation/opencensus-specs/blob/master/encodings/BinaryEncoding.md#trace-context), and embeds it into the `trace.kubernetes.io/context` object annotation. The webhook can be configured to inject context into only target object types.
 
