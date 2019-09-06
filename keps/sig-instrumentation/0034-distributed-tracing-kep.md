@@ -9,6 +9,7 @@ participating-sigs:
   - sig-architecture
   - sig-node
   - sig-api-machinery
+  - sig-scalability
 reviewers:
   - "@Random-Liu"
   - "@bogdandrutu"
@@ -58,7 +59,8 @@ Debugging latency issues in Kubernetes is an involved process. There are existin
 
 * **Logs**: are fragmented, and finding out which process was the bottleneck involves digging through troves of unstructured text. In addition, logs do not offer higher-level insight into overall system behavior without an extensive background on the process of interest. 
 * **Events**: in Kubernetes are only kept for an hour by default, and don't integrate with visualization of analysis tools. To gain trace-like insights would require a large investment in custom tooling.
-* **Latency metrics**: can only supply limited metadata because of cardinality constraints.  They are useful for showing _that_ a process was slow, but don't provide insight into _why_ it was slow.  
+* **Latency metrics**: can only supply limited metadata because of cardinality constraints.  They are useful for showing _that_ a process was slow, but don't provide insight into _why_ it was slow.
+* **Latency Logging**: is a "poor man's" version of tracing that only works within a single binary and outputs log messages.  See [github.com/kubernetes/utils/trace](https://github.com/kubernetes/utils/tree/master/trace).
 
 Distributed tracing provides a single window into latency information from across many components and plugins. Trace data is structured, and there are numerous established backends for visualizing and querying over it.
 
@@ -101,12 +103,14 @@ In the traditional RPC client-server tracing model, a trace context is attached 
 
 For the alpha phase, we choose to propagate this span context as an encoded string an object annotation called `trace.kubernetes.io/context`.  As noted in [Tracing API Requests](#tracing-api-requests) above, storing the trace context with the context is _in addition_ to attaching a context to http requests to the apiserver.  The reason for this is explained in the [Controller Behavior](#controller-behavior) section below.  In some scenarios, controllers will want to update the trace context from A -> B, but want to associated that Update request with context A.
 
+This means two trace contexts are sent in different forms with Create/Patch/Update requests to the apiserver.  A trace context is around 32 bytes (16 bytes for the trace ID, 8 bytes for the span ID, and some metadata). See the [OpenCensus spec](https://github.com/census-instrumentation/opencensus-specs/blob/master/trace/Span.md#spancontext) and  the [w3c spec](https://w3c.github.io/trace-context/#tracestate-field) for details.
+
 
 This annotation value is regenerated and replaced when an object's trace ends, to achieve the desired behavior from [section one](#trace-lifecycle). 
 
 This proposal chooses to use annotations as a less invasive alternative to adding a field to object metadata, but as this proposal matures, we should consider graduating this 
 
-Whenever possible, updates to the trace context should be performed in the same Update/Patch as other operations.  For alpha, it is permissible to update trace context with a seperate write if this is not easily feasible.  However, for this proposal to move to Beta, we must ensure tracing can be done without adding extra writes to the APIServer.
+Whenever possible, updates to the trace context should be performed in the same Update/Patch as other operations.  For alpha, it is permissible to update trace context with a seperate write if this is not easily feasible.  However, for this proposal to move to Beta, we must ensure tracing can be done without adding extra writes to the APIServer to ensure tracing does not affect scalability.
 
 #### Controller Behavior
 
@@ -157,7 +161,7 @@ This KEP suggests that we utilize the OpenCensus agent for the initial implement
 1. Add configuration for exporters in-tree by vendoring in each "supported" exporter. 
   a. This places the kubernetes community in the position of curating supported tracing backends
   b. This eliminates the requirement to run to OpenCensus agent in order to use tracing
-2) Support *both* a curated set of in-tree exporters, and the agent exporter
+2. Support *both* a curated set of in-tree exporters, and the agent exporter
 
 While this setup is suitable for an alpha stage, it will require further review from Sig-Instrumentation and Sig-Architecture for beta, as it introduces a dependency on the OC Agent.  It is also worth noting that OpenCensus still has many unresolved details on how to run the agent.
 
