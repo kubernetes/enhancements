@@ -199,13 +199,13 @@ post-filter extension point.
 
 These plugins have two phases:
 
-1. The first phase is called "score" which is used to rank nodes that have passed 
+1. The first phase is called "score" which is used to rank nodes that have passed
 the filtering phase. The scheduler will call `Score` of each scoring plugin for
 each node.
 2. The second phase is "normalize scoring" which is used to modify scores before
 the scheduler computes a final ranking of Nodes, and each score plugin receives
-scores given by the same plugin to all nodes in "normalize scoring" phase. 
-`NormalizeScore` is called once per plugin per scheduling cycle right after 
+scores given by the same plugin to all nodes in "normalize scoring" phase.
+`NormalizeScore` is called once per plugin per scheduling cycle right after
 "score" phase.
 
 The output of a score plugin must be an integer in range of
@@ -589,7 +589,7 @@ configuration.
 
 *Note: Moving `KubeSchedulerConfiguration` to `v1` is outside the scope of this
 design, but see also
-https://github.com/kubernetes/enhancements/blob/master/keps/sig-cluster-lifecycle/0032-create-a-k8s-io-component-repo.md
+https://github.com/kubernetes/enhancements/blob/master/keps/sig-cluster-lifecycle/wgs/0032-create-a-k8s-io-component-repo.md
 and https://github.com/kubernetes/community/pull/3008*
 
 ## Interactions with Cluster Autoscaler
@@ -676,12 +676,12 @@ End-to-end tests are not needed when integration tests can provided adequate cov
 * Alpha
   * Extension points for `Reserve`, `Unreserve`, and `Prebind` are built.
   * Integration tests for these extension points are added.
-  
+
 * Beta
   * All the extension points listed in this KEP and their corresponding tests
   are added.
   * Persistent dynamic volume binding logic is converted to a plugin.
-  
+
 * Stable
   * Existing 'Predicate' and 'Priority' functions and preemption logic are
   converted to plugins.
