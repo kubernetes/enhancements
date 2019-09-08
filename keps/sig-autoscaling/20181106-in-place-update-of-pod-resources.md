@@ -194,26 +194,18 @@ resolves it by rejecting that new Pod if the Node has no room after Pod resize.
 #### Kubelet Restart Tolerance
 
 If Kubelet were to restart amidst handling a Pod resize, then upon restart, all
-existing Pods, new & departed Pods, and Pods needing resize are handled as follows:
-
-1. All existing Pods (including Pods needing resources resize) are admitted at
-   their current Pod.Spec.Containers[i].ResourcesAllocated values, with Pods
-   sorted by their creation time.
-1. All departed Pods are cleaned up.
-1. Once all existing (and departed) Pods are accounted for, new Pods & Pods
-   needing resize (i.e Pods for which Spec.Containers[i].Resources.Requests
-   and Spec.Containers[i].ResourcesAllocated differ) are sorted by increasing
-   ResourceVersion, and admitted as long as Node has enough room.
-
-This will ensure first-come-first-serve processing, just as they would have
-been handled if Kubelet had never restarted.
+Pods are admitted at their current Pod.Spec.Containers[i].ResourcesAllocated
+values, and resizes are handled after all existing Pods have been added. This
+ensures that resizes don't affect previously admitted existing Pods.
 
 ### Scheduler and API Server Interaction
 
-Scheduler continues to watch changes to Pods and updates its cache. It uses the
-cached Pod's Spec.Containers[i].ResourcesAllocated values to compute the Node
-resources allocated to Pods. This ensures that it always uses the most recently
-available resource allocations in making new Pod scheduling decisions.
+Scheduler continues to use Pod's Spec.Containers[i].Resources.Requests for
+scheduling new Pods, and continues to watch Pod updates, and updates its cache.
+It uses the cached Pod's Spec.Containers[i].ResourcesAllocated values to
+compute the Node resources allocated to Pods. This ensures that it always uses
+the most recently available resource allocations in making new Pod scheduling
+decisions.
 
 ### Flow Control
 
