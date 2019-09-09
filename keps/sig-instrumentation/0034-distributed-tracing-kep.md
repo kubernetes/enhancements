@@ -139,7 +139,6 @@ For example, a user could define a Pod Creation trace doing something like the f
 ```golang
 ctx, span := trace.StartSpan(context.Background(), “create-my-pod”)
 defer span.End()
-ctx = traceutil.WithSpanContext(ctx, span)
 pod, err := c.CoreV1().Pod(myPod.Namespace).Create(ctx, myPod)
 if err != nil {
     return err
@@ -158,7 +157,7 @@ While in alpha, controllers should use the OpenCensus exporter, which exports tr
 
 This KEP suggests that we utilize the OpenCensus agent for the initial implementation to reduce the global changes required for alpha.  Alternative options include:
 
-1. Add configuration for exporters in-tree by vendoring in each "supported" exporter. 
+1. Add configuration for exporters in-tree by vendoring in each "supported" exporter. These exporters are the only compatible backends for tracing in kubernetes.
   a. This places the kubernetes community in the position of curating supported tracing backends
   b. This eliminates the requirement to run to OpenCensus agent in order to use tracing
 2. Support *both* a curated set of in-tree exporters, and the agent exporter
