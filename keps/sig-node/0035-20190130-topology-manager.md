@@ -32,6 +32,10 @@ _Authors:_
 * @balajismaniam - Balaji Subramaniam &lt;balaji.subramaniam@intel.com&gt;
 * @lmdaly - Louise M. Daly &lt;louise.m.daly@intel.com&gt;
 
+_Reviewers:_
+* @klueska - Kevin Klues &lt;kklues@nvidia.com&gt;
+* @nolancon - Conor Nolan &lt;conor.nolan@intel.com&gt;
+
 ## Table of Contents
 
 <!-- toc -->
@@ -43,12 +47,13 @@ _Authors:_
 - [Proposal](#proposal)
   - [Proposed Changes](#proposed-changes)
     - [New Component: Topology Manager](#new-component-topology-manager)
+      - [Policies](#policies)
       - [Computing Preferred Affinity](#computing-preferred-affinity)
       - [New Interfaces](#new-interfaces)
     - [Feature Gate and Kubelet Flags](#feature-gate-and-kubelet-flags)
     - [Changes to Existing Components](#changes-to-existing-components)
 - [Graduation Criteria](#graduation-criteria)
-  - [Phase 1: Alpha (target v1.15)](#phase-1-alpha-target-v115)
+  - [Phase 1: Alpha (target v1.16)](#phase-1-alpha-target-v116)
   - [Phase 2: Beta (later versions)](#phase-2-beta-later-versions)
   - [GA (stable)](#ga-stable)
 - [Challenges](#challenges)
@@ -109,8 +114,8 @@ information.
 
 ## Goals
 
-- Arbitrate preferred socket affinity for containers based on input from
-  CPU manager and Device Manager.
+- Arbitrate preferred NUMA Node affinity for containers based on input from
+  CPU Manager and Device Manager.
 - Provide an internal interface and pattern to integrate additional
   topology-aware Kubelet components.
 
@@ -139,13 +144,13 @@ information.
 *Story 1: Fast virtualized network functions*
 
 A user asks for a "fast network" and automatically gets all the various
-pieces coordinated (hugepages, cpusets, network device) co-located on a
-socket.
+pieces coordinated (hugepages, cpusets, network device) in a preferred NUMA Node
+alignment, in most cases this will be the narrrowest possible set of NUMA Node(s).
 
 *Story 2: Accelerated neural network training*
 
 A user asks for an accelerator device and some number of exclusive CPUs
-in order to get the best training performance, due to socket-alignment of
+in order to get the best training performance, due to NUMA Node alignment of
 the assigned CPUs and devices.
 
 # Proposal
@@ -172,39 +177,88 @@ Kubelet components.
 
 If the hints are not compatible, the Topology Manager may choose to
 reject the pod. Behavior in this case depends on a new Kubelet configuration
-value to choose the topology policy. The Topology Manager supports two
-modes: `strict` and `preferred` (default). In `strict` mode, the pod is
-rejected if alignment cannot be satisfied. The Topology Manager could
-use `softAdmitHandler` to keep the pod in `Pending` state.
+value to choose the topology policy. The Topology Manager supports four
+policies: `none`(default), `best-effort`, `restricted` and `single-numa-node`. 
+
+A topology hint indicates a preference for some well-known local resources.
+The Topology Hint currently consists of 
+* A list of bitmasks denoting the possible NUMA Nodes where a request can be satisfied.
+* A preferred field.
+    * This field is defined as follows:
+      * For each Hint Provider, there is a possible resource assignment that satisfies the request, such that the least possible number of NUMA nodes is involved (caculated as if the node were empty.)
+      * There is a possible assignment where the union of involved NUMA nodes for all such resource is no larger than the width required for any single resource.
+
+#### Policies
+
+**none (default)**: Kubelet does not consult Topology Manager for placement decisions. 
+
+**best-effort**: Topology Manager will provide the preferred allocation for the container based
+on the hints provided by the Hint Providers. If an undesirable allocation is determined, the pod will be admitted with this undesirable allocation.
+
+**restricted**: Topology Manager will provide the preferred allocation for the container based
+on the hints provided by the Hint Providers. If an undesirable allocation is determined, the pod will be rejected. 
+This will result in the pod being in a `Terminated` state, with a pod admission failure.
+
+**single-numa-node**: Topology mananager will enforce an allocation of all resources on a single NUMA Node. If such
+an allocation is not possible, the pod will be rejected. This will result in the pod being in a `Terminated` state, with a pod admission failure.
 
 The Topology Manager component will be disabled behind a feature gate until
 graduation from alpha to beta.
 
 #### Computing Preferred Affinity
 
-A topology hint indicates a preference for some well-known local resources.
-Initially, the only supported reference resource is a mask of CPU socket IDs.
-After collecting hints from all providers, the Topology Manager chooses some
-mask that is present in all lists. Here is a sketch:
+After collecting hints from all providers, the Topology Manager preforms the
+affinity calcuation to determine the best fit Topology Hint.
 
-1. Apply a partial order on each list: number of bits set in the
-   mask, ascending. This biases the result to be more precise if
-   possible.
-1. Iterate over the permutations of preference lists and compute
-   bitwise-and over the masks in each permutation.
-1. Store the first non-empty result and break out early.
-1. If no non-empty result exists, return an error.
+The chosen Topology Manager policy then decicds to admit or reject the pod based on this hint.
 
-The behavior when a match does not exist is configurable, as described
-above.
+**Affinity Calcuation:**
+1. Loops through the list of hint providers and saves an accumulated list of 
+   the hints returned by each hint provider.
+2. Iterates through all permutations of hints accumulated in Step 1. The hint affinites are merged to a single hint
+   by performing a bitwise AND. The preferred field on the merged hint is set to false if any of the hints in the 
+   permutation returned a false preferred.
+3. The hint with the narrowest preferred affinity is returned.
+   * Narrowest in this case means the least number of NUMA nodes required to satisfy the resource request.      
+4. If no hint with at least one NUMA Node set is found, return a default hint which is a hint
+   with all NUMA Nodes set and preferred set to false.
+
+**Policy Decisions:**
+
+- **best-effort**
+    * Admits the pod to the node regardless of the Topology Hint stored.
+- **restricted**:
+    * Admits the pod to the node if the preferred field of the Topology Hint is set to true.
+- **single-numa-node**:
+    * Admits the pod to the node if the preferred field of the Topology is set to true **and** the bitmask is set to a single NUMA node.
 
 #### New Interfaces
 
 ```go
+package socketmask
+
+// SocketMask interface allows hint providers to create SocketMasks for TopologyHints
+type SocketMask interface {
+	Add(sockets ...int) error
+	Remove(sockets ...int) error
+	And(masks ...SocketMask)
+	Or(masks ...SocketMask)
+	Clear()
+	Fill()
+	IsEqual(mask SocketMask) bool
+	IsEmpty() bool
+	IsSet(socket int) bool
+	IsNarrowerThan(mask SocketMask) bool
+	String() string
+	Count() int
+	GetSockets() []int
+}
+
+func NewSocketMask(sockets ...int) (SocketMask, error) { ... }
+
 package topologymanager
 
-// TopologyManager helps to coordinate local resource alignment
-// within the Kubelet.
+// Manager interface provides methods for Kubelet to manage pod topology hints
 type Manager interface {
     // Implements pod admit handler interface
     lifecycle.PodAdmitHandler
@@ -219,29 +273,11 @@ type Manager interface {
     Store
 }
 
-// SocketMask is a bitmask-like type denoting a subset of available sockets.
-type SocketMask interface {
-    Add(sockets ...int) error
-    Remove(sockets ...int) error
-    And(masks ...SocketMask)
-    Or(masks ...SocketMask)
-    Clear()
-    Fill()
-    IsEqual(mask SocketMask) bool
-    IsEmpty() bool
-    IsSet(socket int) bool
-    IsNarrowerThan(mask SocketMask) bool
-    String() string
-    Count() int
-    GetSockets() []int
-}
-func NewSocketMask(sockets ...int) (SocketMask, error) { ... }
-
 // TopologyHint encodes locality to local resources. Each HintProvider provides
 // a list of these hints to the TopoologyManager for each container at pod
 // admission time.
 type TopologyHint struct {
-    SocketAffinity socketmask.SocketMask
+    NUMANodeAffinity socketmask.SocketMask
     // Preferred is set to true when the SocketMask encodes a preferred
     // allocation for the Container. It is set to false otherwise.
     Preferred bool
@@ -253,7 +289,7 @@ type TopologyHint struct {
 type HintProvider interface {
   // Returns hints if this hint provider has a preference; otherwise
   // returns `nil` to indicate "don't care".
-  GetTopologyHints(pod v1.Pod, containerName string) []TopologyHint
+  GetTopologyHints(pod v1.Pod, containerName string) map[string][]TopologyHint
 }
 
 // Store manages state related to the Topology Manager.
@@ -261,7 +297,7 @@ type Store interface {
   // GetAffinity returns the preferred affinity as calculated by the
   // TopologyManager across all hint providers for the supplied pod and
   // container.
-  GetAffinity(podName string, containerName string) TopologyHint
+  GetAffinity(podUID string, containerName string) TopologyHint
 }
 ```
 
@@ -282,10 +318,10 @@ A new feature gate will be added to enable the Topology Manager feature. This fe
  * Proposed Feature Gate:  
   `--feature-gate=TopologyManager=true`  
  
- This will be also followed by a Kubelet Flag for the Topology Manager Policy, which is described above. The `preferred` policy will be the default policy.
+ This will be also followed by a Kubelet Flag for the Topology Manager Policy, which is described above. The `none` policy will be the default policy.
  
  * Proposed Policy Flag:  
- `--topology-manager-policy=preferred|strict`  
+ `--topology-manager-policy=none|best-effort|restricted|single-numa-node`  
  
 ### Changes to Existing Components
 
@@ -299,8 +335,8 @@ A new feature gate will be added to enable the Topology Manager feature. This fe
     1. CPU Manager static policy calls `GetAffinity()` method of
        Topology Manager when deciding CPU affinity.
 1. Add `GetTopologyHints()` method to Device Manager.
-    1. Add Socket ID to Device structure in the device plugin
-       interface. Plugins should be able to determine the socket
+    1. Add `TopologyInfo` to Device structure in the device plugin
+       interface. Plugins should be able to determine the NUMA Node(s)
        when enumerating supported devices. See the protocol diff below.
     1. Device Manager calls `GetAffinity()` method of Topology Manager when
        deciding device allocation.
@@ -315,18 +351,26 @@ index efbd72c133..f86a1a5512 100644
  }
 
 +message TopologyInfo {
-+  optional int32 socketID = 1 [default = -1];
++  repeated NUMANode nodes = 1;
++}
++
++message NUMANode {
++    int64 ID = 1;
 +}
 +
  /* E.g:
  * struct Device {
  *    ID: "GPU-fef8089b-4820-abfc-e83e-94318197576e",
+ *    State: "Healthy",
++ *    Topology: 
++ *      Nodes: 
++ *        ID: 1 
 @@ -85,6 +89,8 @@ message Device {
  	string ID = 1;
  	// Health of the device, can be healthy or unhealthy, see constants.go
  	string health = 2;
-+	// Topology details of the device (optional.)
-+	optional TopologyInfo topology = 3;
++	// Topology details of the device
++	TopologyInfo topology = 3;
  }
 ```
 
@@ -342,20 +386,20 @@ _Figure: Topology Manager fetches affinity from hint providers._
 
 # Graduation Criteria
 
-## Phase 1: Alpha (target v1.15)
+## Phase 1: Alpha (target v1.16)
 
 * Feature gate is disabled by default.
 * Alpha-level documentation.
 * Unit test coverage.
-* Node e2e tests.
 * CPU Manager allocation policy takes topology hints into account.
-* Device plugin interface includes socket ID.
+* Device plugin interface includes NUMA Node ID.
 * Device Manager allocation policy takes topology hints into account.
 
 ## Phase 2: Beta (later versions)
 
 * Feature gate is enabled by default.
 * Alpha-level documentation.
+* Node e2e tests.
 * Support hugepages alignment.
 * User feedback.
 
