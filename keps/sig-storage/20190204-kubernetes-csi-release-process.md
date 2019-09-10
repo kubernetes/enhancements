@@ -7,18 +7,15 @@ participating-sigs:
   - sig-testing
   - sig-release
 reviewers:
-  - @msau42
+  - "@msau42"
 approvers:
-  - @msau42
-  - sig-testing: TBD
-  - sig-release: TBD
-editor: @pohly
+  - "@msau42"
+  - "sig-testing: TBD"
+  - "sig-release: TBD"
+editor: "@pohly"
 creation-date: 2019-02-04
 last-updated: 2019-02-04
 status: provisional
-see-also:
-replaces:
-superseded-by:
 ---
 
 # kubernetes-csi-release-process
