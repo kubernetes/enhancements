@@ -284,10 +284,10 @@ before applying limit increases.
 * If additional resize requests arrive when a Pod is being resized, those
   requests are handled after completion of the resize that is in progress. And
   resize is driven towards the latest desired state.
-* Lowering memory limits may not always work if the application is holding on
-  to pages. Kubelet will use a control loop to set the memory limits near usage
-  in order to force a reclaim, and update Status.ContainerStatuses[i].Resources
-  only when limit is at desired value.
+* Lowering memory limits may not always take effect quickly if the application
+  is holding on to pages. Kubelet will use a control loop to set the memory
+  limits near usage in order to force a reclaim, and update the Pod's
+  Status.ContainerStatuses[i].Resources only when limit is at desired value.
 * Impact of Pod Overhead: Kubelet adds Pod Overhead to the resize request to
   determine if in-place resize is possible.
 * Impact of memory-backed emptyDir volumes: If memory-backed emptyDir is in
@@ -303,10 +303,14 @@ Pod v1 core API:
 Admission Controllers: LimitRanger, ResourceQuota need to support Pod Updates:
 * for ResourceQuota it should be enough to change podEvaluator.Handler
   implementation to allow Pod updates,
-* Pod's Spec.Containers[i].ResourcesAllocated should be used to be in line with
-  current ResourceQuota behavior which blocks resources before they are used
-  (e.g. for Pending Pods),
-* for LimitRanger TBD.
+* to ensure alignment with current ResourceQuota behavior that blocks resources
+  before they are used (e.g. for Pending Pods), we should do the following:
+  * for requests.[cpu|memory], Pod's max(Spec.Containers[i].Resources.Requests,
+    Spec.Containers[i].ResourcesAllocated) is used to compute Pod aggregate,
+  * for limits.[cpu|memory], Pod's max(Spec.Containers[i].Resources.Limits,
+    Status.ContainerStatuses[i].Resources.Limits) is used to compute aggregate,
+* for LimitRanger we check that a resize request does not violate the min and
+  max limits specified in LimitRange for the Pod's namespace.
 
 Kubelet:
 * set Pod's Status.ContainerStatuses[i].Resources for Containers upon placing
