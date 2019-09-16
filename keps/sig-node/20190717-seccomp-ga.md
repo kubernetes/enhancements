@@ -8,9 +8,12 @@ participating-sigs:
   - sig-auth
 reviewers:
   - "@liggitt"
-  - TBD
+  - "@derekwaynecarr"
+  - "@dchen1107"
+  - "@mrunalp"
 approvers:
-  - TBD
+  - "@liggitt"
+  - "@derekwaynecarr"
 editor: TBD
 creation-date: 2019-07-17
 status: provisional
