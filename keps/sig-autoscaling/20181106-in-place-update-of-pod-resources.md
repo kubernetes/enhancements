@@ -292,6 +292,8 @@ before applying limit increases.
   determine if in-place resize is possible.
 * Impact of memory-backed emptyDir volumes: If memory-backed emptyDir is in
   use, Kubelet will clear out any files in emptyDir upon Container restart.
+* At this time, Vertical Pod Autoscaler should not be used with Horizontal Pod
+  Autoscaler on CPU, memory. This enhancement does not change that limitation.
 
 ### Affected Components
 
