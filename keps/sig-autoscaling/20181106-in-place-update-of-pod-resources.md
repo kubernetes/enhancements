@@ -301,14 +301,9 @@ Pod v1 core API:
 * added validation.
 
 Admission Controllers: LimitRanger, ResourceQuota need to support Pod Updates:
-* for ResourceQuota it should be enough to change podEvaluator.Handler
-  implementation to allow Pod updates,
-* to ensure alignment with current ResourceQuota behavior that blocks resources
-  before they are used (e.g. for Pending Pods), we should do the following:
-  * for requests.[cpu|memory], Pod's max(Spec.Containers[i].Resources.Requests,
-    Spec.Containers[i].ResourcesAllocated) is used to compute Pod aggregate,
-  * for limits.[cpu|memory], Pod's max(Spec.Containers[i].Resources.Limits,
-    Status.ContainerStatuses[i].Resources.Limits) is used to compute aggregate,
+* for ResourceQuota, podEvaluator.Handler implementation is modified to allow
+  Pod updates, and verify that sum of Pod.Spec.Containers[i].Resources for all
+  Pods in the Namespace don't exceed quota,
 * for LimitRanger we check that a resize request does not violate the min and
   max limits specified in LimitRange for the Pod's namespace.
 
