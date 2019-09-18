@@ -40,6 +40,7 @@ superseded-by:
     - [Limits and Quota](#limits-and-quota)
     - [Scheduler changes](#scheduler-changes)
     - [cAdvisor changes](#cadvisor-changes)
+    - [cAdvisor changes to support NUMA](#cadvisor-changes-to-support-numa)
   - [Risks and Mitigations](#risks-and-mitigations)
     - [Huge pages as shared memory](#huge-pages-as-shared-memory)
     - [NUMA](#numa)
@@ -335,6 +336,14 @@ can be fulfilled by a candidate node.
 cAdvisor will need to be modified to return the number of pre-allocated huge
 pages per page size on the node.  It will be used to determine capacity and
 calculate allocatable values on the node.
+
+#### cAdvisor changes to support NUMA
+The `Node` structure of cAdvisor will need to be updated to describe the
+number of pre-allocated huge pages per NUMA node to support NUMA in the future.
+The `Node` structure already discover Memory, Cores, and Caches per NUMA node.
+
+Pre-allocated huge pages can be found from
+`/sys/devices/system/node/node<id>/hugepages/hugepages-<hugepagesize>/nr_hugepages`.
 
 ### Risks and Mitigations
 
