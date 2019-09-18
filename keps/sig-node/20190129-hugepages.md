@@ -88,6 +88,20 @@ usage of pre-allocated huge pages instead of THP.
 Managing memory is hard, and unfortunately, there is no one-size fits all
 solution for all applications.
 
+Some applications such as Database and DPDK utilize huge pages to maximize
+performance.  In the case of DPDK which is a sort of technique to accelerate the
+performance of packet processing, DPDK requires huge pages, CPU pinning,
+and (dedicated)NIC to result performance. DPDK utilizes huge pages as
+the memory buffer of packets to reduce I/O latency by reducing TLB miss,
+and it attempts cpu pinning to have exclusive cpu usage to prevent interruption
+from the cpu scheduler of kernel while processing packets.
+Since these characteristics of DPDK, it is NUMA sensitive and requires the
+alignment of computing resources to a NUMA node. If the alignment doesn't make,
+performance decrement(approximately 20%) can be observed, and besides, it cannot
+be initialized when huge pages are not available on the NUMA node where NIC
+locate.  For this reason, it is required to support NUMA awareness of huge pages
+in the future at least on the node level.
+
 ### Goals
 
 This proposal only includes pre-allocated huge pages configured on the node by
