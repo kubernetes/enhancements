@@ -182,8 +182,8 @@ Note that PreFilter is called once in each scheduling cycle.
 
 A Pre-filter plugin can provide another two optional functions: **AddPod** and **RemovePod** 
 to incrementally modify its pre-processed info. The framework guarantees that those
-functions will only be called after PreFilter. The framework may call those functions 
-more than once before calling Filter on a specific node.
+functions will only be called after PreFilter, possibly on a cloned PluginContext, and may call
+those functions more than once before calling Filter on a specific node.
 
 
 ### Filter
@@ -191,7 +191,8 @@ more than once before calling Filter on a specific node.
 These plugins are used to filter out nodes that cannot run the Pod. For each
 node, the scheduler will call filter plugins in their configured order. If any
 filter plugin marks the node as infeasible, the remaining plugins will not be
-called for that node. Nodes may be evaluated concurrently.
+called for that node. Nodes may be evaluated concurrently, and Filter may be called
+more than once in the same scheduling cycle.
 
 ### Post-filter
 
