@@ -88,7 +88,7 @@ aliases:
     - wojtek-t
     - shyamjvs
   sig-scheduling-leads:
-    - bsalamat
+    - ahg-g
     - k82cn
   sig-service-catalog-leads:
     #- kibbles-n-bytes # not an org member
