@@ -1,15 +1,15 @@
 ---
 title: Node Maintenance Controller
 authors:
-  - "@yanirq"
+ - "@yanirq"
 owning-sig: sig-node
 participating-sigs:
-  - sig-node
-  - sig-scheduling
+ - sig-node
+ - sig-scheduling
 reviewers:
-  - TBD
+ - TBD
 approvers:
-  - TBD
+ - TBD
 editor: "@yanirq"
 creation-date: 2019-05-28
 last-updated: 2019-06-02
@@ -25,30 +25,30 @@ A table of contents is helpful for quickly jumping to sections of a KEP and for 
 [Tools for generating][] a table of contents from markdown are available.
 
 - [Title](#title)
-  - [Release Signoff Checklist](#release-signoff-checklist)
-  - [Summary](#summary)
-  - [Motivation](#motivation)
-    - [Goals](#goals)
-    - [Non-Goals](#non-goals)
-  - [Proposal](#proposal)
-    - [User Stories](#user-stories)
-      - [Story 1](#story-1)
-      - [Story 2](#story-2)
-      - [Story 3](#story-2)
-      - [Story 4](#story-2)
-      - [Story 5](#story-2) 
-      - [Story 6](#story-2)                       
-    - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints-optional)
-    - [Risks and Mitigations](#risks-and-mitigations)
-  - [Design Details](#design-details)
-    - [Test Plan](#test-plan)
-    - [Graduation Criteria](#graduation-criteria)
-    - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
-    - [Version Skew Strategy](#version-skew-strategy)
-  - [Implementation History](#implementation-history)
-  - [Drawbacks [optional]](#drawbacks-optional)
-  - [Alternatives [optional]](#alternatives-optional)
-  - [Infrastructure Needed [optional]](#infrastructure-needed-optional)
+ - [Release Signoff Checklist](#release-signoff-checklist)
+ - [Summary](#summary)
+ - [Motivation](#motivation)
+   - [Goals](#goals)
+   - [Non-Goals](#non-goals)
+ - [Proposal](#proposal)
+   - [User Stories](#user-stories)
+     - [Story 1](#story-1)
+     - [Story 2](#story-2)
+     - [Story 3](#story-2)
+     - [Story 4](#story-2)
+     - [Story 5](#story-2)
+     - [Story 6](#story-2)                      
+   - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints-optional)
+   - [Risks and Mitigations](#risks-and-mitigations)
+ - [Design Details](#design-details)
+   - [Test Plan](#test-plan)
+   - [Graduation Criteria](#graduation-criteria)
+   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+   - [Version Skew Strategy](#version-skew-strategy)
+ - [Implementation History](#implementation-history)
+ - [Drawbacks [optional]](#drawbacks-optional)
+ - [Alternatives [optional]](#alternatives-optional)
+ - [Infrastructure Needed [optional]](#infrastructure-needed-optional)
 
 [Tools for generating]: https://github.com/ekalinin/github-markdown-toc
 
@@ -81,34 +81,49 @@ Check these off as they are completed for the Release Team to track. These check
 
 ## Summary
 
-Node maintenance controller that performs node drain - server side using custom resources calls to the API in order to perform the drain (cordon + evictions)
+Node maintenance controller that performs node drain:
+-  Move kubectl drain into the server to enable execution of node drain:  cordon + evictions.
+
+- Use of custom resources calls to the API in order to perform the drain.
+The use of custom resources can provide important high level insights of the drain process including initiated calls , status and handle requests from UI.
 
 ## Motivation
 
-Move kubectl drain into the server to enable execution of node drain using custom resources calls to the API in order to perform the drain.
-This would also reduce the proliferation of drain behaviours in other projects that re-implement the drain logic to accustom their needs.
+Users expect to be able to perform actions via at least the CLI, and ideally the UI, but also expect that where both are available they behave consistently. To achieve this without a server side implementation requires either duplication of code or inlining of kubectl in the UI.
 
 (https://github.com/kubernetes/kubernetes/issues/25625)
 
+### Description of terms
+
+- **Drain**: Cordon and evict/delete pods from a node.
+
+- **Cordon**: mark the node as unschedulable, so new pods can no longer be scheduled to the node.
+
+- **Uncordon**: mark the node as schedulable, so new pods can be scheduled to the node.
+
+- **Evict**: evict the pods that are running on that node.
+
 ### Goals
 
-- A new controller that implements the drain logic that is currently [implemented](https://github.com/kubernetes/kubernetes/blob/v1.14.0/pkg/kubectl/cmd/drain/drain.go#L307) in [kubectl](https://kubernetes.io/docs/reference/generated/kubectl/kubectl-commands#drain).
-- The controller watches and acts upon maintenance CRs to put/remove a node on/from maintenance.
-- Status report of the drain (embodied in the maintenance CR).
-- Custom taints and labels added to the node going under maintenance.
-- Configurable time-out(time buffer) for the drain process.
+- Provide consistent semantics around drain for administrators whether using the CLI or the UI.
+- Provide a single upstream source for developers and projects to implement and extend drain logic.
 
 ### Non-Goals
-- "Dry run" mode to detect what is the best node / N nodes to drain
+- "Dry Run" mode to detect what is the best node / N nodes to drain
 
 ## Proposal
 
 Node maintenance controller watches for new or deleted custom resources e.g. `NodeMaintenance` which indicate that a node in the cluster should either:
- - `NodeMaintenance` CR created: move node into maintenance, cordon the node - set it as unscheduleble and evict the pods (which can be evicted) from that node.
-  - `NodeMaintenance` CR deleted: remove pod from maintenance and uncordon the node - set it as scheduleble.
+- `NodeMaintenance` CR created: move node into maintenance, cordon the node - set it as unschedulable and evict the pods (which can be evicted) from that node.
+- `NodeMaintenance` CR deleted: remove node from maintenance and uncordon the node - set it as scheduleble.
+
+The `NodeMaintenance` CR will contain information about the drain process such as: reason for maintenance, status (Running/Complete), list of pending pods (waiting on eviction), total number of pods on node, events (optional) , etc.
 
 Current implementation and design can be found under Kubevirt:
-https://github.com/kubevirt/node-maintenance-operator 
+https://github.com/kubevirt/node-maintenance-operator
+
+Openshift drain library:
+https://github.com/openshift/cluster-api/tree/openshift-4.2-cluster-api-0.1.0/pkg/drain  
 
 ### User Stories
 
@@ -118,6 +133,8 @@ As a third party developer/operator I want to evacuate my workloads appropriatel
 - Today we can not differentiate between cordon and drain using cluster information
 
 - Adding taints/labels as part of the evacuation process can help performing additional work before a pod is removed from a node.
+
+>NOTE: Future work might rely on [eviction web-hooks](https://github.com/kubernetes/kubernetes/pull/76910).
 
 #### Story 2
 As a third party developer/operator I would like to activate the node back simply by removing the maintenance mode CR.
@@ -129,21 +146,28 @@ As an operator I need a reliable way to request to put a node into maintenance m
 - CR needs to report pending/running/success/failure as well as informative conditions in the CR’s Status section. The conditions should provide information about what is blocking maintenance node in the event maintenance mode is can not proceed.
 
 #### Story 4
-As an operator I need to put a number of nodes i.e. a rack of nodes into node maintenance.
-
-- As a cluster admin i would like to shutdown a rack (due to overheating problem) to do that I would need to move hosts to maintenance.
+- As a developer/operator I would like a way to invoke node maintenance (drain) not only from CLI but also from UI.
 
 #### Story 5
-- As a cluster admin, i would like to perform a firmware update on the nodes.
+As an operator I need to put a number of nodes i.e. a rack of nodes into node maintenance.
+Potential reasons:
 
-- As a cluster admin i would like to perform a bios update for the nodes in the cluster.
+- Shutdown a rack (due to overheating problem) to do that I would need to move hosts to maintenance.
+- Perform updates for the nodes in the cluster.
 
-#### Story 6
-- As a developer/operator I would like a way to invoke node maintenance (drain) not only from CLI but also from UI.
+Custom resources can come in handy for creating and marking several nodes under maintenance including monitoring the maintenance status.
 
 ### Implementation Details/Notes/Constraints
 
-- Custom taints added to the node by the controller might be overun by other controllers such as the node life cycle controller for the `TaintNodesByCondition` feature or the node controller for the `TaintBasedEvictions` feature.
+- A new controller that implements the drain logic that is currently [implemented](https://github.com/kubernetes/kubernetes/blob/v1.14.0/pkg/kubectl/cmd/drain/drain.go#L307) in [kubectl](https://kubernetes.io/docs/reference/generated/kubectl/kubectl-commands#drain) CLI which:
+  1. Cordones the node.
+  2. Evicts or deletes the pods:
+ After the node is made unschedulable, the drain command will try to evict the pods that are already running on that node. If eviction is supported on the cluster (from Kubernetes version 1.7) the drain command will use the Eviction API that takes disruption budgets into account, if it’s not supported it will simply delete the pods on the node.
+
+- The controller watches and acts upon maintenance CRs to put/remove a node in/out of maintenance.
+- Status report of the drain will be reported on the maintenance CR including : reason for maintenance, status (Running/Complete), list of pending pods (waiting on eviction), total number of pods on node and events (optional).
+- Custom taints and labels could be added to the node going under maintenance.
+- Configurable time-out(time buffer) for the drain process.
 
 ### Risks and Mitigations
 
@@ -187,4 +211,6 @@ TBD
 ## Infrastructure Needed [optional]
 
 TBD
+
+
 
