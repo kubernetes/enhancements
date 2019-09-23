@@ -23,45 +23,37 @@ status: implementable
 
 <!-- TOC -->
 
-- [Supporting CRI-ContainerD on Windows](#supporting-cri-containerd-on-windows)
-    - [Table of Contents](#table-of-contents)
-    - [Release Signoff Checklist](#release-signoff-checklist)
-    - [Summary](#summary)
-    - [Motivation](#motivation)
-        - [Goals](#goals)
-        - [Non-Goals](#non-goals)
-    - [Proposal](#proposal)
-        - [User Stories](#user-stories)
-            - [Improving Kubernetes integration for Windows Server containers](#improving-kubernetes-integration-for-windows-server-containers)
-            - [Improved isolation and compatibility between Windows pods using Hyper-V](#improved-isolation-and-compatibility-between-windows-pods-using-hyper-v)
-            - [Improve Control over Memory & CPU Resources with Hyper-V](#improve-control-over-memory--cpu-resources-with-hyper-v)
-            - [Improved Storage Control with Hyper-V](#improved-storage-control-with-hyper-v)
-            - [Enable runtime resizing of container resources](#enable-runtime-resizing-of-container-resources)
-        - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
-            - [Proposal: Use Runtimeclass Scheduler to simplify deployments based on OS version requirements](#proposal-use-runtimeclass-scheduler-to-simplify-deployments-based-on-os-version-requirements)
-            - [Proposal: Standardize hypervisor annotations](#proposal-standardize-hypervisor-annotations)
-        - [Dependencies](#dependencies)
-                - [Windows Server 2019](#windows-server-2019)
-                - [CRI-ContainerD](#cri-containerd)
-                - [CNI: Flannel](#cni-flannel)
-                - [CNI: Kubenet](#cni-kubenet)
-                - [CNI: GCE](#cni-gce)
-                - [Storage: in-tree AzureFile, AzureDisk, Google PD](#storage-in-tree-azurefile-azuredisk-google-pd)
-                - [Storage: FlexVolume for iSCSI & SMB](#storage-flexvolume-for-iscsi--smb)
-        - [Risks and Mitigations](#risks-and-mitigations)
-            - [CRI-ContainerD availability](#cri-containerd-availability)
-    - [Design Details](#design-details)
-        - [Test Plan](#test-plan)
-        - [Graduation Criteria](#graduation-criteria)
-        - [Alpha release (proposed 1.17)](#alpha-release-proposed-117)
-        - [Alpha -> Beta Graduation](#alpha---beta-graduation)
-                - [Beta -> GA Graduation](#beta---ga-graduation)
-        - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
-        - [Version Skew Strategy](#version-skew-strategy)
-    - [Implementation History](#implementation-history)
-    - [Alternatives](#alternatives)
-        - [CRI-O](#cri-o)
-    - [Infrastructure Needed](#infrastructure-needed)
+- [Table of Contents](#table-of-contents)
+- [Release Signoff Checklist](#release-signoff-checklist)
+- [Summary](#summary)
+- [Motivation](#motivation)
+    - [Goals](#goals)
+    - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+    - [User Stories](#user-stories)
+        - [Improving Kubernetes integration for Windows Server containers](#improving-kubernetes-integration-for-windows-server-containers)
+        - [Improved isolation and compatibility between Windows pods using Hyper-V](#improved-isolation-and-compatibility-between-windows-pods-using-hyper-v)
+        - [Improve Control over Memory & CPU Resources with Hyper-V](#improve-control-over-memory--cpu-resources-with-hyper-v)
+        - [Improved Storage Control with Hyper-V](#improved-storage-control-with-hyper-v)
+        - [Enable runtime resizing of container resources](#enable-runtime-resizing-of-container-resources)
+    - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
+        - [Proposal: Use Runtimeclass Scheduler to simplify deployments based on OS version requirements](#proposal-use-runtimeclass-scheduler-to-simplify-deployments-based-on-os-version-requirements)
+        - [Proposal: Support multiarch os/arch/version in CRI](#proposal-support-multiarch-osarchversion-in-cri)
+        - [Proposal: Standardize hypervisor annotations](#proposal-standardize-hypervisor-annotations)
+    - [Dependencies](#dependencies)
+    - [Risks and Mitigations](#risks-and-mitigations)
+        - [CRI-ContainerD availability](#cri-containerd-availability)
+- [Design Details](#design-details)
+    - [Test Plan](#test-plan)
+    - [Graduation Criteria](#graduation-criteria)
+    - [Alpha release (proposed 1.17)](#alpha-release-proposed-117)
+    - [Alpha -> Beta Graduation](#alpha---beta-graduation)
+    - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+    - [Version Skew Strategy](#version-skew-strategy)
+- [Implementation History](#implementation-history)
+- [Alternatives](#alternatives)
+    - [CRI-O](#cri-o)
+- [Infrastructure Needed](#infrastructure-needed)
 
 <!-- /TOC -->
 
@@ -180,6 +172,102 @@ Windows forward compatibility will bring a new challenge as well because there a
 - Running on a newer OS version using Hyper-V.
 This second case could be enabled with a RuntimeClass. If a separate RuntimeClass was used based on OS version, this means the scheduler could find a node with matching class.
 
+#### Proposal: Support multiarch os/arch/version in CRI
+
+The Open Container Initiative specifications for container runtime support specifying the architecture, os, and version when pulling and starting a container. This is important for Windows because there is no kernel compatibility between major versions. In order to successfully start a container with process isolation, the right `os.version` must be pulled and run. Hyper-V can provide backwards compatibility, but the image pull and sandbox creation need to specify `os.version` because the kernel is brought up when the sandbox is created. The same challenges exist for Linux as well because multiple CPU architectures can be supported - for example armv7 with qemu and binfmt_misc.
+
+Here's one example of a container image that has a multi-arch manifest with entries for Linux & Windows, multiple CPU architectures, and multiple Windows os versions.
+
+```powershell
+(docker manifest inspect mcr.microsoft.com/dotnet/core/sdk:2.1 | ConvertFrom-Json)[0].manifests | Format-Table digest, platform
+
+digest                                                                  platform
+------                                                                  --------
+sha256:f04192a946a4473d0001ed9c9422a9e3c9c659de8498778d29bfe6c98672ad9f @{architecture=amd64; os=linux}
+sha256:b7da46cdbc9a0c0ed154cabbb0591dea596e67d62d84c2a3ef34aaefe98f186d @{architecture=arm; os=linux; variant=v7}
+sha256:b73b7b5defbab6beddcf6e9289b25dd37c99c5c79415bf78a8b47f92350fb09b @{architecture=amd64; os=windows; os.version=10.0.17134.1006}
+sha256:573625a22a90e684c655f1eed7b0e4f03fbe90a4e94907f1f960f73a9e3092f5 @{architecture=amd64; os=windows; os.version=10.0.17763.737}
+sha256:2c0d528344dff960540f500b44ed1c60840138aa60e01927620df59bd63a9dfc @{architecture=amd64; os=windows; os.version=10.0.18362.356}
+```
+
+Here's the steps needed to pull and start a pod+container matching a specific os/arch/version:
+
+- ImageService.PullImage(PullImageRequest) - PullImageRequest includes a `PodSandboxConfig` reference
+- RuntimeService.RunPodSandbox(RunPodSandboxRequest) - RunPodSandboxRequest includes a `PodSandboxConfig` reference
+- RuntimeService.CreateContainer(CreateContainerRequest - the same `PodSandboxConfig` is passed as in the previous step
+
+All of these use the same `PodSandboxConfig`, so we're proposing adding os/arch/version there.
+
+From https://github.com/kubernetes/cri-api/blob/24ae4d4e8b036b885ee1f4930ec2b173eabb28e7/pkg/apis/runtime/v1alpha2/api.proto#L310
+
+```
+message PodSandboxConfig {
+    // Metadata of the sandbox. This information will uniquely identify the
+    // sandbox, and the runtime should leverage this to ensure correct
+    // operation. The runtime may also use this information to improve UX, such
+    // as by constructing a readable name.
+    PodSandboxMetadata metadata = 1;
+    // Hostname of the sandbox. Hostname could only be empty when the pod
+    // network namespace is NODE.
+    string hostname = 2;
+    // Path to the directory on the host in which container log files are
+    // stored.
+    // By default the log of a container going into the LogDirectory will be
+    // hooked up to STDOUT and STDERR. However, the LogDirectory may contain
+    // binary log files with structured logging data from the individual
+    // containers. For example, the files might be newline separated JSON
+    // structured logs, systemd-journald journal files, gRPC trace files, etc.
+    // E.g.,
+    //     PodSandboxConfig.LogDirectory = `/var/log/pods/<podUID>/`
+    //     ContainerConfig.LogPath = `containerName/Instance#.log`
+    //
+    // WARNING: Log management and how kubelet should interface with the
+    // container logs are under active discussion in
+    // https://issues.k8s.io/24677. There *may* be future change of direction
+    // for logging as the discussion carries on.
+    string log_directory = 3;
+    // DNS config for the sandbox.
+    DNSConfig dns_config = 4;
+    // Port mappings for the sandbox.
+    repeated PortMapping port_mappings = 5;
+    // Key-value pairs that may be used to scope and select individual resources.
+    map<string, string> labels = 6;
+    // Unstructured key-value map that may be set by the kubelet to store and
+    // retrieve arbitrary metadata. This will include any annotations set on a
+    // pod through the Kubernetes API.
+    //
+    // Annotations MUST NOT be altered by the runtime; the annotations stored
+    // here MUST be returned in the PodSandboxStatus associated with the pod
+    // this PodSandboxConfig creates.
+    //
+    // In general, in order to preserve a well-defined interface between the
+    // kubelet and the container runtime, annotations SHOULD NOT influence
+    // runtime behaviour.
+    //
+    // Annotations can also be useful for runtime authors to experiment with
+    // new features that are opaque to the Kubernetes APIs (both user-facing
+    // and the CRI). Whenever possible, however, runtime authors SHOULD
+    // consider proposing new typed fields for any new features instead.
+    map<string, string> annotations = 7;
+    // Optional configurations specific to Linux hosts.
+    LinuxPodSandboxConfig linux = 8;
+}
+```
+
+Today, PodSandboxConfig has an annotation that can be used as a workaround, but it's stated that "Whenever possible, however, runtime authors SHOULD consider proposing new typed fields for any new features instead.".
+
+The proposed additions are:
+
+```
+string os = 9;
+string architecture = 10;
+string version = 11;
+```
+
+These correspond to `platform.os`, `platform.architecture`, and `platform.os.version` as describe in the [OCI image spec](https://github.com/opencontainers/image-spec/blob/master/image-index.md)
+
+
+
 #### Proposal: Standardize hypervisor annotations
 
 There are large number of [Windows annotations](https://github.com/Microsoft/hcsshim/blob/master/internal/oci/uvm.go#L15) defined that can control how Hyper-V will configure its hypervisor partition for the pod. Today, these could be set in the runtimeclasses defined in the CRI-ContainerD configuration file on the node, but it would be easier to maintain them if key settings around resources (cpu+memory+storage) could be aligned across multiple hypervisors and exposed in CRI.
@@ -188,7 +276,10 @@ Doing this would make pod definitions more portable between different isolation 
 - 1809-Hyper-V-Reserve-2Core-PhysicalMemory
 - 1903-Hyper-V-Reserve-1Core-VirtualMemory
 - 1903-Hyper-V-Reserve-4Core-PhysicalMemory
-...
+- ...
+
+
+
 
 ### Dependencies
 
