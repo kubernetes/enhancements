@@ -98,6 +98,24 @@ We need to verify the ability to share informer cache across controllers.
 - [ ] Update documents to reflect the changes
 - [ ] Pass current e2e tests for CronJob
 - [ ] Pass existing and new unit-tests that are applicable
+- [ ] Scrub Existing Enhancement requirements and Open Bugs
+
+#### Enhancements
+- [Cronjob: include lastSuccessfulTime in the status](https://github.com/kubernetes/kubernetes/issues/75674)
+- [add the next run jobs time to CronJobStatus](https://github.com/kubernetes/kubernetes/issues/78564)
+- [Add CatchUp concurrency policy to Cronjob](https://github.com/kubernetes/kubernetes/issues/79995)
+- [When creating a cronjob, Reference an existing job](https://github.com/kubernetes/kubernetes/issues/81329)
+
+#### Bugs
+- [Updating a cronjob causes jobs to be scheduled retroactively](https://github.com/kubernetes/kubernetes/issues/63371)
+- [CLI: Updated CronJob Schedule Missing from Dry Run](https://github.com/kubernetes/kubernetes/issues/73613)
+- [Kubernetes CronJob pods is not getting clean-up when Job is completed](https://github.com/kubernetes/kubernetes/issues/74741)
+- [Infinite ImagePullBackOff CronJob results in resource leak](https://github.com/kubernetes/kubernetes/issues/76570)
+- [Cronjob `spec.schedule` can`t be change when `spec.schedule` value not `"` or `’`](https://github.com/kubernetes/kubernetes/issues/78646)
+- [CronJob Schedule does not use master's timezone - instead it uses UTC](https://github.com/kubernetes/kubernetes/issues/80577)
+- [Kubelet CPU/Memory Usage linearly increases using CronJob](https://github.com/kubernetes/kubernetes/issues/64137)
+- [Stopping cluster overnight prevents scheduled jobs from running after cluster startup](https://github.com/kubernetes/kubernetes/issues/42649)
+
 
 ## Implementation History
 
