@@ -80,6 +80,39 @@ We will implement the new controller to handle batch/v2alpha1 version initially.
 
 We need to verify the ability to share informer cache across controllers. 
 
+### Scale Targets for GA
+
+The scale targets for GA of CronJob are defined by the same [API call latency
+SLIs/SLOs as the Kuberetes native types](https://github.com/kubernetes/community/blob/master/sig-scalability/slos/api_call_latency.md#api-call-latency-slisslos-details).
+
+The targets are defined by the below suggested maximum limits, which are organized the same way as the [Kubernetes native type thresholds](https://github.com/kubernetes/community/blob/master/sig-scalability/configs-and-limits/thresholds.md#kubernetes-thresholds).
+
+#### CronJob Limits
+There should be nothing in the implementation that limits CronJobs per namespace. Overall clusterwide limits of CronJob are important. Cluster wide limits for CronJob should be storage bound since it shares the storage space with all other objects. Determining the appropriate storage limit for a cluster is out-of-scope for this document. We would recommend having CronJob use not more than 25% of the etcd storage. Since by default CronJob's successfulJobsHistoryLimit is 3. 
+
+#### Frequency of launched jobs
+The number of CronJobs is also sensitive to the API server QPS and the schedule of the individual CronJobs. This translated to the frequency of launched jobs. We could have large number of CronJobs with a spread of schedule that doenst stress the Job API. At the same time we could have a small number of CronJobs that schedule synchronously stressing the Jobs API. The design must be able to easily saturate the API server QPS.
+
+### Enhancements and Bugs
+These are the [current](https://github.com/kubernetes/kubernetes/issues/82659) list of issues that are being targetted for GA.
+
+#### Enhancements
+- [Cronjob: include lastSuccessfulTime in the status](https://github.com/kubernetes/kubernetes/issues/75674)
+- [add the next run jobs time to CronJobStatus](https://github.com/kubernetes/kubernetes/issues/78564)
+- [Add CatchUp concurrency policy to Cronjob](https://github.com/kubernetes/kubernetes/issues/79995)
+- [When creating a cronjob, Reference an existing job](https://github.com/kubernetes/kubernetes/issues/81329)
+
+#### Bugs
+- [Updating a cronjob causes jobs to be scheduled retroactively](https://github.com/kubernetes/kubernetes/issues/63371)
+- [CLI: Updated CronJob Schedule Missing from Dry Run](https://github.com/kubernetes/kubernetes/issues/73613)
+- [Kubernetes CronJob pods is not getting clean-up when Job is completed](https://github.com/kubernetes/kubernetes/issues/74741)
+- [Infinite ImagePullBackOff CronJob results in resource leak](https://github.com/kubernetes/kubernetes/issues/76570)
+- [Cronjob `spec.schedule` can`t be change when `spec.schedule` value not `"` or `’`](https://github.com/kubernetes/kubernetes/issues/78646)
+- [CronJob Schedule does not use master's timezone - instead it uses UTC](https://github.com/kubernetes/kubernetes/issues/80577)
+- [Kubelet CPU/Memory Usage linearly increases using CronJob](https://github.com/kubernetes/kubernetes/issues/64137)
+- [Stopping cluster overnight prevents scheduled jobs from running after cluster startup](https://github.com/kubernetes/kubernetes/issues/42649)
+
+
 ### Test Plan
 
 #### Existing Tests
@@ -99,23 +132,7 @@ We need to verify the ability to share informer cache across controllers.
 - [ ] Pass current e2e tests for CronJob
 - [ ] Pass existing and new unit-tests that are applicable
 - [ ] Scrub Existing Enhancement requirements and Open Bugs
-
-#### Enhancements
-- [Cronjob: include lastSuccessfulTime in the status](https://github.com/kubernetes/kubernetes/issues/75674)
-- [add the next run jobs time to CronJobStatus](https://github.com/kubernetes/kubernetes/issues/78564)
-- [Add CatchUp concurrency policy to Cronjob](https://github.com/kubernetes/kubernetes/issues/79995)
-- [When creating a cronjob, Reference an existing job](https://github.com/kubernetes/kubernetes/issues/81329)
-
-#### Bugs
-- [Updating a cronjob causes jobs to be scheduled retroactively](https://github.com/kubernetes/kubernetes/issues/63371)
-- [CLI: Updated CronJob Schedule Missing from Dry Run](https://github.com/kubernetes/kubernetes/issues/73613)
-- [Kubernetes CronJob pods is not getting clean-up when Job is completed](https://github.com/kubernetes/kubernetes/issues/74741)
-- [Infinite ImagePullBackOff CronJob results in resource leak](https://github.com/kubernetes/kubernetes/issues/76570)
-- [Cronjob `spec.schedule` can`t be change when `spec.schedule` value not `"` or `’`](https://github.com/kubernetes/kubernetes/issues/78646)
-- [CronJob Schedule does not use master's timezone - instead it uses UTC](https://github.com/kubernetes/kubernetes/issues/80577)
-- [Kubelet CPU/Memory Usage linearly increases using CronJob](https://github.com/kubernetes/kubernetes/issues/64137)
-- [Stopping cluster overnight prevents scheduled jobs from running after cluster startup](https://github.com/kubernetes/kubernetes/issues/42649)
-
+- [ ] Conform to scaling requirements
 
 ## Implementation History
 
