@@ -11,10 +11,16 @@ participating-sigs:
   - sig-scheduling
 reviewers:
   - "@bsalamat"
+  - "@dashpole"
   - "@derekwaynecarr"
   - "@dchen1107"
+  - "@ahg-g"
+  - "@k82cn"
 approvers:
-  - TBD
+  - "@dchen1107"
+  - "@derekwaynecarr"
+  - "@ahg-g"
+  - "@mwielgus"
 editor: TBD
 creation-date: 2018-11-06
 last-updated: 2018-11-06
@@ -130,7 +136,8 @@ Thanks to the above:
 
 A new Pod subresource named 'resourceallocation' is introduced to allow
 fine-grained access control that enables Kubelet to set or update resources
-allocated to a Pod.
+allocated to a Pod, and prevents the user or any other component from changing
+the allocated resources.
 
 #### Container Resize Policy
 
@@ -186,6 +193,9 @@ new desired resources (i.e Spec.Containers[i].Resources.Requests) to the sum.
 * If new desired resources don't fit, Kubelet rejects the resize, and no
   further action is taken.
   - Kubelet retries the Pod resize at a later time.
+
+If multiple Pods need resizing, they are handled sequentially in the order in
+which Pod additions and updates arrive at Kubelet.
 
 Scheduler may, in parallel, assign a new Pod to the Node because it uses cached
 Pods to compute Node allocable values. If this race condition occurs, Kubelet
