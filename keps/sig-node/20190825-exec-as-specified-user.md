@@ -89,7 +89,7 @@ By providing the `user` option for `exec`, users can use their own ID to enter t
 Since the container does not have a uniform `exec` format, the format of `user` should be just a string.
 
 #### Story 2
-By providing the `user` option for `exec`, user can do the auit inside the container.
+By providing the `user` option for `exec`, user can do the audit inside the container.
 
 ## Design Details
 
