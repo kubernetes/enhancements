@@ -115,7 +115,7 @@ In Linux kernel 4.14 support for a new seccomp return action named `SECCOMP_RET_
 
 Audit mode empowers users to monitor the impact of new profiles for extensive periods of time before switching into more restrictive modes. An example of it would be a profile with safe system calls whitelisted using `SCMP_ACT_ALLOW` and a default action of `SCMP_ACT_LOG`, instead of the current `SCMP_ACT_ERRNO`. The result would be that all system calls would be executed, however, only the ones outside the whitelist would be logged into the system logs.
 
-To arrive in Kubernetes, this functionality needs to first make it to libseccomp and runc. It was recently added to Libseccomp-golang [v0.9.1](https://github.com/seccomp/libseccomp-golang/releases/tag/v0.9.1) as `SCMP_ACT_LOG`. And it has currently a [PR](https://github.com/opencontainers/runc/pull/1951) to make it into runc.
+To arrive in Kubernetes, this functionality needs to first make it to libseccomp and OCI/runc. It was recently added to Libseccomp-golang [v0.9.1](https://github.com/seccomp/libseccomp-golang/releases/tag/v0.9.1) as `SCMP_ACT_LOG`. And it has currently a PR to make it into [runC](https://github.com/opencontainers/runc/pull/1951) and the [OCI](https://github.com/opencontainers/runtime-spec/pull/1019).
 
 The support is based on the downstream dependencies, therefore Kubernetes changes are not _required_. However, some changes may be improve its usability as pointed out on the [Implementation Details](#implementation-details) section.
 
@@ -169,18 +169,17 @@ As a user and administrator, I want to be able Kubernetes to audit all potential
 
 ### 1. Audit mode support (Details)
 
-Kubernetes will continue to be unaware of downstream support. If a user tries to use unsupported actions (i.e. `SCMP_ACT_LOG`) today, the lower level dependencies will handle the error appropriately. As a result, containers won't be able to start. We are proposing no changes to this behaviour.
+Kubernetes will continue to be unaware of downstream support. If a user tries to use unsupported actions (i.e. `SCMP_ACT_LOG`) today, the lower level dependencies will return an error. As a result, the container won't be able to start. We are proposing no changes to this behaviour.
 
 
 ### 2. Built-in profiles (Details)
 
-The internal built-in profiles will be implemented by golang, not allowing users to amend them.
+The internal built-in profiles will be implemented in golang, not allowing users to amend them. Similar to the implementation in the [containerd](https://github.com/containerd/containerd/blob/master/contrib/seccomp/seccomp_default.go) project.
 
 
 ### 3. New Kind for custom profiles (Details)
 
-The new types suggested here are largely based on a [former proposal](https://github.com/kubernetes/community/pull/660) to enhance seccomp's functionality. 
-
+To represent the seccomp profiles a new `SeccompProfile` resource type will be created: 
 ```
 // SeccompProfile defines custom seccomp profiles to be enforced at runtime.
 type SeccompProfile struct {
@@ -189,18 +188,27 @@ type SeccompProfile struct {
 	metav1.ObjectMeta
 
 	// +optional
-	Spec SeccompSpec
+	Spec LinuxSeccomp
 }
+```
 
-// SeccompSpec represents the spec for syscall restrictions
-type SeccompSpec struct {
-	DefaultAction Action        `json:"defaultAction"`
-	Architectures []Arch        `json:"architectures,omitempty"`
-	Syscalls      []Syscall     `json:"syscalls,omitempty"`
+Referencing the types defined by the [OCI Spec](https://github.com/opencontainers/runtime-spec/blob/master/specs-go/config.go#L556):
+
+```
+// LinuxSeccomp represents syscall restrictions
+type LinuxSeccomp struct {
+	DefaultAction LinuxSeccompAction `json:"defaultAction"`
+	Architectures []Arch             `json:"architectures,omitempty"`
+	Flags         []LinuxSeccompFlag `json:"flags,omitempty"`
+	Syscalls      []LinuxSyscall     `json:"syscalls,omitempty"`
 }
 
 // Arch used for additional architectures
 type Arch string
+
+// LinuxSeccompFlag is a flag to pass to seccomp(2).
+type LinuxSeccompFlag string
+
 // Additional architectures permitted to be used for system calls
 // By default only the native architecture of the kernel is permitted
 const (
@@ -224,53 +232,56 @@ const (
 	ArchPARISC64    Arch = "SCMP_ARCH_PARISC64"
 )
 
-// SeccompAction taken upon Seccomp rule match
-type SeccompAction string
+// LinuxSeccompAction taken upon Seccomp rule match
+type LinuxSeccompAction string
+
 // Define actions for Seccomp rules
 const (
-	ActKill  SeccompAction = "SCMP_ACT_KILL"
-	ActTrap  SeccompAction = "SCMP_ACT_TRAP"
-	ActErrno SeccompAction = "SCMP_ACT_ERRNO"
-	ActTrace SeccompAction = "SCMP_ACT_TRACE"
-	ActAllow SeccompAction = "SCMP_ACT_ALLOW"
-	ActLog SeccompAction = "SCMP_ACT_LOG"
+	ActKill  LinuxSeccompAction = "SCMP_ACT_KILL"
+	ActTrap  LinuxSeccompAction = "SCMP_ACT_TRAP"
+	ActErrno LinuxSeccompAction = "SCMP_ACT_ERRNO"
+	ActTrace LinuxSeccompAction = "SCMP_ACT_TRACE"
+	ActAllow LinuxSeccompAction = "SCMP_ACT_ALLOW"
+	ActLog   LinuxSeccompAction = "SCMP_ACT_LOG"    ## Pending pull request
 )
 
-// SeccompOperator used to match syscall arguments in Seccomp
-type SeccompOperator string
+// LinuxSeccompOperator used to match syscall arguments in Seccomp
+type LinuxSeccompOperator string
+
 // Define operators for syscall arguments in Seccomp
 const (
-	OpNotEqual     SeccompOperator = "SCMP_CMP_NE"
-	OpLessThan     SeccompOperator = "SCMP_CMP_LT"
-	OpLessEqual    SeccompOperator = "SCMP_CMP_LE"
-	OpEqualTo      SeccompOperator = "SCMP_CMP_EQ"
-	OpGreaterEqual SeccompOperator = "SCMP_CMP_GE"
-	OpGreaterThan  SeccompOperator = "SCMP_CMP_GT"
-	OpMaskedEqual  SeccompOperator = "SCMP_CMP_MASKED_EQ"
+	OpNotEqual     LinuxSeccompOperator = "SCMP_CMP_NE"
+	OpLessThan     LinuxSeccompOperator = "SCMP_CMP_LT"
+	OpLessEqual    LinuxSeccompOperator = "SCMP_CMP_LE"
+	OpEqualTo      LinuxSeccompOperator = "SCMP_CMP_EQ"
+	OpGreaterEqual LinuxSeccompOperator = "SCMP_CMP_GE"
+	OpGreaterThan  LinuxSeccompOperator = "SCMP_CMP_GT"
+	OpMaskedEqual  LinuxSeccompOperator = "SCMP_CMP_MASKED_EQ"
 )
 
-// SeccompArg used for matching specific syscall arguments in Seccomp
-type SeccompArg struct {
+// LinuxSeccompArg used for matching specific syscall arguments in Seccomp
+type LinuxSeccompArg struct {
 	Index    uint                 `json:"index"`
 	Value    uint64               `json:"value"`
-	ValueTwo uint64               `json:"valueTwo"`
-	Op       SeccompOperator      `json:"op"`
+	ValueTwo uint64               `json:"valueTwo,omitempty"`
+	Op       LinuxSeccompOperator `json:"op"`
 }
 
-// Syscall is used to match a syscall in Seccomp
-type Syscall struct {
-	Names  []string      `json:"names"`
-	Action SeccompAction `json:"action"`
-	Args   []SeccompArg  `json:"args,omitempty"`
+// LinuxSyscall is used to match a syscall in Seccomp
+type LinuxSyscall struct {
+	Names  []string           `json:"names"`
+	Action LinuxSeccompAction `json:"action"`
+	Args   []LinuxSeccompArg  `json:"args,omitempty"`
 }
 ```
 
 
-The profile definition would be passed as a serialised json inside an dockerOpt object, in the same way that it is done currently for file based profiles:
+The profile definition would be passed as a serialised json object inside an dockerOpt object, in the same way that it is done currently for file based profiles:
 ```
 jsonSeccomp, _ := json.Marshal(profile.Spec)
 return []dockerOpt{{"seccomp", string(jsonSeccomp), seccompProfileName}}, nil
 ```
+_Needs confirmation as to whether this would also work for non-docker implementations._
 
 
 User-defined Seccomp profiles would be created this way:
@@ -317,7 +328,7 @@ And referenced by `custom/my-custom-profile`.
 
 This can be treated as an incremental enhancement in the future, based on the community feedback.
 
-**Use an unstructured data type instead of SeccompSpec.** The main motivation here would be to keep profiles loosely coupled with downstream components. Assuming that the interface in question is implemented by runc as part of OCI, this should be less of a problem? (needs confirming)
+**Use an unstructured data type instead of SeccompSpec.** The main motivation here would be to remove the tight coupling with OCI and downstream components. However, by using unstructured data type may bring its own challenges - especially around migration paths in case the specification changes.
 
 ## References
 - [Original Seccomp Proposal](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/node/seccomp.md)
