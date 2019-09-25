@@ -63,7 +63,7 @@ so when Kubernetes announce [Container Runtime Interface(CRI)](https://kubernete
 
 But There are many container runtime implementation, e.g Docker, Kata, gVisior, most of which provide a way to enter the container as a special `user`.
 
-It is because the `exec` is basically to start a process inside the container runtime, and the [`process`](https://github.com/opencontainers/runtime-spec/blob/master/specs-go/config.go#L39) has a user definition, which is required.
+It is because the `exec` is basically to start a process inside the container runtime, and the [`process`](https://github.com/opencontainers/runtime-spec/blob/52e2591aa9f7211d64c49c4fed8691a183189284/specs-go/config.go#L39) has a user definition, which is required.
 
 > User specifies specific user (and group) information for the container process
 
