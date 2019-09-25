@@ -102,6 +102,9 @@ Because it was in staging, its history is up to date.  This means we can simply.
 1. Stop publishing k8s.io/code-generator
 2. Vendor k8s.io/code-generator as normal using go.mod.
 3. Update the readme for k8s.io/code-generator to indicate it as authoritative.
+4. For risky changes, a "fake-bump" could be made to k/k pointing to the remote branch to prove that it functions properly.
+ This should only be necessary if we find test gaps that need to be addressed, but it's a simple thing for an author
+ to put together for a reviewer.
 
 ### User Stories [optional]
 
