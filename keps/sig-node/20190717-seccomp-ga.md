@@ -170,9 +170,8 @@ type SeccompOptions struct {
 // Only one profile source may be set.
 // +union
 type SeccompProfile struct {
-    // No seccomp profile should be set.
-    // +optional
-    Unconfined *bool
+    // +unionDescriminator
+    Type SeccompProfileType
     // Use a predefined profile defined by the runtime.
     // Most runtimes only support "default"
     // +optional
@@ -182,6 +181,14 @@ type SeccompProfile struct {
     // +optional
     LocalhostProfile *string
 }
+
+type SeccompProfileType string
+
+const (
+    SeccompProfileUnconfined SeccompProfileType = "Unconfined"
+    SeccompProfileRuntime    SeccompProfileType = "Runtime"
+    SeccompProfileLocalhost  SeccompProfileType = "Localhost"
+)
 ```
 
 This API makes the options more explicit than the stringly-typed annotation values, and leaves room
@@ -217,9 +224,9 @@ type SeccompStrategyOptions struct {
 // All values are optional, and an unspecified field excludes all profiles of
 // that type from the set.
 type SeccompProfileSet struct {
-    // Whether the unconfined profile is included in this set.
+    // The allowed seccomp profile types.
     // +optional
-    Unconfined *bool
+    Types []SeccompProfileType
     // The allowed runtimeProfiles. A value of '*' allows all runtimeProfiles.
     // +optional
     RuntimeProfiles []string
