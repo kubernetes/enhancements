@@ -38,6 +38,7 @@ status: provisional
   - [Version Skew Strategy](#version-skew-strategy)
 - [Implementation History](#implementation-history)
 - [Alternatives](#alternatives)
+  - [MVP mitigation of known threats](#mvp-mitigation-of-known-threats)
   - [Restrict namespaces](#restrict-namespaces)
 <!-- /toc -->
 
@@ -213,6 +214,9 @@ annotations, except for whitelisted keys:
 - `PreferAvoidPodsAnnotationKey = "scheduler.alpha.kubernetes.io/preferAvoidPods"`
 - `BootstrapCheckpointAnnotationKey = "node.kubernetes.io/bootstrap-checkpoint"`
 
+Note that annotation restrictions are applying the least-privilege principal, but are not directly
+mitigating a known threat.
+
 ### OwnerReferences
 
 OwnerReferences cannot be updated through the `pod/status` subresource, but they can be set on
@@ -286,6 +290,18 @@ restrictions enabled.
 - 2019-09-16 - KEP proposed
 
 ## Alternatives
+
+### MVP mitigation of known threats
+
+An MVP of this proposal to mitigate the [2 motivating examples](#motivation) must include:
+
+1. Prevent nodes from modifying arbitrary labels through `pod/status` updates.
+2. Prevent nodes from setting arbitrary labels on mirror pods.
+3. Prevent nodes from setting arbitrary owner references on mirror pods.
+
+An MVP would exclude the speculative annotation restrictions. It could optionally take a blacklist
+approcah to label restrictions rather than a whitelist approach, but doing so would force every
+service label to use the `node-restriction.kubernetes.io/` prefix to prevent the MITM threat.
 
 ### Restrict namespaces
 
