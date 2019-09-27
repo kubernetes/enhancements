@@ -234,11 +234,16 @@ These rules are internal to the scheduler and they don't get reflected in the ap
 
 #### In the metadata/predicates/priorities flow
 
-_To be filled after agreement on the API_
+1. Calculate the spreading constraints for the pod as part of the metadata calculation.
+   Use the constraints provided by the pod or calculate the default ones if they don't provide any.
+1. When running the predicates or priorities, use the constraints stored in the metadata.
 
 #### In the scheduler framework
 
-_To be filled after agreement on the API_
+1. Calculate spreading constraints for the pod in the `PreFilter` extension point. Store them
+   in the `PluginContext`.
+1. In the `Filter` and `Score` extension points, use the stored spreading constraints instead of
+   the ones defined by the pod.
 
 ### Test Plan
 
@@ -251,7 +256,13 @@ To ensure this feature to be rolled out in high quality. Following tests are man
 
 ### Graduation Criteria
 
-_To be filled after agreement on the API_
+Alpha (v1.17):
+
+[ ] Scheduler Component Config API changes.
+[ ] Default, validation and generated code.
+[ ] Priority Implementation.
+[ ] Predicate implementation.
+[ ] Test cases mentioned in the [Test Plan](#test-plan).
 
 ## Implementation History
 
