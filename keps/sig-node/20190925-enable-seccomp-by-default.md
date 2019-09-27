@@ -131,7 +131,7 @@ The table below shows what built-in profiles and the two supported ways to creat
 | `custom/<profile-name>` 	| User defined profiles based off the new `SeccompProfile` Kind. 	| New 	| Only when `SCPM_ACT_LOG` is being used 	| `unconfined` 	|
 | `localhost/<path>` 	| User defined profile as a file on the node located at <seccomp_root>/<path>, where <seccomp_root> is defined via the  --seccomp-profile-root flag on the Kubelet. _Note that the user is responsible for physically synchronising the profile files across all nodes._ 	| Unchanged 	| Only when ` SCPM_ACT_LOG` is being used 	| `unconfined` 	|
 | `docker/default` 	| The Docker default seccomp profile is used. Deprecated as of Kubernetes 1.11. Use  `runtime/default` instead. 	| Unchanged, Deprecated 	| No 	| N/A 	|
-| `unconfined` 	| Seccomp is not applied to the container processes (the current default in Kubernetes), if no alternative is provided. Usage should be disencouraged. 	| Unchanged 	| No 	| N/A 	|
+| `unconfined` 	| Seccomp is not applied to the container processes (the current default in Kubernetes), if no alternative is provided. Usage should be discouraged. 	| Unchanged 	| No 	| N/A 	|
 
 
 ### 3. New Kind for custom profiles
