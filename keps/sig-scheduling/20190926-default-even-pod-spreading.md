@@ -34,6 +34,8 @@ see-also:
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [API](#api)
+  - [Default rules](#default-rules)
+  - [How user stories are addressed](#how-user-stories-are-addressed)
   - [Implementation Details](#implementation-details)
     - [In the metadata/predicates/priorities flow](#in-the-metadatapredicatespriorities-flow)
     - [In the scheduler framework](#in-the-scheduler-framework)
@@ -148,6 +150,86 @@ type TopologySpreadConstraint struct {
 Note that `TopologySpreadConstraint` is similar to `k8s.io/api/core/v1.TopologySpreadConstraint`,
 except that it doesn't define selectors.
 
+### Default rules
+
+These will be the default rules for the cluster when the operator doesn't provide any:
+
+```yaml
+defaultTopologySpreadConstraints:
+  -
+    maxSkew: 1
+    topologyKey: "kubernetes.io/hostname"
+    whenUnsatisfiable: ScheduleAnyway
+  -
+    maxSkew: 1
+    topologyKey: "failure-domain.beta.kubernetes.io/zone"
+    whenUnsatisfiable: ScheduleAnyway
+```
+
+### How user stories are addressed
+
+Let's say we have a cluster that has a topology based on physical hosts and racks.
+Then, an operator can set the following scheduler configuration:
+
+```yaml
+apiVersion: componentconfig/v1alpha1
+defaultTopologySpreadConstraints:
+  -
+    maxSkew: 5
+    topologyKey: "example.com/topology/physical_host"
+    whenUnsatisfiable: ScheduleAnyway
+  -
+    maxSkew: 15
+    topologyKey: "example.com/topology/rack"
+    whenUnsatisfiable: DoNotSchedule
+```
+
+Then, a workload author could have the following `ReplicaSet`:
+
+```yaml
+apiVersion: apps/v1
+kind: ReplicaSet
+metadata:
+  name: replicated_demo
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: demo
+  template:
+    metadata:
+      labels:
+        app: demo
+    spec:
+      containers:
+      - name: php-redis
+        image: example.com/registry/demo:latest
+```
+
+Note that the workload author didn't provide a spreading rules.
+The following rules will be applied to the pods of this replica set before running the
+algorithms for Even Pods Spreading:
+
+```yaml
+topologySpreadConstraints:
+  -
+    maxSkew: 5
+    TopologyKey: "example.com/topology/physical_host"
+    WhenUnsatisfiable: ScheduleAnyway
+    selector:
+      matchLabels:
+        app: demo
+  -
+    maxSkew: 15
+    TopologyKey: "example.com/topology/rack"
+    WhenUnsatisfiable: DoNotSchedule
+    selector:
+      matchLabels:
+        app: demo
+```
+
+These rules are internal to the scheduler and they don't get reflected in the apiserver.
+
 ### Implementation Details
 
 #### In the metadata/predicates/priorities flow
@@ -160,7 +242,12 @@ _To be filled after agreement on the API_
 
 ### Test Plan
 
-_To be filled after agreement on the API_
+To ensure this feature to be rolled out in high quality. Following tests are mandatory:
+
+- **Unit Tests**: All core changes must be covered by unit tests.
+- **Integration Tests**: One integration test for the default rules and one for custom rules.
+- **Benchmark Tests**: A benchmark test that compare the default rules against `SelectorSpreadingPriority`.
+  The performance should be as close as possible.
 
 ### Graduation Criteria
 
