@@ -58,17 +58,19 @@ see-also:
 
 ## Summary
 
-With `EvenPodsSpreading`, workload authors can define spreading rules for their loads based on the
-topology of the clusters. 
+With [Even Pods Spreading](/keps/sig-scheduling/20190221-even-pods-spreading.md),
+workload authors can define spreading rules for their loads based on the topology of the clusters. 
+The spreading rules are defined in the `PodSpec`, thus they are tied to the pod.
 
-By introducing configurable default spreading rules, workloads can be spread in the topology of
-the cluster according to opinionated rules set by a cluster operator, without having to explicitly
-define them. And workloads with specific needs can still override the rules by defining them in
-their PodSpec.
+We propose the introduction of configurable default spreading rules, i.e. rules that
+can be defined at the cluster level and are applied to pods that don't explicitly define spreading rules.
+This way, all pods can be spread according to (likely better informed) rules set by a cluster operator.
+Workload authors don't need to know the topology of the cluster they will be running on to have their pods spread.
+But if they do, they can still set their own spreading rules if they have specific needs.
 
 ## Motivation
 
-In order for a workload (pod) to use `EvenPodsSpreading`:
+In order for a workload (pod) to use `EvenPodsSpreadPriority`:
 
 1. Authors have to have an idea of the underlying topology.
 1. PodSpecs become less portable if their spreading rules are tailored to a specific topology.
@@ -78,10 +80,10 @@ them suitable to provide default spreading rules for all workloads in their clus
 
 ### Goals
 
-- Cluster operators can define default spreading rules for pods that don't provide any.
-- Workloads are spread with the default rules if they belong to the same service, controller,
-replica set or stateful set,
-and if they don't define `TopologySpreadConstraints`.
+- Cluster operators can define default spreading rules for pods that don't provide any
+  `pod.spec.topologySpreadConstraints`.
+- Workloads are spread with the default rules if they belong to the same service, replication controller,
+  replica set or stateful set, and if they don't define `pod.spec.topologySpreadConstraints`.
 
 ### Non-Goals
 
@@ -106,16 +108,17 @@ As a workload author, I want to spread the workload in the cluster, but:
 
 ### Implementation Details/Notes/Constraints
 
-Note that a priority given by default `EvenPodsSpreading` rules could conflict with
-`SelectorSpreadingPriority`.
-Operators can disable `SelectorSpreadingPriority`. But once default rules for `EvenPodsSpreading` is GA,
-we can consider removing `SelectorSpreadingPriority` and replacing it by an equivalent
-k8s default to the default rules for `EvenPodsSpreading`.
+Note that a priority given by Default `topologySpreadConstraints` could conflict with the priority
+given by `SelectorSpreadingPriority`.
+
+Operators can disable `SelectorSpreadingPriority` or give more precedence to `EvenPodsSpreadPriority`.
+But once this KEP graduates to GA, there should be no need for `SelectorSpreadingPriority`
+and it can be replaced by an equivalent k8s default to Default `topologySpreadConstraints`.
 
 ### Risks and Mitigations
 
-`EvenPodsSpreading` has some overhead and we currently ensure that pods that don't use the
-feature get minimally affected. After default rules for `EvenPodsSpreading` is rolled out,
+`EvenPodsSpreadPriority` has some overhead and we currently ensure that pods that don't use the
+feature get minimally affected. After Default `topologySpreadConstraints` is rolled out,
 all pods will run through the algorithms.
 However, we should ensure that the running overhead is not significantly higher than
 `SelectorSpreadingPriority` if using the k8s default.
@@ -131,7 +134,8 @@ type KubeSchedulerConfiguration struct {
 	....
 	// DefaultTopologySpreadConstraints defines spreading constraints to be applied to pods
 	// that don't define any.
-	// If not specified, the scheduler applies the following default.
+	// If not specified, the scheduler applies the following default:
+	// <default rules go here. See next section>
 	// +optional
 	DefaultTopologySpreadConstraints []TopologySpreadConstraint
 	....
@@ -156,12 +160,10 @@ These will be the default rules for the cluster when the operator doesn't provid
 
 ```yaml
 defaultTopologySpreadConstraints:
-  -
-    maxSkew: 1
+  - maxSkew: 1
     topologyKey: "kubernetes.io/hostname"
     whenUnsatisfiable: ScheduleAnyway
-  -
-    maxSkew: 1
+  - maxSkew: 1
     topologyKey: "failure-domain.beta.kubernetes.io/zone"
     whenUnsatisfiable: ScheduleAnyway
 ```
@@ -174,12 +176,10 @@ Then, an operator can set the following scheduler configuration:
 ```yaml
 apiVersion: componentconfig/v1alpha1
 defaultTopologySpreadConstraints:
-  -
-    maxSkew: 5
+  - maxSkew: 5
     topologyKey: "example.com/topology/physical_host"
     whenUnsatisfiable: ScheduleAnyway
-  -
-    maxSkew: 15
+  - maxSkew: 15
     topologyKey: "example.com/topology/rack"
     whenUnsatisfiable: DoNotSchedule
 ```
@@ -206,21 +206,19 @@ spec:
         image: example.com/registry/demo:latest
 ```
 
-Note that the workload author didn't provide a spreading rules.
-The following rules will be applied to the pods of this replica set before running the
-algorithms for Even Pods Spreading:
+Note that the workload author didn't provide spreading rules in the `pod.spec`.
+The following spreading rules will be derived from the rules defined in ComponentConfig
+and applied at runtime:
 
 ```yaml
 topologySpreadConstraints:
-  -
-    maxSkew: 5
+  - maxSkew: 5
     TopologyKey: "example.com/topology/physical_host"
     WhenUnsatisfiable: ScheduleAnyway
     selector:
       matchLabels:
         app: demo
-  -
-    maxSkew: 15
+  - maxSkew: 15
     TopologyKey: "example.com/topology/rack"
     WhenUnsatisfiable: DoNotSchedule
     selector:
@@ -228,7 +226,8 @@ topologySpreadConstraints:
         app: demo
 ```
 
-These rules are internal to the scheduler and they don't get reflected in the apiserver.
+Please note that these rules are honored internally in the scheduler, but they are NOT
+persisted into PodSpec via API Server.
 
 ### Implementation Details
 
@@ -258,11 +257,11 @@ To ensure this feature to be rolled out in high quality. Following tests are man
 
 Alpha (v1.17):
 
-[ ] Scheduler Component Config API changes.
-[ ] Default, validation and generated code.
-[ ] Priority Implementation.
-[ ] Predicate implementation.
-[ ] Test cases mentioned in the [Test Plan](#test-plan).
+- [ ] Scheduler Component Config API changes.
+- [ ] Default, validation and generated code.
+- [ ] Priority Implementation.
+- [ ] Predicate implementation.
+- [ ] Test cases mentioned in the [Test Plan](#test-plan).
 
 ## Implementation History
 
