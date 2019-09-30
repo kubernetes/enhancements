@@ -23,37 +23,51 @@ status: implementable
 
 <!-- TOC -->
 
-- [Table of Contents](#table-of-contents)
-- [Release Signoff Checklist](#release-signoff-checklist)
-- [Summary](#summary)
-- [Motivation](#motivation)
-    - [Goals](#goals)
-    - [Non-Goals](#non-goals)
-- [Proposal](#proposal)
-    - [User Stories](#user-stories)
-        - [Improving Kubernetes integration for Windows Server containers](#improving-kubernetes-integration-for-windows-server-containers)
-        - [Improved isolation and compatibility between Windows pods using Hyper-V](#improved-isolation-and-compatibility-between-windows-pods-using-hyper-v)
-        - [Improve Control over Memory & CPU Resources with Hyper-V](#improve-control-over-memory--cpu-resources-with-hyper-v)
-        - [Improved Storage Control with Hyper-V](#improved-storage-control-with-hyper-v)
-        - [Enable runtime resizing of container resources](#enable-runtime-resizing-of-container-resources)
-    - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
-        - [Proposal: Use Runtimeclass Scheduler to simplify deployments based on OS version requirements](#proposal-use-runtimeclass-scheduler-to-simplify-deployments-based-on-os-version-requirements)
-        - [Proposal: Support multiarch os/arch/version in CRI](#proposal-support-multiarch-osarchversion-in-cri)
-        - [Proposal: Standardize hypervisor annotations](#proposal-standardize-hypervisor-annotations)
-    - [Dependencies](#dependencies)
-    - [Risks and Mitigations](#risks-and-mitigations)
-        - [CRI-ContainerD availability](#cri-containerd-availability)
-- [Design Details](#design-details)
-    - [Test Plan](#test-plan)
-    - [Graduation Criteria](#graduation-criteria)
-    - [Alpha release (proposed 1.17)](#alpha-release-proposed-117)
-    - [Alpha -> Beta Graduation](#alpha---beta-graduation)
-    - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
-    - [Version Skew Strategy](#version-skew-strategy)
-- [Implementation History](#implementation-history)
-- [Alternatives](#alternatives)
-    - [CRI-O](#cri-o)
-- [Infrastructure Needed](#infrastructure-needed)
+- [Supporting CRI-ContainerD on Windows](#supporting-cri-containerd-on-windows)
+    - [Table of Contents](#table-of-contents)
+    - [Release Signoff Checklist](#release-signoff-checklist)
+    - [Summary](#summary)
+    - [Motivation](#motivation)
+        - [Goals](#goals)
+        - [Non-Goals](#non-goals)
+    - [Proposal](#proposal)
+        - [User Stories](#user-stories)
+            - [Improving Kubernetes integration for Windows Server containers](#improving-kubernetes-integration-for-windows-server-containers)
+            - [Improved isolation and compatibility between Windows pods using Hyper-V](#improved-isolation-and-compatibility-between-windows-pods-using-hyper-v)
+            - [Improve Control over Memory & CPU Resources with Hyper-V](#improve-control-over-memory--cpu-resources-with-hyper-v)
+            - [Improved Storage Control with Hyper-V](#improved-storage-control-with-hyper-v)
+            - [Enable runtime resizing of container resources](#enable-runtime-resizing-of-container-resources)
+        - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
+            - [Options for supporting multiple OS versions](#options-for-supporting-multiple-os-versions)
+            - [Option A - Use RuntimeClass per Windows OS version](#option-a---use-runtimeclass-per-windows-os-version)
+                - [Migrating to Hyper-V from per-version RuntimeClass](#migrating-to-hyper-v-from-per-version-runtimeclass)
+            - [Option B: Use RuntimeClass only with ContainerD](#option-b-use-runtimeclass-only-with-containerd)
+            - [Option C: Support multiarch os/arch/version in CRI](#option-c-support-multiarch-osarchversion-in-cri)
+                - [Details of Multi-arch images](#details-of-multi-arch-images)
+                - [Proposed changes to CRI to support multi-arch](#proposed-changes-to-cri-to-support-multi-arch)
+            - [Proposal: Standardize hypervisor annotations](#proposal-standardize-hypervisor-annotations)
+        - [Dependencies](#dependencies)
+                - [Windows Server 2019](#windows-server-2019)
+                - [CRI-ContainerD](#cri-containerd)
+                - [CNI: Flannel](#cni-flannel)
+                - [CNI: Kubenet](#cni-kubenet)
+                - [CNI: GCE](#cni-gce)
+                - [Storage: in-tree AzureFile, AzureDisk, Google PD](#storage-in-tree-azurefile-azuredisk-google-pd)
+                - [Storage: FlexVolume for iSCSI & SMB](#storage-flexvolume-for-iscsi--smb)
+        - [Risks and Mitigations](#risks-and-mitigations)
+            - [CRI-ContainerD availability](#cri-containerd-availability)
+    - [Design Details](#design-details)
+        - [Test Plan](#test-plan)
+        - [Graduation Criteria](#graduation-criteria)
+        - [Alpha release (proposed 1.17)](#alpha-release-proposed-117)
+        - [Alpha -> Beta Graduation](#alpha---beta-graduation)
+                - [Beta -> GA Graduation](#beta---ga-graduation)
+        - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+        - [Version Skew Strategy](#version-skew-strategy)
+    - [Implementation History](#implementation-history)
+    - [Alternatives](#alternatives)
+        - [CRI-O](#cri-o)
+    - [Infrastructure Needed](#infrastructure-needed)
 
 <!-- /TOC -->
 
@@ -163,18 +177,142 @@ With virtual-based allocations and Hyper-V, it should be possible to increase th
 
 The work needed will span multiple repos, SIG-Windows will be maintaining a [Windows CRI-Containerd Project Board] to track everything in one place.
 
-#### Proposal: Use Runtimeclass Scheduler to simplify deployments based on OS version requirements
 
-As of version 1.14, RuntimeClass is not considered by the Kubernetes scheduler. There’s no guarantee that a node can start a pod, and it could fail until it’s scheduled on an appropriate node. Additional node labels and nodeSelectors are required to avoid this problem. [RuntimeClass Scheduling](https://github.com/kubernetes/enhancements/blob/master/keps/sig-node/runtime-class-scheduling.md) proposes being able to add nodeSelectors automatically when using a RuntimeClass, simplifying the deployment.
+#### Options for supporting multiple OS versions
 
-Windows forward compatibility will bring a new challenge as well because there are two ways a container could be run:
-- Constrained to the OS version it was designed for, using process-based isolation
-- Running on a newer OS version using Hyper-V.
-This second case could be enabled with a RuntimeClass. If a separate RuntimeClass was used based on OS version, this means the scheduler could find a node with matching class.
 
-#### Proposal: Support multiarch os/arch/version in CRI
+
+
+#### Option A - Use RuntimeClass per Windows OS version
+
+With process isolation, Windows containers must be constrained to only run on a matching Windows Server version node.
+
+[RuntimeClass Scheduling] has a few useful features that can make it easier to match a Windows container to a compatible Windows node. Here's an example of steps that could use RuntimeClass to avoid os version mismatches: 
+
+1. A RuntimeClass such as `WindowsServer1809` defined with [RuntimeClass Scheduling] `nodeSelector` for `kubernetes.io/os=windows` and `nodeSelector` for `beta.kubernetes.io/osversion=Windows1809` set.
+1. Nodes must be labeled with the `kubernetes.io/os=windows` (already done), as well as the additional label `beta.kubernetes.io/osversion=Windows1809`
+
+This would need to be repeated for each Windows version added to the cluster such as `WindowsServer1809`, `WindowsServer1903` and future releases. The cluster operator would need to ensure that nodes are added and scaled as needed for each Windows version independently.
+
+A user doing a deployment must set an appropriate `runtimeClassName` for their Pod to be scheduled on a compatible Windows node.
+
+```
+apiVersion: v1
+kind: Pod
+metadata:
+  name: mypod
+spec:
+  runtimeClassName: WindowsServer1809
+  # ...
+```
+
+##### Migrating to Hyper-V from per-version RuntimeClass
+
+Once Hyper-V isolation is supported though, this causes a problem. There may be two different nodes that could run a given container built using Windows Server 1809:
+
+1. One running `Windows Server version 1809` supporting process isolation with `dockershim` or `containerd`
+    * Labels
+      * `kubernetes.io/os` = `windows`
+      * `beta.kubernetes.io/osversion` = `Windows1809`
+1. One running `Windows Server version 1903` supporting Hyper-V isolation with `containerd`
+    * Labels
+      * `kubernetes.io/os` = `windows`
+      * `beta.kubernetes.io/osversion` = `Windows1903`
+      * `capability.microsoft.com/isolation` = `hyperv`
+
+Using the `nodeSelector` above will only match node #1. Scheduling to node #2 would require defining a separate runtime class, and changing the `Pod` spec `runtimeClassName`.
+
+Migrating off an old Windows Server version would require a multi-step manual process.
+
+1. Set up an admission controller (for example [Gatekeeper]) to prevent new pods from being scheduled using the old `runtimeClassName`
+1. Find existing pods (for example - [Gatekeeper] audit rules) using the old `runtimeClassName`, and update them.
+1. `kubectl cordon` the old Windows nodes
+1. Decommission the old Windows nodes once no pods are left
+
+#### Option B: Use RuntimeClass only with ContainerD
+
+Instead of using RuntimeClass to support multiple Windows Server versions in the same cluster with `process` isolation, it could be used only to enable new features.
+
+Using the same two nodes from above:
+
+1. One running `Windows Server version 1809` supporting process isolation with `dockershim` or `containerd`
+    * Labels
+      * `kubernetes.io/os` = `windows`
+      * `beta.kubernetes.io/osversion` = `Windows1809`
+1. One running `Windows Server version 1903` supporting Hyper-V isolation with `containerd`
+    * Labels
+      * `kubernetes.io/os` = `windows`
+      * `beta.kubernetes.io/osversion` = `Windows1903`
+      * `capability.microsoft.com/isolation` = `hyperv`
+
+A new RuntimeClass could be created to opt-in to `hyperv` isolation for existing workloads:
+
+```
+apiVersion: node.k8s.io/v1beta1
+kind: RuntimeClass
+metadata:
+  name: windows-1809-hyperv
+handler: runhcs-wcow-hypervisor-1809  # The name of the corresponding CRI configuration
+nodeSelector:
+  kubernetes.io/os = 'windows'
+  beta.kubernetes.io/osversion = 'Windows1903'
+  capability.microsoft.com/isolation = 'hyperv'
+```
+
+The new version can be added with a new RuntimeClass
+
+```
+apiVersion: node.k8s.io/v1beta1
+kind: RuntimeClass
+metadata:
+  name: windows-1903-hyperv
+handler: runhcs-wcow-hypervisor-1903  # The name of the corresponding CRI configuration
+nodeSelector:
+  kubernetes.io/os = 'windows'
+  beta.kubernetes.io/osversion = 'Windows1903'
+  capability.microsoft.com/isolation = 'hyperv'
+```
+
+Pods would need to be updated to migrate to the new nodes using `hyperv` isolation.
+
+```
+apiVersion: v1
+kind: Pod
+metadata:
+  name: mypod
+spec:
+  runtimeClassName: windows-1809-hyperv
+  # ...
+```
+
+The same approach of block with [Gatekeeper], audit existing workloads, update deployments, cordon then remove old nodes as in Option A could be followed.
+
+Once the first Hyper-V migration is done, future Windows versions could be used by just updating `RuntimeClass.NodeSelector` to use the new OS version. Cordon the old nodes, wait for the pods to move, then delete the old nodes.
+
+
+#### Option C: Support multiarch os/arch/version in CRI
 
 The Open Container Initiative specifications for container runtime support specifying the architecture, os, and version when pulling and starting a container. This is important for Windows because there is no kernel compatibility between major versions. In order to successfully start a container with process isolation, the right `os.version` must be pulled and run. Hyper-V can provide backwards compatibility, but the image pull and sandbox creation need to specify `os.version` because the kernel is brought up when the sandbox is created. The same challenges exist for Linux as well because multiple CPU architectures can be supported - for example armv7 with qemu and binfmt_misc.
+
+One way to make the experience uniform for dealing with multi-arch images is to add new optional fields to force a deployment to use a specific os/version/arch. This may be combined with RuntimeClass to simplify node placement if needed.
+
+```
+apiVersion: v1
+kind: Pod
+metadata:
+  name: mypod
+spec:
+  os: windows
+  osversion: 1809
+  architecture: amd64
+  runtimeClassName: windows-hyperv
+  containers:
+      - name: iis
+        image: mcr.microsoft.com/windows/servercore/iis:windowsservercore-ltsc2019
+```
+
+
+##### Details of Multi-arch images
 
 Here's one example of a container image that has a multi-arch manifest with entries for Linux & Windows, multiple CPU architectures, and multiple Windows os versions.
 
@@ -189,6 +327,8 @@ sha256:b73b7b5defbab6beddcf6e9289b25dd37c99c5c79415bf78a8b47f92350fb09b @{archit
 sha256:573625a22a90e684c655f1eed7b0e4f03fbe90a4e94907f1f960f73a9e3092f5 @{architecture=amd64; os=windows; os.version=10.0.17763.737}
 sha256:2c0d528344dff960540f500b44ed1c60840138aa60e01927620df59bd63a9dfc @{architecture=amd64; os=windows; os.version=10.0.18362.356}
 ```
+
+##### Proposed changes to CRI to support multi-arch
 
 Here's the steps needed to pull and start a pod+container matching a specific os/arch/version:
 
@@ -325,7 +465,7 @@ These out-of-tree plugins are expected to work, and are not tested in prow jobs 
 
 #### CRI-ContainerD availability
 
-As mentioned earlier, builds are not yet available. We will publish the setup steps required to build & test in the kubernetes-sigs/windows-testing repo during the course of alpha so testing can commence.
+Builds are not yet available, but there is a [ContainerD tracking issue] for support Windows. Tests are currently running in a [prow job with CRITest](https://k8s-testgrid.appspot.com/sig-node-containerd#cri-validation-windows) against the master branch. We will publish the setup steps required to build & test in the kubernetes-sigs/windows-testing repo during the course of alpha so testing can commence.
 
 ## Design Details
 
@@ -390,5 +530,7 @@ There's no version skew considerations needed for the same reasons described in 
 No new infrastructure is currently needed from the Kubernetes community. The existing test jobs using prow & testgrid will be copied and modified to test CRI-ContainerD in addition to dockershim.
 
 
-
+[RuntimeClass Scheduling]: https://kubernetes.io/docs/concepts/containers/runtime-class/#scheduling
 [Windows CRI-Containerd Project Board]: https://github.com/orgs/kubernetes/projects/34
+[ContainerD tracking issue]: https://github.com/containerd/cri/issues/1257
+[Gatekeeper]: https://github.com/open-policy-agent/gatekeeper
