@@ -39,12 +39,12 @@ status: implementable
             - [Enable runtime resizing of container resources](#enable-runtime-resizing-of-container-resources)
         - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
             - [Options for supporting multiple OS versions](#options-for-supporting-multiple-os-versions)
-            - [Option A - Use RuntimeClass per Windows OS version](#option-a---use-runtimeclass-per-windows-os-version)
-                - [Migrating to Hyper-V from per-version RuntimeClass](#migrating-to-hyper-v-from-per-version-runtimeclass)
-            - [Option B: Use RuntimeClass only with ContainerD](#option-b-use-runtimeclass-only-with-containerd)
-            - [Option C: Support multiarch os/arch/version in CRI](#option-c-support-multiarch-osarchversion-in-cri)
-                - [Details of Multi-arch images](#details-of-multi-arch-images)
-                - [Proposed changes to CRI to support multi-arch](#proposed-changes-to-cri-to-support-multi-arch)
+                - [Option A - Use RuntimeClass per Windows OS version](#option-a---use-runtimeclass-per-windows-os-version)
+                    - [Migrating to Hyper-V from per-version RuntimeClass](#migrating-to-hyper-v-from-per-version-runtimeclass)
+                - [Option B: Use RuntimeClass only with ContainerD](#option-b-use-runtimeclass-only-with-containerd)
+                - [Option C: Support multiarch os/arch/version in CRI](#option-c-support-multiarch-osarchversion-in-cri)
+                    - [Details of Multi-arch images](#details-of-multi-arch-images)
+                    - [Proposed changes to CRI to support multi-arch](#proposed-changes-to-cri-to-support-multi-arch)
             - [Proposal: Standardize hypervisor annotations](#proposal-standardize-hypervisor-annotations)
         - [Dependencies](#dependencies)
                 - [Windows Server 2019](#windows-server-2019)
@@ -183,7 +183,7 @@ The work needed will span multiple repos, SIG-Windows will be maintaining a [Win
 
 
 
-#### Option A - Use RuntimeClass per Windows OS version
+##### Option A - Use RuntimeClass per Windows OS version
 
 With process isolation, Windows containers must be constrained to only run on a matching Windows Server version node.
 
@@ -206,7 +206,7 @@ spec:
   # ...
 ```
 
-##### Migrating to Hyper-V from per-version RuntimeClass
+###### Migrating to Hyper-V from per-version RuntimeClass
 
 Once Hyper-V isolation is supported though, this causes a problem. There may be two different nodes that could run a given container built using Windows Server 1809:
 
@@ -229,7 +229,7 @@ Migrating off an old Windows Server version would require a multi-step manual pr
 1. `kubectl cordon` the old Windows nodes
 1. Decommission the old Windows nodes once no pods are left
 
-#### Option B: Use RuntimeClass only with ContainerD
+##### Option B: Use RuntimeClass only with ContainerD
 
 Instead of using RuntimeClass to support multiple Windows Server versions in the same cluster with `process` isolation, it could be used only to enable new features.
 
@@ -290,7 +290,7 @@ The same approach of block with [Gatekeeper], audit existing workloads, update d
 Once the first Hyper-V migration is done, future Windows versions could be used by just updating `RuntimeClass.NodeSelector` to use the new OS version. Cordon the old nodes, wait for the pods to move, then delete the old nodes.
 
 
-#### Option C: Support multiarch os/arch/version in CRI
+##### Option C: Support multiarch os/arch/version in CRI
 
 The Open Container Initiative specifications for container runtime support specifying the architecture, os, and version when pulling and starting a container. This is important for Windows because there is no kernel compatibility between major versions. In order to successfully start a container with process isolation, the right `os.version` must be pulled and run. Hyper-V can provide backwards compatibility, but the image pull and sandbox creation need to specify `os.version` because the kernel is brought up when the sandbox is created. The same challenges exist for Linux as well because multiple CPU architectures can be supported - for example armv7 with qemu and binfmt_misc.
 
@@ -312,7 +312,7 @@ spec:
 ```
 
 
-##### Details of Multi-arch images
+###### Details of Multi-arch images
 
 Here's one example of a container image that has a multi-arch manifest with entries for Linux & Windows, multiple CPU architectures, and multiple Windows os versions.
 
@@ -328,7 +328,7 @@ sha256:573625a22a90e684c655f1eed7b0e4f03fbe90a4e94907f1f960f73a9e3092f5 @{archit
 sha256:2c0d528344dff960540f500b44ed1c60840138aa60e01927620df59bd63a9dfc @{architecture=amd64; os=windows; os.version=10.0.18362.356}
 ```
 
-##### Proposed changes to CRI to support multi-arch
+###### Proposed changes to CRI to support multi-arch
 
 Here's the steps needed to pull and start a pod+container matching a specific os/arch/version:
 
