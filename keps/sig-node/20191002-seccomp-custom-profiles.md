@@ -161,7 +161,7 @@ type SecurityContextStatus struct {
 }
  ```
 
-A similar approach would also be benefitial to AppArmor profiles. 
+A similar approach would also be beneficial to AppArmor profiles. 
 
 
 #### Rollout of profile changes
