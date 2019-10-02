@@ -294,10 +294,11 @@ The new built-in profiles will only be available from this version onwards. To u
 ##### Alpha
 
 - Make Built-in profiles available.
+- API changes to map Built-in profiles to an additional `Kubernetes` type.
 
 ##### Alpha -> Beta Graduation
 
-- API changes to map Built-in profiles to an additional `Kubernetes` type.
+- Gather feedback among community and developers.
 
 ##### Beta -> GA Graduation
 
