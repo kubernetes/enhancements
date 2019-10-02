@@ -119,6 +119,15 @@ jsonSeccomp, _ := json.Marshal(profile.Spec)
 return []dockerOpt{{"seccomp", string(jsonSeccomp), seccompProfileName}}, nil
 ```
 
+The new config profiles would be mapped to an additional Kubernetes profile type:
+```
+const (
+    SeccompProfileUnconfined SeccompProfileType = "Unconfined"
+    SeccompProfileRuntime    SeccompProfileType = "Runtime"
+    SeccompProfileLocalhost  SeccompProfileType = "Localhost"
+    SeccompProfileConfigmap  SeccompProfileType = "ConfigMap"
+)
+```
 
 User-defined Seccomp profiles would be created this way:
 
