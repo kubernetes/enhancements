@@ -5,11 +5,10 @@ authors:
 owning-sig: sig-node
 participating-sigs:
   - sig-auth
-  - sig-apimachinery
 reviewers:
-  - TBD
+  - "@tallclair"
 approvers:
-  - TBD
+  - "@tallclair"
 editor: TBD
 creation-date: 2019-10-02
 last-updated: 2019-10-02
@@ -18,9 +17,6 @@ see-also:
   - "https://github.com/kubernetes/community/blob/master/contributors/design-proposals/node/seccomp.md"
   - "https://github.com/kubernetes/enhancements/pull/1148"
   - "https://github.com/kubernetes/enhancements/pull/1257"
-replaces:
-  - "https://github.com/kubernetes/community/blob/master/contributors/design-proposals/node/seccomp.md"
-superseded-by: {}
 ---
 
 # seccomp-custom-profiles
