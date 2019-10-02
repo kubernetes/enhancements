@@ -5,7 +5,6 @@ authors:
 owning-sig: sig-node
 participating-sigs:
   - sig-auth
-  - sig-apimachinery
 reviewers:
   - "@tallclair"
 approvers:
@@ -13,14 +12,11 @@ approvers:
   - "@tallclair"
 editor: TBD
 creation-date: 2019-09-25
-last-updated: 2019-09-30
+last-updated: 2019-10-02
 status: provisional
 see-also:
   - "https://github.com/kubernetes/community/blob/master/contributors/design-proposals/node/seccomp.md"
   - "https://github.com/kubernetes/enhancements/pull/1148"
-replaces:
-  - "https://github.com/kubernetes/community/blob/master/contributors/design-proposals/node/seccomp.md"
-superseded-by: {}
 ---
 
 # enable-seccomp-by-default
@@ -52,6 +48,10 @@ superseded-by: {}
   - [Test Plan](#test-plan)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
+  - [Graduation Criteria](#graduation-criteria)
+      - [Alpha](#alpha)
+      - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
+      - [Beta -&gt; GA Graduation](#beta---ga-graduation)
 - [Implementation History](#implementation-history)
 - [Alternatives](#alternatives)
 - [References](#references)
@@ -280,10 +280,26 @@ Older Kubelet versions won't be able set the default profile to `kubernetes/defa
 The new built-in profiles will only be available from this version onwards. To use them, the pods must be scheduled on nodes in which the kubelet support them, otherwise they will fail to start.
 
 
+### Graduation Criteria
+
+##### Alpha
+
+- Make Built-in profiles available.
+
+##### Alpha -> Beta Graduation
+
+- API changes to map Built-in profiles to an additional `Kubernetes` type.
+
+##### Beta -> GA Graduation
+
+- Enable audit-mode as default.
+
+
 
 ## Implementation History
 - 2019-09-25: Initial KEP
 - 2019-09-30: Updates based on reviewer's feedback
+- 2019-10-02: Added Graduation Criteria
 
 
 
