@@ -81,7 +81,7 @@ Check these off as they are completed for the Release Team to track. These check
 
 ## Summary
 
-A proposal to enhance the user-defined profiles support for seccomp.
+A proposal to enhance user-defined profiles support for seccomp by allowing them to be stored as `ConfigMap` objects.
 
 
 
@@ -114,9 +114,9 @@ Kubernetes supports Seccomp in some capacity since version 1.3, but from then on
 
 Add support to user-defined profiles being loaded from `ConfigMap` objects. The unstructured nature of this object type removes the potential tight coupling with OCI and downstream components, and the impact in case the seccomp profile format was to change in the future.
 
-Users will be able to create profiles in `ConfigMap` objects and refer to them as `configmap/<profile-name>`. The `ConfigMap` objects will have to be placed in the same namespace as where the Pod wills reside. Reusable cross namespaces user-defined profiles will not be supported at this point.
+Users will be able to create profiles in `ConfigMap` objects and refer to them as `configmap/<profile-name>`. Note that the `ConfigMap` objects will have to be placed in the same namespace as where the Pods will reside. Reusable cross namespaces user-defined profiles will not be supported at this point.
 
-The profile definition would be passed to the CRI as a serialised json object inside an dockerOpt object, in the same way that it is done currently for file based profiles, removing the need of files being saved and synchronised across nodes.
+The profile definition would be passed to the CRI as a serialised json object inside a dockerOpt object, in the same way that it is done currently for file based profiles, removing the need of files being saved and synchronised across nodes.
 
 ```
 jsonSeccomp, _ := json.Marshal(profile.Spec)
@@ -138,14 +138,13 @@ data:
   }
 ``` 
 
-This profile would be referenced as `configmap/my-custom-profile`.
+And the profile would be referenced as `configmap/my-custom-profile`.
 
 
 ### Usage Scenarios
-Below goes a few points to clarify the expected behaviour around user-defined profiles:
 
 #### Profile tampering protection
-At container start time the sha256 hash of the profile contents will be taken and saved within the `pod.status.containerStatuses.SecurityContext` object. 
+Just before the container creation time the sha256 hash of the profile contents will be taken and saved within the `pod.status.containerStatuses.SecurityContext` object. 
 This enables users to verify whether the applied profile is the exact same as the profile saved on the given `ConfigMap` object. 
 
 This will require changes to `ContainerStatus`:
@@ -171,15 +170,14 @@ A similar approach would also be benefitial to AppArmor profiles.
 
 #### Rollout of profile changes
 
-Seccomp profiles are applied at container startup time, therefore updating an existing user-defined profile will not cause any changes to the running containers that are using it. They will need to be restarted in order for the changes to take effect, which users will have to manually to so. 
+Seccomp profiles are applied at container creation time, therefore updating an existing user-defined profile will not cause any changes to the running containers that are using it. They will need to be restarted in order for the changes to take effect, which users will have to manually do. 
 
-At a later stage a new KEP will cover the automatic rollout of profile changes as an opt-in feature, taking into account container settings to ensure minimum availability impact.
 
 #### Starting containers with non-existent profile
 
 An error message should be returned stating the profile could not be found. Containers targeted for seccomp profiles should not be able to start if their profiles are deleted. 
 
-If a running container has its policy deleted, nothing will happen until it has to be restarted, which in this case would lead to a failure.
+If a running container has its policy deleted, nothing will happen until it has to be restarted, which in this case would lead to a failure as stated above.
 
 
 
@@ -212,16 +210,11 @@ E2E tests will be required to ensure profile changes won't impact running contai
 
 ### Upgrade / Downgrade Strategy
 
-No upgrade changes required - both localhost and configmap profiles will be supported.
+No upgrade changes required - both localhost and configmap profiles will be supported in parallel.
 
 ### Version Skew Strategy
 
-If applicable, how will the component handle version skew with other components? What are the guarantees? Make sure
-this is in the test plan.
-
-Consider the following in developing a version skew strategy for this enhancement:
-- Does this enhancement involve coordinating behavior in the control plane and in the kubelet? How does an n-2 kubelet without this feature available behave when this feature is used?
-- Will any other components on the node change? For example, changes to CSI, CRI or CNI may require updating that component before the kubelet.
+The new configmap based profiles will only be supported from this version on. Users will need to ensure that pods using the new feature won't be scheduled on nodes running older Kubelet versions.
 
 ### Graduation Criteria
 
