@@ -103,6 +103,19 @@ Once an API or feature reaches beta, it has six months to
 If neither of those conditions met, the beta API/feature is deprecated in the second release with a stated intent to remove the feature entirely.
 To avoid removal, the feature must create a new beta version (it cannot go directly from deprecated to GA).
 
+For example, in v1.16, v1beta1 is released. Sample release note and API doc:
+> * "The v1beta1 version of this API will be evaluated during v1.16 and v1.17, then deprecated in v1.18 (in favor of a new beta version, a GA version, or with no replacement), then removed in v1.21"
+
+Scenario A - progression to v1beta2 in v1.18. Sample release note and API doc:
+> * "The v1beta1 version of this API is deprecated in favor of v1beta2, and will be removed in v1.21"
+> * "The v1beta2 version of this API will be evaluated during v1.18 and v1.19, then deprecated in v1.20 (in favor of a new beta version, a GA version, or with no replacement), then removed in v1.23"
+
+Scenario B - progression to v1 in v1.18. Sample release note and API doc:
+> * "The v1beta1 version of this API is deprecated in favor of v1, and will be removed in v1.21"
+
+Scenario C - deprecation with no replacement. Sample release note and API doc:
+> * "The v1beta1 version of this API is deprecated with no replacement, and will be removed in v1.21"
+
 By regularly having new beta versions, we can ensure that consumers will not grow long running dependencies on particular betas which could pin design decisions.
 It will also create an incentive for feature authors to push their features to GA instead of letting them live in a permanent beta state. 
 
