@@ -224,8 +224,17 @@ Kubernetes will continue to be unaware of downstream support. If a user tries to
 
 The internal built-in profiles will be implemented in golang, not allowing users to amend them. It will be based off the implementation in [docker](https://github.com/moby/moby/blob/master/profiles/seccomp/default.json) and [containerd](https://github.com/containerd/containerd/blob/master/contrib/seccomp/seccomp_default.go).
 
+The new built-in profiles would be mapped to an additional Kubernetes profile type:
+```
+const (
+    SeccompProfileUnconfined SeccompProfileType = "Unconfined"
+    SeccompProfileRuntime    SeccompProfileType = "Runtime"
+    SeccompProfileLocalhost  SeccompProfileType = "Localhost"
+    SeccompProfileKubernetes SeccompProfileType = "Kubernetes"
+)
+```
 
-The new built-in profiles would be mapped to an additional Kubernetes profile type. And its definition would be passed as a serialised json object inside dockerOpt objects, in the same way that it is done currently for file based profiles:
+Profiles will be passed as a serialised json object inside dockerOpt objects, in the same way that it is done currently for file based profiles:
 ```
 jsonSeccomp, _ := json.Marshal(profile.Spec)
 return []dockerOpt{{"seccomp", string(jsonSeccomp), seccompProfileName}}, nil
@@ -234,6 +243,7 @@ _Needs confirmation as to whether this would also work for non-docker runtime im
 
 
 Built-in profiles will act in the same way as custom profiles, therefore, trying to apply any of the audit built-in profiles in nodes which do not support `SCMP_ACT_LOG` (due to kernel or dependencies version) will cause containers to fail to start.
+
 
 
 
@@ -299,6 +309,7 @@ The new built-in profiles will only be available from this version onwards. To u
 - 2019-09-25: Initial KEP
 - 2019-09-30: Updates based on reviewer's feedback
 - 2019-10-02: Added Graduation Criteria
+- 2019-10-02: Added new SeccompProfileType for kubernetes type
 
 
 
