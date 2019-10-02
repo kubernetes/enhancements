@@ -138,8 +138,7 @@ The table below shows what built-in profiles and the two supported ways to creat
 | Profile Name 	| Description 	| Status 	| Requires Audit Support 	| Fallback profile 	|
 |-------------------------	|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------	|-------------------------------------------	|-----------------------------------------	|------------------	|
 | `runtime/default` 	| The default container runtime. Syscalls outside allowed list are blocked. 	| Unchanged 	| No 	| N/A 	|
-| `kubernetes/default` 	| The default Kubernetes profile - a copy of `runtime/default`. System calls outside the allowed list are blocked. 	| New 	| No 	| N/A 	|
-| `kubernetes/default-audit` 	| Allows the same system calls as `kubernetes/default`, but logs all violations. 	| New 	| Yes 	| `unconfined` 	|
+| `kubernetes/default-audit` 	| Allows the same system calls as `runtime/default`, but logs all violations instead of blocking them. 	| New 	| Yes 	| `unconfined` 	|
 | `kubernetes/audit-verbose` 	| Remove all whitelisted system calls, logging every time any system calls are used. Useful for creating new profiles based on the execution of a container. 	| New 	| Yes 	| `unconfined` 	|
 | `localhost/<path>` 	| User defined profile as a file on the node located at <seccomp_root>/<path>, where <seccomp_root> is defined via the  --seccomp-profile-root flag on the Kubelet. _Note that the user is responsible for physically synchronising the profile files across all nodes._ 	| Unchanged 	| Only when ` SCPM_ACT_LOG` is being used 	| `unconfined` 	|
 | `docker/default` 	| The Docker default seccomp profile is used. Deprecated as of Kubernetes 1.11. Use  `runtime/default` instead. 	| Unchanged, Deprecated 	| No 	| N/A 	|
@@ -218,7 +217,7 @@ As a user and administrator, I want Kubernetes to audit all potentially dangerou
 
 ### 1. Audit mode support (Details)
 
-Kubernetes will continue to be unaware of downstream support. If a user tries to use unsupported actions (i.e. `SCMP_ACT_LOG`) today, the lower level dependencies will return an error. As a result, the container won't be able to start. We are proposing no changes to this behaviour.
+Kubernetes will continue to be unaware of downstream support. If a user tries to apply a seccomp profile containing unsupported actions (i.e. `SCMP_ACT_LOG`) today, the lower level dependencies (i.e. runC) will return an error. As a result, the container won't be able to start. We are proposing no changes to this behaviour.
 
 
 ### 2. Built-in profiles (Details)
