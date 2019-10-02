@@ -115,6 +115,7 @@ Example applications include:
 - Java applications can back the heap with huge pages using the
   `-XX:+UseLargePages` and `-XX:LagePageSizeInBytes` options.
 - packet processing systems (DPDK)
+- VMs running on top of Kubernetes infrastructure (libvirt, QEMU, etc.)
 
 Applications can generally use huge pages by calling
 - `mmap()` with `MAP_ANONYMOUS | MAP_HUGETLB` and use it as anonymous memory
@@ -141,21 +142,16 @@ components pending graduation to Beta.
 
 Huge pages cannot be overcommitted on a node.
 
-A system may support multiple huge page sizes.  It is assumed that most nodes
-will be configured to primarily use the default huge page size as returned via
-`grep Hugepagesize /proc/meminfo`.  This defaults to 2Mi on most Linux systems
-unless overridden by `default_hugepagesz=1g` in kernel boot parameters.
-
-For each supported huge page size, the node will advertise a resource of the
-form `hugepages-<hugepagesize>`.  On Linux, supported huge page sizes are
-determined by parsing the `/sys/kernel/mm/hugepages/hugepages-{size}kB`
-directory on the host. Kubernetes will expose a `hugepages-<hugepagesize>`
-resource using binary notation form. It will convert `<hugepagesize>` into the
-most compact binary notation using integer values.  For example, if a node
-supports `hugepages-2048kB`, a resource `hugepages-2Mi` will be shown in node
-capacity and allocatable values. Operators may set aside pre-allocated huge
-pages that are not available for user pods similar to normal memory via the
-`--system-reserved` flag.
+A system may support multiple huge page sizes. For each supported huge page
+size, the node will advertise a resource of the form `hugepages-<hugepagesize>`.
+On Linux, supported huge page sizes are determined by parsing the
+`/sys/kernel/mm/hugepages/hugepages-{size}kB` directory on the host. Kubernetes
+will expose a `hugepages-<hugepagesize>` resource using binary notation form.
+It will convert `<hugepagesize>` into the most compact binary notation using
+integer values.  For example, if a node supports `hugepages-2048kB`, a resource
+`hugepages-2Mi` will be shown in node capacity and allocatable values.
+Operators may set aside pre-allocated huge pages that are not available for user
+pods similar to normal memory via the `--system-reserved` flag.
 
 There are a variety of huge page sizes supported across different hardware
 architectures.  It is preferred to have a resource per size in order to better
@@ -212,12 +208,12 @@ If a pod consumes huge pages via `shmget`, it must run with a supplemental group
 that matches `/proc/sys/vm/hugetlb_shm_group` on the node.  Configuration of
 this group is outside the scope of this specification.
 
-Initially, a pod may not consume multiple huge page sizes in a single pod spec.
-Attempting to use `hugepages-2Mi` and `hugepages-1Gi` in the same pod spec will
-fail validation.  We believe it is rare for applications to attempt to use
-multiple huge page sizes. This restriction may be lifted in the future with
-community presented use cases.  Introducing the feature with this restriction
-limits the exposure of API changes needed when consuming huge pages via volumes.
+A pod may consume multiple huge page sizes in a single pod spec. In this
+case it must use `medium: HugePages-<hugepagesize>` notation for all
+volume mounts.
+
+A pod may use `medium: HugePages` only if it requests huge pages of one
+size.
 
 In order to consume huge pages backed by the `hugetlbfs` filesystem inside the
 specified container in the pod, it is helpful to understand the set of mount
@@ -231,22 +227,60 @@ mount -t hugetlbfs \
 ```
 
 The proposal recommends extending the existing `EmptyDirVolumeSource` to satisfy
-this use case.  A new `medium=HugePages` option would be supported.  To write
-into this volume, the pod must make a request for huge pages. The `pagesize`
-argument is inferred from the `hugepages-<hugepagesize>` from the resource
-request.  If in the future, multiple huge page sizes are supported in a single
-pod spec, we may modify the `EmptyDirVolumeSource` to provide an optional page
-size.  The existing `sizeLimit` option for `emptyDir` would restrict usage to
-the minimum value specified between `sizeLimit` and the sum of huge page limits
-of all containers in a pod. This keeps the behavior consistent with memory
-backed `emptyDir` volumes whose usage is ultimately constrained by the pod
-cgroup sandbox memory settings.  The `min_size` option is omitted as its not
-necessary.  The `nr_inodes` mount option is omitted at this time in the same
-manner it is omitted with `medium=Memory` when using `tmpfs`.
+this use case.  A new `medium=HugePages[-<hugepagesize>]` options would be
+supported.  To write into this volume, the pod must make a request for huge
+pages.  The `pagesize` argument is inferred from the medium of the mount if
+`medium: HugePages-<hugepagesize>` notation is used. For `medium: HugePages`
+notation the `pagesize` argument is inferred from the resource request
+`hugepages-<hugepagesize>`.
 
-The following is a sample pod that is limited to 1Gi huge pages of size 2Mi. It
-can consume those pages using `shmget()` or via `mmap()` with the specified
-volume.
+The existing `sizeLimit` option for `emptyDir` would restrict usage to the
+minimum value specified between `sizeLimit` and the sum of huge page limits of
+all containers in a pod. This keeps the behavior consistent with memory backed
+`emptyDir` volumes whose usage is ultimately constrained by the pod cgroup
+sandbox memory settings.  The `min_size` option is omitted as its not necessary.
+The `nr_inodes` mount option is omitted at this time in the same manner it is
+omitted with `medium=Memory` when using `tmpfs`.
+
+The following is a sample pod that is limited to 1Gi huge pages of size 2Mi and
+2Gi huge pages of size 1Gi. It can consume those pages using `shmget()` or via
+`mmap()` with the specified volume.
+
+```
+apiVersion: v1
+kind: Pod
+metadata:
+  name: example
+spec:
+  containers:
+...
+    volumeMounts:
+    - mountPath: /hugepages-2Mi
+      name: hugepage-2Mi
+    - mountPath: /hugepages-1Gi
+      name: hugepage-1Gi
+    resources:
+      requests:
+        hugepages-2Mi: 1Gi
+        hugepages-1Gi: 2Gi
+      limits:
+        hugepages-2Mi: 1Gi
+        hugepages-1Gi: 2Gi
+  volumes:
+  - name: hugepage-2Mi
+    emptyDir:
+      medium: HugePages-2Mi
+  - name: hugepage-1Gi
+    emptyDir:
+      medium: HugePages-1Gi
+```
+
+For backwards compatibility, a pod that uses one page size should pass
+validation if a volume emptyDir `medium=HugePages` notation is used.
+
+The following is an example of a pod backward compatible with the
+current implementation. It uses `medium: HugePages` notation and
+requests hugepages of one size.
 
 ```
 apiVersion: v1
@@ -268,6 +302,85 @@ spec:
   - name: hugepage
     emptyDir:
       medium: HugePages
+```
+
+A pod that requests more than one page size should fail validation if a volume
+emptyDir medium=HugePages is specified.
+
+This is an example of an invalid pod that requests huge pages of two
+differfent sizes, but doesn't use `medium: Hugepages-<size>` notation:
+
+```
+apiVersion: v1
+kind: Pod
+metadata:
+  name: example
+spec:
+  containers:
+...
+    volumeMounts:
+    - mountPath: /hugepages
+      name: hugepage
+    resources:
+      requests:
+        hugepages-2Mi: 1Gi
+        hugepages-1Gi: 2Gi
+      limits:
+        hugepages-2Mi: 1Gi
+        hugepages-1Gi: 2Gi
+  volumes:
+  - name: hugepage
+    emptyDir:
+      medium: HugePages
+```
+
+A pod that requests huge pages of one size and uses another size in a
+volume emptyDir madium should fail validation.
+This is an example of such an invalid pod. It requests hugepages of 2Mi
+size, but specifies 1Gi in `medium: HugePages-1Gi`:
+
+```
+apiVersion: v1
+kind: Pod
+metadata:
+  name: example
+spec:
+  containers:
+...
+    volumeMounts:
+    - mountPath: /hugepages
+      name: hugepage
+    resources:
+      requests:
+        hugepages-2Mi: 1Gi
+      limits:
+        hugepages-2Mi: 1Gi
+  volumes:
+  - name: hugepage
+    emptyDir:
+      medium: HugePages-1Gi
+```
+
+Also, it is important to note that emptyDir usage is not required if pod
+consumes huge pages via shmat/shmget system calls or mmap with MAP_HUGETLB.
+This is an example of the pod that consumes 1Gi huge pages of size 2Mi and
+2Gi huge pages of size 1Gi without using emptyDir:
+
+```
+apiVersion: v1
+kind: Pod
+metadata:
+  name: example
+spec:
+  containers:
+...
+    resources:
+      requests:
+        hugepages-2Mi: 1Gi
+        hugepages-1Gi: 2Gi
+      limits:
+        hugepages-2Mi: 1Gi
+        hugepages-1Gi: 2Gi
 ```
 
 #### CRI Updates
