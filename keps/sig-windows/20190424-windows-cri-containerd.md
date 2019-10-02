@@ -102,7 +102,6 @@ Check these off as they are completed for the Release Team to track. These check
 
 The ContainerD maintainers have been working on CRI support which is stable on Linux, but is not yet available for Windows as of ContainerD 1.2. Currently it’s planned for ContainerD 1.3, and the developers in the Windows container platform team have most of the key work merged into master already. Supporting CRI-ContainerD on Windows means users will be able to take advantage of the latest container platform improvements that shipped in Windows Server 2019 / 1809 and beyond.
 
-
 ## Motivation
 
 Windows Server 2019 includes an updated host container service (HCS v2) that offers more control over how containers are managed. This can remove some limitations and improve some Kubernetes API compatibility. However, the current Docker EE 18.09 release has not been updated to work with the Windows HCSv2, only ContainerD has been migrated. Moving to CRI-ContainerD allows the Windows OS team and Kubernetes developers to focus on an interface designed to work with Kubernetes to improve compatibility and accelerate development.
@@ -146,7 +145,6 @@ Adding Hyper-V support would use [RuntimeClass](https://kubernetes.io/docs/conce
 
 Using Hyper-V isolation does require some extra memory for the isolated kernel & system processes. This could be accounted for by implementing the [PodOverhead](https://kubernetes.io/docs/concepts/containers/runtime-class/#runtime-class) proposal for those runtime classes. We would include a recommended PodOverhead in the default CRDs, likely between 100-200M.
 
-
 #### Improve Control over Memory & CPU Resources with Hyper-V
 
 The Windows kernel itself cannot provide reserved memory for pods, containers or processes. They are always fulfilled using virtual allocations which could be paged out later. However, using a Hyper-V partition improves control over memory and CPU cores. Hyper-V can either allocate memory on-demand (while still enforcing a hard limit), or it can be reserved as a physical allocation up front. Physical allocations may be able to enable large page allocations within that range (to be confirmed) and improve cache coherency. CPU core counts may also be limited so a pod only has certain cores available, rather than shares spread across all cores, and applications can tune thread counts to the actually available cores.
@@ -157,9 +155,7 @@ Operators could deploy additional RuntimeClasses with more granular control for 
 - 1903-Hyper-V-Reserve: Hyper-V isolation is used, Pod will be compatible with containers built with Windows Server 1903. Memory reserve == limit, and is guaranteed to not page out.
   - 1903-Hyper-V-Reserve-<N>Core: Same as above, except all but <N> CPU cores are masked out.
 
-
 #### Improved Storage Control with Hyper-V
-
 
 Hyper-V also brings the capability to attach storage to pods using block-based protocols (SCSI) instead of file-based protocols (host file mapping / NFS / SMB). These capabilities could be enabled in HCSv2 with CRI-ContainerD, so this could be an area of future work. Some examples could include:
 
@@ -167,21 +163,15 @@ Attaching a "physical disk" (such as a local SSD, iSCSI target, Azure Disk or Go
 
 Creating [Persistent Local Volumes](https://kubernetes.io/docs/concepts/storage/volumes/#local) using a local virtual disk attached directly to a pod. This would create local, non-resilient storage that could be formatted from the pod without being mounted on the host. This could be used to build out more resource controls such as fixed disk sizes and QoS based on IOPs or throughput and take advantage of high speed local storage such as temporary SSDs offered by cloud providers.
 
-
 #### Enable runtime resizing of container resources
 
 With virtual-based allocations and Hyper-V, it should be possible to increase the limit for a running pod. This won’t give it a guaranteed allocation, but will allow it to grow without terminating and scheduling a new pod. This could be a path to vertical pod autoscaling. This still needs more investigation and is mentioned as a future possibility.
-
 
 ### Implementation Details/Notes/Constraints
 
 The work needed will span multiple repos, SIG-Windows will be maintaining a [Windows CRI-Containerd Project Board] to track everything in one place.
 
-
 #### Options for supporting multiple OS versions
-
-
-
 
 ##### Option A - Use RuntimeClass per Windows OS version
 
@@ -190,19 +180,31 @@ With process isolation, Windows containers must be constrained to only run on a 
 [RuntimeClass Scheduling] has a few useful features that can make it easier to match a Windows container to a compatible Windows node. Here's an example of steps that could use RuntimeClass to avoid os version mismatches: 
 
 1. A RuntimeClass such as `WindowsServer1809` defined with [RuntimeClass Scheduling] `nodeSelector` for `kubernetes.io/os=windows` and `nodeSelector` for `beta.kubernetes.io/osversion=Windows1809` set.
-1. Nodes must be labeled with the `kubernetes.io/os=windows` (already done), as well as the additional label `beta.kubernetes.io/osversion=Windows1809`
+1. Nodes must be labeled with the `kubernetes.io/os=windows` (already there), as well as a new label for the OS version such as `beta.kubernetes.io/osversion=Windows1809`
 
-This would need to be repeated for each Windows version added to the cluster such as `WindowsServer1809`, `WindowsServer1903` and future releases. The cluster operator would need to ensure that nodes are added and scaled as needed for each Windows version independently.
+This would need to be repeated for each Windows version added to the cluster such as `windows-1809`, `windows-1903` and future releases. The cluster operator would need to ensure that nodes are added and scaled as needed for each Windows version independently.
+
+```yaml
+apiVersion: node.k8s.io/v1beta1
+kind: RuntimeClass
+metadata:
+  name: windows-1809-amd64
+handler: 'docker'  # only handler accepted when using dockershim
+scheduling:
+  nodeSelector:
+    kubernetes.io/os: 'windows'
+    kubernetes.io/arch: 'amd64'
+```
 
 A user doing a deployment must set an appropriate `runtimeClassName` for their Pod to be scheduled on a compatible Windows node.
 
-```
+```yaml
 apiVersion: v1
 kind: Pod
 metadata:
   name: mypod
 spec:
-  runtimeClassName: WindowsServer1809
+  runtimeClassName: windows-1809-amd64
   # ...
 ```
 
@@ -220,7 +222,33 @@ Once Hyper-V isolation is supported though, this causes a problem. There may be 
       * `beta.kubernetes.io/osversion` = `Windows1903`
       * `capability.microsoft.com/isolation` = `hyperv`
 
-Using the `nodeSelector` above will only match node #1. Scheduling to node #2 would require defining a separate runtime class, and changing the `Pod` spec `runtimeClassName`.
+Using the `nodeSelector` above will only match node #1. Scheduling to node #2 would require defining a separate runtime class, and changing the `Pod` spec `runtimeClassName`. Changing the example above to run on Windows Server 1903 could look like this:
+
+```yaml
+apiVersion: node.k8s.io/v1beta1
+kind: RuntimeClass
+metadata:
+  name: windows-1809-amd64
+handler: 'windows-hyperv-1809'  # only handler accepted when using dockershim
+scheduling:
+  nodeSelector:
+    kubernetes.io/os: 'windows'
+    kubernetes.io/arch: 'amd64'
+    beta.kubernetes.io/osversion: '1903'
+    capability.microsoft.com/isolation: 'hyperv'
+```
+
+The `handler` here would need reference a configuration file that's otherwise opaque to the user. It would have the extra annotations needed to specify what OS version the pod requires so that pulling the image, creating the sandbox and starting the container will succeed.
+
+```toml
+        [plugins.cri.containerd.runtimes.windows-hyperv-1809]
+          runtime_type = "io.containerd.runhcs.v1"
+          [plugins.cri.containerd.runtimes.runhcs-wcow-hypervisor.options]
+            SandboxImage = "{{WINDOWSSANDBOXIMAGE}}"
+            SandboxPlatform = "windows/amd64"
+            SandboxIsolation = 1
+```
+
 
 Migrating off an old Windows Server version would require a multi-step manual process.
 
@@ -247,35 +275,37 @@ Using the same two nodes from above:
 
 A new RuntimeClass could be created to opt-in to `hyperv` isolation for existing workloads:
 
-```
+```yaml
 apiVersion: node.k8s.io/v1beta1
 kind: RuntimeClass
 metadata:
-  name: windows-1809-hyperv
+  name: windows-1809-amd64-hyperv
 handler: runhcs-wcow-hypervisor-1809  # The name of the corresponding CRI configuration
 nodeSelector:
-  kubernetes.io/os = 'windows'
-  beta.kubernetes.io/osversion = 'Windows1903'
-  capability.microsoft.com/isolation = 'hyperv'
+  kubernetes.io/os: 'windows'
+  kubernetes.io/arch: 'amd64'
+  beta.kubernetes.io/osversion: 'windows1903'
+  capability.microsoft.com/isolation: 'hyperv'
 ```
 
-The new version can be added with a new RuntimeClass
+The new version can be added with a new RuntimeClass:
 
-```
+```yaml
 apiVersion: node.k8s.io/v1beta1
 kind: RuntimeClass
 metadata:
   name: windows-1903-hyperv
 handler: runhcs-wcow-hypervisor-1903  # The name of the corresponding CRI configuration
 nodeSelector:
-  kubernetes.io/os = 'windows'
-  beta.kubernetes.io/osversion = 'Windows1903'
-  capability.microsoft.com/isolation = 'hyperv'
+  kubernetes.io/os: 'windows'
+  kubernetes.io/arch: 'amd64'
+  beta.kubernetes.io/osversion: 'windows-1903'
+  capability.microsoft.com/isolation: 'hyperv'
 ```
 
 Pods would need to be updated to migrate to the new nodes using `hyperv` isolation.
 
-```
+```yaml
 apiVersion: v1
 kind: Pod
 metadata:
@@ -288,7 +318,6 @@ spec:
 The same approach of block with [Gatekeeper], audit existing workloads, update deployments, cordon then remove old nodes as in Option A could be followed.
 
 Once the first Hyper-V migration is done, future Windows versions could be used by just updating `RuntimeClass.NodeSelector` to use the new OS version. Cordon the old nodes, wait for the pods to move, then delete the old nodes.
-
 
 ##### Option C: Support multiarch os/arch/version in CRI
 
@@ -310,7 +339,6 @@ spec:
       - name: iis
         image: mcr.microsoft.com/windows/servercore/iis:windowsservercore-ltsc2019
 ```
-
 
 ###### Details of Multi-arch images
 
@@ -406,8 +434,6 @@ string version = 11;
 
 These correspond to `platform.os`, `platform.architecture`, and `platform.os.version` as describe in the [OCI image spec](https://github.com/opencontainers/image-spec/blob/master/image-index.md)
 
-
-
 #### Proposal: Standardize hypervisor annotations
 
 There are large number of [Windows annotations](https://github.com/Microsoft/hcsshim/blob/master/internal/oci/uvm.go#L15) defined that can control how Hyper-V will configure its hypervisor partition for the pod. Today, these could be set in the runtimeclasses defined in the CRI-ContainerD configuration file on the node, but it would be easier to maintain them if key settings around resources (cpu+memory+storage) could be aligned across multiple hypervisors and exposed in CRI.
@@ -417,9 +443,6 @@ Doing this would make pod definitions more portable between different isolation 
 - 1903-Hyper-V-Reserve-1Core-VirtualMemory
 - 1903-Hyper-V-Reserve-4Core-PhysicalMemory
 - ...
-
-
-
 
 ### Dependencies
 
