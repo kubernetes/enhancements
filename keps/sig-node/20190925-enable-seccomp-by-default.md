@@ -160,7 +160,7 @@ Enabling Linux Security Modules, such as seccomp or apparmor, may come with a pe
 
 Docker by default has both apparmor and seccomp enabled, which is the security community's recommendation. In contrast, Kubernetes have both disabled by default. To make it clearer the real impact of enabling this feature in Kubernetes, the comparison shows all those different scenarios. 
 
-![](seccomp-perf-chart.svg)
+![](seccomp-perf-chart.png)
 
 Using the proposed "new k8s default" (a.k.a. `kubernetes/default-audit`), performed 10% slower than running as "default k8s" (a.k.a. `unconfined`). However, it performed marginally slower than "default docker w/o apparmor" (a.k.a. `runtime/default` or `docker/default`), which is the default seccomp profile used by docker. 
 
