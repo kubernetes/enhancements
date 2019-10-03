@@ -13,7 +13,7 @@ approvers:
 editor: TBD
 creation-date: 2019-04-22
 last-updated: 2019-04-22
-status: provisional
+status: implementable
 see-also:
   - "/keps/sig-cloud-provider/20180530-cloud-controller-manager.md"
 ---
@@ -127,7 +127,8 @@ The properties of the migration lock are:
   * no two migration locks should have overlapping controllers
   * the controller manager where the lock runs can change across releases.
   * for a minor release it should run exclusively in one type of controller manager - KCM or CCM.
-
+  * given a minor release, all subsequent patch releases shouldn't change the migration locks
+  
 During migration, either the KCM or CCM may have multiple migration locks, though for performance reasons no more than 2 locks is recommended.
 
 Let's say we are migrating the service, route, and nodeipam controllers from the KCM to the CCM across Kubernetes versions, say v1.17 to v1.18.
@@ -136,6 +137,7 @@ inside the KCM (see Figure 1). As a result, in v1.17 those controllers would run
 To migrate to the CCM for v1.18, the cloud provider would update the `cloud-network-controller-migration` lock to now run in the CCM (see Figure 2).
 During a control plane upgrade, the cloud network controllers may still run in one of the KCMs that are still on v1.17. A 1.17 KCM holding the lock
 will prevent any of the v1.18 CCMs from claiming the lock. When the current holder of the lock goes down, one of the controller managers eligible will acquire lock.
+Then in 1.19 the cloud provider would delete the `cloud-network-controller-migration` lock and run using the `cloud-controller-manager` lock for the migrated controllers.
 
 <br/>
 <br/>
@@ -157,53 +159,35 @@ will prevent any of the v1.18 CCMs from claiming the lock. When the current hold
 
 ### Implementation Details/Notes/Constraints [optional]
 
-TODO after KEP summary and proposal is approved
+The cloud-provider needs to would need to implement an interface, that for a given controller returns the version of migration
 
 ### Risks and Mitigations
 
-TODO after KEP summary and proposal is approved
+One of the risks related to this KEP is the KCM and the CCM running the same controllers if the implementation is not well tested.
+To avoid this we should have e2e tests that covers the happy path and the edge cases
 
 ## Design Details
 
 ### Test Plan
 
-TODO after KEP summary and proposal is approved
+test strategy will include:
+
+- unit Testing
+- integration test between KCM and KAS
+- e2e testing with providers supporting the migration
 
 ### Graduation Criteria
 
-TODO after KEP summary and proposal is approved
-
-#### Examples
-
 ##### Alpha -> Beta Graduation
 
-TODO after KEP summary and proposal is approved
-
-##### Beta -> GA Graduation
-
-TODO after KEP summary and proposal is approved
-
-### Upgrade / Downgrade Strategy
-
-TODO after KEP summary and proposal is approved
+the migration library is working and tested with at least one cloud provider
 
 ### Version Skew Strategy
 
-TODO after KEP summary and proposal is approved
+The CCM's version shipping the migration (i.e. running under a new lock) should only support running
+with a KCM that has the migration lock introduced for these controllers.
 
 ## Implementation History
 
-Major milestones in the life cycle of a KEP should be tracked in `Implementation History`.
-Major milestones might include
-
-- the `Summary` and `Motivation` sections being merged signaling SIG acceptance
-- the `Proposal` section being merged signaling agreement on a proposed design
-- the date implementation started
-- the first Kubernetes release where an initial version of the KEP was available
-- the version of Kubernetes where the KEP graduated to general availability
-- when the KEP was retired or superseded
-
-## Infrastructure Needed [optional]
-
-TODO after KEP summary and proposal is approved
-
+- KEP merged as provisional
+- KEP merged as implementable in 1.17
