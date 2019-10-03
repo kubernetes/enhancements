@@ -66,3 +66,5 @@ This KEP contains details that are missing from the design proposal.
 
 ## Implementation History
 * K8s 1.12: Alpha implementation
+* K8s 1.14: Beta implementation
+* K8s 1.17: GA implementation
