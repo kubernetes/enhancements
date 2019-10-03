@@ -16,7 +16,7 @@ approvers:
   - "@derekwaynecarr"
 editor: TBD
 creation-date: 2019-07-17
-status: provisional
+status: implementable
 ---
 
 # Seccomp to GA
