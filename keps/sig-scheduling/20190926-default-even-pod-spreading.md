@@ -31,6 +31,7 @@ see-also:
     - [Story 1](#story-1)
     - [Story 2](#story-2)
   - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
+    - [Relationship with SelectorSpreadingPriority](#relationship-with-selectorspreadingpriority)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [API](#api)
@@ -42,7 +43,7 @@ see-also:
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
 - [Implementation History](#implementation-history)
-- [Alternatives [optional]](#alternatives-optional)
+- [Alternatives](#alternatives)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -62,27 +63,27 @@ With [Even Pods Spreading](/keps/sig-scheduling/20190221-even-pods-spreading.md)
 workload authors can define spreading rules for their loads based on the topology of the clusters. 
 The spreading rules are defined in the `PodSpec`, thus they are tied to the pod.
 
-We propose the introduction of configurable default spreading rules, i.e. rules that
-can be defined at the cluster level and are applied to pods that don't explicitly define spreading rules.
-This way, all pods can be spread according to (likely better informed) rules set by a cluster operator.
+We propose the introduction of configurable default spreading constraints, i.e. constraints that
+can be defined at the cluster level and are applied to pods that don't explicitly define spreading constraints.
+This way, all pods can be spread according to (likely better informed) constraints set by a cluster operator.
 Workload authors don't need to know the topology of the cluster they will be running on to have their pods spread.
-But if they do, they can still set their own spreading rules if they have specific needs.
+But if they do, they can still set their own spreading constraints if they have specific needs.
 
 ## Motivation
 
 In order for a workload (pod) to use `EvenPodsSpreadPriority`:
 
 1. Authors have to have an idea of the underlying topology.
-1. PodSpecs become less portable if their spreading rules are tailored to a specific topology.
+1. PodSpecs become less portable if their spreading constraints are tailored to a specific topology.
 
 On the other hand, cluster operators know the underlying topology of the cluster, which makes
-them suitable to provide default spreading rules for all workloads in their cluster.
+them suitable to provide default spreading constraints for all workloads in their cluster.
 
 ### Goals
 
-- Cluster operators can define default spreading rules for pods that don't provide any
+- Cluster operators can define default spreading constraints for pods that don't provide any
   `pod.spec.topologySpreadConstraints`.
-- Workloads are spread with the default rules if they belong to the same service, replication controller,
+- Workloads are spread with the default constraints if they belong to the same service, replication controller,
   replica set or stateful set, and if they don't define `pod.spec.topologySpreadConstraints`.
 
 ### Non-Goals
@@ -95,7 +96,7 @@ them suitable to provide default spreading rules for all workloads in their clus
 
 #### Story 1
 
-As a cluster operator, I want to set default spreading rules for workloads in the cluster.
+As a cluster operator, I want to set default spreading constraints for workloads in the cluster.
 Currently, `SelectorSpreadPriority` provides a canned priority that spreads across nodes
 and zones (`failure-domain.beta.kubernetes.io/zone`). However, the nodes in my cluster have
 custom topology keys (for physical host, rack, etc.).
@@ -108,12 +109,25 @@ As a workload author, I want to spread the workload in the cluster, but:
 
 ### Implementation Details/Notes/Constraints
 
-Note that a priority given by Default `topologySpreadConstraints` could conflict with the priority
-given by `SelectorSpreadingPriority`.
 
-Operators can disable `SelectorSpreadingPriority` or give more precedence to `EvenPodsSpreadPriority`.
-But once this KEP graduates to GA, there should be no need for `SelectorSpreadingPriority`
-and it can be replaced by an equivalent k8s default to Default `topologySpreadConstraints`.
+#### Relationship with SelectorSpreadingPriority
+
+Note that Default `topologySpreadConstraints` has a similar effect to `SelectorSpreadingPriority`.
+Given that the latter is not configurable, they could return conflicting priorities, which
+may not be the intention of an operator. On the other hand, a proper Default for `topologySpreadConstraints`
+could provide the same priority as `SelectorSpreadingPriority`. Thus, there's no need for the
+features to co-exist.
+
+Give that we guard Default `topologySpreadConstraints` behind a feature flag,
+these would be its semantics:
+
+- If the feature is enabled, `SelectorSpreadingPriority` is removed from the default set of priorities.
+  K8s provides the Default `topologySpreadConstraints` that matches the priority given by
+  `SelectorSpreading` if the cluster operator doesn't specify one.
+- If the cluster operator provides a Policy that includes `SelectorSpreadingPriority` and
+  `EvenPodsSpreadPriority`, K8s provides an empty Default `topologySpreadConstraints`.
+  The cluster operator can still specify Default `topologySpreadConstraints`,
+  in which case both priorities run.
 
 ### Risks and Mitigations
 
@@ -121,7 +135,7 @@ and it can be replaced by an equivalent k8s default to Default `topologySpreadCo
 feature get minimally affected. After Default `topologySpreadConstraints` is rolled out,
 all pods will run through the algorithms.
 However, we should ensure that the running overhead is not significantly higher than
-`SelectorSpreadingPriority` if using the k8s default.
+`SelectorSpreadingPriority` with k8s Default `topologySpreadConstraints`.
 
 ## Design Details
 
@@ -132,31 +146,24 @@ A new structure called `TopologySpreadConstraint` is introduced to `KubeSchedule
 ```go
 type KubeSchedulerConfiguration struct {
 	....
-	// DefaultTopologySpreadConstraints defines spreading constraints to be applied to pods
-	// that don't define any.
-	// If not specified, the scheduler applies the following default:
+	// TopologySpreadConstraints defines topology spread constraints to be applied to pods
+	// that don't define any in `pod.spec.topologySpreadConstraints`. Pod selectors must
+	// be empty, as they are deduced from the resources that the pod belongs to
+	// (includes services, replication controllers, replica sets and stateful sets). 
+	// If not specified, the scheduler applies the following default constraints:
 	// <default rules go here. See next section>
 	// +optional
-	DefaultTopologySpreadConstraints []TopologySpreadConstraint
+	TopologySpreadConstraints []corev1.TopologySpreadConstraint
 	....
-}
-
-// TopologySpreadConstraint specifies how to spread pods among the given topology.
-// Pod selectors are deduced from the resource definitions that the pod belongs to
-// (includes services, controllers, replica sets and stateful sets).
-type TopologySpreadConstraint struct {
-	MaxSkew int32
-	TopologyKey string
-	WhenUnsatisfiable corev1.UnsatisfiableConstraintAction
 }
 ```
 
-Note that `TopologySpreadConstraint` is similar to `k8s.io/api/core/v1.TopologySpreadConstraint`,
-except that it doesn't define selectors.
+Note the use of `k8s.io/api/core/v1.TopologySpreadConstraint`. During validation,
+we verify that selectors are not defined.
 
 ### Default rules
 
-These will be the default rules for the cluster when the operator doesn't provide any:
+These will be the default constraints for the cluster when the operator doesn't provide any:
 
 ```yaml
 defaultTopologySpreadConstraints:
@@ -206,9 +213,9 @@ spec:
         image: example.com/registry/demo:latest
 ```
 
-Note that the workload author didn't provide spreading rules in the `pod.spec`.
-The following spreading rules will be derived from the rules defined in ComponentConfig
-and applied at runtime:
+Note that the workload author didn't provide spreading constraints in the `pod.spec`.
+The following spreading constraints will be derived from the constraints defined in ComponentConfig,
+and will be applied at runtime:
 
 ```yaml
 topologySpreadConstraints:
@@ -226,8 +233,8 @@ topologySpreadConstraints:
         app: demo
 ```
 
-Please note that these rules are honored internally in the scheduler, but they are NOT
-persisted into PodSpec via API Server.
+Please note that these constraints are honored internally in the scheduler, but they are NOT
+persisted in the PodSpec via API Server.
 
 ### Implementation Details
 
@@ -267,7 +274,7 @@ Alpha (v1.17):
 
 - 2019-09-26: Initial KEP sent out for review.
 
-## Alternatives [optional]
+## Alternatives
 
 - Make the topology keys used in `SelectorSpreadingPriority` configurable.
 
