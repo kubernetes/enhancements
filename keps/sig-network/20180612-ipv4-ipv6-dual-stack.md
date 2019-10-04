@@ -131,7 +131,7 @@ In order to support dual-stack in Kubernetes clusters, Kubernetes needs to have 
 - Kubernetes needs to be made aware of multiple IPs per pod (limited to one IPv4 and one IPv6 address per pod maximum).
 - Link Local Addresses (LLAs) on a pod will remain implicit (Kubernetes will not display nor track these addresses).
 - Service Cluster IP Range `--service-cluster-ip-range=` will support the configuration of one IPv4 and one IPV6 address block) 
-- Service IPs will be allocated from only a single family (either IPv4 or IPv6 as specificate in the Service `spec.ipFamily` OR the first configured address block defined via `--service-cluster-ip-range=`).
+- Service IPs will be allocated from only a single family (either IPv4 or IPv6 as specified in the Service `spec.ipFamily` OR the first configured address block defined via `--service-cluster-ip-range=`).
 - Backend pods for a service can be dual-stack.
 - Endpoints addresses will match the address family of the Service IP address family (eg. An IPv6 Service IP will only have IPv6 Endpoints)
 - Kube-proxy iptables mode needs to drive iptables and ip6tables in parallel. This is required, even though service IP support is single-family, so that Kubernetes services can be exposed to clients external to the cluster via both IPv4 and IPv6. Support includes:
@@ -406,7 +406,7 @@ CoreDNS will need to make changes in order to support the plural form of endpoin
 
 - Because service IPs will remain single-family, pods will continue to access the CoreDNS server via a single service IP. In other words, the nameserver entries in a pod's /etc/resolv.conf will typically be a single IPv4 or single IPv6 address, depending upon the IP family of the cluster's service CIDR.
 - Non-headless Kubernetes services: CoreDNS will resolve these services to either an IPv4 entry (A record) or an IPv6 entry (AAAA record), depending upon the IP family of the cluster's service CIDR.
-- Headless Kubernetes services: CoreDNS will resolve these services to either an IPv4 entry (A record), an IPv6 entry (AAAA record), or both, depending on the service's endpointFamily configuration (see [Configuration of Endpoint IP Family in Service Definitions](#configuration-of-endpoint-ip-family-in-service-definitions)).
+- Headless Kubernetes services: CoreDNS will resolve these services to either an IPv4 entry (A record), an IPv6 entry (AAAA record), or both, depending on the service's `ipFamily`.
 
 ### Ingress Controller Operation
 
@@ -433,7 +433,7 @@ The ClusterIP service type will be single stack, so for this case there will be 
 
 #### Type NodePort
 
-The NodePort service type uses the nodes IP address, which can be dual-stack, and port. If the service type is NodePort and the ipFamily is DualStack [NodePort](#configuration-of-ip-family-in-service-definitions) the load balancer can be configured as dual-stack, as both families will get forwarded.
+The NodePort Service type uses the nodes IP address, which can be dual-stack, and port. If the Service type is NodePort, the `spec.ipFamily` will be used to determine how the the load balancer is configured and only the corresponding address family will be forwarded.
 
 #### Type Load Balancer
 
