@@ -85,10 +85,13 @@ them suitable to provide default spreading constraints for all workloads in thei
   `pod.spec.topologySpreadConstraints`.
 - Workloads are spread with the default constraints if they belong to the same service, replication controller,
   replica set or stateful set, and if they don't define `pod.spec.topologySpreadConstraints`.
+- Provide a k8s default for `topologySpreadConstraints` that produces a priority equivalent to
+  `SelectorSpreadPriority`, so that this algorithm can be removed from the default algorithms' provider.
 
 ### Non-Goals
 
-- Removal of `SelectorSpreadPriority`, `ServiceSpreadingPriority` or `ServiceAntiAffinity` priorities.
+- Set defaults for specific namespaces or according to other selectors.
+- Removal of `ServiceSpreadingPriority` or `ServiceAntiAffinity` priorities.
 
 ## Proposal
 
@@ -282,3 +285,10 @@ Alpha (v1.17):
     
     1. We can only support one topology key.
     1. It makes it hard for pods to override the operator-provided spreading rules.
+
+- Implement a mutating controller that sets defaults.
+
+  This approach would likely allow us to provide a more flexible interface that
+  can set defaults for specific namespaces or with other selectors. However, that
+  wouldn't allow us to replace `SelectorSpreadingPriority` with
+  `EvenPodsSpreading`.
