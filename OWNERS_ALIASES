@@ -7,11 +7,9 @@ aliases:
     - prydonius
     - kow3ns
   sig-architecture-leads:
-    - bgrant0607
-    - jdumars
-    - mattfarina
     - derekwaynecarr
     - dims
+    - johnbelamaric
   sig-auth-leads:
     - mikedanese
     - enj
