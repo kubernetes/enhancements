@@ -21,7 +21,7 @@ approvers:
 editor:
 creation-date: 2019-05-06
 last-updated: 2019-05-29
-status: provisional
+status: implementable
 ---
 
 # Kubeadm machine output
