@@ -42,7 +42,7 @@ superseded-by:
     - [Post-bind](#post-bind)
     - [Un-reserve](#un-reserve)
   - [Plugin API](#plugin-api)
-    - [PluginContext](#plugincontext)
+    - [CycleState](#cyclestate)
     - [FrameworkHandle](#frameworkhandle)
     - [Plugin Registration](#plugin-registration)
   - [Plugin Lifecycle](#plugin-lifecycle)
@@ -182,7 +182,7 @@ Note that PreFilter is called once in each scheduling cycle.
 
 A Pre-filter plugin can provide another two optional functions: **AddPod** and **RemovePod** 
 to incrementally modify its pre-processed info. The framework guarantees that those
-functions will only be called after PreFilter, possibly on a cloned PluginContext, and may call
+functions will only be called after PreFilter, possibly on a cloned CycleState, and may call
 those functions more than once before calling Filter on a specific node.
 
 
@@ -227,7 +227,7 @@ For example, suppose a plugin `BlinkingLightScorer` ranks Nodes based on how
 many blinking lights they have.
 
 ```go
-func (*BlinkingLightScorer) Score(pc *PluginContext, _ *v1.Pod, nodeName string) (int, *Status) {
+func (*BlinkingLightScorer) Score(state *CycleState, _ *v1.Pod, nodeName string) (int, *Status) {
    return getBlinkingLightCount(nodeName)
 }
 ```
@@ -236,7 +236,7 @@ However, the maximum count of blinking lights may be small compared to
 `MaxNodeScore`. To fix this, `BlinkingLightScorer` should also implement `NormalizeScore`.
 
 ```go
-func (*BlinkingLightScorer) NormalizeScore(pc *PluginContext, _ *v1.Pod, nodeScores NodeScoreList) *Status {
+func (*BlinkingLightScorer) NormalizeScore(state *CycleState, _ *v1.Pod, nodeScores NodeScoreList) *Status {
    highest := 0
    for _, nodeScore := range nodeScores {
       highest = max(highest, nodeScore.Score)
@@ -340,23 +340,23 @@ type QueueSortPlugin interface {
 
 type PreFilterPlugin interface {
    Plugin
-   PreFilter(PluginContext, *v1.Pod) *Status
+   PreFilter(CycleState, *v1.Pod) *Status
 }
 
 // ...
 ```
 
-### PluginContext
+### CycleState
 
-Most* plugin functions will be called with a `PluginContext` argument. A
-`PluginContext` represents the current scheduling context.
+Most* plugin functions will be called with a `CycleState` argument. A
+`CycleState` represents the current scheduling context.
 
-A `PluginContext` will provide APIs for accessing data whose scope is the
+A `CycleState` will provide APIs for accessing data whose scope is the
 current scheduling context. Because binding cycles may execute concurrently,
-plugins can use the `PluginContext` to make sure they are handling the right
+plugins can use the `CycleState` to make sure they are handling the right
 request.
 
-The `PluginContext` also provides an API similar to
+The `CycleState` also provides an API similar to
 [`context.WithValue`](https://godoc.org/context#WithValue) that can be used to
 pass data between plugins at different extension points. Multiple plugins can
 share the state or communicate via this mechanism. The state is preserved only
@@ -366,13 +366,13 @@ modifying another plugin's state.
 
 \* *The only exception is for [queue sort](#queue-sort) plugins.*
 
-**WARNING**: The data available through a `PluginContext` is not valid after a
+**WARNING**: The data available through a `CycleState` is not valid after a
 scheduling context ends, and plugins should not hold references to that data
 longer than necessary.
 
 ### FrameworkHandle
 
-While the `PluginContext` provides APIs relevant to a single scheduling context,
+While the `CycleState` provides APIs relevant to a single scheduling context,
 the `FrameworkHandle` provides APIs relevant to the lifetime of a plugin. This
 is how plugins can get a client (`kubernetes.Interface`) and
 `SharedInformerFactory`, or read data from the scheduler's cache of cluster
