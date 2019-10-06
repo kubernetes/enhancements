@@ -11,7 +11,7 @@ approvers:
   - TBD
 editor: "@konghui"
 creation-date: 2019-07-30
-last-updated: 2019-07-30
+last-updated: 2019-10-06
 status: provisional
 see-also:
 replaces:
@@ -161,7 +161,7 @@ type HTTPGetAction struct {
 	HTTPHeaders []HTTPHeader `json:"httpHeaders,omitempty" protobuf:"bytes,5,rep,name=httpHeaders"`
 	// Expect status code. If return code in the ExpectStatusCode and response match EexpectHTTPContent(will ignore if ExpectHTTPContent is empty). it treat as success.
 	// +optional
-	ExpectHTTPCodes []int `json:"expectHTTPCodes,omitempty" protobuf:"bytes,6,rep,name=expectHTTPCodes"`
+	ExpectHTTPCodes []int32 `json:"expectHTTPCodes,omitempty" protobuf:"bytes,6,rep,name=expectHTTPCodes"`
         // Expect HTTP conetnt. If http response content match expectHTTPContent and result HTTPcode in ExpectHTTPCodes (will ignore if ExpectHTTPCodes is empty). It treat as success
         // +optional
         ExpectHTTPContent string `json:"expectHTTPContent,omitempty" protobuf:"bytes,7,rep,name=expectHTTPContent"`
@@ -184,7 +184,7 @@ We support use globbing patterns test probe result content is match ExpectHTTPCo
 |  hellworld	|      hellawor\*	| mismatch|
 
 
-We introduce a new feature gate named `HTTPProbeEnhancement`. It will do flow the condition.
+We introduce a new feature gate named `HTTPProbePlus`. It will do flow the condition.
 1. If user not enable feature gate. It works as normal. If HTTP status code between 200 and 400. return Probe.Success.
 2. If user enable feature gate. Both ExpectHTTPContent and ExpectHTTPCodes is empty. We treat it as condition 1.
 3. If user enable feature gate. `ExpectHTTPCodes` is not empty and `ExpectHTTPContent` is empty. If probe result HTTP status code in the ExpectHTTPCodes return Probe.Success else return Probe.Failure.
@@ -200,6 +200,6 @@ We introduce a new feature gate named `HTTPProbeEnhancement`. It will do flow th
 * New feature flags become alpha after one release, GA and defaulted on after one, and are removed after one releases after they default on (so three releases from when this is first implemented)
 
 ### Upgrade / Downgrade Strategy
-use `HTTPProbeEnhancement` feature gate, default is disabled, If there is some problem, user can disable this feature gate.
+use `HTTPProbePlus` feature gate, default is disabled, If there is some problem, user can disable this feature gate.
 
 ## Implementation History
