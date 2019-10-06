@@ -164,7 +164,7 @@ type HTTPGetAction struct {
 	ExpectHTTPCodes []int `json:"expectHTTPCodes,omitempty" protobuf:"bytes,6,rep,name=expectHTTPCodes"`
         // Expect HTTP conetnt. If http response content match expectHTTPContent and result HTTPcode in ExpectHTTPCodes (will ignore if ExpectHTTPCodes is empty). It treat as success
         // +optional
-        ExpectHTTPContent `json:"expectHTTPContent,omitempty" protobuf:"bytes,7,rep,name=expectHTTPContent"`
+        ExpectHTTPContent string `json:"expectHTTPContent,omitempty" protobuf:"bytes,7,rep,name=expectHTTPContent"`
 
 }
 ```
@@ -176,7 +176,7 @@ If probe result HTTP code in the list of ExpectHTTPCodes. We say it match the Ex
 How to match ExpectHTTPContent:
 We support use globbing patterns test probe result content is match ExpectHTTPContent or not, for example:
 
-|probe content	|   ExpectHTTPContent	| resuienblt |
+|probe content	|   ExpectHTTPContent	| result |
 |----|----|----|
 |  helloworld	|      helloworld 	| match	|
 |  helloworld   |      helloworl\*	| match	|
@@ -192,7 +192,13 @@ We introduce a new feature gate named `HTTPProbeEnhancement`. It will do flow th
 5. If user enable feature gate. `ExpectHTTPCodes` and `ExpectHTTPContent` is not empty. If both probe result HTTP code match ExpectHTTPCodes and HTTP content match ExpectHTTPContent return Probe.Success else return Probe.Failure.
 
 ### Test Plan
+
+* Unit tests to verify selection using feature gates
+
 ### Graduation Criteria
+
+* New feature flags become alpha after one release, GA and defaulted on after one, and are removed after one releases after they default on (so three releases from when this is first implemented)
+
 ### Upgrade / Downgrade Strategy
 use `HTTPProbeEnhancement` feature gate, default is disabled, If there is some problem, user can disable this feature gate.
 
