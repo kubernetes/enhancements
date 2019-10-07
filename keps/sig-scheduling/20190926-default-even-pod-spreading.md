@@ -121,16 +121,22 @@ may not be the intention of an operator. On the other hand, a proper Default for
 could provide the same priority as `SelectorSpreadingPriority`. Thus, there's no need for the
 features to co-exist.
 
-Give that we guard Default `topologySpreadConstraints` behind a feature flag,
-these would be its semantics:
+K8s will set Default `topologySpreadConstraints` and remove `SelectorSpreadingPriority`
+from the k8s providers (`DefaultProvider` and `ClusterAutoscalerProvider`). The set
+[default](#default-rules) will have a similar effect.
 
-- If the feature is enabled, `SelectorSpreadingPriority` is removed from the default set of priorities.
-  K8s provides the Default `topologySpreadConstraints` that matches the priority given by
-  `SelectorSpreading` if the cluster operator doesn't specify one.
-- If the cluster operator provides a Policy that includes `SelectorSpreadingPriority` and
-  `EvenPodsSpreadPriority`, K8s provides an empty Default `topologySpreadConstraints`.
-  The cluster operator can still specify Default `topologySpreadConstraints`,
-  in which case both priorities run.
+If an operator sets a Policy, these are the semantics of the presence of `SelectorSpreadingPriority`
+and/or `EvenPodsSpreadPriority`:
+
+| SelectorSpreading | EvenPodsSpread | Valid | Pod spread constraints                    |
+| :---------------: | :------------: | :---: | :---------------------------------------: |
+| N                 | Y              | Yes   | provided or [k8s default](#default-rules) |
+| Y                 | Y              | Yes   | provided or [k8s default](#default-rules) |
+| N                 | N              | Yes   | None                                      |
+| Y                 | N              | No    | -                                         |
+
+Selecting `SelectorSpreadingPriority` but not `EvenPodsSpreadPriority` in a policy is an invalid
+configuration, because the latter is a requirement for the former.
 
 ### Risks and Mitigations
 
