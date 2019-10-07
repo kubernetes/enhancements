@@ -59,81 +59,118 @@ type EndpointSlice struct {
     metav1.TypeMeta `json:",inline"`
     // OwnerReferences should be set when the object is derived from a k8s
     // object.
-    // The object labels may contain the following key:
-    // kubernetes.io/service: the label value indicates the name of the
-    // service from which the EndpointSlice is derived from.
+    // The object labels may include the following keys:
+    // * kubernetes.io/service-name: the label value indicates the name of the
+    //   service from which the EndpointSlice is derived. EndpointSlices which
+    //   are not associated with a Service should not use this key.
+    // * endpointslice.kubernetes.io/managed-by: the label value represents a
+    //   unique name for the controller or application that manages this
+    //   EndpointSlice.
     // +optional
     metav1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
-    // Metadata of the Endpoints in the EndpointSlice.
-    EndpointMeta `json:",inline"`
-    // Endpoints of this EndpointSlice.
+    // addressType specifies the type of address carried by this EndpointSlice.
+    // All addresses in this slice must be the same type.
+    // Default is IP
+    // +optional
+    AddressType *AddressType `json:"addressType" protobuf:"bytes,4,rep,name=addressType"`
+    // endpoints is a list of unique endpoints in this slice. Each slice may
+    // include a maximum of 1000 endpoints.
+    // +listType=atomic
+    Endpoints []Endpoint `json:"endpoints" protobuf:"bytes,2,rep,name=endpoints"`
+    // ports specifies the list of network ports exposed by each endpoint in
+    // this slice. Each port must have a unique name. When ports is empty, it
+    // indicates that there are no defined ports. When a port is defined with a
+    // nil port value, it indicates "all ports". Each slice may include a
+    // maximum of 100 ports.
     // +optional
     // +listType=atomic
-    Endpoints []Endpoint `json:"endpoints,omitempty" protobuf:"bytes,2,opt,name=endpoints"`
+    Ports []EndpointPort `json:"ports" protobuf:"bytes,3,rep,name=ports"`
 }
 
+// AddressType represents the type of address referred to by an endpoint.
+type AddressType string
+
+const (
+    // AddressTypeIP represents an IP Address.
+    AddressTypeIP = AddressType("IP")
+    // AddressTypeFQDN represents a FQDN.
+    AddressTypeFQDN = AddressType("FQDN")
+)
+
+// Endpoint represents a single logical "backend" implementing a service.
 type Endpoint struct {
-    // Required: Targets of the endpoint. Must contain at least one target.
-    // Different consumers (e.g. kube-proxy) handle different types of
-    // targets in the context of its own capabilities.
+    // addresses of this endpoint. The contents of this field are interpreted
+    // according to the corresponding EndpointSlice addressType field. This
+    // allows for cases like dual-stack (IPv4 and IPv6) networking. Consumers
+    // (e.g. kube-proxy) must handle different types of addresses in the context
+    // of their own capabilities. This must contain at least one address but no
+    // more than 100.
     // +listType=set
-    Targets []string `json:"targets,omitempty" protobuf:"bytes,1,opt,name=targets"`
-    // The Hostname of this endpoint.
-    // +optional 
-    Hostname *string `json:"hostname,omitempty" protobuf:"bytes,2,opt,name=hostname"`
-    // Required: the conditions of the endpoint.
-    Conditions EndpointConditions  `json:"conditions,omitempty" protobuf:"bytes,3,opt,name=conditions"`
-    // Reference to object providing the endpoint.
-    // +optional 
-    TargetRef *v1.ObjectReference `json:"targetRef,omitempty" protobuf:"bytes,4,opt,name=targetRef"`
-    // Topology can contain arbitrary topology information associated with the
+    Addresses []string `json:"addresses" protobuf:"bytes,1,rep,name=addresses"`
+    // conditions contains information about the current status of the endpoint.
+    Conditions EndpointConditions `json:"conditions,omitempty" protobuf:"bytes,2,opt,name=conditions"`
+    // hostname of this endpoint. This field may be used by consumers of
+    // endpoints to distinguish endpoints from each other (e.g. in DNS names).
+    // Multiple endpoints which use the same hostname should be considered
+    // fungible (e.g. multiple A values in DNS). Must pass DNS Label (RFC 1123)
+    // validation.
+    // +optional
+    Hostname *string `json:"hostname,omitempty" protobuf:"bytes,3,opt,name=hostname"`
+    // targetRef is a reference to a Kubernetes object that represents this
     // endpoint.
-    // Key/value pairs contained in topology must conform with the label format.
+    // +optional
+    TargetRef *v1.ObjectReference `json:"targetRef,omitempty" protobuf:"bytes,4,opt,name=targetRef"`
+    // topology contains arbitrary topology information associated with the
+    // endpoint. These key/value pairs must conform with the label format.
     // https://kubernetes.io/docs/concepts/overview/working-with-objects/labels
-    // Topology may contain the following well known keys:
-    // kubernetes.io/hostname: the value indicates the hostname of the node
-    // where the endpoint is located. This should match the corresponding
-    // node label.
-    // topology.kubernetes.io/zone: the value indicates the zone where the
-    // endpoint is located. This should match the corresponding node label.
-    // topology.kubernetes.io/region: the value indicates the region where the
-    // endpoint is located. This should match the corresponding node label.
-    // +optional 
+    // Topology may include a maximum of 16 key/value pairs. For endpoints
+    // backed by Kubernetes Pods, This may include, but is not limited to the
+    // following well known keys:
+    // * kubernetes.io/hostname: the value indicates the hostname of the node
+    //   where the endpoint is located. This should match the corresponding
+    //   node label.
+    // * topology.kubernetes.io/zone: the value indicates the zone where the
+    //   endpoint is located. This should match the corresponding node label.
+    // * topology.kubernetes.io/region: the value indicates the region where the
+    //   endpoint is located. This should match the corresponding node label.
+    // +optional
     Topology map[string]string `json:"topology,omitempty" protobuf:"bytes,5,opt,name=topology"`
 }
 
+// EndpointConditions represents the current condition of an endpoint.
 type EndpointConditions struct {
-    // Ready indicates if the endpoint is ready to serve traffic.
-    Ready bool `json:"ready,omitempty" protobuf:"bytes,1,opt,name=ready"`
+    // ready indicates that this endpoint is prepared to receive traffic,
+    // according to whatever system is managing the endpoint. A nil value
+    // indicates an unknown state. In most cases consumers should interpret this
+    // unknown state as ready.
+    // +optional
+    Ready *bool `json:"ready,omitempty" protobuf:"bytes,1,name=ready"`
 }
 
-type EndpointMeta struct {
-    // This field specifies the list of ports associated with each endpoint in the EndpointSlice
-    // Each EndpointPort must have a unique port name.
-    // +optional 
-    // +listType=atomic
-    Ports []EndpointPort `json:"ports,omitempty" protobuf:"bytes,1,opt,name=ports"`
-}
-
+// EndpointPort represents a Port used by an EndpointSlice
 type EndpointPort struct {
-    // The name of this port. 
-    // If the EndpointSlice is dervied from K8s service, this corresponds to ServicePort.Name.
-    // Name must be a IANA_SVC_NAME or an empty string.
+    // The name of this port. All ports in an EndpointSlice must have a unique
+    // name. If the EndpointSlice is dervied from a Kubernetes service, this
+    // corresponds to the Service.ports[].name.
+    // Name must either be an empty string or pass IANA_SVC_NAME validation:
+    // * must be no more than 15 characters long
+    // * may contain only [-a-z0-9]
+    // * must contain at least one letter [a-z]
+    // * it must not start or end with a hyphen, nor contain adjacent hyphens
     // Default is empty string.
-    // +optional 
-    Name *string `json:"name,omitempty" protobuf:"bytes,1,opt,name=name"`
+    Name *string `json:"name,omitempty" protobuf:"bytes,1,name=name"`
     // The IP protocol for this port.
     // Must be UDP, TCP, or SCTP.
     // Default is TCP.
-    // +optional 
-    Protocol *v1.Protocol `json:"protocol,omitempty" protobuf:"bytes,2,opt,name=protocol"`
+    Protocol *v1.Protocol `json:"protocol,omitempty" protobuf:"bytes,2,name=protocol"`
+    // The application protocol for this port.
+    // +optional
+    AppProtocol *string `json:"appProtocol,omitempty" protobuf:"bytes,3,name=appProtocol"`
     // The port number of the endpoint.
     // If this is not specified, ports are not restricted and must be
     // interpreted in the context of the specific consumer.
-    // +optional 
-    Port *int32 `json:"port,omitempty" protobuf:"bytes,3,opt,name=port"`
+    Port *int32 `json:"port,omitempty" protobuf:"bytes,4,opt,name=port"`
 }
-
 ```
 
 ### Mapping
@@ -163,7 +200,7 @@ If the k8s service has topological keys specified, the corresponding node labels
 ### EndpointSlice Naming
 Use `generateName` with service name as prefix:
 ```
-${service name}.${random}
+${service name}-${random}
 ```
 
 ## Estimation
@@ -297,6 +334,24 @@ A new EndpointSlice Controller will be added to `kube-controller-manager`. It wi
 Watch: Service, Pod, Node ==> Manage: EndpointSlice
 ```
 
+### Additional EndpointSlice Controllers
+
+Since EndpointSlices were meant to be highly extensible, it's important to
+ensure that they can be managed by other controllers without being deleted or
+modified by the primary EndpointSlice Controller. To achieve that, we propose
+adding a `endpointslice.kubernetes.io/managed-by` label. The EndpointSlice
+controller will set a value of `endpointslice-controller` on each EndpointSlice
+it manages. It will not modify any EndpointSlices without that label value.
+
+In the alpha release of EndpointSlices in 1.16, this label did not exist and all
+EndpointSlices associated with a Service that had a selector specified were
+managed by the EndpointSlice Controller. To add support for this label in 1.17,
+a temporary `endpointslice.kubernetes.io/managed-by-setup` annotation on the
+Service will be used to provide a seamless upgrade. In 1.17, the EndpointSlice
+controller will claim each EndpointSlice without the corresponding label and
+annotation set, setting those values to claim ownership. In 1.18, the annotation
+on the Service can safely be removed.
+
 #### Workflows
 On Service Create/Update/Delete:
 - `syncService(svc)`
@@ -323,8 +378,8 @@ Watch: Service, EndpointSlice ==> Manage: iptables, ipvs, etc
 - Reuse the existing processing logic 
 
 ### Endpoint Controller (classic)
+
 In order to ensure backward compatibility for external consumer of the core/v1 Endpoints API, the existing K8s endpoint controller will keep running until the API is EOL. The following limitations will apply:
-- Starting from EndpointSlice beta: If # of endpoints in one Endpoints object exceed 1000, generate a normal event to the object.
 - Starting from EndpointSlice beta: If # of endpoints in one Endpoints object exceed 1000, generate a warning event to the object. 
 - Starting from EndpointSlice GA: Only include up to 1000 endpoints in one Endpoints Object and throw events.
 
@@ -334,17 +389,22 @@ In order to ensure backward compatibility for external consumer of the core/v1 E
 |-------------|-------|----------------------------------------------------------------------------|--------------------------------|
 | 1.16        | Alpha | EndpointSliceController (Alpha) EndpointController (GA with normal event)  | Endpoints                      |
 | 1.17        | Beta  | EndpointSliceController (Beta)  EndpointController (GA with warning event) | EndpointSlice                  |
-| 1.18        | GA    | EndpointSliceController (GA)    EndpointController (GA with limitation)    | EndpointSlice                  |
-
-
+| 1.19+       | GA    | EndpointSliceController (GA)    EndpointController (GA with limitation)    | EndpointSlice                  |
 
 
 ## Graduation Criteria
 
-In order to graduate to beta, we need:
+In order to graduate to beta, we will:
 
-- Kube-proxy switch to consume EndpointSlice API. 
-- Verify performance/scalability via testing.
+- Kube-proxy switch to consume EndpointSlice API. (Already done in Alpha)
+- Verify performance/scalability via testing. (Scale tested to 50k endpoints in
+  4k node cluster)
+- Get performance fixes identified in scale testing merged.
+- Implement dual-stack EndpointSlice support in kube-proxy.
+- Implement e2e tests that ensure both Endpoints and EndpointSlices are tested.
+- Add support for `endpointslice.kubernetes.io/managed-by` label.
+- Add FQDN addressType.
+- Add support for optional appProtocol field on `EndpointPort`.
 
 ## Alternatives
 
@@ -352,7 +412,6 @@ In order to graduate to beta, we need:
 2. endpoints controller batches / rate limits changes
 3. apiserver batches / rate-limits watch notifications
 4. apimachinery to support object level pagination
-
 
 ## FAQ
 
@@ -372,6 +431,36 @@ Based on the data collected from user clusters, vast majority (> 99%) of the k8s
 
 The current Endpoints API only includes a boolean state (Ready vs. NotReady) on individual endpoint. However, according to pod life cycle, there are more states (e.g. Graceful Termination, ContainerReary). In order to represent additional states other than Ready/NotReady,  a status structure is included for each endpoint. More condition types can be added in the future without compatibility disruptions. As more conditions are added, different consumer (e.g. different kube-proxy implementations) will have the option to evaluate the additional conditions. 
 
+- #### Why not use a CRD?
+
+**1. Protobuf is more efficient**
+Currently CRDs don't support protobuf. In our testing, a protobuf watch is
+approximately 5x faster than a JSON watch. We used pprof to profile 2 versions
+of kube-proxy using EndpointSlices and running on 2 different nodes in a 150
+node cluster as it scaled up to 15k endpoints. Over the 15 minute window,
+kube-proxy with JSON used 17% more CPU time, with the difference in
+`StreamWatcher.receive` accounting for all of that. With protobuf enabled, that
+function took 1/5th the time of the JSON implementation.
+
+**2. Validation is too complex**
+Validation of addresses relies on addressType, something that would be
+difficult, maybe impossible, to recreate with OpenAPI validations. Additionally,
+there are a number of validations currently in use that are able to reuse the
+same validations used elsewhere for Services or Endpoints such as
+`IsDNS1123Label` and `IsValidIP`. Although these could be recreated with OpenAPI
+validations, the error messages would not be as helpful and we would lose the
+consistency in messaging from the related resources.
+
+**3. EndpointSlices are required for the API Server to be accessible**
+In an interesting race condition, the API Server needs to be available before
+much can happen. With both Endpoints and EndpointSlices, that means that it
+needs to manage the references to itself by creating these resources on startup.
+Since this makes EndpointSlice core enough to be a dependency of API Server, it
+would have to exist in every cluster. If EndpointSlices were a CRD, the CRD
+would also have to be installed by the API Server, making a CRD a core
+dependency of Kubernetes. Additionally, any components like kube-proxy that
+depend on EndpointSlices would break if the CRD hadn't been installed before
+they started up.
 
 
 [original-doc]: https://docs.google.com/document/d/1sLJfolOeEVzK5oOviRmtHOHmke8qtteljQPaDUEukxY/edit#
