@@ -10,8 +10,8 @@ approvers:
   - "@ahg-g"
   - "@k82cn"
 creation-date: 2019-09-26
-last-updated: 2010-09-26
-status: provisional
+last-updated: 2010-10-07
+status: implementable
 see-also:
   - "/keps/sig-aaa/20190221-even-pods-spreading.md"
 ---
@@ -48,9 +48,9 @@ see-also:
 
 ## Release Signoff Checklist
 
-- [ ] kubernetes/enhancements issue in release milestone, which links to KEP (this should be a link to the KEP location in kubernetes/enhancements, not the initial KEP PR)
-- [ ] KEP approvers have set the KEP status to `implementable`
-- [ ] Design details are appropriately documented
+- [x] kubernetes/enhancements issue in release milestone, which links to KEP (this should be a link to the KEP location in kubernetes/enhancements, not the initial KEP PR)
+- [x] KEP approvers have set the KEP status to `implementable`
+- [x] Design details are appropriately documented
 - [ ] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
 - [ ] Graduation criteria is in place
 - [ ] "Implementation History" section is up-to-date for milestone
@@ -280,6 +280,9 @@ Alpha (v1.17):
 - [ ] Priority Implementation.
 - [ ] Predicate implementation.
 - [ ] Test cases mentioned in the [Test Plan](#test-plan).
+
+Default `topologySpreadConstaints` will graduate from Alpha along with
+[Even Pods Spreading](/keps/sig-scheduling/20190221-even-pods-spreading.md).
 
 ## Implementation History
 
