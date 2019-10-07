@@ -546,7 +546,7 @@ For the test that checks pod internet connectivity, the IPv4 and IPv6 tests can 
 
 
 ## Implementation History
-\<TBD\>
+Refer to the [Implementation Plan](#implementation-plan)
 
 ## Alternatives
 
