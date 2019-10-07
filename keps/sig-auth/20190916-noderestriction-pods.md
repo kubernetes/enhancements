@@ -284,6 +284,52 @@ service label to use the `node-restriction.kubernetes.io/` prefix to prevent the
 For additional defense-in-depth, mirror pods could be restricted to whitelisted namespaces. Doing so
 would be a more disruptive change, but is something we could consider in the future.
 
+### Weaker label restrictions
+
+Alternatives to the whitelist restriction approach were considered.
+
+**Explicitly opt mirror pods out controllers**
+
+Requires the controllers to check for the `kubernetes.io/config.mirror` annotation before matching a
+pod. While we could make this change for internal controllers, there is no way to enforce it for
+third-party controllers, so this approach would be less-safe. It also still requires the
+`pod/status` label update restriction and owner ref restrictions to be complete.
+
+**Blacklist labels**
+
+Rather than forbidding all labels except those under `unrestricted.node.kubernetes.io/`, we could
+_allow_ all labels except those under `restricted.node.kubernetes.io/`.
+
+This change is more consistent with the [self-labeling restrictions on
+nodes](0000-20170814-bounding-self-labeling-kubelets.md), but has a much broader impact. Pod labels
+& label selectors are much more widely used than node labels, and less cluster dependent. This means
+the labels are often set through third party deployment tools, such as helm. In order to safely
+match labels, ALL labels consumed by controllers or other security-sensitive operations would need
+to be moved to the blacklisted domain. Doing so would be a disruptive change, and force all labels
+to be under the same domain.
+
+**Whitelist configuration**
+
+We could provide a configurable option (flag / ComponentConfig) to the NodeRestriction admission
+controller to explicitly whitelist specific labels. This would be in addition to the
+`unrestricted.node.kubernetes.io/` prefix. Alternatively, it could optionally include prefixes, and
+we could make `"unrestricted.node.kubernetes.io/*"` be the default value of the option.
+
+Providing this option is tempting, but it increases the configurable surface area with a
+security-sensitive option that is easy to misunderstand. For example, a system service matching
+mirror pods should explicitly opt-in to using the insecure labels to make the implications
+explicit. If any labels can be whitelisted, it becomes harder to audit the cluster.
+
+### Force a Kubelet controller owner ref
+
+By requiring the OwnerRef defined under [OwnerReferences](#ownerrefernces) and setting `controller:
+true` on it, well-written controllers wouldn't be able to be duped by labels, since they would see
+the controller owner ref for the specific node, and ignore the pod.
+
+This still does not address non-owning controllers, such as the endpoints controller, that will
+still match on labels. It is also a harder change to roll out, requiring a longer soak period to
+account for version skew across the master & nodes. As such, it does not seem worth pursuing.
+
 ### Annotation Restrictions
 
 In addition to label & owner restrictions, annotation keys could be restricted too. I am still open
