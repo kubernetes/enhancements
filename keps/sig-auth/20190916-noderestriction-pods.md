@@ -5,6 +5,7 @@ authors:
 owning-sig: sig-auth
 participating-sigs:
   - sig-node
+  - sig-cluster-lifecycle
 reviewers:
   - TBD
 approvers:
@@ -86,9 +87,7 @@ Extend the [NodeRestriction][] admission controller to add further limitations o
 pods:
 
 1. Restrict labels to a whitelisted prefix: `unrestricted.node.kubernetes.io/`
-2. Restrict annotations to [well-known annotations](#annotation-restrictions) and a whitelisted
-   prefix: `unrestricted.node.kubernetes.io/`
-3. Restrict mirror pod OwnerReferences to only allow a node reference.
+2. Restrict mirror pod OwnerReferences to only allow a node reference.
 
 ## Motivation
 
@@ -167,7 +166,7 @@ All restrictions will be enforced through the [NodeRestriction][] admission cont
 extensions will be guarded by the `NodeRestrictionPods` feature gate.
 
 On update, only the delta will be restricted. In other words, the Kubelet can modify pods with
-restricted labels / annotations / owner references as long as it's not modifying (or adding or
+restricted labels / owner references as long as it's not modifying (or adding or
 deleting) the restricted entries.
 
 ### Label Restrictions
@@ -194,29 +193,6 @@ than special casing the existing labels.
 [kubeadm-labels]: https://github.com/kubernetes/kubernetes/blob/e682310dcc5d805a408e0073e251d99b8fe5c06d/cmd/kubeadm/app/util/staticpod/utils.go#L60
 [addons-k8s-app]: https://github.com/kubernetes/kubernetes/blob/e682310dcc5d805a408e0073e251d99b8fe5c06d/cluster/addons/kube-proxy/kube-proxy-ds.yaml#L23
 
-### Annotation Restrictions
-
-The Kubelet will be prevented from updating pod annotations or creating mirror pods with
-annotations, except for whitelisted keys:
-
-1. Any annotations starting with `unrestricted.node.kubernetes.io/` are allowed.
-2. Annotations the Kubelet currently uses are allowed:
-- `ConfigMirrorAnnotationKey = "kubernetes.io/config.mirror"`
-- `ConfigHashAnnotationKey = "kubernetes.io/config.hash"`
-- `ConfigFirstSeenAnnotationKey = "kubernetes.io/config.seen"`
-- `ConfigSourceAnnotationKey = "kubernetes.io/config.source"`
-3. Well-known annotations that may be used on static pods are allowed:
-- `PodPresetOptOutAnnotationKey = "podpreset.admission.kubernetes.io/exclude"
-- `SeccompPodAnnotationKey = "seccomp.security.alpha.kubernetes.io/pod"`
-- `SeccompContainerAnnotationKeyPrefix = "container.seccomp.security.alpha.kubernetes.io/"` (prefix
-  match)
-- `ContainerAnnotationKeyPrefix = "container.apparmor.security.beta.kubernetes.io/"` (prefix match)
-- `PreferAvoidPodsAnnotationKey = "scheduler.alpha.kubernetes.io/preferAvoidPods"`
-- `BootstrapCheckpointAnnotationKey = "node.kubernetes.io/bootstrap-checkpoint"`
-
-Note that annotation restrictions are applying the least-privilege principal, but are not directly
-mitigating a known threat.
-
 ### OwnerReferences
 
 OwnerReferences cannot be updated through the `pod/status` subresource, but they can be set on
@@ -241,8 +217,8 @@ likely break these clusters. There is no way to apply these changes in a fully b
 way, so instead we will rely on a staged rollout through the `NodeRestrictionPods` feature gate, and
 call out the actions required.
 
-Clusters currently depending on label-matching or annotating static pods will need to migrate the
-labels & annotations to the new whitelisted key prefix. This can be done in a non-disruptive way,
+Clusters currently depending on label-matching static pods will need to migrate the
+labels to the new whitelisted key prefix. This can be done in a non-disruptive way,
 but requires a multistep process. For example, to migrate static pods providing a Service:
 
 1. Update the static pods (by deploying updated static manifests) with _both_ the old & new labels.
@@ -260,7 +236,7 @@ node's identity and ensuring illegal mirror pods cannot be created.
 ### Graduation Criteria
 
 The feature gate will initially be in a default-disabled alpha state. Graduating to beta will make
-the feature enabled by default, but users that have not yet updated existing label & annotation
+the feature enabled by default, but users that have not yet updated existing label
 usage to the unrestricted keys can still disable it. We will allow at least 2 releases before
 migrating to GA and removing the feature gate entirely.
 
@@ -300,10 +276,35 @@ An MVP of this proposal to mitigate the [2 motivating examples](#motivation) mus
 3. Prevent nodes from setting arbitrary owner references on mirror pods.
 
 An MVP would exclude the speculative annotation restrictions. It could optionally take a blacklist
-approcah to label restrictions rather than a whitelist approach, but doing so would force every
+approach to label restrictions rather than a whitelist approach, but doing so would force every
 service label to use the `node-restriction.kubernetes.io/` prefix to prevent the MITM threat.
 
 ### Restrict namespaces
 
 For additional defense-in-depth, mirror pods could be restricted to whitelisted namespaces. Doing so
 would be a more disruptive change, but is something we could consider in the future.
+
+### Annotation Restrictions
+
+In addition to label & owner restrictions, annotation keys could be restricted too. I am still open
+to adding these restrictions in a future extension, but doing so is contingent on concrete use
+cases.
+
+Under these restrictions, the Kubelet would be prevented from updating pod annotations or creating
+mirror pods with annotations, except for whitelisted keys:
+
+1. Any annotations starting with `unrestricted.node.kubernetes.io/` are allowed.
+2. Annotations the Kubelet currently uses are allowed:
+- `ConfigMirrorAnnotationKey = "kubernetes.io/config.mirror"`
+- `ConfigHashAnnotationKey = "kubernetes.io/config.hash"`
+- `ConfigFirstSeenAnnotationKey = "kubernetes.io/config.seen"`
+- `ConfigSourceAnnotationKey = "kubernetes.io/config.source"`
+3. Well-known annotations that may be used on static pods are allowed:
+- `PodPresetOptOutAnnotationKey = "podpreset.admission.kubernetes.io/exclude"
+- `SeccompPodAnnotationKey = "seccomp.security.alpha.kubernetes.io/pod"`
+- `SeccompContainerAnnotationKeyPrefix = "container.seccomp.security.alpha.kubernetes.io/"` (prefix
+  match)
+- `ContainerAnnotationKeyPrefix = "container.apparmor.security.beta.kubernetes.io/"` (prefix match)
+- `PreferAvoidPodsAnnotationKey = "scheduler.alpha.kubernetes.io/preferAvoidPods"`
+- `BootstrapCheckpointAnnotationKey = "node.kubernetes.io/bootstrap-checkpoint"`
+
