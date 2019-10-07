@@ -128,12 +128,14 @@ from the k8s providers (`DefaultProvider` and `ClusterAutoscalerProvider`). The 
 If an operator sets a Policy, these are the semantics of the presence of `SelectorSpreadingPriority`
 and/or `EvenPodsSpreadPriority`:
 
-| SelectorSpreading | EvenPodsSpread | Valid | Pod spread constraints                    |
-| :---------------: | :------------: | :---: | :---------------------------------------: |
-| N                 | Y              | Yes   | provided or [k8s default](#default-rules) |
-| Y                 | Y              | Yes   | provided or [k8s default](#default-rules) |
-| N                 | N              | Yes   | None                                      |
-| Y                 | N              | No    | -                                         |
+| SelectorSpreading | EvenPodsSpread | Operator constraints | Valid | Pod spread constraints        |
+| :---------------: | :------------: | :------------------: | :---: | :---------------------------: |
+| N                 | Y              | Not provided         | Yes   | [k8s default](#default-rules) |
+| N                 | Y              | Provided             | Yes   | provided by operator          |
+| Y                 | Y              | Not provided         | Yes   | [k8s default](#default-rules) |
+| Y                 | Y              | Provided             | No    | -                             |
+| N                 | N              | -                    | Yes   | None                          |
+| Y                 | N              | -                    | No    | -                             |
 
 Selecting `SelectorSpreadingPriority` but not `EvenPodsSpreadPriority` in a policy is an invalid
 configuration, because the latter is a requirement for the former.
