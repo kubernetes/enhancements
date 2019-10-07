@@ -359,7 +359,7 @@ The current [Kubernetes Endpoints API](https://kubernetes.io/docs/reference/gene
 - 2 single-family endpoints per backend pod: Make no change to the [Kubernetes Endpoints API](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.10/#endpoints-v1-core). Treat each IPv4/IPv6 address as separate, distinct endpoints, and include each address in the comma-separated list of addresses in an 'Endpoints' API object. 
 - 1 dual-stack endpoint per backend pod: Modify the [Kubernetes Endpoints API](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.10/#endpoints-v1-core) so that each endpoint can be associated with a pair of IPv4/IPv6 addresses.
 
-Given a phased approach, the 2 single-family endpoint approach represents the least distruptive change. Services will select only the endpoints that match the `spec.ipFamily` defined in the Service.
+Given a phased approach, the 2 single-family endpoint approach represents the least disruptive change. Services will select only the endpoints that match the `spec.ipFamily` defined in the Service.
 
 For example, for a Service named `my-service` that has the `spec.ipFamily` set to IPv4 would only have endpoints only from the IPv4 address family.
 
@@ -522,7 +522,7 @@ Kubeadm will also need to generate dual-stack CIDRs for the --cluster-cidr argum
 This dual-stack proposal will introduce a new IPNetSlice object to spf13.pflag to allow parsing of comma separated CIDRs. Refer to [https://github.com/spf13/pflag/pull/170](https://github.com/spf13/pflag/pull/170)
 
 ### End-to-End Test Support
-End-to-End tests will be updated for dual-stack. The dual-stack E2E tests will use deployment scripts from the kubernetes-sigs/kubeadm-dind-cluster github repo to set up a containerized, multi-node Kubernetes cluster that is running in a Prow container (Docker-in-Docker-in-Docker, or DinDinD configuration), similar to the IPv6-only E2E tests (see [test-infra PR # 7529](https://github.com/kubernetes/test-infra/pull/7529)). The DinDinD cluster will be updated to support dual-stack.
+End-to-End tests will be updated for dual-stack. The dual-stack e2e tests will utilized kubernetes-sigs/kind along with supported cloud providers. The e2e test-suite for dual-stack is running [here](https://testgrid.k8s.io/sig-network-dualstack-azure-e2e#dualstack-azure-e2e). Once dual-stack support is added to kind, corresponding dual-stack e2e tests will be run on kind similar to [this](https://testgrid.k8s.io/sig-release-master-blocking#kind-ipv6-master-parallel). 
 
 The E2E test suite that will be run for dual-stack will be based upon the [IPv6-only test suite](https://github.com/CiscoSystems/kube-v6-test) as a baseline. New versions of the network connectivity test cases that are listed below will need to be created so that both IPv4 and IPv6 connectivity to and from a pod can be tested within the same test case. A new dual-stack test flag will be created to control when the dual-stack tests are run versus single stack versions of the tests:
 ```
