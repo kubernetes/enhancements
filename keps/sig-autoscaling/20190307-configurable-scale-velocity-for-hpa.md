@@ -20,33 +20,36 @@ superseded-by:
 
 ## Table of Contents
 
-<!-- toc -->
+<!-- TOC depthfrom:2 -->
+
+- [Table of Contents](#table-of-contents)
 - [Summary](#summary)
 - [Motivation](#motivation)
-  - [Goals](#goals)
-  - [Non-Goals](#non-goals)
+    - [Goals](#goals)
+    - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [User Stories](#user-stories)
-    - [Story 1: Scale Up As Fast As Possible](#story-1-scale-up-as-fast-as-possible)
-    - [Story 2: Scale Up As Fast As Possible, Scale Down Very Gradually](#story-2-scale-up-as-fast-as-possible-scale-down-very-gradually)
-    - [Story 3: Scale Up Very Gradually, Usual Scale Down Process](#story-3-scale-up-very-gradually-usual-scale-down-process)
-    - [Story 4: Scale Up As Usual, Do Not Scale Down](#story-4-scale-up-as-usual-do-not-scale-down)
-    - [Story 5: Delay Before Scaling Down](#story-5-delay-before-scaling-down)
-  - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
-    - [Algorithm Pseudocode](#algorithm-pseudocode)
-    - [Introducing <code>stabilizationWindowSeconds</code> Option](#introducing--option)
-    - [Default Values](#default-values)
-    - [The Motivation To “Pick The Largest Constraint” Concept](#the-motivation-to-pick-the-largest-constraint-concept)
-    - [Stabilization Window](#stabilization-window)
-    - [API Changes](#api-changes)
-    - [HPA Controller State Changes](#hpa-controller-state-changes)
-    - [Command Line Options Changes](#command-line-options-changes)
-<!-- /toc -->
+    - [User Stories](#user-stories)
+        - [Story 1: Scale Up As Fast As Possible](#story-1-scale-up-as-fast-as-possible)
+        - [Story 2: Scale Up As Fast As Possible, Scale Down Very Gradually](#story-2-scale-up-as-fast-as-possible-scale-down-very-gradually)
+        - [Story 3: Scale Up Very Gradually, Usual Scale Down Process](#story-3-scale-up-very-gradually-usual-scale-down-process)
+        - [Story 4: Scale Up As Usual, Do Not Scale Down](#story-4-scale-up-as-usual-do-not-scale-down)
+        - [Story 5: Stabilization before scaling down](#story-5-stabilization-before-scaling-down)
+        - [Story 6: Avoid false positive signals for scaling up](#story-6-avoid-false-positive-signals-for-scaling-up)
+    - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
+        - [Algorithm Pseudocode](#algorithm-pseudocode)
+        - [Introducing `stabilizationWindowSeconds` Option](#introducing-stabilizationwindowseconds-option)
+        - [Default Values](#default-values)
+        - [Stabilization Window](#stabilization-window)
+        - [API Changes](#api-changes)
+        - [HPA Controller State Changes](#hpa-controller-state-changes)
+        - [Command Line Options Changes](#command-line-options-changes)
+
+<!-- /TOC -->
 
 ## Summary
 
-[Horizontal Pod Autoscaler][] (HPA) automatically scales the number of pods in any resource which supports the `scale` subresource based on observed CPU utilization 
-(or, with custom metrics support, on some other application-provided metrics). This proposal adds scale velocity configuration parameters to the HPA to control the 
+[Horizontal Pod Autoscaler][] (HPA) automatically scales the number of pods in any resource which supports the `scale` subresource based on observed CPU utilization
+(or, with custom metrics support, on some other application-provided metrics). This proposal adds scale velocity configuration parameters to the HPA to control the
 rate of scaling in both directions.
 
 [Horizontal Pod Autoscaler]: https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/
@@ -95,10 +98,10 @@ As a result, users cannot influence scale velocity, and that is a problem for ma
 We need to introduce an algorithm-agnostic HPA object configuration that will allow configuration of individual HPAs.
 To customize the scaling behavior we should add a `behavior` object with the following fields:
 
-- `stabilizationWindowSeconds` - this value indicates the amount of time the HPA controller should consider
-  previous recommendations to prevent flapping of the number of replicas.
 - `scaleUp` specifies the rules which are used to control scaling behavior while scaling up.
-  - `choosePolicy` can be `min` or `max` and specifies which value from the policies should be selected. The `max` value is used by default.
+  - `stabilizationWindowSeconds` - this value indicates the amount of time the HPA controller should consider
+      previous recommendations to prevent flapping of the number of replicas.
+  - `selectPolicy` can be `min` or `max` and specifies which value from the policies should be selected. The `max` value is used by default.
   - `policies` a list of policies which regulate the amount of scaling. Each item has the following fields
     - `type` can have the value `pods` or `percent` which indicates the allowed changed in terms of absolute number of pods or percentage of current replicas.
     - `periodSeconds` the amount of time in seconds for which the rule should hold true.
@@ -107,10 +110,11 @@ To customize the scaling behavior we should add a `behavior` object with the fol
 
 A user will specify the parameters for the HPA, thus controlling the HPA logic.
 
-The `choosePolicy` field indicates which policy should be applied. By default the `max` policy is chosen or in other words while scaling up the highest
-possible number of replicas is used and while scaling down the lowest possible number of replicas is chosen. If the user does not specify policies for 
-either `scaleUp` or `scaleDown` then default value for that policy is used (see the [Default Values] [] section below). Setting the `value` to `0` for
-`scaleUp` or `scaleDown` disables scaling in that direction.
+The `selectPolicy` field indicates which policy should be applied. By default the `max` policy is chosen or in other words while scaling up the highest
+possible number of replicas is used and while scaling down the lowest possible number of replicas is chosen. 
+
+If the user does not specify `policies` for either `scaleUp` or `scaleDown` then default value for that policy is used 
+(see the [Default Values] [] section below). Setting the `value` to `0` for `scaleUp` or `scaleDown` disables scaling in that direction.
 
 [Default Values]: #default-values
 [Stabilization Window]: #stabilization-window
@@ -206,7 +210,7 @@ behavior:
 
 The cluster will scale up as usual (default values), but will never scale down.
 
-#### Story 5: Stabilization when the traffic has a fluctuating pattern
+#### Story 5: Stabilization before scaling down
 
 This mode is used when the user expects a lot of flapping or does not want to scale down pods too early expecting some late load spikes.
 
@@ -214,8 +218,8 @@ Create an HPA with the following behavior:
 
 ```yaml
 behavior:
-  stabilizationWindowSeconds: 600
   scaleDown:
+    stabilizationWindowSeconds: 600
     policies:
     - type: pods
       value: 5
@@ -245,6 +249,48 @@ Example for `CurReplicas = 10` and HPA controller cycle once per a minute:
     recommendations = [9, 8, 9, 9, 8, 9, 8, 9, 8, 7]
 
   The algorithm picks the largest value `9` and changes the number of replicas `10 -> 9`
+
+#### Story 6: Avoid false positive signals for scaling up
+
+This mode is useful in Data Processing pipelines when the number of replicas depends on the number of events in the queue.
+The users want to scale up quickly if they have a high number of events in the queue. 
+However, they do not want to react to false positive signals, i.e. to short spikes of events.
+
+Create an HPA with the following behavior:
+
+```yaml
+behavior:
+  scaleUp:
+    stabilizationWindowSeconds: 300
+    policies:
+    - type: pods
+      value: 20
+```
+
+i.e., the algorithm will:
+
+- gather recommendations for 300 seconds _(default: 0 seconds)_
+- pick the smallest one
+- scale up no more than 20 pods per minute
+
+Example for `CurReplicas = 2` and HPA controller cycle once per a minute:
+
+- First 5 minutes the algorithm will do nothing except gathering recommendations.
+  Let's imagine that we have the following recommendations
+
+    recommendations = [2, 3, 19, 10, 3]
+
+- On the 6th minute, we'll add one more recommendation (let it me `4`):
+
+    recommendations = [2, 3, 19, 10, 3, 4]
+
+  Now the algorithm picks the smallest one `2`. Hence it will not change number of replicas
+
+- On the 7th minute, we'll add one more recommendation (let it be `7`) and removes the first one to keep the same amount of recommendations:
+
+    recommendations = [7, 3, 19, 10, 3, 4]
+
+  The algorithm picks the smallest value `3` and changes the number of replicas `2 -> 3`
 
 ### Implementation Details/Notes/Constraints
 
@@ -291,7 +337,8 @@ The algorithm to find the number of pods will look like this:
         limitedReplicas = max(min, desiredReplicas)
       }
     }
-    storeRecommend(limitedReplicas, scaleDownRecommendations)
+    storeRecommend(limitedReplicas, scaleRecommendations)
+    nextReplicas := applyRecommendationIfNeeded(scaleRecommendations)
     setReplicas(nextReplicas)
     sleep(ControllerSleepTime)
   }
@@ -304,9 +351,10 @@ If no scaling policy is specified then the default policy is chosen(see the [Def
 
 #### Introducing `stabilizationWindowSeconds` Option
 
-Effectively the `stabilizationWindowSeconds` option is a full copy of the current [Stabilization Window][] algorithm:
+Effectively the `stabilizationWindowSeconds` option is a full copy of the current [Stabilization Window][] algorithm extended to cover scale up:
 
 - While scaling down, we should pick the safest (largest) "desiredReplicas" number during last `stabilizationWindowSeconds`.
+- While scaling up, we should pick the safest (smallest) "desiredReplicas" number during last `stabilizationWindowSeconds`.
 
 Check the [Algorithm Pseudocode][] section if you need more details.
 
@@ -314,7 +362,7 @@ If the window is `0`, it means that no delay should be used. And we should insta
 
 If no value is specified, the default value is used, see the [Default Values][] section.
 
-The __“Stabilization Window"__ as a result becomes an alias for the `behavior.stabilizationWindowSeconds`.
+The __“Stabilization Window"__ as a result becomes an alias for the `behavior.scaleDown.stabilizationWindowSeconds`.
 
 [Stabilization Window]: #stabilization-window
 [Algorithm Pseudocode]: #algorithm-pseudocode
@@ -324,7 +372,8 @@ The __“Stabilization Window"__ as a result becomes an alias for the `behavior.
 
 For smooth transition it makes sense to set the following default values:
 
-- `behavior.stabilizationWindowSeconds = 300`, wait 5 min for the largest recommendation and then scale down to that value.
+- `behavior.scaleDown.stabilizationWindowSeconds = 300`, wait 5 min for the largest recommendation and then scale down to that value.
+- `behavior.scaleUp.stabilizationWindowSeconds = 0`, do not gather recommendations, instantly scale up to the calculated number of replicas
 - `behavior.scaleUp.policies` has the following policies
    - Percentage policy
       - `policy = percent`
@@ -342,16 +391,16 @@ For smooth transition it makes sense to set the following default values:
 
 Please note that:
 
-`behavior.stabilizationWindowSeconds` value is picked in the following order:
+`behavior.scaleDown.stabilizationWindowSeconds` value is picked in the following order:
 
 - from the HPA configuration if specified
 - from the command-line options for the controller. Check the [Command Line Option Changes][] section.
 - from the hardcoded default value `300`.
 
-The `scaleDown` behavior has a single `percent`policy with a value of `100` because
+The `scaleDown` behavior has a single `percent` policy with a value of `100` because
 the current scale down behavior is only limited by [Stabilization Window][] which means after
 the stabilization window has passed the target can be scaled down to the minimum specified replicas.
-In order to replicate the default behavior we set `behavior.stabilizationWindowSeconds` to 300
+In order to replicate the default behavior we set `behavior.scaleDown.stabilizationWindowSeconds` to 300
 (the default value for Stabilization window), and let it determine the number of pods.
 
 [Stabilization Window]: #stabilization-window
@@ -396,12 +445,12 @@ type HPAScalingPolicy struct {
 }
 
 type HPAScalingRules struct {
+  StabilizationWindowSeconds *int32
   Policies     []HpaScalingPolicy
   SelectPolicy *string
 }
 
 type HorizontalPodAutoscalerBehavior struct {
-    StabilizationWindowSeconds *int32
     ScaleUp   *HPAScalingRules
     ScaleDown *HPAScalingRules
 }
@@ -437,7 +486,7 @@ It will store last scale events and will be used to make decisions about next sc
 Say, if 30 seconds ago the number of replicas was increased by one, and we forbid to scale up for more than 1 pod per minute,
 then during the next 30 seconds, the HPA controller will not scale up the target again.
 
-If the controller is restarted, the state information is lost so the behavior is not guaranteed anymore and the 
+If the controller is restarted, the state information is lost so the behavior is not guaranteed anymore and the
 controller may scale a target instantly after the restart.
 
 Though, I don’t think this is a problem, as:
@@ -452,7 +501,7 @@ As the added parameters have default values, we don’t need to update the API v
 
 #### Command Line Options Changes
 
-It should be noted that the current [--horizontal-pod-autoscaler-downscale-stabilization-window][] option defines the default value for the 
+It should be noted that the current [--horizontal-pod-autoscaler-downscale-stabilization-window][] option defines the default value for the
 `behavior.stabilizationWindowSeconds`. As it becomes part of the HPA specification, the option is not needed anymore.
 So we should make it obsolete but we should keep the existing flag till user have a chance to migrate.
 
