@@ -43,6 +43,7 @@ superseded-by:
         - [API Changes](#api-changes)
         - [HPA Controller State Changes](#hpa-controller-state-changes)
         - [Command Line Options Changes](#command-line-options-changes)
+- [Graduation Criteria](#graduation-criteria)
 
 <!-- /TOC -->
 
@@ -92,6 +93,7 @@ As a result, users cannot influence scale velocity, and that is a problem for ma
 ### Non-Goals
 
 - Persist the scaling events so that the HPA behavior is consistent even when the controller is restarted.
+- Add `tolerance` paramter to the new `behavior` section for both `scaleUp` and `scaleDown`
 
 ## Proposal
 
@@ -509,3 +511,8 @@ Check the [Default Values][] section for more information about how to determine
 
 [--horizontal-pod-autoscaler-downscale-stabilization-window]: https://v1-14.docs.kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#algorithm-details
 [DefaultValues]: #default-values
+
+## Graduation Criteria
+
+All the new configuration will be added to the `autoscaling/v2beta2` API which has not yet graduated to GA. So these changes do not need a separate
+Graduation Criteria and will be part of the existing beta API.
