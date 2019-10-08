@@ -12,7 +12,7 @@ approvers:
   - TBD
 editor: TBD
 creation-date: 2019-09-16
-status: provisional
+status: implementable
 ---
 
 # Extended NodeRestrictions for Pods
@@ -29,7 +29,6 @@ status: provisional
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [Label Restrictions](#label-restrictions)
-  - [Annotation Restrictions](#annotation-restrictions)
   - [OwnerReferences](#ownerreferences)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
@@ -41,6 +40,9 @@ status: provisional
 - [Alternatives](#alternatives)
   - [MVP mitigation of known threats](#mvp-mitigation-of-known-threats)
   - [Restrict namespaces](#restrict-namespaces)
+  - [Weaker label restrictions](#weaker-label-restrictions)
+  - [Force a Kubelet controller owner ref](#force-a-kubelet-controller-owner-ref)
+  - [Annotation Restrictions](#annotation-restrictions)
 <!-- /toc -->
 
 ## Release Signoff Checklist
