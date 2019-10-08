@@ -119,7 +119,8 @@ tests and test scaffolding to quickly cover those behaviors.
 * Enable separate review of behaviors and tests that evaluate those behaviors.
 * Provide a single location for defining conforming behavior.
 * Provide tooling to generate as many of the behaviors as possible from API
-  schemas.
+  schemas. This will be a seed for the behavior lists, which will in turn be
+  human curated. Refinements can improve the quality of the seed over time.
 * Provide tooling to generate tests and test scaffolding for validating
   behaviors.
 * Provide tooling to measure the conformance test coverage of the behaviors.
@@ -133,6 +134,9 @@ tests and test scaffolding to quickly cover those behaviors.
 * Add new conformance tests. It is expected that during this effort new
   tests may be created using the proposed tooling, but it is not explicitly part
   of this proposal.
+* Provide tooling that perfectly populates the behaviors from the API schema.
+  Not enough information is present in the schema to achieve this. The tooling
+  is only intended to produce a seed for human curation.
 
 ## Proposal
 
