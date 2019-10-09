@@ -93,7 +93,7 @@ As a result, users cannot influence scale velocity, and that is a problem for ma
 ### Non-Goals
 
 - Persist the scaling events so that the HPA behavior is consistent even when the controller is restarted.
-- Add `tolerance` paramter to the new `behavior` section for both `scaleUp` and `scaleDown`
+- Add `tolerance` parameter to the new `behavior` section for both `scaleUp` and `scaleDown`
 
 ## Proposal
 
