@@ -385,7 +385,7 @@ For smooth transition it makes sense to set the following default values:
       - `policy = pods`
       - `periodSeconds = 60`, one minute period for scaleUp
       - `value = 4` which means the 4 replicas can be added every minute.
-- `behaviour.scaleDown.policies` has the following policies
+- `behavior.scaleDown.policies` has the following policies
   - Percentage Policy
     - `policy = percent`
     - `periodSeconds = 60` one minute period for scaleDown
