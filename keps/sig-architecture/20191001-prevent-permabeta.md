@@ -9,10 +9,12 @@ reviewers:
   - "@liggitt"
   - "@smarterclayton"
 approvers:
-  - TBD
+  - "@dims"
+  - "@derekwaynecarr"
+  - "@johnbelamaric"
 editor: TBD
 creation-date: 2019-10-01
-last-updated: 2019-10-01
+last-updated: 2019-10-10
 status: implementable
 see-also:
 replaces:
@@ -23,10 +25,6 @@ superseded-by:
 
 ## Table of Contents
 
-A table of contents is helpful for quickly jumping to sections of a KEP and for highlighting any additional information provided beyond the standard KEP template.
-
-Ensure the TOC is wrapped with <code>&lt;!-- toc --&rt;&lt;!-- /toc --&rt;</code> tags, and then generate with `hack/update-toc.sh`.
-
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
@@ -34,9 +32,6 @@ Ensure the TOC is wrapped with <code>&lt;!-- toc --&rt;&lt;!-- /toc --&rt;</code
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [Risks and Mitigations](#risks-and-mitigations)
-- [Drawbacks [optional]](#drawbacks-optional)
-- [Alternatives [optional]](#alternatives-optional)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -68,73 +63,58 @@ Check these off as they are completed for the Release Team to track. These check
 
 ## Summary
 
-APIs and features should not languish in beta.  They should take feedback and progress towards GA by either
+k8s.io REST APIs should not languish in beta.  They should take feedback and progress towards GA by either
 1. meeting GA criteria and getting promoted, or
 2. having a new beta and deprecating the previous beta
   
-This must happen within six months (two releases).  If it does not,
-the API will be deprecated with an announced intent to remove the feature per the deprecation policy.
+This must happen within nine months (three releases).  If it does not,
+the REST API will be deprecated with an announced intent to remove the API per the [deprecation policy](https://kubernetes.io/docs/reference/using-api/deprecation-policy/).
 
 ## Motivation
 
-When a feature reaches beta, it is turned on by default.  This is great for getting feedback, but it can also lead to state
+When a REST API reaches beta, it is turned on by default.  This is great for getting feedback, but it can also lead to state
 where users and vendors start building important infrastructure against APIs that are not considered stable.
-In addition, once a feature is on by default, the incentive to further stabilize appears to diminish.
-See the features that have been beta for a long time: CSRs and Ingresses as examples.
+In addition, once a REST API is on by default, the incentive to further stabilize appears to diminish.
+See the REST API that have been beta for a long time: CSRs and Ingresses as examples.
 If we're honest with ourselves, a single actor has been cleaning up behind a lot of the project to unstick perma-beta APIs.
 
 [experience reports]: https://github.com/golang/go/wiki/ExperienceReports
 
 ### Goals
 
-1. Prevent APIs and features from being in a single beta version for more than six months.
+1. Prevent k8s.io REST APIs from being in a single beta version for more than nine months.
 2. Prevent beta APIs from being treated as GA by users and vendors.
 
 ### Non-Goals
 
 1. Promote APIs to GA before they are ready.
+2. Control non-k8s.io REST APIs.
+3. Control features that are not REST APIs.
+4. Control fields on otherwise GA REST APIs.
 
 ## Proposal
 
-Once an API or feature reaches beta, it has six months to 
+Once a REST API reaches beta, it has nine months to 
 1. reach GA and deprecate the beta or 
 2. have a new beta version and deprecate the previous beta.
 
-If neither of those conditions met, the beta API/feature is deprecated in the second release with a stated intent to remove the feature entirely.
-To avoid removal, the feature must create a new beta version (it cannot go directly from deprecated to GA).
+If neither of those conditions met, the beta REST API is deprecated in the second release with a stated intent to remove the REST API entirely.
+To avoid removal, the REST API must create a new beta version (it cannot go directly from deprecated to GA).
 
 For example, in v1.16, v1beta1 is released. Sample release note and API doc:
-> * "The v1beta1 version of this API will be evaluated during v1.16 and v1.17, then deprecated in v1.18 (in favor of a new beta version, a GA version, or with no replacement), then removed in v1.21"
+> * "The v1beta1 version of this API will be evaluated during v1.16, v1.17, and v1.18, then deprecated in v1.19 (in favor of a new beta version, a GA version, or with no replacement), then removed in v1.22"
 
-Scenario A - progression to v1beta2 in v1.18. Sample release note and API doc:
-> * "The v1beta1 version of this API is deprecated in favor of v1beta2, and will be removed in v1.21"
-> * "The v1beta2 version of this API will be evaluated during v1.18 and v1.19, then deprecated in v1.20 (in favor of a new beta version, a GA version, or with no replacement), then removed in v1.23"
+Scenario A - progression to v1beta2 in v1.19. Sample release note and API doc:
+> * "The v1beta1 version of this API is deprecated in favor of v1beta2, and will be removed in v1.22"
+> * "The v1beta2 version of this API will be evaluated during v1.19, v1.20, and v1.21, then deprecated in v1.22 (in favor of a new beta version, a GA version, or with no replacement), then removed in v1.25"
 
-Scenario B - progression to v1 in v1.18. Sample release note and API doc:
-> * "The v1beta1 version of this API is deprecated in favor of v1, and will be removed in v1.21"
+Scenario B - progression to v1 in v1.19. Sample release note and API doc:
+> * "The v1beta1 version of this API is deprecated in favor of v1, and will be removed in v1.22"
 
 Scenario C - deprecation with no replacement. Sample release note and API doc:
-> * "The v1beta1 version of this API is deprecated with no replacement, and will be removed in v1.21"
+> * "The v1beta1 version of this API is deprecated with no replacement, and will be removed in v1.22"
 
 By regularly having new beta versions, we can ensure that consumers will not grow long running dependencies on particular betas which could pin design decisions.
-It will also create an incentive for feature authors to push their features to GA instead of letting them live in a permanent beta state. 
+It will also create an incentive for REST API authors to push their APIs to GA instead of letting them live in a permanent beta state.
 
-### Risks and Mitigations
-
-What are the risks of this proposal and how do we mitigate.
-Think broadly.
-For example, consider both security and how this will impact the larger kubernetes ecosystem.
-
-How will security be reviewed and by whom?
-How will UX be reviewed and by whom?
-
-Consider including folks that also work outside the SIG or subproject.
-
-## Drawbacks [optional]
-
-Why should this KEP _not_ be implemented.
-
-## Alternatives [optional]
-
-Similar to the `Drawbacks` section the `Alternatives` section is used to highlight and record other possible approaches to delivering the value proposed by a KEP.
 
