@@ -283,6 +283,7 @@ Alpha (v1.17):
 
 Default `topologySpreadConstaints` will graduate from Alpha along with
 [Even Pods Spreading](/keps/sig-scheduling/20190221-even-pods-spreading.md).
+They will share the same feature gate.
 
 ## Implementation History
 
