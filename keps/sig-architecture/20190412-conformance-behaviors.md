@@ -17,35 +17,43 @@ approvers:
 editor: TBD
 creation-date: 2019-04-12
 last-updated: 2010-07-30
-status: provisional
+status: implementable
 ---
 
 # Behavior-driven Conformance Testing
 
 ## Table of Contents
 
-- [Title](#title)
-  - [Table of Contents](#table-of-contents)
-  - [Release Signoff Checklist](#release-signoff-checklist)
-  - [Summary](#summary)
-  - [Motivation](#motivation)
-    - [Goals](#goals)
-    - [Non-Goals](#non-goals)
-  - [Proposal](#proposal)
-    - [Representation of Behaviors](#representation-of-behaviors)
-    - [Behavior and Test Generation Tooling](#behavior-and-test-generation-tooling)
-    - [Coverage Tooling](#coverage-tooling)
-    - [Risks and Mitigations](#risks-and-mitigations)
-  - [Design Details](#design-details)
-  - [Subsequent Phase](#subsequent-phase)
+<!-- toc -->
+- [Release Signoff Checklist](#release-signoff-checklist)
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [Representation of Behaviors](#representation-of-behaviors)
+  - [Behavior and Test Generation Tooling](#behavior-and-test-generation-tooling)
+    - [Handwritten Behaviour Scenarios](#handwritten-behaviour-scenarios)
+  - [Coverage Tooling](#coverage-tooling)
+  - [Risks and Mitigations](#risks-and-mitigations)
+- [Design Details](#design-details)
+  - [Phase 1](#phase-1)
+    - [Tying tests back to behaviors](#tying-tests-back-to-behaviors)
+    - [kubetestgen](#kubetestgen)
+  - [Phase 2](#phase-2)
+  - [Graduation Criteria](#graduation-criteria)
+  - [Future development](#future-development)
     - [Complex Storytelling combined with json/yaml](#complex-storytelling-combined-with-jsonyaml)
     - [Example patch test scenario](#example-patch-test-scenario)
     - [Generating scaffolding from Gherkin .feature files](#generating-scaffolding-from-gherkin-feature-files)
     - [Autogeneration of Test Scaffolding](#autogeneration-of-test-scaffolding)
     - [Combining gherkin with existing framework](#combining-gherkin-with-existing-framework)
-  - [Implementation History](#implementation-history)
-  - [Drawbacks](#drawbacks)
-  - [Alternatives](#alternatives)
+- [Implementation History](#implementation-history)
+- [Drawbacks](#drawbacks)
+- [Alternatives](#alternatives)
+  - [Annotate test files with behaviors](#annotate-test-files-with-behaviors)
+  - [Annotate existing API documentation with behaviors](#annotate-existing-api-documentation-with-behaviors)
+<!-- /toc -->
 
 ## Release Signoff Checklist
 
@@ -56,12 +64,12 @@ For enhancements that make changes to code or processes/procedures in core Kuber
 
 Check these off as they are completed for the Release Team to track. These checklist items _must_ be updated for the enhancement to be released.
 
-- [ ] kubernetes/enhancements issue in release milestone, which links to KEP (this should be a link to the KEP location in kubernetes/enhancements, not the initial KEP PR)
-- [ ] KEP approvers have set the KEP status to `implementable`
-- [ ] Design details are appropriately documented
-- [ ] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
-- [ ] Graduation criteria is in place
-- [ ] "Implementation History" section is up-to-date for milestone
+- [x] kubernetes/enhancements issue in release milestone, which links to KEP (this should be a link to the KEP location in kubernetes/enhancements, not the initial KEP PR)
+- [x] KEP approvers have set the KEP status to `implementable`
+- [x] Design details are appropriately documented
+- [x] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [x] Graduation criteria is in place
+- [x] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
@@ -111,7 +119,8 @@ tests and test scaffolding to quickly cover those behaviors.
 * Enable separate review of behaviors and tests that evaluate those behaviors.
 * Provide a single location for defining conforming behavior.
 * Provide tooling to generate as many of the behaviors as possible from API
-  schemas.
+  schemas. This will be a seed for the behavior lists, which will in turn be
+  human curated. Refinements can improve the quality of the seed over time.
 * Provide tooling to generate tests and test scaffolding for validating
   behaviors.
 * Provide tooling to measure the conformance test coverage of the behaviors.
@@ -125,13 +134,16 @@ tests and test scaffolding to quickly cover those behaviors.
 * Add new conformance tests. It is expected that during this effort new
   tests may be created using the proposed tooling, but it is not explicitly part
   of this proposal.
+* Provide tooling that perfectly populates the behaviors from the API schema.
+  Not enough information is present in the schema to achieve this. The tooling
+  is only intended to produce a seed for human curation.
 
 ## Proposal
 
 The proposal consists of four deliverables:
 * A machine readable format to define conforming behaviors.
 * Tooling to generate lists of behaviors from the API schemas.
-* Tooling to generate tests and test scaffoloding to evaulate those behaviors.
+* Tooling to generate tests and test scaffolding to evaluate those behaviors.
 * Tooling to compare the implemented tests to the list of behaviors and
   calculate coverage.
 
@@ -193,7 +205,7 @@ test/conformance
 
 The structure of the behavior YAML files is described by these Go types:
 
-```
+```go
 // Area defines a general grouping of behaviors
 type Area struct {
         // Area is the name of the area.
@@ -342,12 +354,89 @@ this is not a high risk.
 
 ## Design Details
 
-TBD.
+Delivery of this KEP shall be done in the following phases:
 
-## Subsequent Phase
+### Phase 1
+
+In Phase 1, we will:
+* Implement the behavior formats and types described above. This will include
+  separate suites for tooling-generated behaviors and handcrafted behaviors.
+* Implement the directory structure described above to contain the behavior
+  lists, including how to tie tests back to behaviors.
+* `kubetestgen`, a tool which reads the OpenAPI schema and generates the list of
+  behaviors.
+* Migrate existing conformance tests to work with the new tooling. Existing
+  tooling around generation of conformance reports will not be changed in this
+  phase.
+
+#### Tying tests back to behaviors
+The proposal above mentions `tests.yaml` but does not describe a format for that
+file. The current conformance frameworks requests that during promotion of the
+test to conformance, the developer adds metadata, including the release name,
+the test name, and description. Tests are identified in the
+[conformance.txt](https://github.com/kubernetes/kubernetes/blob/master/test/conformance/testdata/conformance.txt)
+file by their Ginko description. Unfortunately, this does not produce unique
+test names, as it does not include all of the `Describe` calls from higher in
+the call tree (see this
+[slack discussion](https://kubernetes.slack.com/archives/C78F00H99/p1566324743171500)
+for more details).
+
+As part of this KEP, tests being promoted to conformance must add a unique
+identifier, `TestId`, in their conformance metadata. This will be used, along with
+the behavior IDs, to map which tests validate which behaviors in the
+`tests.yaml` file. The Go structures for `tests.yaml` are shown below.
+
+```go
+type BehaviorTestList struct {
+       Tests []BehaviorTest `json:"tests,omitempty"`
+}
+
+type BehaviorTest struct {
+        BehaviorId  string `json:"behaviorId,omitempty"`
+        TestId      string `json:"testId,omitempty"`
+
+        // Description is optional and is intended to make reviewing easier; the
+        // expectation would be that tooling would copy the value here.
+        Description string `json:"description,omitempty"`
+}
+```
+
+#### kubetestgen
+
+In this phase, the tool will only generate behavior lists in the format defined
+above. It will accept the following flags:
+* `-schema` - a URL or local file name pointing to the JSON OpenAPI schema
+* `-resource` - the specific OpenAPI definition for which to generate behaviors
+* `-area` - the name to use for the area
+* `-suite` - the name to use for the suite
+* `-behaviorsdir` - the path to the behaviors directory (default current
+  directory)
+
+The tool will read the schema, locate the specific definition, and generate the
+`{area}` directory and `{suite}.yaml` as described in the proposal above.
+
+### Phase 2
+
+In Phase 2, we will:
+* Migrate existing tooling for conformance report generation to the new method,
+  and remove older tooling. This will eliminate the need to maintain conformance
+  tests in both the new and old manner.
+* Add test scaffolding generation in parallel with the behavior list generation.
+* Implement coverage metrics comparing behavior lists to the coverage captured
+  by existing conformance tests.
+
+### Graduation Criteria
+As this is a tooling component and is not user facing, it does not follow the
+ordinary alpha/beta/GA process. In 1.17, the intent is to implement Phase 1,
+without disruption to any feature development. The acceptance criteria here
+are that the deliverables described in Phase 1 are complete, and that no
+developers other than those writing or promoting conformance tests are
+affected by the changes introduced in this KEP.
+
+### Future development
 
 The description above achieves the basic goals of the KEP. However, in the same
-timeframe as implementation of this KEP, we also plan to explore some furture
+timeframe as implementation of this KEP, we also plan to explore some future
 refinements. In particular, we will explore the use of an existing behavior-
 driven testing language to refine our *prose* behavior descriptions into
 *machine-readable* behavior descriptions.
@@ -355,7 +444,7 @@ driven testing language to refine our *prose* behavior descriptions into
 One such language is [Gherkin](https://cucumber.io/docs/gherkin/). In Gherkin,
 specifications are defined around Features, which are collections of Scenarios.
 
-### Complex Storytelling combined with json/yaml
+#### Complex Storytelling combined with json/yaml
 
 Inline json or yaml as CRUD input/output can be autogenerated for verification. The
 json or yaml can also be contained in external files. The functions matching the
@@ -377,7 +466,7 @@ Feature: Intrapod Communication
     And this is fine
 ```
 
-### Example patch test scenario
+#### Example patch test scenario
 
 ```feature
 Feature: Manually using Manifests to CRUD and evaluate effects
@@ -404,7 +493,7 @@ Feature: Manually using Manifests to CRUD and evaluate effects
       """
     And this is fine
 ```
-### Generating scaffolding from Gherkin .feature files
+#### Generating scaffolding from Gherkin .feature files
 
 A Gherkin **feature** is synonymous with our definition of **behaviour**, and
 tagging can be used for **@conformance** or **@release-X.Y** metadata.
@@ -436,7 +525,7 @@ Feature: Structured Metadata allowing Behaviour Driven tooling automation
     And this is fine
 ```
 
-### Autogeneration of Test Scaffolding
+#### Autogeneration of Test Scaffolding
 
 ```shell
 ~/go/bin/godog --no-colors
@@ -511,7 +600,7 @@ func FeatureContext(s *godog.Suite) {
 These functions and the Suite.Step matchers that tie them to Gherkin steps can
 be pasted into a `test_steps.go` file as a initial scaffolding.
 
-### Combining gherkin with existing framework
+#### Combining gherkin with existing framework
 
 Our current tests are not super easy to write, read, or review. BDD in go was in
 it's early days when k8s started integration testing with a closely coupled
@@ -561,6 +650,7 @@ It('test string')`
 - 2019-07-24: Updated to add reviewers and an example on generated scaffolding
 - 2019-07-30: Updated to separate Gherkin / godog into second phase, include
   directory structure for showing behavior/test separation
+- 2019-10-01: Added detailed design; marked implementable
 
 ## Drawbacks
 
