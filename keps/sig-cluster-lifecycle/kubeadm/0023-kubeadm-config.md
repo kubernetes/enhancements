@@ -37,11 +37,15 @@ see-also:
     - [Use substructures instead of the old &quot;single flat object&quot;](#use-substructures-instead-of-the-old-single-flat-object)
   - [v1beta2](#v1beta2)
     - [Add config options for new and existing kubeadm features](#add-config-options-for-new-and-existing-kubeadm-features)
+  - [v1beta3](#v1beta3)
+    - [Make kubeadm's config format more CRD and third party friendly](#make-kubeadms-config-format-more-crd-and-third-party-friendly)
+    - [Opt-in AddOns](#opt-in-addons)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Graduation Criteria](#graduation-criteria)
 - [Implementation History](#implementation-history)
   - [v1alpha3 released with Kubernetes 1.12](#v1alpha3-released-with-kubernetes-112)
   - [v1beta1 released with Kubernetes 1.13](#v1beta1-released-with-kubernetes-113)
+  - [v1beta2 released with Kubernetes 1.15](#v1beta2-released-with-kubernetes-115)
 - [Drawbacks](#drawbacks)
 <!-- /toc -->
 
@@ -212,6 +216,22 @@ active (a setting already introduced in `v1beta1`) and an ability to ignore some
 Nevertheless, SIG Cluster Lifecycle should be careful not to add fields that are needed for fairly
 limited use cases.
 
+### v1beta3
+
+This section outlines changes to be introduced in the third iteration of the kubeadm config format.
+
+#### Make kubeadm's config format more CRD and third party friendly
+
+With more and more external tools consuming and providing kubeadm configuration it is desirable to increase the compatibility with other tools.
+This includes:
+- Adding metadata fields to InitConfiguration, JoinConfiguration and ClusterConfiguration.
+- Marking omitempty fields as `+optional`.
+
+#### Opt-in AddOns
+
+In the past few releases users have been increasingly using the kubeadm phases feature to skip the installation of the Kube-Proxy and CoreDNS/Kube-DNS addons. This, however, causes some problems when joining new nodes to the cluster or upgrading existing ones, as there are no means of persisting the user wish to not install some of the addons.
+This, combined with recent developments in the Cluster AddOns sub-project of SIG Cluster Lifecycle, led us to believe, that the best way to tackle the problem at hand is to allow for users to specify precisely which addons should be installed by kubeadm and persist the choice in the ClusterConfiguration.
+
 ### Risks and Mitigations
 
 This is a change mostly driven by kubeadm maintainers, without an explicit buy-in from customers
@@ -262,6 +282,11 @@ This risk will be mitigated by implementing the change according to following ap
 - Focus on providing more structure of the config format, in contrast with large and mostly flat
   structures that deal with different kinds of settings.
 - Improved the config format with respect to HA.
+
+### v1beta2 released with Kubernetes 1.15
+
+- Added new fields for specifying the encryption key for certificates and for specifying which pre-flight errors to be ignored.
+- **omitempty** has a wider use, but is removed from the *taints* field of NodeRegistrationOptions.
 
 ## Drawbacks
 
