@@ -210,8 +210,11 @@ jump to ~30KB with server-side-apply feature, in 5k-node clusters, we are reduci
 etcd write throughput from 150MB/min to 30MB/min. Note that this isn't the only
 gain, because we also save on sending watch events, in kube-apiserver, and so on.
 
-With this change and positive user-feedback we already got, we will also graduate
-the feature to GA in 1.17 too.
+Additionally, we will modify kubectl describe to show the information from the
+corresponding Lease object.
+
+With those two changes and positive user-feedback we already got, we will also
+graduate the feature to GA in 1.17 too.
 
 Other notes:
 
@@ -279,6 +282,8 @@ both real clusters and Kubemark.
 
 GA:
 - Enabled by default for a release with no complaints.
+- Frequency of NodeStatus defaulted to 5m
+- kubectl describe node showing information from corrsponding Lease object
 
 
 ## Implementation History
