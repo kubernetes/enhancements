@@ -10,6 +10,7 @@ participating-sigs:
   - sig-node
   - sig-api-machinery
   - sig-scalability
+  - sig-cli
 reviewers:
   - "@Random-Liu"
   - "@bogdandrutu"
@@ -36,15 +37,14 @@ status: provisional
         - [Architecture](#architecture)
             - [Tracing API Requests](#tracing-api-requests)
             - [Propagating Traces Through Objects](#propagating-context-through-objects)
-            - [Controller Behavior](#controller-behavior)          
-            - [End-User Behavior](#end-user-behavior)          
+            - [Controller Behavior](#controller-behavior)
+            - [End-User Behavior](#end-user-behavior)
         - [In-tree changes](#in-tree-changes)
             - [Vendor the Tracing Framework](#vendor-the-tracing-framework)
             - [Trace Utility Package](#trace-utility-package)
             - [Tracing Pod Lifecycle](#tracing-pod-lifecycle)
         - [Out-of-tree changes](#out-of-tree-changes)
             - [Tracing best-practices documentation](#tracing-best-practices-documentation)
-            - [Mutating admission webhook](#mutating-admission-webhook)
     - [Graduation Requirements](#graduation-requirements)
     - [Implementation History](#implementation-history)
 
@@ -106,11 +106,9 @@ For the alpha phase, we choose to propagate this span context as an encoded stri
 This means two trace contexts are sent in different forms with Create/Patch/Update requests to the apiserver.  A trace context is around 32 bytes (16 bytes for the trace ID, 8 bytes for the span ID, and some metadata). See the [OpenCensus spec](https://github.com/census-instrumentation/opencensus-specs/blob/master/trace/Span.md#spancontext) and  the [w3c spec](https://w3c.github.io/trace-context/#tracestate-field) for details.
 
 
-This annotation value is regenerated and replaced when an object's trace ends, to achieve the desired behavior from [section one](#trace-lifecycle). 
+This annotation value is removed when an object's trace ends, to achieve the desired behavior from [section one](#trace-lifecycle).  For core kubernetes components, this must be done in the same request to the API Server as the status update which updates the object to its desired state.  This is a requirement to ensure tracing does not affect the scalability of kubernetes.  For other components, it is recommended, but not required to update the trace annotation in the same request.
 
-This proposal chooses to use annotations as a less invasive alternative to adding a field to object metadata, but as this proposal matures, we should consider graduating this 
-
-Whenever possible, updates to the trace context should be performed in the same Update/Patch as other operations.  For alpha, it is permissible to update trace context with a seperate write if this is not easily feasible.  However, for this proposal to move to Beta, we must ensure tracing can be done without adding extra writes to the APIServer to ensure tracing does not affect scalability.
+This proposal chooses to use annotations to store the SpanContext associated with an object.  This mirrors how trace context propagation is done with golang context.Context and http headers, which are both key/value stores.
 
 #### Controller Behavior
 
@@ -131,13 +129,13 @@ High-level processes, such as starting a pod or restarting a failed container, c
 
 #### End-User Behavior
 
-A previous iteration of this proposal suggested controllers should export a "Root Span" when ending a trace (described in [Controller Behavior](#controller-behavior) above).  However, that would limit a trace to being associated with a single object, since a "Root Span" defines the scope of the trace.  More generally, we shouldn't assume that the creation or update of a single object represents the entirety of end-user intent.  The user or system using kubernetes determines what the user intent is, not kubernetes controllers.
+Add a new `--trace` argument to `kubectl`, which generates a new trace context, sets the trace context to be sampled, attaches the context to all modified objects, and uses the context when sending requests to the API Server.  The option is disabled by default.  Note that by attaching a trace context to the initial object creation, this will cause all object modification done by controllers to propagate the context through to all changes made by the system that are driven by the initial user action.
 
-Tracing in a kubernetes cluster must be a composable component within a larger system, and allow external users or systems to define the "Root Span" that defines and bounds the scope of a trace.
+Add `context.Context` arguments to k8s.io/client-go client functions.  This will allow users and components to associate API calls with the context of the involved object.  In some cases, such as object creation, we can automatically attach the SpanContext of the provided context to the created object, making propagation simpler.
 
-For example, a user could define a Pod Creation trace doing something like the following:
+This also enables kubernetes to be a composable part of a larger system. For example, if an end-user's service creates a pod as part of handing a request, it could do:
 ```golang
-ctx, span := trace.StartSpan(context.Background(), “create-my-pod”)
+ctx, span := trace.StartSpan(preexistingContext, “create-my-pod”)
 defer span.End()
 pod, err := c.CoreV1().Pod(myPod.Namespace).Create(ctx, myPod)
 if err != nil {
@@ -146,6 +144,10 @@ if err != nil {
 waitForPodToBeRunning(ctx, myPod)
 return nil
 ```
+
+A previous iteration of this proposal suggested controllers should export a "Root Span" when ending a trace (described in [Controller Behavior](#controller-behavior) above).  However, that would limit a trace to being associated with a single object, since a "Root Span" defines the scope of the trace.  More generally, we shouldn't assume that the creation or update of a single object represents the entirety of end-user intent.  The user or system using kubernetes determines what the user intent is, not kubernetes controllers.
+
+Tracing in a kubernetes cluster must be a composable component within a larger system, and allow external users or systems to define the "Root Span" that defines and bounds the scope of a trace.
 
 ### In-tree changes
 
@@ -166,7 +168,22 @@ While this setup is suitable for an alpha stage, it will require further review 
 
 #### Trace Utility Package
 
-This package will be able to create spans from the span context embedded in the `trace.kubernetes.io/context` object annotation, in addition to embedding context from spans back into the annotation. This package will facilitate tracing across Kubernetes watches. It will also provide an implementation for exporting the root span for a given reconciliation trace.
+This package will be able to create spans from the span context embedded in the `trace.kubernetes.io/context` object annotation, in addition to embedding context from spans back into the annotation. This package will facilitate propagating traces through kubernetes objects.  The exported functions include:
+
+```golang
+// InitializeExporter initializes the trace exporting service with the provided service name.
+// Components should use this initializer to ensure common behavior.
+func InitializeExporter(service string)
+
+// StartSpanFromObject constructs a new Span using the context attached to the object as the parent SpanContext.  It mirrors trace.StartSpan, but for kubernetes objects.
+func StartSpanFromObject(ctx context.Context, obj meta.Object, spanName string) (context.Context, *trace.Span, error)
+
+// EncodeContextIntoObject encodes the SpanContext contained in the context into the object
+func EncodeContextIntoObject(ctx context.Context, obj meta.Object)
+
+// RemoveSpanContextFromObject removes the SpanContext attached to an object, if one exists
+func RemoveSpanContextFromObject(obj meta.Object) 
+```
 
 #### Tracing Pod Lifecycle
 
@@ -194,18 +211,6 @@ This documentation will put forward standards for:
 
 Having these standards in place will ensure that our tracing instrumentation works well with all backends, and that reviewers have concrete criteria to cross-check PRs against. 
 
-#### Mutating admission webhook
-
-For spans to be correlated as part of the same trace, we must generate a `span context`, serialize it, and embed it in target traced objects. To accomplish this, we have introduced an [out-of-tree mutating admission webhook](https://github.com/kubernetes-sigs/mutating-trace-admission-controller).
-
-This mutating admission webhook generates a `span context`, which is the base64 encoded version of [this wire format](https://github.com/census-instrumentation/opencensus-specs/blob/master/encodings/BinaryEncoding.md#trace-context), and embeds it into the `trace.kubernetes.io/context` object annotation. The webhook can be configured to inject context into only target object types.
-
-The decision on whether or not to sample traces from a given object is made in this webhook, upon the generation of the trace context. In addition to this, the aforementioned OpenCensus agent offers ex-post-facto trace sampling.
-
-The proposed in-tree changes will utilize the span context annotation injected into objects with this webhook.
-
-When this feature moves to beta, we should move this defaulting logic in-tree to either the client library or to defaulting in the APIServer.
-
 ### Graduation requirements
 
 Alpha
@@ -213,16 +218,17 @@ Alpha
 - [] Alpha-implementation as described above
 - [] E2e testing of traces
 - [] User-facing documentation
+- [] Tracing must not increase the number of requests to the APIServer
 
 Beta
 
 - [] Security Review, including threat model
-- [] Tracing must not increase the number of requests to the APIServer
 - [] Deployment review including whether the [OC Agent](https://github.com/census-instrumentation/opencensus-service#opencensus-agent) is a required component
 - [] Benchmark kubernetes components using tracing, and determine resource requirements and scaling for any additional required components (e.g. OC Agent).
-- [] Move trace context creation in-tree, and remove the need for an admission webhook.
 
 GA
+
+- [] Versioning for span naming and backwards-compatibility guarantees
 
 ## Implementation History
 
