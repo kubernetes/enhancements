@@ -28,8 +28,13 @@ status: implementable
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [Label Restrictions](#label-restrictions)
-  - [OwnerReferences](#ownerreferences)
+  - [Node Restrictions](#node-restrictions)
+    - [Label Restrictions](#label-restrictions)
+    - [OwnerReferences](#ownerreferences)
+  - [Kubelet changes](#kubelet-changes)
+    - [Label Restrictions](#label-restrictions-1)
+    - [OwnerReferences](#ownerreferences-1)
+    - [Example](#example)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
@@ -41,8 +46,8 @@ status: implementable
   - [MVP mitigation of known threats](#mvp-mitigation-of-known-threats)
   - [Restrict namespaces](#restrict-namespaces)
   - [Weaker label restrictions](#weaker-label-restrictions)
-  - [Force a Kubelet controller owner ref](#force-a-kubelet-controller-owner-ref)
   - [Annotation Restrictions](#annotation-restrictions)
+  - [Alternative Label Modifications](#alternative-label-modifications)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -164,6 +169,8 @@ makes the following assumptions:
 
 ## Proposal
 
+### Node Restrictions
+
 All restrictions will be enforced through the [NodeRestriction][] admission controller. These
 extensions will be guarded by the `NodeRestrictionPods` feature gate.
 
@@ -171,7 +178,7 @@ On update, only the delta will be restricted. In other words, the Kubelet can mo
 restricted labels / owner references as long as it's not modifying (or adding or
 deleting) the restricted entries.
 
-### Label Restrictions
+#### Label Restrictions
 
 The Kubelet will be prevented from updating pod labels or creating mirror pods with labels, except
 for whitelisted keys:
@@ -195,7 +202,7 @@ than special casing the existing labels.
 [kubeadm-labels]: https://github.com/kubernetes/kubernetes/blob/e682310dcc5d805a408e0073e251d99b8fe5c06d/cmd/kubeadm/app/util/staticpod/utils.go#L60
 [addons-k8s-app]: https://github.com/kubernetes/kubernetes/blob/e682310dcc5d805a408e0073e251d99b8fe5c06d/cluster/addons/kube-proxy/kube-proxy-ds.yaml#L23
 
-### OwnerReferences
+#### OwnerReferences
 
 OwnerReferences cannot be updated through the `pod/status` subresource, but they can be set on
 mirror pods. With the new restrictions, mirror pods are only allowed a single owner reference (or
@@ -207,17 +214,96 @@ none), and it must refer to the node:
   Kind: "Node"
   Name: node.Name
   UID:  node.UID
-  Controller: nil // or false
-  BlockOwnerDeletion: nil // all values allowed
+  Controller: true
+  BlockOwnerDeletion: false
 }
+```
+
+The node owner reference will eventually be required, but due to apiserver-node version skew, this
+must happen at least 2 releases after `MirrorPodMetadata` graduates to beta.
+
+### Kubelet changes
+
+To comply with and ease the rollout of the modified restrictions, Kubelet will make some
+modifications to mirror pods. The Kubelet changes will be guarded by a separate
+`MirrorPodMetadata` feature gate.
+
+These changes introduce 2 new "well-known" labels:
+
+- `kubernetes.io/config.removed-labels`
+- `kubernetes.io/config.removed-ownerreferences`
+
+#### Label Restrictions
+
+Labels that do not meet the modified restrictions will be removed. In order to audit these changes,
+an annotation will be added with the json-encoded removed labels, using the schema:
+
+```
+kubernetes.io/config.removed-labels: '{"<label-key>": "<label-value>", ...}'
+```
+
+Removed labels will also generate a warning in the kubelet log.
+
+#### OwnerReferences
+
+A valid owner reference will be added to the mirror pod, matching the spec described
+[above](#ownerreferences).
+
+Any other OwnerReferences will be removed, and json-encoded in an annotation (similar to removed
+labels):
+
+```
+kubernetes.io/config.removed-ownerreferences: '[{...}, ...]'
+```
+
+#### Example
+
+For example, a static pod with metadata:
+
+```yaml
+name: kube-proxy
+namespace: kube-system
+annotations:
+  scheduler.alpha.kubernetes.io/critical-pod: ''
+labels:
+  tier: node
+  component: kube-proxy
+  unrestricted.node.kubernetes.io/example: true
+```
+
+Might produce a mirror pod (on a node named `testing-default-pool-588c6e30-408q`) with metadata:
+
+```yaml
+name: kube-proxy-testing-default-pool-588c6e30-408q
+namespace: kube-system
+annotations:
+  kubernetes.io/config.hash: 5edeeae4fbd5dde04f6298cdd8d7fb15
+  kubernetes.io/config.mirror: 5edeeae4fbd5dde04f6298cdd8d7fb15
+  kubernetes.io/config.seen: "2019-10-10T07:38:16.378551617Z"
+  kubernetes.io/config.source: file
+  kubernetes.io/config.removed-labels: '{"component": "kube-proxy", "tier": "node"}'
+  scheduler.alpha.kubernetes.io/critical-pod: ""
+labels:
+  unrestricted.node.kubernetes.io/example: true
+creationTimestamp: "2019-10-10T07:38:21Z"
+resourceVersion: "29997713"
+selfLink: /api/v1/namespaces/kube-system/pods/kube-proxy-testing-default-pool-588c6e30-408q
+uid: ef19cb63-eb30-11e9-a0d3-42010a80005d
+ownerReferences:
+- apiVersion: v1
+  kind: Node
+  name: testing-default-pool-588c6e30-408q
+  uid: 40e7848c-a828-11e9-829c-42010a80016f
+  controller: true
+  blockOwnerDeletion: false
 ```
 
 ### Risks and Mitigations
 
 Some Kubernetes setups depend on statically serving services today. Applying these mitigations will
 likely break these clusters. There is no way to apply these changes in a fully backwards compatible
-way, so instead we will rely on a staged rollout through the `NodeRestrictionPods` feature gate, and
-call out the actions required.
+way, so instead we will rely on a staged rollout through the `NodeRestrictionPods` and
+`MirrorPodMetadata` feature gates, and call out the actions required.
 
 Clusters currently depending on label-matching static pods will need to migrate the
 labels to the new whitelisted key prefix. This can be done in a non-disruptive way,
@@ -235,6 +321,9 @@ Our CI environment does not depend on static pods serving services, so we can en
 gate in the standard Kubernetes E2E environment. The restrictions can be verified by impersonating a
 node's identity and ensuring illegal mirror pods cannot be created.
 
+To test the Kubelet modifications, a privileged pod can write a static pod manifest to a node and
+verify the expected changes are made.
+
 ### Graduation Criteria
 
 The feature gate will initially be in a default-disabled alpha state. Graduating to beta will make
@@ -242,7 +331,24 @@ the feature enabled by default, but users that have not yet updated existing lab
 usage to the unrestricted keys can still disable it. We will allow at least 2 releases before
 migrating to GA and removing the feature gate entirely.
 
+Here is an approximate graduation schedule, specific release numbers subject to change:
+
+- v1.17
+  - NodeRestrictionPods: **alpha**
+  - MirrorPodMetadata: **alpha**
+- v1.18
+  - NodeRestrictionPods: alpha
+  - MirrorPodMetadata: **beta**
+- v1.19
+  - NodeRestrictionPods: **beta**
+  - MirrorPodMetadata: beta
+- v1.20
+  - NodeRestrictionPods: **GA**
+  - MirrorPodMetadata: **GA**
+
 ### Upgrade / Downgrade Strategy
+
+**NodeRestrictionPods**
 
 Upgrade / downgrade is only meaningful for enabling / disabling the feature gate. If no explicit
 action is taken, this will happen on upgrade when the feature graduates to beta.
@@ -256,7 +362,21 @@ resources.
 Rolling back / disabling the feature will not affect existing pods. If a mirror pod was previously
 rejected, the Kubelet will attempt to recreate it and it will now be allowed.
 
+**MirrorPodMetadata**
+
+Nodes are not updated in place, but rather recreated. A node recreated with(out) the feature gate
+will also recreate the mirror pods with the correct feature set.
+
 ### Version Skew Strategy
+
+This feature uses 2 separate feature gates so that the Kubelet changes can be rolled out ahead of
+the control-plane changes. The `MirrorPodMetadata` feature gate will advance to beta at least 1
+release ahead of `NodeRestrictionPods`. Taking this approach limits the blast radius for a breakage
+to a subset of the cluster (upgraded nodes).
+
+If `MirrorPodMetadata` is enabled but `NodeRestrictionPods` is not, mirror pods will be modified,
+but the modifications will not be enforced. Once all nodes are using `MirrorPodMetadata`, enabling
+`NodeRestrictionPods` should be a no-op.
 
 In an HA environment, it's possible for some apiservers to have the feature enabled and others
 disabled. In this case, violating may or may not be allowed. Since the feature doesn't affect
@@ -322,16 +442,6 @@ security-sensitive option that is easy to misunderstand. For example, a system s
 mirror pods should explicitly opt-in to using the insecure labels to make the implications
 explicit. If any labels can be whitelisted, it becomes harder to audit the cluster.
 
-### Force a Kubelet controller owner ref
-
-By requiring the OwnerRef defined under [OwnerReferences](#ownerrefernces) and setting `controller:
-true` on it, well-written controllers wouldn't be able to be duped by labels, since they would see
-the controller owner ref for the specific node, and ignore the pod.
-
-This still does not address non-owning controllers, such as the endpoints controller, that will
-still match on labels. It is also a harder change to roll out, requiring a longer soak period to
-account for version skew across the master & nodes. As such, it does not seem worth pursuing.
-
 ### Annotation Restrictions
 
 In addition to label & owner restrictions, annotation keys could be restricted too. I am still open
@@ -356,3 +466,11 @@ mirror pods with annotations, except for whitelisted keys:
 - `PreferAvoidPodsAnnotationKey = "scheduler.alpha.kubernetes.io/preferAvoidPods"`
 - `BootstrapCheckpointAnnotationKey = "node.kubernetes.io/bootstrap-checkpoint"`
 
+### Alternative Label Modifications
+
+Several alternative label modification schemes were discussed, including:
+
+- Out right rejecting pods with illegal labels
+- Munging the labels to fit the allowed schema
+
+For more details, see https://github.com/kubernetes/enhancements/pull/1243#issuecomment-540758654
