@@ -69,6 +69,7 @@ superseded-by:
 - [Design Details](#design-details)
   - [References](#references)
   - [Design Considerations](#design-considerations)
+    - [Avoiding Disastrous Lockout](#avoiding-disastrous-lockout)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
 - [Implementation History](#implementation-history)
@@ -1767,6 +1768,57 @@ logical extreme of this, in the unweighted case, is to use a quantum
 of 1 bit (in the terms of the original networking setting).  That is
 isomorphic to (unweighted) fair queuing!  The weighted versions, still
 with miniscule quanta, are also isomorphic.
+
+#### Avoiding Disastrous Lockout
+
+We want to allow admins to edit the configuration, but we do not want
+these edits to be able to cause critical problems.  The critical
+problems are locking out administrators.  That would include locking
+out secondary requests in service of such primary requests.  By
+"locking out" we mean a total stop or an extreme slowdown.  We favor
+the approach of identifying a category of critical requests and
+ensuring that they are not held up by this feature.  This approach
+requires answering two questions: how do we identify the requests that
+must be let through, and what feature(s) of the configuration and
+behavior cause such requests to always get through?
+
+The likely way to identify the requests to always let through is by
+user group.  The group `system:masters` is a good place to start.  It
+might not be enough; some relevant secondary requests might not be in
+this user group.  To add those we might define an additional group
+that always gets through, perhaps something like `system:secondary`.
+
+There are two approaches to adjusting the config&behavior definitions
+to make the critical requests always get through: by direct
+stipulation in the behavior of the filter, or by stipulating that
+certain configuration objects always exist.
+
+The direct stipulation approach is to simply preface the proposal with
+a statement that any request meeting the identification test just
+discussed is not subject to priority and fairness control but rather
+is immediately executed and is not counted against any concurrency
+limit.
+
+The other approach is based on requiring some configuration objects to
+exist.  There are a few different ways to do this, in varying degrees
+of tension with the desire to let admins do whatever they want with
+configuration objects.  A high tension approach would be to stipulate
+that a particular FlowSchema must always exist, with matching rules
+that identify the critical requests and with logically-top matching
+precedence and referring to a PriorityLevelConfiguration that also
+must always exist and always be marked as exempt.  A slightly more
+flexible version would not fix any particular
+PriorityLevelConfiguration but instead allow admins to make any
+desired changes in those; this would require our implementation to
+update the mandated FlowSchema as necessary to keep it referring to an
+exempt PriorityLevelConfiguration (with some useful definition of what
+happens while there is none such).  An even less interventionist
+approach would start by moving the responsibility for saying "exempt"
+from priority levels to flow schemas; any exempt flow schema is
+relieved of the responsibility to identify a priority level.  In this
+approach the mandated flow schema says it is exempt, and we thus do
+not have a problem with fixing or tracking a corresponding priority
+level.
 
 ### Test Plan
 
