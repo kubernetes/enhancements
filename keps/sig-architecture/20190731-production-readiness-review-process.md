@@ -8,12 +8,14 @@ participating-sigs:
 reviewers:
   - "@derekwaynecarr"
   - "@vishh"
+  - "@justaugustus"
+  - "@alejandrox1"
 approvers:
-  - TBD
-editor: TBD
+  - "@derekwaynecarr"
+  - "@dims"
 creation-date: 2019-07-31
-last-updated: 2019-08-01
-status: provisional
+last-updated: 2019-10-17
+status: implementable
 ---
 
 # Production Readiness Review Process
@@ -30,7 +32,6 @@ status: provisional
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
 - [Implementation History](#implementation-history)
-- [Infrastructure Needed](#infrastructure-needed)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -93,6 +94,10 @@ all new features, at a level appropriate to the features' maturity levels.
 ### Non-Goals
 
 * Building new tooling to enforce the process.
+* Provide guidance for specific Kubernetes deployment models. That is,
+  requirements for features should be generally applicable to Kubernetes
+  deployments, not specific to use cases such as single or mult-tenant, cloud
+  provider, on-prem, edge, or other modes.
 
 ## Proposal
 
@@ -118,6 +123,8 @@ all new features, at a level appropriate to the features' maturity levels.
     - What happens if a cluster with this feature enabled is rolled back? What
       happens if it is subsequently upgraded again?
     - Are there tests for this?
+  * Scalability
+  * Rollout, Upgrade, and Rollback Planning
   * Dependencies
     - Does this feature depend on any specific services running in the cluster
       (e.g., a metrics service)?
@@ -134,7 +141,10 @@ all new features, at a level appropriate to the features' maturity levels.
   * Troubleshooting
     - What are the known failure modes?
     - How can those be detected via metrics or logs?
+    - What are the mitigations for each of those failure modes?
     - What are the most useful log messages and what logging levels do they require?
+    - What steps should be taken if SLOs are not being met to determine the
+      problem?
   * etc.
 
 * Establish a production readiness review team, label, and CI check to prevent
@@ -158,13 +168,27 @@ include a means of:
 
 ## Design Details
 
-TBD - this section should include the label name and the description of prow
-configuration that is needed
+Phase 1 - Research and Pilot
+* Targeted to the 1.17 cycle.
+* Setup a pilot PRR team, which will:
+  * Deliver an initial PRR questionnaire and pilot it with non-blocking PRRs for
+    in-progress KEPs.
+  * Deliver an interview/questionnaire form for operators and interview them on
+    production issues that they experience, to ensure that the focus of this
+    effort is on meaningful problems.
+  * Deliver a postmortem summary of existing features that have stalled due to
+    production-readiness issues (e.g., cron jobs).
+* Resolve open questions, including:
+  * Should the scope of this expand to feature lifecycle?
+  * How do we measure the effectiveness of this effort?
+
+
+Phase 2 - Implementation
+* Details TBD based on outcome of Phase 1.
+* Develop the complete PRR questionnaire.
+* Design and implement the tooling to identify features needing PRR review.
 
 ## Implementation History
 
 - 2019-07-31: Created
-
-## Infrastructure Needed
-
-TBD
+- 2019-10-17: Review feedback, phase 1 implementable
