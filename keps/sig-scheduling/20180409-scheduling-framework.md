@@ -35,7 +35,6 @@ superseded-by:
     - [Filter](#filter)
     - [Post-filter](#post-filter)
     - [Scoring](#scoring)
-    - [Normalize scoring](#normalize-scoring)
     - [Reserve](#reserve)
     - [Permit](#permit)
     - [Pre-bind](#pre-bind)
@@ -43,7 +42,7 @@ superseded-by:
     - [Post-bind](#post-bind)
     - [Un-reserve](#un-reserve)
   - [Plugin API](#plugin-api)
-    - [PluginContext](#plugincontext)
+    - [CycleState](#cyclestate)
     - [FrameworkHandle](#frameworkhandle)
     - [Plugin Registration](#plugin-registration)
   - [Plugin Lifecycle](#plugin-lifecycle)
@@ -177,15 +176,23 @@ plugin may be enabled at a time.
 ### Pre-filter
 
 These plugins are used to pre-process info about the pod, or to check certain
-conditions that the cluster or the pod must meet. If a pre-filter plugin returns
-an error, the scheduling cycle is aborted.
+conditions that the cluster or the pod must meet. A pre-filter plugin should implement
+a PreFilter function, if PreFilter returns an error, the scheduling cycle is aborted.
+Note that PreFilter is called once in each scheduling cycle.
+
+A Pre-filter plugin can provide another two optional functions: **AddPod** and **RemovePod** 
+to incrementally modify its pre-processed info. The framework guarantees that those
+functions will only be called after PreFilter, possibly on a cloned CycleState, and may call
+those functions more than once before calling Filter on a specific node.
+
 
 ### Filter
 
 These plugins are used to filter out nodes that cannot run the Pod. For each
 node, the scheduler will call filter plugins in their configured order. If any
 filter plugin marks the node as infeasible, the remaining plugins will not be
-called for that node. Nodes may be evaluated concurrently.
+called for that node. Nodes may be evaluated concurrently, and Filter may be called
+more than once in the same scheduling cycle.
 
 ### Post-filter
 
@@ -198,49 +205,50 @@ post-filter extension point.
 
 ### Scoring
 
-These plugins are used to rank nodes that have passed the filtering phase. The
-scheduler will call each scoring plugin for each node. There will be a well
-defined range of integers representing the minimum and maximum scores. After the
-[normalize scoring](#normalize-scoring) phase, the scheduler will combine node
-scores from all plugins according to the configured plugin weights.
+These plugins have two phases:
 
-### Normalize scoring
+1. The first phase is called "score" which is used to rank nodes that have passed
+the filtering phase. The scheduler will call `Score` of each scoring plugin for
+each node.
+2. The second phase is "normalize scoring" which is used to modify scores before
+the scheduler computes a final ranking of Nodes, and each score plugin receives
+scores given by the same plugin to all nodes in "normalize scoring" phase.
+`NormalizeScore` is called once per plugin per scheduling cycle right after
+"score" phase.
 
-These plugins are used to modify scores before the scheduler computes a final
-ranking of Nodes. A plugin that registers for this extension point will be
-called with the [scoring](#scoring) results from the same plugin. This is called
-once per plugin per scheduling cycle.
+The output of a score plugin must be an integer in range of
+**[MinNodeScore, MaxNodeScore]**. if not, the scheduling cycle is aborted.
+This is the output after running the optional NormalizeScore function of the
+plugin. If NormalizeScore is not provided, the output of Score must be in this range.
+After the optional NormalizeScore, the scheduler will combine node scores from all
+plugins according to the configured plugin weights.
 
 For example, suppose a plugin `BlinkingLightScorer` ranks Nodes based on how
 many blinking lights they have.
 
 ```go
-func ScoreNode(_ *v1.Pod, n *v1.Node) (int, error) {
-   return getBlinkingLightCount(n)
+func (*BlinkingLightScorer) Score(state *CycleState, _ *v1.Pod, nodeName string) (int, *Status) {
+   return getBlinkingLightCount(nodeName)
 }
 ```
 
 However, the maximum count of blinking lights may be small compared to
-`NodeScoreMax`. To fix this, `BlinkingLightScorer` should also register for this
-extension point.
+`MaxNodeScore`. To fix this, `BlinkingLightScorer` should also implement `NormalizeScore`.
 
 ```go
-func NormalizeScores(scores map[string]int) {
+func (*BlinkingLightScorer) NormalizeScore(state *CycleState, _ *v1.Pod, nodeScores NodeScoreList) *Status {
    highest := 0
-   for _, score := range scores {
-      highest = max(highest, score)
+   for _, nodeScore := range nodeScores {
+      highest = max(highest, nodeScore.Score)
    }
-   for node, score := range scores {
-      scores[node] = score*NodeScoreMax/highest
+   for i, nodeScore := range nodeScores {
+      nodeScores[i].Score = nodeScore.Score*MaxNodeScore/highest
    }
+   return nil
 }
 ```
 
-If any normalize-scoring plugin returns an error, the scheduling cycle is
-aborted.
-
-**Note:** Plugins wishing to perform "pre-reserve" work should use the
-normalize-scoring extension point.
+If either `Score` or `NormalizeScore` returns an error, the scheduling cycle is aborted.
 
 ### Reserve
 
@@ -332,23 +340,23 @@ type QueueSortPlugin interface {
 
 type PreFilterPlugin interface {
    Plugin
-   PreFilter(PluginContext, *v1.Pod) *Status
+   PreFilter(CycleState, *v1.Pod) *Status
 }
 
 // ...
 ```
 
-### PluginContext
+### CycleState
 
-Most* plugin functions will be called with a `PluginContext` argument. A
-`PluginContext` represents the current scheduling context.
+Most* plugin functions will be called with a `CycleState` argument. A
+`CycleState` represents the current scheduling context.
 
-A `PluginContext` will provide APIs for accessing data whose scope is the
+A `CycleState` will provide APIs for accessing data whose scope is the
 current scheduling context. Because binding cycles may execute concurrently,
-plugins can use the `PluginContext` to make sure they are handling the right
+plugins can use the `CycleState` to make sure they are handling the right
 request.
 
-The `PluginContext` also provides an API similar to
+The `CycleState` also provides an API similar to
 [`context.WithValue`](https://godoc.org/context#WithValue) that can be used to
 pass data between plugins at different extension points. Multiple plugins can
 share the state or communicate via this mechanism. The state is preserved only
@@ -358,13 +366,13 @@ modifying another plugin's state.
 
 \* *The only exception is for [queue sort](#queue-sort) plugins.*
 
-**WARNING**: The data available through a `PluginContext` is not valid after a
+**WARNING**: The data available through a `CycleState` is not valid after a
 scheduling context ends, and plugins should not hold references to that data
 longer than necessary.
 
 ### FrameworkHandle
 
-While the `PluginContext` provides APIs relevant to a single scheduling context,
+While the `CycleState` provides APIs relevant to a single scheduling context,
 the `FrameworkHandle` provides APIs relevant to the lifetime of a plugin. This
 is how plugins can get a client (`kubernetes.Interface`) and
 `SharedInformerFactory`, or read data from the scheduler's cache of cluster
@@ -471,7 +479,6 @@ type Plugins struct {
     Filter         []Plugin
     PostFilter     []Plugin
     Score          []Plugin
-    NormalizeScore []Plugin
     Reserve        []Plugin
     Permit         []Plugin
     PreBind        []Plugin
@@ -590,7 +597,7 @@ configuration.
 
 *Note: Moving `KubeSchedulerConfiguration` to `v1` is outside the scope of this
 design, but see also
-https://github.com/kubernetes/enhancements/blob/master/keps/sig-cluster-lifecycle/0032-create-a-k8s-io-component-repo.md
+https://github.com/kubernetes/enhancements/blob/master/keps/sig-cluster-lifecycle/wgs/0032-create-a-k8s-io-component-repo.md
 and https://github.com/kubernetes/community/pull/3008*
 
 ## Interactions with Cluster Autoscaler
@@ -677,12 +684,12 @@ End-to-end tests are not needed when integration tests can provided adequate cov
 * Alpha
   * Extension points for `Reserve`, `Unreserve`, and `Prebind` are built.
   * Integration tests for these extension points are added.
-  
+
 * Beta
   * All the extension points listed in this KEP and their corresponding tests
   are added.
   * Persistent dynamic volume binding logic is converted to a plugin.
-  
+
 * Stable
   * Existing 'Predicate' and 'Priority' functions and preemption logic are
   converted to plugins.

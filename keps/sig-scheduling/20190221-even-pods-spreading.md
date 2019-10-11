@@ -289,9 +289,9 @@ carries label `foo` in zones.
 
 If global topologyKey is "zone" and maxSkew is "1", then incoming pod can only
 be put into zone3 because for zone1, it violates `matching num (3) - min
-matching num (1) < maxSkey (1)`. Zone2 violate the formula the same way.
+matching num (1) < maxSkew (1)`. Zone2 violate the formula the same way.
 
-If global topologyKey is "node" and masSkew is "1", things are slightly
+If global topologyKey is "node" and maxSkew is "1", things are slightly
 different. Min matching num becomes 0 now, and hence only node1c, node2b and
 node2c are qualified candidates.
 
