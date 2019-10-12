@@ -37,7 +37,6 @@ superseded-by:
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
-  - [Version Skew Strategy](#version-skew-strategy)
 - [Implementation History](#implementation-history)
 <!-- /toc -->
 
@@ -162,9 +161,9 @@ type HTTPGetAction struct {
 	// Expect status code. If return code in the ExpectStatusCode and response match EexpectHTTPContent(will ignore if ExpectHTTPContent is empty). it treat as success.
 	// +optional
 	ExpectHTTPCodes []int32 `json:"expectHTTPCodes,omitempty" protobuf:"bytes,6,rep,name=expectHTTPCodes"`
-        // Expect HTTP conetnt. If http response content match expectHTTPContent and result HTTPcode in ExpectHTTPCodes (will ignore if ExpectHTTPCodes is empty). It treat as success
-        // +optional
-        ExpectHTTPContent string `json:"expectHTTPContent,omitempty" protobuf:"bytes,7,rep,name=expectHTTPContent"`
+    // Expect HTTP conetnt. If http response content match expectHTTPContent and result HTTPcode in ExpectHTTPCodes (will ignore if ExpectHTTPCodes is empty). It treat as success
+    // +optional
+    ExpectHTTPContent string `json:"expectHTTPContent,omitempty" protobuf:"bytes,7,rep,name=expectHTTPContent"`
 
 }
 ```
