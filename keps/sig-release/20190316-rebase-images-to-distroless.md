@@ -221,3 +221,4 @@ This KEP is targeted at v1.15 release. The full list of images switched to distr
 |     k8s-dns-sidecar  |  Master + Node   | alpine  --> debian-base  | k8s.gcr.io/k8s-dns-sidecar:1.15.3 |  Done |Done  | @yuwenma @prameshj  |
 |     k8s-dns-dnsmasq-nanny |  Master + Node   | alpine  --> debian-base  | k8s.gcr.io/k8s-dns-dnsmasq-nanny:1.15.3  |  Done | Done   | @yuwenma @prameshj  |
 |     k8s-dns-node-cache |  Node   | debian:stable-slim  --> debian-base  | k8s.gcr.io/k8s-dns-node-cache:1.15.3 |  Done | Done | @yuwenma @prameshj  |
+|     cluster-autoscaler |  Master   | debian-base  --> distroless  | k8s.gcr.io/cluster-autoscaler:v1.16.0 |  Done | Done | @losipiuk  |

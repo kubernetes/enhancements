@@ -18,17 +18,9 @@ set -o errexit
 set -o nounset
 set -o pipefail
 
-export KUBE_ROOT=$(dirname "${BASH_SOURCE}")/..
-cd ${KUBE_ROOT}
+# cd to the root path
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+cd "${ROOT}"
 
-go install ./vendor/github.com/chuckha/kepview/cmd/kepval
-if ! which kepval >/dev/null 2>&1; then
-    echo "Can't find kepval - is your GOPATH 'bin' in your PATH?" >&2
-    echo "  GOPATH: ${GOPATH}" >&2
-    echo "  PATH:   ${PATH}" >&2
-    exit 1
-fi
-
-# * ignore "0023-documentation-for-images.md" because it is not a real KEP
-# * ignore "YYYYMMDD-kep-template.md" because it is not a real KEP
-grep --recursive --files-with-matches --regexp '---' --include='*.md' keps | grep --invert-match "YYYYMMDD-kep-template.md" | grep --invert-match "0023-documentation-for-images.md" | xargs kepval
+# run the tests
+GO111MODULE=on go test ./cmd/kepval/...

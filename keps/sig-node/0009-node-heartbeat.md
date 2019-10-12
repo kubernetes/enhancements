@@ -189,27 +189,32 @@ Once all the code changes are done, we will:
    but it’s fine to reduce its frequency (though we should continue writing it at
    least once per eviction period).
 
+Based on experiments, unsuccessful attempt to enable `Server Side Apply` due to
+performance issues it was causing, in v1.17 release, we will:
+- reduce frequency of NodeStatus update to once every 5 minutes instead of
+  1 minute (note that if any condition changes, the update will happen within
+  next 10 seconds anyway, so we are only talking about periodic heartbeats)
+- reduce frequency of updating NodeStatuses in NodeProblemDetector also to
+  5 minutes (to keep those two frequencies in sync) (similarly as Kubelet,
+  if any condition changes, update will happen within next 30s as it is now)
 
-To be considered:
+Obviously, in both cases, we are only talking about default values, which may
+be changed by cluster operators if needed.
+We don't want to increase it further, as we would like to keep at least one
+NodeStatus update at least every eviction period (which is defaulted to 5 minutes).
 
-1. We may consider reducing frequency of NodeStatus updates to once every 5 minutes
-   (instead of 1 minute). That would help with performance/scalability even more.
-   Caveats:
-   - NodeProblemDetector is currently updating (some) node conditions every 1 minute
-     (unconditionally, because lastHeartbeatTime always changes). To make reduction
-     of NodeStatus updates frequency really useful, we should also change NPD to
-     work in a similar mode (check periodically if condition changes, but report only
-     when something changed or no status was reported for a given time) and decrease
-     its reporting frequency too.
-   - In general, we recommend to keep frequencies of NodeStatus reporting in both
-     Kubelet and NodeProblemDetector in sync (once all changes will be done) and
-     that should be reflected in [NPD documentation][].
-   - Note that reducing frequency to 1 minute already gives us almost 6x improvement.
-     It seems more than enough for any foreseeable future assuming we won’t
-     significantly increase the size of object Node.
-     Note that if we keep adding node conditions owned by other components, the
-     number of writes of Node object will go up. But that issue is separate from
-     that proposal.
+This change will help with enabling server-side-apply for all operation and will
+give more performance slack in largest supported clusters. As an example, assuming
+average node object size 20KB (which happens in production clusters), that will
+jump to ~30KB with server-side-apply feature, in 5k-node clusters, we are reducing
+etcd write throughput from 150MB/min to 30MB/min. Note that this isn't the only
+gain, because we also save on sending watch events, in kube-apiserver, and so on.
+
+Additionally, we will modify kubectl describe to show the information from the
+corresponding Lease object.
+
+With those two changes and positive user-feedback we already got, we will also
+graduate the feature to GA in 1.17 too.
 
 Other notes:
 
@@ -227,6 +232,19 @@ Increasing default frequency of NodeStatus updates may potentially break clients
 relying on frequent Node object updates. However, in non-managed solutions, customers
 will still be able to restore previous behavior by setting appropriate flag values.
 Thus, changing defaults to what we recommend is the path to go with.
+
+To evaluate the risk of further reduction of NodeStatus updates, I went through
+couple thousands of files mentioning `LastHeartbeatTime` and `k8s` on github to
+understand the potential of breaking some system. There are couple places that
+are incompatible with node leases, but they would already be broken by current
+1m frequency, e.g.:
+- [mesos status updater](https://github.com/kubernetes-retired/kube-mesos-framework/blob/9bee6ea903eb7c3e78b9b0a4accb9b8162cabeb5/pkg/node/statusupdater.go#L122)
+- [node cacher](https://github.com/sandflee/k8s-load-simulator/blob/6d9a1c7458df1231e06d6eb7ac9eecb4f7d0e3ce/pkg/node/node_cacher.go#L25)
+- [isk8salive](https://github.com/barkbay/isk8salive/blob/a47c0aa46c1008fab4042c4047e9c5ee68516845/main.go#L55)
+- [node evictor](https://github.com/jdartigalongue/k8s-node-evictor/blob/fd03ee3452951bb191dde792eada7a29549594cd/controller.go#L88)
+- [node cleanup](https://github.com/monder/aws-node-cleanup/blob/25b2a568fa303de053b11e8387f5ddbc8c192ea6/node-cleanup.go#L21)
+
+That said, it sounds better to update the frequency before going to GA.
 
 ### Testing Plan
 
@@ -264,6 +282,8 @@ both real clusters and Kubemark.
 
 GA:
 - Enabled by default for a release with no complaints.
+- Frequency of NodeStatus defaulted to 5m
+- kubectl describe node showing information from corrsponding Lease object
 
 
 ## Implementation History
@@ -271,6 +291,10 @@ GA:
 - v1.11: KEP Summary, Motivation and Proposal merged
 - v1.13: Feature launched to Alpha (default: off)
 - v1.14: Feature launched to Beta (default: on)
+- v1.16: Minor improvements based on user feedback (e.g. [80429][], [81174][])
+
+[80429]: https://github.com/kubernetes/kubernetes/pull/80429
+[81174]: https://github.com/kubernetes/kubernetes/pull/81174
 
 ## Alternatives
 

@@ -98,7 +98,7 @@ The [metrics overhaul KEP](https://github.com/kubernetes/enhancements/blob/maste
 
 ## Implementation History
 
-- [ ] [Migrate kubelet metrics to use standard prometheus collectors](https://github.com/kubernetes/kubernetes/issues/79286)
+- [x] [Migrate kubelet metrics to use standard prometheus collectors](https://github.com/kubernetes/kubernetes/issues/79286)
 - [ ] Create migrated variants of shared client metrics
 - [ ] Create migrated variants of shared leader-election metrics
 - [ ] Create migrated variants of shared workqueue metrics

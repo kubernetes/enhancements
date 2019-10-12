@@ -45,9 +45,25 @@ superseded-by:
   - [Dispatching](#dispatching)
     - [Fair Queuing for Server Requests](#fair-queuing-for-server-requests)
   - [Example Configuration](#example-configuration)
+  - [Reaction to Configuration Changes](#reaction-to-configuration-changes)
   - [Default Behavior](#default-behavior)
   - [Prometheus Metrics](#prometheus-metrics)
   - [Testing](#testing)
+  - [Observed Requests](#observed-requests)
+    - [Loopback](#loopback)
+    - [TokenReview from kube-controller-manager](#tokenreview-from-kube-controller-manager)
+    - [SubjectAccessReview by Aggregated API Server](#subjectaccessreview-by-aggregated-api-server)
+    - [GET of Custom Resource by Administrator Using Kubectl](#get-of-custom-resource-by-administrator-using-kubectl)
+    - [Node to Self](#node-to-self)
+    - [Other Leases](#other-leases)
+    - [Status Update From System Controller To System Object](#status-update-from-system-controller-to-system-object)
+    - [Etcd Operator](#etcd-operator)
+    - [Garbage Collectors](#garbage-collectors)
+    - [Kube-Scheduler](#kube-scheduler)
+    - [Kubelet Updates Pod Status](#kubelet-updates-pod-status)
+    - [Controller in Hosted Control Plane](#controller-in-hosted-control-plane)
+    - [LOG and EXEC on Workload Pod](#log-and-exec-on-workload-pod)
+    - [Requests Over Insecure Port](#requests-over-insecure-port)
   - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
@@ -286,7 +302,7 @@ FlowSchema.
 
 Each FlowSchema has:
 - A boolean test of an authenticated request;
-- A matching priority (default value is 1000);
+- A matching precedence (default value is 1000);
 - A reference to a RequestPriority object; and
 - An optional rule for computing the request’s flow distinguisher; not
   allowed for a FlowSchema that refers to a RequestPriority that is
@@ -309,10 +325,10 @@ The best matching FlowSchema for a given request is one of those whose
 boolean test accepts the request.  It is a configuration error if
 there is no FlowSchema that matches every request.  In case multiple
 schemas accept the request, the best is one of those with the
-logically highest matching priority.  In case there are multiple of
+logically highest matching precedence.  In case there are multiple of
 those the implementation is free to pick any of those as best.  A
-matching priority is an integer, and a numerically lower number
-indicates a logically higher priority.
+matching precedence is an integer, and a numerically lower number
+indicates a logically higher precedence.
 
 A FlowSchema’s boolean test is constructed from atomic tests.  Each
 atomic test compares an authenticated request attribute --- selected
@@ -403,7 +419,8 @@ import (
 var numQueues uint64
 
 func shuffleDealAndPick(v, nq uint64,
-	mr func(int /*in [0, nq-1]*/) int, /*in [0, numQueues-1] and excluding previously determined members of I*/
+	lengthOfQueue func(int) int,
+	mr func( /*in [0, nq-1]*/ int) /*in [0, numQueues-1] and excluding previously determined members of I*/ int,
 	nRem, minLen, bestIdx int) int {
 	if nRem < 1 {
 		return bestIdx
@@ -412,7 +429,7 @@ func shuffleDealAndPick(v, nq uint64,
 	ai := int(v - nq*vNext)
 	ii := mr(ai)
 	i := numQueues - nq // i is used only for debug printing
-	mrNext := func(a int /*in [0, nq-2]*/) int /*in [0, numQueues-1] and excluding I[0], I[1], ... ii*/ {
+	mrNext := func(a /*in [0, nq-2]*/ int) /*in [0, numQueues-1] and excluding I[0], I[1], ... ii*/ int {
 		if a < ai {
 			fmt.Printf("mr[%v](%v) going low\n", i, a)
 			return mr(a)
@@ -426,18 +443,14 @@ func shuffleDealAndPick(v, nq uint64,
 		minLen = lenI
 		bestIdx = ii
 	}
-	return shuffleDealAndPick(vNext, nq-1, mrNext, nRem-1, minLen, bestIdx)
-}
-
-func lengthOfQueue(i int) int {
-	return i % 10 // hack for this PoC
+	return shuffleDealAndPick(vNext, nq-1, lengthOfQueue, mrNext, nRem-1, minLen, bestIdx)
 }
 
 func main() {
 	numQueues = uint64(128)
 	handSize := 6
 	hashValue := rand.Uint64()
-	queueIndex := shuffleDealAndPick(hashValue, numQueues, func(i int) int { return i }, handSize, math.MaxInt32, -1)
+	queueIndex := shuffleDealAndPick(hashValue, numQueues, func (idx int) int {return idx % 10}, func(i int) int { return i }, handSize, math.MaxInt32, -1)
 	fmt.Printf("For V=%v, numQueues=%v, handSize=%v, chosen queue is %v\n", hashValue, numQueues, handSize, queueIndex)
 }
 ```
@@ -902,6 +915,61 @@ spec:
       set: [ "system:serviceaccount:example-com:network-apiserver" ]
 ```
 
+### Reaction to Configuration Changes
+
+We do not seek to make our life easy by making any configuration
+object fields immutable.  Recall that objects can be deleted and
+replacements (with the same name) created, so server-enforced
+immutability of field values provides no useful guarantee to
+downstream consumers (such as the request filter here).  We could try
+to get useful guarantees by adding a finalizer per (config object,
+apiserver), but at this level of development we will not attempt that.
+
+Many details of the configuration are consumed only momentarily;
+changes in these pose no difficulty.  Challenging changes include
+changes in the number of queues, the queue length limit, or the
+assured concurrency value (which is derived from several pieces of
+config, as outlined elsewhere) of a request priority --- as well as
+deletion of a priority level itself.
+
+An increase in the number of queues of a priority level is handled by
+simply adding queues.  A decrease is handled by making a distinction
+between the desired and the actual number of queues.  When the desired
+number drops below the actual number, the undesired queues are left in
+place until they are naturally drained; new requests are put in only
+the desired queues.  When an undesired queue becomes empty it is
+deleted and the fair queuing round-robin pointer is advanced if it was
+pointing to that queue.
+
+When the assured concurrency value of a priority level increases,
+additional requests are dispatched if possible.  When the assured
+concurrency value decreases, there is no immediate reaction --- this
+filter does not abort or suspend requests that are currently being
+served.
+
+When the queue length limit of a priority level increases, no
+immediate reaction is required.  When the queue length limit
+decreases, there is also no immediate reaction --- queues that are
+longer than the new length limit are left to naturally shrink as they
+are drained by dispatching and timeouts.
+
+When a request priority configuration object is deleted, in a given
+apiserver the corresponding implementation objects linger until all
+the queues of that priority level are empty.  A FlowSchema associated
+with one of these lingering undesired priority levels matches no
+requests.
+
+The [Dispatching](#Dispatching) section prescribes how the assured
+concurrency value (`ACV`) is computed for each priority level, and the
+sum there is over all the _desired_ priority levels (i.e., excluding
+the lingering undesired priority levels).  For this reason and for
+others, at any given time this may compute for some priority level(s)
+an assured concurrency value that is lower than the number currently
+executing.  In these situations the total number allowed to execute
+will temporarily exceed the apiserver's configured concurrency limit
+(`SCL`) and will settle down to the configured limit as requests
+complete their service.
+
 ### Default Behavior
 
 There must be reasonable behavior "out of the box", and it should be
@@ -994,7 +1062,465 @@ such objects would test that the workload does not crowd out the
 garbage collector.
 
 
+### Observed Requests
 
+To provide data about requests to use in designing the configuration,
+here are some observations from a running system late in the
+release 1.16 development cycle.  These are extracts from the
+kube-apiserver log file, with linebreaks and indentation added for
+readability.
+
+The displayed data are a `RequestInfo` from
+`k8s.io/apiserver/pkg/endpoints/request` and an `Info` from
+`k8s.io/apiserver/pkg/authentication/user`.
+
+#### Loopback
+
+```
+requestInfo=&request.RequestInfo{IsResourceRequest:true,
+  Path:"/apis/admissionregistration.k8s.io/v1beta1/mutatingwebhookconfigurations",
+  Verb:"list", APIPrefix:"apis",
+  APIGroup:"admissionregistration.k8s.io", APIVersion:"v1beta1",
+  Namespace:"", Resource:"mutatingwebhookconfigurations",
+  Subresource:"", Name:"",
+  Parts:[]string{"mutatingwebhookconfigurations"}},
+userInfo=&user.DefaultInfo{Name:"system:apiserver",
+  UID:"388b748d-481c-4348-9c94-b7aab0c6efad",
+  Groups:[]string{"system:masters"}, Extra:map[string][]string(nil)}
+```
+
+```
+RequestInfo=&request.RequestInfo{IsResourceRequest:true,
+  Path:"/api/v1/services", Verb:"watch", APIPrefix:"api", APIGroup:"",
+  APIVersion:"v1", Namespace:"", Resource:"services", Subresource:"",
+  Name:"", Parts:[]string{"services"}},
+user.Info=&user.DefaultInfo{Name:"system:apiserver",
+  UID:"388b748d-481c-4348-9c94-b7aab0c6efad",
+  Groups:[]string{"system:masters"}, Extra:map[string][]string(nil)}
+```
+
+```
+requestInfo=&request.RequestInfo{IsResourceRequest:true,
+  Path:"/api/v1/namespaces/default/services/kubernetes", Verb:"get",
+  APIPrefix:"api", APIGroup:"", APIVersion:"v1", Namespace:"default",
+  Resource:"services", Subresource:"", Name:"kubernetes",
+  Parts:[]string{"services", "kubernetes"}},
+userInfo=&user.DefaultInfo{Name:"system:apiserver",
+  UID:"388b748d-481c-4348-9c94-b7aab0c6efad",
+  Groups:[]string{"system:masters"}, Extra:map[string][]string(nil)}
+  ```
+
+#### TokenReview from kube-controller-manager
+
+```
+requestInfo=&request.RequestInfo{IsResourceRequest:true,
+  Path:"/apis/authentication.k8s.io/v1/tokenreviews", Verb:"create",
+  APIPrefix:"apis", APIGroup:"authentication.k8s.io", APIVersion:"v1",
+  Namespace:"", Resource:"tokenreviews", Subresource:"", Name:"",
+  Parts:[]string{"tokenreviews"}},
+userInfo=&user.DefaultInfo{Name:"system:kube-controller-manager",
+  UID:"", Groups:[]string{"system:authenticated"},
+  Extra:map[string][]string(nil)}
+```
+
+#### SubjectAccessReview by Aggregated API Server
+
+```
+requestInfo=&request.RequestInfo{IsResourceRequest:true,
+  Path:"/apis/authorization.k8s.io/v1beta1/subjectaccessreviews",
+  Verb:"create", APIPrefix:"apis", APIGroup:"authorization.k8s.io",
+  APIVersion:"v1beta1", Namespace:"", Resource:"subjectaccessreviews",
+  Subresource:"", Name:"", Parts:[]string{"subjectaccessreviews"}},
+userInfo=&user.DefaultInfo{Name:"system:serviceaccount:example-com:network-apiserver",
+  UID:"55aa7599-67e7-4f29-80ae-d8c2cb5fd0c4",
+  Groups:[]string{"system:serviceaccounts",
+    "system:serviceaccounts:example-com", "system:authenticated"},
+  Extra:map[string][]string(nil)}
+```
+
+#### GET of Custom Resource by Administrator Using Kubectl
+
+```
+requestInfo=&request.RequestInfo{IsResourceRequest:false,
+  Path:"/openapi/v2", Verb:"get", APIPrefix:"", APIGroup:"",
+  APIVersion:"", Namespace:"", Resource:"", Subresource:"", Name:"",
+  Parts:[]string(nil)},
+userInfo=&user.DefaultInfo{Name:"system:admin", UID:"",
+  Groups:[]string{"system:masters", "system:authenticated"},
+  Extra:map[string][]string(nil)}
+```
+
+```
+requestInfo=&request.RequestInfo{IsResourceRequest:true,
+  Path:"/apis/network.example.com/v1alpha1/namespaces/default/networkattachments",
+  Verb:"list", APIPrefix:"apis", APIGroup:"network.example.com",
+  APIVersion:"v1alpha1", Namespace:"default",
+  Resource:"networkattachments", Subresource:"", Name:"",
+  Parts:[]string{"networkattachments"}},
+userInfo=&user.DefaultInfo{Name:"system:admin", UID:"",
+  Groups:[]string{"system:masters", "system:authenticated"},
+  Extra:map[string][]string(nil)}
+```
+
+#### Node to Self
+
+```
+requestInfo=&request.RequestInfo{IsResourceRequest:true,
+  Path:"/api/v1/nodes/127.0.0.1/status", Verb:"patch", APIPrefix:"api",
+  APIGroup:"", APIVersion:"v1", Namespace:"", Resource:"nodes",
+  Subresource:"status", Name:"127.0.0.1", Parts:[]string{"nodes",
+    "127.0.0.1", "status"}},
+userInfo=&user.DefaultInfo{Name:"system:node:127.0.0.1", UID:"",
+  Groups:[]string{"system:nodes", "system:authenticated"},
+  Extra:map[string][]string(nil)}
+```
+
+```
+requestInfo=&request.RequestInfo{IsResourceRequest:true,
+  Path:"/apis/coordination.k8s.io/v1/namespaces/kube-node-lease/leases/127.0.0.1",
+  Verb:"update", APIPrefix:"apis", APIGroup:"coordination.k8s.io",
+  APIVersion:"v1", Namespace:"kube-node-lease", Resource:"leases",
+  Subresource:"", Name:"127.0.0.1", Parts:[]string{"leases",
+    "127.0.0.1"}},
+userInfo=&user.DefaultInfo{Name:"system:node:127.0.0.1", UID:"",
+  Groups:[]string{"system:nodes", "system:authenticated"},
+  Extra:map[string][]string(nil)}
+```
+
+#### Other Leases
+
+LIST by kube-controller-manager
+```
+requestInfo=&request.RequestInfo{IsResourceRequest:true,
+  Path:"/apis/coordination.k8s.io/v1/leases", Verb:"list",
+  APIPrefix:"apis", APIGroup:"coordination.k8s.io", APIVersion:"v1",
+  Namespace:"", Resource:"leases", Subresource:"", Name:"",
+  Parts:[]string{"leases"}},
+userInfo=&user.DefaultInfo{Name:"system:kube-controller-manager",
+  UID:"", Groups:[]string{"system:authenticated"},
+  Extra:map[string][]string(nil)}
+```
+
+WATCH by kube-controller-manager
+```
+RequestInfo=&request.RequestInfo{IsResourceRequest:true,
+  Path:"/apis/coordination.k8s.io/v1beta1/leases", Verb:"watch",
+  APIPrefix:"apis", APIGroup:"coordination.k8s.io",
+  APIVersion:"v1beta1", Namespace:"", Resource:"leases", Subresource:"",
+  Name:"", Parts:[]string{"leases"}},
+user.Info=&user.DefaultInfo{Name:"system:kube-controller-manager",
+  UID:"", Groups:[]string{"system:authenticated"},
+  Extra:map[string][]string(nil)}
+```
+
+#### Status Update From System Controller To System Object
+
+Deployment controller
+```
+requestInfo=&request.RequestInfo{IsResourceRequest:true,
+  Path:"/apis/apps/v1/namespaces/kube-system/deployments/kube-dns/status",
+  Verb:"update", APIPrefix:"apis", APIGroup:"apps", APIVersion:"v1",
+  Namespace:"kube-system", Resource:"deployments", Subresource:"status",
+  Name:"kube-dns", Parts:[]string{"deployments", "kube-dns", "status"}},
+userInfo=&user.DefaultInfo{Name:"system:serviceaccount:kube-system:deployment-controller",
+  UID:"2b126368-be77-454d-8893-0384f9895f02",
+  Groups:[]string{"system:serviceaccounts",
+    "system:serviceaccounts:kube-system", "system:authenticated"},
+  Extra:map[string][]string(nil)}
+```
+
+#### Etcd Operator
+
+List relevant pods
+```
+requestInfo=&request.RequestInfo{IsResourceRequest:true,
+  Path:"/api/v1/namespaces/example-com/pods", Verb:"list",
+  APIPrefix:"api", APIGroup:"", APIVersion:"v1",
+  Namespace:"example-com", Resource:"pods", Subresource:"", Name:"",
+  Parts:[]string{"pods"}},
+userInfo=&user.DefaultInfo{Name:"system:serviceaccount:example-com:default",
+  UID:"6c906aa7-135c-4094-8611-fbdb1a8ea077",
+  Groups:[]string{"system:serviceaccounts",
+    "system:serviceaccounts:example-com", "system:authenticated"},
+  Extra:map[string][]string(nil)}
+```
+
+Update an etcd cluster
+```
+requestInfo=&request.RequestInfo{IsResourceRequest:true,
+  Path:"/apis/etcd.database.coreos.com/v1beta2/namespaces/example-com/etcdclusters/the-etcd-cluster",
+  Verb:"update", APIPrefix:"apis", APIGroup:"etcd.database.coreos.com",
+  APIVersion:"v1beta2", Namespace:"example-com",
+  Resource:"etcdclusters", Subresource:"", Name:"the-etcd-cluster",
+  Parts:[]string{"etcdclusters", "the-etcd-cluster"}},
+userInfo=&user.DefaultInfo{Name:"system:serviceaccount:example-com:default",
+  UID:"6c906aa7-135c-4094-8611-fbdb1a8ea077",
+  Groups:[]string{"system:serviceaccounts",
+    "system:serviceaccounts:example-com", "system:authenticated"},
+  Extra:map[string][]string(nil)}
+```
+
+Kube-scheduler places an etcd Pod
+```
+requestInfo=&request.RequestInfo{IsResourceRequest:true,
+  Path:"/api/v1/namespaces/example-com/pods/the-etcd-cluster-mxcxvgbcfg/binding",
+  Verb:"create", APIPrefix:"api", APIGroup:"", APIVersion:"v1",
+  Namespace:"example-com", Resource:"pods", Subresource:"binding",
+  Name:"the-etcd-cluster-mxcxvgbcfg", Parts:[]string{"pods",
+    "the-etcd-cluster-mxcxvgbcfg", "binding"}},
+userInfo=&user.DefaultInfo{Name:"system:kube-scheduler", UID:"",
+  Groups:[]string{"system:authenticated"},
+  Extra:map[string][]string(nil)}
+```
+
+#### Garbage Collectors
+
+Pod GC, list nodes.
+```
+requestInfo=&request.RequestInfo{IsResourceRequest:true,
+  Path:"/api/v1/nodes", Verb:"list", APIPrefix:"api", APIGroup:"",
+  APIVersion:"v1", Namespace:"", Resource:"nodes", Subresource:"",
+  Name:"", Parts:[]string{"nodes"}},
+userInfo=&user.DefaultInfo{Name:"system:serviceaccount:kube-system:pod-garbage-collector",
+  UID:"85b105c6-ca2f-42f0-8a75-1da13a8c1f6d",
+  Groups:[]string{"system:serviceaccounts",
+    "system:serviceaccounts:kube-system", "system:authenticated"},
+  Extra:map[string][]string(nil)}
+```
+
+Generic GC, `GET /api`
+```
+requestInfo=&request.RequestInfo{IsResourceRequest:false, Path:"/api",
+  Verb:"get", APIPrefix:"", APIGroup:"", APIVersion:"", Namespace:"",
+  Resource:"", Subresource:"", Name:"", Parts:[]string(nil)},
+userInfo=&user.DefaultInfo{Name:"system:serviceaccount:kube-system:generic-garbage-collector",
+  UID:"61271d97-a959-467a-afd5-892dfd30dec9",
+  Groups:[]string{"system:serviceaccounts",
+    "system:serviceaccounts:kube-system", "system:authenticated"},
+  Extra:map[string][]string(nil)}
+```
+
+Generic GC, `GET /apis/coordination.k8s.io/v1beta1`
+```
+requestInfo=&request.RequestInfo{IsResourceRequest:false,
+  Path:"/apis/coordination.k8s.io/v1beta1", Verb:"get",
+  APIPrefix:"apis", APIGroup:"", APIVersion:"", Namespace:"",
+  Resource:"", Subresource:"", Name:"", Parts:[]string(nil)},
+userInfo=&user.DefaultInfo{Name:"system:serviceaccount:kube-system:generic-garbage-collector",
+  UID:"61271d97-a959-467a-afd5-892dfd30dec9",
+  Groups:[]string{"system:serviceaccounts",
+    "system:serviceaccounts:kube-system", "system:authenticated"},
+  Extra:map[string][]string(nil)}
+```
+
+#### Kube-Scheduler
+
+LIST
+```
+requestInfo=&request.RequestInfo{IsResourceRequest:true,
+  Path:"/apis/storage.k8s.io/v1/storageclasses", Verb:"list",
+  APIPrefix:"apis", APIGroup:"storage.k8s.io", APIVersion:"v1",
+  Namespace:"", Resource:"storageclasses", Subresource:"", Name:"",
+  Parts:[]string{"storageclasses"}},
+userInfo=&user.DefaultInfo{Name:"system:kube-scheduler", UID:"",
+  Groups:[]string{"system:authenticated"},
+  Extra:map[string][]string(nil)}
+```
+
+WATCH
+```
+RequestInfo=&request.RequestInfo{IsResourceRequest:true,
+  Path:"/api/v1/services", Verb:"watch", APIPrefix:"api", APIGroup:"",
+  APIVersion:"v1", Namespace:"", Resource:"services", Subresource:"",
+  Name:"", Parts:[]string{"services"}},
+user.Info=&user.DefaultInfo{Name:"system:kube-scheduler", UID:"",
+  Groups:[]string{"system:authenticated"},
+  Extra:map[string][]string(nil)}
+```
+
+Bind Pod of Hosted Control Plane
+```
+requestInfo=&request.RequestInfo{IsResourceRequest:true,
+  Path:"/api/v1/namespaces/example-com/pods/the-etcd-cluster-mxcxvgbcfg/binding",
+  Verb:"create", APIPrefix:"api", APIGroup:"", APIVersion:"v1",
+  Namespace:"example-com", Resource:"pods", Subresource:"binding",
+  Name:"the-etcd-cluster-mxcxvgbcfg", Parts:[]string{"pods",
+    "the-etcd-cluster-mxcxvgbcfg", "binding"}},
+userInfo=&user.DefaultInfo{Name:"system:kube-scheduler", UID:"",
+  Groups:[]string{"system:authenticated"},
+  Extra:map[string][]string(nil)}
+```
+
+Update Status of System Pod
+```
+requestInfo=&request.RequestInfo{IsResourceRequest:true,
+  Path:"/api/v1/namespaces/kube-system/pods/kube-dns-5f7bc9fd5c-2bsz8/status",
+  Verb:"update", APIPrefix:"api", APIGroup:"", APIVersion:"v1",
+  Namespace:"kube-system", Resource:"pods", Subresource:"status",
+  Name:"kube-dns-5f7bc9fd5c-2bsz8", Parts:[]string{"pods",
+    "kube-dns-5f7bc9fd5c-2bsz8", "status"}},
+userInfo=&user.DefaultInfo{Name:"system:kube-scheduler", UID:"",
+  Groups:[]string{"system:authenticated"},
+  Extra:map[string][]string(nil)}
+```
+
+ Create Event About Hosted Control Plane
+```
+requestInfo=&request.RequestInfo{IsResourceRequest:true,
+  Path:"/apis/events.k8s.io/v1beta1/namespaces/example-com/events",
+  Verb:"create", APIPrefix:"apis", APIGroup:"events.k8s.io",
+  APIVersion:"v1beta1", Namespace:"example-com", Resource:"events",
+  Subresource:"", Name:"", Parts:[]string{"events"}},
+userInfo=&user.DefaultInfo{Name:"system:kube-scheduler", UID:"",
+  Groups:[]string{"system:authenticated"},
+  Extra:map[string][]string(nil)}
+```
+
+#### Kubelet Updates Pod Status
+
+```
+requestInfo=&request.RequestInfo{IsResourceRequest:true,
+  Path:"/api/v1/namespaces/default/pods/bb1-66bdc74b9c-bgm47/status",
+  Verb:"patch", APIPrefix:"api", APIGroup:"", APIVersion:"v1",
+  Namespace:"default", Resource:"pods", Subresource:"status",
+  Name:"bb1-66bdc74b9c-bgm47", Parts:[]string{"pods",
+    "bb1-66bdc74b9c-bgm47", "status"}},
+userInfo=&user.DefaultInfo{Name:"system:node:127.0.0.1", UID:"",
+  Groups:[]string{"system:nodes", "system:authenticated"},
+  Extra:map[string][]string(nil)}
+```
+
+#### Controller in Hosted Control Plane
+
+LIST
+```
+requestInfo=&request.RequestInfo{IsResourceRequest:true,
+  Path:"/apis/network.example.com/v1alpha1/subnets", Verb:"list",
+  APIPrefix:"apis", APIGroup:"network.example.com",
+  APIVersion:"v1alpha1", Namespace:"", Resource:"subnets",
+  Subresource:"", Name:"", Parts:[]string{"subnets"}},
+userInfo=&user.DefaultInfo{Name:"system:serviceaccount:example-com:kos-controller-manager",
+  UID:"cd95ccf8-f1ea-4398-9cc3-035331125442",
+  Groups:[]string{"system:serviceaccounts",
+   "system:serviceaccounts:example-com", "system:authenticated"},
+  Extra:map[string][]string(nil)}
+```
+
+WATCH
+```
+RequestInfo=&request.RequestInfo{IsResourceRequest:true,
+  Path:"/apis/network.example.com/v1alpha1/subnets", Verb:"watch",
+  APIPrefix:"apis", APIGroup:"network.example.com",
+  APIVersion:"v1alpha1", Namespace:"", Resource:"subnets",
+  Subresource:"", Name:"", Parts:[]string{"subnets"}},
+user.Info=&user.DefaultInfo{Name:"system:serviceaccount:example-com:kos-controller-manager",
+  UID:"cd95ccf8-f1ea-4398-9cc3-035331125442",
+  Groups:[]string{"system:serviceaccounts",
+    "system:serviceaccounts:example-com", "system:authenticated"},
+  Extra:map[string][]string(nil)}
+```
+
+UPDATE
+```
+requestInfo=&request.RequestInfo{IsResourceRequest:true,
+  Path:"/apis/network.example.com/v1alpha1/namespaces/default/subnets/sn-1",
+  Verb:"update", APIPrefix:"apis", APIGroup:"network.example.com",
+  APIVersion:"v1alpha1", Namespace:"default", Resource:"subnets",
+  Subresource:"", Name:"sn-1", Parts:[]string{"subnets", "sn-1"}},
+userInfo=&user.DefaultInfo{Name:"system:serviceaccount:example-com:kos-controller-manager",
+  UID:"cd95ccf8-f1ea-4398-9cc3-035331125442",
+  Groups:[]string{"system:serviceaccounts",
+    "system:serviceaccounts:example-com", "system:authenticated"},
+  Extra:map[string][]string(nil)}
+```
+
+#### LOG and EXEC on Workload Pod
+
+`kubectl logs bb1-66bdc74b9c-bgm47`
+
+```
+RequestInfo=&request.RequestInfo{IsResourceRequest:true,
+  Path:"/api/v1/namespaces/default/pods/bb1-66bdc74b9c-bgm47/log",
+  Verb:"get", APIPrefix:"api", APIGroup:"", APIVersion:"v1",
+  Namespace:"default", Resource:"pods", Subresource:"log",
+  Name:"bb1-66bdc74b9c-bgm47", Parts:[]string{"pods",
+    "bb1-66bdc74b9c-bgm47", "log"}},
+user.Info=&user.DefaultInfo{Name:"system:admin", UID:"",
+  Groups:[]string{"system:masters", "system:authenticated"},
+  Extra:map[string][]string(nil)}
+```
+
+`kubectl logs -f bb1-66bdc74b9c-bgm47`
+
+```
+RequestInfo=&request.RequestInfo{IsResourceRequest:true,
+  Path:"/api/v1/namespaces/default/pods/bb1-66bdc74b9c-bgm47/log",
+  Verb:"get", APIPrefix:"api", APIGroup:"", APIVersion:"v1",
+  Namespace:"default", Resource:"pods", Subresource:"log",
+  Name:"bb1-66bdc74b9c-bgm47", Parts:[]string{"pods",
+    "bb1-66bdc74b9c-bgm47", "log"}},
+user.Info=&user.DefaultInfo{Name:"system:admin", UID:"",
+  Groups:[]string{"system:masters", "system:authenticated"},
+  Extra:map[string][]string(nil)}
+```
+
+`kubectl exec bb1-66bdc74b9c-bgm47 date`
+
+```
+RequestInfo=&request.RequestInfo{IsResourceRequest:true,
+  Path:"/api/v1/namespaces/default/pods/bb1-66bdc74b9c-bgm47/exec",
+  Verb:"create", APIPrefix:"api", APIGroup:"", APIVersion:"v1",
+  Namespace:"default", Resource:"pods", Subresource:"exec",
+  Name:"bb1-66bdc74b9c-bgm47", Parts:[]string{"pods",
+    "bb1-66bdc74b9c-bgm47", "exec"}},
+user.Info=&user.DefaultInfo{Name:"system:admin", UID:"",
+  Groups:[]string{"system:masters", "system:authenticated"},
+  Extra:map[string][]string(nil)}
+```
+
+#### Requests Over Insecure Port
+
+Before fix
+```
+W0821 18:10:40.546166    5468 reqmgmt.go:56] No User found in context
+&context.valueCtx{Context:(*context.valueCtx)(0xc007c89ad0), key:0,
+  val:(*request.RequestInfo)(0xc0016afa20)}
+of request &http.Request{Method:"GET",
+  URL:(*url.URL)(0xc006f87d00), Proto:"HTTP/1.1", ProtoMajor:1,
+  ProtoMinor:1,
+  Header:http.Header{"Accept":[]string{"*/*"},
+    "User-Agent":[]string{"curl/7.58.0"}},
+  Body:http.noBody{}, GetBody:(func() (io.ReadCloser, error))(nil),
+  ContentLength:0, TransferEncoding:[]string(nil), Close:false,
+  Host:"localhost:8080", Form:url.Values(nil),
+  PostForm:url.Values(nil),
+  MultipartForm:(*multipart.Form)(nil), Trailer:http.Header(nil),
+  RemoteAddr:"127.0.0.1:41628", RequestURI:"/healthz",
+  TLS:(*tls.ConnectionState)(nil), Cancel:(<-chan struct {})(nil),
+  Response:(*http.Response)(nil), ctx:(*context.valueCtx)(0xc007c89b00)}
+```
+
+After https://github.com/kubernetes/kubernetes/pull/81788
+```
+requestInfo=&request.RequestInfo{IsResourceRequest:false,
+  Path:"/healthz/zzz", Verb:"get", APIPrefix:"", APIGroup:"",
+  APIVersion:"", Namespace:"", Resource:"", Subresource:"", Name:"",
+  Parts:[]string(nil)},
+userInfo=&user.DefaultInfo{Name:"system:unsecured", UID:"",
+  Groups:[]string{"system:masters", "system:authenticated"},
+  Extra:map[string][]string(nil)}
+```
+
+```
+requestInfo=&request.RequestInfo{IsResourceRequest:true,
+  Path:"/api/v1/namespaces/fooobar", Verb:"get", APIPrefix:"api",
+  APIGroup:"", APIVersion:"v1", Namespace:"fooobar",
+  Resource:"namespaces", Subresource:"", Name:"fooobar",
+  Parts:[]string{"namespaces", "fooobar"}},
+userInfo=&user.DefaultInfo{Name:"system:unsecured", UID:"",
+  Groups:[]string{"system:masters", "system:authenticated"},
+  Extra:map[string][]string(nil)}
+```
 
 ### Implementation Details/Notes/Constraints
 

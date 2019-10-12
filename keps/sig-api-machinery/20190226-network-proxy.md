@@ -44,7 +44,7 @@ superseded-by:
 - [Proposal](#proposal)
   - [Network Context](#network-context)
   - [Proxy gRPC definition](#proxy-grpc-definition)
-  - [Connectivity Proxy](#connectivity-proxy)
+  - [Konnectivity Server](#konnectivity-server)
   - [Direct Connection](#direct-connection)
   - [Kubernetes API Server Outbound Requests](#kubernetes-api-server-outbound-requests)
   - [Testing the Solution](#testing-the-solution)
@@ -67,7 +67,7 @@ superseded-by:
 ## Summary
 
 We will build an extensible system which controls network traffic from the Kube API Server.
-We will add a network proxy system. The KAS can be configured to send traffic
+We will add a traffic egress or network proxy system. The KAS can be configured to send traffic
 (or not) to one or more of the proxies. Users can drop in custom proxies if the
 default behavior is insufficient.
 
@@ -112,19 +112,23 @@ Direct IP routability between cluster and master networks should not be assumed.
 Later version may relax the all node requirement to some.
 - **KAS** Kubernetes API Server, responsible for serving the Kubernetes API to clients.
 - **KMS** Key Management Service, plugins for secrets encryption key management
-- **Connectivity service** A component built into the KAS which provides a golang dialer for outgoing connection requests.
+- **Egress Selector** A component built into the KAS which provides a golang dialer for outgoing connection requests.
 The dialer provided depends on NetworkContext information.
-- **Connectivity proxy** The proxy that runs in the master network.
+- **Konnectivity Server** The proxy server which runs in the master network.
 It has a secure channel established to the cluster network.
 It could work on either a HTTP Connect mechanism or gRPC.
 If the former it would exposes a gRPC interface to KAS to provide connectivity service.
 If the latter it would use standard HTTP Connect.
+Formerly known the the Network Proxy Server.
+- **Konnectivity Agent** A proxy agent which runs in the node network for
+  establishing the tunnel.
+Formerly known as the Network Proxy Agent.
 - **Flat Network** A network where traffic can be successfully routed using IP.
 Implies no overlapping (i.e. shared) IPs on the network.
 
 ## Proposal
 
-We will run a connectivity proxy inside the master network.
+We will run a connectivity server inside the master network.
 It could work on either a HTTP Connect mechanism or gRPC.
 For the alpha version we will attempt to get this working with HTTP Connect.
 We will evaluate HTTP Connect for scalability, error handling and traffic types.
@@ -133,12 +137,12 @@ Increasing usage of webhooks means we need better than 1 request per connection 
 We also need the tunnel to be tolerant of errors in the requests it is transporting.
 HTTP-Connect only supports HTTP requests and not things like DNS requests.
 We assume that for HTTP URL request,s it will be the proxy which does the DNS lookup.
-However this means that we cannot have the KAS perform a DNS request to then do a follow on request. 
+However this means that we cannot have the KAS perform a DNS request to then do a follow on request.
 If no issues are found with HTTP Connect in these areas we will proceed with it.
 If an issue is found then we will update the KEP and switch the client to the gRPC solution.
 This should be as simple as switching the connection mode of the client code.
 
-It may be desirable to allow out of band data (metadata) to be transmitted from the KAS to the Proxy.
+It may be desirable to allow out of band data (metadata) to be transmitted from the KAS to the Proxy Server.
 We expect to handle metadata in the HTTP Connect case using http 'X' headers on the Connect request.
 This means that the metadata can only be sent when establishing a KAS to Proxy tunnel.
 For the GRPC case we just update the interface to the KAS.
@@ -180,16 +184,28 @@ node CIDR and pod CIDR of each cluster network cannot overlap.
 The minimal NetworkContext looks like the following struct in golang:
 
 ```go
+type EgressType int
+
+const (
+    // Master is the EgressType for traffic intended to go to the control plane.
+    Master EgressType = iota
+    // Etcd is the EgressType for traffic intended to go to Kubernetes persistence store.
+    Etcd
+    // Cluster is the EgressType for traffic intended to go to the system being managed by Kubernetes.
+    Cluster
+)
+
+// NetworkContext is the struct used by Kubernetes API Server to indicate where it intends traffic to be sent.
 type NetworkContext struct {
-        // ConnectivityServiceName is the unique name of the
-        // ConnectivityServiceConfiguration which determines
-        // the network we route the traffic to.
-        ConnectivityServiceName string
+    // EgressSelectionName is the unique name of the
+    // EgressSelectorConfiguration which determines
+    // the network we route the traffic to.
+    EgressSelectionName EgressType
 }
 ```
 
-ConnectivityServiceName specifies the network to route traffic to.
-The KAS starts with a list of registered connectivity service names. These
+EgressSelectionName specifies the network to route traffic to.
+The KAS starts with a list of registered konnectivity service names. These
 correspond to networks we route traffic to. So the KAS knows where to
 proxy the traffic to, otherwise it return an “Unknown network” error.
 
@@ -198,32 +214,24 @@ The example specifies 4 networks. "direct" specifies the KAS talking directly
 on the local network (no proxy). "master" specifies the KAS talks to a proxy
 listening at 1.2.3.4:5678. "cluster" specifies the KAS talk to a proxy
 listening at 1.2.3.5:5679. While these are represented as resources
-they are not intended to be loaded dynamically.
-The KAS loads them as configuration at start time.
+they are not intended to be loaded dynamically. The names are not case
+sensitive. The KAS loads this resource lsit as a configuration at start time.
 
 ```yaml
-apiVersion: connectivityservice.k8s.io/v1alpha1
-kind: ConnectivityServiceConfiguration
-connectionService:
-  name: direct
+apiVersion: apiserver.k8s.io/v1alpha1
+kind: EgressSelectorConfiguration
+egressSelections:
+- name: direct
   connection:
     type: direct
----
-apiVersion: connectivityservice.k8s.io/v1alpha1
-kind: ConnectivityServiceConfiguration
-connectionService:
-  name: Master
+- name: master
   connection:
     type: grpc
     url: grpc://1.2.3.4:5678
     caBundle: file1.pem
     clientKeyFile: proxy-client1.key
     clientCertFile: proxy-client1.crt
----
-apiVersion: connectivityservice.k8s.io/v1alpha1
-kind: ConnectivityServiceConfiguration
-connectionService:
-  name: Cluster
+- name: cluster
   connection:
     type: grpc
     url: grpc://1.2.3.5:5679
@@ -264,9 +272,9 @@ message Payload {
 }
 ```
 
-### Connectivity Proxy
+### Konnectivity Server
 
-The connectivity proxy(s) can run in the same container as the KAS.
+The Konnectivity Server (connectivity proxy(s)) can run in the same container as the KAS.
 It should run on the same machine and must run in the same flat network as the KAS.
 It listens on a port for gRPC connections from the KAS.
 This port would be for forwarding traffic to the appropriate cluster.
@@ -419,7 +427,8 @@ Alpha:
 
 ## Implementation History
 
-- Feature goes Alpha in 1.15
+- Feature went Alpha in 1.16 with limited functionality. It will cover the log
+  sub resource and communication to the etcd server.
 
 ## Alternatives [optional]
 

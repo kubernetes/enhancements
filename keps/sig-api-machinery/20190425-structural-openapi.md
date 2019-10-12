@@ -712,8 +712,7 @@ Also note that structural schemas enforce types and properties outside of logica
 ### API Compatibility Plan
 
 * When creating `v1` CRDs, only structural schemas (with value-validation) are allowed.
-Updating a schema in a `v1` CRD to a non-structural schema is only allowed if the original schema was non-structural already.
-* Non-structural CRDs only allow `v1` schema updates if a structural schema is already set in the existing persisted object.
+* When updating `v1` CRDs, non-structural schemas are only allowed if the existing persisted object contained a non-structural schema already.
 * Any new feature and any feature not promoted to beta yet, will be available for structural schemas only:
   * webhook conversion:
     * rejected at CRD validation time on create and on update which sets the webhook; user gets validation error

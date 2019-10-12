@@ -18,17 +18,30 @@ set -o errexit
 set -o nounset
 set -o pipefail
 
-export KUBE_ROOT=$(dirname "${BASH_SOURCE}")/..
+# keep in sync with hack/verify-toc.sh
+TOOL_VERSION=4dc3d6f908138504b02a1766f1f8ea282d6bdd7c
 
-# Install tools we need, but only from vendor/...
-cd ${KUBE_ROOT}
-go install ./vendor/github.com/tallclair/mdtoc
-if ! which mdtoc >/dev/null 2>&1; then
-    echo "Can't find mdtoc - is your GOPATH 'bin' in your PATH?" >&2
-    echo "  GOPATH: ${GOPATH}" >&2
-    echo "  PATH:   ${PATH}" >&2
-    exit 1
-fi
+# cd to the root path
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+cd "${ROOT}"
 
+# create a temporary directory
+TMP_DIR=$(mktemp -d)
+
+# cleanup
+exitHandler() (
+  echo "Cleaning up..."
+  rm -rf "${TMP_DIR}"
+)
+trap exitHandler EXIT
+
+# perform go get in a temp dir as we are not tracking this version in a go module
+# if we do the go get in the repo, it will create / update a go.mod and go.sum
+cd "${TMP_DIR}"
+GO111MODULE=on GOBIN="${TMP_DIR}" go get "github.com/tallclair/mdtoc@${TOOL_VERSION}"
+export PATH="${TMP_DIR}:${PATH}"
+cd "${ROOT}"
+
+echo "Checking table of contents are up to date..."
 # Verify tables of contents are up-to-date
 grep --include='*.md' -rl keps -e '<!-- toc -->' | xargs mdtoc --inplace --dryrun
