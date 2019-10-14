@@ -31,13 +31,14 @@ status: implementable
   - [Goals](#goals)
 - [Proposal](#proposal)
   - [Use of <code>node-role.kubernetes.io/*</code> labels](#use-of--labels)
-  - [Migrating existing deployments](#migrating-existing-deployments)
   - [Current users of <code>node-role.kubernetes.io/*</code> within the project that must change](#current-users-of--within-the-project-that-must-change)
     - [Service load-balancer](#service-load-balancer)
     - [Node controller excludes master nodes from consideration for eviction](#node-controller-excludes-master-nodes-from-consideration-for-eviction)
     - [Kubernetes e2e tests](#kubernetes-e2e-tests)
     - [Preventing accidental reintroduction](#preventing-accidental-reintroduction)
 - [Design Details](#design-details)
+  - [Migrating existing deployments](#migrating-existing-deployments)
+    - [Instructions for deployers](#instructions-for-deployers)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
@@ -109,34 +110,6 @@ This KEP:
 * Conformance tests MUST NOT depend on the node-role labels in any fashion
 * Ecosystem controllers that desire to be placed on the masters MAY tolerate the node-role master taint or set nodeSelector to the master nodes in order to be placed, but SHOULD recognize that some deployment models will not have these node-roles, or may prohibit deployments that attempt to schedule to masters as unprivileged users. In general we recommend limiting this sort of placement rule to examples, docs, or simple deployment configurations rather than embedding the logic in code.
 
-### Migrating existing deployments
-
-The proposed fixes will all require deployment-level changes. That must be staged across several releases, and it should be possible for deployers to move early and "fix" the issues that may be caused by their topology.
-
-Therefore, for each change we recommend the following process to adopt the new labels in successive releases:
-
-* Release 1 (1.16):
-  * Introduce a feature gate for disabling node-role being honored. The gate defaults to on. `LegacyNodeRoleBehavior=on`
-  * Define the new node label with an associated feature gate for each feature area. The gate defaults to off. `FeatureA=off`
-  * Behavior for each functional area is defined as `LegacyNodeRoleBehavior == on && node_has_role || FeatureA == on && node_has_label`
-  * Deprecation of node role behavior in tree is announced for a future release as a warning to users
-  * No new components may leverage node-roles within Kubernetes projects.
-  * Early adopters may label their nodes to opt in to the features, even in the absence of the  gate.
-* Release 2 (1.17):
-  * For each new node label, usage is reviewed and as appropriate the label is declared beta/GA and the feature gate is set on
-  * All Kubernetes deployments should be updated to add node labels as appropriate: `kubectl label nodes -l node-role.kubernetes.io/master LABEL_A=VALUE_A`
-  * Documentation will be provided on making the transition
-  * Deployments may set `LegacyNodeRoleBehavior=off` after they have set the appropriate labels.
-  * NOTE: Release 3 starts when all labels graduate to beta
-* Release 3 (1.18):
-  * Default the `LegacyNodeRoleBehavior=off`. Admins whose deployments still use the old labels may set `LegacyNodeRoleBehavior=on` during 1.17 to get the legacy behavior.
-  * Deployments should stop setting `LegacyNodeRoleBehavior=off` if they opted out early.
-* Release 4 (1.19):
-  * The `LegacyNodeRoleBehavior` gate and all feature-level gates are removed, components that attempt to set these gates will fail to start.
-  * Code that references node-roles within Kubernetes will be removed.
-
-In Release 4 (which could be as early as 1.19) this KEP will be considered complete.
-
 
 ### Current users of `node-role.kubernetes.io/*` within the project that must change
 
@@ -147,9 +120,9 @@ The following components vary behavior based on the presence of the node-role la
 
 The service load balancer implementation previously implemented a heuristic where `node-role.kubernetes.io/master` is used to exclude masters from the candidate nodes for a service. This is an implementation detail of the cluster and is not allowed. Since there is value in excluding nodes from service load balancer candidacy in some deployments, an alpha feature gated label `alpha.service-controller.kubernetes.io/exclude-balancer` was added in Kubernetes 1.9.
 
-This label should be moved to beta in Kube 1.16 at its final name `node.kubernetes.io/exclude-from-external-load-balancers`, its feature gate `ServiceNodeExclusion` should default on in 1.17, the gate `ServiceNodeExclusion` should be declared GA in 1.18, and the gate will be removed in 1.19. The old alpha label should be honored in 1.16 and removed in 1.17.
+This label should be moved to beta in Kube 1.17 at its final name `node.kubernetes.io/exclude-from-external-load-balancers`, its feature gate `ServiceNodeExclusion` should default on in 1.18, the gate `ServiceNodeExclusion` should be declared GA in 1.19, and the gate will be removed in 1.20. The old alpha label should be honored in 1.17 and removed in 1.18.
 
-Starting in 1.16 the legacy code block should be gated on `LegacyNodeRoleBehavior=on`
+Starting in 1.16 the legacy code block should be gated on `LegacyNodeRoleBehavior=true`
 
 
 #### Node controller excludes master nodes from consideration for eviction
@@ -175,6 +148,57 @@ Some components like the external cloud provider controllers (considered to fall
 
 ## Design Details
 
+### Migrating existing deployments
+
+The proposed fixes will all require deployment-level changes. That must be staged across several releases, and it should be possible for deployers to move early and "fix" the issues that may be caused by their topology.
+
+Therefore, for each change we recommend the following process to adopt the new labels in successive releases:
+
+* Release 1 (1.16):
+  * Introduce a feature gate for disabling node-role being honored. The gate defaults to on. `LegacyNodeRoleBehavior=true`
+  * Define the new node label with an associated feature gate for each feature area. The gate defaults to off. `ServiceNodeExclusion=false` and `NodeDisruptionExclusion=false`
+  * Behavior for each functional area is defined as `(LegacyNodeRoleBehavior == on && node_has_role) || (FeatureGate == on && node_has_label)`
+  * No new components may leverage node-roles within Kubernetes projects.
+  * Early adopters may label their nodes to opt in to the features, even in the absence of the gate.
+* Release 2 (1.17):
+  * The legacy alpha label `alpha.service-controller.kubernetes.io/exclude-balancer` is marked as deprecated
+  * Deprecation of node role behavior in tree is announced for 1.20, with a detailed plan for cluster administrators and deployers
+  * Gates are officially alpha
+* Release 3 (1.18):
+  * The old label `alpha.service-controller.kubernetes.io/exclude-balancer` is removed
+  * For both labels, usage is reviewed and as appropriate the label is declared beta/GA and the feature gate is set on
+  * All Kubernetes deployments should be updated to add node labels as appropriate: `kubectl label nodes -l node-role.kubernetes.io/master LABEL_A=VALUE_A`
+  * Documentation will be provided on making the transition
+  * Deployments may set `LegacyNodeRoleBehavior=false` after they have set the appropriate labels.
+* Release 4 (1.19):
+  * Default the legacy gate `LegacyNodeRoleBehavior` to off. Admins whose deployments still use the old labels may set `LegacyNodeRoleBehavior=true` during 1.19 to get the legacy behavior.
+  * Deployments should stop setting `LegacyNodeRoleBehavior=false` if they opted out early.
+* Release 5 (1.20):
+  * The `LegacyNodeRoleBehavior` gate and all feature-level gates are removed, components that attempt to set these gates will fail to start.
+  * Code that references node-roles within Kubernetes will be removed.
+
+In Release 5 (which could be as early as 1.20) this KEP will be considered complete.
+
+#### Instructions for deployers
+
+The current behavior of the `node-role.kubernetes.io/master` label on nodes preventing them from being part of service load balancers or from being disrupted when NotReady is deprecated and will be fully removed in Kubernetes 1.20. Administrators and Kubernetes deployers should follow these steps.
+
+If you are using the `alpha.service-controller.kubernetes.io/exclude-balancer` label in your deployments to exclude specific nodes from your deployment, the label has been replaced in 1.17 with `node.kubernetes.io/exclude-from-external-load-balancers`.  All administrators should run the following command before upgrading to Kubernetes 1.18 and set the feature gate `ServiceNodeExclusion=true`:
+
+    kubectl label nodes --selector=alpha.service-controller.kubernetes.io/exclude-balancer \
+        node.kubernetes.io/exclude-balancer=true
+
+Cluster deployers that rely on the existing behavior where master nodes are not part of the service load balancer and master workloads will not be evicted if the master is NotReady for longer than the grace period should run the following command after upgrading to Kubernetes 1.18:
+
+    kubectl label nodes --selector=node-role.kubernetes.io/master \
+        node.kubernetes.io/exclude-from-external-load-balancers=true \
+        node.kubernetes.io/exclude-disruption=true
+
+After setting these labels in 1.18, administrators will need to take no further action.
+
+Cluster deployers that wish to manage this migration during the 1.17 to 1.18 upgrade should label nodes and set feature gates before upgrading to 1.18. If `LegacyNodeRoleBehavior=false` is set, it must be removed prior to the 1.19 to 1.20 upgrade.
+
+
 ### Test Plan
 
 * Unit tests to verify selection using feature gates
@@ -182,7 +206,7 @@ Some components like the external cloud provider controllers (considered to fall
 ### Graduation Criteria
 
 * New labels and feature flags become beta after one release, GA and defaulted on after two, and are removed after two releases after they are defaulted on (so 4 releases from when this is first implemented).
-* Documentation for migrating to the new labels is available in 1.17.
+* Documentation for migrating to the new labels is available in 1.18.
 
 ### Upgrade / Downgrade Strategy
 
@@ -190,7 +214,7 @@ As described in the migration process, deployers and administrators have 2 relea
 
 ### Version Skew Strategy
 
-Controllers are updated after the control plane, so consumers must update the labels on their nodes before they update controller processes in 1.18.
+Controllers are updated after the control plane, so consumers must update the labels on their nodes before they update controller processes in 1.19.
 
 ## Implementation History
 
