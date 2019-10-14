@@ -323,6 +323,19 @@ but requires a multistep process. For example, to migrate static pods providing 
 
 ## Design Details
 
+### Unrestricted label scheme
+
+The `unrestricted.node.kubernetes.io/` label prefix is for use by users and external projects, and
+not to be used for system behavior. This is aligned with other user-space `*.kubernetes.io/` label
+prefixes, such as
+[`node-role.kubernetes.io/*`](/keps/sig-architecture/2019-07-16-node-role-label-use.md). Labels with
+this prefix are exempt from [API review
+requirements](https://github.com/kubernetes/community/blob/7f0a76ec7d3a9531a35ffb6d781626c377db3ad5/contributors/devel/sig-architecture/api-conventions.md#label-selector-and-annotation-conventions).
+
+Users SHOULD use [reverse domain name
+notation](https://en.wikipedia.org/wiki/Reverse_domain_name_notation) for the label suffix to avoid
+collisions, but this is not required. E.g. `unrestricted.node.kubernetes.io/com.example.my-label`.
+
 ### Test Plan
 
 Our CI environment does not depend on static pods serving services, so we can enable the feature
