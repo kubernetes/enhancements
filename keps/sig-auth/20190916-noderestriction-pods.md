@@ -40,9 +40,11 @@ status: implementable
     - [Example](#example)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
+  - [Unrestricted label scheme](#unrestricted-label-scheme)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+    - [Upgrading Mirror Pod Services](#upgrading-mirror-pod-services)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Implementation History](#implementation-history)
 - [Alternatives](#alternatives)
@@ -349,8 +351,7 @@ verify the expected changes are made.
 
 The feature gate will initially be in a default-disabled alpha state. Graduating to beta will make
 the feature enabled by default, but users that have not yet updated existing label
-usage to the unrestricted keys can still disable it. We will allow at least 2 releases before
-migrating to GA and removing the feature gate entirely.
+usage to the unrestricted keys can still disable it.
 
 Here is an approximate graduation schedule, specific release numbers subject to change:
 
@@ -360,10 +361,10 @@ Here is an approximate graduation schedule, specific release numbers subject to 
 - v1.18
   - MirrorPodNodeRestriction: alpha
   - MirrorPodMetadataFilter: **beta**
-- v1.19
+- v1.20 (2 releases later to account for master-node version skew)
   - MirrorPodNodeRestriction: **beta**
   - MirrorPodMetadataFilter: beta
-- v1.20
+- v1.21
   - MirrorPodNodeRestriction: **GA**
   - MirrorPodMetadataFilter: **GA**
 
@@ -388,16 +389,44 @@ rejected, the Kubelet will attempt to recreate it and it will now be allowed.
 Nodes are not updated in place, but rather recreated. A node recreated with(out) the feature gate
 will also recreate the mirror pods with the correct feature set.
 
+#### Upgrading Mirror Pod Services
+
+If a cluster is currently using services to route to mirror pods, a multi-step remediation process
+is required:
+
+0. Current state
+   - Static pods labeled with `example.com/foo=bar`
+   - Service with selector for `example.com/foo=bar`
+1. Update static pod labels
+   - Static pods are labeled with `example.com/foo=bar` **AND**
+     `unrestricted.node.kubernetes.io/com.example.foo=bar`
+   - Service still uses selector for `example.com/foo=bar`
+2. Update service (after all static pods migrated)
+   - _Note: This step must happen prior to `MirrorPodNodeRestriction` being enabled._
+   - Static pods are labeled with `example.com/foo=bar` **AND**
+     `unrestricted.node.kubernetes.io/com.example.foo=bar`
+   - Service switches to selector for `unrestricted.node.kubernetes.io/com.example.foo=bar`
+3. Clean-up (optional, but recommended)
+   - Remove old static pod label, so static pods are only labeled with
+     `unrestricted.node.kubernetes.io/com.example.foo=bar`
+   - Service still uses selector for `unrestricted.node.kubernetes.io/com.example.foo=bar`
+
+A similar strategy also works for any third-party systems depending on mirror-pod labels.
+
+If mirror-pod labels are not programmatically consumed, no action is required (since
+`MirrorPodMetadataFilter` will munge the spec to conform with restrictions). In this case, static
+pods can be migrated to the unrestricted labels on any schedule.
+
 ### Version Skew Strategy
 
 This feature uses 2 separate feature gates so that the Kubelet changes can be rolled out ahead of
-the control-plane changes. The `MirrorPodMetadataFilter` feature gate will advance to beta at least 1
-release ahead of `MirrorPodNodeRestriction`. Taking this approach limits the blast radius for a breakage
-to a subset of the cluster (upgraded nodes).
+the control-plane changes. The `MirrorPodMetadataFilter` feature gate will advance to beta at least
+2 releases ahead of `MirrorPodNodeRestriction`. Taking this approach limits the blast radius for a
+breakage to a subset of the cluster (upgraded nodes).
 
-If `MirrorPodMetadataFilter` is enabled but `MirrorPodNodeRestriction` is not, mirror pods will be modified,
-but the modifications will not be enforced. Once all nodes are using `MirrorPodMetadataFilter`, enabling
-`MirrorPodNodeRestriction` should be a no-op.
+If `MirrorPodMetadataFilter` is enabled but `MirrorPodNodeRestriction` is not, mirror pods will be
+modified, but the modifications will not be enforced. Once all nodes are using
+`MirrorPodMetadataFilter`, enabling `MirrorPodNodeRestriction` should be a no-op.
 
 In an HA environment, it's possible for some apiservers to have the feature enabled and others
 disabled. In this case, violating may or may not be allowed. Since the feature doesn't affect
