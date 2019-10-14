@@ -55,6 +55,9 @@ This KEP contains details that are missing from the design proposal.
 * E2E tests:
     * Drivers that don't support attach don't need the external-attacher and can
       mount volumes successfully
+    * Drivers that don't require attach but has missing CSIDriver objects should successfully
+      mount volumes without attachment(and no external-attacher running) if CSIDriver
+      object is created later on.
 
 ## Graduation Criteria
 
