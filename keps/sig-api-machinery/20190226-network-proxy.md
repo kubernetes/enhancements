@@ -16,6 +16,7 @@ reviewers:
   - "@justinsb"
   - "@krousey"
   - "@khenidak"
+  - "@mikedanese"
 approvers:
   - "@deads2k - For Kube API Server portion of KEP"
   - "@bowei - For networking/proxy portion of KEP"
@@ -424,6 +425,23 @@ Alpha:
 - Feature is turned off in the KAS by default. Enabled by adding ConnectivityServiceConfiguration.
 - Kubernetes will not ship with a network proxy. The feature will work with the sample network proxy in https://github.com/kubernetes-sigs/apiserver-network-proxy
 - Demonstrate that the API Server Network Proxy eliminates the need for the SSH Tunnels.
+
+Beta:
+
+- All [Kube API Server egress points](#kubernetes-api-server-outbound-requests) have been implemented to use the
+  EgressSelector.
+- Have official releases of the [Konnectivity Server and Agent](https://github.com/kubernetes-sigs/apiserver-network-proxy) reference implementations.
+- Have at least one OSS kube-up implementation where the feature can be turned on and
+  demonstrated.
+- Have run a basic load test with egresses enabled through the Konnectivity
+  Server to demonstrate that concurrent requests work with Admission Webhooks.
+- Tests for EgressSelector.
+- e2e test with a functioning cluster with the EgressSelector conifgured to use
+  a KonnectivityService.
+- Add metrics and trace around the Egress Lookup/Dial code. Make sure we know
+  how many egresses of each type are returned. Make sure we know how long we
+  are spending dialing out.
+- Ensure we have metrics on each existing egress use case.
 
 ## Implementation History
 
