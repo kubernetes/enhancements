@@ -59,7 +59,7 @@ This KEP is targeted to land in Kubernetes 1.14. The aim is to get all changes i
 
 ## Motivation
 
-A number of metrics that Kubernetes is instrumented with do not follow the [official Kubernetes instrumentation guidelines](https://github.com/kubernetes/community/blob/master/contributors/devel/instrumentation.md). This is for a number of reasons, such as the metrics having been created before the instrumentation guidelines were put in place (around two years ago), and just missing it in code reviews. Beyond the Kubernetes instrumentation guidelines, there are several violations of the [Prometheus instrumentation best practices](https://prometheus.io/docs/practices/instrumentation/). In order to have consistently named and high quality metrics, this effort aims to make working with metrics exposed by Kubernetes consistent with the rest of the ecosystem. In fact even metrics exposed by Kubernetes are inconsistent in themselves, making joining of metrics difficult.
+A number of metrics that Kubernetes is instrumented with do not follow the [official Kubernetes instrumentation guidelines](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-instrumentation/instrumentation.md). This is for a number of reasons, such as the metrics having been created before the instrumentation guidelines were put in place (around two years ago), and just missing it in code reviews. Beyond the Kubernetes instrumentation guidelines, there are several violations of the [Prometheus instrumentation best practices](https://prometheus.io/docs/practices/instrumentation/). In order to have consistently named and high quality metrics, this effort aims to make working with metrics exposed by Kubernetes consistent with the rest of the ecosystem. In fact even metrics exposed by Kubernetes are inconsistent in themselves, making joining of metrics difficult.
 
 Kubernetes also makes extensive use of a global metrics registry to register metrics to be exposed. Aside from general shortcomings of global variables, Kubernetes is seeing actual effects of this, causing a number of components to use `sync.Once` or other mechanisms to ensure to not panic, when registering metrics. Instead a metrics registry should be passed to each component in order to explicitly register metrics instead of through `init` methods or other global, non-obvious executions. Within the scope of this KEP, we want to explore other ways, however, it is not blocking for its success, as the primary goal is to make the metrics exposed themselves more consistent and stable.
 
@@ -117,7 +117,7 @@ https://github.com/kubernetes/kubernetes/pull/63924
 
 #### Prober metrics
 
-Make prober metrics introduced in https://github.com/kubernetes/kubernetes/pull/61369 conform to the [Kubernetes instrumentation guidelines](https://github.com/kubernetes/community/blob/master/contributors/devel/instrumentation.md).
+Make prober metrics introduced in https://github.com/kubernetes/kubernetes/pull/61369 conform to the [Kubernetes instrumentation guidelines](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-instrumentation/instrumentation.md).
 
 ### Kube-scheduler metric changes
 
