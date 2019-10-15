@@ -144,7 +144,7 @@ The table below shows what built-in profiles and the supported way to create use
 | `unconfined` 	| Seccomp is not applied to the container processes (the current default in Kubernetes), if no alternative is provided. Usage should be discouraged. 	| Unchanged 	| No 	|
 
  
-Users will be able to define the complain mode profile in the same way they do today: at pod, container and cluster levels. 
+Users will be able to use any of the built-in profiles in the same way they do today: at pod and container levels or the default with `PodSecurityPolicy`. 
 Please note that as part of [Seccomp becoming GA](https://github.com/kubernetes/enhancements/pull/1148), there may be some changes in syntax.
 
 
