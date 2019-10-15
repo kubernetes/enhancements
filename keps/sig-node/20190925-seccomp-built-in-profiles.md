@@ -133,15 +133,15 @@ The support is based on the downstream dependencies, therefore Kubernetes change
 ### 2. Built-in profiles
 The table below shows what built-in profiles and the supported way to create user-defined profiles.
 
-| Profile Name 	| Description 	| Status 	| Requires Audit Support 	| Fallback profile 	|
+| Profile Name 	| Description 	| Status 	| Requires Audit Support 	| 
 |-------------------------	|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------	|-------------------------------------------	|-----------------------------------------	|------------------	|
-| `runtime/default` 	| The default container runtime. Syscalls outside allowed list are blocked. 	| Unchanged 	| No 	| N/A 	|
-| `kubernetes/default` 	| The default Kubernetes profile - a copy of `runtime/default`. System calls outside the allowed list are blocked. 	| New 	| No 	| N/A 	|
-| `kubernetes/default-audit` 	| Allows the same system calls as `runtime/default`, but logs all violations instead of blocking them. 	| New 	| Yes 	| `unconfined` 	|
-| `kubernetes/audit-verbose` 	| Remove all whitelisted system calls, logging every time system calls are used. Useful for creating new profiles based on the execution of a container. 	| New 	| Yes 	| `unconfined` 	|
-| `localhost/<path>` 	| User defined profile as a file on the node located at <seccomp_root>/<path>, where <seccomp_root> is defined via the  --seccomp-profile-root flag on the Kubelet. _Note that the user is responsible for physically synchronising the profile files across all nodes._ 	| Unchanged 	| Only when ` SCPM_ACT_LOG` is being used 	| `unconfined` 	|
-| `docker/default` 	| The Docker default seccomp profile is used. Deprecated as of Kubernetes 1.11. Use  `runtime/default` instead. 	| Unchanged, Deprecated 	| No 	| N/A 	|
-| `unconfined` 	| Seccomp is not applied to the container processes (the current default in Kubernetes), if no alternative is provided. Usage should be discouraged. 	| Unchanged 	| No 	| N/A 	|
+| `runtime/default` 	| The default container runtime. Syscalls outside allowed list are blocked. 	| Unchanged 	| No 	|
+| `kubernetes/default` 	| The default Kubernetes profile - a copy of `runtime/default`. System calls outside the allowed list are blocked. 	| New 	| No 	| 
+| `kubernetes/default-audit` 	| Allows the same system calls as `runtime/default`, but logs all violations instead of blocking them. 	| New 	| Yes 	| 
+| `kubernetes/audit-verbose` 	| Remove all whitelisted system calls, logging every time system calls are used. Useful for creating new profiles based on the execution of a container. 	| New 	| Yes 	| 
+| `localhost/<path>` 	| User defined profile as a file on the node located at <seccomp_root>/<path>, where <seccomp_root> is defined via the  --seccomp-profile-root flag on the Kubelet. _Note that the user is responsible for physically synchronising the profile files across all nodes._ 	| Unchanged 	| Only when ` SCPM_ACT_LOG` is being used 	|
+| `docker/default` 	| The Docker default seccomp profile is used. Deprecated as of Kubernetes 1.11. Use  `runtime/default` instead. 	| Unchanged, Deprecated 	| No 	| 
+| `unconfined` 	| Seccomp is not applied to the container processes (the current default in Kubernetes), if no alternative is provided. Usage should be discouraged. 	| Unchanged 	| No 	|
 
  
 Users will be able to define the complain mode profile in the same way they do today: at pod, container and cluster levels. 
