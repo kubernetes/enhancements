@@ -24,48 +24,44 @@ see-also:
 
 ## Table of Contents
 
-<!-- TOC -->
-
-- [RuntimeClass Support for Windows](#runtimeclass-support-for-windows)
-    - [Table of Contents](#table-of-contents)
-    - [Release Signoff Checklist](#release-signoff-checklist)
-    - [Summary](#summary)
-    - [Motivation](#motivation)
-        - [Goals](#goals)
-        - [Non-Goals](#non-goals)
-    - [Proposal](#proposal)
-        - [User Stories](#user-stories)
-            - [Story 1 - Easy selection of Windows Server releases](#story-1---easy-selection-of-windows-server-releases)
-            - [Story 2 - Forward compatibility with Hyper-V](#story-2---forward-compatibility-with-hyper-v)
-            - [Story 3 - Choosing a specific multi-arch image](#story-3---choosing-a-specific-multi-arch-image)
-        - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
-            - [Adding new label node.kubernetes.io/osversion](#adding-new-label-nodekubernetesioosversion)
-            - [Adding handler to CRI pull API](#adding-handler-to-cri-pull-api)
-        - [Risks and Mitigations](#risks-and-mitigations)
-            - [Adding new node label](#adding-new-node-label)
-            - [Adding runtime_handler to PullImageRequest](#adding-runtime_handler-to-pullimagerequest)
-    - [Design Details](#design-details)
-        - [Test Plan](#test-plan)
-            - [E2E Testing with CRI-ContainerD and Kubernetes](#e2e-testing-with-cri-containerd-and-kubernetes)
-            - [Unit testing with CRITest](#unit-testing-with-critest)
-        - [Graduation Criteria](#graduation-criteria)
-            - [Alpha - Kubernetes 1.17](#alpha---kubernetes-117)
-            - [Alpha -> Beta Graduation](#alpha---beta-graduation)
-            - [Beta -> GA Graduation](#beta---ga-graduation)
-                - [Removing a deprecated flag](#removing-a-deprecated-flag)
-        - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
-    - [Implementation History](#implementation-history)
-    - [Alternatives](#alternatives)
-        - [Support multiarch os/arch/version in CRI](#support-multiarch-osarchversion-in-cri)
-        - [Make the scheduler aware of Multi-arch images](#make-the-scheduler-aware-of-multi-arch-images)
-        - [Create a multi-arch Mutating admission controller](#create-a-multi-arch-mutating-admission-controller)
-    - [Future Considerations](#future-considerations)
-        - [Pod Overhead](#pod-overhead)
-        - [RuntimeClass Parameters](#runtimeclass-parameters)
-    - [Reference & Examples](#reference--examples)
-        - [Multi-arch container image overview](#multi-arch-container-image-overview)
-
-<!-- /TOC -->
+<!-- toc -->
+- [Release Signoff Checklist](#release-signoff-checklist)
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [User Stories](#user-stories)
+    - [Story 1 - Easy selection of Windows Server releases](#story-1---easy-selection-of-windows-server-releases)
+    - [Story 2 - Forward compatibility with Hyper-V](#story-2---forward-compatibility-with-hyper-v)
+    - [Story 3 - Choosing a specific multi-arch image](#story-3---choosing-a-specific-multi-arch-image)
+  - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
+    - [Adding new label node.kubernetes.io/windows-build](#adding-new-label-nodekubernetesiowindows-build)
+    - [Adding handler to CRI pull API](#adding-handler-to-cri-pull-api)
+  - [Risks and Mitigations](#risks-and-mitigations)
+    - [Adding new node label](#adding-new-node-label)
+    - [Adding runtime_handler to PullImageRequest](#adding-runtime_handler-to-pullimagerequest)
+- [Design Details](#design-details)
+  - [Test Plan](#test-plan)
+    - [E2E Testing with CRI-ContainerD and Kubernetes](#e2e-testing-with-cri-containerd-and-kubernetes)
+    - [Unit testing with CRITest](#unit-testing-with-critest)
+  - [Graduation Criteria](#graduation-criteria)
+    - [Alpha - Kubernetes 1.17](#alpha---kubernetes-117)
+    - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
+    - [Beta -&gt; GA Graduation](#beta---ga-graduation)
+      - [Removing a deprecated flag](#removing-a-deprecated-flag)
+  - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+- [Implementation History](#implementation-history)
+- [Alternatives](#alternatives)
+  - [Support multiarch os/arch/version in CRI](#support-multiarch-osarchversion-in-cri)
+  - [Make the scheduler aware of Multi-arch images](#make-the-scheduler-aware-of-multi-arch-images)
+  - [Create a multi-arch Mutating admission controller](#create-a-multi-arch-mutating-admission-controller)
+- [Future Considerations](#future-considerations)
+  - [Pod Overhead](#pod-overhead)
+  - [RuntimeClass Parameters](#runtimeclass-parameters)
+- [Reference &amp; Examples](#reference--examples)
+  - [Multi-arch container image overview](#multi-arch-container-image-overview)
+<!-- /toc -->
 
 ## Release Signoff Checklist
 
@@ -112,21 +108,22 @@ Next, SIG-Windows is adding support for [Windows CRI-ContainerD], Windows nodes 
 
 ### Goals
 
-- Schedule a Windows Pod with a compatible host
-  - Allow matching Windows versions without isolation
-  - Allow opt-in on a per-Pod basis to use mismatched Windows versions with compatibility provided by Hyper-V
+- Schedule a Windows Pod to a compatible node
+  - Allow matching Windows versions without Hyper-V isolation
+  - Allow opt-in on a per-Pod basis to run containers using existing Windows versions with backwards-compatibility provided by Hyper-V on a new Windows OS version node
 - Be able to schedule a specific image from a multi-arch manifest on a given node
 - Provide a simpler experience (fewer lines of YAML) than adding os and version nodeSelector and tolerations to each Pod
 
 ### Non-Goals
 
 - Linux container support on Windows is not a requirement or test target for Kubernetes 1.17, but it's not specifically excluded.
+- Running newer Windows OS version containers (Windows Server version 1903) on an older OS version host (Windows Server version 1809). This is not supported today with or without Hyper-V isolation (see [Windows container version compatibility]).
 
 ## Proposal
 
 For Kubernetes 1.17, we're proposing three key things to improve the experience deploying Windows containers across multiple versions, and enable experimentation with Hyper-V while ContainerD support is in alpha/beta stages.
 
-1. Add `node.kubernetes.io/osversion` label using Windows kubelet
+1. Add `node.kubernetes.io/windows-build` label using Windows kubelet
 2. Add RuntimeHandler to the CRI pull API
 3. Use RuntimeHandler and separate ContainerD configurations to control runtime specific parameters such as overrides for OS/version/architecture and Hyper-V isolation.
 
@@ -136,11 +133,11 @@ As a fallback plan, steps 2/3 could use annotations instead during alpha, but th
 
 #### Story 1 - Easy selection of Windows Server releases
 
-As of Kubernetes 1.16, [RuntimeClass Scheduling] is in beta and can be used to simplify setting nodeSelector & tolerations. This makes it easier to steer workloads to a suitable Windows or Linux node using the existing labels. With the addition of a new `osversion` label it can also distinguish between multiple Windows version in the same cluster.
+As of Kubernetes 1.16, [RuntimeClass Scheduling] is in beta and can be used to simplify setting nodeSelector & tolerations. This makes it easier to steer workloads to a suitable Windows or Linux node using the existing labels. With the addition of a new `windows-build` label it can also distinguish between multiple Windows version in the same cluster. For more details on how and why build numbers are used, read [Adding new label node.kubernetes.io/windows-build](#adding-new-label-nodekubernetesiowindows-build) below.
 
-> Note: There's an open PR [website#16697](https://github.com/kubernetes/website/pull/16697) to add this to existing documentation for Kubernetes 1.16
+> Note: There's an open PR [website#16697](https://github.com/kubernetes/website/pull/16697) to add `RuntimeClass` examples to existing documentation for Kubernetes 1.16.
 
-- Example of a RuntimeClass that would restrict a pod to Windows Server 2019 / 1809.
+- Example of a RuntimeClass that would restrict a pod to Windows Server 2019 / 1809 (10.0.17763)
 
     ```yaml
     apiVersion: node.k8s.io/v1beta1
@@ -152,7 +149,7 @@ As of Kubernetes 1.16, [RuntimeClass Scheduling] is in beta and can be used to s
       nodeSelector:
         kubernetes.io/os: 'windows'
         kubernetes.io/arch: 'amd64'
-        node.kubernetes.io/osversion: '10.0.17763'
+        node.kubernetes.io/windows-build: '10.0.17763'
       tolerations:
       - effect: NoSchedule
         key: windows
@@ -160,7 +157,7 @@ As of Kubernetes 1.16, [RuntimeClass Scheduling] is in beta and can be used to s
         value: "true"
     ```
 
-- Example of a RuntimeClass that would restrict a pod to Windows Server version 1903
+- Example of a RuntimeClass that would restrict a pod to Windows Server version 1903 (10.0.18362)
 
     ```yaml
     apiVersion: node.k8s.io/v1beta1
@@ -172,7 +169,7 @@ As of Kubernetes 1.16, [RuntimeClass Scheduling] is in beta and can be used to s
       nodeSelector:
         kubernetes.io/os: 'windows'
         kubernetes.io/arch: 'amd64'
-        node.kubernetes.io/osversion: '10.0.18362'
+        node.kubernetes.io/windows-build: '10.0.18362'
       tolerations:
       - effect: NoSchedule
         key: windows
@@ -196,7 +193,7 @@ Once a new version of Windows Server is deployed using [Windows CRI-ContainerD],
       nodeSelector:
         kubernetes.io/os: 'windows'
         kubernetes.io/arch: 'amd64'
-        node.kubernetes.io/osversion: '10.0.18362'
+        node.kubernetes.io/windows-build: '10.0.18362'
       tolerations:
       - effect: NoSchedule
         key: windows
@@ -216,7 +213,7 @@ Once a new version of Windows Server is deployed using [Windows CRI-ContainerD],
       nodeSelector:
         kubernetes.io/os: 'windows'
         kubernetes.io/arch: 'amd64'
-        node.kubernetes.io/osversion: '10.0.18362'
+        node.kubernetes.io/windows-build: '10.0.18362'
       tolerations:
       - effect: NoSchedule
         key: windows
@@ -236,7 +233,7 @@ scheduling:
   nodeSelector:
     kubernetes.io/os: 'windows'
     kubernetes.io/arch: 'amd64'
-    node.kubernetes.io/osversion: '10.0.18362'
+    node.kubernetes.io/windows-build: '10.0.18362'
   tolerations:
   - effect: NoSchedule
     key: windows
@@ -264,19 +261,29 @@ Here's an example of what corresponding ContainerD configurations could look lik
           # No version is specified for process isolation, the node OS version is used
 ```
 
-
 ### Implementation Details/Notes/Constraints
 
 There were multiple options discussed with SIG-Node & SIG-Windows on October 8 2019 prior to filing this KEP. That discussion & feedback were captured in [Difficulties in mixed OS and arch clusters]. If you're looking for more details on other approaches excluded, please review that document.
 
-
-#### Adding new label node.kubernetes.io/osversion
+#### Adding new label node.kubernetes.io/windows-build
 
 In [Bounding Self-Labeling Kubelets], a specific range of prefixes were reserved for node self-labeling - `[*.]node.kubernetes.io/*`. Adding a new label within that namespace won't require any changes to NodeRestriction admission. As a new field it also won't require changes to any existing workloads.
 
-Windows product names such as "Windows Server version 1903" don't align with the actual build numbers, so build numbers will be used instead. Users can choose to reflect the product name instead as shown in the user stories.
+Build numbers will be used instead of product names in the node labels for a few reasons:
 
-[Windows Update History] has a full list of version numbers by release & patch. Starting from an example of `10.0.17763.805` - the OS major, minor, and build number - `10.0.17763` - should match for containers to be compatible. The final `.805` refers to the monthly patches and isn't required for compatibility. Therefore, a value such as `node.kubernetes.io/osversion = 10.0.17763` will be used.
+- The same OS version may be marketed under two different names due to support / licensing differences. For example, Windows Server 2019 and Windows Server version 1809 are the same build number. The actual binary compatibility is based on build number and the same container can run on either.
+- Windows product names may not have been announced when the Kubernetes project contributors start building and testing against it. Using build numbers instead avoids needing to change Kubernetes source once a name has been announced.
+
+Here are the current product name to build number mappings to illustrate the point:
+
+|Product Name                          |   Build Number(s)      |
+|--------------------------------------|------------------------|
+| Windows Server 2019                  | 10.0.17763             |
+| Windows Server version 1809          | 10.0.17763             |
+| Windows Server version 1903          | 10.0.18362             |
+| Windows Server vNext Insider Preview | 10.0.18975, 10.0.18985 |
+
+[Windows Update History] has a full list of version numbers by release & patch. Starting from an example of `10.0.17763.805` - the OS major, minor, and build number - `10.0.17763` - should match for containers to be compatible. The final `.805` refers to the monthly patches and isn't required for compatibility. Therefore, a value such as `node.kubernetes.io/windows-build = 10.0.17763` will be used.
 
 To make this easier to consume in the Kubelet and APIs, it will be updated in multiple places:
 
@@ -328,7 +335,7 @@ message PullImageRequest {
 
 #### Adding new node label
 
-The names of aren't part of a versioned API today, so there's no risk to upgrade/downgrade from an API and functionality standpoint. However, if someone wants to keep the node selection experience consistent between Kubernetes 1.14 - 1.17, they may want to manually add the `node.kubernetes.io/osversion` label to clusters running versions < 1.17. A cluster admin can choose to modify labels using `kubectl label node` after a node has joined the cluster.
+The names of aren't part of a versioned API today, so there's no risk to upgrade/downgrade from an API and functionality standpoint. However, if someone wants to keep the node selection experience consistent between Kubernetes 1.14 - 1.17, they may want to manually add the `node.kubernetes.io/windows-build` label to clusters running versions < 1.17. A cluster admin can choose to modify labels using `kubectl label node` after a node has joined the cluster.
 
 #### Adding runtime_handler to PullImageRequest
 
@@ -366,7 +373,7 @@ In addition to what's included there, for alpha:
 
 This timeline should follow that of [Windows CRI-ContainerD].
 
-In addition to what's included there, for beta: 
+In addition to what's included there, for beta:
 
 - Unit tests will be added to critest
 - E2E tests for basic coverage of:
@@ -390,7 +397,7 @@ In addition to what's included there, for beta:
 
 ### Upgrade / Downgrade Strategy
 
-The new label `node.kubernetes.io/osversion` can be set or removed if needed without impacting other components as described in [Risks and Mitigations](#risks-and-mitigations)
+The new label `node.kubernetes.io/windows-build` can be set or removed if needed without impacting other components as described in [Risks and Mitigations](#risks-and-mitigations)
 
 Users can only opt-in to use the new `runtime_handler` field after setting up and configuring ContainerD. On existing clusters without ContainerD set up, they must use `docker` as the `runtimeHandler` in the `RuntimeClass` today. Therefore they must update to a supported version of ContainerD as a prerequisite which is covered in the scope of another KEP - [Windows CRI-ContainerD].
 
