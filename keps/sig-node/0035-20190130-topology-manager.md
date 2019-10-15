@@ -12,6 +12,8 @@ reviewers:
   - "@derekwaynecarr"
   - "@jeremyeder"
   - "@RenaudWasTaken"
+  - "@klueska"
+  - "@nolancon"
 approvers:
   - "@dawnchen"
   - "@derekwaynecarr"
@@ -53,8 +55,8 @@ _Reviewers:_
     - [Feature Gate and Kubelet Flags](#feature-gate-and-kubelet-flags)
     - [Changes to Existing Components](#changes-to-existing-components)
 - [Graduation Criteria](#graduation-criteria)
-  - [Phase 1: Alpha (target v1.16)](#phase-1-alpha-target-v116)
-  - [Phase 2: Beta (later versions)](#phase-2-beta-later-versions)
+  - [Phase 1: Alpha (v1.16) [COMPLETED]](#phase-1-alpha-v116-completed)
+  - [Phase 2: Beta (target v1.17)](#phase-2-beta-target-v117)
   - [GA (stable)](#ga-stable)
 - [Challenges](#challenges)
 - [Limitations](#limitations)
@@ -235,26 +237,26 @@ The chosen Topology Manager policy then decicds to admit or reject the pod based
 #### New Interfaces
 
 ```go
-package socketmask
+package bitmask
 
-// SocketMask interface allows hint providers to create SocketMasks for TopologyHints
-type SocketMask interface {
+// BitMask interface allows hint providers to create BitMasks for TopologyHints
+type BitMask interface {
 	Add(sockets ...int) error
 	Remove(sockets ...int) error
-	And(masks ...SocketMask)
-	Or(masks ...SocketMask)
+	And(masks ...BitMask)
+	Or(masks ...BitMask)
 	Clear()
 	Fill()
-	IsEqual(mask SocketMask) bool
+	IsEqual(mask BitMask) bool
 	IsEmpty() bool
 	IsSet(socket int) bool
-	IsNarrowerThan(mask SocketMask) bool
+	IsNarrowerThan(mask BitMask) bool
 	String() string
 	Count() int
 	GetSockets() []int
 }
 
-func NewSocketMask(sockets ...int) (SocketMask, error) { ... }
+func NewBitMask(sockets ...int) (BitMask, error) { ... }
 
 package topologymanager
 
@@ -277,8 +279,8 @@ type Manager interface {
 // a list of these hints to the TopoologyManager for each container at pod
 // admission time.
 type TopologyHint struct {
-    NUMANodeAffinity socketmask.SocketMask
-    // Preferred is set to true when the SocketMask encodes a preferred
+    NUMANodeAffinity bitmask.BitMask
+    // Preferred is set to true when the BitMask encodes a preferred
     // allocation for the Container. It is set to false otherwise.
     Preferred bool
 }
@@ -386,7 +388,7 @@ _Figure: Topology Manager fetches affinity from hint providers._
 
 # Graduation Criteria
 
-## Phase 1: Alpha (target v1.16)
+## Phase 1: Alpha (v1.16) [COMPLETED]
 
 * Feature gate is disabled by default.
 * Alpha-level documentation.
@@ -395,16 +397,20 @@ _Figure: Topology Manager fetches affinity from hint providers._
 * Device plugin interface includes NUMA Node ID.
 * Device Manager allocation policy takes topology hints into account.
 
-## Phase 2: Beta (later versions)
+## Phase 2: Beta (target v1.17)
 
-* Feature gate is enabled by default.
-* Alpha-level documentation.
-* Node e2e tests.
-* Support hugepages alignment.
-* User feedback.
+* Enable the feature gate by default.
+* Provide beta-level documentation.
+* Add node E2E tests.
+* Allow pods in all QoS classes to request aligned resources.
+* Guarantee aligned resources for multiple containers in a pod.
+* Refactor to easily support different merge strategies for different policies.
+* Add support for device-specific topology constraints beyond NUMA.
 
 ## GA (stable)
 
+* Support hugepages alignment.
+* User feedback.
 * *TBD*
 
 # Challenges
@@ -416,7 +422,8 @@ _Figure: Topology Manager fetches affinity from hint providers._
 
 # Limitations
 
-* *TBD*
+* Alignment is only possible for pods in the `Guaranteed` QoS class.
+* Alignment is only guaranteed for a single container inside a pod.
 
 # Alternatives
 
