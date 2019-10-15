@@ -12,6 +12,8 @@ reviewers:
   - "@derekwaynecarr"
   - "@jeremyeder"
   - "@RenaudWasTaken"
+  - "@klueska"
+  - "@nolancon"
 approvers:
   - "@dawnchen"
   - "@derekwaynecarr"
