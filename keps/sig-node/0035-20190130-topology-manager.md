@@ -237,26 +237,26 @@ The chosen Topology Manager policy then decicds to admit or reject the pod based
 #### New Interfaces
 
 ```go
-package socketmask
+package bitmask
 
-// SocketMask interface allows hint providers to create SocketMasks for TopologyHints
-type SocketMask interface {
+// BitMask interface allows hint providers to create BitMasks for TopologyHints
+type BitMask interface {
 	Add(sockets ...int) error
 	Remove(sockets ...int) error
-	And(masks ...SocketMask)
-	Or(masks ...SocketMask)
+	And(masks ...BitMask)
+	Or(masks ...BitMask)
 	Clear()
 	Fill()
-	IsEqual(mask SocketMask) bool
+	IsEqual(mask BitMask) bool
 	IsEmpty() bool
 	IsSet(socket int) bool
-	IsNarrowerThan(mask SocketMask) bool
+	IsNarrowerThan(mask BitMask) bool
 	String() string
 	Count() int
 	GetSockets() []int
 }
 
-func NewSocketMask(sockets ...int) (SocketMask, error) { ... }
+func NewBitMask(sockets ...int) (BitMask, error) { ... }
 
 package topologymanager
 
@@ -279,8 +279,8 @@ type Manager interface {
 // a list of these hints to the TopoologyManager for each container at pod
 // admission time.
 type TopologyHint struct {
-    NUMANodeAffinity socketmask.SocketMask
-    // Preferred is set to true when the SocketMask encodes a preferred
+    NUMANodeAffinity bitmask.BitMask
+    // Preferred is set to true when the BitMask encodes a preferred
     // allocation for the Container. It is set to false otherwise.
     Preferred bool
 }
