@@ -12,7 +12,7 @@ approvers:
   - "@tallclair"
 editor: TBD
 creation-date: 2019-09-25
-last-updated: 2019-10-02
+last-updated: 2019-10-15
 status: provisional
 see-also:
   - "https://github.com/kubernetes/community/blob/master/contributors/design-proposals/node/seccomp.md"
@@ -30,20 +30,16 @@ see-also:
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [1. Audit mode support](#1-audit-mode-support)
+  - [1. Complain mode support](#1-complain-mode-support)
   - [2. Built-in profiles](#2-built-in-profiles)
-  - [3. Set <code>kubernetes/default-audit</code> as the default profile](#3-set--as-the-default-profile)
     - [Performance Considerations](#performance-considerations)
     - [Log spamming](#log-spamming)
-    - [Cost vs Benefit](#cost-vs-benefit)
   - [User Stories](#user-stories)
     - [Story 1](#story-1)
     - [Story 2](#story-2)
-    - [Story 3](#story-3)
 - [Implementation Details](#implementation-details)
   - [1. Audit mode support (Details)](#1-audit-mode-support-details)
   - [2. Built-in profiles (Details)](#2-built-in-profiles-details)
-  - [3. Set <code>kubernetes/default-audit</code> as the default profile](#3-set--as-the-default-profile-1)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
@@ -86,9 +82,9 @@ Check these off as they are completed for the Release Team to track. These check
 
 ## Summary
 
-A proposal to enhance the current seccomp support, enabling it by default in new deployments by leveraging a new audit-only feature.
+A proposal to enhance the current seccomp support, by creating new built-in profiles for users to choose from. Some of which running in complain mode.
 
-This lays the foundation required for us to arrive at a more secure enforceable seccomp setup later down the road.
+This lays the foundation required for us to arrive at a more secure enforceable seccomp setup later down the road. 
 
 
 
@@ -103,7 +99,6 @@ Removing such barriers of entry for seccomp usage in Kubernetes clusters, will e
 ### Goals
 
 - Add audit-mode support for logging violations instead of blocking them.
-- Set clusters to use the new audit profile (i.e. `kubernetes/default-audit`) by default.  
 - Avoid breaking changes for Kubernetes api and user workloads.
 
 
@@ -119,39 +114,39 @@ Removing such barriers of entry for seccomp usage in Kubernetes clusters, will e
 
 ## Proposal
 
-The proposed change aims to make the seccomp support in Kubernetes more user-friendly, by 1) supporting audit mode, 2) creating new Kubernetes built-in profiles, and 3) enabling seccomp in audit-mode by default. 
+The proposed change aims to make the seccomp support in Kubernetes more user-friendly, by 1) supporting complain mode, and 2) creating new Kubernetes built-in profiles. 
 
 
-### 1. Audit mode support 
-In Linux kernel 4.14 support for a new seccomp return action named `SECCOMP_RET_LOG` was added. This return action permits that systems calls are logged and then executed. Before such feature, seccomp profiles had only the ability to block, allow and trace system calls, which could lead to disruptive profiles that would evolve through trial and error. 
+### 1. Complain mode support 
+In Linux kernel 4.14 support for a new seccomp return action named `SECCOMP_RET_LOG` was added. 
+This return action permits system calls to be logged and then executed. Before such feature, seccomp profiles had only the ability to allow, block and trace system calls. 
+To test profile changes in production meant that either some calls would be blocked, potentially impacting the application behaviour, or a tracer would have to be attached to it, 
+which could have performance and security implications. 
 
-Audit mode empowers users to monitor the impact of new profiles for extensive periods of time before switching into more restrictive modes. An example of it would be a profile with safe system calls whitelisted using `SCMP_ACT_ALLOW` and a default action of `SCMP_ACT_LOG`, instead of the current `SCMP_ACT_ERRNO`. The result would be that all system calls would be executed, however, only the ones outside the whitelist would be logged into the system logs.
+Complain mode empower users to assess whether their workloads would be able to function normally under the enforceable seccomp profile without that disruption.
+All system calls would be executed, and the ones outside the whitelist would be logged into the system logs.
+Users would be able to test their applications for extensive periods of time without the risk of breaking them. 
 
-To arrive in Kubernetes, this functionality needs to first make it to libseccomp and OCI/runc. It was recently added to Libseccomp-golang [v0.9.1](https://github.com/seccomp/libseccomp-golang/releases/tag/v0.9.1) as `SCMP_ACT_LOG`. It has recently merged into master for [runC](https://github.com/opencontainers/runc/pull/1951) and is currently being considered for the [OCI](https://github.com/opencontainers/runtime-spec/pull/1019).
-
-The support is based on the downstream dependencies, therefore Kubernetes changes are not _required_. However, some changes may be improve its usability as pointed out on the [Implementation Details](#implementation-details) section.
+The support is based on the downstream dependencies, therefore Kubernetes changes are based on creating new built-in profiles for users to choose. 
 
 
 ### 2. Built-in profiles
-The table below shows what built-in profiles and the two supported ways to create user-defined profiles.
+The table below shows what built-in profiles and the supported way to create user-defined profiles.
 
 | Profile Name 	| Description 	| Status 	| Requires Audit Support 	| Fallback profile 	|
 |-------------------------	|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------	|-------------------------------------------	|-----------------------------------------	|------------------	|
 | `runtime/default` 	| The default container runtime. Syscalls outside allowed list are blocked. 	| Unchanged 	| No 	| N/A 	|
+| `kubernetes/default` 	| The default Kubernetes profile - a copy of `runtime/default`. System calls outside the allowed list are blocked. 	| New 	| No 	| N/A 	|
 | `kubernetes/default-audit` 	| Allows the same system calls as `runtime/default`, but logs all violations instead of blocking them. 	| New 	| Yes 	| `unconfined` 	|
-| `kubernetes/audit-verbose` 	| Remove all whitelisted system calls, logging every time any system calls are used. Useful for creating new profiles based on the execution of a container. 	| New 	| Yes 	| `unconfined` 	|
+| `kubernetes/audit-verbose` 	| Remove all whitelisted system calls, logging every time system calls are used. Useful for creating new profiles based on the execution of a container. 	| New 	| Yes 	| `unconfined` 	|
 | `localhost/<path>` 	| User defined profile as a file on the node located at <seccomp_root>/<path>, where <seccomp_root> is defined via the  --seccomp-profile-root flag on the Kubelet. _Note that the user is responsible for physically synchronising the profile files across all nodes._ 	| Unchanged 	| Only when ` SCPM_ACT_LOG` is being used 	| `unconfined` 	|
 | `docker/default` 	| The Docker default seccomp profile is used. Deprecated as of Kubernetes 1.11. Use  `runtime/default` instead. 	| Unchanged, Deprecated 	| No 	| N/A 	|
 | `unconfined` 	| Seccomp is not applied to the container processes (the current default in Kubernetes), if no alternative is provided. Usage should be discouraged. 	| Unchanged 	| No 	| N/A 	|
 
  
-### 3. Set `kubernetes/default-audit` as the default profile
+Users will be able to define the complain mode profile in the same way they do today: at pod, container and cluster levels. 
+Please note that as part of [Seccomp becoming GA](https://github.com/kubernetes/enhancements/pull/1148), there may be some changes in syntax.
 
-By default clusters will have `kubernetes/default-audit` applied to all containers (users can opt-out) that haven't got a seccomp profile associated to them. This profile is similar to the existing `runtime/default`, with the difference being that system calls used that are outside the allowed list will be logged instead of having their execution blocked. This improves the default auditing capabilities of high risk syscalls whilst not breaking existing workloads.
-
-An extra benefit is to provide an easier route for users to move to `kubernetes/default`. They can determine their workload readiness by going through violations on syslogs, instead of having to profile each application individually. 
-
-To support audit mode, some validation will be required ensuring that the downstream dependencies (Kernel, Libseccomp and runc) also supports it. If audit mode is not supported, the default seccomp profile will be set back to `unconfined`, for backwards compatibility. 
 
 #### Performance Considerations
 
@@ -194,25 +189,14 @@ net.core.message_cost = 5
 Users can adjust the verbosity of their logs on demand, although the default settings are quite safe.
 
 
-#### Cost vs Benefit
-
-The performance overhead of auditing syscalls that not whitelisted are negligible, once the cost of enabling seccomp is taken into account. 
-
-Kubernetes should take the same approach taken by docker of enabling both AppArmor and Seccomp by default. This would make any overhead added by such features part of the cost for running secure container workloads. 
-
-Providing users with sensible default security settings outweights the performance impact incurred, specially when users are given the ability to opt-out if their prefer to do so.
-
 
 ### User Stories
 
 #### Story 1
-As a user and administrator, I want to be able to assess what pods within my cluster would be affected by applying more restrictive seccomp profiles.
+As a user and administrator, I want a non-disruptive way to assess what pods within my cluster would be affected by applying the `kubernetes/default` seccomp profile.
 
 #### Story 2
-As a user, I want to be able to assess whether my pods will be affected by more restrictive seccomp profiles.
-
-#### Story 3
-As a user and administrator, I want Kubernetes to audit all potentially dangerous system calls from my containers by default.
+As a user and administrator, I want to be able to audit all potentially dangerous system calls my containers.
 
 
 
@@ -220,7 +204,10 @@ As a user and administrator, I want Kubernetes to audit all potentially dangerou
 
 ### 1. Audit mode support (Details)
 
-Kubernetes will continue to be unaware of downstream support. If a user tries to apply a seccomp profile containing unsupported actions (i.e. `SCMP_ACT_LOG`) today, the lower level dependencies (i.e. runC) will return an error. As a result, the container won't be able to start. We are proposing no changes to this behaviour.
+Kubernetes will continue to be unaware of downstream support. 
+If a user tries to apply a seccomp profile containing unsupported actions (i.e. `SCMP_ACT_LOG`) today, the lower level dependencies (i.e. runC) will return an error. 
+As a result, the container won't be able to start. The same will happen if a user tries to use `kubernetes/default-audit` on a node that does not support the new seccomp action. 
+We are proposing no changes to this behaviour.
 
 
 ### 2. Built-in profiles (Details)
@@ -245,23 +232,6 @@ return []dockerOpt{{"seccomp", string(jsonSeccomp), seccompProfileName}}, nil
 _Needs confirmation as to whether this would also work for non-docker runtime implementations._
 
 
-Built-in profiles will act in the same way as custom profiles, therefore, trying to apply any of the audit built-in profiles in nodes which do not support `SCMP_ACT_LOG` (due to kernel or dependencies version) will cause containers to fail to start.
-
-
-
-
-### 3. Set `kubernetes/default-audit` as the default profile
-
-To define what seccomp profile a container will use, the following order of priority must be observed:
-
-1. Profile name set at container-level (TODO: update with seccomp GA field)
-1. Profile name set at pod-level (TODO: update with seccomp GA field)
-1. Default profile name set at PodSecurityPolicy (TODO: update with seccomp GA field)
-
-If none found, falls back to assessment to take place in the kubelet prior to creating the container:
-1. Is Libseccomp-golang higher than v0.9.1, and runC higher than runc 1.0-rc8 then use `kubernetes/default-audit`.  TODO: need to confirm what version of runC will support this, changes are already merged but a new release needs to happen.
-1. Fallback to `unconfined`.
-
 
 
 ## Design Details
@@ -280,24 +250,21 @@ New tests will be added covering profile selection logic described under [Implem
 
 No upgrade changes required. 
 
-Users can opt-out of this feature by setting the default seccomp profile to `unconfined` on a `PodSecurityPolicy` object. 
 
 
 ### Version Skew Strategy
 
 This feature is based on kubelet changes only. 
 
-Older Kubelet versions won't be able set the default profile to `kubernetes/default-audit`, keeping the current setting of `unconfined` instead.
-
-The new built-in profiles will only be available from this version onwards. To use them, the pods must be scheduled on nodes in which the kubelet support them, otherwise they will fail to start.
+Older Kubelet versions won't be able to schedule containers using the new built-in profiles. 
+To use them, the pods must be scheduled on nodes in which the kubelet support them, otherwise they will fail to start.
 
 
 ### Graduation Criteria
 
 ##### Alpha
 
-- Make Built-in profiles available.
-- API changes to map Built-in profiles to an additional `Kubernetes` type.
+- Make Built-in profiles available. 
 
 ##### Alpha -> Beta Graduation
 
@@ -305,7 +272,7 @@ The new built-in profiles will only be available from this version onwards. To u
 
 ##### Beta -> GA Graduation
 
-- Enable audit-mode as default.
+- API changes to map Built-in profiles to an additional `Kubernetes` type.
 
 
 
@@ -314,6 +281,7 @@ The new built-in profiles will only be available from this version onwards. To u
 - 2019-09-30: Updates based on reviewer's feedback
 - 2019-10-02: Added Graduation Criteria
 - 2019-10-02: Added new SeccompProfileType for kubernetes type
+- 2019-10-15: Limited the scope to the creation of kubernetes built-in types
 
 
 
