@@ -18,7 +18,7 @@ approvers:
 editor: TBD
 creation-date: 2019-02-15
 last-updated: 2019-02-15
-status: provisional
+status: implementable
 see-also:
   - "/keps/sig-node/20190130-node-os-arch-labels.md"
 ---
@@ -105,14 +105,14 @@ nodeSelector and not applying the beta labels to new nodes would mean new nodes 
 
 Here is a break down of the implementation steps:
 
-1) [v1.16] update components to apply both the GA and beta labels to nodes & volumes.
-2) [v1.16] deprecate the beta labels.
-3) [v1.16] update the appropriate release notes & documentation to promote the use of GA labels over beta labels.
-4) [v1.17] continue to promote usage of GA labels over beta labels.
-5) [v1.18] continue to promote usage of GA labels over beta labels.
-6) [v1.19] continue to promote usage of GA labels over beta labels.
-7) [v1.20] components that consume the beta labels will be updated to only check for GA labels.
-8) [v1.20] stop applying beta labels to new resources, existing resources will continue to have those labels unless manually removed.
+1) [v1.17] update components to apply both the GA and beta labels to nodes & volumes.
+2) [v1.17] deprecate the beta labels.
+3) [v1.17] update the appropriate release notes & documentation to promote the use of GA labels over beta labels.
+4) [v1.18] continue to promote usage of GA labels over beta labels.
+5) [v1.19] continue to promote usage of GA labels over beta labels.
+6) [v1.20] continue to promote usage of GA labels over beta labels.
+7) [v1.21] components that consume the beta labels will be updated to only check for GA labels.
+8) [v1.21] stop applying beta labels to new resources, existing resources will continue to have those labels unless manually removed.
 
 ### Risks and Mitigations
 
