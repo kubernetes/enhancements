@@ -12,10 +12,11 @@ approvers:
   - "@saad-ali"
 editor: TBD
 creation-date: 2019-01-30
-last-updated: 2019-02-01
+last-updated: 2019-10-15
 status: implementable
 see-also:
   - "https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/raw-block-pv.md"
+  - "https://github.com/kubernetes/enhancements/pull/1288"
 ---
 
 # CSI Raw Block Volumes
@@ -94,6 +95,14 @@ the parts that are used by kubelet (`BlockVolumeMapper` interface). A node
 must be therefore drained before switching the feature off to remove all
 raw devices provided to pods, because newly started kubelet (with the feature
 off) won't be able to remove these devices.
+
+When a node is not drained and CSIBlockVolume is disabled while running
+a pod, we make sure that the pod is either killed or can continue
+using the volume as before. In both cases, kubelet won't touch data
+on the volume and can't corrupt it. The volume may not be cleaned after
+the pod is deleted, i.e. some leftover symlinks / bind mounts may be
+present. It's up to the cluster admin to clean these orphans
+(or drain nodes properly before disabling the feature).
 
 ## Test Plan
 
