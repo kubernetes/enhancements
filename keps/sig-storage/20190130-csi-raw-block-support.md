@@ -12,10 +12,11 @@ approvers:
   - "@saad-ali"
 editor: TBD
 creation-date: 2019-01-30
-last-updated: 2019-02-01
+last-updated: 2019-10-15
 status: implementable
 see-also:
   - "https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/raw-block-pv.md"
+  - "https://github.com/kubernetes/enhancements/pull/1288"
 ---
 
 # CSI Raw Block Volumes
@@ -28,6 +29,7 @@ see-also:
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
+- [Upgrade/Downgrade Strategy](#upgradedowngrade-strategy)
 - [Test Plan](#test-plan)
   - [Unit tests](#unit-tests)
   - [E2E tests](#e2e-tests)
@@ -37,6 +39,8 @@ see-also:
 - [Implementation History](#implementation-history)
   - [K8s 1.12: Alpha](#k8s-112-alpha)
   - [K8s 1.13: Alpha](#k8s-113-alpha)
+  - [K8s 1.14: Beta](#k8s-114-beta)
+  - [K8s 1.17: GA](#k8s-117-ga)
 <!-- /toc -->
 
 ## Summary
@@ -84,6 +88,22 @@ plugin removed any device files it created.
 
 This support is controlled by a feature gate called "CSIBlockVolume".
 
+## Upgrade/Downgrade Strategy
+
+CSIBlockVolume feature gate is used only in CSI volume plugin and only in
+the parts that are used by kubelet (`BlockVolumeMapper` interface). A node
+must be therefore drained before switching the feature off to remove all
+raw devices provided to pods, because newly started kubelet (with the feature
+off) won't be able to remove these devices.
+
+When a node is not drained and CSIBlockVolume is disabled while running
+a pod, we make sure that the pod is either killed or can continue
+using the volume as before. In both cases, kubelet won't touch data
+on the volume and can't corrupt it. The volume may not be cleaned after
+the pod is deleted, i.e. some leftover symlinks / bind mounts may be
+present. It's up to the cluster admin to clean these orphans
+(or drain nodes properly before disabling the feature).
+
 ## Test Plan
 
 ### Unit tests
@@ -114,6 +134,16 @@ ambiguity about how implementations should work.
 * Two or more CSI plugins that and run in the gate and test raw block
 * At least 5 third party CSI plugins support raw block with CSI and pass e2e
 tests
+* Manual stress test with at least one real CSI driver is performed with a node
+  running non-trivial amount of pods that use a block device (simple `dd`
+  should do).
+  * Test that the pods are moved to another nodes and data is retained when
+    the node is drained.
+  * Test that the data is retained when kubelet restarts while the pods are
+    running.
+  * Test that the data is retained when the node reboots. For pods that were
+    moved to another nodes during the outage, test that the newly started node
+    cleaned up their devices.
 
 ## Implementation History
 
@@ -124,3 +154,11 @@ tests
 * Multiple third party plugins start to implement the raw block CSI interface
 and we can test with them
 * Bugs fixed in CSI sidecars 
+
+### K8s 1.14: Beta
+* Bugs fixed
+
+### K8s 1.17: GA
+* Separated NodeStage / NodePublish calls.
+* Fixed volume reconstruction after kubelet restart.
+* Stress tests as noted above.
