@@ -226,23 +226,23 @@ Once a new version of Windows Server is deployed using [Windows CRI-ContainerD],
 
 Another RuntimeClass could still be run on the same hosts to use updated containers without Hyper-V isolation.
 
-    ```yaml
-    apiVersion: node.k8s.io/v1beta1
-    kind: RuntimeClass
-    metadata:
-      name: windows-1903
-    handler: 'default'
-    scheduling:
-      nodeSelector:
-        kubernetes.io/os: 'windows'
-        kubernetes.io/arch: 'amd64'
-        node.kubernetes.io/osversion: '10.0.18362'
-      tolerations:
-      - effect: NoSchedule
-        key: windows
-        operator: Equal
-        value: "true"
-    ```
+```yaml
+apiVersion: node.k8s.io/v1beta1
+kind: RuntimeClass
+metadata:
+  name: windows-1903
+handler: 'default'
+scheduling:
+  nodeSelector:
+    kubernetes.io/os: 'windows'
+    kubernetes.io/arch: 'amd64'
+    node.kubernetes.io/osversion: '10.0.18362'
+  tolerations:
+  - effect: NoSchedule
+    key: windows
+    operator: Equal
+    value: "true"
+```
 
 #### Story 3 - Choosing a specific multi-arch image
 
