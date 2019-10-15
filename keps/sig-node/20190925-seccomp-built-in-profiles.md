@@ -214,7 +214,8 @@ We are proposing no changes to this behaviour.
 
 The internal built-in profiles will be implemented in golang, not allowing users to amend them. It will be based off the implementation in [docker](https://github.com/moby/moby/blob/master/profiles/seccomp/default.json) and [containerd](https://github.com/containerd/containerd/blob/master/contrib/seccomp/seccomp_default.go).
 
-The new built-in profiles would be mapped to an additional Kubernetes profile type:
+The new built-in profiles would be mapped to an additional Kubernetes profile type, which is contingent on the GA API changes proposed in [#1148](https://github.com/kubernetes/enhancements/pull/1148):
+
 ```
 const (
     SeccompProfileUnconfined SeccompProfileType = "Unconfined"
@@ -242,7 +243,7 @@ Seccomp already has E2E tests, but the tests are guarded by the [Feature:Seccomp
 
 As part of seccomp [being marked GA](https://github.com/kubernetes/enhancements/pull/1148), the feature tag will be removed from the seccomp tests.
 
-New tests will be added covering profile selection logic described under [Implementation Details](#implementation-details). 
+New tests will be added to verify the use of the new built-in profiles.
 
 
 
