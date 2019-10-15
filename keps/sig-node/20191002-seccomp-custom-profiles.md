@@ -11,7 +11,7 @@ approvers:
   - "@tallclair"
 editor: TBD
 creation-date: 2019-10-02
-last-updated: 2019-10-02
+last-updated: 2019-10-15
 status: provisional
 see-also:
   - "https://github.com/kubernetes/community/blob/master/contributors/design-proposals/node/seccomp.md"
@@ -119,7 +119,7 @@ jsonSeccomp, _ := json.Marshal(profile.Spec)
 return []dockerOpt{{"seccomp", string(jsonSeccomp), seccompProfileName}}, nil
 ```
 
-The new config profiles would be mapped to an additional Kubernetes profile type:
+The new config profiles would be mapped to an additional Kubernetes profile type, which is contingent on the GA API changes proposed in [#1148](https://github.com/kubernetes/enhancements/pull/1148):
 ```
 const (
     SeccompProfileUnconfined SeccompProfileType = "Unconfined"
@@ -175,7 +175,8 @@ A similar approach would also be beneficial to AppArmor profiles.
 
 #### Rollout of profile changes
 
-Seccomp profiles are applied at container creation time, therefore updating an existing user-defined profile will not cause any changes to the running containers that are using it. They will need to be restarted in order for the changes to take effect, which users will have to manually do. 
+Seccomp profiles are applied at container creation time, therefore updating an existing user-defined profile will not cause any changes to the running containers that are using it. 
+They will need to be restarted in order for the changes to take effect, which users will have to do manually. 
 
 
 #### Starting containers with non-existent profile
@@ -229,11 +230,12 @@ The new configmap based profiles will only be supported from this version on. Us
 
 ## Implementation History
 - 2019-10-02: Initial KEP
+- 2019-10-15: Minor changes
 
 
 ## Alternatives
 
-**Start deprecation process for `localhost/<path>`.** The new `ConfigMapSeccompProfile` will better support custom profiles. Starting the deprecation process would signal to users what the end goal is. However, this can be started once the new approach GA's.
+**Start deprecation process for `localhost/<path>`.** The new `ConfigMapSeccompProfile` will better support custom profiles. Starting the deprecation process would signal users what the end goal is. However, this can be started once the new approach GA's.
 
 
 **Downstream seccomp support awareness.** Validation could be added to assert whether the Seccomp Profile could be applied by the downstream dependencies on a _per- node_ basis, and lead to a list of available profiles for each node. This would benefit clusters with heterogeneus nodes. It would also benefit the usage of the current `localhost/<path>` profile, which an administrator has no way to tell which nodes have them and which ones don't. 
