@@ -17,10 +17,7 @@ status: provisional
 
 ## Summary
 
-Enable users to set the fieldManager, introduced with Server Side Apply, declaratively when sending the object to the apiserver.
-The Server Side Apply feature introduced ownership of fields to improve merging and the object lifecycle when multiple actors interact with the same object.
-
-While currently the identifier of the current actor (fieldManager) is set through an request option or the request user-agent,
+Currently the identifier of the current actor (fieldManager) is set through an request option or the request user-agent,
 this KEP aims to provide a declarative way of setting the current fieldManager through a field in the object itself.
 
 ## Motivation
@@ -29,7 +26,7 @@ It is a common practice to use Kubernetes manifests as stored configuration of a
 
 With the addition of Server Side Apply it could become necessary to change the way those manifests get applied, as the most benefit from this new feature requires every actor to define it's fieldManager. Doing this, currently is only possible through api options, the user-agent or as a kubectl option.
 
-To keep the way of interacting with manifests as easy as possible, this KEP suggests to allow defining the fieldManager as part of the manifest itself. Therefor no further action is required when applying a set of manifests and users can easily benefit from Server Side Apply without having to change their apply workflow.
+To keep the way of interacting with manifests as easy as possible, this KEP suggests to allow defining the fieldManager as part of the manifest itself. Therefore no further action is required when applying a set of manifests and users can easily benefit from Server Side Apply without having to change their apply workflow.
 
 This would also assist existing solutions already interacting with manifest files, as the fieldManager information gets provided in a way they already know to handle which might improve compatibility.
 
@@ -48,7 +45,7 @@ To achieve the goals, we would add a field to ObjectMeta called `options`, this 
 This field should not get persisted to storage and is solely for sending request options information to the apiserver.
 When the `options.fieldManager` field is not set, the apiserver would fallback onto current behavior and default the fieldManager (or fail).
 
-This means, we add a field that is optional metadata, write-only and non-persisted.
+This means, we add a field that is optional metadata, write-only and non-persisted and exists for the sole purpose of sending request information to the apiserver.
 The `options.fieldManager` should take a non empty string or be unset and should follow the same criteria as [ManagedFieldsEntry.Manager](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.14/#managedfieldsentry-v1-meta).
 
 Setting or not setting the field will cause the following behavior for both apply and non-apply operations:
@@ -69,6 +66,16 @@ metadata:
 data:
   k: v
 ```
+
+The challenge of this proposal is to introduce a new kind of field behaving differently from the fields currently available in the api,
+as it does not get persisted directly, but causes side-effects on the apiserver.
+
+### Risks and Mitigations
+
+One risk might be, that introducing this change would mean there is a field that does not get persisted to storage.
+As a result, setting it causes different behavior on the apiserver, but is not reflected when reading the object back from the apiserver.
+
+This can seem unintuitive but should be solved by proper documentation.
 
 ### User Stories [optional]
 
@@ -98,16 +105,9 @@ All actors now can coexist and manage their set of fields without interfering wi
 
 #### Kustomize
 
-In reference to the above workflow, it would be possible to override `options.fieldManager` for differen Kustomize overlays and therefor separate ownership depending on the actor currently active.
+In reference to the above workflow, it would be possible to override `options.fieldManager` for differen Kustomize overlays and therefore separate ownership depending on the actor currently active.
 
 This means, updating single fields by using a Kustomize overlay (like updating images, labels or annotations) as part of a CI/CD pipeline could easily contain the fieldManager information without any changes to Kustomize (or similar tools) itself.
-
-### Risks and Mitigations
-
-One risk might be, that introducing this change would mean there is a field that does not get persisted to storage.
-As a result, setting it causes different behavior on the apiserver, but is not reflected when reading the object back from the apiserver.
-
-This can seem unintuitive but should be solved by proper documentation.
 
 ## Design Details
 
