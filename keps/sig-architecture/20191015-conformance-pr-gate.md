@@ -2,6 +2,7 @@
 title: Conformance Coverage PR Gate
 authors:
   - "@hh"
+  - "@zachmandeville"
 owning-sig: sig-architecture
 participating-sigs:
   - sig-testing
@@ -99,15 +100,17 @@ frameworks are written.
 
 ### Goals
 
-* run per PR against kubernetes/kubernetes
-* feedback with list of newly promoted API objects/fields lacking tests
-* feedback with list of currently tested API objects/fields not tested
-* soft gate with '/hold' (or similar merge blocking tag)
+* Defining Conformance Coverage for API Operation 
+* Runnning Coverage per PR against kubernetes/kubernetes
+* Feedback with list of newly promoted API Operations lacking test hits
+* Feedback with list of previously tested API Operations lacking test hits
+* Soft gate with '/hold' (or similar merge blocking tag)
+* Hard gate 
 
 ### Non-Goals
 
-* hard gating
-* definition conformance coverage
+* Defining Conformance Coverage for Watch Methods
+* Defining Conformance Coverage for Object Fields
 
 ## Proposal
 
@@ -115,6 +118,46 @@ The proposal consists of four deliverables:
 * prow-job that runs periodically/continously against master for baseline
 * prow-job that waits for PR e2e test jobs to finish for comparision
 * automated workflow for tagging / failing as a test for all PRs that reduce coverage percentage
+
+### Definition of Stable / GA Coverage
+
+APISnoop analyses Audit Logs and does not run on an active cluster yet.
+
+#### API Operations / Endpoints
+
+
+##### Total Endpoints eligible for Conformance
+
+The surface area of Kubernetes API endpoints is based on the
+paths/method/operationId of swagger.json in the k/k repo.
+
+This is not based on the generated swagger from the API server, as we analyze the audit logs statically.
+
+Out of 1100+ total, roughly 200 have been deprecated leaving 910 operations.
+
+490 of the those paths include the strings alpha and beta, which we treate as alpha and beta operations / endpoints.
+
+This currently leaves 420 'stable' endpoints.
+
+##### Test Hits
+
+The e2e.test binary adds it's user agent to calls, additionally recording the test name by appending '-- TEST CONTEXT'
+
+##### Conformance Hits
+
+When the user agent includes '--' followed by '[Conformance]' it counts as a conformance tests.
+
+#### Watch methods on Objects
+
+This may be added in the future if consensus can be reached.
+
+#### Object Fields
+
+##### PodSpec
+
+The Conformance Team has an Initial Focus will be on PodSpec. When we get closer
+to fulll coverage for PodSpec, we may reach consensus on this metric and how to
+list changes in coverage.
 
 ### Baseline Job against master
 ### Comparision Job per PR
@@ -146,6 +189,11 @@ In Phase 2, we will:
 In Phase 3, we will:
 * Implement the tagging / feedback workflow
 * Open up to all PRs hitting k/k
+
+### Phase 4
+
+In Phase 4, we will:
+* Hard Gating
 
 ### Graduation Criteria
 
