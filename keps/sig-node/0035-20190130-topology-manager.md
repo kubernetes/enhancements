@@ -55,8 +55,8 @@ _Reviewers:_
     - [Feature Gate and Kubelet Flags](#feature-gate-and-kubelet-flags)
     - [Changes to Existing Components](#changes-to-existing-components)
 - [Graduation Criteria](#graduation-criteria)
-  - [Phase 1: Alpha (target v1.16)](#phase-1-alpha-target-v116)
-  - [Phase 2: Beta (later versions)](#phase-2-beta-later-versions)
+  - [Phase 1: Alpha (v1.16) [COMPLETED]](#phase-1-alpha-v116-completed)
+  - [Phase 2: Beta (target v1.17)](#phase-2-beta-target-v117)
   - [GA (stable)](#ga-stable)
 - [Challenges](#challenges)
 - [Limitations](#limitations)
@@ -388,7 +388,7 @@ _Figure: Topology Manager fetches affinity from hint providers._
 
 # Graduation Criteria
 
-## Phase 1: Alpha (target v1.16)
+## Phase 1: Alpha (v1.16) [COMPLETED]
 
 * Feature gate is disabled by default.
 * Alpha-level documentation.
@@ -397,16 +397,20 @@ _Figure: Topology Manager fetches affinity from hint providers._
 * Device plugin interface includes NUMA Node ID.
 * Device Manager allocation policy takes topology hints into account.
 
-## Phase 2: Beta (later versions)
+## Phase 2: Beta (target v1.17)
 
-* Feature gate is enabled by default.
-* Alpha-level documentation.
-* Node e2e tests.
-* Support hugepages alignment.
-* User feedback.
+* Enable the feature gate by default.
+* Provide beta-level documentation.
+* Add node E2E tests.
+* Allow pods in all QoS classes to request aligned resources.
+* Guarantee aligned resources for multiple containers in a pod.
+* Refactor to easily support different merge strategies for different policies.
+* Add support for device-specific topology constraints beyond NUMA.
 
 ## GA (stable)
 
+* Support hugepages alignment.
+* User feedback.
 * *TBD*
 
 # Challenges
@@ -418,7 +422,8 @@ _Figure: Topology Manager fetches affinity from hint providers._
 
 # Limitations
 
-* *TBD*
+* Alignment is only possible for pods in the `Guaranteed` QoS class.
+* Alignment is only guaranteed for a single container inside a pod.
 
 # Alternatives
 
