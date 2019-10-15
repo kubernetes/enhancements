@@ -31,23 +31,19 @@ status: implementable
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [Node Restrictions](#node-restrictions)
-    - [Label Restrictions](#label-restrictions)
-    - [OwnerReferences](#ownerreferences)
-  - [Kubelet changes](#kubelet-changes)
-    - [Label Restrictions](#label-restrictions-1)
-    - [OwnerReferences](#ownerreferences-1)
-    - [Example](#example)
+  - [Label Restrictions](#label-restrictions)
+  - [PodStatus Restrictions](#podstatus-restrictions)
+  - [OwnerReferences](#ownerreferences)
   - [Risks and Mitigations](#risks-and-mitigations)
+    - [Breaking Services](#breaking-services)
+    - [Namespace Annotation Policy](#namespace-annotation-policy)
 - [Design Details](#design-details)
-  - [Unrestricted label scheme](#unrestricted-label-scheme)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
-    - [Upgrading Mirror Pod Services](#upgrading-mirror-pod-services)
-  - [Version Skew Strategy](#version-skew-strategy)
 - [Implementation History](#implementation-history)
 - [Alternatives](#alternatives)
+  - [Munge Mirror Pods](#munge-mirror-pods)
   - [MVP mitigation of known threats](#mvp-mitigation-of-known-threats)
   - [Restrict namespaces](#restrict-namespaces)
   - [Weaker label restrictions](#weaker-label-restrictions)
@@ -98,8 +94,9 @@ is being considered for a milestone.
 Extend the [NodeRestriction][] admission controller to add further limitations on a node's effect on
 pods:
 
-1. Restrict labels to a whitelisted prefix: `unrestricted.node.kubernetes.io/`
-2. Restrict mirror pod OwnerReferences to only allow a node reference.
+1. Restrict labels to per-namespace whitelisted keys
+2. Prevent nodes from modifying labels through a `pod/status` update.
+3. Restrict mirror pod OwnerReferences to only allow a node reference.
 
 ## Motivation
 
@@ -174,21 +171,26 @@ makes the following assumptions:
 
 ## Proposal
 
-### Node Restrictions
-
 All restrictions will be enforced through the [NodeRestriction][] admission controller. These
 extensions will be guarded by the `MirrorPodNodeRestriction` feature gate.
 
-On update, only the delta will be restricted. In other words, the Kubelet can modify pods with
-restricted labels / owner references as long as it's not modifying (or adding or
-deleting) the restricted entries.
+Nodes are not granted the `update` or `patch` permissions on pods, but may update `pod/status`. All
+label and owner reference updates will be forbidden through `pod/status` updates, so restrictions
+will not be checked on status updates. In other words, a node _can_ update the status on a pod that
+has un-whitelisted labels.
 
-#### Label Restrictions
+### Label Restrictions
 
-The Kubelet will be prevented from updating pod labels or creating mirror pods with labels, except
-for whitelisted keys:
+A new reserved annotation will be introduced for namespaces to whitelist mirror-pod labels:
 
-- Any labels starting with `unrestricted.node.kubernetes.io/` are allowed.
+```
+node.kubernetes.io/mirror.allowed-label-keys = "key1,key2,..."
+```
+
+When the NodeRestriction controller receives a mirror pod create a request for a node, it will check
+the pod for labels. If it is labeled, the pod's namespace is fetched and checked for the
+allowed-label-keys annotation. If any of the mirror-pod's labels are not whitelisted, or the
+annotation is absent, the create request will be rejected.
 
 The Kubelet does not currently label pods, nor are there official label keys that apply to
 pods. However, there are a few labels that are commonly applied to system addons & static pods:
@@ -200,22 +202,25 @@ pods. However, there are a few labels that are commonly applied to system addons
 The `k8s-app` label is used to match controllers for system components, and therefore should be
 explicitly disallowed.
 
-It is not clear how the `tier` and `component` labels are consumed, but I recommend uses be migrated
-to `unrestricted.node.kubernetes.io/component` and `unrestricted.node.kubernetes.io/tier`, rather
-than special casing the existing labels.
-
-Additionally, nodes will be restricted from making any label changes through `pod/status`
-updates. As the kubelet doesn't make any label updates through this request, this change  will be
-rolled out without a feature gate.
+`kubeadm` should be modified to whitelist the `component` and `tier` labels, or potentially drop
+them if they're not required.
 
 [kubeadm-labels]: https://github.com/kubernetes/kubernetes/blob/e682310dcc5d805a408e0073e251d99b8fe5c06d/cmd/kubeadm/app/util/staticpod/utils.go#L60
 [addons-k8s-app]: https://github.com/kubernetes/kubernetes/blob/e682310dcc5d805a408e0073e251d99b8fe5c06d/cluster/addons/kube-proxy/kube-proxy-ds.yaml#L23
 
-#### OwnerReferences
+### PodStatus Restrictions
 
-OwnerReferences cannot be updated through the `pod/status` subresource, but they can be set on
-mirror pods. With the new restrictions, mirror pods are only allowed a single owner reference (or
-none), and it must refer to the node:
+Some metadata can be modified through a `pod/status` subresource update. OwnerRefrences are
+restricted from pod/status updates, but labels & annotations can be updated. Going forward, nodes
+will be restricted from making any label changes through `pod/status` updates.
+
+As the kubelet doesn't make any label updates through this request, this change will be rolled out
+without a feature gate in **v1.17**.
+
+### OwnerReferences
+
+OwnerReferences can be set on mirror pods today. With the new restrictions, mirror pods are only
+allowed a single owner reference (or none), and it must refer to the node:
 
 ```go
  metav1.OwnerReference{
@@ -228,121 +233,74 @@ none), and it must refer to the node:
 }
 ```
 
+The Kubelet will start injecting this OwnerReference into mirror-pods in **v1.17**, unguarded by a
+feature gate.
+
 The node owner reference will eventually be required, but due to apiserver-node version skew, this
-must happen at least 2 releases after `MirrorPodMetadataFilter` graduates to beta.
-
-### Kubelet changes
-
-To comply with and ease the rollout of the modified restrictions, Kubelet will make some
-modifications to mirror pods. The Kubelet changes will be guarded by a separate
-`MirrorPodMetadataFilter` feature gate.
-
-These changes introduce 2 new "well-known" annotations:
-
-- `kubernetes.io/config.removed-labels`
-- `kubernetes.io/config.removed-ownerreferences`
-
-#### Label Restrictions
-
-Labels that do not meet the modified restrictions will be removed. In order to audit these changes,
-an annotation will be added with the json-encoded removed labels, using the schema:
-
-```
-kubernetes.io/config.removed-labels: '{"<label-key>": "<label-value>", ...}'
-```
-
-Removed labels will also generate a warning in the kubelet log.
-
-#### OwnerReferences
-
-A valid owner reference will be added to the mirror pod, matching the spec described
-[above](#ownerreferences). By adding an owner reference with `controller: true`, it adds an extra
-assurance that controllers will not try to adopt the mirror pod.
-
-Any other OwnerReferences will be removed, and json-encoded in an annotation (similar to removed
-labels):
-
-```
-kubernetes.io/config.removed-ownerreferences: '[{...}, ...]'
-```
-
-#### Example
-
-For example, a static pod with metadata:
-
-```yaml
-name: kube-proxy
-namespace: kube-system
-annotations:
-  scheduler.alpha.kubernetes.io/critical-pod: ''
-labels:
-  tier: node
-  component: kube-proxy
-  unrestricted.node.kubernetes.io/example: true
-```
-
-Might produce a mirror pod (on a node named `testing-default-pool-588c6e30-408q`) with metadata:
-
-```yaml
-name: kube-proxy-testing-default-pool-588c6e30-408q
-namespace: kube-system
-annotations:
-  kubernetes.io/config.hash: 5edeeae4fbd5dde04f6298cdd8d7fb15
-  kubernetes.io/config.mirror: 5edeeae4fbd5dde04f6298cdd8d7fb15
-  kubernetes.io/config.seen: "2019-10-10T07:38:16.378551617Z"
-  kubernetes.io/config.source: file
-  kubernetes.io/config.removed-labels: '{"component": "kube-proxy", "tier": "node"}'
-  scheduler.alpha.kubernetes.io/critical-pod: ""
-labels:
-  unrestricted.node.kubernetes.io/example: true
-creationTimestamp: "2019-10-10T07:38:21Z"
-resourceVersion: "29997713"
-selfLink: /api/v1/namespaces/kube-system/pods/kube-proxy-testing-default-pool-588c6e30-408q
-uid: ef19cb63-eb30-11e9-a0d3-42010a80005d
-ownerReferences:
-- apiVersion: v1
-  kind: Node
-  name: testing-default-pool-588c6e30-408q
-  uid: 40e7848c-a828-11e9-829c-42010a80016f
-  controller: true
-  blockOwnerDeletion: false
-```
+must happen at least 2 releases after nodes start injecting this OwnerReference.
 
 ### Risks and Mitigations
 
+#### Breaking Services
+
 Some Kubernetes setups depend on statically serving services today. Applying these mitigations will
 likely break these clusters. There is no way to apply these changes in a fully backwards compatible
-way, so instead we will rely on a staged rollout through the `MirrorPodNodeRestriction` and
-`MirrorPodMetadataFilter` feature gates, and call out the actions required.
+way, so users or operators of such clusters will be required to whitelist the required labels prior
+to enabling the `MirrorPodNodeRestriction` feature gate (or upgrading to a release with the feature
+gate enabled).
 
-Clusters currently depending on label-matching static pods will need to migrate the
-labels to the new whitelisted key prefix. This can be done in a non-disruptive way,
-but requires a multistep process. For example, to migrate static pods providing a Service:
+Here is a kubectl monstrosity for listing the labels that need to be whitelisted on each namespcae:
 
-1. Update the static pods (by deploying updated static manifests) with _both_ the old & new labels.
-2. Update the service selector to match the new labels.
-3. Update the static pods to remove the old labels.
+```
+kubectl get pods --all-namespaces -o=go-template='{{range .items}}{{if .metadata.annotations}}{{if (index .metadata.annotations "kubernetes.io/config.mirror") }}{{$ns := .metadata.namespace}}{{range $key, $value := .metadata.labels}}{{$ns}}{{": "}}{{$key}}{{"\n"}}{{end}}{{end}}{{end}}{{end}}' | sort -u
+```
+
+This command gives output as `namespace: label-key` pairs, for example:
+
+```
+$ kubectl get pods --all-namespaces -o=go-template='{{range .items}}{{if .metadata.annotations}}{{if (index .metadata.annotations "kubernetes.io/config.mirror") }}{{$ns := .metadata.namespace}}{{range $key, $value := .metadata.labels}}{{$ns}}{{": "}}{{$key}}{{"\n"}}{{end}}{{end}}{{end}}{{end}}' | sort -u
+kube-system: component
+kube-system: extra
+kube-system: tier
+```
+
+Which should be translated into an annotation on the kube-system namespace:
+
+```
+node.kubernetes.io/mirror.allowed-label-keys: "component,extra,tier"
+```
+
+Like so:
+
+```
+$ kubectl annotate namespaces kube-system node.kubernetes.io/mirror.allowed-label-keys="component,extra,tier"
+```
+
+#### Namespace Annotation Policy
+
+There is prior art for representing namespaced policy through annotations, such as with the
+[PodNodeSelector][] or [PodTolerationRestriction][] admission controllers. However, this is a model
+we're trying to move away from for general namespaced-policy specification, so adding another
+namespace annotation is considered a risk.
+
+In this case, I think an exception is warranted given that:
+
+1. Use of the annotation is very niche
+2. The annotation is narrowly-scoped. Even when required, it will probably only be needed on a small
+   number (typically 1) of namespaces.
+3. The annotation is expected to be static. New namespaces won't need to be annotated, and the
+   annotation value is tied to the cluster setup.
+
+[PodNodeSelector]: https://kubernetes.io/docs/reference/access-authn-authz/admission-controllers/#configuration-annotation-format
+[PodTolerationRestriction]: https://kubernetes.io/docs/reference/access-authn-authz/admission-controllers/#podtolerationrestriction
 
 ## Design Details
-
-### Unrestricted label scheme
-
-The `unrestricted.node.kubernetes.io/` label prefix is for use by users and external projects, and
-not to be used for system behavior. This is aligned with other user-space `*.kubernetes.io/` label
-prefixes, such as
-[`node-role.kubernetes.io/*`](/keps/sig-architecture/2019-07-16-node-role-label-use.md). Labels with
-this prefix are exempt from [API review
-requirements](https://github.com/kubernetes/community/blob/7f0a76ec7d3a9531a35ffb6d781626c377db3ad5/contributors/devel/sig-architecture/api-conventions.md#label-selector-and-annotation-conventions).
-
-Users SHOULD use [reverse domain name
-notation](https://en.wikipedia.org/wiki/Reverse_domain_name_notation) for the label suffix to avoid
-collisions, but this is not required. E.g. `unrestricted.node.kubernetes.io/com.example.my-label`.
 
 ### Test Plan
 
 Our CI environment does not depend on static pods serving services, so we can enable the feature
 gate in the standard Kubernetes E2E environment. The restrictions can be verified by impersonating a
-node's identity and ensuring illegal mirror pods cannot be created.
+node's identity and ensuring illegal mirror pods cannot be created while legal pods can be.
 
 To test the Kubelet modifications, a privileged pod can write a static pod manifest to a node and
 verify the expected changes are made.
@@ -350,27 +308,19 @@ verify the expected changes are made.
 ### Graduation Criteria
 
 The feature gate will initially be in a default-disabled alpha state. Graduating to beta will make
-the feature enabled by default, but users that have not yet updated existing label
-usage to the unrestricted keys can still disable it.
+the feature enabled by default, and will break users who have not taken steps to whitelist
+mirror-pod labels.
 
 Here is an approximate graduation schedule, specific release numbers subject to change:
 
 - v1.17
   - MirrorPodNodeRestriction: **alpha**
-  - MirrorPodMetadataFilter: **alpha**
-- v1.18
-  - MirrorPodNodeRestriction: alpha
-  - MirrorPodMetadataFilter: **beta**
-- v1.20 (2 releases later to account for master-node version skew)
+- v1.20
   - MirrorPodNodeRestriction: **beta**
-  - MirrorPodMetadataFilter: beta
 - v1.21
   - MirrorPodNodeRestriction: **GA**
-  - MirrorPodMetadataFilter: **GA**
 
 ### Upgrade / Downgrade Strategy
-
-**MirrorPodNodeRestriction**
 
 Upgrade / downgrade is only meaningful for enabling / disabling the feature gate. If no explicit
 action is taken, this will happen on upgrade when the feature graduates to beta.
@@ -384,60 +334,27 @@ resources.
 Rolling back / disabling the feature will not affect existing pods. If a mirror pod was previously
 rejected, the Kubelet will attempt to recreate it and it will now be allowed.
 
-**MirrorPodMetadataFilter**
-
-Nodes are not updated in place, but rather recreated. A node recreated with(out) the feature gate
-will also recreate the mirror pods with the correct feature set.
-
-#### Upgrading Mirror Pod Services
-
-If a cluster is currently using services to route to mirror pods, a multi-step remediation process
-is required:
-
-0. Current state
-   - Static pods labeled with `example.com/foo=bar`
-   - Service with selector for `example.com/foo=bar`
-1. Update static pod labels
-   - Static pods are labeled with `example.com/foo=bar` **AND**
-     `unrestricted.node.kubernetes.io/com.example.foo=bar`
-   - Service still uses selector for `example.com/foo=bar`
-2. Update service (after all static pods migrated)
-   - _Note: This step must happen prior to `MirrorPodNodeRestriction` being enabled._
-   - Static pods are labeled with `example.com/foo=bar` **AND**
-     `unrestricted.node.kubernetes.io/com.example.foo=bar`
-   - Service switches to selector for `unrestricted.node.kubernetes.io/com.example.foo=bar`
-3. Clean-up (optional, but recommended)
-   - Remove old static pod label, so static pods are only labeled with
-     `unrestricted.node.kubernetes.io/com.example.foo=bar`
-   - Service still uses selector for `unrestricted.node.kubernetes.io/com.example.foo=bar`
-
-A similar strategy also works for any third-party systems depending on mirror-pod labels.
-
-If mirror-pod labels are not programmatically consumed, no action is required (since
-`MirrorPodMetadataFilter` will munge the spec to conform with restrictions). In this case, static
-pods can be migrated to the unrestricted labels on any schedule.
-
-### Version Skew Strategy
-
-This feature uses 2 separate feature gates so that the Kubelet changes can be rolled out ahead of
-the control-plane changes. The `MirrorPodMetadataFilter` feature gate will advance to beta at least
-2 releases ahead of `MirrorPodNodeRestriction`. Taking this approach limits the blast radius for a
-breakage to a subset of the cluster (upgraded nodes).
-
-If `MirrorPodMetadataFilter` is enabled but `MirrorPodNodeRestriction` is not, mirror pods will be
-modified, but the modifications will not be enforced. Once all nodes are using
-`MirrorPodMetadataFilter`, enabling `MirrorPodNodeRestriction` should be a no-op.
-
-In an HA environment, it's possible for some apiservers to have the feature enabled and others
-disabled. In this case, violating may or may not be allowed. Since the feature doesn't affect
-existing pods, a violating pod will continue to be allowed by another server that does have the
-restrictions enabled.
-
 ## Implementation History
 
 - 2019-09-16 - KEP proposed
 
 ## Alternatives
+
+### Munge Mirror Pods
+
+An alternative to outright rejecting invalid mirror pods, the NodeRestriction controller could
+modify the mirror pods to conform to the restrictions. For example, the controller could:
+
+- Remove illegal labels, and dump them into an annotation for audit purposes
+  (e.g. `kubernetes.io/config.removed-labels`)
+- Remove illegal owner references, also dumping them into an annotation
+- Add the node owner reference (and require it)
+
+A problem with this approach is that the Kubelet will not attempt to recreate a mirror pod with
+illegal labels once the labels are whitelisted. In contrast, if the pod is outright rejected, then
+as soon as its labels are whitelisted the Kubelet would try to recreate it and succeed. This
+argument does not apply to the owner references, but the benefit of only modifying the owner
+reference is weaker.
 
 ### MVP mitigation of known threats
 
@@ -453,12 +370,19 @@ service label to use the `node-restriction.kubernetes.io/` prefix to prevent the
 
 ### Restrict namespaces
 
-For additional defense-in-depth, mirror pods could be restricted to whitelisted namespaces. Doing so
-would be a more disruptive change, but is something we could consider in the future.
+For additional defense-in-depth, mirror pods could be restricted to whitelisted namespaces, for
+example only namespaces with a `node.kubernetes.io/mirror.allowed` annotation. We may consider
+this change in a future release.
 
 ### Weaker label restrictions
 
 Alternatives to the whitelist restriction approach were considered.
+
+**Whitelist prefix**
+
+The original version of this proposal suggested using a `unrestricted.node.kubernetes.io/*` prefix
+for whitelisted labels. This approach requires migrating static pods to a new label through a
+complicated rollout procedure coordinated between services and multiple feature gates.
 
 **Explicitly opt mirror pods out controllers**
 
