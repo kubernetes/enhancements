@@ -9,58 +9,61 @@ reviewers:
   - "@tallclair"
   - "@derekwaynecarr"
   - "@benmoss"
+  - "@ddebroy"
 approvers:
-  - "@dawnchen"
+  - "@dchen1107"
 editor: "@patricklang"
 creation-date: 2019-10-08
-last-updated: 2019-10-08
-status: provisional
+last-updated: 2019-10-15
+status: implementable
 see-also:
   - "/keps/sig-windows/20190424-windows-cri-containerd.md"
 ---
 
 # RuntimeClass Support for Windows
 
-
-
-
 ## Table of Contents
 
 <!-- TOC -->
 
-- [Table of Contents](#table-of-contents)
-- [Release Signoff Checklist](#release-signoff-checklist)
-- [Summary](#summary)
-- [Motivation](#motivation)
-    - [Goals](#goals)
-    - [Non-Goals](#non-goals)
-- [Proposal](#proposal)
-    - [User Stories](#user-stories)
-        - [Story 1 - Easy selection of Windows Server releases](#story-1---easy-selection-of-windows-server-releases)
-        - [Story 2 - Forward compatibility with Hyper-V](#story-2---forward-compatibility-with-hyper-v)
-        - [Story 3 - Choosing a specific multi-arch image](#story-3---choosing-a-specific-multi-arch-image)
-    - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
-        - [Adding new label node.kubernetes.io/osversion](#adding-new-label-nodekubernetesioosversion)
-        - [Adding handler to CRI pull API](#adding-handler-to-cri-pull-api)
-    - [Risks and Mitigations](#risks-and-mitigations)
-        - [Adding new node label](#adding-new-node-label)
-        - [Adding runtime_handler to PullImageRequest](#adding-runtime_handler-to-pullimagerequest)
-- [Design Details](#design-details)
-    - [Test Plan](#test-plan)
-        - [E2E Testing with CRI-ContainerD and Kubernetes](#e2e-testing-with-cri-containerd-and-kubernetes)
-        - [Unit testing with CRITest](#unit-testing-with-critest)
-    - [Graduation Criteria](#graduation-criteria)
-        - [Alpha - Kubernetes 1.17](#alpha---kubernetes-117)
-        - [Alpha -> Beta Graduation](#alpha---beta-graduation)
-        - [Beta -> GA Graduation](#beta---ga-graduation)
-    - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
-- [Implementation History](#implementation-history)
-- [Alternatives](#alternatives)
-    - [Support multiarch os/arch/version in CRI](#support-multiarch-osarchversion-in-cri)
-    - [Make the scheduler aware of Multi-arch images](#make-the-scheduler-aware-of-multi-arch-images)
-    - [Create a multi-arch Mutating admission controller](#create-a-multi-arch-mutating-admission-controller)
-- [Reference & Examples](#reference--examples)
-    - [Multi-arch container image overview](#multi-arch-container-image-overview)
+- [RuntimeClass Support for Windows](#runtimeclass-support-for-windows)
+    - [Table of Contents](#table-of-contents)
+    - [Release Signoff Checklist](#release-signoff-checklist)
+    - [Summary](#summary)
+    - [Motivation](#motivation)
+        - [Goals](#goals)
+        - [Non-Goals](#non-goals)
+    - [Proposal](#proposal)
+        - [User Stories](#user-stories)
+            - [Story 1 - Easy selection of Windows Server releases](#story-1---easy-selection-of-windows-server-releases)
+            - [Story 2 - Forward compatibility with Hyper-V](#story-2---forward-compatibility-with-hyper-v)
+            - [Story 3 - Choosing a specific multi-arch image](#story-3---choosing-a-specific-multi-arch-image)
+        - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
+            - [Adding new label node.kubernetes.io/osversion](#adding-new-label-nodekubernetesioosversion)
+            - [Adding handler to CRI pull API](#adding-handler-to-cri-pull-api)
+        - [Risks and Mitigations](#risks-and-mitigations)
+            - [Adding new node label](#adding-new-node-label)
+            - [Adding runtime_handler to PullImageRequest](#adding-runtime_handler-to-pullimagerequest)
+    - [Design Details](#design-details)
+        - [Test Plan](#test-plan)
+            - [E2E Testing with CRI-ContainerD and Kubernetes](#e2e-testing-with-cri-containerd-and-kubernetes)
+            - [Unit testing with CRITest](#unit-testing-with-critest)
+        - [Graduation Criteria](#graduation-criteria)
+            - [Alpha - Kubernetes 1.17](#alpha---kubernetes-117)
+            - [Alpha -> Beta Graduation](#alpha---beta-graduation)
+            - [Beta -> GA Graduation](#beta---ga-graduation)
+                - [Removing a deprecated flag](#removing-a-deprecated-flag)
+        - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+    - [Implementation History](#implementation-history)
+    - [Alternatives](#alternatives)
+        - [Support multiarch os/arch/version in CRI](#support-multiarch-osarchversion-in-cri)
+        - [Make the scheduler aware of Multi-arch images](#make-the-scheduler-aware-of-multi-arch-images)
+        - [Create a multi-arch Mutating admission controller](#create-a-multi-arch-mutating-admission-controller)
+    - [Future Considerations](#future-considerations)
+        - [Pod Overhead](#pod-overhead)
+        - [RuntimeClass Parameters](#runtimeclass-parameters)
+    - [Reference & Examples](#reference--examples)
+        - [Multi-arch container image overview](#multi-arch-container-image-overview)
 
 <!-- /TOC -->
 
@@ -179,7 +182,7 @@ As of Kubernetes 1.16, [RuntimeClass Scheduling] is in beta and can be used to s
 
 #### Story 2 - Forward compatibility with Hyper-V
 
-Once a new version of Windows Server is deployed using [Windows CRI-ContainerD], Hyper-V can be enabled to provide backwards compatibility and run Windows containers based on the previous OS version. Cluster admins can pick between two different approaches to move applications forward.
+Once a new version of Windows Server is deployed using [Windows CRI-ContainerD], Hyper-V can be enabled to provide backwards compatibility and run Windows containers based on the previous OS version. Cluster admins can pick between two different approaches to move applications forward. Currently Windows Server has only supported backwards compatibility with Hyper-V, for example running a 1809 container on 1903. Therefore the node OS version should be the same or ahead of the container OS version used (see: [Windows container version compatibility]).
 
 1. Create a new RuntimeClass that Pods can use to try out Hyper-V isolation on the new version of Windows.
 
@@ -321,12 +324,11 @@ message PullImageRequest {
 }
 ```
 
-
 ### Risks and Mitigations
 
 #### Adding new node label
 
-The names of aren't part of a versioned API today, so there's no risk to upgrade/downgrade from an API and functionality standpoint. However, if someone wants to keep the node selection experience consistent between Kubernetes 1.14 - 1.17, they may want to manually add the `node.kubernetes.io/osversion` label to clusters running versions < 1.17.
+The names of aren't part of a versioned API today, so there's no risk to upgrade/downgrade from an API and functionality standpoint. However, if someone wants to keep the node selection experience consistent between Kubernetes 1.14 - 1.17, they may want to manually add the `node.kubernetes.io/osversion` label to clusters running versions < 1.17. A cluster admin can choose to modify labels using `kubectl label node` after a node has joined the cluster.
 
 #### Adding runtime_handler to PullImageRequest
 
@@ -335,7 +337,6 @@ This will be reviewed with contributors from both Kubernetes and ContainerD and 
 ## Design Details
 
 ### Test Plan
-
 
 #### E2E Testing with CRI-ContainerD and Kubernetes
 
@@ -348,7 +349,6 @@ The existing tests relying on `dockershim` will be run side by side until it is 
 #### Unit testing with CRITest
 
 Unit tests will be added in CRITest which is in the [Cri-Tools] repo. Tests are already running on Windows - see [testgrid](https://k8s-testgrid.appspot.com/sig-node-containerd#cri-validation-windows).
-
 
 ### Graduation Criteria
 
@@ -394,7 +394,6 @@ The new label `node.kubernetes.io/osversion` can be set or removed if needed wit
 
 Users can only opt-in to use the new `runtime_handler` field after setting up and configuring ContainerD. On existing clusters without ContainerD set up, they must use `docker` as the `runtimeHandler` in the `RuntimeClass` today. Therefore they must update to a supported version of ContainerD as a prerequisite which is covered in the scope of another KEP - [Windows CRI-ContainerD].
 
-
 ## Implementation History
 
 Major milestones in the life cycle of a KEP should be tracked in `Implementation History`.
@@ -407,10 +406,9 @@ Major milestones might include
 - the version of Kubernetes where the KEP graduated to general availability
 - when the KEP was retired or superseded
 
-
 ## Alternatives
 
-### Support multiarch os/arch/version in CRI 
+### Support multiarch os/arch/version in CRI
 
 The Open Container Initiative specifications for container runtime support specifying the architecture, os, and version when pulling and starting a container. This is important for Windows because there is no kernel compatibility between major versions. In order to successfully start a container with process isolation, the right `os.version` must be pulled and run. Hyper-V can provide backwards compatibility, but the image pull and sandbox creation need to specify `os.version` because the kernel is brought up when the sandbox is created. The same challenges exist for Linux as well because multiple CPU architectures can be supported - for example armv7 with qemu and binfmt_misc.
 
@@ -513,16 +511,28 @@ These correspond to `platform.os`, `platform.architecture`, and `platform.os.ver
 When scheduling a pod, it would need to retrieve the container manifest to infer what os, version and architecture was intended. This could be used to find a matching node and avoid the pull failure. However, this was previously rejected in discussions with SIG-Architecture and SIG-Scheduling because it would impact scheduler performance. Additionally, the scheduler makes no sync network calls to other services (such as a container registry) to make scheduling decisions. It can run in isolation and only connects to other trusted pods such as the APIServer.
 
 ### Create a multi-arch Mutating admission controller
+
 Before a deployment is scheduled, it can be handed off to a mutating admission controller registered with a webhook. This could do extra work such as a manifest pull & analysis, then add additional info to the deployment such as a NodeSelector or RuntimeClass. The behavior would probably need to be configurable and tailored to a customer's deployment. To round off the experience, it could also reject requests that can't be fulfilled (no matching OS / architecture) immediately.
 
 Based on a deployment, infer and determine the extra info needed that needs to be passed to ContainerD. This could work within the existing APIs (RuntimeClass / NodeSelector) or work with extended APIs (annotations or more specific pod API).
 
 This approach would still impact scheduling latency if a pod has omitted any of the NodeSelector required by the heuristic. The synchronous calls to a container registry are still needed.
 
+## Future Considerations
+
+While this feature is in alpha, we can continue experimenting with the user experience. There are other enhancements that may work well with these changes to provide an easier experience.
+
+### Pod Overhead
+
+The [Pod overhead KEP] proposes adding an `Overhead` field using the same `ContainerResources` structure today. This would make the scheduler aware of how much resources are required by the container runtime, such as ContainerD with Hyper-V isolation, in addition to those requested for the Pod itself. If this KEP is implemented, it can be tested with multiple hypervisors and used to help build consistency across them.
+
+### RuntimeClass Parameters
+
+RuntimeClass aims to replace experimental pod annotations with a [Runtime Handler] instead. Today that doesn't include any CRI-specific configuration that's passed through CRI. However, if there's a clear use case and need to consolidate parameters across multiple sandbox implementations, it could be added. One easy example might be setting the cpu or memory topology presented from the hypervisor to the sandbox. If a consensus emerges between multiple sandboxed CRI providers such as Kata, Firecracker & Hyper-V, then RuntimeClass could be updated to include more standard parameters and replace some configurations kept in separate configuration files today.
+
 ## Reference & Examples
 
 ### Multi-arch container image overview
-
 
 The Open Container Initiative specifications for container runtime support specifying the architecture, os, and version when pulling and starting a container. 
 
@@ -553,3 +563,6 @@ sha256:d22e5bf156af4df25a24cb268e955df3503cd91b50cd43b9bcf4bccf7a3c0804 @{archit
 [Bounding Self-Labeling Kubelets]: https://github.com/kubernetes/enhancements/blob/f1a799d5f4658ed29797c1fb9ceb7a4d0f538e93/keps/sig-auth/0000-20170814-bounding-self-labeling-kubelets.md
 [Windows Update History]: https://support.microsoft.com/en-us/help/4498140
 [Cri-Tools]: https://github.com/kubernetes-sigs/cri-tools
+[Windows container version compatibility]: https://docs.microsoft.com/en-us/virtualization/windowscontainers/deploy-containers/version-compatibility
+[Pod overhead KEP]: https://github.com/kubernetes/enhancements/blob/master/keps/sig-node/20190226-pod-overhead.md#container-runtime-interface-cri
+[Runtime Handler]: https://github.com/kubernetes/enhancements/blob/master/keps/sig-node/runtime-class.md#runtime-handler
