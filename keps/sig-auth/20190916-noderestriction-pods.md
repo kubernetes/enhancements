@@ -8,11 +8,13 @@ participating-sigs:
   - sig-cluster-lifecycle
 reviewers:
   - derekwaynecarr
-  - timothysc
+  - neolit123
+  - deads2k
 approvers:
   - liggitt
   - derekwaynecarr
-  - timothysc
+  - neolit123
+  - deads2k
 editor: TBD
 creation-date: 2019-09-16
 status: implementable
@@ -188,9 +190,9 @@ node.kubernetes.io/mirror.allowed-label-keys = "key1,key2,..."
 ```
 
 When the NodeRestriction controller receives a mirror pod create a request for a node, it will check
-the pod for labels. If it is labeled, the pod's namespace is fetched and checked for the
-allowed-label-keys annotation. If any of the mirror-pod's labels are not whitelisted, or the
-annotation is absent, the create request will be rejected.
+the pod for labels. If it is labeled, the pod's namespace is checked for the allowed-label-keys
+annotation. If any of the mirror-pod's labels are not whitelisted, or the annotation is absent, the
+create request will be rejected.
 
 The Kubelet does not currently label pods, nor are there official label keys that apply to
 pods. However, there are a few labels that are commonly applied to system addons & static pods:
@@ -315,9 +317,9 @@ Here is an approximate graduation schedule, specific release numbers subject to 
 
 - v1.17
   - MirrorPodNodeRestriction: **alpha**
-- v1.20
+- v1.19
   - MirrorPodNodeRestriction: **beta**
-- v1.21
+- v1.20
   - MirrorPodNodeRestriction: **GA**
 
 ### Upgrade / Downgrade Strategy
