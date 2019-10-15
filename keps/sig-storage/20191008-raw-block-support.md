@@ -12,7 +12,7 @@ approvers:
   - "@saad-ali"
 editor: TBD
 creation-date: 2019-10-08
-last-updated: 2019-19-08
+last-updated: 2019-15-10
 status: implementable
 see-also:
   - "https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/raw-block-pv.md"
@@ -88,11 +88,14 @@ These situations can happen when various Kubernetes components run with raw bloc
 
 * API server on, controller-manager on, kubelet off: kubelet does not see
   `volumeDevices` section in pods and thus it will run the pods as if the pods
-  did not use the volume at all.
+  did not use the volume at all. Kubelet should not touch block volumes at all,
+  especially should not format / mount / resize them.
 * API server on, controller-manager off: PV controller will bind / provision
   filesystem PVs to PVCs that request block volumes.
-* API server off: all PVs / PVCs / Pods that refer to a block volume are
-  rejected by validation.
+* API server off: all newly created PVs / PVCs / Pods that refer to a block
+  volume are rejected by validation. Older objects may keep the field,
+  however, the field is ignored by controller-manager and kubelet as in the
+  previous case.
 
 As result, cluster admins are responsible for deleting any pods that use block
 volumes and all block PV/PVCs before downgrading to an older release / disabling
