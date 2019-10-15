@@ -86,20 +86,32 @@ https://raw.githubusercontent.com/kubernetes/community/master/contributors/desig
 
 These situations can happen when various Kubernetes components run with raw block volume feature gate on/off:
 
-* API server on, controller-manager on, kubelet off: kubelet does not see
-  `volumeDevices` section in pods and thus it will run the pods as if the pods
-  did not use the volume at all. Kubelet should not touch block volumes at all,
-  especially should not format / mount / resize them.
-* API server on, controller-manager off: PV controller will bind / provision
-  filesystem PVs to PVCs that request block volumes.
+* API server on, controller-manager on, kubelet off:
+  * When processing new pods in VolumeManager, it checks that a filesystem PV
+    is used only in `volumeMounts` and block PV in `volumeDevices` and
+    rejects any mismatched PV/Pod to protect a block PV from being formatted
+    and mounted.
+    For that, it evaluates appropriate block-related fields in Pod, PV and PVC
+    even when the feature gate is disabled.
+  * In all other cases, kubelet does not see `volumeDevices` section in pods
+    and thus it will run the pods as if the pods did not use the volume at all.
+    Kubelet will not touch block volumes, especially it will not format / mount /
+    resize them. Especially, when the feature is disabled in kubelet while
+    a pod is running and uses a block volume, the volume may not be cleaned
+    up properly when the pod is deleted. Manual cleanup may be necessary.
+
+* API server on, controller-manager off:
+  * PV controller will not bind block PV to a filesystem PVC and filesystem PV
+    to block PVC. Such PVC cannot be used by the cluster in any pod.
+    For that, it evaluates appropriate block-related fields in PV and PVC
+    even when the feature gate is disabled.
+
 * API server off: all newly created PVs / PVCs / Pods that refer to a block
-  volume are rejected by validation. Older objects may keep the field,
-  however, the field is ignored by controller-manager and kubelet as in the
-  previous case.
+  volume are rejected by validation. Older objects may keep the field to
+  prevent from data corruption (see previous bullets).
 
 As result, cluster admins are responsible for deleting any pods that use block
-volumes and all block PV/PVCs before downgrading to an older release / disabling
-the feature gate.
+volumes before downgrading to an older release / disabling the feature gate.
 
 ## Test Plan
 
