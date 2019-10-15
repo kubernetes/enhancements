@@ -1,5 +1,5 @@
 ---
-title: enable-seccomp-by-default
+title: seccomp-built-in-profiles
 authors:
   - "@pjbgf"
 owning-sig: sig-node
@@ -19,7 +19,7 @@ see-also:
   - "https://github.com/kubernetes/enhancements/pull/1148"
 ---
 
-# enable-seccomp-by-default
+# seccomp-built-in-profiles
 
 ## Table of Contents
 
