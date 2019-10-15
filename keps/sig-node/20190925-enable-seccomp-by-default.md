@@ -155,15 +155,18 @@ To support audit mode, some validation will be required ensuring that the downst
 
 #### Performance Considerations
 
-Enabling Linux Security Modules, such as seccomp or apparmor, may come with a performance overhead. To assess that impact a performance test was made comparing a given application running against different seccomp configurations. 
-
-Docker by default has both apparmor and seccomp enabled, which is the security community's recommendation. In contrast, Kubernetes have both disabled by default. To make it clearer the real impact of enabling this feature in Kubernetes, the comparison shows all those different scenarios. 
+Enabling security features may come with a performance overhead, to assess such impact for landing this proposal, a given application was executed against different seccomp configurations, and the results are per below. 
 
 ![](seccomp-perf-chart.png)
 
-Using the proposed "new k8s default" (a.k.a. `kubernetes/default-audit`), performed 10% slower than running as "default k8s" (a.k.a. `unconfined`). However, it performed marginally slower than "default docker w/o apparmor" (a.k.a. `runtime/default` or `docker/default`), which is the default seccomp profile used by docker. 
+_For the purposes of this test, the time calculated was just for the [application](https://gist.github.com/pjbgf/8474083a612d0566aa5328747341bddb) inside the container to execute 4 million lstat operations. Tests executed using: Docker Engine Community v19.03.2, containerd v1.2.6 and runc v1.0.0-rc9._
 
-_For the purposes of this test, the time calculated was just for the application inside the container to execute 4 million lstat operations. Tests executed using: Docker Engine Community v19.03.2, containerd v1.2.6 and runc v1.0.0-rc8._
+By enabling seccomp there was an increase of around 10% for the time required for the task to be completed. Both profiles `kubernetes/default` and `kubernetes/default-audit`, performed quite similarly, considering a 200ms std deviation. 
+
+Note that the comparison used an [application](https://gist.github.com/pjbgf/8474083a612d0566aa5328747341bddb) that consumes syscalls that are white-listed in `kubernetes/default`, otherwise it would not be a fair comparison, as the enforceable profile would block the operation.
+
+Considering that the built-in seccomp profiles whitelist around 80% of the syscalls supported by seccomp, which include the most commonly used ones, the impact between using `kubernetes/default` and `kubernetes/default-audit` in line of business applications should be negligible. For applications that heavily depend on the other 20% of syscalls, the impact can be as big as the one showed for `kubernetes/audit-verbose`, namely up to 3 times slower.
+
 
 #### Log spamming
 
