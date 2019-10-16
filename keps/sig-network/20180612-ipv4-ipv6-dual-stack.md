@@ -15,7 +15,7 @@ approvers:
   - "thockin@"
 editor: TBD
 creation-date: 2018-05-21
-last-updated: 2019-09-29
+last-updated: 2019-10-15
 status: implementable
 ---
 
@@ -173,7 +173,8 @@ Phase 3 (Planned Kubernetes 1.17)
 - Dual-stack support for kubeadm
 - Expand container runtime support (containerd, CRI-O)
 
-- External dependencies, eg. cloud-provide, CNI, CRI, CoreDNS etc...
+Phase 4 and beyond
+- External dependencies, eg. cloud-provider, CNI, CRI, CoreDNS etc...
 
 ### Awareness of Multiple IPs per Pod
 
@@ -583,6 +584,10 @@ Providing dual-stack service CIDRs would add the following functionality:
   * [sig-network] [Feature:IPv6DualStackAlphaFeature] [LinuxOnly] should create pod, add ipv6 and ipv4 ip to pod ips
   * [sig-network] [Feature:IPv6DualStackAlphaFeature] [LinuxOnly] should have ipv4 and ipv6 internal node ip
   * [sig-network] [Feature:IPv6DualStackAlphaFeature] [LinuxOnly] should have ipv4 and ipv6 node podCIDRs
+  * [sig-network] [Feature:IPv6DualStackAlphaFeature] [LinuxOnly] should be able to reach pod on ipv4 and ipv6 ip [Feature:IPv6DualStackAlphaFeature:Phase2]
+  * [sig-network] [Feature:IPv6DualStackAlphaFeature] [LinuxOnly] should create service with cluster ip from primary service range [Feature:IPv6DualStackAlphaFeature:Phase2]
+  * [sig-network] [Feature:IPv6DualStackAlphaFeature] [LinuxOnly] should create service with ipv4 cluster ip [Feature:IPv6DualStackAlphaFeature:Phase2]
+  * [sig-network] [Feature:IPv6DualStackAlphaFeature] [LinuxOnly] should create service with ipv6 cluster ip [Feature:IPv6DualStackAlphaFeature:Phase2]
 * e2e tests should cover the following:
   * multi-IP, same family
   * multi-IP, dual-stack
