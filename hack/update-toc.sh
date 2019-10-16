@@ -43,4 +43,4 @@ export PATH="${TMP_DIR}:${PATH}"
 cd "${ROOT}"
 
 # Update tables of contents if necessary.
-grep --include='*.md' -rli keps -e '<!-- toc -->' | xargs mdtoc --inplace
+find keps -name '*.md' | grep -Fxvf hack/.notableofcontents | xargs mdtoc --inplace
