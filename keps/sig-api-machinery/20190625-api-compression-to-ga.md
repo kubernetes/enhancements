@@ -26,21 +26,17 @@ superseded-by:
 ## Table of Contents
 
 <!-- toc -->
-- [Title](#title)
-  - [Table of Contents](#table-of-contents)
-  - [Release Signoff Checklist](#release-signoff-checklist)
-  - [Summary](#summary)
-  - [Motivation](#motivation)
-    - [Goals](#goals)
-    - [Non-Goals](#non-goals)
-  - [Proposal](#proposal)
-    - [1.16](#1-16)
-    - [1.17](#1-17)
-    - [Implementation Details](#implementation-details)
-    - [Risks and Mitigations](#risks-and-mitigations)
-  - [Graduation Criteria](#graduation-criteria)
-    - [Version Skew Strategy](#version-skew-strategy)
-  - [Implementation History](#implementation-history)
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [1.16](#116)
+  - [1.17](#117)
+  - [Implementation Details](#implementation-details)
+  - [Risks and Mitigations](#risks-and-mitigations)
+- [Graduation Criteria](#graduation-criteria)
+- [Implementation History](#implementation-history)
 <!-- /toc -->
 
 ## Summary

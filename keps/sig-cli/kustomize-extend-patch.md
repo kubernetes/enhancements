@@ -26,17 +26,17 @@ superseded-by:
 ## Table of Contents
 
 <!-- toc -->
-* [Table of Contents](#table-of-contents)
-* [Summary](#summary)
-* [Motivation](#motivation)
-  * [Goals](#goals)
-  * [Non-Goals](#non-goals)
-* [Proposal](#proposal)
-  * [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
-  * [Risks and Mitigations](#risks-and-mitigations)
-* [Graduation Criteria](#graduation-criteria)
-* [Implementation History](#implementation-history)
-* [Alternatives](#alternatives)
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [Risks and Mitigations](#risks-and-mitigations)
+- [Graduation Criteria](#graduation-criteria)
+- [Docs](#docs)
+- [Test plan](#test-plan)
+- [Implementation History](#implementation-history)
+- [Alternatives](#alternatives)
 <!-- /toc -->
 
 ## Summary

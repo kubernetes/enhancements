@@ -23,18 +23,16 @@ status: implementable
 ## Table of Contents
 
 <!-- toc -->
-* [Presubmit config inside the tested repo](#presubmit-config-inside-the-tested-repo)
-   * [Table of Contents](#table-of-contents)
-   * [Release Signoff Checklist](#release-signoff-checklist)
-   * [Summary](#summary)
-   * [Motivation](#motivation)
-      * [Goals](#goals)
-      * [Non-Goals](#non-goals)
-   * [Proposal](#proposal)
-      * [Risks and Mitigations](#risks-and-mitigations)
-         * [Security](#security)
-         * [Components that need the Presubmit configuration but do not have a git ref to work on](#components-that-need-the-presubmit-configuration-but-do-not-have-a-git-ref-to-work-on)
-   * [Implementation History](#implementation-history)
+- [Release Signoff Checklist](#release-signoff-checklist)
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [Risks and Mitigations](#risks-and-mitigations)
+    - [Security](#security)
+    - [Components that need the <code>Presubmit</code> configuration but do not have a <code>git ref</code> to work on](#components-that-need-the--configuration-but-do-not-have-a--to-work-on)
+- [Implementation History](#implementation-history)
 <!-- /toc -->
 
 ## Release Signoff Checklist

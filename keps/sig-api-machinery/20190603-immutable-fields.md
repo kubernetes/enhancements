@@ -28,6 +28,26 @@ see-also:
 ## Table of Contents
 
 <!-- toc -->
+- [Release Signoff Checklist](#release-signoff-checklist)
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [OpenAPI extension <code>x-kubernetes-immutable</code>](#openapi-extension-)
+  - [OpenAPI extension <code>x-kubernetes-immutable-keys</code>](#openapi-extension--1)
+  - [Publishing](#publishing)
+  - [Suggested marker syntax](#suggested-marker-syntax)
+  - [Future outline sketch: native resources](#future-outline-sketch-native-resources)
+  - [Future outline: protobuf](#future-outline-protobuf)
+  - [Mutating admission chain](#mutating-admission-chain)
+  - [Where does this happen](#where-does-this-happen)
+  - [Risks and Mitigations](#risks-and-mitigations)
+- [Design Details](#design-details)
+  - [Test Plan](#test-plan)
+  - [Graduation Criteria](#graduation-criteria)
+- [Implementation History](#implementation-history)
+- [Alternative Considered](#alternative-considered)
 <!-- /toc -->
 
 ## Release Signoff Checklist

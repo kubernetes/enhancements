@@ -32,11 +32,16 @@ see-also:
 ## Table of Contents
 
 <!-- toc -->
-* [Table of Contents](#table-of-contents)
-* [Summary](#summary)
-* [Motivation](#motivation)
-    * [Goals](#goals)
-    * [Non-Goals](#non-goals)
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [General Migration Strategy](#general-migration-strategy)
+  - [Shared metrics](#shared-metrics)
+  - [Deprecation of modified metrics from metrics overhaul KEP](#deprecation-of-modified-metrics-from-metrics-overhaul-kep)
+- [Implementation History](#implementation-history)
+- [Graduation Criteria](#graduation-criteria)
+- [Testing Plan](#testing-plan)
 <!-- /toc -->
 
 

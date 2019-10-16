@@ -23,17 +23,20 @@ status: provisional
 ## Table of Contents
 
 <!-- toc -->
-* [Kubernetes Image Builder](#kubernetes-image-builder)
-  * [Metadata](#metadata)
-  * [Table of Contents](#table-of-contents)
-  * [Summary](#summary)
-  * [Motivation](#motivation)
-    * [Goals](#goals)
-    * [Non\-goals](#non-goals)
-  * [Proposal](#proposal)
-  * [Graduation Criteria](#graduation-criteria)
-  * [Implementation History](#implementation-history)
-  * [Alternatives](#alternatives)
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [Phases](#phases)
+    - [Phase 0 (Base Image)](#phase-0-base-image)
+    - [Phase 1 (Software Installation / Customization)](#phase-1-software-installation--customization)
+    - [Phase 2 (Artifact Generation)](#phase-2-artifact-generation)
+  - [Risks and Mitigations](#risks-and-mitigations)
+- [Graduation Criteria](#graduation-criteria)
+- [Implementation History](#implementation-history)
+- [Infrastructure Needed](#infrastructure-needed)
+- [Alternatives](#alternatives)
 <!-- /toc -->
 
 ## Summary

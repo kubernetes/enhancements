@@ -23,20 +23,18 @@ status: implementable
 ## Table of Contents
 
 <!-- toc -->
-* [kube-proxy component config graduation proposal](#kube-proxy-component-config-graduation-proposal)
-  * [Table of Contents](#table-of-contents)
-  * [Release Signoff Checklist](#release-signoff-checklist)
-  * [Summary](#summary)
-  * [Motivation](#motivation)
-    * [Goals](#goals)
-    * [Non-Goals](#non-goals)
-  * [Proposal](#proposal)
-    * [Re-encapsulate mode specific options](#re-encapsulate-mode-specific-options)
-      * [Example](#example)
-    * [Risks and Mitigations](#risks-and-mitigations)
-  * [Design Details](#design-details)
-    * [Test Plan](#test-plan)
-    * [Graduation Criteria](#graduation-criteria)
+- [Release Signoff Checklist](#release-signoff-checklist)
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [Re-encapsulate mode specific options](#re-encapsulate-mode-specific-options)
+    - [Example](#example)
+  - [Risks and Mitigations](#risks-and-mitigations)
+- [Design Details](#design-details)
+  - [Test Plan](#test-plan)
+  - [Graduation Criteria](#graduation-criteria)
 <!-- /toc -->
 
 ## Release Signoff Checklist
