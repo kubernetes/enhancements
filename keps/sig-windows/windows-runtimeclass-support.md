@@ -25,42 +25,44 @@ see-also:
 ## Table of Contents
 
 <!-- toc -->
+
+- [Table of Contents](#table-of-contents)
 - [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
 - [Motivation](#motivation)
-  - [Goals](#goals)
-  - [Non-Goals](#non-goals)
+    - [Goals](#goals)
+    - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [User Stories](#user-stories)
-    - [Story 1 - Easy selection of Windows Server releases](#story-1---easy-selection-of-windows-server-releases)
-    - [Story 2 - Forward compatibility with Hyper-V](#story-2---forward-compatibility-with-hyper-v)
-    - [Story 3 - Choosing a specific multi-arch image](#story-3---choosing-a-specific-multi-arch-image)
-  - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
-    - [Adding new label node.kubernetes.io/windows-build](#adding-new-label-nodekubernetesiowindows-build)
-    - [Adding handler to CRI pull API](#adding-handler-to-cri-pull-api)
-  - [Risks and Mitigations](#risks-and-mitigations)
-    - [Adding new node label](#adding-new-node-label)
-    - [Adding runtime_handler to PullImageRequest](#adding-runtime_handler-to-pullimagerequest)
+    - [User Stories](#user-stories)
+        - [Story 1 - Easy selection of Windows Server releases](#story-1---easy-selection-of-windows-server-releases)
+        - [Story 2 - Forward compatibility with Hyper-V](#story-2---forward-compatibility-with-hyper-v)
+        - [Story 3 - Choosing a specific multi-arch image](#story-3---choosing-a-specific-multi-arch-image)
+    - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
+        - [Adding new label node.kubernetes.io/windows-build](#adding-new-label-nodekubernetesiowindows-build)
+        - [Adding handler to CRI pull API](#adding-handler-to-cri-pull-api)
+    - [Risks and Mitigations](#risks-and-mitigations)
+        - [Adding new node label](#adding-new-node-label)
+        - [Adding runtime_handler to PullImageRequest](#adding-runtime_handler-to-pullimagerequest)
 - [Design Details](#design-details)
-  - [Test Plan](#test-plan)
-    - [E2E Testing with CRI-ContainerD and Kubernetes](#e2e-testing-with-cri-containerd-and-kubernetes)
-    - [Unit testing with CRITest](#unit-testing-with-critest)
-  - [Graduation Criteria](#graduation-criteria)
-    - [Alpha - Kubernetes 1.17](#alpha---kubernetes-117)
-    - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
-    - [Beta -&gt; GA Graduation](#beta---ga-graduation)
-      - [Removing a deprecated flag](#removing-a-deprecated-flag)
-  - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+    - [Test Plan](#test-plan)
+        - [E2E Testing with CRI-ContainerD and Kubernetes](#e2e-testing-with-cri-containerd-and-kubernetes)
+        - [Unit testing with CRITest](#unit-testing-with-critest)
+    - [Graduation Criteria](#graduation-criteria)
+        - [Alpha - Kubernetes 1.17](#alpha---kubernetes-117)
+        - [Alpha -> Beta Graduation](#alpha---beta-graduation)
+        - [Beta -> GA Graduation](#beta---ga-graduation)
+    - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
 - [Implementation History](#implementation-history)
 - [Alternatives](#alternatives)
-  - [Support multiarch os/arch/version in CRI](#support-multiarch-osarchversion-in-cri)
-  - [Make the scheduler aware of Multi-arch images](#make-the-scheduler-aware-of-multi-arch-images)
-  - [Create a multi-arch Mutating admission controller](#create-a-multi-arch-mutating-admission-controller)
+    - [Support multiarch os/arch/version in CRI](#support-multiarch-osarchversion-in-cri)
+    - [Make the scheduler aware of Multi-arch images](#make-the-scheduler-aware-of-multi-arch-images)
+    - [Create a multi-arch Mutating admission controller](#create-a-multi-arch-mutating-admission-controller)
 - [Future Considerations](#future-considerations)
-  - [Pod Overhead](#pod-overhead)
-  - [RuntimeClass Parameters](#runtimeclass-parameters)
-- [Reference &amp; Examples](#reference--examples)
-  - [Multi-arch container image overview](#multi-arch-container-image-overview)
+    - [Pod Overhead](#pod-overhead)
+    - [RuntimeClass Parameters](#runtimeclass-parameters)
+- [Reference & Examples](#reference--examples)
+    - [Multi-arch container image overview](#multi-arch-container-image-overview)
+
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -283,7 +285,9 @@ Here are the current product name to build number mappings to illustrate the poi
 | Windows Server version 1903          | 10.0.18362             |
 | Windows Server vNext Insider Preview | 10.0.18975, 10.0.18985 |
 
-[Windows Update History] has a full list of version numbers by release & patch. Starting from an example of `10.0.17763.805` - the OS major, minor, and build number - `10.0.17763` - should match for containers to be compatible. The final `.805` refers to the monthly patches and isn't required for compatibility. Therefore, a value such as `node.kubernetes.io/windows-build = 10.0.17763` will be used.
+[Windows Update History] has a full list of version numbers by release & patch. Starting from an example of `10.0.17763.805` - the OS major, minor, and build number - `10.0.17763` - should match for containers to be compatible. The final `.805` refers to the monthly patches and isn't required for compatibility. Therefore, a value such as `node.kubernetes.io/windows-build = 10.0.17763` will be used. Each one of these Windows Server version will have corresponding containers released - see [Container Base Images] and [Windows Insider Container Images] for details.
+
+This will pass the regex validation for labels (references: [src1](https://github.com/kubernetes/kubernetes/blob/release-1.16/staging/src/k8s.io/apimachinery/pkg/util/validation/validation.go#L30-L32) [src2](https://github.com/kubernetes/kubernetes/blob/release-1.16/staging/src/k8s.io/apimachinery/pkg/util/validation/validation.go#L88-L108)). Even the most specific identifier in the Windows registry `BuildLabEx`, for example `18362.1.amd64fre.19h1_release.190318-1202` is within the allowed length and characters to pass the existing validation, although we're not planning to use that whole string. Instead, the kubelet will shorten to just what's needed similar to what's returned today in the output from `kubectl describe node` ([src](https://github.com/kubernetes/kubernetes/blob/0599ca2bcfcae7d702f95284f3c2e2c2978c7772/vendor/github.com/docker/docker/pkg/parsers/operatingsystem/operatingsystem_windows.go#L10))
 
 To make this easier to consume in the Kubelet and APIs, it will be updated in multiple places:
 
@@ -415,6 +419,8 @@ Major milestones might include
 
 ## Alternatives
 
+These are some other options that were discussed in meetings with SIG-Node and SIG-Windows, but we're not proceeding with. If for some reason `RuntimeClass` support does not graduate to stable or the community prefers to investigate another option, these could serve as starting points for future KEPs.
+
 ### Support multiarch os/arch/version in CRI
 
 The Open Container Initiative specifications for container runtime support specifying the architecture, os, and version when pulling and starting a container. This is important for Windows because there is no kernel compatibility between major versions. In order to successfully start a container with process isolation, the right `os.version` must be pulled and run. Hyper-V can provide backwards compatibility, but the image pull and sandbox creation need to specify `os.version` because the kernel is brought up when the sandbox is created. The same challenges exist for Linux as well because multiple CPU architectures can be supported - for example armv7 with qemu and binfmt_misc.
@@ -428,7 +434,7 @@ metadata:
   name: mypod
 spec:
   os: windows
-  osversion: 1809
+  osversion: 10.0.17763
   architecture: amd64
   runtimeClassName: windows-hyperv
   containers:
@@ -573,3 +579,5 @@ sha256:d22e5bf156af4df25a24cb268e955df3503cd91b50cd43b9bcf4bccf7a3c0804 @{archit
 [Windows container version compatibility]: https://docs.microsoft.com/en-us/virtualization/windowscontainers/deploy-containers/version-compatibility
 [Pod overhead KEP]: https://github.com/kubernetes/enhancements/blob/master/keps/sig-node/20190226-pod-overhead.md#container-runtime-interface-cri
 [Runtime Handler]: https://github.com/kubernetes/enhancements/blob/master/keps/sig-node/runtime-class.md#runtime-handler
+[Container Base Images]: https://docs.microsoft.com/en-us/virtualization/windowscontainers/manage-containers/container-base-images
+[Windows Insider Container Images]: https://docs.microsoft.com/en-us/virtualization/windowscontainers/quick-start/using-insider-container-images#install-base-container-image
