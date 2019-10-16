@@ -11,8 +11,8 @@ approvers:
   - TBD
 editor: TBD
 creation-date: 2019-03-07
-last-updated: 2019-09-16
-status: implementable
+last-updated: 2019-12-17
+status: implemented
 superseded-by:
 ---
 
@@ -39,6 +39,7 @@ superseded-by:
     - [Default Values](#default-values)
     - [Stabilization Window](#stabilization-window)
     - [API Changes](#api-changes)
+    - [API Validation](#api-validation)
     - [HPA Controller State Changes](#hpa-controller-state-changes)
     - [Command Line Options Changes](#command-line-options-changes)
 - [Graduation Criteria](#graduation-criteria)
@@ -101,6 +102,7 @@ To customize the scaling behavior we should add a `behavior` object with the fol
   - `stabilizationWindowSeconds` - this value indicates the amount of time the HPA controller should consider
       previous recommendations to prevent flapping of the number of replicas.
   - `selectPolicy` can be `min` or `max` and specifies which value from the policies should be selected. The `max` value is used by default.
+    If `disabled` as a value then scaling in that direction is disabled regardless of policies.
   - `policies` a list of policies which regulate the amount of scaling. Each item has the following fields
     - `type` can have the value `pods` or `percent` which indicates the allowed changed in terms of absolute number of pods or percentage of current replicas.
     - `periodSeconds` the amount of time in seconds for which the rule should hold true.
@@ -130,11 +132,11 @@ Create an HPA with the following configuration:
 behavior:
   scaleUp:
     policies:
-    - type: percent
-      value: 900%
+    - type: Percent
+      value: 900
 ```
 
-The `900%` implies that 9 times the current number of pods can be added, effectively making the number
+The `900` implies that 9 times the current number of pods can be added, effectively making the number
 of replicas 10 times the current size. All other parameters are not specified (default values are used)
 
 If the application is started with 1 pod, it will scale up with the following number of pods:
@@ -158,11 +160,11 @@ Create an HPA with the following behavior:
 behavior:
   scaleUp:
     policies:
-    - type: percent
+    - type: Percent
       value: 900%
   scaleDown:
     policies:
-    - type: pods
+    - type: Pods
       value: 1
       periodSeconds: 600 # (i.e., scale down one pod every 10 min)
 ```
@@ -181,7 +183,7 @@ Create an HPA with the following behavior:
 behavior:
   scaleUp:
     policies:
-    - type: pods
+    - type: Pods
       value: 1
 ```
 
@@ -203,7 +205,7 @@ Create an HPA with the following constraints:
 behavior:
   scaleDown:
     policies:
-    - type: pods
+    - type: Pods
       value: 0
 ```
 
@@ -220,7 +222,7 @@ behavior:
   scaleDown:
     stabilizationWindowSeconds: 600
     policies:
-    - type: pods
+    - type: Pods
       value: 5
 ```
 
@@ -262,7 +264,7 @@ behavior:
   scaleUp:
     stabilizationWindowSeconds: 300
     policies:
-    - type: pods
+    - type: Pods
       value: 20
 ```
 
@@ -291,6 +293,25 @@ Example for `CurReplicas = 2` and HPA controller cycle once per a minute:
 
   The algorithm picks the smallest value `3` and changes the number of replicas `2 -> 3`
 
+#### Story 7: Scaling should be disabled in one direction
+
+If scale down should be disabled because the pods contain state and they should be drained and terminated by a separate process then scaling
+down by the HPA controller should be disabled.
+
+Create an HPA with the following behavior:
+
+```yaml
+behavior:
+  scaleDown:
+    selectPolicy: Disabled
+    policies:
+    - type: Pods
+      value: 10
+      periodSeconds: 120
+```
+
+The HPA controller will then prevent scale downs regardless of what the metrics indicate.
+
 ### Implementation Details/Notes/Constraints
 
 To minimize the impact of new changes on existing code the HPA controller will be modified in a such
@@ -305,35 +326,43 @@ The algorithm to find the number of pods will look like this:
   for { // infinite cycle inside the HPA controller
     desiredReplicas = AnyAlgorithmInHPAController(...)
     if desiredReplicas > curReplicas {
-      replicas = []int{}
-      for _, policy := range behavior.ScaleUp.Policies {
-        if policy.type == "pods" {
-          replicas = append(replicas, CurReplicas + policy.Value)
-        } else if policy.type == "percent" {
-          replicas = append(CurReplicas * (1 + policy.Value/100))
-        }
-      }
-      if behavior.ScaleUp.selectPolicy == "max" {
-        scaleUpLimit = max(replicas)
+      if behavior.ScaleUp.selectPolicy == "disabled" {
+        limitedReplicas = curReplicas
       } else {
-        scaleUpLimit = min(replicas)
+        replicas = []int{}
+        for _, policy := range behavior.ScaleUp.Policies {
+          if policy.type == "pods" {
+            replicas = append(replicas, CurReplicas + policy.Value)
+          } else if policy.type == "percent" {
+            replicas = append(CurReplicas * (1 + policy.Value/100))
+          }
+        }
+        if behavior.ScaleUp.selectPolicy == "max" {
+          scaleUpLimit = max(replicas)
+        } else {
+          scaleUpLimit = min(replicas)
+        }
+        limitedReplicas = min(max, desiredReplicas)
       }
-      limitedReplicas = min(max, desiredReplicas)
     }
     if desiredReplicas < curReplicas {
-      for _, policy := range behaviro.scaleDown.Policies {
+      if behavior.ScaleDown.selectPolicy == "disabled" {
+        limitedReplicas = curReplicas
+      } else {
         replicas = []int{}
-        if policy.type == "pods" {
-          replicas = append(replicas, CurReplicas - policy.Value)
-        } else if policy.type == "percent" {
-          replicas = append(replicas, CurReplicas * (1 - policy.Value /100))
+        for _, policy := range behaviro.scaleDown.Policies {
+          if policy.type == "pods" {
+            replicas = append(replicas, CurReplicas - policy.Value)
+          } else if policy.type == "percent" {
+            replicas = append(replicas, CurReplicas * (1 - policy.Value /100))
+          }
+          if behavior.ScaleDown.SelectPolicy == "max" {
+            scaleDownLimit = min(replicas)
+          } else {
+            scaleDownLimit = max(replicas)
+          }
+          limitedReplicas = max(min, desiredReplicas)
         }
-        if behavior.ScaleDown.SelectPolicy == "max" {
-          scaleDownLimit = min(replicas)
-        } else {
-          scaleDownLimit = max(replicas)
-        }
-        limitedReplicas = max(min, desiredReplicas)
       }
     }
     storeRecommend(limitedReplicas, scaleRecommendations)
@@ -371,8 +400,8 @@ The __“Stabilization Window"__ as a result becomes an alias for the `behavior.
 
 For smooth transition it makes sense to set the following default values:
 
-- `behavior.scaleDown.stabilizationWindowSeconds = 300`, wait 5 min for the largest recommendation and then scale down to that value.
 - `behavior.scaleUp.stabilizationWindowSeconds = 0`, do not gather recommendations, instantly scale up to the calculated number of replicas
+- `behavior.scaleUp.selectPolicy = max` which chooses the maximum value from the policies specified.
 - `behavior.scaleUp.policies` has the following policies
    - Percentage policy
       - `policy = percent`
@@ -382,6 +411,8 @@ For smooth transition it makes sense to set the following default values:
       - `policy = pods`
       - `periodSeconds = 60`, one minute period for scaleUp
       - `value = 4` which means the 4 replicas can be added every minute.
+- `behavior.scaleDown.stabilizationWindowSeconds = 300`, wait 5 min for the largest recommendation and then scale down to that value.
+- `behavior.scaleDown.selectPolicy = max` which chooses the maximum values from the policies specified.
 - `behavior.scaleDown.policies` has the following policies
   - Percentage Policy
     - `policy = percent`
@@ -430,11 +461,12 @@ The following API changes are needed:
 The resulting data structures will look like this:
 
 ```golang
-type HPAScalingPolicyType string
+type ScalingPolicySelect string
 
 const (
-  PercentPolicy HPAScalingPolicyType = "percent"
-  PodsPolicy    HPAScalingPolicyType = "pods"
+  MaxPolicySelect ScalingPolicySelect = "Max"
+  MinPolicySelect ScalingPolicySelect = "Min"
+  DisabledPolicySelect ScalingPolicySelect = "Disabled"
 )
 
 type HPAScalingPolicy struct {
@@ -444,9 +476,11 @@ type HPAScalingPolicy struct {
 }
 
 type HPAScalingRules struct {
-  StabilizationWindowSeconds *int32
+  StabilizationWindowSeconds int32
   Policies     []HpaScalingPolicy
-  SelectPolicy *string
+  SelectPolicy HPAScalingPolicyType
+  SelectPolicy *ScalingPolicySelect
+
 }
 
 type HorizontalPodAutoscalerBehavior struct {
@@ -462,6 +496,13 @@ type HorizontalPodAutoscalerSpec struct {
     Behavior      *HorizontalPodAutoscalerBehavior
 }
 ```
+
+#### API Validation
+
+When the `rules` for scale up or scale down is specified it should contain at least one completely valid policy.
+A valid policy has all the fields `type`, `value` and `periodSeconds` specified. The `value` is a non-negative integer
+and the `periodSeconds` can be at most 1800 seconds i.e 30 minutes. The `stabilizationWindowSeconds` cannot be more
+than 3600 seconds i.e. 1 hour.
 
 #### HPA Controller State Changes
 
