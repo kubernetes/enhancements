@@ -22,6 +22,7 @@ status: implementable
 
 ## Table of Contents
 
+<!-- toc -->
 * [kube-proxy component config graduation proposal](#kube-proxy-component-config-graduation-proposal)
   * [Table of Contents](#table-of-contents)
   * [Release Signoff Checklist](#release-signoff-checklist)
@@ -36,6 +37,7 @@ status: implementable
   * [Design Details](#design-details)
     * [Test Plan](#test-plan)
     * [Graduation Criteria](#graduation-criteria)
+<!-- /toc -->
 
 ## Release Signoff Checklist
 

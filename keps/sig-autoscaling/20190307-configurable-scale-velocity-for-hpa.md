@@ -20,7 +20,7 @@ superseded-by:
 
 ## Table of Contents
 
-<!-- TOC depthfrom:2 -->
+<!-- toc -->
 
 - [Table of Contents](#table-of-contents)
 - [Summary](#summary)
@@ -45,7 +45,7 @@ superseded-by:
         - [Command Line Options Changes](#command-line-options-changes)
 - [Graduation Criteria](#graduation-criteria)
 
-<!-- /TOC -->
+<!-- /toc -->
 
 ## Summary
 

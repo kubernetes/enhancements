@@ -34,6 +34,7 @@ superseded-by:
 
 ## Table of Contents
 
+<!-- toc -->
    * [In-place Update of Pod Resources](#in-place-update-of-pod-resources)
       * [Table of Contents](#table-of-contents)
       * [Summary](#summary)
@@ -55,6 +56,7 @@ superseded-by:
          * [Risks and Mitigations](#risks-and-mitigations)
       * [Graduation Criteria](#graduation-criteria)
       * [Implementation History](#implementation-history)
+<!-- /toc -->
 
 ## Summary
 

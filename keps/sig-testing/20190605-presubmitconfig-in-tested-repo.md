@@ -22,6 +22,7 @@ status: implementable
 
 ## Table of Contents
 
+<!-- toc -->
 * [Presubmit config inside the tested repo](#presubmit-config-inside-the-tested-repo)
    * [Table of Contents](#table-of-contents)
    * [Release Signoff Checklist](#release-signoff-checklist)
@@ -34,7 +35,7 @@ status: implementable
          * [Security](#security)
          * [Components that need the Presubmit configuration but do not have a git ref to work on](#components-that-need-the-presubmit-configuration-but-do-not-have-a-git-ref-to-work-on)
    * [Implementation History](#implementation-history)
-
+<!-- /toc -->
 
 ## Release Signoff Checklist
 

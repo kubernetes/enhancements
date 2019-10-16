@@ -25,6 +25,11 @@ see-also:
 
 # Immutable fields
 
+## Table of Contents
+
+<!-- toc -->
+<!-- /toc -->
+
 ## Release Signoff Checklist
 
 - [ ] kubernetes/enhancements issue in release milestone, which links to KEP (this should be a link to the KEP location in kubernetes/enhancements, not the initial KEP PR)

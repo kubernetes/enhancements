@@ -20,6 +20,7 @@ status: implementable
 
 ## Table of Contents
 
+<!-- toc -->
 * [External credential providers](#external-credential-providers)
   * [Table of Contents](#table-of-contents)
   * [Summary](#summary)
@@ -39,6 +40,7 @@ status: implementable
   * [Alternatives](#alternatives)
      * [RPC vs exec](#rpc-vs-exec)
   * [Implementation History](#implementation-history)
+<!-- /toc -->
 
 ## Summary
 

@@ -22,6 +22,7 @@ status: provisional
 
 ## Table of Contents
 
+<!-- toc -->
 - [kubernetes-csi-release-process](#kubernetes-csi-release-process)
     - [Table of Contents](#table-of-contents)
     - [Summary](#summary)
@@ -39,7 +40,7 @@ status: provisional
     - [Drawbacks](#drawbacks)
     - [Alternatives](#alternatives)
     - [Infrastructure Needed](#infrastructure-needed)
-
+<!-- /toc -->
 
 ## Summary
 

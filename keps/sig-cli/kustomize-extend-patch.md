@@ -24,6 +24,8 @@ superseded-by:
 # Extend Kustomize Patches to Multiple Targets
 
 ## Table of Contents
+
+<!-- toc -->
 * [Table of Contents](#table-of-contents)
 * [Summary](#summary)
 * [Motivation](#motivation)
@@ -35,8 +37,7 @@ superseded-by:
 * [Graduation Criteria](#graduation-criteria)
 * [Implementation History](#implementation-history)
 * [Alternatives](#alternatives)
-
-[Tools for generating]: https://github.com/ekalinin/github-markdown-toc
+<!-- /toc -->
 
 ## Summary
 Currently, there are different types of patches supported in Kustomize:

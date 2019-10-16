@@ -19,6 +19,11 @@ see-also:
 ---
 # EndpointSlice API 
 
+## Table of Contents
+
+<!-- toc -->
+<!-- /toc -->
+
 ## Summary 
 
 This KEP was converted from the [original proposal doc][original-doc]. The current  [Core/V1 Endpoints API][v1-endpoints-api] comes with severe performance/scalability drawbacks affecting multiple components in the control-plane (apiserver, etcd, endpoints-controller, kube-proxy). 

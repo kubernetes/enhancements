@@ -27,6 +27,7 @@ see-also:
 
 ## Table of Contents
 
+<!-- toc -->
    * [Promoting Cloud Provider Labels to GA](#promoting-cloud-provider-labels-to-ga)
       * [Table of Contents](#table-of-contents)
       * [Release Signoff Checklist](#release-signoff-checklist)
@@ -48,6 +49,7 @@ see-also:
       * [Implementation History](#implementation-history)
       * [Drawbacks [optional]](#drawbacks-optional)
       * [Alternatives [optional]](#alternatives-optional)
+<!-- /toc -->
 
 ## Release Signoff Checklist
 

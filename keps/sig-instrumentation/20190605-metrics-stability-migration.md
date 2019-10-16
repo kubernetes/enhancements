@@ -31,11 +31,13 @@ see-also:
 
 ## Table of Contents
 
+<!-- toc -->
 * [Table of Contents](#table-of-contents)
 * [Summary](#summary)
 * [Motivation](#motivation)
     * [Goals](#goals)
     * [Non-Goals](#non-goals)
+<!-- /toc -->
 
 
 ## Summary

@@ -27,6 +27,7 @@ superseded-by:
 
 ## Table of Contents
 
+<!-- toc -->
 * [Less object serializations](#less-object-serializations)
    * [Table of Contents](#table-of-contents)
    * [Release Signoff Checklist](#release-signoff-checklist)
@@ -44,6 +45,7 @@ superseded-by:
    * [Implementation History](#implementation-history)
    * [Drawbacks](#drawbacks)
    * [Alternatives](#alternatives)
+<!-- /toc -->
 
 ## Release Signoff Checklist
 

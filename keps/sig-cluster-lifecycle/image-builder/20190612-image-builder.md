@@ -22,6 +22,7 @@ status: provisional
 
 ## Table of Contents
 
+<!-- toc -->
 * [Kubernetes Image Builder](#kubernetes-image-builder)
   * [Metadata](#metadata)
   * [Table of Contents](#table-of-contents)
@@ -33,6 +34,7 @@ status: provisional
   * [Graduation Criteria](#graduation-criteria)
   * [Implementation History](#implementation-history)
   * [Alternatives](#alternatives)
+<!-- /toc -->
 
 ## Summary
 It is common for modern cloud based software deployments to follow immutable patterns. One of the foundational pieces to this idea is the creation of immutable images. There are already several tools that create images in the Kubernetes ecosystem, which include: [Wardroom](https://github.com/heptiolabs/wardroom), [Cluster API AWS](https://github.com/kubernetes-sigs/cluster-api-provider-aws/tree/master/build), [Cluster API vSphere](https://github.com/kubernetes-sigs/cluster-api-provider-vsphere/tree/master/docs/ova), [amazon-eks-ami](https://github.com/awslabs/amazon-eks-ami), [talos](https://docs.talos-systems.com/), [LinuxKit](https://github.com/linuxkit/linuxkit),[kube-deploy](https://github.com/kubernetes/kube-deploy/tree/master/imagebuilder), etc. The purpose of this proposal is to distill down the common requirements and provide an image building utility that can be leveraged by the Kubernetes ecosystem.  

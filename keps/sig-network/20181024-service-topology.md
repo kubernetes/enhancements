@@ -16,9 +16,9 @@ status: implementable
 
 # Topology-aware service routing
 
-Table of Contents
-=================
+## Table of Contents
 
+<!-- toc -->
    * [Topology-aware service routing](#topology-aware-service-routing)
       * [Table of Contents](#table-of-contents)
       * [Motivation](#motivation)
@@ -38,8 +38,7 @@ Table of Contents
             * [Alpha](#alpha)
             * [Alpha -&gt; Beta](#alpha---beta)
                * [Beta -&gt; GA Graduation](#beta---ga-graduation)
-
-Created by [gh-md-toc](https://github.com/ekalinin/github-markdown-toc)
+<!-- /toc -->
 
 ## Motivation
 

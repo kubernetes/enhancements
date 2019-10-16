@@ -28,6 +28,7 @@ status: implementable
 
 ## Table of Contents
 
+<!-- toc -->
 * [Kubeadm machine output](#kubeadm-machine-output)
   * [Table of Contents](#table-of-contents)
   * [Release Signoff Checklist](#release-signoff-checklist)
@@ -64,6 +65,7 @@ status: implementable
     * [Version Skew Strategy](#version-skew-strategy)
   * [Implementation History](#implementation-history)
   * [Drawbacks](#drawbacks)
+<!-- /toc -->
 
 ## Release Signoff Checklist
 

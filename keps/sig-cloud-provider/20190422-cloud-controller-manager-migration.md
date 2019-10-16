@@ -22,6 +22,7 @@ see-also:
 
 ## Table of Contents
 
+<!-- toc -->
 * [Cloud Controller Manager Migration](#cloud-controller-manager-migration)
   * [Table of Contents](#table-of-contents)
   * [Release Signoff Checklist](#release-signoff-checklist)
@@ -45,8 +46,7 @@ see-also:
   * [Implementation History](#implementation-history)
   * [Alternatives [optional]](#alternatives-optional)
   * [Infrastructure Needed [optional]](#infrastructure-needed-optional)
-
-[Tools for generating]: https://github.com/ekalinin/github-markdown-toc
+<!-- /toc -->
 
 ## Release Signoff Checklist
 

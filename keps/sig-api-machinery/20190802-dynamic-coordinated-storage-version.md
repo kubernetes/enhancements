@@ -19,6 +19,7 @@ status: provisional
 
 ## Table of Contents
 
+<!-- toc -->
 * [Overview](#overview)
 * [API changes](#api-changes)
    * [Resource Version API](#resource-version-api)
@@ -39,6 +40,7 @@ status: provisional
 * [Appendix](#appendix)
    * [Accuracy of the discovery document of CRDs](#accuracy-of-the-discovery-document-of-crds)
 * [References](#references)
+<!-- /toc -->
 
 ## Overview
 

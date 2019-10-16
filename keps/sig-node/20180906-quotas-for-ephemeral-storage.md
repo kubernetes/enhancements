@@ -21,7 +21,7 @@ status: implementable
 
 ## Table of Contents
 
-<!-- markdown-toc start - Don't edit this section. Run M-x markdown-toc-generate-toc again -->
+<!-- toc -->
 **Table of Contents**
 
 - [Quotas for Ephemeral Storage](#quotas-for-ephemeral-storage)
@@ -69,7 +69,7 @@ status: implementable
             - [Other Security Issues Without CVE](#other-security-issues-without-cve)
         - [Other Linux Quota-Related Bugs Since 2012](#other-linux-quota-related-bugs-since-2012)
 
-<!-- markdown-toc end -->
+<!-- /toc -->
 
 [Tools for generating]: https://github.com/ekalinin/github-markdown-toc
 

@@ -23,6 +23,9 @@ status: implementable
 
 ## Table of Contents
 
+<!-- toc -->
+<!-- /toc -->
+
 ## Summary
 
 API groups are organized by namespace, similar to java packages.  `authorization.k8s.io` is one example.  When users create
