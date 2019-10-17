@@ -10,7 +10,7 @@ reviewers:
 approvers:
   - "@thockin"
 creation-date: 2018-10-24
-last-updated: 2018-12-03
+last-updated: 2019-10-17
 status: implementable
 ---
 
@@ -184,12 +184,29 @@ We should consider this kind of topology support for headless service in coredns
 
 In order to handle headless services, the DNS server needs to know the node corresponding to the client IP address in the DNS request - i.e, it needs to map PodIP -> Node. Kubernetes DNS servers(include kube-dns and CoreDNS) will watch PodLocator object. When a client/pod request a headless service domain to DNS server, dns server will retrieve the node labels of both client and the backend Pods via PodLocator. DNS server will only select the IPs of backend Pods which are in the same topological domain with client Pod, and then write A record.
 
+### Test Plan
+
+* Unit tests to check API validation of topology keys.
+* Unit tests to check API validation of incompatibility with
+  externalTrafficPolicy.
+* Unit tests for topology endpoint filtering function, including at least:
+  * No topology constraints (no keys)
+  * A single hard constraint (single specific key)
+  * A single `""` constraint.
+  * Multiple hard constraints (no final `""` key).
+  * Multiple constraints plus a final `""` key.
+* Each of the above sets of keys must have tests with varying topologies
+  available.
+* E2E tests with hard constraint and soft constraints using Endpoints.
+* E2E tests with hard constraint and soft constraints using EndpointSlice.
+
 ### Graduation Criteria
 
 #### Alpha
 
 - topologyKeys field is added to the Service API
 - kube-proxy implements service topology in-memory only enabled by `ServiceTopology` feature gate.
+- Unit tests
 
 #### Alpha -> Beta
 
