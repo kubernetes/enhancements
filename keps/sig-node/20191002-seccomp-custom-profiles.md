@@ -231,9 +231,18 @@ The new configmap based profiles will only be supported from this version on. Us
 ## Implementation History
 - 2019-10-02: Initial KEP
 - 2019-10-15: Minor changes
+- 2019-10-17: Add alternative to use CRD instead of ConfigMap
 
 
 ## Alternatives
+
+**Use CRD instead of ConfigMap.** The decision to use `ConfigMap` was to avoid unnecessary complexity. Below are some key points from the [official guidance](https://kubernetes.io/docs/concepts/extend-kubernetes/api-extension/custom-resources/#should-i-use-a-configmap-or-a-custom-resource) which clarifies the reasoning:
+
+- There is an existing, well-documented config file format.
+- The entire config file will be stored into one key of a configMap.
+- The main use of the config file is for the cluster to consume the file to pass it on to CRIs.
+- Users could potentially perform rolling updates via Deployment, when the file is updated.
+
 
 **Start deprecation process for `localhost/<path>`.** The new `ConfigMapSeccompProfile` will better support custom profiles. Starting the deprecation process would signal users what the end goal is. However, this can be started once the new approach GA's.
 
