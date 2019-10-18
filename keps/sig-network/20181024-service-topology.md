@@ -27,6 +27,7 @@ status: implementable
 - [Proposal](#proposal)
 - [Design Details](#design-details)
   - [Service API changes](#service-api-changes)
+  - [Intersection with Local External Traffic Policy](#intersection-with-local-external-traffic-policy)
   - [Service Topology Scalability](#service-topology-scalability)
     - [New PodLocator resource](#new-podlocator-resource)
     - [New PodLocator controller](#new-podlocator-controller)
@@ -122,6 +123,12 @@ spec:
 In our example above, we will firstly try to find the backends in the same host. If no backends match, we will then try the same zone. If finally we can't find any backends in the same host or same zone, then we say the service has no satisfied backends and connections will fail.
 
 If we configure topologyKeys as `["kubernetes.io/hostname", "*"]`, we just do the effort to find the backends in the same host and will not fail the connection if no matched backends found.
+
+### Intersection with Local External Traffic Policy
+
+Topology Aware Services (# of topologyKeys > 0) and Services using `externalTrafficPolicy=Local` will be mutually exclusive. This will be enforced by API validation where a Service with `externalTrafficPolicy=Local` cannot specify any topology keys and vice versa.
+
+Before Service Topology goes GA, kube-proxy should be able to provide feature parity with `externalTrafficPolicy=Local` when the chosen topology is `kubernetes.io/hostname`. The correctness and feasibility of the `kubernetes.io/hostname` topology as a sufficient replacement for `externalTrafficPolicy=Local` will be evaluated during the alpha phase.
 
 ### Service Topology Scalability
 
