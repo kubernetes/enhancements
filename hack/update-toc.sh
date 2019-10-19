@@ -19,7 +19,7 @@ set -o nounset
 set -o pipefail
 
 # keep in sync with hack/verify-toc.sh
-TOOL_VERSION=4dc3d6f908138504b02a1766f1f8ea282d6bdd7c
+TOOL_VERSION=ee652eb78c047a7b6c7417d9324a97bb05689563
 
 # cd to the root path
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
@@ -43,4 +43,4 @@ export PATH="${TMP_DIR}:${PATH}"
 cd "${ROOT}"
 
 # Update tables of contents if necessary.
-grep --include='*.md' -rl keps -e '<!-- toc -->' | xargs mdtoc --inplace
+grep --include='*.md' -rli keps -e '<!-- toc -->' | xargs mdtoc --inplace

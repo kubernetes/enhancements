@@ -21,21 +21,17 @@ status: implementable
 ## Table of Contents
 
 <!-- TOC -->
-
-- [Cross resource group nodes](#cross-resource-group-nodes)
-    - [Table of Contents](#table-of-contents)
-    - [Summary](#summary)
-    - [Motivation](#motivation)
-        - [Assumptions](#assumptions)
-        - [Non-Goals](#non-goals)
-    - [Design](#design)
-    - [Implementation](#implementation)
-        - [Cross-RG nodes](#cross-rg-nodes)
-        - [On-prem nodes](#on-prem-nodes)
-    - [Graduation Criteria](#graduation-criteria)
-    - [Implementation History](#implementation-history)
-    - [Alternatives](#alternatives)
-
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Assumptions](#assumptions)
+  - [Non-Goals](#non-goals)
+- [Design](#design)
+- [Implementation](#implementation)
+  - [Cross-RG nodes](#cross-rg-nodes)
+  - [On-prem nodes](#on-prem-nodes)
+- [Graduation Criteria](#graduation-criteria)
+- [Implementation History](#implementation-history)
+- [Alternatives](#alternatives)
 <!-- /TOC -->
 
 ## Summary
