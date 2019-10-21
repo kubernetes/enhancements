@@ -174,7 +174,8 @@ The resetting interface is proposed as:
 # staging/src/k8s.io/apimachinery/pkg/runtime/interfaces.go
 type ObjectResetter interface {
   // ResetFields takes an Object (must be a pointer) and resets any fields that are not allowed to be changed by a user
-  ResetFields(in Object)
+  // If old is not nil, fields in the new object will be reset based on old.
+  ResetFields(new, old Object)
 }
 ```
 
