@@ -44,4 +44,4 @@ cd "${ROOT}"
 
 echo "Checking table of contents are up to date..."
 # Verify tables of contents are up-to-date
-grep --include='*.md' -rli keps -e '<!-- toc -->' | xargs mdtoc --inplace --dryrun
+find keps -name '*.md' | grep -Fxvf hack/.notableofcontents | xargs mdtoc --inplace --dryrun

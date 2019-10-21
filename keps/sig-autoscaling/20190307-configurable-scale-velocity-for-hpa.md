@@ -20,32 +20,29 @@ superseded-by:
 
 ## Table of Contents
 
-<!-- TOC depthfrom:2 -->
-
-- [Table of Contents](#table-of-contents)
+<!-- toc -->
 - [Summary](#summary)
 - [Motivation](#motivation)
-    - [Goals](#goals)
-    - [Non-Goals](#non-goals)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-    - [User Stories](#user-stories)
-        - [Story 1: Scale Up As Fast As Possible](#story-1-scale-up-as-fast-as-possible)
-        - [Story 2: Scale Up As Fast As Possible, Scale Down Very Gradually](#story-2-scale-up-as-fast-as-possible-scale-down-very-gradually)
-        - [Story 3: Scale Up Very Gradually, Usual Scale Down Process](#story-3-scale-up-very-gradually-usual-scale-down-process)
-        - [Story 4: Scale Up As Usual, Do Not Scale Down](#story-4-scale-up-as-usual-do-not-scale-down)
-        - [Story 5: Stabilization before scaling down](#story-5-stabilization-before-scaling-down)
-        - [Story 6: Avoid false positive signals for scaling up](#story-6-avoid-false-positive-signals-for-scaling-up)
-    - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
-        - [Algorithm Pseudocode](#algorithm-pseudocode)
-        - [Introducing `stabilizationWindowSeconds` Option](#introducing-stabilizationwindowseconds-option)
-        - [Default Values](#default-values)
-        - [Stabilization Window](#stabilization-window)
-        - [API Changes](#api-changes)
-        - [HPA Controller State Changes](#hpa-controller-state-changes)
-        - [Command Line Options Changes](#command-line-options-changes)
+  - [User Stories](#user-stories)
+    - [Story 1: Scale Up As Fast As Possible](#story-1-scale-up-as-fast-as-possible)
+    - [Story 2: Scale Up As Fast As Possible, Scale Down Very Gradually](#story-2-scale-up-as-fast-as-possible-scale-down-very-gradually)
+    - [Story 3: Scale Up Very Gradually, Usual Scale Down Process](#story-3-scale-up-very-gradually-usual-scale-down-process)
+    - [Story 4: Scale Up As Usual, Do Not Scale Down](#story-4-scale-up-as-usual-do-not-scale-down)
+    - [Story 5: Stabilization before scaling down](#story-5-stabilization-before-scaling-down)
+    - [Story 6: Avoid false positive signals for scaling up](#story-6-avoid-false-positive-signals-for-scaling-up)
+  - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
+    - [Algorithm Pseudocode](#algorithm-pseudocode)
+    - [Introducing <code>stabilizationWindowSeconds</code> Option](#introducing--option)
+    - [Default Values](#default-values)
+    - [Stabilization Window](#stabilization-window)
+    - [API Changes](#api-changes)
+    - [HPA Controller State Changes](#hpa-controller-state-changes)
+    - [Command Line Options Changes](#command-line-options-changes)
 - [Graduation Criteria](#graduation-criteria)
-
-<!-- /TOC -->
+<!-- /toc -->
 
 ## Summary
 

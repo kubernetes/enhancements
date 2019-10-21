@@ -22,17 +22,22 @@ status: provisional
 
 ## Table of Contents
 
-* [Kubernetes Image Builder](#kubernetes-image-builder)
-  * [Metadata](#metadata)
-  * [Table of Contents](#table-of-contents)
-  * [Summary](#summary)
-  * [Motivation](#motivation)
-    * [Goals](#goals)
-    * [Non\-goals](#non-goals)
-  * [Proposal](#proposal)
-  * [Graduation Criteria](#graduation-criteria)
-  * [Implementation History](#implementation-history)
-  * [Alternatives](#alternatives)
+<!-- toc -->
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [Phases](#phases)
+    - [Phase 0 (Base Image)](#phase-0-base-image)
+    - [Phase 1 (Software Installation / Customization)](#phase-1-software-installation--customization)
+    - [Phase 2 (Artifact Generation)](#phase-2-artifact-generation)
+  - [Risks and Mitigations](#risks-and-mitigations)
+- [Graduation Criteria](#graduation-criteria)
+- [Implementation History](#implementation-history)
+- [Infrastructure Needed](#infrastructure-needed)
+- [Alternatives](#alternatives)
+<!-- /toc -->
 
 ## Summary
 It is common for modern cloud based software deployments to follow immutable patterns. One of the foundational pieces to this idea is the creation of immutable images. There are already several tools that create images in the Kubernetes ecosystem, which include: [Wardroom](https://github.com/heptiolabs/wardroom), [Cluster API AWS](https://github.com/kubernetes-sigs/cluster-api-provider-aws/tree/master/build), [Cluster API vSphere](https://github.com/kubernetes-sigs/cluster-api-provider-vsphere/tree/master/docs/ova), [amazon-eks-ami](https://github.com/awslabs/amazon-eks-ami), [talos](https://docs.talos-systems.com/), [LinuxKit](https://github.com/linuxkit/linuxkit),[kube-deploy](https://github.com/kubernetes/kube-deploy/tree/master/imagebuilder), etc. The purpose of this proposal is to distill down the common requirements and provide an image building utility that can be leveraged by the Kubernetes ecosystem.  

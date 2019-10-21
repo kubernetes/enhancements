@@ -19,6 +19,41 @@ see-also:
 ---
 # EndpointSlice API 
 
+## Table of Contents
+
+<!-- toc -->
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goal](#goal)
+  - [Non-Goal](#non-goal)
+- [Proposal](#proposal)
+  - [EndpointSlice API](#endpointslice-api-1)
+  - [Mapping](#mapping)
+  - [EndpointMeta (Per EndpointSlice)](#endpointmeta-per-endpointslice)
+  - [Topology (Per Endpoint)](#topology-per-endpoint)
+  - [EndpointSlice Naming](#endpointslice-naming)
+- [Estimation](#estimation)
+- [Sample Case 1: 20,000 endpoints, 5,000 nodes](#sample-case-1-20000-endpoints-5000-nodes)
+  - [Service Creation/Deletion](#service-creationdeletion)
+  - [Single Endpoint Update](#single-endpoint-update)
+  - [Rolling Update](#rolling-update)
+- [Sample Case 2: 20 endpoints, 10 nodes](#sample-case-2-20-endpoints-10-nodes)
+  - [Service Creation/Deletion](#service-creationdeletion-1)
+  - [Single Endpoint Update](#single-endpoint-update-1)
+  - [Rolling Update](#rolling-update-1)
+- [Implementation](#implementation)
+  - [Requirements](#requirements)
+  - [EndpointSlice Controller](#endpointslice-controller)
+  - [Additional EndpointSlice Controllers](#additional-endpointslice-controllers)
+    - [Workflows](#workflows)
+  - [Kube-Proxy](#kube-proxy)
+  - [Endpoint Controller (classic)](#endpoint-controller-classic)
+- [Roll Out Plan](#roll-out-plan)
+- [Graduation Criteria](#graduation-criteria)
+- [Alternatives](#alternatives)
+- [FAQ](#faq)
+<!-- /toc -->
+
 ## Summary 
 
 This KEP was converted from the [original proposal doc][original-doc]. The current  [Core/V1 Endpoints API][v1-endpoints-api] comes with severe performance/scalability drawbacks affecting multiple components in the control-plane (apiserver, etcd, endpoints-controller, kube-proxy). 

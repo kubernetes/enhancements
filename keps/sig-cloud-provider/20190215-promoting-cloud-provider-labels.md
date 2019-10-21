@@ -27,27 +27,24 @@ see-also:
 
 ## Table of Contents
 
-   * [Promoting Cloud Provider Labels to GA](#promoting-cloud-provider-labels-to-ga)
-      * [Table of Contents](#table-of-contents)
-      * [Release Signoff Checklist](#release-signoff-checklist)
-      * [Summary](#summary)
-      * [Motivation](#motivation)
-         * [Goals](#goals)
-         * [Non-Goals](#non-goals)
-      * [Proposal](#proposal)
-         * [Implementation Details/Notes/Constraints [optional]](#implementation-detailsnotesconstraints-optional)
-         * [Risks and Mitigations](#risks-and-mitigations)
-      * [Design Details](#design-details)
-         * [Test Plan](#test-plan)
-         * [Graduation Criteria](#graduation-criteria)
-            * [Examples](#examples)
-               * [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
-               * [Beta -&gt; GA Graduation](#beta---ga-graduation)
-         * [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
-         * [Version Skew Strategy](#version-skew-strategy)
-      * [Implementation History](#implementation-history)
-      * [Drawbacks [optional]](#drawbacks-optional)
-      * [Alternatives [optional]](#alternatives-optional)
+<!-- toc -->
+- [Release Signoff Checklist](#release-signoff-checklist)
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [Implementation Details/Notes/Constraints [optional]](#implementation-detailsnotesconstraints-optional)
+  - [Risks and Mitigations](#risks-and-mitigations)
+- [Design Details](#design-details)
+  - [Test Plan](#test-plan)
+  - [Graduation Criteria](#graduation-criteria)
+  - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+  - [Version Skew Strategy](#version-skew-strategy)
+- [Implementation History](#implementation-history)
+- [Drawbacks [optional]](#drawbacks-optional)
+- [Alternatives [optional]](#alternatives-optional)
+<!-- /toc -->
 
 ## Release Signoff Checklist
 

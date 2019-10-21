@@ -22,31 +22,26 @@ see-also:
 
 ## Table of Contents
 
-* [Cloud Controller Manager Migration](#cloud-controller-manager-migration)
-  * [Table of Contents](#table-of-contents)
-  * [Release Signoff Checklist](#release-signoff-checklist)
-  * [Summary](#summary)
-  * [Motivation](#motivation)
-     * [Goals](#goals)
-     * [Non-Goals](#non-goals)
-  * [Proposal](#proposal)
-     * [Implementation Details/Notes/Constraints [optional]](#implementation-detailsnotesconstraints-optional)
-	* [Splitting the Main Run Func](#splitting-the-main-run-func)
-	* [Process Handling when Lock is Lost](#process-handling-when-lock-is-lost)
-     * [Risks and Mitigations](#risks-and-mitigations)
-  * [Design Details](#design-details)
-     * [Test Plan](#test-plan)
-     * [Graduation Criteria](#graduation-criteria)
-	* [Examples](#examples)
-	   * [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
-	   * [Beta -&gt; GA Graduation](#beta---ga-graduation)
-     * [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
-     * [Version Skew Strategy](#version-skew-strategy)
-  * [Implementation History](#implementation-history)
-  * [Alternatives [optional]](#alternatives-optional)
-  * [Infrastructure Needed [optional]](#infrastructure-needed-optional)
-
-[Tools for generating]: https://github.com/ekalinin/github-markdown-toc
+<!-- toc -->
+- [Release Signoff Checklist](#release-signoff-checklist)
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [Implementation Details/Notes/Constraints [optional]](#implementation-detailsnotesconstraints-optional)
+  - [Risks and Mitigations](#risks-and-mitigations)
+- [Design Details](#design-details)
+  - [Test Plan](#test-plan)
+  - [Graduation Criteria](#graduation-criteria)
+    - [Examples](#examples)
+      - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
+      - [Beta -&gt; GA Graduation](#beta---ga-graduation)
+  - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+  - [Version Skew Strategy](#version-skew-strategy)
+- [Implementation History](#implementation-history)
+- [Infrastructure Needed [optional]](#infrastructure-needed-optional)
+<!-- /toc -->
 
 ## Release Signoff Checklist
 

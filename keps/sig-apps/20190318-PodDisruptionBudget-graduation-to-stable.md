@@ -25,16 +25,21 @@ superseded-by:
 
 ## Table of Contents
 
+<!-- toc -->
 - [Summary](#summary)
 - [Motivation](#motivation)
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints-optional)
+  - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
+    - [Mutable PDBs](#mutable-pdbs)
   - [Risks and Mitigations](#risks-and-mitigations)
   - [Test Plan](#test-plan)
+    - [Existing Tests](#existing-tests)
+    - [Needed Tests](#needed-tests)
   - [Graduation Criteria](#graduation-criteria)
 - [Implementation History](#implementation-history)
+<!-- /toc -->
 
 ## Summary
 

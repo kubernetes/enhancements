@@ -19,26 +19,28 @@ status: provisional
 
 ## Table of Contents
 
-* [Overview](#overview)
-* [API changes](#api-changes)
-   * [Resource Version API](#resource-version-api)
-* [Changes to API servers](#changes-to-api-servers)
-   * [Curating a list of participating API servers in HA master](#curating-a-list-of-participating-api-servers-in-ha-master)
-   * [Updating StorageVersion](#updating-storageversion)
-   * [Garbage collection](#garbage-collection)
-   * [CRDs](#crds)
-   * [Aggregated API servers](#aggregated-api-servers)
-* [Consuming the StorageVersion API](#consuming-the-storageversion-api)
-* [StorageVersion API vs. StorageVersionHash in the discovery document](#storageversion-api-vs-storageversionhash-in-the-discovery-document)
-* [Backwards Compatibility](#backwards-compatibility)
-* [Graduation Plan](#graduation-plan)
-* [FAQ](#faq)
-* [Alternatives](#alternatives)
-   * [Letting API servers vote on the storage version](#letting-api-servers-vote-on-the-storage-version)
-   * [Letting the storage migrator detect if API server instances are in agreement](#letting-the-storage-migrator-detect-if-api-server-instances-are-in-agreement)
-* [Appendix](#appendix)
-   * [Accuracy of the discovery document of CRDs](#accuracy-of-the-discovery-document-of-crds)
-* [References](#references)
+<!-- toc -->
+- [Overview](#overview)
+- [API changes](#api-changes)
+  - [Resource Version API](#resource-version-api)
+- [Changes to API servers](#changes-to-api-servers)
+  - [Curating a list of participating API servers in HA master](#curating-a-list-of-participating-api-servers-in-ha-master)
+  - [Updating StorageVersion](#updating-storageversion)
+  - [Garbage collection](#garbage-collection)
+  - [CRDs](#crds)
+  - [Aggregated API servers](#aggregated-api-servers)
+- [Consuming the StorageVersion API](#consuming-the-storageversion-api)
+- [StorageVersion API vs. StorageVersionHash in the discovery document](#storageversion-api-vs-storageversionhash-in-the-discovery-document)
+- [Backwards Compatibility](#backwards-compatibility)
+- [Graduation Plan](#graduation-plan)
+- [FAQ](#faq)
+- [Alternatives](#alternatives)
+  - [Letting API servers vote on the storage version](#letting-api-servers-vote-on-the-storage-version)
+  - [Letting the storage migrator detect if API server instances are in agreement](#letting-the-storage-migrator-detect-if-api-server-instances-are-in-agreement)
+- [Appendix](#appendix)
+  - [Accuracy of the discovery document of CRDs](#accuracy-of-the-discovery-document-of-crds)
+- [References](#references)
+<!-- /toc -->
 
 ## Overview
 
