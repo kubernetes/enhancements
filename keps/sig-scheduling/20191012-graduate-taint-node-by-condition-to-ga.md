@@ -81,11 +81,18 @@ The scheduler will remove condition-based predicates after TaintNodeByCondition 
 
 TaintNodeByCondition currently has multiple tests in various components that use the feature.
 
++ [Admission plugin node taint tests](https://github.com/kubernetes/kubernetes/blob/cf9203501e80ecf4611e3e762a03f009d4aac6b2/plugin/pkg/admission/nodetaint/admission_test.go#L34-L121)
++ [Kubelet TestRegisterWithApiServerWithTaint](https://github.com/kubernetes/kubernetes/blob/cf9203501e80ecf4611e3e762a03f009d4aac6b2/pkg/kubelet/kubelet_node_status_test.go#L1959-L2005)
++ Scheduler integration tests
+  + [Daemonset tests](https://github.com/kubernetes/kubernetes/blob/cf9203501e80ecf4611e3e762a03f009d4aac6b2/test/integration/daemonset/daemonset_test.go#L966)
+  + [Taint tests](https://github.com/kubernetes/kubernetes/blob/cf9203501e80ecf4611e3e762a03f009d4aac6b2/test/integration/scheduler/taint_test.go#L69)
++ [Daemon controller tests](https://github.com/kubernetes/kubernetes/blob/cf9203501e80ecf4611e3e762a03f009d4aac6b2/pkg/controller/daemon/daemon_controller_test.go#L1782)
+
 ### Graduation Criteria
 
 **Note:** *Section not required until targeted at a release.*
 
-- [ ] Graduate TaintNodeByCondition to GA
+- [x] Graduate TaintNodeByCondition to GA
 - [ ] Update documents to reflect the changes
 
 ## Implementation History
