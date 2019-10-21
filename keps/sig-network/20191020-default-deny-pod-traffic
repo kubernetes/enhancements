@@ -1,0 +1,262 @@
+---
+title: default-deny-pod-traffic
+authors:
+  - "@vllry"
+owning-sig: sig-network
+participating-sigs:
+  - sig-network
+  - sig-usability
+reviewers:
+  - TBD
+approvers:
+  - TBD
+editor: "@vllry"
+creation-date: 2019-10-20
+last-updated: 2019-10-21
+status: provisional
+---
+
+# deny-pod-traffic-by-default
+
+## Table of Contents
+
+A table of contents is helpful for quickly jumping to sections of a KEP and for highlighting any additional information provided beyond the standard KEP template.
+
+Ensure the TOC is wrapped with <code>&lt;!-- toc --&rt;&lt;!-- /toc --&rt;</code> tags, and then generate with `hack/update-toc.sh`.
+
+<!-- toc -->
+- [Release Signoff Checklist](#release-signoff-checklist)
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [User Stories [optional]](#user-stories-optional)
+    - [Story 1](#story-1)
+    - [Story 2](#story-2)
+  - [Implementation Details/Notes/Constraints [optional]](#implementation-detailsnotesconstraints-optional)
+  - [Risks and Mitigations](#risks-and-mitigations)
+- [Design Details](#design-details)
+  - [Test Plan](#test-plan)
+  - [Graduation Criteria](#graduation-criteria)
+    - [Examples](#examples)
+      - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
+      - [Beta -&gt; GA Graduation](#beta---ga-graduation)
+      - [Removing a deprecated flag](#removing-a-deprecated-flag)
+  - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+  - [Version Skew Strategy](#version-skew-strategy)
+- [Implementation History](#implementation-history)
+- [Drawbacks [optional]](#drawbacks-optional)
+- [Alternatives [optional]](#alternatives-optional)
+- [Infrastructure Needed [optional]](#infrastructure-needed-optional)
+<!-- /toc -->
+
+## Release Signoff Checklist
+
+**ACTION REQUIRED:** In order to merge code into a release, there must be an issue in [kubernetes/enhancements] referencing this KEP and targeting a release milestone **before [Enhancement Freeze](https://github.com/kubernetes/sig-release/tree/master/releases)
+of the targeted release**.
+
+For enhancements that make changes to code or processes/procedures in core Kubernetes i.e., [kubernetes/kubernetes], we require the following Release Signoff checklist to be completed.
+
+Check these off as they are completed for the Release Team to track. These checklist items _must_ be updated for the enhancement to be released.
+
+- [ ] kubernetes/enhancements issue in release milestone, which links to KEP (this should be a link to the KEP location in kubernetes/enhancements, not the initial KEP PR)
+- [ ] KEP approvers have set the KEP status to `implementable`
+- [ ] Design details are appropriately documented
+- [ ] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [ ] Graduation criteria is in place
+- [ ] "Implementation History" section is up-to-date for milestone
+- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+
+**Note:** Any PRs to move a KEP to `implementable` or significant changes once it is marked `implementable` should be approved by each of the KEP approvers. If any of those approvers is no longer appropriate than changes to that list should be approved by the remaining approvers and/or the owning SIG (or SIG-arch for cross cutting KEPs).
+
+**Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
+
+[kubernetes.io]: https://kubernetes.io/
+[kubernetes/enhancements]: https://github.com/kubernetes/enhancements/issues
+[kubernetes/kubernetes]: https://github.com/kubernetes/kubernetes
+[kubernetes/website]: https://github.com/kubernetes/website
+
+## Summary
+
+Make pod-to-pod communication in Kubernetes secure by default.
+Pods should require an explicit NetworkPolicy ingress/egress configuration,
+in order to receive/send traffic.
+
+## Motivation
+
+Kubernetes and Kubernetes workloads are notoriously easy to leave insecure.
+Many users are not aware of relevant settings (like NetworkPolicy),
+or choose not to configure them due to friction and learning curves.
+This is a systemic pattern,
+NetworkPolicy is one example.
+
+TODO pull examples
+
+### Goals
+
+* Restrict pod ingress/egress by default on clusters.
+
+### Non-Goals
+
+## Proposal
+
+There are multiple options for design/implementation.
+
+Restricting network access requires a CNI driver that supports NetworkPolicy.
+All options would require codifying NetworkPolicy support as a requirement,
+or creating a clear user experience when using a CNI driver that does not support NetworkPolicy.
+
+### Option 1: Change default NetworkPolicy behavior
+
+The most conceptually simple option is to change default NetworkPolicy behavior.
+Currently,
+NetworkPolicy allows all traffic to pods that are not selected by a NetworkPolicy. [1]
+
+If all pods are treated as isolated,
+users must explicitly create NetworkPolicy objects
+(either as needed, or by allowing all ingress/egress and _explicitly_ enabling the existing behavior).
+
+### Option 2: Inject explicit deny-all NetworkPolicy objects
+
+If making changes to NetworkPolicy API is too undesirable,
+we could automatically apply NetworkPolicy objects to achieve the same effect.
+
+EG a deny-all NetworkPolicy could be created on namespace creation,
+similar to creation of the default service account token.
+This solution would be subject to race conditions,
+where new pods would be subject to the default-open behavior before the NetworkPolicy is created.
+
+Changing this behavior around namespace creation may require creating a v2 namespace API.
+Although the namespace object would not be changed,
+the behavior associated with it would be.
+
+### Risks and Mitigations
+
+Changing network defaults would existing break user setups (EG apps with no NetworkPolicies),
+and could break existing clusters if designed or applied incorrectly.
+It must be designed as an opt-in.
+
+This change may frustrate users,
+as it introduces another step (configure NetworkPolicy) that was previously optional.
+
+e2e and conformance testing will need to account for this change.
+
+## Design Details
+
+TODO
+
+### Test Plan
+
+**Note:** *Section not required until targeted at a release.*
+
+Consider the following in developing a test plan for this enhancement:
+- Will there be e2e and integration tests, in addition to unit tests?
+- How will it be tested in isolation vs with other components?
+
+No need to outline all of the test cases, just the general strategy.
+Anything that would count as tricky in the implementation and anything particularly challenging to test should be called out.
+
+All code is expected to have adequate tests (eventually with coverage expectations).
+Please adhere to the [Kubernetes testing guidelines][testing-guidelines] when drafting this test plan.
+
+[testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
+
+### Graduation Criteria
+
+**Note:** *Section not required until targeted at a release.*
+
+Define graduation milestones.
+
+These may be defined in terms of API maturity, or as something else. Initial KEP should keep
+this high-level with a focus on what signals will be looked at to determine graduation.
+
+Consider the following in developing the graduation criteria for this enhancement:
+- [Maturity levels (`alpha`, `beta`, `stable`)][maturity-levels]
+- [Deprecation policy][deprecation-policy]
+
+Clearly define what graduation means by either linking to the [API doc definition](https://kubernetes.io/docs/concepts/overview/kubernetes-api/#api-versioning),
+or by redefining what graduation means.
+
+In general, we try to use the same stages (alpha, beta, GA), regardless how the functionality is accessed.
+
+[maturity-levels]: https://git.k8s.io/community/contributors/devel/sig-architecture/api_changes.md#alpha-beta-and-stable-versions
+[deprecation-policy]: https://kubernetes.io/docs/reference/using-api/deprecation-policy/
+
+#### Examples
+
+These are generalized examples to consider, in addition to the aforementioned [maturity levels][maturity-levels].
+
+##### Alpha -> Beta Graduation
+
+- Gather feedback from developers and surveys
+- Complete features A, B, C
+- Tests are in Testgrid and linked in KEP
+
+##### Beta -> GA Graduation
+
+- N examples of real world usage
+- N installs
+- More rigorous forms of testing e.g., downgrade tests and scalability tests
+- Allowing time for feedback
+
+**Note:** Generally we also wait at least 2 releases between beta and GA/stable, since there's no opportunity for user feedback, or even bug reports, in back-to-back releases.
+
+##### Removing a deprecated flag
+
+- Announce deprecation and support policy of the existing flag
+- Two versions passed since introducing the functionality which deprecates the flag (to address version skew)
+- Address feedback on usage/changed behavior, provided on GitHub issues
+- Deprecate the flag
+
+**For non-optional features moving to GA, the graduation criteria must include [conformance tests].**
+
+[conformance tests]: https://github.com/kubernetes/community/blob/master/contributors/devel/conformance-tests.md
+
+### Upgrade / Downgrade Strategy
+
+If applicable, how will the component be upgraded and downgraded? Make sure this is in the test plan.
+
+Consider the following in developing an upgrade/downgrade strategy for this enhancement:
+- What changes (in invocations, configurations, API use, etc.) is an existing cluster required to make on upgrade in order to keep previous behavior?
+- What changes (in invocations, configurations, API use, etc.) is an existing cluster required to make on upgrade in order to make use of the enhancement?
+
+### Version Skew Strategy
+
+If applicable, how will the component handle version skew with other components? What are the guarantees? Make sure
+this is in the test plan.
+
+Consider the following in developing a version skew strategy for this enhancement:
+- Does this enhancement involve coordinating behavior in the control plane and in the kubelet? How does an n-2 kubelet without this feature available behave when this feature is used?
+- Will any other components on the node change? For example, changes to CSI, CRI or CNI may require updating that component before the kubelet.
+
+## Implementation History
+
+Major milestones in the life cycle of a KEP should be tracked in `Implementation History`.
+Major milestones might include
+
+- the `Summary` and `Motivation` sections being merged signaling SIG acceptance
+- the `Proposal` section being merged signaling agreement on a proposed design
+- the date implementation started
+- the first Kubernetes release where an initial version of the KEP was available
+- the version of Kubernetes where the KEP graduated to general availability
+- when the KEP was retired or superseded
+
+## Drawbacks [optional]
+
+Why should this KEP _not_ be implemented.
+
+## Alternatives [optional]
+
+Similar to the `Drawbacks` section the `Alternatives` section is used to highlight and record other possible approaches to delivering the value proposed by a KEP.
+
+## Infrastructure Needed [optional]
+
+Use this section if you need things from the project/SIG.
+Examples include a new subproject, repos requested, github details.
+Listing these here allows a SIG to get the process for these resources started right away.
+
+# References
+
+[1] https://kubernetes.io/docs/concepts/services-networking/network-policies/#isolated-and-non-isolated-pods
