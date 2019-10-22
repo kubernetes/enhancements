@@ -14,7 +14,7 @@ approvers:
   - "@johnbelamaric"
 editor: TBD
 creation-date: 2019-10-01
-last-updated: 2019-10-10
+last-updated: 2019-10-22
 status: implementable
 see-also:
 replaces:
@@ -32,6 +32,7 @@ superseded-by:
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
+- [Drawbacks](#drawbacks)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -117,4 +118,8 @@ Scenario C - deprecation with no replacement. Sample release note and API doc:
 By regularly having new beta versions, we can ensure that consumers will not grow long running dependencies on particular betas which could pin design decisions.
 It will also create an incentive for REST API authors to push their APIs to GA instead of letting them live in a permanent beta state.
 
+## Drawbacks
 
+1. Consumers of beta APIs will be made aware of the status of the APIs and be given clear dates in documentation about
+when they will have to update.  If the maintainers of these beta APIs do not graduate their API, a new beta version will
+need to exist within 18-ish months and early adopters will have to update their manifests to the new version.  
