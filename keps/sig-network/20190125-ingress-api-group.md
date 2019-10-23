@@ -353,6 +353,7 @@ type IngressClass struct {
   //
   // This allows for different "flavors" that are controlled by the same
   // controller. For example, you may have different Parameters for
+  // the same implementing controller.
   Controller string
 
   // Parameters is a link to a custom resource configuration for
