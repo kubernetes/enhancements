@@ -20,15 +20,6 @@ aliases:
     - mikedanese
   sig-autoscaling-leads:
     - mwielgus
-  sig-aws-leads:
-    - justinsb
-    - kris-nova
-    - d-nishi
-  sig-azure-leads:
-    - justaugustus
-    - dstrebel
-    - khenidak
-    - feiskyer
   sig-cli-leads:
     - soltysh
     - seans3
@@ -50,12 +41,6 @@ aliases:
     - bradamant3
     - jimangel
     - zacharysarah
-  sig-gcp-leads:
-    - abgworrall
-  sig-ibmcloud-leads:
-    - khahmed
-    - rtheis
-    - spzala
   sig-instrumentation-leads:
     - piosz
     - brancz
@@ -69,10 +54,6 @@ aliases:
   sig-node-leads:
     - dchen1107
     - derekwaynecarr
-  sig-openstack-leads:
-    - hogepodge
-    - adisky
-    - chrigl
   sig-pm-leads:
     - calebamiles
     - idvoretskyi
@@ -105,9 +86,6 @@ aliases:
     - maciaszczykm
     - danielromlein
     - jeefy
-  sig-vmware-leads:
-    - frapposelli
-    - cantbewong
   sig-windows-leads:
     - michmike
     - patricklang
@@ -212,4 +190,24 @@ aliases:
     - jbeda
     - jdumars
     - mattfarina
+  provider-aws:
+    - d-nishi
+    - justinsb
+    - kris-nova
+  provider-azure:
+    - craiglpeters
+    - justaugustus
+    - feiskyer
+    - khenidak
+  provider-gcp:
+    - abgworrall
+  provider-ibmcloud:
+    - spzala
+  provider-openstack:
+    - adisky
+    - chrigl
+    - hogepodge
+  provider-vmware:
+    - cantbewong
+    - frapposelli
 ## END CUSTOM CONTENT
