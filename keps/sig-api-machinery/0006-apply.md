@@ -172,11 +172,10 @@ It is defined either in Go IDL by pefixing the list with `//
 
 - Associative lists: Kubernetes has a pattern of using lists as dictionary, with
 "name" being a very common key. People can now reproduce this pattern by using
-`// +listType=associative`, or in the OpenAPI with
-`"x-kubenetes-list-type": "map"` along with `//
-+x-kubernetes-list-map-key=name`, or `"listMapKey": "name"`. Items
-of an associative lists are owned by the person who applied the item to the
-list.
+`// +listType=associative`, or in the OpenAPI with `"x-kubernetes-list-type":
+"map"` along with `"x-kubernetes-list-map-keys": ["name"]`, or `//
++listMapKey=name`. Items of an associative lists are owned by the person who
+applied the item to the list.
 
 For compatibility with the existing markers, the `patchStrategy` and
 `patchMergeKey` markers are automatically used and converted to the corresponding `listType`
@@ -187,13 +186,13 @@ and `listMapKey` if missing.
 Maps and structures can behave in two ways:
 - Each item in the map or field in the structure are independent from each
 other. They can be changed by different actors. This is the default behavior,
-but can be explicitly specified with `// +mapType=separate` or `//
-+structType=separate` respectively. They map to the same openapi extension:
-`x-kubernetes-map-type=separate`.
-- All the fields or item of the map are treated as one, we say the map/struct is
+but can be explicitly specified with `// +mapType=granular` or `//
++structType=granular` respectively. They map to the same openapi extension:
+`"x-kubernetes-map-type": "granular"`.
+- All the fields or item of the map are treated as one unit, we say the map/struct is
 atomic. That can be specified with `// +mapType=atomic` or `//
 +structType=atomic` respectively. They map to the same openapi extension:
-`x-kubernetes-map-type=atomic`.
+`"x-kubernetes-map-type": "atomic"`.
 
 #### Kubectl
 ##### Server-side Apply
