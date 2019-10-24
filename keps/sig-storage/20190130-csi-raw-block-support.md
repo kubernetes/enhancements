@@ -40,7 +40,7 @@ see-also:
   - [K8s 1.12: Alpha](#k8s-112-alpha)
   - [K8s 1.13: Alpha](#k8s-113-alpha)
   - [K8s 1.14: Beta](#k8s-114-beta)
-  - [K8s 1.17: GA](#k8s-117-ga)
+  - [K8s 1.17: Beta](#k8s-117-beta)
 <!-- /toc -->
 
 ## Summary
@@ -158,7 +158,7 @@ and we can test with them
 ### K8s 1.14: Beta
 * Bugs fixed
 
-### K8s 1.17: GA
+### K8s 1.17: Beta
 * Separated NodeStage / NodePublish calls.
 * Fixed volume reconstruction after kubelet restart.
 * Stress tests as noted above.
