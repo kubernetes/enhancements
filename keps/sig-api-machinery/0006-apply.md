@@ -337,7 +337,21 @@ exception).
 
 ```
 Field set:
-{"f:apiVersion":{},"f:kind":{},"f:metadata":{"f:labels":{"f:app":{},"f:plugin1":{},"f:plugin2":{},"f:plugin3":{},"f:plugin4":{},".":{}},"f:name":{},"f:namespace":{},"f:ownerReferences":{"k:{\"uid\":\"0a9d2b9e-779e-11e7-b422-42010a8001be\"}":{"f:apiVersion":{},"f:blockOwnerDeletion":{},"f:controller":{},"f:kind":{},"f:name":{},"f:uid":{},".":{}},".":{}},".":{}},"f:spec":{"f:containers":{"k:{\"name\":\"some-name\"}":{"f:args":{},"f:env":{"k:{\"name\":\"VAR_1\"}":{"f:name":{},"f:valueFrom":{"f:secretKeyRef":{"f:key":{},"f:name":{},".":{}},".":{}},".":{}},"k:{\"name\":\"VAR_2\"}":{"f:name":{},"f:valueFrom":{"f:secretKeyRef":{"f:key":{},"f:name":{},".":{}},".":{}},".":{}},"k:{\"name\":\"VAR_3\"}":{"f:name":{},"f:valueFrom":{"f:secretKeyRef":{"f:key":{},"f:name":{},".":{}},".":{}},".":{}},".":{}},"f:image":{},"f:imagePullPolicy":{},"f:name":{},"f:resources":{"f:requests":{"f:cpu":{},".":{}},".":{}},"f:terminationMessagePath":{},"f:terminationMessagePolicy":{},"f:volumeMounts":{"k:{\"mountPath\":\"/var/run/secrets/kubernetes.io/serviceaccount\"}":{"f:mountPath":{},"f:name":{},"f:readOnly":{},".":{}},".":{}},".":{}},".":{}},"f:dnsPolicy":{},"f:nodeName":{},"f:priority":{},"f:restartPolicy":{},"f:schedulerName":{},"f:securityContext":{},"f:serviceAccount":{},"f:serviceAccountName":{},"f:terminationGracePeriodSeconds":{},"f:tolerations":{},"f:volumes":{},".":{}},"f:status":{"f:conditions":{"k:{\"type\":\"ContainersReady\"}":{"f:lastProbeTime":{},"f:lastTransitionTime":{},"f:status":{},"f:type":{},".":{}},"k:{\"type\":\"Initialized\"}":{"f:lastProbeTime":{},"f:lastTransitionTime":{},"f:status":{},"f:type":{},".":{}},"k:{\"type\":\"PodScheduled\"}":{"f:lastProbeTime":{},"f:lastTransitionTime":{},"f:status":{},"f:type":{},".":{}},"k:{\"type\":\"Ready\"}":{"f:lastProbeTime":{},"f:lastTransitionTime":{},"f:status":{},"f:type":{},".":{}},".":{}},"f:containerStatuses":{},"f:hostIP":{},"f:phase":{},"f:podIP":{},"f:qosClass":{},"f:startTime":{},".":{}}}
+{"f:apiVersion":{},"f:kind":{},"f:metadata":{"f:labels":{"f:app":{},"f:plugin1":{},"f:plugin2":{},"f:plugin3":{},"f:plugin4":{},".":{}},"f:n
+ame":{},"f:namespace":{},"f:ownerReferences":{"k:{\"uid\":\"0a9d2b9e-779e-11e7-b422-42010a8001be\"}":{"f:apiVersion":{},"f:blockOwnerDeletio
+n":{},"f:controller":{},"f:kind":{},"f:name":{},"f:uid":{},".":{}},".":{}},".":{}},"f:spec":{"f:containers":{"k:{\"name\":\"some-name\"}":{"
+f:args":{},"f:env":{"k:{\"name\":\"VAR_1\"}":{"f:name":{},"f:valueFrom":{"f:secretKeyRef":{"f:key":{},"f:name":{},".":{}},".":{}},".":{}},"k
+:{\"name\":\"VAR_2\"}":{"f:name":{},"f:valueFrom":{"f:secretKeyRef":{"f:key":{},"f:name":{},".":{}},".":{}},".":{}},"k:{\"name\":\"VAR_3\"}"
+:{"f:name":{},"f:valueFrom":{"f:secretKeyRef":{"f:key":{},"f:name":{},".":{}},".":{}},".":{}},".":{}},"f:image":{},"f:imagePullPolicy":{},"f
+:name":{},"f:resources":{"f:requests":{"f:cpu":{},".":{}},".":{}},"f:terminationMessagePath":{},"f:terminationMessagePolicy":{},"f:volumeMou
+nts":{"k:{\"mountPath\":\"/var/run/secrets/kubernetes.io/serviceaccount\"}":{"f:mountPath":{},"f:name":{},"f:readOnly":{},".":{}},".":{}},".
+":{}},".":{}},"f:dnsPolicy":{},"f:nodeName":{},"f:priority":{},"f:restartPolicy":{},"f:schedulerName":{},"f:securityContext":{},"f:serviceAc
+count":{},"f:serviceAccountName":{},"f:terminationGracePeriodSeconds":{},"f:tolerations":{},"f:volumes":{},".":{}},"f:status":{"f:conditions
+":{"k:{\"type\":\"ContainersReady\"}":{"f:lastProbeTime":{},"f:lastTransitionTime":{},"f:status":{},"f:type":{},".":{}},"k:{\"type\":\"Initi
+alized\"}":{"f:lastProbeTime":{},"f:lastTransitionTime":{},"f:status":{},"f:type":{},".":{}},"k:{\"type\":\"PodScheduled\"}":{"f:lastProbeTi
+me":{},"f:lastTransitionTime":{},"f:status":{},"f:type":{},".":{}},"k:{\"type\":\"Ready\"}":{"f:lastProbeTime":{},"f:lastTransitionTime":{},
+"f:status":{},"f:type":{},".":{}},".":{}},"f:containerStatuses":{},"f:hostIP":{},"f:phase":{},"f:podIP":{},"f:qosClass":{},"f:startTime":{},
+".":{}}}
 ```
 
 | Total bytes | Strings | Integers | Control [“.f:k:v{\:},] |
@@ -349,7 +363,17 @@ Field set:
 
 ```
 Field set:
-[0,"apiVersion",0,"kind",8,"metadata",[8,"labels",[0,"app",0,"plugin1",0,"plugin2",0,"plugin3",0,"plugin4"],0,"name",0,"namespace",8,"ownerReferences",[11,{"uid":"0a9d2b9e-779e-11e7-b422-42010a8001be"},[0,"apiVersion",0,"blockOwnerDeletion",0,"controller",0,"kind",0,"name",0,"uid"]]],8,"spec",[8,"containers",[11,{"name":"some-name"},[0,"args",8,"env",[11,{"name":"VAR_1"},[0,"name",8,"valueFrom",[8,"secretKeyRef",[0,"key",0,"name"]]],11,{"name":"VAR_2"},[0,"name",8,"valueFrom",[8,"secretKeyRef",[0,"key",0,"name"]]],11,{"name":"VAR_3"},[0,"name",8,"valueFrom",[8,"secretKeyRef",[0,"key",0,"name"]]]],0,"image",0,"imagePullPolicy",0,"name",8,"resources",[8,"requests",[0,"cpu"]],0,"terminationMessagePath",0,"terminationMessagePolicy",8,"volumeMounts",[11,{"mountPath":"/var/run/secrets/kubernetes.io/serviceaccount"},[0,"mountPath",0,"name",0,"readOnly"]]]],0,"dnsPolicy",0,"nodeName",0,"priority",0,"restartPolicy",0,"schedulerName",0,"securityContext",0,"serviceAccount",0,"serviceAccountName",0,"terminationGracePeriodSeconds",0,"tolerations",0,"volumes"],8,"status",[8,"conditions",[11,{"type":"ContainersReady"},[0,"lastProbeTime",0,"lastTransitionTime",0,"status",0,"type"],11,{"type":"Initialized"},[0,"lastProbeTime",0,"lastTransitionTime",0,"status",0,"type"],11,{"type":"PodScheduled"},[0,"lastProbeTime",0,"lastTransitionTime",0,"status",0,"type"],11,{"type":"Ready"},[0,"lastProbeTime",0,"lastTransitionTime",0,"status",0,"type"]],0,"containerStatuses",0,"hostIP",0,"phase",0,"podIP",0,"qosClass",0,"startTime"]]
+[0,"apiVersion",0,"kind",8,"metadata",[8,"labels",[0,"app",0,"plugin1",0,"plugin2",0,"plugin3",0,"plugin4"],0,"name",0,"namespace",8,"ownerR
+eferences",[11,{"uid":"0a9d2b9e-779e-11e7-b422-42010a8001be"},[0,"apiVersion",0,"blockOwnerDeletion",0,"controller",0,"kind",0,"name",0,"uid
+"]]],8,"spec",[8,"containers",[11,{"name":"some-name"},[0,"args",8,"env",[11,{"name":"VAR_1"},[0,"name",8,"valueFrom",[8,"secretKeyRef",[0,"
+key",0,"name"]]],11,{"name":"VAR_2"},[0,"name",8,"valueFrom",[8,"secretKeyRef",[0,"key",0,"name"]]],11,{"name":"VAR_3"},[0,"name",8,"valueFr
+om",[8,"secretKeyRef",[0,"key",0,"name"]]]],0,"image",0,"imagePullPolicy",0,"name",8,"resources",[8,"requests",[0,"cpu"]],0,"terminationMess
+agePath",0,"terminationMessagePolicy",8,"volumeMounts",[11,{"mountPath":"/var/run/secrets/kubernetes.io/serviceaccount"},[0,"mountPath",0,"n
+ame",0,"readOnly"]]]],0,"dnsPolicy",0,"nodeName",0,"priority",0,"restartPolicy",0,"schedulerName",0,"securityContext",0,"serviceAccount",0,"
+serviceAccountName",0,"terminationGracePeriodSeconds",0,"tolerations",0,"volumes"],8,"status",[8,"conditions",[11,{"type":"ContainersReady"}
+,[0,"lastProbeTime",0,"lastTransitionTime",0,"status",0,"type"],11,{"type":"Initialized"},[0,"lastProbeTime",0,"lastTransitionTime",0,"statu
+s",0,"type"],11,{"type":"PodScheduled"},[0,"lastProbeTime",0,"lastTransitionTime",0,"status",0,"type"],11,{"type":"Ready"},[0,"lastProbeTime
+",0,"lastTransitionTime",0,"status",0,"type"]],0,"containerStatuses",0,"hostIP",0,"phase",0,"podIP",0,"qosClass",0,"startTime"]]
 ```
 
 | Total bytes | Strings | Integers | Control [“.f:k:v{\:},] |
@@ -361,10 +385,18 @@ Field set:
 
 ```
 Field set:
-[1,0,!0,0,!1,8,!2,[8,!3,[0,"app",0,"plugin1",0,"plugin2",0,"plugin3",0,"plugin4"],0,!4,0,!5,8,!6,[11,{!7:"0a9d2b9e-779e-11e7-b422-42010a8001be"},[0,!0,0,!8,0,!9,0,!1,0,!4,0,!7]]],8,!A,[8,!B,[11,{!4:"some-name"},[0,!C,8,!D,[11,{!4:"VAR_1"},[0,!4,8,!E,[8,!F,[0,!G,0,!4]]],11,{!4:"VAR_2"},[0,!4,8,!E,[8,!F,[0,!G,0,!4]]],11,{!4:"VAR_3"},[0,!4,8,!E,[8,!F,[0,!G,0,!4]]]],0,!H,0,!I,0,!4,8,!J,[8,!K,[0,!L]],0,!M,0,!N,8,!O,[11,{!P:!s},[0,!Q,0,!4,0,!R]]]],0,!S,0,!T,0,!U,0,!V,0,!W,0,!X,0,!Y,0,!Z,0,!a,0,!b,0,!c],8,!d,[8,!e,[11,{!f:!o},[0,!g,0,!h,0,!d,0,!f],11,{!f:!p},[0,!g,0,!h,0,!d,0,!f],11,[!f,!q},[0,!g,0,!h,0,!d,0,!f],11,{!f:!r},[0,!g,0,!h,0,!d,0,!f]],0,!i,0,!j,0,!k,0,!l,0,!m,0,!n]]
+[1,0,!0,0,!1,8,!2,[8,!3,[0,"app",0,"plugin1",0,"plugin2",0,"plugin3",0,"plugin4"],0,!4,0,!5,8,!6,[11,{!7:"0a9d2b9e-779e-11e7-b422-42010a8001
+be"},[0,!0,0,!8,0,!9,0,!1,0,!4,0,!7]]],8,!A,[8,!B,[11,{!4:"some-name"},[0,!C,8,!D,[11,{!4:"VAR_1"},[0,!4,8,!E,[8,!F,[0,!G,0,!4]]],11,{!4:"VA
+R_2"},[0,!4,8,!E,[8,!F,[0,!G,0,!4]]],11,{!4:"VAR_3"},[0,!4,8,!E,[8,!F,[0,!G,0,!4]]]],0,!H,0,!I,0,!4,8,!J,[8,!K,[0,!L]],0,!M,0,!N,8,!O,[11,{!
+P:!s},[0,!Q,0,!4,0,!R]]]],0,!S,0,!T,0,!U,0,!V,0,!W,0,!X,0,!Y,0,!Z,0,!a,0,!b,0,!c],8,!d,[8,!e,[11,{!f:!o},[0,!g,0,!h,0,!d,0,!f],11,{!f:!p},[0
+,!g,0,!h,0,!d,0,!f],11,[!f,!q},[0,!g,0,!h,0,!d,0,!f],11,{!f:!r},[0,!g,0,!h,0,!d,0,!f]],0,!i,0,!j,0,!k,0,!l,0,!m,0,!n]]
 
 Example static string table (versioned):
-{1:[apiVersion,kind,metadata,labels,name,namespace,ownerReferences,uid,blockOwnerDeletion,controller,spec,containers,args,env,valueFrom,secretKeyRef,key,image,imagePullPolicy,resources,requests,cpu,terminationMessagePath,terminationMessagePolicy,volumeMounts,mountPath,readOnly,dnsPolicy,nodeName,priority,restartPolicy,schedulerName,securityContext,serviceAccount,serviceAccountName,terminationGracePeriodSeconds,tolerations,volumes,status,conditions,type,lastProbeTime,lastTransitionTime,containerStatuses,hostIP,phase,podIP,qosClass,startTime,ContainersReady,Initialized,PodScheduled,Ready,/var/run/secrets/kubernetes.io/serviceaccount]}
+{1:[apiVersion,kind,metadata,labels,name,namespace,ownerReferences,uid,blockOwnerDeletion,controller,spec,containers,args,env,valueFrom,secr
+etKeyRef,key,image,imagePullPolicy,resources,requests,cpu,terminationMessagePath,terminationMessagePolicy,volumeMounts,mountPath,readOnly,dn
+sPolicy,nodeName,priority,restartPolicy,schedulerName,securityContext,serviceAccount,serviceAccountName,terminationGracePeriodSeconds,tolera
+tions,volumes,status,conditions,type,lastProbeTime,lastTransitionTime,containerStatuses,hostIP,phase,podIP,qosClass,startTime,ContainersRead
+y,Initialized,PodScheduled,Ready,/var/run/secrets/kubernetes.io/serviceaccount]}
 ```
 
 | Total bytes | Strings | Integers | Control [“.f:k:v{\:},] |
@@ -376,7 +408,12 @@ Example static string table (versioned):
 
 ```
 Field set:
-H4sIAAAAAAAA/6xUTW/bMAz9Lzo7i50WaNpb0WFDMXQN0qKXwhhoiW2EyJJLStmyYf990Edcr9tOy42iHx8fnyg/1pWAQT8gsXZWVHUlttoqUS0r0aMHBR5E9bishIEODYsqVwwJOpjwrG0ziReT+GQSn4o2Hiz0KA4BDyAxdXJfLdIan5DQSoxNmqb6IYJW4kLUcK4W3TnOzs7OcdY0eDbrTheL2emibmpY1nXTofhZ/WWSzji5vY3c79GgP6Sls56cMUiTeafiYt+2baMyHlDm+WMVaIs0ykv4C8Gux1mKiwh65jQV2t0b6MPl+ktTYLnbshI7MAE/kOtzH0ZJ6D/hfo1P2e0t7l/1RV1vKRfHpzz5b8p037qH5+xpilbBmJUzWk6gkZyQXaB88+n4EpB9WTY5BJHZPFKvLcSLvEHmSAh+I/7xqfSJ2p0JPd64YP14eX08pfILMd8BzSnYeZ6K59vQIVn0yO+0mzPSTksEKWNNMea1/rfVIQR1a81+dEBZnk7sFH4+YAfSjrTfl0L2QH6CZblBFQzSWMAoQyy4ctbjN19ySdxlEfdnaqyeWPSRQOIKSTt1h9JZxRnhDFIC5HP2jUV+CR584PEtKF1w2U6/H+LqXI2PZI2g9sUrA+xX5Dq810VLzNwTWE4sY/rQI2qJhGUvC/m11V6D0d9RHZd45dRdMfvIzMdxoT38tZK1d+kzZsDGsb9e5XXaAJfFcqrkXhxfGWA+8JJPXdr2VwAAAP//Dee47/gFAAA=
+H4sIAAAAAAAA/6xUTW/bMAz9Lzo7i50WaNpb0WFDMXQN0qKXwhhoiW2EyJJLStmyYf990Edcr9tOy42iHx8fnyg/1pWAQT8gsXZWVHUlttoqUS0r0aMHBR5E9bishIEODYsqVwwJOpjw
+rG0ziReT+GQSn4o2Hiz0KA4BDyAxdXJfLdIan5DQSoxNmqb6IYJW4kLUcK4W3TnOzs7OcdY0eDbrTheL2emibmpY1nXTofhZ/WWSzji5vY3c79GgP6Sls56cMUiTeafiYt+2baMyHlDm
++WMVaIs0ykv4C8Gux1mKiwh65jQV2t0b6MPl+ktTYLnbshI7MAE/kOtzH0ZJ6D/hfo1P2e0t7l/1RV1vKRfHpzz5b8p037qH5+xpilbBmJUzWk6gkZyQXaB88+n4EpB9WTY5BJHZPFKv
+LcSLvEHmSAh+I/7xqfSJ2p0JPd64YP14eX08pfILMd8BzSnYeZ6K59vQIVn0yO+0mzPSTksEKWNNMea1/rfVIQR1a81+dEBZnk7sFH4+YAfSjrTfl0L2QH6CZblBFQzSWMAoQyy4ctbj
+N19ySdxlEfdnaqyeWPSRQOIKSTt1h9JZxRnhDFIC5HP2jUV+CR584PEtKF1w2U6/H+LqXI2PZI2g9sUrA+xX5Dq810VLzNwTWE4sY/rQI2qJhGUvC/m11V6D0d9RHZd45dRdMfvIzMdx
+oT38tZK1d+kzZsDGsb9e5XXaAJfFcqrkXhxfGWA+8JJPXdr2VwAAAP//Dee47/gFAAA=
 ```
 
 | Total bytes | Strings | Integers | Control [“.f:k:v{\:},] |
@@ -389,10 +426,16 @@ H4sIAAAAAAAA/6xUTW/bMAz9Lzo7i50WaNpb0WFDMXQN0qKXwhhoiW2EyJJLStmyYf990Edcr9tOy42i
 
 ```
 Field set:
-H4sIAAAAAAAA/5SQyU7DMBCGn8U+TyTbMWS5lX1fCpQlslBCnFJo0kDFCfHu6HccyAWqXj6NPL++GU8mSRATgKSYmKIsJhZSJojnbctJEG/nH9NZIwe1GtThoNbcwKSBDeg2KZOSPlmUcpEnpSoSG0RRYgMpbRQUWqlAKyFFHgshC8u/MLhbJwaSbrHeGRljoB25Lbe8XKd8uaht0OR1b9hGaue3PxmNH6XvafR2nWHPPew7P9TDuFovHq6Mu9McAIfUB49c8NgFT7rEKXCG5rnf/yJly05++XOJcS+8Aq6BG2AC3AJ3wD3wAORAATy5E5ZusvUjqpQtuhFTRJ6BEqj8L6uUtf8EMlYRe1tleP8j4D4yA16AV2AO1EBjzHcAAAD//7CaT86mAgAA
+H4sIAAAAAAAA/5SQyU7DMBCGn8U+TyTbMWS5lX1fCpQlslBCnFJo0kDFCfHu6HccyAWqXj6NPL++GU8mSRATgKSYmKIsJhZSJojnbctJEG/nH9NZIwe1GtThoNbcwKSBDeg2KZOSPlmU
+cpEnpSoSG0RRYgMpbRQUWqlAKyFFHgshC8u/MLhbJwaSbrHeGRljoB25Lbe8XKd8uaht0OR1b9hGaue3PxmNH6XvafR2nWHPPew7P9TDuFovHq6Mu9McAIfUB49c8NgFT7rEKXCG5rnf
+/yJly05++XOJcS+8Aq6BG2AC3AJ3wD3wAORAATy5E5ZusvUjqpQtuhFTRJ6BEqj8L6uUtf8EMlYRe1tleP8j4D4yA16AV2AO1EBjzHcAAAD//7CaT86mAgAA
 
 Example static string table (versioned):
-{1:[apiVersion,kind,metadata,labels,name,namespace,ownerReferences,uid,blockOwnerDeletion,controller,spec,containers,args,env,valueFrom,secretKeyRef,key,image,imagePullPolicy,resources,requests,cpu,terminationMessagePath,terminationMessagePolicy,volumeMounts,mountPath,readOnly,dnsPolicy,nodeName,priority,restartPolicy,schedulerName,securityContext,serviceAccount,serviceAccountName,terminationGracePeriodSeconds,tolerations,volumes,status,conditions,type,lastProbeTime,lastTransitionTime,containerStatuses,hostIP,phase,podIP,qosClass,startTime,ContainersReady,Initialized,PodScheduled,Ready,/var/run/secrets/kubernetes.io/serviceaccount]}
+{1:[apiVersion,kind,metadata,labels,name,namespace,ownerReferences,uid,blockOwnerDeletion,controller,spec,containers,args,env,valueFrom,secr
+etKeyRef,key,image,imagePullPolicy,resources,requests,cpu,terminationMessagePath,terminationMessagePolicy,volumeMounts,mountPath,readOnly,dn
+sPolicy,nodeName,priority,restartPolicy,schedulerName,securityContext,serviceAccount,serviceAccountName,terminationGracePeriodSeconds,tolera
+tions,volumes,status,conditions,type,lastProbeTime,lastTransitionTime,containerStatuses,hostIP,phase,podIP,qosClass,startTime,ContainersRead
+y,Initialized,PodScheduled,Ready,/var/run/secrets/kubernetes.io/serviceaccount]}
 ```
 
 | Total bytes | Strings | Integers | Control [“.f:k:v{\:},] |
