@@ -20,6 +20,56 @@ superseded-by:
 
 # Graduate Ingress to GA
 
+## Table of contents
+
+<!-- toc -->
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+- [Design](#design)
+  - [Summary of the proposed changes](#summary-of-the-proposed-changes)
+    - [Potential features for post V1](#potential-features-for-post-v1)
+  - [Path as a prefix](#path-as-a-prefix)
+    - [Paths proposal](#paths-proposal)
+      - [Path matching semantics](#path-matching-semantics)
+      - [<code>Exact</code> match](#-match)
+      - [<code>Prefix</code> match](#-match-1)
+      - [<code>ImplementationSpecific</code> match](#-match-2)
+      - [Examples](#examples)
+  - [<code>backend</code> to <code>defaultBackend</code>](#-to-)
+  - [Hostname wildcards](#hostname-wildcards)
+    - [Hostname proposal](#hostname-proposal)
+      - [Hostname match examples](#hostname-match-examples)
+  - [Status](#status)
+  - [Ingress class](#ingress-class)
+    - [Ingress class proposal](#ingress-class-proposal)
+      - [Interoperability with previous annotation](#interoperability-with-previous-annotation)
+  - [Alternative backend types](#alternative-backend-types)
+    - [Backend types proposal](#backend-types-proposal)
+      - [Backend types examples](#backend-types-examples)
+      - [Supporting custom backends (non-normative)](#supporting-custom-backends-non-normative)
+- [Proposed roadmap](#proposed-roadmap)
+  - [1.14](#114)
+    - [Test plan](#test-plan)
+  - [1.15](#115)
+  - [1.16](#116)
+  - [1.17](#117)
+  - [1.18](#118)
+- [Graduation Criteria](#graduation-criteria)
+  - [API group move to <code>networking.k8s.io/v1beta1</code>](#api-group-move-to-)
+  - [GA](#ga)
+- [Implementation History](#implementation-history)
+- [Alternatives](#alternatives)
+- [Appendix](#appendix)
+  - [Design discussions](#design-discussions)
+  - [Non-options](#non-options)
+  - [Future design: Healthchecks](#future-design-healthchecks)
+    - [Healthchecks proposal](#healthchecks-proposal)
+  - [Potential pre-GA work](#potential-pre-ga-work)
+  - [Rejected designs](#rejected-designs)
+    - [Portable regex for Path](#portable-regex-for-path)
+<!-- /toc -->
+
 ## Summary
 
 - Move the Ingress resource from the current API group
