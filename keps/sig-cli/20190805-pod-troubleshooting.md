@@ -10,6 +10,7 @@ reviewers:
   - "@tallclair"
 approvers:
   - "@pwittrock"
+  - "@soltysh"
 editor: TBD
 creation-date: 2019-08-05
 last-updated: 2019-08-06
@@ -216,11 +217,15 @@ Examples:
   # Start an interactive debugging session with a debian image
   kubectl debug mypod --image=debian
 
+  # Run in the same namespace as target container 'myapp'
+  # (Useful for debugging other containers when shareProcessNamespace is false)
+  kubectl debug mypod --target=myapp
+
 Options:
-  -a, --attach=true: Automatically attach to container once created.
-  -c, --container='': Container name. If omitted one will be chosen.
+  -a, --attach=true: Automatically attach to container once created
+  -c, --container='': Container name. If omitted, the first container in the pod will be chosen
   -i, --stdin=true: Pass stdin to the container
-  -m, --image='busybox': Container image to use for debug container.
+  --image='': Required. Container image to use for debug container.
   -p, --target='': Target processes in this container name.
   -t, --tty=true: Stdin is a TTY
 
@@ -235,7 +240,7 @@ Use "kubectl options" for a list of global command-line options (applies to all 
 #### Operations
 
 Alice runs a service "neato" that consists of a statically compiled Go binary
-running in a minimal container image. One of the its pods is suddenly having
+running in a minimal container image. One of its pods is suddenly having
 trouble connecting to an internal service. Being in operations, Alice wants to
 be able to inspect the running pod without restarting it, but she doesn't
 necessarily need to enter the container itself. She wants to:
@@ -335,8 +340,6 @@ is to run his team's autodiagnose script:
 
 ### Implementation Details/Notes/Constraints
 
-1.  There are no guaranteed resources for ad-hoc troubleshooting. If
-    troubleshooting causes a pod to exceed its resource limit it may be evicted.
 1.  There's an output stream race inherent to creating then attaching a
     container which causes output generated between the start and attach to go
     to the log rather than the client. This is not specific to Ephemeral
@@ -347,7 +350,9 @@ is to run his team's autodiagnose script:
 
 ### Risks and Mitigations
 
-TODO
+1.  There are no guaranteed resources for ad-hoc troubleshooting. If
+    troubleshooting causes a pod to exceed its resource limit it may be evicted.
+    This risk can be removed once support for pod resizing has been implemented.
 
 ## Design Details
 
