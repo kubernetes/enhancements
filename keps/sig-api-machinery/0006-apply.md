@@ -39,6 +39,16 @@ superseded-by:
       - [Maps and structs](#maps-and-structs)
     - [Kubectl](#kubectl)
       - [Server-side Apply](#server-side-apply)
+    - [Managed Fields Serialization](#managed-fields-serialization)
+      - [Context](#context)
+      - [FieldsV1](#fieldsv1)
+      - [Areas of Improvement](#areas-of-improvement)
+      - [Example Fieldset](#example-fieldset)
+        - [FieldsV1](#fieldsv1-1)
+        - [With Improvement 1](#with-improvement-1)
+        - [With Improvement 1 and 2](#with-improvement-1-and-2)
+        - [With Improvement 1 and 3](#with-improvement-1-and-3)
+        - [With Improvement 1, 2, and 3](#with-improvement-1-2-and-3)
   - [Risks and Mitigations](#risks-and-mitigations)
   - [Testing Plan](#testing-plan)
 - [Graduation Criteria](#graduation-criteria)
@@ -212,6 +222,183 @@ The long-term plan for this feature is to be the default apply on all
 Kubernetes clusters. The semantical differences between server-side
 apply and client-side apply will make a smooth roll-out difficult, so
 the best way to achieve this has not been decided yet.
+
+#### Managed Fields Serialization
+
+##### Context
+
+The way managedFields is currently serialized (in “Beta 1”) is not
+compact enough to allow it to appear in every object in a cluster.
+Depending on the exact content of an object, tracking its managed
+fields could more than double its size serialized in protobuf, putting
+too much strain on etcd io/database size, controller cache size, and
+apiserver serialization/deserialization allocations. To get around
+this problem, and enable server-side apply by default on 1.16
+clusters, managed fields tracking was limited to objects which had
+been server-side applied to. This effectively made it opt-in on a per
+object basis. The decision to limit apply in this way was made to
+allow users to start benefiting from it in a partial state, and in
+that sense it was useful, but before server-side apply can go GA, the
+serialization problem needs to be solved.
+
+##### FieldsV1
+
+The current fieldset format, FieldsV1, is defined as a trie,
+serialized in JSON. Each key in the trie is either a ‘.’, or a
+serialized path element. If the key is a ‘.’, this represents the
+inclusion of the path leading to this key in the fieldset, and will
+always map to an empty set. If the key is a serialized path element,
+it represents a sub-field or item, and is split into two parts by the
+separating character ‘:’. The character before the separator is a type
+prefix and defines the format of the content after the separator,
+which will follow one of these four formats:
+
+  * 'f:<name>', where <name> is the name of a field in a struct, or
+  * 'key in a map v:<value>', where <value> is the exact json
+  * 'formatted value of a list item i:<index>', where <index> is
+  * 'position of an item in a list k:<keys>', where <keys> is a map of
+  * ' a list item's key fields to their unique values
+
+If a path element maps to an empty set, this is a shortcut for mapping
+to {‘.’}
+
+This format was chosen partly because it can be stored as a
+RawExtension in the API, which allows it to display in json or yaml
+depending on what a client asks for, which makes it more human
+readable. But because of this there are also some major inefficiencies
+to this format. For example, being serialized json means that we are
+wasting a lot of space on control characters, for example, to
+represent the list item with the value ‘udp’ for it’s field
+‘protocol’, we need to serialize `{“k:{\”protocol\”:\”udp\”}”:{}}`,
+which is a total of 29 characters, 9 are because it’s serialized JSON,
+11 are just for the format of the path element, 8 are to store the
+field name, and only 3 are for identifying the list item uniquely.
+
+##### Areas of Improvement
+
+  1. The first round of improvements, proposed in this
+  [PR](https://github.com/kubernetes-sigs/structured-merge-diff/pull/102),
+  restructures the trie from nested maps to nested lists, because it
+  permits directly serializing keys rather than encoding them as
+  strings, which wastes much less space double-encoding strings. It
+  also groups the path element type prefixes and whether or not self
+  is included into a single int, by taking a path element type int (f
+  -> 0, v -> 1, i -> 2, k -> 3) and adding either 0, 4, or 8 to
+  specify inclusion of self, children, or both respectively. These
+  improvements reduce the serialized size by about 22%, but there are
+  still some obvious areas we can improve.
+
+  1. One is field names, which are now a large part of the size of the
+  data, since we still directly serialize them as a string. To reduce
+  the size further we will implement a statically defined string
+  table, which maps int to strings, and instead of directly
+  serializing common kubernetes field names, we will just write their
+  index in this string table in base64, with a prefix of ! to specify
+  that it refers to an item in the string table rather than an actual
+  integer. The string table will be versioned, by prepending an int to
+  the beginning of the top level nested list, and updated as new field
+  names or common annotations are added. Updating the string table
+  will be very rare, as it will require clients (who want to
+  understand this field) to upgrade. To continue supporting arbitrary
+  labels/annotations and CRD field names, we will also allow direct
+  field name serialization as a fallback. Without actually
+  implementing anything, this was tested by manually replacing strings
+  by ints in an example fieldset, and showed an improvement of an
+  additional 50-60%.
+
+  1. Another improvement is to stop serializing as JSON at all, and
+  simply use a binary format, like protobuf, or a compressed binary
+  format. This would be on top of approaches 1+2. This will further
+  reduce the impact of control characters, and the largest portion of
+  the serialized fieldset will become key values, since those will be
+  the final thing that is always still serialized directly as a
+  string. We will seek to include common key values (e.g., known
+  enums) in the string table to minimize the size further. By similar
+  testing to improvement 2, this would probably reduce the size by
+  another 50-60%
+
+Each step above represents a mechanical and easily reversible
+transformation. The latter two steps (string table and binary
+compression) do not require any knowledge of the schema. This is
+important because values can be arbitrary json (for set-type lists).
+
+The combined effect of these three improvements will be \~85% smaller
+managed fields size, or a \~10% total increase in protobuf serialized
+object sizes (based on an approximate \~62% increase in object sizes
+from FieldsV1 calculated in this
+[doc](https://github.com/kubernetes/enhancements/blob/8a4596505592aa86e7b19b6575f1eafb9a014fcd/keps/sig-api-machinery/20190621-apply-scalability.md))
+which seems acceptable for almost all resources (endpoints--where some
+clusters run quite close to the size limit already--being the possible
+exception).
+
+##### Example Fieldset
+
+###### FieldsV1
+
+```
+Field set:
+{"f:apiVersion":{},"f:kind":{},"f:metadata":{"f:labels":{"f:app":{},"f:plugin1":{},"f:plugin2":{},"f:plugin3":{},"f:plugin4":{},".":{}},"f:name":{},"f:namespace":{},"f:ownerReferences":{"k:{\"uid\":\"0a9d2b9e-779e-11e7-b422-42010a8001be\"}":{"f:apiVersion":{},"f:blockOwnerDeletion":{},"f:controller":{},"f:kind":{},"f:name":{},"f:uid":{},".":{}},".":{}},".":{}},"f:spec":{"f:containers":{"k:{\"name\":\"some-name\"}":{"f:args":{},"f:env":{"k:{\"name\":\"VAR_1\"}":{"f:name":{},"f:valueFrom":{"f:secretKeyRef":{"f:key":{},"f:name":{},".":{}},".":{}},".":{}},"k:{\"name\":\"VAR_2\"}":{"f:name":{},"f:valueFrom":{"f:secretKeyRef":{"f:key":{},"f:name":{},".":{}},".":{}},".":{}},"k:{\"name\":\"VAR_3\"}":{"f:name":{},"f:valueFrom":{"f:secretKeyRef":{"f:key":{},"f:name":{},".":{}},".":{}},".":{}},".":{}},"f:image":{},"f:imagePullPolicy":{},"f:name":{},"f:resources":{"f:requests":{"f:cpu":{},".":{}},".":{}},"f:terminationMessagePath":{},"f:terminationMessagePolicy":{},"f:volumeMounts":{"k:{\"mountPath\":\"/var/run/secrets/kubernetes.io/serviceaccount\"}":{"f:mountPath":{},"f:name":{},"f:readOnly":{},".":{}},".":{}},".":{}},".":{}},"f:dnsPolicy":{},"f:nodeName":{},"f:priority":{},"f:restartPolicy":{},"f:schedulerName":{},"f:securityContext":{},"f:serviceAccount":{},"f:serviceAccountName":{},"f:terminationGracePeriodSeconds":{},"f:tolerations":{},"f:volumes":{},".":{}},"f:status":{"f:conditions":{"k:{\"type\":\"ContainersReady\"}":{"f:lastProbeTime":{},"f:lastTransitionTime":{},"f:status":{},"f:type":{},".":{}},"k:{\"type\":\"Initialized\"}":{"f:lastProbeTime":{},"f:lastTransitionTime":{},"f:status":{},"f:type":{},".":{}},"k:{\"type\":\"PodScheduled\"}":{"f:lastProbeTime":{},"f:lastTransitionTime":{},"f:status":{},"f:type":{},".":{}},"k:{\"type\":\"Ready\"}":{"f:lastProbeTime":{},"f:lastTransitionTime":{},"f:status":{},"f:type":{},".":{}},".":{}},"f:containerStatuses":{},"f:hostIP":{},"f:phase":{},"f:podIP":{},"f:qosClass":{},"f:startTime":{},".":{}}}
+```
+
+| Total bytes | Strings | Integers | Control [“.f:k:v{\:},] |
+|---|---|---|---|
+| 1968 | 943 | 0 | 1025 |
+
+
+###### With Improvement 1
+
+```
+Field set:
+[0,"apiVersion",0,"kind",8,"metadata",[8,"labels",[0,"app",0,"plugin1",0,"plugin2",0,"plugin3",0,"plugin4"],0,"name",0,"namespace",8,"ownerReferences",[11,{"uid":"0a9d2b9e-779e-11e7-b422-42010a8001be"},[0,"apiVersion",0,"blockOwnerDeletion",0,"controller",0,"kind",0,"name",0,"uid"]]],8,"spec",[8,"containers",[11,{"name":"some-name"},[0,"args",8,"env",[11,{"name":"VAR_1"},[0,"name",8,"valueFrom",[8,"secretKeyRef",[0,"key",0,"name"]]],11,{"name":"VAR_2"},[0,"name",8,"valueFrom",[8,"secretKeyRef",[0,"key",0,"name"]]],11,{"name":"VAR_3"},[0,"name",8,"valueFrom",[8,"secretKeyRef",[0,"key",0,"name"]]]],0,"image",0,"imagePullPolicy",0,"name",8,"resources",[8,"requests",[0,"cpu"]],0,"terminationMessagePath",0,"terminationMessagePolicy",8,"volumeMounts",[11,{"mountPath":"/var/run/secrets/kubernetes.io/serviceaccount"},[0,"mountPath",0,"name",0,"readOnly"]]]],0,"dnsPolicy",0,"nodeName",0,"priority",0,"restartPolicy",0,"schedulerName",0,"securityContext",0,"serviceAccount",0,"serviceAccountName",0,"terminationGracePeriodSeconds",0,"tolerations",0,"volumes"],8,"status",[8,"conditions",[11,{"type":"ContainersReady"},[0,"lastProbeTime",0,"lastTransitionTime",0,"status",0,"type"],11,{"type":"Initialized"},[0,"lastProbeTime",0,"lastTransitionTime",0,"status",0,"type"],11,{"type":"PodScheduled"},[0,"lastProbeTime",0,"lastTransitionTime",0,"status",0,"type"],11,{"type":"Ready"},[0,"lastProbeTime",0,"lastTransitionTime",0,"status",0,"type"]],0,"containerStatuses",0,"hostIP",0,"phase",0,"podIP",0,"qosClass",0,"startTime"]]
+```
+
+| Total bytes | Strings | Integers | Control [“.f:k:v{\:},] |
+|---|---|---|---|
+| 1528 | 943 | 104 | 481 |
+
+###### With Improvement 1 and 2
+(string table just in order of appearance)
+
+```
+Field set:
+[1,0,!0,0,!1,8,!2,[8,!3,[0,"app",0,"plugin1",0,"plugin2",0,"plugin3",0,"plugin4"],0,!4,0,!5,8,!6,[11,{!7:"0a9d2b9e-779e-11e7-b422-42010a8001be"},[0,!0,0,!8,0,!9,0,!1,0,!4,0,!7]]],8,!A,[8,!B,[11,{!4:"some-name"},[0,!C,8,!D,[11,{!4:"VAR_1"},[0,!4,8,!E,[8,!F,[0,!G,0,!4]]],11,{!4:"VAR_2"},[0,!4,8,!E,[8,!F,[0,!G,0,!4]]],11,{!4:"VAR_3"},[0,!4,8,!E,[8,!F,[0,!G,0,!4]]]],0,!H,0,!I,0,!4,8,!J,[8,!K,[0,!L]],0,!M,0,!N,8,!O,[11,{!P:!s},[0,!Q,0,!4,0,!R]]]],0,!S,0,!T,0,!U,0,!V,0,!W,0,!X,0,!Y,0,!Z,0,!a,0,!b,0,!c],8,!d,[8,!e,[11,{!f:!o},[0,!g,0,!h,0,!d,0,!f],11,{!f:!p},[0,!g,0,!h,0,!d,0,!f],11,[!f,!q},[0,!g,0,!h,0,!d,0,!f],11,{!f:!r},[0,!g,0,!h,0,!d,0,!f]],0,!i,0,!j,0,!k,0,!l,0,!m,0,!n]]
+
+Example static string table (versioned):
+{1:[apiVersion,kind,metadata,labels,name,namespace,ownerReferences,uid,blockOwnerDeletion,controller,spec,containers,args,env,valueFrom,secretKeyRef,key,image,imagePullPolicy,resources,requests,cpu,terminationMessagePath,terminationMessagePolicy,volumeMounts,mountPath,readOnly,dnsPolicy,nodeName,priority,restartPolicy,schedulerName,securityContext,serviceAccount,serviceAccountName,terminationGracePeriodSeconds,tolerations,volumes,status,conditions,type,lastProbeTime,lastTransitionTime,containerStatuses,hostIP,phase,podIP,qosClass,startTime,ContainersReady,Initialized,PodScheduled,Ready,/var/run/secrets/kubernetes.io/serviceaccount]}
+```
+
+| Total bytes | Strings | Integers | Control [“.f:k:v{\:},] |
+|---|---|---|---|
+| 678 | \~ | \~ | \~ |
+
+###### With Improvement 1 and 3
+(binary format approximated by compressing into base 64 binary using gzip)
+
+```
+Field set:
+H4sIAAAAAAAA/6xUTW/bMAz9Lzo7i50WaNpb0WFDMXQN0qKXwhhoiW2EyJJLStmyYf990Edcr9tOy42iHx8fnyg/1pWAQT8gsXZWVHUlttoqUS0r0aMHBR5E9bishIEODYsqVwwJOpjwrG0ziReT+GQSn4o2Hiz0KA4BDyAxdXJfLdIan5DQSoxNmqb6IYJW4kLUcK4W3TnOzs7OcdY0eDbrTheL2emibmpY1nXTofhZ/WWSzji5vY3c79GgP6Sls56cMUiTeafiYt+2baMyHlDm+WMVaIs0ykv4C8Gux1mKiwh65jQV2t0b6MPl+ktTYLnbshI7MAE/kOtzH0ZJ6D/hfo1P2e0t7l/1RV1vKRfHpzz5b8p037qH5+xpilbBmJUzWk6gkZyQXaB88+n4EpB9WTY5BJHZPFKvLcSLvEHmSAh+I/7xqfSJ2p0JPd64YP14eX08pfILMd8BzSnYeZ6K59vQIVn0yO+0mzPSTksEKWNNMea1/rfVIQR1a81+dEBZnk7sFH4+YAfSjrTfl0L2QH6CZblBFQzSWMAoQyy4ctbjN19ySdxlEfdnaqyeWPSRQOIKSTt1h9JZxRnhDFIC5HP2jUV+CR584PEtKF1w2U6/H+LqXI2PZI2g9sUrA+xX5Dq810VLzNwTWE4sY/rQI2qJhGUvC/m11V6D0d9RHZd45dRdMfvIzMdxoT38tZK1d+kzZsDGsb9e5XXaAJfFcqrkXhxfGWA+8JJPXdr2VwAAAP//Dee47/gFAAA=
+```
+
+| Total bytes | Strings | Integers | Control [“.f:k:v{\:},] |
+|---|---|---|---|
+| 768 in base64 | \~ | \~ | \~ |
+| 575 in raw bytes | \~ | \~ | \~ |
+
+###### With Improvement 1, 2, and 3
+(string table just in order of appearance, binary format approximated by compressing into base 64 binary using gzip)
+
+```
+Field set:
+H4sIAAAAAAAA/5SQyU7DMBCGn8U+TyTbMWS5lX1fCpQlslBCnFJo0kDFCfHu6HccyAWqXj6NPL++GU8mSRATgKSYmKIsJhZSJojnbctJEG/nH9NZIwe1GtThoNbcwKSBDeg2KZOSPlmUcpEnpSoSG0RRYgMpbRQUWqlAKyFFHgshC8u/MLhbJwaSbrHeGRljoB25Lbe8XKd8uaht0OR1b9hGaue3PxmNH6XvafR2nWHPPew7P9TDuFovHq6Mu9McAIfUB49c8NgFT7rEKXCG5rnf/yJly05++XOJcS+8Aq6BG2AC3AJ3wD3wAORAATy5E5ZusvUjqpQtuhFTRJ6BEqj8L6uUtf8EMlYRe1tleP8j4D4yA16AV2AO1EBjzHcAAAD//7CaT86mAgAA
+
+Example static string table (versioned):
+{1:[apiVersion,kind,metadata,labels,name,namespace,ownerReferences,uid,blockOwnerDeletion,controller,spec,containers,args,env,valueFrom,secretKeyRef,key,image,imagePullPolicy,resources,requests,cpu,terminationMessagePath,terminationMessagePolicy,volumeMounts,mountPath,readOnly,dnsPolicy,nodeName,priority,restartPolicy,schedulerName,securityContext,serviceAccount,serviceAccountName,terminationGracePeriodSeconds,tolerations,volumes,status,conditions,type,lastProbeTime,lastTransitionTime,containerStatuses,hostIP,phase,podIP,qosClass,startTime,ContainersReady,Initialized,PodScheduled,Ready,/var/run/secrets/kubernetes.io/serviceaccount]}
+```
+
+| Total bytes | Strings | Integers | Control [“.f:k:v{\:},] |
+|---|---|---|---|
+| 400 in base64 | \~ | \~ | \~ |
+| 300 in raw bytes | \~ | \~ | \~ |
 
 ### Risks and Mitigations
 
