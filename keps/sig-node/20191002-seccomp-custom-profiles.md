@@ -11,7 +11,7 @@ approvers:
   - "@tallclair"
 editor: TBD
 creation-date: 2019-10-02
-last-updated: 2019-10-15
+last-updated: 2019-10-27
 status: provisional
 see-also:
   - "https://github.com/kubernetes/community/blob/master/contributors/design-proposals/node/seccomp.md"
@@ -39,10 +39,15 @@ see-also:
     - [Story 2](#story-2)
     - [Story 3](#story-3)
 - [Design Details](#design-details)
+  - [No persistence to disk](#no-persistence-to-disk)
+  - [Feature Gate](#feature-gate)
   - [Test Plan](#test-plan)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
   - [Graduation Criteria](#graduation-criteria)
+      - [Alpha](#alpha)
+      - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
+      - [Beta -&gt; GA Graduation](#beta---ga-graduation)
 - [Implementation History](#implementation-history)
 - [Alternatives](#alternatives)
 - [References](#references)
@@ -120,7 +125,8 @@ return []dockerOpt{{"seccomp", string(jsonSeccomp), seccompProfileName}}, nil
 ```
 
 The new config profiles would be mapped to an additional Kubernetes profile type, which is contingent on the GA API changes proposed in [#1148](https://github.com/kubernetes/enhancements/pull/1148):
-```
+
+```golang
 const (
     SeccompProfileUnconfined SeccompProfileType = "Unconfined"
     SeccompProfileRuntime    SeccompProfileType = "Runtime"
@@ -131,7 +137,7 @@ const (
 
 User-defined Seccomp profiles would be created this way:
 
-```
+```yaml
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -154,7 +160,7 @@ This enables users to verify whether the applied profile is the exact same as th
 
 This will require changes to `ContainerStatus`:
 
- ```
+ ```golang
  // ContainerStatus represents the status of a container.
 type ContainerStatus struct {
 	...
@@ -178,13 +184,16 @@ A similar approach would also be beneficial to AppArmor profiles.
 Seccomp profiles are applied at container creation time, therefore updating an existing user-defined profile will not cause any changes to the running containers that are using it. 
 They will need to be restarted in order for the changes to take effect, which users will have to do manually. 
 
+However, the recommended approach for making profile changes is to create a new `ConfigMap` with the desired profile and then trigger a rolling-update, by changing the configmap the pods are pointing to. The old `ConfigMap` can be deleted once there are no running pods referring to it.
+
 
 #### Starting containers with non-existent profile
 
-An error message should be returned stating the profile could not be found. Containers targeted for seccomp profiles should not be able to start if their profiles are deleted. 
+When the Kubelet is creating a container using this seccomp profile type, it must validate that the container is referring to a `ConfigMap` that exists inside the same namespace. That `ConfigMap` should contain a `profile.json` file inside of it with a valid json value. If either of those evaluations is false, the container should not be created and an error should be logged instead. 
 
-If a running container has its policy deleted, nothing will happen until it has to be restarted, which in this case would lead to a failure as stated above.
+Once the container is running, the `ConfigMap` holding the profile will not be re-evaluated. If that `ConfigMap` is deleted at this point, nothing will happen until the container is restarted, in which case the same rules as above will apply, leading to the container failing to start.
 
+The Kubelet will only validate whether the contents of the `profile.json` file is a valid `json` file. The container runtime will be responsible for validating it further. The Kubelet will not validate or use any other files apart from `profile.json`.
 
 
 ### User Stories
@@ -204,13 +213,40 @@ As a user, I want to be able to determine whether custom seccomp profiles have b
 
 ## Design Details
 
+### No persistence to disk
+
+The profiles will not persisted to disk. The Kubelet will fetch the contents from `ConfigMap` and then returned to be later pass on to the OCI, as per code below:
+
+```golang
+configMapName := strings.TrimPrefix(seccompProfile, "configmap/")
+seccompCfg, err := apiclient.GetConfigMapWithRetry(client, podNamespace, configMapName)
+...
+profileData, ok := seccompCfg.Data[SeccompConfigMapFileName]
+if !ok {
+  ...
+}
+if !isValidJson(profileData){
+  ...
+}
+
+return []dockerOpt{{"seccomp", profileData, ""}}, nil
+```
+
+### Feature Gate
+
+A new feature gate will be created to enable the use of Seccomp ConfigMaps, as per below:
+
+`--feature-gate=SeccompConfigMaps=true`
+
+The proposed default value for this feature gate will change through the [Graduation Process](#graduation-criteria).
+
 ### Test Plan
 
 Seccomp already has E2E tests, but the tests are guarded by the [Feature:Seccomp] tag and not run in the standard test suites.
 
 Prior to [being marked GA](20190717-seccomp-ga.md), the feature tag will be removed from the seccomp tests.
 
-Test coverage for configmap profiles will be added and be tested in isolation. 
+Unit tests will be created for both kubelet and API server to account for configmap profiles, taking into account scenarios mentioned at the [usage scenarios](#usage-scenarios) section.
 
 E2E tests will be required to ensure profile changes won't impact running containers.
 
@@ -220,18 +256,44 @@ No upgrade changes required - both localhost and configmap profiles will be supp
 
 ### Version Skew Strategy
 
-The new configmap based profiles will only be supported from this version on. Users will need to ensure that pods using the new feature won't be scheduled on nodes running older Kubelet versions.
+Error handling for users trying to use the new `ConfigMap` based profiles on older versions of either Kubelet or API server is already implemented. Messages will differ depending on what component does not support the new feature:
+
+- **Not Supported at API Server** (i.e. before implementation of this proposal):
+Pod creation will fail with the error message `must be a valid seccomp profile`. 
+
+- **Supported at API Server but not at Kubelet** (i.e. Kubelet running on older version):
+Pod creation will fail with the error message `unknown seccomp profile option: configmap/config-name`. 
+
+The error message above may change once seccomp [becomes GA](20190717-seccomp-ga.md).
 
 ### Graduation Criteria
 
-- API changes to map seccomp profiles to an additional `Kubernetes` type.
-- E2E tests
+
+##### Alpha
+
+- API changes to map Built-in profiles to an additional `Kubernetes` type.
+- Feature gate is disabled by default (i.e. `--feature-gate=SeccompConfigMaps=false`).
+- Provide alpha level documentation.
+- Unit tests.
+
+##### Alpha -> Beta Graduation
+
+- Feature gate is enabled by default (i.e. `--feature-gate=SeccompConfigMaps=true`).
+- Provide beta level documentation.
+- E2E tests.
+
+##### Beta -> GA Graduation
+
+- Provide comprehensive documentation.
+- Feature gate is removed.
+- Potential changes based on community feedback.
 
 
 ## Implementation History
 - 2019-10-02: Initial KEP
 - 2019-10-15: Minor changes
 - 2019-10-17: Add alternative to use CRD instead of ConfigMap
+- 2019-10-27: Add improvements to Design, Version Skew Strategy and Graduation
 
 
 ## Alternatives
@@ -244,7 +306,7 @@ The new configmap based profiles will only be supported from this version on. Us
 - Users could potentially perform rolling updates via Deployment, when the file is updated.
 
 
-**Start deprecation process for `localhost/<path>`.** The new `ConfigMapSeccompProfile` will better support custom profiles. Starting the deprecation process would signal users what the end goal is. However, this can be started once the new approach GA's.
+**Start deprecation process for `localhost/<path>`.** The proposed changes will better support custom profiles. Starting the deprecation process of the existing method would signal users what the end goal is. However, this can be started once the new approach GA's.
 
 
 **Downstream seccomp support awareness.** Validation could be added to assert whether the Seccomp Profile could be applied by the downstream dependencies on a _per- node_ basis, and lead to a list of available profiles for each node. This would benefit clusters with heterogeneus nodes. It would also benefit the usage of the current `localhost/<path>` profile, which an administrator has no way to tell which nodes have them and which ones don't. 
