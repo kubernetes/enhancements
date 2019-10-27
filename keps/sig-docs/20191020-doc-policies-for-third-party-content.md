@@ -1,6 +1,7 @@
 ---
 title: doc-policies-for-third-party-content
 authors:
+  - "@aimeeu"
   - "@jimangel"
   - "@sftim"
   - "@zacharysarah"
