@@ -437,12 +437,12 @@ immutability of fields.
    
 ### Graduation Criteria
 
-Because of the very limited risk of the additional immutability check and our
-experience with defaulting getting no additional soak time by the community
-we propose to start directly as beta.
+Because we must be able to downgrade from 1.17 to 1.16 without losing data, immutability must be introduced as alpha first.
 
 For beta:
 
+- API fields roundtrip through the previous version during downgrade 
+- normalization KEP (or something comparable) is merged.
 - performance does not suffer for CRDs **which do not use** immutability vendor extensions.
 
 For GA:
