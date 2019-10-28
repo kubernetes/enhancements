@@ -53,6 +53,7 @@ _Reviewers:_
       - [Computing Preferred Affinity](#computing-preferred-affinity)
       - [New Interfaces](#new-interfaces)
     - [Feature Gate and Kubelet Flags](#feature-gate-and-kubelet-flags)
+    - [New Node Label](#new-node-label)
     - [Changes to Existing Components](#changes-to-existing-components)
 - [Graduation Criteria](#graduation-criteria)
   - [Phase 1: Alpha (v1.16) [COMPLETED]](#phase-1-alpha-v116-completed)
@@ -312,7 +313,6 @@ _Figure: Topology Manager components._
 ![topology-manager-instantiation](https://user-images.githubusercontent.com/379372/47447526-945a7580-d772-11e8-9761-5213d745e852.png)
 
 _Figure: Topology Manager instantiation and inclusion in pod admit lifecycle._
- 
 ### Feature Gate and Kubelet Flags
  
 A new feature gate will be added to enable the Topology Manager feature. This feature gate will be enabled in Kubelet, and will be disabled by default in the Alpha release.  
@@ -325,6 +325,40 @@ A new feature gate will be added to enable the Topology Manager feature. This fe
  * Proposed Policy Flag:  
  `--topology-manager-policy=none|best-effort|restricted|single-numa-node`  
  
+### New Node Label
+
+A new built-in node label will be added to support topology-aware pod scheduling.
+It can be used to schedule topology-sensitive Pod to particular Node(s),
+which has `restricted` or `single-numa-node` policy, by `nodeSelector`.
+
+The label will expose the given policy flag of the node like existing node labels
+such as `kubernetes.io/arch`, `kubernetes.io/os`, `kubernetes.io/hostname`.
+
+ * Proposed Node Label:  
+  `beta.kubernetes.io/topology=none|best-effort|restricted|single-numa-node`
+
+The following is an example pod that requests three GPUs.
+This pod will get scheduled on the node that has 3 available GPUs and
+`beta.kubernetes.io/topology` label with the value `restricted`.
+The value `restricted` implies that the node is configured with
+`restricted` policy for the Topology Manager.
+
+```
+apiVersion: v1
+kind: Pod
+metadata:
+  name: cuda-ml-test
+spec:
+  containers:
+    - name: cuda-ml-test
+      image: "k8s.gcr.io/cuda-vector-add:v0.1"
+      resources:
+        limits:
+          nvidia.com/gpu: 3 # requesting 3 GPUs
+  nodeSelector:
+    beta.kubernetes.io/topology: restricted # scheduling pod to the node which has restricted policy
+```
+
 ### Changes to Existing Components
 
 1. Kubelet consults Topology Manager for pod admission (discussed above.)
@@ -411,6 +445,7 @@ _Figure: Topology Manager fetches affinity from hint providers._
 
 * Support hugepages alignment.
 * User feedback.
+* Support node label.
 * *TBD*
 
 # Challenges
