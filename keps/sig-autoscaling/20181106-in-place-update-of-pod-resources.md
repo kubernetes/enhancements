@@ -23,8 +23,8 @@ approvers:
   - "@mwielgus"
 editor: TBD
 creation-date: 2018-11-06
-last-updated: 2018-11-06
-status: provisional
+last-updated: 2019-10-25
+status: implementable
 see-also:
 replaces:
 superseded-by:
@@ -168,6 +168,12 @@ Kubelet calls UpdateContainerResources CRI API which currently takes
 but not for Windows. This parameter changes to *runtimeapi.ContainerResources*,
 that is runtime agnostic, and will contain platform-specific information.
 
+Additionally, GetContainerResources CRI API is introduced that allows Kubelet
+to query currently configured CPU and memory limits for a container.
+
+These CRI changes are a separate effort that does not affect the design
+proposed in this KEP.
+
 ### Kubelet and API Server Interaction
 
 When a new Pod is created, Scheduler is responsible for selecting a suitable
@@ -284,6 +290,16 @@ updates resource limit for the Pod and its Containers in the following manner:
 In all the above cases, Kubelet applies Container resource limit decreases
 before applying limit increases.
 
+#### Container resource limit update failure handling
+
+If multiple Containers in a Pod are being updated, and UpdateContainerResources
+CRI API fails for any of the containers, Kubelet will backoff and retry at a
+later time. Kubelet does not attempt to update limits for containers that are
+lined up for update after the failing container. This ensures that sum of the
+container limits does not exceed Pod-level cgroup limit at any point. Once all
+the container limits have been successfully updated, Kubelet updates the Pod's
+Status.ContainerStatuses[i].Resources to match the desired limit values.
+
 #### Notes
 
 * If CPU Manager policy for a Node is set to 'static', then only integral
@@ -374,3 +390,4 @@ TODO
 - 2019-01-18 - implementation proposal extended
 - 2019-03-07 - changes to flow control, updates per review feedback
 - 2019-08-29 - updated design proposal
+- 2019-10-25 - update key open items and move KEP to implementable
