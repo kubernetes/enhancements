@@ -3,6 +3,7 @@ title: Immutable Fields
 authors:
   - "@apelisse"
   - "@sttts"
+  - "@liggitt"
 owning-sig: sig-api-machinery
 participating-sigs:
   - sig-api-machinery
@@ -64,14 +65,14 @@ with the unreasonable development overhead of a webhook.
 - extend the CRD API to be able to specify immutability for fields.
 - publish the immutability field of CRDs via OpenAPI as vendor extension.
 - verify immutability on CR update and patch requests.
-- propose a source code marker to be consumed by kubebuilder and openapi-gen.
+- propose a source code marker to be consumed by kubebuilder (for CRDs) and openapi-gen (for native types).
 - the semantics of immutability must be driven by:
   - we do not break/change old CRD persistence semantics.
   - the user-observed equality used for immutability checks must match the equality on
     persisted objects. I.e. if `StorageRoundtrip(object)` is the object returned by a
     create or update call, then we want that `StorageRoundtrip(a) == StorageRoundtrip(b)`
-    is the equality used for comparing `a` and `b` **only modulo the order in `x-kubernetes-list-type: set` arrays**. If that check fails, a request
-    is rejected because of immutability conflict.
+    is the equality used for comparing `a` and `b` **only modulo the order in `x-kubernetes-list-type: set` arrays**. 
+    If that check fails, a request is rejected because of immutability conflict.
 - the mechanism must extend to
   - the addition of protobuf or other encodings which unify values like empty, null and undefined.
   - the use for existing native types in order to replace complex validation code with a simple declarative marker on the types.
@@ -91,242 +92,324 @@ with the unreasonable development overhead of a webhook.
 
 We propose
 
-1. adding boolean vendor extensions to CRD OpenAPI schemas named `x-kubernetes-immutable` and `x-kubernetes-immutable-keys` with `true` as the only valid value.
-2. do **strict deep-equal** comparison of those fields marked as immutable during
-   update validation in the request pipeline, with these exceptions:
-   - for fields with `x-kubernetes-immutable-keys: true` only the keys of the map or array (specified via `x-kubernetes-list-map-keys`) are compared.
-   - for fields with `x-kubernetes-list-type: set` the order is ignored.
+1. adding two optional vendor extensions to CRD OpenAPI schemas:
+ 
+   1. `x-kubernetes-mutability: Immutable | AddOnly | RemoveOnly` and
+   2. `x-kubernetes-key-mutability: Immutable | AddOnly | RemoveOnly`.
    
-   If that comparison fails, the request is rejected as 400 "Bad Request".
+   The second is restricted to `Immutable` *if* the schema is of type `object` and `properties` is set, the first is restricted otherwise.
+   
+   At the root-level and inside `.metadata` of an object, `x-kubernetes-mutability` and `x-kubernetes-key-mutability` are forbidden.
+   
+   Both extensions can only be set in `v1` CRDs on creation, but updated in `v1beta1` if preexisting.
+   
+2. to use **strict deep-equal** comparison of those fields marked as immutable during
+   update validation in the request pipeline, with the only exception outlined below in the detailed semantics of the different values of the two vendor extensions.
    
 We create another KEP to define custom normalization steps for CRs done during 
 deserialization from etcd and when receiving a request (just after pruning and defaulting).
 
-### OpenAPI extension `x-kubernetes-immutable`
+### Recursive Scope
 
-The `x-kubernetes-immutable` vendor extension is set in the spec of fields,
-arrays and objects. It recursively applies to the whole subtree:
+If the `x-kubernetes-mutability` vendor extension is set (to `Immutable`, `AddOnly`, `RemoveOnly`), `x-kubernetes-mutability: Immutable` is implicitly applied recursively to all subschemas.
+
+The `x-kubernetes-key-mutability` vendor extension does not apply recursively.
+
+### Semantics of `x-kubernetes-mutability`
+
+#### Immutable list, arbitrary list type
+
+The whole list is immutable in the strict sense of `reflect.DeepEqual`.
+
+#### Immutable map / object, arbitrary map type
+
+The whole map is immutable in the strict sense of `reflect.DeepEqual`.
+
+#### Mutable object, immutable fields
+
+The value of a field is immutable, and it cannot be added (Immutable, RemoveOnly) or removed (Immutable, AddOnly).
+
+*Example 1 - Immutable*:
 
 ```yaml
 properties:
   foo:
-    type: array
+    type: string
+    x-kubernetes-mutability: Immutable | AddOnly | RemoveOnly
+```
+
+Allowed for AddOnly, disallowed otherwise:
+- `{}` → `{foo:"a"}`
+
+Allowed for RemoveOnly, disallowed otherwise:
+- `{foo:"a"}` → `{}`
+
+Disallowed:
+- `{foo:"a"}` →	`{foo:"b"}`
+
+#### Mutable array, immutable items, list type list
+
+The items with their respective index in the array are immutable. Hence, appending and removal at the end of the array are allowed, the change of an item or the change of the order are not.
+
+*Example 2*:
+
+```yaml
+properties:
+  foo:
     items:
-      x-kubernetes-immutable: true
+      type: object
+      properties: ...
+      x-kubernetes-mutability: Immutable
+```
+
+Allowed:
+- `{}` → `{foo:...}`
+- `{foo:...}` → `{}`
+- `{foo:[a]}` → `{foo:[a,b]}` (value of key 0 is unchanged)
+- `{foo:[a]}` →	`{foo:[]}`
+
+Disallowed:
+- `{foo:[a]}` → `{foo:[b]}`
+- `{foo:[a]}` → `{foo:[b,a]}` (value of key 0 is changed)
+
+#### Mutable array, immutable items, list type map
+
+The key-value pairs in the array are immutable, set set of keys is not. Hence, addition and removal of key-values pairs
+
+*Example 3*:
+
+```yaml
+properties:
+  foo:
+    x-kubernetes-list-type: map
+    x-kubernetes-list-map-keys: ["k"]
+    items:
+      type: object
+      properties: ...
+      x-kubernetes-mutability: Immutable
+```
+
+Allowed:
+- `{}` → `{foo:...}`
+- `{foo:...}` → `{}`
+- `{foo:[{k:a}]}` → `{foo:[{k:a},{k:b}]}` (value of key a is unchanged)
+- `{foo:[{k:a}]}` → `{foo:[]}`
+- `{foo:[{k:a}]}` → `{foo:[{k:b}]}`
+- `{foo:[{k:a},{k:b}]}`	→ `{foo:[{k:b},{k:a}]}`	(values of key a and b unchanged)
+
+Disallowed:
+- `{foo:[{k:a,v:1}]}` → `{foo:[{k:a,v:2}]}` (value of key a is changed)
+
+**TODO:** removal+addition = change. The former is allowed, the latter disallowed. 
+
+#### Mutable array, immutable items, list type set
+
+Sets are maps with the whole value as key. Hence, addition and removed of any value in the set is allowed.
+
+*Example 4*:
+
+```yaml
+properties:
+  foo:
+    x-kubernetes-list-type: set
+    items:
+      type: string
+      x-kubernetes-mutability: Immutable
+```
+
+Allowed:
+- `{}` → `{foo:...}`
+- `{foo:...}` → `{}`
+- `{foo:[a]}` → `{foo:[a,b]}` (value of key a is unchanged)
+- `{foo:[a]}` → `{foo:[]}` (key a is removed)
+- `{foo:[a]}` → `{foo:[b]}` (key a is removed, key b is added)
+- `{foo:[a]}` → `{foo:[b,a]}` (value of key a is unchanged, key b is added)
+
+#### Mutable map, immutable values, map type map
+
+Equivalently to the list type map, removal and addition of key-value pairs are allowed, while direct value change is not.
+
+*Example 5*:
+
+```yaml
+properties:
+  foo:
+    x-kubernetes-list-type: map
+    additionalProperties:
+      type: string
+      x-kubernetes-mutability: Immutable
+```
+
+Allowed:
+- `{}` → `{foo:...}`
+- `{foo:...}` → `{}`
+- `{foo:{a:"1"}}` → `{foo:{a:"1", b:"2"}}` (value of key a is unchanged)
+- `{foo:{a:"1"}}` → `{foo:{}}`
+- `{foo:{a:"1"}}` → `{foo:{b:"1"}}`
+
+Disallowed:
+
+- `{foo:{a:"1"}` → `{foo:{a:"2"}}` (value of key a is changed)
+
+#### Mutable map, immutable values, map type atomic
+
+Same as map type map (the normal map case).
+
+### Semantics of `x-kubernetes-key-mutability`
+
+The vendor extension is `x-kubernetes-key-mutability` only applies to the keys, not the values of maps and arrays.
+
+#### Immutable/AddOnly/RemoveOnly object keys, mutable values
+
+*Example 6*:
+
+```yaml
+type: object
+x-kubernetes-key-mutability: Immutable | AddOnly | RemoveOnly
+properties:
+  foo:
+    type: string
+```
+
+Because object `properties` in Kubernetes-like APIs should not be considered as a known set, but each field individually we disallow the use of `x-kubernetes-key-mutability` in this case. CRD validation will reject it. 
+
+#### Immutable array keys, mutable values, list type list / atomic
+
+The set of indices is immutable/add-only/remove-only. Hence, appending (Immutable, RemoveOnly) or shrinking (Immutable, AddOnly) is disallowed, but changes that do not change the length are allowed.
+
+*Example 7*:
+
+```yaml
+properties:
+  foo:
+    x-kubernetes-list-type: list | atomic
+    x-kubernetes-key-mutability: Immutable | AddOnly | RemoveOnly
+    items:
+      type: object
+      properties: ...
+```
+
+Allowed:
+- `{}` → `{foo:[]}`	(all keys are unchanged)
+- `{foo:[]}` → `{}`	(all keys are unchanged)
+- `{foo:[a]}` → `{foo:[b]}` (key 0 still exists)
+
+Allowed with AddOnly, disallowed otherwise:
+- `{}` → `{foo:[a]}` (key 0 is added)
+- `{foo:[a]}` → `{foo:[a,b]}` (key 1 is added)
+- `{foo:[a]}` → `{foo:[b,a]}` (key 1 is added)
+
+Allowed with RemoveOnly, disabled otherwise:
+- `{foo:[a]}` → `{}` (key 0 is removed)
+- `{foo:[a]}` → `{foo:[]}` (key 0 is removed)
+
+#### Immutable array keys, mutable values, list type map
+
+The set of keys is immutable/add-only/remove-only. Hence, non-key values can be changed. New key-values cannot be added (Immutable, RemoveOnly) and old key-values cannot be removed (Immutable, AddOnly).
+
+*Example 8*:
+
+```yaml
+properties:
+  foo:
+    x-kubernetes-list-type: map
+    x-kubernetes-list-map-keys: ["k"]
+    x-kubernetes-key-mutability: Immutable | AddOnly | RemoveOnly
+    items:
+      type: object
+      properties:
+        k:
+          type: string
+```
+       
+Allowed:
+- `{}` → `{foo:[]}` (all keys are unchanged)
+- `{foo:[]}` → `{}` (all keys are unchanged)
+- `{foo:[{k:a,v:1}]}` → `{foo:[{k:a,v:2}]}` (all keys are unchanged)
+- `{foo:[{k:a},{k:b}]}` → `{foo:[{k:b},{k:a}]}` (all keys are unchanged)
+
+Allowed for AddOnly, disallowed otherwise:
+- `{}` → `{foo:[{k:a}]}` (key a is added)
+- `{foo:[{k:a}]}` → `{foo:[{k:a},{k:b}]}` (key b is added)
+
+Allowed for RemoveOnly, disallowed otherwise:
+- `{foo:[{k:a}]}` → `{}` (key a is removed)
+- `{foo:[{k:a}]}` → `{foo:[]}` (key a is removed)
+
+Disallow:
+- `{foo:[{k:a}]}` → `{foo:[{k:b}]}` (key a is removed, key b is added)
+
+#### Immutable array keys, mutable value, list type set
+
+The whole items are the keys. Hence, new items cannot be added (Immutable, RemoveOnly), old items cannot be removed (Immutable, AddOnly), but the order can.
+
+Note: this is different from a set with `x-kubernetes-mutability: Immutable`. The latter does not allow order changes.
+
+*Example 9*: 
+
+```yaml
+properties:
+  foo:
+    x-kubernetes-list-type: set
+    x-kubernetes-key-mutability: Immutable | AddOnly | RemoveOnly
+    items:
       type: string
 ```
 
-means that the `foo` array itself is mutable, but the items are not. This means that
-items can be deleted and added, but at each existing index the string values are
-immutable.
+Allowed:
+- `{}` → `{foo: []}` (all keys are unchanged)
+- `{foo: []}` → `{}` (all keys are unchanged)
+- `{foo: [a,b]}` → `{foo: [b,a]}` (all keys are unchanged)
+
+Allowed for AddOnly, disallowed otherwise:
+- `{foo:[a]}` → `{foo:[a,b]}` (key a is unchanged, key b is added)
+- `{foo:[a]}` → `{foo:[b,a]}` (key a is unchanged, key b is added)
+
+Disallowed for RemoveOnly, disallowed otherwise:
+- `{foo:[a]}` → `{foo:[]}` (key a is removed)
+
+Disallowed:
+- `{foo:[a]}` → `{foo:[b]}` (key a is removed, key b is added)
+
+#### Immutable map keys, mutable values, map type map / atomic
+
+Equivalently to the list type map, the set of keys is immutable|add-only|remove-only. Hence, values can be changed. New key-values cannot be added (Immutable, RemoveOnly) and old key-values cannot be removed (Immutable, AddOnly).
+
+*Example 10*:
 
 ```yaml
 properties:
   foo:
-    type: object
-    x-kubernetes-immutable: true
+    x-kubernetes-map-type: map | atomic 
+    x-kubernetes-key-mutability: Immutable | AddOnly | RemoveOnly
+    additionalProperties:
+      type: string
 ```
 
-means that the whole `.foo` object is immutable. It cannot be removed or set.
+Allowed:
 
-If one wants to make only field immutable, but allow to delete an existing object
-or set it if unset, the following is used:
+- `{}` → `{foo:{}}`	(keys are unchanged)
+- `{foo:{}}` → `{}`	(keys are unchanged)
+- `{foo:{a:"1"}` → `{foo:{a:"2"}}` (keys are unchanged)
 
-```yaml
-properties:
-  foo:
-    type: object
-    properties:
-      "x":
-        type: string
-        x-kubernetes-immutable: true
-      "y":
-        type: string
-        x-kubernetes-immutable: true
-```
+Allowed for AddOnly, disallowed otherwise:
+- `{}` → `{foo:{a:"1"}}` (key a is added)
+- `{foo:{a:"1"}}` → `{foo:{a:"1", b:"2"}}` (key b is added)
 
-for all fields `x` and `y` of `foo`.
+Allowed for RemoveOnly, disallowed otherwise:
+- `{foo:{a:"1"}}` → `{}` (key a is removed)
 
-```yaml
-properties:
-  foo:
-    type: object
-    x-kubernetes-immutable: true
-    properties:
-      bar:
-        type: object
-        x-kubernetes-immutable: true
-```
-
-can be simplified to 
-
-```yaml
-properties:
-  foo:
-    type: object
-    x-kubernetes-immutable: true
-    properties:
-      bar:
-        type: object
-```
-
-At the root-level and inside `.metadata` of an object, `x-kubernetes-immutable` is forbidden.
-
-### OpenAPI extension `x-kubernetes-immutable-keys`
-
-The topology of arrays is specified via `x-kubernetes-list-type` and `x-kubernetes-list-map-keys`. We currently support the `atomic`, `set` and `map` types. These interact with immutability in the following way:
-
-- **Non-recursive** immutability: For an array or a map, one can not remove or add new items/values, but existing items/values can be modified. 
-
-  - For maps this means that the the keys stay the same, but values might change:
-    ```yaml
-    properties:
-      someMap:
-        type: object
-        x-kubernetes-immutable-keys: true # allowed with additionalProperties
-        additionalProperties:
-          type: string
-    ```
-    with `x-kubernetes-immutable-keys` allowed due to `additionalProperties` and mutually
-    exclusive with `x-kubernetes-immutable` on the same node.
-    
-  - For arrays of list-type `map` (associative lists) we get the same behaviour, but enforce that the map-keys
-    are immutable as well (via CRD validation):
-    
-    ```yaml
-    properties:
-      someArray:
-        type: array
-        x-kubernetes-list-type: map
-        x-kubernetes-list-map-keys: ["name"]
-        x-kubernetes-immutable-keys: true # allowed with `x-kubernetes-list-type: map`
-        items:
-          properties:
-            name:
-              type: string
-              x-kubernetes-immutable: true # enforced
-            x:
-              type: string
-            y:
-              type: integer
-     ```
-     with `x-kubernetes-immutable-keys` allowed due to `x-kubernetes-list-type: map`.
-     
-  In any other context, without the concept of keys, we do not allow `x-kubernetes-immutable-keys` to be set. Especially for `x-kubernetes-list-type: set`, by definition the whole list items behave as keys and therefore `x-kubernetes-immutable: true` and `x-kubernetes-immutable-keys: true` coincide. We choose to only allow `x-kubernetes-immutable: true` in that case.
-  
-- **Allowed addition and deletion**: New/deleted keys in maps are tolerated.
-
-  - For maps, this can be expressed by marking the values immutable,
-    but not the map:
-    ```yaml
-    properties:
-      someMap:
-        type: object
-        additionalProperties:
-          type: string
-          x-kubernetes-immutable: true
-    ```
-  - For arrays an identifier field is required, e.g. `.name`. We support this by reusing `x-kubernetes-list-type: map` and `x-kubernetes-list-map-keys` specifying the keys:
-    ```yaml
-    properties:
-      someArray:
-        type: array
-        x-kubernetes-list-type: map
-        x-kubernetes-list-map-keys: ["name"]
-        items:
-          x-kubernetes-immutable: true
-          properties:
-            name:
-              type: string
-            x:
-              type: string
-            y:
-              type: integer
-    ```
-- **Immutable sets**: For arrays of list-type `set` the equality ignores the order:
-
-    ```yaml
-    properties:
-      someSet:
-        type: array
-        x-kubernetes-list-type: set
-        x-kubernetes-immutable: true
-        items:
-          type: object
-          properties:
-            x:
-              type: string
-            y:
-              type: integer
-    ```
-    such that `{"someSet":[{"x":"abc"},{"x":"def","y":1}]}` and `{"someSet":[{"x":"def","y":1},{"x":"abc"}]}` are considered equally and not mutated.
-    
-- (Possible future extension) **Addition only/Deletion only**: Maps and arrays of list-type `map` and `set` can be addition-only and deletion-only by setting either `x-kubernetes-addition-only: true` or `x-kubernetes-deletion-only: true`, both mutually exclusive with `x-kubernetes-immutable` and `x-kubernetes-immutable-keys`.
-  
-  - For maps:
-    ```yaml
-    properties:
-      someMap:
-        type: object
-        x-kubernetes-addition-only: true # allowed with additionalProperties
-        additionalProperties:
-          type: string
-    ```
-    and similarly for `x-kubernetes-deletion-only: true`.
-      
-  - For arrays of list-type `map` we get the same behaviour, but enforce that the map-keys
-    are immutable as well (via CRD validation):
-      
-    ```yaml
-    properties:
-      someArray:
-        type: array
-        x-kubernetes-list-type: map
-        x-kubernetes-list-map-keys: ["name"]
-        x-kubernetes-addition-only: true # allowed with `x-kubernetes-list-type: map`
-        items:
-          properties:
-            name:
-              type: string
-              x-kubernetes-immutable: true # enforced
-            x:
-              type: string
-            y:
-              type: integer
-    ```
-    and similarly for `x-kubernetes-deletion-only: true`.
-      
-  - For arrays of list-type `set` get:
-  
-    ```yaml
-    properties:
-      someSet:
-        type: array
-        x-kubernetes-list-type: set
-        x-kubernetes-addition-only: true # allowed with `x-kubernetes-list-type: set`
-        items:
-          type: object
-          properties:
-            x:
-              type: string
-            y:
-              type: integer
-    ```
-    and similarly for `x-kubernetes-deletion-only: true`.
-    
-For list type `atomic` we disallow `x-kubernetes-immutable-keys`.
-
-Note: it is planned to add `x-kubernetes-map-type` as the equivalent vendor extensions for map to distinguish between classical and atomic maps with the values `map` and `atomic`. The `map` case is the same as the one without any specified map type, and for atomic maps we disallow `x-kubernetes-immutable-keys` again.
+Disallowed:
+- `{foo:{a:"1"}}` → `{foo:{b:"1"}}` (key a is removed, key b is added)
     
 ### Publishing
 
-The `x-kubernetes-immutable` and `x-kubernetes-immutable-keys` vendor extensions are published via `/openapi/v2` as is.
+The `x-kubernetes-mutability` and `x-kubernetes-key-mutability` vendor extensions are published via `/openapi/v2` as is.
 
 ### Suggested marker syntax
 
 In analogy to `+required`, `+optional` we propose to add a marker to kubebuilder's
-controller-gen named `+immutable`, which covers the whole subtree of the object 
-(compare field-selection section for extension).
+controller-gen named `+immutable` meaning `x-kubernetes-immutability: Immutable` and `+immutable=AddOnly | RemoveOnly` for the other two values:
 
 ```
 // The name can not be changed after creation.
@@ -340,7 +423,7 @@ Name string
 Containers []Containers
 ```
 
-The `x-kubernetes-immutable-keys: true` vendor extension is expressed via `// +immutable=keys` in Golang types:
+The `x-kubernetes-key-mutability` vendor extension is expressed via `// +immutable-keys` for `Immutable` and `// +immutable-keys=AddOnly | RemoveOnly` for the other two values.
 
 ### Future outline sketch: native resources
 
@@ -410,7 +493,7 @@ immutability of fields.
 
 ### Risks and Mitigations
 
-- immutable metadata would break API machinery. We forbid the `x-kubernetes-immutable`
+- immutable metadata would break API machinery. We forbid the `x-kubernetes-mutability` and `x-kubernetes-key-mutability`
   at the root of the object and inside `.metadata`. `kind` and `apiVersion` are
   immutable implicitly. We might publish immutable though for some of these fields.
 
@@ -420,18 +503,18 @@ immutability of fields.
 
 - exhaustive unit tests are added in apiextensions-apiserver for
   - CRD validation
-    - for `x-kubernetes-immutable: true` and `x-kubernetes-immutable-keys: true` at the root and in `metadata`
-    - for `x-kubernetes-immutable-keys: true` for list-type `map` and forbidden otherwise
-    - for `x-kubernetes-immutable: true` on the list-keys of `x-kubernetes-immutable-keys: true` maps.
-    - for `x-kubernetes-immutable: true` and `x-kubernetes-immutable-keys: true` only for v1 CRDs, or during ratcheting updates.
-  - immutability checking with all variants of `x-kubernetes-immutable`, `x-kubernetes-immutable-keys` and `x-kubernetes-list-type`.
+    - for `x-kubernetes-mutability` and `x-kubernetes-key-mutability` at the root and in `metadata`
+    - for `x-kubernetes-key-mutability` forbidden for object with `properties`
+    - for `x-kubernetes-mutability: AddOnly | RemoveOnly` forbidden for objects without `properties` (maps) and arrays.
+    - for `x-kubernetes-mutability` and `x-kubernetes-key-mutability` only for v1 CRDs, or during ratcheting updates.
+  - immutability checking with all variants of `x-kubernetes-mutability`, `x-kubernetes-key-mutability`, and all variations of `x-kubernetes-list-type` and `x-kubernetes-map-type`.
 - integration tests are added for
   - creation, updates, patches and server-side-apply of partially immutable CRs 
-  - interaction of server-side-apply list-types and immutability
+  - interaction of server-side-apply list-types, map-types and immutability
   - OpenAPI publishing of the vendor extensions
   - CRD updates of the immutability extensions and that the new immutability
     schemas are followed.
-  - rejection of `x-kubernetes-immutable: true` and `x-kubernetes-immutable-keys: true` for non-v1 CRDs
+  - rejection of `x-kubernetes-mutability` and `x-kubernetes-key-mutability` for non-v1 CRDs on creation, ratcheting on update.
 - e2e and conformance tests that
   - immutability is followed during updates, patches and server-side-apply. 
    
@@ -439,15 +522,25 @@ immutability of fields.
 
 Because we must be able to downgrade from 1.17 to 1.16 without losing data, immutability must be introduced as alpha first.
 
+For alpha:
+
+- behaviour for all cases is implemented
+- `v1` validation and ratcheting updates for `v1beta1` is implemented.
+- root-level and metadata validation is implemented.
+- restrictions of `x-kubernetes-mutability` and `x-kubernetes-key-mutability` values is implemented.
+- integration tests exist with good coverage. 
+
 For beta:
 
-- API fields roundtrip through the previous version during downgrade 
+- API fields roundtrip through the previous version during downgrade. 
 - normalization KEP (or something comparable) is merged.
 - performance does not suffer for CRDs **which do not use** immutability vendor extensions.
+- unit and integration tests are exhaustive for all list and map types.
 
 For GA:
 
 - performance is benchmarked with an upper bound overhead of 15% on CRDs with schemas.
+- conformance tests are implement.
 
 ## Implementation History
 
@@ -458,7 +551,8 @@ N/A
 - OpenAPI has a notion of `readOnly`. This is meant to restrict fields to be set
   only in responses, not in a request payload. This does not match our 
   `never-change-after-creation` semantics.
-- Allowing `false` as value for `x-kubernetes-immutable: false` was considered to
-  disable immutability imposed by a parent node. This complicates the semantics
-  considerably and can be expressed with a combination of `x-kubernetes-immutable-keys` 
-  and `x-kubernetes-immutable` on the complementing fields.
+- Allowing `false` as value for `x-kubernetes-mutability: Mutable` was considered to
+  disable immutability imposed by a parent node. This complicates the definition of the semantics
+  considerably, increases complexity of the verification algorithm and can be expressed with a 
+  combination of a (possibly large) number of  `x-kubernetes-key-immutabilty` and 
+  `x-kubernetes-immutabilty` directives on the complementing fields.
