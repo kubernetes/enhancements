@@ -34,8 +34,10 @@ status: provisional
 - [Prerequisites](#prerequisites)
 - [Motivation](#motivation)
   - [Jobs](#jobs)
-  - [Startup](#startup)
-  - [Shutdown](#shutdown)
+  - [The Order](#the-order)
+    - [Pre Startup](#pre-startup)
+    - [Post Startup](#post-startup)
+    - [Post Shutdown](#post-shutdown)
 - [Goals](#goals)
 - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
@@ -125,10 +127,19 @@ The only way around this problem is to manage the sidecar container's lifecycle 
 * Third-party containers typically require a wrapper to add this behaviour, normally provided via an entrypoint wrapper script implemented in the k8s container spec. This adds undesirable overhead and introduces repetition between the k8s and upstream container image specs.
 * The wrapping typically requires the presence of a shell in the container image, so this pattern does not work for minimal containers which ship without a toolchain.
 
-### Startup
+### The Order
+
+Sidecars containers could be started up or shut down before/after normal containers. And the order does matter.
+
+#### Pre Startup
+Sometimes sidecars should start before normal containers to do some preparations such as releasing credentials, creating shared volumes, copying some files and etc.
+
+#### Post Startup
 An application that has a proxy container acting as a sidecar may fail when it starts up as it's unable to communicate until its proxy has started up successfully. Readiness probes don't help if the application is trying to talk outbound.
 
-### Shutdown
+Moreover, postSidecars could do some minor updates, such as updating some static css files. Admittedly we could build new images again and again. But it takes so many steps from images building to scaling/publishing an updated version. Actually a more dynamic and configurable way is preferred. Such postSidecars can be applied by sharing volumes with normal containers without building new images. This will greatly improve the developing efficiency and reduce the heavy burden for the image registries.
+
+#### Post Shutdown
 Applications that rely on sidecars may experience a high amount of errors when shutting down as the sidecar may terminate before the application has finished what it's doing.
 
 ## Goals
