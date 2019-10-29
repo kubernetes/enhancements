@@ -3,7 +3,6 @@
 ## Table of Contents
 
 <!-- toc -->
-- [Move ExternalDNS out of Kubernetes incubator](#move-externaldns-out-of-kubernetes-incubator)
 - [Summary](#summary)
 - [Motivation](#motivation)
   - [Goals](#goals)
