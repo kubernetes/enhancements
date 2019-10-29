@@ -47,6 +47,11 @@ superseded-by:
   - [Risks and Mitigations](#risks-and-mitigations)
   - [Testing Plan](#testing-plan)
 - [Graduation Criteria](#graduation-criteria)
+  - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+    - [Upgrade from kubectl Client-Side to Server-Side Apply](#upgrade-from-kubectl-client-side-to-server-side-apply)
+      - [Avoiding Conflicts from Client-Side Apply to Server-Side Apply](#avoiding-conflicts-from-client-side-apply-to-server-side-apply)
+    - [Downgrade from kubectl Server-Side to Client-Side Apply](#downgrade-from-kubectl-server-side-to-client-side-apply)
+    - [Downgrade the API Server](#downgrade-the-api-server)
 - [Implementation History](#implementation-history-1)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives-1)
@@ -130,8 +135,8 @@ A brief list of the changes:
     managers) but the formalization of our schema from that document is still
     correct.
 * Apply is invoked by sending a certain Content-Type with the verb PATCH.
-* Instead of using a last-applied annotation, the control plane will track a
-  "manager" for every field.
+* Instead of using a `kubectl.kubernetes.io/last-applied-configuration` annotation,
+the control plane will track a "manager" for every field.
 * Apply is for users and/or ci/cd systems. We modify the POST, PUT (and
   non-apply PATCH) verbs so that when controllers or other systems make changes
   to an object, they are made "managers" of the fields they change.
@@ -371,6 +376,72 @@ updated when we know the concrete things changing for beta.
 
 This will be promoted to GA once it's gone a sufficient amount of time as beta
 with no changes. A KEP update will precede this.
+
+### Upgrade / Downgrade Strategy
+
+#### Upgrade from kubectl Client-Side to Server-Side Apply
+
+With client-side `kubectl apply`, the annotation
+`kubectl.kubernetes.io/last-applied-configuration` tracks ownership for a single
+shared field manager. With server-side `kubectl apply --server-side`, the
+`.metadata.managedFields` field tracks ownership for multiple field managers.
+
+Users who wish to start using server-side apply for objects managed with
+client-side apply would encounter a field manager conflict: the field set that
+the user now wants to manage with server-side apply will be owned by the
+client-side apply field manager.
+
+If we don't specifically handle this case, then users would need to force
+conflicts with `kubectl apply --server-side --force-conflicts`. This extra step
+is not desirable for users who wish to onboard to server-side apply.
+
+However we know that users' intent is to take ownership of client-side apply
+fields when upgrading, which we can do for them while avoiding the conflict.
+
+##### Avoiding Conflicts from Client-Side Apply to Server-Side Apply
+
+We'll use the `kubectl` user-agent and the client-side apply
+`last-applied-configuration` annotation to identify when to do the upgrade.
+
+When server-side apply is run with `kubectl apply --server-side` on an object
+with a `last-applied-configuration` annotation for client-side apply, then the
+annotation will be upgraded to the managed fields server-side apply notation.
+
+To upgrade the `last-applied-configuration` annotation, the following procedure
+will be used.
+
+1.  Identify if the server-side apply is from the `kubectl` user-agent
+1.  Identify if the server-side apply would result in a conflict
+1.  Create a fieldset from the `last-applied-configuration` annotation.
+1.  Remove all fields from the `last-applied-configuration` annotation that are
+    added, missing, or different than the corresponding field of the live
+    object. Because the fields have changed, client-side apply does not own
+    them.
+1.  Compare the "last-applied" fieldset to the conflict fieldset. Take the
+    difference as the new conflict fieldset. If the conflict fieldset is empty,
+    then the conflicts are allowed and we force the server-side apply. If the
+    conflict fieldset is not empty, then return the conflict fieldset.
+
+#### Downgrade from kubectl Server-Side to Client-Side Apply
+
+Client-side `kubectl apply` users can incrementally upgrade to a version of
+`kubectl` that can send a server-side apply
+
+We can sync the intent between server-side and client-side apply by keeping the
+`last-applied-configuration` annotation up-to-date with the `.managedFields`
+field.
+
+Client-side apply will continue to work.
+
+#### Downgrade the API Server
+
+When downgrading the API server with server-side apply disabled, then
+`.metadata.managedFields` field will be cleared since the API server doesn't
+know about this field. A server-side apply will fail with a content-type unknown
+error.
+
+A client-side apply would succeed because the `last-applied-configuration`
+annotation is preserved and up-to-date as described in the downgrade above.
 
 ## Implementation History
 
