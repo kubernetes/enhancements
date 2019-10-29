@@ -11,7 +11,7 @@ approvers:
   - "@tallclair"
 editor: TBD
 creation-date: 2019-10-02
-last-updated: 2019-10-27
+last-updated: 2019-10-29
 status: provisional
 see-also:
   - "https://github.com/kubernetes/community/blob/master/contributors/design-proposals/node/seccomp.md"
@@ -50,6 +50,11 @@ see-also:
       - [Beta -&gt; GA Graduation](#beta---ga-graduation)
 - [Implementation History](#implementation-history)
 - [Alternatives](#alternatives)
+  - [Use CRD instead of ConfigMap](#use-crd-instead-of-configmap)
+    - [Reasons for <code>ConfigMap</code>](#reasons-for-)
+    - [Reasons against it](#reasons-against-it)
+    - [Start the deprecation process for <code>localhost/&lt;path&gt;</code>](#start-the-deprecation-process-for-)
+    - [Downstream seccomp support awareness](#downstream-seccomp-support-awareness)
 - [References](#references)
 <!-- /toc -->
 
@@ -115,9 +120,9 @@ Kubernetes supports Seccomp in some capacity since version 1.3, but from then on
 
 Add support to user-defined profiles being loaded from `ConfigMap` objects. The unstructured nature of this object type removes the potential tight coupling with OCI and downstream components, and the impact in case the seccomp profile format was to change in the future.
 
-Users will be able to create profiles in `ConfigMap` objects and refer to them as `configmap/<profile-name>`. Note that the `ConfigMap` objects will have to be placed in the same namespace as where the Pods will reside. Reusable cross namespaces user-defined profiles will not be supported at this point.
+Users will be able to create profiles in `ConfigMap` objects and refer to them as `configmap/<profile-name>/<file-name>`. Note that the `ConfigMap` objects will have to be placed in the same namespace as where the Pods will reside. Reusable cross namespaces user-defined profiles will not be supported at this point.
 
-The profile definition would be passed to the CRI as a serialised json object inside a dockerOpt object, in the same way that it is done currently for file based profiles, removing the need of files being saved and synchronised across nodes.
+The profile definition would be passed to the CRI as a serialised json object inside a `dockerOpt` object, in the same way that it is done currently for file based profiles, removing the need of files being saved and synchronised across nodes.
 
 ```
 jsonSeccomp, _ := json.Marshal(profile.Spec)
@@ -141,15 +146,24 @@ User-defined Seccomp profiles would be created this way:
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: my-custom-profile
+  name: webapi-seccomp
 data:
-  profile.json: |-
-  {
-	"defaultAction": "SCMP_ACT_LOG"
-  }
+  profile-block.json: |-
+    {
+	  "defaultAction": "SCMP_ACT_ERRNO"
+    }
+  profile-complain.json: |-
+    {
+	  "defaultAction": "SCMP_ACT_LOG"
+    }
 ``` 
 
-And the profile would be referenced as `configmap/my-custom-profile`.
+The two profiles inside the `ConfigMap` above would be referenced respectively by:
+
+- `configmap/webapi-seccomp/profile-block.json`
+- `configmap/webapi-seccomp/profile-complain.json`
+
+Neither the configmap nor the file inside of it needs to have a specific name.
 
 
 ### Usage Scenarios
@@ -189,11 +203,11 @@ However, the recommended approach for making profile changes is to create a new 
 
 #### Starting containers with non-existent profile
 
-When the Kubelet is creating a container using this seccomp profile type, it must validate that the container is referring to a `ConfigMap` that exists inside the same namespace. That `ConfigMap` should contain a `profile.json` file inside of it with a valid json value. If either of those evaluations is false, the container should not be created and an error should be logged instead. 
+When the Kubelet is creating a container using this seccomp profile type, it must validate that the profile is valid. For a profile reference of `configmap/webapi-seccomp/profile-block.json`, the Kubelet will check for the existence of a `ConfigMap` named `web-seccomp` in the same namespace as the pod/container referencing it. It will also check whether that `ConfigMap` contains a file named `profile-block.json` and that it is a valid json. If any of those evaluations are false, the container will not be created and an error should be logged instead. 
 
 Once the container is running, the `ConfigMap` holding the profile will not be re-evaluated. If that `ConfigMap` is deleted at this point, nothing will happen until the container is restarted, in which case the same rules as above will apply, leading to the container failing to start.
 
-The Kubelet will only validate whether the contents of the `profile.json` file is a valid `json` file. The container runtime will be responsible for validating it further. The Kubelet will not validate or use any other files apart from `profile.json`.
+The Kubelet will only validate whether the contents of the profile file is a valid `json` file. The container runtime will be responsible for validating it further. The Kubelet will not validate or use any other files apart from the one being referenced.
 
 
 ### User Stories
@@ -218,10 +232,11 @@ As a user, I want to be able to determine whether custom seccomp profiles have b
 The profiles will not persisted to disk. The Kubelet will fetch the contents from `ConfigMap` and then returned to be later pass on to the OCI, as per code below:
 
 ```golang
-configMapName := strings.TrimPrefix(seccompProfile, "configmap/")
-seccompCfg, err := apiclient.GetConfigMapWithRetry(client, podNamespace, configMapName)
+scmpWithouPrefix := strings.TrimPrefix(seccompProfile, "configmap/")
+configAndFile := strings.Split(scmpWithouPrefix, "/")
+seccompCfg, err := apiclient.GetConfigMapWithRetry(client, podNamespace, configAndFile[0])
 ...
-profileData, ok := seccompCfg.Data[SeccompConfigMapFileName]
+profileData, ok := seccompCfg.Data[configAndFile[1]]
 if !ok {
   ...
 }
@@ -279,6 +294,7 @@ The error message above may change once seccomp [becomes GA](20190717-seccomp-ga
 ##### Alpha -> Beta Graduation
 
 - Feature gate is enabled by default (i.e. `--feature-gate=SeccompConfigMaps=true`).
+- Approach community for feedback.
 - Provide beta level documentation.
 - E2E tests.
 
@@ -294,22 +310,39 @@ The error message above may change once seccomp [becomes GA](20190717-seccomp-ga
 - 2019-10-15: Minor changes
 - 2019-10-17: Add alternative to use CRD instead of ConfigMap
 - 2019-10-27: Add improvements to Design, Version Skew Strategy and Graduation
+- 2019-10-29: Add improvements to alternatives and multiple files support
 
 
 ## Alternatives
 
-**Use CRD instead of ConfigMap.** The decision to use `ConfigMap` was to avoid unnecessary complexity. Below are some key points from the [official guidance](https://kubernetes.io/docs/concepts/extend-kubernetes/api-extension/custom-resources/#should-i-use-a-configmap-or-a-custom-resource) which clarifies the reasoning:
+### Use CRD instead of ConfigMap
 
-- There is an existing, well-documented config file format.
-- The entire config file will be stored into one key of a configMap.
-- The main use of the config file is for the cluster to consume the file to pass it on to CRIs.
-- Users could potentially perform rolling updates via Deployment, when the file is updated.
+The decision to use `ConfigMap` was to avoid unnecessary complexity. However, this can be later reviewed through the Graduation process. The reasons considered whilst assessing the two different approaches were:
+
+#### Reasons for `ConfigMap`
+
+- Smaller implementation footprint.
+- Official type for storing files.
+- Allows for multiple files to be stored on a single object.
+- Due to its free form nature, provides loose coupling with downstream dependencies (i.e. OCI).
+
+#### Reasons against it
+
+- The configmap won't be mounted into a container, so it won't be reusing any Kubelet code.
+- A CRD could be cluster-scoped (although I'm on the fence about whether that's actually desirable).
+- A dedicated type could be immutable, to avoid some uncertainty around updates.
+- A fully-structured CRD could provide static type checking for early failure (although this creates the undesirable tight coupling to the OCI format).
 
 
-**Start deprecation process for `localhost/<path>`.** The proposed changes will better support custom profiles. Starting the deprecation process of the existing method would signal users what the end goal is. However, this can be started once the new approach GA's.
+
+#### Start the deprecation process for `localhost/<path>`
+
+The proposed changes will better support custom profiles. Starting the deprecation process of the existing method would signal users what the end goal is. However, this can be started once the new approach GA's.
 
 
-**Downstream seccomp support awareness.** Validation could be added to assert whether the Seccomp Profile could be applied by the downstream dependencies on a _per- node_ basis, and lead to a list of available profiles for each node. This would benefit clusters with heterogeneus nodes. It would also benefit the usage of the current `localhost/<path>` profile, which an administrator has no way to tell which nodes have them and which ones don't. 
+#### Downstream seccomp support awareness
+
+Validation could be added to assert whether the Seccomp Profile could be applied by the downstream dependencies on a _per- node_ basis, and lead to a list of available profiles for each node. This would benefit clusters with heterogeneus nodes. It would also benefit the usage of the current `localhost/<path>` profile, which an administrator has no way to tell which nodes have them and which ones don't. 
 
 This can be treated as an incremental enhancement in the future, based on the community feedback.
 
