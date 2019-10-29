@@ -146,16 +146,13 @@ User-defined Seccomp profiles would be created this way:
 apiVersion: v1
 kind: ConfigMap
 metadata:
+  namespace: secure-projects-ns
   name: webapi-seccomp
 data:
   profile-block.json: |-
-    {
-	  "defaultAction": "SCMP_ACT_ERRNO"
-    }
+    { "defaultAction": "SCMP_ACT_ERRNO", ... }
   profile-complain.json: |-
-    {
-	  "defaultAction": "SCMP_ACT_LOG"
-    }
+    { "defaultAction": "SCMP_ACT_LOG", ... }
 ``` 
 
 The two profiles inside the `ConfigMap` above would be referenced respectively by:
@@ -163,7 +160,7 @@ The two profiles inside the `ConfigMap` above would be referenced respectively b
 - `configmap/webapi-seccomp/profile-block.json`
 - `configmap/webapi-seccomp/profile-complain.json`
 
-Neither the configmap nor the file inside of it needs to have a specific name.
+The only restriction for using those profiles is that the `webapi-seccomp` object must reside in the same namespace as the pods/containers that refers to it, in this case `secure-projects-ns`. 
 
 
 ### Usage Scenarios
@@ -234,6 +231,7 @@ The profiles will not persisted to disk. The Kubelet will fetch the contents fro
 ```golang
 scmpWithouPrefix := strings.TrimPrefix(seccompProfile, "configmap/")
 configAndFile := strings.Split(scmpWithouPrefix, "/")
+...
 seccompCfg, err := apiclient.GetConfigMapWithRetry(client, podNamespace, configAndFile[0])
 ...
 profileData, ok := seccompCfg.Data[configAndFile[1]]
