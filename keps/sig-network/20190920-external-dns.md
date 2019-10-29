@@ -105,7 +105,7 @@ Those are identified in the project roadmap, which is roughly made of the follow
 
 * Integration testing suite, to be implemented at least for the "stable" providers
 
-* ExternalDNS build/artifact use an official k8s.io release image
+* ExternalDNS build/artifact has to use an official k8s.io release image
 
 For those reasons, we consider ExternalDNS to be in Beta state as a project. We believe that once the items mentioned above will be implemented, the project can reach a declared GA status.
 
