@@ -2,8 +2,7 @@
 
 ## Table of Contents
 
-<!-- toc  -->
-
+<!-- toc -->
 - [Move ExternalDNS out of Kubernetes incubator](#move-externaldns-out-of-kubernetes-incubator)
 - [Summary](#summary)
 - [Motivation](#motivation)
@@ -14,7 +13,6 @@
     - [Maintainers](#maintainers)
   - [Release process, artifacts](#release-process-artifacts)
   - [Risks and Mitigations](#risks-and-mitigations)
-
 <!-- /toc -->
 
 ## Summary
