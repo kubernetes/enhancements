@@ -3,20 +3,22 @@ title: Metrics Stability Framework to Beta
 authors:
   - "@logicalhan"
   - "@RainbowMango"
-owning-sig:
-  - sig-instrumentation
+owning-sig: sig-instrumentation
 participating-sigs:
   - sig-instrumentation
 reviewers:
-  - @brancz
+  - "@brancz"
 approvers:
+  - "@brancz"
+editor: "@brancz"
 creation-date: 2019-10-28
+last-updated: 2019-10-28
+status: implementable
 see-also:
   - 20181106-kubernetes-metrics-overhaul
   - 20190404-kubernetes-control-plane-metrics-stability
   - 20190605-metrics-stability-migration
   - 20190605-metrics-validation-and-verification
-status: proposed
 ---
 
 # Metrics Stability Framework to Beta
@@ -42,7 +44,7 @@ These are the planned changes for Beta feature graduation:
 * No Kubernetes binaries register metrics to prometheus registries directly.
 * There is a validated import restriction on all kubernetes binaries (except `component-base/metrics`) such that we will fail, in a precommit phase, a direct import of prometheus in kubernetes. This forces all metrics related code to go through the metrics stability framework.
 * All currently deprecated metrics are deprecated using the `DeprecatedVersion` field of metrics options struct.
-* All Kubernetes binaries should have a command flag `--show-hidden-metrics` by which cluster admins can show metrics deprecated in last minor release.  
+* All Kubernetes binaries should have a command flag `--show-hidden-metrics` by which cluster admins can show metrics deprecated in last minor release.
 
 ### Non-Goals
 
