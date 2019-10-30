@@ -49,6 +49,8 @@ superseded-by:
         - [With Improvement 1 and 2](#with-improvement-1-and-2)
         - [With Improvement 1 and 3](#with-improvement-1-and-3)
         - [With Improvement 1, 2, and 3](#with-improvement-1-2-and-3)
+      - [Generating String Tables](#generating-string-tables)
+      - [Versioning String Tables](#versioning-string-tables)
   - [Risks and Mitigations](#risks-and-mitigations)
   - [Testing Plan](#testing-plan)
 - [Graduation Criteria](#graduation-criteria)
@@ -442,6 +444,101 @@ y,Initialized,PodScheduled,Ready,/var/run/secrets/kubernetes.io/serviceaccount]}
 |---|---|---|---|
 | 400 in base64 | \~ | \~ | \~ |
 | 300 in raw bytes | \~ | \~ | \~ |
+
+##### Generating String Tables
+
+A traversal across the Kubernetes type definitions in the OpenAPI spec will be
+used to gather all field names and enum values, which can be used as a starting
+point for the string table.
+
+The strings found in type definitions will be supplemented with other strings
+found to be frequently used in fieldsets. Commonly used string values and
+unstructured map keys are good candidates. For example,
+`/var/run/secrets/kubernetes.io/serviceaccount` was found by direct inspection
+as being a great string table entry; it is quite long, and it is frequently
+used. We expect to find more string table entries like this via tools and direct
+inspection, and will keep track of them in a separate list that will then be
+merged together with the strings from type definitions when generating string
+tables.
+
+A couple considerations when generating the string table:
+
+- Not all strings are worth adding to the string table. If the `!<base64>`
+  string is longer than the string it would replace, then it clearly makes no
+  sense to add it to the dictionary.
+- Since the base64 strings of low ints are shorter, they should be used for
+  more frequently used strings in fieldsets.
+
+Fine tuning the string table based on what strings are most frequent is
+something we can iterate on. If the initial string table size is small, ordering
+by frequency might not matter that much, but if/when the table gets larger,
+ensuring that frequently used strings are assigned low numbers in the table will
+become increasingly valuable.
+
+There are plenty of potential future optimizations, like gathering fieldset data
+from real-world Kubernetes clusters at runtime, and using it as training data to
+improve string tables.
+
+##### Versioning String Tables
+
+Each string table has a version, starting at 1:
+
+```
+String table:
+{<versionNumber>:[...
+```
+
+Fieldsets serialized using string tables contain the version they were serialized with:
+
+```
+Field set:
+[<versionNumber>, ...
+```
+
+Since a fieldset can only be deserialized using the versioned string table
+it was serialized with, each Kubernetes version must be able to deserialize
+fieldsets that were serialized by:
+
+- All of the prior Kubernetes minor versions.
+- The next Kubernetes minor version, so that N-1 rollback is safe
+
+We can ensure this by:
+
+- Keeping all string table versions around forever
+- Introducing a string table version to Kubernetes one minor version before
+  serializing data using that string table version
+
+Alternative considered: We could instead persist string table versions in etcd--
+each time the kube-apiserver starts, it writes to etcd any string table versions
+it knows about that are not alreeay stored in etcd. Then, if the kube-apiserver
+ever needs to deserialize a fieldset with a string table version it is not aware
+of, it tries to read the needed string table version from etcd. This would allow
+for both HA upgrades and rollbacks. But it is complicated, and since we don't
+want or need to add new the string table versions often, it is unnecessary.
+
+Logically, the information Kubernetes needs about the string tables are:
+
+- The versions of string table it is aware of
+- Which version of the string table it should use when serializing
+
+```
+// Current Kubernetes version: 1.18
+
+const serializeVersion = 1
+
+const stringTableVersions = {
+  1:{[...], introducedVersion: "1.17"}, // may be used to serialize in kubernetes 1.18
+  2:{[...], introducedVersion: "1.18"}, // may be used to serialize in kubernetes 1.19
+  ...
+```
+
+Automated checks we will add to ensure the string tables are versioned correctly:
+
+- Check that the "introducedVersion" of the current "serailizeVersion is less
+  than the current kubernetes (for n-1 rollback support).
+- Check that that string table where the "introducedVersion" is less than the
+  curreht kubernetes version are not modified. E.g.  check the the
+  hashe/checksum of these string tables.
 
 ### Risks and Mitigations
 
