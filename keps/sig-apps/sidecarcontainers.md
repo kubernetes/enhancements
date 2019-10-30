@@ -13,7 +13,7 @@ approvers:
   - "@kow3ns"
 editor: TBD
 creation-date: 2018-05-14
-last-updated: 2019-06-26
+last-updated: 2019-10-30
 status: implementable
 ---
 
@@ -151,12 +151,14 @@ During pod termination sidecars will be terminated last:
 * Containers sent SIGTERM
 * Once all Containers have exited: Sidecars sent SIGTERM
 
-If Containers don't exit before the end of the TerminationGracePeriod then they will be sent a SIGKIll as normal, Sidecars will then be sent a SIGTERM with a short grace period of 5/10 Seconds (up for debate) to give them a chance to cleanly exit.
+Containers and Sidecar will share the TerminationGracePeriod. If Containers don't exit before the end of the TerminationGracePeriod then they will be sent a SIGKIll as normal, Sidecars will then be sent a SIGTERM with a short grace period of 2 Seconds to give them a chance to cleanly exit.
 
 PreStop Hooks will be sent to sidecars before containers are terminated.
 This will be useful in scenarios such as when your sidecar is a proxy so that it knows to no longer accept inbound requests but can continue to allow outbound ones until the the primary containers have shut down.
 
 To solve the problem of Jobs that don't complete: When RestartPolicy!=Always if all normal containers have reached a terminal state (Succeeded for restartPolicy=OnFailure, or Succeeded/Failed for restartPolicy=Never), then all sidecar containers will be sent a SIGTERM.
+
+PodPhase will be modified to not include Sidecars in its calculations, this is so that if a sidecar exits in failure it does not mark the pod as `Failed`. It also avoids the scenario in which a Pod has RestartPolicy `OnFailure`, if the containers all successfully complete, when the sidecar gets sent the shut down signal if it exits with a non-zero code the Pod phase would be calculated as `Running` despite all containers having exited permanently.
 
 Sidecars are just normal containers in almost all respects, they have all the same attributes, they are included in pod state, obey pod restart policy etc. The only differences are lifecycle related.
 
