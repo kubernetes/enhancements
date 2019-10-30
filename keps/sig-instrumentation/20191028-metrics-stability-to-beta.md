@@ -146,6 +146,9 @@ These are related Post-GA tasks:
   - [x] https://github.com/kubernetes/kubernetes/pull/83678 (by @RainbowMango)
   - [x] https://github.com/kubernetes/kubernetes/pull/83713 (by @RainbowMango)
   - [ ] https://github.com/kubernetes/kubernetes/pull/83664 (by @RainbowMango)
+- Migrate promhttp 
+  - [ ] https://github.com/kubernetes/kubernetes/pull/84393 (by @wuyafang)
+  - [x] https://github.com/kubernetes/kubernetes/pull/84221 (by @wuyafang)
   
 ### Metrics Validation
 
