@@ -146,11 +146,18 @@ These are related Post-GA tasks:
   - [x] https://github.com/kubernetes/kubernetes/pull/83678 (by @RainbowMango)
   - [x] https://github.com/kubernetes/kubernetes/pull/83713 (by @RainbowMango)
   - [ ] https://github.com/kubernetes/kubernetes/pull/83664 (by @RainbowMango)
+  - [x] https://github.com/kubernetes/kubernetes/pull/84283 (by @serathius)
 - Migrate promhttp 
   - [ ] https://github.com/kubernetes/kubernetes/pull/84393 (by @wuyafang)
   - [x] https://github.com/kubernetes/kubernetes/pull/84221 (by @wuyafang)
   
-### Metrics Validation
+### Metrics Validation And Restriction
+- [x] https://github.com/kubernetes/kubernetes/pull/80803 (by @serathius)
+- [x] https://github.com/kubernetes/kubernetes/pull/80906 (by @serathius)
+- [x] https://github.com/kubernetes/kubernetes/pull/81510 (by @serathius)
+- [ ] https://github.com/kubernetes/kubernetes/pull/84302 (by @serathius)
+- [ ] https://github.com/kubernetes/kubernetes/pull/84373 (by @serathius)
+- [ ] https://github.com/kubernetes/kubernetes/pull/84378 (by @serathius)
 
 ### Deprecate Metrics
 - [ ] https://github.com/kubernetes/kubernetes/pull/83836 (by @RainbowMango)
