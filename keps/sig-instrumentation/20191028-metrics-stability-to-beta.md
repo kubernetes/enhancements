@@ -98,12 +98,17 @@ These are related Post-GA tasks:
   - [x] https://github.com/kubernetes/kubernetes/pull/83722 (by @RainbowMango)
 - Introduce GaugeFunc 
   - [X] https://github.com/kubernetes/kubernetes/pull/83830 (by @RainbowMango)
+- Introduce custom collector
+  - [ ] https://github.com/kubernetes/kubernetes/pull/83062 (by @RainbowMango)
+- Cleanup
+  - [ ] https://github.com/kubernetes/kubernetes/pull/84135 (by @RainbowMango)
 - Bug fix
   - [x] https://github.com/kubernetes/kubernetes/pull/84395 (by @RainbowMango)
 
 ### Metrics Stability Migration
 - General Migration
   - [x] for etcd version monitor: https://github.com/kubernetes/kubernetes/pull/83283 (by @RainbowMango)
+  - [ ] for metrics validation framework: https://github.com/kubernetes/kubernetes/pull/84500 (by @RainbowMango)
 - Migrate bucket functionality
   - [x] https://github.com/kubernetes/kubernetes/pull/82626 (by @RainbowMango)
   - [x] https://github.com/kubernetes/kubernetes/pull/82630 (by @RainbowMango)
@@ -122,4 +127,16 @@ These are related Post-GA tasks:
   - [x] https://github.com/kubernetes/kubernetes/pull/83611 (by @RainbowMango)
   - [x] https://github.com/kubernetes/kubernetes/pull/83678 (by @RainbowMango)
   - [x] https://github.com/kubernetes/kubernetes/pull/83713 (by @RainbowMango)
+  - [ ] https://github.com/kubernetes/kubernetes/pull/83664 (by @RainbowMango)
+  
 ### Metrics Validation
+
+### Deprecate Metrics
+- [ ] https://github.com/kubernetes/kubernetes/pull/83836 (by @RainbowMango)
+- [ ] https://github.com/kubernetes/kubernetes/pull/83837 (by @RainbowMango)
+- [ ] https://github.com/kubernetes/kubernetes/pull/83838 (by @RainbowMango)
+- [ ] https://github.com/kubernetes/kubernetes/pull/83839 (by @RainbowMango)
+- [ ] https://github.com/kubernetes/kubernetes/pull/83841 (by @RainbowMango)
+
+### Escape Flag
+- [ ] https://github.com/kubernetes/kubernetes/pull/84292 (by @RainbowMango)
