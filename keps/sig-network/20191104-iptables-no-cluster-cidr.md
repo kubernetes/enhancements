@@ -115,12 +115,12 @@ The [rule here currently](
 ) looks as follows
 
 ```go
-				// This masquerades off-cluster traffic to a service VIP.  The idea
-				// is that you can establish a static route for your Service range,
-				// routing to any node, and that node will bridge into the Service
-				// for you.  Since that might bounce off-node, we masquerade here.
-				// If/when we support "Local" policy for VIPs, we should update this.
-				writeLine(proxier.natRules, append(args, "! -s", proxier.clusterCIDR, "-j", string(KubeMarkMasqChain))...)
+// This masquerades off-cluster traffic to a service VIP.  The idea
+// is that you can establish a static route for your Service range,
+// routing to any node, and that node will bridge into the Service
+// for you.  Since that might bounce off-node, we masquerade here.
+// If/when we support "Local" policy for VIPs, we should update this.
+writeLine(proxier.natRules, append(args, "! -s", proxier.clusterCIDR, "-j", string(KubeMarkMasqChain))...)
 ```
 
 The logic is that if the source IP is not part of the cluster CIDR range,
@@ -154,19 +154,19 @@ The [rule here currently](
 ) looks as follows
 
 ```go
-		// First rule in the chain redirects all pod -> external VIP traffic to the
-		// Service's ClusterIP instead. This happens whether or not we have local
-		// endpoints; only if clusterCIDR is specified
-		if len(proxier.clusterCIDR) > 0 {
-			args = append(args[:0],
-				"-A", string(svcXlbChain),
-				"-m", "comment", "--comment",
-				`"Redirect pods trying to reach external loadbalancer VIP to clusterIP"`,
-				"-s", proxier.clusterCIDR,
-				"-j", string(svcChain),
-			)
-			writeLine(proxier.natRules, args...)
-		}
+// First rule in the chain redirects all pod -> external VIP traffic to the
+// Service's ClusterIP instead. This happens whether or not we have local
+// endpoints; only if clusterCIDR is specified
+if len(proxier.clusterCIDR) > 0 {
+  args = append(args[:0],
+    "-A", string(svcXlbChain),
+    "-m", "comment", "--comment",
+    `"Redirect pods trying to reach external loadbalancer VIP to clusterIP"`,
+    "-s", proxier.clusterCIDR,
+    "-j", string(svcChain),
+  )
+  writeLine(proxier.natRules, args...)
+}
 ```
 
 The logic here is that if the source IP is part of cluster CIDR and we detect that is being
@@ -183,29 +183,29 @@ with a representation of pod's nodeCIDR or it's interfaces.
 The rule here looks as follows
 
 ```go
-	// The following rules can only be set if clusterCIDR has been defined.
-	if len(proxier.clusterCIDR) != 0 {
-		// The following two rules ensure the traffic after the initial packet
-		// accepted by the "kubernetes forwarding rules" rule above will be
-		// accepted, to be as specific as possible the traffic must be sourced
-		// or destined to the clusterCIDR (to/from a pod).
-		writeLine(proxier.filterRules,
-			"-A", string(kubeForwardChain),
-			"-s", proxier.clusterCIDR,
-			"-m", "comment", "--comment", `"kubernetes forwarding conntrack pod source rule"`,
-			"-m", "conntrack",
-			"--ctstate", "RELATED,ESTABLISHED",
-			"-j", "ACCEPT",
-		)
-		writeLine(proxier.filterRules,
-			"-A", string(kubeForwardChain),
-			"-m", "comment", "--comment", `"kubernetes forwarding conntrack pod destination rule"`,
-			"-d", proxier.clusterCIDR,
-			"-m", "conntrack",
-			"--ctstate", "RELATED,ESTABLISHED",
-			"-j", "ACCEPT",
-		)
-	}
+// The following rules can only be set if clusterCIDR has been defined.
+if len(proxier.clusterCIDR) != 0 {
+  // The following two rules ensure the traffic after the initial packet
+  // accepted by the "kubernetes forwarding rules" rule above will be
+  // accepted, to be as specific as possible the traffic must be sourced
+  // or destined to the clusterCIDR (to/from a pod).
+  writeLine(proxier.filterRules,
+    "-A", string(kubeForwardChain),
+    "-s", proxier.clusterCIDR,
+    "-m", "comment", "--comment", `"kubernetes forwarding conntrack pod source rule"`,
+    "-m", "conntrack",
+    "--ctstate", "RELATED,ESTABLISHED",
+    "-j", "ACCEPT",
+  )
+  writeLine(proxier.filterRules,
+    "-A", string(kubeForwardChain),
+    "-m", "comment", "--comment", `"kubernetes forwarding conntrack pod destination rule"`,
+    "-d", proxier.clusterCIDR,
+    "-m", "conntrack",
+    "--ctstate", "RELATED,ESTABLISHED",
+    "-j", "ACCEPT",
+  )
+}
 ```
 
 The interesting part of this rule that it already matches conntrack state to "RELATED,ESTABLISHED",
