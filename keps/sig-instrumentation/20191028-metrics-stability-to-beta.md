@@ -84,3 +84,87 @@ These are related Post-GA tasks:
 
 ## Implementation History
 
+### Metrics Stability Framework
+- Setup framework
+  - [x] https://github.com/kubernetes/kubernetes/pull/77037 (by @logicalhan)
+  - [x] https://github.com/kubernetes/kubernetes/pull/77618 (by @logicalhan)
+  - [x] https://github.com/kubernetes/kubernetes/pull/78773 (by @logicalhan)
+  - [x] https://github.com/kubernetes/kubernetes/pull/78867 (by @logicalhan)
+  - [x] https://github.com/kubernetes/kubernetes/pull/78877 (by @logicalhan)
+  - [x] https://github.com/kubernetes/kubernetes/pull/79237 (by @logicalhan)
+  - [x] https://github.com/kubernetes/kubernetes/pull/81190 (by @logicalhan)
+  - [x] https://github.com/kubernetes/kubernetes/pull/81395 (by @logicalhan)
+  - [x] https://github.com/kubernetes/kubernetes/pull/81579 (by @logicalhan)
+  - [x] https://github.com/kubernetes/kubernetes/pull/81608 (by @logicalhan)
+- Introduce bucket functionality
+  - [x] https://github.com/kubernetes/kubernetes/pull/82583 (by @RainbowMango)
+- Deal with stability default level
+  - [x] https://github.com/kubernetes/kubernetes/pull/82957 (by @RainbowMango)
+- Introduce label functionality
+  - [x] https://github.com/kubernetes/kubernetes/pull/83019 (by @RainbowMango)
+- Introduce test util: 
+  - [x] https://github.com/kubernetes/kubernetes/pull/83299 (by @RainbowMango)
+  - [x] https://github.com/kubernetes/kubernetes/pull/83699 (by @RainbowMango)
+- Introduce http handler functionality
+  - [x] https://github.com/kubernetes/kubernetes/pull/83722 (by @RainbowMango)
+- Introduce GaugeFunc 
+  - [X] https://github.com/kubernetes/kubernetes/pull/83830 (by @RainbowMango)
+- Introduce custom collector
+  - [ ] https://github.com/kubernetes/kubernetes/pull/83062 (by @RainbowMango)
+- Cleanup
+  - [ ] https://github.com/kubernetes/kubernetes/pull/84135 (by @RainbowMango)
+  - [x] https://github.com/kubernetes/kubernetes/pull/81432 (by @logicalhan)
+- Bug fix
+  - [x] https://github.com/kubernetes/kubernetes/pull/84395 (by @RainbowMango)
+
+### Metrics Stability Migration
+- General Migration
+  - [x] for shared metrics: https://github.com/kubernetes/kubernetes/pull/81173 (by @logicalhan)
+  - [x] for apiserver: https://github.com/kubernetes/kubernetes/pull/81531 (by @logicalhan)
+  - [x] for kubelet: https://github.com/kubernetes/kubernetes/pull/81534 (by @logicalhan)
+  - [x] for scheduler: https://github.com/kubernetes/kubernetes/pull/81576 (by @logicalhan)
+  - [x] for controller manager: https://github.com/kubernetes/kubernetes/pull/81624 (by @logicalhan)
+  - [x] for kube-proxy: https://github.com/kubernetes/kubernetes/pull/81626 (by @logicalhan)
+  - [x] for etcd version monitor: https://github.com/kubernetes/kubernetes/pull/83283 (by @RainbowMango)
+  - [ ] for metrics validation framework: https://github.com/kubernetes/kubernetes/pull/84500 (by @RainbowMango)
+- Migrate bucket functionality
+  - [x] https://github.com/kubernetes/kubernetes/pull/82626 (by @RainbowMango)
+  - [x] https://github.com/kubernetes/kubernetes/pull/82630 (by @RainbowMango)
+  - [x] https://github.com/kubernetes/kubernetes/pull/82736 (by @RainbowMango)
+  - [x] https://github.com/kubernetes/kubernetes/pull/82737 (by @RainbowMango)
+  - [x] https://github.com/kubernetes/kubernetes/pull/82741 (by @RainbowMango)
+  - [x] https://github.com/kubernetes/kubernetes/pull/82745 (by @RainbowMango)
+- Migrate bucket functionality
+  - [x] https://github.com/kubernetes/kubernetes/pull/83159 (by @RainbowMango)
+  - [x] https://github.com/kubernetes/kubernetes/pull/83220 (by @RainbowMango)
+  - [x] https://github.com/kubernetes/kubernetes/pull/83223 (by @RainbowMango)
+  - [x] https://github.com/kubernetes/kubernetes/pull/83269 (by @RainbowMango)
+  - [x] https://github.com/kubernetes/kubernetes/pull/83278 (by @RainbowMango)
+  - [x] https://github.com/kubernetes/kubernetes/pull/83279 (by @RainbowMango)
+- Migrate or refactor test case
+  - [x] https://github.com/kubernetes/kubernetes/pull/83611 (by @RainbowMango)
+  - [x] https://github.com/kubernetes/kubernetes/pull/83678 (by @RainbowMango)
+  - [x] https://github.com/kubernetes/kubernetes/pull/83713 (by @RainbowMango)
+  - [ ] https://github.com/kubernetes/kubernetes/pull/83664 (by @RainbowMango)
+  - [x] https://github.com/kubernetes/kubernetes/pull/84283 (by @serathius)
+- Migrate promhttp 
+  - [ ] https://github.com/kubernetes/kubernetes/pull/84393 (by @wuyafang)
+  - [x] https://github.com/kubernetes/kubernetes/pull/84221 (by @wuyafang)
+  
+### Metrics Validation And Restriction
+- [x] https://github.com/kubernetes/kubernetes/pull/80803 (by @serathius)
+- [x] https://github.com/kubernetes/kubernetes/pull/80906 (by @serathius)
+- [x] https://github.com/kubernetes/kubernetes/pull/81510 (by @serathius)
+- [ ] https://github.com/kubernetes/kubernetes/pull/84302 (by @serathius)
+- [ ] https://github.com/kubernetes/kubernetes/pull/84373 (by @serathius)
+- [ ] https://github.com/kubernetes/kubernetes/pull/84378 (by @serathius)
+
+### Deprecate Metrics
+- [ ] https://github.com/kubernetes/kubernetes/pull/83836 (by @RainbowMango)
+- [ ] https://github.com/kubernetes/kubernetes/pull/83837 (by @RainbowMango)
+- [ ] https://github.com/kubernetes/kubernetes/pull/83838 (by @RainbowMango)
+- [ ] https://github.com/kubernetes/kubernetes/pull/83839 (by @RainbowMango)
+- [ ] https://github.com/kubernetes/kubernetes/pull/83841 (by @RainbowMango)
+
+### Escape Flag
+- [ ] https://github.com/kubernetes/kubernetes/pull/84292 (by @RainbowMango)
