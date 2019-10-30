@@ -85,6 +85,17 @@ These are related Post-GA tasks:
 ## Implementation History
 
 ### Metrics Stability Framework
+- Setup framework
+  - [x] https://github.com/kubernetes/kubernetes/pull/77037 (by @logicalhan)
+  - [x] https://github.com/kubernetes/kubernetes/pull/77618 (by @logicalhan)
+  - [x] https://github.com/kubernetes/kubernetes/pull/78773 (by @logicalhan)
+  - [x] https://github.com/kubernetes/kubernetes/pull/78867 (by @logicalhan)
+  - [x] https://github.com/kubernetes/kubernetes/pull/78877 (by @logicalhan)
+  - [x] https://github.com/kubernetes/kubernetes/pull/79237 (by @logicalhan)
+  - [x] https://github.com/kubernetes/kubernetes/pull/81190 (by @logicalhan)
+  - [x] https://github.com/kubernetes/kubernetes/pull/81395 (by @logicalhan)
+  - [x] https://github.com/kubernetes/kubernetes/pull/81579 (by @logicalhan)
+  - [x] https://github.com/kubernetes/kubernetes/pull/81608 (by @logicalhan)
 - Introduce bucket functionality
   - [x] https://github.com/kubernetes/kubernetes/pull/82583 (by @RainbowMango)
 - Deal with stability default level
@@ -102,11 +113,18 @@ These are related Post-GA tasks:
   - [ ] https://github.com/kubernetes/kubernetes/pull/83062 (by @RainbowMango)
 - Cleanup
   - [ ] https://github.com/kubernetes/kubernetes/pull/84135 (by @RainbowMango)
+  - [x] https://github.com/kubernetes/kubernetes/pull/81432 (by @logicalhan)
 - Bug fix
   - [x] https://github.com/kubernetes/kubernetes/pull/84395 (by @RainbowMango)
 
 ### Metrics Stability Migration
 - General Migration
+  - [x] for shared metrics: https://github.com/kubernetes/kubernetes/pull/81173 (by @logicalhan)
+  - [x] for apiserver: https://github.com/kubernetes/kubernetes/pull/81531 (by @logicalhan)
+  - [x] for kubelet: https://github.com/kubernetes/kubernetes/pull/81534 (by @logicalhan)
+  - [x] for scheduler: https://github.com/kubernetes/kubernetes/pull/81576 (by @logicalhan)
+  - [x] for controller manager: https://github.com/kubernetes/kubernetes/pull/81624 (by @logicalhan)
+  - [x] for kube-proxy: https://github.com/kubernetes/kubernetes/pull/81626 (by @logicalhan)
   - [x] for etcd version monitor: https://github.com/kubernetes/kubernetes/pull/83283 (by @RainbowMango)
   - [ ] for metrics validation framework: https://github.com/kubernetes/kubernetes/pull/84500 (by @RainbowMango)
 - Migrate bucket functionality
