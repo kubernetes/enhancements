@@ -84,3 +84,42 @@ These are related Post-GA tasks:
 
 ## Implementation History
 
+### Metrics Stability Framework
+- Introduce bucket functionality
+  - [x] https://github.com/kubernetes/kubernetes/pull/82583 (by @RainbowMango)
+- Deal with stability default level
+  - [x] https://github.com/kubernetes/kubernetes/pull/82957 (by @RainbowMango)
+- Introduce label functionality
+  - [x] https://github.com/kubernetes/kubernetes/pull/83019 (by @RainbowMango)
+- Introduce test util: 
+  - [x] https://github.com/kubernetes/kubernetes/pull/83299 (by @RainbowMango)
+  - [x] https://github.com/kubernetes/kubernetes/pull/83699 (by @RainbowMango)
+- Introduce http handler functionality
+  - [x] https://github.com/kubernetes/kubernetes/pull/83722 (by @RainbowMango)
+- Introduce GaugeFunc 
+  - [X] https://github.com/kubernetes/kubernetes/pull/83830 (by @RainbowMango)
+- Bug fix
+  - [x] https://github.com/kubernetes/kubernetes/pull/84395 (by @RainbowMango)
+
+### Metrics Stability Migration
+- General Migration
+  - [x] for etcd version monitor: https://github.com/kubernetes/kubernetes/pull/83283 (by @RainbowMango)
+- Migrate bucket functionality
+  - [x] https://github.com/kubernetes/kubernetes/pull/82626 (by @RainbowMango)
+  - [x] https://github.com/kubernetes/kubernetes/pull/82630 (by @RainbowMango)
+  - [x] https://github.com/kubernetes/kubernetes/pull/82736 (by @RainbowMango)
+  - [x] https://github.com/kubernetes/kubernetes/pull/82737 (by @RainbowMango)
+  - [x] https://github.com/kubernetes/kubernetes/pull/82741 (by @RainbowMango)
+  - [x] https://github.com/kubernetes/kubernetes/pull/82745 (by @RainbowMango)
+- Migrate bucket functionality
+  - [x] https://github.com/kubernetes/kubernetes/pull/83159 (by @RainbowMango)
+  - [x] https://github.com/kubernetes/kubernetes/pull/83220 (by @RainbowMango)
+  - [x] https://github.com/kubernetes/kubernetes/pull/83223 (by @RainbowMango)
+  - [x] https://github.com/kubernetes/kubernetes/pull/83269 (by @RainbowMango)
+  - [x] https://github.com/kubernetes/kubernetes/pull/83278 (by @RainbowMango)
+  - [x] https://github.com/kubernetes/kubernetes/pull/83279 (by @RainbowMango)
+- Migrate or refactor test case
+  - [x] https://github.com/kubernetes/kubernetes/pull/83611 (by @RainbowMango)
+  - [x] https://github.com/kubernetes/kubernetes/pull/83678 (by @RainbowMango)
+  - [x] https://github.com/kubernetes/kubernetes/pull/83713 (by @RainbowMango)
+### Metrics Validation
