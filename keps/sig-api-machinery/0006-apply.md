@@ -465,9 +465,17 @@ A couple considerations when generating the string table:
 
 - Not all strings are worth adding to the string table. If the `!<base64>`
   string is longer than the string it would replace, then it clearly makes no
-  sense to add it to the dictionary.
+  sense to add it to the dictionary. The quotes around strings do count
+  toward their length when making this determination since the `!<base64>`
+  entries are unquoted.
 - Since the base64 strings of low ints are shorter, they should be used for
   more frequently used strings in fieldsets.
+- Unless frequency data that takes priority, we should assign shorter strings
+  to shorter `!<base64>` to minimize the number of strings we excluded because
+  they would get longer if we substituted them with a `!<base64>`.
+- Once we have most of the strings in the table, we anticipate further fine
+  tuning to lead to less and less marginal improvement. As a consequence,
+  we don't expect to release new versions often.
 
 Fine tuning the string table based on what strings are most frequent is
 something we can iterate on. If the initial string table size is small, ordering
@@ -510,11 +518,13 @@ We can ensure this by:
 
 Alternative considered: We could instead persist string table versions in etcd--
 each time the kube-apiserver starts, it writes to etcd any string table versions
-it knows about that are not alreeay stored in etcd. Then, if the kube-apiserver
+it knows about that are not already stored in etcd. Then, if the kube-apiserver
 ever needs to deserialize a fieldset with a string table version it is not aware
 of, it tries to read the needed string table version from etcd. This would allow
 for both HA upgrades and rollbacks. But it is complicated, and since we don't
-want or need to add new the string table versions often, it is unnecessary.
+want or need to add new the string table versions often, it is not something we
+plan to add initially. It can always be added later if we determine it would be
+useful.
 
 Logically, the information Kubernetes needs about the string tables are:
 
@@ -534,11 +544,12 @@ const stringTableVersions = {
 
 Automated checks we will add to ensure the string tables are versioned correctly:
 
-- Check that the "introducedVersion" of the current "serailizeVersion is less
+- Check that the "introducedVersion" of the current "serializeVersion is less
   than the current kubernetes (for n-1 rollback support).
 - Check that that string table where the "introducedVersion" is less than the
-  curreht kubernetes version are not modified. E.g.  check the the
-  hashe/checksum of these string tables.
+  current kubernetes version are not modified. We could store hashes with the
+  string tables to help make it obvious that they are immutable, and check that
+  they are correct with a unit test.
 
 ### Risks and Mitigations
 
