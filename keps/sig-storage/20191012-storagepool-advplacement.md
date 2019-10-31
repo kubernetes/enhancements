@@ -45,13 +45,12 @@ status: provisional
     - [Story 2](#story-2)
     - [Story 3](#story-3)
   - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
-    - [New CRD to surface Placement Choices](#new-crd-to-surface-placement-choices)
-    - [Add new field to PVC spec](#add-new-field-to-pvc-spec)
+    - [New CRD to surface Storage Pools](#new-crd-to-surface-storage-pools)
     - [API definitions for the Storage Pool](#api-definitions-for-the-storage-pool)
     - [CSI changes](#csi-changes)
-    - [Updated logic in external-provisioner](#updated-logic-in-external-provisioner)
     - [New external controller for StoragePool](#new-external-controller-for-storagepool)
     - [Usage of StoragePool objects by application](#usage-of-storagepool-objects-by-application)
+    - [Using StorageClass for placement](#using-storageclass-for-placement)
     - [Interop with StatefulSet](#interop-with-statefulset)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
@@ -60,17 +59,8 @@ status: provisional
 - [Implementation History](#implementation-history)
 - [Drawbacks [optional]](#drawbacks-optional)
 - [Alternatives](#alternatives)
-  - [Alternative Proposal 1 - StorageClass/Parameters](#alternative-proposal-1---storageclassparameters)
-    - [Add new field to PVC spec](#add-new-field-to-pvc-spec-1)
-    - [Updated logic in external-provisioner](#updated-logic-in-external-provisioner-1)
-    - [Reasons against this proposal](#reasons-against-this-proposal)
-  - [Alternative Proposal 2 - VolumeGroup](#alternative-proposal-2---volumegroup)
-    - [API definitions](#api-definitions)
-    - [Add groupInfo to CSI Spec](#add-groupinfo-to-csi-spec)
-    - [A new external controller will handle VolumeGroupClass and VolumeGroup resources](#a-new-external-controller-will-handle-volumegroupclass-and-volumegroup-resources)
-    - [Reasons against this proposal](#reasons-against-this-proposal-1)
-  - [Alternative Proposal 3 - No CRD](#alternative-proposal-3---no-crd)
-    - [Reasons against this proposal](#reasons-against-this-proposal-2)
+  - [Alternative Proposal - No CRD](#alternative-proposal---no-crd)
+    - [Reasons against this alternative proposal](#reasons-against-this-alternative-proposal)
 <!-- /toc -->
 
 <!--
@@ -107,7 +97,7 @@ Check these off as they are completed for the Release Team to track. These check
 
 This KEP aims to extend Kubernetes with a new storage pool concept which enables the underlying storage system to provide more control over placement decisions. These are expected to be leveraged by application operators for modern scale out storage services (e.g. MongoDB, ElasticSearch, Kafka, MySQL, PostgreSQL, Minio, etc.) in order to optimize availability, durability, performance and cost. 
 
-The document lays out the background for why modern storage services benefit from finer control over placement, explain how SDS offers and abstracts such capabilities, and analyses the gaps in the existing Kubernetes APIs. Based on that, it derives detailed Goals and User Stories and proposes to introduce a new `StoragePool` CRD and associated plumbing for consumption by PVCs via backwards compatible CSI extensions.
+The document lays out the background for why modern storage services benefit from finer control over placement, explain how SDS offers and abstracts such capabilities, and analyses the gaps in the existing Kubernetes APIs. Based on that, it derives detailed Goals and User Stories and proposes to introduce a new `StoragePool` CRD and suggets how to use existing `StorageClass` for how to steer placement to these storage pools.
 
 ## Motivation
 
@@ -160,17 +150,15 @@ Finally, the entire zone and region support and topology aware scheduling in Kub
 
 ### Goals
 
-* Allow scale out storage services (via their own controllers) to express placement constraints for their PVs/PVCs that allow them to optimize for availability and durability via smart application level data placement
-* Extend CSI to allow a cluster to advertising storage placement choices / storage pools
-  * Allowing to express physical disks as placement choices in CreateVolumeRequest.
-  * Allowing to express bins of scale out cloud storage services as placement choices in CreateVolumeRequest.
+* Extend CSI to allow a cluster to advertising storage storage pools
+  * Cover scenarios spanning at least physical disks or bins of scale out cloud storage services as storage pools
   * Convey metadata that allows applications to make scheduling decisions:
     * Capacity
     * Which nodes have access to it
-* Extend StorageClass/PV/PVC/CSI to allow topology restrictions using these placement choices
+* Use non-modified `StorageClass` for placement onto storage pools
 * Stay consistent with existing Zone/Region topology support in PV/PVC/CSI
 * Stay consistent with existing Pod affinity/anti-affinity and topology aware scheduling of pods and PVCs
-* Make no hard assumptions about how CSI providers and underlying SDS will implement the new placement options
+* Make no hard assumptions about how CSI providers and underlying SDS will implement or form storage pools
 
 ### Non-Goals
 
@@ -214,7 +202,7 @@ The placement choices in this use case cannot be expressed using existing Kubern
 
 ### Implementation Details/Notes/Constraints
 
-#### New CRD to surface Placement Choices
+#### New CRD to surface Storage Pools
 ```
 apiVersion: storagepool.storage.k8s.io/v1alpha1
 kind: StoragePool
@@ -232,25 +220,6 @@ status:
   - node2
   capacity:
     total: 124676572
-```
-
-#### Add new field to PVC spec
-```
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: pvc1
-spec:
-  accessModes:
-  - ReadWriteOnce
-  dataSource: null
-  resources:
-    requests:
-      storage: 1Gi
-  storageClassName: fast-storage
-  volumeMode: Filesystem
-  storagePoolSelector:
-     labelKey: labelValue
 ```
 
 #### API definitions for the Storage Pool
@@ -316,10 +285,6 @@ Note that `StoragePool` are non-namespaced.
 * Add a “StoragePoolSelector map[string]string” field in CreateVolumeRequest.
 * Add a ControllerListStoragePools RPC that lists storage pools for CSI drivers that support LIST_STORAGE_POOLS controller capability.
 
-#### Updated logic in external-provisioner
-
-Currently, the external-provisioner, when creating a volume, looks up the StorageClass of the PVC, gets the Parameters field, and passes that down to the CSI via the CreateVolumeRequest struct. This document proposes that external-provisioner also passes down the StoragePoolSelector to CreateVolumeRequest.
-
 #### New external controller for StoragePool
 
 CSI will be extended with a new ControllerListStoragePools() API, which returns all storage pools available via this CSI driver. A new external K8s controller uses this API upon CSI startup to learn about all storage pools and publish them into the K8s API server using the new StoragePool CRD. 
@@ -327,8 +292,14 @@ CSI will be extended with a new ControllerListStoragePools() API, which returns 
 #### Usage of StoragePool objects by application
 Storage applications (e.g. MongoDB, Kafka, Minio, etc.), with their own operator (i.e. controllers), consume the data in the StoragePool. It is how they understand topology. For example, let’s say we are in User Story 2, i.e. every Node has a bunch of local drives each published as a StoragePool. The operator will understand that they are “local” drives by seeing that only one K8s Node has access to each of them, and it will see how many there are and of which size. Based on the mirroring/erasure coding scheme of the specific storage service, it can now translate to how many PVCs, which size and on which of these StoragePools to create. Given that the StoragePool may model something as fragile as a single physical drive, it is a real possibility for a StoragePool to fail or be currently inaccessible. The StoragePool hence also communicates that fact, and the Storage Service operator can understand when and why volumes are failing, and how to remediate (e.g. by putting an additional PVC on another pool and moving some data around). 
 
+#### Using StorageClass for placement
+
+The existing StorageClass can be leveraged to facilitate placement onto StoragePools using the existing vendor/driver specific `parameters` dictionary. Essentially, which keys and values are used to express placement onto StoragePools is CSI driver dependent. This is consistent with existing use of StorageClasses, e.g. how the existing Google Compute Engine CSI driver allows for specifying zones and replication across them. The `parameters` field in the `StoragePool` can be used to provide a hint to applications which key/value pairs, if put into the `StorageClass` will yield the desired placement. The details however are left to the CSI driver and its documentation.
+
+That said, this document acknowledges that it leaves multiple problems unsolved related to placement. For one, if an operator really wants to steer PVCs to each storage pool, the existing number of StorageClass objects may multiply with the number of StoragePools. That would be an undesired cardinality explosion. Alternatively, the user of a Statefulset may like Kubernetes to make automatic scheduling decisions for storage pools, e.g. spreading/round robin. Neither of these problems are solved by this document, and we fully expect subsequent KEPs to tackle these problems.
+
 #### Interop with StatefulSet
-We stated that integration with the Kubernetes scheduler is a non-goal for this document. This means there are some special considerations when applications use StatefulSet to provision PVCs that use StoragePool. In particular, if the PVC references a StoragePool, the Pod should have a nodeSelector specified which matches the Nodes from which the StoragePool is accessible. That said, most likely applications that want to use StoragePool will not leverage the auto-scaling and automatic dynamic PVC creation capability of StatefulSet, but rather go for finer grained controlled from their application operator for the reasons of fine placement control discussed before.
+We stated that integration with the Kubernetes scheduler is a non-goal for this document. This means there are some special considerations when applications use StatefulSet to provision PVCs that use StoragePool. In particular, if the PVC uses a StorageClass that references a StoragePool, the Pod should have a nodeSelector specified which matches the Nodes from which the StoragePool is accessible. That said, most likely applications that want to use StoragePool will not leverage the auto-scaling and automatic dynamic PVC creation capability of StatefulSet, but rather go for finer grained controlled from their application operator for the reasons of fine placement control discussed before.
 
 ### Risks and Mitigations
 
@@ -354,252 +325,9 @@ XXX Why should this KEP _not_ be implemented.
 
 ## Alternatives 
 
-### Alternative Proposal 1 - StorageClass/Parameters
+### Alternative Proposal - No CRD
 
-Alternative Proposal 1 is a variant of the Proposal. It has the same StoragePool CRD, new external K8s controller and CSI extensions to populate the StoragePools, and the use of them is the same. However, instead of having PVC directly reference StoragePools (and hence external-provisioner), this alternative proposal relies on reuse of generic StorageClasses as below.
-
-To avoid explosion of StorageClass cardinality, users are allowed to leverage multiple StorageClasses when creating PVCs. Here, the second StorageClass was created by the application by taking the Parameters field of StoragePool and creating a new StorageClass to match. Listing 2 such StorageClasses as an example (no change to StorageClass API):
-```
-apiVersion: storage.k8s.io/v1
-kind: StorageClass
-metadata:
-  name: fast-tier
-provisioner: example-provisioner
-parameters:
-   type: fast
-
-apiVersion: storage.k8s.io/v1
-kind: StorageClass
-metadata:
-  name: pool1
-provisioner: example-provisioner
-parameters:
-   csiBackendSpecificOpaqueKey: csiBackendSpecificOpaqueValue
-```
-
-#### Add new field to PVC spec
-
-This is to be able to add additional storage classes
-```
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: pvc1
-spec:
-  accessModes:
-  - ReadWriteOnce
-  dataSource: null
-  resources:
-    requests:
-      storage: 1Gi
-  storageClassName: fast-tier
-  volumeMode: Filesystem
-  additionalStorageClassNames:
-  - pool1
-```
-
-#### Updated logic in external-provisioner
-Currently, the external-provisioner, when creating a volume, looks up the StorageClass of the PVC, gets the Parameters field, and passes that down to the CSI via the CreateVolumeRequest struct. This proposal suggests that external-provisioner also looks up the additional StorageClasses, and merges the Parameters from all the StorageClasses and send the combined map to CSI.
-
-#### Reasons against this proposal
-
-As CSI is already modified to surface up named storage pools, it is quite logical for selected storage pools to be pushed down on volume creation. It leads to a cleaner, more expressive design for CSI drivers. Further, this alternative proposal would require changes to the core notion of how StorageClasses work, create questions of which merge strategy to use for when multiple StorageClasses are used and have overlapping keys, etc.
-
-### Alternative Proposal 2 - VolumeGroup
-
-Alternative Proposal 2 introduces two new CRDs VolumeGroup and VolumeGroupClass.  It assumes that storage pools exist on storage systems already.  In VolumeGroupClass, there is an AllowedTopologies field that can be used to specify the accessibility of the group of volumes to storage pools and nodes.  However it won’t have a field to track the capacities of the storage pools.
-
-VolumeGroup and VolumeGroupClass are already being proposed in the context of snapshots and consistency groups, see https://docs.google.com/document/d/1nmq0rjt7A45w3kRHloDsMbzwGMELaJNNw2_w1B9qirk/edit#
-
-#### API definitions
-```
-type VolumeGroupClass struct {
-        metav1.TypeMeta
-        // +optional
-        metav1.ObjectMeta
- 
-        // Driver is the driver expected to handle this VolumeGroupClass.
-        // This value may not be empty.
-        Driver string
- 
-        // Parameters holds parameters for driver.
-        // These values are opaque to the  system and are passed directly
-        // to the driver.
-        // +optional
-        Parameters map[string]string
- 
-        // Restrict the topologies where a group of volumes can be located.
-        // Each driver defines its own supported topology specifications.
-        // An empty TopologySelectorTerm list means there is no topology restriction.
-        // This field is passed on to the drivers to handle placement of a group of 
-        // volumes on storage pods.
-        // +optional
-        AllowedTopologies []api.TopologySelectorTerm
- 
-        // This field specifies whether group snapshot is consistent.
-        // The default is false.
-        // +optional
-        ConsistentGroupSnapshot bool
- 
-        // In the future, we can add replication group support and introduce a field for    
-        // ConsistentGroupReplication.
-        // This field specifies whether group replication is consistent.
-        // The default is false.
-        // +optional
-        ConsistentGroupReplication bool
-}
-
-
-// VolumeGroup is a user's request for a group of volumes
-type VolumeGroup struct {
-        metav1.TypeMeta
-        // +optional
-        metav1.ObjectMeta
-
-        // Spec defines the volume group requested by a user
-        // +optional
-        Spec VolumeGroupSpec
-
-        // Status represents the current information about a volume group
-        // +optional
-        Status VolumeGroupStatus
-}
-
-
-// VolumeGroupSpec describes the common attributes of group storage devices
-// and allows a Source for provider-specific attributes
-Type VolumeGroupSpec struct {
-        VolumeGroupClassName *string
-
-        // This field specifies the source of a volume group.
-        // +optional
-        GroupDataSource *TypedLocalObjectReference 
-Note: Used for creating a volume group from a group snapshot. Not need for creating a new volume group.
-  
-        // A list of persistent volume claims
-        // +optional
-        PVCList []PersistentVolumeClaim
- }
-
-type VolumeGroupStatus struct {
-      GroupCreationTime *metav1.Time
-
-      Ready bool
-  
-      // Last error encountered during group creation
-      Error *VolumeGroupError
-}
-
-
-// Describes an error encountered on the group
-type VolumeGroupError struct {
-    	// time is the timestamp when the error was encountered.
-    	// +optional
-    	Time *metav1.Time
- 
-    	// message details the encountered error
-    	// +optional
-    	Message *string
-}
-```
-
-Example yaml files are in the following:
-
-```
-apiVersion: volumegroup.storage.k8s.io/v1alpha1
-kind: VolumeGroupClass
-metadata:
-  name: placementGroupClass1
-spec:
-  parameters:
-     …...
-  allowedTopologies: [failure-domain.example.com/placement: storagePod1]
-
-
-apiVersion: volumegroup.storage.k8s.io/v1alpha1
-kind: VolumeGroup
-metadata:
-  Name: placemenGroup1 
-spec:
-  volumeGroupClassName: placementGroupClass1
-
-
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: pvc1
-  annotations:
-spec:
-  accessModes:
-  - ReadWriteOnce
-  dataSource: null
-  resources:
-	requests:
-  	storage: 1Gi
-  storageClassName: sample-hostlocal
-  volumeMode: Filesystem
-  volumeGroupNames: [placementGroup1]
-```
-
-#### Add groupInfo to CSI Spec
-```
-message CreateVolumeRequest {
-    ……
-    map<string,string> groupInfo
-}
-```
-Note: More details on VolumeGroup and VolumeGroupClass related changes in CSI Spec will be added if we decide to adopt this alternative option.
-
-#### A new external controller will handle VolumeGroupClass and VolumeGroup resources
-External provisioner will be modified to read information from volume groups (through volumeGroupNames) and pass them down to the CSI driver through a new groupInfo field (alternatively we could use the existing field parameters).
-
-In addition to placement choices, a volume group can also be used to define a consistency group.  If both placement group and consistency group are defined, it is possible for the same volume to join both groups. For example, a consistency group may include volume members from two placement groups as they belong to the same application.
-
-```
-apiVersion: volumegroup.storage.k8s.io/v1alpha1
-kind: VolumeGroupClass
-metadata:
-  name: consistencyGroupClass1
-spec:
-  parameters:
-     …...
-  consistentGroupSnapshot: true
-
-
-apiVersion: volumegroup.storage.k8s.io/v1alpha1
-kind: VolumeGroup
-metadata:
-  Name: consistencyGroup1
-spec:
-  volumeGroupClassName: consistencyGroupClass1
-
-
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: pvc1
-  annotations:
-spec:
-  accessModes:
-  - ReadWriteOnce
-  dataSource: null
-  resources:
-	requests:
-  	storage: 1Gi
-  storageClassName: sample-hostlocal
-  volumeMode: Filesystem
-  volumeGroupNames: [placementGroup1, consistencyGroup1]
-```
-
-
-#### Reasons against this proposal
-
-In this alternative proposal we avoid a new CRD unique to this KEP, while leveraging two CRDs already proposed in the context of snapshots. It turns out though that we loose expressibility. Metadata of the StoragePool, like its capacity, can not be surfaced up. it does however allow for applications to group their volumes and express placement constraints quite nicely. It represents a nice way to group PVCs into multiple different logical groups for different use cases, a pattern we believe is valuable. But once we add the StoragePool CRD to achieve the expressability we need, the complexity of using VolumeGroups seems unreasonable and of not enough value as compared to the main proposal in this document.
-
-
-### Alternative Proposal 3 - No CRD
-
-We considered an option without a new CRD, and leveraging existing extensibility whereever possible. 
+We considered an option without a new CRD, and leveraging existing extensibility instead.
 
 As storage pools are only meaningful throught the nodes by which they can be accessed, we can also consider publishing them and their details on Node objects. We can do such publication by leveraging existing CSI mechanism.
 
@@ -631,6 +359,6 @@ metadata:
 
 If a pool is accessible from multiple nodes, they would all quote the same. The `parameters` field could be used by applications to populate `StorageClass`, or a new `storagePoolNames` fields could be added to PVCs.
 
-#### Reasons against this proposal
+#### Reasons against this alternative proposal
 
-We decided against this proposal because StoragePool is more of a first class entity. The same information would need to be replicated on many Nodes, e.g. in Story 3. Best case this would bloat the Nodes, cause additional API server updates, and watching controllers to reconcile without need. Worse case the information on the Nodes, even when referring to the same underlying pool, may be get out of sync and only eventual consistent. A CRD is the clean, easy to reason, reduced load, concern separating solution.
+We decided against this alternative proposal (in favor of the proposed solution stated aboove) because StoragePool is more of a first class entity. The same information would need to be replicated on many Nodes, e.g. in Story 3. Best case this would bloat the Nodes, cause additional API server updates, and watching controllers to reconcile without need. Worse case the information on the Nodes, even when referring to the same underlying pool, may be get out of sync and only eventual consistent. A CRD is the clean, easy to reason, reduced load, concern separating solution.
