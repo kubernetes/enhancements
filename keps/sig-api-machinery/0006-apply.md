@@ -49,6 +49,8 @@ superseded-by:
         - [With Improvement 1 and 2](#with-improvement-1-and-2)
         - [With Improvement 1 and 3](#with-improvement-1-and-3)
         - [With Improvement 1, 2, and 3](#with-improvement-1-2-and-3)
+      - [Generating String Tables](#generating-string-tables)
+      - [Versioning String Tables](#versioning-string-tables)
   - [Risks and Mitigations](#risks-and-mitigations)
   - [Testing Plan](#testing-plan)
 - [Graduation Criteria](#graduation-criteria)
@@ -442,6 +444,112 @@ y,Initialized,PodScheduled,Ready,/var/run/secrets/kubernetes.io/serviceaccount]}
 |---|---|---|---|
 | 400 in base64 | \~ | \~ | \~ |
 | 300 in raw bytes | \~ | \~ | \~ |
+
+##### Generating String Tables
+
+A traversal across the Kubernetes type definitions in the OpenAPI spec will be
+used to gather all field names and enum values, which can be used as a starting
+point for the string table.
+
+The strings found in type definitions will be supplemented with other strings
+found to be frequently used in fieldsets. Commonly used string values and
+unstructured map keys are good candidates. For example,
+`/var/run/secrets/kubernetes.io/serviceaccount` was found by direct inspection
+as being a great string table entry; it is quite long, and it is frequently
+used. We expect to find more string table entries like this via tools and direct
+inspection, and will keep track of them in a separate list that will then be
+merged together with the strings from type definitions when generating string
+tables.
+
+A couple considerations when generating the string table:
+
+- Not all strings are worth adding to the string table. If the `!<base64>`
+  string is longer than the string it would replace, then it clearly makes no
+  sense to add it to the dictionary. The quotes around strings do count
+  toward their length when making this determination since the `!<base64>`
+  entries are unquoted.
+- Since the base64 strings of low ints are shorter, they should be used for
+  more frequently used strings in fieldsets.
+- Unless frequency data that takes priority, we should assign shorter strings
+  to shorter `!<base64>` to minimize the number of strings we excluded because
+  they would get longer if we substituted them with a `!<base64>`.
+- Once we have most of the strings in the table, we anticipate further fine
+  tuning to lead to less and less marginal improvement. As a consequence,
+  we don't expect to release new versions often.
+
+Fine tuning the string table based on what strings are most frequent is
+something we can iterate on. If the initial string table size is small, ordering
+by frequency might not matter that much, but if/when the table gets larger,
+ensuring that frequently used strings are assigned low numbers in the table will
+become increasingly valuable.
+
+There are plenty of potential future optimizations, like gathering fieldset data
+from real-world Kubernetes clusters at runtime, and using it as training data to
+improve string tables.
+
+##### Versioning String Tables
+
+Each string table has a version, starting at 1:
+
+```
+String table:
+{<versionNumber>:[...
+```
+
+Fieldsets serialized using string tables contain the version they were serialized with:
+
+```
+Field set:
+[<versionNumber>, ...
+```
+
+Since a fieldset can only be deserialized using the versioned string table
+it was serialized with, each Kubernetes version must be able to deserialize
+fieldsets that were serialized by:
+
+- All of the prior Kubernetes minor versions.
+- The next Kubernetes minor version, so that N-1 rollback is safe
+
+We can ensure this by:
+
+- Keeping all string table versions around forever
+- Introducing a string table version to Kubernetes one minor version before
+  serializing data using that string table version
+
+Alternative considered: We could instead persist string table versions in etcd--
+each time the kube-apiserver starts, it writes to etcd any string table versions
+it knows about that are not already stored in etcd. Then, if the kube-apiserver
+ever needs to deserialize a fieldset with a string table version it is not aware
+of, it tries to read the needed string table version from etcd. This would allow
+for both HA upgrades and rollbacks. But it is complicated, and since we don't
+want or need to add new the string table versions often, it is not something we
+plan to add initially. It can always be added later if we determine it would be
+useful.
+
+Logically, the information Kubernetes needs about the string tables are:
+
+- The versions of string table it is aware of
+- Which version of the string table it should use when serializing
+
+```
+// Current Kubernetes version: 1.18
+
+const serializeVersion = 1
+
+const stringTableVersions = {
+  1:{[...], introducedVersion: "1.17"}, // may be used to serialize in kubernetes 1.18
+  2:{[...], introducedVersion: "1.18"}, // may be used to serialize in kubernetes 1.19
+  ...
+```
+
+Automated checks we will add to ensure the string tables are versioned correctly:
+
+- Check that the "introducedVersion" of the current "serializeVersion is less
+  than the current kubernetes (for n-1 rollback support).
+- Check that that string table where the "introducedVersion" is less than the
+  current kubernetes version are not modified. We could store hashes with the
+  string tables to help make it obvious that they are immutable, and check that
+  they are correct with a unit test.
 
 ### Risks and Mitigations
 
