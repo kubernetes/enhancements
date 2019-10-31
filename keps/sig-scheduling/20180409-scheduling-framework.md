@@ -574,7 +574,10 @@ For example,
 
 ```go
 func NewServiceAffinity(args runtime.Unknown, h FrameworkHandle) (Plugin, error) {
-    if args != nil && args.ContentType != "application/json" {
+    if args == nil {
+      return errors.Errorf("cannot find service affinity plugin config")
+    }
+    if args.ContentType != "application/json" {
       return errors.Errorf("cannot parse content type: %v", args.ContentType)
     }
     var config struct {
