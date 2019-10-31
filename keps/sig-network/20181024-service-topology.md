@@ -103,7 +103,7 @@ type ServiceSpec struct {
   // topologyKeys is a preference-order list of topology keys.  If backends exist for
   // index [0], they will always be chosen; only if no backends exist for index [0] will backends for index [1] be considered.
   // If this field is specified and all indices have no backends, the service has no backends, and connections will fail.  We say these requirements are hard.
-  // In order to experss soft requirement, we may give a special node label key "*" as it means "match all nodes".
+  // In order to express soft requirement, we may give a special node label key "*" as it means "match all nodes".
   TopologyKeys []string `json:"topologyKeys" protobuf:"bytes,1,opt,name=topologyKeys"`
 }
 ```
