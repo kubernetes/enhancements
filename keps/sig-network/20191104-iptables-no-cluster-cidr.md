@@ -35,7 +35,6 @@ superseded-by:
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Graduation Criteria](#graduation-criteria)
-      - [Removing a deprecated flag](#removing-a-deprecated-flag)
 - [Implementation History](#implementation-history)
 - [Drawbacks [optional]](#drawbacks-optional)
 - [Alternatives [optional]](#alternatives-optional)
@@ -90,11 +89,18 @@ Alternate implementations that don’t use iptables could also adopt this same r
 
 As stated above, the goal is to re-implement the functionality called out in the summary, but in a 
 way that does not depend on a pod cluster CIDR. The essence of the proposal is that for the 
-first two cases in iptables implementation and first case in ipvs, we can replace the `-s proxier.clusterCIDR` with `-s node.podCIDR`.
+first two cases in iptables implementation and first case in ipvs, we can replace the `-s proxier.clusterCIDR` with some notion of node local pod traffic.
 
-The core logic in these cases is “how to determine” cluster originated traffic from non-cluster originated ones. The proposal is that tracking the node podCIDR is sufficient to determine cluster originated traffic.
+The core logic in these cases is “how to determine” cluster originated traffic from non-cluster originated ones. The proposal is that tracking pod traffic generated from within the node is sufficient to determine cluster originated traffic.
+For the first two use cases in iptables and first use case in ipvs, we provide alternatives to using the proxier.clusterCIDR in one of the following ways to determine cluster originated traffic
 
-For the last case, in iptables and ipvs, the proposal is to drop the reference to the cluster CIDR.
+   1. `-s node.podCIDR` (where node podCIDR is used for allocating pod IPs within the node)
+   2. `--in-interface prefix+` (where all pod interfaces start with same prefix)
+   3. `-m physdev --physdev-is-in` (for kubenet if we don’t want to depend on node podCIDR)
+
+Note the above are equivalent definitions, when considering only pod traffic originating from within the node.
+
+For the last use case, in iptables and ipvs, the proposal is to drop the reference to the cluster CIDR.
 
 The reasoning behind why this works are as follows.
 
@@ -117,15 +123,13 @@ The logic is that if the source IP is not part of the cluster CIDR range,
 then it must have originated from outside the cluster. Hence we add a rule to masquerade by
 the node IP so that we can send traffic to any pod within the cluster.
 
-One key insight when thinking about this data path though is the fact that the ip table rules run
-at _every_ node boundary. So when a pod sends a traffic to a service IP, it get's translated to
+One key insight when thinking about this data path though is the fact that the iptable rules run
+at _every_ node boundary. So when a pod sends a traffic to a service IP, it gets translated to
 one of the node IPs _before_ it leaves the node at the node boundary. So it's highly unlikely to 
 receive traffic at a node, whose destination is the service cluster IP, that is initiated by pods
 within the cluster, but not scheduled within that node.
 
-Going by the above reasoning, if we receive traffic whose source is not within the node podCIDR,
-we can say with very high confidence that the traffic originated from outside the cluster. This
-would be simplest change with respect to re-writing the rule without any assumptions on how the pod networking is setup.
+Going by the above reasoning, if we receive traffic whose source is not within the node generated pod traffic,we can say with very high confidence that the traffic originated from outside the cluster. This would be simplest change with respect to re-writing the rule without any assumptions on how the pod networking is setup.
 
 ### iptables - redirecting pod traffic to external loadbalancer VIP to cluster IP
 
@@ -246,13 +250,13 @@ The biggest risk we have is that we are expanding the scope of the last rule to 
 
 ## Design Details
 
+The idea of ‘determine cluster originated traffic’ would be captured in a new interface type within kube-proxy, with different implementations of the interface. The kube-proxy implementation itself would just call method on interface to get the match criteria to write in the rule.
+
+This assumes that the match can be represented in a single rule. We want to avoid going down the path, as much as possible, of adding multiple rules. Support for multiple rules will be taken as a separate enhancement based on feedback as the current clusterCIDR rule is not yet being removed.
+
 ### Graduation Criteria
 
 TODO
-
-##### Removing a deprecated flag
-
-The core proposal is to change kube-proxy such that when we _don’t_ pass a clusterCIDR flag, to write these rules using reference to the node.podCIDR. The node podCIDR will be automatically discovered by observing the node and assumed to be immutable once assigned. So instead of adding any flags, we are in fact encouraging not using one.
 
 ## Implementation History
 
@@ -272,4 +276,5 @@ But for the first rule, we would have to do a new mark and then masquerade on ab
 It also complicates the lifecycle of kube-proxy as when new cluster CIDRs are added, this has to
 be plumbed down to kube-proxy (either change flags and restart or create a new resource to watch).
 
-It is felt it's better to have kube-proxy unlearn knowledge of cluster CIDR instead of adding to it.
+It is felt that it's better to have kube-proxy unlearn knowledge of cluster CIDR instead of adding to it.
+
