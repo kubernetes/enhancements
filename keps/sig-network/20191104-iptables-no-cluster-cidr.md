@@ -27,10 +27,10 @@ superseded-by:
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [iptables - allowing access to service IPs from outside the cluster](#iptables---allowing-access-to-service-ips-from-outside-the-cluster)
-  - [iptables - redirecting pod traffic to external VIP to cluster IP](#iptables---redirecting-pod-traffic-to-external-vip-to-cluster-ip)
+  - [iptables - masquerade off cluster traffic to services by node IP](#iptables---masquerade-off-cluster-traffic-to-services-by-node-ip)
+  - [iptables - redirecting pod traffic to external loadbalancer VIP to cluster IP](#iptables---redirecting-pod-traffic-to-external-loadbalancer-vip-to-cluster-ip)
   - [iptables - accepting traffic after first packet, after being accepted by kubernetes rules](#iptables---accepting-traffic-after-first-packet-after-being-accepted-by-kubernetes-rules)
-  - [ipvs - masquerading non-cluster traffic](#ipvs---masquerading-non-cluster-traffic)
+  - [ipvs - masquerade off cluster traffic to services by node IP](#ipvs---masquerade-off-cluster-traffic-to-services-by-node-ip)
   - [ipvs - accepting traffic after first packet, after being accepted by kubernetes rules](#ipvs---accepting-traffic-after-first-packet-after-being-accepted-by-kubernetes-rules)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
@@ -46,14 +46,14 @@ superseded-by:
 
 The iptables implementation of kube-proxy today references the cluster CIDR for pods in three places for the following reasons.
 
-   1. [Allowing for access to service IPs from outside the cluster, by masquerading with the NodeIP for inbound traffic](https://github.com/kubernetes/kubernetes/blob/master/pkg/proxy/iptables/proxier.go#L887-L894)
+   1. [Masquerade off cluster traffic to services by node IP](https://github.com/kubernetes/kubernetes/blob/master/pkg/proxy/iptables/proxier.go#L887-L894)
    2. [Redirecting pods traffic to external loadbalancer VIP to cluster IP](https://github.com/kubernetes/kubernetes/blob/master/pkg/proxy/iptables/proxier.go#L1248-L1260)
-   3. [Accepting traffic after the first packet, after being accepted by kubernetes rules](https://github.com/kubernetes/kubernetes/blob/master/pkg/proxy/iptables/proxier.go#L1389-L1411)
+   3. [Accepting traffic after first packet, after being accepted by kubernetes rules](https://github.com/kubernetes/kubernetes/blob/master/pkg/proxy/iptables/proxier.go#L1389-L1411)
 
 In addition, the the ipvs implementation also references it in two places for similar purposes
 
-   1. [Masquerade off cluster traffic by node IP](https://github.com/kubernetes/kubernetes/blob/master/pkg/proxy/ipvs/proxier.go#L1558-L1563)
-   2. [Accepting traffic after the first packet, after being accepted by kubernetes](https://github.com/kubernetes/kubernetes/blob/master/pkg/proxy/ipvs/proxier.go#L1635-L1654)
+   1. [Masquerade off cluster traffic to services by node IP](https://github.com/kubernetes/kubernetes/blob/master/pkg/proxy/ipvs/proxier.go#L1558-L1563)
+   2. [Accepting traffic after first packet, after being accepted by kubernetes](https://github.com/kubernetes/kubernetes/blob/master/pkg/proxy/ipvs/proxier.go#L1635-L1654)
 
 This enhancement proposes ways to achieve similar goals without tracking the pod cluster CIDR to do so.
 
@@ -98,7 +98,7 @@ For the last case, in iptables and ipvs, the proposal is to drop the reference t
 
 The reasoning behind why this works are as follows.
 
-### iptables - allowing access to service IPs from outside the cluster
+### iptables - masquerade off cluster traffic to services by node IP
 
 The [rule here currently](
   https://github.com/kubernetes/kubernetes/blob/master/pkg/proxy/iptables/proxier.go#L887-L894
@@ -127,7 +127,7 @@ Going by the above reasoning, if we receive traffic whose source is not within t
 we can say with very high confidence that the traffic originated from outside the cluster. This
 would be simplest change with respect to re-writing the rule without any assumptions on how the pod networking is setup.
 
-### iptables - redirecting pod traffic to external VIP to cluster IP
+### iptables - redirecting pod traffic to external loadbalancer VIP to cluster IP
 
 The [rule here currently](
   https://github.com/kubernetes/kubernetes/blob/master/pkg/proxy/iptables/proxier.go#L1248-L1260
@@ -197,7 +197,7 @@ In addition, since this rule is written after the rule to drop packets marked by
 Unfortunately in this case, it's not possible replace the cluster CIDR rule with local CIDR as
 the traffic could be getting forwarded through this node to another node.
 
-### ipvs - masquerading non-cluster traffic
+### ipvs - masquerade off cluster traffic to services by node IP
 
 The [rule here currently](https://github.com/kubernetes/kubernetes/blob/master/pkg/proxy/ipvs/proxier.go#L1558-L1563) looks as follows.
 
