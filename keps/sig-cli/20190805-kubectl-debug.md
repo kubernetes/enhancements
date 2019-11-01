@@ -1,5 +1,5 @@
 ---
-title: Pod Troubleshooting
+title: kubectl debug
 authors:
   - "@verb"
 owning-sig: sig-cli
@@ -34,10 +34,11 @@ see-also:
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [Debug Container Naming](#debug-container-naming)
+  - [Pod Troubleshooting with Ephemeral Containers](#pod-troubleshooting-with-ephemeral-containers)
+    - [Debug Container Naming](#debug-container-naming)
   - [Container Namespace Targeting](#container-namespace-targeting)
-  - [Interactive Troubleshooting and Automatic Attaching](#interactive-troubleshooting-and-automatic-attaching)
-  - [Proposed <code>kubectl debug</code> arguments](#proposed--arguments)
+    - [Interactive Troubleshooting and Automatic Attaching](#interactive-troubleshooting-and-automatic-attaching)
+    - [Proposed <code>kubectl debug</code> arguments](#proposed--arguments)
   - [User Stories](#user-stories)
     - [Operations](#operations)
     - [Debugging](#debugging)
@@ -80,20 +81,22 @@ Check these off as they are completed for the Release Team to track. These check
 
 ## Summary
 
-This proposal adds a command to `kubectl` allowing troubleshooting a running pod
-with tools provided in an arbitrary container image by making use of [ephemeral
-containers]. `kubectl debug` parallels the existing, `kubectl exec`.  Whereas
-`kubectl exec` runs a _process_ in a _container_, `kubectl debug` runs a
-_container_ in a _pod_.
+This proposal adds a command to `kubectl` to improve the user experience of
+troubleshooting. Current `kubectl` commands such as `exec` and `port-forward`
+allow this sort of troubleshooting at the container and network layer. `kubectl
+debug` extends these capabilities to include Kubernetes abstractions such as
+Pod, Node and [Ephemeral Containers].
 
-For example, the following command would attach to a newly created container in
-a pod:
+Workflows supported by the initial release of `kubectl debug` are:
 
-```
-kubectl debug -c debug-shell --image=debian target-pod -- bash
-```
+1. Create an Ephemeral Container in a running Pod to attach debugging tools
+   to a distroless container image. *(pod debugging)*
+2. Restart a pod with a modified `PodSpec`, to allow in-place troubleshooting
+   using different container images or permissions. *(pod debugging)*
+3. Start and attach to a privileged container in the host namespace.
+   *(node debugging)*
 
-[ephemeral containers]: https://git.k8s.io/enhancements/keps/sig-node/20190212-ephemeral-containers.md
+[Ephemeral Containers]: https://git.k8s.io/enhancements/keps/sig-node/20190212-ephemeral-containers.md
 
 ## Motivation
 
@@ -148,23 +151,25 @@ Make available to users of Kubernetes a troubleshooting facility that:
 3. does not require administrative access to the node.
 
 New `kubectl` concepts increase cognitive burden for all users of Kubernetes.
-This KEP seeks to minimize this burden by mirroring the existing `kubectl exec`
-workflow.
+This KEP seeks to minimize this burden by mirroring the existing `kubectl`
+workflows where possible.
 
 ### Non-Goals
 
 Ephemeral containers are supported on Windows, but it's not the recommended
-debugging facility. Debugging relies on process namespace sharing, which isn't
-implemented by the Windows container runtime, and Windows containers cannot be
-built `FROM scratch` so debugging tools are already available in the container.
-While not excluding Windows containers, this KEP will focus on the Linux use
-case.
+debugging facility. The other troubleshooting workflows described here are
+equally as useful to Windows containers. We will not attempt to create
+separate debugging facilities for Windows containers.
 
 [distroless container image]: https://github.com/GoogleCloudPlatform/distroless
 [distroless for k8s system images]: https://git.k8s.io/enhancements/keps/sig-release/20190316-rebase-images-to-distroless.md
 [scratch debugger]: https://github.com/kubernetes-retired/contrib/tree/master/scratch-debugger
 
 ## Proposal
+
+TODO: Add other troubleshooting workflows.
+
+### Pod Troubleshooting with Ephemeral Containers
 
 We will add a new command `kubectl debug` that will:
 
@@ -178,7 +183,7 @@ We will add a new command `kubectl debug` that will:
 4. [optional] Watch pod for updates to the debug container's `ContainerStatus`
    and automatically attach once the container is running.
 
-### Debug Container Naming
+#### Debug Container Naming
 
 Currently, there is no support for deleting or recreating ephemeral containers.
 In cases where the user does not specify a name, `kubectl` will generate a
@@ -195,7 +200,7 @@ that support container namespace targeting.
 
 [Process Namespace Sharing]: https://kubernetes.io/docs/tasks/configure-pod-container/share-process-namespace
 
-### Interactive Troubleshooting and Automatic Attaching
+#### Interactive Troubleshooting and Automatic Attaching
 
 Since the primary use case for `kubectl debug` is interactive troubleshooting,
 `kubectl debug` will automatically attach to the console of the newly created
@@ -204,7 +209,7 @@ ephemeral container and will default to creating containers with `Stdin` and
 
 These may be disabled via command line flags.
 
-### Proposed `kubectl debug` arguments
+#### Proposed `kubectl debug` arguments
 
 ```
 % kubectl help debug
