@@ -10,13 +10,11 @@ participating-sigs:
 reviewers:
   - "@sttts"
   - "@lavalamp"
-  - "@cblecker"
-  - "@mattfarina"
 approvers:
   - "@smarterclayton"
   - "@thockin"
 creation-date: 2019-03-19
-last-updated: 2019-03-26
+last-updated: 2019-11-01
 status: implementable
 ---
 
@@ -56,21 +54,15 @@ These checklist items _must_ be updated for the enhancement to be released.
 
 - [x] kubernetes/enhancements issue in release milestone, which links to KEP: https://github.com/kubernetes/enhancements/issues/917
 - [x] KEP approvers have set the KEP status to `implementable`
-- [ ] Design details are appropriately documented
-- [ ] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
-- [ ] Graduation criteria is in place
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [x] Design details are appropriately documented
+- [x] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [x] Graduation criteria is in place
+- [x] "Implementation History" section is up-to-date for milestone
+- [x] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [x] User-facing documentation has been created
 
-**Note:** Any PRs to move a KEP to `implementable` or significant changes once it is marked `implementable` should be approved by each of the KEP approvers. If any of those approvers is no longer appropriate than changes to that list should be approved by the remaining approvers and/or the owning SIG (or SIG-arch for cross cutting KEPs).
-
-**Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
-
-[kubernetes.io]: https://kubernetes.io/
 [kubernetes/enhancements]: https://github.com/kubernetes/enhancements/issues
 [kubernetes/kubernetes]: https://github.com/kubernetes/kubernetes
-[kubernetes/website]: https://github.com/kubernetes/website
 
 ## Summary
 
@@ -103,6 +95,7 @@ In addition to simply keeping up with the go ecosystem, go modules provide many 
 * Provide accurate go.mod module descriptors for kubernetes/kubernetes and published staging components
 * Enable use of published kubernetes components by `go module` aware consumers
 * Allow continued use of published kubernetes components by `go module` *unaware* consumers until go modules are enabled by default
+* Allow consumers of go modules to understand the versions of kubernetes libraries they are using
 
 ## Proposal
 
@@ -167,13 +160,29 @@ See the [alternatives](#alternatives-to-publishing-staging-component-modules) se
 
 As part of transitioning to go modules, we can select a versioning strategy.
 
-Current state:
-* `client-go` tags a major version on every kubernetes release
-* other components tag a (non-semver) `kubernetes-1.x.y` version on each release
-* no import rewriting occurs
-* consumers can only make use of a single version of each component
+State prior to adoption of go modules:
+* `client-go` tagged a major version on every kubernetes release
+* all components tagged a (non-semver) `kubernetes-1.x.y` version on each release
+* no import rewriting occurred
+* consumers could only make use of a single version of each component in a build
 
-This proposes continuing to tag published components as-is (`kubernetes-1.x.y` for most components, `vX.0.0` for client-go).
+State after adoption of go modules:
+* all components tagged a (non-semver) `kubernetes-1.x.y` version on each release
+* no import rewriting occurred
+* consumers could only make use of a single version of each component in a build
+
+This proposes publishing components with the following tags:
+* Non-semver tags of `kubernetes-1.x.y` (corresponding to kubernetes `v1.x.y`)
+* Semver tags of `v0.x.y` (corresponding to kubernetes `v1.x.y`)
+
+`v0.x.y` accurately convey the current guarantees around the go APIs release-to-release.
+The semver tags are preserved in the go.mod files of consuming components, 
+allowing them to see what versions of kubernetes libraries they are using.
+Without semver tags, downstream components see "pseudo-versions" like
+`v0.0.0-20181208010431-42b417875d0f` in their go.mod files, making it 
+extremely difficult to see if there are version mismatches between the 
+kubernetes libraries they are using.
+
 This results in the following usage patterns:
 
 Consumers:
@@ -182,10 +191,10 @@ Consumers:
   * `go get` behavior (e.g. `go get client-go`):
     * uses latest commits of transitive `k8s.io/...` dependencies (likely to break, as today)
     * uses latest commits of transitive non-module-based dependencies (likely to break, as today)
-* module-based consumers
-  * reference published module versions as `v0.0.0-$date-$sha`
+* module-based consumers using a specific version
+  * reference published module versions as `v0.x.y` or `kubernetes-1.x.y`
   * import `k8s.io/apimachinery/...` (as they do today)
-  * `go get` behavior (e.g. `GO111MODULE=on go get client-go@v15.0.0`):
+  * `go get` behavior (e.g. `GO111MODULE=on go get k8s.io/client-go@v0.17.0` or `GO111MODULE=on go get k8s.io/client-go@kubernetes-1.17.0`):
     * uses `go.mod`-referenced versions of transitive `k8s.io/...` dependencies (unless overridden by top-level module, or conflicting peers referencing later versions)
     * uses `go.mod`-referenced versions of transitive non-module-based dependencies (unless overridden by top-level module, or conflicting peers referencing later versions)
 * consumers are limited to a single copy of kubernetes libraries among all dependencies (as they are today)
@@ -197,8 +206,11 @@ Compatibility implications:
 * breaking go changes in each release impact consumers that have not pinned to particular tags/shas (as they do today)
 * conflicting version requirements (direct or transitive) can result in impossible-to-build or impossible-to-update dependencies (as they do today)
 
-Allowed versioning changes:
-* modules published this way can transition to semantic import versioning in the future
+This would not limit future changes to our versioning strategy:
+* modules published and tagged this way could transition to semantic import versioning in the future, if desired
+* modules published and tagged this way could transition to v1.x.y semver tagging in the future, if desired
+  (this would require enforcement of go API compatibility in perpetuity, and prevent removal of *any* go API element,
+  so we are unlikely to pursue this approach, but adding v0.x.y tags now does not remove the option)
 
 See the [alternatives](#alternative-versioning-strategies) section for other possible versioning strategies considered for the initial move to modules.
 
@@ -245,6 +257,8 @@ Not applicable
 - 2019-03-19: Created
 - 2019-03-26: Completed proposal
 - 2019-03-26: Marked implementable
+- 2019-04-03: Implemented go module support
+- 2019-11-01: Added proposal for tagging published modules with v0.x.y
 
 ## Alternatives
 
@@ -354,3 +368,4 @@ and doesn't fully allow multiple versions of kubernetes components to coexist as
 * https://golang.org/cmd/go/#hdr-The_go_mod_file
 * https://golang.org/cmd/go/#hdr-Maintaining_module_requirements
 * https://golang.org/cmd/go/#hdr-Module_compatibility_and_semantic_versioning
+* [discussion of tagging with v0.x.y](https://github.com/kubernetes/kubernetes/issues/84608)
