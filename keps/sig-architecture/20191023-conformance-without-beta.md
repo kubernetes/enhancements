@@ -57,7 +57,7 @@ Check these off as they are completed for the Release Team to track. These check
 - [x] Graduation criteria is in place
 - [x] "Implementation History" section is up-to-date for milestone
 - [x] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
-- [ ] KEP approvers have set the KEP status to `implementable`
+- [x] KEP approvers have set the KEP status to `implementable`
 - [ ] ~~User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]~~
 
 **Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
@@ -161,6 +161,7 @@ Phase 2:
 ## Implementation History
 
 - 2019-10-23: KEP created
+- 2019-11-01: KEP marked implementable
 
 ## Infrastructure Needed
 
