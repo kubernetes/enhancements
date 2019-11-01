@@ -103,7 +103,7 @@ type ServiceSpec struct {
   // topologyKeys is a preference-order list of topology keys.  If backends exist for
   // index [0], they will always be chosen; only if no backends exist for index [0] will backends for index [1] be considered.
   // If this field is specified and all indices have no backends, the service has no backends, and connections will fail.  We say these requirements are hard.
-  // In order to experss soft requirement, we may give a special node label key "" as it means "match all nodes".
+  // In order to express soft requirement, we may give a special node label key "*" as it means "match all nodes".
   TopologyKeys []string `json:"topologyKeys" protobuf:"bytes,1,opt,name=topologyKeys"`
 }
 ```
@@ -121,7 +121,7 @@ spec:
 
 In our example above, we will firstly try to find the backends in the same host. If no backends match, we will then try the same zone. If finally we can't find any backends in the same host or same zone, then we say the service has no satisfied backends and connections will fail.
 
-If we configure topologyKeys as `["kubernetes.io/hostname", ""]`, we just do the effort to find the backends in the same host and will not fail the connection if no matched backends found.
+If we configure topologyKeys as `["kubernetes.io/hostname", "*"]`, we just do the effort to find the backends in the same host and will not fail the connection if no matched backends found.
 
 ### Service Topology Scalability
 
@@ -190,9 +190,9 @@ In order to handle headless services, the DNS server needs to know the node corr
 * Unit tests for topology endpoint filtering function, including at least:
   * No topology constraints (no keys)
   * A single hard constraint (single specific key)
-  * A single `""` constraint.
-  * Multiple hard constraints (no final `""` key).
-  * Multiple constraints plus a final `""` key.
+  * A single `"*"` constraint.
+  * Multiple hard constraints (no final `"*"` key).
+  * Multiple constraints plus a final `"*"` key.
 * Each of the above sets of keys must have tests with varying topologies
   available.
 * E2E tests with hard constraint and soft constraints using Endpoints.
