@@ -1,0 +1,30 @@
+title: Optionally Disable Node Ports for Service Type=LoadBalancer
+kep-number: 1864
+authors:
+  - "@andrewsykim"
+owning-sig: sig-network
+participating-sigs:
+  - sig-cloud-provider
+status: implementable
+creation-date: 2020-06-21
+reviewers:
+  - "@thockin"
+  - "@uablrek"
+  - "@rikatz"
+approvers:
+  - "@thockin"
+prr-approvers:
+  - "@johnbelamaric"
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: stable
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.20"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  stable: "v1.20"
+
