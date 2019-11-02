@@ -192,7 +192,13 @@ Having the pods query the nodelocal cache introduces a single point of failure.
 
 
 ## Graduation Criteria
-TODO
+This feature has been alpha since 1.13 release and beta since 1.15 release.
+
+Graduation criteria for GA(targeted for 1.18 release):
+- Upgrade to a newer CoreDNS version(1.16.x) in [node-cache](https://github.com/kubernetes/dns/pull/328).
+- Ensure that Kubernetes [e2e tests with NodeLocal DNSCache](https://k8s-testgrid.appspot.com/sig-network-gce#gci-gce-kube-dns-nodecache) are passing.
+- Scalability tests with NodeLocal DNSCache enabled, verifying the [HA modes](https://github.com/kubernetes/enhancements/blob/master/keps/sig-network/20190424-NodeLocalDNS-beta-proposal.md#design-details) as well as the regular mode.
+- Have N clusters(number TBD) running in production with NodeLocal DNSCache enabled.
 
 ## Rollout Plan
 This feature will be launched with Alpha support in the first release. Master versions v1.13 and above will deploy the new add-on. Node versions v1.13 and above will have kubelet code to modify pods' resolv.conf. Nodes running older versions will run the nodelocal daemonset, but it will not be used. The user can specify a custom dnsConfig to use this local cache dns server.
@@ -202,6 +208,7 @@ This feature will be launched with Alpha support in the first release. Master ve
 * 2018-10-05 - Creation of the KEP
 * 2018-10-30 - Follow up comments and choice of cache agent
 * 2018-11-14 - [Changes](https://github.com/kubernetes/kubernetes/pull/70555) to support running NodeLocal DNSCache were merged.
+* 2018-11-02 - Added GA graduation criteria
 
 ## Drawbacks [optional]
 
