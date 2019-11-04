@@ -71,14 +71,19 @@ with the unreasonable development overhead of a webhook.
   - the user-observed equality used for immutability checks must match the equality on
     persisted objects. I.e. if `StorageRoundtrip(object)` is the object returned by a
     create or update call, then we want that `StorageRoundtrip(a) == StorageRoundtrip(b)`
-    is the equality used for comparing `a` and `b` **only modulo the order in `x-kubernetes-list-type: set` arrays**. 
-    If that check fails, a request is rejected because of immutability conflict.
+    is the equality used for comparing `a` and `b`. If that check fails, a request is rejected because of immutability conflict.
+    
+    The choice if this equality (vs. e.g. a semantic equality) is essential because both validation and defaulting depend on it for sane behaviour: an update to an immutable (sub-)object must not change validity or trigger defaulting to happen that did not happen before.
 - the mechanism must extend to
   - the addition of protobuf or other encodings which unify values like empty, null and undefined.
   - the use for existing native types in order to replace complex validation code with a simple declarative marker on the types.
   - the restriction of the equality to only map keys, but not their values.
-  - the allowance of addition and/or deletion of map keys.
-  - the allowance of addition and/or deletion of keys in array of list-type `map`.  
+  - the allowance of addition and/or deletion of map keys in maps and in array of list-type `map` to support cases we have in Kubernetes API today like:
+  
+    - scheduler setting `spec.nodeName` (and it being immutable after that point)
+    - populating `clusterIP` in services
+    - append-only lists (like `ephemeralContainers`)
+    - remove-only lists (like `finalizers` that may only shrink after deletion).
 
 ### Non-Goals
 
@@ -403,7 +408,7 @@ Disallowed for RemoveOnly, disallowed otherwise:
 Disallowed:
 - `{foo:[a]}` → `{foo:[b]}` (key a is removed, key b is added)
 
-#### Immutable map keys, mutable values, map type granular / atomic
+#### Immutable map keys, mutable values, map type undefined / granular / atomic
 
 Equivalently to the list type map, the set of keys is immutable|add-only|remove-only. Hence, values can be changed. New key-values cannot be added (Immutable, RemoveOnly) and old key-values cannot be removed (Immutable, AddOnly).
 
@@ -414,7 +419,7 @@ type: object
 properties:
   foo:
     type: object
-    x-kubernetes-map-type: granular | atomic 
+    x-kubernetes-map-type: undefined | granular | atomic 
     x-kubernetes-key-mutability: Immutable | AddOnly | RemoveOnly
     additionalProperties:
       type: string
@@ -473,42 +478,6 @@ decoded from JSON which have normalizations defined:
    2. normalization creating a copy with shared data-structures
    3. strict immutability check against the old object, coming from proto assuming it is normalized.
 
-### Future outline: protobuf
-
-Protobuf encoding unifies unset, empty and null values for slices and maps. Those three cases 
-cannot be differentiated an lead to the same on-the-wire value. In native types
-we use a semantic equality to factor those differences out if JSON is used on the wire, but
-protobuf is used for storage. In CRs decoding and encoding is always faithful with the 
-traditional JSON format used on-the-wire and for storage.
-
-When adding protobuf encoding to CRDs in the future, we have to (without major, non-standard
-efforts) identify unset, empty and null for CRs as well. This leads to the idea to use a less
-strict equality in the immutabiltiy checks with that case in mind. But protobuf encoding in
-native types also has a normalization effect, namely posted JSON object are normalized through
-the encoding to protobuf when writing to etcd. 
-
-Hence, it looks sensible to split normalization from immutability equality, and keep a strict 
-deep-equal equality even for protobuf, and potentially native types (if we decide to implement 
-immutability for those).
-
-With the container example we get this, with a sketch of a `+normalize` marker which
-normalizes empty and null to undefined:
-
-```
-// The list of containers can not change AT ALL after creation, modulo
-// empty, null and undefined.
-// No single field in existing containers can be changed, added or deleted,
-// no new containers can be added, no existing container can be removed.
-// +immutable
-// +normalize=undefined
-Containers []Container `json:containers,omitempty` `protobuf:"bytes,2,opt,name=containers"
-```
-
-For fields which carry no `omitempty`, we could allow more advanced normalization
-modes which replicate the Golang serialization behaviour. Tooling like openapi-gen
-and the CRD validation could verify that the normalization specification matches 
-that of Golang.
-
 ### Mutating admission chain
 
 Mutating admission chain would have the exact same effects as user changes,
@@ -527,8 +496,8 @@ immutability of fields.
 
 ### Risks and Mitigations
 
-- immutable metadata would break API machinery. We forbid the `x-kubernetes-mutability` and `x-kubernetes-key-mutability`
-  at the root of the object and inside `.metadata`. `kind` and `apiVersion` are
+- immutable metadata would break API machinery. We already forbid any specification/restriction of metadata fields other than `name` and `generatedName` today. We keep the same restriction for `x-kubernetes-mutability` and `x-kubernetes-key-mutability`, and
+  at the root of the object (`x-kubernetes-mutability` would affect `metadata`, and `x-kubernetes-key-mutability` is forbidden as the root is of type `object` and `additionalProperties` is already disallowed). `kind` and `apiVersion` are
   immutable implicitly. We might publish immutable though for some of these fields.
 
 ## Design Details
@@ -585,8 +554,30 @@ N/A
 - OpenAPI has a notion of `readOnly`. This is meant to restrict fields to be set
   only in responses, not in a request payload. This does not match our 
   `never-change-after-creation` semantics.
-- Allowing `false` as value for `x-kubernetes-mutability: Mutable` was considered to
-  disable immutability imposed by a parent node. This complicates the definition of the semantics
-  considerably, increases complexity of the verification algorithm and can be expressed with a 
-  combination of a (possibly large) number of  `x-kubernetes-key-immutabilty` and 
-  `x-kubernetes-immutabilty` directives on the complementing fields.
+- Allowing `x-kubernetes-mutability: Mutable` was considered to disable immutability imposed by a parent node. With it we could express `x-kubernetes-key-mutability: Immutable` as:
+  ```yaml
+  type: object
+  properties:
+    foo:
+      type: object
+      x-kubernetes-mutability: Immutable
+      additionalProperties:
+        type: string
+        x-kubernetes-mutability: Mutable
+  ```
+  with the small difference that here these would be disallowed:
+  - `{}` → `{foo: {}}`
+  - `{foo: {}}` → `{}`.
+  This API does not extend cleanly to  `AddOnly | RemoveOnly`:
+  ```yaml
+  type: object
+  properties:
+    foo:
+      type: object
+      x-kubernetes-mutability: AddOnly
+      additionalProperties:
+        type: string
+        x-kubernetes-mutability: Mutable
+  ```
+  Does the `AddOnly` apply to the keys of the map or to the map itself as field `foo` in the parent object?
+  
