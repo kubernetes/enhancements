@@ -581,3 +581,27 @@ N/A
   ```
   Does the `AddOnly` apply to the keys of the map or to the map itself as field `foo` in the parent object?
   
+  If it `x-kubernetes-mutability: AddOnly | RemoveOnly` applies to both, we would get:
+  
+  Allowed:
+  - `{foo:{a:"1"}` → `{foo:{a:"2"}}` (keys are unchanged)
+  
+  Allowed for AddOnly, disallowed otherwise:
+  - `{}` → `{foo:{}}` (`foo` is added)
+  - `{}` → `{foo:{a:"1"}}` (key a is added)
+  - `{foo:{a:"1"}}` → `{foo:{a:"1", b:"2"}}` (key b is added)
+  
+  Allowed for RemoveOnly, disallowed otherwise:
+  - `{foo:{}}` → `{}` (`foo` is removed)
+  - `{foo:{a:"1"}}` → `{}` (key a is removed)
+  
+  Disallowed:
+  - `{foo:{a:"1"}}` → `{foo:{b:"1"}}` (key a is removed, key b is added)
+  
+  **While this looks acceptable, there are reasons that we do not want to go with `x-kubernetes-mutability: Mutable`:**
+  
+  1. `x-kubernetes-mutability: Mutable` is a negative property which makes the schema weaker instead of stronger. With structural schemas we tried hard to avoid non-positive properties because it is hard to reason about: missing knowledge about that property leads to an inconsistent schema which forbids valid requests.
+  
+  2. A practical consequence of (1) is that of non-local, unexpected behaviour for shared types: imagine a `PodSpec` that marks certain fields mutable. If that type is embedded into an immutable object, that immutability is not applied to the whole `PodSpec` because it opts out for certain fields. This is counter-intuitive.
+  
+  As a fix for (2) one could ignore `x-kubernetes-mutability: Mutable` under more than one parent with `x-kubernetes-mutability: Immutable`. While this looks like a reasonable behaviour for the "shared type case", it makes the semantics complex.
