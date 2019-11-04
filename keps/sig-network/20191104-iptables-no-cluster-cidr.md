@@ -6,6 +6,8 @@ owning-sig: sig-network
 participating-sigs:
 reviewers:
   - "@thockin"
+  - "@caseydavenport"
+  - "@mikespreitzer"
 approvers:
   - "@thockin"
 editor: TBD
@@ -49,7 +51,7 @@ The iptables implementation of kube-proxy today references the cluster CIDR for 
    2. [Redirecting pods traffic to external loadbalancer VIP to cluster IP](https://github.com/kubernetes/kubernetes/blob/master/pkg/proxy/iptables/proxier.go#L1248-L1260)
    3. [Accepting traffic after first packet, after being accepted by kubernetes rules](https://github.com/kubernetes/kubernetes/blob/master/pkg/proxy/iptables/proxier.go#L1389-L1411)
 
-In addition, the the ipvs implementation also references it in two places for similar purposes
+In addition, the ipvs implementation also references it in two places for similar purposes
 
    1. [Masquerade off cluster traffic to services by node IP](https://github.com/kubernetes/kubernetes/blob/master/pkg/proxy/ipvs/proxier.go#L1558-L1563)
    2. [Accepting traffic after first packet, after being accepted by kubernetes](https://github.com/kubernetes/kubernetes/blob/master/pkg/proxy/ipvs/proxier.go#L1635-L1654)
@@ -129,7 +131,7 @@ one of the node IPs _before_ it leaves the node at the node boundary. So it's hi
 receive traffic at a node, whose destination is the service cluster IP, that is initiated by pods
 within the cluster, but not scheduled within that node.
 
-Going by the above reasoning, if we receive traffic whose source is not within the node generated pod traffic,we can say with very high confidence that the traffic originated from outside the cluster. This would be simplest change with respect to re-writing the rule without any assumptions on how the pod networking is setup.
+Going by the above reasoning, if we receive traffic whose source is not within the node generated pod traffic,we can say with very high confidence that the traffic originated from outside the cluster. This would be the simplest change with respect to re-writing the rule without any assumptions on how the pod networking is setup.
 
 ### iptables - redirecting pod traffic to external loadbalancer VIP to cluster IP
 
@@ -256,7 +258,7 @@ This assumes that the match can be represented in a single rule. We want to avoi
 
 ### Graduation Criteria
 
-TODO
+TODO - this will be resolved once the initial KEP has been reviewed. The current thinking is that these would just be additional flags to kube-proxy.
 
 ## Implementation History
 
