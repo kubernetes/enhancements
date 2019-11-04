@@ -132,6 +132,7 @@ The value of a field is immutable, and it cannot be added (Immutable, RemoveOnly
 *Example 1 - Immutable*:
 
 ```yaml
+type: object
 properties:
   foo:
     type: string
@@ -147,15 +148,18 @@ Allowed for RemoveOnly, disallowed otherwise:
 Disallowed:
 - `{foo:"a"}` →	`{foo:"b"}`
 
-#### Mutable array, immutable items, list type list
+#### Mutable array, immutable items, list type undefined / atomic
 
 The items with their respective index in the array are immutable. Hence, appending and removal at the end of the array are allowed, the change of an item or the change of the order are not.
 
 *Example 2*:
 
 ```yaml
+type: object
 properties:
   foo:
+    type: array
+    x-kubernetes-list-type: undefined | atomic
     items:
       type: object
       properties: ...
@@ -174,13 +178,15 @@ Disallowed:
 
 #### Mutable array, immutable items, list type map
 
-The key-value pairs in the array are immutable, set set of keys is not. Hence, addition and removal of key-values pairs
+The key-value pairs in the array are immutable, the set of keys is not. Hence, addition and removal of key-values pairs
 
 *Example 3*:
 
 ```yaml
+type: object
 properties:
   foo:
+    type: array
     x-kubernetes-list-type: map
     x-kubernetes-list-map-keys: ["k"]
     items:
@@ -204,13 +210,15 @@ Disallowed:
 
 #### Mutable array, immutable items, list type set
 
-Sets are maps with the whole value as key. Hence, addition and removed of any value in the set is allowed.
+Sets are maps with the whole value as key. Hence, addition and removal of any value in the set is allowed.
 
 *Example 4*:
 
 ```yaml
+type: object
 properties:
   foo:
+    type: array
     x-kubernetes-list-type: set
     items:
       type: string
@@ -225,16 +233,34 @@ Allowed:
 - `{foo:[a]}` → `{foo:[b]}` (key a is removed, key b is added)
 - `{foo:[a]}` → `{foo:[b,a]}` (value of key a is unchanged, key b is added)
 
-#### Mutable map, immutable values, map type map
+*Example 4b*: the values must be atomic. A non-trivial example is the following with map type atomic, i.e. a mutable set of atomic string maps.
+
+```yaml
+type: object
+properties:
+  foo:
+    type: array
+    x-kubernetes-list-type: set
+    items:
+      type: object
+      x-kubernetes-mutability: Immutable
+      x-kubernetes-map-type: atomic
+      additionalProperties:
+        type: string
+```
+
+#### Mutable map, immutable values, map type undefined / granular
 
 Equivalently to the list type map, removal and addition of key-value pairs are allowed, while direct value change is not.
 
 *Example 5*:
 
 ```yaml
+type: object
 properties:
   foo:
-    x-kubernetes-list-type: map
+    type: array
+    x-kubernetes-map-type: undefined | granular
     additionalProperties:
       type: string
       x-kubernetes-mutability: Immutable
@@ -273,16 +299,18 @@ properties:
 
 Because object `properties` in Kubernetes-like APIs should not be considered as a known set, but each field individually we disallow the use of `x-kubernetes-key-mutability` in this case. CRD validation will reject it. 
 
-#### Immutable array keys, mutable values, list type list / atomic
+#### Immutable array keys, mutable values, list type unset / atomic
 
 The set of indices is immutable/add-only/remove-only. Hence, appending (Immutable, RemoveOnly) or shrinking (Immutable, AddOnly) is disallowed, but changes that do not change the length are allowed.
 
 *Example 7*:
 
 ```yaml
+type: object
 properties:
   foo:
-    x-kubernetes-list-type: list | atomic
+    type: array
+    x-kubernetes-list-type: undefined | atomic
     x-kubernetes-key-mutability: Immutable | AddOnly | RemoveOnly
     items:
       type: object
@@ -310,8 +338,10 @@ The set of keys is immutable/add-only/remove-only. Hence, non-key values can be 
 *Example 8*:
 
 ```yaml
+type: object
 properties:
   foo:
+    type: array
     x-kubernetes-list-type: map
     x-kubernetes-list-map-keys: ["k"]
     x-kubernetes-key-mutability: Immutable | AddOnly | RemoveOnly
@@ -348,8 +378,10 @@ Note: this is different from a set with `x-kubernetes-mutability: Immutable`. Th
 *Example 9*: 
 
 ```yaml
+type: object
 properties:
   foo:
+    type: array
     x-kubernetes-list-type: set
     x-kubernetes-key-mutability: Immutable | AddOnly | RemoveOnly
     items:
@@ -371,16 +403,18 @@ Disallowed for RemoveOnly, disallowed otherwise:
 Disallowed:
 - `{foo:[a]}` → `{foo:[b]}` (key a is removed, key b is added)
 
-#### Immutable map keys, mutable values, map type map / atomic
+#### Immutable map keys, mutable values, map type granular / atomic
 
 Equivalently to the list type map, the set of keys is immutable|add-only|remove-only. Hence, values can be changed. New key-values cannot be added (Immutable, RemoveOnly) and old key-values cannot be removed (Immutable, AddOnly).
 
 *Example 10*:
 
 ```yaml
+type: object
 properties:
   foo:
-    x-kubernetes-map-type: map | atomic 
+    type: object
+    x-kubernetes-map-type: granular | atomic 
     x-kubernetes-key-mutability: Immutable | AddOnly | RemoveOnly
     additionalProperties:
       type: string
@@ -505,7 +539,7 @@ immutability of fields.
   - CRD validation
     - for `x-kubernetes-mutability` and `x-kubernetes-key-mutability` at the root and in `metadata`
     - for `x-kubernetes-key-mutability` forbidden for object with `properties`
-    - for `x-kubernetes-mutability: AddOnly | RemoveOnly` forbidden for objects without `properties` (maps) and arrays.
+    - for `x-kubernetes-mutability: AddOnly | RemoveOnly` forbidden for type object with `additionalProperties` (maps) and arrays.
     - for `x-kubernetes-mutability` and `x-kubernetes-key-mutability` only for v1 CRDs, or during ratcheting updates.
   - immutability checking with all variants of `x-kubernetes-mutability`, `x-kubernetes-key-mutability`, and all variations of `x-kubernetes-list-type` and `x-kubernetes-map-type`.
 - integration tests are added for
