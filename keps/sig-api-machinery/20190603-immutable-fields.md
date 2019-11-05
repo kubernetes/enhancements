@@ -101,8 +101,12 @@ We propose
  
    1. `x-kubernetes-mutability: Immutable | AddOnly | RemoveOnly` and
    2. `x-kubernetes-key-mutability: Immutable | AddOnly | RemoveOnly`.
+
+   For schemas of type `array` and for schemas of type `object` with `additionalProperties` (i.e. Golang `map[string]<type>`), we allow only `Immutable` for `x-kubernetes-mutability` and all three values of `x-kubernetes-key-mutability`.
    
-   The second is restricted to `Immutable` *if* the schema is of type `object` and `properties` is set, the first is restricted to `Immutable` otherwise.
+   For all other schemas (especially of type `object` with `properties`, i.e. Golang structs; and all basic types), we allow all three values for `x-kubernetes-mutability` and we disallow `x-kubernetes-key-mutability`.
+   
+   For any other schema, 
    
    At the root-level and inside `.metadata` of an object, `x-kubernetes-mutability` and `x-kubernetes-key-mutability` are forbidden.
    
