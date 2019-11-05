@@ -102,12 +102,14 @@ We propose
    1. `x-kubernetes-mutability: Immutable | AddOnly | RemoveOnly` and
    2. `x-kubernetes-key-mutability: Immutable | AddOnly | RemoveOnly`.
 
-   For schemas of type `array` and for schemas of type `object` with `additionalProperties` (i.e. Golang `map[string]<type>`), we allow only `Immutable` for `x-kubernetes-mutability` and all three values of `x-kubernetes-key-mutability`.
+   Both `x-kubernetes-mutability` and `x-kubernetes-key-mutability` are mutual exclusive in a schema.
+
+   For schemas of type `array` and for schemas of type `object` with `additionalProperties` (i.e. Golang `map[string]<type>`), we allow all three values of `x-kubernetes-key-mutability`.
    
-   For all other schemas (especially of type `object` with `properties`, i.e. Golang structs; and all basic types), we allow all three values for `x-kubernetes-mutability` and we disallow `x-kubernetes-key-mutability`.
+   For all other schemas (especially of type `object` with `properties`, i.e. Golang structs; and all basic types), we disallow `x-kubernetes-key-mutability`.
    
-   For any other schema, 
-   
+   For properties of a schema of type object, `x-kubernetes-mutability` can have all three values independently of the type of the property schema. Otherwise, i.e. for items of an array and in `additionalProperties`, `Immutable` is the only permitted value for `x-kubernetes-mutability`.
+      
    At the root-level and inside `.metadata` of an object, `x-kubernetes-mutability` and `x-kubernetes-key-mutability` are forbidden.
    
    Both extensions can only be set in `v1` CRDs on creation, but updated in `v1beta1` if preexisting.
@@ -123,6 +125,8 @@ deserialization from etcd and when receiving a request (just after pruning and d
 If the `x-kubernetes-mutability` vendor extension is set (to `Immutable`, `AddOnly`, `RemoveOnly`), `x-kubernetes-mutability: Immutable` is implicitly applied recursively to all subschemas.
 
 The `x-kubernetes-key-mutability` vendor extension does not apply recursively.
+
+If `x-kubernetes-mutability: Immutable` applies to a schema, `x-kubernetes-key-mutability` is ignored.
 
 ### Semantics of `x-kubernetes-mutability`
 
@@ -288,7 +292,7 @@ Disallowed:
 
 #### Mutable map, immutable values, map type atomic
 
-Same as map type map (the normal map case).
+Same as map type granular (the normal map case).
 
 ### Semantics of `x-kubernetes-key-mutability`
 
