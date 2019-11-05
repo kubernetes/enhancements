@@ -102,7 +102,7 @@ We propose
    1. `x-kubernetes-mutability: Immutable | AddOnly | RemoveOnly` and
    2. `x-kubernetes-key-mutability: Immutable | AddOnly | RemoveOnly`.
    
-   The second is restricted to `Immutable` *if* the schema is of type `object` and `properties` is set, the first is restricted otherwise.
+   The second is restricted to `Immutable` *if* the schema is of type `object` and `properties` is set, the first is restricted to `Immutable` otherwise.
    
    At the root-level and inside `.metadata` of an object, `x-kubernetes-mutability` and `x-kubernetes-key-mutability` are forbidden.
    
@@ -304,7 +304,7 @@ properties:
 
 Because object `properties` in Kubernetes-like APIs should not be considered as a known set, but each field individually we disallow the use of `x-kubernetes-key-mutability` in this case. CRD validation will reject it. 
 
-#### Immutable array keys, mutable values, list type unset / atomic
+#### Immutable array keys, mutable values, list type undefined / atomic
 
 The set of indices is immutable/add-only/remove-only. Hence, appending (Immutable, RemoveOnly) or shrinking (Immutable, AddOnly) is disallowed, but changes that do not change the length are allowed.
 
