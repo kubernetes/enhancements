@@ -50,6 +50,7 @@ see-also:
   - [Endpoint Controller (classic)](#endpoint-controller-classic)
 - [Roll Out Plan](#roll-out-plan)
 - [Graduation Criteria](#graduation-criteria)
+  - [Splitting IP address type for better dual stack support](#splitting-ip-address-type-for-better-dual-stack-support)
 - [Alternatives](#alternatives)
 - [FAQ](#faq)
 <!-- /toc -->
@@ -127,7 +128,15 @@ type AddressType string
 
 const (
     // AddressTypeIP represents an IP Address.
+    // This address type has been deprecated and has been replaced by the IPv4
+    // and IPv6 adddress types. New resources with this address type will be
+    // considered invalid. This will be fully removed in 1.18.
+    // +deprecated
     AddressTypeIP = AddressType("IP")
+    // AddressTypeIPv4 represents an IPv4 Address.
+    AddressTypeIPv4 = AddressType(corev1.IPv4Protocol)
+    // AddressTypeIPv6 represents an IPv6 Address.
+    AddressTypeIPv6 = AddressType(corev1.IPv6Protocol)
     // AddressTypeFQDN represents a FQDN.
     AddressTypeFQDN = AddressType("FQDN")
 )
@@ -435,11 +444,29 @@ In order to graduate to beta, we will:
 - Verify performance/scalability via testing. (Scale tested to 50k endpoints in
   4k node cluster)
 - Get performance fixes identified in scale testing merged.
+- Split `IP` address type into new `IPv4` and `IPv6` address types.
 - Implement dual-stack EndpointSlice support in kube-proxy.
 - Implement e2e tests that ensure both Endpoints and EndpointSlices are tested.
 - Add support for `endpointslice.kubernetes.io/managed-by` label.
 - Add FQDN addressType.
 - Add support for optional appProtocol field on `EndpointPort`.
+
+### Splitting IP address type for better dual stack support
+
+Although the initial vision for the `IP` address type was to be inclusive of
+both IPv4 and IPv6 addresses, that ended up complicating workflows in consumers
+like kube-proxy. In that case, and we anticipate many more, the consumer is only
+interested in a specific IP family for an endpoint. Both Endpoints and Services
+have moved toward using different resources per IP family. It only makes sense
+to mirror that behavior with EndpointSlices.
+
+With that in mind, the proposed changes for beta will involve the following:
+
+1. Add 2 additional address types: `IPv4` and `IPv6`.
+2. Update the EndpointSlice controller to only create EndpointSlices with these
+address types.
+3. Deprecate the `IP` address type, making it invalid for new EndpointSlices in
+1.17 before becoming fully invalid in 1.18.
 
 ## Alternatives
 
