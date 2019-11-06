@@ -172,10 +172,10 @@ It is defined either in Go IDL by pefixing the list with `//
 
 - Associative lists: Kubernetes has a pattern of using lists as dictionary, with
 "name" being a very common key. People can now reproduce this pattern by using
-`// +listType=associative`, or in the OpenAPI with `"x-kubernetes-list-type":
-"map"` along with `"x-kubernetes-list-map-keys": ["name"]`, or `//
-+listMapKey=name`. Items of an associative lists are owned by the person who
-applied the item to the list.
+`// +listType=map`, or in the OpenAPI with `"x-kubernetes-list-type": "map"`
+along with `"x-kubernetes-list-map-keys": ["name"]`, or `// +listMapKey=name`.
+Items of an associative lists are owned by the person who applied the item to
+the list.
 
 For compatibility with the existing markers, the `patchStrategy` and
 `patchMergeKey` markers are automatically used and converted to the corresponding `listType`
