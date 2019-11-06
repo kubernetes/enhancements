@@ -272,7 +272,7 @@ Equivalently to the list type map, removal and addition of key-value pairs are a
 type: object
 properties:
   foo:
-    type: array
+    type: object
     x-kubernetes-map-type: undefined | granular
     additionalProperties:
       type: string
