@@ -43,6 +43,8 @@ see-also:
 - [Stability Classes](#stability-classes)
 - [API Review](#api-review)
 - [Deprecation Lifecycle](#deprecation-lifecycle)
+  - [Show Hidden Metrics](#show-hidden-metrics)
+  - [Why Not Bool Flag](#why-not-bool-flag)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
