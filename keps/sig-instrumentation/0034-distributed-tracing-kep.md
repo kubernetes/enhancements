@@ -18,7 +18,7 @@ approvers:
   - "@brancz"
   - "@piosz"
 creation-date: 2018-12-04
-last-updated: 2019-09-05
+last-updated: 2019-11-07
 status: provisional
 ---
 
@@ -46,6 +46,7 @@ status: provisional
         - [Out-of-tree changes](#out-of-tree-changes)
             - [Tracing best-practices documentation](#tracing-best-practices-documentation)
     - [Graduation Requirements](#graduation-requirements)
+    - [Production Readiness Survey](#production-readiness-survey)
     - [Implementation History](#implementation-history)
 
 ## Summary
@@ -211,7 +212,7 @@ This documentation will put forward standards for:
 
 Having these standards in place will ensure that our tracing instrumentation works well with all backends, and that reviewers have concrete criteria to cross-check PRs against. 
 
-### Graduation requirements
+## Graduation requirements
 
 Alpha
 
@@ -229,6 +230,67 @@ Beta
 GA
 
 - [] Versioning for span naming and backwards-compatibility guarantees
+
+## Production Readiness Survey
+
+* Feature enablement and rollback
+  - How can this feature be enabled / disabled in a live cluster?  **Feature-gate**
+  - Can the feature be disabled once it has been enabled (i.e., can we roll
+    back the enablement)?  **Yes, the feature gate can be disabled in all relevant components**
+  - Will enabling / disabling the feature require downtime for the control
+    plane?  **Yes, control-plane components must be restarted with the feature-gate disabled.**
+  - Will enabling / disabling the feature require downtime or reprovisioning
+    of a node?  **No, it just requires restarting the kubelet with the feature-gate disabled**
+  - What happens if a cluster with this feature enabled is rolled back? **No Adverse effects** What
+    happens if it is subsequently upgraded again?  **No adverse effects**
+  - Are there tests for this?  **No.  The feature hasn't been developed yet.**
+* Scalability
+  - Will enabling / using the feature result in any new API calls? **No (there was a recent change in the KEP to that effect).**
+    Describe them with their impact keeping in mind the [supported limits][]
+    (e.g. 5000 nodes per cluster, 100 pods/s churn) focusing mostly on:
+     - components listing and/or watching resources they didn't before
+     - API calls that may be triggered by changes of some Kubernetes
+       resources (e.g. update object X based on changes of object Y)
+     - periodic API calls to reconcile state (e.g. periodic fetching state,
+       heartbeats, leader election, etc.)
+  - Will enabling / using the feature result in supporting new API types? **No**
+    How many objects of that type will be supported (and how that translates
+    to limitations for users)?
+  - Will enabling / using the feature result in increasing size or count
+    of the existing API objects?  **Yes.  It adds an annotation to traced objects.**
+  - Will enabling / using the feature result in increasing time taken
+    by any operations covered by [existing SLIs/SLOs][] (e.g. by adding
+    additional work, introducing new steps in between, etc.)? **No**
+    Please describe the details if so.
+  - Will enabling / using the feature result in non-negligible increase
+    of resource usage (CPU, RAM, disk IO, ...) in any components?
+    Things to keep in mind include: additional in-memory state, additional
+    non-trivial computations, excessive access to disks (including increased
+    log volume), significant amount of data sent and/or received over
+    network, etc. Think through this in both small and large cases, again
+    with respect to the [supported limits][].  **The tracing client library has an in-memory cache for outgoing spans.  I believe this is limited to 1Mb by default.  This overhead would apply to all controllers that export spans.**
+* Rollout, Upgrade, and Rollback Planning
+* Dependencies
+  - Does this feature depend on any specific services running in the cluster
+    (e.g., a metrics service)? **Yes.  In the current version of the proposal, users must run the [opencensus agent](https://opencensus.io/service/components/agent/) to configure which backend (e.g. jager, zipkin, etc.) they want telemetry sent to.**
+  - How does this feature respond to complete failures of the services on
+    which it depends?  **Traces will stop being exported, and components will store spans in memory until the buffer is full.**
+  - How does this feature respond to degraded performance or high error rates
+    from services on which it depends? **If the bi-directional grpc streaming connection to the agent cannot be established or is broken, the controller retries the connection every 5 minutes (by default).**
+* Monitoring requirements
+  - How can an operator determine if the feature is in use by workloads?  **The agent produces metrics about telemetry it sends to the backend. 
+ The operator presumably can also see the telemetry being sent on behalf of user workloads.**
+  - How can an operator determine if the feature is functioning properly?  **Same as previous.  The agent has metrics about telemetry that is sent to backends.**
+  - What are the service level indicators an operator can use to determine the
+    health of the service?  **Error rate of sending traces in controllers and opencensus agent.**
+  - What are reasonable service level objectives for the feature?  **Not entirely sure, but I would expect at least 99% of spans to be sent successfully, if not more.**
+* Troubleshooting
+  - What are the known failure modes?  **The controller is misconfigured, and cannot talk to the agent.  The agent is misconfigured, and can't send traces to the backend.**
+  - How can those be detected via metrics or logs?  Logs from the component or agent based on the failure mode.
+  - What are the mitigations for each of those failure modes?  **None.  You must correctly configure the agent for tracing to work.**
+  - What are the most useful log messages and what logging levels do they require? **All errors are useful, and are logged as errors (no logging levels required). Failure to initialize exporters (in both controller and agent), failures exporting metrics are the most useful.**
+  - What steps should be taken if SLOs are not being met to determine the
+    problem?  **Look at controller and agent logs.**
 
 ## Implementation History
 
