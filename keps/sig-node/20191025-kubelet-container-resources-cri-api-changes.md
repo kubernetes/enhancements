@@ -29,91 +29,94 @@ superseded-by:
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [Implementation Details/Notes/Constraints [optional]](#implementation-detailsnotesconstraints-optional)
-  - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
+  - [Expected Behavior of CRI Runtime](#expected-behavior-of-cri-runtime)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
+  - [Risks and Mitigations](#risks-and-mitigations)
 - [Implementation History](#implementation-history)
 <!-- /toc -->
 
 ## Summary
 
 This proposal aims to improve the Container Runtime Interface (CRI) APIs for
-managing CPU and memory resource configurations for Containers. It seeks to
-extend UpdateContainerResources CRI API such that it works for Windows, and
-other future runtimes besides Linux. It also seeks to add a new CRI API that
-allows Kubelet to query the current resources configuration for a Container.
+managing a Container's CPU and memory resource configurations on the runtime.
+It seeks to extend UpdateContainerResources CRI API such that it works for
+Windows, and other future runtimes besides Linux. It also seeks to extend
+ContainerStatus CRI API to allow Kubelet to discover the current resources
+configured on a Container.
 
 ## Motivation
 
 In-Place Pod Vertical Scaling feature relies on Container Runtime Interface
 (CRI) to update the CPU and/or memory limits for Container(s) in a Pod.
 
-The current API set have a few issues that need to be addressed:
-1. UpdateContainerResources CRI API takes a parameter that describes container
+The current CRI API set has a few drawbacks that need to be addressed:
+1. UpdateContainerResources CRI API takes a parameter that describes Container
    resources to update for Linux Containers, and this may not work for Windows
    Containers or other potential non-Linux runtimes in the future.
 1. There is no CRI mechanism that lets Kubelet query and discover the CPU and
-   memory limits configured on a running Container.
+   memory limits configured on a Container from the Container runtime.
 1. The expected behavior from a runtime that handles UpdateContainerResources
-   CRI API is not very well defined.
+   CRI API is not very well defined or documented.
 
 ### Goals
 
-There are two primary goals of this proposal:
+This proposal has two primary goals:
   - Modify UpdateContainerResources to allow it to work for Windows Containers,
-    as well as Containers managed by other runtimes in the future,
-  - Define a new CRI API to query CPU and memory resource configurations that
-    are currently applied to a running Container.
+    as well as Containers managed by other runtimes besides Linux,
+  - Provide CRI API mechanism to query the Container runtime for CPU and memory
+    resource configurations that are currently applied to a Container.
 
-An additional goal of this proposal is to better define the expected behavior
-from a Container runtime when handling the above APIs.
+An additional goal of this proposal is to better define and document the
+expected behavior of a Container runtime when handling resource updates.
 
 ### Non-Goals
 
 Definition of expected behavior of a Container runtime when it handles CRI APIs
-related to a Container's resources APIs is intended to be a high-level guide.
-It is a non-goal of this proposal to define a detailed or specific way to
-implement these APIs. Implementation specifics are left to the runtime, within
-the bounds of expected behavior.
+related to a Container's resources is intended to be a high level guide.  It is
+a non-goal of this proposal to define a detailed or specific way to implement
+these functions. Implementation specifics are left to the runtime, within the
+bounds of expected behavior.
 
 ## Proposal
 
-This is where we get down to the nitty gritty of what the proposal actually is.
-
 One key change is to make UpdateContainerResources API work for Windows, and
-any other runtimes that may need to pass resources information in the future.
+any other future runtimes, besides Linux by making the resources parameter
+passed in the API specific to the target runtime.
 
-Another change in this proposal is to add a new GetContainerResources CRI API
-that Kubelet can use to query and discover the CPU and memory resources that
-are presently configured for a Container.
+Another change in this proposal is to extend ContainerStatus CRI API such that
+Kubelet can query and discover the CPU and memory resources that are presently
+applied to a Container.
+
+To accomplish aforementioned goals:
 
 * A new protobuf message object named *ContainerResources* that encapsulates
 LinuxContainerResources and WindowsContainerResources is introduced as below.
-  - This message can be easily extended for future runtimes by simply adding a
+  - This message can easily be extended for future runtimes by simply adding a
     new runtime-specific resources struct to the ContainerResources message.
 ```
 // ContainerResources holds resource configuration for a container.
 message ContainerResources {
-    // Resource configuration specific to Linux container.
-    LinuxContainerResources linux = 1;
-    // Resource configuration specific to Windows container.
-    WindowsContainerResources windows = 2;
+    oneof r {
+        // Resource configuration specific to Linux container.
+        LinuxContainerResources linux = 1;
+        // Resource configuration specific to Windows container.
+        WindowsContainerResources windows = 2;
+    }
 }
 ```
 
 * UpdateContainerResourcesRequest message is extended to carry
   ContainerResources field as below.
-  - This allows backward compatibility where runtimes that rely on
-    LinuxContainerResources continue to work.
-  - Kubelet fills both UpdateContainerResourcesRequest.Linux and
-    UpdateContainerResourcesRequest.Resources.Linux fields, allowing
-    newer runtimes to use UpdateContainerResourcesRequest.Resources.Linux
-    field.
-  - This enables deprecation of UpdateContainerResourcesRequest.Linux field.
+  - For Linux runtimes, Kubelet fills UpdateContainerResourcesRequest.Linux in
+    additon to UpdateContainerResourcesRequest.Resources.Linux fields.
+    - This keeps backward compatibility by letting runtimes that rely on the
+      current LinuxContainerResources continue to work, while enabling newer
+      runtime versions to use UpdateContainerResourcesRequest.Resources.Linux,
+    - It enables deprecation of UpdateContainerResourcesRequest.Linux field.
 ```
 message UpdateContainerResourcesRequest {
     // ID of the container to update.
@@ -125,31 +128,22 @@ message UpdateContainerResourcesRequest {
 }
 ```
 
-* A new CRI API, GetContainerResources, is introduced, and RuntimeService is
-  modified as shown below.
-  - This API enables Kubelet to query and discover currently configured
-    resources for a Container.
+* ContainerStatus message is extended to return ContainerResources as below.
+  - This enables Kubelet to query the runtime and discover resources currently
+    applied to a Container using ContainerStatus CRI API.
 ```
-message GetContainerResourcesRequest {
-    // ID of the container whose resource config is queried.
-    string container_id = 1;
-}
-
-message GetContainerResourcesResponse {
-    // Resource configuration of the container.
-    ContainerResources resources = 1;
-}
-
-// GetContainerResources returns resource configuration of the container.
-rpc GetContainerResources(GetContainerResourcesRequest) returns (GetContainerResourcesResponse) {}
+@@ -914,6 +912,8 @@ message ContainerStatus {
+     repeated Mount mounts = 14;
+     // Log path of container.
+     string log_path = 15;
++    // Resource configuration of the container.
++    ContainerResources resources = 16;
+ }
 ```
 
-* ContainerManager CRI API service interface is modified as follows:
+* ContainerManager CRI API service interface is modified as below.
   - UpdateContainerResources takes ContainerResources parameter instead of
     LinuxContainerResources.
-  - GetContainerResources is introduced that allows Kubelet to query current
-    resource configurations of a Container.
-  - Kubelet code is modified to implement and use these methods.
 ```
 --- a/staging/src/k8s.io/cri-api/pkg/apis/services.go
 +++ b/staging/src/k8s.io/cri-api/pkg/apis/services.go
@@ -159,8 +153,6 @@ rpc GetContainerResources(GetContainerResourcesRequest) returns (GetContainerRes
         ContainerStatus(containerID string) (*runtimeapi.ContainerStatus, error)
 -       // UpdateContainerResources updates the cgroup resources for the container.
 -       UpdateContainerResources(containerID string, resources *runtimeapi.LinuxContainerResources) error
-+       // GetContainerResources returns resource configuration applied to the container.
-+       GetContainerResources(containerID string) (*runtimeapi.ContainerResources, error)
 +       // UpdateContainerResources updates resource configuration for the container.
 +       UpdateContainerResources(containerID string, resources *runtimeapi.ContainerResources) error
         // ExecSync executes a command in the container, and returns the stdout output.
@@ -168,23 +160,57 @@ rpc GetContainerResources(GetContainerResourcesRequest) returns (GetContainerRes
         ExecSync(containerID string, cmd []string, timeout time.Duration) (stdout []byte, stderr []byte, err error)
 ```
 
-### Expected Behavior of UpdateContainerResources CRI API
-
-TBD
-
-### Expected Behavior of GetContainerResources CRI API
-
-TBD
+* Kubelet code is modified to leverage these changes.
 
 ## Design Details
 
-TODO: Add a section/flow-diagram on how Kubelet will use these APIs
+Below diagram is an overview of Kubelet using UpdateContainerResources and
+ContainerStatus CRI APIs to set new container resource limits, and update the
+Pod Status in response to user changing the desired resources in Pod Spec.
 
-### Implementation Details/Notes/Constraints [optional]
+```
+   +-----------+                   +-----------+                  +-----------+
+   |           |                   |           |                  |           |
+   | apiserver |                   |  kubelet  |                  |  runtime  |
+   |           |                   |           |                  |           |
+   +-----+-----+                   +-----+-----+                  +-----+-----+
+         |                               |                              |
+         |       watch (pod update)      |                              |
+         |------------------------------>|                              |
+         |     [Containers.Resources]    |                              |
+         |                               |                              |
+         |                            (admit)                           |
+         |                               |                              |
+         |                               |  UpdateContainerResources()  |
+         |                               |----------------------------->|
+         |                               |                         (set limits)
+         |                               |<- - - - - - - - - - - - - - -|
+         |                               |                              |
+         |                               |      ContainerStatus()       |
+         |                               |----------------------------->|
+         |                               |                              |
+         |                               |     [ContainerResources]     |
+         |                               |<- - - - - - - - - - - - - - -|
+         |                               |                              |
+         |      update (pod status)      |                              |
+         |<------------------------------|                              |
+         | [ContainerStatuses.Resources] |                              |
+         |                               |                              |
 
-TBD
+```
 
-### Risks and Mitigations
+* Kubelet invokes UpdateContainerResources() CRI API in ContainerManager
+  interface to configure new CPU and memory limits for a Container by
+  specifying those values in ContainerResources parameter to the API. Kubelet
+  sets ContainerResources parameter specific to the target runtime platform
+  when calling this CRI API.
+
+* Kubelet calls ContainerStatus() CRI API in ContainerManager interface to get
+  the CPU and memory limits applied to a Container. It uses the values returned
+  in ContainerStatus.Resources to update ContainerStatuses[i].Resources.Limits
+  for that Container in the Pod's Status.
+
+### Expected Behavior of CRI Runtime
 
 TBD
 
@@ -204,6 +230,10 @@ Is this applicable? - TBD
 ### Version Skew Strategy
 
 Is this applicable? - TBD
+
+### Risks and Mitigations
+
+TBD
 
 ## Implementation History
 
