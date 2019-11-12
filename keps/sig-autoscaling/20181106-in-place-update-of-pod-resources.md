@@ -168,8 +168,9 @@ Kubelet calls UpdateContainerResources CRI API which currently takes
 but not for Windows. This parameter changes to *runtimeapi.ContainerResources*,
 that is runtime agnostic, and will contain platform-specific information.
 
-Additionally, GetContainerResources CRI API is introduced that allows Kubelet
-to query currently configured CPU and memory limits for a container.
+Additionally, ContainerStatus CRI API is extended to hold
+*runtimeapi.ContainerResources* so that it allows Kubelet to query Container's
+CPU and memory limit configurations from runtime.
 
 These CRI changes are a separate effort that does not affect the design
 proposed in this KEP.
