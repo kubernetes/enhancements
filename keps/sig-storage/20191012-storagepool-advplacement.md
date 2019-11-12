@@ -282,7 +282,6 @@ Note that `StoragePool` are non-namespaced.
 
 #### CSI changes
 
-* Add a “StoragePoolSelector map[string]string” field in CreateVolumeRequest.
 * Add a ControllerListStoragePools RPC that lists storage pools for CSI drivers that support LIST_STORAGE_POOLS controller capability.
 
 #### New external controller for StoragePool
