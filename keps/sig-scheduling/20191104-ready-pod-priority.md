@@ -75,8 +75,12 @@ New scheduler priority `ReadyPodPriority` which adds a score to prefer nodes wit
 
 ## Motivation
 
-In our environment we have pods that take a while to pass ready/liveness checks as these pods have caches which need to backfill to memory prior to being ready, during this time memory and cpu resources are spiked. 
-By adding a score to favor nodes with less non ready pods, this helped us by preventing deployments to overload a node, especially a newly entered node which is idle, from getting overloaded.
+In our environment we have pods that take a while to pass ready/liveness checks as these pods have caches which need to backfill to memory prior to being ready.
+
+During this extended duration, factors such as spike in memory and cpu resources contribute to very increased load on the node.
+When nodes are idle, such as a newly joined node into the cluster, this node would get the majority of the scheduled pods assigned to it, and when multiples of these pods are starting up during the resource intensive period the resulting load would overwhelm the node, evicting pods, and often times become generally unaccessible.
+
+By adding a score to favor nodes with less non ready pods, this helped us prevent deployments of such pods from overwhelming load on node(s).
 
 ### Goals
 
