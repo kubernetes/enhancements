@@ -14,7 +14,7 @@ approvers:
   - "@derekwaynecarr"
   - "@dims"
 creation-date: 2019-07-31
-last-updated: 2019-10-17
+last-updated: 2019-11-12
 status: implementable
 ---
 
@@ -147,6 +147,10 @@ all new features, at a level appropriate to the features' maturity levels.
       problem?
   * etc.
 
+* Establish a production readiness review subproject under SIG Architecture,
+  with subproject owners:
+  - johnbelamaric
+
 * Establish a production readiness review team, label, and CI check to prevent
   the merging of feature promotion PRs that lack production readiness.
 
@@ -179,7 +183,8 @@ Phase 1 - Research and Pilot
   * Deliver a postmortem summary of existing features that have stalled due to
     production-readiness issues (e.g., cron jobs).
 * Resolve open questions, including:
-  * Should the scope of this expand to feature lifecycle?
+  * ~~Should the scope of this expand to feature lifecycle?~~ No, not at this
+    time.
   * How do we measure the effectiveness of this effort?
 
 
@@ -192,3 +197,4 @@ Phase 2 - Implementation
 
 - 2019-07-31: Created
 - 2019-10-17: Review feedback, phase 1 implementable
+- 2019-11-12: Add establishment of subproject
