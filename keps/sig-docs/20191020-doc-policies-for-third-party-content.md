@@ -32,6 +32,7 @@ status: provisional
     - [Story 3 (actual)](#story-3-actual)
     - [Story 4 (actual)](#story-4-actual)
     - [Story 5 (actual)](#story-5-actual)
+    - [Story 6 (actual)](#story-6-actual)
   - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
@@ -89,7 +90,7 @@ This KEP focuses on the following issues:
 
 ## Proposal
 
-TBD. Detailed policies will come out of the discussion around this KEP.
+Revise the [content guide](https://github.com/kubernetes/website/blob/master/content/en/docs/contribute/style/content-guide.md#contributing-content) to address community concerns
 
 ### User Stories
 
@@ -109,11 +110,15 @@ Rafael wanted to share a Kubernetes course from an online education provider. He
 
 #### Story 4 (actual)
 
-[PR #16203](https://github.com/kubernetes/website/pull/16203) removes Stackdriver and Elasticsearch vendor content. Since logging falls into the external add-ons category, SIG Docs decided to remove this vendor-specific content. That , which has not been meaningfully updated in three years. SIG Docs had buy-in from SIG Instrumentation Bugs for removal; however that PR was held pending the outcome of this KEP.
+Website [PR #16203](https://github.com/kubernetes/website/pull/16203) removes Stackdriver and Elasticsearch vendor content. Since logging falls into the external add-ons category, SIG Docs decided to remove this vendor-specific content that had not been meaningfully updated in three years. SIG Docs had buy-in from SIG Instrumentation Bugs for removal; however that PR was held pending the outcome of this KEP.
 
 #### Story 5 (actual)
 
 In [PR #16766](https://github.com/kubernetes/website/pull/16766) @pouledodue proposed adding Hertzner Cloud Controller to the list of vendors that have implemented a cloud controller manager. That PR was held pending the outcome of this KEP.
+
+#### Story 6 (actual)
+
+As [hyperkube transitions to [third-party maintenance](https://github.com/kubernetes/kubeadm/issues/1889), it's unclear how to handle [hyperkube content in the Kubernetes docs](https://github.com/kubernetes/website/search?q=hyperkube&unscoped_q=hyperkube) or re-point related links.
 
 ### Implementation Details/Notes/Constraints
 
