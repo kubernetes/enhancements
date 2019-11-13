@@ -13,7 +13,7 @@ approvers:
   - "@liggitt"
 editor: TBD
 creation-date: 2019-02-12
-last-updated: 2019-02-13
+last-updated: 2019-10-02
 status: implementable
 ---
 
@@ -96,7 +96,7 @@ Check these off as they are completed for the Release Team to track. These check
 ## Summary
 
 This proposal adds to Kubernetes a mechanism to run a container with a
-temporary duration that executes within namespaces of an existing pod. 
+temporary duration that executes within namespaces of an existing pod.
 Ephemeral Containers are initiated by a user and intended to observe the state
 of other pods and containers for troubleshooting and debugging purposes.
 
@@ -193,7 +193,7 @@ type PodSpec struct {
 	// +optional
 	// +patchMergeKey=name
 	// +patchStrategy=merge
-	EphemeralContainers []EphemeralContainer `json:"ephemeralContainers,omitempty" patchStrategy:"merge" patchMergeKey:"name" protobuf:"bytes,31,rep,name=ephemeralContainers"`
+	EphemeralContainers []EphemeralContainer `json:"ephemeralContainers,omitempty" patchStrategy:"merge" patchMergeKey:"name" protobuf:"bytes,34,rep,name=ephemeralContainers"`
 }
 
 type PodStatus struct {
@@ -201,7 +201,7 @@ type PodStatus struct {
 	// Status for any Ephemeral Containers that running in this pod.
 	// This field is alpha-level and is only honored by servers that enable the EphemeralContainers feature.
 	// +optional
-	EphemeralContainerStatuses []ContainerStatus `json:"ephemeralContainerStatuses,omitempty" protobuf:"bytes,12,rep,name=ephemeralContainerStatuses"`
+	EphemeralContainerStatuses []ContainerStatus `json:"ephemeralContainerStatuses,omitempty" protobuf:"bytes,13,rep,name=ephemeralContainerStatuses"`
 }
 ```
 
@@ -209,10 +209,21 @@ type PodStatus struct {
 `InitContainerStatuses`, but `EphemeralContainers` introduces a new type:
 
 ```
-// An EphemeralContainer is a container which runs temporarily in a pod for human-initiated actions
-// such as troubleshooting. This is an alpha feature enabled by the EphemeralContainers feature flag.
+// An EphemeralContainer is a container that may be added temporarily to an existing pod for
+// user-initiated activities such as debugging. Ephemeral containers have no resource or
+// scheduling guarantees, and they will not be restarted when they exit or when a pod is
+// removed or restarted. If an ephemeral container causes a pod to exceed its resource
+// allocation, the pod may be evicted.
+// Ephemeral containers may not be added by directly updating the pod spec. They must be added
+// via the pod's ephemeralcontainers subresource, and they will appear in the pod spec
+// once added.
+// This is an alpha feature enabled by the EphemeralContainers feature flag.
 type EphemeralContainer struct {
-	Container `json:",inline" protobuf:"bytes,1,opt,name=container"`
+	// Ephemeral containers have all of the fields of Container, plus additional fields
+	// specific to ephemeral containers. Fields in common with Container are in the
+	// following inlined struct so than an EphemeralContainer may easily be converted
+	// to a Container.
+	EphemeralContainerCommon `json:",inline" protobuf:"bytes,1,req"`
 
 	// If set, the name of the container from PodSpec that this ephemeral container targets.
 	// The ephemeral container will be run in the namespaces (IPC, PID, etc) of this container.
@@ -227,6 +238,30 @@ Much of the utility of Ephemeral Containers comes from the ability to run a
 container within the PID namespace of another container. `TargetContainerName`
 allows targeting a container that doesn't share its PID namespace with the rest
 of the pod. We must modify the CRI to enable this functionality (see below).
+
+`EphemeralContainerCommon` is an inline copy of `Container` that resolves the
+following contradictory requirements:
+
+1. Ephemeral containers should be represented by a type that is easily
+   convertible to `Container` so that code that operations on `Container` can
+   also operate on ephemeral containers.
+1. Fields of `Container` that have different behavior for ephemeral containers
+   should be separately and clearly documented. Since many fields of ephemeral
+   containers have different behavior, this requires a separate type.
+
+`EphemeralContainerCommon` contains fields that ephemeral containers have in
+common with `Container`. It's field-for-field copy of `Container`, which is
+enforced by the compiler:
+
+```
+// EphemeralContainerCommon converts to Container. All fields must be kept in sync between
+// these two types.
+var _ = Container(EphemeralContainerCommon{})
+```
+
+Since `EphemeralContainerCommon` is inlined, the API machinery hides this
+complexity from the end user, who sees a type, `EphemeralContainer` which has
+all of the fields of `Container` plus an additional field `targetContainerName`.
 
 ##### Alternative Considered: Omitting TargetContainerName
 
@@ -293,8 +328,8 @@ The CRI requires no changes for basic functionality, but it will need to be
 updated to support container namespace targeting, described fully in
 [Targeting a Namespace].
 
-[Process Namespace Sharing]: https://git.k8s.io/community/contributors/design-proposals/node/pod-pid-namespace.md
-[Targeting a Namespace]: https://git.k8s.io/community/contributors/design-proposals/node/pod-pid-namespace.md#targeting-a-specific-containers-namespace
+[Process Namespace Sharing]: https://git.k8s.io/enhancements/keps/sig-node/20190920-pod-pid-namespace.md
+[Targeting a Namespace]: https://git.k8s.io/enhancements/keps/sig-node/20190920-pod-pid-namespace.md#targeting-a-specific-containers-namespace
 
 ### Creating Ephemeral Containers
 
