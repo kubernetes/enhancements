@@ -3,7 +3,6 @@ title: RollingUpdate enhancement for Daemonset
 authors:
   - "@resouer"
   - "@zhangxiaoyu-zidif"
-  - "@answer1991"
 owning-sig: sig-apps
 participating-sigs:
   - sig-apps
@@ -13,7 +12,7 @@ approvers:
   - TBD
 editor: TBD
 creation-date: 2019-07-15
-last-updated: 2019-08-05
+last-updated: 2019-11-13
 status: provisional
 see-also:
   - n/a
@@ -52,9 +51,9 @@ superseded-by:
 The purpose of this enhancement is to enhance RollingUpdate for Daemonset.
   - When Daemonset rolling update, it can be `Paused` by user.
   - Add `SurgingRollingUpdate` for Daemonset as a new update strategy.
-  - Add two more fields, `partition` and `selector` for `RollingUpdate` and `SurgingRollingUpdate`.
+  - Add two more fields, `partition` and `selector` for `RollingUpdate`
     - `partition` is the number of DaemonSet pods remained to be old version.
-    - `selector` is to query over nodes whoes labels are matched by the Daemonset `RollingUpdate` or `SurgingRollingUpdate`.
+    - `selector` is to query over nodes whoes labels are matched by the Daemonset `RollingUpdate`.
 
 
 ## Motivation
@@ -63,14 +62,11 @@ Consider the following scenarios:-
 
 1. When executing Daemonset update, even those Pods run well, user need to pause updation to check if  some results of new version image meet expect. If not, user can rollback images to stable version.
 
-1. In some case, user do not want to stop some services when rolling update, so SurgingRollingUpdate is a must choice.
-
-1. When rollingUpdate or surgeRollingUpdate, user should have some chioce to select some specific or random nodes to update pods running on it.
+1. When rollingUpdate, user should have some chioces to select some specific or random nodes to update pods running on it.
 
 ### Goals
 
 - Add field `Paused` for `DaemonSetSpec`.
-- Add a new  `DaemonSetUpdateStrategy`, i.e.: `SurgingRollingUpdate`. `SurgingRollingUpdate` has three fileds, i.e.: `MaxSurge`,`Selector`, and `Partition`.
 - Add new fields `Selector` and `Partition` for existing RollingUpdateDaemonSet.
 
 ### Non-Goals
@@ -81,8 +77,11 @@ Consider the following scenarios:-
 ### User Stories
 
 #### Story 1
-In some end users' clusters, they deploy DNS resolver and other containers serving infrastructure by daemonset in every nodes. To an online e-commercial services which serve 200K+ QPS, it must cause cascading disaster to stop those infrastructure services even in a very short time by current Daemonset RollingUpdate strategy. So surgingRollingUpdate is a necessary strategy for our production environment. 
-As a solution for above case, if end users are not sure whether SurgeingRollingUpdate are suitable for their production environment or cause other resource conflicts, e.g. hostport, they can use 'Selector' or 'Partition' to do some experimental update.
+
+There are serveral defects of current community design. Such as:
+* Pause and Resume. DaemonSet does not has the fetature of Pause/Resume in update。 Especially in large or huge scale cluster, in order to make the cluster high avaiable and certainly correct image version, Kubernetes should server the ability that user can pause DaemonSet update process and check if target version image meet their expect. If users or administrators' test verified new version pass probe test, they can resume DaemonSet update.
+
+* Batch update. As for a mature system, gray update is a necessary ability. However there is no any enhancement on this area. Now the community version do not supports any partion process in update like other workload, such StatefulSet.
 
 ### Implementation Details
 
@@ -103,46 +102,24 @@ type DaemonSetSpec struct {
 ```
 
 ```go
-// DaemonSetUpdateStrategy is a struct used to control the update strategy for a DaemonSet.
-type DaemonSetUpdateStrategy struct {
-  ...
-	// Surging rolling update config params. Present only if type = "SurgingRollingUpdate".
-	SurgingRollingUpdate *SurgingRollingUpdateDaemonSet `json:"surgingRollingUpdate,omitempty" protobuf:"bytes,3,opt,name=surgingRollingUpdate"`
-}
-```
-
-```go
-// Spec to control the desired behavior of a daemon set surging rolling update.
-type SurgingRollingUpdateDaemonSet struct {
-	// The maximum number of DaemonSet pods that can be scheduled above the desired number of pods
-	// during the update. Value can be an absolute number (ex: 5) or a percentage of the total number
-	// of DaemonSet pods at the start of the update (ex: 10%). The absolute number is calculated from
-	// the percentage by rounding up. This cannot be 0. The default value is 1. Example: when this is
-	// set to 30%, at most 30% of the total number of nodes that should be running the daemon pod
-	// (i.e. status.desiredNumberScheduled) can have 2 pods running at any given time. The update
-	// starts by starting replacements for at most 30% of those DaemonSet pods. Once the new pods are
-	// available it then stops the existing pods before proceeding onto other DaemonSet pods, thus
-	// ensuring that at most 130% of the desired final number of DaemonSet  pods are running at all
-	// times during the update.
-	// +optional
-	MaxSurge *intstr.IntOrString `json:"maxSurge,omitempty" protobuf:"bytes,1,opt,name=maxSurge"`
-
-	// A label query over pods that are managed by the daemon set SurgingRollingUpdate.
-	// Must match in order to be controlled.
-	// It must match the node's labels.
-	Selector *metav1.LabelSelector `json:"selector" protobuf:"bytes,2,opt,name=selector"`
-
-	// The number of DaemonSet pods remained to be old version.
-	// Default value is 0.
-	// Maximum value is status.DesiredNumberScheduled, which means no pod will be updated.
-	// +optional
-	Partition *int32 `json:"partition,omitempty" protobuf:"varint,3,opt,name=partition"`
-}
-```
-
-```go
 type RollingUpdateDaemonSet struct {
-  ...
+	// The maximum number of DaemonSet pods that can be unavailable during the
+	// update. Value can be an absolute number (ex: 5) or a percentage of total
+	// number of DaemonSet pods at the start of the update (ex: 10%). Absolute
+	// number is calculated from percentage by rounding up.
+	// This cannot be 0.
+	// Default value is 1.
+	// Example: when this is set to 30%, at most 30% of the total number of nodes
+	// that should be running the daemon pod (i.e. status.desiredNumberScheduled)
+	// can have their pods stopped for an update at any given
+	// time. The update starts by stopping at most 30% of those DaemonSet pods
+	// and then brings up new DaemonSet pods in their place. Once the new pods
+	// are available, it then proceeds onto other DaemonSet pods, thus ensuring
+	// that at least 70% of original number of DaemonSet pods are available at
+	// all times during the update.
+  // +optional
+  MaxUnavailable *intstr.IntOrString `json:"maxUnavailable,omitempty" protobuf:"bytes,1,opt,name=maxUnavailable"`
+
 	// A label query over nodes that are managed by the daemon set RollingUpdate.
 	// Must match in order to be controlled.
 	// It must match the node's labels.
@@ -157,6 +134,28 @@ type RollingUpdateDaemonSet struct {
 ```
 
 #### Implementation
+* Add subcommand Pause/Resume for kubectl rollout
+
+```shell
+kubectl rollout pause ds <ds name>
+```
+
+When users want to update a DaemonSet whose replicas are deployed in a huge cluster, a Pause is a must feature. DaemonSet always serves some basic infrastructures, and the target version image may go wrong, even pass all kinds of tests. At this occasions, the operators should stop updating at once.
+
+Some disadvantages of pause: When DaemonSet's fields paused is set to be true, DaemonSet will not execute any processes. All behaviors, such as extending replicas on new imported nodes, are all stopped. But it will not affect too much because the whole period of pause status is rather short to the whole lifecycle of DaemonSet.
+
+```shell
+kubectl rollout resume ds <ds name>
+```
+
+After users or operators verified new DaemonSet replicas work well, they could coninue the update process.
+
+* Add new fields for `RollingUpdateDaemonSet`
+  * `selector`
+    * This field will match nodes' labels, and select label matched nodes to update DaemonSet replicas.
+  * `partition`
+    * Only if selector is nil, the feild partition works.
+    * When partition is specified, the partition value is the count of DaemonSet replcas remaining old version. User should continue to update partition in descreaing order gradually until it turns to be zero.
 
 
 ### Risks and Mitigations
@@ -170,7 +169,9 @@ type RollingUpdateDaemonSet struct {
 ## Implementation History
 
 - KEP Started on 7/15/2019
+- KEP Modified on 11/13/2019
 - Implementation PR and UT by TBD
+
 
 ## Drawbacks [optional]
 
