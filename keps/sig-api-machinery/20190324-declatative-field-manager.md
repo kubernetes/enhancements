@@ -40,19 +40,20 @@ This would also assist existing solutions already interacting with manifest file
 
 ## Proposal
 
-To achieve the goals, we would add a field to ObjectMeta called `options`, this field would contain options for the api server being only `fieldManager` for now, but might get extended in the future.
+To achieve the goals, we would add a field to ObjectMeta called `options`, this field would allow to send options to the api server.
+The field will be in the form of a map of string keys and values that gets validated to contain only known options (currently `fieldManager`).
 
 This field should not get persisted to storage and is solely for sending request options information to the apiserver.
-When the `options.fieldManager` field is not set, the apiserver would fallback onto current behavior and default the fieldManager (or fail).
+When the `options.fieldManager` value is not set or empty, the apiserver would fallback onto current behavior and default the fieldManager (or fail).
 
 This means, we add a field that is optional metadata, write-only and non-persisted and exists for the sole purpose of sending request information to the apiserver.
-The `options.fieldManager` should take a non empty string or be unset and should follow the same criteria as [ManagedFieldsEntry.Manager](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.14/#managedfieldsentry-v1-meta).
+The `options.fieldManager` value should accept a non empty string or be unset and should follow the same criteria as [ManagedFieldsEntry.Manager](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.14/#managedfieldsentry-v1-meta).
 
-Setting or not setting the field will cause the following behavior for both apply and non-apply operations:
+Setting or not setting the `options.fieldManager` value will cause the following behavior for both apply and non-apply operations:
 
 - If the fieldManager request option is set for the request (for example through kubectl), it will get used as manager
-- If the newly introduced `options.fieldManager` field is set in the received request, it will get used as manager
-- If both of the  two options are set and do not match, the request will get rejected.
+- If the newly introduced `options.fieldManager` option is set in the received request, it will get used as manager
+- If both of the two options are set and do not match, the request will get rejected.
 
 An example of setting the field would be:
 
@@ -92,7 +93,7 @@ as well as services that updated labels for some objects.
 
 They want to make use of the new Server Side Apply, so concurrent changes to objects from different actors are possible without unwanted overlap/conflicts.
 
-To do so, assuming the changes in this KEP, Alice would add the newly introduced field to all manifests in their config management repo. The field would be set to e.g. `configManagement` (or their repo name).
+To do so, assuming the changes in this KEP, Alice would add the newly introduced field to all manifests in their config management repo. The `fieldManager` value would be set to e.g. `configManagement` (or their repo name).
 Additionally, she would update the manifests sent by different actors (like controllers) to contain the field with a value like `controllerName`. Note that this might already be the case for some through the defaulting to the user-agent inside the apply and update pathway.
 
 If now the team updates their repo with a change to their manifests, Jenkins again applies them as usual. On the apiserver side though, the fieldManager set in the applied manifest gets used and all fields set now get owned by the `configManagement` fieldManager.
@@ -105,7 +106,7 @@ All actors now can coexist and manage their set of fields without interfering wi
 
 #### Kustomize
 
-In reference to the above workflow, it would be possible to override `options.fieldManager` for differen Kustomize overlays and therefore separate ownership depending on the actor currently active.
+In reference to the above workflow, it would be possible to override `options` for different Kustomize overlays and therefore separate ownership depending on the actor currently active.
 
 This means, updating single fields by using a Kustomize overlay (like updating images, labels or annotations) as part of a CI/CD pipeline could easily contain the fieldManager information without any changes to Kustomize (or similar tools) itself.
 
@@ -116,31 +117,29 @@ This means, updating single fields by using a Kustomize overlay (like updating i
 ```go
 type ObjectMeta struct {
 ...
-  // Options used by the apiserver when handling the object.
+  // Options is a map of string keys and values for providing information about the object to the apiserver.
   // This field is write-only, non-persisted and optional.
-  Options *MetaOptions `json:"options,omitempty" protobuf:"bytes,18,opt,name=options"`
+  // It may only contain keys that are known to the current apiserver version.
+  // Sending a request with an invalid key/value results in the request being rejected.
+  // The apiserver validates the field against the `AllowedOptions` list.
+  // Options available through this field, that are also available as query options, should cause an error if both are set and differ.
+  Options map[string]string `json:"options,omitempty" protobuf:"bytes,18,rep,name=options"`
 ...
 }
 
-// MetaOptions allow to set options used by the apiserver when handling objects.
-// This field is write-only, non-persisted and optional.
-// Options here are defined respective to their apiserver query parameters. Setting either one of them should cause the same effects. Setting MetaOptions and query parameters to different values, should fail the request.
-// Setting options that are not known by the apiserver will have no effect and unknown fields get discarded.
-type MetaOptions struct {
-  // FieldManager is a name associated with the actor or entity that is responsible for the currently taking place
-  // interaction with the object.
-  // This field is write-only, non-persisted and optional.
-  // It is only used by the apiserver on create, apply and update operations, to set the ManagedFields accordingly.
-  // The value must be unset or less than or 128 characters long, and only contain printable characters, as defined by https://golang.org/pkg/unicode/#IsPrint.
-  //
-  // If the field is unset, the apiserver will default to the request user-agent.
-  // If the request contains the fieldManager option, it acts like this field.
-  // If both this field or the requests fieldManager option are set, but not equal the apply and non-apply operation will fail.
-  //
-  // This field is alpha and can be changed or removed without notice.
-  //
-  // +optional
-  FieldManager string `json:"fieldManager,omitempty" protobuf:"bytes,19,opt,name=fieldManager"`
+// FieldManagerOption defines the ObjectMeta.Options key for setting the fieldManager.
+// It is only used by the apiserver on create, apply and update operations, to set the ManagedFields accordingly.
+// The value associated with this key, must be less than or 128 characters long, and only contain printable characters, as defined by https://golang.org/pkg/unicode/#IsPrint.
+//
+// If the option is unset or empty, the apiserver will default to the request user-agent.
+// If the request contains the fieldManager option, it acts like this option.
+// If both this option or the requests fieldManager option are set but not equal, the apply and non-apply operation will fail.
+//
+const FieldManagerOption = "fieldManager"
+
+// AllowedOptions defines the list of keys allowed for `ObjectMeta.Options`.
+var AllowedOptions = []string{
+  FieldManagerOption,
 }
 ```
 
@@ -156,7 +155,12 @@ TBD
 
 No fields get persisted.
 When the field is not set due to an old client, the current Server Side Apply defaulting is the fallback.
-When the field is set by a new client, it will get ignored by an old apiserver.
+
+The apiserver should always reject unknown keys in the options field to provide the user with clear information
+and prevent unexpected behavior cause by ignored/discarded options.
+
+This is the reason for making the field a map of string keys and values, to allow validation of incoming requests.
+Not validating this, would make adding new options more complicated and span over multiple releases.
 
 ### Version Skew Strategy
 
@@ -174,3 +178,7 @@ See the risks outlined above.
 As an alternative to the unpersisted field, a custom annotation might be used.
 This already got used for the previous `last-applied` annotation in kubectl.
 However this approach seems wrong, as it would persist information in the object that is of no value and will probably change very often. Additionally using annotations for this seems like a workaround and for the apply to work we would have to strip the annotation from the managedFields object, which then would cause even more unintuitive behavior as a dedicated field, as one special annotation will not get persisted instead of a field that is explicitly declared to behave like that.
+
+As an alternative to the `map[string]string` approach, a `MetaOptions` type could be introduced defining the available options as fields.
+This would cause the problems outline in the Upgrade / Downgrade Strategy section above.
+Due to the handling of json in the apiserver, unknown fields would be discarded by an old apiserver without the user explicitly knowing about it.
