@@ -25,8 +25,25 @@ see-also:
 
 ## Table of Contents
 
-* [Table of Contents](#table-of-contents)
-* [Summary](#summary)
+<!-- toc -->
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [Remove Prometheus Registry](#remove-prometheus-registry)
+  - [Validated Import Restriction](#validated-import-restriction)
+  - [Deprecate Metrics](#deprecate-metrics)
+  - [Escape Hatch](#escape-hatch)
+- [Graduation Criteria](#graduation-criteria)
+- [Post-Beta tasks](#post-beta-tasks)
+- [Implementation History](#implementation-history)
+  - [Metrics Stability Framework](#metrics-stability-framework)
+  - [Metrics Stability Migration](#metrics-stability-migration)
+  - [Metrics Validation And Restriction](#metrics-validation-and-restriction)
+  - [Deprecate Metrics](#deprecate-metrics-1)
+  - [Escape Flag](#escape-flag)
+<!-- /toc -->
 
 ## Summary
 
@@ -102,12 +119,12 @@ These are related Post-GA tasks:
   - [x] https://github.com/kubernetes/kubernetes/pull/82957 (by @RainbowMango)
 - Introduce label functionality
   - [x] https://github.com/kubernetes/kubernetes/pull/83019 (by @RainbowMango)
-- Introduce test util: 
+- Introduce test util:
   - [x] https://github.com/kubernetes/kubernetes/pull/83299 (by @RainbowMango)
   - [x] https://github.com/kubernetes/kubernetes/pull/83699 (by @RainbowMango)
 - Introduce http handler functionality
   - [x] https://github.com/kubernetes/kubernetes/pull/83722 (by @RainbowMango)
-- Introduce GaugeFunc 
+- Introduce GaugeFunc
   - [X] https://github.com/kubernetes/kubernetes/pull/83830 (by @RainbowMango)
 - Introduce custom collector
   - [ ] https://github.com/kubernetes/kubernetes/pull/83062 (by @RainbowMango)
@@ -147,10 +164,10 @@ These are related Post-GA tasks:
   - [x] https://github.com/kubernetes/kubernetes/pull/83713 (by @RainbowMango)
   - [ ] https://github.com/kubernetes/kubernetes/pull/83664 (by @RainbowMango)
   - [x] https://github.com/kubernetes/kubernetes/pull/84283 (by @serathius)
-- Migrate promhttp 
+- Migrate promhttp
   - [ ] https://github.com/kubernetes/kubernetes/pull/84393 (by @wuyafang)
   - [x] https://github.com/kubernetes/kubernetes/pull/84221 (by @wuyafang)
-  
+
 ### Metrics Validation And Restriction
 - [x] https://github.com/kubernetes/kubernetes/pull/80803 (by @serathius)
 - [x] https://github.com/kubernetes/kubernetes/pull/80906 (by @serathius)
