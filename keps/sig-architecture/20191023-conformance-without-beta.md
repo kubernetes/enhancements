@@ -158,6 +158,10 @@ Phase 2:
 * All identified dependencies on beta REST APIs and features to pass conformance are resolved
 * Blocking presubmit and periodic CI jobs ensure no beta dependencies are introduced
 
+Phase 3:
+* All GA APIs required to pass conformance tests are identified
+* Blocking presubmit and periodic CI jobs ensure no dependencies on optional GA APIs are introduced as required into conformance tests
+
 ## Implementation History
 
 - 2019-10-23: KEP created
