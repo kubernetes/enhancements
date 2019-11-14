@@ -100,12 +100,10 @@ LinuxContainerResources and WindowsContainerResources is introduced as below.
 ```
 // ContainerResources holds resource configuration for a container.
 message ContainerResources {
-    oneof r {
-        // Resource configuration specific to Linux container.
-        LinuxContainerResources linux = 1;
-        // Resource configuration specific to Windows container.
-        WindowsContainerResources windows = 2;
-    }
+    // Resource configuration specific to Linux container.
+    LinuxContainerResources linux = 1;
+    // Resource configuration specific to Windows container.
+    WindowsContainerResources windows = 2;
 }
 ```
 
