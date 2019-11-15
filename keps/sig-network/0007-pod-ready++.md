@@ -72,7 +72,7 @@ For example, during deployment rolling update, a new pod becomes ready. On the o
 Introduce an extra field called ReadinessGates in PodSpec. The field stores a list of ReadinessGate structure as follows: 
 ```yaml
 type ReadinessGate struct {
-	conditionType string	
+    conditionType string	
 }
 ```
 The ReadinessGate struct has only one string field called ConditionType. ConditionType refers to a condition in the PodCondition list in PodStatus. And the status of conditions specified in the ReadinessGates will be evaluated for pod readiness. If the condition does not exist in the PodCondition list, its status will be default to false. 
