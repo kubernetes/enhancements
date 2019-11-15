@@ -35,23 +35,23 @@ The title should be lowercased and spaces/punctuation should be replaced with `-
 
 To get started with this template:
 1. **Pick a hosting SIG.**
-   Make sure that the problem space is something the SIG is interested in taking up.
-   KEPs should not be checked in without a sponsoring SIG.
+  Make sure that the problem space is something the SIG is interested in taking up.
+  KEPs should not be checked in without a sponsoring SIG.
 1. **Make a copy of this template.**
-   Copy this template into the owning SIG's directory (or KEP root directory, as appropriate) and name it `YYYYMMDD-my-title.md`, where `YYYYMMDD` is the date the KEP was first drafted.
+  Copy this template into the owning SIG's directory (or KEP root directory, as appropriate) and name it `YYYYMMDD-my-title.md`, where `YYYYMMDD` is the date the KEP was first drafted.
 1. **Fill out the "overview" sections.**
-   This includes the Summary and Motivation sections.
-   These should be easy if you've preflighted the idea of the KEP with the appropriate SIG.
+  This includes the Summary and Motivation sections.
+  These should be easy if you've preflighted the idea of the KEP with the appropriate SIG.
 1. **Create a PR.**
-   Assign it to folks in the SIG that are sponsoring this process.
+  Assign it to folks in the SIG that are sponsoring this process.
 1. **Create an issue in kubernetes/enhancements, if the enhancement will be targeting changes to kubernetes/kubernetes**
-   When filing an enhancement tracking issue, please ensure to complete all fields in the template.
+  When filing an enhancement tracking issue, please ensure to complete all fields in the template.
 1. **Merge early.**
-   Avoid getting hung up on specific details and instead aim to get the goal of the KEP merged quickly.
-   The best way to do this is to just start with the "Overview" sections and fill out details incrementally in follow on PRs.
-   View anything marked as a `provisional` as a working document and subject to change.
-   Aim for single topic PRs to keep discussions focused.
-   If you disagree with what is already in a document, open a new PR with suggested changes.
+  Avoid getting hung up on specific details and instead aim to get the goal of the KEP merged quickly.
+  The best way to do this is to just start with the "Overview" sections and fill out details incrementally in follow on PRs.
+  View anything marked as a `provisional` as a working document and subject to change.
+  Aim for single topic PRs to keep discussions focused.
+  If you disagree with what is already in a document, open a new PR with suggested changes.
 
 The canonical place for the latest set of instructions (and the likely source of this file) is [here](/keps/YYYYMMDD-kep-template.md).
 
