@@ -20,8 +20,8 @@ reviewers:
 approvers:
   - "@brancz"
 creation-date: 2019-06-05
-last-updated: 2019-06-27
-status: implementable
+last-updated: 2019-11-19
+status: implemented
 see-also:
   - 20181106-kubernetes-metrics-overhaul
   - 20190404-kubernetes-control-plane-metrics-stability
@@ -105,26 +105,33 @@ The [metrics overhaul KEP](https://github.com/kubernetes/enhancements/blob/maste
 
 ## Implementation History
 
-- [x] [Migrate kubelet metrics to use standard prometheus collectors](https://github.com/kubernetes/kubernetes/issues/79286)
-- [ ] Create migrated variants of shared client metrics
-- [ ] Create migrated variants of shared leader-election metrics
-- [ ] Create migrated variants of shared workqueue metrics
-- [ ] Migrate kubelet's /metrics/probes endpoint
-- [ ] Migrate apiserver /metrics endpoint
-- [ ] Migrate scheduler /metrics endpoint
-- [ ] Migrate kube-proxy /metrics endpoint
-- [ ] Migrate controller-manager /metrics endpoint (this include in-tree cloud-provider metrics)
-
-TBD (since this is not yet implemented)
+- [x] [Migrate kubelet metrics to use standard prometheus
+  collectors](https://github.com/kubernetes/kubernetes/issues/79286)
+- [x] Create migrated variants of shared client metrics
+- [x] Create migrated variants of shared leader-election metrics
+- [x] Create migrated variants of shared workqueue metrics
+- [x] [Migrate kubelet's /metrics/probes
+  endpoint](https://github.com/kubernetes/kubernetes/pull/81534)
+- [x] [Migrate apiserver /metrics
+  endpoint](https://github.com/kubernetes/kubernetes/pull/81531)
+- [x] [Migrate scheduler /metrics
+  endpoint](https://github.com/kubernetes/kubernetes/pull/81576)
+- [x] [Migrate kube-proxy /metrics
+  endpoint](https://github.com/kubernetes/kubernetes/pull/81626)
+- [x] [Migrate controller-manager /metrics
+  endpoint](https://github.com/kubernetes/kubernetes/pull/81624) (this includes
+  in-tree cloud-provider metrics)
 
 ## Graduation Criteria
 
-- [ ] Prior to migrating a component, automated static analysis testing is in place to validate and verify API guarantees.
+- [x] Prior to migrating a component, [automated static analysis testing is in
+  place](https://github.com/kubernetes/kubernetes/pull/81510) to validate and
+  verify API guarantees.
 - [ ] Adequate documentation exists for new flags on components.
 - [ ] Update instrumentation documents to reflect changes
 
 ## Testing Plan
 
-- [ ] Prior to migrating a metric's endpoint, we will run local tests to verify that the same metrics are populated
-- [ ] All metrics framework code will have unit/integration tests
-- [ ] All validation and verification code will have unit/integration tests
+- [x] Prior to migrating a metric's endpoint, we will run local tests to verify that the same metrics are populated
+- [x] All metrics framework code will have unit/integration tests
+- [x] All validation and verification code will have unit/integration tests
