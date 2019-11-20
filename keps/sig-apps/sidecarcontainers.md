@@ -172,7 +172,7 @@ The proposal can broken down into four key pieces of implementation that all rel
 * Sidecars start before normal containers
 
 #### API Changes:
-As this is a change to the Container spec we will be using feature gating, you will be required to explicitly enable this feature on the api server as recommended [here](https://github.com/kubernetes/community/blob/master/contributors/devel/api_changes.md#adding-unstable-features-to-stable-versions).
+As this is a change to the Container spec we will be using feature gating, you will be required to explicitly enable this feature on the api server as recommended [here](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api_changes.md#adding-unstable-features-to-stable-versions).
 
 New field `Type` will be added to the lifecycle struct:
 

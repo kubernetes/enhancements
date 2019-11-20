@@ -135,7 +135,7 @@ for the protobuf tag.
 
 The above is a simplified version of Kubernetes API change [guideline][].
 
-[guideline]:https://github.com/kubernetes/community/blob/master/contributors/devel/api_changes.md#alpha-field-in-existing-api-version
+[guideline]:https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api_changes.md#alpha-field-in-existing-api-version
 
 ## Risks and mitigation
 

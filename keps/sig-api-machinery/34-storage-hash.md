@@ -185,7 +185,7 @@ for the protobuf tag.
 The above is a simplified version of the Kubernetes API change [guideline][],
 because the discovery API is read-only.
 
-[guideline]:https://github.com/kubernetes/community/blob/master/contributors/devel/api_changes.md#alpha-field-in-existing-api-version
+[guideline]:https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api_changes.md#alpha-field-in-existing-api-version
 
 ## Alternatives
 1. Adding to the discovery API a reference to the canonical endpoint. For
