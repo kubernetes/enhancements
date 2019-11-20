@@ -13,7 +13,7 @@ approvers:
 editor: "@DirectXMan12"
 creation-date: 2018-11-06
 last-updated: 2019-03-21
-status: implementable
+status: implemented
 ---
 
 # Kubernetes Metrics Overhaul
