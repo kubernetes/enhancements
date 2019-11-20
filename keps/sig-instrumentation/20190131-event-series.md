@@ -16,7 +16,7 @@ approvers:
 editor: TBD
 creation-date: 2019-01-31
 last-updated: 2019-01-31
-status: implementable
+status: implemented
 see-also:
   - n/a
 replaces:
@@ -54,3 +54,4 @@ GA:
 
 - 2017-10-7 design proposal merged under [kubernetes/community](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/instrumentation/events-redesign.md)
 - 2017-11-23 Event API group is [merged](https://github.com/kubernetes/kubernetes/pull/49112)
+- 2019-01-31 [Documented as a KEP](https://github.com/kubernetes/enhancements/pull/796)
