@@ -85,7 +85,7 @@ The `sysctl` design document with more details and rationals is available at [de
 
 ## Motivation
 
-As mentioned in [contributors/devel/api_changes.md#alpha-field-in-existing-api-version](https://github.com/kubernetes/community/blob/master/contributors/devel/api_changes.md#alpha-field-in-existing-api-version):
+As mentioned in [contributors/devel/api_changes.md#alpha-field-in-existing-api-version](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api_changes.md#alpha-field-in-existing-api-version):
 
 > Previously, annotations were used for experimental alpha features, but are no longer recommended for several reasons:
 >
@@ -200,7 +200,7 @@ type PodSecurityPolicySpec struct {
 }
 ```
 
-Following steps in [devel/api_changes.md#alpha-field-in-existing-api-version](https://github.com/kubernetes/community/blob/master/contributors/devel/api_changes.md#alpha-field-in-existing-api-version)
+Following steps in [devel/api_changes.md#alpha-field-in-existing-api-version](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api_changes.md#alpha-field-in-existing-api-version)
 during implementation.
 
 Validation checks implemented as part of [#27180](https://github.com/kubernetes/kubernetes/pull/27180).
