@@ -61,7 +61,7 @@ The CRD validation schemas today support nearly the whole OpenAPI v3 schema lang
 * significantly reduce difficulty in moving forward with advanced features like pruning, defaulting, server-side apply, read-only fields and protobuf in the near and medium term future
 * while keeping needed expressivity to express Kubernetes-like APIs including powerful value validations.
 
-Schema generators (like [crd-gen](https://github.com/kubernetes-sigs/controller-tools/tree/master/cmd/crd) and [openapi-gen](https://github.com/kubernetes/kube-openapi/tree/master/cmd/openapi-gen)) which recurse over API Golang types produce structural schemas naturally. Developers can enrich those structural schemas with nearly arbitrary value validation logic, usually using in-code `+kubebuilder`-like tags.
+Schema generators (like [crd-gen](https://github.com/kubernetes-sigs/controller-tools/tree/master/pkg/crd) and [openapi-gen](https://github.com/kubernetes/kube-openapi/tree/master/cmd/openapi-gen)) which recurse over API Golang types produce structural schemas naturally. Developers can enrich those structural schemas with nearly arbitrary value validation logic, usually using in-code `+kubebuilder`-like tags.
 
 The restriction is an API change of the CustomResourceDefinition kind in the `apiextensions.k8s.io/v1beta1` API group, but in the sense that
 * CRDs created via the `v1beta1` endpoints are not restricted such that existing CRDs keep working **as before**,
