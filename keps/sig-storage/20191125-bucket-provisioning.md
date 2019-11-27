@@ -1,7 +1,7 @@
 ---
 title: Object Bucket Provisioning
 authors:
-  - "@jeffvanec"
+  - "@jeffvance"
   - "@copejon"
 owning-sig: sig-storage
 participating-sigs:
@@ -38,7 +38,7 @@ see-also:
 - [Design Details](#design-details)
   - [Custom Resources](#custom-resources)
   - [Moving Parts](#moving-parts)
-  - [API](#api)
+  - [Interfaces](#interfaces)
   - [Library Usage](#library-usage)
   - [Current Restrictions](#current-restrictions)
   - [Risks and Mitigations](#risks-and-mitigations)
@@ -60,7 +60,7 @@ Kubernetes natively supports dynamic provisioning for file and block storage but
 Without a formal API to describe and manage bucket provisioning, storage providers are left to write their own provisioners including all of the necessary controller code.
 This "wild west" landscape for bucket provisioning is potentially confusing, overly complex, inconsistent, may slow down Kubernetes adoption by object store users, and may hinder application portability.
 
-This KEP is a proposal for a consistent bucket provisioning API which is object store agnostic and provides a familiar, intuitive management plane.
+We propose a common Kubernetes control-plane API for the management of object store bucket lifecycles which has no dependencies on the underlying providers.
 
 ## Motivation
 
@@ -68,23 +68,23 @@ By defining a Kubernetes API for object bucket provsioning, we provide a consist
 
 ### Goals
 
-+ Relieve object store providers from Kubernetes controller details when all they want is to provision bucket storage.
-+ Minimize technical ramp-up for storage vendors who have already contributed external storage provisioning (file and block).
-+ Make bucket consumption similar to file or block consumption using familiar concepts and commnands.
++ Define a _control-plane_ object bucket management API thus relieving object store providers from Kubernetes controller details.
++ Minimize technical ramp-up for storage vendors who have already contributed external storage provisioners (file and block).
++ Make bucket consumption similar to file or block consumption using familiar concepts and commands.
 + Use native Kubernetes resources where possible, again, to keep the bucket experience for users and admins similar to existing storage provisioning.
 + Be unopinionated about the underlying object-store and at the same time provide a flexible API such that provisioner specific features can be supported.
-+ Ensure the bucket consuming pod waits until the target bucket has been created and is accessible. Thus there is no specific order required for when a bucket claim is created vs. when the app pod is run.
++ Ensure bucket consuming pods wait until the target buckets have been created and are accessible. Thus there is no specific order required for when a bucket claim is created vs. when the app pod is run.
 + Present similar user and admin experiences for both _greenfield_ (new) and _brownfield_ (existing) bucket provisioning.
 
 ### Non-Goals
 
 + Update the native Kubernetes PVC-PV API to support object buckets.
-+ Support and manage object store data planes.
++ Define a native _data-plane_ object store API.
 + Handle the small percentage of apps that will not be portable due to use of non-compatible object-store features.
 
 ## Proposal
 
-Create a bucket provisioning library, similar to the Kubernetes [sig-storage-lib-external-provisioner](https://github.com/kubernetes-sigs/sig-storage-lib-external-provisioner/blob/master/controller/controller.go) library, which handles all of the controller and Kubernetes resource aspects related to provisioning.
+Create a bucket provisioning library, similar to the Kubernetes [sig-storage-lib-external-provisioner](https://github.com/kubernetes-sigs/sig-storage-lib-external-provisioner/blob/master/controller/controller.go) library, which handles all of the controller and Kubernetes resources related to provisioning.
 This library will implement a simple and familiar API via Custom Resources, and define a _contract_ between app developers and provisioners regarding the Kubernetes resources related to bucket provisioning.
 
 The actual creation of physical buckets and the generation of appropriate credentials belong to each object store provisioner, while the library handles watches on bucket claims, reconciles desired state, and creates and deletes k8s resources.
@@ -98,58 +98,73 @@ Since certain object store-specific artifacts, e.g. user name, are needed in ord
 (see the [full specs](#custom-resource-details))
 
 The bucket provisioning library utilizes two Custom Resources to abstract an object store bucket and a claim/request for such a bucket.
-+ a namespaced _ObjectBucketClaim_ (OBC), similar to a PVC, is a formal request for a new or existing bucket.
-+ an _ObjectBucket_ (OB), similar to a PV, is the k8s representation of the provisioned bucket and may contain object store-specific data needed to allow the bucket to be de-provisioned (e.g. deleted). The OB resides in the same namespace as the object store, and is typically not seen by bucket consumers.
++ a namespaced _**ObjectBucketClaim**_ (OBC), similar to a PVC, is a formal request for a new or an existing bucket.
++ an _**ObjectBucket**_ (OB), similar to a PV, is the k8s representation of the provisioned bucket and may contain object store-specific data needed to allow the bucket to be de-provisioned. The OB resides in the same namespace as the object store, and is typically not seen by bucket consumers.
 **Note:** namespaced OBs is a change from the original design and was suggested at the 2019 NA Kubecon storage face-to-face with the premise being that if there is no _technical_ reason for a cluster scoped resource then it should be namespaced.
 
 As is true for PVCs-PVs, there is a 1:1 relationship between an OBC and an OB, and as will be seen below, there is a [_binding_](#binding) between an OBC and OB. 
 
-OBCs reference a storage class. The storage class references the external provisioner, defines a reclaim policy, and specifies object-store specific parameters, such as region, owner secret, and bucket lifecycle polcies.
-For brownfield provisioning, the storage class also specifies the name of the existing bucket so that app developers are not burdened with typically long, random bucket names.
+OBCs reference a storage class. The storage class references the external provisioner, defines a reclaim policy, and specifies object-store specific parameters, such as region, owner secret, bucket lifecycle policies, etc.
 
 ### Moving Parts
 
-Before deploying an object bucket consuming app, the OB and OBC CRDs need to be created with RBAC rules granting _get_, _list_, and _watch_ verbs.
+Before deploying an object bucket consuming app, the OB and OBC CRDs need to be created with RBAC rules granting _get_, _list_, _watch_, and _delete_ verbs.
+**Note:** OBCs do not need delete permission but OBs, secrets, and configmaps do.
 An object store needs to be created and referenced in the storage classes used by OBCs.
-Depending on the object store, a secret in the object-store's namespace, containing new bucket owner credentials, may need to be created.
-The OBCs needed by the app should exist in the app's namespace.
+The OBCs needed by the app must exist in the app's namespace.
 
-As is true for dynamic PV provisioning, a bucket provisioner pod needs to be running for each object-store created in the Kubernetes cluster.
+As is true for dynamic PV provisioning, a bucket provisioner pod needs to be running for each type of object-store existing in the Kubernetes cluster.
 For example, for AWS S3, the developer creates an OBC referencing a storage class which references the S3 store.
 This storage class needs to be created by the admin.
 The S3 provisioner pod watches for OBCs whose storage classes point to the AWS S3 provisioner, while ignoring all other OBCs.
 Likewise, the same cluster can also run the Rook-Ceph RGW provisioner, which also watches OBCs, only handling OBCs that reference storage classes which define ceph-rgw.
 
-An OBC for a new bucket triggers the correct provisioner to create a new bucket and associated artifacts (credentials, policy, etc). 
-The library, in turn, creates a secret and configmap based on information returned by the provisioner.
+**Note:** it is possible for one provisioner to handle OBCs for different instances of the same type of object store.
+
+#### Greenfield (new)
+
+An OBC for a new bucket is defined by its inclusion of a generated or static bucket name.
+In this case the referenced storage class omits a bucket name.
+A new bucket OBC triggers the correct provisioner to create a new bucket and the associated artifacts (credentials, policy, etc). 
+The library, in turn, creates a secret, configmap, and OB based on information returned by the provisioner.
+
 The secret contains the credentails needed to access the bucket and the configmap contains bucket endpoint information.
 **Note:** it was mentioned at the 2019 NA Kubecon storage face-to-face that to improve scaling we could decide to move the configmap info into the secret, thus reducing k8s resources required.
-The secret and configmap reside in the same namespace as the OBC.
+The OB is an abstraction of the bucket and can save some state data needed by provisioners.
+The secret and configmap reside in the same namespace as the OBC, and the OB lives in the provisioner's namespace.
 The app pod consumes the secret and configmap and thus can reference the bucket.
 
-An OBC for an existing bucket triggers the correct provisioner to grant access to the existing bucket. Like new bucket provisioning, associated bucket related artifacts (credentials, policy, etc) are typically created by the provisioner.
-
-When a _greenfield_ OBC is deleted the associated provisioner is expected to delete the newly provisioned bucket and related object store-specific artifacts.
+When a _greenfield_ OBC is deleted the associated provisioner is expected to delete the newly provisioned bucket and the related object store-specific artifacts.
 The library will delete the secret, configmap and OB.
-A deleted _brownfield_ OBC is similar except that provisioners typically will not delete the physical bucket. Instead, bucket access is revoked and related artifacts are expected to be cleaned up.
+
+#### Brownfield (existing)
+
+An OBC for an existing bucket is defined by the omission of a bucket name.
+Instead the associated storage class contains the bucket name.
+An existing bucket OBC triggers the correct provisioner to grant access to the existing bucket.
+The library then creates the secret, configmap, and OB based on information returned by the provisioner.
+Like new bucket provisioning, associated bucket related artifacts (credentials, policy, etc) are created and managed by the provisioner.
+
+A deleted _brownfield_ OBC is the same as for _greenfield_ except that provisioners typically will not delete the physical bucket. Instead, bucket access is revoked and the related artifacts are cleaned up.
 Again, the library will delete the secret, configmap and OB.
 
-### API
+### Interfaces
 
 There are four interface methods that must be defined by all bucket provisioners.
-Additionally there are two required and one optional library functions that are used. 
+Additionally there are two required and one optional library function used. 
 
 #### Library Functions
 
 - **`NewProvisioner`** is a required function called by provisioners to create the library's controller struct which is returned to the provisioner.
 Each provisioner defines their own struct, passed to `NewProvision`, which implements the Interfaces below.
-The returned struct supports the `Run` and `SetLabels` methods.
+The returned controller struct supports the `Run` and `SetLabels` methods.
 
 - **`Run`** is a required controller method called by provisioners to start the OBC controller.
 
-- **`SetLabels`** is an optional controller method called by provisioners to define the labels applied to the Kubernetes resources created by the library.
+- **`SetLabels`** is an optional controller method called by provisioners which supports setting custom labels on the library resources.
+**Note:** the library adds its own label to the OBC, OB, secret, and configmap. This label value is the provisioner name.
 
-#### Interfaces
+#### Bucket Interfaces
 
 The following interfaces must be implemented on the provisioner-defined structure which is passed to `NewProvisioner`:
 
