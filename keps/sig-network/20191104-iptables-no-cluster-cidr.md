@@ -47,6 +47,7 @@ superseded-by:
 - [Drawbacks [optional]](#drawbacks-optional)
 - [Alternatives [optional]](#alternatives-optional)
   - [Multiple cluster CIDR rules](#multiple-cluster-cidr-rules)
+  - [ip-masq-agent like behavior](#ip-masq-agent-like-behavior)
 <!-- /toc -->
 
 ## Summary
