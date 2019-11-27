@@ -258,7 +258,7 @@ controller manager also needs a mechanism to read parameters for initialization 
 config maps.
 
 There are two entirely different approach to refactoring volumes -
-[Flex Volumes](https://github.com/kubernetes/community/blob/master/contributors/devel/flexvolume.md) and
+[Flex Volumes](https:\/\/github.com\/kubernetes\/community\/blob\/master\/contributors\/devel\/flexvolume.md) and
 [CSI Container Storage Interface](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/container-storage-interface.md). There is an undergoing effort to move all
 of the volume logic from the controller-manager into plugins called Flex Volumes. In the Flex volumes world, all of the
 vendor specific code will be packaged in a separate binary as a plugin. After discussing with @thockin, this was
