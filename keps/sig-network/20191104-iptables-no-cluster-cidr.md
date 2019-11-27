@@ -8,12 +8,18 @@ reviewers:
   - "@thockin"
   - "@caseydavenport"
   - "@mikespreitzer"
+  - "@aojea"
+  - "@fasaxc"
+  - "@squeed"
+  - "@bowei"
+  - "@dcbw"
+  - "@darwinship"
 approvers:
   - "@thockin"
 editor: TBD
-creation-date: 2019-10-30
-last-updated: 2019-10-30
-status: provisional
+creation-date: 2019-11-04
+last-updated: 2019-11-27
+status: implementable
 see-also:
 replaces:
 superseded-by:
@@ -60,21 +66,27 @@ This enhancement proposes ways to achieve similar goals without tracking the pod
 
 ## Motivation
 
-The idea that makes kubernetes networking model unique and powerful is the concept of each pod having its own IP, with all the pod IPs being natively routable within the cluster. The service chains in iptable rules depend on this capability by assuming that they can treat all the endpoints of a cluster as being equivalent and load balance service traffic across all the endpoints, but just translating destination to the pod IP address.
+The idea that makes kubernetes networking model unique and powerful is the concept of each pod having its own IP, 
+with all the pod IPs being natively routable within the cluster. The service chains in iptable rules depend on this 
+capability by assuming that they can treat all the endpoints of a cluster as being equivalent and load balance service 
+traffic across all the endpoints, by just translating destination to the pod IP address.
 
-While this is powerful, it also means pod IP addresses are in many cases the constraining resource for cluster creation and scale. It would be valuable for implementations to have different strategies for managing pod IP addresses that can adapt to different environment needs.
+While this is powerful, it also means pod IP addresses are in many cases the constraining resource for cluster creation
+and scale. It would be valuable for implementations to have different strategies for managing pod IP addresses that can
+adapt to different environment needs.
 
 Some examples of use cases:
 
    * Creating a cluster out of many disjoint ranges instead of a single range.
    * Expanding a cluster with more disjoint ranges after initial creation.
 
-Not having to depend on the cluster pod CIDR for routing service traffic would effectively de-couple pod IP management and allocation strategies from service management and routing. 
-Which in turn would mean that it would be far cheaper to evolve the IP allocation schemes while
-sharing the same service implementation, thus significantly lowering the bar for adoption of
-alternate schemes.
+Not having to depend on the cluster pod CIDR for routing service traffic would effectively de-couple pod IP management
+and allocation strategies from service management and routing. Which in turn would mean that it would be far cheaper 
+to evolve the IP allocation schemes while sharing the same service implementation, thus significantly lowering the bar
+for adoption of alternate schemes.
 
-Alternate implementations that don’t use iptables could also adopt this same reasoning to not have to track the cluster CIDR for routing cluster traffic.
+Alternate implementations that don’t use iptables could also adopt this same reasoning to not have to track the cluster
+CIDR for routing cluster traffic.
 
 ### Goals
 
@@ -91,13 +103,17 @@ Alternate implementations that don’t use iptables could also adopt this same r
 
 As stated above, the goal is to re-implement the functionality called out in the summary, but in a 
 way that does not depend on a pod cluster CIDR. The essence of the proposal is that for the 
-first two cases in iptables implementation and first case in ipvs, we can replace the `-s proxier.clusterCIDR` with some notion of node local pod traffic.
+first two cases in iptables implementation and first case in ipvs, we can replace the `-s proxier.clusterCIDR` with 
+some notion of node local pod traffic.
 
-The core logic in these cases is “how to determine” cluster originated traffic from non-cluster originated ones. The proposal is that tracking pod traffic generated from within the node is sufficient to determine cluster originated traffic.
-For the first two use cases in iptables and first use case in ipvs, we provide alternatives to using the proxier.clusterCIDR in one of the following ways to determine cluster originated traffic
+The core logic in these cases is “how to determine” cluster originated traffic from non-cluster originated ones. 
+The proposal is that tracking pod traffic generated from within the node is sufficient to determine cluster originated 
+traffic. For the first two use cases in iptables and first use case in ipvs, we provide alternatives to using 
+proxier.clusterCIDR in one of the following ways to determine cluster originated traffic
 
    1. `-s node.podCIDR` (where node podCIDR is used for allocating pod IPs within the node)
-   2. `--in-interface prefix+` (where all pod interfaces start with same prefix)
+   2. `--in-interface prefix+` (where all pod interfaces start with same prefix,
+      or where all pod traffic appears to come from a single bridge or other interface)
    3. `-m physdev --physdev-is-in` (for kubenet if we don’t want to depend on node podCIDR)
 
 Note the above are equivalent definitions, when considering only pod traffic originating from within the node.
@@ -127,11 +143,15 @@ the node IP so that we can send traffic to any pod within the cluster.
 
 One key insight when thinking about this data path though is the fact that the iptable rules run
 at _every_ node boundary. So when a pod sends a traffic to a service IP, it gets translated to
-one of the node IPs _before_ it leaves the node at the node boundary. So it's highly unlikely to 
+one of the pod IPs _before_ it leaves the node at the node boundary. So it's highly unlikely to 
 receive traffic at a node, whose destination is the service cluster IP, that is initiated by pods
 within the cluster, but not scheduled within that node.
 
-Going by the above reasoning, if we receive traffic whose source is not within the node generated pod traffic,we can say with very high confidence that the traffic originated from outside the cluster. This would be the simplest change with respect to re-writing the rule without any assumptions on how the pod networking is setup.
+Going by the above reasoning, if we receive traffic destined to a service whose source is not within the node 
+generated pod traffic, we can say with very high confidence that the traffic originated from outside the cluster. 
+So we can rewrite the rule in terms of just the pod identity within the node (node CIDR, interface prefix or bridge).
+This would be the simplest change with respect to re-writing the rule without any assumptions on how pod 
+networking is setup.
 
 ### iptables - redirecting pod traffic to external loadbalancer VIP to cluster IP
 
@@ -166,7 +186,8 @@ with a representation of pod's nodeCIDR or it's interfaces.
 
 ### iptables - accepting traffic after first packet, after being accepted by kubernetes rules
 
-The [rule here currently](https://github.com/kubernetes/kubernetes/blob/master/pkg/proxy/iptables/proxier.go#L1389-L1411) looks as follows
+The [rule here currently](https://github.com/kubernetes/kubernetes/blob/master/pkg/proxy/iptables/proxier.go#L1389-L1411)
+looks as follows
 
 ```go
 // The following rules can only be set if clusterCIDR has been defined.
@@ -194,18 +215,23 @@ if len(proxier.clusterCIDR) != 0 {
 }
 ```
 
-The interesting part of this rule that it already matches conntrack state to "RELATED,ESTABLISHED", which means that it does not apply to the initial packet, but after the connection has been setup and accepted.
+The interesting part of this rule that it already matches conntrack state to "RELATED,ESTABLISHED", 
+which means that it does not apply to the initial packet, but after the connection has been setup and accepted.
 
-In this case, dropping the `-d proxier.clusterCIDR` rule should have minimal impact on it behavior. We would just be saying that if any connection is already established or related, just accept it.
+In this case, dropping the `-d proxier.clusterCIDR` rule should have minimal impact on it behavior.
+We would just be saying that if any connection is already established or related, just accept it.
 
-In addition, since this rule is written after the rule to drop packets marked by `KUBE-MARK-DROP`, by the time we reach this rule, packets marked to dropped by kubernetes would already have been dropped. So it should not break any kubernetes specific logic.
+In addition, since this rule is written after the rule to drop packets marked by `KUBE-MARK-DROP`,
+by the time we reach this rule, packets marked to dropped by kubernetes would already have been dropped.
+So it should not break any kubernetes specific logic.
 
 Unfortunately in this case, it's not possible replace the cluster CIDR rule with local CIDR as
 the traffic could be getting forwarded through this node to another node.
 
 ### ipvs - masquerade off cluster traffic to services by node IP
 
-The [rule here currently](https://github.com/kubernetes/kubernetes/blob/master/pkg/proxy/ipvs/proxier.go#L1558-L1563) looks as follows.
+The [rule here currently](https://github.com/kubernetes/kubernetes/blob/master/pkg/proxy/ipvs/proxier.go#L1558-L1563)
+looks as follows.
 
 ```go
 // This masquerades off-cluster traffic to a service VIP.  The idea
@@ -216,11 +242,14 @@ The [rule here currently](https://github.com/kubernetes/kubernetes/blob/master/p
 writeLine(proxier.natRules, append(args, "dst,dst", "! -s", proxier.clusterCIDR, "-j", string(KubeMarkMasqChain))...)
 ```
 
-By the same logic used in the first case for iptables, we can replace references to clusterCIDR with node.podCIDR to determine whether the traffic originated from within the cluster or not.
+By the same logic used in the first case for iptables, we can replace references to clusterCIDR with equivalent
+node specific pod identification (node.podCIDR, interface prefix or bridge) to determine whether the traffic originated
+from within the cluster or not.
 
 ### ipvs - accepting traffic after first packet, after being accepted by kubernetes rules
 
-The [rule here currently](https://github.com/kubernetes/kubernetes/blob/master/pkg/proxy/ipvs/proxier.go#L1635-L1654) looks as follows
+The [rule here currently](https://github.com/kubernetes/kubernetes/blob/master/pkg/proxy/ipvs/proxier.go#L1635-L1654)
+looks as follows
 
 ```go
 // The following two rules ensure the traffic after the initial packet
@@ -244,39 +273,85 @@ writeLine(proxier.filterRules,
 	"-j", "ACCEPT",
 )
 ```
-Again, applying similar logic to the last rule for iptables, the proposal here is to simplify this drop reference to the proxy.clusterCIDR and just match on the connection state.
+Again, applying similar logic to the last rule for iptables, the proposal here is to simplify this drop reference to
+the proxy.clusterCIDR and just match on the connection state.
 
 ### Risks and Mitigations
 
-The biggest risk we have is that we are expanding the scope of the last rule to potentially include non-kubernetes traffic. This is considered mostly safe as it does not break any of the intended drop behavior. Plus once the initial connection has been accepted, assuming nodes are used for kubernetes workloads, it's highly unlikely that we would need to not accept it later.
+The biggest risk we have is that we are expanding the scope of the last rule to potentially include non-kubernetes
+traffic. This is considered mostly safe as it does not break any of the intended drop behavior. Plus once the initial
+connection has been accepted, assuming nodes are used for kubernetes workloads, it's highly unlikely that we would
+need to not accept it later.
 
 ## Design Details
 
-The idea of ‘determine cluster originated traffic’ would be captured in a new interface type within kube-proxy, with different implementations of the interface. The kube-proxy implementation itself would just call method on interface to get the match criteria to write in the rule.
+The idea of ‘determine cluster originated traffic’ would be captured in a new go interface type within kube-proxy,
+with different implementations of the interface. The kube-proxy implementation itself would just call method on
+interface to get the match criteria to write in the rule.
 
-This assumes that the match can be represented in a single rule. We want to avoid going down the path, as much as possible, of adding multiple rules. Support for multiple rules will be taken as a separate enhancement based on feedback as the current clusterCIDR rule is not yet being removed.
+The new behavior can be opted-in using the following flags as an alternative to `--cluster-cidr string` flag.
+
+```
+--detect-local-with-node-cidr string
+
+  kube-proxy considers traffic as local if originating from within this cidr list. string argument 
+  can be an empty string. If empty (""), then kube-proxy will use the node.spec.podCIDR
+  attribute to identify the list of pod cidr. Can be a comma separated list of CIDR in a.b.c.d/x format
+  in case manually specified
+
+--detect-local-with-pod-interface string
+
+  kube-proxy considers traffic as local if originating from an interface which matches one of given
+  prefixes. string argument is a comma separated list of interface prefix names, without the ending '+'.
+
+--detect-local-with-bridge
+
+  kube-proxy considers traffic as local if originating from a bridge within the node.
+```
+
+Only one of `--cluster-cidr`, `--detect-local-with-node-cidr`, `--detect-local-with-pod-interface` or
+`detect-local-with-bridge` can be specified at a time. Specifying more than one is considered an error.
+
+Given that we are handling a list of rules, the jump to `KUBE-MARK-MARQ` will be implemented with a
+jump to a new chain `KUBE-MASQ-IF-NOT-LOCAL` which will then either return or jump to `KUBE-MARK-MASQ`
+as appriate. For example:
+
+```
+-A WHEREVER -blah -blah -blah -j MARK-MASQ-IF-NOT-LOCAL
+
+-A MARK-MASQ-IF-NOT-LOCAL -s 10.0.1.0/24 -j RETURN
+-A MARK-MASQ-IF-NOT-LOCAL -s 10.0.3.0/24 -j RETURN
+-A MARK-MASQ-IF-NOT-LOCAL -s 10.0.5.0/24 -j RETURN
+-A MARK-MASQ-IF-NOT-LOCAL -j KUBE-MARK-MASQ
+```
 
 ### Graduation Criteria
 
-TODO - this will be resolved once the initial KEP has been reviewed. The current thinking is that these would just be additional flags to kube-proxy.
+These additional flags will go through alpha, beta etc graduation as for any feature.
 
 ## Implementation History
 
 2019-11-04 - Creation of the KEP
+2019-11-27 - Revision with Implementation Details
 
 ## Drawbacks [optional]
 
-The main caveat in this KEP is the relaxation of the accept rule for "ESTABLISHED,RELATED" packets. The other two rules have equivalent implementations, as long as we continue to guarantee that pod traffic is routed at the node boundary on _every_ and _all_ nodes that makes up the kubernetes cluster. This would not work if that assumption were to change.
+The main caveat in this KEP is the relaxation of the accept rule for "ESTABLISHED,RELATED" packets. The other two rules
+have equivalent implementations, as long as we continue to guarantee that pod traffic is routed at the node boundary
+on _every_ and _all_ nodes that makes up the kubernetes cluster. This would not work if that assumption were to change.
 
 ## Alternatives [optional]
 
 ### Multiple cluster CIDR rules
-One alternative to consider is to explicitly track a list of cluster CIDRs in the ip table rules.
-For the second rule and third, it would be a simple source match to each of the CIDRs.
-But for the first rule, we would have to do a new mark and then masquerade on absence of mark, as we have to make sure it does not match _any_ of the allocated CIDRs.
+One alternative to consider is to explicitly track a list of cluster CIDRs in the ip table rules. If we 
+want to do this, we might want to consider making the cluster CIDR a first class resource, which we want to avoid.
 
-It also complicates the lifecycle of kube-proxy as when new cluster CIDRs are added, this has to
-be plumbed down to kube-proxy (either change flags and restart or create a new resource to watch).
+Instead in most cases, where the interface prefix is mostly fixed or we are using the `node.spec.podCIDR` attribute,
+changes to the cluster CIDR does not need any change to the kube-proxy arguments or a restart, which we believe 
+is of benefit when managing clusters.
 
-It is felt that it's better to have kube-proxy unlearn knowledge of cluster CIDR instead of adding to it.
-
+### ip-masq-agent like behavior
+The other alternative is to have kube-proxy never track it and instead use something like 
+[ip-masq-agent](https://kubernetes.io/docs/tasks/administer-cluster/ip-masq-agent/) to track what we masquerade
+or not. In this case, it assumes more knowledge from the users, but it does provide for a single place to update
+these cidrs using existing tooling.
