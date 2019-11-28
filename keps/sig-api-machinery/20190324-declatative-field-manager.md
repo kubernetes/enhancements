@@ -15,6 +15,29 @@ status: provisional
 
 # declarative-field-manager
 
+## Table of Contents
+
+<!-- toc -->
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [Risks and Mitigations](#risks-and-mitigations)
+  - [User Stories [optional]](#user-stories-optional)
+    - [Git Managed Configuration](#git-managed-configuration)
+    - [Kustomize](#kustomize)
+- [Design Details](#design-details)
+  - [Proposed API Change](#proposed-api-change)
+  - [Test Plan](#test-plan)
+  - [Graduation Criteria](#graduation-criteria)
+  - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+  - [Version Skew Strategy](#version-skew-strategy)
+- [Implementation History](#implementation-history)
+- [Drawbacks [optional]](#drawbacks-optional)
+- [Alternatives [optional]](#alternatives-optional)
+<!-- /toc -->
+
 ## Summary
 
 Currently the identifier of the current actor (fieldManager) is set through an request option or the request user-agent,
