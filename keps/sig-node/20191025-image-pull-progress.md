@@ -12,7 +12,7 @@ approvers:
   - TBD
 editor: TBD
 creation-date: 2010-10-25
-last-updated: 2010-10-25
+last-updated: 2010-11-29
 status: provisional
 ---
 
@@ -32,7 +32,6 @@ status: provisional
   - [Kubernetes API additions](#kubernetes-api-additions)
   - [CLI modifications](#cli-modifications)
   - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
-  - [Risks and Mitigations](#risks-and-mitigations)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature enablement and rollback](#feature-enablement-and-rollback)
   - [Scalability](#scalability)
@@ -99,7 +98,7 @@ created, then the user has now the possibility to obtain additional information,
 like the overall amount of bytes already downloaded, the needed bytes to be
 downloaded and the estimated pull time based on the currently available
 bandwidth. These information are directly available via tools like `kubectl`,
-because each workload exposes this state directly to the Kubernetes API.
+because each workload exposes this state directly via an API.
 
 ## Motivation
 
@@ -119,7 +118,7 @@ is the `ContainerCreating` or `PullingImage` state.
 
 ### Non-Goals
 
-- Everything which is not related to the container image pull procedure
+Everything which is not related to the container image pull procedure
 
 ## Proposal / User Stories
 
@@ -127,11 +126,11 @@ The overall implementation can be split up into three user stories.
 
 ### CRI API enhancement
 
-The Kubernets runtime API `ImageService` has to be modified to provide an
-additional streaming RPC. This server-side stream provides continuously image
-pull related metadata during the whole image pull process. The new endpoint
-would be added in addition to the already available `PullImage` RPC and re-use
-the request data type:
+The Kubernetes runtime API `ImageService` has to be modified to provide an
+additional streaming remote procedure call (RPC). This server-side stream
+provides continuously image pull related metadata during the whole image pull
+process. The new endpoint would be added in addition to the already available
+`PullImage` RPC and re-uses the request data type:
 
 ```protobuf
 service ImageService {
@@ -170,12 +169,15 @@ directly from the runtimes via the `reason` field.
 
 ### Kubernetes API additions
 
-The already existing kubelet `imageManager` events `PullingImage`, `PulledImage`
-and `FailedToPullImage` will be re-used and extended with the additional
-metadata provided by the CRI. This means that the container will still reside in
-`ContainerStateWaiting` during the image pull, but the events regarding the
-image pull process will be thrown periodically. The amount of how often the
-kubelet throws this event should be configurable in a range between 1s and 1min.
+The required API will be deployed via a Custom Resource Definition (CRD), which
+can be enabled via a feature gate. The definition applies cluster wide, whereas
+a single custom resource will be created on a per-node basis. This means that
+one custom resource gets managed per node, which contains the list of images and
+their current pull progress/status.
+
+The kubelet updates the Custom Resources during an image pull, which indicate
+the pull progress per container image. The amount of how often the kubelet
+updates the resources are configurable in a range between 1s and 1min.
 
 To reduce the impact of the added feature, a kubelet configuration option will
 be added which is (for now) disabled per default. This option completely avoids
@@ -184,35 +186,13 @@ calling the new gRPC API and falls back to the current `PullImage` RPC.
 ### CLI modifications
 
 The command line interface of Kubernetes (`kubectl`) does right now provide all
-necessary features to display the additional pull progress events, but the
-overall usability is not satisfying at all.
-
-To improve the amount of information when calling `kubectl get pods`, we will
-now take the thrown events into account as well. To achieve that and stay
-backwards compatible, a new output variant `events` will be added to the
-`kubectl get` flag `-o/--output`. If the flag is set, `kubectl` will map
-(manually implemented) relevant information into the default (table) output in a
-similar fashion to the `-o wide`. For example, the output for pods pulling a
-container image will now look like:
-
-```
-> kubectl get pods -o events
-NAMESPACE     NAME                       READY   STATUS              RESTARTS   AGE   EVENT
-kube-system   coredns-65c865486d-s2fs5   0/1     ContainerCreating   0          3s    Pulling Image (42%)
-```
+necessary features to display the additional pull progress information.
 
 ### Implementation Details/Notes/Constraints
 
 The major caveat for this implementation approach is the increased amount of
-thrown events from the kubelet during an image pull. This should be limited in a
+resource updates from the kubelet during an image pull. This should be limited in a
 fashion that the API surface is not strongly impacted.
-
-### Risks and Mitigations
-
-The interface changes to `kubectl` should increase the usability to the users,
-whereas it opens the doors for future correlations between events and
-`kubectl get` requests. There is a risk that the current design proposal does
-not fulfill that need.
 
 ## Production Readiness Review Questionnaire
 
@@ -264,9 +244,9 @@ not fulfill that need.
   - **periodic API calls to reconcile state (e.g. periodic fetching state,
     heartbeats, leader election, etc.)**
 
-  Yes, we throw new events during the image pull process. The frequency can be
-  configured on the kubelet as well. This frequency will limit the amount of
-  thrown events on slow image downloads in the worst case.
+  Yes, we create and update custom resources during the image pull process. The
+  frequency can be configured on the kubelet as well. This frequency will limit
+  the amount of updates on slow image downloads in the worst case.
 
   **Example:** We assume an average container image size of 100 MiB and an
   available bandwidth of 100 MBit/s. This means that the overall image
@@ -276,22 +256,24 @@ not fulfill that need.
   images, so we have a window of round about 800 pods downloading a container
   image at the same time.
 
-  If we configure the feature to an event period of 1 second, then it would
-  result in between 0 and 800 QPS to the API Server.
+  If we configure the feature to an resource update period of 1 second, then it
+  would result in between 0 and 800 QPS to the API Server.
 
 - **Will enabling / using the feature result in supporting new API types? How
   many objects of that type will be supported (and how that translates to
   limitations for users)?**
 
-  No, we will reuse the existing pull related events `PullingImage`,
-  `PulledImage` and `FailedToPullImage` but these will contain additional
-  metadata, like the pull progress.
+  Yes, the API will be deployed via a CRD.
+
+  (TODO: I'm not sure if there is a need to limit the amount of custom
+  resources)
 
 - **Will enabling / using the feature result in increasing size or count of
   the existing API objects?**
 
-  Yes, the amount of events will increase up to the configured event period
-  multiplied by the amount of pods pulling an image at the same time.
+  Yes, the amount of resources and their updates will increase up to the
+  configured update period multiplied by the amount of pods pulling an image at
+  the same time.
 
 - **Will enabling / using the feature result in increasing time taken by any
   operations covered by existing SLIs/SLOs (e.g. by adding additional
@@ -329,8 +311,8 @@ not fulfill that need.
 - **How does this feature respond to degraded performance or high error rates
   from services on which it depends?**
 
-  It will report these errors to the API via events. This was not done before
-  and is also a purpose of this feature.
+  It will report these errors to the API via the custom resource. This was not
+  done before and is also a purpose of this feature.
 
 ### Monitoring requirements
 
@@ -340,13 +322,14 @@ not fulfill that need.
 
 - **How can an operator determine if the feature is functioning properly?**
 
-  Image pull progress should be exposed via events in the configured intervals.
+  Image pull progress should be exposed via the custom resource in the
+  configured intervals.
 
 - **What are the service level indicators an operator can use to determine the
   health of the service?**
 
   The kubelet is reporting a prometheus metric for the number of failed calls
-  to the new CRI API method or failed event deliveries. The SLI will correlate
+  to the new CRI API method or failed resource updates. The SLI will correlate
   to the aggregation of this metric for all nodes.
 
 - **What are reasonable service level objectives for the feature?**
