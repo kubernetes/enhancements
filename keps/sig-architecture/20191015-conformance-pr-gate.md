@@ -187,6 +187,7 @@ In Phase 1, we will:
 
 In Phase 2, we will:
 * Create a per PR prow-job comparing a limited subset of PRs touching tests/e2e/*
+* For tests that are modified, comment if test is flakey for the previous two weeks
 
 ### Phase 3
 
@@ -197,7 +198,7 @@ In Phase 3, we will:
 
 N/A
 
-## Workflow
+## Workflow within the PR
 
 We have three changes that need to be gated together.
 
@@ -211,6 +212,22 @@ over a multi-stage/PR approach.
 
 We should keep an updated workflow as we encounter difficulties in the process,
 prefered to multi-stage.
+
+## Bot Sequencing
+
+### New [Conformance] tags
+
+Identifying tests with newly added [Conformance] tags, inspecting the previous versions are non-flakey for two weeks.
+
+We will also ensure that the only changes to the tests are related to the beta->ga api change and addition of [Conformance] tag.
+
+### New GA endpoints
+
+Ensuring that newly GA endpoints are hit by tests with [Conformance]
+
+### Ensure Overall Coverage doesn't decrease
+
+For any other PRs ensuring that conformance doesn't drop overall, listing APIs that lost coverage in a PR comment.
 
 ## Implementation History
 
