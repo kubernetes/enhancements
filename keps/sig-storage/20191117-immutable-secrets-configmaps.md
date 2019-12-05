@@ -14,8 +14,8 @@ reviewers:
 approvers:
   - "@saad-ali"
 creation-date: 2019-11-17
-last-updated: 2019-11-22
-status: provisional
+last-updated: 2019-12-09
+status: implementable
 see-also:
 replaces:
 superseded-by:
@@ -128,11 +128,16 @@ field:
 ```
 
 If set, the machinery in apiserver will reject any updates of the object
-trying to change anything different than ObjectMetadata. Note that we
-need to allow mutating ObjectMetadata to not break object lifecycle
-(e.g. to avoid deadlock if Finalizers are set).
+trying to change anything different than ObjectMetadata.
 
-Based on the value of that field Kubelet will or will not:
+Note that will NOT reject all updates of the object, as we need to allow
+e.g. for mutating ObjectMetadata (to not break object lifecycle, e.g. by
+introducing a deadlock if Finalizers are set) or to allow rotating
+certificates used for encryption at rest. We will only reject requests
+that are explicitly changing keys and/or values stored in Secrets and/or
+ConfigMaps.
+
+Based on the value of `Immutable` field Kubelet will or will not:
 - start a watch (or periodic polling) of a given Secret/ConfigMap
 - perform updates of files mounted to a Pod based on updates of
   the Kubernetes object
@@ -150,27 +155,46 @@ the new logic behind the feature gate.
 
 ### Test Plan
 
-**Note:** *Section not required until targeted at a release.*
+For `Alpha`, we will add e2e tests verifying that contents of Secrets and
+ConfigMaps marked as immutable really can't be updated. Additionally, these
+will check if the metadata can be modified.
 
-TODO
+Additionally, unit tests will be added in Kubelet codebase to ensure that
+the newly added logic to not watch immutable Secrets/ConfigMaps works as
+expected.
+
+For `Beta`, we will also extend scalability tests with a number of immutable
+`Secrets` and `ConfigMaps` to validate the performance impact (for `Alpha`
+only manual scalability tests will be performed).
 
 ### Graduation Criteria
 
-**Note:** *Section not required until targeted at a release.*
+Alpha:
+- All tests describe above for `Alpha` are implemented and passing.
+- Manual scalability tests prove the expected impact.
 
-TODO
+Beta:
+- Scalability tests are extended to mount an immutable Secret and ConfigMap
+for every single Pod, and that doesn't violate existing SLOs.
+
+GA:
+- No complaints about the API and user bug reports for 2 releases.
 
 ### Upgrade / Downgrade Strategy
 
-No  upgrade/downgrade concerns.
+No upgrade/downgrade concerns.
 
 ### Version Skew Strategy
 
-TODO
+On Nodes in versions on supporting the feature, Kubelet will still be watching
+immutable Secrets and/or ConfigMaps. That said, this is purely a performance
+improvement and doesn't have correctness implications. So those clusters will
+simple have worse scalability characteristic.
 
 ## Implementation History
 
 2019-11-18: KEP opened
+2019-12-09: KEP marked implementable
 
 ## Alternatives
 
