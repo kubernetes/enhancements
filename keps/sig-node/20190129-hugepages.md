@@ -263,9 +263,9 @@ spec:
 ...
     volumeMounts:
     - mountPath: /hugepages-2Mi
-      name: hugepage-2Mi
+      name: hugepage-2mi
     - mountPath: /hugepages-1Gi
-      name: hugepage-1Gi
+      name: hugepage-1gi
     resources:
       requests:
         hugepages-2Mi: 1Gi
@@ -274,10 +274,10 @@ spec:
         hugepages-2Mi: 1Gi
         hugepages-1Gi: 2Gi
   volumes:
-  - name: hugepage-2Mi
+  - name: hugepage-2mi
     emptyDir:
       medium: HugePages-2Mi
-  - name: hugepage-1Gi
+  - name: hugepage-1gi
     emptyDir:
       medium: HugePages-1Gi
 ```
@@ -407,9 +407,9 @@ spec:
   - name: container1
     volumeMounts:
     - mountPath: /hugepage-2Mi
-      name: hugepage-2Mi
+      name: hugepage-2mi
     - mountPath: /hugepage-1Gi
-      name: hugepage-1Gi
+      name: hugepage-1gi
     resources:
       requests:
         hugepages-2Mi: 1Gi
@@ -420,17 +420,17 @@ spec:
   - name: container2
     volumeMounts:
     - mountPath: /hugepage-2Mi
-      name: hugepage-2Mi
+      name: hugepage-2mi
     resources:
       requests:
         hugepages-2Mi: 1Gi
       limits:
         hugepages-2Mi: 1Gi
   volumes:
-  - name: hugepage-2Mi
+  - name: hugepage-2mi
     emptyDir:
       medium: HugePages-2Mi
-  - name: hugepage-1Gi
+  - name: hugepage-1gi
     emptyDir:
       medium: HugePages-1Gi
 ```
