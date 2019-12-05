@@ -92,8 +92,9 @@ the output of the various Kubernetes project tools.
 
 ## Proposal
 
-Details of protocol specification and implementaion are capturted as api-conventions under the kustomize repo here:
- 
+Details of protocol specification and implementation are captured as api-conventions under the kustomize repo here:
+
+- [Structured Output for Kubernetes CLI Tools](https://github.com/ibelle/kustomize/blob/master/cmd/config/docs/api-conventions/structured_output.md#structured-output-for-kubernetes-cli-tools)
 
 ## Implementation History
 - 12-05-2019 KEP Created
