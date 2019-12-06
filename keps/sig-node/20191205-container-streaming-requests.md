@@ -1,0 +1,222 @@
+---
+title: Cleaning up container streaming requests
+authors:
+  - "@tallclair"
+owning-sig: sig-node
+participating-sigs:
+  - sig-apimachinery
+reviewers:
+  - "@Random-Liu"
+  - "@yujuhong"
+  - "@mrunalp"
+  - "@derekwaynecarr"
+approvers:
+  - "@Random-Liu"
+  - "@derekwaynecarr"
+creation-date: 2019-12-05
+status: provisional
+replaces:
+  - "https://docs.google.com/document/d/1OE_QoInPlVCK9rMAx9aybRmgFiVjHpJCHI9LrfdNM_s/edit#heading=h.4yfjiw58o8d3"
+---
+
+# Cleaning up container streaming requests
+
+## Table of Contents
+
+<!-- toc -->
+- [Release Signoff Checklist](#release-signoff-checklist)
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [Rollout Plan](#rollout-plan)
+  - [Risks and Mitigations](#risks-and-mitigations)
+    - [Dependence on apiserver redirects](#dependence-on-apiserver-redirects)
+    - [Rollout breakage](#rollout-breakage)
+- [Design Details](#design-details)
+  - [Test Plan](#test-plan)
+  - [Graduation Criteria](#graduation-criteria)
+      - [Removing a deprecated flag](#removing-a-deprecated-flag)
+  - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+  - [Version Skew Strategy](#version-skew-strategy)
+- [Implementation History](#implementation-history)
+<!-- /toc -->
+
+## Release Signoff Checklist
+
+**ACTION REQUIRED:** In order to merge code into a release, there must be an issue in [kubernetes/enhancements] referencing this KEP and targeting a release milestone **before [Enhancement Freeze](https://github.com/kubernetes/sig-release/tree/master/releases)
+of the targeted release**.
+
+For enhancements that make changes to code or processes/procedures in core Kubernetes i.e., [kubernetes/kubernetes], we require the following Release Signoff checklist to be completed.
+
+Check these off as they are completed for the Release Team to track. These checklist items _must_ be updated for the enhancement to be released.
+
+- [ ] kubernetes/enhancements issue in release milestone, which links to KEP (this should be a link to the KEP location in kubernetes/enhancements, not the initial KEP PR)
+- [ ] KEP approvers have set the KEP status to `implementable`
+- [ ] Design details are appropriately documented
+- [ ] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [ ] Graduation criteria is in place
+- [ ] "Implementation History" section is up-to-date for milestone
+- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+
+**Note:** Any PRs to move a KEP to `implementable` or significant changes once it is marked `implementable` should be approved by each of the KEP approvers. If any of those approvers is no longer appropriate than changes to that list should be approved by the remaining approvers and/or the owning SIG (or SIG-arch for cross cutting KEPs).
+
+**Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
+
+[kubernetes.io]: https://kubernetes.io/
+[kubernetes/enhancements]: https://github.com/kubernetes/enhancements/issues
+[kubernetes/kubernetes]: https://github.com/kubernetes/kubernetes
+[kubernetes/website]: https://github.com/kubernetes/website
+
+## Summary
+
+There are several features and flags for handling container streaming requests
+(exec/attach/port-forward). Having so many different ways of handling these requests unnecessarily
+complicates configuration, and opens the cluster to potential security risks. This is a proposal to
+consolidate the current options into a single supported configuration. Specifically, it proposes:
+
+1. Graduate `ValidateProxyRedirects` to GA
+2. Deprecate the Kubelet's `--redirect-container-streaming` feature
+3. Deprecate the `StreamingProxyRedirects` feature
+
+## Motivation
+
+The `StreamingProxyRedirects` feature was originally added as part of the migration the [Container
+Runtime Interface][]. One of the initial goals was to bypass the Kubelet for these long-running
+requests in order to better account the request overhead. However, the apiserver is still
+responsible for proxying these requests, so the gains of bypassing the Kubelet are
+marginal. Furthermore, the redirect handling significantly complicates the apiserver stream
+handling, and opens it up to [potential SSRF attacks][], so we added the `ValidateProxyRedirects`
+feature to mitigate those.
+
+When we went to add mTLS support to the runtime streaming server, we realized getting the right
+certs established between the apiserver and the runtime was complicated, but the apiserver already
+had an mTLS connection to the Kubelet. So, we added the ability for the Kubelet to connect the
+stream locally and proxy the connection back to the apiserver. This setup is more secure, removes
+the need for `StreamingProxyRedirecs` and `ValidateProxyRedirects`, but adds the Kubelet back into
+the long-running request chain.
+
+`StreamingProxyRedirects` and `ValidateProxyRedirects` are currently in Beta, and should either be
+graduated or removed.
+
+[Container Runtime Interface]: https://github.com/kubernetes/community/blob/master/contributors/design-proposals/node/container-runtime-interface-v1.md
+[potential SSRF attacks]: https://github.com/kubernetes/kubernetes/issues/85867
+
+### Goals
+
+1. Simplify secure container runtime setup and operation
+2. Remove conformance dependencies on beta features
+
+### Non-Goals
+
+Design a high-bandwidth low-latency production ready streaming channel to containers. Such a system
+should go through an ingress point other than the apiserver, and could be implemented (or at least
+prototyped) out of tree by leveraging the new [ephemeral containers
+feature](20190212-ephemeral-containers.md).
+
+## Proposal
+
+After the [transition period](#rollout-plan), the only way to configure container streaming will be
+using the local redirect with Kubelet proxy (`--redirect-container-streaming=false`) approach. Under
+this configuration, handling streaming redirects are not needed by the apiserver, so
+`StreamingProxyRedirects` will be deprecated and eventually removed. Once `StreamingProxyRedirects`
+are removed, `ValidateProxyRedirects` is no longer needed and can be removed. However, it will be
+faster to graduate that feature to GA first, and then it can be removed along with the
+`StreamingProxyRedirects` code without any user-visible impact. Finally, the
+`--redirect-container-streaming` flag will be deprecated and eventually removed.
+
+### Rollout Plan
+
+1. release **1.18**
+   1. Mark the `--redirect-container-streaming` flag as deprecated. Log a warning on use.
+   2. Mark the `StreamingProxyRedirects` feature as deprecated. Log a warning on use.
+   3. Graduate `ValidateProxyRedirects` to GA (remove option to disable). This feature has been in
+      beta and enabled by default since v1.14 with no reported issues.
+2. release **1.19** - no changes
+3. release **1.20**
+   1. `--redirect-container-streaming` can no longer be enabled. If the flag is set, log an error
+      and continue as though it is unset.
+   2. Remove `ValidateProxyRedirects` feature gate.
+4. release **1.21** _(extra safe alternative: 1.22)_
+   1. Default `StreamingProxyRedirects` to disabled. If there is a >= 2 version skew between master
+      and nodes, and the old nodes were enabling `--redirect-container-streaming`, this **will break
+      them**. In this case, the `StreamingProxyRedirects` can still be manually enabled.
+5. release **1.22** _(extra safe alternative: 1.24)_
+   1. Remove the `--redirect-container-streaming` flag.
+   2. Remove the `StreamingProxyRedirects` feature.
+
+### Risks and Mitigations
+
+#### Dependence on apiserver redirects
+
+Risk: a user depends on the ability to handle streaming redirects in the apiserver.
+
+This could be the case if:
+
+1. Pods are run outside the node, and the kubelet has no connectivity to streaming server. This is
+   not a conformant setup, and I do not think we need to support it. If the kubelet _does_ have
+   connectivity, then the kubelet can still proxy the stream.
+2. The use case is extremely latency or resource sensitive, and cannot tolerate the extra hop
+   through the Kubelet. My hypothesis is that these use cases would also be intolerant of the
+   apiserver hop, and should look into alternative solutions.
+
+Without direct evidence of use cases that wouldn't be able to handle the new approach anything here
+is purely speculative. Hopefully the long transition plan would raise any issues in this bucket
+before we pass the point of no return (features removed).
+
+#### Rollout breakage
+
+Risk: no configurations are updated, and streaming is broken during the rollout transition.
+
+There are 4 potential points for breakage in the rollout, which we'll consider separately:
+
+1. `ValidateProxyRedirects` to GA (rollout step 1.3) - If a user is overriding the feature to
+   disable it, then this could break them. It is expected that beta features eventually transition
+   to GA, so overriding beta features should be viewed as a temporary state. We have not heard of
+   any issues with the beta. This would cause problems if the CRI streaming server was serving on a
+   different interface or DNS name than the interface the apiserver was connecting to.
+2. `--redirect-container-streaming` cannot be set (rollout step 3.1) - This case is covered by
+   [Dependence on apiserver redirects](#dependence-on-apiserver-redirects).
+3. `StreamingProxyRedirects` disabled or removed (rollout step 4.1 or 5.2) - This would only be the
+   case there was version skew of at least 2 versions from the apiserver to the nodes, and the old
+   nodes were still using `--redirect-container-streaming`. At this point, the user should have had
+   ample warning (3 versions), and would only be affected if nodes were lagging the apiserver
+   version. The safe alternative rollout plan waits 2 versions between steps, which is the maximum
+   version skew supported between apiserver & nodes, to eliminate this concern.
+4. Features / flags removed (rollout steps 3.2, 5.1 or 5.2) - The rollout plan conforms with the
+   [Kubernetes deprecation policy][] for feature gates & flags, which gives users several releases
+   and warnings to upgrade their configuration.
+
+[Kubernetes deprecation policy]: https://kubernetes.io/docs/reference/using-api/deprecation-policy/#deprecating-a-flag-or-cli
+
+## Design Details
+
+### Test Plan
+
+Multiple configurations are currently covered in the e2e environment, and there are many tests that
+depend on the exec behavior. There are exec, attach, and port-forward tests in the kubectl test
+suite.
+
+### Graduation Criteria
+
+See [Rollout Plan](#rollout-plan).
+
+##### Removing a deprecated flag
+
+This proposal removes 2 feature gates (`ValidateProxyRedirects` and `StreamingProxyRedirects`) and a
+kubelet flag `--redirect-container-streaming`. See [Rollout Plan](#rollout-plan) for the details.
+
+### Upgrade / Downgrade Strategy
+
+There are no special considerations during upgrade and downgrade, except those around version skew
+(see [Rollout breakage](#rollout-breakage)).
+
+### Version Skew Strategy
+
+See [Rollout breakage](#rollout-breakage).
+
+## Implementation History
+
+- _2019-12-05_: Published KEP
