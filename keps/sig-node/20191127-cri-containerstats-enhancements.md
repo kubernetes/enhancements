@@ -11,7 +11,7 @@ approvers:
   - TBD
 editor: TBD
 creation-date: 2019-11-27
-last-updated: 2019-11-27
+last-updated: 2019-12-06
 status: provisional
 ---
 
@@ -44,15 +44,15 @@ monitoring metrics.
 
 ## Motivation
 
-Since more and more sandbox container runtimes shows up, like `kata-container`/
-`gVisor`/ `Firecracker`, the way to collect metrics from sandbox container is
-quite different from runC. For the third-party metric collectors, they have to
-maintain the knowledge about how to collect metrics from each kind of container
-runtimes. And more, kubelet codebase focus on core-metrics export
-(defined in [Kubernetes monitoring architecture#Terminology](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/instrumentation/monitoring_architecture.md#terminology)),
+Since more and more container runtimes shows up, like `kata-container`/
+`gVisor`/ `Firecracker`/ `Windows Containers`, the way to collect metrics from
+these containers is quite different from runC. For the third-party metric
+collectors, they have to maintain the knowledge about how to collect metrics
+from each kind of container runtimes. And more, kubelet codebase focus on
+core-metrics export (defined in [Kubernetes monitoring architecture#Terminology](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/instrumentation/monitoring_architecture.md#terminology)),
 and there is no powerful standard interface for container level metrics.
 It will bring burden to end-users who wants to build powerful monitor pipeline
-(defined in [Kubernetes monitoring architecture#Executive Summary](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/instrumentation/monitoring_architecture.md#executive-summary)) for sandbox container runtimes.
+(defined in [Kubernetes monitoring architecture#Executive Summary](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/instrumentation/monitoring_architecture.md#executive-summary)) for different container runtimes.
 
 Based on this case, we can extend Container Runtime Interface(CRI) to define
 the container level metrics. Each container runtime engine, which implemented
