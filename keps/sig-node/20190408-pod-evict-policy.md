@@ -18,24 +18,22 @@ status: provisional
 
 ## Table of Contents
 
-- [Table of Contents](#table-of-contents)
+<!-- toc -->
 - [Summary](#summary)
 - [Motivation](#motivation)
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [User Stories](#user-stories)
-    - [Story 1](#story-1)
-    - [Story 2](#story-2)
+    - [ReplicaSet Controller Evict Pods according ReplicaSet EvictStrategy](#replicaset-controller-evict-pods-according-replicaset-evictstrategy)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
-  - [API](#api)
-    - [EvictReason Definition](#evictreason-definition)
-    - [EvictRequest Definition](#evictrequest-definition)
-    - [EvictPolicyType Definition](#evictpolicytype-definition)
-    - [EvictPolicy Definition](#evictpolicy-definition)
-  - [Workflow](#workflow)
+  - [API Changes](#api-changes)
+    - [Adding EvictPolicy Definition in PodSpec](#adding-evictpolicy-definition-in-podspec)
+    - [Adding Pod Eviction Wanted Annotation](#adding-pod-eviction-wanted-annotation)
+  - [Kubernetes Evict Pod](#kubernetes-evict-pod)
 - [Implementation History](#implementation-history)
+<!-- /toc -->
 
 ## Summary
 
