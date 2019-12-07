@@ -53,7 +53,7 @@ that has feature parity to the kube-controller-manager.
 
 ## Motivation
 
-Motivation for supporting out-of-tree providers can be found in [KEP-0002](https://github.com/kubernetes/enhancements/blob/master/keps/sig-cloud-provider/0002-cloud-controller-manager.md). 
+Motivation for supporting out-of-tree providers can be found in the [Cloud Controller Manager KEP](/keps/sig-cloud-provider/20180530-cloud-controller-manager.md). 
 This KEP is specifically tracking progress for the IBM cloud provider.
 
 ### Goals
@@ -96,4 +96,3 @@ TODO for SIG-IBM
 ## Implementation History
 
 TODO for SIG-IBM
-
