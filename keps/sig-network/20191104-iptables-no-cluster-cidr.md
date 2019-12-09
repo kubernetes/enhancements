@@ -319,7 +319,9 @@ the current behaviour. So upgrades with no changes retain current behavior.
 
   kube-proxy considers traffic as local if originating from an interface which matches one of given
   prefixes. string argument is a comma separated list of interface prefix names, without the ending '+'.
-  This is only used if `--detect-local=pod-interface-prefix`
+  This is only used if `--detect-local=pod-interface-prefix` or `--detect-local=bridge`. In the case of
+  latter, the prefix is used as option to `--physdev-in name` match instead of just `--physdev-in` in
+  iptables.
 ```
 
 Given that we are handling a list of rules, the jump to `KUBE-MARK-MARQ` will be implemented with a
