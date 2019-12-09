@@ -119,7 +119,10 @@ proxier.clusterCIDR in one of the following ways to determine cluster originated
 
 Note the above are equivalent definitions, when considering only pod traffic originating from within the node.
 
-For the last use case, in iptables and ipvs, the proposal is to drop the reference to the cluster CIDR.
+Given that this kep only addresses usage of the cluster CIDR (for pods), and that pods with hostNetwork are not 
+impacted by this, the assumption is that hostNetwork pod behavior will continue to work as is.
+
+For the last use case, note above, in iptables and ipvs, the proposal is to drop the reference to the cluster CIDR.
 
 The reasoning behind why this works are as follows.
 
