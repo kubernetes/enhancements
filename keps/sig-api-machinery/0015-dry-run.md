@@ -32,6 +32,7 @@ for the request should be as close as possible to a non dry-run response.
 - [Admission controllers](#admission-controllers)
 - [Generated values](#generated-values)
 - [Storage](#storage)
+- [kubectl](#kubectl)
 <!-- /toc -->
 
 ## Specifying dry-run
@@ -150,3 +151,22 @@ A dry-run request should behave as close as possible to a regular
 request. Attempting to dry-run create an existing object will result in an
 `AlreadyExists` error to be returned. Similarly, if a dry-run update is
 performed on a non-existing object, a `NotFound` error will be returned.
+
+## kubectl
+
+For the `kubectl` client integration with server-side dry-run, we will pass
+the `dryRun` query parameter by reading the user's intent from a flag.
+
+For beta, we use `--server-dry-run` for `kubectl apply` to exercise
+server-side apply. This flag will be deprecated next release and removed in 2 releases.
+
+For GA, we'll use the existing `--dry-run` flag available on `kubectl apply`.
+
+Currently, the `--dry-run` flag is a boolean for subcommands including
+`kubectl apply` and `kubectl create`.
+
+We'll extend the flag to accept strings for new options `client` and `server`
+for selecting client-side and server-side behavior.  For backwards compatibility,
+we'll continue to default to `--dry-run=true` as
+the default, which is equivalent to `--dry-run=client`.
+
