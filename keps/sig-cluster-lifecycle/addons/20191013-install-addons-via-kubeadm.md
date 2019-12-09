@@ -225,19 +225,19 @@ The user may extend the default kubeadm config using the `AddonInstallerConfigur
 The API details are still being finalized. Usage may look like this:
 ```yaml
 ---
-apiVersion: addons.config.k8s.io/v1alpha1
+apiVersion: addons.config.x-k8s.io/v1alpha1
 kind: AddonInstallerConfiguration
 addons:
 - name: kube-proxy
-  ref: github.com/kubernetes/kubernetes//cluster/addons/kustomize/kube-proxy/?ref=v1.17.0
+  kustomizeRef: github.com/kubernetes/kubernetes//cluster/addons/kustomize/kube-proxy/?ref=v1.17.0
 - name: coredns-operator
-  ref: github.com/kubernetes-sigs/addon-operators//kustomize/coredns-operator/?ref=v0.1.0
+  kustomizeRef: github.com/kubernetes-sigs/addon-operators//kustomize/coredns-operator/?ref=v0.1.0
+- name: my-addon1
+  manifestRef: ../my-local-dir/addon1/
 - name: weavenet
   ref: oci+kustomize://weaveworks/kustomize-weavenet:v2.5.2
     # kustomize OCI backend currently unimplemented
     # POC packaging:  https://github.com/ecordell/kpg
-- name: my-addon1
-  ref: ../my-local-dir/addon1/
 ```
 
 It may be in scope for kubeadm to internally patch the `AddonInstallerConfiguration` with the contents of user-supplied ComponentConfigs such as `KubeProxyConfiguration`.
