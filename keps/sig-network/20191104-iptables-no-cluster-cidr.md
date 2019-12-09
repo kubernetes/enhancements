@@ -290,28 +290,34 @@ The idea of ‘determine cluster originated traffic’ would be captured in a ne
 with different implementations of the interface. The kube-proxy implementation itself would just call method on
 interface to get the match criteria to write in the rule.
 
-The new behavior can be opted-in using the following flags as an alternative to `--cluster-cidr string` flag.
+The new behavior can be opted-in using two flags. The first to determine the mode to use for detection, and the
+other (optionally) being the value to use in that mode. This separation of mode and value has the nice property
+that if we default the mode to "cluster-cidr", then the current `--cluster-cidr` flag can be used as is to get
+the current behaviour. So upgrades with no changes retain current behavior.
 
 ```
---detect-local-with-node-cidr string
+--detect-local={cluster-cidr | node-cidr | pod-interface-prefix  | bridge}
 
-  kube-proxy considers traffic as local if originating from within this cidr list. string argument 
-  can be an empty string. If empty (""), then kube-proxy will use the node.spec.podCIDR
-  attribute to identify the list of pod cidr. Can be a comma separated list of CIDR in a.b.c.d/x format
-  in case manually specified
+  the mode to use for detection local traffic. The default is cluster-cidr (current behavior)
 
---detect-local-with-pod-interface string
+--cluster-cidr="cidr[,cidr,..]"
+
+  the current --cluster-cidr flag. It will be enhanced to read a comma separated list of CIDRs so that more
+  than one can be specified if necessary. kube-proxy considers traffic as local if source is one
+  of the CIDR values. This is only used if `--detect-local=cluster-cidr` .
+
+--node-cidr[="cidr[,cidr,..]"]
+
+  (optional) list of node CIDRs as a comma separated list. kube-proxy considers traffic as local if source is one
+  of the CIDR values. If value is not specified, or flag is omitted,  defaults to node.podCIDR property on the node.
+  This is only used if `--detect-local=node-cidr` .
+
+--pod-interface-prefix="prefix[,prefix,..]"
 
   kube-proxy considers traffic as local if originating from an interface which matches one of given
   prefixes. string argument is a comma separated list of interface prefix names, without the ending '+'.
-
---detect-local-with-bridge
-
-  kube-proxy considers traffic as local if originating from a bridge within the node.
+  This is only used if `--detect-local=pod-interface-prefix`
 ```
-
-Only one of `--cluster-cidr`, `--detect-local-with-node-cidr`, `--detect-local-with-pod-interface` or
-`detect-local-with-bridge` can be specified at a time. Specifying more than one is considered an error.
 
 Given that we are handling a list of rules, the jump to `KUBE-MARK-MARQ` will be implemented with a
 jump to a new chain `KUBE-MASQ-IF-NOT-LOCAL` which will then either return or jump to `KUBE-MARK-MASQ`
@@ -325,6 +331,9 @@ as appriate. For example:
 -A MARK-MASQ-IF-NOT-LOCAL -s 10.0.5.0/24 -j RETURN
 -A MARK-MASQ-IF-NOT-LOCAL -j KUBE-MARK-MASQ
 ```
+
+Future changes to detection of local traffic (say using things like mark etc) can be done by adding more options
+to the `--detect-local` mode flag with any appropriate additional flags.
 
 ### Graduation Criteria
 
