@@ -3,6 +3,7 @@ title: Scheduling Framework
 authors:
   - "@bsalamat"
   - "@misterikkit"
+  - "@everpeace"
 owning-sig: sig-scheduling
 participating-sigs:
 reviewers:
@@ -36,6 +37,9 @@ superseded-by:
     - [Post-filter](#post-filter)
     - [Scoring](#scoring)
     - [Reserve](#reserve)
+    - [Pre-Preempt](#pre-preempt)
+    - [Preempt](#preempt)
+    - [Post-Preempt](#post-preempt)
     - [Permit](#permit)
     - [Pre-bind](#pre-bind)
     - [Bind](#bind)
@@ -264,6 +268,31 @@ state, it will either trigger [Un-reserve](#un-reserve) plugins (on failure) or
 
 *Note: This concept used to be referred to as "assume".*
 
+### Pre-Preempt
+
+This is an informational extension point. Plugins will be called with a pod which was unscheduled and eligible to preemption. A plugin may use this data to update internal state or to generate logs/metrics.
+
+### Preempt
+
+The plugin provides an extension point for selecting the victim pods for preemption.  Only one preempt plugin may be enabled at a time.  
+
+The selection process are performed in cooperating with scheduler and preempt plugin as follows.
+
+1. Scheduler firstly filters _potential victim nodes_ that satisfies the following two conditions.  It contains _potential victim pods_ that are allowed to be preempted by the preemptor pod according to their `spec.preemptionPolicy`.  The other is the preemptor pod can be schedulable when all the potential victim pods are assumed to be preempted.
+1. For each potential victim node, scheduler filters several pods as _victim candidate pods_ from potential victim pods with the plugin's help (see `SelectVictimCandidatesOnNode`).
+1. Scheduler calls scheduler extenders, if configured, to filter victim candidate pods.
+1. Scheduler picks one node from the potential victim nodes for preemption with the plugin's help (see `PickOneNodeForPreemption`).
+
+Thus, the plugin can provide two methods to customize behavior of victim pods selection.
+
+- `SelectVictimCandidatesOnNode`: The method receives a potential victim node and its potential victim pods.  And, the method returns victim candidate pods.  Please note the plugin is responsible that the returned victims can create enough room in the node for the preemptor pod.  That means, even if it can't create enough space for the preemptor pod, the scheduling cycle will not abort.  The plugin can use with the [`FrameworkHandle`](#frameworkhandle) for which it assures the selected victims can surely make enough space for the preemptor pod.
+
+- `PickOneNodeForPreemption`: The method receives a map from node to victim candidate pods (it might be filtered by extenders) and returns node which should be the victim consequently.
+
+### Post-Preempt
+
+This is an informational extension point. Plugins will be called with the node and victim pods which will be preempted. A plugin may use this data to update internal state or to generate logs/metrics.
+
 ### Permit
 
 These plugins are used to prevent or delay the binding of a Pod. A permit plugin
@@ -377,7 +406,7 @@ the `FrameworkHandle` provides APIs relevant to the lifetime of a plugin. This
 is how plugins can get a client (`kubernetes.Interface`) and
 `SharedInformerFactory`, or read data from the scheduler's cache of cluster
 state. The handle will also provide APIs to list and approve or reject
-[waiting pods](#permit).
+[waiting pods](#permit) and check [the preemptor pod fits to the node](#preempt).
 
 **WARNING**: `FrameworkHandle` provides access to both the kubernetes API server
 and the scheduler's internal cache. The two are **not guaranteed to be in sync**
