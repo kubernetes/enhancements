@@ -49,7 +49,13 @@ This KEP seeks consensus on how Kubernetes docs handle two types of content:
 1. Content from third-party providers
 2. Content hosted on multiple sites ("dual-sourced content")
 
-Feature docs are not a place for vendor pitches. Nevertheless, SIG Docs receives pull requests to place advertising content on the Kubernetes website. Some PRs clearly do not belong in feature docs, but other instances are less clear.
+Kubernetes documentation seeks to teach Kubernetes users about how
+Kubernetes works, how to use in-tree Kubernetes features, and how to
+build on top of Kubernetes infrastucture.
+Feature docs are not a place for vendor pitches. Nevertheless, SIG Docs
+receives pull requests to place advertising-like content on the Kubernetes
+website. Some PRs clearly do not belong in feature docs, but other
+instances are less clear.
 
 Feature docs also contain dual-sourced content. A good practice for code project docs is to host single-sourced content only, and to provide links to other providers’ single-sourced content. This simplifies version management and reduces the work required to maintain content.
 This KEP defines a policy on documentation content, so that authors can judge what is appropriate to propose and so that PR approvers can make consistent, fair decisions during the review process.
