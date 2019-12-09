@@ -66,7 +66,8 @@ Currently metrics emitted in the Kubernetes control-plane do not offer any stabi
 
 ## Motivation
 
-Metrics stability has been an ongoing community concern. Oftentimes, cluster monitoring infrastructure assumes the stability of at least some control-plane metrics; thus, it would be prudent to offer some sort of guarantees around control-plane metrics, treating it more properly as an API. Since the [metrics overhaul](https://github.com/kubernetes/enhancements/blob/master/keps/sig-instrumentation/0031-kubernetes-metrics-overhaul.md) is nearing completion, there should be less reason to introduce breaking changes to metrics, making it an opportune time to introduce metric stability rules. Specifically, this KEP intends to address metric stability from an ingestion point of view.
+Metrics stability has been an ongoing community concern. Oftentimes, cluster monitoring infrastructure assumes the stability of at least some control-plane metrics; thus, it would be prudent to offer some sort of guarantees around control-plane metrics, treating it more properly as an API.
+Since the [metrics overhaul](https://github.com/kubernetes/enhancements/blob/master/keps/sig-instrumentation/20181106-kubernetes-metrics-overhaul.md) is nearing completion, there should be less reason to introduce breaking changes to metrics, making it an opportune time to introduce metric stability rules. Specifically, this KEP intends to address metric stability from an ingestion point of view.
 
 Guarantees around metrics have been [proposed previously](https://docs.google.com/document/d/1_CdNWIjPBqVDMvu82aJICQsSCbh2BR-y9a8uXjQm4TI/edit#) and there are [ongoing community discussions](https://groups.google.com/forum/#!topic/kubernetes-sig-instrumentation/XbElxDtww0Y) around this issue. Some suggested solutions include:
 
