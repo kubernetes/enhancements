@@ -5,13 +5,14 @@ authors:
 owning-sig: sig-node
 participating-sigs:
   - sig-node
+  - sig-instrumentation
 reviewers:
   - TBD
 approvers:
   - TBD
 editor: TBD
 creation-date: 2019-11-27
-last-updated: 2019-12-06
+last-updated: 2019-12-09
 status: provisional
 ---
 
