@@ -43,10 +43,11 @@ superseded-by:
       - [Current Behavior](#current-behavior)
       - [Proposed Change](#proposed-change)
       - [Alternatives](#alternatives)
+      - [Implementation History](#implementation-history)
   - [Risks and Mitigations](#risks-and-mitigations)
   - [Testing Plan](#testing-plan)
 - [Graduation Criteria](#graduation-criteria)
-- [Implementation History](#implementation-history)
+- [Implementation History](#implementation-history-1)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives-1)
 <!-- /toc -->
