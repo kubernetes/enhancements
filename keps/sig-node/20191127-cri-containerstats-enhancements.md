@@ -12,7 +12,7 @@ approvers:
   - TBD
 editor: TBD
 creation-date: 2019-11-27
-last-updated: 2019-12-09
+last-updated: 2019-12-10
 status: provisional
 ---
 
@@ -24,8 +24,8 @@ status: provisional
 - [Summary](#summary)
 - [Motivation](#motivation)
   - [Goals](#goals)
-  - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
+  - [User Stories](#user-stories)
   - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
@@ -59,19 +59,30 @@ Based on this case, we can extend Container Runtime Interface(CRI) to define
 the container level metrics. Each container runtime engine, which implemented
 CRI, knows lifecycle and metrics about each managed container better than any
 external metric collector. For the third-party metric collectors, they just
-need to follow the `ContainerStats` API defined by CRI. With standard CRI,
+need to follow the `ContainerStats` API defined by CRI. With standard CRI,
 it is easy for the collector from monitor pipeline (defined in [Kubernetes monitoring architecture](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/instrumentation/monitoring_architecture.md#executive-summary)) to collect metrics from different kind of runtimes.
 
 ### Goals
 
-- Enhance Container Runtime Interface(CRI) to provide more metrics about
-managed container
+Enhance Container Runtime Interface(CRI) to provide more metrics about managed
+container to
 
-### Non-Goals
-
-- Extend Core-Metrics (defined in [Kubernetes monitoring architecture#Terminology](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/instrumentation/monitoring_architecture.md#terminology)) for 
+- Reduce resource usage of kubelet
+- Make eaiser integration for Monitoring pipeline
 
 ## Proposal
+
+### User Stories
+
+As administrator, I provides sandbox runtime for applications in my cluster. I
+am not expertise of the sandbox runtime, but CRI implementation has created by
+domain expertise and CRI-API provides useful and powerful metrics for
+monitoring.
+
+To expose sandbox container's metrics, I only need to run Daemonset Monitoring
+Agent to collect container metrics from CRI Runtime Endpoint and show it in
+dashboard. It doesn't bring burden on kubelet and makes eaiser to enhance
+monitoring pipeline.
 
 ### Implementation Details/Notes/Constraints
 
