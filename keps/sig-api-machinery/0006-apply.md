@@ -325,6 +325,10 @@ Mainly by pulling the reset logic from the strategies `PrepareForCreate` and `Pr
 This approach did not work as expected, because the strategy works on internal types while the FieldManager handles external api types.
 The conversion between the two and creating the diff was complex and would have caused a notable amount of allocations.
 
+##### Implementation History
+
+- 12/2019 [#86083](https://github.com/kubernetes/kubernetes/pull/86083) implementing a poc for the described approach
+
 ### Risks and Mitigations
 
 We used a feature branch to ensure that no partial state of this feature would
