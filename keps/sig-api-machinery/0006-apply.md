@@ -219,8 +219,7 @@ the best way to achieve this has not been decided yet.
 
 Right before being persisted to etcd, resources in the apiserver undergo a preparation mechanism that is custom for every resource kind.
 It takes care of things like incrementing object generation and status wiping.
-This happens through [PrepareForUpdate](https://github.com/kubernetes/kubernetes/blob/bc1360ab158d524c5a7132c8dd9dc7f7e8889af1/staging/src/k8s.io/apiserver/pkg/registry/rest/update.go#L49)
-for update and [PrepareForCreate](https://github.com/kubernetes/kubernetes/blob/bc1360ab158d524c5a7132c8dd9dc7f7e8889af1/staging/src/k8s.io/apiserver/pkg/registry/rest/create_update.go#L37) for create.
+This happens through [PrepareForUpdate](https://github.com/kubernetes/kubernetes/blob/bc1360ab158d524c5a7132c8dd9dc7f7e8889af1/staging/src/k8s.io/apiserver/pkg/registry/rest/update.go#L49) and [PrepareForCreate](https://github.com/kubernetes/kubernetes/blob/bc1360ab158d524c5a7132c8dd9dc7f7e8889af1/staging/src/k8s.io/apiserver/pkg/registry/rest/create_update.go#L37).
 
 The problem status wiping at this level creates is, that when a user applies a field that gets wiped later on, it gets owned by said user.
 The apply mechanism (FieldManager) can not know which fields get wiped for which resource and therefor can not ignore those.
