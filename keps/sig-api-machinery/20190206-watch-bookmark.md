@@ -12,7 +12,7 @@ approvers:
   - "@lavalamp"
 creation-date: 2019-02-06
 last-updated: 2019-04-30
-status: implementable
+status: implemented
 see-also:
   - "https://github.com/kubernetes/kubernetes/issues/73585"
 replaces:
