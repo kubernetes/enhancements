@@ -162,24 +162,101 @@ Additionally ignoring status as a whole is not enough, as it should be possible 
 
 ##### Proposed Change
 
-From looking at various implementations of `PrepareForUpdate` and `PrepareForCreate` throughout the current resource kinds, the two main actions found were resetting fields (including status) and updating fields (like incrementing generation).
-
-This can be separated into actions that should/can only be executed once per request (updates) and actions that can be executed multiple times (resets).
-
-The proposed change here is, to split what happens in `PrepareForUpdate` and `PrepareForCreate` accordingly and add an interface that allows FieldManager to call the resetting functionality itself before updating field ownership. Later on, where it happens right now, before persisting the object, both the resetting and the updating code can be run together.
-
-The resetting interface is proposed as:
+Add an interface that resource strategies can implement, to provide field sets affected by status wiping.
 
 ```go
-# staging/src/k8s.io/apimachinery/pkg/runtime/interfaces.go
-type ObjectResetter interface {
-  // ResetFields takes an Object (must be a pointer) and resets any fields that are not allowed to be changed by a user
-  // If old is not nil, fields in the new object will be reset based on old.
-  ResetFields(new, old Object)
+# staging/src/k8s.io/apiserver/pkg/registry/rest/rest.go
+// ResetFieldsProvider is an optional interface that a strategy can implement
+// to expose a set of fields that get reset before persisting the object.
+type ResetFieldsProvider interface {
+  // ResetFieldsFor returns a set of fields for the provided version that get reset before persisting the object.
+  // If no fieldset is defined for a version, nil is returned.
+  ResetFieldsFor(version string) *fieldpath.Set
 }
 ```
 
-TODO: add example implementation and describe how this will be available to both the fieldManager and storage.
+Additionally, this interface is implemented by `registry.Store` which forwards it to the corresponding strategy (if applicable).
+If `registry.Store` can not provide a field set, it returns nil.
+
+An example implementation for the interface inside the pod strategy could be:
+
+```go
+# pkg/registry/core/pod/strategy.go
+// ResetFieldsFor returns a set of fields for the provided version that get reset before persisting the object.
+// If no fieldset is defined for a version, nil is returned.
+func (podStrategy) ResetFieldsFor(version string) *fieldpath.Set {
+  set, ok := resetFieldsByVersion[version]
+  if !ok {
+    return nil
+  }
+  return set
+}
+
+var resetFieldsByVersion = map[string]*fieldpath.Set{
+  "v1": fieldpath.NewSet(
+    fieldpath.MakePathOrDie("status"),
+  ),
+}
+```
+
+When creating the handlers in [installer.go](https://github.com/kubernetes/kubernetes/blob/3ff0ed46791a821cb7053c1e25192e1ecd67a6f0/staging/src/k8s.io/apiserver/pkg/endpoints/installer.go) the current `rest.Storage` is checked to implement the `ResetFieldsProvider` interface and the result is passed to the FieldManager.
+
+```go
+# staging/src/k8s.io/apiserver/pkg/endpoints/installer.go
+var resetFields *fieldpath.Set
+if resetFieldsProvider, isResetFieldsProvider := storage.(rest.ResetFieldsProvider); isResetFieldsProvider {
+    resetFields = resetFieldsProvider.ResetFieldsFor(a.group.GroupVersion.Version)
+}
+```
+
+When provided with a field set, FieldManager behavior depends on the operation:
+
+- On `apply`, the received patch gets stripped of all `resetFields`.
+If the removal results in the patch to change, the FieldManager rejects the request with an error returning the invalid fields to the user.
+
+```go
+staging/src/k8s.io/apiserver/pkg/endpoints/handlers/fieldmanager/structuredmerge.go @ Apply()
+
+func (f *structuredMergeManager) Apply(liveObj, patchObj runtime.Object, managed Managed, manager string, force bool) (runtime.Object, Managed, error) {
+  ...
+  if f.resetFields != nil {
+    resetObjTyped := patchObjTyped.Remove(f.resetFields)
+    diff, err := patchObjTyped.Compare(resetObjTyped)
+    if err != nil {
+      return nil, nil, fmt.Errorf("failed to compare typed patch to its reset: %v", err)
+    }
+
+    if !diff.IsSame() {
+      // TODO: define good error message
+      return nil, nil, fmt.Errorf("apply contained fields a user should not change:\n%s", diff)
+    }
+  }
+  ...
+}
+```
+
+- On `update`, the received object gets stripped of all `resetFields`.
+Then the flow continues, but the user won't own the removed fields.
+
+```go
+# staging/src/k8s.io/apiserver/pkg/endpoints/handlers/fieldmanager/structuredmerge.go @ Update()
+
+func (f *structuredMergeManager) Update(liveObj, newObj runtime.Object, managed Managed, manager string) (runtime.Object, Managed, error) {
+  ...
+  if f.resetFields != nil {
+    newObjTyped = newObjTyped.Remove(f.resetFields)
+  }
+  ...
+}
+```
+
+##### Alternatives
+
+We looked at a way to get the fields affected by status wiping without defining them separately.
+Mainly by pulling the reset logic from the strategies `PrepareForCreate` and `PrepareForUpdate` methods into a new method `ResetFields` implementing an `ObjectResetter` interface.
+
+This approach did not work as expected, because the strategy works on internal types while the FieldManager handles external api types.
+The conversion between the two and creating the diff was complex and would have caused a notable amount of allocations.
 
 #### API Topology
 
