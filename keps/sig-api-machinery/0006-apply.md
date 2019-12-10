@@ -34,20 +34,21 @@ superseded-by:
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [Implementation Details/Notes/Constraints [optional]](#implementation-detailsnotesconstraints-optional)
-    - [Status Wiping](#status-wiping)
-      - [Current Behavior](#current-behavior)
-      - [Proposed Change](#proposed-change)
     - [API Topology](#api-topology)
       - [Lists](#lists)
       - [Maps and structs](#maps-and-structs)
     - [Kubectl](#kubectl)
       - [Server-side Apply](#server-side-apply)
+    - [Status Wiping](#status-wiping)
+      - [Current Behavior](#current-behavior)
+      - [Proposed Change](#proposed-change)
+      - [Alternatives](#alternatives)
   - [Risks and Mitigations](#risks-and-mitigations)
   - [Testing Plan](#testing-plan)
 - [Graduation Criteria](#graduation-criteria)
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
-- [Alternatives](#alternatives)
+- [Alternatives](#alternatives-1)
 <!-- /toc -->
 
 ## Summary
@@ -145,6 +146,72 @@ The linked documents should be read for a more complete picture.
 ### Implementation Details/Notes/Constraints [optional]
 
 (TODO: update this section with current design)
+
+#### API Topology
+
+Server-side apply has to understand the topology of the objects in order to make
+valid merging decisions. In order to reach that goal, some new Go markers, as
+well as OpenAPI extensions have been created:
+
+##### Lists
+
+Lists can behave in mostly 3 different ways depending on what their actual semantic
+is. New annotations allow API authors to define this behavior.
+
+- Atomic lists: The list is owned by only one person and can only be entirely
+replaced. This is the default for lists. It is defined either in Go IDL by
+pefixing the list with `// +listType=atomic`, or in the OpenAPI
+with `"x-kubenetes-list-type": "atomic"`.
+
+- Sets: the list is a set (it has to be of a scalar type). Items in the list
+must appear at most once. Individual actors of the API can own individual items.
+It is defined either in Go IDL by pefixing the list with `//
++listType=set`, or in the OpenAPI with
+`"x-kubenetes-list-type": "set"`.
+
+- Associative lists: Kubernetes has a pattern of using lists as dictionary, with
+"name" being a very common key. People can now reproduce this pattern by using
+`// +listType=map`, or in the OpenAPI with `"x-kubernetes-list-type": "map"`
+along with `"x-kubernetes-list-map-keys": ["name"]`, or `// +listMapKey=name`.
+Items of an associative lists are owned by the person who applied the item to
+the list.
+
+For compatibility with the existing markers, the `patchStrategy` and
+`patchMergeKey` markers are automatically used and converted to the corresponding `listType`
+and `listMapKey` if missing.
+
+##### Maps and structs
+
+Maps and structures can behave in two ways:
+- Each item in the map or field in the structure are independent from each
+other. They can be changed by different actors. This is the default behavior,
+but can be explicitly specified with `// +mapType=granular` or `//
++structType=granular` respectively. They map to the same openapi extension:
+`"x-kubernetes-map-type": "granular"`.
+- All the fields or item of the map are treated as one unit, we say the map/struct is
+atomic. That can be specified with `// +mapType=atomic` or `//
++structType=atomic` respectively. They map to the same openapi extension:
+`"x-kubernetes-map-type": "atomic"`.
+
+#### Kubectl
+
+##### Server-side Apply
+
+Since server-side apply is currently in the Alpha phase, it is not
+enabled by default on kubectl. To use server-side apply on servers
+with the feature, run the command
+`kubectl apply --experimental-server-side ...`.
+
+If the feature is not available or enabled on the server, the command
+will fail rather than fall-back on client-side apply due to significant
+semantical differences.
+
+As the feature graduates to the Beta phase, the flag will be renamed to `--server-side`.
+
+The long-term plan for this feature is to be the default apply on all
+Kubernetes clusters. The semantical differences between server-side
+apply and client-side apply will make a smooth roll-out difficult, so
+the best way to achieve this has not been decided yet.
 
 #### Status Wiping
 
@@ -257,70 +324,6 @@ Mainly by pulling the reset logic from the strategies `PrepareForCreate` and `Pr
 
 This approach did not work as expected, because the strategy works on internal types while the FieldManager handles external api types.
 The conversion between the two and creating the diff was complex and would have caused a notable amount of allocations.
-
-#### API Topology
-
-Server-side apply has to understand the topology of the objects in order to make
-valid merging decisions. In order to reach that goal, some new Go markers, as
-well as OpenAPI extensions have been created:
-
-##### Lists
-
-Lists can behave in mostly 3 different ways depending on what their actual semantic
-is. New annotations allow API authors to define this behavior.
-
-- Atomic lists: The list is owned by only one person and can only be entirely
-replaced. This is the default for lists. It is defined either in Go IDL by
-pefixing the list with `// +listType=atomic`, or in the OpenAPI
-with `"x-kubenetes-list-type": "atomic"`.
-
-- Sets: the list is a set (it has to be of a scalar type). Items in the list
-must appear at most once. Individual actors of the API can own individual items.
-It is defined either in Go IDL by pefixing the list with `//
-+listType=set`, or in the OpenAPI with
-`"x-kubenetes-list-type": "set"`.
-
-- Associative lists: Kubernetes has a pattern of using lists as dictionary, with
-"name" being a very common key. People can now reproduce this pattern by using
-`// +listType=map`, or in the OpenAPI with `"x-kubernetes-list-type": "map"`
-along with `"x-kubernetes-list-map-keys": ["name"]`, or `// +listMapKey=name`.
-Items of an associative lists are owned by the person who applied the item to
-the list.
-
-For compatibility with the existing markers, the `patchStrategy` and
-`patchMergeKey` markers are automatically used and converted to the corresponding `listType`
-and `listMapKey` if missing.
-
-##### Maps and structs
-
-Maps and structures can behave in two ways:
-- Each item in the map or field in the structure are independent from each
-other. They can be changed by different actors. This is the default behavior,
-but can be explicitly specified with `// +mapType=granular` or `//
-+structType=granular` respectively. They map to the same openapi extension:
-`"x-kubernetes-map-type": "granular"`.
-- All the fields or item of the map are treated as one unit, we say the map/struct is
-atomic. That can be specified with `// +mapType=atomic` or `//
-+structType=atomic` respectively. They map to the same openapi extension:
-`"x-kubernetes-map-type": "atomic"`.
-
-#### Kubectl
-##### Server-side Apply
-Since server-side apply is currently in the Alpha phase, it is not
-enabled by default on kubectl. To use server-side apply on servers
-with the feature, run the command
-`kubectl apply --experimental-server-side ...`.
-
-If the feature is not available or enabled on the server, the command
-will fail rather than fall-back on client-side apply due to significant
-semantical differences.
-
-As the feature graduates to the Beta phase, the flag will be renamed to `--server-side`.
-
-The long-term plan for this feature is to be the default apply on all
-Kubernetes clusters. The semantical differences between server-side
-apply and client-side apply will make a smooth roll-out difficult, so
-the best way to achieve this has not been decided yet.
 
 ### Risks and Mitigations
 
