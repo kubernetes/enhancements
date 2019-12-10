@@ -36,28 +36,27 @@ superseded-by:
   - [Release Signoff Checklist](#release-signoff-checklist)
   - [Summary](#summary)
   - [Motivation](#motivation)
-      - [Goals](#goals)
-      - [Non-Goals](#non-goals)
+    - [Goals](#goals)
+    - [Non-Goals](#non-goals)
   - [Proposal](#proposal)
-      - [User Stories](#user-stories)
-        - [Links](#links)
-      - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
-      - [Risks and Mitigations](#risks-and-mitigations)
+    - [User Stories](#user-stories)
+      - [Links](#links)
+    - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
+    - [Risks and Mitigations](#risks-and-mitigations)
   - [Design Details](#design-details)
-      - [Test Plan](#test-plan)
-      - [Graduation Criteria](#graduation-criteria)
-        - [Examples](#examples)
-            - [Alpha](#alpha)
-            - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
-            - [Beta -&gt; GA Graduation](#beta---ga-graduation)
-            - [Removing a deprecated flag](#removing-a-deprecated-flag)
-      - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
-      - [Version Skew Strategy](#version-skew-strategy)
+    - [Test Plan](#test-plan)
+    - [Graduation Criteria](#graduation-criteria)
+      - [Examples](#examples)
+        - [Alpha](#alpha)
+        - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
+        - [Beta -&gt; GA Graduation](#beta---ga-graduation)
+        - [Removing a deprecated flag](#removing-a-deprecated-flag)
+    - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+    - [Version Skew Strategy](#version-skew-strategy)
   - [Implementation History](#implementation-history)
   - [Drawbacks](#drawbacks)
   - [Alternatives](#alternatives)
   - [Infrastructure Needed](#infrastructure-needed)
-
 
 ## Release Signoff Checklist
 
@@ -104,12 +103,12 @@ This KEP proposes an additional phase to kubeadm that invokes the addon-installe
 Describe why the change is important and the benefits to users.
 The motivation section can optionally provide links to [experience reports][] to demonstrate the interest in a KEP within the wider Kubernetes community. -->
 
-Kubeadm currently installs two "core" addons into the cluster once the control-plane is running:  kube-proxy and CoreDNS.
+Kubeadm currently installs two "core" addons into the cluster once the control-plane is running: kube-proxy and CoreDNS.
 Optionally, it also supports installing kube-dns in place of CoreDNS.
 Installation of these addons occurs via application of manifests for which the strings are built into and versioned with the kubeadm binary.
 It is not currently possible to disable installation of these addons or modify them with a formal kubeadm init.
 
-Upgrades are accomplished with modifications to kubeadm's upgrade logic, often by introspecting which GVK's exist in the current cluster. 
+Upgrades are accomplished with modifications to kubeadm's upgrade logic, often by introspecting which config maps exist in the current cluster.
 
 Kubeadm installs these "core" addons leaving an almost functioning cluster available for the user, but a CNI implementation is not installed. That is left to the cluster operator.
 
@@ -117,7 +116,7 @@ Maintaining these manifests and this logic with kubeadm has to this point has al
 As the ecosystem grows, this is proving to now be too inflexible for users and vendors.
 
 Use of ClusterAPI means less operators will be manually mutating clusters before they are expected to function.
-Kubeadm does not need to maintain CNI installation, but users should be able to use kubeadm to produce a functioning cluster, complete with with operational CNI. 
+Kubeadm does not need to maintain CNI installation, but users should be able to use kubeadm to produce a functioning cluster, complete with with operational CNI.
 
 ### Goals
 
@@ -126,6 +125,7 @@ How will we know that this has succeeded? -->
 
 Integrating the addon-installer library and API with kubeadm will allow users to opt out of installing kube-proxy or CoreDNS/kube-dns.
 Some reasons for this may be:
+
 - The user does not desire pod networking and/or service-discovery in their cluster.
 - CNI implementations such as kube-router and Cilium can actually replace kube-proxy.
 
@@ -164,6 +164,7 @@ An `AddonInstallerConfiguration` will be defaulted but may be overridden by the 
 It is interpreted to be the authoritative declaration of addons in the cluster.
 
 The phase can roughly operate in this manner:
+
 - Parse the kubeadm global `--dry-run` flag.
 - Determine if a KUBECONFIG is available for the cluster.
 - Load an `AddonInstallerConfiguration` from the multi-YAML-document kubeadm `--config`.
@@ -179,6 +180,7 @@ The phase can roughly operate in this manner:
 Removing resources from the kubernetes API currently does not propagate any "delete reason" to processes in Pods.
 This can make it difficult (even for smart addon-operators with separately installed CustomResources) to determine when to clean up with definitive convergence. One use-case is removal of iptables rules. Another is removal of an operator + cleanup of operator-managed external resources in a single declaration.
 Uninstall Support Proposal A [not currently in scope]:
+
 - An uninstall kustomize dir can be optionally provided with an addon (along with `name` + `ref`) when applied.
 - When the addon is removed, either explicitly or as a consequence of prune via declaration, these manifests could be applied.
 - Any uninstall Jobs can be polled for completion.
@@ -189,10 +191,12 @@ Uninstall Support Proposal A [not currently in scope]:
 ### User Stories
 
 Users may enable this feature in `kubeadm init` and `kubeadm upgrade` using the `AddonInstaller` feature gate:
+
 ```shell
 kubeadm init --feature-gates AddonInstaller=true
 kubeadm init --config
 ```
+
 ```yaml
 apiVersion: kubeadm.k8s.io/v1beta2
 kind: InitConfiguration
@@ -204,25 +208,32 @@ featureGates:
 ```
 
 Users may invoke the phase similarly:
+
 ```shell
 kubeadm init phase addon installer --feature-gates AddonInstaller=true
 kubeadm init phase addon installer --config
 ```
+
 The feature gate is still expected to be enabled/true when invoking the phase directly.
 
 Users may print the default `AddonInstallerConfiguration` using `kubeadm config`:
+
 ```shell
 kubeadm config print init-defaults --feature-gates AddonInstaller=true
 # this requires adding a feature-gates flag to this command
 ```
+
 TODO: Discuss this alternative:
+
 ```shell
 kubeadm config print addon-defaults
 ```
+
 Similar U/X can be expected for `kubeadm config migrate` and `kubeadm config view`
 
 The user may extend the default kubeadm config using the `AddonInstallerConfiguration` kind.
 The API details are still being finalized. Usage may look like this:
+
 ```yaml
 ---
 apiVersion: addons.config.x-k8s.io/v1alpha1
@@ -244,6 +255,7 @@ It may be in scope for kubeadm to internally patch the `AddonInstallerConfigurat
 Various patchList fields may need to be added to the `Addon` type of the library's API to support this specific U/X as well as more lightweight user-extension of addons.
 
 The AddonInstaller feature composes with kubeadm's global `--dry-run` flag:
+
 - on `init`, the intended addons (and perhaps manifests) can simply be printed.
 - on `upgrade diff` and `upgrade apply`, the expected difference relative to the cluster can be output.
   `kubectl` already does this currently.
@@ -256,18 +268,20 @@ Mirroring git repositories, cloning git repositories to a local filesystem, and 
 #### Links
 
 @fabriziopandini began a design doc for kubeadm integration:
-- https://docs.google.com/document/d/1FZA873LBXf-aG4UULOk96MhT8xm_nPHq5Vu0z61S8pk
+
+- <https://docs.google.com/document/d/1FZA873LBXf-aG4UULOk96MhT8xm_nPHq5Vu0z61S8pk>
 
 More generic User Stories have been collected by @dholbach:
-- doc: https://docs.google.com/document/d/17NH4xcFdeh4NVcIBjMQNK2P27j9xrsm4sCFTXdZqopg
-- sheet: https://docs.google.com/spreadsheets/d/1Np0aOQYyiRqRQYOUoMcUwP_2Tt9b39HUwJXQIgW9rYA
+
+- doc: <https://docs.google.com/document/d/17NH4xcFdeh4NVcIBjMQNK2P27j9xrsm4sCFTXdZqopg>
+- sheet: <https://docs.google.com/spreadsheets/d/1Np0aOQYyiRqRQYOUoMcUwP_2Tt9b39HUwJXQIgW9rYA>
 
 ### Implementation Details/Notes/Constraints
 
 We intend for the installer library and API to live in `sigs.k8s.io/addon-operators/installer`.
 Core kustomize addons and images may be hosted in a number of git repositories or image registries.
 
-Internally, the addon-installer library execs `kubectl -k`.
+Internally, the addon-installer library execs `kubectl -k` for kustomize refs.
 This introduces a binary and PATH dependency for `kubeadm` when using this feature.
 Furthermore, certain sensible usage of this feature may depend on `git` by proxy of kustomize.
 While `kubectl` may commonly be available in the cluster-installation environment, `git` may not be available.
@@ -280,6 +294,7 @@ This works for kubeadm and means less work when executing `kubectl` for the appl
 Should we also support a formal internal type for this?
 
 A more mature addon-installer library may:
+
 - Vendor kustomize for manifest generation.
 - Use an apiClient type for applying the manifests.
   ( This may be compatible with some shareable client type supporting dryRun? )
@@ -287,7 +302,7 @@ A more mature addon-installer library may:
 
 Kustomize currently supports constructing manifests from local directories and git.
 OCI image support in kustomize is currently unimplemented.
-A POC of some of this mechanism is implemented here: https://github.com/ecordell/kpg
+A POC of some of this mechanism is implemented here: <https://github.com/ecordell/kpg>
 Implementation of this feature could be delegated to another KEP.
 
 ### Risks and Mitigations
@@ -429,11 +444,10 @@ Major milestones might include
 - when the KEP was retired or superseded -->
 
 - Overarching Addon-Management design:
-  https://github.com/kubernetes-sigs/addon-operators/issues/10
-- addon-installer lib POC:
-  https://github.com/kubernetes-sigs/addon-operators/pull/25
+  <https://github.com/kubernetes-sigs/addon-operators/issues/10>
+- addon-installer lib: <https://sigs.k8s.io/addon-operators/installer>
 - kubeadm integration POC:
-  https://github.com/kubernetes/kubernetes/compare/master...stealthybox:kubeadm-addon-installer
+  <https://github.com/kubernetes/kubernetes/pull/85224>
 
 ## Drawbacks
 
