@@ -267,14 +267,8 @@ Mirroring git repositories, cloning git repositories to a local filesystem, and 
 
 #### Links
 
-@fabriziopandini began a design doc for kubeadm integration:
-
-- <https://docs.google.com/document/d/1FZA873LBXf-aG4UULOk96MhT8xm_nPHq5Vu0z61S8pk>
-
-More generic User Stories have been collected by @dholbach:
-
-- doc: <https://docs.google.com/document/d/17NH4xcFdeh4NVcIBjMQNK2P27j9xrsm4sCFTXdZqopg>
-- sheet: <https://docs.google.com/spreadsheets/d/1Np0aOQYyiRqRQYOUoMcUwP_2Tt9b39HUwJXQIgW9rYA>
+- [Design doc for kubeadm integration](https://docs.google.com/document/d/1FZA873LBXf-aG4UULOk96MhT8xm_nPHq5Vu0z61S8pk) (@fabriziopandini and @stealthybox)
+- [More generic User Stories](https://docs.google.com/spreadsheets/d/1Np0aOQYyiRqRQYOUoMcUwP_2Tt9b39HUwJXQIgW9rYA) (@dholbach and the Cluster Addons team).
 
 ### Implementation Details/Notes/Constraints
 
