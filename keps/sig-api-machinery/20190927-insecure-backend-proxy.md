@@ -54,6 +54,7 @@ misbehaving self-hosted clusters.
 - [Drawbacks [optional]](#drawbacks-optional)
 - [Alternatives [optional]](#alternatives-optional)
 - [Infrastructure Needed [optional]](#infrastructure-needed-optional)
+- [Production Readiness](#production-readiness)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -220,3 +221,60 @@ Similar to the `Drawbacks` section the `Alternatives` section is used to highlig
 Use this section if you need things from the project/SIG.
 Examples include a new subproject, repos requested, github details.
 Listing these here allows a SIG to get the process for these resources started right away.
+
+## Production Readiness
+
+  * Feature enablement and rollback
+    - How can this feature be enabled / disabled in a live cluster?
+      Once GA, this feature cannot be disabled at a cluster-wide level. It is the decision of the client whether or not
+      they will use the new API. 
+    - Can the feature be disabled once it has been enabled (i.e., can we roll
+      back the enablement)?
+      Not applicable.
+    - Will enabling / disabling the feature require downtime for the control
+      plane?
+      Not applicable.
+    - Will enabling / disabling the feature require downtime or reprovisioning
+      of a node?
+      Not applicable.
+    - What happens if a cluster with this feature enabled is rolled back? What
+      happens if it is subsequently upgraded again?
+      There is no data persisted as part of this API change, so there is no impact for upgrade or rollback.
+    - Are there tests for this?
+      There are integration tests that confirm the feature only takes effect when requested and works correctly.
+      You cannot add invalid kubelet certificates during e2e tests.
+  * Scalability
+    This is an additional value on an existing call and a change to TLS params. There isn't a meaningful impact on scalability.
+  * Rollout, Upgrade, and Rollback Planning
+  * Dependencies
+    - Does this feature depend on any specific services running in the cluster
+      (e.g., a metrics service)?
+      No.
+    - How does this feature respond to complete failures of the services on
+      which it depends?
+      The existing error paths for /logs are unchanged.
+    - How does this feature respond to degraded performance or high error rates
+      from services on which it depends?
+      This change doesn't modify the existing behavior.
+  * Monitoring requirements
+    - How can an operator determine if the feature is in use by workloads?
+      We don't measure individual values set on API requests.
+    - How can an operator determine if the feature is functioning properly?
+      You'd have to set up a kubelet with invalid certificates. This is generally hard to do.
+    - What are the service level indicators an operator can use to determine the
+      health of the service?
+      No new surface area.
+    - What are reasonable service level objectives for the feature?
+      No new surface area.
+  * Troubleshooting
+    - What are the known failure modes?
+      None.
+    - How can those be detected via metrics or logs?
+      Not applicable.
+    - What are the mitigations for each of those failure modes?
+      Not applicable.
+    - What are the most useful log messages and what logging levels do they require?
+      None were added.
+    - What steps should be taken if SLOs are not being met to determine the
+      problem?
+      Not applicable.
