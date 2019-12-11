@@ -94,7 +94,11 @@ KEP editors, SIG Docs, and SIG PM should help to ensure that the tone and conten
 A good summary is probably at least a paragraph in length. -->
 
 The addons subproject hosted by SIG Cluster Lifecycle has been working on implementation details regarding addon installation, user-experience, maintenance, and operation.
-The [addon-installer library POC](https://github.com/kubernetes-sigs/addon-operators/pull/25) functions as a small, vendorable implementation for applying addons to the cluster using kubectl and Kustomize. The `AddonInstallerConfiguration` API kind is intended to be a user-facing ComponentConfig.
+The initial KEP [defines an addon](https://github.com/kubernetes/enhancements/blob/master/keps/sig-cluster-lifecycle/addons/0035-20190128-addons-via-operators.md#motivation) as:
+
+> Addons are components that are managed alongside the lifecycle of the cluster. They are often tied to or dependent on the configuration of other cluster components. [..]
+
+The [addon-installer library](https://github.com/kubernetes-sigs/addon-operators/tree/master/installer) functions as a small, vendorable implementation for applying addons to the cluster using kubectl and Kustomize. The `AddonInstallerConfiguration` API kind is intended to be a user-facing ComponentConfig.
 This KEP proposes an additional phase to kubeadm that invokes the addon-installer library.
 
 ## Motivation
@@ -117,6 +121,8 @@ As the ecosystem grows, this is proving to now be too inflexible for users and v
 
 Use of ClusterAPI means less operators will be manually mutating clusters before they are expected to function.
 Kubeadm does not need to maintain CNI installation, but users should be able to use kubeadm to produce a functioning cluster, complete with with operational CNI.
+
+This creates a level playing-field for third party addons beside the set that the Kubernetes/kubeadm maintainers decide to include.
 
 ### Goals
 
@@ -149,7 +155,7 @@ No dependency system or DAG is currently proposed or in-scope.
 
 Discussions of how addons may validate ComponentConfigs and other files and how the AddonInstaller API can enable that are welcome. There are existing efforts in this area already (currently championed by @rosti) that may need to be cross-referenced.
 
-Usable operators for addons such as the "CoreDNS Operator" are for consideration regarding the motivation, UX, and vision of this KEP's features. However, implementation, packaging, and delivery of these operators is out of scope for the technical implementation of the AddonInstaller in kubeadm.
+Usable operators for addons such as the "CoreDNS Operator" were used as a case study in the Cluster Addons subproject to better understand the motivation, UX, and vision of this KEP's features. However, implementation, packaging, and delivery of these operators is out of scope for the technical implementation of the `AddonInstaller` in kubeadm.
 
 Providing an "uninstall" signal, hook, or mechanism for addons is currently out of scope but is open for discussion.
 
