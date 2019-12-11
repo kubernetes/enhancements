@@ -276,45 +276,15 @@ if resetFieldsProvider, isResetFieldsProvider := storage.(rest.ResetFieldsProvid
 }
 ```
 
-When provided with a field set, FieldManager behavior depends on the operation:
-
-- On `apply`, the received patch gets stripped of all `resetFields`.
-If the removal results in the patch to change, the FieldManager rejects the request with an error returning the invalid fields to the user.
+When provided with a field set, the FieldManager strips all `resetFields` from incoming update and apply requests.
+This causes the user/manager to not own those fields.
 
 ```go
-staging/src/k8s.io/apiserver/pkg/endpoints/handlers/fieldmanager/structuredmerge.go @ Apply()
-
-func (f *structuredMergeManager) Apply(liveObj, patchObj runtime.Object, managed Managed, manager string, force bool) (runtime.Object, Managed, error) {
-  ...
-  if f.resetFields != nil {
-    resetObjTyped := patchObjTyped.Remove(f.resetFields)
-    diff, err := patchObjTyped.Compare(resetObjTyped)
-    if err != nil {
-      return nil, nil, fmt.Errorf("failed to compare typed patch to its reset: %v", err)
-    }
-
-    if !diff.IsSame() {
-      // TODO: define good error message
-      return nil, nil, fmt.Errorf("apply contained fields a user should not change:\n%s", diff)
-    }
-  }
-  ...
+...
+if f.resetFields != nil {
+  patchObjTyped = patchObjTyped.Remove(f.resetFields)
 }
-```
-
-- On `update`, the received object gets stripped of all `resetFields`.
-Then the flow continues, but the user won't own the removed fields.
-
-```go
-# staging/src/k8s.io/apiserver/pkg/endpoints/handlers/fieldmanager/structuredmerge.go @ Update()
-
-func (f *structuredMergeManager) Update(liveObj, newObj runtime.Object, managed Managed, manager string) (runtime.Object, Managed, error) {
-  ...
-  if f.resetFields != nil {
-    newObjTyped = newObjTyped.Remove(f.resetFields)
-  }
-  ...
-}
+...
 ```
 
 ##### Alternatives
