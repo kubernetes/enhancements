@@ -170,3 +170,5 @@ for selecting client-side and server-side behavior.  For backwards compatibility
 we'll continue to default to `--dry-run=true` as
 the default, which is equivalent to `--dry-run=client`.
 
+The boolean values for `--dry-run` will be deprecated and removed in 2 releases.
+
