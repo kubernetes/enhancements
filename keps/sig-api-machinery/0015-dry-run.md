@@ -158,17 +158,20 @@ For the `kubectl` client integration with server-side dry-run, we will pass
 the `dryRun` query parameter by reading the user's intent from a flag.
 
 For beta, we use `--server-dry-run` for `kubectl apply` to exercise
-server-side apply. This flag will be deprecated next release and removed in 2 releases.
+server-side apply. This flag will be deprecated next release, then removed in 2 releases.
 
-For GA, we'll use the existing `--dry-run` flag available on `kubectl apply`.
+For GA, we'll use the existing `--dry-run` flag available on `kubectl apply`.j
 
 Currently, the `--dry-run` flag is a boolean for subcommands including
 `kubectl apply` and `kubectl create`.
 
-We'll extend the flag to accept strings for new options `client` and `server`
-for selecting client-side and server-side behavior.  For backwards compatibility,
-we'll continue to default to `--dry-run=true` as
-the default, which is equivalent to `--dry-run=client`.
+We'll extend the flag to accept strings for new options
+for selecting client-side and server-side behavior: `client`, `server`, and
+`none`.
 
-The boolean values for `--dry-run` will be deprecated and removed in 2 releases.
+For backwards compatibility, we'll continue to default the value for `--dry-run`
+to `--dry-run=client`, which is equivalent to the existing behavior for
+`--dry-run=true`.
+
+The boolean values for `--dry-run` will be deprecated next release, then removed in 2 releases.
 
