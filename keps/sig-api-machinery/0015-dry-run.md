@@ -158,9 +158,9 @@ For the `kubectl` client integration with server-side dry-run, we will pass
 the `dryRun` query parameter by reading the user's intent from a flag.
 
 For beta, we use `--server-dry-run` for `kubectl apply` to exercise
-server-side apply. This flag will be deprecated next release, then removed in 2 releases.
+server-side apply. This flag will be removed next release.
 
-For GA, we'll use the existing `--dry-run` flag available on `kubectl apply`.j
+For GA, we'll use the existing `--dry-run` flag available on `kubectl apply`.
 
 Currently, the `--dry-run` flag is a boolean for subcommands including
 `kubectl apply` and `kubectl create`.
@@ -174,4 +174,29 @@ to `--dry-run=client`, which is equivalent to the existing behavior for
 `--dry-run=true`.
 
 The boolean values for `--dry-run` will be deprecated next release, then removed in 2 releases.
+
+The `--dry-run` flag will be parsed as described below.
+
+```golang
+func ParseDryRun(dryRunFlag string) (DryRunEnum, error) {
+  b, err := strconv.ParseBool(dryRunFlag)
+  if err != nil { // The flag is not a boolean
+    switch dryRunFlag {
+    case "client":
+      return DryRunClient, nil
+    case "server":
+      return DryRunServer, nil
+    case "none":
+      return DryRunNone, nil
+    default:
+      return DryRunNone, fmt.Errorf(`Invalid dry-run value (%v), must be "none", "server", or "client"`, dryRunFlag)
+    }
+  }
+  if b { // flag was a boolean, and indicates true, run client-side
+    klog.Warning("deprecated boolean value for flag --dry-run: supported dry-run strategies are none, client, or server")
+    return DryRunClient, nil
+  }
+  return DryRunNone, nil
+}
+```
 
