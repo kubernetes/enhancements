@@ -158,7 +158,7 @@ For the `kubectl` client integration with server-side dry-run, we will pass
 the `dryRun` query parameter by reading the user's intent from a flag.
 
 For beta, we use `--server-dry-run` for `kubectl apply` to exercise
-server-side apply. This flag will be removed next release.
+server-side apply. This flag will be deprecated next release, then removed after 1 release.
 
 For GA, we'll use the existing `--dry-run` flag available on `kubectl apply`.
 
