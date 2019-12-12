@@ -31,6 +31,7 @@ status: provisional
    - [Case 2](#case-1)
    - [Goals](#goals)
    - [Non-Goals](#non-goals)
+ - [Proposal](#proposal)
 
 <!-- /toc -->
 
