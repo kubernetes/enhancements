@@ -85,3 +85,53 @@ operation.
 To centrally manage the logs of each k8s component with `Request-ID` (This can
 be realized with existing OSS such as Kibana, so no need to implement into K8s
 components).
+
+## Proposal
+
+The following two features are necessary to realize log tracking
+
+### Propagate ID information
+
+- Add Request-ID and Parent-ID information to objects related to a single API request
+- Example: When creating a deployment resource, objects with the following Request-ID and Parent-ID are created
+
+| Object | Object-UUID | Parent-ID  | Request-ID |
+| ------ | ------ | ------ | ------ |
+| Deployment | 1000 | null | 100 |
+| ReplicaSet | 1010 | 1000 | 100 |
+| Pod1 | 1020 | 1000 | 100 |
+| Pod2 | 1030 | 1000 | 100 |
+| Pod3 | 1040 | 1000 | 100 |
+
+- Replicasets and pods related to the above Deployment are linked by Object-UUID and Parent-ID.
+- In the above example, Replicaset and Pods have “1000” as the Parent-ID. In this case, these objects are linked to an object which has “1000” as Object-UUID
+- Also, Reuest-ID should be associated with Request-ID in Audit log
+
+### Add ID information to the logs
+
+ - Add the above Object-UUID and Parent-ID information to the logs of each k8s component
+ - Current log example:
+
+```
+Kube-apiserver
+I1028 11:21:02.700432   11190 httplog.go:90] POST /api/v1/namespaces/kube-system/pods/kube-dns-68496566b5-24cwk/binding: (6.841722ms) 201 [hyperkube/v1.16.3 (linux/amd64) kubernetes/e76a12b/scheduler [::1]:35762]
+
+Kube-scheduler
+I1028 11:21:02.692701   11463 scheduler.go:530] Attempting to schedule pod: kube-system/kube-dns-68496566b5-24cwk
+I1028 11:21:02.693154   11463 factory.go:610] Attempting to bind kube-dns-68496566b5-24cwk to 127.0.0.1
+I1028 11:21:02.700681   11463 scheduler.go:667] pod kube-system/kube-dns-68496566b5-24cwk is bound successfully on node "127.0.0.1", 1 nodes evaluated, 1 nodes were found feasible. Bound node resource: "Capacity: CPU<4>|Memory<8037268Ki>|Pods<110>|StorageEphemeral<71724152Ki>.
+
+Kubelet
+I1028 11:21:02.699986   11594 kubelet.go:1901] SyncLoop (ADD, "api"): "kube-dns-68496566b5-24cwk_kube-system(7b0e128d-2a58-4c2c-8374-1ef872eefa65)"
+```
+
+ - New log example: Add ID information to the head of each log
+
+```
+I1028 11:21:02.700432   11190 httplog.go:90] [RequestID, ObjectID, ParentID] POST /api/v1/namespaces/kube-system/pods/kube-dns-68496566b5-24cwk/binding:(6.841722ms) 201 [hyperkube/v1.16.3 (linux/amd64) kubernetes/e76a12b/scheduler [::1]:35762]
+I1028 11:21:02.699986   11594 kubelet.go:1901] [RequestID, ObjectID, ParentID] Attempting to bind kube-dns-68496566b5-24cwk to 127.0.0.1
+I1028 11:21:02.692701   11463 scheduler.go:530] [RequestID, ObjectID , ParentID] Attempting to schedule pod: kube-system/kube-dns-68496566b5-24cwk
+```
+
+- By combining the above two functions, we can easily search for logs related to a single API by using Request-ID information as a query key.
+- In addition, we can also know more detail information about API request (e.g. when and who requested what API) by linking to Audit logs.
