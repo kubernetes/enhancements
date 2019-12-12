@@ -110,42 +110,7 @@ all new features, at a level appropriate to the features' maturity levels.
   of this questionnaire will be included in playbook for the feature (the
   creation of this playbook should be one of the production readiness criteria).
 
-  The actual questionnaire will be part of the implementation of this KEP, but
-  some example items include:
-  * Feature enablement and rollback
-    - How can this feature be enabled / disabled in a live cluster?
-    - Can the feature be disabled once it has been enabled (i.e., can we roll
-      back the enablement)?
-    - Will enabling / disabling the feature require downtime for the control
-      plane?
-    - Will enabling / disabling the feature require downtime or reprovisioning
-      of a node?
-    - What happens if a cluster with this feature enabled is rolled back? What
-      happens if it is subsequently upgraded again?
-    - Are there tests for this?
-  * Scalability
-  * Rollout, Upgrade, and Rollback Planning
-  * Dependencies
-    - Does this feature depend on any specific services running in the cluster
-      (e.g., a metrics service)?
-    - How does this feature respond to complete failures of the services on
-      which it depends?
-    - How does this feature respond to degraded performance or high error rates
-      from services on which it depends?
-  * Monitoring requirements
-    - How can an operator determine if the feature is in use by workloads?
-    - How can an operator determine if the feature is functioning properly?
-    - What are the service level indicators an operator can use to determine the
-      health of the service?
-    - What are reasonable service level objectives for the feature?
-  * Troubleshooting
-    - What are the known failure modes?
-    - How can those be detected via metrics or logs?
-    - What are the mitigations for each of those failure modes?
-    - What are the most useful log messages and what logging levels do they require?
-    - What steps should be taken if SLOs are not being met to determine the
-      problem?
-  * etc.
+  See [current questionnaire](https://github.com/kubernetes/community/blob/master/sig-architecture/production-readiness.md#questionnaire).
 
 * Establish a production readiness review subproject under SIG Architecture,
   with subproject owners:
