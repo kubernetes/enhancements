@@ -166,8 +166,7 @@ Currently, the `--dry-run` flag is a boolean for subcommands including
 `kubectl apply` and `kubectl create`.
 
 We'll extend the flag to accept strings for new options
-for selecting client-side and server-side behavior: `client`, `server`, and
-`none`.
+for selecting client-side and server-side behavior: `none`, `client` and `server`.
 
 For backwards compatibility, we'll continue to default the value for `--dry-run`
 to `--dry-run=client`, which is equivalent to the existing behavior for
@@ -175,10 +174,20 @@ to `--dry-run=client`, which is equivalent to the existing behavior for
 
 The boolean values for `--dry-run` will be deprecated next release, then removed in 2 releases.
 
-The `--dry-run` flag will be parsed as described below.
+The default value for `--dry-run` with the flag set and unspecified
+will be deprecated in the next release, then in 2 releases we will
+require that a value must be specified.
+Users must update any scripts to explicitly set `--dry-run=client` or
+`--dry-run=server`.
+
+The `--dry-run` flag will be parsed and defaulted as described below.
 
 ```golang
 func ParseDryRun(dryRunFlag string) (DryRunEnum, error) {
+  if dryRunFlag == "" {
+    klog.Warning(`The unset value for --dry-run is deprecated and a value will be required in a future version. Must be "none", "server", or "client".`)
+    // this warning will eventually become a fatal error
+  }
   b, err := strconv.ParseBool(dryRunFlag)
   if err != nil { // The flag is not a boolean
     switch dryRunFlag {
@@ -189,11 +198,11 @@ func ParseDryRun(dryRunFlag string) (DryRunEnum, error) {
     case "none":
       return DryRunNone, nil
     default:
-      return DryRunNone, fmt.Errorf(`Invalid dry-run value (%v), must be "none", "server", or "client"`, dryRunFlag)
+      return DryRunNone, fmt.Errorf(`Invalid dry-run value (%v). Must be "none", "server", or "client".`, dryRunFlag)
     }
   }
   if b { // flag was a boolean, and indicates true, run client-side
-    klog.Warning("deprecated boolean value for flag --dry-run: supported dry-run strategies are none, client, or server")
+    klog.Warning(`Boolean values for --dry-run are deprecated and will be removed in a future version. Must be "none", "server", or "client".`)
     return DryRunClient, nil
   }
   return DryRunNone, nil
