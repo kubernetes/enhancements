@@ -32,6 +32,7 @@ for the request should be as close as possible to a non dry-run response.
 - [Admission controllers](#admission-controllers)
 - [Generated values](#generated-values)
 - [Storage](#storage)
+- [kubectl](#kubectl)
 <!-- /toc -->
 
 ## Specifying dry-run
@@ -150,3 +151,69 @@ A dry-run request should behave as close as possible to a regular
 request. Attempting to dry-run create an existing object will result in an
 `AlreadyExists` error to be returned. Similarly, if a dry-run update is
 performed on a non-existing object, a `NotFound` error will be returned.
+
+## kubectl
+
+For the `kubectl` client integration with server-side dry-run, we will pass
+the `dryRun` query parameter by reading the user's intent from a flag.
+
+For beta, we use `--server-dry-run` for `kubectl apply` to exercise
+server-side apply. This flag will be deprecated next release, then removed after 1 release.
+
+For GA, we'll use the existing `--dry-run` flag available on `kubectl apply`.
+
+Currently, the `--dry-run` flag is a boolean for subcommands including
+`kubectl apply` and `kubectl create`.
+
+We'll extend the flag to accept strings for new options
+for selecting client-side and server-side behavior: `none`, `client` and `server`.
+
+For backwards compatibility, we'll continue to default the value for `--dry-run`
+to `--dry-run=client`, which is equivalent to the existing behavior for
+`--dry-run=true`.
+
+The boolean values for `--dry-run` will be deprecated next release, then removed in 2 releases.
+
+The default value for `--dry-run` with the flag set and unspecified
+will be deprecated in the next release, then in 2 releases we will
+require that a value must be specified.
+Users must update any scripts to explicitly set `--dry-run=client` or
+`--dry-run=server`.
+
+The `--dry-run` flag will be parsed and defaulted as described below.
+
+```golang
+func ParseDryRun(dryRunFlag string) (DryRunEnum, error) {
+  if dryRunFlag == "" {
+    klog.Warning(`The unset value for --dry-run is deprecated and a value will be required in a future version. Must be "none", "server", or "client".`)
+    // this warning will eventually become a fatal error
+  }
+  b, err := strconv.ParseBool(dryRunFlag)
+  if err != nil { // The flag is not a boolean
+    switch dryRunFlag {
+    case "client":
+      return DryRunClient, nil
+    case "server":
+      return DryRunServer, nil
+    case "none":
+      return DryRunNone, nil
+    default:
+      return DryRunNone, fmt.Errorf(`Invalid dry-run value (%v). Must be "none", "server", or "client".`, dryRunFlag)
+    }
+  }
+  if b { // flag was a boolean, and indicates true, run client-side
+    klog.Warning(`Boolean values for --dry-run are deprecated and will be removed in a future version. Must be "none", "server", or "client".`)
+    return DryRunClient, nil
+  }
+  return DryRunNone, nil
+}
+
+func AddDryRunFlag(cmd *cobra.Command) {
+	cmd.Flags().String(
+      "dry-run",
+      "client",
+      `Must be "none", "server", or "client". If client strategy, only print the object that would be sent, without sending it. If server strategy, submit server-side request without persisting the resource.`
+      )
+}
+```
+
