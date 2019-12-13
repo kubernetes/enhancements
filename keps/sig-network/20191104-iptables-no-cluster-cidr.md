@@ -54,14 +54,14 @@ superseded-by:
 
 The iptables implementation of kube-proxy today references the cluster CIDR for pods in three places for the following reasons.
 
-   1. [Masquerade off cluster traffic to services by node IP](https://github.com/kubernetes/kubernetes/blob/master/pkg/proxy/iptables/proxier.go#L887-L894)
-   2. [Redirecting pods traffic to external loadbalancer VIP to cluster IP](https://github.com/kubernetes/kubernetes/blob/master/pkg/proxy/iptables/proxier.go#L1248-L1260)
-   3. [Accepting traffic after first packet, after being accepted by kubernetes rules](https://github.com/kubernetes/kubernetes/blob/master/pkg/proxy/iptables/proxier.go#L1389-L1411)
+   1. [Masquerade off cluster traffic to services by node IP](https://github.com/kubernetes/kubernetes/blob/v1.17.0/pkg/proxy/iptables/proxier.go#L965-L970)
+   2. [Redirecting pods traffic to external loadbalancer VIP to cluster IP](https://github.com/kubernetes/kubernetes/blob/v1.17.0/pkg/proxy/iptables/proxier.go#L1327-L1339)
+   3. [Accepting traffic after first packet, after being accepted by kubernetes rules](https://github.com/kubernetes/kubernetes/blob/v1.17.0/pkg/proxy/iptables/proxier.go#L1468-L1490)
 
 In addition, the ipvs implementation also references it in two places for similar purposes
 
-   1. [Masquerade off cluster traffic to services by node IP](https://github.com/kubernetes/kubernetes/blob/master/pkg/proxy/ipvs/proxier.go#L1558-L1563)
-   2. [Accepting traffic after first packet, after being accepted by kubernetes](https://github.com/kubernetes/kubernetes/blob/master/pkg/proxy/ipvs/proxier.go#L1635-L1654)
+   1. [Masquerade off cluster traffic to services by node IP](https://github.com/kubernetes/kubernetes/blob/master/pkg/proxy/ipvs/proxier.go#L1649-L1654)
+   2. [Accepting traffic after first packet, after being accepted by kubernetes](https://github.com/kubernetes/kubernetes/blob/master/pkg/proxy/ipvs/proxier.go#L1726-L1745)
 
 This enhancement proposes ways to achieve similar goals without tracking the pod cluster CIDR to do so.
 
@@ -129,7 +129,7 @@ The reasoning behind why this works are as follows.
 ### iptables - masquerade off cluster traffic to services by node IP
 
 The [rule here currently](
-  https://github.com/kubernetes/kubernetes/blob/master/pkg/proxy/iptables/proxier.go#L887-L894
+  https://github.com/kubernetes/kubernetes/blob/v1.17.0/pkg/proxy/iptables/proxier.go#L965-L970
 ) looks as follows
 
 ```go
@@ -160,7 +160,7 @@ networking is setup.
 ### iptables - redirecting pod traffic to external loadbalancer VIP to cluster IP
 
 The [rule here currently](
-  https://github.com/kubernetes/kubernetes/blob/master/pkg/proxy/iptables/proxier.go#L1248-L1260
+  https://github.com/kubernetes/kubernetes/blob/v1.17.0/pkg/proxy/iptables/proxier.go#L1327-L1339
 ) looks as follows
 
 ```go
@@ -190,7 +190,7 @@ with a representation of pod's nodeCIDR or it's interfaces.
 
 ### iptables - accepting traffic after first packet, after being accepted by kubernetes rules
 
-The [rule here currently](https://github.com/kubernetes/kubernetes/blob/master/pkg/proxy/iptables/proxier.go#L1389-L1411)
+The [rule here currently](https://github.com/kubernetes/kubernetes/blob/v1.17.0/pkg/proxy/iptables/proxier.go#L1468-L1490)
 looks as follows
 
 ```go
@@ -234,7 +234,7 @@ the traffic could be getting forwarded through this node to another node.
 
 ### ipvs - masquerade off cluster traffic to services by node IP
 
-The [rule here currently](https://github.com/kubernetes/kubernetes/blob/master/pkg/proxy/ipvs/proxier.go#L1558-L1563)
+The [rule here currently](https://github.com/kubernetes/kubernetes/blob/master/pkg/proxy/ipvs/proxier.go#L1649-L1654)
 looks as follows.
 
 ```go
@@ -252,7 +252,7 @@ from within the cluster or not.
 
 ### ipvs - accepting traffic after first packet, after being accepted by kubernetes rules
 
-The [rule here currently](https://github.com/kubernetes/kubernetes/blob/master/pkg/proxy/ipvs/proxier.go#L1635-L1654)
+The [rule here currently](https://github.com/kubernetes/kubernetes/blob/master/pkg/proxy/ipvs/proxier.go#L1726-L1745)
 looks as follows
 
 ```go
