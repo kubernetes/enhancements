@@ -12,8 +12,8 @@ approvers:
   - "@andrewsykim"
 editor: TBD
 creation-date: 2019-07-22
-last-updated: yyyy-mm-dd
-status: provisional
+last-updated: 2019-12-15
+status: implementable
 see-also:
   - "/keps/sig-cloud-provider/20180530-cloud-controller-manager.md"
 ---
@@ -22,7 +22,7 @@ see-also:
 
 ## Table of Contents
 
-<!-- toc -->
+<!-- TOC -->
 - [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
 - [Motivation](#motivation)
@@ -40,7 +40,7 @@ see-also:
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Implementation History](#implementation-history)
-<!-- /toc -->
+<!-- /TOC -->
 
 ## Release Signoff Checklist
 
@@ -128,12 +128,12 @@ After node initialized, cloud-node-manager would reconcile the IP addresses from
 
 Considering some providers may not require IMDS, cloud-node-manager cloud be enabled optionally by a new option `--enable-node-controller` on cloud-controller-manager. With this new option, there would be three node initialization modes after this proposal:
 
-* 1) Centrally via cloud-controller-manager. All the node initialization, node IP address reconciling and other cloud provider operations are done in CCM.
-  * `cloud-controller-manager --enable-node-controller=true`
-* 2) Using IMDS with cloud-node-manager.
-  * cloud-node-manager running as a daemonset on each node
-  * `cloud-controller-manager enable-node-controller=false`
-* 3) Arbitrary via custom controllers. Customers may also choose their own controllers, which implement the same functions in cloud provider interfaces. The design and deployments are out of this proposal's scope.
+- 1) Centrally via cloud-controller-manager. All the node initialization, node IP address reconciling and other cloud provider operations are done in CCM.
+  - `cloud-controller-manager --enable-node-controller=true`
+- 2) Using IMDS with cloud-node-manager.
+  - cloud-node-manager running as a daemonset on each node
+  - `cloud-controller-manager enable-node-controller=false`
+- 3) Arbitrary via custom controllers. Customers may also choose their own controllers, which implement the same functions in cloud provider interfaces. The design and deployments are out of this proposal's scope.
 
 ## Alternatives
 
