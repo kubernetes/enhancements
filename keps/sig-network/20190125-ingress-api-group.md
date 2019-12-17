@@ -31,6 +31,7 @@ superseded-by:
     - [Potential features for post V1](#potential-features-for-post-v1)
   - [Path as a prefix](#path-as-a-prefix)
     - [Paths proposal](#paths-proposal)
+      - [Defaults](#defaults)
       - [Path matching semantics](#path-matching-semantics)
       - [<code>Exact</code> match](#-match)
       - [<code>Prefix</code> match](#-match-1)
@@ -233,9 +234,14 @@ Note: default value are permitted between API versions
 
 [api-conv-versions]: https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#defaulting
 
+##### Defaults
+
+The `PathType` field will default to a value of `ImplementationSpecific` to
+provide backwards compatibility. 
+
 ##### Path matching semantics
 
-For non-`ImplementationSpecific` paths:
+For `Prefix` and `Exact` paths:
 
 1. Let `[p_1, p_2, ..., p_n]` be the list of Paths for a specific host.
 1. Every Path `p_i` must be syntactically valid:
@@ -252,7 +258,7 @@ For non-`ImplementationSpecific` paths:
       preference depends on the implementation.
 1. If there is no matching path, then the `defaultBackend` for the host will be
    used.
-1. If there is not match for the host, then the overall `defaultBackend` for
+1. If there is not a match for the host, then the overall `defaultBackend` for
    the Ingress will be selected.
 
 ##### `Exact` match
@@ -339,7 +345,7 @@ The `IngressRule.Host` specification would be changed to:
 > http host header is to equal to the suffix (removing the first
 > label) of the wildcard rule.
 >
-> - The wildcard character `'*'` must appear by itself as a the first
+> - The wildcard character `'*'` must appear by itself as the first
 >   DNS label and matches only a single label.
 > - You cannot have a wildcard label by itself (e.g. `Host == "*"`).
 
