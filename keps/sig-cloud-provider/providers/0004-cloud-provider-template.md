@@ -88,7 +88,7 @@ Your cloud provider is accepted as part of the [Certified Kubernetes Conformance
 
 ### Documentation
 
-There is documentation on running Kubernetes on your cloud provider as per the [cloud provider documentation KEP](https://github.com/kubernetes/community/blob/master/keps/sig-cloud-provider/0019-cloud-provider-documentation.md).
+There is documentation on running Kubernetes on your cloud provider as per the [cloud provider documentation KEP](https://github.com/kubernetes/enhancements/blob/master/keps/sig-cloud-provider/20180731-cloud-provider-docs.md).
 
 ### Technical Leads are members of the Kubernetes Organization
 
