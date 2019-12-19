@@ -80,7 +80,7 @@ There must be a reasonable amount of user feedback about running Kubernetes for 
 
 ### Testgrid Integration
 
-Your cloud provider is reporting conformance test results to TestGrid as per the [Reporting Conformance Test Results to Testgrid KEP](https://github.com/kubernetes/community/blob/master/keps/sig-cloud-provider/0018-testgrid-conformance-e2e.md).
+Your cloud provider is reporting conformance test results to TestGrid as per the [Reporting Conformance Test Results to Testgrid KEP](https://github.com/kubernetes/enhancements/blob/master/keps/sig-cloud-provider/0018-testgrid-conformance-e2e.md).
 
 ### CNCF Certified Kubernetes
 
