@@ -31,9 +31,13 @@ see-also:
 
 <!-- toc -->
 - [Summary](#summary)
+- [Vocabulary](#vocabulary)
 - [Motivation](#motivation)
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
+- [CSI](#csi)
+  - [Pros](#pros)
+  - [Cons](#cons)
 - [Proposal](#proposal)
 - [Design Details](#design-details)
   - [Custom Resources](#custom-resources)
@@ -56,11 +60,24 @@ see-also:
 
 ## Summary
 
-Kubernetes natively supports dynamic provisioning for file and block storage but lacks support for object bucket provisioning.
-Without a formal API to describe and manage bucket provisioning, storage providers are left to write their own provisioners including all of the necessary controller code.
-This "wild west" landscape for bucket provisioning is potentially confusing, overly complex, inconsistent, may slow down Kubernetes adoption by object store users, and may hinder application portability.
+Object storage is different from file and block storage in that there are no mounts or attatches, but most importantly, there is no standard such as POSIX or iSCSI.
+And although AWS S3 could be considered a de-facto standard, it is, in fact, proprietary, closed and subject to any changes the vendor wishes to make.
+These issues are the main reasons why Kubernetes today lacks object store related APIs.
 
+However, despite the lack of a formal standard for an object data path, we can still define an API for bucket management.
 We propose a common Kubernetes control-plane API for the management of object store bucket lifecycles which has no dependencies on the underlying providers.
+This proposal does not address all aspects of object storage, e.g. creating an object store, creating bucket users, etc.
+It focuses on provisioning new buckets, granting access to existing buckets, and deleting buckets created by provisioners.
+
+## Vocabulary
+
++ _bucket_ - a container where objects reside, similar to a POSIX directory.
++ _bucket owner_ - an object store user with permissions to create a new bucket. The credentials for this user are not the credentials stored in the secret.
++ _bucket user_ - the user created or used by the provisioner who is granted access to the bucket. This user's credentials are store in the secret.
++ _endpoint_ - the URL describing the bucket.
++ _library_ - the bucket provisioning library proposed in this document and imported by provisiuoners.
++ _object_ - in this proposal object usually means content residing in a container, excluding metadata, similar in concept to a file.
++ _provisioner_ - code running in a pod that implements the library's `Provision`, `Grant`, `Delete` and `Revoke` interfaces.
 
 ## Motivation
 
@@ -69,9 +86,12 @@ By defining a Kubernetes API for object bucket provsioning, we provide a consist
 ### Goals
 
 + Define a _control-plane_ object bucket management API thus relieving object store providers from Kubernetes controller details.
-+ Minimize technical ramp-up for storage vendors who have already contributed external storage provisioners (file and block).
-+ Make bucket consumption similar to file or block consumption using familiar concepts and commands.
-+ Use native Kubernetes resources where possible, again, to keep the bucket experience for users and admins similar to existing storage provisioning.
++ Minimize technical ramp-up for storage vendors.
++ Make bucket provisioning similar to file or block provisioning using familiar concepts and commands.
++ ~~Use native Kubernetes resources where possible, again, to keep the bucket experience for users and admins similar to existing storage provisioning.~~
+This was an original goal and the OBC is define to reference a storage class like PVCs do.
+However, there could be confusion using storage classes for bucket provisioning since storage classes are designed only for file and block storage, and thus many fields have no meaning for buckets.
+We are open to defining a namespaced `BucketClass` Custom Resource to be used similarly to storage classes.
 + Be unopinionated about the underlying object-store and at the same time provide a flexible API such that provisioner specific features can be supported.
 + Ensure bucket consuming pods wait until the target buckets have been created and are accessible. Thus there is no specific order required for when a bucket claim is created vs. when the app pod is run.
 + Present similar user and admin experiences for both _greenfield_ (new) and _brownfield_ (existing) bucket provisioning.
@@ -81,6 +101,20 @@ By defining a Kubernetes API for object bucket provsioning, we provide a consist
 + Update the native Kubernetes PVC-PV API to support object buckets.
 + Define a native _data-plane_ object store API.
 + Handle the small percentage of apps that will not be portable due to use of non-compatible object-store features.
+
+## CSI
+
+There has been some excellent discussion around CSI vs. a library approach.
+We'd like this section to collect comments on the pros and cons of using CSI.
+
+### Pros
++ Kubernetes strategic direction for all storage.
+This may be the only argument needed to discard the library and instead support CSI.
++ Familiar to most storage vendors.
++ gRPC supports many languages.
+
+### Cons
++ Being independent of Kubernetes, perhaps there is more up-front ramp up?
 
 ## Proposal
 
@@ -105,6 +139,7 @@ The bucket provisioning library utilizes two Custom Resources to abstract an obj
 As is true for PVCs-PVs, there is a 1:1 relationship between an OBC and an OB, and as will be seen below, there is a [_binding_](#binding) between an OBC and OB. 
 
 OBCs reference a storage class. The storage class references the external provisioner, defines a reclaim policy, and specifies object-store specific parameters, such as region, owner secret, bucket lifecycle policies, etc.
+**Note:** the original design uses storage classes but we are open to using a namespaced _BucketClass_ Custom Resource based on community input.
 
 ### Moving Parts
 
@@ -119,8 +154,6 @@ This storage class needs to be created by the admin.
 The S3 provisioner pod watches for OBCs whose storage classes point to the AWS S3 provisioner, while ignoring all other OBCs.
 Likewise, the same cluster can also run the Rook-Ceph RGW provisioner, which also watches OBCs, only handling OBCs that reference storage classes which define ceph-rgw.
 
-**Note:** it is possible for one provisioner to handle OBCs for different instances of the same type of object store.
-
 #### Greenfield (new)
 
 An OBC for a new bucket is defined by its inclusion of a generated or static bucket name.
@@ -128,7 +161,7 @@ In this case the referenced storage class omits a bucket name.
 A new bucket OBC triggers the correct provisioner to create a new bucket and the associated artifacts (credentials, policy, etc). 
 The library, in turn, creates a secret, configmap, and OB based on information returned by the provisioner.
 
-The secret contains the credentails needed to access the bucket and the configmap contains bucket endpoint information.
+The secret contains the credentials needed to access the bucket and the configmap contains bucket endpoint information.
 **Note:** it was mentioned at the 2019 NA Kubecon storage face-to-face that to improve scaling we could decide to move the configmap info into the secret, thus reducing k8s resources required.
 The OB is an abstraction of the bucket and can save some state data needed by provisioners.
 The secret and configmap reside in the same namespace as the OBC, and the OB lives in the provisioner's namespace.
@@ -224,11 +257,12 @@ spec:
 1. name of the bucket. If supplied then `generateBucketName` is ignored.
 **Not** recommended for new buckets since names must be unique within
 an entire object store.
-1. if supplied then `bucketName` must be empty. This value becomes the prefix for a randomly generated name.
+1. if supplied then `bucketName` must be empty. This value becomes the prefix for a randomly generated name and is the preferred way to create a new bucket.
 After `Provision` returns `bucketName` is set to this random name.
 If both `bucketName` and `generateBucketName` are supplied then `BucketName` has precedence and `GenerateBucketName` is ignored. 
 If both `bucketName` and `generateBucketName` are blank or omitted then the storage class is expected to contain the name of an _existing_ bucket. It's an error if all three bucket related names are blank or omitted.
 1. storageClass which defines the object-store service and the bucket provisioner.
+**Note:** we are happy to define a namespaced _BucketClass_ Custom Resource based on community input.
 1. additionalConfig gives providers a location to set store-specific config values (tenant, namespace...).
 The value is a list of 1 or more key-value pairs.
 
@@ -350,6 +384,8 @@ Provisioners are able to cause the lib to create additional data keys by returni
 
 #### Storage Class (created by admin)
 
+**Note:** depending on community input a storage class may be replaced by a namespaced `BucketClass` custom resource.
+
 ```yaml
 apiVersion: storage.k8s.io/v1
 kind: StorageClass
@@ -419,7 +455,7 @@ There is also an [S3 example](https://github.com/yard-turkey/aws-s3-provisioner)
 + there is no way to define a _reclaimPolicy_ that supports erasing or suspending a bucket
 + there are no bucket metrics
 + there is no bucket lifecycle management (e.g. ability to define expiration, archive, migration, etc. policies)
-+ security relies soley on RBAC, thus there is no way to distinguish bucket access within the same namespace
++ security relies solely on RBAC, thus there is no way to distinguish bucket access within the same namespace
 + there is no HA due to no leader election in the lib -- if the provisioner is running in a goroutine (e.g. rook-ceph provisioner) and it fails the lib cannot be restarted
 + logging verbosity levels are somewhat arbitrary
 
@@ -532,7 +568,7 @@ Various alternative designs were considered before reaching the design described
 1. Using a service broker to provision buckets.
 This doesn't alleviate the pod from consuming env variables which define the endpoint and secret keys.
 It also feels too far removed from basic Kubernetes storage -- there is no claim and no object to represent the bucket.
-1. A Rook-Ceph only provisioner with built-in watches, reconcilation, etc, **but** no bucket library. The main problem here is that each provisioner would need to write all of the controller code themselves.
+1. A Rook-Ceph only provisioner with built-in watches, reconciliation, etc, **but** no bucket library. The main problem here is that each provisioner would need to write all of the controller code themselves.
 This could easily result in different _contracts_ for different provisioners, meaning one provisioners might create the Secret of ConfigMap differently than another.
 This could result in the app pod being coupled to the provisioner.
 1. Rook-Ceph repo and a centralized controller.
