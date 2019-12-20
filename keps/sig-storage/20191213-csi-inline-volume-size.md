@@ -130,12 +130,12 @@ extend the [pod info on
 mount](https://kubernetes-csi.github.io/docs/pod-info.html) feature:
 if (and only if) the driver enables that, then a new
 `csi.storage.k8s.io/size` entry in
-`NodePublishVolumeRequest.publish_context` is set to the string
+`NodePublishVolumeRequest.volume_context` is set to the string
 representation of the size quantity. An unset size is passed as empty
 string.
 
 This has to be optional because CSI drivers written for 1.16 might do
-strict validation of the `publish_context` content and reject volumes
+strict validation of the `volume_context` content and reject volumes
 with unknown fields. If the driver enables pod info, then new fields
 in the `csi.storage.k8s.io` namespace are explicitly allowed.
 
