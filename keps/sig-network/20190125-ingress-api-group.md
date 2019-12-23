@@ -129,6 +129,7 @@ section below.
   - Promote commonly supported annotations to proper API fields.
   - Create a suite of conformance tests to validate existing
     implementations.
+  - Fix theoretical issue for controllers like [external-dns](https://github.com/kubernetes-sigs/external-dns)
 - Make Ingress GA. (status: proposal).
 
 ## Design
@@ -149,6 +150,8 @@ This section describes the API fixes proposed for GA.
 1. Formalize the Ingress class annotation into a field and an associated
    `IngressClass` resource.
 1. Add support for non-Service Backend types.
+1. Add a second field in `status.loadBalancer.ingress` list for
+  controllers like [external-dns](https://github.com/kubernetes-sigs/external-dns).
 
 #### Potential features for post V1
 
@@ -554,6 +557,117 @@ backend:
     kind: bucket
     name: my-bucket
 ```
+
+### Status change for controllers like external-dns
+
+There is a logical bug, that hopefully no one had, with Ingress `status`
+and [external-dns](https://github.com/kubernetes-sigs/external-dns) if multiple hostnames are defined in one ingress.
+
+#### Background how external-dns works with ingress
+
+Example how external-dns works:
+
+```
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name:my-ingress
+spec:
+  rules:
+  - host: myapp.example.com
+    http:
+      paths:
+      - backend:
+          serviceName: myapp
+          servicePort: 80
+status:
+  loadBalancer:
+    ingress:
+    - hostname: my-load-balancer1.target.example.cloud
+```
+
+In the above example, external-dns would setup a DNS CNAME record,
+that points from `myapp.example.com` to
+`my-load-balancer1.target.example.cloud`.
+
+This idea works reliably for us since 4 years, but there is a
+theoretical problem, which I would like to address in ingress GA.
+
+#### Problem - Ingress data
+
+The problem is, that there is nothing that prevents from having many
+`spec.rules` with different `host` definitions, and a long list of
+`status.loadBalancer.ingress`. In this case external-dns has to guess
+which `spec.rules[].host` should be assigned to which `status.loadBalancer.ingress[].hostname`.
+
+Example:
+
+```
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name:my-ingress
+spec:
+  rules:
+  - host: example.TLD1
+    http:
+      paths:
+      - backend:
+          serviceName: myapp1
+          servicePort: 80
+  - host: example.TLD2
+    http:
+      paths:
+      - backend:
+          serviceName: myapp2
+          servicePort: 80
+  ...
+  - host: example.TLDN
+    http:
+      paths:
+      - backend:
+          serviceName: myappN
+          servicePort: 80
+
+status:
+  loadBalancer:
+    ingress:
+    - hostname: my-load-balancer1.target.example.cloud
+    - hostname: my-load-balancer2.target.example.cloud
+     ...
+    - hostname: my-load-balancerN.target.example.cloud
+```
+
+We have no link between the `spec.rules[].host` and the
+`status.loadBalancer.ingress[].hostname`, such that external-dns can
+not judge which loadbalancer should be targeted by which host
+definition from ingress spec. This means that TLS, SNI and routing can
+break, because we have no link between a `host` and the loadbalancer
+`hostname`.
+
+#### How to fix the link between spec and status
+
+The creator of the loadbalancer has to attach the certificate to
+httpsListeners, which means it knows the host from spec and it has to
+write the status field. The status field could be changed to add also
+host, such that it's a clearly linked:
+
+```
+status:
+  loadBalancer:
+    ingress:
+    - hostname: my-load-balancer1.target.example.cloud
+      host: example.TLD1
+    - hostname: my-load-balancer2.target.example.cloud
+      host: example.TLD2
+    ...
+    - hostname: my-load-balancerN.target.example.cloud
+      host: example.TLDN
+```
+
+Controllers like external-dns should fallback to old behavior to
+support both for some time, to make a production update without
+downtime for everyone possible.
 
 ## Proposed roadmap
 
