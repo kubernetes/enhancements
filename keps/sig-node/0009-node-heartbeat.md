@@ -283,7 +283,7 @@ both real clusters and Kubemark.
 GA:
 - Enabled by default for a release with no complaints.
 - Frequency of NodeStatus defaulted to 5m
-- kubectl describe node showing information from corrsponding Lease object
+- kubectl describe node showing information from corresponding Lease object
 
 
 ## Implementation History

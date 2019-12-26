@@ -228,7 +228,7 @@ Note that this change does not introduce an equivalent field called runAsNonRoot
 and PodSecurityContext. There was ongoing discussion about this field at PR [#62216](https://github.com/kubernetes/kubernetes/pull/62217)
 The summary of this discussion seems as follows:-
 - Use PSP MustRunAs Group strategy to guarantee that Pod never runs with 0 as Primary Group ID.
-- Using the PSP MustRunaAs Group strategy forces Pod to always specify a RunAsGroup
+- Using the PSP MustRunAs Group strategy forces Pod to always specify a RunAsGroup
 - RunAsGroup field when specified in PodSpec, will always override USER field in Dockerfile
 
 There are other potentially unresolved discussions in that PR which need a followup.
