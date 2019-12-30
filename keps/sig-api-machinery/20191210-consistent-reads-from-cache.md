@@ -23,8 +23,8 @@ superseded-by:
 # Consistent Reads from Cache
 
 Kubernetes Get and List requests are guaranteed to be "consistent reads" if the
-resourceVerions paramter is not provided and are served from etcd using a
-"quorum read".
+`resourceVersion` paramter is not provided. Consistent reads are served from
+etcd using a "quorum read".
 
 But often the watch cache contains sufficiently up-to-date data to serve the
 read request, and could serve it far more efficiently.
@@ -55,12 +55,12 @@ read from etcd.
 ## Summary
 
 Consistent reads may be served from cache so long as:
-- A consistent (quorum) read is first made to etcd to get the latest "revsion"
-- The data in the watch cache no older than the latest "revsion" just from etcd
+- A consistent (quorum) read is first made to etcd to get the latest "revision"
+- The data in the watch cache no older than the latest "revision" just from etcd
 
 etcd 3.4 contains a [progress notify](https://github.com/etcd-io/etcd/issues/9855)
 feature that was added specifically to make it easy to check if a cache that is
-updated via an etcd watch is up-to-date relative to some etcd revsion.
+updated via an etcd watch is up-to-date relative to some etcd revision.
 
 This KEP summarizes how we can take advantage of progress notify feature in etcd
 3.4 to efficiently determine how up-to-date kubernetes watch caches are then
@@ -68,23 +68,23 @@ serve reads from the watch cache when they are sufficiently up-to-date.
 
 ## Motivation
 
-Intuitively, we expect that serving reads from the watch cache to be more
-performant and scalable than reading them from etcd, deserializing them,
-converting them to the desired type and then garbage collecting all the
-objects that were allocated during the read. 
+Serving reads from the watch cache is more performant and scalable than reading
+them from etcd, deserializing them, converting them to the desired type and then
+garbage collecting all the objects that were allocated during the read.
 
-We will need to measure the impact to performance and scalability, but we
-believe there is a significant opportunity and would like to explore it.
+We will need to measure the impact to performance and scalability, but we have
+data and experience from prior improvements made by the watch cache that
+suggests there is significant opportunity here, and we would like to explore it.
 
-In addition to the general scale and performance opportunity, we also aim
-to resolve a specific problem. The long standing "stale read" issue
+In addition to the general scale and performance opportunity, we also aim to
+resolve a specific problem. The long standing "stale read" issue
 (https://github.com/kubernetes/kubernetes/issues/59848) is still open because
 reflectors default to resourceVersion=”0” for their initial list requests. If
 the reflectors instead use a consistent read for their initial list request,
-they could not "going back in time" when components are restarted, which can
-curently happen if the initial list request is served from a stale watch cache
-with data much older than the reflector has previously observed or if the
-api-server or etcd are partitioned.
+they could not "going back in time" when components are restarted and this issue
+would be solved. "Going back in time" can curently happen if the initial list
+request is served from a stale watch cache with data much older than the
+reflector has previously observed or if the api-server or etcd are partitioned.
 
 We have held off on switching reflectors to using consistent read for the
 initial list, even though we know it is more correct, due to concerns with the
@@ -104,10 +104,36 @@ serves the resourceVersion="0" list requests from reflectors today.
 
 ## Proposal
 
-Allow the etcd minor version to be specified in the kube-apiserver `--storage-backend` flag, e.g. `--storage-backend=etcd3.4`.  For backward compatibility, if `--storage-backend=etcd3` is provided, it will treat this as `etcd3.0`.
+### Making kube-apiserver aware of etcd minor version
 
-Since etcd progress notify is only available in etcd 3.4. We would only serve consistent reads from cache if `--storage-backend` is set to `etcd3.4` or higher.
-For etcd 3.3-, we would continue to serve consistent reads from etcd.
+Allow the etcd minor version to be specified in the kube-apiserver
+`--storage-backend` flag, e.g. `--storage-backend=etcd3.4`.  When client
+connections to etcd servers are established (and maybe periodically after that
+as well), check the current etcd version (via the etcd 'version' API) and warn
+the user if the version is older than the version of etcd provided in the
+flag.
+
+if `--storage-backend=etcd3` is provided, the minor etcd version will default to
+the detected etcd version minor version. This is for ease of use, since
+defaulting to `etcd3.0` would require additional configuration management by
+administrators. To make this safe, if the api-server gets an error when making a
+request that is enabled for newer etcd versions, it should warn in the logs that
+there might be an etcd version mismatch and fallback to the etcd functionality
+supported by all etcd 3.x versions.
+
+Also, Due to etcd upgrades and downgrades, there is no way to automatically
+detect the etcd version is a way that is guaranteed to be always correct, so the
+administrator must be able to set the version to a desired version.
+
+In addition to etcd minor version detection, all features requiring features
+introduced at a specific etcd minor version will have feature gates and will go
+through the usual kubernetes stability levels promotions (alpha, beta, GA).
+
+### Leveraging the Progress Notify Mechanism
+
+Since etcd progress notify is only available in etcd 3.4. We would only serve
+consistent reads from cache if the etcd version is 3.4 or higher
+higher.  For etcd 3.3-, we would continue to serve consistent reads from etcd.
 
 Guard this optmization behind `WatchCacheConsistentReads` feature gate, and only server consistent reads from cache if it is enabled.
 
@@ -129,7 +155,9 @@ Optional: For some or all of the etcd progress watch events, also create a
 kubernetes "bookmark" watch event and send it to kube-apiserver clients so that
 reflectors and shared informers are kept up-to-date. The benefit of this is that
 it minimizes the chance that these clients will end up with an out-of-date
-resource version and need to relist (which can impact scalability).
+resource version and need to relist (which can impact scalability). See [Watch
+Bookmarks](https://github.com/kubernetes/enhancements/blob/master/keps/sig-api-machinery/20190206-watch-bookmark.md)
+for details.
 
 ### Risks and Mitigations
 
@@ -148,6 +176,23 @@ sufficiently short value.
 
 ## Design Details
 
+### Early experiments planned
+
+We would like to first modify etcd to send progress events in short intervals
+of 20ms or so, and modify Get and List request serving to first check
+if the watch cache contains sufficiently up-to-date data before falling back
+to serving resourceVersion="" requests directly from etcd.
+
+We will check for cache hit ratios and check scalability. If these are promising
+we will then explore what the optimal interval to have etcd send progress events
+is. If this performs at a sufficiently high cache hit rate, we may not need to
+request progress notify events from etcd.
+
+We will also explore how long the kube-apiserver should wait for a watch cache
+to catch up to the needed revision. I.e. for a progress event interval of 20ms,
+should the kube-apiserver also wait 20ms to a desired revision to become
+available or should it fallback to making the request to etcd sooner?
+
 ### Test Plan
 
 We will need to scale and performance test this carefully. We’ll need to measure
@@ -161,13 +206,11 @@ list requests served from storage instead of from cache.
 Guard it with the `WatchCacheConsistentReads` feature gate.
 Communicate that clusters administrators should set `--storage-backend` with major.minor version, .e.g. `--storage-backend=etcd3.4` to benefit from features requiring newer etcd versions.
 
-#### Reflector
+#### Reflectors
 
-- Provide a way for reflectors to be configured to use resourceVersion=”” for initial list
-- Upgrade all in-tree reflectors to use resourceVersion=”” (TODO: this will be problematic for cluster that do not have this feature enabled)
-- For backward compatibility, resourceVersion=”0” would need remain the default for reflectors, at least for an extended period of long time.
-
-An approach we are considering is: Switch over to have resourceVersion=”0” also served from current resourceVersion by servers (if using etcd 3.4+). This does not violate the semantics of resourceVersion=”0”, but if clients depend on resourceVersion=”0” being consistent, then transitioning to an implementation where resourceVersion=”0” is not consistent would be problematic.
+- Provide a way for reflectors to be configured to use resourceVersion=”” for initial list, but for backward compatibility, resourceVersion=”0” must remain the default for reflectors.
+- Upgrade the reflectors of in-tree components to use resourceVersion=”" based on a flag or configuration option. Administrators and administrative tools would need to enable this only when using etcd 3.4 or higher.
+- If at some point in the (far) future, the lowest etcd supported version for kubernetes is 3.4 or higher, reflectors could be changed to default to resourceVersion="".
 
 ### Graduation Criteria
 
@@ -189,3 +232,9 @@ Allow clients to manage the initial resource version they provide to reflectors,
 - Many clients will most likely continue to use resourceVersion=”0” even if it violates their consistency needs
 - Clients that transition to use resourceVersion=”” will pay a high scale/performance cost
 - We don't expect clients to attempt to keep track of the last resourceVersion they observed. If they do attempt this, we are concerned that they might get it wrong and introduce subtle and difficult to debug issues as a result.
+
+Modify etcd to allow echo back a user provided ID in progress events.
+
+- Client generates a UUID and provides to the ProgressNotify request
+- Once client sees a progress event with the same UUID, it knows the watch is up-to-date
+- This reduces the worst case number of round trips required to do a consistent read from two to one since client doesn't need to get the lastest revision from etcd first
