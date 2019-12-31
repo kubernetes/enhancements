@@ -2,6 +2,7 @@
 title: KEP Template
 authors:
   - "@jpbetz"
+  - "@wojtek-t"
 owning-sig: sig-api-machinery
 participating-sigs:
   - sig-scalability
@@ -23,7 +24,7 @@ superseded-by:
 # Consistent Reads from Cache
 
 Kubernetes Get and List requests are guaranteed to be "consistent reads" if the
-`resourceVersion` paramter is not provided. Consistent reads are served from
+`resourceVersion` parameter is not provided. Consistent reads are served from
 etcd using a "quorum read".
 
 But often the watch cache contains sufficiently up-to-date data to serve the
@@ -36,20 +37,23 @@ read from etcd.
 ## Table of Contents
 
 <!-- toc -->
-- [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
 - [Motivation](#motivation)
   - [Goals](#goals)
-  - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
+  - [Make the kube-apiserver aware of etcd's minor version](#make-the-kube-apiserver-aware-of-etcds-minor-version)
+  - [Leveraging the Progress Notify Mechanism](#leveraging-the-progress-notify-mechanism)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
+  - [Pagination](#pagination)
   - [Test Plan](#test-plan)
   - [Rollout Plan](#rollout-plan)
-    - [Reflector](#reflector)
+    - [Serving consistent reads from cache](#serving-consistent-reads-from-cache)
+    - [Reflectors](#reflectors)
   - [Graduation Criteria](#graduation-criteria)
 - [Implementation History](#implementation-history)
 - [Alternatives](#alternatives)
+- [Potential Future Improvements](#potential-future-improvements)
 <!-- /toc -->
 
 ## Summary
@@ -58,13 +62,16 @@ Consistent reads may be served from cache so long as:
 - A consistent (quorum) read is first made to etcd to get the latest "revision"
 - The data in the watch cache no older than the latest "revision" just from etcd
 
-etcd 3.4 contains a [progress notify](https://github.com/etcd-io/etcd/issues/9855)
-feature that was added specifically to make it easy to check if a cache that is
-updated via an etcd watch is up-to-date relative to some etcd revision.
+etcd 3.4 supports progress events. [Progress event
+interval](https://github.com/etcd-io/etcd/blob/e6980b1f9fc008837abb9177e87e893e48d565c1/etcdserver/api/v3rpc/watch.go#L67)
+are sent by etcd automatically, and [progress
+notify](https://github.com/etcd-io/etcd/issues/9855) requests a progress event
+and was added specifically to make it easy to check if a cache that is updated
+via an etcd watch is up-to-date relative to some etcd revision).
 
-This KEP summarizes how we can take advantage of progress notify feature in etcd
-3.4 to efficiently determine how up-to-date kubernetes watch caches are then
-serve reads from the watch cache when they are sufficiently up-to-date.
+This KEP summarizes how we can take advantage of progress events efficiently
+determine how up-to-date kubernetes watch caches are then serve reads from the
+watch cache when they are sufficiently up-to-date.
 
 ## Motivation
 
@@ -75,6 +82,13 @@ garbage collecting all the objects that were allocated during the read.
 We will need to measure the impact to performance and scalability, but we have
 data and experience from prior improvements made by the watch cache that
 suggests there is significant opportunity here, and we would like to explore it.
+
+We expect the biggest gain to be from node-originating requests (e.g. kubelet
+listing pods scheduled on its node). For those requests, the size of the
+response is small (it fits a single page, assuming you won't make it extremely
+small), whereas the number of objects to process is proportional to cluster-size
+(so fairly big). I.e. when kubelets requests pods, they request all pods and then
+use a selector to filter the pod list down to the ones scheduled on that kubelet.
 
 In addition to the general scale and performance opportunity, we also aim to
 resolve a specific problem. The long standing "stale read" issue
@@ -94,17 +108,12 @@ serves the resourceVersion="0" list requests from reflectors today.
 
 ### Goals
 
-- Serve consistent reads from the watch cache for etcd 3.4 or newer
 - Resolve the "stale read" problem (https://github.com/kubernetes/kubernetes/issues/59848)
 - Improve the scailability and performance of Kubernetes for Get and List requests, when the watch cache is enabled
 
-### Non-Goals
-
-- Serve consistent reads from the watch cache for etcd 3.3 or earlier
-
 ## Proposal
 
-### Making kube-apiserver aware of etcd minor version
+### Make the kube-apiserver aware of etcd's minor version
 
 Allow the etcd minor version to be specified in the kube-apiserver
 `--storage-backend` flag, e.g. `--storage-backend=etcd3.4`.  When client
@@ -145,11 +154,18 @@ When an consistent read request is received and the watch cache is enabled:
 - Use the existing waitUntilFreshAndBlock function in the watch cache to wait for the watch to catch up to the current revision
 - If the block times out, skip the cache and serve the request directly from storage.
 
-Optional: In addition to progress notify, also configure etcd to send regular
-progress events all on watches, every 10-100 milliseconds or so. If this is
-works, it could reduce the need to need to send progress notify requests to
-etcd, since watch cache progress would already kept largely up-to-date
-by the progress events etcd proactively sent.
+We will experiment with modifying etcd to automatically send progress events in
+short intervals of 20ms or so to see if this keeps the latest observed revision
+of watch caches sufficiently up-to-date that they rarely need to fall back to
+serving resourceVersion="" requests directly from etcd.  We will check for cache
+hit ratios and check scalability. If these are promising we will then explore
+what the optimal interval to have etcd send progress events is. If this works
+well enough, we may not need to request progress notify events from etcd.
+
+We will also explore how long the kube-apiserver should wait for a watch cache
+to catch up to the needed revision. I.e. for a progress event interval of 20ms,
+should the kube-apiserver also wait 20ms to a desired revision to become
+available or should it fallback to making the request to etcd sooner?
 
 Optional: For some or all of the etcd progress watch events, also create a
 kubernetes "bookmark" watch event and send it to kube-apiserver clients so that
@@ -166,7 +182,8 @@ latest revision, another might be needed to request the progress notify. Both of
 these requests are cheap and scalable, but we need to understand the latency
 impact of waiting for both of them before serving a response back to the
 client. If this turns out to have performance implications, it could be
-partially mitigated by configuring etcd to send regular progress events.
+partially mitigated by configuring etcd to send regular progress events, which
+is something we will explore.
 
 In the worst case, the “wait until fresh” duration is exceeded, and then the
 request must be served from etcd anyway, which will be much higher latency than
@@ -176,22 +193,13 @@ sufficiently short value.
 
 ## Design Details
 
-### Early experiments planned
+### Pagination
 
-We would like to first modify etcd to send progress events in short intervals
-of 20ms or so, and modify Get and List request serving to first check
-if the watch cache contains sufficiently up-to-date data before falling back
-to serving resourceVersion="" requests directly from etcd.
+Because the watch cache does not paginate responses, clients that were
+previously getting pagination for RV="" requests will start getting unpaginated
+responses when this feature is enabled.
 
-We will check for cache hit ratios and check scalability. If these are promising
-we will then explore what the optimal interval to have etcd send progress events
-is. If this performs at a sufficiently high cache hit rate, we may not need to
-request progress notify events from etcd.
-
-We will also explore how long the kube-apiserver should wait for a watch cache
-to catch up to the needed revision. I.e. for a progress event interval of 20ms,
-should the kube-apiserver also wait 20ms to a desired revision to become
-available or should it fallback to making the request to etcd sooner?
+The impacts of this can be explored when the feature is in alpha.
 
 ### Test Plan
 
@@ -214,7 +222,9 @@ Communicate that clusters administrators should set `--storage-backend` with maj
 
 ### Graduation Criteria
 
-TODO
+Beta:
+
+- Imapct to pagination (calls that previously were paginated by etcd will be unpaginated when served from the watch cache) is understood and addressed.
 
 ## Implementation History
 
@@ -232,6 +242,8 @@ Allow clients to manage the initial resource version they provide to reflectors,
 - Many clients will most likely continue to use resourceVersion=”0” even if it violates their consistency needs
 - Clients that transition to use resourceVersion=”” will pay a high scale/performance cost
 - We don't expect clients to attempt to keep track of the last resourceVersion they observed. If they do attempt this, we are concerned that they might get it wrong and introduce subtle and difficult to debug issues as a result.
+
+## Potential Future Improvements
 
 Modify etcd to allow echo back a user provided ID in progress events.
 
