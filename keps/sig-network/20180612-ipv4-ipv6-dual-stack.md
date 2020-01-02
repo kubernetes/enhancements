@@ -15,7 +15,7 @@ approvers:
   - "thockin@"
 editor: TBD
 creation-date: 2018-05-21
-last-updated: 2019-10-15
+last-updated: 2020-01-02
 status: implementable
 ---
 
@@ -584,25 +584,30 @@ Providing dual-stack service CIDRs would add the following functionality:
   * [sig-network] [Feature:IPv6DualStackAlphaFeature] [LinuxOnly] should create pod, add ipv6 and ipv4 ip to pod ips
   * [sig-network] [Feature:IPv6DualStackAlphaFeature] [LinuxOnly] should have ipv4 and ipv6 internal node ip
   * [sig-network] [Feature:IPv6DualStackAlphaFeature] [LinuxOnly] should have ipv4 and ipv6 node podCIDRs
-  * [sig-network] [Feature:IPv6DualStackAlphaFeature] [LinuxOnly] should be able to reach pod on ipv4 and ipv6 ip [Feature:IPv6DualStackAlphaFeature:Phase2]
-  * [sig-network] [Feature:IPv6DualStackAlphaFeature] [LinuxOnly] should create service with cluster ip from primary service range [Feature:IPv6DualStackAlphaFeature:Phase2]
-  * [sig-network] [Feature:IPv6DualStackAlphaFeature] [LinuxOnly] should create service with ipv4 cluster ip [Feature:IPv6DualStackAlphaFeature:Phase2]
-  * [sig-network] [Feature:IPv6DualStackAlphaFeature] [LinuxOnly] should create service with ipv6 cluster ip [Feature:IPv6DualStackAlphaFeature:Phase2]
+  * [sig-network] [Feature:IPv6DualStackAlphaFeature] [LinuxOnly] should be able to reach pod on ipv4 and ipv6 ip [Feature:IPv6DualStackAlphaFeature]
+  * [sig-network] [Feature:IPv6DualStackAlphaFeature] [LinuxOnly] should create service with cluster ip from primary service range [Feature:IPv6DualStackAlphaFeature]
+  * [sig-network] [Feature:IPv6DualStackAlphaFeature] [LinuxOnly] should create service with ipv4 cluster ip [Feature:IPv6DualStackAlphaFeature]
+  * [sig-network] [Feature:IPv6DualStackAlphaFeature] [LinuxOnly] should create service with ipv6 cluster ip [Feature:IPv6DualStackAlphaFeature]
 * e2e tests should cover the following:
   * multi-IP, same family
   * multi-IP, dual-stack
   * single IP, ipv4
   * single IP, ipv6
+
 ## Graduation Criteria
 
 This capability will move to beta when the following criteria have been met.
 
-* Kubernetes types finalized
-* CRI types finalized
-* Pods to support multi-IPs
-* Nodes to support multi-CIDRs
-* Service resource supports pods with multi-IP
-* Kubenet to support multi-IPs
+- [x] Kubernetes types finalized
+- [x] CRI types finalized
+- [x] Pods to support multi-IPs
+- [x] Nodes to support multi-CIDRs
+- [x] Service resource supports pods with multi-IP
+- [x] Kubenet to support multi-IPs
+- [x] CI using a Kubernetes testing environment
+- [ ] CI using at least two cloud providers
+- [x] Passing all e2e conformance tests
+- [x] Documentation
 
 This capability will move to stable when the following criteria have been met.
 
