@@ -143,7 +143,8 @@ the allocated resources.
 #### Container Resize Policy
 
 To provide fine-grained user control, PodSpec.Containers is extended with
-ResizePolicy map (new object) for each resource type (CPU, memory):
+ResizePolicy - a list of named subobjects (new object) that supports 'cpu'
+and 'memory' as names. It supports the following policy values:
 * NoRestart - the default value; resize Container without restarting it,
 * RestartContainer - restart the Container in-place to apply new resource
   values. (e.g. Java process needs to change its Xmx flag)
