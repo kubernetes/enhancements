@@ -14,7 +14,7 @@ approvers:
 editor: TBD
 creation-date: 2019-10-12
 last-updated: 2019-10-12
-status: implementable
+status: implemented
 see-also:
   - "https://github.com/kubernetes/community/blob/master/contributors/design-proposals/scheduling/taint-node-by-condition.md"
 ---
@@ -93,7 +93,7 @@ TaintNodeByCondition currently has multiple tests in various components that use
 **Note:** *Section not required until targeted at a release.*
 
 - [x] Graduate TaintNodeByCondition to GA
-- [ ] Update documents to reflect the changes
+- [x] Update documents to reflect the changes
 
 ## Implementation History
 
