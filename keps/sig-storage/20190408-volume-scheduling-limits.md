@@ -17,7 +17,7 @@ approvers:
 editor: TBD
 creation-date: 2019-04-08
 last-updated: 2019-04-08
-status: implementable
+status: implemented
 see-also:
   - "https://github.com/kubernetes/enhancements/blob/master/keps/sig-storage/20190129-csi-migration.md"
 replaces:
@@ -290,6 +290,10 @@ Due to version skew, following situations are possible (scheduler is always with
 As implied by the above, the scheduler needs to have both old and new implementation of `MaxCSIVolumeCountPred` and switch between them based on `CSINode` availability for a particular node until the old implementation is deprecated and removed (2 releases).
 
 ## Implementation History
+
+* K8s 1.11: Alpha
+* K8s 1.12: Beta
+* K8s 1.17: GA
 
 # Alternatives
 
