@@ -74,7 +74,7 @@ support for high availability cluster is one of the most requested features for 
 
 A lot of effort was already done in kubeadm for achieving this goal, among them the redesign
 of the kubeadm config file and its graduation to beta and the implementation of the
-[`kubeadm join --control-plane workflow (KEP0015)`](https://github.com/kubernetes/enhancements/blob/master/keps/sig-cluster-lifecycle/0015-kubeadm-join-control-plane.md),
+[`kubeadm join --control-plane workflow (KEP0015)`](https://github.com/kubernetes/enhancements/blob/master/keps/sig-cluster-lifecycle/kubeadm/0015-kubeadm-join-control-plane.md),
 but the solution currently in place stills requires the manual copy of cluster certificates from
 the bootstrap control-plane node to secondary control-plane nodes.
 
