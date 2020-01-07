@@ -117,7 +117,7 @@ serves the resourceVersion="0" list requests from reflectors today.
 ### Goals
 
 - Resolve the "stale read" problem (https://github.com/kubernetes/kubernetes/issues/59848)
-- Improve the scailability and performance of Kubernetes for Get and List requests, when the watch cache is enabled
+- Improve the scalability and performance of Kubernetes for Get and List requests, when the watch cache is enabled
 
 ## Proposal
 
