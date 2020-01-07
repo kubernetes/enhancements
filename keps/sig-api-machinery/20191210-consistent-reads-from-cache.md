@@ -65,12 +65,13 @@ Consistent reads may be served from cache so long as:
 - A consistent (quorum) read is first made to etcd to get the latest "revision"
 - The data in the watch cache no older than the latest "revision" just from etcd
 
-etcd 3.4 supports progress events. [Progress event
-interval](https://github.com/etcd-io/etcd/blob/e6980b1f9fc008837abb9177e87e893e48d565c1/etcdserver/api/v3rpc/watch.go#L67)
-are sent by etcd automatically, and [progress
-notify](https://github.com/etcd-io/etcd/issues/9855) requests a progress event
-and was added specifically to make it easy to check if a cache that is updated
-via an etcd watch is up-to-date relative to some etcd revision).
+etcd watches support "progress events", which provide an updated revision and a
+guarantee that all future watch events will be newer than the that revision.  If
+an etcd watch is configured with `WithProgressNotify` enabled, etcd
+automatically sends progress events at a regular interval. If an etcd client
+sends a `WatchProgressRequest` request, etcd sends a progress event as soon as
+possible. Either way, the "progress events" allow a etcd watcher to know how
+up-to-date the watch stream is relative a particular revision.
 
 This KEP summarizes how we can take advantage of progress events efficiently
 determine how up-to-date kubernetes watch caches are then serve reads from the
@@ -79,22 +80,23 @@ watch cache when they are sufficiently up-to-date.
 ## Motivation
 
 Serving reads from the watch cache is more performant and scalable than reading
-them from etcd, deserializing them, converting them to the desired type and then
-garbage collecting all the objects that were allocated during the read.
+them from etcd, deserializing them, applying selectors, converting them to the
+desired version and then garbage collecting all the objects that were allocated
+during the whole process.
 
 We will need to measure the impact to performance and scalability, but we have
-enough data and experience from prior improvements made by the watch cache to be
-confident there is significant scale/perf opportunity, and we would like to
-measure it.
+enough data and experience from prior work with the watch cache to be confident
+there is significant scale/perf opportunity here, and we would like to measure
+it.
 
 We expect the biggest gain to be from node-originating requests (e.g. kubelet
 listing pods scheduled on its node). For those requests, the size of the
 response is small (it fits a single page, assuming you won't make it extremely
 small), whereas the number of objects to process is proportional to cluster-size
 (so fairly big). For example, when kubelets requests pods schedule against it in
-a 5000 node cluster with 30pods/node, the kube-apiserver must list the 150k pods
+a 5k node cluster with 30pods/node, the kube-apiserver must list the 150k pods
 from etcd and then filter that list down to the list of 30 pods that the kubelet
-actually need. This must occur for each list request from each of the 5000
+actually need. This must occur for each list request from each of the 5k
 kubelets. If served from watch cache, this same request can be served by simply
 filtering out the 30 pods each kubelet needs from the data in the cache.
 
