@@ -13,7 +13,7 @@ approvers:
 editor: TBD
 creation-date: 2019-10-11
 last-updated: 2019-10-11
-status: implementable
+status: implemented
 see-also:
   - "https://docs.google.com/document/d/10Ch3dhD88mnHYTq9q4jtX3e9e6gpndC78g5Ea6q4JY4/edit#heading=h.dtxm02f9bgaw"
 ---
@@ -88,10 +88,10 @@ ScheduleDaemonSetPods currently has multiple tests in various components that us
 
 **Note:** *Section not required until targeted at a release.*
 
-- [ ] Graduate ScheduleDaemonSetPods to GA
-- [ ] Remove suspenedDaemonPods which handles Pod deleted on the nodes
-- [ ] Refactor nodeShouldRunDaemonPod to remove useless return values
-- [ ] Update documents to reflect the changes
+- [x] Graduate ScheduleDaemonSetPods to GA
+- [x] Remove suspenedDaemonPods which handles Pod deleted on the nodes
+- [x] Refactor nodeShouldRunDaemonPod to remove useless return values
+- [x] Update documents to reflect the changes
 
 ## Implementation History
 
