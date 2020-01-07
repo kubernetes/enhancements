@@ -17,7 +17,7 @@ approvers:
 editor: "@sttts"
 creation-date: 2019-04-26
 last-updated: 2019-07-29
-status: implementable
+status: implemented
 see-also:
   - "/keps/sig-api-machinery/20180731-crd-pruning.md"
   - "/keps/sig-api-machinery/20190425-structural-openapi.md"

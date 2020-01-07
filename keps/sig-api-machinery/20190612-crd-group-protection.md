@@ -16,7 +16,7 @@ approvers:
 editor: "@deads2k"
 creation-date: 2019-06-12
 last-updated: 2019-07-03
-status: implementable
+status: implemented
 ---
 
 # k8s.io Group Protection
