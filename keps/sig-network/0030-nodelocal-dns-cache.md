@@ -199,6 +199,8 @@ Graduation criteria for GA(targeted for 1.18 release):
 - Ensure that Kubernetes [e2e tests with NodeLocal DNSCache](https://k8s-testgrid.appspot.com/sig-network-gce#gci-gce-kube-dns-nodecache) are passing.
 - Scalability tests with NodeLocal DNSCache enabled, verifying the [HA modes](https://github.com/kubernetes/enhancements/blob/master/keps/sig-network/20190424-NodeLocalDNS-beta-proposal.md#design-details) as well as the regular mode.
 - Have N clusters(number TBD) running in production with NodeLocal DNSCache enabled.
+- Provide clear documentation on using NodeLocal DNSCache aimed at cluster
+  operators.
 
 ## Rollout Plan
 This feature will be launched with Alpha support in the first release. Master versions v1.13 and above will deploy the new add-on. Node versions v1.13 and above will have kubelet code to modify pods' resolv.conf. Nodes running older versions will run the nodelocal daemonset, but it will not be used. The user can specify a custom dnsConfig to use this local cache dns server.
