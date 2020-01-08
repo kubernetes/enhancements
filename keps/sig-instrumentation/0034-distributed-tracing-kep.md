@@ -26,28 +26,28 @@ status: provisional
 
 ## Table of Contents
 
-- [Leveraging Distributed Tracing to Understand Kubernetes Object Lifecycles](#leveraging-distributed-tracing-to-understand-kubernetes-object-lifecycles)
-    - [Table of Contents](#table-of-contents)
-    - [Summary](#summary)
-    - [Motivation](#motivation)
-        - [Definitions](#definitions)
-        - [Goals](#goals)
-        - [Non-Goals](#non-goals)
-    - [Proposal](#proposal)
-        - [Architecture](#architecture)
-            - [Tracing API Requests](#tracing-api-requests)
-            - [Propagating Traces Through Objects](#propagating-context-through-objects)
-            - [Controller Behavior](#controller-behavior)
-            - [End-User Behavior](#end-user-behavior)
-        - [In-tree changes](#in-tree-changes)
-            - [Vendor the Tracing Framework](#vendor-the-tracing-framework)
-            - [Trace Utility Package](#trace-utility-package)
-            - [Tracing Pod Lifecycle](#tracing-pod-lifecycle)
-        - [Out-of-tree changes](#out-of-tree-changes)
-            - [Tracing best-practices documentation](#tracing-best-practices-documentation)
-    - [Graduation Requirements](#graduation-requirements)
-    - [Production Readiness Survey](#production-readiness-survey)
-    - [Implementation History](#implementation-history)
+<!-- toc -->
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Definitions](#definitions)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [Architecture](#architecture)
+    - [Tracing API Requests](#tracing-api-requests)
+    - [Propagating Context Through Objects](#propagating-context-through-objects)
+    - [Controller Behavior](#controller-behavior)
+    - [End-User Behavior](#end-user-behavior)
+  - [In-tree changes](#in-tree-changes)
+    - [Vendor the Tracing Framework](#vendor-the-tracing-framework)
+    - [Trace Utility Package](#trace-utility-package)
+    - [Tracing Pod Lifecycle](#tracing-pod-lifecycle)
+  - [Out-of-tree changes](#out-of-tree-changes)
+    - [Tracing best-practices documentation](#tracing-best-practices-documentation)
+- [Graduation requirements](#graduation-requirements)
+- [Production Readiness Survey](#production-readiness-survey)
+- [Implementation History](#implementation-history)
+<!-- /toc -->
 
 ## Summary
 
@@ -89,7 +89,7 @@ Distributed tracing provides a single window into latency information from acros
 
 #### Tracing API Requests
 
-In the traditional tracing model, a client sends a request to a server and recieves a response back.  Even though Kubernetes "controllers" don't follow this model (more on that later), the kube-apierver and backing storage (e.g. etcd3) do.  To enable traces to be collected for API requests, the following must be true:
+In the traditional tracing model, a client sends a request to a server and receives a response back.  Even though Kubernetes "controllers" don't follow this model (more on that later), the kube-apierver and backing storage (e.g. etcd3) do.  To enable traces to be collected for API requests, the following must be true:
 
 1. The apiserver must propagate the http context of incoming requests through its function stack to the backing storage
 1. Kubernetes client libraries must allow passing a context with API requests
@@ -200,7 +200,7 @@ While adding tracing to Pods is a good first step to demonstrate the viability o
 
 #### Tracing best-practices documentation
 
-This KEP introduces a new form of instrumentation to Kubernetes, which necessiates the creation of guidelines for adding effective, standardized traces to Kubernetes components, [similar to what is found here for metrics](https://github.com/kubernetes/community/blob/master/contributors/devel/instrumentation.md).
+This KEP introduces a new form of instrumentation to Kubernetes, which necessitates the creation of guidelines for adding effective, standardized traces to Kubernetes components, [similar to what is found here for metrics](https://github.com/kubernetes/community/blob/master/contributors/devel/instrumentation.md).
 
 This documentation will put forward standards for: 
 
