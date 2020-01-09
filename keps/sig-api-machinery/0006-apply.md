@@ -212,7 +212,7 @@ The value may be,
 
 - `changes-unneeded` in cases where the request did not cause a change to the resource's managedFields.
 This means changes to fields that don't get owned or get reset, will be ignored when setting the header.
-- `changes-made` in cases where the request causes a change to the resource's managedFields.
+- `changes-made` in cases where the request causes a change to the resource.
 
 This header is optional.
 If the header is missing on the response, the apiserver may be older than this feature.
