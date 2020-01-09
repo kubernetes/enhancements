@@ -116,13 +116,13 @@ spec:
 
 Once that limit is removed those Service definitions will reach the Cloud Provider LB controller implementations. The logic of the particular Cloud Provider LB controller and of course the actual capabilities and architecture of the backing Cloud Load Balancer services determines how the actual exposure of the application really manifests. For this reason it is important to understand the capabilities of those backing services and to design this feature accordingly.
 
-### User Stories [optional]
+### User Stories
 
 #### Story 1
 
 As a Kubernetes cluster user I want to expose an application that provides its service on different protocols with a single cloud provider load balancer IP. In order to achieve this I want to define different `ports` with mixed protocols in my Service definition of `type: LoadBalancer`
 
-### Implementation Details/Notes/Constraints [optional]
+### Implementation Details/Notes/Constraints
 
 #### Alibaba
 
@@ -262,7 +262,7 @@ Currently a feature gate is used to control its activation status. Though if we 
 
 ### Option Control Alternatives
 
-#### Annotiation in the Service definition
+#### Annotation in the Service definition
 
 In this alternative we would have a new annotation in the `kubernetes.io` annotation namespace, as it was planned in the original PR. Example: `kubernetes.io/mixedprotocol`. If this annotation is applied on a Service definition the Service would be accepted by the K8s API.
 
