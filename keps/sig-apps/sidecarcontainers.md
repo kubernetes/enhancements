@@ -13,7 +13,7 @@ approvers:
   - "@kow3ns"
 editor: TBD
 creation-date: 2018-05-14
-last-updated: 2019-10-30
+last-updated: 2020-01-22
 status: implementable
 ---
 
@@ -49,6 +49,12 @@ status: implementable
   - [Version Skew Strategy](#version-skew-strategy)
 - [Implementation History](#implementation-history)
 - [Alternatives](#alternatives)
+- [Production Readiness Questionnaire](#production-readiness-questionnaire)
+    - [Feature enablement and rollback](#feature-enablement-and-rollback)
+    - [Scalability](#scalability)
+    - [Dependencies](#dependencies)
+    - [Monitoring requirements](#monitoring-requirements)
+    - [Troubleshooting](#troubleshooting)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -284,3 +290,114 @@ One alternative would be to have a new field in the Pod Spec of `sidecarContaine
 Another alternative would be to change the Job Spec to have a `primaryContainer` field to tell it which containers are important. However I feel this is perhaps too specific to job when this Sidecar concept could be useful in other scenarios.
 
 A boolean flag of `sidecar: true` could be used to indicate which pods are sidecars, however this prevents additional ContainerLifecycles from being added in the future.
+
+## Production Readiness Questionnaire
+
+#### Feature enablement and rollback
+
+* **How can this feature be enabled / disabled in a live cluster?**
+  - [x] Feature gate
+	  - Feature gate name: `SidecarLifecycle`
+    - Components depending on the feature gate: `Kubelet`, `ApiServer`
+  - [ ] Other
+    - Describe the mechanism:
+    - Will enabling / disabling the feature require downtime of the control
+      plane?
+    - Will enabling / disabling the feature require downtime or reprovisioning
+      of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
+
+* **Can the feature be disabled once it has been enabled (i.e. can we rollback
+  the enablement)?**  
+  The feature can be disabled, doing so would cause any pods that use the sidecar lifecycle to revert back to using the standard pod lifecycle that everything currently obeys.
+
+* **What happens if we reenable the feature if it was previously rolled back?**
+
+  Any pods that were using the sidecar lifecycle would now start following that lifecycle again.
+
+* **Are there any tests for feature enablement/ disablement?**  
+  Not currently
+
+#### Scalability
+
+* **Will enabling / using this feature result in any new API calls?**  
+  No
+
+* **Will enabling / using this feature result in introducing new API types?**  
+  No
+* **Will enabling / using this feature result in any new calls to cloud
+  provider?**
+
+  No
+* **Will enabling / using this feature result in increasing size or count
+  of the existing API objects?**  
+  Describe them providing:
+  - API type(s): Pod
+  - Estimated increase in size: 13B
+  - Estimated amount of new objects: Field is optional
+
+
+* **Will enabling / using this feature result in increasing time taken by any
+  operations covered by [existing SLIs/SLOs][]?**  
+  Pods using the sidecar lifecycle will take longer for all containers to start as they will wait for the sidecars to start before starting non sidecar containers, this is by design.
+
+* **Will enabling / using this feature result in non-negligible increase of
+  resource usage (CPU, RAM, disk, IO, ...) in any components?**  
+  No
+
+#### Dependencies
+
+* **Does this feature depend on any specific services running in the cluster?**  
+  No
+
+* **How does this feature respond to complete failures of the services on which
+  it depends?**  
+
+  N/A
+
+* **How does this feature respond to degraded performance or high error rates
+  from services on which it depends?**
+
+  N/A
+
+#### Monitoring requirements
+
+* **How can an operator determine if the feature is in use by workloads?**
+
+  Containers using it will have their `Lifecycle.Type` set to `Sidecar`
+
+* **How can an operator determine if the feature is functioning properly?**  
+  Startup: Events on the Pod/Logs in the Kubelet should show that the Sidecars are starting up and becoming `Ready` before any non-sidecars are started.
+
+  Termination: Events will be emitted showing termination of non-sidecars before sidecars.
+
+  Completion: An event is emitted when all non-sidecars have permanently exited and the sidecars are sent termination signals.
+
+* **What are the SLIs (Service Level Indicators) an operator can use to
+  determine the health of the service?**
+
+  Standard Kubelet related metrics should suffice
+
+* **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
+
+  N/A
+
+#### Troubleshooting
+Troubleshooting section serves the `Playbook` role as of now. We may consider
+splitting it into a dedicated `Playbook` document (potentially with some monitoring
+details). For now we leave it here though, with some questions not required until
+further stages (e.g. Beta/Ga) of feature lifecycle.
+
+* **What are the known failure modes?**
+
+  If the ApiServer is down the pod should continue to function and run, but there is a chance that the feature will not function correctly (e.g startup ordering would not be honoured) if the pod api object is Nil in the Kubelet. This is most likely to happen if the Kubelet restarts when the api server is down.
+
+* **How can those be detected via metrics or logs?**
+
+  The logs indicating that your sidecars are starting before your non-sidecars would not be present, all containers will be started at the same time.
+
+* **What are the mitigations for each of those failure modes?**
+
+* **What are the most useful log messages and what logging levels to they require?**  
+  The most useful log messages can be found in `kuberuntime_manager.go` at a logging verbosity of 4.
+
+* **What steps should be taken if SLOs are not being met to determine the problem?**
