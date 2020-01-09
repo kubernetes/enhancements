@@ -44,6 +44,9 @@ superseded-by:
       - [Proposed Change](#proposed-change)
       - [Alternatives](#alternatives)
       - [Implementation History](#implementation-history)
+    - [Clients](#clients)
+      - [Apply Status Header](#apply-status-header)
+      - [Kubectl](#kubectl)
   - [Risks and Mitigations](#risks-and-mitigations)
   - [Testing Plan](#testing-plan)
 - [Graduation Criteria](#graduation-criteria)
@@ -194,9 +197,26 @@ atomic. That can be specified with `// +mapType=atomic` or `//
 +structType=atomic` respectively. They map to the same openapi extension:
 `"x-kubernetes-map-type": "atomic"`.
 
-#### Kubectl
+#### Clients
 
-##### Server-side Apply
+##### Apply Status Header
+
+Client side apply in kubectl provides the user with information if the applied config resulted in any changes
+on the apiserver.
+
+To provided the same information with server-side apply, a dedicated header is set by the apiserver
+if the request caused changes to the existing resource.
+
+```txt
+X-Kubernetes-Apply-Status: "modified" || "unmodified"
+```
+
+This header can then be used by e.g. `kubectl` to provide the user with the desired information (rel: [#85750](https://github.com/kubernetes/kubernetes/issues/85750), [#66450](https://github.com/kubernetes/kubernetes/issues/66450)).
+
+An alternative that was considered is a http status code, indicating the resource was not modified.
+This approach was discarded due to the lack of a matching 2xx status code.
+
+##### Kubectl
 
 Since server-side apply is currently in the Alpha phase, it is not
 enabled by default on kubectl. To use server-side apply on servers
