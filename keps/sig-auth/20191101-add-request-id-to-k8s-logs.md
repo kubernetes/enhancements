@@ -14,7 +14,7 @@ approvers:
  - TBD
 editor: TBD
 creation-date: 2019-11-01
-last-updated: 2019-11-01
+last-updated: 2020-01-09
 status: provisional
 ---
 
@@ -89,50 +89,128 @@ components).
 
 ## Proposal
 
-The following two features are necessary to realize log tracking
+### Basic policy of Request-ID
 
-### Propagate ID information
+ - Minimize the impact to existing features
+ - Simple implementation
+ - Collaborate with related KEPs. This means as follows.
+   - Ensure consistent metadata(This may need to be considered and managed across the Kubernetes beyond the related KEPs).
+   - Implementation which does not interfere related KEP's implementation
 
-- Add Request-ID and Parent-ID information to objects related to a single API request
-- Example: When creating a deployment resource, objects with the following Request-ID and Parent-ID are created
+### Design Overview
 
-| Object | Object-UUID | Parent-ID  | Request-ID |
-| ------ | ------ | ------ | ------ |
-| Deployment | 1000 | null | 100 |
-| ReplicaSet | 1010 | 1000 | 100 |
-| Pod1 | 1020 | 1000 | 100 |
-| Pod2 | 1030 | 1000 | 100 |
-| Pod3 | 1040 | 1000 | 100 |
+Request-ID feature consists the following two features.
+ - Export Request-ID to each kubernetes component log
+ - Propagate Request-ID to related objects
 
-- Replicasets and pods related to the above Deployment are linked by Object-UUID and Parent-ID.
-- In the above example, Replicaset and Pods have “1000” as the Parent-ID. In this case, these objects are linked to an object which has “1000” as Object-UUID
-- Also, Reuest-ID should be associated with Request-ID in Audit log
+#### Design overview of Export Request-ID
 
-### Add ID information to the logs
+**Collaboration with related KEP**  
+There is the existing KEP(structured logging feature) that related log exporting. 
+Main concept of this feature is structuring the log format and replace existing klog with logr for structuring.
+Structured format is attractive, however this replacement is very tough work and may be required troublesome migration steps.
+In this situation, it is expect to take a long time to migration completely.
+In the meantime, Request-ID feature takes more simple way to export ID information to log files.
+(It is possibility that Request-ID feature may take structured logging feature in the future)
 
- - Add the above Object-UUID and Parent-ID information to the logs of each k8s component
- - Current log example:
+There is another related KEP(distributed tracing) that propagate Trace-ID(and etc.) to related kubernetes objects.
+This feature adds these information(e.g. Trace-ID) to Annotations of objects.
+Annotations is existing feature of kubernetes, and Request-ID feature adopts same method.
 
-```
-Kube-apiserver
-I1028 11:21:02.700432   11190 httplog.go:90] POST /api/v1/namespaces/kube-system/pods/kube-dns-68496566b5-24cwk/binding: (6.841722ms) 201 [hyperkube/v1.16.3 (linux/amd64) kubernetes/e76a12b/scheduler [::1]:35762]
+**Idea of design**  
+As a result, exporting Request-ID is implementable by just reading Annotations from objects when using klog.
+Note that this is no impact to existing klog feature.
 
-Kube-scheduler
-I1028 11:21:02.692701   11463 scheduler.go:530] Attempting to schedule pod: kube-system/kube-dns-68496566b5-24cwk
-I1028 11:21:02.693154   11463 factory.go:610] Attempting to bind kube-dns-68496566b5-24cwk to 127.0.0.1
-I1028 11:21:02.700681   11463 scheduler.go:667] pod kube-system/kube-dns-68496566b5-24cwk is bound successfully on node "127.0.0.1", 1 nodes evaluated, 1 nodes were found feasible. Bound node resource: "Capacity: CPU<4>|Memory<8037268Ki>|Pods<110>|StorageEphemeral<71724152Ki>.
+##### Example of source code and log output
 
-Kubelet
-I1028 11:21:02.699986   11594 kubelet.go:1901] SyncLoop (ADD, "api"): "kube-dns-68496566b5-24cwk_kube-system(7b0e128d-2a58-4c2c-8374-1ef872eefa65)"
-```
-
- - New log example: Add ID information to the head of each log
+ - Original source code(scheduler.go)
 
 ```
-I1028 11:21:02.700432   11190 httplog.go:90] [RequestID, ObjectID, ParentID] POST /api/v1/namespaces/kube-system/pods/kube-dns-68496566b5-24cwk/binding:(6.841722ms) 201 [hyperkube/v1.16.3 (linux/amd64) kubernetes/e76a12b/scheduler [::1]:35762]
-I1028 11:21:02.699986   11594 kubelet.go:1901] [RequestID, ObjectID, ParentID] Attempting to bind kube-dns-68496566b5-24cwk to 127.0.0.1
-I1028 11:21:02.692701   11463 scheduler.go:530] [RequestID, ObjectID , ParentID] Attempting to schedule pod: kube-system/kube-dns-68496566b5-24cwk
+func (sched *Scheduler) scheduleOne(ctx context.Context) {
+	fwk := sched.Framework
+
+	podInfo := sched.NextPod()
+<snip>
+	pod := podInfo.Pod
+<snip>
+	klog.V(3).Infof("Attempting to schedule pod: %v/%v", pod.Namespace, pod.Name)
 ```
 
-- By combining the above two functions, we can easily search for logs related to a single API by using Request-ID information as a query key.
-- In addition, we can also know more detail information about API request (e.g. when and who requested what API) by linking to Audit logs.
+ - Add Request-ID exportation into klog
+
+```
+func (sched *Scheduler) scheduleOne(ctx context.Context) {
+	fwk := sched.Framework
+
+	podInfo := sched.NextPod()
+<snip>
+	pod := podInfo.Pod
+<snip>
+	klog.V(3).Infof("Request-ID: %v Attempting to schedule pod: %v/%v", pod.<Annotations related Request-ID>, pod.Namespace, pod.Name)
+```
+
+ - Original log output
+```
+I1220 08:58:31.000196    6869 scheduler.go:564] Attempting to schedule pod: default/nginx
+
+```
+
+ - Request-ID log output
+```
+I1220 08:58:31.000196    6869 scheduler.go:564] Request-ID : d0ac7061-d9fc-43d0-957f-dbc7306d3ace Attempting to schedule pod: default/nginx
+
+```
+
+**Pros of this method**  
+ - No impact to existing klog feature
+ - As a result, no interfere with structured logging implementation
+
+**Restricts**  
+ - Only objects that can be obtained within the function scope calling klog can read annotations
+
+#### Step to implementation of Export Request-ID
+
+##### Step1
+
+Target klogs: Only klogs that satisfy both of the following requirements.
+ - klogs that are called during typical kubectl operations
+   - e.g. kubectl operation: create, apply, delete, etc.
+   - e.g. kubernetes object: deployment, pod, etc. 
+ - klogs that can get object's annotation in the scope which calls the klog.
+
+##### Step2
+
+Expand the range of operations and resources from Step1.
+   - e.g. kubectl operation: rollout, scale, drain, etc.
+   - e.g. kubernetes object: service, secret, pv, etc. 
+
+##### Step3(TBD.)
+
+ - Considering a mechanism that can acquire annotations from any objects at any scopes, and then the target is klog that could not be done in Step1 and 2.
+
+#### Design overview of Propagate Request-ID
+
+**Collaboration with related KEP**  
+There is an idea to use `distributed context` of the existing KEP(distributed tracing).
+In this case, use of OpenTelemetry is prerequisite.
+However, Request-ID feature does not need Exporter of OpenTelemetry because Request-ID is exported to only kubernetes log file by klog.
+Request-ID collaborates with distributed tracing KEP in terms of adding context(e.g. Trace-ID such as Request-ID) to Annotations and propagation feature(distributed context of OpenTelemetry).
+At first(in Alpha stage), OpenTelemetry is prerequisite of Request-ID feature.
+Eventually, propagating feature is implemented by in-tree code change only(not use OpenTelemetry).This idea is TBD.
+
+**Idea of design**  
+TBD.
+
+
+### Summary of collaboration idea of related KEPs
+
+#### distributed tracing
+
+ - Adding context information to kubernetes object's Annotations
+ - Propagate Annotations by distributed context of OpenTelemetry(Eventually, propagating feature is implemented by in-tree code change only)
+ - Consider consistent of metadata
+
+#### structured logging
+
+ - Request-ID implementation does not interfere with structured logging implementation
+ - Consider consistent of metadata
