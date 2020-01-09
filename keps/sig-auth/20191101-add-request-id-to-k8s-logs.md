@@ -32,6 +32,9 @@ status: provisional
    - [Goals](#goals)
    - [Non-Goals](#non-goals)
  - [Proposal](#proposal)
+   - [Basic policy of Request-ID](#basic-policy-of-request-id)
+   - [Design Overview](#design-overview)
+   - [Summary of collaboration idea of related KEPs](#summary-of-collaboration-idea-of-related-keps)
 
 <!-- /toc -->
 
@@ -163,7 +166,7 @@ I1220 08:58:31.000196    6869 scheduler.go:564] Request-ID : d0ac7061-d9fc-43d0-
 
 **Pros of this method**  
  - No impact to existing klog feature
- - As a result, no interfere with structured logging implementation
+ - As a result, no interfere with structured logging implementation during migration to logr
 
 **Restricts**  
  - Only objects that can be obtained within the function scope calling klog can read annotations
