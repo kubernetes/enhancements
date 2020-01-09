@@ -201,17 +201,31 @@ atomic. That can be specified with `// +mapType=atomic` or `//
 
 ##### Apply Status Header
 
-Client side apply in kubectl provides the user with information if the applied config resulted in any changes
-on the apiserver.
+Client side apply in kubectl determines if the applied object would result in any changes on the apiserver and provides the user with this information.
 
-To provided the same information with server-side apply, a dedicated header is set by the apiserver
-if the request caused changes to the existing resource.
+To provided similar information with server-side apply, a dedicated header is set by the apiserver
+if a **successful apply request** caused changes to the existing resource.
 
 ```txt
-X-Kubernetes-Apply-Status: "modified" || "unmodified"
+X-Kubernetes-Apply-Success-Type: "changes-made" || "changes-unneeded"
 ```
 
+The value may be,
+
+- `changes-unneeded` in cases where the request did not cause a change to the resource's managedFields.
+This means changes to fields that don't get owned or get reset, will be ignored when setting the header.
+- `changes-made` in cases where the request causes a change to the resource's managedFields.
+
+This header is optional.
+If the header is missing on the response, the apiserver may be older than this feature.
+Clients should never deduce anything from the absence of this header.
+
 This header can then be used by e.g. `kubectl` to provide the user with the desired information (rel: [#85750](https://github.com/kubernetes/kubernetes/issues/85750), [#66450](https://github.com/kubernetes/kubernetes/issues/66450)).
+
+**The header is intended to be informational only.**
+No behavior should be determined based on it's existence or value.
+
+It is not reliable to use this header as a mechanism for controlling multi-step deployments, which would be highly discouraged.
 
 An alternative that was considered is a http status code, indicating the resource was not modified.
 This approach was discarded due to the lack of a matching 2xx status code.
