@@ -258,7 +258,7 @@ created:
 ```
 Options:
   --copy-to='': Create a copy of the target pod with this pod name.
-  --delete-old: When used with `--copy-to`, delete the original pod.
+  --delete-old=false: When used with `--copy-to`, delete the original pod.
   --copy-labels=false: When used with `--copy-to`, specifies whether labels
                        should also be copied. Note that copying labels may cause
                        the copy to receive traffic from a service or a replicaset
@@ -284,7 +284,7 @@ Examples:
 
 #### Modify Application Image by Copy
 
-If a users specify a `--container`, then they are instructing `kubectl debug` to
+If a user specifies a `--container`, then they are instructing `kubectl debug` to
 create a copy of the target pod with a new image for one of the containers.
 
 ```
