@@ -188,7 +188,7 @@ Having the pods query the nodelocal cache introduces a single point of failure.
 
 * The Daemonset is assigned a PriorityClass of "system-node-critical", to ensure it is not evicted.
 
-* Populating both the nodelocal cache ip address and kube-dns ip address in resolv.conf is not a reliable option. Depending on underlying implementation, this can result in kube-dns being queried only if cache ip does not repond, or both queried simultaneously.
+* Populating both the nodelocal cache ip address and kube-dns ip address in resolv.conf is not a reliable option. Depending on underlying implementation, this can result in kube-dns being queried only if cache ip does not respond, or both queried simultaneously.
 
 
 ## Graduation Criteria
