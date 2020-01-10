@@ -105,17 +105,37 @@ This is not a scalable design and ends up loading the API server.
 
 #### Proposed rearchitect
 
-To reduce the need to list all Jobs and CronJobs frequently to reconcile, we propose to replace it with an Informers and WorkQueue based architecture. Preferably we should be sharing the same informer cache as the Job controller uses. 
+With proposed rearchitecture we aim to:
+1. Reduce the potential scale issues when using lots of CronJob objects
+2. Reduce load on API server in such cases.
+3. Reduce memory usage
 
+##### Informers and Caches
+To reduce the need to list all Jobs and CronJobs frequently to reconcile, we propose to replace it with an Informers and WorkQueue based architecture. Preferably we should be sharing the same informer cache as the Job controller uses. Not sharing informer cache would increase the memory usage.
+
+##### Multiple workers
 We also propose to have multiple workers controller by a flag similar to [statefulset controller](https://github.com/kubernetes/kubernetes/blob/master/cmd/kube-controller-manager/app/apps.go#L65). The default would be set to 5 similar to [statefulset](https://github.com/kubernetes/kubernetes/blob/master/pkg/controller/statefulset/config/v1alpha1/defaults.go#L34)
 
+##### Handling Cron aspect
+To detect which CronJob has met its schedule and need to create Jobs we need to implement a timer component. These are the possible options for implementing the timer:
+
+| algorithm  | how it works | notes |
+|:----------|:----------|:-------|
+| Unordered timer list | Periodic Sweep from cache | Slower and similar to existing implementation. But improved because we sweep fom the cache instead of API server | 
+|Ordered timer list| Maintain ordered list of Cronjob keys and next time of expiry. Keep starting a timer with the earliest expiry. | Efficient. Reinsertion to list takes O(n) |
+|Timer trees| Instead of ordered list use a sorted binary tree. | More efficient. Insertion is O(log n) |
+|Simple Timing wheels| circular buffer of MaxTimeOut slots. List of expiring timers at each slot. | Works for small bounded  MaxTimeOut which is not our case. Insertion and removal is O(1) via indexing |
+|Hashed Wheel| Hash expiring time and insert in a hash table with linked list at each index | Bookkeeping is O(1) and worst case insertion is O(n) |
+|Hierarchical Wheel| multiple timer wheels for different resolutions (Seconds, minutes, hours, days). When seconds rolls over we grab the next minutes timers and recreate the seconds wheel. similarly for minutes and hours. | Sharding at different hierarchy levels improves insertion and bookkeeping performance. |
+
+For our use cases O(n) could be sufficient. To avoid premature optimization, we will implement one of the simpler algorithms: Unordered timer list or Ordered timer list. 
+
+For further reading:
+1. [Reinventing timer wheel](https://lwn.net/Articles/646950/)
+2. [Hashed and hierarchical timer wheel](http://www.cs.columbia.edu/~nahum/w6998/papers/sosp87-timing-wheels.pdf)
+
+##### Metrics
 We propose to add metrics that could expose the performance health of the controller including and not limited to: skew, queue depth, job failures, job successes etc.
-
-This is required to:
-1. Reduce the potential scale issues when using lots of CronJob
-2. Reduce load on API server in such cases.
-3. Reduce memory usage when listing all Jobs and CronJobs in every sync loop.
-
 
 
 ```golang
