@@ -10,7 +10,7 @@ reviewers:
   - "@jagosan"
 approvers:
   - "@andrewsykim"
-editor: TBD
+editor: "@feiskyer"
 creation-date: 2019-07-22
 last-updated: 2019-12-15
 status: implementable
