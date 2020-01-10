@@ -223,7 +223,7 @@ This header can then be used by e.g. `kubectl` to provide the user with the desi
 **The header is intended to be informational only.**
 No behavior should be determined based on it's existence or value.
 
-It is not reliable to use this header as a mechanism for controlling multi-step deployments, which would be highly discouraged.
+This header is informational, not a mechanism for controlling multi-step deployments. Since clients may crash and retry from arbitrary points in a multi-step deployment, lack of action at one stage doesn't imply other stages don't need action.
 
 An alternative that was considered is a http status code, indicating the resource was not modified.
 This approach was discarded due to the lack of a matching 2xx status code.
