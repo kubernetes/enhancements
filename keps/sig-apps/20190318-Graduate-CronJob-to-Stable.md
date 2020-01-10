@@ -88,6 +88,8 @@ To reduce the need to list all Jobs and CronJobs frequently to reconcile, we pro
 
 We also propose to have multiple workers controller by a flag similar to [statefulset controller](https://github.com/kubernetes/kubernetes/blob/master/cmd/kube-controller-manager/app/apps.go#L65). The default would be set to 5 similar to [statefulset](https://github.com/kubernetes/kubernetes/blob/master/pkg/controller/statefulset/config/v1alpha1/defaults.go#L34)
 
+We propose to add metrics that could expose the perfomance health of the controller including and not limited to: skew, queue depth, job failures, job successes etc.
+
 This is required to:
 1. Reduce the potential scale issues when using lots of CronJob
 2. Reduce load on API server in such cases.
@@ -238,7 +240,7 @@ SLIs/SLOs as the Kuberetes native types](https://github.com/kubernetes/community
 The targets are defined by the below suggested maximum limits, which are organized the same way as the [Kubernetes native type thresholds](https://github.com/kubernetes/community/blob/master/sig-scalability/configs-and-limits/thresholds.md#kubernetes-thresholds).
 
 #### CronJob Limits
-There should be nothing in the implementation that limits CronJobs per namespace. Overall clusterwide limits of CronJob are important. Cluster wide limits for CronJob should be storage bound since it shares the storage space with all other objects. Determining the appropriate storage limit for a cluster is out-of-scope for this document. We would recommend having CronJob use not more than 25% of the etcd storage. Since by default CronJob's successfulJobsHistoryLimit is 3. 
+There should be nothing in the implementation that limits CronJobs per namespace. Overall clusterwide limits of CronJob are important. Cluster wide limits for CronJob should be storage bound since it shares the storage space with all other objects. Determining the appropriate storage limit for a cluster is out-of-scope for this document. We would recommend having CronJob use not more than 15% of the etcd storage. This allows space for Jobs created by CronJobs with the default successfulJobsHistoryLimit of 3 and for other objects.
 
 #### Frequency of launched jobs
 The number of CronJobs is also sensitive to the API server QPS and the schedule of the individual CronJobs. This translated to the frequency of launched jobs. We could have large number of CronJobs with a spread of schedule that doenst stress the Job API. At the same time we could have a small number of CronJobs that schedule synchronously stressing the Jobs API. The design must be able to easily saturate the API server QPS.
@@ -453,6 +455,9 @@ CronJob E2E test code is [located here](`/test/e2e/apps/cronjob.go`)
   - [issue/78646 - Should change shedule when schedule value is not wrapped with quotes](https://github.com/kubernetes/kubernetes/issues/78646)
 - Scaling
   - Should be able to create and schedule atleast 5000 cronjobs
+- Start Stop Tests
+  - Schedule cronjobs and randomly stop the controller and start it.
+  - Schedule cronjobs and stop the controller and start it after the deadline.
 
 
 ### Conformance Tests
