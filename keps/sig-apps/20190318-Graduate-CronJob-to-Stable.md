@@ -38,10 +38,29 @@ superseded-by:
 - [Goals](#goals)
 - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
+  - [Promote CronJob API to v1](#promote-cronjob-api-to-v1)
+  - [Rearchitect CronJob controller](#rearchitect-cronjob-controller)
+    - [Existing controller](#existing-controller)
+    - [Proposed rearchitect](#proposed-rearchitect)
+  - [Add .status.lastSuccessfulTime](#add-statuslastsuccessfultime)
+  - [Add .status.nextScheduleTime](#add-statusnextscheduletime)
+  - [Add Counters](#add-counters)
+  - [Add .status.conditions](#add-statusconditions)
+  - [CatchUp concurrency support](#catchup-concurrency-support)
+  - [Use master timezone instead of UTC](#use-master-timezone-instead-of-utc)
+  - [Fix applicable open issues](#fix-applicable-open-issues)
+  - [Scale Targets for GA](#scale-targets-for-ga)
+    - [CronJob Limits](#cronjob-limits)
+    - [Frequency of launched jobs](#frequency-of-launched-jobs)
 - [V1 API](#v1-api)
 - [v1beta1 changes](#v1beta1-changes)
 - [Validations](#validations)
 - [Tests](#tests)
+  - [E2E test](#e2e-test)
+    - [Existing test cases](#existing-test-cases)
+    - [New test cases](#new-test-cases)
+  - [Conformance Tests](#conformance-tests)
+  - [Unit Tests](#unit-tests)
 - [Graduation Criteria](#graduation-criteria)
 - [Implementation History](#implementation-history)
 <!-- /toc -->
@@ -90,7 +109,7 @@ To reduce the need to list all Jobs and CronJobs frequently to reconcile, we pro
 
 We also propose to have multiple workers controller by a flag similar to [statefulset controller](https://github.com/kubernetes/kubernetes/blob/master/cmd/kube-controller-manager/app/apps.go#L65). The default would be set to 5 similar to [statefulset](https://github.com/kubernetes/kubernetes/blob/master/pkg/controller/statefulset/config/v1alpha1/defaults.go#L34)
 
-We propose to add metrics that could expose the perfomance health of the controller including and not limited to: skew, queue depth, job failures, job successes etc.
+We propose to add metrics that could expose the performance health of the controller including and not limited to: skew, queue depth, job failures, job successes etc.
 
 This is required to:
 1. Reduce the potential scale issues when using lots of CronJob
@@ -168,7 +187,7 @@ func (cjc *CronJobController)  sync(cronJobKey) {
 
 ### Add .status.lastSuccessfulTime
 [#issue/75674](https://github.com/kubernetes/kubernetes/issues/75674)  
-Add `lastSuccessfulTime` to `.status` that tracks the last time the job completed succesfully. This will augment the `lastScheduledTime` available in the `.status` in the v1beta1 api. Potential use is in monitoring (e.g. fire an alert if lastSuccessfulTime is more than X ago).
+Add `lastSuccessfulTime` to `.status` that tracks the last time the job completed successfully. This will augment the `lastScheduledTime` available in the `.status` in the v1beta1 api. Potential use is in monitoring (e.g. fire an alert if lastSuccessfulTime is more than X ago).
 
 Code for reference, subject to change:
 
@@ -176,7 +195,7 @@ Code for reference, subject to change:
 func (cjc *CronJobController)  syncOne(sj *batchv1beta1.CronJob, js []batchv1.Job, now time.Time, jc jobControlInterface, sjc sjControlInterface, recorder record.EventRecorder) {
    ...
    // Get most recent successfully finished job from current job list.
-   sj.Status.LastSuccesfulTime = &metav1.Time{Time: scheduledTime}
+   sj.Status.LastSuccessfulTime = &metav1.Time{Time: scheduledTime}
 	if _, err := sjc.UpdateStatus(sj); err != nil {
 		klog.Infof("Unable to update status for %s (rv = %s): %v", nameForLog, sj.ResourceVersion, err)
 	}
@@ -214,17 +233,17 @@ Add a set of counters that helps users understand a summary of runs.
 - `FailuresSinceSuccess` Count of all successful runs since last failure
 
 ### Add .status.conditions
-Add a condition array with `Settled` condition type. This would help with the effort of standarizng conditions across all core types. `Settled` is set at the end of every succesful reconcile run. The key thing to note here is the notions of `Settled` does not imply the `Job`s are running correctly. It just means that the controller is done processing this object successfully.
+Add a condition array with `Settled` condition type. This would help with the effort of standarizng conditions across all core types. `Settled` is set at the end of every successful reconcile run. The key thing to note here is the notions of `Settled` does not imply the `Job`s are running correctly. It just means that the controller is done processing this object successfully.
 
 ### CatchUp concurrency support
 [#issue/79995](https://github.com/kubernetes/kubernetes/issues/79995)
-Support for Catch up semantics is being discussed and no concensus has been reached. Adding it to the list for further discussion. Cachup aims to allow for missed runs to be backfilled. We would need to have additional config to bound the backfill and ensure that it doesnt cause the controller to be in backfill mode, never catching up with the current run.
+Support for Catch up semantics is being discussed and no consensus has been reached. Adding it to the list for further discussion. Cachup aims to allow for missed runs to be backfilled. We would need to have additional config to bound the backfill and ensure that it doesnt cause the controller to be in backfill mode, never catching up with the current run.
 
 ### Use master timezone instead of UTC
 We propose to address this request as well: [CronJob Schedule does not use master's timezone - instead it uses UTC](https://github.com/kubernetes/kubernetes/issues/80577)
 
 ### Fix applicable open issues
-These are the [current](https://github.com/kubernetes/kubernetes/issues/82659) list of issues that are being targetted for GA. 
+These are the [current](https://github.com/kubernetes/kubernetes/issues/82659) list of issues that are being targeted for GA. 
 
 - [Updating a cronjob causes jobs to be scheduled retroactively](https://github.com/kubernetes/kubernetes/issues/63371)
 - [CLI: Updated CronJob Schedule Missing from Dry Run](https://github.com/kubernetes/kubernetes/issues/73613)
@@ -387,7 +406,7 @@ type CronJobStatus struct {
 	// +optional
 	LastSuccessfulTime *metav1.Time
 
-	// Counter for tracking succesful Job runs
+	// Counter for tracking successful Job runs
 	// +optional
 	SuccessfulRuns int64
 
