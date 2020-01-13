@@ -93,7 +93,7 @@ CronJob definition has been stable for the last few releases and is useful to ru
 ## Proposal
 
 ### Promote CronJob API to v1
-There is already a [batch/v1/CronJob](https://github.com/kubernetes/kubernetes/blob/master/pkg/apis/batch/v1/register.go#L28) currently. We will formally promote the API to GA. In addition the older versions of CronJob API (batch/v1beta1, batch/v2alpha1) will be deprecated following the [deprecation policy](https://kubernetes.io/docs/reference/using-api/deprecation-policy/) 
+We will formally promote the GA and create `batch/v1/CronJob` in the [batch/v1 API](https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/api/batch/v1/types.go). The older versions of CronJob API (batch/v1beta1, batch/v2alpha1) will be deprecated following the [deprecation policy](https://kubernetes.io/docs/reference/using-api/deprecation-policy/) 
 
 ### Rearchitect CronJob controller
 
@@ -115,31 +115,7 @@ With proposed rearchitecture we aim to:
 3. Reduce memory usage
 
 ##### Informers and Caches
-To reduce the need to list all Jobs and CronJobs frequently to reconcile, we propose to replace it with an Informers and WorkQueue based architecture. Preferably we should be sharing the same informer cache as the Job controller uses. Not sharing informer cache would increase the memory usage.
-
-##### Multiple workers
-We also propose to have multiple workers controller by a flag similar to [statefulset controller](https://github.com/kubernetes/kubernetes/blob/master/cmd/kube-controller-manager/app/apps.go#L65). The default would be set to 5 similar to [statefulset](https://github.com/kubernetes/kubernetes/blob/master/pkg/controller/statefulset/config/v1alpha1/defaults.go#L34)
-
-##### Handling Cron aspect
-To detect which CronJob has met its schedule and need to create Jobs we need to implement a timer component. These are the possible options for implementing the timer:
-
-| algorithm  | how it works | notes |
-|:----------|:----------|:-------|
-| Unordered timer list | Periodic Sweep from cache | Slower and similar to existing implementation. But improved because we sweep fom the cache instead of API server | 
-|Ordered timer list| Maintain ordered list of Cronjob keys and next time of expiry. Keep starting a timer with the earliest expiry. | Efficient. Reinsertion to list takes O(n) |
-|Timer trees| Instead of ordered list use a sorted binary tree. | More efficient. Insertion is O(log n) |
-|Simple Timing wheels| circular buffer of MaxTimeOut slots. List of expiring timers at each slot. | Works for small bounded  MaxTimeOut which is not our case. Insertion and removal is O(1) via indexing |
-|Hashed Wheel| Hash expiring time and insert in a hash table with linked list at each index | Bookkeeping is O(1) and worst case insertion is O(n) |
-|Hierarchical Wheel| multiple timer wheels for different resolutions (Seconds, minutes, hours, days). When seconds rolls over we grab the next minutes timers and recreate the seconds wheel. similarly for minutes and hours. | Sharding at different hierarchy levels improves insertion and bookkeeping performance. |
-
-For our use cases O(n) could be sufficient. To avoid premature optimization, we will implement one of the simpler algorithms: Unordered timer list or Ordered timer list. 
-
-For further reading:
-1. [Reinventing timer wheel](https://lwn.net/Articles/646950/)
-2. [Hashed and hierarchical timer wheel](http://www.cs.columbia.edu/~nahum/w6998/papers/sosp87-timing-wheels.pdf)
-
-##### Metrics
-We propose to add metrics that could expose the performance health of the controller including and not limited to: skew, queue depth, job failures, job successes etc.
+To reduce the need to list all Jobs and CronJobs frequently to reconcile, we propose to replace it with an Informers and WorkQueue based architecture. We would be sharing the [same informer cache](https://github.com/kubernetes/kubernetes/blob/master/cmd/kube-controller-manager/app/controllermanager.go#L450) as the Job controller uses. 
 
 
 ```golang
@@ -208,6 +184,50 @@ func (cjc *CronJobController)  sync(cronJobKey) {
 
 
 ```
+
+
+##### Multiple workers
+We also propose to have multiple workers controller by a flag similar to [statefulset controller](https://github.com/kubernetes/kubernetes/blob/master/cmd/kube-controller-manager/app/apps.go#L65). The default would be set to 5 similar to [statefulset](https://github.com/kubernetes/kubernetes/blob/master/pkg/controller/statefulset/config/v1alpha1/defaults.go#L34)
+
+```
+// Controller code
+
+func (cjc *CronJobController)  Run() {
+	...
+    for i := 0; i < workers; i++ {
+        go wait.Until(cjc.worker, time.Second, stopCh)
+    }
+...
+}
+
+```
+
+##### Handling Cron aspect
+To detect which CronJob has met its schedule and need to create Jobs we need to implement a timer component. These are the possible options for implementing the timer:
+
+| algorithm  | how it works | notes |
+|:----------|:----------|:-------|
+| Unordered timer list | Periodic Sweep from cache | Slower and similar to existing implementation. But improved because we sweep fom the cache instead of API server | 
+|Ordered timer list| Maintain ordered list of Cronjob keys and next time of expiry. Keep starting a timer with the earliest expiry. | Efficient. Reinsertion to list takes O(n) |
+|Timer trees| Instead of ordered list use a sorted binary tree. | More efficient. Insertion is O(log n) |
+|Heap based timer|A variant of ordered timer list where heap is used to store the next expiry time | Efficient compared to ordered list. Bookkeeping and insertion is O(log n). |
+|Simple Timing wheels| circular buffer of MaxTimeOut slots. List of expiring timers at each slot. | Works for small bounded  MaxTimeOut which is not our case. Insertion and removal is O(1) via indexing |
+|Hashed Wheel| Hash expiring time and insert in a hash table with linked list at each index | Bookkeeping is O(1) and worst case insertion is O(n) |
+|Hierarchical Wheel| multiple timer wheels for different resolutions (Seconds, minutes, hours, days). When seconds rolls over we grab the next minutes timers and recreate the seconds wheel. similarly for minutes and hours. | Sharding at different hierarchy levels improves insertion and bookkeeping performance. |
+
+
+We will use a use a separate [`DelayingInterface`](https://github.com/kubernetes/client-go/blob/master/util/workqueue/delaying_queue.go#L37) which has a heap based single shot api [`AddAfter`](https://github.com/kubernetes/client-go/blob/master/util/workqueue/delaying_queue.go#L150). Every time we process an entry from this queue, we would need to add it back to the queue to simulate a periodic timer.
+
+
+For further reading:
+1. [Reinventing timer wheel](https://lwn.net/Articles/646950/)
+2. [Hashed and hierarchical timer wheel](http://www.cs.columbia.edu/~nahum/w6998/papers/sosp87-timing-wheels.pdf)
+3. [Golang timers in multi-cpu systems](https://github.com/golang/go/commit/76f4fd8a5251b4f63ea14a3c1e2fe2e78eb74f81)
+4. [Go timerwheel](https://github.com/RussellLuo/timingwheel)
+
+##### Metrics
+We propose to add metrics that could expose the performance health of the controller including and not limited to: skew, queue depth, job failures, job successes etc.
+
 
 ### Add .status.lastSuccessfulTime
 [#issue/75674](https://github.com/kubernetes/kubernetes/issues/75674)  
