@@ -53,7 +53,15 @@ superseded-by:
   - [Affected Components](#affected-components)
   - [Future Enhancements](#future-enhancements)
   - [Risks and Mitigations](#risks-and-mitigations)
+- [Test Plan](#test-plan)
+  - [Unit Tests](#unit-tests)
+  - [Pod Resize E2E Tests](#pod-resize-e2e-tests)
+  - [Resource Quota and Limit Ranges](#resource-quota-and-limit-ranges)
+  - [Resize Policy Tests](#resize-policy-tests)
 - [Graduation Criteria](#graduation-criteria)
+  - [Alpha](#alpha)
+  - [Beta](#beta)
+  - [Stable](#stable)
 - [Implementation History](#implementation-history)
 <!-- /toc -->
 
@@ -379,9 +387,121 @@ Other components:
    could be in use, and approaches such as setting limit near current usage may
    be required. This issue needs further investigation.
 
+## Test Plan
+
+### Unit Tests
+
+Unit tests will cover the sanity of code changes that implements the feature,
+and the policy controls that are introduced as part of this feature.
+
+### Pod Resize E2E Tests
+
+End-to-End tests resize a Pod via PATCH to Pod's Spec.Containers[i].Resources.
+The e2e tests use docker as container runtime.
+  - Resizing of Requests are verified by querying the values in Pod's
+    Spec.Containers[i].ResourcesAllocated field.
+  - Resizing of Limits are verified by querying the cgroup limits of the Pod's
+    containers.
+
+E2E test cases for Guaranteed class Pod with one container:
+1. Increase, decrease Requests & Limits for CPU only.
+1. Increase, decrease Requests & Limits for memory only.
+1. Increase, decrease Requests & Limits for CPU and memory.
+1. Increase CPU and decrease memory.
+1. Decrease CPU and increase memory.
+
+E2E test cases for Burstable class single container Pod that specifies
+both CPU & memory:
+1. Increase, decrease Requests - CPU only.
+1. Increase, decrease Requests - memory only.
+1. Increase, decrease Requests - both CPU & memory.
+1. Increase, decrease Limits - CPU only.
+1. Increase, decrease Limits - memory only.
+1. Increase, decrease Limits - both CPU & memory.
+1. Increase, decrease Requests & Limits - CPU only.
+1. Increase, decrease Requests & Limits - memory only.
+1. Increase, decrease Requests & Limits - both CPU and memory.
+1. Increase CPU (Requests+Limits) & decrease memory(Requests+Limits).
+1. Decrease CPU (Requests+Limits) & increase memory(Requests+Limits).
+1. Increase CPU Requests while decreasing CPU Limits.
+1. Decrease CPU Requests while increasing CPU Limits.
+1. Increase memory Requests while decreasing memory Limits.
+1. Decrease memory Requests while increasing memory Limits.
+1. CPU: increase Requests, decrease Limits, Memory: increase Requests, decrease Limits.
+1. CPU: decrease Requests, increase Limits, Memory: decrease Requests, increase Limits.
+
+E2E tests for Burstable class single container Pod that specifies CPU only:
+1. Increase, decrease CPU - Requests only.
+1. Increase, decrease CPU - Limits only.
+1. Increase, decrease CPU - both Requests & Limits.
+
+E2E tests for Burstable class single container Pod that specifies memory only:
+1. Increase, decrease memory - Requests only.
+1. Increase, decrease memory - Limits only.
+1. Increase, decrease memory - both Requests & Limits.
+
+E2E tests for Guaranteed class Pod with three containers (c1, c2, c3):
+1. Increase CPU & memory for all three containers.
+1. Decrease CPU & memory for all three containers.
+1. Increase CPU, decrease memory for all three containers.
+1. Decrease CPU, increase memory for all three containers.
+1. Increase CPU for c1, decrease c2, c3 unchanged - no net CPU change.
+1. Increase memory for c1, decrease c2, c3 unchanged - no net memory change.
+1. Increase CPU for c1, decrease c2 & c3 - net CPU decrease for Pod.
+1. Increase memory for c1, decrease c2 & c3 - net memory decrease for Pod.
+1. Increase CPU for c1 & c3, decrease c2 - net CPU increase for Pod.
+1. Increase memory for c1 & c3, decrease c2 - net memory increase for Pod.
+
+### Resource Quota and Limit Ranges
+
+Setup a namespace with ResourceQuota and a single, valid Pod.
+1. Resize the Pod within resource quota - CPU only.
+1. Resize the Pod within resource quota - memory only.
+1. Resize the Pod within resource quota - both CPU and memory.
+1. Resize the Pod to exceed resource quota - CPU only.
+1. Resize the Pod to exceed resource quota - memory only.
+1. Resize the Pod to exceed resource quota - both CPU and memory.
+
+Setup a namespace with min and max LimitRange and create a single, valid Pod.
+1. Increase, decrease CPU within min/max bounds.
+1. Increase CPU to exceed max value.
+1. Decrease CPU to go below min value.
+1. Increase memory to exceed max value.
+1. Decrease memory to go below min value.
+
+### Resize Policy Tests
+
+Setup a guaranteed class Pod with two containers (c1 & c2).
+1. No resize policy specified, defaults to NoRestart. Verify that CPU and
+   memory are resized without restarting containers.
+1. NoRestart (cpu, memory) policy for c1, RestartContainer (cpu, memory) for c2.
+   Verify that c1 is resized without restart, c2 is restarted on resize.
+1. NoRestart cpu, RestartContainer memory policy for c1. Resize c1 CPU only,
+   verify container is resized without restart.
+1. NoRestart cpu, RestartContainer memory policy for c1. Resize c1 memory only,
+   verify container is resized with restart.
+1. NoRestart cpu, RestartContainer memory policy for c1. Resize c1 CPU & memory,
+   verify container is resized with restart.
+
+### Negative Tests
+TBD
+
 ## Graduation Criteria
 
-TODO
+### Alpha
+- In-Place Pod Resouces Update functionality is implemented,
+- Unit tests and E2E tests covering basic functionality are added,
+- E2E tests covering multiple containers are added.
+
+### Beta
+- VPA alpha integration of feature completed and any bugs addressed,
+- Resize Policies are added, LimitRanger and ResourceQuota handling added,
+- Unit tests and E2E tests covering the above are added,
+- Negative tests are identified and added.
+
+### Stable
+- VPA integration of feature moved to beta,
+- No major bugs reported for three months.
 
 ## Implementation History
 
@@ -390,3 +510,5 @@ TODO
 - 2019-03-07 - changes to flow control, updates per review feedback
 - 2019-08-29 - updated design proposal
 - 2019-10-25 - update key open items and move KEP to implementable
+- 2020-01-06 - API review suggested changes incorporated
+- 2020-01-13 - Test plan and graduation criteria added
