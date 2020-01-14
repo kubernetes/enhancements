@@ -5,9 +5,9 @@ authors:
   - "@bskiba"
   - "@schylek"
   - "@vinaykul"
-owning-sig: sig-autoscaling
+owning-sig: sig-node
 participating-sigs:
-  - sig-node
+  - sig-autoscaling
   - sig-scheduling
 reviewers:
   - "@bsalamat"
@@ -23,9 +23,10 @@ approvers:
   - "@mwielgus"
 editor: TBD
 creation-date: 2018-11-06
-last-updated: 2019-10-25
+last-updated: 2020-01-14
 status: implementable
 see-also:
+  - "/keps/sig-node/20191025-kubelet-container-resources-cri-api-changes.md"
 replaces:
 superseded-by:
 ---

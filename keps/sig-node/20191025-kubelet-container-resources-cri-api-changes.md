@@ -14,10 +14,10 @@ approvers:
   - @derekwaynecarr
 editor: TBD
 creation-date: 2019-10-25
-last-updated: 2019-10-25
+last-updated: 2020-01-14
 status: implementable
 see-also:
-  - "/keps/sig-autoscaling/20181106-in-place-update-of-pod-resources.md"
+  - "/keps/sig-node/20181106-in-place-update-of-pod-resources.md"
 replaces:
 superseded-by:
 ---
