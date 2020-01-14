@@ -37,10 +37,11 @@ superseded-by:
     - [API Topology](#api-topology)
       - [Lists](#lists)
       - [Maps and structs](#maps-and-structs)
-    - [Topology Changes Compatibility](#compatibility)
-      - [Definitions](#compatibility-definitions)
-      - [Lists](#lists-compatibility)
-      - [Maps and structs](#maps-structs-compatibility)
+    - [Topology Changes Compatibility](#topology-changes-compatibility)
+      - [Definitions](#definitions)
+      - [Generally](#generally)
+      - [Lists](#lists-1)
+      - [Maps](#maps)
     - [Kubectl](#kubectl)
       - [Server-side Apply](#server-side-apply)
     - [Status Wiping](#status-wiping)
@@ -198,11 +199,11 @@ atomic. That can be specified with `// +mapType=atomic` or `//
 +structType=atomic` respectively. They map to the same openapi extension:
 `"x-kubernetes-map-type": "atomic"`.
 
-#### Topology Changes Compatibility {#compatibility}
+#### Topology Changes Compatibility
 
 This section looks at how server-side apply will behave as actors adopt it on previously applied objects, or if the topology configurations change (for example a list that was configured `atomic` changes to `set`).
 
-##### Definitions {#compatibility-definitions}
+##### Definitions
 * Upgrade: refers to using a newer version of the `apply` functionality, i.e. stop using non-server side, start using server-side apply. Could be accompanied (but not necessarily) with using a newer version of the underlying Kubernetes API.
 * Update: refers to a change in the topology configuration (i.e. the value of `x-kubernetes-list/map-type`/`x-kubernetes-list-map-keys` in the resource definition) or a change in the object specification (or a combination of both).
 
@@ -210,8 +211,9 @@ This section looks at how server-side apply will behave as actors adopt it on pr
 * All Go IDL/OpenAPI markers are only effective when server-side apply is used. Configuring them is allowed when non-server-side apply is used, but that configuration is ignored.
 * When objects are not-server-side applied, list/map/struct topology is considered `atomic`.
 
-##### Lists {#lists-compatibility}
-###### Scalar lists: updates from `set` to `atomic`
+##### Lists
+**Scalar lists: updates from `set` to `atomic`**
+
 The next manager to server-side `apply`
   * will atomically replace the content of the list, regardless of whether or not they already managed any of the entries.
   * will maintain previous managers in the object's `metadata.managedFields`, including if they managed the object's root. For example (`k get <object> -o yaml`):
@@ -251,12 +253,12 @@ managedFields:
   uid: 27cb3520-763c-43e1-98c6-d5e48b818d40
 ```
 
-###### Scalar lists: updates from `atomic` to `set`
+**Scalar lists: updates from `atomic` to `set`**
 
 The manager (or joint managers, if there were more than one) remains in the object's `metadata.managedFields`.
 Subsequent callers of `apply` will manage the fields that they send (jointly with others if they've been previously applied).
 
-###### Associative lists: updates to `x-kubernetes-list-map-keys`
+**Associative lists: updates to `x-kubernetes-list-map-keys`**
 For an object's spec to be valid, 2 conditions must be met regarding the map keys configuration:
 * they can't be missing in any of the entries, and
 * they can't be duplicated.
@@ -266,7 +268,7 @@ In the case of updates in map keys, these conditions must be respected for both 
 
 TODO: should we add opinions/advice here? e.g. "use defaults" or "here's how to migrate"?
 
-###### Scalar lists: updates to `map`
+**Scalar lists: updates to `map`**
 
 Existing objects can no longer be updated, regardless of manager. The server does not have enough information to convert a plain string format into a map with keys.
 ```
@@ -281,7 +283,8 @@ New objects can be created:
 * The map entries of the list are themselves granular. A manager can update a field in the entry without having to update all other fields, or replace the entire map).
 * Management of the fields is inherited when someone assumes management of the entry. In other words, whoever manages entry [3], for example, also manages _all_ of its fields.
 
-###### Associative lists: updates to scalar (`set`/`atomic`)
+**Associative lists: updates to scalar (`set`/`atomic`)**
+
 Attempt to update from `map`-> `set`/`atomic` will empty previous content at _configuration change_ time (for example, when `apply`ing the updated CRD).
 It will also result in error at _object apply_ time:
 ```
@@ -291,7 +294,7 @@ Error from server: failed to create typed live object: errors:
   (etc. for all the fields)
 ```
 
-##### Maps  {#maps-structs-compatibility}
+##### Maps
 * The `granular/atomic` configuration refers to the map, not the fields.
 The fields are "atomic": once a manager sets them, other managers can't update them (unless they `--force-conflicts`). They can only become joint managers.
 Jointly managed fields cannot be updated, except with `--force-conflicts`.
@@ -330,13 +333,20 @@ spec:
 ```
 `k apply -f object-map-blues.yml --server-side=true --field-manager=second` will result in conflict.
 
-###### Updating from `granular` to `atomic`
+**Updating from `granular` to `atomic`**
+
 TODO
-###### Updating from `atomic` to `granular`
+
+**Updating from `atomic` to `granular`**
+
 TODO
-###### Upgrading from non-server-side to server-side apply
+
+**Upgrading from non-server-side to server-side apply**
+
 Equivalent to updating from `atomic`.
-###### Downgrading from server-side apply to non-server-side apply
+
+**Downgrading from server-side apply to non-server-side apply**
+
 Equivalent to updating to `atomic`.
 
 #### Kubectl
