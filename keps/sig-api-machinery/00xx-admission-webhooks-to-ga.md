@@ -12,7 +12,7 @@ approvers:
 editor: TBD
 creation-date: 2019-01-27
 last-updated: 2019-02-04
-status: implementable
+status: implemented
 see-also:
   - "[Admission Control Webhook Beta Design Doc](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/api-machinery/admission-control-webhooks.md)"
 ---
