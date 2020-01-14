@@ -37,6 +37,10 @@ superseded-by:
     - [API Topology](#api-topology)
       - [Lists](#lists)
       - [Maps and structs](#maps-and-structs)
+    - [Topology Changes Compatibility](#compatibility)
+      - [Definitions](#compatibility-definitions)
+      - [Lists](#lists-compatibility)
+      - [Maps and structs](#maps-structs-compatibility)
     - [Kubectl](#kubectl)
       - [Server-side Apply](#server-side-apply)
     - [Status Wiping](#status-wiping)
@@ -193,6 +197,147 @@ but can be explicitly specified with `// +mapType=granular` or `//
 atomic. That can be specified with `// +mapType=atomic` or `//
 +structType=atomic` respectively. They map to the same openapi extension:
 `"x-kubernetes-map-type": "atomic"`.
+
+#### Topology Changes Compatibility {#compatibility}
+
+This section looks at how server-side apply will behave as actors adopt it on previously applied objects, or if the topology configurations change (for example a list that was configured `atomic` changes to `set`).
+
+##### Definitions {#compatibility-definitions}
+* Upgrade: refers to using a newer version of the `apply` functionality, i.e. stop using non-server side, start using server-side apply. Could be accompanied (but not necessarily) with using a newer version of the underlying Kubernetes API.
+* Update: refers to a change in the topology configuration (i.e. the value of `x-kubernetes-list/map-type`/`x-kubernetes-list-map-keys` in the resource definition) or a change in the object specification (or a combination of both).
+
+##### Generally
+* All Go IDL/OpenAPI markers are only effective when server-side apply is used. Configuring them is allowed when non-server-side apply is used, but that configuration is ignored.
+* When objects are not-server-side applied, list/map/struct topology is considered `atomic`.
+
+##### Lists {#lists-compatibility}
+###### Scalar lists: updates from `set` to `atomic`
+The next manager to server-side `apply`
+  * will atomically replace the content of the list, regardless of whether or not they already managed any of the entries.
+  * will maintain previous managers in the object's `metadata.managedFields`, including if they managed the object's root. For example (`k get <object> -o yaml`):
+
+```
+managedFields:
+  - apiVersion: colours.example.com/v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:spec:
+        f:colours:
+          v:"black": {}
+    manager: first-with-set
+    operation: Apply
+    time: "2019-12-23T09:52:05Z"
+  - apiVersion: colours.example.com/v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:spec:
+        f:colours:
+          v:"red": {}
+    manager: second-with-set
+    operation: Apply
+    time: "2019-12-23T09:53:12Z"
+  - apiVersion: colours.example.com/v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:spec:
+        f:colours: {}
+    manager: first-with-atomic
+    operation: Apply
+    time: "2019-12-23T10:02:50Z"
+  name: simple-colour-set
+  namespace: default
+  resourceVersion: "2631"
+  selfLink: /apis/colours.example.com/v1/namespaces/default/associativesets/simple-colour-set
+  uid: 27cb3520-763c-43e1-98c6-d5e48b818d40
+```
+
+###### Scalar lists: updates from `atomic` to `set`
+
+The manager (or joint managers, if there were more than one) remains in the object's `metadata.managedFields`.
+Subsequent callers of `apply` will manage the fields that they send (jointly with others if they've been previously applied).
+
+###### Associative lists: updates to `x-kubernetes-list-map-keys`
+For an object's spec to be valid, 2 conditions must be met regarding the map keys configuration:
+* they can't be missing in any of the entries, and
+* they can't be duplicated.
+
+These conditions are checked at object apply time, not at configuration update time.
+In the case of updates in map keys, these conditions must be respected for both the existing and the new set of map keys. If an object spec either omits or duplicates map keys, of either the previous or the new configuration, the object can no longer be updated.
+
+TODO: should we add opinions/advice here? e.g. "use defaults" or "here's how to migrate"?
+
+###### Scalar lists: updates to `map`
+
+Existing objects can no longer be updated, regardless of manager. The server does not have enough information to convert a plain string format into a map with keys.
+```
+Error from server: failed to create typed live object: errors:
+  .spec.colours: element 0: associative list with keys may not have non-map elements
+  .spec.colours: element 1: associative list with keys may not have non-map elements
+```
+New objects can be created:
+* The resulting list of nested objects behaves as a `set`. I.e. the list is granular, and the items are unique.
+* The uniqueness of each item is calculated using `x-kubernetes-list-map-keys`.
+* Because the top level list is also granular, multiple actors can update different entries independently. If an actor sends an update to entry [0], for example, that won't impact the other maps in the list.
+* The map entries of the list are themselves granular. A manager can update a field in the entry without having to update all other fields, or replace the entire map).
+* Management of the fields is inherited when someone assumes management of the entry. In other words, whoever manages entry [3], for example, also manages _all_ of its fields.
+
+###### Associative lists: updates to scalar (`set`/`atomic`)
+Attempt to update from `map`-> `set`/`atomic` will empty previous content at _configuration change_ time (for example, when `apply`ing the updated CRD).
+It will also result in error at _object apply_ time:
+```
+Error from server: failed to create typed live object: errors:
+  .spec.colours: element 0: associative list without keys has an element that's a map type
+  .spec.colours: element 1: associative list without keys has an element that's a map type
+  (etc. for all the fields)
+```
+
+##### Maps  {#maps-structs-compatibility}
+* The `granular/atomic` configuration refers to the map, not the fields.
+The fields are "atomic": once a manager sets them, other managers can't update them (unless they `--force-conflicts`). They can only become joint managers.
+Jointly managed fields cannot be updated, except with `--force-conflicts`.
+
+To show in practice:
+
+With this configuration (crd.yml)
+```
+properties:
+  colour:
+    type: object
+    additionalProperties:
+      type: string
+    x-kubernetes-map-type: granular
+```
+
+And this spec (object.yml)
+```
+spec:
+  colour:
+    name:   turquoise
+    hue:    light
+    saturation: strong
+```
+
+`k apply -f object-map-blues.yml --server-side=true --field-manager=first` makes `first` the manager of name, hue, saturation (but not the map)
+
+with this similar spec
+And this spec (object2.yml)
+```
+spec:
+  colour:
+    name:   turquoise
+    hue:    light
+    saturation: different
+```
+`k apply -f object-map-blues.yml --server-side=true --field-manager=second` will result in conflict.
+
+###### Updating from `granular` to `atomic`
+TODO
+###### Updating from `atomic` to `granular`
+TODO
+###### Upgrading from non-server-side to server-side apply
+Equivalent to updating from `atomic`.
+###### Downgrading from server-side apply to non-server-side apply
+Equivalent to updating to `atomic`.
 
 #### Kubectl
 
