@@ -95,7 +95,7 @@ When we went to add mTLS support to the runtime streaming server, we realized ge
 certs established between the apiserver and the runtime was complicated, but the apiserver already
 had an mTLS connection to the Kubelet. So, we added the ability for the Kubelet to connect the
 stream locally and proxy the connection back to the apiserver. This setup is more secure, removes
-the need for `StreamingProxyRedirecs` and `ValidateProxyRedirects`, but adds the Kubelet back into
+the need for `StreamingProxyRedirects` and `ValidateProxyRedirects`, but adds the Kubelet back into
 the long-running request chain.
 
 `StreamingProxyRedirects` and `ValidateProxyRedirects` are currently in Beta, and should either be
@@ -180,7 +180,7 @@ There are 4 potential points for breakage in the rollout, which we'll consider s
 2. `--redirect-container-streaming` cannot be set (rollout step 3.1) - This case is covered by
    [Dependence on apiserver redirects](#dependence-on-apiserver-redirects).
 3. `StreamingProxyRedirects` disabled or removed (rollout step 4.1 or 5.2) - This would only be the
-   case there was version skew of at least 2 versions from the apiserver to the nodes, and the old
+   case if there was version skew of at least 2 versions from the apiserver to the nodes, and the old
    nodes were still using `--redirect-container-streaming`. At this point, the user should have had
    ample warning (3 versions), and would only be affected if nodes were lagging the apiserver
    version. The safe alternative rollout plan waits 2 versions between steps, which is the maximum
