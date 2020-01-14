@@ -33,6 +33,8 @@ superseded-by:
 - [Proposal](#proposal)
   - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
     - [Mutable PDBs](#mutable-pdbs)
+    - [Eviction of non-ready pods](#eviction-of-non-ready-pods)
+    - [Make the disruption controller more lenient for pods belonging to non-scale controllers](#make-the-disruption-controller-more-lenient-for-pods-belonging-to-non-scale-controllers)
   - [Risks and Mitigations](#risks-and-mitigations)
   - [Test Plan](#test-plan)
     - [Existing Tests](#existing-tests)
@@ -79,6 +81,31 @@ fields to be modified by clients. Components that use PDB must watch such
 modifications and use the updated values when making decisions.
 
 This feature is implemented by [this PR](https://github.com/kubernetes/kubernetes/pull/69867).
+
+#### Eviction of non-ready pods
+
+There are a couple of open issues where pods can't be evicted, even if they not Ready and Running 
+(https://github.com/kubernetes/kubernetes/issues/72320 and https://github.com/kubernetes/kubernetes/issues/80389).
+The root of this issue, is that the rules in the disruption controller for what is a healthy pod, and the rules
+in the Eviction API for when a pod can be evicted without looking at the PDB are not the same. This means a pod can
+be considered unhealthy by the disruption controller so it does not count as healthy when computing `DisruptionsAllowed`,
+but will still require `DisruptionsAllowed` to be larger than 0 for it to be evicted. Some strange situations can
+arise from this. For example if we have a PDB with `MinAvailable  = 1` and 10 pods that are all in the CrashLoop state 
+(`Running`, but not `Ready`), we will not be allowed to evict any of the pods.
+
+#### Make the disruption controller more lenient for pods belonging to non-scale controllers
+
+The disruption controller is currently taking the very safe route whenever it encounters any
+issues with the targeted pods or their controllers. For all configurations of the PDB, except when
+`minAvailable` is a number, the PDB requires that it can find the controller and that
+the controller implements scale (either by being one of the built-in workloads or a CR where the CRD implements
+the scale subresource). If those conditions are not met for all pods targeted by the PDB, the disruption
+controller will set `DisruptionsAllowed` to 0, which means none of the pods can be evicted. There is an issue
+concerning this behavior: https://github.com/kubernetes/kubernetes/issues/77383.
+
+The current behavior of the disruption controller for the different types of input and the different
+types of pods that might be encountered are documented in: 
+https://docs.google.com/spreadsheets/d/12HUundBS-slA6axfQYZPRCeIu_Au_wsGD0Vu_oKAnM8/edit?usp=sharing
 
 ### Risks and Mitigations
 
