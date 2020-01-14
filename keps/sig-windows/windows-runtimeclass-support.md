@@ -37,10 +37,13 @@ see-also:
     - [Story 3 - Choosing a specific multi-arch image](#story-3---choosing-a-specific-multi-arch-image)
   - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
     - [Adding new label node.kubernetes.io/windows-build (done)](#adding-new-label-nodekubernetesiowindows-build-done)
-    - [Adding handler to CRI pull API](#adding-handler-to-cri-pull-api)
+    - [Adding annotations to ImageSpec](#adding-annotations-to-imagespec)
+      - [ImageSpec changes](#imagespec-changes)
+      - [ImageSpec as part of the Image struct](#imagespec-as-part-of-the-image-struct)
+      - [Scenarios](#scenarios)
   - [Risks and Mitigations](#risks-and-mitigations)
     - [Adding new node label](#adding-new-node-label)
-    - [Adding runtime_handler to PullImageRequest](#adding-runtime_handler-to-pullimagerequest)
+    - [Annotations in ImageSpec](#annotations-in-imagespec)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
     - [E2E Testing with CRI-ContainerD and Kubernetes](#e2e-testing-with-cri-containerd-and-kubernetes)
@@ -297,43 +300,103 @@ To make this easier to consume in the Kubelet and APIs, it will be updated in mu
 - Set & update it in Kubelet
   - [pkg/kubelet/kubelet_node_status.go](https://github.com/kubernetes/kubernetes/blob/4fda1207e347af92e649b59d60d48c7021ba0c54/pkg/kubelet/kubelet_node_status.go#L217)
 
-#### Adding handler to CRI pull API
+#### Adding annotations to ImageSpec
 
-CRI doesn't have any way to know what os/version/architecture/variant to use when pulling an image today. There are no explicit fields for os/version/architecture/variant in [PodSandboxConfig]
+Current proposal is to change the `ImageSpec` to incorporate annotations for runtime class. These can be passed down to the container runtimes where various actions can be taken as per the runtime class specified. Also proposed is the change to `Image` struct to include the `ImageSpec` and thereby include the annotations.
+ 
+##### ImageSpec changes
 
-The same is true for creating a sandbox, but this could be inferred as part of RuntimeHandler. The RuntimeHandler would correspond to a containerd configuration file already on the node which would fill in the missing details.
-
-The [RunPodSandboxRequest](https://github.com/kubernetes/cri-api/blob/24ae4d4e8b036b885ee1f4930ec2b173eabb28e7/pkg/apis/runtime/v1alpha2/api.proto#L362) message passes the `runtime_handler` as a string.
+Currently ImageSpec contains just a string.
 
 ```
-message RunPodSandboxRequest {
-    // Configuration for creating a PodSandbox.
-    PodSandboxConfig config = 1;
-    // Named runtime configuration to use for this PodSandbox.
-    // If the runtime handler is unknown, this request should be rejected.  An
-    // empty string should select the default handler, equivalent to the
-    // behavior before this feature was added.
-    // See https://git.k8s.io/enhancements/keps/sig-node/runtime-class.md
-    string runtime_handler = 2;
+type ImageSpec struct {
+  Image string
+}
+```
+ 
+The proposal is to add Annotations into the ImageSpec:
+
+```
+type ImageSpec struct {
+  Image string
+  Annotations []Annotation
+}
+```
+ 
+The runtimeHandler annotation will be based on the Runtime Class specified by the user:
+
+```
+“kubernetes.io/runtimehandler”: “<corresponding values>”
+ ```
+
+We could potentially also add the kubernetes specification annotations for consideration of the runtime:
+```
+“kubernetes.io/arch”: “amd64”
+“kubernetes.io/os”: ”linux”
+```
+
+Note that these are currently derived from from GOARCH and GOOS at runtime, which does not reflect the image which needs to be pulled but instead corresponds to the system on which kubelet is running. The runtime handler specified in the annotation will provide more accurate indication of the user intent to the runtime.
+
+##### ImageSpec as part of the Image struct
+
+`ListImage` returns `Image` struct from the runtime to Kubelet which currently does not include the `ImageSpec`:
+
+```
+type ImageService interface {
+	// PullImage pulls an image from the network to local storage using the supplied
+	// secrets if necessary. It returns a reference (digest or ID) to the pulled image.
+	PullImage(image ImageSpec, pullSecrets []v1.Secret, podSandboxConfig *runtimeapi.PodSandboxConfig) (string, error)
+	// GetImageRef gets the reference (digest or ID) of the image which has already been in
+	// the local storage. It returns ("", nil) if the image isn't in the local storage.
+	GetImageRef(image ImageSpec) (string, error)
+	// Gets all images currently on the machine.
+	ListImages() ([]Image, error)
+	// Removes the specified image.
+	RemoveImage(image ImageSpec) error
+	// Returns Image statistics.
+	ImageStats() (*ImageStats, error)
 }
 ```
 
-The proposal is to do the same for [PullImageRequest](https://github.com/kubernetes/cri-api/blob/24ae4d4e8b036b885ee1f4930ec2b173eabb28e7/pkg/apis/runtime/v1alpha2/api.proto#L1081). With the additions, it would be:
+The proposal is to change the `Image` from the following :
 
 ```
-message PullImageRequest {
-    // Spec of the image.
-    ImageSpec image = 1;
-    // Authentication configuration for pulling the image.
-    AuthConfig auth = 2;
-    // Config of the PodSandbox, which is used to pull image in PodSandbox context.
-    PodSandboxConfig sandbox_config = 3;
-    // Named runtime configuration to use for this PodSandbox.
-    // This should match a runtime_handler used in RunPodSandboxRequest
-    // and is subject to the same semantics.
-    string runtime_handler = 4;
+type Image struct {
+	// ID of the image.
+	ID string
+	// Other names by which this image is known.
+	RepoTags []string
+	// Digests by which this image is known.
+	RepoDigests []string
+	// The size of the image in bytes.
+	Size int64
 }
 ```
+to include the ImageSpec as follows:
+
+```
+type Image struct {
+	// ID of the image.
+	ID string
+	// Other names by which this image is known.
+	RepoTags []string
+	// Digests by which this image is known.
+	RepoDigests []string
+	// The size of the image in bytes.
+	Size int64
+	// ImageSpec for the image which includes the run time annotations
+	Spec ImageSpec
+}
+```
+Note that the ID field will be potentially duplicated in ImageSpec for backward compatibility.
+
+##### Scenarios
+
+Following is a scenario which is handled precisely by this approach:
+1. Same image names with different handlers - `handler1` and `handler2` are getting pulled around the same time.
+2. Image with `handler1` is pulled by `EnsureImageExists`
+3. Image with `handler2` comes via `EnsureImageExists`. With the current code, since `ImageSpec` only has the name, `GetImageRef` would get a reference for the image downloaded for `handler1`.
+4. With the runtime handler annotations added to `ImageSpec` and kept track by runtime, the right image reference will be sent back.
 
 ### Risks and Mitigations
 
@@ -341,9 +404,8 @@ message PullImageRequest {
 
 The names of aren't part of a versioned API today, so there's no risk to upgrade/downgrade from an API and functionality standpoint. However, if someone wants to keep the node selection experience consistent between Kubernetes 1.14 - 1.17, they may want to manually add the `node.kubernetes.io/windows-build` label to clusters running versions < 1.17. A cluster admin can choose to modify labels using `kubectl label node` after a node has joined the cluster.
 
-#### Adding runtime_handler to PullImageRequest
-
-This will be reviewed with contributors from both Kubernetes and ContainerD and tested together while Windows support in CRI-ContainerD is still in development. As this is an optional field today in `RunPodSandboxRequest`, there's no risk if someone wants to not specify it in `RuntimeClass`. In that case ContainerD will use the default configuration for pull, create sandbox, and so on.
+#### Annotations in ImageSpec
+These annotations will be optional parameters. The runtimes can optionally choose to implement specific behaviour based on these Annotations.
 
 ## Design Details
 
