@@ -6,13 +6,16 @@ authors:
 owning-sig: sig-node
 participating-sigs:
 reviewers:
-  - TBD
+  - @Random-Liu
+  - @yujuhong
+  - @PatrickLang
 approvers:
-  - TBD
+  - @dchen1107
+  - @derekwaynecarr
 editor: TBD
 creation-date: 2019-10-25
 last-updated: 2019-10-25
-status: provisional
+status: implementable
 see-also:
   - "/keps/sig-autoscaling/20181106-in-place-update-of-pod-resources.md"
 replaces:
@@ -33,9 +36,9 @@ superseded-by:
   - [Expected Behavior of CRI Runtime](#expected-behavior-of-cri-runtime)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
-  - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
-  - [Version Skew Strategy](#version-skew-strategy)
-  - [Risks and Mitigations](#risks-and-mitigations)
+    - [Alpha](#alpha)
+    - [Beta](#beta)
+    - [Stable](#stable)
 - [Implementation History](#implementation-history)
 <!-- /toc -->
 
@@ -214,26 +217,33 @@ TBD
 
 ### Test Plan
 
-Unit tests: TBD
-E2E tests: TBD
+* Unit tests are updated to reflect use of ContainerResources object in
+  UpdateContainerResources and ContainerStatus APIs.
+
+* E2E test is added to verify UpdateContainerResources API with docker runtime.
+
+* E2E test is added to verify ContainerStatus API using docker runtime.
+
+* E2E test is added to verify backward compatibility usign docker runtime.
 
 ### Graduation Criteria
 
-TBD
+#### Alpha
 
-### Upgrade / Downgrade Strategy
+* UpdateContainerResources and ContainerStatus API changes are done and tested
+  with dockershim and docker runtime, backward compatibility is maintained.
 
-Is this applicable? - TBD
+#### Beta
 
-### Version Skew Strategy
+* UpdateContainerResources and ContainerStatus API changes are completed and
+  tested for Windows runtime.
 
-Is this applicable? - TBD
+#### Stable
 
-### Risks and Mitigations
-
-TBD
+* No major bugs reported for three months.
 
 ## Implementation History
 
 - 2019-10-25 - Initial KEP draft created
+- 2020-01-14 - Test plan and graduation criteria added
 
