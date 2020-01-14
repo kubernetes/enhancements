@@ -135,10 +135,9 @@ Thanks to the above:
   v1.ResourceRequirements) shows the **actual** resources held by the Pod and
   its Containers.
 
-A new Pod subresource named 'resourceallocation' is introduced to allow
-fine-grained access control that enables Kubelet to set or update resources
-allocated to a Pod, and prevents the user or any other component from changing
-the allocated resources.
+A new admission controller named 'PodResourceAllocation' is introduced in order
+to limit access to ResourcesAllocated field such that only Kubelet can update
+this field.
 
 #### Container Resize Policy
 
@@ -194,11 +193,10 @@ resources allocated (Pod.Spec.Containers[i].ResourcesAllocated) for all Pods in
 the Node, except the Pod being resized. For the Pod being resized, it adds the
 new desired resources (i.e Spec.Containers[i].Resources.Requests) to the sum.
 * If new desired resources fit, Kubelet accepts the resize by updating
-  Pod.Spec.Containers[i].ResourcesAllocated via pods/resourceallocation
-  subresource, and then proceeds to invoke UpdateContainerResources CRI API
-  to update the Container resource limits. Once all Containers are successfully
-  updated, it updates Pod.Status.ContainerStatuses[i].Resources to reflect the
-  new resource values.
+  Pod.Spec.Containers[i].ResourcesAllocated, and then proceeds to invoke
+  UpdateContainerResources CRI API to update Container resource limits. Once
+  all Containers are successfully updated, it updates
+  Pod.Status.ContainerStatuses[i].Resources to reflect new resource values.
 * If new desired resources don't fit, Kubelet rejects the resize, and no
   further action is taken.
   - Kubelet retries the Pod resize at a later time.
@@ -243,10 +241,9 @@ Pod with ResizePolicy set to NoRestart for all its Containers.
    resources to determine if the new desired Resources fit the Node.
    * _Case 1_: Kubelet finds new desired Resources fit. It accepts the resize
      and sets Spec.Containers[i].ResourcesAllocated equal to the values of
-     Spec.Containers[i].Resources.Requests by invoking resourceallocation
-     subresource. It then applies the new cgroup limits to the Pod and its
-     Containers, and once successfully done, sets Pod's
-     Status.ContainerStatuses[i].Resources to reflect the desired resources.
+     Spec.Containers[i].Resources.Requests. It then applies the new cgroup
+     limits to the Pod and its Containers, and once successfully done, sets
+     Pod's Status.ContainerStatuses[i].Resources to reflect desired resources.
      - If at the same time, a new Pod was assigned to this Node against the
        capacity taken up by this resource resize, that new Pod is rejected by
        Kubelet during admission if Node has no more room.
@@ -328,7 +325,7 @@ Status.ContainerStatuses[i].Resources to match the desired limit values.
 
 Pod v1 core API:
 * extended model,
-* new subresource,
+* new admission controller,
 * added validation.
 
 Admission Controllers: LimitRanger, ResourceQuota need to support Pod Updates:
