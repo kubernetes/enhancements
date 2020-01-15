@@ -456,7 +456,11 @@ is to run his team's autodiagnose script:
 
 ### Test Plan
 
-TODO
+In addition to standard unit tests for `kubectl`, the `debug` command will be
+released as a `kubectl alpha` subcommand, signaling users to expect instability.
+During the alpha phase we will gather feedback from users that we expect will
+improve the design of `debug` and identify the Critical User Journeys we should
+test prior to Alpha -> Beta graduation.
 
 ### Graduation Criteria
 
@@ -466,6 +470,7 @@ TODO
 - [ ] A task on https://kubernetes.io/docs/tasks/ describes how to troubleshoot
   a running pod using Ephemeral Containers.
 - [ ] A survey sent to early adopters doesn't reveal any major shortcomings.
+- [ ] Test plan is amended to address the most common user journeys.
 
 #### Beta -> GA Graduation
 
@@ -476,6 +481,7 @@ TODO
 - *2019-08-06*: Initial KEP draft
 - *2019-12-05*: Updated KEP for expanded debug targets.
 - *2020-01-09*: Updated KEP for debugging nodes and mark implementable.
+- *2020-01-15*: Added test plan.
 
 ## Alternatives
 
