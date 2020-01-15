@@ -1,6 +1,8 @@
 ---
 title: kubeadm-for-windows
 authors:
+  - "@benmoss"
+  - "@gab-satchi"
   - "@ksubrmnn"
   - "@neolit123"
   - "@patricklang"
@@ -35,6 +37,8 @@ status: implementable
   - [User Stories](#user-stories)
     - [Story 1](#story-1)
   - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
+    - [Wins used to enable privileged/host network DaemonSets](#wins-used-to-enable-privilegedhost-network-daemonsets)
+    - [Provisioning script creates a fake host network](#provisioning-script-creates-a-fake-host-network)
     - [Kubeadm manages the kubelet start / stop as a service](#kubeadm-manages-the-kubelet-start--stop-as-a-service)
     - [Kubeadm makes assumptions about systemd and Linux](#kubeadm-makes-assumptions-about-systemd-and-linux)
     - [Windows vs Linux host paths](#windows-vs-linux-host-paths)
@@ -93,19 +97,15 @@ The motivation for this KEP is to provide a tool to allow users to take a Window
 
 ### Goals
 
-* Create and maintain a Powershell script to install and run Kubernetes prerequisites on Windows
-* Support kubeadm join for Windows
-* Support kubeadm reset for Windows
-* Create and maintain a Powershell script to deploy Windows CNIs
+* Create and maintain a Powershell script to install kubelet, kubeadm and [wins](https://github.com/rancher/wins/)
+* Support kubeadm join, reset and upgrade
+* Provide DaemonSets to run kube-proxy and Flannel
 
 ### Non-Goals
 
 * Installing the Container Runtime (e.g. Docker or containerd)
-* Implement kubeadm init for Windows (at this time)
-* Implement kubeadm join --control-plane for Windows (at this time)
-* Supporting upgrades using kubeadm upgrade for Windows (to be revisited for Beta)
-* Running kube-proxy as a DaemonSet on Windows (to be revisited for Beta)
-* Running Flannel as a DaemonSet on Windows (to be revisited for Beta)
+* Implement kubeadm init
+* Implement kubeadm join --control-plane
 
 ## Proposal
 
@@ -115,23 +115,35 @@ The motivation for this KEP is to provide a tool to allow users to take a Window
 
 A user will have a Windows machine that they want to join to an existing Kubernetes cluster.
 
-1. The user will download a set of required binaries (kubelet, kube-proxy, kubeadm, kubectl, Flannel) using a script. The same script will also wrap kubeadm execution.
+1. The user will download a set of required binaries (kubelet, kubeadm, and wins) using a script.
 
-2. The script will register kubelet and kube-proxy as Windows services.
+1. The script will register kubelet as a Windows service.
 
-3. The script will upload a default ConfigMap to the cluster for the default Windows KubeletConfiguration if one does not already exist.
+1. The user will run "kubeadm join ..." to join the node to the cluster. In this step kubeadm will run preflight checks and proceed with the regular join process.
 
-4. The script will run "kubeadm join ..." to join the node to the cluster. In this step kubeadm will run preflight checks and proceed with the regular join process.
+1. kubeadm will restart the kubelet service using flags that kubeadm fed to the Windows service. kubeadm will proceed to bootstrap the node. After this process is finished the node should show with the status of NotReady.
 
-5. kubeadm will restart the kubelet service using flags that kubeadm fed to the Windows service. kubeadm will proceed to bootstrap the node. After this process is finished the node should show with the status of NotReady.
+1. The user will then deploy the Flannel and kube-proxy DaemonSets. These will run and initialize container networking.
 
-6. The same script will then configure FlannelD. The script will (re-)register FlannelD as a service and start it with the correct configuration, optionally using parameters from kubeadm.
-
-7. kube-proxy will do the same steps as FlannelD shortly after.
-
-8. The node status should be Ready.
+1. The node status should become Ready.
 
 ### Implementation Details/Notes/Constraints
+
+#### Wins used to enable privileged/host network DaemonSets
+
+Windows has no native support for creating privileged containers or attaching them to the host network.
+[Wins](https://github.com/rancher/wins/) is a project from Rancher that works around this shortcoming by exposing an API
+to run processes on the host. This API can be exposed to containers via a [named pipe](https://docs.microsoft.com/en-us/windows/win32/ipc/named-pipes)
+to allow those containers to launch processes that escape the restrictions normally imposed by Windows containerization.
+Additional details about this approach can be found [here](https://docs.google.com/document/d/1dXLs2XR8tqueSYWxAb0OGzKqKzx1pR6l2b1JXXT8kqA/edit?usp=sharing).
+
+#### Provisioning script creates a fake host network
+
+In order for the Flannel and kube-proxy DaemonSets to run before CNI has been initialized, they need to be running with `hostNetwork: true` on their Pod specs. This is the established pattern on Linux for bootstrapping CNI, and we are utilizing it here as well. This is in spite of the fact that our containers will not actually need networking at all since the actual Flannel/kube-proxy process will be running outside of the container through wins.
+
+In the provisioning script we create a Docker network named `host` but that is actually of the type `NAT`. This is because the kubelet only checks for this network by name, and Docker does not support networks of type `host` on Windows.
+
+The kubelet on Windows previously would panic when told to run a hostNetwork pod, but changes made in [#84649](https://github.com/kubernetes/kubernetes/pull/84649) allow these pods to run. As a result this means we can only support kubelets from 1.17 onwards.
 
 #### Kubeadm manages the kubelet start / stop as a service
 
@@ -171,57 +183,36 @@ Windows related adjustments to default paths might be required.
 
 #### Windows vs Linux host paths
 
-Kubeadm makes a number of non-portable assumptions about paths. E.g. “/etc/kubernetes” is a hardcoded path in kubeadm.
+Kubeadm makes use of several Linux-specific paths. E.g. “/etc/kubernetes” is a hardcoded path in kubeadm. We intend to use these paths on Windows as well, though we would be open to making them follow Windows path standards later.
 
-We will use "C:\kubernetes" to hold the paths that are normally created for Linux.
-
-We need to evaluate the kubeadm codebase for such instances of non-portable paths - CRI sockets, Cert paths, etc. Such paths need to be defaulted properly in the kubeadm configuration API.
-
-A consolidated list of paths where kubeadm installs files to a set of paths needs to be created and updated to comply with the Windows OS model. At least a single PR against kubeadm will be required to modify the Windows defaults. 
-
-Last, as new paths are created, restrictive Access Control Lists (ACL) for Windows should be applied. Golang does not convert Posix permissions to an appropriate Windows ACL, so an additional step is needed. See [mkdirWithACL from moby/moby](https://github.com/moby/moby/blob/e4cc3adf81cc0810a416e2b8ce8eb4971e17a3a3/pkg/system/filesys_windows.go#L103)) for an example. This step will be performed by kubeadm.
+Last, for the paths used, restrictive Access Control Lists (ACL) for Windows should be applied. Golang does not convert Posix permissions to an appropriate Windows ACL, so an additional step is needed. See [mkdirWithACL from moby/moby](https://github.com/moby/moby/blob/e4cc3adf81cc0810a416e2b8ce8eb4971e17a3a3/pkg/system/filesys_windows.go#L103) for an example. This step will be performed by the provisioning script.
 
 #### Kube-proxy deployment
 
-On Linux, kube-proxy is deployed as a DaemonSet in the kubeadm init phase. However, kube-proxy cannot run as a container in Windows since Windows does not support privileged containers. Kube-proxy should therefore be run as a Windows service so that it is restarted by windows control manager automatically and has lifecycle control.
-
-We need to modify the Linux kube-proxy DaemonSet to not deploy on Windows nodes. A PR is already in flight for that [76327](https://github.com/kubernetes/kubernetes/pull/76327). *Merging this PR is mandatory for this proposal*.
-
-Running kube-proxy as a Windows service from kubeadm is out of scope for this proposal. This is due to the fact that we don’t want the changes in kubeadm to be intrusive to the existing method of running kube-proxy as a DaemonSet on Linux. This can end up requiring an abstraction layer that is far from ideal.
-
-The proposed Windows wrapper script that executes kubeadm will also manage the restart of the kube-proxy Windows service.
-
-Long term and ideally, kube-proxy should be run as a DaemonSet on Windows.
+On Linux, kube-proxy is deployed as a DaemonSet in the kubeadm init phase. We will supply a DaemonSet that will run on Windows and use the wins API to launch kube-proxy.
 
 #### CNI plugin deployment
 
-On Linux, CNI plugins are deployed via kubectl and run as a DaemonSet. However, on Windows, CNI plugins need to run on the node, and cannot run in containers (again because Windows does not currently support privileged containers). Azure-CNI, win-bridge (compatible with kubenet), and Flannel all need the binary and config stored on the node.
+On Linux, CNI plugins are deployed via kubectl and run as a DaemonSet. We will supply a DaemonSet that will run Flannel configured in VXLAN/Overlay mode. This ideally can be upstreamed into the Flannel project.
 
-This proposal plans for FlannelD as the default option. Currently, FlannelD has to be started before the kube-proxy Windows service is started. FlannelD creates an HNS network on the Windows host, and kube-proxy will crash if it cannot find the network. This should be fixed in the scope of this project so that kube-proxy will wait until the network comes up. Therefore, kube proxy can be started at any time. 
-
-However, if FlannelD is deployed in VXLAN (Overlay) mode, then we need to rewrite the KubeProxyConfiguration with the correct Overlay specific values, and kube-proxy will need to read this config again. This is not true for Host-Gateway (L2Bridge) mode. The script will have a flag that allows users to choose between the two networking modes.
-
-If the users wish to use a different plugin they will technically opt-out of the supported setup for kubeadm based Windows worker nodes in the Alpha release.
-
-Long term, any CNI plugin should be supported for kubeadm based Windows worker nodes.
+If the users wish to use a different plugin they can create a DaemonSet to be applied in place of the Flannel DaemonSet.
 
 ### Risks and Mitigations
 
-**Risk**: Versioning of the wrapper script can become complicated
+**Risk**: Wins proxy introduces new security vector
+
+The same functionality that allows us to now run privileged DaemonSets on Windows could be used maliciously to perform
+unwanted behavior on Windows nodes. This brings to Windows problems that already exist on Linux and now require the same
+mitigations, namely Pod Security Policies (PSP).
+
+*Mitigation*: Access to the wins named pipe can be restricted using a PSP that either disables
+`hostPath` volume mounts or restricts the paths that can be mounted. A sample PSP will be provided.
+
+**Risk**: Versioning of the script can become complicated
 
 Versioning of the script per-Kubernetes version can become a problem if a certain new version diverges in terms of download URLs, flags and configuration.
 
 *Mitigation*: Use git branches to version the script in the repository where it is hosted.
-
-**Risk**: The wrapper script is planned to act as both a downloader and runner of the downloader binaries, which might cause scope and maintenance issues.
-
-*Mitigation*: Use separate scripts, the first one downloads the binaries and the wrapper/runner script then setups the environment. The user then executes the wrapper script.
-
-The initial plan is to give the single script method a shot with different arguments that will execute the different stages (downloading, setting up the environment, deploying the CNI).
-
-**Risk**: Flannel or kube-proxy require special configuration that kubeadm does not handle.
-
-*Mitigation*: Allow the user to pass custom configuration files that the wrapper script can feed into the components in question.
 
 **Risk**: Failing or missing preflight checks on Windows
 
@@ -233,7 +224,7 @@ kubeadm creates directories using MakeAll() and such directories are strictly Li
 
 On Windows, the creation of such a path can result in sensitive files to be exposed without the right permissions.
 
-*Mitigation*: Provide a SecureMakeAll() func in kubeadm, that ensures secure enough permissions on both Windows & Linux, and replace usage of MakeAll()
+*Mitigation*: Create ACLs from the provisioning script that give similar access controls to those on Linux.
 
 ## Design Details
 
@@ -266,13 +257,13 @@ Documentation is complete.
 
 ### Upgrade / Downgrade Strategy
 
-Upgrades and downgrades are out of scope for this proposal for 1.16 but will be revisited in future iterations.
+The provisioning script will be updated as necessary to support newer versions of kubeadm and kubelet, but ideally will
+be parameterized such that it's not heavily tied to specific versions of Kubernetes. Kubeadm doesn't support downgrades and
+so that is out of scope for this feature.
 
 ### Version Skew Strategy
 
-The existing version skew strategy will apply to Windows worker nodes using kubeadm.
-The download scripts will not allow or recommend skewing the version of kube-proxy or the kubelet from the version of kubeadm that is installed by the user.
-If the users applies manual skew by diverging from the recommended setup, the node will be claimed as unsupported.
+Kubeadm's version skew policy will apply to this feature as well.
 
 ## Implementation History
 
@@ -285,7 +276,8 @@ If the users applies manual skew by diverging from the recommended setup, the no
 * May 31, 2019      [PR 78189](https://github.com/kubernetes/kubernetes/pull/78189) Use Service Control Manager as the Windows Initsystem
 * June 3, 2019      [PR 78612](https://github.com/kubernetes/kubernetes/pull/78612) Remove dependency on Kube-Proxy to start after FlannelD
 * July 20,2019      KEP was updated to target Alpha for 1.16
-
+* November 1, 2019  [PR 84649](https://github.com/kubernetes/kubernetes/pull/84649) Skip GetPodNetworkStatus when CNI not yet initialized
+* January 15th, 2020 KEP was updated to reflect new approach using Wins as a privileged proxy
 
 ## Drawbacks 
 
