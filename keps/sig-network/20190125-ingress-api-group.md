@@ -42,8 +42,10 @@ superseded-by:
       - [Hostname match examples](#hostname-match-examples)
   - [Status](#status)
   - [Ingress class](#ingress-class)
-    - [Ingress class proposal](#ingress-class-proposal)
+    - [Ingress class field](#ingress-class-field)
       - [Interoperability with previous annotation](#interoperability-with-previous-annotation)
+    - [IngressClass Resource](#ingressclass-resource)
+      - [Default IngressClass](#default-ingressclass)
   - [Alternative backend types](#alternative-backend-types)
     - [Backend types proposal](#backend-types-proposal)
       - [Backend types examples](#backend-types-examples)
@@ -366,61 +368,100 @@ The `kubernetes.io/ingress.class` annotation is required for selecting between
 multiple Ingress providers. As support for this annotation is universal, this
 concept should be promoted to an actual field.
 
-#### Ingress class proposal
+#### Ingress class field
 
-Promoting the annotation as it is currently defined as an opaque string is the
-most direct path but precludes any future enhancements to the concept.
-
-An alternative is to create a new resource `IngressClass` to take its place.
-This resource will serve a couple of purposes:
-
-- Define the set of valid classes available to the user. Gives operators control
-  over allowed classes.
-- Allow us to evolve the API to express concepts such a levels of service
-  associated with a given Ingress controller.
-
-Add a field to `ingress.spec`:
+Although promoting the annotation as it is currently defined as an opaque string
+is the most direct path, that precludes any future enhancements to the concept.
+With that in mind, we propose creating a new `Class` field in `IngressSpec` to
+take the place of the existing annotation. This new field will be immutable. To
+ensure that this can be safely round tripped between API versions, this new
+field will also be added to previous API versions.
 
 ```golang
 type IngressSpec struct {
   ...
-  // Class is the name of the IngressClass cluster resource. This defines
-  // which controller(s) will implement the resource.
-  Class string
-  ...
-}
-
-...
-
-// IngressClass represents the class of the Ingress, referenced by the
-// ingress.spec. IngressClass will be a non-namespaced Cluster resource.
-type IngressClass struct {
-  metav1.TypeMeta
-  metav1.ObjectMeta
-
-  // Controller is responsible for handling this class. This should be
-  // specified as a domain-prefixed path, e.g. "acme.io/ingress-controller".
-  //
-  // This allows for different "flavors" that are controlled by the same
-  // controller. For example, you may have different Parameters for
-  // the same implementing controller.
-  Controller string
-
-  // Parameters is a link to a custom resource configuration for
-  // the controller. This is optional if the controller does not
-  // require extra parameters.
-  //
+  // Class is the name of the IngressClass cluster resource. This defines which
+  // controller(s) will implement the resource.
   // +optional
-  Parameters *TypeLocalObjectReference
+  Class *string
+  ...
 }
 ```
 
 ##### Interoperability with previous annotation
 
-The Ingress class set in the annotation takes priority to the
-`Spec.Class` field. The controller MAY emit a warning event if the
-user sets conflicting (different) values for the annotation and
-`Spec.Class`.
+The `kubernetes.io/ingress.class` annotation will be separate from the new Class
+field. As the annotation was never formally defined or validated, we can not
+safely convert the value of this annotation to the new Class field. Use of this
+annotation will be considered formally deprecated with the v1 Ingress release.
+
+When both the class field and annotation are set, the annotation will take
+priority. The controller MAY emit a warning event if the user sets conflicting
+(different) values for the annotation and field.
+
+To ensure backwards compatibility, Ingresses may be created without a class
+field or annotation. Although this is not a recommended state, it must still be
+supported by the API. Implementations of this API may choose to ignore Ingresses
+without a class specified. In certain cases, such as when an Ingress class is
+marked as default, it may make sense for Ingress implementations to implement
+Ingresses that do not have a class specified.
+
+When new Ingresses are created, if both the class field and annotation are set,
+an error will be returned that only the class field should be used. If the class
+field is set, a corresponding IngressClass resource must also exist.
+
+#### IngressClass Resource
+
+Additionally, we propose adding an `IngressClass` resource to provide additional
+data about the Ingress class. This will be a non-namespaced resource. The
+IngressClass resource is an optional way to provide additional configuration for
+a specific class of Ingress. This allows us to evolve the API to express
+concepts such as levels of service associated with a given Ingress controller.
+
+The name of this IngressClass resource will be tied to any Ingresses with the
+same value for the class field. An IngressClass resource can exist without any
+Ingresses referencing it, and an Ingress can have a class value that does not
+correspond with an IngressClass resource.
+
+```golang
+// IngressClass represents the class of the Ingress, referenced by the Ingress
+// Spec.
+type IngressClass struct {
+  metav1.TypeMeta
+  metav1.ObjectMeta
+
+  // Spec is the desired state of the IngressClass.
+  // More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#spec-and-status
+  // +optional
+  Spec IngressClassSpec
+}
+
+// IngressClassSpec provides information about the class of an Ingress.
+type IngressClassSpec struct {
+  // Controller is responsible for handling this class. This should be
+  // specified as a domain-prefixed path, e.g. "acme.io/ingress-controller".
+  // This allows for different "flavors" that are controlled by the same
+  // controller. For example, you may have different Parameters for the same
+  // implementing controller.
+  Controller string
+
+  // Parameters is a link to a custom resource configuration for the
+  // controller. This is optional if the controller does not require extra
+  // parameters.
+  // +optional
+  Parameters *api.TypedLocalObjectReference
+}
+```
+
+##### Default IngressClass
+
+Following the pattern established by StorageClass, an annotation can be set on
+an IngressClass to indicate that the IngressClass should be considered default.
+This `ingressclass.kubernetes.io/is-default-class` will accept a boolean value.
+When set to true, new Ingress resources without a class specified will be
+assigned this Ingress class. If more than one IngressClass resource has this
+annotation, the admission controller will return an error in response to Ingress
+creation attempts that don't have a class specified.
 
 ### Alternative backend types
 
@@ -492,9 +533,9 @@ spec:
   class: acme-lb
   backend:
     service:
-	  name: foo-app
-	  port:
-	    number: 80
+    name: foo-app
+    port:
+      number: 80
 ```
 
 Ingress routing everything to the ACME storage bucket:
@@ -505,9 +546,9 @@ spec:
   class: acme-lb
   backend:
     resource:
-	  apiGroup: acme.io/networking
-	  kind: storage-bucket
-	  name: foo-bucket
+    apiGroup: acme.io/networking
+    kind: storage-bucket
+    name: foo-bucket
 ```
 
 Invalid configuration (uses both resource and service):
@@ -518,13 +559,13 @@ spec:
   class: acme-lb
   backend:
     service:
-	  name: foo-app
-	  port:
-	    number: 80
+    name: foo-app
+    port:
+      number: 80
     resource: # INVALID!
-	  apiGroup: acme.io/networking
-	  kind: storage-bucket
-	  name: foo-bucket
+    apiGroup: acme.io/networking
+    kind: storage-bucket
+    name: foo-bucket
 ```
 
 ##### Supporting custom backends (non-normative)
