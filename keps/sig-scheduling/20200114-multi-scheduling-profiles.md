@@ -33,6 +33,10 @@ see-also:
     - [Story 1](#story-1)
   - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
     - [Component Config API](#component-config-api)
+      - [Conversion between API versions](#conversion-between-api-versions)
+      - [Defaults](#defaults)
+      - [Validation](#validation)
+      - [CLI flags binding](#cli-flags-binding)
     - [Kube-Scheduler implementation](#kube-scheduler-implementation)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
@@ -69,21 +73,21 @@ name. The scheduler will continue to schedule one pod at a time.
 ## Motivation
 
 Clusters run a variety of workloads, which can be *broadly* classified as
-services and batch jobs. Some users may chose to run only one class of workloads
-in a cluster, so they can provide a reasonable configuration that suits their
-scheduling needs.
+services and batch jobs. Some users may choose to run only one class of
+workloads in a cluster, so they can provide a reasonable configuration that
+suits their scheduling needs.
 
 However, users may choose to run more heterogeneous workloads in a single
-cluster. They could have a multi-tenant cluster or they might want to take
-advantage of under-utilized nodes. Or they could have a set of fixed nodes
-and a set that auto-scales.
+cluster. Or they could have a set of fixed nodes and a set that auto-scales,
+requiring different scheduling behaviors in each of them.
 
 Pods can influence scheduling decisions with features such as node/pod affinity,
 tolerations or (alpha) even pod spreading. But there are 2 problems:
 
-- kube-scheduler also calculates a set of default scores that can compete with
-  these requests.
-- Authors of the workloads need to be aware of the cluster characteristics.
+- kube-scheduler also calculates a set of default scores that can potentially
+  compete with these requests.
+- Authors of the workloads need to be aware of the cluster characteristics and
+  the weights of the scoring that the scheduler calculates for the nodes.
 
 For this reason, some operators choose to run multiple schedulers, whether those
 are different binaries or kube-scheduler with a different configuration. But
@@ -149,11 +153,62 @@ type KubeSchedulerProfile struct {
 }
 ```
 
-`HardPodAffinitySymmetricWeight` would be moved to be a `PluginConfig.Arg` for
-the plugin `InterPodAffinity` as `HardPodAffinityWeight`.
+##### Conversion between API versions
 
 During conversion from `v1alpha1` to `v1alpha2`, we will copy all the necessary
-parameters from KubeSchedulerConfiguration into one item in the `profiles` list.
+parameters from KubeSchedulerConfiguration into one item in the `Profiles` list.
+
+`HardPodAffinitySymmetricWeight` would be moved to be a `PluginConfig.Arg` in
+the `PluginConfig` slice for the plugin `InterPodAffinity` as
+`HardPodAffinityWeight`.
+
+##### Defaults
+
+The default configuration will look like:
+
+```yaml
+profiles:
+  - schedulerName: 'default-scheduler'
+```
+
+Note that default plugins are loaded internally from the AlgorithmSource.
+
+`HardPodAffinityWeight` will be set to have a default of `1` in the
+`InterPodAffinity` plugin instantiation.
+
+##### Validation
+
+`SchedulerName`, `Plugins` and `PluginConfig` fields for each item in
+`Profiles` will be validated according to the same rules as `v1alpha1`. We will
+lose the early validation of `HardPodAffinitySymmetricWeight`. However, once we
+try to instantiate a framework, the Plugin instantiation will fail, providing a
+similar result as the binary is starting.
+
+`SchedulerName` values will be validated to not repeat among the items of
+`Profiles`.
+
+##### CLI flags binding
+
+Note that, if component config is used, deprecated flags are currently ignored,
+which includes `scheduler-name` and `hard-pod-affinity-symmetric-weight`. This
+implies that we only have to worry about these flags in relationship with the
+default profile.
+
+Thus, if component config is not used, we will preserve the behavior of the
+flags as follows:
+- `scheduler-name` will be bound to its counterpart in the default profile.
+- `hard-pod-affinity-symmetric-weight` will be bound to a new deprecated option
+  that will be processed into a `pluginConfig` slice of the default profile,
+  like follows:
+  
+```yaml
+profiles:
+  - schedulerName: 'default-scheduler'
+    pluginConfig:
+      - name: 'InterPodAffinity'
+      - args:
+          hadPodAffinityWeight: <value>
+```
 
 #### Kube-Scheduler implementation
 
