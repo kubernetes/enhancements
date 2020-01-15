@@ -218,7 +218,10 @@ Summary: once this feature is implemented IBM Cloud VPC LB can use TCP and HTTP 
 The OpenStack CPI supports TCP, UDP, HTTP(S) in Service definitions and can configure the Octavia listeners with the protocols defined in the Service.
 OpenStack Octavia supports TCP, UDP and HTTP(S) on listeners, an own listener must be configured for each protocol, and different listeners can be used on the same LB instance.
 
-Summary: the OpenStack based clouds that use Octavia v2 as their LBaaS seems to support this feature once implemented. Pricing is up to their model.
+There was a bug in Octavia versions <5.0.0: it was not possible to use the same port number (5e.g. 53) with different protocols (e.g. TCP and UDP) on the same LB instance. It has been fixed in 5.0.0, which is available since the "T" release of OpenStack.
+
+Summary: the OpenStack based clouds that use Octavia v2 as their LBaaS seems to support this feature once implemented. It is true that the "T" release is the newest one, so upgrade may take a while. On the other hand OpenStack documentation mentions, that a newer Octavia version can be used with previous releases of other OpenStack projects, i.e. it can be the case that the upgrade effort is on Octavia side in an OpenStack cloud. 
+Pricing is up to the pricing model of the OpenStack providers.
 
 #### Oracle Cloud
 
