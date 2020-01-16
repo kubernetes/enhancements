@@ -1,0 +1,31 @@
+title: Add node-level plugin support for pod admission handler
+kep-number: 2823
+authors:
+  - "@SaranBalaji90"
+  - "@xujyan"
+  - "@jaypipes"
+owning-sig: sig-node
+participating-sigs:
+  - sig-node
+status: provisional
+creation-date: 2021-07-06
+reviewers:
+  - "@derekwaynecarr"
+  - "@dchen1107"
+  - "@tallclair"
+approvers:
+  - "@sig-node-leads"
+see-also:
+replaces:
+stage: "alpha"
+latest-milestone:
+milestone:
+  alpha:
+  beta:
+  stable:
+feature-gates:
+  - name: PluggablePodAdmitHandler
+    components:
+      - kubelet
+disable-supported: true
+metrics:
