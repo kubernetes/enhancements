@@ -95,7 +95,7 @@ The goals of this KEP are:
 
 ## Proposal
 
-The first thing proposed here is to lift the hardcoded limitation in Kubernetes that currently rejects Service definitions with different protocols if their type is LoadBalancer. Kubernetes would not reject Service definitions like this from that point:
+The first thing proposed here is to relax the API validation in Kubernetes that currently rejects Service definitions with different protocols if their type is LoadBalancer. Kubernetes would not reject Service definitions like this from that point:
 ```yaml
 apiVersion: v1
 kind: Service
@@ -135,7 +135,7 @@ https://www.alibabacloud.com/help/doc-detail/74809.htm
 
 A user can ask for an internal TCP/UDP Load Balancer via a K8s Service definition that also has the annotation `service.beta.kubernetes.io/alibaba-cloud-loadbalancer-address-type: "intranet"`. Internal SLBs are free.
 
-Summary: Alibaba CPI and SLB seems to support mixed protocol Services, and the pricing is not based on the number of protocols per Service.
+Summary: Alibaba CPI and SLB seem to support mixed protocol Services, and the pricing is not based on the number of protocols per Service.
 
 #### AWS
 
@@ -203,7 +203,11 @@ That is, if we consider the "single Service with 6 ports" case the user has to p
 
 #### IBM Cloud
 
-The IBM Cloud CPI implementation supports TCP, UDP, HTTP protocol values in K8s Services, and it supports mutiple protocols in a Service. The IBM Cloud CPI creates VPC Load Balancer in a VPC based cluster and NLB in a classic cloud based cluster.
+The IBM Cloud creates VPC Load Balancer in a VPC based cluster and NLB in a classic cloud based cluster. 
+
+The IBM Cloud CPI implementation for the classic cluster supports TCP and UDP protocol values in K8s Services, and it supports different protocol values in a Service. 
+
+The IBM Cloud CPI implementation for the VPC clusters supports only TCP. 
 
 The VPC Load Balancer supports TCP and HTTP, and it is possible to create TCP and HTTP listeners for the same LB instance. UDP is not supported. 
 
@@ -211,7 +215,7 @@ The VPC LB pricing is time and data amount based, i.e. the number of protocols o
 
 The NLB supports TCP and UDP on the same NLB instance. The usage of NLB does not have pricing effects, it is part of the IKS basic package.
 
-Summary: once this feature is implemented IBM Cloud VPC LB can use TCP and HTTP ports from a single Service definition. NLB can use TCP and UDP ports from a single Service definition.
+Summary: once this feature is implemented in the K8s API Server the IBM Cloud VPC LB can still use only TCP ports from a Service definition. NLB can use TCP and UDP ports from a single Service definition.
 
 #### OpenStack
 
@@ -225,21 +229,30 @@ Pricing is up to the pricing model of the OpenStack providers.
 
 #### Oracle Cloud
 
-Oracle Cloud supports TCP, HTTP(S) protocols in its LB solution. The Oracle CPI also supports the protocols in he K8s Service definitions.
+The Oracle CPI does not support UDP in the K8s Service definition. It supports only TCP and HTTP. It supports mixed TCP and HTTP ports in the same Service definition.
+
+The Oracle Cloud Load Balancer supports TCP, HTTP(S) protocols. 
 
 The pricing is based on time and capacity: https://www.oracle.com/cloud/networking/load-balancing-pricing.html I.e. the amount of protocols on a sinlge LB instance does not affect the pricing.
 
+Summary: Oracle CPI and LB seem to support mixed protocol Services, and the pricing is not based on the number of protocols per Service.
+
 #### Tencent Cloud
 
-The Tencent Cloud CPI supports TCP, UDP and HTTP(S) in Service definitions and can configure the CLB listeners with the protocols defined in the Service.
+The Tencent Cloud CPI supports TCP, UDP and HTTP in Service definitions. It maps "HTTP" protocol value in a Service definition to "TCP" before creating a listener on the CLB.
+The Tencent Cloud CPI can manage both of their LB solutions: "Classic CLB" and "Cloud Load Balancer" (previously known as "Application Load Balancer"). 
 The Tencent Cloud CLB supports TCP, UDP and HTTP(S) listeners, an own listener must be configured for each protocol. 
 The number of listeners does not affect CLB pricing. CLB pricing is time (day) based and not tied to the number of listeners.
 https://intl.cloud.tencent.com/document/product/214/8848
 
 A user can ask for an internal Load Balancer via a K8s Service definition that  has the annotation `service.kubernetes.io/qcloud-loadbalancer-internal-subnetid: subnet-xxxxxxxx`. Internal CLBs are free.
 
+Summary: Tencent Cloud CPI and LBs seem to support mixed protocol Services, and the pricing is not based on the number of protocols per Service.
+
 
 ### Risks and Mitigations
+
+#### Billing perspective
 
 The goal of the current restriction on the K8s API was to prevent an unexpected extra charging for Load Balancers that were created based on Services with mixed protocol definitions.
 If the current limitation is removed without any option control we introduce the same risk. Let's see which clouds are exposed:
@@ -251,6 +264,30 @@ If the current limitation is removed without any option control we introduce the
 - OpenStack: here the risk is that there is almost no chance to analyze all the public OpenStack cloud providers with regard to their pricing policies
 - Oracle: no risk
 - Tencent Cloud: no risk
+
+#### API change and upgrade/downgrade situations
+
+In we relax here a validation rule, which is considered as an API-breaking act by the [K8s API change guidelines](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api_changes.md) Even if the change is implemented behind a feature flag the following actions can cause problems:
+- the user creates a Service with mixed protocols and then
+  - turns off the feature flag; or
+  - executes K8s version rollback to the N-1 version where this feature is not available at all
+
+When investigating the possible issues with such a change we must consider [the supported version skew among components](https://deploy-preview-11060--kubernetes-io-master-staging.netlify.com/docs/setup/version-skew-policy/), which are the K8s API server and the cloud controller managers (CPI implementations) in our case.
+
+First of all, feature gate based (a.k.a conditional) field validation must be implemented as defined in the [API change guidelines](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api_changes.md#alpha-field-in-existing-api-version) One can see a good example for a case when an existing field got a new optional value [here](https://github.com/kubernetes/kubernetes/issues/72651). This practice ensures that upgrade between _future releases_ is safe. Also it enables the further management of existing API objects that were created before turning off the feature flag. Though it does not save us when a K8s API server version rollback is executed to a release in which this feature is not implemented at all.
+
+Our feature does not introduce new values or new fields. It enables the usage of an existing value in existing fields, but with a different logic. I.e. if someone creates a Service with mixed protocol setup and then rollbacks the API server to a version that does not implement this feature the clients will still get the Service with mixed protocols when they read that via the rollback'd API. If the client (CPI implementation) has been rollbacked, too, then the client may receive such a Service setup that it does not support.
+
+- Alibaba: no risk. The current CPI and LB already supports the mixed protocols in the same Service definition. If this feature is enabled in an API server and then the API server rollback is executed the CPI can still handle the Services with mixed protocol sets.
+- AWS: no risk. The current CPI accepts Services with TCP protocol only, i.e. after a K8s upgrade a user still cannot use this feature. Consequently, a rollback in the K8s version does not introduce any issues.
+- Azure: no risk. The current CPI and LB already supports the mixed protocols in the same Service definition. The situation is the same as with the Alibaba CPI.
+- GCE: currently the GCE CPI assumes that a Service definition contains a single protocol value, as it assumes that the Service Controller already rejected Services with mixed protocols. While the Service Controller really did so a while ago, it does not do this anymore. It means a risk.
+- IBM Cloud VPC: no risk. The same situation like in the case of AWS.
+- IBM Cloud Classic: no risk. The CPI and NLB already supports TCP and UDP in the same Service definition. The same situation like in the case of Alibaba.
+- OpenStack: no risk. The CPI and NLB already supports TCP and UDP in the same Service definition. The same situation like in the case of Alibaba.
+- Oracle: no risk. The CPI and LB already supports mixed protocols. The same situation like in the case of Alibaba.
+- Tencent Cloud: no risk. The CPI and LB already supports mixed protocols. The same situation like in the case of Alibaba.
+
 
 The other risk is in the introduction of this feature without an option control mechanism, i.e. as a general change in Service handling. In that case there is the question whether this feature should be a part of the conformance test set, because it can affect the conformance of cloud providers.
 
@@ -284,6 +321,7 @@ The same works in GCE as a workaround.
 I.e. if a cloud provider wants to support this feature the CPI must have a logic to apply the Service definitions with a common key value (for example loadBalancerIP) on the same LoadBalancer instance. If the CPI does not implement this support it will work as it does currently.
 Pro:
 - the cloud provider can decide when to support this feature, and until that it works as currently for this kind of config
+- the restriction on mixed protocols can remain in the K8s API - i.e. there is no K8s API change, and the corresponding risks are mitigated
 Con:
 - the users must maintain two Service instances
 - Atomic update can be a problem - the key must be such a Service attribute that cannot be patched
