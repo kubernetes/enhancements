@@ -198,7 +198,7 @@ supply DaemonSets that will allow users to run Flannel configured in either
 L2Bridge/Host-Gateway or VXLAN/Overlay mode. These ideally can be upstreamed into the Flannel
 project.
 
-If the users wish to use a different plugin they can create a DaemonSet to be applied in place of the Flannel DaemonSet.
+If users wish to use a different plugin they can create a DaemonSet to be applied in place of the Flannel DaemonSet.
 
 ### Risks and Mitigations
 
@@ -217,10 +217,6 @@ Versioning of the script per-Kubernetes version can become a problem if a certai
 
 *Mitigation*: Use git branches to version the script in the repository where it is hosted.
 
-**Risk**: Failing or missing preflight checks on Windows
-
-*Mitigation*: The existing kubeadm codebase already has good abstraction in this regard. Still, a PR that makes some non-intrusive adjustments in _windows.go files might be required.
-
 **Risk**: Permissions on Windows paths that kubeadm generates can pose a security hole.
 
 kubeadm creates directories using MakeAll() and such directories are strictly Linux originated for the time being - such as /etc.
@@ -233,8 +229,7 @@ On Windows, the creation of such a path can result in sensitive files to be expo
 
 ### Test Plan
 
-E2e testing for kubeadm on Windows is still being planned.
-One available option is to run “kubeadm join” periodically on Azure nodes and federate the reports to test-infra/testgrid.
+e2e testing for kubeadm on Windows will be performed using Cluster API on AWS.
 The CI signal will be owned by SIG Windows.
 
 ### Graduation Criteria
@@ -247,15 +242,14 @@ This proposal targets *Alpha* support for kubeadm based Windows worker nodes in 
 Kube-proxy and CNI plugins are run as Kubernetes pods.
 The feature is maintained by active contributors.
 The feature is tested by the community and feedback is adapted with changes.
-Kubeadm join performs complete preflight checks on the host node
-E2e tests might not be complete but provide good signal.
+e2e tests will be published but may might not be completely green.
 Documentation is in a good state. Kubeadm documentation is edited to point to documentation provided by SIG Windows.
 Kubeadm upgrade is implemented.
 
 ##### Beta -> GA Graduation
 
 The feature is well tested and adapted by the community.
-E2e test provide sufficient coverage.
+e2e tests are stable and consistent with other SIG-Windows CI signals.
 Documentation is complete.
 
 ### Upgrade / Downgrade Strategy
