@@ -193,7 +193,10 @@ On Linux, kube-proxy is deployed as a DaemonSet in the kubeadm init phase. We wi
 
 #### CNI plugin deployment
 
-On Linux, CNI plugins are deployed via kubectl and run as a DaemonSet. We will supply a DaemonSet that will run Flannel configured in VXLAN/Overlay mode. This ideally can be upstreamed into the Flannel project.
+On Linux, CNI plugins are deployed via kubectl and run as a DaemonSet. We will
+supply DaemonSets that will allow users to run Flannel configured in either
+L2Bridge/Host-Gateway or VXLAN/Overlay mode. These ideally can be upstreamed into the Flannel
+project.
 
 If the users wish to use a different plugin they can create a DaemonSet to be applied in place of the Flannel DaemonSet.
 
