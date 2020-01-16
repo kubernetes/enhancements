@@ -1,31 +1,28 @@
 ---
-title: KEP Template
+title: kubectl-diff
 authors:
-  - "@janedoe"
-owning-sig: sig-xxx
+  - "@julianvmodesto"
+owning-sig: sig-cli
 participating-sigs:
-  - sig-aaa
-  - sig-bbb
+  - sig-api-machinery
 reviewers:
   - TBD
-  - "@alicedoe"
 approvers:
   - TBD
-  - "@oscardoe"
 editor: TBD
-creation-date: yyyy-mm-dd
-last-updated: yyyy-mm-dd
-status: provisional|implementable|implemented|deferred|rejected|withdrawn|replaced
+creation-date: 2020-01-15
+last-updated: 2020-01-15
+status: implementable
 see-also:
-  - "/keps/sig-aaa/20190101-we-heard-you-like-keps.md"
-  - "/keps/sig-bbb/20190102-everyone-gets-a-kep.md"
+  - "/keps/sig-api-machinery/0015-dry-run.md"
+  - "/keps/sig-api-machinery/0006-apply.md"
 replaces:
-  - "/keps/sig-ccc/20181231-replaced-kep.md"
+  - n/a
 superseded-by:
-  - "/keps/sig-xxx/20190104-superceding-kep.md"
+  - n/a
 ---
 
-# Title
+# kubectl-diff
 
 This is the title of the KEP.
 Keep it simple and descriptive.
