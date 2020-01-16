@@ -58,10 +58,6 @@ See the KEP process for details on each of these items.
 
 ## Table of Contents
 
-A table of contents is helpful for quickly jumping to sections of a KEP and for highlighting any additional information provided beyond the standard KEP template.
-
-Ensure the TOC is wrapped with <code>&lt;!-- toc --&rt;&lt;!-- /toc --&rt;</code> tags, and then generate with `hack/update-toc.sh`.
-
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
@@ -84,9 +80,6 @@ Ensure the TOC is wrapped with <code>&lt;!-- toc --&rt;&lt;!-- /toc --&rt;</code
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Implementation History](#implementation-history)
-- [Drawbacks [optional]](#drawbacks-optional)
-- [Alternatives [optional]](#alternatives-optional)
-- [Infrastructure Needed [optional]](#infrastructure-needed-optional)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -271,17 +264,3 @@ Major milestones might include
 - the first Kubernetes release where an initial version of the KEP was available
 - the version of Kubernetes where the KEP graduated to general availability
 - when the KEP was retired or superseded
-
-## Drawbacks [optional]
-
-Why should this KEP _not_ be implemented.
-
-## Alternatives [optional]
-
-Similar to the `Drawbacks` section the `Alternatives` section is used to highlight and record other possible approaches to delivering the value proposed by a KEP.
-
-## Infrastructure Needed [optional]
-
-Use this section if you need things from the project/SIG.
-Examples include a new subproject, repos requested, github details.
-Listing these here allows a SIG to get the process for these resources started right away.
