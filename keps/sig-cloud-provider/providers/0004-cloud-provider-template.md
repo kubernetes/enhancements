@@ -72,7 +72,7 @@ This is where you outline all the prerequisites for new providers that have been
 
 ### Repository Requirements
 
-For [repository requirements](https://github.com/kubernetes/community/blob/master/keps/sig-cloud-provider/0002-cloud-controller-manager.md#repository-requirements) you are expected to have a repo (belonging to any organization, ideally owned by your cloud provider) that has a working implementation of the [Kubernetes Cloud Controller Manager](https://kubernetes.io/docs/tasks/administer-cluster/running-cloud-controller/). Note that the list of requirements are subject to change.
+For [repository requirements](https://github.com/kubernetes/enhancements/blob/master/keps/sig-cloud-provider/20180530-cloud-controller-manager.md#repository-requirements) you are expected to have a repo (belonging to any organization, ideally owned by your cloud provider) that has a working implementation of the [Kubernetes Cloud Controller Manager](https://kubernetes.io/docs/tasks/administer-cluster/running-cloud-controller/). Note that the list of requirements are subject to change.
 
 ### User Experience Reports
 
@@ -80,7 +80,7 @@ There must be a reasonable amount of user feedback about running Kubernetes for 
 
 ### Testgrid Integration
 
-Your cloud provider is reporting conformance test results to TestGrid as per the [Reporting Conformance Test Results to Testgrid KEP](https://github.com/kubernetes/community/blob/master/keps/sig-cloud-provider/0018-testgrid-conformance-e2e.md).
+Your cloud provider is reporting conformance test results to TestGrid as per the [Reporting Conformance Test Results to Testgrid KEP](https://github.com/kubernetes/enhancements/blob/master/keps/sig-cloud-provider/0018-testgrid-conformance-e2e.md).
 
 ### CNCF Certified Kubernetes
 
