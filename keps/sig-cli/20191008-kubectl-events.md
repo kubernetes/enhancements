@@ -39,8 +39,9 @@ superseded-by:
 
 ## Summary
 
-Presently, `kubectl get events` has some limitations. It cannot be extended to met the increasing user needs to 
-support more functionality without impacting the `kubectl get`. 
+Presently, `kubectl get events` has some limitations. It cannot be extended to meet the increasing user needs to 
+support more functionality without impacting the `kubectl get`. This KEP proposes a new command `kubectl events` which will help
+address the existing issues and enhance the `events` functionality to accommodate more features.  
 
 For eg: Any modification to `--watch` functionality for `events` will also change the `--watch` for `kubectl get` since the `events` is dependent of `kubectl get`
 
@@ -48,8 +49,12 @@ Some of the requested features for events include:
 
 1. Extended behaviour for `--watch` 
 2. Default sorting of `events`
+3. Union of fields in custom-columns option 
+4. Listing the events timeline for last N minutes
+5. Soring the events using the other criteria as well 
 
-This KEP proposes to add a new command `events` for `kubectl` and  be independent of `kubectl get`. This can be 
+
+This new `kubectl events` command will be independent of `kubectl get`. This can be 
 extended to address the user requirements that cannot be achieved if the command is dependent of `get`.
 
 ## Motivation
@@ -58,11 +63,10 @@ A separate sub-command for `events` under `kubectl` which can help with long sta
 Some of these issues that be addressed with the above change are: 
 
 - User would like to see a stream of "create" or update events, filtering out deletes or any other event type. 
-- User would like to know when an object is deleted while `--watching` it. 
-- User would like to see all changes to a single object until it is deleted. 
 - User would like to watch an object until it exists. 
 - User would like to see the results of `events` in default sorting order. 
 - User would like to see a timeline of `events`
+
 
 Examples:
 
@@ -76,16 +80,26 @@ Examples:
       ```
   - Following are the proposed options for the command: 
 
-  - `kuebctl events --watch-event=[]` flag that allows users to subscribe to particular events, 
-     filtering out any other event kind: 
-     ```
-       kubectl events --watch-event=Delete
-       or 
-       kuebctl events  --watch-event=Warning 
+  - `kuebctl events --watch` flag that allows users to subscribe to particular events, 
+     filtering out any other event kind
 
-     ```
+  - Union of Fields in custom-column `kubectl events -o custom-columns=Object:'.involvedObject.kind'/'.involvedObject.name'`
+  - For a timeline of events for last N minutes `kubectl events --since=1h` 
+  - Sorting based on type `kubectl events --sort-by='.type'`
+
+
+  
 
 Some of the options that will be included in the new command are: 
+
+```
+- Option to sort the events apart from the default time based sorting. 
+- Option to watch on the events streaming
+- Option to provide union of fields
+- Option to list timeline of events for last N hours
+```
+
+Some Other flags that can be included are: 
 
 ```
   Options:
@@ -128,6 +142,8 @@ Following is a list of long standing issues for `events`
 - kubectl get events doesnt sort events by last seen time [kubernetes/kubernetes#29838](https://github.com/kubernetes/kubernetes/issues/29838)
 - Improve --watch behavior for events [kubernetes/kubernetes#65646](https://github.com/kubernetes/kubernetes/issues/65646)
 - kubectl get events should give a timeline of events [kubernetes/kubernetes#36304](https://github.com/kubernetes/kubernetes/issues/36304)
+- Kubectl get events should provide a way to combine ( Union) of columns [kubernetes/kubernetes#82950](https://github.com/kubernetes/kubernetes/issues/82950)
+- 
 
 ### Goals
 
@@ -143,10 +159,11 @@ command is performing and also to extend the `kubectl get events` functionality 
 
 ### Implementation Details/Notes/Constraints [optional]
 
-Once the kubectl events command is implemented, this can be rolled out in multiple phases: 
--  Release the new command `kubectl evetns` alongside with the existing command. 
--  After the successful adoption of the new command `kubectl events`, the old command under `kubectl get events` can be removed. 
-- The new `kubectl events` can further be extended with the new features/long standing issues. 
+Once the experimental kubectl events command is implemented, this can be rolled out in multiple phases: 
+-  Release the new command `kubectl events` as experimental command alongside with the existing command. 
+-  Gather the feedback,during the initial phase, which will help in improving the command further. 
+-  After the initial phase, we can graduate this command. 
+-  The new `kubectl events` can further be extended with the new features/long standing issues. 
 
 
 
