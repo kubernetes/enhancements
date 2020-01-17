@@ -114,7 +114,7 @@ spec:
     app: my-dns-server
   ```
 
-Once that limit is removed those Service definitions will reach the Cloud Provider LB controller implementations. The logic of the particular Cloud Provider LB controller and of course the actual capabilities and architecture of the backing Cloud Load Balancer services determines how the actual exposure of the application really manifests. For this reason it is important to understand the capabilities of those backing services and to design this feature accordingly.
+Once that limit is removed those Service definitions will reach the Cloud Provider LB controller implementations. The logic of the particular Cloud Provider LB controller and of course the actual capabilities and architecture of the backing Cloud Load Balancer services determine how the actual exposure of the application really manifests. For this reason it is important to understand the capabilities of those backing services and to design this feature accordingly.
 
 ### User Stories
 
@@ -188,8 +188,6 @@ HTTP protocol support: there is a different LB type in GCE for HTTP traffic: HTT
 
 Forwarding rule pricing is per rule: there is a flat price up to 5 forwarding rule instances, on top of which every new forwarding rule has additional cost. 
 
-https://cloud.google.com/compute/network-pricing#forwarding_rules_charges
-
 [GCP forwarding_rules_charges](https://cloud.google.com/compute/network-pricing#forwarding_rules_charges) suggest that the same K8s Service definition would result in the creation of 2 forwarding rules in GCP. This has the same fixed price up to 5 forwarding rule instances, and each additional rule results in extra cost.
 
 A user can ask for an internal TCP/UDP Load Balancer via a K8s Service definition that also has the annotation `cloud.google.com/load-balancer-type: "Internal"`. Forwarding rules are also part of the GCE Internal TCP/UDP Load Balancer architecture, but in case of Internal TCP/UDP Load Balancer it is not supported to define different forwarding rules with different protocols for the same IP address. That is, for Services with type=LoadBalancer and with annotation `cloud.google.com/load-balancer-type: "Internal"` this feature would not be supported.
@@ -197,9 +195,8 @@ A user can ask for an internal TCP/UDP Load Balancer via a K8s Service definitio
 Summary: The implementation of this feature can affect the bills of GCP users. However the following perspectives are also observed:
 - if a user wants to have UDP and TCP ports behind the same NLB two Services with must be defined, one for TCP and one for UDP. As the pricing is based on the number of forwarding rules this setup also means the same pricing as with the single Service instance.
 - if a user is happy with 2 NLB (Service) instances for TCP and UDP still the user has two more forwarding rules to be billed - i.e. it has the same effect on pricing as if those TCP and UDP endpoints were behind the same NLB instance
-- already now the bills of users is affected if they have more than 5 forwarding rules as the result of their current Service definitions (e.g. 6 or more port definitions in a single Serice, or if the number of all port definitions in different Services is 6 or more, etc.)
 
-That is, if we consider the "single Service with 6 ports" case the user has to pay more for that single Service ("single LB instance") than for another Service (another LB instance) with 5 or less ports already now. It is not the number of LBs that matters. This phenomenon is already there with the current practice, and the enabling of mixed protocols will not change it to the worse.
+That is, if a user wants to use different protocols on the same LB that can be achieved with 2 Service definitions with the current GCP services now. It is not the number of LBs or Service definitions that matters. This phenomenon is already there with the current practice, and the enabling of mixed protocols will not change it to the worse.
 
 #### IBM Cloud
 
@@ -259,7 +256,7 @@ If the current limitation is removed without any option control we introduce the
 - Alibaba: the pricing here is not protocol or forwarding rule or listener based. No risk.
 - AWS: there is no immediate impact on the pricing side as the AWS CPI limits the scope of protocols to TCP only.
 - Azure: Azure pricing is indeed based on load-balancing rules, but this cloud already supports mixed protocols via annotations. There is another risk for Azure, though: if the current restriction is removed from the K8s API, the Azure CPI must be prepared to handle Services with mixed protocols.
-- GCE: here the risk is valid once the user exceeds the threshold of 5 forwarding rules. Though, as we mentioned above, it is already possible now without this feature
+- GCE: here the risk is valid once the user exceeds the threshold of 5 forwarding rules.
 - IBM Cloud: no risk
 - OpenStack: here the risk is that there is almost no chance to analyze all the public OpenStack cloud providers with regard to their pricing policies
 - Oracle: no risk
@@ -267,14 +264,14 @@ If the current limitation is removed without any option control we introduce the
 
 #### API change and upgrade/downgrade situations
 
-In we relax here a validation rule, which is considered as an API-breaking act by the [K8s API change guidelines](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api_changes.md) Even if the change is implemented behind a feature flag the following actions can cause problems:
+We relax here a validation rule, which is considered as an API-breaking act by the [K8s API change guidelines](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api_changes.md) Even if the change is implemented behind a feature flag the following actions can cause problems:
 - the user creates a Service with mixed protocols and then
   - turns off the feature flag; or
   - executes K8s version rollback to the N-1 version where this feature is not available at all
 
 When investigating the possible issues with such a change we must consider [the supported version skew among components](https://deploy-preview-11060--kubernetes-io-master-staging.netlify.com/docs/setup/version-skew-policy/), which are the K8s API server and the cloud controller managers (CPI implementations) in our case.
 
-First of all, feature gate based (a.k.a conditional) field validation must be implemented as defined in the [API change guidelines](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api_changes.md#alpha-field-in-existing-api-version) One can see a good example for a case when an existing field got a new optional value [here](https://github.com/kubernetes/kubernetes/issues/72651). This practice ensures that upgrade between _future releases_ is safe. Also it enables the further management of existing API objects that were created before turning off the feature flag. Though it does not save us when a K8s API server version rollback is executed to a release in which this feature is not implemented at all.
+First of all, feature gate based (a.k.a conditional) field validation must be implemented as defined in the [API change guidelines](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api_changes.md#alpha-field-in-existing-api-version) One can see a good example for a case when an existing field got a new optional value [here](https://github.com/kubernetes/kubernetes/issues/72651). This practice ensures that upgrade and rollback between _future releases_ is safe. Also it enables the further management of existing API objects that were created before turning off the feature flag. Though it does not save us when a K8s API server version rollback is executed to a release in which this feature is not implemented at all.
 
 Our feature does not introduce new values or new fields. It enables the usage of an existing value in existing fields, but with a different logic. I.e. if someone creates a Service with mixed protocol setup and then rollbacks the API server to a version that does not implement this feature the clients will still get the Service with mixed protocols when they read that via the rollback'd API. If the client (CPI implementation) has been rollbacked, too, then the client may receive such a Service setup that it does not support.
 
@@ -326,52 +323,40 @@ Con:
 - the users must maintain two Service instances
 - Atomic update can be a problem - the key must be such a Service attribute that cannot be patched
 
+#### Proposed solution
+
+In the first release: 
+ - a feature flag shall control whether loadbalancer Services with mixed protcol configuration are accepted or not at validation time
+ - we must add a note to the documentation that if such Service is created then it may break things after a rollback - it depends on the cloud provider implementation
+ - the update of such services shall be possible even if the feature flag is OFF. This is to prepare for the next release when the feature flag is removed from the create path, too, and after a rollback to the first release the update of existing Service objects must be possible
+ - the CPI implementations shall be prepared to deal with Services with mixed protocol configurations. It does not mean that the CPI implementations have to accept such Services. It means that the CPI implementations shall be able to process such Services. The CPI implementation can still reject such a Service if it cannot manage the corresponding cloud load balancers for those Services. The point is, that the system (Service - CPI implementation - cloud LB) must be in a consitent state in the end, and the user must have meaningful information about that state. For exempla, if the Service is not accepted by the CPI implementation this fact shall be available for the user.
+
+In the second release: 
+- the feature flag shall be set to ON by default. Most probably we want to keep the feature flag so cloud providers can decide whether they enable it or not in their managed K8s services depending their CPI implementations.
+
 ### Test Plan
+
+There must be e2e cases that test whether CPI implementations handle Service definitions with mixed protocol configuration on a consistent way. I.e. either the cloud LB is set up properly or the Service is rejected by the CPI implementation.
 
 ### Graduation Criteria
 
-#### Examples
-
-##### Alpha -> Beta Graduation
-
-- Gather feedback from developers and surveys
-- Complete features A, B, C
-- Tests are in Testgrid and linked in KEP
-
-##### Beta -> GA Graduation
-
-- N examples of real world usage
-- N installs
-- More rigorous forms of testing e.g., downgrade tests and scalability tests
-- Allowing time for feedback
-
-##### Removing a deprecated flag
-
-- Announce deprecation and support policy of the existing flag
-- Two versions passed since introducing the functionality which deprecates the flag (to address version skew)
-- Address feedback on usage/changed behavior, provided on GitHub issues
-- Deprecate the flag
-
-**For non-optional features moving to GA, the graduation criteria must include [conformance tests].**
-
-[conformance tests]: https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md
+This feature does not need alpha phase. It uses a new feature flag, but from the perspective of graduation it does not need the full transformation path. In the first release the feature flag is turned OFF by default. In the next release it can be turned ON by default. Cloud providers with managed K8s products can still decide when they activate it for the managed clusters.
 
 ### Upgrade / Downgrade Strategy
 
-If applicable, how will the component be upgraded and downgraded? Make sure this is in the test plan.
+#### Downgrade Strategy
 
-Consider the following in developing an upgrade/downgrade strategy for this enhancement:
-- What changes (in invocations, configurations, API use, etc.) is an existing cluster required to make on upgrade in order to keep previous behavior?
-- What changes (in invocations, configurations, API use, etc.) is an existing cluster required to make on upgrade in order to make use of the enhancement?
+If a user creates loadbalancer Services with mixed protocols and then the user downgrades to an API Server version that does not support this feature at all the only operation the user can execute on those Services is the delete operation.
+
+If the downgrade also affects the version of the CPI implementation (i.e. when a K8s API server rollback implicitly executes a CPI implementation rollback, too) then the new CPI implementation version may not handle the existing cloud load balancers on a consistent way. It is recommended that the user deletes such Services before the rollback is started to such K8s API server/CPI implementation that does not support this feature.
+
+The same stands for the case when the user wants to move the existing Service definitions to another K8s cluster: the user shall check whether the target K8s cluster supports this feature or not and modify the Service descriptors accordingly.
 
 ### Version Skew Strategy
 
-If applicable, how will the component handle version skew with other components? What are the guarantees? Make sure
-this is in the test plan.
+Version skew is possible among the following components in this case: K8s API server, CPI implementation, cloud load balancer
 
-Consider the following in developing a version skew strategy for this enhancement:
-- Does this enhancement involve coordinating behavior in the control plane and in the kubelet? How does an n-2 kubelet without this feature available behave when this feature is used?
-- Will any other components on the node change? For example, changes to CSI, CRI or CNI may require updating that component before the kubelet.
+Once this feature is implemented in the API server there is a chance that the CPI implementation has to deal with load balancer Services with mixed protocol configuration anytime, even if the API server is downgraded later. The CPI implementation shall be prepared for this, i.e. the CPI implementation cannot expect anymore that the API Server (or any other component, like the Service Controller) filters out such Service definitions. If the CPI implementation wants to have such filtering it has to implement that on its own. In this case the CPI implementation shall be upgraded before the feature is enabled on the API server. In case of a rollback of the API Server such Services can still exist in the cluster, so the CPI implementation should not be downgraded to a version that does not implement that filtering. This is the reason why the CPI implementations shall be updated (if necessary) to be able to deal with such Service definitions already in the first release of this feature.
 
 ## Implementation History
 
