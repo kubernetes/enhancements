@@ -95,9 +95,9 @@ Check these off as they are completed for the Release Team to track. These check
 
 ## Summary
 
-This KEP aims to extend Kubernetes with a new storage pool concept which enables the underlying storage system to provide more control over placement decisions. These are expected to be leveraged by application operators for modern scale out storage services (e.g. MongoDB, ElasticSearch, Kafka, MySQL, PostgreSQL, Minio, etc.) in order to optimize availability, durability, performance and cost. 
+This KEP aims to extend Kubernetes's storage pool concept (see https://github.com/kubernetes/enhancements/pull/1353) to enables the underlying storage system to provide more control over placement decisions. These are expected to be leveraged by application operators for modern scale out storage services (e.g. MongoDB, ElasticSearch, Kafka, MySQL, PostgreSQL, Minio, etc.) in order to optimize availability, durability, performance and cost. 
 
-The document lays out the background for why modern storage services benefit from finer control over placement, explain how SDS offers and abstracts such capabilities, and analyses the gaps in the existing Kubernetes APIs. Based on that, it derives detailed Goals and User Stories and proposes to introduce a new `StoragePool` CRD and suggets how to use existing `StorageClass` for how to steer placement to these storage pools.
+The document lays out the background for why modern storage services benefit from finer control over placement, explain how SDS offers and abstracts such capabilities, and analyses the gaps in the existing Kubernetes APIs. Based on that, it derives detailed Goals and User Stories and proposes extensions to the `StoragePool` API and suggests how to use existing `StorageClass` for how to steer placement to these storage pools.
 
 ## Motivation
 
@@ -134,7 +134,7 @@ For this document we focus on either bare metal or SDS systems which allow stora
 ### Kubernetes Background / Motivation
 In terms of modelling these SDS capabilities and application placement constraints, we should abstract from physical disks to more logical concepts. This document proposes to introduce a concept called storage pools (also sometimes referred to as placement choices) that promise uncorrelated failure behavior among each other. For example, two distinct enterprise storage arrays could fit this definition. Or the physical disks in a bare metal deployment could fit it as well. Each such storage pool possibly has a maximum capacity, health, attributes (e.g. SSD vs. HDD hardware). And each such storage pool can be accessible by one or multiple K8s nodes. In turn, when placing Persistent Volume Claims (PVCs) the application should be able to choose which storage pool to provision onto.
 
-Note that Kubernetes and CSI already support for a K8s node to announce topology information, by virtue of giving a list of Key/Value-Pairs, with Zone and Region being well-known keys. However, there is no way to announce multiple distinct storage pools that a single Node can have access to. There is also no way to express the additional metadata (e.g. capacity) for such storage pools. While StorageClasses can be used to express opaque placement parameters down to the CSI driver and SDS, they are not capable of surfacing up the available choices and their metadata.
+Note that Kubernetes and CSI already support for a K8s node to announce topology information, by virtue of giving a list of Key/Value-Pairs, with Zone and Region being well-known keys. Thanks to https://github.com/kubernetes/enhancements/pull/1353 Kubernetes also exposes a `StoragePool` concept. In its current form this allows to expose capacity for a single or a group of nodes. But there is no way to announce multiple distinct storage pools that a single Node can have access to. There is additional metadata (e.g. health, hardware type, performance tier) of such storage pools that is not currently exposed.
 
 ### Schedulers
 The Kubernetes scheduler has features for both compute (Pod) placement but also storage placement, by virtue of features like topology aware scheduling, zone and region support for PVCs, Storage Classes and underlying CSI. So naturally the question is how the problems and proposals laid out in this document relate to the Kubernetes scheduler. In short, this document does not propose to extend the Kubernetes scheduler and leaves that to a possible future work. 
@@ -142,6 +142,9 @@ The Kubernetes scheduler has features for both compute (Pod) placement but also 
 The reason for this is that we expect the vendors of these sophisticated scale out storage services to write their own Kubernetes controllers (aka operators) if they are trying to deeply optimize for performance, availability and durability the way that was outlined above. As laid out above, each storage service is different, implements high availability differently and has its own decisions of where to place data, how to leverage the available underlying topology. As such, a generic implementation in Kubernetes is nice-to-have, but not a priority, and can hence be pursued as a separate KEP.
 
 ### Related work
+
+This KEP builds on top of https://github.com/kubernetes/enhancements/pull/1353 which introduces `StoragePool`.
+
 In https://github.com/kubernetes/enhancements/blob/master/keps/sig-storage/20190124-local-persistent-volumes.md the case for local persistent volumes is made, e.g. the often superior performance of local devices. Aside from performance, local devices also have an aspect of expressing topology. But as outlined above, the concept is not generic enough to cover the use cases of cloud storage and modern Software Defined Storage.
 
 There is also https://github.com/kubernetes/enhancements/pull/1127 , which in similar ways argues for compute awareness of when K8s nodes are actually co-located physically. This is required for similar reasons to optimize availability given physical failure patterns.
@@ -150,9 +153,9 @@ Finally, the entire zone and region support and topology aware scheduling in Kub
 
 ### Goals
 
-* Extend CSI to allow a cluster to advertising storage storage pools
+* Extend CSI to allow a cluster to advertising storage storage pools more flexibly
   * Cover scenarios spanning at least physical disks or bins of scale out cloud storage services as storage pools
-  * Convey metadata that allows applications to make scheduling decisions:
+  * Convey metadata per pool that allows applications to make scheduling decisions:
     * Capacity
     * Which nodes have access to it
 * Use non-modified `StorageClass` for placement onto storage pools
@@ -174,26 +177,26 @@ Finally, the entire zone and region support and topology aware scheduling in Kub
 
 Let’s assume a simple scale out storage service, e.g. an ElasticSearch cluster. The scope of the ElasticSearch cluster should be the same as the Kubernetes cluster, with 1 ElasticSearch Pod per Kubernetes Node. ElasticSearch is configured with 3-way replication and wants to use 1 PVC per Node by leveraging fast local storage offered by an SDS. The CSI driver of the SDS has exposed placement choices such that every Node by itself is a choice. The Pods are configured with Spec.NodeSelector[“kubernetes.io/hostname”] to pin them to a particular node. 
 
-If we use a Node as a key in topology, this use case can be expressed by using existing Kubernetes mechanisms.
+If we use a Node as a key in topology, this use case can be expressed by using existing Kubernetes mechanisms. `StoragePool` can also be used to track capacity, but not health.
 
 #### Story 2
 
 Let’s assume a scale out storage service, e.g. a Minio Object Store cluster using Erasure Coding. The scope of the Minio cluster should be the same as the Kubernetes cluster, with 1 Minio Pod per Kubernetes Node. Minio is configured with erasure coding such that half the chunks are parity and the other half are data. Minio operates the erasure code on a per-disk basis and optimizes not just for host but also individual disk failures this way. Hence, let’s assume every Node has 4 physical drives. The SDS exposes 4 “placement choices” mapping the 4 physical disks to CSI topology choices. Minio then uses Pod affinity and Storage Class allowsTopology with the custom key com.example/disk=Disk1 for its first PVC, com.example/disk=Disk2 for its second PVC, etc., for a total of 4 PVCs matching the physical topology.
 
-The placement choices in this use case cannot be expressed using existing Kubernetes mechanism.
+The placement choices in this use case cannot be expressed using existing Kubernetes mechanism, because `StoragePool` and zone support have a single node as the smallest granularity.
 
 ![Story2-LocalDrives](./kep-storagepool-story2.png)
 
-Beyond the existence of the Placement Choice / Storage Pool, Minio further uses metadata to know that the storage pool has enough capacity to accommodate the desired PVC. If for example physical disks have different size, then Minio may decide to create PVCs of different sizes to still work in this scenario.
+Beyond the existence of the Storage Pool per disk, Minio further uses metadata to know that the storage pool has enough capacity to accommodate the desired PVC. If for example physical disks have different size, then Minio may decide to create PVCs of different sizes to still work in this scenario.
 
 #### Story 3
 
-Let’s assume a sharded and replicated MongoDB instance. Let’s further assume that the Cloud Storage Service used for the PVCs is comprised of 3 distinct Storage-Pods (not to be confused with K8s Pods) in both of the two available AZs, such that the 3 Storage-Pods fail independently by having dedicated power, networking, racks, hosts and disks. The CSI driver of the Cloud Storage service announces that 3 Storage-Pods per AZ as placement choices (AZ1-SP1, AZ1-SP2, AZ1-SP3, AZ2-SP1, etc.) and also advertises that all nodes in AZ1 can access all Storage-Pods in AZ1 (as a simple example). Let’s further assume MongoDB is configured for 3-way replication per shard. MongoDB decides to create 3 Pods for a given shard:
+Let’s assume a sharded and replicated MongoDB instance. Let’s further assume that the Cloud Storage Service used for the PVCs is comprised of 3 distinct StoragePools in both of the two available AZs, such that the 3 StoragePool fail independently by having dedicated power, networking, racks, hosts and disks. The CSI driver of the Cloud Storage service announces that 3 Storage-Pools per AZ as placement choices (AZ1-SP1, AZ1-SP2, AZ1-SP3, AZ2-SP1, etc.) and also advertises that all nodes in AZ1 can access all StoragePools in AZ1 (as a simple example). Let’s further assume MongoDB is configured for 3-way replication per shard. MongoDB decides to create 3 Pods for a given shard:
 * Pod1 has an affinity to AZ1, and its PVCs have an affinity to AZ1-SP1.
 * Pod2 has an affinity to AZ1, and its PVCs have an affinity to AZ1-SP2.
 * Pod3 has an affinity to AZ2, and its PVCs have an affinity to AZ2-SP1.
 
-If we compare this to the case where we can’t express the PVC affinity to the Storage-Pod, Pod1 and Pod2 may land on the same Storage-Pod and so if that Storage-Pod fails, it would take down two Pods. In the scenario described here, the math will show a higher availability and durability.
+If we compare this to the case where we can’t express the PVC affinity to the StoragePool, Pod1 and Pod2 may land on the same Storage-Pod and so if that StoragePool fails, it would take down two Pods. In the scenario described here, the math will show a higher availability and durability.
 
 The placement choices in this use case cannot be expressed using existing Kubernetes mechanism.
 
@@ -202,91 +205,46 @@ The placement choices in this use case cannot be expressed using existing Kubern
 
 ### Implementation Details/Notes/Constraints
 
-#### New CRD to surface Storage Pools
+#### Add fields to Storage Pools
 ```
-apiVersion: storagepool.storage.k8s.io/v1alpha1
-kind: StoragePool
+apiVersion: storage.k8s.io/v1alpha1
+kind: CSIStoragePool
 metadata:
   name: storagePool1
-  labels:
-     labelKey: labelValue
 spec:
-  driver: myDriver
+  [...]
   parameters:
      csiBackendSpecificOpaqueKey: csiBackendSpecificOpaqueValue
 status:
-  accessibleNodes: 
-  - node1
-  - node2
-  capacity:
-    total: 124676572
+  health: XXX
 ```
 
-#### API definitions for the Storage Pool
+#### API definition additions for the Storage Pool
 ```
-type StoragePool struct {
-        metav1.TypeMeta
-        // +optional
-        metav1.ObjectMeta
- 
-        // Spec defines the desired state of a storage pool
-        // +optional
-        Spec StorgePoolSpec
- 
-        // Status represents the current information about a storage pool
-        // +optional
-        Status StoragePoolStatus
+Type CSIStoragePoolSpec struct {
+    [...]
+    // Opaque parameters describing attributes of the storage pool
+    +optional
+    Parameters map[string]string
 }
- 
-// StoragePoolSpec describes the attributes of a storage pool
-Type StoragePoolSpec struct {
-    	// Name of the driver
-    	Driver string
- 
-    	// Opaque parameters describing attributes of the storage pool
-    	+optional
-    	Parameters map[string]string
-}
- 
-type StoragePoolStatus struct {
-    	// Nodes the storage pool has access to
-    	+optional
-  	AccessibleNodes []string
-  	// Capacity of the storage pool
-  	+optional
-  	Capacity *PoolCapacity
-  	// Last errors happened on the pool
-  	+optional
-  	Errors []StoragePoolError
-}
- 
-type PoolCapacity struct {
-    	// Total capacity of the storage pool
-    	// +optional
-    	Total *resource.Quantity
-}
- 
-// Describes an error encountered on the pool
-type StoragePoolError struct {
-    	// Time is the timestamp when the error was encountered.
-    	// +optional
-    	Time *metav1.Time
- 
-    	// Message details the encountered error
-    	// +optional
-    	Message *string
-}
-```
 
-Note that `StoragePool` are non-namespaced. 
+// XXX: Need a health enum
+ 
+type CSIStoragePoolStatus struct {
+    [...]
+  	// StoragePool Health
+  	+optional
+  	Health []StoragePoolHealth
+}
+```
 
 #### CSI changes
 
-* Add a ControllerListStoragePools RPC that lists storage pools for CSI drivers that support LIST_STORAGE_POOLS controller capability.
+* Add a ControllerListStoragePools RPC that lists storage pools for CSI drivers that support LIST_GRANULAR_STORAGE_POOLS controller capability.
 
-#### New external controller for StoragePool
+#### Extend external-privisioner
 
-CSI will be extended with a new ControllerListStoragePools() API, which returns all storage pools available via this CSI driver. A new external K8s controller uses this API upon CSI startup to learn about all storage pools and publish them into the K8s API server using the new StoragePool CRD. 
+CSI will be extended with a new ControllerListStoragePools() API, which returns all storage pools available via this CSI driver. External-provisioner currently constructs the StoragePool objects out of GetCapacity calls, and would now switch to the more expressive ControllerListStoragePools() if the capability is set.
 
 #### Usage of StoragePool objects by application
 Storage applications (e.g. MongoDB, Kafka, Minio, etc.), with their own operator (i.e. controllers), consume the data in the StoragePool. It is how they understand topology. For example, let’s say we are in User Story 2, i.e. every Node has a bunch of local drives each published as a StoragePool. The operator will understand that they are “local” drives by seeing that only one K8s Node has access to each of them, and it will see how many there are and of which size. Based on the mirroring/erasure coding scheme of the specific storage service, it can now translate to how many PVCs, which size and on which of these StoragePools to create. Given that the StoragePool may model something as fragile as a single physical drive, it is a real possibility for a StoragePool to fail or be currently inaccessible. The StoragePool hence also communicates that fact, and the Storage Service operator can understand when and why volumes are failing, and how to remediate (e.g. by putting an additional PVC on another pool and moving some data around). 
@@ -320,44 +278,3 @@ CSI uses a capability to maintain compatibility
 
 ## Drawbacks [optional]
 
-XXX Why should this KEP _not_ be implemented.
-
-## Alternatives 
-
-### Alternative Proposal - No CRD
-
-We considered an option without a new CRD, and leveraging existing extensibility instead.
-
-As storage pools are only meaningful throught the nodes by which they can be accessed, we can also consider publishing them and their details on Node objects. We can do such publication by leveraging existing CSI mechanism.
-
-Lets assume we encode a StoragePool a JSON:
-```
-{
-    “storage-pod1”: {
-       “capacityTotal”: 12345,
-       [...]
-   }
-   [...]
-}
-```
-
-We can then use the `accessible_topology` field in the result of the CSI function `NodeGetInfo()`, and have the CSI plugin return VOLUME_ACCESSIBILITY_CONSTRAINTS capability:
-```
-accessible_topology = {‘’failure-domain.beta.vmware.com/placement-choices’’ : PLACEMENTCHOICES}
-```
-
-The label will be auto-added in K8s:
-```
-apiVersion: v1
-kind: Node
-metadata:
-  labels:
-    failure-domain.beta.vmware.com/placement-choices: PLACEMENTCHOICES
-[...]
-```
-
-If a pool is accessible from multiple nodes, they would all quote the same. The `parameters` field could be used by applications to populate `StorageClass`, or a new `storagePoolNames` fields could be added to PVCs.
-
-#### Reasons against this alternative proposal
-
-We decided against this alternative proposal (in favor of the proposed solution stated aboove) because StoragePool is more of a first class entity. The same information would need to be replicated on many Nodes, e.g. in Story 3. Best case this would bloat the Nodes, cause additional API server updates, and watching controllers to reconcile without need. Worse case the information on the Nodes, even when referring to the same underlying pool, may be get out of sync and only eventual consistent. A CRD is the clean, easy to reason, reduced load, concern separating solution.
