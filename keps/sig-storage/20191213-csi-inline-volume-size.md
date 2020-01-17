@@ -4,13 +4,13 @@ authors:
   - "@pohly"
 owning-sig: sig-storage
 reviewers:
-  - TBD
+  - "@saad-ali"
 approvers:
-  - TBD
+  - "@saad-ali"
 editor: "@pohly"
 creation-date: 2019-12-13
 last-updated: 2019-12-13
-status: provisional
+status: implementable
 see-also:
   - "https://github.com/kubernetes/enhancements/pull/1353"
 ---
@@ -30,13 +30,13 @@ see-also:
     - [Ephemeral local volumes](#ephemeral-local-volumes)
   - [Capacity-aware scheduling of pods](#capacity-aware-scheduling-of-pods)
   - [fsSize field](#fssize-field)
-  - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
+  - [Graduation Criteria](#graduation-criteria)
+      - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
+      - [Beta -&gt; GA Graduation](#beta---ga-graduation)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
-  - [Version Skew Strategy](#version-skew-strategy)
 - [Implementation History](#implementation-history)
-- [Drawbacks](#drawbacks)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -131,8 +131,9 @@ mount](https://kubernetes-csi.github.io/docs/pod-info.html) feature:
 if (and only if) the driver enables that, then a new
 `csi.storage.k8s.io/size` entry in
 `NodePublishVolumeRequest.volume_context` is set to the string
-representation of the size quantity. An unset size is passed as empty
-string.
+representation of the size quantity as decimal number, i.e. CSI drivers
+do not need to import Kubernetes code to parse it.
+An unset size is passed as empty string.
 
 This has to be optional because CSI drivers written for 1.16 might do
 strict validation of the `volume_context` content and reject volumes
@@ -150,26 +151,41 @@ Setting `fsSize` for a CSI driver which ignores the field is not an
 error. This is similar to setting `fsType` which also may get ignored
 silently.
 
-### Risks and Mitigations
-
-TBD
-
 ## Design Details
 
 ### Test Plan
 
-TBD
+The [mount
+tests](https://github.com/kubernetes/kubernetes/blob/05b6c32886cf522550928de30287806d53e1b293/pkg/volume/csi/csi_mounter_test.go#L97)
+will be extended to cover different scenarios:
+- no `fsSize` set
+- `fsSize` set
+- both of these cases with and without pod info enabled
+
+### Graduation Criteria
+
+##### Alpha -> Beta Graduation
+
+- Gather feedback from developers
+- Full implementation of `fsSize` to `csi.storage.k8s.io/size` conversion
+- Tests are in Testgrid and linked in KEP
+
+##### Beta -> GA Graduation
+
+- 3 CSI drivers which use the field
+- Allowing time for feedback (two releases in beta)
 
 ### Upgrade / Downgrade Strategy
 
-TBD
+Upgrading with an existing pod spec that uses a vendor-specific size
+parameter is handled because the CSI driver must continue to check for
+that parameter. Downgrading in this scenario also works.
 
-### Version Skew Strategy
-
-TBD
+When actually using the new `fsSize` parameter, downgrading or
+disabling `CSIInlineVolumeSize` will result in not passing the
+`csi.storage.k8s.io/size` parameter. A CSI driver can treat this as an
+error instead of falling back to some default volume size.
 
 ## Implementation History
 
-## Drawbacks
-
-Why should this KEP _not_ be implemented - TBD.
+- Kubernetes 1.18: alpha (tentative)
