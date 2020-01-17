@@ -135,21 +135,21 @@ command-line integration test suite:
 
 #### Alpha -> Beta Graduation
 
-- At least 2 release cycles pass to gather feedback and bug reports during
+- [x] At least 2 release cycles pass to gather feedback and bug reports during
   real-world usage
-- End-user documentation is written
-- The client-side dry-run used to calculate the diff is replaced with the
+- [x] End-user documentation is written
+- [x] The client-side dry-run used to calculate the diff is replaced with the
   server-side dry-run feature to improve correctness and accuracy for this
   feature
-- The dependent API server-side dry-run feature is released to beta
+- [x] The dependent API server-side dry-run feature is released to beta
 
 #### Beta -> GA Graduation
 
-- At least 2 release cycles pass to gather feedback and bug reports during
+- [x] At least 2 release cycles pass to gather feedback and bug reports during
   real-world usage
-- Integration tests are in Testgrid and linked in KEP
-- Documentation exists for user stories
-- The dependent API server-side dry-run feature is released to GA
+- [ ] Integration tests are in Testgrid and linked in KEP
+- [ ] Documentation exists for user stories
+- [ ] The dependent API server-side dry-run feature is released to GA
 
 ### Upgrade / Downgrade Strategy
 
@@ -166,6 +166,7 @@ fail to get a merged version of the object and not display a diff.
 
 ## Implementation History
 
-- 2019-01 beta in 1.13
-- 2017-12 alpha in 1.9
+- *2020-01*: Added KEP
+- *2019-01*: Promoted from alpha to beta in 1.13
+- *2017-12*: Released as alpha in 1.9
 
