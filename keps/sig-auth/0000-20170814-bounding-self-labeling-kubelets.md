@@ -151,11 +151,11 @@ v1.16:
 other than the specifically allowed labels/prefixes described above (deprecation period
 of 6 months for CLI elements of admin-facing components is complete)
 
-v1.17:
+v1.19:
 
 * NodeRestriction admission prevents kubelets from adding/removing/modifying `kubernetes.io` or `k8s.io`
 labels other than the specifically allowed labels/prefixes described above on Node *update* and *create*
-(oldest supported kubelet running against a v1.17 apiserver is v1.15)
+(oldest supported kubelet running against a v1.19 apiserver is v1.17)
 
 ## Alternatives Considered
 

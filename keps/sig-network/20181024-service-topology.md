@@ -10,36 +10,35 @@ reviewers:
 approvers:
   - "@thockin"
 creation-date: 2018-10-24
-last-updated: 2018-12-03
+last-updated: 2019-10-17
 status: implementable
 ---
 
 # Topology-aware service routing
 
-Table of Contents
-=================
+## Table of Contents
 
-   * [Topology-aware service routing](#topology-aware-service-routing)
-      * [Table of Contents](#table-of-contents)
-      * [Motivation](#motivation)
-         * [Goals](#goals)
-         * [Non-goals](#non-goals)
-         * [User cases](#user-cases)
-         * [Background](#background)
-      * [Proposal](#proposal)
-      * [Design Details](#design-details)
-         * [Service API changes](#service-api-changes)
-         * [Addressing Scalbility](#addressing-scalbility)
-            * [New PodLocator resource](#new-podlocator-resource)
-            * [New PodLocator controller](#new-podlocator-controller)
-         * [Kube-proxy changes](#kube-proxy-changes)
-         * [DNS server changes (in beta stage)](#dns-server-changes-in-beta-stage)
-         * [Graduation Criteria](#graduation-criteria)
-            * [Alpha](#alpha)
-            * [Alpha -&gt; Beta](#alpha---beta)
-               * [Beta -&gt; GA Graduation](#beta---ga-graduation)
-
-Created by [gh-md-toc](https://github.com/ekalinin/github-markdown-toc)
+<!-- toc -->
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-goals](#non-goals)
+  - [User cases](#user-cases)
+  - [Background](#background)
+- [Proposal](#proposal)
+- [Design Details](#design-details)
+  - [Service API changes](#service-api-changes)
+  - [Intersection with Local External Traffic Policy](#intersection-with-local-external-traffic-policy)
+  - [Service Topology Scalability](#service-topology-scalability)
+    - [New PodLocator resource](#new-podlocator-resource)
+    - [New PodLocator controller](#new-podlocator-controller)
+  - [Kube-proxy changes](#kube-proxy-changes)
+  - [DNS server changes (in beta stage)](#dns-server-changes-in-beta-stage)
+  - [Test Plan](#test-plan)
+  - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
+    - [Alpha -&gt; Beta](#alpha---beta)
+      - [Beta -&gt; GA Graduation](#beta---ga-graduation)
+<!-- /toc -->
 
 ## Motivation
 
@@ -105,7 +104,7 @@ type ServiceSpec struct {
   // topologyKeys is a preference-order list of topology keys.  If backends exist for
   // index [0], they will always be chosen; only if no backends exist for index [0] will backends for index [1] be considered.
   // If this field is specified and all indices have no backends, the service has no backends, and connections will fail.  We say these requirements are hard.
-  // In order to experss soft requirement, we may give a special node label key "" as it means "match all nodes".
+  // In order to express soft requirement, we may give a special node label key "*" as it means "match all nodes".
   TopologyKeys []string `json:"topologyKeys" protobuf:"bytes,1,opt,name=topologyKeys"`
 }
 ```
@@ -123,7 +122,13 @@ spec:
 
 In our example above, we will firstly try to find the backends in the same host. If no backends match, we will then try the same zone. If finally we can't find any backends in the same host or same zone, then we say the service has no satisfied backends and connections will fail.
 
-If we configure topologyKeys as `["kubernetes.io/hostname", ""]`, we just do the effort to find the backends in the same host and will not fail the connection if no matched backends found.
+If we configure topologyKeys as `["kubernetes.io/hostname", "*"]`, we just do the effort to find the backends in the same host and will not fail the connection if no matched backends found.
+
+### Intersection with Local External Traffic Policy
+
+Topology Aware Services (# of topologyKeys > 0) and Services using `externalTrafficPolicy=Local` will be mutually exclusive. This will be enforced by API validation where a Service with `externalTrafficPolicy=Local` cannot specify any topology keys and vice versa.
+
+Before Service Topology goes GA, kube-proxy should be able to provide feature parity with `externalTrafficPolicy=Local` when the chosen topology is `kubernetes.io/hostname`. The correctness and feasibility of the `kubernetes.io/hostname` topology as a sufficient replacement for `externalTrafficPolicy=Local` will be evaluated during the alpha phase.
 
 ### Service Topology Scalability
 
@@ -184,12 +189,29 @@ We should consider this kind of topology support for headless service in coredns
 
 In order to handle headless services, the DNS server needs to know the node corresponding to the client IP address in the DNS request - i.e, it needs to map PodIP -> Node. Kubernetes DNS servers(include kube-dns and CoreDNS) will watch PodLocator object. When a client/pod request a headless service domain to DNS server, dns server will retrieve the node labels of both client and the backend Pods via PodLocator. DNS server will only select the IPs of backend Pods which are in the same topological domain with client Pod, and then write A record.
 
+### Test Plan
+
+* Unit tests to check API validation of topology keys.
+* Unit tests to check API validation of incompatibility with
+  externalTrafficPolicy.
+* Unit tests for topology endpoint filtering function, including at least:
+  * No topology constraints (no keys)
+  * A single hard constraint (single specific key)
+  * A single `"*"` constraint.
+  * Multiple hard constraints (no final `"*"` key).
+  * Multiple constraints plus a final `"*"` key.
+* Each of the above sets of keys must have tests with varying topologies
+  available.
+* E2E tests with hard constraint and soft constraints using Endpoints.
+* E2E tests with hard constraint and soft constraints using EndpointSlice.
+
 ### Graduation Criteria
 
 #### Alpha
 
 - topologyKeys field is added to the Service API
 - kube-proxy implements service topology in-memory only enabled by `ServiceTopology` feature gate.
+- Unit tests
 
 #### Alpha -> Beta
 

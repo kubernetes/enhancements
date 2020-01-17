@@ -13,8 +13,8 @@ approvers:
   - "@deads2k"
   - "@lavalamp"
 creation-date: 2019-03-27
-last-updated: 2019-07-19
-status: implementable
+last-updated: 2019-10-10
+status: implemented
 see-also:
   - TODO
 replaces:
@@ -27,23 +27,25 @@ superseded-by:
 
 ## Table of Contents
 
-* [Less object serializations](#less-object-serializations)
-   * [Table of Contents](#table-of-contents)
-   * [Release Signoff Checklist](#release-signoff-checklist)
-   * [Summary](#summary)
-   * [Motivation](#motivation)
-      * [Goals](#goals)
-      * [Non-Goals](#non-goals)
-   * [Proposal](#proposal)
-      * [Risks and Mitigations](#risks-and-mitigations)
-   * [Design Details](#design-details)
-      * [Test Plan](#test-plan)
-      * [Graduation Criteria](#graduation-criteria)
-      * [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
-      * [Version Skew Strategy](#version-skew-strategy)
-   * [Implementation History](#implementation-history)
-   * [Drawbacks](#drawbacks)
-   * [Alternatives](#alternatives)
+<!-- toc -->
+- [Release Signoff Checklist](#release-signoff-checklist)
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [Risks and Mitigations](#risks-and-mitigations)
+- [Design Details](#design-details)
+  - [Test Plan](#test-plan)
+  - [Graduation Criteria](#graduation-criteria)
+  - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+  - [Version Skew Strategy](#version-skew-strategy)
+- [Implementation History](#implementation-history)
+- [Alternatives](#alternatives)
+  - [Bake-in caching objects into apimachinery](#bake-in-caching-objects-into-apimachinery)
+  - [LRU cache](#lru-cache)
+  - [Smart objects](#smart-objects)
+<!-- /toc -->
 
 ## Release Signoff Checklist
 
@@ -120,90 +122,105 @@ read/watched by different components.
 This proposal does not introduce any user-visible changes - the proposed changes
 are purely implementation details of kube-apiserver.
 
-The first observation is that a given object may be serialized to multiple
-different formats, based on it's:
-- group and version
-- subresource
-- output media type
+First, we will extend [runtime.Encoder][] interface with the Identifier() method:
+```go
+// Identifier represents an identifier.
+// Identitier of two different objects should be equal if and only if for every
+// input the output they produce is exactly the same.
+type Identifier string
 
-However, group, version and subresource are reflected in the `SelfLink` of
-returned object. As a result, for a given (potentially unversioned) object,
-we can identify all its possible serializations by (SelfLink, media-type)
-pairs, and that is what we will do below.
-
-We propose to extend [WithVersionEncoder][] by adding ObjectConvertor to it:
-```
-type WithVersionEncoder struct {
-	Version GroupVersioner
-	Encoder
-	ObjectConvertor
-	ObjectTyper
+type Encoder interface {
+	...
+	// Identifier returns an identifier of the encoder.
+	// Identifiers of two different encoders should be equal if and only if for every input
+	// object it will be encoded to the same representation by both of them.
+	Identifier() Identifier
 }
 ```
 
-On top of that, we propose introducing `CustomEncoder` interface:
+With that, we will introduce a new interface:
+```go
+// CacheableObject allows an object to cache its different serializations
+// to avoid performing the same serialization multiple times.
+type CacheableObject interface {
+	// CacheEncode writes an object to a stream. The <encode> function will
+	// be used in case of cache miss. The <encode> function takes ownership
+	// of the object.
+	// If CacheableObject is a wrapper, then deep-copy of the wrapped object
+	// should be passed to <encode> function.
+	// CacheEncode assumes that for two different calls with the same <id>,
+	// <encode> function will also be the same.
+	CacheEncode(id Identifier, encode func(Object, io.Writer) error, w io.Writer) error
+
+	// GetObject returns a deep-copy of an object to be encoded - the caller of
+	// GetObject() is the owner of returned object. The reason for making a copy
+	// is to avoid bugs, where caller modifies the object and forgets to copy it,
+	// thus modifying the object for everyone.
+	// The object returned by GetObject should be the same as the one that is supposed
+	// to be passed to <encode> function in CacheEncode method.
+	// If CacheableObject is a wrapper, the copy of wrapped object should be returned.
+	GetObject() Object
 ```
-type CustomEncoder interface {
-	InterceptEncode(encoder WithVersionEncoder, w io.Writer) error
+
+We will add support for `CacheableObject` for all existing Encoders. This is
+basically as simple as:
+```go
+func (e *Encoder) Encode(obj Object, stream io.Writer) error {
+	if co, ok := obj.(CacheableObject); ok {
+		return co.CacheEncode(s.Identifier(), s.doEncode, stream)
+	}
+	return s.doEncode(obj, stream)
+}
+
+func (e *Encoder) doEncode(obj Object, stream io.Writer) error {
+	// Existing encoder logic.
 }
 ```
 
-With that, we will change existing serializers (json, protobuf and versioning),
-to check if the to-be-serialized object implements that interface and if so simply
-call its `Encode()` method instead of using existing logic.
+Necessary generic tests will be created to ensure it is supported correctly.
 
-[WithVersionEncoder]: https://github.com/kubernetes/kubernetes/blob/990ee3c09c0104cc1045b343040fe76082862d73/staging/src/k8s.io/apimachinery/pkg/runtime/helper.go#L215
+[runtime.Encoder]: https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/apimachinery/pkg/runtime/interfaces.go#L52
 
-With those (very local and small) changes, we will introduce an internal type
-in package `cacher` implementing both `runtime.Object` and `CustomEncoder`
+With those (relatively mechanical) changes, we will introduce an internal type
+in package `cacher` implementing both `runtime.Object` and `CacheableObject`
 interfaces. The idea behind it is that it will be encapsulating the original
 object and additionally it will be able to accumulate its serialized versions.
 It will look like this:
-```
-// TODO: Better name is welcome :)
-type CachingObject struct {
-	// Object is the object (potentially in the internal version)
-	// for which serializations should be cached for future reuse.
-	Object runtime.Object
-
-	// FIXME: We may want to change that during performance experiments
-	// e.g. to use sync.Map or slice or something different, also to
-	// allow some fast-path.
-	lock sync.Mutex
-	Versioned map[runtime.GroupVersioner]*CachingVersionedObject
-}
-
-// TODO: Better name is welcome :)
-type CachingVersionedObject struct {
-	// Ojbect is the versioned object for which serializations
-	// should be cached.
-
-	// FIXME: We may want to change that during performance experiments
-	// e.g. to use sync.Map or slice or something different, also to
-	// allow some fast-path.
-	lock sync.Mutex
-	serialization map[cachingKey]*serializationResult
-}
-
-type cachineKey struct {
-	// encoder is a proxy for mediaType - given we don't have access to it
-	// (Serializer interface doesn't expose it) and we want to minimize
-	// changes to apimachinery, we take runtime.Encoder which is a singleton
-	// for a given mediaType in apiserver.
-	encoder runtime.Encoder
-	// selfLink of the serialized object identifying endpoint
-	// (e.g. group, version, subresource)
-	selfLink string
-}
-
-// TODO: Better name is welcome :)
+```go
+// serializationResult captures a result of serialization.
 type serializationResult struct {
+	// once should be used to ensure serialization is computed once.
 	once sync.Once
 
 	// raw is serialized object.
 	raw []byte
 	// err is error from serialization.
 	err error
+}
+
+// metaRuntimeInterface implements runtime.Object and
+// metav1.Object interfaces.
+type metaRuntimeInterface interface {
+	runtime.Object
+	metav1.Object
+}
+
+// cachingObject is an object that is able to cache its serializations
+// so that each of those is computed exactly once.
+//
+// cachingObject implements the metav1.Object interface (accessors for
+// all metadata fields). However, setters for all fields except from
+// SelfLink (which is set lately in the path) are ignored.
+type cachingObject struct {
+	lock sync.RWMutex
+
+	// Object for which serializations are cached.
+	object metaRuntimeInterface
+
+	// serializations is a cache containing object`s serializations.
+	// The value stored in atomic.Value is of type serializationsCache.
+	// The atomic.Value type is used to allow fast-path.
+	serializations atomic.Value
 }
 ```
 
@@ -221,14 +238,12 @@ memory usage.
 We may want to revisit that decision later if we would need more gains
 from avoiding serialization and deep-copies of objects in watchcache.
 
-Note that based on a [POC][] (slightly different that above design),
-the gains of implementing it include:
+Based on the implementation, we observed the following gains:
 - eliminating kube-apiserver unresponsiveness in case of write of
 a single huge Endpoints object: [#75294#comment-472728088][]
-- ~7% lower cpu-usage
-- XX% less memory allocations
+- ~5% lower cpu-usage
+- ~15% less memory allocations
 
-[POC]: https://github.com/kubernetes/kubernetes/pull/60067
 [#75294#comment-472728088]: https://github.com/kubernetes/kubernetes/issues/75294#issuecomment-472728088
 
 ### Risks and Mitigations
@@ -273,6 +288,8 @@ kube-apiserver, so version skew strategy is not relevant.
 - 2019-03-27: KEP Created
 - 2019-07-18: KEP Merged
 - 2019-07-19: KEP updated with test plan and moved to implementaable state.
+- 2019-10-10: KEP updated to reflect the implementation.
+- v1.17: Implemented
 
 ## Alternatives
 

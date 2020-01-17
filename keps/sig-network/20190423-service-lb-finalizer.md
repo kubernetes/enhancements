@@ -170,7 +170,8 @@ services.
 Beta: Allow Alpha ("remove finalizer") to soak for at least one release, then
 switch the "add finalizer" logic to be on by default.
 
-GA: TBD
+GA: Allow Beta to soak for at least one release. (There is no behavioral
+differences from the Beta phase.)
 
 ## Implementation History
 

@@ -294,6 +294,12 @@ Beta 1.15 milestones achieved:
 * sig-storage test grid: https://testgrid.k8s.io/sig-storage-kubernetes#gce-slow
 * Node kubelet feature test grid: https://testgrid.k8s.io/sig-node-kubelet#node-kubelet-features
 
+Stable 1.17 milestones achieved:
+* Stable implementation: https://github.com/kubernetes/kubernetes/pull/82578
+* Documentation: https://github.com/kubernetes/website/pull/16547
+* sig-storage test grid: https://k8s-testgrid.appspot.com/sig-storage-kubernetes#gce&include-filter-by-regex=Variable
+* sig-storage slow tests: https://k8s-testgrid.appspot.com/sig-storage-kubernetes#gce-slow&include-filter-by-regex=Variable
+
 ## Alternatives - Using subPathFrom
 A possible further implementation could derive directly from the `fieldRef` as
 

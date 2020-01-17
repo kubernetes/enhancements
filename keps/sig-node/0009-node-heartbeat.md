@@ -17,7 +17,7 @@ approvers:
 editor: TBD
 creation-date: 2018-04-27
 last-updated: 2018-04-27
-status: implementable
+status: implemented
 see-also:
   - "https://github.com/kubernetes/kubernetes/issues/14733"
   - "https://github.com/kubernetes/kubernetes/pull/14735"

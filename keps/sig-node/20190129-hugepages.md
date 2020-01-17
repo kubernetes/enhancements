@@ -194,23 +194,30 @@ status:
 
 #### Pod Specification
 
-A pod must make a request to consume pre-allocated huge pages using the resource
-`hugepages-<hugepagesize>` whose quantity is a positive amount of memory in
-bytes.  The specified amount must align with the `<hugepagesize>`; otherwise,
-the pod will fail validation.  For example, it would be valid to request
+Containers in a pod can cunsume huge pages by requesting pre-allocated
+huge pages. In order to request huge pages, A pod spec must specify a certain
+amount of huge pages using the resource `hugepages-<hugepagesize>` in container
+object. The quantity of huge pages must be a positive amount of memory in bytes.
+The specified amount must align with the `<hugepagesize>`; otherwise, the pod
+will fail validation. For example, it would be valid to request
 `hugepages-2Mi: 4Mi`, but invalid to request `hugepages-2Mi: 3Mi`.
 
 The request and limit for `hugepages-<hugepagesize>` must match.  Similar to
 memory, an application that requests `hugepages-<hugepagesize>` resource is at
 minimum in the `Burstable` QoS class.
 
+If multiple containers consume huge pages in the same pod, the request must be
+made for each container. Similar to memory setting in cgroup sandbox, the sum of
+huge page limits across the pod sets on pod cgroup sandbox, and the limit of
+containers also sets on container cgroup sandboxes individually.
+
 If a pod consumes huge pages via `shmget`, it must run with a supplemental group
 that matches `/proc/sys/vm/hugetlb_shm_group` on the node.  Configuration of
 this group is outside the scope of this specification.
 
-A pod may consume multiple huge page sizes in a single pod spec. In this
-case it must use `medium: HugePages-<hugepagesize>` notation for all
-volume mounts.
+A pod may consume multiple huge page sizes backed by the `hugetlbfs` in a single
+pod spec. In this case it must use `medium: HugePages-<hugepagesize>` notation
+for all volume mounts.
 
 A pod may use `medium: HugePages` only if it requests huge pages of one
 size.
@@ -335,7 +342,7 @@ spec:
 ```
 
 A pod that requests huge pages of one size and uses another size in a
-volume emptyDir madium should fail validation.
+volume emptyDir medium should fail validation.
 This is an example of such an invalid pod. It requests hugepages of 2Mi
 size, but specifies 1Gi in `medium: HugePages-1Gi`:
 
@@ -383,16 +390,98 @@ spec:
         hugepages-1Gi: 2Gi
 ```
 
+The following is an example of the pod that requests multiple sizes of
+huge pages for multiple containers. It requests 1Gi huge pages of size 1Gi and
+2Mi for the container1 and 1Gi huge pages of size 2Mi for the container2 with
+emptyDir backing. Note that `hugetlbfs` offers `size` mount option to specify
+the maximum amount of memory for the mount, but huge pages medium does not use
+the option to set limits so that the huge pages usage of containers will be
+controlled by container cgroup sandboxes individually:
+```
+apiVersion: v1
+kind: Pod
+metadata:
+  name: example
+spec:
+  containers:
+  - name: container1
+    volumeMounts:
+    - mountPath: /hugepage-2Mi
+      name: hugepage-2Mi
+    - mountPath: /hugepage-1Gi
+      name: hugepage-1Gi
+    resources:
+      requests:
+        hugepages-2Mi: 1Gi
+        hugepages-1Gi: 1Gi
+      limits:
+        hugepages-2Mi: 1Gi
+        hugepages-1Gi: 1Gi
+  - name: container2
+    volumeMounts:
+    - mountPath: /hugepage-2Mi
+      name: hugepage-2Mi
+    resources:
+      requests:
+        hugepages-2Mi: 1Gi
+      limits:
+        hugepages-2Mi: 1Gi
+  volumes:
+  - name: hugepage-2Mi
+    emptyDir:
+      medium: HugePages-2Mi
+  - name: hugepage-1Gi
+    emptyDir:
+      medium: HugePages-1Gi
+```
+
 #### CRI Updates
 
 The `LinuxContainerResources` message should be extended to support specifying
 huge page limits per size.  The specification for huge pages should align with
 opencontainers/runtime-spec.
-
 see:
 https://github.com/opencontainers/runtime-spec/blob/master/config-linux.md#huge-page-limits
 
-The CRI changes are required before promoting this feature to Beta.
+The runtime-spec provides the object `hugepageLimits` as an array of objects to
+represent `hugetlb` controller. `hugepageLimits` allows specifying `limit` per
+`pageSize`. The following is an example of the `hugepageLimits` object,
+which has limits per 2MB and 64KB page size:
+
+```
+    "hugepageLimits": [
+        {
+            "pageSize": "2MB",
+            "limit": 209715200
+        },
+        {
+            "pageSize": "64KB",
+            "limit": 1000000
+        }
+   ]
+```
+
+The `LinuxContainerResources` message can be extended to specify multiple sizes
+to align with the runtime-spec in this way:
+```
+message LinuxContainerResources {
+    ...
+    string cpuset_mems = 7;
+    // List of HugepageLimits to limit the HugeTLB usage of container per page size. Default: nil (not specified).
+    repeated HugepageLimit hugepage_limits = 8;
+}
+
+// HugepageLimit corresponds to the file`hugetlb.<hugepagesize>.limit_in_byte` in container level cgroup.
+// For example, `PageSize=1GB`, `Limit=1073741824` means setting `1073741824` bytes to hugetlb.1GB.limit_in_bytes.
+message HugepageLimit {
+    // The value of PageSize has the format <size><unit-prefix>B (2MB, 1GB),
+    // and must match the <hugepagesize> of the corresponding control file found in `hugetlb.<hugepagesize>.limit_in_bytes`.
+    // The values of <unit-prefix> are intended to be parsed using base 1024("1KB" = 1024, "1MB" = 1048576, etc).
+    string page_size = 1;
+    // limit in bytes of hugepagesize HugeTLB usage.
+    uint64 limit = 2;
+}
+```
 
 #### Cgroup Enforcement
 

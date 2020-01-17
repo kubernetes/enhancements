@@ -17,7 +17,7 @@ approvers:
 editor: "@sttts"
 creation-date: 2019-04-26
 last-updated: 2019-07-29
-status: implementable
+status: implemented
 see-also:
   - "/keps/sig-api-machinery/20180731-crd-pruning.md"
   - "/keps/sig-api-machinery/20190425-structural-openapi.md"
@@ -123,7 +123,7 @@ Defaulting happens top-down, i.e. we apply defaults for an object first, then di
 
 The `default` field in the CRD types is considered alpha quality. We will add a `CustomResourceDefaulting` feature gate. Values for `default` will be rejected if the gate is not enabled and there have not been `default` values set before (ratcheting validation). 
 
-[Kubebuilder's crd-gen](https://github.com/kubernetes-sigs/controller-tools/tree/master/cmd/crd) can make use of this feature by adding another tag, e.g. `// +default=<arbitrary-json-value>`. Defaults are arbitrary JSON values, which must also validate (types are checked during CRD creation and update, value validation is checked for requests, but not for etcd reads) and are not subject to pruning (defaulting happens after pruning).
+[Kubebuilder's crd-gen](https://github.com/kubernetes-sigs/controller-tools/tree/master/pkg/crd) can make use of this feature by adding another tag, e.g. `// +default=<arbitrary-json-value>`. Defaults are arbitrary JSON values, which must also validate (types are checked during CRD creation and update, value validation is checked for requests, but not for etcd reads) and are not subject to pruning (defaulting happens after pruning).
 
 ### Validation
 

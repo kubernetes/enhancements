@@ -16,12 +16,30 @@ approvers:
 editor: "@deads2k"
 creation-date: 2019-06-12
 last-updated: 2019-07-03
-status: implementable
+status: implemented
 ---
 
 # k8s.io Group Protection
 
 ## Table of Contents
+
+<!-- toc -->
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [Behavior of new clusters](#behavior-of-new-clusters)
+  - [Behavior of old clusters](#behavior-of-old-clusters)
+  - [What to do if you accidentally put an unapproved API in a protected group](#what-to-do-if-you-accidentally-put-an-unapproved-api-in-a-protected-group)
+- [References](#references)
+  - [Test Plan](#test-plan)
+  - [Graduation Criteria](#graduation-criteria)
+  - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+  - [Version Skew Strategy](#version-skew-strategy)
+- [Alternatives considered](#alternatives-considered)
+- [Implementation History](#implementation-history)
+<!-- /toc -->
 
 ## Summary
 

@@ -8,12 +8,14 @@ participating-sigs:
 reviewers:
   - "@derekwaynecarr"
   - "@vishh"
+  - "@justaugustus"
+  - "@alejandrox1"
 approvers:
-  - TBD
-editor: TBD
+  - "@derekwaynecarr"
+  - "@dims"
 creation-date: 2019-07-31
-last-updated: 2019-08-01
-status: provisional
+last-updated: 2019-11-12
+status: implementable
 ---
 
 # Production Readiness Review Process
@@ -30,7 +32,6 @@ status: provisional
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
 - [Implementation History](#implementation-history)
-- [Infrastructure Needed](#infrastructure-needed)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -93,6 +94,10 @@ all new features, at a level appropriate to the features' maturity levels.
 ### Non-Goals
 
 * Building new tooling to enforce the process.
+* Provide guidance for specific Kubernetes deployment models. That is,
+  requirements for features should be generally applicable to Kubernetes
+  deployments, not specific to use cases such as single or mult-tenant, cloud
+  provider, on-prem, edge, or other modes.
 
 ## Proposal
 
@@ -105,37 +110,11 @@ all new features, at a level appropriate to the features' maturity levels.
   of this questionnaire will be included in playbook for the feature (the
   creation of this playbook should be one of the production readiness criteria).
 
-  The actual questionnaire will be part of the implementation of this KEP, but
-  some example items include:
-  * Feature enablement and rollback
-    - How can this feature be enabled / disabled in a live cluster?
-    - Can the feature be disabled once it has been enabled (i.e., can we roll
-      back the enablement)?
-    - Will enabling / disabling the feature require downtime for the control
-      plane?
-    - Will enabling / disabling the feature require downtime or reprovisioning
-      of a node?
-    - What happens if a cluster with this feature enabled is rolled back? What
-      happens if it is subsequently upgraded again?
-    - Are there tests for this?
-  * Dependencies
-    - Does this feature depend on any specific services running in the cluster
-      (e.g., a metrics service)?
-    - How does this feature respond to complete failures of the services on
-      which it depends?
-    - How does this feature respond to degraded performance or high error rates
-      from services on which it depends?
-  * Monitoring requirements
-    - How can an operator determine if the feature is in use by workloads?
-    - How can an operator determine if the feature is functioning properly?
-    - What are the service level indicators an operator can use to determine the
-      health of the service?
-    - What are reasonable service level objectives for the feature?
-  * Troubleshooting
-    - What are the known failure modes?
-    - How can those be detected via metrics or logs?
-    - What are the most useful log messages and what logging levels do they require?
-  * etc.
+  See [current questionnaire](https://github.com/kubernetes/community/blob/master/sig-architecture/production-readiness.md#questionnaire).
+
+* Establish a production readiness review subproject under SIG Architecture,
+  with subproject owners:
+  - johnbelamaric
 
 * Establish a production readiness review team, label, and CI check to prevent
   the merging of feature promotion PRs that lack production readiness.
@@ -158,13 +137,29 @@ include a means of:
 
 ## Design Details
 
-TBD - this section should include the label name and the description of prow
-configuration that is needed
+Phase 1 - Research and Pilot
+* Targeted to the 1.17 cycle.
+* Setup a pilot PRR team, which will:
+  * Deliver an initial PRR questionnaire and pilot it with non-blocking PRRs for
+    in-progress KEPs.
+  * Deliver an interview/questionnaire form for operators and interview them on
+    production issues that they experience, to ensure that the focus of this
+    effort is on meaningful problems.
+  * Deliver a postmortem summary of existing features that have stalled due to
+    production-readiness issues (e.g., cron jobs).
+* Resolve open questions, including:
+  * ~~Should the scope of this expand to feature lifecycle?~~ No, not at this
+    time.
+  * How do we measure the effectiveness of this effort?
+
+
+Phase 2 - Implementation
+* Details TBD based on outcome of Phase 1.
+* Develop the complete PRR questionnaire.
+* Design and implement the tooling to identify features needing PRR review.
 
 ## Implementation History
 
 - 2019-07-31: Created
-
-## Infrastructure Needed
-
-TBD
+- 2019-10-17: Review feedback, phase 1 implementable
+- 2019-11-12: Add establishment of subproject

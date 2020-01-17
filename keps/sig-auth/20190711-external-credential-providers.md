@@ -20,25 +20,25 @@ status: implementable
 
 ## Table of Contents
 
-* [External credential providers](#external-credential-providers)
-  * [Table of Contents](#table-of-contents)
-  * [Summary](#summary)
-  * [Motivation](#motivation)
-     * [Goals](#goals)
-     * [Non-Goals](#non-goals)
-  * [Proposal](#proposal)
-     * [Provider configuration](#provider-configuration)
-     * [Provider input format](#provider-input-format)
-     * [Provider output format](#provider-output-format)
-     * [Risks and Mitigations](#risks-and-mitigations)
-        * [Client authentication to the binary](#client-authentication-to-the-binary)
-        * [Invalid credentials before cache expiry](#invalid-credentials-before-cache-expiry)
-     * [Graduation Criteria](#graduation-criteria)
-        * [Beta](#beta)
-           * [Beta -&gt; GA Graduation](#beta---ga-graduation)
-  * [Alternatives](#alternatives)
-     * [RPC vs exec](#rpc-vs-exec)
-  * [Implementation History](#implementation-history)
+<!-- toc -->
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [Provider configuration](#provider-configuration)
+  - [Provider input format](#provider-input-format)
+  - [Provider output format](#provider-output-format)
+  - [Risks and Mitigations](#risks-and-mitigations)
+    - [Client authentication to the binary](#client-authentication-to-the-binary)
+    - [Invalid credentials before cache expiry](#invalid-credentials-before-cache-expiry)
+  - [Graduation Criteria](#graduation-criteria)
+    - [Beta](#beta)
+    - [Beta -&gt; GA Graduation](#beta---ga-graduation)
+- [Alternatives](#alternatives)
+  - [RPC vs exec](#rpc-vs-exec)
+- [Implementation History](#implementation-history)
+<!-- /toc -->
 
 ## Summary
 

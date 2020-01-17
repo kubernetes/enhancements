@@ -34,14 +34,22 @@ superseded-by:
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [Implementation Details/Notes/Constraints [optional]](#implementation-detailsnotesconstraints-optional)
+    - [API Topology](#api-topology)
+      - [Lists](#lists)
+      - [Maps and structs](#maps-and-structs)
     - [Kubectl](#kubectl)
       - [Server-side Apply](#server-side-apply)
+    - [Status Wiping](#status-wiping)
+      - [Current Behavior](#current-behavior)
+      - [Proposed Change](#proposed-change)
+      - [Alternatives](#alternatives)
+      - [Implementation History](#implementation-history)
   - [Risks and Mitigations](#risks-and-mitigations)
   - [Testing Plan](#testing-plan)
 - [Graduation Criteria](#graduation-criteria)
-- [Implementation History](#implementation-history)
+- [Implementation History](#implementation-history-1)
 - [Drawbacks](#drawbacks)
-- [Alternatives](#alternatives)
+- [Alternatives](#alternatives-1)
 <!-- /toc -->
 
 ## Summary
@@ -140,16 +148,59 @@ The linked documents should be read for a more complete picture.
 
 (TODO: update this section with current design)
 
-What are the caveats to the implementation?
-What are some important details that didn't come across above.
-Go in to as much detail as necessary here.
-This might be a good place to talk about core concepts and how they releate.
+#### API Topology
+
+Server-side apply has to understand the topology of the objects in order to make
+valid merging decisions. In order to reach that goal, some new Go markers, as
+well as OpenAPI extensions have been created:
+
+##### Lists
+
+Lists can behave in mostly 3 different ways depending on what their actual semantic
+is. New annotations allow API authors to define this behavior.
+
+- Atomic lists: The list is owned by only one person and can only be entirely
+replaced. This is the default for lists. It is defined either in Go IDL by
+pefixing the list with `// +listType=atomic`, or in the OpenAPI
+with `"x-kubenetes-list-type": "atomic"`.
+
+- Sets: the list is a set (it has to be of a scalar type). Items in the list
+must appear at most once. Individual actors of the API can own individual items.
+It is defined either in Go IDL by pefixing the list with `//
++listType=set`, or in the OpenAPI with
+`"x-kubenetes-list-type": "set"`.
+
+- Associative lists: Kubernetes has a pattern of using lists as dictionary, with
+"name" being a very common key. People can now reproduce this pattern by using
+`// +listType=map`, or in the OpenAPI with `"x-kubernetes-list-type": "map"`
+along with `"x-kubernetes-list-map-keys": ["name"]`, or `// +listMapKey=name`.
+Items of an associative lists are owned by the person who applied the item to
+the list.
+
+For compatibility with the existing markers, the `patchStrategy` and
+`patchMergeKey` markers are automatically used and converted to the corresponding `listType`
+and `listMapKey` if missing.
+
+##### Maps and structs
+
+Maps and structures can behave in two ways:
+- Each item in the map or field in the structure are independent from each
+other. They can be changed by different actors. This is the default behavior,
+but can be explicitly specified with `// +mapType=granular` or `//
++structType=granular` respectively. They map to the same openapi extension:
+`"x-kubernetes-map-type": "granular"`.
+- All the fields or item of the map are treated as one unit, we say the map/struct is
+atomic. That can be specified with `// +mapType=atomic` or `//
++structType=atomic` respectively. They map to the same openapi extension:
+`"x-kubernetes-map-type": "atomic"`.
 
 #### Kubectl
+
 ##### Server-side Apply
+
 Since server-side apply is currently in the Alpha phase, it is not
 enabled by default on kubectl. To use server-side apply on servers
-with the feature, run the command 
+with the feature, run the command
 `kubectl apply --experimental-server-side ...`.
 
 If the feature is not available or enabled on the server, the command
@@ -162,6 +213,91 @@ The long-term plan for this feature is to be the default apply on all
 Kubernetes clusters. The semantical differences between server-side
 apply and client-side apply will make a smooth roll-out difficult, so
 the best way to achieve this has not been decided yet.
+
+#### Status Wiping
+
+##### Current Behavior
+
+Right before being persisted to etcd, resources in the apiserver undergo a preparation mechanism that is custom for every resource kind.
+It takes care of things like incrementing object generation and status wiping.
+This happens through [PrepareForUpdate](https://github.com/kubernetes/kubernetes/blob/bc1360ab158d524c5a7132c8dd9dc7f7e8889af1/staging/src/k8s.io/apiserver/pkg/registry/rest/update.go#L49) and [PrepareForCreate](https://github.com/kubernetes/kubernetes/blob/bc1360ab158d524c5a7132c8dd9dc7f7e8889af1/staging/src/k8s.io/apiserver/pkg/registry/rest/create_update.go#L37).
+
+The problem status wiping at this level creates is, that when a user applies a field that gets wiped later on, it gets owned by said user.
+The apply mechanism (FieldManager) can not know which fields get wiped for which resource and therefor can not ignore those.
+
+Additionally ignoring status as a whole is not enough, as it should be possible to own status (and other fields) in some occasions. More conversation on this can be found in the [GitHub issue](https://github.com/kubernetes/kubernetes/issues/75564) where the problem got reported.
+
+##### Proposed Change
+
+Add an interface that resource strategies can implement, to provide field sets affected by status wiping.
+
+```go
+# staging/src/k8s.io/apiserver/pkg/registry/rest/rest.go
+// ResetFieldsProvider is an optional interface that a strategy can implement
+// to expose a set of fields that get reset before persisting the object.
+type ResetFieldsProvider interface {
+  // ResetFieldsFor returns a set of fields for the provided version that get reset before persisting the object.
+  // If no fieldset is defined for a version, nil is returned.
+  ResetFieldsFor(version string) *fieldpath.Set
+}
+```
+
+Additionally, this interface is implemented by `registry.Store` which forwards it to the corresponding strategy (if applicable).
+If `registry.Store` can not provide a field set, it returns nil.
+
+An example implementation for the interface inside the pod strategy could be:
+
+```go
+# pkg/registry/core/pod/strategy.go
+// ResetFieldsFor returns a set of fields for the provided version that get reset before persisting the object.
+// If no fieldset is defined for a version, nil is returned.
+func (podStrategy) ResetFieldsFor(version string) *fieldpath.Set {
+  set, ok := resetFieldsByVersion[version]
+  if !ok {
+    return nil
+  }
+  return set
+}
+
+var resetFieldsByVersion = map[string]*fieldpath.Set{
+  "v1": fieldpath.NewSet(
+    fieldpath.MakePathOrDie("status"),
+  ),
+}
+```
+
+When creating the handlers in [installer.go](https://github.com/kubernetes/kubernetes/blob/3ff0ed46791a821cb7053c1e25192e1ecd67a6f0/staging/src/k8s.io/apiserver/pkg/endpoints/installer.go) the current `rest.Storage` is checked to implement the `ResetFieldsProvider` interface and the result is passed to the FieldManager.
+
+```go
+# staging/src/k8s.io/apiserver/pkg/endpoints/installer.go
+var resetFields *fieldpath.Set
+if resetFieldsProvider, isResetFieldsProvider := storage.(rest.ResetFieldsProvider); isResetFieldsProvider {
+    resetFields = resetFieldsProvider.ResetFieldsFor(a.group.GroupVersion.Version)
+}
+```
+
+When provided with a field set, the FieldManager strips all `resetFields` from incoming update and apply requests.
+This causes the user/manager to not own those fields.
+
+```go
+...
+if f.resetFields != nil {
+  patchObjTyped = patchObjTyped.Remove(f.resetFields)
+}
+...
+```
+
+##### Alternatives
+
+We looked at a way to get the fields affected by status wiping without defining them separately.
+Mainly by pulling the reset logic from the strategies `PrepareForCreate` and `PrepareForUpdate` methods into a new method `ResetFields` implementing an `ObjectResetter` interface.
+
+This approach did not work as expected, because the strategy works on internal types while the FieldManager handles external api types.
+The conversion between the two and creating the diff was complex and would have caused a notable amount of allocations.
+
+##### Implementation History
+
+- 12/2019 [#86083](https://github.com/kubernetes/kubernetes/pull/86083) implementing a poc for the described approach
 
 ### Risks and Mitigations
 

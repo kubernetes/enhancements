@@ -18,7 +18,7 @@ approvers:
 editor: "@sttts"
 creation-date: 2018-07-31
 last-updated: 2019-04-30
-status: implementable
+status: implemented
 see-also:
   - "https://github.com/kubernetes/enhancements/pull/1002"
   - "/keps/sig-api-machinery/20180415-crds-to-ga.md"

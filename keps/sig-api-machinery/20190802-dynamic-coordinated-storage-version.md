@@ -19,26 +19,28 @@ status: provisional
 
 ## Table of Contents
 
-* [Overview](#overview)
-* [API changes](#api-changes)
-   * [Resource Version API](#resource-version-api)
-* [Changes to API servers](#changes-to-api-servers)
-   * [Curating a list of participating API servers in HA master](#curating-a-list-of-participating-api-servers-in-ha-master)
-   * [Updating StorageVersion](#updating-storageversion)
-   * [Garbage collection](#garbage-collection)
-   * [CRDs](#crds)
-   * [Aggregated API servers](#aggregated-api-servers)
-* [Consuming the StorageVersion API](#consuming-the-storageversion-api)
-* [StorageVersion API vs. StorageVersionHash in the discovery document](#storageversion-api-vs-storageversionhash-in-the-discovery-document)
-* [Backwards Compatibility](#backwards-compatibility)
-* [Graduation Plan](#graduation-plan)
-* [FAQ](#faq)
-* [Alternatives](#alternatives)
-   * [Letting API servers vote on the storage version](#letting-api-servers-vote-on-the-storage-version)
-   * [Letting the storage migrator detect if API server instances are in agreement](#letting-the-storage-migrator-detect-if-api-server-instances-are-in-agreement)
-* [Appendix](#appendix)
-   * [Accuracy of the discovery document of CRDs](#accuracy-of-the-discovery-document-of-crds)
-* [References](#references)
+<!-- toc -->
+- [Overview](#overview)
+- [API changes](#api-changes)
+  - [Resource Version API](#resource-version-api)
+- [Changes to API servers](#changes-to-api-servers)
+  - [Curating a list of participating API servers in HA master](#curating-a-list-of-participating-api-servers-in-ha-master)
+  - [Updating StorageVersion](#updating-storageversion)
+  - [Garbage collection](#garbage-collection)
+  - [CRDs](#crds)
+  - [Aggregated API servers](#aggregated-api-servers)
+- [Consuming the StorageVersion API](#consuming-the-storageversion-api)
+- [StorageVersion API vs. StorageVersionHash in the discovery document](#storageversion-api-vs-storageversionhash-in-the-discovery-document)
+- [Backwards Compatibility](#backwards-compatibility)
+- [Graduation Plan](#graduation-plan)
+- [FAQ](#faq)
+- [Alternatives](#alternatives)
+  - [Letting API servers vote on the storage version](#letting-api-servers-vote-on-the-storage-version)
+  - [Letting the storage migrator detect if API server instances are in agreement](#letting-the-storage-migrator-detect-if-api-server-instances-are-in-agreement)
+- [Appendix](#appendix)
+  - [Accuracy of the discovery document of CRDs](#accuracy-of-the-discovery-document-of-crds)
+- [References](#references)
+<!-- /toc -->
 
 ## Overview
 
@@ -170,6 +172,39 @@ During bootstrap, for each resource, the API server
   to avoid conflicting with other API servers.
 * installs the resource handler.
 
+The above mentioned process requires an API server to update the storageVersion
+before accepting API requests. If we don't enforce this order, data encoded in
+an unexpected version can sneak into etcd. For example, an API server persists a
+write request encoded in an obsoleted version, then it crashes before it can
+update the storageVersion. The storage migrator has no way to detect this write.
+
+For the cmd/kube-apiserver binary, we plan to enforce this order by adding a new
+filter to the [handler chain][]. Before kube-aggregator, kube-apiserver, and
+apiextension-apiserver have registered the storage version of the built-in
+resources they host, this filter only allows the following requests to pass:
+1. a request sent by the loopbackClient and is destined to the storageVersion
+   API.
+2. the verb of the request is GET.
+3. the request is for an API that is not persisted, e.g.,
+   SubjectAccessReview and TokenReview. [Here] is a complete list.
+4. the request is for an aggregated API, because the request is handled by the
+   aggregated API server.
+5. the request is for a custom resource, because the apiextension apiserver
+   makes sure that it updates the storage version before it serves the CR (see
+   [CRDs](#crds)).
+
+The filter rejects other requests with a 503 Service Unavailable response code.
+
+[handler chain]:https://github.com/kubernetes/kubernetes/blob/fc8f5a64106c30c50ee2bbcd1d35e6cd05f63b00/staging/src/k8s.io/apiserver/pkg/server/config.go#L639
+[Here]:https://github.com/kubernetes/kubernetes/blob/709a0c4f7bfec2063cb856f3cdf4105ce984e247/pkg/master/storageversionhashdata/data.go#L26
+
+One concern is that the storageVersion API becomes a single-point-of-failure,
+though it seems inevitable in order to ensure the correctness of the storage
+migration.
+
+We will also add a post-start hook to ensure that the API server reports not
+ready until the storageVersions are up-to-date and the filter is turned off.
+
 ### Garbage collection
 
 There are two kinds of "garbage":
@@ -215,11 +250,14 @@ details.
 [appendix]:#appendix
 [storageVersionHash]:https://github.com/kubernetes/kubernetes/blob/c008cf95a92c5bbea67aeab6a765d7cb1ac68bd7/staging/src/k8s.io/apimachinery/pkg/apis/meta/v1/types.go#L989
 
-To accurately reflect the storage version being used, the apiextension-apiserver
-needs to update the storageVersion object when it [creates][] the custom
-resource handler upon CRD creation or changes.
+To ensure that the storageVersion.status always shows the actual encoding
+versions, the apiextension-apiserver must update the storageVersion.status
+before it [enables][] the custom resource handler. This way it does not require
+the [filter][] mechanism that is used by the kube-apiserver to ensure the
+correct order.
 
-[creates]:https://github.com/kubernetes/kubernetes/blob/220498b83af8b5cbf8c1c1a012b64c956d3ebf9b/staging/src/k8s.io/apiextensions-apiserver/pkg/apiserver/customresource_handler.go#L721
+[enables]:https://github.com/kubernetes/kubernetes/blob/220498b83af8b5cbf8c1c1a012b64c956d3ebf9b/staging/src/k8s.io/apiextensions-apiserver/pkg/apiserver/customresource_handler.go#L703
+[filter]:#updating-storageversion
 
 ### Aggregated API servers
 

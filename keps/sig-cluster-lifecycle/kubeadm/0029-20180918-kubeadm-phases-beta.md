@@ -74,7 +74,9 @@ duplication of code or in some case inconsistencies between the init and phase i
 - This proposal doesn't include a plan for implementation of phases in workflows
   different than the `kubeadm init` workflow; such plans will be defined by the sig 
   during release planning for each cycle, and then documented in this KEP.
-  - v1.14 implementation of phases in the `kubeadm join` workflow (planned)
+  - v1.14 implementation of phases in the `kubeadm join` workflow
+  - v1.15 implementation of phases in the `kubeadm upgrade node` workflow
+  - v1.17 implementation of phases in the `kubeadm upgrade apply` workflow
 
 ## Proposal
 
@@ -87,6 +89,9 @@ duplication of code or in some case inconsistencies between the init and phase i
 - As a kubernetes administrator/IT automation tool, I want to run all the phases of
   the `kubeadm init` workflow except some phases.
 - Same as above, but for the `kubeadm join` workflow
+- As a kubernetes administrator/IT automation tool, I used kubeadm init/join and
+  excluded some phases, I will want to run all the phases of kubeadm upgrade except
+  for the equivalent phases.
 
 ### Implementation Details
 
@@ -110,7 +115,7 @@ own, nested, ordered sequence of phases. For instance:
 ````
 
 The above list of ordered phases should be made accessible from all the command supporting phases
-via the command help, e.g. `kubeadm init --help` (and eventually in the future `kubeadm join --help` etc.)
+via the command help, e.g. `kubeadm init --help` (and eventually in the future `kubeadm join --help` and `kubeadm upgrade apply --help` etc.)
 
 Additionally we are going to improve consistency between the command outputs/logs with the name of phases
 defined in the above list. This will be achieved by enforcing that the prefix of each output/log should match
@@ -118,7 +123,7 @@ the name of the corresponding phase, e.g. `[certs/ca] Generated ca certificate a
 `[certificates] Generated ca certificate and key.`.
 
 Single phases will be made accessible to the users via a new `phase` sub command that will be nested in the
-command supporting phases, e.g. `kubeadm init phase` (and eventually in the future `kubeadm join phase` etc.). e.g.
+command supporting phases, e.g. `kubeadm init phase` and `kubeadm join phase` (and eventually in the future `kubeadm upgrade apply phase` etc.). e.g.
 
 ```bash
 kubeadm init phases certs [flags]
@@ -152,7 +157,9 @@ workflows e.g. reuse of phase `certs` in both `kubeadm init` and `kubeadm join` 
 * [#61631](https://github.com/kubernetes/kubernetes/pull/61631) First prototype implementation 
   (now outdated)
 * v1.13 implementation of phases in the `kubeadm init` workflow
-* v1.14 implementation of phases in the `kubeadm join` workflow (planned)
+* v1.14 implementation of phases in the `kubeadm join` workflow
+* v1.15 implementation of phases in the `kubeadm upgrade node` workflow
+* v1.17 implementation of phases in the `kubeadm upgrade apply` workflow (planned)
 
 ## Drawbacks
 

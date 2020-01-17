@@ -20,7 +20,7 @@ approvers:
   - "@x13n"
 editor: "@brancz"
 creation-date: 2019-04-04
-last-updated: 2019-06-05
+last-updated: 2019-11-06
 status: implementable
 see-also:
   - 20181106-kubernetes-metrics-overhaul
@@ -43,6 +43,8 @@ see-also:
 - [Stability Classes](#stability-classes)
 - [API Review](#api-review)
 - [Deprecation Lifecycle](#deprecation-lifecycle)
+  - [Show Hidden Metrics](#show-hidden-metrics)
+  - [Why Not Bool Flag](#why-not-bool-flag)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
@@ -64,7 +66,8 @@ Currently metrics emitted in the Kubernetes control-plane do not offer any stabi
 
 ## Motivation
 
-Metrics stability has been an ongoing community concern. Oftentimes, cluster monitoring infrastructure assumes the stability of at least some control-plane metrics; thus, it would be prudent to offer some sort of guarantees around control-plane metrics, treating it more properly as an API. Since the [metrics overhaul](https://github.com/kubernetes/enhancements/blob/master/keps/sig-instrumentation/0031-kubernetes-metrics-overhaul.md) is nearing completion, there should be less reason to introduce breaking changes to metrics, making it an opportune time to introduce metric stability rules. Specifically, this KEP intends to address metric stability from an ingestion point of view.
+Metrics stability has been an ongoing community concern. Oftentimes, cluster monitoring infrastructure assumes the stability of at least some control-plane metrics; thus, it would be prudent to offer some sort of guarantees around control-plane metrics, treating it more properly as an API.
+Since the [metrics overhaul](https://github.com/kubernetes/enhancements/blob/master/keps/sig-instrumentation/20181106-kubernetes-metrics-overhaul.md) is nearing completion, there should be less reason to introduce breaking changes to metrics, making it an opportune time to introduce metric stability rules. Specifically, this KEP intends to address metric stability from an ingestion point of view.
 
 Guarantees around metrics have been [proposed previously](https://docs.google.com/document/d/1_CdNWIjPBqVDMvu82aJICQsSCbh2BR-y9a8uXjQm4TI/edit#) and there are [ongoing community discussions](https://groups.google.com/forum/#!topic/kubernetes-sig-instrumentation/XbElxDtww0Y) around this issue. Some suggested solutions include:
 
@@ -260,7 +263,40 @@ some_counter 0
 ```
 Like their stable metric counterparts, deprecated metrics will be automatically registered to the metrics endpoint.
 
-On a subsequent release (when the metric's deprecatedVersion is equal to current_kubernetes_version - 1)), a deprecated metric will become a __hidden metric__. _Unlike_ their deprecated counterparts, hidden metrics will __*no longer be automatically registered*__ to the metrics endpoint (hence hidden). However, they can be explicitly enabled through a command line flag on the binary (i.e. '--enable-hidden-metrics=really_deprecated_metric'). This is to provide cluster admins an escape hatch to properly migrate off of a deprecated metric, if they were not able to react to the earlier deprecation warnings. Hidden metrics should be deleted after one release.
+On a subsequent release (when the metric's deprecatedVersion is equal to current_kubernetes_version - 1)), a deprecated metric will become a __hidden metric__. _Unlike_ their deprecated counterparts, hidden metrics will __*no longer be automatically registered*__ to the metrics endpoint (hence hidden). However, they can be explicitly enabled through a command line flag on the binary (i.e. '--show-hidden-metrics-for-version=<previous minor release>'). This is to provide cluster admins an escape hatch to properly migrate off of a deprecated metric, if they were not able to react to the earlier deprecation warnings. Hidden metrics should be deleted after one release.
+
+### Show Hidden Metrics
+As described above, admins can enable hidden metrics through a command-line flag on a specific binary. 
+This intends to be used as an escape hatch for admins if they missed the migration of the metrics deprecated in the last release. 
+
+The flag `show-hidden-metrics-for-version` takes a version for which you want to show metrics deprecated in that release.
+The version is expressed as __x.y__, where __x__ is the major version, __y__ is the minor version.
+The patch version is not needed even though a metrics can be deprecated in a patch release, the reason for that is
+the metrics deprecation policy runs against the minor release.
+
+The flag can only take the previous minor version as it's value. 
+All metrics hidden in previous will be emitted if admins set the previous version to `show-hidden-metrics-for-version`.
+The too old version is not allowed because this violates the metrics deprecated policy.
+
+Take metric `A` as an example, here assumed that `A` is deprecated in `1.n`.
+According to metrics deprecated policy, we can reach the following conclusion:
+- In release `1.n`, the metric is deprecated, and it can be emitted by default.
+- In release `1.n+1`, the metric is hidden by default and it can be emitted by command line `show-hidden-metrics-for-version=1.n`.
+- In release `1.n+2`, the metric should be removed from the codebase. No escape hatch anymore.
+
+So, if admins want to enable metric `A` in release `1.n+1`, they should set `1.n` to the command line flag. 
+That is `show-hidden-metrics=1.n`. 
+
+### Why Not Bool Flag
+Alternatively, another solution which was previously suggested(refer to the discussion on [PR](https://github.com/kubernetes/kubernetes/pull/84292)) 
+was provide a bool flag-like `show-hidden-metrics`. That works like:
+- `show-hidden-metrics=true`: enable all hidden metrics deprecated in a previous minor version.
+- `show-hidden-metrics=false`: the default value, do nothing.
+
+This proposal has a side effect(thanks for @lavalamp pointed it out) in the scenario:
+1. in version X, turn this on to get back deprecated metric M
+2. in version Y, not turn this off, and therefore fail to notice metric N is being deprecated
+3. in version Z, metric N is removed with (effectively) no warning
 
 ## Design Details
 
