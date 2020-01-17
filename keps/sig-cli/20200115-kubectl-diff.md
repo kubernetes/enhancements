@@ -12,7 +12,7 @@ approvers:
 editor: TBD
 creation-date: 2020-01-15
 last-updated: 2020-01-15
-status: implementable
+status: provisional
 see-also:
   - "/keps/sig-api-machinery/0015-dry-run.md"
   - "/keps/sig-api-machinery/0006-apply.md"
@@ -23,38 +23,6 @@ superseded-by:
 ---
 
 # kubectl-diff
-
-This is the title of the KEP.
-Keep it simple and descriptive.
-A good title can help communicate what the KEP is and should be considered as part of any review.
-
-The title should be lowercased and spaces/punctuation should be replaced with `-`.
-
-To get started with this template:
-1. **Pick a hosting SIG.**
-  Make sure that the problem space is something the SIG is interested in taking up.
-  KEPs should not be checked in without a sponsoring SIG.
-1. **Make a copy of this template.**
-  Copy this template into the owning SIG's directory (or KEP root directory, as appropriate) and name it `YYYYMMDD-my-title.md`, where `YYYYMMDD` is the date the KEP was first drafted.
-1. **Fill out the "overview" sections.**
-  This includes the Summary and Motivation sections.
-  These should be easy if you've preflighted the idea of the KEP with the appropriate SIG.
-1. **Create a PR.**
-  Assign it to folks in the SIG that are sponsoring this process.
-1. **Create an issue in kubernetes/enhancements, if the enhancement will be targeting changes to kubernetes/kubernetes**
-  When filing an enhancement tracking issue, please ensure to complete all fields in the template.
-1. **Merge early.**
-  Avoid getting hung up on specific details and instead aim to get the goal of the KEP merged quickly.
-  The best way to do this is to just start with the "Overview" sections and fill out details incrementally in follow on PRs.
-  View anything marked as a `provisional` as a working document and subject to change.
-  Aim for single topic PRs to keep discussions focused.
-  If you disagree with what is already in a document, open a new PR with suggested changes.
-
-The canonical place for the latest set of instructions (and the likely source of this file) is [here](/keps/YYYYMMDD-kep-template.md).
-
-The `Metadata` section above is intended to support the creation of tooling around the KEP process.
-This will be a YAML section that is fenced as a code block.
-See the KEP process for details on each of these items.
 
 ## Table of Contents
 
@@ -84,25 +52,14 @@ See the KEP process for details on each of these items.
 
 ## Release Signoff Checklist
 
-**ACTION REQUIRED:** In order to merge code into a release, there must be an issue in [kubernetes/enhancements] referencing this KEP and targeting a release milestone **before [Enhancement Freeze](https://github.com/kubernetes/sig-release/tree/master/releases)
-of the targeted release**.
-
-For enhancements that make changes to code or processes/procedures in core Kubernetes i.e., [kubernetes/kubernetes], we require the following Release Signoff checklist to be completed.
-
-Check these off as they are completed for the Release Team to track. These checklist items _must_ be updated for the enhancement to be released.
-
 - [ ] kubernetes/enhancements issue in release milestone, which links to KEP (this should be a link to the KEP location in kubernetes/enhancements, not the initial KEP PR)
 - [ ] KEP approvers have set the KEP status to `implementable`
 - [ ] Design details are appropriately documented
 - [ ] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
 - [ ] Graduation criteria is in place
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] "Implementation History" section is up-to-date for milestone
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
-
-**Note:** Any PRs to move a KEP to `implementable` or significant changes once it is marked `implementable` should be approved by each of the KEP approvers. If any of those approvers is no longer appropriate than changes to that list should be approved by the remaining approvers and/or the owning SIG (or SIG-arch for cross cutting KEPs).
-
-**Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
 
 [kubernetes.io]: https://kubernetes.io/
 [kubernetes/enhancements]: https://github.com/kubernetes/enhancements/issues
