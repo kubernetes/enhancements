@@ -1,6 +1,7 @@
 ---
 title: kubectl-diff
 authors:
+  - "@apelisse"
   - "@julianvmodesto"
 owning-sig: sig-cli
 participating-sigs:
