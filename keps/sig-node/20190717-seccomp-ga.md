@@ -151,7 +151,7 @@ type PodSecurityContext struct {
     ...
     // The seccomp options to use by the containers in this pod.
     // +optional
-    Seccomp  *SeccompOptions
+    Seccomp  *SeccompProfile
     ...
 }
 
@@ -161,13 +161,8 @@ type SecurityContext struct {
     // provided at both the pod & container level, the container options
     // override the pod options.
     // +optional
-    Seccomp  *SeccompOptions
+    SeccompProfile  *SeccompProfile
     ...
-}
-
-type SeccompOptions struct {
-    // The seccomp profile to run with.
-    SeccompProfile
 }
 
 // Only one profile source may be set.
@@ -198,6 +193,32 @@ This API makes the options more explicit than the stringly-typed annotation valu
 for new profile sources to be added in the future (e.g. Kubernetes predefined profiles or ConfigMap
 profiles). The seccomp options struct leaves room for future extensions, such as defining the
 behavior when a profile cannot be set.
+
+<UNRESOLVED>
+What to do with the localhost profile type, given that we want to deprecate it? Alternative for
+consideration:
+
+Drop the LocalhostProfile *string field. Keep the SeccompProfileLocalhost SeccompProfileType, but
+optionally change its value to LocalhostDeprecated.
+
+When creating a pod, the profile type can only be set to "Localhost" if the annotation is also set
+to localhost. When the kubelet goes to enforce the localhost profile, it fetches the path from the
+annotation.
+
+The one gotcha is how to handle annotation update in this case. I'm tempted to say allow the update,
+and if the kubelet goes to enforce it and the annotation isn't set to localhost anymore, just treat
+it as an invalid localhost path (fail the pod).
+</UNRESOLVED>
+
+<UNRESOLVED>
+What to do with RuntimeProfile field? There aren't any runtimes that support multiple built in
+profiles, and this feature has never been requested.
+
+If we dropped this field for now (just assume it's runtime/default), how bad would it be to add it
+back at some point in the future if it was needed? As long as we defaulted the new field to
+"default" and it's immutable, it doesn't seem like it would be that problematic? Or am I forgetting
+something?
+</UNRESOLVED>
 
 #### PodSecurityPolicy API
 
@@ -255,10 +276,8 @@ in the fields, and ignore the annotations.
 If no seccomp annotations or fields are specified, no action is necessary.
 
 If _only_ seccomp fields are specified, add the corresponding annotations. This ensures that the
-fields are enforced even if the node version trails the API version. Since [we
-support](https://kubernetes.io/docs/setup/release/version-skew-policy/) up to 2 minor releases of
-version skew between the master and node, this behavior will be removed in version N+2 (where N is
-the release with the upgraded seccomp support).
+fields are enforced even if the node version trails the API version (see [Upgrade /
+Downgrade](#upgrade--downgrade))
 
 If _only_ seccomp annotations are specified, copy the values into the corresponding fields. This
 ensures that existing applications continue to enforce seccomp, and prevents the kubelet from
@@ -266,6 +285,13 @@ needing to resolve annotations & fields.
 
 If both seccomp annotations _and_ fields are specified, the values MUST match. This will be enforced
 in API validation.
+
+To raise awareness of annotation usage (in case of old automation), an additional warning annotation
+will be added when a pod is created with a seccomp annotation:
+
+```
+warning.kubernetes.io/seccomp: "Seccomp set through annotations. Support will be dropped in v1.22"
+```
 
 #### Pod Update
 
@@ -279,40 +305,34 @@ Therefore, seccomp annotation updates will be ignored. This maintains backwards 
 (no tightening validation), and makes a small stabilizing change to behavior (new Kubelets will
 ignore the update).
 
+When an [Ephemeral Container](20190212-ephemeral-containers.md) is added, it will follow the same
+rules for using or overriding the pod's seccomp profile. Ephemeral container's will never sync with
+a seccomp annotation.
+
 #### PodSecurityPolicy Creation
 
-_Similar policy to [Pod Creation](#pod-creation)_
+Unlike with pods, PodSecurityPolicy seccomp annotations and fields are _not_ synced.
 
-If no seccomp annotations or fields are specified, no action is necessary.
-
-If _only_ seccomp fields are specified, add the corresponding annotations. This ensures that the
-fields are enforced even in skewed high-availability environments. Since [we
-support](https://kubernetes.io/docs/setup/release/version-skew-policy/) up to 1 minor release of
-version skew between the HA masters, this behavior will be removed in version N+1 (where N is the
-release with the upgraded seccomp support).
-
-If _only_ seccomp annotations are specified, copy the values into the corresponding fields. This
-smooths the migration for a future release that removes annotation support, and frees tools from
-needing to check annotations.
+If only seccomp annotations or fields are specified, no action is necessary. The set value is used
+when applying the PodSecurityPolicy.
 
 If both seccomp annotations _and_ fields are specified, the values MUST match. This will be enforced
 in API validation.
 
 #### PodSecurityPolicy Update
 
-If the old pod did not specify any seccomp options (fields or annotations), follow the same rules as
-for creation.
+PodSecurityPolicy seccomp fields are mutable. On an update, the same rules are applied as for
+creation, ignoring the old values.
 
-If only the fields or only the annotations are changed, take the new value and copy it to both the
-corresponding fields & annotations (even if one was previously unset).
+If only seccomp annotations or fields are specified in the updated PSP, no action is necessary, and
+the specified values are used.
 
-If both the fields _and_ annotations are changed, the new values MUST match. Enforced in API
-validation.
+If both seccomp annotations _and_ fields are specified in the updated PSP, the values MUST match.
 
 #### PodSecurityPolicy Enforcement
 
-The PodSecurityPolicy admission controller must continue to check the PSP object for annotations if
-the fields are unset, in order to handle upgrade & version skew scenarios.
+The PodSecurityPolicy admission controller must continue to check the PSP object for annotations, as
+well as for fields.
 
 When setting default profiles, PSP only needs to set the field. The API machinery will handle
 setting the annotation as necessary.
@@ -327,6 +347,13 @@ version running the pod.
 PodTemplates (e.g. ReplaceSets, Deployments, StatefulSets, etc.) will be ignored. The
 field/annotation resolution will happen on template instantiation.
 
+However, to raise awareness of existing controllers using the seccomp annotations that need to be
+migrated, the same warning annotation will be added to the controller as for pods:
+
+```
+warning.kubernetes.io/seccomp: "Seccomp set through annotations. Support will be dropped in v1.22"
+```
+
 #### Upgrade / Downgrade
 
 Nodes do not currently support in-place upgrades, so pods will be recreated on node upgrade and
@@ -334,6 +361,12 @@ downgrade. No special handling or consideration is needed to support this.
 
 On the API server side, we've already taken version skew in HA clusters into account. The same
 precautions make upgrade & downgrade handling a non-issue.
+
+Since [we support](https://kubernetes.io/docs/setup/release/version-skew-policy/) up to 2 minor
+releases of version skew between the master and node, annotations must continue to be supported and
+backfilled for at least 2 versions passed the initial implementation. However, we can decide to
+extend support farther to reduce breakage. If this feature is implemented in v1.18, I propose v1.22
+as a target for removal of the old behavior.
 
 ### Test Plan
 
@@ -354,10 +387,6 @@ alpha](#alternatives).
 ### Graduation Criteria
 
 _This section is excluded, as it is the subject of the entire proposal._
-
-### Upgrade / Downgrade Strategy
-
-See [Version Skew Strategy](#version-skew-strategy).
 
 ## Implementation History
 
