@@ -2,16 +2,16 @@
 title: http probe enhancement
 authors:
   - "@konghui"
-owning-sig: sig-apimachinery
+owning-sig: sig-node
 participating-sigs:
   - sig-node
 reviewers:
-  - TBD
+  - "@liggitt"
 approvers:
-  - TBD
+  - "@liggitt"
 editor: "@konghui"
 creation-date: 2019-07-30
-last-updated: 2019-10-06
+last-updated: 2020-01-17
 status: provisional
 see-also:
 replaces:
