@@ -68,14 +68,15 @@ which we will call profiles and will be associated to a scheduler name.
 Pods can choose to be scheduled under a particular configuration by setting the
 scheduler name associated to it in its pod spec. They will continue to be
 scheduled under the default configuration if they don't specify a scheduler
-name. The scheduler will continue to schedule one pod at a time.
+name (i.e. `.spec.schedulerName`). The scheduler will continue to schedule one
+pod at a time.
 
 ## Motivation
 
 Clusters run a variety of workloads, which can be *broadly* classified as
-services and batch jobs. Some users may choose to run only one class of
-workloads in a cluster, so they can provide a reasonable configuration that
-suits their scheduling needs.
+services (long-running) and batch jobs (run-to-completion). Some users may
+choose to run only one class of workloads in a cluster, so they can provide a
+reasonable configuration that suits their scheduling needs.
 
 However, users may choose to run more heterogeneous workloads in a single
 cluster. Or they could have a set of fixed nodes and a set that auto-scales,
@@ -84,19 +85,23 @@ requiring different scheduling behaviors in each of them.
 Pods can influence scheduling decisions with features such as node/pod affinity,
 tolerations or (alpha) even pod spreading. But there are 2 problems:
 
-- kube-scheduler also calculates a set of default scores that can potentially
-  compete with these requests.
+- A single kube-scheduler configuration will weigh scores in such a way that
+  doesn't adjust to all types of workloads. For example, the default 
+  configuration includes scores that seek high availability of services.
 - Authors of the workloads need to be aware of the cluster characteristics and
-  the weights of the scoring that the scheduler calculates for the nodes.
+  the weights of the scores to influence their pods' scheduling in a meaningful
+  way.
 
-For this reason, some operators choose to run multiple schedulers, whether those
-are different binaries or kube-scheduler with a different configuration. But
-this setup might cause race conditions between the multiple schedulers, as they
-might have a different view of the cluster resources at a given time.
-Additionally, more binaries requires more management effort.
+To serve such heterogeneous types of workloads, some cluster operators choose to
+run multiple schedulers, whether those are different binaries or kube-schedulers
+with a different configuration. But this setup might cause race conditions
+between the multiple schedulers, as they might have a different view of the
+cluster resources at a given time. Additionally, more binaries requires more
+management effort.
 
-Instead, having a single kube-scheduler run multiple profiles can solve the
-users' needs avoiding the problem of multiple schedulers.
+Instead, having a single kube-scheduler run multiple profiles will have the
+same benefits of running multiple schedulers without running into race
+conditions.
 
 ### Goals
 
