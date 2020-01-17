@@ -41,10 +41,8 @@ superseded-by:
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
-    - [Examples](#examples)
-      - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
-      - [Beta -&gt; GA Graduation](#beta---ga-graduation)
-      - [Removing a deprecated flag](#removing-a-deprecated-flag)
+    - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
+    - [Beta -&gt; GA Graduation](#beta---ga-graduation)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Implementation History](#implementation-history)
@@ -128,89 +126,46 @@ Consider including folks that also work outside the SIG or subproject.
 
 ### Test Plan
 
-**Note:** *Section not required until targeted at a release.*
+In addition to unit tests, there will be integration tests using the
+command-line integration test suite:
 
-Consider the following in developing a test plan for this enhancement:
-- Will there be e2e and integration tests, in addition to unit tests?
-- How will it be tested in isolation vs with other components?
-
-No need to outline all of the test cases, just the general strategy.
-Anything that would count as tricky in the implementation and anything particularly challenging to test should be called out.
-
-All code is expected to have adequate tests (eventually with coverage expectations).
-Please adhere to the [Kubernetes testing guidelines][testing-guidelines] when drafting this test plan.
-
-[testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
+- [x] [Test `kubectl diff` for multiple resources with the same name](https://testgrid.k8s.io/presubmits-kubernetes-blocking#pull-kubernetes-integration&include-filter-by-regex=test-cmd.run_kubectl_diff_same_names)
 
 ### Graduation Criteria
 
-**Note:** *Section not required until targeted at a release.*
+#### Alpha -> Beta Graduation
 
-Define graduation milestones.
+- At least 2 release cycles pass to gather feedback and bug reports during
+  real-world usage
+- End-user documentation is written
+- The client-side dry-run used to calculate the diff is replaced with the
+  server-side dry-run feature to improve correctness and accuracy for this
+  feature
+- The dependent API server-side dry-run feature is released to beta
 
-These may be defined in terms of API maturity, or as something else. Initial KEP should keep
-this high-level with a focus on what signals will be looked at to determine graduation.
+#### Beta -> GA Graduation
 
-Consider the following in developing the graduation criteria for this enhancement:
-- [Maturity levels (`alpha`, `beta`, `stable`)][maturity-levels]
-- [Deprecation policy][deprecation-policy]
-
-Clearly define what graduation means by either linking to the [API doc definition](https://kubernetes.io/docs/concepts/overview/kubernetes-api/#api-versioning),
-or by redefining what graduation means.
-
-In general, we try to use the same stages (alpha, beta, GA), regardless how the functionality is accessed.
-
-[maturity-levels]: https://git.k8s.io/community/contributors/devel/sig-architecture/api_changes.md#alpha-beta-and-stable-versions
-[deprecation-policy]: https://kubernetes.io/docs/reference/using-api/deprecation-policy/
-
-#### Examples
-
-These are generalized examples to consider, in addition to the aforementioned [maturity levels][maturity-levels].
-
-##### Alpha -> Beta Graduation
-
-- Gather feedback from developers and surveys
-- Complete features A, B, C
-- Tests are in Testgrid and linked in KEP
-
-##### Beta -> GA Graduation
-
-- N examples of real world usage
-- N installs
-- More rigorous forms of testing e.g., downgrade tests and scalability tests
-- Allowing time for feedback
-
-**Note:** Generally we also wait at least 2 releases between beta and GA/stable, since there's no opportunity for user feedback, or even bug reports, in back-to-back releases.
-
-##### Removing a deprecated flag
-
-- Announce deprecation and support policy of the existing flag
-- Two versions passed since introducing the functionality which deprecates the flag (to address version skew)
-- Address feedback on usage/changed behavior, provided on GitHub issues
-- Deprecate the flag
-
-**For non-optional features moving to GA, the graduation criteria must include [conformance tests].**
-
-[conformance tests]: https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md
+- At least 2 release cycles pass to gather feedback and bug reports during
+  real-world usage
+- Integration tests are in Testgrid and linked in KEP
+- Documentation exists for user stories
+- The dependent API server-side dry-run feature is released to GA
 
 ### Upgrade / Downgrade Strategy
 
-If applicable, how will the component be upgraded and downgraded? Make sure this is in the test plan.
-
-Consider the following in developing an upgrade/downgrade strategy for this enhancement:
-- What changes (in invocations, configurations, API use, etc.) is an existing cluster required to make on upgrade in order to keep previous behavior?
-- What changes (in invocations, configurations, API use, etc.) is an existing cluster required to make on upgrade in order to make use of the enhancement?
+This section is not relevant because this is a client-side component only.
 
 ### Version Skew Strategy
 
-If applicable, how will the component handle version skew with other components? What are the guarantees? Make sure
-this is in the test plan.
+To check what the merged live object would look like, the `kubectl diff`
+command relies on server-side dry-run support for the resource.
 
-Consider the following in developing a version skew strategy for this enhancement:
-- Does this enhancement involve coordinating behavior in the control plane and in the kubelet? How does an n-2 kubelet without this feature available behave when this feature is used?
-- Will any other components on the node change? For example, changes to CSI, CRI or CNI may require updating that component before the kubelet.
+If an API server has disabled server-side dry-run or the API server was
+downgraded to a version without server-side dry-run, then `kubectl diff` will
+fail to get a merged version of the object and not display a diff.
 
 ## Implementation History
 
 - 2019-01 beta in 1.13
 - 2017-12 alpha in 1.9
+
