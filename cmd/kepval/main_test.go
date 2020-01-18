@@ -73,7 +73,8 @@ func ignore(name string) bool {
 	if !strings.HasSuffix(name, "md") {
 		return true
 	}
-	if name == "0023-documentation-for-images.md" {
+	if name == "0023-documentation-for-images.md" ||
+		name == "0004-cloud-provider-template.md" {
 		return true
 	}
 	return false
