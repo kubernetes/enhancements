@@ -93,6 +93,6 @@ func (p *Parser) Parse(in io.Reader) *Proposal {
 		return proposal
 	}
 
-	proposal.Error = yaml.Unmarshal(metadata, proposal)
+	proposal.Error = yaml.UnmarshalStrict(metadata, proposal)
 	return proposal
 }

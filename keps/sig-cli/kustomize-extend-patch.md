@@ -10,8 +10,7 @@ reviewers:
  - "@mengqiy"
 approvers:
  - "@monopole"
-editors:
- - "@Liujingfang1"
+editor: "@Liujingfang1"
 creation-date: 2019-03-14
 last-updated: 2019-03-18
 status: implementable

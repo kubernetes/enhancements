@@ -46,6 +46,6 @@ func run() int {
 		return 1
 	}
 
-	fmt.Println("No validation errors")
+	fmt.Printf("No validation errors : %v\n", os.Args[1:])
 	return 0
 }

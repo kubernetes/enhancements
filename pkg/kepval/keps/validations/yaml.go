@@ -21,6 +21,14 @@ import (
 	"strings"
 )
 
+type KeyMustBeSpecified struct {
+	key interface{}
+}
+
+func (k *KeyMustBeSpecified) Error() string {
+	return fmt.Sprintf("missing key %[1]v", k.key)
+}
+
 type KeyMustBeString struct {
 	key interface{}
 }
@@ -62,7 +70,16 @@ type MustHaveAtLeastOneValue struct {
 func (m *MustHaveAtLeastOneValue) Error() string {
 	return fmt.Sprintf("%q must have at least one value", m.key)
 }
+
+var mandatoryKeys = []string{"title", "owning-sig"}
+
 func ValidateStructure(parsed map[interface{}]interface{}) error {
+	for _, key := range mandatoryKeys {
+		if _, found := parsed[key]; !found {
+			return &KeyMustBeSpecified{key}
+		}
+	}
+
 	for key, value := range parsed {
 		// First off the key has to be a string. fact.
 		k, ok := key.(string)
