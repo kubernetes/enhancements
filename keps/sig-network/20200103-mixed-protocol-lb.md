@@ -329,10 +329,10 @@ In the first release:
  - a feature flag shall control whether loadbalancer Services with mixed protcol configuration are accepted or not at validation time
  - we must add a note to the documentation that if such Service is created then it may break things after a rollback - it depends on the cloud provider implementation
  - the update of such services shall be possible even if the feature flag is OFF. This is to prepare for the next release when the feature flag is removed from the create path, too, and after a rollback to the first release the update of existing Service objects must be possible
- - the CPI implementations shall be prepared to deal with Services with mixed protocol configurations. It does not mean that the CPI implementations have to accept such Services. It means that the CPI implementations shall be able to process such Services. The CPI implementation can still reject such a Service if it cannot manage the corresponding cloud load balancers for those Services. The point is, that the system (Service - CPI implementation - cloud LB) must be in a consitent state in the end, and the user must have meaningful information about that state. For exempla, if the Service is not accepted by the CPI implementation this fact shall be available for the user.
+ - the CPI implementations shall be prepared to deal with Services with mixed protocol configurations. It does not mean that the CPI implementations have to accept such Services. It means that the CPI implementations shall be able to process such Services. The CPI implementation can still reject such a Service if it cannot manage the corresponding cloud load balancers for those Services, or for any other reasons. The point is, that the system (Service - CPI implementation - cloud LB) must be in a consitent state in the end, and the user must have meaningful information about that state. For exempla, if the Service is not accepted by the CPI implementation this fact shall be available for the user.
 
 In the second release: 
-- the feature flag shall be set to ON by default. Most probably we want to keep the feature flag so cloud providers can decide whether they enable it or not in their managed K8s services depending their CPI implementations.
+- the feature flag shall be set to ON by default (promoted to beta). Most probably we want to keep the feature flag so cloud providers can decide whether they enable it or not in their managed K8s services depending their CPI implementations.
 
 ### Test Plan
 
@@ -340,7 +340,12 @@ There must be e2e cases that test whether CPI implementations handle Service def
 
 ### Graduation Criteria
 
-This feature does not need alpha phase. It uses a new feature flag, but from the perspective of graduation it does not need the full transformation path. In the first release the feature flag is turned OFF by default. In the next release it can be turned ON by default. Cloud providers with managed K8s products can still decide when they activate it for the managed clusters.
+From end user's perspective the graduation criteria are the feecback/bug correction and testing based.
+
+From CPI implementation perspective thet feature can be graduated to beta, as the cloud providers with managed K8s products can still decide whether they activate it for their managed clusters or not, depending on the status of their CPI implementation.
+
+Graduating to GA means, that the feature flag checking is removed from the code. It means, that all CPI implementations must be ready to deal with Services with mixed protocol configuration - either rejecting such Services properly or managing the cloud load balancers according to the Service definition.
+
 
 ### Upgrade / Downgrade Strategy
 
