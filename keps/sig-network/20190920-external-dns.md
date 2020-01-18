@@ -1,3 +1,10 @@
+---
+title: Move ExternalDNS out of Kubernetes incubator
+authors:
+  - "@njuettner"
+owning-sig: sig-network
+---
+
 # Move ExternalDNS out of Kubernetes incubator
 
 ## Table of Contents

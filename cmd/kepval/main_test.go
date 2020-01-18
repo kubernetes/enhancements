@@ -74,7 +74,9 @@ func ignore(name string) bool {
 		return true
 	}
 	if name == "0023-documentation-for-images.md" ||
-		name == "0004-cloud-provider-template.md" {
+		name == "0004-cloud-provider-template.md" ||
+		name == "README.md" ||
+		name == "kep-faq.md" {
 		return true
 	}
 	return false
