@@ -237,7 +237,7 @@ Note: default value are permitted between API versions
 ##### Defaults
 
 The `PathType` field will default to a value of `ImplementationSpecific` to
-provide backwards compatibility. 
+provide backwards compatibility.
 
 ##### Path matching semantics
 
@@ -247,9 +247,8 @@ For `Prefix` and `Exact` paths:
 1. Every Path `p_i` must be syntactically valid:
     1. Must begin with the `'/'` character (relative paths are not allowed by [RFC-7230][rfc7230]).
     1. Must not contain consecutive `'/'` characters (e.g. `/foo///`, `//`).
-1. A trailing `'/'` character in the Path is ignored, e.g. `/abc` and `/abc/`
-   specify the same match. The rest of the discussion below assumes
-   trailing `'/'` are removed from the paths.
+1. For prefix paths, a trailing `'/'` character in the Path is ignored, e.g.
+   `/abc` and `/abc/` specify the same match.
 1. If there is more than one potential match:
    1. `Exact` match is preferred to a `Prefix` match.
    1. For multiple prefix matches, the longest Path `p_i` will be the
@@ -267,35 +266,39 @@ Path must be exactly the same as the request path.
 
 ##### `Prefix` match
 
-Matching is done on a path element by element basis. A path element refers
-is the list of labels in the path split by the `'/'` separator. A request
-is a match for path `p` if every `p` is an element-wise prefix of `p` of the
-request path. Note that if the last element of the path is a substring of
-the last element in request path, it
-is *not* a match (e.g. `/foo/bar` matches `/foo/bar/baz`, but does not
-match `/foo/barbaz`).
+Matching is done on a path element by element basis. A path element refers is
+the list of labels in the path split by the `'/'` separator. A request is a
+match for path `p` if every `p` is an element-wise prefix of `p` of the request
+path. Note that if the last element of the path is a substring of the last
+element in request path, it is *not* a match (e.g. `/foo/bar` matches
+`/foo/bar/baz`, but does not match `/foo/barbaz`).
 
 ##### `ImplementationSpecific` match
 
 Interpretation of the implementation-specific behavior is defined by the
-associated `IngressClass`. Implementations are not required to support this
-type of match. If the match type is not supported, then the controller MAY
-raise this error as an asynchronous Event to the user.
+associated `IngressClass`. Implementations are not required to support this type
+of match. If the match type is not supported, then the controller MAY raise this
+error as an asynchronous Event to the user.
 
 ##### Examples
 
-| Kind   | Path                            | Request path                  | Matches?                           |
+| Kind   | Path(s)                         | Request path(s)               | Matches?                           |
 |--------|---------------------------------|-------------------------------|------------------------------------|
+| Prefix | `/`                             | (all paths)                   | Yes                                |
 | Exact  | `/foo`                          | `/foo`                        | Yes                                |
 | Exact  | `/foo`                          | `/bar`                        | No                                 |
-| Prefix | `/`                             | (all paths)                   | Yes                                |
+| Exact  | `/foo`                          | `/foo/`                       | No                                 |
+| Exact  | `/foo/`                         | `/foo`                        | No                                 |
+| Prefix | `/foo`                          | `/foo`, `/foo/`               | Yes                                |
+| Prefix | `/foo/`                         | `/foo`, `/foo/`               | Yes                                |
+| Prefix | `/aaa/bb`                       | `/aaa/bbb`                    | No                                 |
 | Prefix | `/aaa/bbb`                      | `/aaa/bbb`                    | Yes                                |
 | Prefix | `/aaa/bbb/`                     | `/aaa/bbb`                    | Yes, ignores trailing slash        |
 | Prefix | `/aaa/bbb`                      | `/aaa/bbb/`                   | Yes,  matches trailing slash       |
 | Prefix | `/aaa/bbb`                      | `/aaa/bbb/ccc`                | Yes, matches subpath               |
 | Prefix | `/aaa/bbb`                      | `/aaa/bbbxyz`                 | No, does not match string prefix   |
-| Prefix | `/`, `/aaa`, `/aaa/bbb`         | `/aaa/ccc`                    | Yes, matches `/aaa` prefix     |
-| Prefix | `/`, `/aaa`, `/aaa/bbb`         | `/aaa/bbb`                    | Yes, matches `/aaa/bbb` prefix, not `/` or `/aaa` |
+| Prefix | `/`, `/aaa`                     | `/aaa/ccc`                    | Yes, matches `/aaa` prefix         |
+| Prefix | `/`, `/aaa`, `/aaa/bbb`         | `/aaa/bbb`                    | Yes, matches `/aaa/bbb` prefix     |
 | Prefix | `/`, `/aaa`, `/aaa/bbb`         | `/ccc`                        | Yes, matches `/` prefix            |
 | Prefix | `/aaa`                          | `/ccc`                        | No, uses default backend           |
 | Mixed  | `/foo` (Prefix), `/foo` (Exact) | `/foo`                        | Yes, prefers Exact                 |
