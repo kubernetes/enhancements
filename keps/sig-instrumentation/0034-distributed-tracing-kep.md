@@ -2,8 +2,7 @@
 title: Leveraging Distributed Tracing to Understand Kubernetes Object Lifecycles
 authors:
   - "@Monkeyanator"
-editors:
-  - "@dashpole"
+editor: "@dashpole"
 owning-sig: sig-instrumentation
 participating-sigs:
   - sig-architecture
