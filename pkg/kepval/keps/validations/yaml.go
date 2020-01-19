@@ -48,8 +48,8 @@ func (v *ValueMustBeString) Error() string {
 }
 
 type ValueMustBeOneOf struct {
-	key   string
-	value string
+	key    string
+	value  string
 	values []string
 }
 
@@ -83,7 +83,7 @@ func (m *MustHaveAtLeastOneValue) Error() string {
 }
 
 var mandatoryKeys = []string{"title", "owning-sig"}
-var statuses = []string{"provisional","implementable","implemented","deferred","rejected","withdrawn","replaced"}
+var statuses = []string{"provisional", "implementable", "implemented", "deferred", "rejected", "withdrawn", "replaced"}
 var reStatus = regexp.MustCompile(strings.Join(statuses, "|"))
 
 func ValidateStructure(parsed map[interface{}]interface{}) error {

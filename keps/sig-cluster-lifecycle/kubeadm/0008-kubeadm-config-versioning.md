@@ -11,7 +11,7 @@ approvers:
 editor: TBD
 creation-date: 2018-04-12
 last-updated: 2018-04-12
-status: draft
+status: provisional
 see-also:
 replaces:
 superseded-by:
