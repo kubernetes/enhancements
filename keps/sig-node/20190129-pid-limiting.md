@@ -189,4 +189,4 @@ GA
 ### Version 1.15
 
 - Graduate `SupportNodePidsLimit` to beta by adding node e2e test
-  coverage for node cgrop isoation.
+  coverage for node cgroup isoation.
