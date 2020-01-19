@@ -86,7 +86,7 @@ func (m *MustHaveAtLeastOneValue) Error() string {
 	return fmt.Sprintf("%q must have at least one value", m.key)
 }
 
-var listSIGs []string
+var listSIGsAndWGs []string
 
 func init() {
 	resp, err := http.Get("https://raw.githubusercontent.com/kubernetes/community/master/sigs.yaml")
@@ -95,20 +95,20 @@ func init() {
 		os.Exit(1)
 	}
 	defer resp.Body.Close()
-	re := regexp.MustCompile(`- dir: sig-(.*)$`)
+	re := regexp.MustCompile(`- dir: (.*)$`)
 
 	scanner := bufio.NewScanner(resp.Body)
 	for scanner.Scan() {
 		match := re.FindStringSubmatch(scanner.Text())
 		if len(match)>0 {
-			listSIGs = append(listSIGs, "sig-" + match[1])
+			listSIGsAndWGs = append(listSIGsAndWGs, match[1])
 		}
 	}
 	if err := scanner.Err(); err != nil {
 		fmt.Fprintf(os.Stderr, "unable to scan list of sigs: %v", err)
 		os.Exit(1)
 	}
-	sort.Strings(listSIGs)
+	sort.Strings(listSIGsAndWGs)
 }
 
 var mandatoryKeys = []string{"title", "owning-sig"}
@@ -147,9 +147,9 @@ func ValidateStructure(parsed map[interface{}]interface{}) error {
 				return &ValueMustBeString{k, v}
 			}
 			v, _ := value.(string)
-			index := sort.SearchStrings(listSIGs, v)
-			if index >= len(listSIGs) || listSIGs[index] != v {
-				return &ValueMustBeOneOf{k, v, listSIGs}
+			index := sort.SearchStrings(listSIGsAndWGs, v)
+			if index >= len(listSIGsAndWGs) || listSIGsAndWGs[index] != v {
+				return &ValueMustBeOneOf{k, v, listSIGsAndWGs}
 			}
 		// optional strings
 		case "editor":
