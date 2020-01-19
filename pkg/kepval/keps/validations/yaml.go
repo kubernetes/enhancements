@@ -18,6 +18,7 @@ package validations
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 )
 
@@ -46,6 +47,16 @@ func (v *ValueMustBeString) Error() string {
 	return fmt.Sprintf("%q must be a string but it is a %T: %v", v.key, v.value, v.value)
 }
 
+type ValueMustBeOneOf struct {
+	key   string
+	value string
+	values []string
+}
+
+func (v *ValueMustBeOneOf) Error() string {
+	return fmt.Sprintf("%q must be one of (%s) but it is a %T: %v", v.key, strings.Join(v.values, ","), v.value, v.value)
+}
+
 type ValueMustBeListOfStrings struct {
 	key   string
 	value interface{}
@@ -72,6 +83,8 @@ func (m *MustHaveAtLeastOneValue) Error() string {
 }
 
 var mandatoryKeys = []string{"title", "owning-sig"}
+var statuses = []string{"provisional","implementable","implemented","deferred","rejected","withdrawn","replaced"}
+var reStatus = regexp.MustCompile(strings.Join(statuses, "|"))
 
 func ValidateStructure(parsed map[interface{}]interface{}) error {
 	for _, key := range mandatoryKeys {
@@ -90,13 +103,22 @@ func ValidateStructure(parsed map[interface{}]interface{}) error {
 
 		// figure out the types
 		switch strings.ToLower(k) {
+		case "status":
+			switch v := value.(type) {
+			case []interface{}:
+				return &ValueMustBeString{k, v}
+			}
+			v, _ := value.(string)
+			if !reStatus.Match([]byte(v)) {
+				return &ValueMustBeOneOf{k, v, statuses}
+			}
 		// optional strings
 		case "editor":
 			if empty {
 				continue
 			}
 			fallthrough
-		case "title", "owning-sig", "status", "creation-date", "last-updated":
+		case "title", "owning-sig", "creation-date", "last-updated":
 			switch v := value.(type) {
 			case []interface{}:
 				return &ValueMustBeString{k, v}
