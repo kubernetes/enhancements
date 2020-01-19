@@ -65,6 +65,7 @@ superseded-by:
     - [New test cases](#new-test-cases)
   - [Conformance Tests](#conformance-tests)
   - [Unit Tests](#unit-tests)
+- [Implementation plan](#implementation-plan)
 - [Graduation Criteria](#graduation-criteria)
 - [Implementation History](#implementation-history)
 <!-- /toc -->
@@ -91,9 +92,6 @@ CronJob definition has been stable for the last few releases and is useful to ru
 - Add `CatchUp` concurrency policy
 
 ## Proposal
-
-### Promote CronJob API to v1
-We will formally promote the GA and create `batch/v1/CronJob` in the [batch/v1 API](https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/api/batch/v1/types.go). The older versions of CronJob API (batch/v1beta1, batch/v2alpha1) will be deprecated following the [deprecation policy](https://kubernetes.io/docs/reference/using-api/deprecation-policy/) 
 
 ### Rearchitect CronJob controller
 
@@ -216,7 +214,7 @@ To detect which CronJob has met its schedule and need to create Jobs we need to 
 |Hierarchical Wheel| multiple timer wheels for different resolutions (Seconds, minutes, hours, days). When seconds rolls over we grab the next minutes timers and recreate the seconds wheel. similarly for minutes and hours. | Sharding at different hierarchy levels improves insertion and bookkeeping performance. |
 
 
-We will use a use a separate [`DelayingInterface`](https://github.com/kubernetes/client-go/blob/master/util/workqueue/delaying_queue.go#L37) which has a heap based single shot api [`AddAfter`](https://github.com/kubernetes/client-go/blob/master/util/workqueue/delaying_queue.go#L150). Every time we process an entry from this queue, we would need to add it back to the queue to simulate a periodic timer.
+We will introduce a separate queue with the [`DelayingInterface`](https://github.com/kubernetes/client-go/blob/master/util/workqueue/delaying_queue.go#L37) that implements heap based single shot api [`AddAfter`](https://github.com/kubernetes/client-go/blob/master/util/workqueue/delaying_queue.go#L150). Every time we process an entry from this queue, we will add it back to the queue to simulate a periodic timer.
 
 
 For further reading:
@@ -226,7 +224,13 @@ For further reading:
 4. [Go timerwheel](https://github.com/RussellLuo/timingwheel)
 
 ##### Metrics
-We propose to add metrics that could expose the performance health of the controller including and not limited to: skew, queue depth, job failures, job successes etc.
+We propose to add metrics that could expose the performance and health of the controller including and not limited to: 
+- Skew (actualJobCreationTime-expectedJobCreationTime)
+- Queue depth (pending CronJob and Job entries in the Queue)
+- Job failures (counter)
+- Job successes (counter)
+- API server errors (counter)
+- Job scheduling latency (podCreationTime - jobCreationTime)
 
 
 ### Add .status.lastSuccessfulTime
@@ -286,6 +290,15 @@ Support for Catch up semantics is being discussed and no consensus has been reac
 ### Use master timezone instead of UTC
 We propose to address this request as well: [CronJob Schedule does not use master's timezone - instead it uses UTC](https://github.com/kubernetes/kubernetes/issues/80577)
 
+### Support Jitter for cronjobs
+We propose to introduce `.spec.jitter` which is a percentage of the time delta to the next schedule. We propose to cap it to 50%. There is also a [community request](https://github.com/kubernetes/community/issues/2440) for this.
+
+```golang
+delta = nextScheduleTime - currentTime
+jitter = delta*cronjob.Spec.Jitter/100
+nextScheduleTime += jitter
+```
+
 ### Fix applicable open issues
 These are the [current](https://github.com/kubernetes/kubernetes/issues/82659) list of issues that are being targeted for GA. 
 
@@ -309,6 +322,8 @@ There should be nothing in the implementation that limits CronJobs per namespace
 
 #### Frequency of launched jobs
 The number of CronJobs is also sensitive to the API server QPS and the schedule of the individual CronJobs. This translated to the frequency of launched jobs. We could have large number of CronJobs with a spread of schedule that doenst stress the Job API. At the same time we could have a small number of CronJobs that schedule synchronously stressing the Jobs API. The design must be able to easily saturate the API server QPS.
+
+
 
 ## V1 API
 Most of the changes are adding additional status fields.
@@ -475,6 +490,14 @@ None
 ## Validations
 Nothing additional from v1beta1
 
+## Plan for promoting CronJob to GA
+
+Dual controller (old and new coexist). Feature flag for new controller. alpha (disabled), beta(enabled, can be disabled), ga(enabled)
+API will track the controller since GAing the API implies GAing scalable implementation
+
+We will promote to  GA and create `batch/v1/CronJob` in the [batch/v1 API](https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/api/batch/v1/types.go). The older versions of CronJob API (batch/v1beta1, batch/v2alpha1) will be deprecated following the [deprecation policy](https://kubernetes.io/docs/reference/using-api/deprecation-policy/) 
+
+
 ## Tests
 
 ### E2E test
@@ -497,9 +520,9 @@ CronJob E2E test code is [located here](`/test/e2e/apps/cronjob.go`)
   - should remove from active list jobs that have been deleted
 
 #### New test cases
-- Schedule *
+- Schedule
   - Should not create a cronjob with invalid schedule format
-- StartingDeadlineSeconds *
+- StartingDeadlineSeconds
   - Should not schedule a job within two minutes when missed the current window if 
   - StartingDeadlineSeconds is 0
   - Should schedule a job soon when missed the current window if StartingDeadlineSeconds is long 
@@ -520,9 +543,11 @@ CronJob E2E test code is [located here](`/test/e2e/apps/cronjob.go`)
   - [issue/78646 - Should change shedule when schedule value is not wrapped with quotes](https://github.com/kubernetes/kubernetes/issues/78646)
 - Scaling
   - Should be able to create and schedule atleast 5000 cronjobs
+  - Measure scheduling skew, podCreationLatency and check if it meets epxectation (To Be Defined)
 - Start Stop Tests
   - Schedule cronjobs and randomly stop the controller and start it.
   - Schedule cronjobs and stop the controller and start it after the deadline.
+
 
 
 ### Conformance Tests
@@ -536,6 +561,18 @@ This is subject to the new rearchitected controller implementation. Overall thes
 - [Validates Job cleanup](https://github.com/kubernetes/kubernetes/blob/master/pkg/controller/cronjob/cronjob_controller_test.go#L371) path of the controller under different conditions.
 - [Validates Status](https://github.com/kubernetes/kubernetes/blob/master/pkg/controller/cronjob/cronjob_controller_test.go#L593) of the CronJob after sync under different conditions.
 
+
+## Implementation plan
+#### Release X
+- Alpha: Feature flag for new controller is disabled by default
+- Dual controller. Both old and new implementation co-exist
+- API will track the controller since GAing the API implies GAing scalable implementation
+
+#### Release X+1
+- Beta: Feature flag for new controller is enabled by default. If the distribution chooses it can be disabled
+
+#### Release X+2
+- GA: The feature flag is deprecated and the old controller code is cleaned up
 
 ## Graduation Criteria
 
