@@ -86,7 +86,7 @@ func (m *MustHaveAtLeastOneValue) Error() string {
 	return fmt.Sprintf("%q must have at least one value", m.key)
 }
 
-var listSIGsAndWGs []string
+var listGroups []string
 
 func init() {
 	resp, err := http.Get("https://raw.githubusercontent.com/kubernetes/community/master/sigs.yaml")
@@ -101,14 +101,14 @@ func init() {
 	for scanner.Scan() {
 		match := re.FindStringSubmatch(scanner.Text())
 		if len(match)>0 {
-			listSIGsAndWGs = append(listSIGsAndWGs, match[1])
+			listGroups = append(listGroups, match[1])
 		}
 	}
 	if err := scanner.Err(); err != nil {
 		fmt.Fprintf(os.Stderr, "unable to scan list of sigs: %v", err)
 		os.Exit(1)
 	}
-	sort.Strings(listSIGsAndWGs)
+	sort.Strings(listGroups)
 }
 
 var mandatoryKeys = []string{"title", "owning-sig"}
@@ -147,9 +147,9 @@ func ValidateStructure(parsed map[interface{}]interface{}) error {
 				return &ValueMustBeString{k, v}
 			}
 			v, _ := value.(string)
-			index := sort.SearchStrings(listSIGsAndWGs, v)
-			if index >= len(listSIGsAndWGs) || listSIGsAndWGs[index] != v {
-				return &ValueMustBeOneOf{k, v, listSIGsAndWGs}
+			index := sort.SearchStrings(listGroups, v)
+			if index >= len(listGroups) || listGroups[index] != v {
+				return &ValueMustBeOneOf{k, v, listGroups}
 			}
 		// optional strings
 		case "editor":
@@ -193,9 +193,9 @@ func ValidateStructure(parsed map[interface{}]interface{}) error {
 				if strings.ToLower(k) == "participating-sigs" {
 					for _, value := range values {
 						v := value.(string)
-						index := sort.SearchStrings(listSIGsAndWGs, v)
-						if index >= len(listSIGsAndWGs) || listSIGsAndWGs[index] != v {
-							return &ValueMustBeOneOf{k, v, listSIGsAndWGs}
+						index := sort.SearchStrings(listGroups, v)
+						if index >= len(listGroups) || listGroups[index] != v {
+							return &ValueMustBeOneOf{k, v, listGroups}
 						}
 					}
 				}
