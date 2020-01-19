@@ -2,7 +2,7 @@
 title: AWS LoadBalancer Prefix
 authors:
   - "@minherz"
-owning-sig: sig-aws
+owning-sig: sig-cloud-provider
 participating-sigs:
 reviewers:
   - TBD

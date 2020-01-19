@@ -3,7 +3,7 @@ title: Removing In-Tree Cloud Providers
 authors:
   - "@andrewsykim"
   - "@cheftako"
-owning-sig: sig-cloudprovider
+owning-sig: sig-cloud-provider
 participating-sigs:
   - sig-apps
   - sig-aws

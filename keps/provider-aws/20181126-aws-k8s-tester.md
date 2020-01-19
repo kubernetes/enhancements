@@ -2,7 +2,7 @@
 title: aws-k8s-tester
 authors:
   - "@gyuho"
-owning-sig: sig-aws
+owning-sig: sig-cloud-provider
 reviewers:
   - "@d-nishi"
   - "@shyamjvs"

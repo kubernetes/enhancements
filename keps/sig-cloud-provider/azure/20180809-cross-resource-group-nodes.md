@@ -2,7 +2,7 @@
 title: Cross resource group nodes
 authors:
   - "@feiskyer"
-owning-sig: sig-azure
+owning-sig: sig-cloud-provider
 participating-sigs:
   - sig-azure
 reviewers:

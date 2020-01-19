@@ -2,7 +2,7 @@
 title: aws-ebs-csi-driver
 authors:
   - "@leakingtapan"
-owning-sig: sig-aws
+owning-sig: sig-cloud-provider
 reviewers:
   - "@d-nishi"
   - "@jsafrane"
