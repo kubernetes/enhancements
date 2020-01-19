@@ -17,28 +17,27 @@ status: provisional
 # Coscheduling plugin based on scheduler framework
 
 ## Table of Contents
+
 <!-- toc -->
-- [Coscheduling plugin based on scheduler framework](#coscheduling-plugin-based-on-scheduler-framework)
-  - [Table of Contents](#table-of-contents)
-  - [Motivation](#motivation)
-  - [Goals](#goals)
-  - [Non-Goals](#non-goals)
-  - [Use Cases](#use-cases)
-  - [Terms](#terms)
-  - [Proposal](#proposal)
-  - [Design Details](#design-details)
-    - [PodGroup](#podgroup)
-    - [Coscheduling](#coscheduling)
-    - [Extension points](#extension-points)
-      - [QueueSort](#queuesort)
-      - [Pre-Filter](#pre-filter)
-      - [Permit](#permit)
-      - [UnReserve](#unreserve)
-  - [Alternatives considered](#alternatives-considered)
-  - [Graduation Criteria](#graduation-criteria)
-  - [Testing Plan](#testing-plan)
-  - [Implementation History](#implementation-history)
-  - [References](#references)
+- [Motivation](#motivation)
+- [Goals](#goals)
+- [Non-Goals](#non-goals)
+- [Use Cases](#use-cases)
+- [Terms](#terms)
+- [Proposal](#proposal)
+- [Design Details](#design-details)
+  - [PodGroup](#podgroup)
+  - [Coscheduling](#coscheduling)
+  - [Extension points](#extension-points)
+    - [QueueSort](#queuesort)
+    - [Pre-Filter](#pre-filter)
+    - [Permit](#permit)
+    - [UnReserve](#unreserve)
+- [Alternatives considered](#alternatives-considered)
+- [Graduation Criteria](#graduation-criteria)
+- [Testing Plan](#testing-plan)
+- [Implementation History](#implementation-history)
+- [References](#references)
 <!-- /toc -->
 
 ## Motivation
@@ -60,7 +59,7 @@ When running a Tensorflow/MPI job, all tasks of a job must be start together; ot
 
 ## Proposal
 
-In order to implement the coscheduling, we developed plugins in different extension points. In `QueueSort` phase, implement a strategy to ensure the Pods belonging to the same PodGroup are queued continously. For example, suppose PodGroup A owns Pod-A1, Pod-A2, Pod-A3, while PodGroup B owns Pod-B1, Pod-B2. The pods of the two PodGroups cannot be zigzagged - it should be always <PodGroup-A, PodGroup-B> or the other way around; it should NOT be any way like <Pod-A1, Pod-B1, Pod-A2, ...>In `Permit` phase，put the pod that doesn't meet min-available into WaitingMap and reserve resources until min-available are met or timeout. In `Unreserve` phase，clean up the pods which is timeout.
+In order to implement the coscheduling, we developed plugins in different extension points. In `QueueSort` phase, implement a strategy to ensure the Pods belonging to the same PodGroup are queued continuously. For example, suppose PodGroup A owns Pod-A1, Pod-A2, Pod-A3, while PodGroup B owns Pod-B1, Pod-B2. The pods of the two PodGroups cannot be zigzagged - it should be always <PodGroup-A, PodGroup-B> or the other way around; it should NOT be any way like <Pod-A1, Pod-B1, Pod-A2, ...>In `Permit` phase，put the pod that doesn't meet min-available into WaitingMap and reserve resources until min-available are met or timeout. In `Unreserve` phase，clean up the pods which is timeout.
 
 ![image](./20200116-coscheduling-plugin-based-on-scheduler-framework-extensions.png)
 
