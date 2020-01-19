@@ -18,29 +18,31 @@ status: provisional
 
 ## Table of Contents
 <!-- toc -->
-- [Motivation](#motivation)
-- [Goals](#goals)
-- [Non-Goals](#non-goals)
-- [Use Cases](#use-cases)
-- [Terms](#terms)
-- [Proposal](#proposal)
-- [Design Details](#design-details)
-  - [PodGroup](#podgroup)
-  - [Coscheduling](#coscheduling)
-  - [Extension points](#extension-points)
-    - [QueueSort](#queuesort)
-    - [Pre-Filter](#pre-filter)
-    - [Permit](#permit)
-    - [UnReserve](#unreserve)
-- [Alternatives considered](#alternatives-considered)
-- [Graduation Criteria](#graduation-criteria)
-- [Testing Plan](#testing-plan)
-- [Implementation History](#implementation-history)
-- [References](#references)
+- [Coscheduling plugin based on scheduler framework](#coscheduling-plugin-based-on-scheduler-framework)
+  - [Table of Contents](#table-of-contents)
+  - [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+  - [Use Cases](#use-cases)
+  - [Terms](#terms)
+  - [Proposal](#proposal)
+  - [Design Details](#design-details)
+    - [PodGroup](#podgroup)
+    - [Coscheduling](#coscheduling)
+    - [Extension points](#extension-points)
+      - [QueueSort](#queuesort)
+      - [Pre-Filter](#pre-filter)
+      - [Permit](#permit)
+      - [UnReserve](#unreserve)
+  - [Alternatives considered](#alternatives-considered)
+  - [Graduation Criteria](#graduation-criteria)
+  - [Testing Plan](#testing-plan)
+  - [Implementation History](#implementation-history)
+  - [References](#references)
 <!-- /toc -->
 
 ## Motivation
-Kubernetes has become a popular solution for orchestrating containerized workloads. Due to limitation of Kubernetes scheduler, some offline workloads(ML/DL)  are managed in a different system. For the sake of operation efficiency, we'd like to treat Kubneretes as a unified management platform. But the ML jobs have the characteristics of All-or-Nothing in the scheduling process, which requires all tasks of a job to be scheduled at the same time. If the job only start part of tasks, it will wait for other tasks be ready to begin to work. In worst case, all jobs are pending like deadlock. To solve the above problem, co-scheduling is needed for the scheduler. The new scheduler framework makes the goal possible.
+Kubernetes has become a popular solution for orchestrating containerized workloads. Due to limitation of Kubernetes scheduler, some offline workloads(ML/DL)  are managed in a different system. For the sake of improving cluster utilization and operation efficiency., we'd like to treat Kubneretes as a unified management platform. But the ML jobs have the characteristics of All-or-Nothing in the scheduling process, which requires all tasks of a job to be scheduled at the same time. If the job only start part of tasks, it will wait for other tasks be ready to begin to work. In worst case, all jobs are pending like deadlock. To solve the above problem, co-scheduling is needed for the scheduler. The new scheduler framework makes the goal possible.
  
 ## Goals
  Use scheduler plugin, which is the most Kubernetes native way, to implement coscheduling.
@@ -58,9 +60,9 @@ When running a Tensorflow/MPI job, all tasks of a job must be start together; ot
 
 ## Proposal
 
-In order to implement the coscheduling, we developed plugins in different extension points. In `Sort` phase, add strategy to try to make sure that the pods belong to same PodGroup are queued continuously. In `Permit` phase，put the pod that doesn't meet min-available into WaitingMap and reserve resources until min-available are met or timeout. In `Unreserve` phase，clean up the pods which is timeout.
+In order to implement the coscheduling, we developed plugins in different extension points. In `QueueSort` phase, implement a strategy to ensure the Pods belonging to the same PodGroup are queued continously. For example, suppose PodGroup A owns Pod-A1, Pod-A2, Pod-A3, while PodGroup B owns Pod-B1, Pod-B2. The pods of the two PodGroups cannot be zigzagged - it should be always <PodGroup-A, PodGroup-B> or the other way around; it should NOT be any way like <Pod-A1, Pod-B1, Pod-A2, ...>In `Permit` phase，put the pod that doesn't meet min-available into WaitingMap and reserve resources until min-available are met or timeout. In `Unreserve` phase，clean up the pods which is timeout.
 
-![image](20200116-coscheduling-plugin-based-on-scheduler-framework-extensions.png)
+![image](https://github.com/denkensk/enhancements/blob/coscheduling-plugin/keps/sig-scheduling/20200116-coscheduling-plugin-based-on-scheduler-framework-extensions.png)
 
 
 ## Design Details
@@ -104,14 +106,14 @@ type PodGroupInfo struct {
 ### Extension points
 
 #### QueueSort
-In order to make the pods which belongs to the same `PodGroup` to be scheduled together as much as possible, much policies are added in `QueueSort` phase. 
+In order to make the pods which belongs to the same `PodGroup` to be scheduled together as much as possible, implement a strategy in `QueueSort` phase. 
 
 ```go
   func  Less(podA *PodInfo, podB *PodInfo) bool
 ```
-1. When priorities are different, they are compared based on their priorities. When priorities are the same, they are operated according to the following process.
+1. When priorities (i.e. .spec.priorityValue) are different, they are compared based on their priorities. When priorities are the same, they are operated according to the following process.
    
-2. When podA and podB are both regularPods (we will check it by the label of pod), it follows the same logic of default in-tree `PrioritySort` plugin.
+2. When podA and podB are both regularPods (we will check it by their labels), it follows the same logic of default in-tree [PrioritySort](https://github.com/kubernetes/kubernetes/blob/master/pkg/scheduler/framework/plugins/queuesort/priority_sort.go#L41-L45) plugin.
    
 3. When podA is regularPod, podB is pgPod. they are compared according to podA’s timestamp and podB’s `LastFailureTimestamp` (we get the PodGroupInfo from the cache). If timestampA is earlier than LastFailureTimestampB, return true. Otherwise, return false. When podA is pgPod, podB is regularPod. Ditto
    
