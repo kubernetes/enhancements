@@ -6,7 +6,7 @@ authors:
 owning-sig: sig-node
 participating-sigs:
   - sig-scalability
-  - sig-apimachinery
+  - sig-api-machinery
   - sig-scheduling
 reviewers:
   - "@deads2k"

@@ -185,13 +185,22 @@ func ValidateStructure(parsed map[interface{}]interface{}) error {
 			}
 			fallthrough
 		case "authors", "reviewers", "approvers":
-			switch v := value.(type) {
+			switch values := value.(type) {
 			case []interface{}:
-				if len(v) == 0 {
+				if len(values) == 0 {
 					return &MustHaveAtLeastOneValue{k}
 				}
+				if strings.ToLower(k) == "participating-sigs" {
+					for _, value := range values {
+						v := value.(string)
+						index := sort.SearchStrings(listSIGsAndWGs, v)
+						if index >= len(listSIGsAndWGs) || listSIGsAndWGs[index] != v {
+							return &ValueMustBeOneOf{k, v, listSIGsAndWGs}
+						}
+					}
+				}
 			case interface{}:
-				return &ValueMustBeListOfStrings{k, v}
+				return &ValueMustBeListOfStrings{k, values}
 			}
 		}
 	}

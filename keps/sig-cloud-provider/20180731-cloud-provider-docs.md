@@ -8,11 +8,6 @@ owning-sig: sig-cloud-provider
 participating-sigs:
   - sig-docs
   - sig-cluster-lifecycle
-  - sig-aws
-  - sig-azure
-  - sig-gcp
-  - sig-openstack
-  - sig-vmware
 reviewers:
   - "@andrewsykim"
   - "@calebamiles"

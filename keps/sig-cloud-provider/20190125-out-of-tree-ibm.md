@@ -3,8 +3,6 @@ title: Support Out-of-Tree IBM Cloud Provider
 authors:
   - "@andrewsykim"
 owning-sig: sig-cloud-provider
-participating-sigs:
-  - sig-ibm
 reviewers:
   - TBD
 approvers:

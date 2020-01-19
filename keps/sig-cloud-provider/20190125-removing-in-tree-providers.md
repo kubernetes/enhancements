@@ -6,12 +6,8 @@ authors:
 owning-sig: sig-cloud-provider
 participating-sigs:
   - sig-apps
-  - sig-aws
-  - sig-azure
-  - sig-apimachinery
-  - sig-gcp
+  - sig-api-machinery
   - sig-network
-  - sig-openstack
   - sig-storage
 reviewers:
   - "@andrewsykim"

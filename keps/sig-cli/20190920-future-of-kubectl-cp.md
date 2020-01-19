@@ -4,7 +4,7 @@ authors:
   - "@sallyom"
 owning-sig: sig-cli
 participating-sigs:
-  - sig-Usability
+  - sig-usability
 reviewers:
   - "@liggitt"
   - "@brendandburns"

@@ -4,7 +4,7 @@ authors:
   - "@deads2k"
 owning-sig: sig-api-machinery
 participating-sigs:
-  - sig-apimachinery
+  - sig-api-machinery
   - sig-auth
   - sig-cli
 reviewers:

@@ -3,8 +3,6 @@ title: Support Out-of-Tree GCE Cloud Provider
 authors:
   - "@andrewsykim"
 owning-sig: sig-cloud-provider
-participating-sigs:
-  - sig-gcp
 reviewers:
   - TBD
 approvers:

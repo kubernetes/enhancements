@@ -5,7 +5,6 @@ authors:
 owning-sig: sig-instrumentation
 participating-sigs:
   - sig-autoscaling
-  - (?)
 reviewers:
   - TBD
 approvers:

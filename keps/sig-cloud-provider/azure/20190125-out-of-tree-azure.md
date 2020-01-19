@@ -5,8 +5,6 @@ authors:
   - "@dstrebel"
   - "@feiskyer"
 owning-sig: sig-cloud-provider
-participating-sigs:
-  - sig-azure
 reviewers:
   - "@dstrebel"
   - "@justaugustus"

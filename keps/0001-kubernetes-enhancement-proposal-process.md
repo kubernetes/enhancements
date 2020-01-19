@@ -4,8 +4,6 @@ authors:
   - "@calebamiles"
   - "@jbeda"
 owning-sig: sig-architecture
-participating-sigs:
-  - kubernetes-wide
 reviewers:
   - "@timothysc"
 approvers:

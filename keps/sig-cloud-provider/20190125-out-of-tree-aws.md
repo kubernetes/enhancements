@@ -3,8 +3,6 @@ title: Support Out-of-Tree AWS Cloud Provider
 authors:
   - "@andrewsykim"
 owning-sig: sig-cloud-provider
-participating-sigs:
-  - sig-aws
 reviewers:
   - TBD
 approvers:

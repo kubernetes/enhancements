@@ -5,7 +5,7 @@ authors:
 owning-sig: sig-api-machinery
 participating-sigs:
   - sig-scheduling
-  - sig-apimachinery
+  - sig-api-machinery
 reviewers:
   - "@bsalamat"
   - "@k82cn"

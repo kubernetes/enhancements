@@ -5,7 +5,7 @@ authors:
 owning-sig: sig-release
 participating-sigs:
   - sig-release
-  - cloud-provider
+  - sig-cloud-provider
 reviewers:
   - "@tallclair"
 approvers:

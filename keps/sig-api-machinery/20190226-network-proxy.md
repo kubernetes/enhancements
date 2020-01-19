@@ -5,7 +5,7 @@ authors:
   - "@anfernee"
 owning-sig: sig-api-machinery
 participating-sigs:
-  - sig-networking
+  - sig-network
   - sig-cloud-provider
 reviewers:
   - TBD

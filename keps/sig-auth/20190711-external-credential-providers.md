@@ -4,7 +4,8 @@ authors:
   - "@awly"
 owning-sig: sig-auth
 participating-sigs:
-  - sig-cli, sig-api-machinery
+  - sig-cli
+  - sig-api-machinery
 reviewers:
   - "@liggitt"
   - "@mikedanese"
