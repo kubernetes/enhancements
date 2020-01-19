@@ -6,12 +6,6 @@ owning-sig: sig-cloud-provider
 participating-sigs:
   - sig-testing
   - sig-release
-  - sig-aws
-  - sig-azure
-  - sig-gcp
-  - sig-ibmcloud
-  - sig-openstack
-  - sig-vmware
 reviewers:
   - TBD
 approvers:

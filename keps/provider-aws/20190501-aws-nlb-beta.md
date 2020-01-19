@@ -2,7 +2,7 @@
 title: graduate-aws-nlb-to-beta
 authors:
   - "@M00nF1sh"
-owning-sig: sig-aws
+owning-sig: sig-cloud-provider
 participating-sigs:
 reviewers:
   - "@dnishi"

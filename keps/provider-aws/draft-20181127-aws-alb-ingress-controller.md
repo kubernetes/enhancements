@@ -2,7 +2,7 @@
 title: AWS ALB Ingress Controller
 authors:
   - "@M00nF1sh"
-owning-sig: sig-aws
+owning-sig: sig-cloud-provider
 reviewers:
   - TBD
   - "@d-nishi"

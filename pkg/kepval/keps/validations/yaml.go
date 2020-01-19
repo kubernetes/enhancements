@@ -17,7 +17,12 @@ limitations under the License.
 package validations
 
 import (
+	"bufio"
 	"fmt"
+	"net/http"
+	"os"
+	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -46,6 +51,16 @@ func (v *ValueMustBeString) Error() string {
 	return fmt.Sprintf("%q must be a string but it is a %T: %v", v.key, v.value, v.value)
 }
 
+type ValueMustBeOneOf struct {
+	key    string
+	value  string
+	values []string
+}
+
+func (v *ValueMustBeOneOf) Error() string {
+	return fmt.Sprintf("%q must be one of (%s) but it is a %T: %v", v.key, strings.Join(v.values, ","), v.value, v.value)
+}
+
 type ValueMustBeListOfStrings struct {
 	key   string
 	value interface{}
@@ -71,7 +86,34 @@ func (m *MustHaveAtLeastOneValue) Error() string {
 	return fmt.Sprintf("%q must have at least one value", m.key)
 }
 
+var listGroups []string
+
+func init() {
+	resp, err := http.Get("https://raw.githubusercontent.com/kubernetes/community/master/sigs.yaml")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "unable to fetch list of sigs: %v", err)
+		os.Exit(1)
+	}
+	defer resp.Body.Close()
+	re := regexp.MustCompile(`- dir: (.*)$`)
+
+	scanner := bufio.NewScanner(resp.Body)
+	for scanner.Scan() {
+		match := re.FindStringSubmatch(scanner.Text())
+		if len(match)>0 {
+			listGroups = append(listGroups, match[1])
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		fmt.Fprintf(os.Stderr, "unable to scan list of sigs: %v", err)
+		os.Exit(1)
+	}
+	sort.Strings(listGroups)
+}
+
 var mandatoryKeys = []string{"title", "owning-sig"}
+var statuses = []string{"provisional", "implementable", "implemented", "deferred", "rejected", "withdrawn", "replaced"}
+var reStatus = regexp.MustCompile(strings.Join(statuses, "|"))
 
 func ValidateStructure(parsed map[interface{}]interface{}) error {
 	for _, key := range mandatoryKeys {
@@ -90,13 +132,32 @@ func ValidateStructure(parsed map[interface{}]interface{}) error {
 
 		// figure out the types
 		switch strings.ToLower(k) {
+		case "status":
+			switch v := value.(type) {
+			case []interface{}:
+				return &ValueMustBeString{k, v}
+			}
+			v, _ := value.(string)
+			if !reStatus.Match([]byte(v)) {
+				return &ValueMustBeOneOf{k, v, statuses}
+			}
+		case "owning-sig":
+			switch v := value.(type) {
+			case []interface{}:
+				return &ValueMustBeString{k, v}
+			}
+			v, _ := value.(string)
+			index := sort.SearchStrings(listGroups, v)
+			if index >= len(listGroups) || listGroups[index] != v {
+				return &ValueMustBeOneOf{k, v, listGroups}
+			}
 		// optional strings
 		case "editor":
 			if empty {
 				continue
 			}
 			fallthrough
-		case "title", "owning-sig", "status", "creation-date", "last-updated":
+		case "title", "creation-date", "last-updated":
 			switch v := value.(type) {
 			case []interface{}:
 				return &ValueMustBeString{k, v}
@@ -124,13 +185,22 @@ func ValidateStructure(parsed map[interface{}]interface{}) error {
 			}
 			fallthrough
 		case "authors", "reviewers", "approvers":
-			switch v := value.(type) {
+			switch values := value.(type) {
 			case []interface{}:
-				if len(v) == 0 {
+				if len(values) == 0 {
 					return &MustHaveAtLeastOneValue{k}
 				}
+				if strings.ToLower(k) == "participating-sigs" {
+					for _, value := range values {
+						v := value.(string)
+						index := sort.SearchStrings(listGroups, v)
+						if index >= len(listGroups) || listGroups[index] != v {
+							return &ValueMustBeOneOf{k, v, listGroups}
+						}
+					}
+				}
 			case interface{}:
-				return &ValueMustBeListOfStrings{k, v}
+				return &ValueMustBeListOfStrings{k, values}
 			}
 		}
 	}

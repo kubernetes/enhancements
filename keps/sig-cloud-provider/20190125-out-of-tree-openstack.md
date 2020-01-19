@@ -4,8 +4,6 @@ authors:
   - "@andrewsykim"
   - "@adisky"
 owning-sig: sig-cloud-provider
-participating-sigs:
-  - sig-openstack
 reviewers:
   - "@lingxiankong"
   - "@chrigl"

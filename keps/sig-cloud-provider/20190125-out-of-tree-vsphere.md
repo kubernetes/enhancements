@@ -4,8 +4,6 @@ authors:
   - "@frapposelli"
   - "@andrewsykim"
 owning-sig: sig-cloud-provider
-participating-sigs:
-  - sig-vmware
 reviewers:
   - "@frapposelli"
   - "@cantbewong"

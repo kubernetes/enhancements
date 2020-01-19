@@ -4,7 +4,7 @@ authors:
   - "@javier-b-perez"
 owning-sig: sig-release
 participating-sigs:
-  - TBD
+  - wg-k8s-infra
 reviewers:
   - "@AishSundar"
   - "@BenTheElder"

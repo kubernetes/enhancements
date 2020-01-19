@@ -8,7 +8,7 @@ authors:
   - "feiskyer@"
 owning-sig: sig-network
 participating-sigs:
-  - sig-clusterlifecycle
+  - sig-cluster-lifecycle
 reviewers:
   - TBD
 approvers:

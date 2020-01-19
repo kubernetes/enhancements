@@ -2,7 +2,7 @@
 title: Watch Bookmark
 authors:
   - "@wojtek-t"
-owning-sig: sig-apimachinery
+owning-sig: sig-api-machinery
 participating-sigs:
   - sig-scalability
 reviewers:

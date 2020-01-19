@@ -4,13 +4,9 @@ authors:
   - "@cheftako"
   - "@calebamiles"
   - "@hogepodge"
-owning-sig: sig-apimachinery
+owning-sig: sig-api-machinery
 participating-sigs:
-  - sig-aws
-  - sig-azure
   - sig-cloud-provider
-  - sig-gcp
-  - sig-openstack
   - sig-storage
 reviewers:
   - "@andrewsykim"

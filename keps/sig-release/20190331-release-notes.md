@@ -4,7 +4,7 @@ authors:
   - "@jeefy"
 owning-sig: sig-release
 participating-sigs:
-  - sig-contribex
+  - sig-contributor-experience
   - sig-docs
 reviewers:
   - "@spiffxp"

@@ -5,7 +5,7 @@ authors:
   - "@jsafrane"
 owning-sig: sig-storage
 participating-sigs:
-  - sig-arch
+  - sig-architecture
   - sig-cluster-lifecycle
 reviewers:
   - "@saadali"

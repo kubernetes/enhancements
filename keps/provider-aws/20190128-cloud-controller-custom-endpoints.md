@@ -2,7 +2,7 @@
 title: Custom endpoints support for AWS Cloud Provider
 authors:
   - "@micahhausler"
-owning-sig: sig-aws
+owning-sig: sig-cloud-provider
 participating-sigs:
   - sig-cloud-provider
 reviewers:

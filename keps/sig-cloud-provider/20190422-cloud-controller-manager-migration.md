@@ -4,7 +4,7 @@ authors:
   - "@andrewsykim"
 owning-sig: sig-cloud-provider
 participating-sigs:
-  - sig-apimachinery
+  - sig-api-machinery
 reviewers:
   - "@cheftako"
   - "@mcrute"
