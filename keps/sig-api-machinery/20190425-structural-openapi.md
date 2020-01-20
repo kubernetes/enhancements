@@ -697,7 +697,7 @@ Note: the kubebuilder tags are partially just sketches because the tags in crd-g
    x-kubernetes-int-or-string: true
    ```   
 
-Note: the OpenAPI v2 output given above is the same we get from the [OpenAPI v2 filtering in Kubernetes 1.14](https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/apiextensions-apiserver/pkg/controller/openapi/conversion.go#L30): that filtering in the CRD OpenAPI v2 publishing pipeline supports the unrestricted range of the CRD OpenAPI v3 language and turns it into a weaker variant understandable by kubectl 1.13 and 1.14. Hence, our changes above have no influence on the OpenAPI v2 publishing other than passing through of our new `x-kubernetes-*` vendor extensions.
+Note: the OpenAPI v2 output given above is the same we get from the [OpenAPI v2 filtering in Kubernetes 1.14](https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/apiextensions-apiserver/pkg/controller/openapi/v2/conversion.go): that filtering in the CRD OpenAPI v2 publishing pipeline supports the unrestricted range of the CRD OpenAPI v3 language and turns it into a weaker variant understandable by kubectl 1.13 and 1.14. Hence, our changes above have no influence on the OpenAPI v2 publishing other than passing through of our new `x-kubernetes-*` vendor extensions.
 
 Also note that structural schemas enforce types and properties outside of logical junctors. OpenAPI v2 publishing will preserve these and hence, structural schemas lead to a more complete OpenAPI v2 spec, client-side validation and `kubectl explain` output.
 
