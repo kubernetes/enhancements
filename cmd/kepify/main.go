@@ -140,16 +140,16 @@ func printJSONOutput(filePath string, proposals keps.Proposals) error {
 		fmt.Fprintf(file, "\t\"%s\": {\n", hash(kep.OwningSIG+":"+kep.Title))
 		fmt.Fprintf(file, "\t\t\"%s\": \"%s\",\n", "title", kep.Title)
 		fmt.Fprintf(file, "\t\t\"%s\": \"%s\",\n", "owning-sig", kep.OwningSIG)
-		fmt.Fprintf(file, "\t\t\"%s\": \"%s\",\n", "participating-sigs", strings.Join(kep.ParticipatingSIGs, ","))
-		fmt.Fprintf(file, "\t\t\"%s\": \"%s\",\n", "reviewers", strings.Join(kep.Reviewers, ","))
-		fmt.Fprintf(file, "\t\t\"%s\": \"%s\",\n", "authors", strings.Join(kep.Authors, ","))
+		fmt.Fprintf(file, "\t\t\"%s\": %s,\n", "participating-sigs", marshal(kep.ParticipatingSIGs))
+		fmt.Fprintf(file, "\t\t\"%s\": %s,\n", "reviewers", marshal(kep.Reviewers))
+		fmt.Fprintf(file, "\t\t\"%s\": %s,\n", "authors", marshal(kep.Authors))
 		fmt.Fprintf(file, "\t\t\"%s\": \"%s\",\n", "editor", kep.Editor)
 		fmt.Fprintf(file, "\t\t\"%s\": \"%s\",\n", "creation-date", kep.CreationDate)
 		fmt.Fprintf(file, "\t\t\"%s\": \"%s\",\n", "last-updated", kep.LastUpdated)
 		fmt.Fprintf(file, "\t\t\"%s\": \"%s\",\n", "status", kep.Status)
-		fmt.Fprintf(file, "\t\t\"%s\": \"%s\",\n", "see-also", strings.Join(kep.SeeAlso, ","))
-		fmt.Fprintf(file, "\t\t\"%s\": \"%s\",\n", "replaces", strings.Join(kep.Replaces, ","))
-		fmt.Fprintf(file, "\t\t\"%s\": \"%s\",\n", "superseded-by", strings.Join(kep.SupersededBy, ","))
+		fmt.Fprintf(file, "\t\t\"%s\": %s,\n", "see-also", marshal(kep.SeeAlso))
+		fmt.Fprintf(file, "\t\t\"%s\": %s,\n", "replaces", marshal(kep.Replaces))
+		fmt.Fprintf(file, "\t\t\"%s\": %s,\n", "superseded-by", marshal(kep.SupersededBy))
 		contents, _ := json.Marshal(kep.Contents)
 		fmt.Fprintf(file, "\t\t\"%s\": %s\n", "markdown", contents)
 		if i < total-1 {
@@ -160,6 +160,11 @@ func printJSONOutput(filePath string, proposals keps.Proposals) error {
 	}
 	fmt.Fprintln(file, "}")
 	return nil
+}
+
+func marshal(array []string) string {
+	contents, _ := json.Marshal(array)
+	return string(contents)
 }
 
 func hash(s string) string {
