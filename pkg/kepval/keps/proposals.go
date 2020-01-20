@@ -62,16 +62,14 @@ func (p *Parser) Parse(in io.Reader) *Proposal {
 	var body bytes.Buffer
 	for scanner.Scan() {
 		line := scanner.Text() + "\n"
-		body.WriteString(line)
-		if count == 2 {
-			continue
-		}
 		if strings.Contains(line, "---") {
 			count++
 			continue
 		}
 		if count == 1 {
 			metadata = append(metadata, []byte(line)...)
+		} else {
+			body.WriteString(line)
 		}
 	}
 	proposal := &Proposal{
