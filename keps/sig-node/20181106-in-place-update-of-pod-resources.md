@@ -491,17 +491,19 @@ TBD
 
 ### Alpha
 - In-Place Pod Resouces Update functionality is implemented,
+- LimitRanger and ResourceQuota handling are added,
+- Resize Policies functionality is implemented,
 - Unit tests and E2E tests covering basic functionality are added,
 - E2E tests covering multiple containers are added.
 
 ### Beta
 - VPA alpha integration of feature completed and any bugs addressed,
-- Resize Policies are added, LimitRanger and ResourceQuota handling added,
-- Unit tests and E2E tests covering the above are added,
+- E2E tests covering Resize Policy, LimitRanger, and ResourceQuota are added,
 - Negative tests are identified and added.
 
 ### Stable
 - VPA integration of feature moved to beta,
+- User feedback (ideally from atleast two distinct users) is green,
 - No major bugs reported for three months.
 
 ## Implementation History
@@ -513,3 +515,4 @@ TBD
 - 2019-10-25 - update key open items and move KEP to implementable
 - 2020-01-06 - API review suggested changes incorporated
 - 2020-01-13 - Test plan and graduation criteria added
+- 2020-01-21 - Graduation criteria updated per review feedback
