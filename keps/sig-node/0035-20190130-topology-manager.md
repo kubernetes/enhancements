@@ -209,12 +209,14 @@ graduation from alpha to beta.
 
 #### Computing Preferred Affinity
 
-After collecting hints from all providers, the Topology Manager preforms the
+After collecting hints from all providers, the chosen Topology Manager policy performs the
 affinity calcuation to determine the best fit Topology Hint.
 
-The chosen Topology Manager policy then decicds to admit or reject the pod based on this hint.
+The chosen Topology Manager policy then decides to admit or reject the pod based on this hint.
 
-**Affinity Calcuation:**
+**Policy Affinity Calcuation:**
+
+- **best-effort/restricted (same affinity calculation algorithm for both policies)**
 1. Loops through the list of hint providers and saves an accumulated list of 
    the hints returned by each hint provider.
 2. Iterates through all permutations of hints accumulated in Step 1. The hint affinites are merged to a single hint
@@ -225,6 +227,16 @@ The chosen Topology Manager policy then decicds to admit or reject the pod based
 4. If no hint with at least one NUMA Node set is found, return a default hint which is a hint
    with all NUMA Nodes set and preferred set to false.
 
+- **single-numa-node**
+1. Loops through the list of hint providers and saves an accumulated list of 
+   the hints returned by each hint provider.
+2. Filters the list of hints accumulated in Step 1 to only include hints with a single NUMA node and nil NUMA nodes.
+3. Iterates through all permutations of hints filtered in Step 2. The hint affinites are merged to a single hint
+   by performing a bitwise AND. The preferred field on the merged hint is set to false if any of the hints in the 
+   permutation returned a false preferred.
+4. If no hint with a single NUMA Node set is found, return a default hint which is a hint
+   with all NUMA Nodes set and preferred set to false.   
+   
 **Policy Decisions:**
 
 - **best-effort**
@@ -301,6 +313,16 @@ type Store interface {
   // container.
   GetAffinity(podUID string, containerName string) TopologyHint
 }
+
+// Policy interface for Topology Manager Pod Admit Result
+type Policy interface {
+  // Returns Policy Name
+  Name() string
+  // Returns a merged TopologyHint based on input from hint providers
+  // and a Pod Admit Handler Response based on hints and policy type
+  Merge(providersHints []map[string][]TopologyHint) (TopologyHint, lifecycle.PodAdmitResult)
+}
+
 ```
 
 _Listing: Topology Manager and related interfaces (sketch)._
