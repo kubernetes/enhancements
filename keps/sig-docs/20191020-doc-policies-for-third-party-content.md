@@ -57,20 +57,43 @@ receives pull requests to place advertising-like content on the Kubernetes
 website. Some PRs clearly do not belong in feature docs, but other
 instances are less clear.
 
-Feature docs also contain dual-sourced content. A good practice for code project docs is to host single-sourced content only, and to provide links to other providers’ single-sourced content. This simplifies version management and reduces the work required to maintain content.
-This KEP defines a policy on documentation content, so that authors can judge what is appropriate to propose and so that PR approvers can make consistent, fair decisions during the review process.
+Feature docs also contain dual-sourced content. A good practice for code
+project docs is to host single-sourced content only, and to provide
+links to other providers’ single-sourced content. This simplifies
+version management and reduces the work required to maintain content.
+
+This KEP defines a policy on documentation content, so that authors can
+judge what is appropriate to propose and so that PR approvers can make
+consistent, fair decisions during the review process.
 
 ## Motivation
 
-SIG Docs publishes Kubernetes documentation on kubernetes.io in line with its [charter](https://github.com/kubernetes/community/blob/master/sig-docs/charter.md#scope) and sets standards for website content. Prior to this KEP, there are no clear guidelines or standards for third-party and dual-sourced content.
+SIG Docs publishes Kubernetes
+documentation on kubernetes.io in line with its
+[charter](https://github.com/kubernetes/community/blob/master/sig-docs/charter.md#scope)
+and sets standards for website content. Prior to this KEP, there are no
+clear guidelines or standards for third-party and dual-sourced content.
 
-The Kubernetes documentation is currently a mix of both 1) documentation describing the Kubernetes open source project; and 2) content describing how to install or use Kubernetes on several third party Kubernetes offerings.
+The Kubernetes documentation is currently a mix of both 1) documentation
+describing the Kubernetes open source project; and 2) content describing
+how to install or use Kubernetes on several third party Kubernetes
+offerings.
 
-Some third party content is necessary in order for Kubernetes to function. For example: Docker, networking policy (CNI plugins), Ingress controllers, and logging all require third party components.
+Some third party content is necessary in order for Kubernetes to
+function. For example: Docker, networking policy (CNI plugins), Ingress
+controllers, and logging all require third party components.
 Pages like [Logging Using Elasticsearch and Kibana](https://kubernetes.io/docs/tasks/debug-application-cluster/logging-elasticsearch-kibana/) are highly specific to a third party offering and seem more like third party product documentation than Kubernetes open source documentation.
 
-The goal of this KEP is to reach and document a consensus on what types of third party content are appropriate for inclusion in Kubernetes documentation; standards for including third-party content; and to create consistent policies for docs handle third-party and dual-sourced content.
-This KEP focuses on the following issues:
+### Goals
+
+The goal of this KEP is to reach and document a consensus on what
+types of third party content are appropriate for inclusion in Kubernetes
+documentation; standards for including third-party content; and to create
+consistent policies for docs handle third-party and dual-sourced content.
+
+To address its goal, this KEP focuses on the following issues:
+
+<del>
 
 1. What third party content is appropriate for inclusion in the Kubernetes documentation?
 1. Does third party content in sections such as [Getting Started](https://kubernetes.io/docs/setup/) in the docs provide sufficient value to the reader that they should remain?
@@ -82,57 +105,103 @@ This KEP focuses on the following issues:
 1. What standard of quality and review must be met before docs include third-party content?
 1. To what extent should SIG Docs advocate for third-party content providers to host their own content, or decline to host third-party content altogether?
 
-### Goals
+</del>
 
-- Create a policy for how to include or exclude third party content in Kubernetes documentation.
-- Create a policy for how to handle dual-sourced content.
-- Publish clear, transparent guidelines for contributors and reviewers on how to handle third-party and dual-sourced content.
-- Published guidelines for contributors and reviewers that clarify requirements for third party content and allow documentation reviewers to reject advertising.
-
+1. Clearly define what documentation is required so that readers understand
+   how to deploy, operate and consume Kubernetes clusters using features from
+   in-tree code and its mandatory dependencies.
 
 ### Non-Goals
 
-- Outright removal of all content relating to vendors and projects outside the CNCF ecosystem.
+1. Outright removal of all content relating to vendors and projects
+   outside the CNCF ecosystem.
 
 ## Proposal
 
-Revise the [content guide](https://github.com/kubernetes/website/blob/master/content/en/docs/contribute/style/content-guide.md#contributing-content) to address community concerns
+Revise the [content guide](https://github.com/kubernetes/website/blob/master/content/en/docs/contribute/style/content-guide.md#contributing-content) to achieve the KEP goal:
+
+- Guidelines for contributors and reviewers on what content is
+  unambiguously OK. Quote or paraphrase the [goal(s)](#goals) from this
+  KEP.
+- Achieve consensus that SIG Docs and specifically approvers for
+  [k/website](https://github.com/kubernetes/website/) are gatekeepers for including
+  content that doesn't meet the core goal of this KEP.
 
 ### User Stories
 
 
 #### Story 1 (fictional)
 
-Alice works for ACME, Inc and wants to gain visibility for ACME Cloud Services, which has just launched a managed Kubernetes cluster product. Alice drafts a change to a concept page so that that it mentions ACME Cloud Services’ Kubernetes product, and submits a pull request.
-Bob is a documentation approver. Bob explains that Alice’s proposed change does not meet community standards, because it is functionally an advertisement.
+Alice works for ACME, Inc and wants to gain visibility for ACME
+Cloud Services, which has just launched a managed Kubernetes cluster
+product. Alice drafts a change to a concept page so that that it mentions
+ACME Cloud Services’ Kubernetes product, and submits a pull request.
+
+Bob is a documentation approver. Bob explains that Alice’s proposed
+change does not meet community standards, because it is functionally
+an advertisement.
 
 #### Story 2 (fictional)
 
-Charlie uses Linux, specifically Ubuntu. Charlie notices that the page about installing `kubethingy` has instructions for installing `kubethingy` on Windows and on CentOS/RHEL but not on Ubuntu. Charlie reads the guidelines on content and sees that this kind of change is acceptable (Ubuntu is one of the most popular Linux distributions, and `kubethingy` documentation is acceptable as it is already documented). Charlie drafts a change and submits a pull request.
+Charlie uses Linux, specifically Ubuntu. Charlie notices that the page
+about installing `kubethingy` has instructions for installing `kubethingy`
+on Windows and on CentOS/RHEL but not on Ubuntu. Charlie reads the
+guidelines on content and sees that this kind of change is acceptable
+(Ubuntu is one of the most popular Linux distributions, and `kubethingy`
+documentation is acceptable as it is already documented).
+
+Charlie drafts a change and submits a pull request.
 
 #### Story 3 (actual)
 
-Rafael wanted to share a Kubernetes course from an online education provider. He submitted [PR #15962](https://github.com/kubernetes/website/pull/15962) to add the course to [Overview of Kubernetes Online Training](https://kubernetes.io/docs/tutorials/online-training/overview/). The PR was not approved because SIG Docs didn’t want to add a link to third-party content over which SIG Docs have no control.
+Rafael wanted to share a Kubernetes course from
+an online education provider. Rafael submitted
+[PR #15962](https://github.com/kubernetes/website/pull/15962)
+to add the course to [Overview of Kubernetes Online
+Training](https://kubernetes.io/docs/tutorials/online-training/overview/).
+
+The PR was not approved because SIG Docs didn’t want to add a link to
+third-party content over which SIG Docs have no control.
 
 #### Story 4 (actual)
 
-Website [PR #16203](https://github.com/kubernetes/website/pull/16203) removes Stackdriver and Elasticsearch vendor content. Since logging falls into the external add-ons category, SIG Docs decided to remove this vendor-specific content that had not been meaningfully updated in three years. SIG Docs had buy-in from SIG Instrumentation Bugs for removal; however that PR was held pending the outcome of this KEP.
+[Website PR #16203](https://github.com/kubernetes/website/pull/16203)
+removes Stackdriver and Elasticsearch vendor content. Since logging
+falls into the external add-ons category, SIG Docs decided to remove this
+vendor-specific content that had not been meaningfully updated in three
+years.
+
+SIG Docs had buy-in from SIG Instrumentation Bugs for removal; however,
+that PR was held pending the outcome of this KEP and later closed.
 
 #### Story 5 (actual)
 
-In [PR #16766](https://github.com/kubernetes/website/pull/16766) @pouledodue proposed adding Hertzner Cloud Controller to the list of vendors that have implemented a cloud controller manager. That PR was held pending the outcome of this KEP.
+In [PR #16766](https://github.com/kubernetes/website/pull/16766)
+@pouledodue proposed adding Hertzner Cloud Controller to the list of
+vendors that have implemented a cloud controller manager. That PR was
+held pending the outcome of this KEP, then later merged.
 
 #### Story 6 (actual)
 
-As [hyperkube transitions to [third-party maintenance](https://github.com/kubernetes/kubeadm/issues/1889), it's unclear how to handle [hyperkube content in the Kubernetes docs](https://github.com/kubernetes/website/search?q=hyperkube&unscoped_q=hyperkube) or re-point related links.
+As [hyperkube transitions to third-party maintenance](https://github.com/kubernetes/kubeadm/issues/1889), it's unclear how to handle [hyperkube content in the Kubernetes docs](https://github.com/kubernetes/website/search?q=hyperkube&unscoped_q=hyperkube) or re-point related links.
 
 ### Implementation Details/Notes/Constraints
 
-While SIG Docs approvers may occasionally need to consider intent, any policies produced by this KEP must be clear enough to minimize cases where intent needs to be considered.
+SIG Docs approvers may occasionally need to consider intent. The policies produced
+by this KEP aim to be clear enough so that important / essential topics are
+accepted and documented, and so that reviews rarely need to consider contributor
+intent as a factor in approval.
 
-(At the time of writing) Kubernetes requires external software to implement Cluster Networking, Ingress, Persistent Storage, and Logging. Hyperlinking to vendor software and documentation _is_ allowed; creating “how to use” content is not.
+SIG Docs can adds its own guidelines for writing and reviewing content outside the
+"unambiguously OK" area.
 
-Examples of allowed content:
+For example:
+> Kubernetes requires out-of-tree software and tools to implement: cluster
+> networking, Ingress, persistent storage, and logging. Hyperlinking to vendor software
+> and documentation _is_ allowed; creating “how to use” content for a specific vendor
+> is discouraged.
+
+Pages that fit with that example guideline:
  - Cluster Networking
    - https://kubernetes.io/docs/concepts/cluster-administration/networking/
    - https://kubernetes.io/docs/concepts/cluster-administration/addons/
@@ -141,7 +210,7 @@ Examples of allowed content:
  - Persistent Volumes
    - https://kubernetes.io/docs/concepts/storage/persistent-volumes/#expanding-persistent-volumes-claims
 
-Examples of content that would not be allowed:
+Pages to review and possibly revise, if that guideline were in place:
  - [Install a Network Policy Provider](https://kubernetes.io/docs/tasks/administer-cluster/network-policy-provider/) and child pages: how to use Calico, Cilium, Kube-router, Romana, and Weave Net for NetworkPolicy
  - [Audit](https://kubernetes.io/docs/tasks/debug-application-cluster/audit/)
  - [Use fluentd to collect and distribute audit events from log file](https://kubernetes.io/docs/tasks/debug-application-cluster/audit/#use-fluentd-to-collect-and-distribute-audit-events-from-log-file) (dual-sourced)
@@ -153,11 +222,7 @@ Examples of content that would not be allowed:
 
 ### Risks and Mitigations
 
-- Rejecting a change that is ultimately deemed acceptable.
-- Accepting a change that is ultimately judged to be unacceptable vendor promotion.
-- It may not always be possible to achieve consensus on whether specific third-party content should be included.
-  This may lead to resentment/resistance to future third party content.
-  *Mitigation*: consider including folks that also work outside the relevant SIG or subproject.
+TBD
 
 ## Design Details
 
@@ -165,9 +230,13 @@ Examples of content that would not be allowed:
 
 **Note:** *this KEP does not target any release*
 
-TBD
+Once the community have reached consensus, prepare a PR to update the
+existing [content guide](https://github.com/kubernetes/website/blob/master/content/en/docs/contribute/style/content-guide.md#contributing-content).
 
-## Drawbacks
+Once the KEP is approved, merge the KEP and then the website update PR.
+That's all that's needed.
+
+# Drawbacks
 
 _Why should this KEP _not_ be implemented._
 
