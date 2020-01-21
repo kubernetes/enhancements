@@ -50,7 +50,7 @@ Kubernetes has become a popular solution for orchestrating containerized workloa
  Discuss the API definition of `PodGroup`.
  
 ## Use Cases
-When running a Tensorflow/MPI job, all tasks of a job must be start together; otherwise, did not start anyone of tasks. If the job only start part of tasks, it will wait for other tasks be ready to start work. In worst case, all jobs are pending like deadlock.
+When running a Tensorflow/MPI job, all tasks of a job must start or none. If the job only start part of tasks, it will wait for other tasks to be ready to start work. In worst case, all jobs are pending leading to a deadlock.
  
 ## Terms
 
