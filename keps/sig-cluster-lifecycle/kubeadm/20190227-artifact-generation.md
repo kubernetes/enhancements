@@ -160,7 +160,7 @@ Bazel will be able to update the configuration yaml to dynamically update the co
 
 N/A 
 
-[conformance tests]: https://github.com/kubernetes/community/blob/master/contributors/devel/conformance-tests.md
+[conformance tests]: https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md
 
 ### Upgrade / Downgrade Strategy
 

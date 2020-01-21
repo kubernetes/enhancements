@@ -395,7 +395,7 @@ In addition to what's included there, for beta:
 
 **For non-optional features moving to GA, the graduation criteria must include [conformance tests].**
 
-[conformance tests]: https://github.com/kubernetes/community/blob/master/contributors/devel/conformance-tests.md
+[conformance tests]: https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md
 
 ### Upgrade / Downgrade Strategy
 

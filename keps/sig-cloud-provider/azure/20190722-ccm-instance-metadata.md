@@ -217,7 +217,7 @@ These are generalized examples to consider, in addition to the aforementioned [m
 
 **For non-optional features moving to GA, the graduation criteria must include [conformance tests].**
 
-[conformance tests]: https://github.com/kubernetes/community/blob/master/contributors/devel/conformance-tests.md
+[conformance tests]: https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md
 
 ### Upgrade / Downgrade Strategy
 
