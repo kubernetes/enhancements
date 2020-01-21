@@ -29,8 +29,9 @@ aliases:
     - andrewsykim
     - cheftako
   sig-cluster-lifecycle-leads:
+    - fabriziopandini
     - justinsb
-    - luxas
+    - neolit123
     - timothysc
   sig-contributor-experience-leads:
     - Phillels
