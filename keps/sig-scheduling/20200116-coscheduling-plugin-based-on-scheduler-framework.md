@@ -68,7 +68,7 @@ In order to implement coscheduling, we developed plugins in different extension 
 
 ### PodGroup
 
- `Pod` is distinguished by its `labels`. Pod of the same `PodGroup` has the same name. We use the label to distinguish the `PodGroup` for less dependence on the api definition of `PodGroup`.  It's just a simple description of the `PodGroup`. If the definition of `PodGroup` is accepted by the community, we will define it directly through the CRD of `PodGroup`. This is not the focus of this proposal.
+We use a special label named ```pod-group/name``` to define a PodGroup. Pods that set this label and use the same value belong to the same PodGroup. This is a short term solution, in the future if the definition of `PodGroup` is accepted by the community, we will define it directly through the CRD of `PodGroup`. This is not the focus of this proposal.
 
 ```yaml 
 labels:
