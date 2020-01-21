@@ -7,13 +7,13 @@ participating-sigs:
   - sig-api-machinery
 reviewers:
   - "@cheftako"
-  - "@mcrute"
+  - "@nckturner"
 approvers:
   - "@lavalamp"
 editor: TBD
 creation-date: 2019-04-22
 last-updated: 2019-04-22
-status: provisional
+status: implementable
 see-also:
   - "/keps/sig-cloud-provider/20180530-cloud-controller-manager.md"
 ---
@@ -30,17 +30,20 @@ see-also:
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [Implementation Details/Notes/Constraints [optional]](#implementation-detailsnotesconstraints-optional)
+    - [Migration Configuration](#migration-configuration)
+    - [Component Flags](#component-flags)
+    - [Example Walkthrough of Controller Migration](#example-walkthrough-of-controller-migration)
+      - [Enable Leader Migration on Components](#enable-leader-migration-on-components)
+      - [Deploy the CCM](#deploy-the-ccm)
+      - [Update Leader Migration Config on Upgrade](#update-leader-migration-config-on-upgrade)
+      - [Disable Leader Migration](#disable-leader-migration)
   - [Risks and Mitigations](#risks-and-mitigations)
-- [Design Details](#design-details)
-  - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
-    - [Examples](#examples)
       - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
       - [Beta -&gt; GA Graduation](#beta---ga-graduation)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Implementation History](#implementation-history)
-- [Infrastructure Needed [optional]](#infrastructure-needed-optional)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -72,22 +75,27 @@ Check these off as they are completed for the Release Team to track. These check
 
 ## Summary
 
-Support a migration process that **safely** migrates existing Kubernetes clusters using the in-tree cloud providers (via kube-controller-manager)
-to their out-of-tree equivalents (via cloud-controller-manager). The migration process laid out here should be reusable by other components in the future if desired.
+Support a migration process for large scale and highly available Kubernetes clusters using the in-tree cloud providers (via kube-controller-manager and kubelet) to their out-of-tree
+equivalents (via cloud-controller-manager).
 
 ## Motivation
 
 SIG Cloud Provider is in the process of migrating the cloud specific code from the core Kubernetes tree to external packages
 and removing them from the kube-controller-manager, where they are today embedded. Once the extraction has been completed, existing users
 running older versions of Kubernetes need a process to migrate their existing clusters to use the new cloud-controller-manager component
-with minimal risk. This KEP proposes a mechanism in which HA clusters can safely migrate “cloud specific” controllers between the
+with minimal risk.
+
+This KEP proposes a mechanism in which HA clusters can safely migrate “cloud specific” controllers between the
 kube-controller-manager and the cloud-controller-manager via a shared resource lock between the two components. The pattern proposed
 in this KEP should be reusable by other components in the future if desired.
 
+The migration mechanism outlined in this KEP should only be used for Kubernetes clusters that have _very_ strict requirements on control plane availability.
+If a cluster can tolerate short intervals of downtime, it is recommended to update your cluster with in-tree cloud providers disabled, and then deploy
+the respective out-of-tree cloud-controller-manager.
+
 ### Goals
 
-* Define a clear migration process for existing clusters to use the cloud-controller-manager instead of the kube-controller-manager for cluster integrations with any cloud provider.
-* The migration process should work for single node control planes and HA control planes with minimal risk to users.
+* Define migration process for large scale, highly available clusters to migrate from the in-tree cloud provider mechnaism, to their out-of-tree equivalents.
 
 ### Non-Goals
 
@@ -152,53 +160,125 @@ will prevent any of the v1.18 CCMs from claiming the lock. When the current hold
 
 ### Implementation Details/Notes/Constraints [optional]
 
-TODO after KEP summary and proposal is approved
+#### Migration Configuration
+
+The migration lock will be configured by defining new API types that will then be passed into the KCM and CCM.
+
+```go
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// LeaderMigrationConfiguration provides versioned configuration for all migrating leader locks.
+type LeaderMigrationConfiguration struct {
+	metav1.TypeMeta `json:",inline"`
+
+	// LeaderName is the name of the resource under which the controllers should be run.
+	LeaderName string `json:"leaderName"`
+
+	// ControllerLeaders contains a list of migrating leader lock configurations
+	ControllerLeaders []ControllerLeaderConfiguration `json:"controllerLeaders"`
+}
+
+// ControllerLeaderConfiguration provides the configuration for a migrating leader lock.
+type ControllerLeaderConfiguration struct {
+	// Name is the name of the controller being migrated
+	// E.g. service-controller, route-controller, cloud-node-controller, etc
+	Name string `json:"name"`
+
+	// Component is the name of the component in which the controller should be running.
+	// E.g. kube-controller-manager, cloud-controller-manager, etc
+	Component string `json:"component"`
+}
+```
+
+#### Component Flags
+
+The LeaderMigrationConfiguration type will be read by the `kube-controller-manager` and the `cloud-controller-manager` via a new flag `--cloud-migration-config` which
+accepts a path to a file containing the LeaderMigrationConfiguration type in yaml.
+
+#### Example Walkthrough of Controller Migration
+
+This is an example of how you would migrate all cloud controllers from the CCM to the KCM during a typical cluster version upgrade.
+
+##### Enable Leader Migration on Components
+
+First, define a LeaderMigrationConfiguration resource in a yaml file containing all known cloud controllers. The component name for each controller should be set to
+the component where the controllers are currently running. Almost always this is the `kube-controller-manager`. The configuration file should look something like this:
+```yaml
+kind: LeaderMigrationConfiguration
+apiVersion: v1alpha1
+leaderName: cloud-controllers-migration
+controllerLeaders:
+  - name: route-controller
+    component: kube-controller-manager
+  - name: service-controller
+    component: kube-controller-manager
+  - name: cloud-node-controller
+    component: kube-controller-manager
+  - name: cloud-nodelifecycle-controller
+    component: kube-controller-manager
+```
+
+Save the leader migration configuration file somewhere, for this example we'll use `/etc/kubernetes/cloud-controller-migration.yaml`.
+Now update the kube-controller-manager to set `--cloud-migration-config /etc/kubernetes/cloud-controller-migration.yaml`.
+
+##### Deploy the CCM
+
+Now deploy the CCM on your cluster but ensure it also has the `--cloud-migration-config` flag set, using the same config file you used for the KCM above.
+
+How the CCM is deployed is out of scope for this KEP, refer to the cloud provider's documentation on how to do this.
+
+#####  Update Leader Migration Config on Upgrade
+
+To migrate controllers from the KCM to the CCM, update the component field from `kube-controller-manager` to `cloud-controller-manager` on every control plane node prior to
+upgrading the node. If you are replacing nodes on upgrade, ensure new nodes set the `component` field to `cloud-controller-manager`. The new config file should look like this:
+```yaml
+kind: LeaderMigrationConfiguration
+apiVersion: v1alpha1
+leaderName: cloud-controllers-migration
+controllerLeaders:
+  - name: route-controller
+    component: cloud-controller-manager
+  - name: service-controller
+    component: cloud-controller-manager
+  - name: cloud-node-controller
+    component: cloud-controller-manager
+  - name: cloud-nodelifecycle-controller
+    component: cloud-controller-manager
+```
+
+NOTE: During upgrade, it is acceptable for control plane nodes to specify different component names for each controller as long as the `leaderName` field is the same across nodes.
+
+##### Disable Leader Migration
+
+Once all controllers are migrated to the desired component:
+* disable the cloud provider in the `kube-controller-manager` (set `--cloud-provider=external`)
+* disable leader migration on the `kube-controller-manager` and `cloud-controller-manager` by unsetting the `--cloud-migration-config` field.
 
 ### Risks and Mitigations
 
-TODO after KEP summary and proposal is approved
-
-## Design Details
-
-### Test Plan
-
-TODO after KEP summary and proposal is approved
+* Increased apiserver load due to new leader election resource per migration configuration.
+* User error could result in cloud controllers not running in any component at all.
 
 ### Graduation Criteria
 
-TODO after KEP summary and proposal is approved
-
-#### Examples
-
 ##### Alpha -> Beta Graduation
 
-TODO after KEP summary and proposal is approved
+Leader migration configuration is tested end-to-end on at least 2 cloud providers.
 
 ##### Beta -> GA Graduation
 
-TODO after KEP summary and proposal is approved
+Leader migration configuration works on all in-tree cloud providers.
 
 ### Upgrade / Downgrade Strategy
 
-TODO after KEP summary and proposal is approved
+See [Example Walkthrough of Controller Migration](#example-walkthrough-of-controller-migratoin) for upgrade strategy.
+Clusters can be downgraded and migration can be disabled by reversing the steps in the upgrade strategy assuming the behavior of each controller
+does not change incompatibly across those versions.
 
 ### Version Skew Strategy
 
-TODO after KEP summary and proposal is approved
+Version skew is handled as long as the leader name is consistent across all control plane nodes during upgrade.
 
 ## Implementation History
 
-Major milestones in the life cycle of a KEP should be tracked in `Implementation History`.
-Major milestones might include
-
-- the `Summary` and `Motivation` sections being merged signaling SIG acceptance
-- the `Proposal` section being merged signaling agreement on a proposed design
-- the date implementation started
-- the first Kubernetes release where an initial version of the KEP was available
-- the version of Kubernetes where the KEP graduated to general availability
-- when the KEP was retired or superseded
-
-## Infrastructure Needed [optional]
-
-TODO after KEP summary and proposal is approved
-
+- 07-25-2019 `Summary` and `Motivation` sections were merged signaling SIG acceptance
+- 01-21-2019  Implementation details are proposed to move KEP to `implementable` state.
