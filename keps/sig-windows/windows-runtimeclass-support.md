@@ -36,7 +36,7 @@ see-also:
     - [Story 2 - Forward compatibility with Hyper-V](#story-2---forward-compatibility-with-hyper-v)
     - [Story 3 - Choosing a specific multi-arch image](#story-3---choosing-a-specific-multi-arch-image)
   - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
-    - [Adding new label node.kubernetes.io/windows-build](#adding-new-label-nodekubernetesiowindows-build)
+    - [Adding new label node.kubernetes.io/windows-build (done)](#adding-new-label-nodekubernetesiowindows-build-done)
     - [Adding handler to CRI pull API](#adding-handler-to-cri-pull-api)
   - [Risks and Mitigations](#risks-and-mitigations)
     - [Adding new node label](#adding-new-node-label)
@@ -265,7 +265,9 @@ Here's an example of what corresponding ContainerD configurations could look lik
 
 There were multiple options discussed with SIG-Node & SIG-Windows on October 8 2019 prior to filing this KEP. That discussion & feedback were captured in [Difficulties in mixed OS and arch clusters]. If you're looking for more details on other approaches excluded, please review that document.
 
-#### Adding new label node.kubernetes.io/windows-build
+#### Adding new label node.kubernetes.io/windows-build (done)
+
+> Done. This label was added in Kubernetes 1.17
 
 In [Bounding Self-Labeling Kubelets], a specific range of prefixes were reserved for node self-labeling - `[*.]node.kubernetes.io/*`. Adding a new label within that namespace won't require any changes to NodeRestriction admission. As a new field it also won't require changes to any existing workloads.
 
