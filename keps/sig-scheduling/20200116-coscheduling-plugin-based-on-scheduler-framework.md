@@ -19,25 +19,27 @@ status: provisional
 ## Table of Contents
 
 <!-- toc -->
-- [Motivation](#motivation)
-- [Goals](#goals)
-- [Non-Goals](#non-goals)
-- [Use Cases](#use-cases)
-- [Terms](#terms)
-- [Proposal](#proposal)
-- [Design Details](#design-details)
-  - [PodGroup](#podgroup)
-  - [Coscheduling](#coscheduling)
-  - [Extension points](#extension-points)
-    - [QueueSort](#queuesort)
-    - [Pre-Filter](#pre-filter)
-    - [Permit](#permit)
-    - [UnReserve](#unreserve)
-- [Alternatives considered](#alternatives-considered)
-- [Graduation Criteria](#graduation-criteria)
-- [Testing Plan](#testing-plan)
-- [Implementation History](#implementation-history)
-- [References](#references)
+- [Coscheduling plugin based on scheduler framework](#coscheduling-plugin-based-on-scheduler-framework)
+  - [Table of Contents](#table-of-contents)
+  - [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+  - [Use Cases](#use-cases)
+  - [Terms](#terms)
+  - [Proposal](#proposal)
+  - [Design Details](#design-details)
+    - [PodGroup](#podgroup)
+    - [Coscheduling](#coscheduling)
+    - [Extension points](#extension-points)
+      - [QueueSort](#queuesort)
+      - [Pre-Filter](#pre-filter)
+      - [Permit](#permit)
+      - [UnReserve](#unreserve)
+  - [Alternatives considered](#alternatives-considered)
+  - [Graduation Criteria](#graduation-criteria)
+  - [Testing Plan](#testing-plan)
+  - [Implementation History](#implementation-history)
+  - [References](#references)
 <!-- /toc -->
 
 ## Motivation
@@ -50,7 +52,7 @@ Kubernetes has become a popular solution for orchestrating containerized workloa
  Discuss the API definition of `PodGroup`.
  
 ## Use Cases
-When running a Tensorflow/MPI job, all tasks of a job must start or none. If the job only start part of tasks, it will wait for other tasks to be ready to start work. In worst case, all jobs are pending leading to a deadlock.
+when running a Tensorflow/MPI job, all tasks of a job must be start together; otherwise, did not start anyone of tasks. If the resource is enough to run all 'tasks', everything is fine; but it's not true for most of case, especially in the on-premises environment. In worst case, all jobs are pending here because of deadlock: every job only start part of tasks, and waits for the other tasks to start. In worst case, all jobs are pending leading to a deadlock.
  
 ## Terms
 
@@ -110,23 +112,23 @@ In order to make the pods which belongs to the same `PodGroup` to be scheduled t
 ```go
   func  Less(podA *PodInfo, podB *PodInfo) bool
 ```
-1. When priorities (i.e. .spec.priorityValue) are different, they are compared based on their priorities. When priorities are the same, they are operated according to the following process.
+1. Trying to order by pod priority (i.e. .spec.priorityValue), pod with higher priority is scheduled ahead of other pod with lower priority. When priorities are the same, they are operated according to the following process.
    
 2. When podA and podB are both regularPods (we will check it by their labels), it follows the same logic of default in-tree [PrioritySort](https://github.com/kubernetes/kubernetes/blob/master/pkg/scheduler/framework/plugins/queuesort/priority_sort.go#L41-L45) plugin.
    
-3. When podA is regularPod, podB is pgPod. they are compared according to podA’s timestamp and podB’s `LastFailureTimestamp` (we get the PodGroupInfo from the cache). If timestampA is earlier than LastFailureTimestampB, return true. Otherwise, return false. When podA is pgPod, podB is regularPod.
+3. When podA is regularPod, podB is pgPod, trying to order by podA's `Timestamp` (the time pod added to the scheduling queue) and podB’s `LastFailureTimestamp` (we get the PodGroupInfo from the cache). Pod with earlier timestamp is scheduled ahead of other pod.   
    
-4. When podA and podB are both pgPods. Compare the the `LastFailureTimestamp` of the podGroup. 
-   1. If `LastFailureTimestampA` is earlier than `LastFailureTimestampB`, return true. `LastFailureTimestampA` is later than `LastFailureTimestampB`, return false.
+4. When podA and podB are both pgPods.
+   1. Trying to order by the `LastFailureTimestamp` of the podGroup. Pod with earlier timestamp is scheduled ahead of other pod.
    
-   2. If `LastFailureTimestampA` is equal to `LastFailureTimestampB`, we will compare the `UID` of `PodGroup`. (The purpose is to distinguish different `PodGroup` with the same `LastFailureTimestamp` and to keep the pods of the same `PodGroup` together)
+   2. If `LastFailureTimestampA` is equal to `LastFailureTimestampB`, trying to order by the `UID` of `PodGroup`,`Pod` with lexicographically greater `UID` is scheduled ahead of other pod. (The purpose is to distinguish different `PodGroup` with the same `LastFailureTimestamp` and to keep the pods of the same `PodGroup` together)
 
 **Note1**: There are different `LastFailureTimestamp` (even if they are the same, the UID will be different). So when the pods enter the queue, the pods that belongs to the same PodGroup will be together.
 
 #### Pre-Filter
-1. When a pod which belongs to a `PodGroup` comes, calculate the total number of Pods  excludes terminating ones belongs to the same PodGroup. If the result is less than minAvailable, the scheduling process is terminated directly.
-   
-2. Compare whether the `PodGroup` of the current pod is `LastPodGroup`, and if so, keep it unchanged. If not, it indicates that the new PodGroup scheduling cycle has been entered. Update LastPodGroup. And if there is a pod belongs to the last podgroup is waiting and if no chance to meet minAvailable, reject it directly here. The purpose is 1. To avoid invalid waiting, 2. To make the pod belongs to the same `PodGroup` fail together, rather than waiting partially.
+1. `PreFilter` validates that if the total number of pods belonging to the same `PodGroup` is less than `minAvailable`. If so, the scheduling process will be interrupted directly.
+
+2. `PreFilter` validates that if we should reject `WaitingPods` in advance. When the pod belongs to a new `PodGroup` (we can check it by the `LastPodGroup` in cache), it indicates that the new PodGroup scheduling cycle has been entered. Then we will check if the last `PodGroup` meets the minAvailable, if not, we will reject it directly in advance. The purpose is 1. To avoid invalid waiting, 2. To make the pod belongs to the same `PodGroup` fail together, rather than waiting partially.
 
 ```go
 func (cs *Coscheduling) PreFilter(ctx context.Context, state *framework.CycleState, p *v1.Pod) *framework.Status {
@@ -135,7 +137,7 @@ func (cs *Coscheduling) PreFilter(ctx context.Context, state *framework.CycleSta
      // Count the numbers of all pods belongs to the same PodGroup excludes terminating ones.
     total := cs.calculateTotalPods(podGroupName)
     if total < minAvailable {
-        return framework.NewStatus(framework.Unschedulable, "less than minAvailable")
+        return framework.NewStatus(framework.UnschedulableAndUnresolvable, "less than minAvailable")
     }
     ...
     if cs.Last != "" && cs.Last != podGroupName {
@@ -158,6 +160,7 @@ func (cs *Coscheduling) PreFilter(ctx context.Context, state *framework.CycleSta
 ```
 
 #### Permit
+`Permit` phase we put the pod that doesn't meet min-available into the WaitingMap and reserve resources until min-available are met or timeout is triggered.
 1. Get the number of Running pods that belong to the same PodGroup
 2. Get the number of WaitingPods (used to record pods in waiting status) that belong to the same PodGroup
 3. If Running + WaitingPods + 1 >= min-available(1 means the pod itself), approve the waiting pods that  belong to the same PodGroup. Otherwise, put the pod into WaitingPods and set the timeout (eg: 10s).
