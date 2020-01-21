@@ -184,7 +184,7 @@ func (cs Coscheduling) Permit(ctx context.Context, state *framework.CycleState, 
  
 
 #### UnReserve
-After a pod which belongs to a PodGroup times out in the permit phase.  We will release the pods belongs to the same PodGroup to avoid long-term invalid occupy of resources.
+After a pod which belongs to a PodGroup times out in the permit phase.  UnReserve ```Rejects``` the pods that belong to the same PodGroup to avoid long-term invalid reservation of resources.
 
 ```go 
 func (cs *Coscheduling) Unreserve(ctx context.Context, state *framework.CycleState, p *v1.Pod, nodeName string) {
