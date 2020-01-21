@@ -114,7 +114,7 @@ In order to make the pods which belongs to the same `PodGroup` to be scheduled t
    
 2. When podA and podB are both regularPods (we will check it by their labels), it follows the same logic of default in-tree [PrioritySort](https://github.com/kubernetes/kubernetes/blob/master/pkg/scheduler/framework/plugins/queuesort/priority_sort.go#L41-L45) plugin.
    
-3. When podA is regularPod, podB is pgPod. they are compared according to podA’s timestamp and podB’s `LastFailureTimestamp` (we get the PodGroupInfo from the cache). If timestampA is earlier than LastFailureTimestampB, return true. Otherwise, return false. When podA is pgPod, podB is regularPod. Ditto
+3. When podA is regularPod, podB is pgPod. they are compared according to podA’s timestamp and podB’s `LastFailureTimestamp` (we get the PodGroupInfo from the cache). If timestampA is earlier than LastFailureTimestampB, return true. Otherwise, return false. When podA is pgPod, podB is regularPod.
    
 4. When podA and podB are both pgPods. Compare the the `LastFailureTimestamp` of the podGroup. 
    1. If `LastFailureTimestampA` is earlier than `LastFailureTimestampB`, return true. `LastFailureTimestampA` is later than `LastFailureTimestampB`, return false.
