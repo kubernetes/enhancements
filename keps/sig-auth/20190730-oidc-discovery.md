@@ -3,6 +3,7 @@ title: Service Account signing key retrieval
 authors:
   - "@mikedanese"
   - "@cceckman"
+  - "@mtaufen"
 owning-sig: sig-auth
 participating-sigs:
   - sig-auth
@@ -18,8 +19,8 @@ approvers:
   - "@ericchiang"
 editor: TBD
 creation-date: 2018-06-26
-last-updated: 2019-07-30
-status: provisional
+last-updated: 2020-01-25
+status: implementable
 replaces:
   - "https://github.com/kubernetes/community/pull/2314/"
 ---
@@ -29,26 +30,58 @@ replaces:
 ## Table of Contents
 
 <!-- toc -->
+- [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
 - [Motivation](#motivation)
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
+  - [Risks and Mitigations](#risks-and-mitigations)
+- [Design Details](#design-details)
+  - [Test Plan](#test-plan)
+  - [Graduation Criteria](#graduation-criteria)
 - [Implementation History](#implementation-history)
 <!-- /toc -->
+
+## Release Signoff Checklist
+
+**ACTION REQUIRED:** In order to merge code into a release, there must be an issue in [kubernetes/enhancements] referencing this KEP and targeting a release milestone **before [Enhancement Freeze](https://github.com/kubernetes/sig-release/tree/master/releases)
+of the targeted release**.
+
+For enhancements that make changes to code or processes/procedures in core Kubernetes i.e., [kubernetes/kubernetes], we require the following Release Signoff checklist to be completed.
+
+Check these off as they are completed for the Release Team to track. These checklist items _must_ be updated for the enhancement to be released.
+
+- [x] kubernetes/enhancements issue in release milestone, which links to KEP (this should be a link to the KEP location in kubernetes/enhancements, not the initial KEP PR)
+- [x] KEP approvers have set the KEP status to `implementable`
+- [x] Design details are appropriately documented
+- [x] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [x] Graduation criteria is in place
+- [x] "Implementation History" section is up-to-date for milestone
+- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+
+**Note:** Any PRs to move a KEP to `implementable` or significant changes once it is marked `implementable` should be approved by each of the KEP approvers. If any of those approvers is no longer appropriate than changes to that list should be approved by the remaining approvers and/or the owning SIG (or SIG-arch for cross cutting KEPs).
+
+**Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
+
+[kubernetes.io]: https://kubernetes.io/
+[kubernetes/enhancements]: https://github.com/kubernetes/enhancements/issues
+[kubernetes/kubernetes]: https://github.com/kubernetes/kubernetes
+[kubernetes/website]: https://github.com/kubernetes/website
 
 ## Summary
 
 The Kubernetes API server generates (signs) JSON Web Tokens that are meant to
-authenticate Kubernetes service accounts. The API server can indeed authenticate
+authenticate Kubernetes service accounts (KSA). The API server can indeed authenticate
 these tokens, but in general, no other system can: there is no standard way to
 get the public portion of the keypair used to sign KSA tokens. Systems ("relying
-parties") that want authenticate KSA tokens must either send them back to the
+parties") that want to authenticate KSA tokens must either send them back to the
 API server (via `TokenReview`) or use some provider-specific method to get the
 authentication key.
 
 If a relying party could obtain trusted metadata about the service account token
-provider - in particular, the issuer (`iss`) value and the public key(s) used -
+provider, in particular the issuer (`iss`) value and the public key(s) used,
 then the relying party could authenticate tokens without putting proportionate
 load on the API server. This would allow KSA tokens to be used as a general
 authentication mechanism, including to services outside the cluster or in other
@@ -84,11 +117,11 @@ credentials; and consider:
     compromise a credential with an extended validity period?
 -   How often do the keys expire? How often do I rotate them?
 
-If services (other than the API server could authenticate KSA tokens directly:
+If services (other than the API server) could authenticate KSA tokens directly:
 
--   the API server wouldn't have to scale with the data-plane (i.e.
-    authentication) load; and
--   workloads could use native credentials to authenticate to services outside
+-   The API server wouldn't have to scale with the data-plane (i.e.
+    authentication) load.
+-   Workloads could use native credentials to authenticate to services outside
     of the cluster.
 
 ### Goals
@@ -97,34 +130,38 @@ If services (other than the API server could authenticate KSA tokens directly:
     authenticate KSA tokens.
 -   Attempt compatibility with OIDC: common libraries that authenticate OIDC
     tokens should be able to authenticate KSA tokens.
-
-As a stretch goal / consideration:
-
 -   Support authentication when the API server is not directly reachable by the
     relying party.
     -   e.g.: a cloud-based service authenticating an API server that doesn't
         have a public Internet address.
 
 Note that the API server has a very different flow from OIDC with respect to
-generating tokens. As such, our goal is OIDC *compatibility*...
+generating tokens. As such, our goal is OIDC *compatibility*.
 
 ### Non-Goals
 
-...but not OIDC *compliance*.
+Our goal is *not* OIDC *compliance*.
 
-We aren't trying to: - Make the KSA token process fully compliant with OIDC
-specifications. - OIDC includes flows for token acquisition, token exchange,
-getting user data out of tokens, etc. - But we're only interested in the parts
-relevant to *relying parties*, i.e. token authentication. - We don't need to do
+We aren't trying to make the KSA token process fully compliant with OIDC
+specifications. OIDC includes flows for token acquisition, token exchange,
+getting user data out of tokens, etc. But we are primarily interested in the parts
+relevant to *relying parties*, i.e. token authentication. We don't need to do
 something `REQUIRED` just because the spec says `REQUIRED`; but we may need to
-do it if relying parties expect that field. - This may mean that our
-implementation doesn't comply with the spec; e.g. we might skip `token_endpoint`
-in the
+do it if relying parties expect that field. This may mean that our
+implementation doesn't fully comply with the spec; e.g. we might skip
+`token_endpoint` in the
 [discovery document](https://openid.net/specs/openid-connect-discovery-1_0.html#ProviderMetadata),
 even without supporting the
-[Implicit Flow](https://openid.net/specs/openid-connect-core-1_0.html#ImplicitFlowAuth). -
-Define new cryptographic or authentication protocols. - Change the format of KSA
-tokens, how they're generated, or how they're issued.
+[Implicit Flow](https://openid.net/specs/openid-connect-core-1_0.html#ImplicitFlowAuth).
+Ensuring compatibility with existing implementations, for example that libraries
+can validate tokens without erroring out during the discovery fetch/parse,
+is critical, and is part of the Alpha to Beta graduation criteria. If we
+determine that it is impossible to broadly meet our compatibility goals with the
+current design, then we will revisit serving a complete discovery doc with
+placeholder values.
+
+We will not define new cryptographic or authentication protocols, or change the
+format of KSA tokens, how they're generated, or how they're issued.
 
 ## Proposal
 
@@ -138,16 +175,31 @@ In addition, the API server will serve a JWKS consisting of the public keys from
 public keys used for valid KSA tokens. The OIDC discovery document will point to
 the JWKS path as the `jwks_uri`.
 
+Finally, it will be possible for users to override the `jwks_uri` via a new
+`--service-account-jwks-uri` flag. We do attempt to construct a default JWKS URI
+from the API server's external address, but without this additional option, it
+isn't possible to correctly configure the server in some cases. For example,
+even given an issuer URL, we don't necessarily know the JWKS path, because it is
+not part of the specification and the issuer URL may not point directly to an
+API server (the user may choose an alternative issuer URL if their cluster does
+not serve on the public internet, as long as the cluster is configured to use
+that URL for issuer claims).
+
 For example, if the API server is configured with the `--service-account-issuer`
-value `https://dev.cluster.internal`, the API server could expose the following
-configuration:
+value `https://cluster.example.com`, which is also the API server root, and
+`--service-account-jwks-uri` value `https://cluster.example.com/openid/v1/jwks`
+(the cluster serves the JWKS at the `/openid/v1/jwks` path by default), the
+API server could expose the following configuration. Note that if the JWKS
+URI overide is not provided, the API server will report it as relative to its
+external address. For example: `https://192.168.10.4:443/openid/v1/jwks`. Note
+also this example intentionally omits the `authorization_endpoint`
+field, as it is not necessary for token verification flows.
 
 ```
-> GET /.well-known/openid-configuration
+> GET https://cluster.example.com/.well-known/openid-configuration
 {
-  "issuer": "https://dev.cluster.internal",
-  "jwks_uri": "https://dev.cluster.internal/serviceaccountkeys/v1",
-  "authorization_endpoint": "urn:kubernetes:programmatic_authorization",
+  "issuer": "https://cluster.example.com",
+  "jwks_uri": "https://cluster.example.com/openid/v1/jwks",
   "response_types_supported": [
     "id_token"
   ],
@@ -158,12 +210,8 @@ configuration:
     "RS256",
     "ES256"
   ],
-  "claims_supported": [
-    "sub",
-    "iss"
-  ]
 }
-> GET /serviceaccountkeys/v1
+> GET /openid/v1/jwks
 {
   "keys": [
     {
@@ -195,10 +243,71 @@ configuration:
 ```
 
 The API server would treat these as `nonResourceURLs`, and restrict access
-appropriately. We will consider expanding `system:public-info-viewer` RBAC
-ClusterRole to grant access to the new paths; some other roles may have
-permission already via a pattern match on `nonResourceURLs` (e.g.
-`cluster-admin`).
+appropriately. We will provide a default RBAC `ClusterRole` called
+`service-account-issuer-discovery` that provides `GET` access to these
+`nonResourceURLs`, but will *not* provide a default `ClusterRoleBinding`. This
+leaves the decision of who is allowed to access these endpoints up to cluster
+admins. A default binding requires further discussion, including ongoing efforts
+to harden the unauthenticated API surface area.
+
+### Risks and Mitigations
+
+- Security is being reviewed by @mikedanese and @liggitt.
+- This feature exposes public key information that is derived from sensitive
+  private keys. It is important that code reviewers pay careful attention
+  to the construction of the keysets so that sensitive private keys are not
+  exposed.
+- This proposal allows Kubernetes identities to be federated into other systems,
+  and creates a dependency on the Kubernetes API server to verify these identities.
+  This means that if the API server is down, and verification keys are not
+  cached by relying parties or an intermediary, workloads may fail to
+  authenticate with their dependencies. This can be mitigated by running a high
+  availability configuration, or by caching discovery docs and keysets in a
+  reliable intermediate location.
+
+## Design Details
+
+### Test Plan
+
+This feature includes unit, integration, and E2E tests:
+- Unit tests in `pkg/serviceaccount` to test that the server code constructs
+  OIDC responses in the correct format.
+- Integration tests in `test/integration/auth/svcacct_test.go` to attempt a
+  token verification based on the OIDC flow against an API server, and also
+  to verify the expected headers on the responses.
+- An E2E test that exercises the full stack by mounting a new-style Kubernetes
+  service-account token on a Pod which then attempts to verify its token by
+  calling into a third-party library implementation of the OIDC flow
+  (github.com/coreos/go-oidc). This helps confirm compatibility with third-party
+  implementations.
+
+
+### Graduation Criteria
+
+This feature does not expose a new K8s style API resource object.
+Instead, it provides endpoints for the subset of the OIDC 1.0 spec specified
+above. As such, it doesn't quite match up with the
+[API doc definition](https://kubernetes.io/docs/concepts/overview/kubernetes-api/#api-versioning)
+of versioning. However, we can still treat graduation in terms of
+[Maturity levels (`alpha`, `beta`, `stable`)][maturity-levels].
+
+- Zero State to Alpha:
+  - KEP is implemented behind a feature gate.
+  - Unit, integration, and E2E tests exist, though some tests (e.g. E2E) won't
+    automatically run in release-blocking suites.
+  - There must be a test that ensures no private keys are emitted via the JWKS endpoint.
+- Alpha to Beta:
+  - Any fixes or API changes from the Alpha experience are implemented.
+  - The feature has been confirmed compatible with several independent
+    relying parties by federating K8s identities with multiple top cloud
+    providers and ensuring that the most popular OIDC libraries used by relying
+    parties are compatible.
+  - Test failures are release blocking.
+- Beta to Stable:
+  - Cluster conformance tests for this feature exist.
+
+[maturity-levels]: https://git.k8s.io/community/contributors/devel/sig-architecture/api_changes.md#alpha-beta-and-stable-versions
+[deprecation-policy]: https://kubernetes.io/docs/reference/using-api/deprecation-policy/
 
 ## Implementation History
 
@@ -207,3 +316,4 @@ permission already via a pattern match on `nonResourceURLs` (e.g.
 -   2019-07-30: Moved to a KEP (with no edits from the original proposal)
 -   2019-08-05: Updated KEP with more details.
 -   2019-10-18: Updated KEP with more RBAC details.
+-   2020-1-25: Updated KEP and marked as implementable.
