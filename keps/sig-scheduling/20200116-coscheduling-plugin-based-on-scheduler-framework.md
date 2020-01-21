@@ -160,7 +160,7 @@ func (cs *Coscheduling) PreFilter(ctx context.Context, state *framework.CycleSta
 #### Permit
 1. Get the number of Running pods that belong to the same PodGroup
 2. Get the number of WaitingPods (used to record pods in waiting status) that belong to the same PodGroup
-3. If Running + WaitingPods + 1 >= min-available(1 means the pod itself), apprve the waiting pods that  belongs to the same PodGroup. Otherwise, put the pod into WaitingPods and set the timeout(eg: 10s)
+3. If Running + WaitingPods + 1 >= min-available(1 means the pod itself), approve the waiting pods that  belong to the same PodGroup. Otherwise, put the pod into WaitingPods and set the timeout (eg: 10s).
  
 ```go
 func (cs Coscheduling) Permit(ctx context.Context, state *framework.CycleState, p *v1.Pod, nodeName string) (*framework.Status, time.Duration) {
