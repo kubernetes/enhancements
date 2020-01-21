@@ -3,7 +3,8 @@ title: Skip Volume Ownership Change
 authors:
   - "@gnuified"
 owning-sig: sig-storage
-participating-sigs: sig-auth
+participating-sigs:
+  - sig-auth
 reviewers:
   - "@msau42"
   - "@liggit"
@@ -24,18 +25,22 @@ superseded-by:
 
 ## Table of Contents
 
-* [Table of Contents](#table-of-contents)
-* [Summary](#summary)
-* [Motivation](#motivation)
-    * [Goals](#goals)
-    * [Non-Goals](#non-goals)
-* [Proposal](#proposal)
-    * [Implementation Details/Notes/Constraints [optional]](#implementation-detailsnotesconstraints-optional)
-    * [Risks and Mitigations](#risks-and-mitigations)
-* [Graduation Criteria](#graduation-criteria)
-* [Implementation History](#implementation-history)
-* [Drawbacks [optional]](#drawbacks-optional)
-* [Alternatives [optional]](#alternatives-optional)
+<!-- toc -->
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [Implementation Details/Notes/Constraints [optional]](#implementation-detailsnotesconstraints-optional)
+  - [Risks and Mitigations](#risks-and-mitigations)
+- [Graduation Criteria](#graduation-criteria)
+  - [Test Plan](#test-plan)
+  - [Monitoring](#monitoring)
+- [Implementation History](#implementation-history)
+- [Drawbacks [optional]](#drawbacks-optional)
+- [Alternatives [optional]](#alternatives-optional)
+- [Infrastructure Needed [optional]](#infrastructure-needed-optional)
+<!-- /toc -->
 
 ## Summary
 
@@ -43,7 +48,7 @@ Currently before a volume is bind-mounted inside a container the permissions on
 that volume are changed recursively to the provided fsGroup value.  This change
 in ownership can take an excessively long time to complete, especially for very
 large volumes (>=1TB) as well as a few other reasons detailed in [Motivation].
-To solve this issue we will add a new field called `VolumePermissionChangePolicy` and
+To solve this issue we will add a new field called `pod.Spec.SecurityContext.VolumePermissionChangePolicy` and
 allow the user to specify whether they want the ownership change to occur.
 
 ## Motivation
@@ -76,15 +81,23 @@ We propose that an user can optionally opt-in to skip recursive ownership(and pe
 
 When creating a pod, we propose that `pod.Spec.SecurityContext` field expanded to include a new field called `VolumePermissionChangePolicy` which can have following possible values:
 
- - `NoChange` --> Don't change permissions and ownership.
+ - `NoChange` --> Don't change permissions and ownership. This could be useful to users when security policy of a cluster prevents users from removing `fsGroup` from their pod's `SecurityContext`.
  - `Always` --> Always change the permissions and ownership to match fsGroup. This is the current behavior and it will be the default one when this proposal is implemented. Algorithm that performs permission change however will be changed to perform permission change of top level directory last.
  - `OnDemand` --> Only perform permission change if permissions of top level directory does not match with expected permissions.
 
 ```go
+type PodVolumePermissionChangePolicy string
+
+const(
+    NeverChangeVolumePermission PodVolumePermissionChangePolicy = "NoChange"
+    OnDemandChangeVolumePermission PodVolumePermissionChangePolicy = "OnDemand"
+    AlwaysChangeVolumePermission PodVolumePermissionChangePolicy = "Always"
+)
+
 type PodSecurityContext struct {
     // VolumePermissionChangePolicy ← new field
     // + optional
-    VolumePermissionChangePolicy string
+    VolumePermissionChangePolicy *PodVolumePermissionChangePolicy
 }
 ```
 
