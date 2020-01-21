@@ -149,9 +149,9 @@ in apiserver responsible for setting it):
 - [ ] staging/src/k8s.io/client-go/tools/reference/ref.go
   A copy of first item literally.
 
-- [ ] https://github.com/kubernetes-client/java/blob/master/kubernetes/src/main/java/io/kubernetes/client/models/V1ListMeta.java
+- [ ] https://github.com/kubernetes-client/java/blob/master/kubernetes/src/main/java/io/kubernetes/client/openapi/models/V1ListMeta.java
   Setter/getter and part of equals() and hashCode() methods.
-- [ ] https://github.com/kubernetes-client/java/blob/master/kubernetes/src/main/java/io/kubernetes/client/models/V1ObjectMeta.java
+- [ ] https://github.com/kubernetes-client/java/blob/master/kubernetes/src/main/java/io/kubernetes/client/openapi/models/V1ObjectMeta.java
   Setter/getter and part of equals() and hashCode() methods.
 - [ ] https://github.com/kubernetes-client/csharp/blob/master/src/KubernetesClient/generated/Models/V1ListMeta.cs
   Setter/getter and constructor.
