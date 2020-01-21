@@ -50,7 +50,7 @@ status: implementable
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
-  - [Alpha release (proposed 1.17)](#alpha-release-proposed-117)
+  - [Alpha release](#alpha-release)
   - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
       - [Beta -&gt; GA Graduation](#beta---ga-graduation)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
@@ -245,24 +245,27 @@ Test cases that depend on ContainerD and won't pass with Dockershim will be mark
 
 ### Graduation Criteria
 
-### Alpha release (proposed 1.17)
+### Alpha release
+
+> Proposed for 1.18
 
 - Windows Server 2019 containers can run with process level isolation
 - TestGrid has results for Kubernetes master branch. CRI-ContainerD and CNI built from source and may include non-upstream PRs.
-- Support RuntimeClass to enable Hyper-V isolation for Windows Server 2019 on 2019
-
 
 ### Alpha -> Beta Graduation
+
+> Proposed for 1.19 or later
 
 - Feature parity with dockershim, including:
   - Group Managed Service Account support
   - Named pipe & Unix domain socket mounts
-- Support RuntimeClass to enable Hyper-V isolation and run Windows Server 2019 containers on Windows Server 1903
+- Support RuntimeClass to enable Hyper-V isolation
 - Publically available builds (beta or better) of CRI-ContainerD, at least one CNI
 - TestGrid results for above builds with Kubernetes master branch
 
-
 ##### Beta -> GA Graduation
+
+> Proposed for 1.20 or later
 
 - Stable release of CRI-ContainerD on Windows, at least one CNI
 - Master & release branches on TestGrid
@@ -282,7 +285,8 @@ There's no version skew considerations needed for the same reasons described in 
 ## Implementation History
 
 - 2019-04-24 - KEP started, based on the [earlier doc shared SIG-Windows and SIG-Node](https://docs.google.com/document/d/1NigFz1nxI9XOi6sGblp_1m-rG9Ne6ELUrNO0V_TJqhI/edit)
-- 2019-09-20 - Updated with ne wmilestones
+- 2019-09-20 - Updated with new milestones
+- 2020-01-21 - Updated with new milestones
 
 ## Alternatives
 
