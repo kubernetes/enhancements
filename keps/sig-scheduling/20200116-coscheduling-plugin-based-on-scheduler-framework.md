@@ -41,7 +41,7 @@ status: provisional
 <!-- /toc -->
 
 ## Motivation
-Kubernetes has become a popular solution for orchestrating containerized workloads. Due to limitation of Kubernetes scheduler, some offline workloads(ML/DL)  are managed in a different system. For the sake of improving cluster utilization and operation efficiency., we'd like to treat Kubneretes as a unified management platform. But the ML jobs have the characteristics of All-or-Nothing in the scheduling process, which requires all tasks of a job to be scheduled at the same time. If the job only start part of tasks, it will wait for other tasks be ready to begin to work. In worst case, all jobs are pending like deadlock. To solve the above problem, co-scheduling is needed for the scheduler. The new scheduler framework makes the goal possible.
+Kubernetes has become a popular solution for orchestrating containerized workloads. Due to limitation of Kubernetes scheduler, some offline workloads (ML/DL) are managed in a different system. To improve cluster utilization and operation efficiency, we'd like to treat Kubneretes as a unified management platform. But ML jobs are All-or-Nothing: they require all tasks of a job to be scheduled at the same time. If the job only start part of tasks, it will wait for other tasks to be ready to begin to work. In the worst case, all jobs are pending leading to a deadlock. To solve this problem, co-scheduling is needed for the scheduler. The new scheduler framework makes the goal possible.
  
 ## Goals
  Use scheduler plugin, which is the most Kubernetes native way, to implement coscheduling.
