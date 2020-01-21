@@ -17,8 +17,8 @@ approvers:
   - "@jagosan"
 editor: "@feiskyer"
 creation-date: 2019-01-29
-last-updated: 2019-05-06
-status: provisional
+last-updated: 2020-01-18
+status: implementable
 ---
 
 # Supporting Out-of-Tree Azure Cloud Provider
@@ -51,12 +51,12 @@ status: provisional
 ## Release Signoff Checklist
 
 - [X] k/enhancements issue in release milestone and linked to KEP (https://github.com/kubernetes/enhancements/issues/667)
-- [ ] KEP approvers have set the KEP status to `implementable`
-- [ ] Design details are appropriately documented
-- [ ] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
-- [ ] Graduation criteria is in place
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [X] KEP approvers have set the KEP status to `implementable`
+- [X] Design details are appropriately documented
+- [X] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [X] Graduation criteria is in place
+- [X] "Implementation History" section is up-to-date for milestone
+- [X] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 ## Summary
 
@@ -85,7 +85,7 @@ We propose a set of repositories from the Kubernetes organization to host our cl
 - [kubernetes-sigs/azuredisk-csi-driver](https://github.com/kubernetes-sigs/azuredisk-csi-driver) would be the repository for AzureDisk CSI plugin.
 - [kubernetes-sigs/azurefile-csi-driver](https://github.com/kubernetes-sigs/azurefile-csi-driver) would be the repository for AzureFile CSI plugin.
 
-Those projects would be subprojects under [SIG Azure](https://github.com/kubernetes/community/tree/master/sig-azure#subprojects).
+Those projects would be subprojects under [SIG Cloud Provider provider-azure](https://github.com/kubernetes/community/tree/master/sig-cloud-provider#provider-azure).
 
 ### Documentation
 
@@ -122,7 +122,7 @@ cloud-provider-azure/
 
 ### Implementation Details/Notes/Constraints
 
-- The core of Azure cloud provider would be moved to [kubernetes/cloud-provider-azure](https://github.com/kubernetes/cloud-provider-azure).
+- The core of Azure cloud provider would be moved to [kubernetes-sigs/cloud-provider-azure](https://github.com/kubernetes-sigs/cloud-provider-azure).
 - The storage drivers would be moved to [kubernetes-sigs/azuredisk-csi-driver](https://github.com/kubernetes-sigs/azuredisk-csi-driver) and [kubernetes-sigs/azurefile-csi-driver](https://github.com/kubernetes-sigs/azurefile-csi-driver).
 - The credential provider is still under discussion on [kubernetes/cloud-provider#13](https://github.com/kubernetes/cloud-provider/issues/13).
 
@@ -148,7 +148,7 @@ This issue is being tracked on [kubernetes/cloud-provider#30](https://github.com
 
 Azure credential provider is also depending on cloud provider codes. Though Azure Managed Service Identity (MSI) is a way to avoid explicit setting of credentials, MSI is not available on all cases (e.g. MSI may not be authorized to specific ACR repository).
 
-This issue is being tracked on [kubernetes/cloud-provider#13](https://github.com/kubernetes/cloud-provider/issues/13). Its status would be updated later when it's discussed through sig cloud-provider.
+This issue is being tracked on KEP [Support Instance Metadata Service with Cloud Controller Manager](https://github.com/kubernetes/enhancements/blob/master/keps/sig-cloud-provider/azure/20190722-ccm-instance-metadata.md). It has been marked as implementable and would be implemented in cloud-provider-auzre.
 
 ## Design Details
 
@@ -156,7 +156,7 @@ This issue is being tracked on [kubernetes/cloud-provider#13](https://github.com
 
 Azure Cloud Controller provider is reporting conformance test results to TestGrid as per the [Reporting Conformance Test Results to Testgrid KEP](https://github.com/kubernetes/enhancements/blob/master/keps/sig-cloud-provider/0018-testgrid-conformance-e2e.md).
 
-See [report](https://testgrid.k8s.io/sig-azure-master#Summary) for more details.
+See [report](https://testgrid.k8s.io/provider-azure-cloud-provider-azure) for more details.
 
 ### Graduation Criteria
 
