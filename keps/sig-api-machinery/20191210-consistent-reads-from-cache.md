@@ -7,15 +7,14 @@ owning-sig: sig-api-machinery
 participating-sigs:
   - sig-scalability
 reviewers:
-  - TBD
   - "@wojtek-t"
   - "@jingyih"
 approvers:
   - TBD
 editor: TBD
 creation-date: 2019-12-10
-last-updated: 2019-12-10
-status: provisional
+last-updated: 2020-01-21
+status: implementable
 see-also:
 replaces:
 superseded-by:
@@ -86,8 +85,8 @@ during the whole process.
 
 We will need to measure the impact to performance and scalability, but we have
 enough data and experience from prior work with the watch cache to be confident
-there is significant scale/perf opportunity here, and we would like to measure
-it.
+there is significant scale/perf opportunity here, and we would like to introduce
+an alpha implementation.
 
 We expect the biggest gain to be from node-originating requests (e.g. kubelet
 listing pods scheduled on its node). For those requests, the size of the
@@ -137,9 +136,17 @@ events to the watch automatically. By default etcd sends progress events every
 modify etcd to send them must more frequently, e.g. every 20ms.
 
 When an consistent read request is received and the watch cache is enabled:
-- Get the current revision from etcd using a range read with limit=0 for the resource type being served. Etcd can serve this type of request efficiently, and the resulting revision is strongly consistent (guaranteed to be the latest revision via a quorum read).
+
+- Get the current revision from etcd for the resource type being served. The returned revision is strongly consistent (guaranteed to be the latest revision via a quorum read).
 - Use the existing `waitUntilFreshAndBlock` function in the watch cache to wait briefly (20ms?) for the watch to catch up to the current revision.
 - If the block times out, skip the cache and serve the request directly from storage (etcd).
+
+To get the revsion we have two options: 
+
+- Use an etcd range request with `WithCount` enabled so etcd return only a count and revision 
+- Use an etcd range request against a known empty range with limit=1 as an additional guard (since etcd does not allow for limit=0)
+
+We will benchmark and select the most efficient of these options.
 
 #### Alternative 2: Use WatchProgressRequest to request watch updates when needed
 
@@ -173,7 +180,7 @@ to catch up to the needed revision. I.e. for a progress event interval of 20ms,
 should the kube-apiserver also wait 20ms to a desired revision to become
 available or should it fallback to making the request to etcd sooner?
 
-Optional: For some or all of the etcd progress watch events, also create a
+Optional: For some (but not all) of the etcd progress watch events, also create a
 kubernetes "bookmark" watch event and send it to kube-apiserver clients so that
 reflectors and shared informers are kept up-to-date. The benefit of this is that
 it minimizes the chance that these clients will end up with an out-of-date
