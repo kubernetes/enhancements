@@ -22,7 +22,22 @@ status: implementable
 
 ## Table of Contents
 
-<!-- TOC -->autoauto- [Remove ClusterStatus from kubeadm-config](#remove-clusterstatus-from-kubeadm-config)auto    - [Table of Contents](#table-of-contents)auto    - [Release Signoff Checklist](#release-signoff-checklist)auto    - [Summary](#summary)auto    - [Motivation](#motivation)auto        - [Goals](#goals)auto        - [Non-Goals](#non-goals)auto    - [Proposal](#proposal)auto        - [Implementation Details/Notes/Constraints [optional]](#implementation-detailsnotesconstraints-optional)auto        - [Risks and Mitigations](#risks-and-mitigations)auto    - [Design Details](#design-details)auto        - [Test Plan](#test-plan)auto        - [Graduation Criteria](#graduation-criteria)auto        - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)auto        - [Version Skew Strategy](#version-skew-strategy)auto    - [Implementation History](#implementation-history)autoauto<!-- /TOC -->
+<!-- TOC -->
+- [Release Signoff Checklist](#release-signoff-checklist)
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [Implementation Details/Notes/Constraints [optional]](#implementation-detailsnotesconstraints-optional)
+  - [Risks and Mitigations](#risks-and-mitigations)
+- [Design Details](#design-details)
+  - [Test Plan](#test-plan)
+  - [Graduation Criteria](#graduation-criteria)
+  - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+  - [Version Skew Strategy](#version-skew-strategy)
+- [Implementation History](#implementation-history)
+<!-- /TOC -->
 
 ## Release Signoff Checklist
 
