@@ -195,7 +195,7 @@ Having the pods query the nodelocal cache introduces a single point of failure.
 This feature has been alpha since 1.13 release and beta since 1.15 release.
 
 Graduation criteria for GA(targeted for 1.18 release):
-- Upgrade to a newer CoreDNS version(1.16.x) in [node-cache](https://github.com/kubernetes/dns/pull/328).
+- Upgrade to a newer CoreDNS version(1.6.x) in [node-cache](https://github.com/kubernetes/dns/pull/328).
 - Add a plan for periodic upgrade to newer CoreDNS versions.
 - Ensure that Kubernetes [e2e tests with NodeLocal DNSCache](https://k8s-testgrid.appspot.com/sig-network-gce#gci-gce-kube-dns-nodecache) are passing.
 - Scalability tests with NodeLocal DNSCache enabled, verifying the [HA modes](https://github.com/kubernetes/enhancements/blob/master/keps/sig-network/20190424-NodeLocalDNS-beta-proposal.md#design-details) as well as the regular mode.
