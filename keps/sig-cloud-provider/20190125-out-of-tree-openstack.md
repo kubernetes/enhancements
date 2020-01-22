@@ -14,7 +14,7 @@ approvers:
 editor: TBD
 creation-date: 2019-01-25
 last-updated: 2019-01-25
-status: provisional
+status: implementable
 ---
 
 # Supporting Out-of-Tree OpenStack Cloud Provider
@@ -44,9 +44,9 @@ status: provisional
 - [X] KEP approvers have set the KEP status to `implementable`
 - [X] Design details are appropriately documentedbs
 - [X] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
-- [ ] Graduation criteria is in place
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [X] Graduation criteria is in place
+- [X] "Implementation History" section is up-to-date for milestone
+- [X] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 ## Summary
 
@@ -83,7 +83,7 @@ OpenStack Cloud Provider is well tested, CI running at [OpenLab](https://github.
 
 ### Graduation Criteria
 
-This feature is complete, well tested, in parity with intree openstack provider. Documents needs to be updated as per sig-cloud-provider guideline. 
+This feature is complete, well tested, in parity with intree openstack provider. Documention regarding migration from in-tree cloud provider to openstack-cloud-controller-manager can be found [here](https://github.com/kubernetes/cloud-provider-openstack/blob/master/docs/migrate-to-ccm-with-csimigration.md)
 
 ### Upgrade / Downgrade Strategy
 
@@ -95,4 +95,4 @@ TODO for SIG-OpenStack
 
 ## Implementation History
 - Implementation and testing completed in 2018.
-- Matching kubernetes versions released from v1.11, latest version is v1.16.
+- Matching kubernetes versions released from v1.11, latest version is v1.17.
