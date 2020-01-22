@@ -77,9 +77,8 @@ There are several features and flags for handling container streaming requests
 complicates configuration, and opens the cluster to potential security risks. This is a proposal to
 consolidate the current options into a single supported configuration. Specifically, it proposes:
 
-1. Graduate `ValidateProxyRedirects` to GA
-2. Deprecate the Kubelet's `--redirect-container-streaming` feature
-3. Deprecate the `StreamingProxyRedirects` feature
+1. Deprecate the Kubelet's `--redirect-container-streaming` feature
+2. Deprecate the `StreamingProxyRedirects` feature
 
 ## Motivation
 
@@ -122,9 +121,7 @@ After the [transition period](#rollout-plan), the only way to configure containe
 using the local redirect with Kubelet proxy (`--redirect-container-streaming=false`) approach. Under
 this configuration, handling streaming redirects are not needed by the apiserver, so
 `StreamingProxyRedirects` will be deprecated and eventually removed. Once `StreamingProxyRedirects`
-are removed, `ValidateProxyRedirects` is no longer needed and can be removed. However, it will be
-faster to graduate that feature to GA first, and then it can be removed along with the
-`StreamingProxyRedirects` code without any user-visible impact. Finally, the
+are removed, `ValidateProxyRedirects` is no longer needed and can be removed. Finally, the
 `--redirect-container-streaming` flag will be deprecated and eventually removed.
 
 ### Rollout Plan
@@ -132,13 +129,10 @@ faster to graduate that feature to GA first, and then it can be removed along wi
 1. release **1.18**
    1. Mark the `--redirect-container-streaming` flag as deprecated. Log a warning on use.
    2. Mark the `StreamingProxyRedirects` feature as deprecated. Log a warning on use.
-   3. Graduate `ValidateProxyRedirects` to GA (remove option to disable). This feature has been in
-      beta and enabled by default since v1.14 with no reported issues.
 2. release **1.19** - no changes
 3. release **1.20**
    1. `--redirect-container-streaming` can no longer be enabled. If the flag is set, log an error
       and continue as though it is unset.
-   2. Remove `ValidateProxyRedirects` feature gate.
 4. release **1.21** _(extra safe alternative: 1.22)_
    1. Default `StreamingProxyRedirects` to disabled. If there is a >= 2 version skew between master
       and nodes, and the old nodes were enabling `--redirect-container-streaming`, this **will break
@@ -172,20 +166,15 @@ Risk: no configurations are updated, and streaming is broken during the rollout 
 
 There are 4 potential points for breakage in the rollout, which we'll consider separately:
 
-1. `ValidateProxyRedirects` to GA (rollout step 1.3) - If a user is overriding the feature to
-   disable it, then this could break them. It is expected that beta features eventually transition
-   to GA, so overriding beta features should be viewed as a temporary state. We have not heard of
-   any issues with the beta. This would cause problems if the CRI streaming server was serving on a
-   different interface or DNS name than the interface the apiserver was connecting to.
-2. `--redirect-container-streaming` cannot be set (rollout step 3.1) - This case is covered by
+1. `--redirect-container-streaming` cannot be set (rollout step 3.1) - This case is covered by
    [Dependence on apiserver redirects](#dependence-on-apiserver-redirects).
-3. `StreamingProxyRedirects` disabled or removed (rollout step 4.1 or 5.2) - This would only be the
+2. `StreamingProxyRedirects` disabled or removed (rollout step 4.1 or 5.2) - This would only be the
    case if there was version skew of at least 2 versions from the apiserver to the nodes, and the old
    nodes were still using `--redirect-container-streaming`. At this point, the user should have had
    ample warning (3 versions), and would only be affected if nodes were lagging the apiserver
    version. The safe alternative rollout plan waits 2 versions between steps, which is the maximum
    version skew supported between apiserver & nodes, to eliminate this concern.
-4. Features / flags removed (rollout steps 3.2, 5.1 or 5.2) - The rollout plan conforms with the
+3. Features / flags removed (rollout steps 3.2, 5.1 or 5.2) - The rollout plan conforms with the
    [Kubernetes deprecation policy][] for feature gates & flags, which gives users several releases
    and warnings to upgrade their configuration.
 
