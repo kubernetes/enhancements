@@ -7,15 +7,17 @@ reviewers:
   - "@bsalamat"
   - "@lavalamp"
   - "@krmayankk"
+  - "@ahg-g"
+  - "@alculquicondor"
 approvers:
-  - "@bsalamat"
-  - "@k82cn"
+  - "@ahg-g"
+  - "@alculquicondor"
 creation-date: 2019-02-21
-last-updated: 2019-05-14
+last-updated: 2020-01-21
 status: implementable
 ---
 
-# Even Pods Spreading
+# Pod Topology Spread
 
 ## Table of Contents
 
@@ -53,7 +55,7 @@ status: implementable
 - [x] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
 - [x] Graduation criteria is in place
 - [x] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 ## Terms
@@ -70,7 +72,7 @@ status: implementable
 
 ## Summary
 
-`EvenPodsSpreading` feature gives users more fine-grained control on
+The `PodTopologySpread` feature gives users more fine-grained control on
 distribution of pods scheduling, so as to achieve better high availability and
 resource utilization.
 
@@ -80,7 +82,7 @@ In Kubernetes, "Affinity" related directives are aimed to control how pods are
 scheduled - more packed or more scattering. But right now only limited options
 are offered: for `PodAffinity`, infinite pods can be stacked onto qualifying
 topology domain(s); for `PodAntiAffinity`, only one pod can be scheduled onto a
-single toplogy domain.
+single topology domain.
 
 This is not an ideal situation if users want to put pods evenly across different
 topology domains - for the sake of high availability or saving cost. And regular
@@ -89,18 +91,18 @@ details in [user stories](#user-stories).
 
 ### Goals
 
-- Even spreading is calculated among pods instead of apps API (such as
+- Pod Topology Spread Constraints is calculated among pods instead of apps API (such as
   Deployment, ReplicaSet).
-- Even spreading can be either a predicate (hard requirement) or a priority
+- Pod Topology Spread Constraints can be either a predicate (hard requirement) or a priority
   (soft requirement).
 
 ### Non-Goals
 
-- Even spreading is NOT calculated on an application basis. In other words, it's
+- Pod Topology Spread Constraints is NOT calculated on an application basis. In other words, it's
   not only applied within replicas of an application, but also applied to
   replicas of other applications if appropriate.
 - "Max number of pods per topology" is NOT a goal.
-- Scale-down on an application is not guaranteed to achieve even pods spreading
+- Scale-down on an application is not guaranteed to achieve desired pods spreading
   in the initial implementation.
 
 ## Proposal
@@ -189,7 +191,7 @@ type TopologySpreadConstraint struct {
 
 #### Option 2 (preferred)
 
-Another option is to flatten "required" and "perferred" podAffinityTerms, and
+Another option is to flatten "required" and "preferred" podAffinityTerms, and
 eliminate embedded "TopologyKey":
 
 ```go
@@ -237,12 +239,12 @@ type TopologySpreadConstraint struct {
 
 Suppose we have a 3-zone cluster, currently pods with the same labelSelector are
 spread as 1/1/0. Internally we compute an "ActualSkew" for each topology
-domain representing "mathing pods in this topology domain" minus "minimum
+domain representing "matching pods in this topology domain" minus "minimum
 matching pods in any topology domain", so for this 1/1/0 cluster, the ActualSkew
 for each zone is 1(1-0)/1(1-0)/0(0-0). (If the spreading is 3/2/1, the
 ActualSkew for each zone will be 2(3-1)/1(2-1)/0(1-1))
 
-The internal computation logic would be to find nodes satifiying "ActualSkew <=
+The internal computation logic would be to find nodes satisfying "ActualSkew <=
 MaxSkew". Let's go back to the 1/1/0 example:
 
 If MaxSkew is 1, incoming pod can only be scheduled to zone3 to become 1/1/1;
@@ -318,7 +320,7 @@ incoming pod would fail to be scheduled.
 If it's a soft requirement, we treat the `min matching num` as 3 instead of 0,
 which means incoming pod can be placed onto zone1 or zone2.
 
-- (more cases) when a topoloy domain is infeasible
+- (more cases) when a topology domain is infeasible
 
     > Suppose maxSkew is 1: (~~zone~~ means the zone is infeasible)
 
@@ -380,7 +382,7 @@ done
 ```bash
 for each candidate node; do
     if "TopologySpreadConstraint" is enabled for the pod being scheduled; then
-        # minMatching num is calculated across node list fitered by Predicate phase
+        # minMatching num is calculated across node list filtered by Predicate phase
         count number of matching pods on the topology domain this node belongs to
         calculate the value of "matching num - minMatching num" minus "MaxSkew"
         the lower, the higher score this node is ranked
@@ -417,20 +419,32 @@ To ensure this feature to be rolled out in high quality. Following tests are man
 
 Alpha:
 
-- [ ] This feature will be rolled out as an Alpha feature in v1.15
-- [ ] API changes and feature gating
-- [ ] Necessary defaulting, validation and generated code
-- [ ] Predicate implmentation
-- [ ] Priority implementation
-- [ ] Implementation of all scenarios discussed in this KEP
-- [ ] Minimum viable test cases mentioned in [Test Plan](#test-plan) section
+- [x] This feature will be rolled out as an Alpha feature in v1.15.
+- [x] API changes and feature gating.
+- [x] Necessary defaulting, validation and generated code.
+- [x] Predicate implementation.
+- [x] Priority implementation.
+- [x] Implementation of all scenarios discussed in this KEP.
+- [x] Minimum viable test cases mentioned in [Test Plan](#test-plan) section.
+
+Beta:
+
+- [ ] This feature will be enabled by default as a Beta feature in v1.18.
+- [ ] Replace of the term "Even Pods Spreading" with "Pod Topology Spread
+  Constraints" in docs, KEP and source code. However, keep the feature gate name
+  "EvenPodsSpread" as is.
+- [ ] Migrate predicate implementation to preFilter / filter plugins.
+- [ ] Migrate priority implementation to postFilter / score plugins.
+- [ ] Calculate "preFilterState" if it's not pre-calculated in preFilter plugin.
+  This is particularly for some extended usage such as Cluster Autoscaler.
+- [ ] Add necessary end-to-end tests.
 
 ## Alternatives
 
 - mixin new fields into `pod.spec.affinity` to act as a"sub feature" of Affinity
 
     ```go
-    type EvenSpreading struct {
+    type TopologySpreadConstraint struct {
         // MaxSkew describes the degree of imbalance of pods spreading.
         // Default value is 1 and 0 is not allowed.
         MaxSkew int32
@@ -439,17 +453,17 @@ Alpha:
     }
 
     type NodeAffinity struct {
-        EvenSpreading *EvenSpreading
+        TopologySpreadConstraint *TopologySpreadConstraint
         ......
     }
 
     type PodAffinity struct {
-        EvenSpreading *EvenSpreading
+        TopologySpreadConstraint *TopologySpreadConstraint
         ......
     }
 
     type PodAntiAffinity struct {
-        EvenSpreading *EvenSpreading
+        TopologySpreadConstraint *TopologySpreadConstraint
         ......
     }
     ```
@@ -464,7 +478,7 @@ Alpha:
 
 ## Impact to Other Features
 
-The motivation of this KEP is to resolve limitations of exisiting features, but
+The motivation of this KEP is to resolve limitations of existing features, but
 it won't replace them.
 
 Comparing to this feature, PodAffinity has the most expressive APIs such like
@@ -477,15 +491,15 @@ existing features.
 
 - NodeAffinity/NodeSelector
 
-As aforementioned, it's a reasonble assumption that eveness should be applied
+As aforementioned, it's a reasonable assumption that evenness should be applied
 among the filtered nodes specified by NodeAffinity/NodeSelector. So be aware of
 implicit assumption.
 
 - PodAffinity
 
-PodAffinity can work seemlessly with this feature. But a tip here is that if
+PodAffinity can work seamlessly with this feature. But a tip here is that if
 your requirement on PodAffinity only applies to one topology, and cares about
-eveness, you can simply put the podAffinityTerm in the manner of `selector` and
+evenness, you can simply put the podAffinityTerm in the manner of `selector` and
 `topologyKey` of `TopologySpreadConstraint`. This can achieve the same
 scheduling goal efficiently.
 
@@ -507,3 +521,7 @@ extra benefit of this KEP.
 - 2019-02-21: Initial KEP sent out for review.
 - 2019-04-16: Initial KEP approved.
 - 2019-05-01: First [KEP implementation PR](https://github.com/kubernetes/kubernetes/pull/77327) sent out for review.
+- 2020-01-21: KEP updated to meet the criteria of promoting to beta.
+  - NOTE: The term "Even Pods Spreading" is replaced with "Pod Topology Spread",
+    to be consistent with the [official doc](https://kubernetes.io/docs/concepts/workloads/pods/pod-topology-spread-constraints/), but
+    the featuregate name "EvenPodsSpread" remains unchanged.
