@@ -22,31 +22,16 @@ status: implementable
 
 ## Table of Contents
 
-<!-- TOC -->
-- [Release Signoff Checklist](#release-signoff-checklist)
-- [Summary](#summary)
-- [Motivation](#motivation)
-  - [Goals](#goals)
-  - [Non-Goals](#non-goals)
-- [Proposal](#proposal)
-  - [Implementation Details/Notes/Constraints [optional]](#implementation-detailsnotesconstraints-optional)
-  - [Risks and Mitigations](#risks-and-mitigations)
-- [Design Details](#design-details)
-  - [Test Plan](#test-plan)
-  - [Graduation Criteria](#graduation-criteria)
-  - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
-  - [Version Skew Strategy](#version-skew-strategy)
-- [Implementation History](#implementation-history)
-<!-- /TOC -->
+<!-- TOC -->autoauto- [Remove ClusterStatus from kubeadm-config](#remove-clusterstatus-from-kubeadm-config)auto    - [Table of Contents](#table-of-contents)auto    - [Release Signoff Checklist](#release-signoff-checklist)auto    - [Summary](#summary)auto    - [Motivation](#motivation)auto        - [Goals](#goals)auto        - [Non-Goals](#non-goals)auto    - [Proposal](#proposal)auto        - [Implementation Details/Notes/Constraints [optional]](#implementation-detailsnotesconstraints-optional)auto        - [Risks and Mitigations](#risks-and-mitigations)auto    - [Design Details](#design-details)auto        - [Test Plan](#test-plan)auto        - [Graduation Criteria](#graduation-criteria)auto        - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)auto        - [Version Skew Strategy](#version-skew-strategy)auto    - [Implementation History](#implementation-history)autoauto<!-- /TOC -->
 
 ## Release Signoff Checklist
 
-- [ ] kubernetes/enhancements issue in release milestone, which links to KEP (this should be a link to the KEP location in kubernetes/enhancements, not the initial KEP PR)
+- [x] kubernetes/enhancements issue in release milestone, which links to KEP (this should be a link to the KEP location in kubernetes/enhancements, not the initial KEP PR)
 - [x] KEP approvers have set the KEP status to `implementable`
 - [x] Design details are appropriately documented
 - [x] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
-- [ ] Graduation criteria is in place
-- [ ] "Implementation History" section is up-to-date for milestone
+- [x] Graduation criteria is in place
+- [x] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
@@ -80,11 +65,12 @@ This allows to remove the `ClusterStatus` entry in the `kubeadm-config` ConfigMa
 ### Goals
 
 - To introduce a new method for tracking the list of API endpoints in a cluster
-- To allow removal of the `ClusterStatus` entry in the `kubeadm-config` ConfigMap and clean-up of the related goal.
+- To allow removal of the `ClusterStatus` entry in the `kubeadm-config` ConfigMap and clean-up of the related code.
 
 ### Non-Goals
 
-- To change any user facing behavior in `kubeadm`
+- To change any user facing behavior in `kubeadm`.
+  However, considering that we are going to remove the `ClusterStatus` in the `kubeadm-config` ConfigMap and potentially some user/higher level tools can rely on it, we are going issue and "Action Required" warning in the release note an respect the Beta API deprecation policy before actual deletion (9 months/3 release).
 
 ## Proposal
 
@@ -92,7 +78,8 @@ This allows to remove the `ClusterStatus` entry in the `kubeadm-config` ConfigMa
 
 As of today, the `ClusterStatus` entry in the `kubeadm-config` ConfigMap contains a map that stores the `LocalAPIEndpoint` for each control-plane node.
 
-The `LocalAPIEndpoint` primary usage is for the `advertise-address` flag in the `kube-apiserver` pod. Having this value in a flag is not ideal for the purpose of this proposal, so, we are going to echo the same value into a new annotation named `kubeadm.kubernetes.io/kube-apiserver.advertise-address`.
+The `LocalAPIEndpoint` primary usage is for the `advertise-address`:`bindPort` flag in the `kube-apiserver` pod. Having this value in a flag is not ideal for the purpose of this proposal, so, we are going to echo the same value into a new annotation in the `kube-apiserver` pod manifest.
+The annotation will be named `kubeadm.kubernetes.io/kube-apiserver.advertise-address.endpoint` and the value will be `advertise-address`:`bindPort`.
 
 Once the annotation will be in place, it will be possible to easily retrieve the local advertise address for each control plane node by querying the corresponding `kube-apiserver` pod.
 
@@ -106,17 +93,22 @@ R. The list of API endpoints in a cluster is crucial to all the kubeadm workflow
 M. The proper function of those workflows and of the underlying codes is already covered by E2E tests; on top of that, we are going to try to implement this change at the beginning of the v1.18 cycle, thus ensuring as much
 test cycles as possible.
 
+R. We are relying on the kubelet signal to check if a static pod goes down.
+M. The fact that there is a long-running agent doing this check is already an improvement vs current state; However, during the implementation, we should try to make this smarter as possible, e.g checking the pod status or any type of feedback the kubelet provides.
+
 ## Design Details
 
 ### Test Plan
 
-No additional test E2E test are required for this change because all the affected behaviors are already covered by existing E2E test.
+All the affected behaviors are already covered by existing E2E test; however, we should consider if to add new destructive tests in order to exercise properly all the possible conditions.
 
 Additional unit test are required only for the new function implementing the inspection of the current Pods.
 
 ### Graduation Criteria
 
-NA
+Alpha - Does not apply (this is part of how kubeadm handles it's configuration API, and currently this is already in Beta).
+Beta - Initial status
+GA - This will graduate as part of the Kubeadm Configuration API.
 
 ### Upgrade / Downgrade Strategy
 
