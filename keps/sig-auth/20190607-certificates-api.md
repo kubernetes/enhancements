@@ -139,7 +139,7 @@ A typical successful issuance proceeds as follows.
 CSRs have a `signerName` field which is used to specify which signer the CSR creator wants to sign the certificate.
 To support migration from v1beta1 to v1, this required field will be defaulted in v1beta1 (optional in openapi), but
 not defaulted and required in v1 :
- 1. If it's a kubelet client certificate, it is assigned "kubernetes.io/kubelet-client".
+ 1. If it's a kubelet client certificate, it is assigned "kubernetes.io/kube-apiserver-client-kubelet".
  2. If it's a kubelet serving certificate, it is assigned "kubernetes.io/kubelet-serving". 
  see https://github.com/kubernetes/kubernetes/blob/release-1.10/pkg/controller/certificates/approver/sarapprove.go#L211-L223 for details.
  3. Otherwise, it is assigned "kubernetes.io/legacy-unknown".
@@ -249,14 +249,14 @@ type CertificateSigningRequest struct {
 type CertificateSigningRequestSpec struct {
   // requested signer for the request up to 571 characters long.  It is a qualified name in the form: `scope-hostname.io/name`.  
   // If empty, it will be defaulted for v1beta1:
-  //  1. If it's a kubelet client certificate, it is assigned "kubernetes.io/kubelet-client".  This is determined by 
+  //  1. If it's a kubelet client certificate, it is assigned "kubernetes.io/kube-apiserver-client-kubelet".  This is determined by 
   //     Seeing if organizations are exactly `[]string{"system:nodes"}`, common name starts with `"system:node:"`, and
   //     key usages are exactly `[]string{"key encipherment", "digital signature", "client auth"}`
   //  2. Otherwise, it is assigned "kubernetes.io/legacy-unknown".
   // In v1 it will be required.  Distribution of trust for signers happens out of band. 
   // The following signers are known to the kube-controller-manager signer.
   //  1. kubernetes.io/kube-apiserver-client - signs certificates that will be honored as client-certs by the kube-apiserver. Never auto-approved by kube-controller-manager.
-  //  2. kubernetes.io/kubelet-client - signs client certificates that will be honored as client-certs by the kube-apiserver. May be auto-approved by kube-controller-manager.
+  //  2. kubernetes.io/kube-apiserver-client-kubelet - signs client certificates that will be honored as client-certs by the kube-apiserver. May be auto-approved by kube-controller-manager.
   //  3. kubernetes.io/kubelet-serving - signs serving certificates that are honored as a valid kubelet serving certificate by the kube-apiserver, but has no other guarantees.
   //  4. kubernetes.io/legacy-unknown - has no guarantees for trust at all.  Some distributions may honor these as client certs, but that behavior is not standard kubernetes behavior.
   // None of these usages are related to ServiceAccount token secrets `.data[ca.crt]` in any way.
