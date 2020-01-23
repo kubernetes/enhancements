@@ -48,7 +48,7 @@ Currently before a volume is bind-mounted inside a container the permissions on
 that volume are changed recursively to the provided fsGroup value.  This change
 in ownership can take an excessively long time to complete, especially for very
 large volumes (>=1TB) as well as a few other reasons detailed in [Motivation].
-To solve this issue we will add a new field called `pod.Spec.SecurityContext.VolumePermissionChangePolicy` and
+To solve this issue we will add a new field called `pod.Spec.SecurityContext.FSGroupPermissionChangePolicy` and
 allow the user to specify whether they want the ownership change to occur.
 
 ## Motivation
@@ -72,6 +72,7 @@ But this presents following problems:
 
  - In some cases if user brings in a large enough volume from outside, the first time ownership and permission change still could take lot of time.
  - On SELinux enabled distributions we will still do recursive chcon whenever applicable and handling that is outside the scope.
+ - This proposal does not attempt to fix two pods using same volume with conflicting fsgroup. `FSGroupPermissionChangePolicy` also will be only applicable to volume types which support setting fsgroup.
 
 ## Proposal
 
@@ -79,42 +80,42 @@ We propose that an user can optionally opt-in to skip recursive ownership(and pe
 
 ### Implementation Details/Notes/Constraints [optional]
 
-When creating a pod, we propose that `pod.Spec.SecurityContext` field expanded to include a new field called `VolumePermissionChangePolicy` which can have following possible values:
+When creating a pod, we propose that `pod.Spec.SecurityContext` field expanded to include a new field called `FSGroupPermissionChangePolicy` which can have following possible values:
 
  - `NoChange` --> Don't change permissions and ownership. This could be useful to users when security policy of a cluster prevents users from removing `fsGroup` from their pod's `SecurityContext`.
  - `Always` --> Always change the permissions and ownership to match fsGroup. This is the current behavior and it will be the default one when this proposal is implemented. Algorithm that performs permission change however will be changed to perform permission change of top level directory last.
  - `OnDemand` --> Only perform permission change if permissions of top level directory does not match with expected permissions.
 
 ```go
-type PodVolumePermissionChangePolicy string
+type PodFSGroupPermissionChangePolicy string
 
 const(
-    NeverChangeVolumePermission PodVolumePermissionChangePolicy = "NoChange"
-    OnDemandChangeVolumePermission PodVolumePermissionChangePolicy = "OnDemand"
-    AlwaysChangeVolumePermission PodVolumePermissionChangePolicy = "Always"
+    NeverChangeVolumePermission PodFSGroupPermissionChangePolicy = "NoChange"
+    OnDemandChangeVolumePermission PodFSGroupPermissionChangePolicy = "OnDemand"
+    AlwaysChangeVolumePermission PodFSGroupPermissionChangePolicy = "Always"
 )
 
 type PodSecurityContext struct {
-    // VolumePermissionChangePolicy ← new field
+    // FSGroupPermissionChangePolicy ← new field
     // + optional
-    VolumePermissionChangePolicy *PodVolumePermissionChangePolicy
+    FSGroupPermissionChangePolicy *PodFSGroupPermissionChangePolicy
 }
 ```
 
 ### Risks and Mitigations
 
-- One of the risks is if user volume's permission was previously changed using old algorithm(which changes permission of top level directory first) and user opts in for `OnDemand` `VolumePermissionChangePolicy` then we can't distinguish if the volume was previously only partially recursively chown'd.
+- One of the risks is if user volume's permission was previously changed using old algorithm(which changes permission of top level directory first) and user opts in for `OnDemand` `FSGroupPermissionChangePolicy` then we can't distinguish if the volume was previously only partially recursively chown'd.
 
 
 ## Graduation Criteria
 
 * Alpha in 1.18 provided all tests are passing and gated by the feature Gate
-   ConfigurableVolumeFilePermissions and set to a default of `False`
+   `ConfigurableFSGroupPermissions` and set to a default of `False`
 
 * Beta in 1.19 with design validated by at least two customer deployments
   (non-production), with discussions in SIG-Storage regarding success of
   deployments.  A metric will be added to report time taken to perform a
-  volume ownership change.
+  volume ownership change. Also e2e tests that verify volume permissions with various `FSGroupPermissionChangePolicy`.
 * GA in 1.20, with Node E2E tests in place tagged with feature Storage
 
 
@@ -125,7 +126,7 @@ type PodSecurityContext struct {
 A test plan will consist of the following tests
 
 * Basic tests including a permutation of the following values
-  - PodSecurityContext.VolumePermissionChangePolicy (Never/OnDemand/Always)
+  - PodSecurityContext.FSGroupPermissionChangePolicy (Never/OnDemand/Always)
   - PersistentVolumeClaimStatus.FSGroup (matching, non-matching)
   - Volume Filesystem existing permissions (none, matching, non-matching, partial-matching?)
 * E2E tests
@@ -143,5 +144,9 @@ We will add a metric that measures the volume ownership change times.
 
 
 ## Alternatives [optional]
+
+We considered various alternatives before proposing changes mentioned in this proposal.
+- We considered using a shiftfs(https://github.com/linuxkit/linuxkit/tree/master/projects/shiftfs) like solution for mounting volumes inside containers without changing permissions on the host. But any such solution is technically not feasible until support in Linux kernel improves.
+- We also considered redesigning volume permission API to better support different volume types and different operating systems because `fsGroup` is somewhat Linux specific. But any such redesign has to be backward compatible and given lack of clarity about how the new API should look like, we aren't quite ready to do that yet.
 
 ## Infrastructure Needed [optional]
