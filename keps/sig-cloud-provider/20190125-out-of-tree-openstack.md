@@ -14,7 +14,7 @@ approvers:
 editor: TBD
 creation-date: 2019-01-25
 last-updated: 2019-01-25
-status: implementable
+status: implemented
 ---
 
 # Supporting Out-of-Tree OpenStack Cloud Provider
