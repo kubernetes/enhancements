@@ -205,9 +205,9 @@ Existing tests will continue running.
 
 ### Graduation Criteria
 
-WG LTS proposes this KEP be implemented as of the 1.18.0 release.
+WG LTS proposes this KEP be implemented as of the 1.19.0 release.
 We do not want to retroactively ask the community to add longer support for an already delivered release.
-Starting with 1.18.0 would mean all releases delivered in calendar year 2020 would have support for all of calendar year 2020.
+Starting with 1.19.0 means that the supported range would change to 1.19 - 1.22 when 1.22 comes out.
 
 ### Upgrade / Downgrade Strategy
 
