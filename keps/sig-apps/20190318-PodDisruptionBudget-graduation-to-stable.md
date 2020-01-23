@@ -93,6 +93,18 @@ but will still require `DisruptionsAllowed` to be larger than 0 for it to be evi
 arise from this. For example if we have a PDB with `MinAvailable  = 1` and 10 pods that are all in the CrashLoop state 
 (`Running`, but not `Ready`), we will not be allowed to evict any of the pods.
 
+To fix this, we will unify the logic between the disruption controller and the eviction REST handler so that a pod that 
+is not considered ready by the controller will always be allowed to be evicted (even if DisruptionsAllowed is 0). 
+Also note that eviction attempts for pods that are not ready but could transition to being ready in the future (e.g. 
+are not in a terminal state) will be made conditional on the resourceVersion at which their unready state was determined 
+to avoid a race condition between pod readiness and eviction. If the conditional eviction fails with a conflict error, 
+it will be retried internally by the eviction REST handler. There is pretty much agreement that this is safe for pods 
+in a phase other than `Running` and there is an open PR for this: https://github.com/kubernetes/kubernetes/pull/83906. 
+It should also be safe to evict `Running` pods that are not `Ready`. The `Ready` condition is already used
+by most of the workload controllers during rollouts and for determining which pods should receive traffic from
+a service. But there are some concerns that it might not be safe in all situations: 
+https://github.com/kubernetes/kubernetes/pull/83906#issuecomment-558287640
+
 #### Make the disruption controller more lenient for pods belonging to non-scale controllers
 
 The disruption controller is currently taking the very safe route whenever it encounters any
