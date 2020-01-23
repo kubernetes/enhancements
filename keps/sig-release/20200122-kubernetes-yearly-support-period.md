@@ -18,7 +18,12 @@ reviewers:
   - "@quinton_hoole"
 approvers:
   - "@justaugustus"
-editor: TBD
+  - "@spiffxp"
+  - "@bgrant"
+  - "@deads2k"
+  - "@dchen1107"
+  - "@pwittrock"
+editor: "@youngnick"
 creation-date: 2020-01-22
 last-updated: 2020-01-22
 status: provisional
