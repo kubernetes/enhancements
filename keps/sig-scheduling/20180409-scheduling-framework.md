@@ -180,10 +180,11 @@ conditions that the cluster or the pod must meet. A pre-filter plugin should imp
 a PreFilter function, if PreFilter returns an error, the scheduling cycle is aborted.
 Note that PreFilter is called once in each scheduling cycle.
 
-A Pre-filter plugin can provide another two optional functions: **AddPod** and **RemovePod** 
-to incrementally modify its pre-processed info. The framework guarantees that those
-functions will only be called after PreFilter, possibly on a cloned CycleState, and may call
-those functions more than once before calling Filter on a specific node.
+A Pre-filter plugin can implement the optional `PreFilterExtensions` interface which
+define **AddPod** and **RemovePod** methods to incrementally modify its pre-processed info.
+The framework guarantees that those functions will only be called after PreFilter, possibly 
+on a cloned CycleState, and may call those functions more than once before calling Filter on 
+a specific node.
 
 
 ### Filter
@@ -214,7 +215,8 @@ each node.
 the scheduler computes a final ranking of Nodes, and each score plugin receives
 scores given by the same plugin to all nodes in "normalize scoring" phase.
 `NormalizeScore` is called once per plugin per scheduling cycle right after
-"score" phase.
+"score" phase. Note that `NormalizeScore` is optional, and can be provided
+by implementing the `ScoreExtensions` interface.
 
 The output of a score plugin must be an integer in range of
 **[MinNodeScore, MaxNodeScore]**. if not, the scheduling cycle is aborted.
@@ -605,7 +607,8 @@ and https://github.com/kubernetes/community/pull/3008*
 
 ## Interactions with Cluster Autoscaler
 
-TODO
+The Cluster Autoscaler will have to be changed to run Filter plugins instead of predicates. 
+This can be done by creating a Framework instance and invoke `RunFilterPlugins`.
 
 # USE CASES
 
