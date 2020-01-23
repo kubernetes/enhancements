@@ -107,6 +107,27 @@ The current behavior of the disruption controller for the different types of inp
 types of pods that might be encountered are documented in: 
 https://docs.google.com/spreadsheets/d/12HUundBS-slA6axfQYZPRCeIu_Au_wsGD0Vu_oKAnM8/edit?usp=sharing
 
+To fix this, we will make two adjustments:
+
+Loosen the rules somewhat, so instead of just returning an error and block all evictions when
+the controller encounters invalid pods, it will ignore those pods when computing `AllowedDisruptions`. And
+similarly, the Eviction API will ignore the PDB when evicting those pods. This means that in a situation like
+was mentioned in the issue, where a PDB selector happen to match both pods belonging to a Deployment and pods
+belonging to a CronJob, the PDB will protect the Deployment pods as expected, but ignore the pods from the CronJob.
+
+Combined with loosening the rules in the controller, we also want to improve feedback to the user in these situation. 
+So while the pods from the CronJob described above will not be covered by the PDB,
+the controller will generate warning events for these situations that will provide accurate descriptions
+of what makes the pod ineligible for the PDB. In this case it would mean an event explaining that the pod
+has a controller that does not implement scale, and therefore can only be used if the PDB is using `minAvilable` as 
+a number. We also want to introduce conditions on the PDB status object that can signal error situations to
+users and tools. In particular, whenever the failsafe functionality of the disruption controller forces `AllowedDisruptions`
+to be 0, there should be a condition that allow tools to distinguish this situation from `AllowedDisruptions` being 
+0 simply because there are not enough ready pods.
+
+Combined, these should make the behavior of the disruption controller more intuitive, but also provide signals to users
+whenever the configuration of the pdb and/or the targeted workloads are invalid.
+
 ### Risks and Mitigations
 
 We plan to support mutation of PDB objects that didn't exist in previous versions.
