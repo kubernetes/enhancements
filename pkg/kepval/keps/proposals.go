@@ -19,6 +19,8 @@ package keps
 import (
 	"bufio"
 	"bytes"
+	"crypto/md5"
+	"fmt"
 	"io"
 	"strings"
 
@@ -34,23 +36,24 @@ func (p *Proposals) AddProposal(proposal *Proposal) {
 }
 
 type Proposal struct {
-	Title             string   `yaml:"title"`
-	Authors           []string `yaml:,flow`
-	OwningSIG         string   `yaml:"owning-sig"`
-	ParticipatingSIGs []string `yaml:"participating-sigs",flow,omitempty`
-	Reviewers         []string `yaml:,flow`
-	Approvers         []string `yaml:,flow`
-	Editor            string   `yaml:"editor,omitempty"`
-	CreationDate      string   `yaml:"creation-date"`
-	LastUpdated       string   `yaml:"last-updated"`
-	Status            string   `yaml:"status"`
-	SeeAlso           []string `yaml:"see-also,omitempty"`
-	Replaces          []string `yaml:"replaces,omitempty"`
-	SupersededBy      []string `yaml:"superseded-by,omitempty"`
+	ID                string   `json:"id"`
+	Title             string   `json:"title" yaml:"title"`
+	Authors           []string `json:"authors" yaml:",flow"`
+	OwningSIG         string   `json:"owningSig" yaml:"owning-sig"`
+	ParticipatingSIGs []string `json:"participatingSigs" yaml:"participating-sigs,flow,omitempty"`
+	Reviewers         []string `json:"reviewers" yaml:",flow"`
+	Approvers         []string `json:"approvers" yaml:",flow"`
+	Editor            string   `json:"editor" yaml:"editor,omitempty"`
+	CreationDate      string   `json:"creationDate" yaml:"creation-date"`
+	LastUpdated       string   `json:"lastUpdated" yaml:"last-updated"`
+	Status            string   `json:"status" yaml:"status"`
+	SeeAlso           []string `json:"seeAlso" yaml:"see-also,omitempty"`
+	Replaces          []string `json:"replaces" yaml:"replaces,omitempty"`
+	SupersededBy      []string `json:"supersededBy" yaml:"superseded-by,omitempty"`
 
-	Filename string `yaml:"-"`
-	Error    error  `yaml:"-"`
-	Contents string `yaml:"-"`
+	Filename string `json:"-" yaml:"-"`
+	Error    error  `json:"-" yaml:"-"`
+	Contents string `json:"markdown" yaml:"-"`
 }
 
 type Parser struct{}
@@ -92,5 +95,10 @@ func (p *Parser) Parse(in io.Reader) *Proposal {
 	}
 
 	proposal.Error = yaml.UnmarshalStrict(metadata, proposal)
+	proposal.ID = hash(proposal.OwningSIG + ":" + proposal.Title)
 	return proposal
+}
+
+func hash(s string) string {
+	return fmt.Sprintf("%x", md5.Sum([]byte(s)))
 }
