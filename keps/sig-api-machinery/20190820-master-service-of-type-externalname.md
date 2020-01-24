@@ -13,7 +13,7 @@ approvers:
 - "@deads2k"
 editor: "@mvladev"
 creation-date: 2019-08-20
-last-updated: 2020-01-21
+last-updated: 2024-01-21
 status: provisional
 see-also: []
 replaces: []
@@ -84,9 +84,11 @@ This KEP is about adding support in Kubernetes for the master service to be of t
 
 ## Motivation
 
-When exposing the kube-apiserver in HA mode, typically, a Layer-4 load-balancer is used. On different public/private cloud-providers, the endpoint of that load-balancer is either an IPv4/IPv6 address or a hostname (AWS being most prominent example for such offering). When consuming the latter offering, kubernetes cluster operators cannot use the hostname directly and have to disable the master endpoint reconciler in kube-apiserver with `--endpoint-reconciler-type=none` and write [custom controllers](https://github.com/gardener/aws-lb-readvertiser) which convert the hostname to IP addresses.
+In a Kubernetes cluster, the kube-apiserver(s) can be reached via its IPv4 and/or IPv6 address (e.g. `10.0.0.1`) and optionally by its hostname (e.g. `master.local`) from out-of-cluster clients. The apiserver(s) is started with `--advertise-address=10.0.0.1`. This IP address is used for in-cluster apiserver discovery.
 
-It might be more suitable to advertise kube-apiserver's endpoint as FQDN, such as `api.my-cluster.example.com` for disaster recovery / prevention - in case of accidental deletion of said load-balancer and/or it's associated IP, the only thing required for recovery is to reconfigure the NS records to point to the newly created load-balancer.
+If this IP address is changed, a reconfiguration and restart of the apiserver(s) is required. Until that operation is performed, in-cluster workload using automatic apiserver discovery would send traffic to the old and invalid `10.0.0.1` address.
+
+To handle such changes to the IP address of the master node(s), using a hostname (`master.local` in this case) is a better alternative to advertise the apiserver host. It offers a dynamic IP address lookup via DNS without the need for reconfiguration/restart of kube-apiserver(s) on such changes. This is currently not supported by Kubernetes and it's components.
 
 Historically there are several issues related to this problem:
 
@@ -96,7 +98,7 @@ Historically there are several issues related to this problem:
 
 ### Goals
 
-- Make kube-servers exposed and advertised as FQDN, first class citizen in Kubernetes.
+- Make kube-servers advertised as FQDN to in-cluster workload, first class citizen in Kubernetes.
 - The master service reconciler in kube-apiserver should support services of type `ExternalName`.
 - Support in kubelet for injecting the required environment variables `KUBERNETES_SERVICE_HOST` and `KUBERNETES_SERVICE_PORT` for [in-cluster discovery](https://github.com/kubernetes/client-go/blob/c8dc69f8a8bf8d8640493ce26688b26c7bfde8e6/rest/config.go#L399-L411) for master kubernetes service of type `ExternalName`.
 
