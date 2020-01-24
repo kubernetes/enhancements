@@ -95,7 +95,8 @@ certs established between the apiserver and the runtime was complicated, but the
 had an mTLS connection to the Kubelet. So, we added the ability for the Kubelet to connect the
 stream locally and proxy the connection back to the apiserver. This setup is more secure, removes
 the need for `StreamingProxyRedirects` and `ValidateProxyRedirects`, but adds the Kubelet back into
-the long-running request chain.
+the long-running request chain. For background, see the discussion on [kubernetes/kubernetes#36666
+(comment)](https://github.com/kubernetes/kubernetes/issues/36666#issuecomment-378440458).
 
 `StreamingProxyRedirects` and `ValidateProxyRedirects` are currently in Beta, and should either be
 graduated or removed.
