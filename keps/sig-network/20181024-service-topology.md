@@ -31,6 +31,7 @@ status: implementable
   - [Service Topology Scalability](#service-topology-scalability)
     - [New PodLocator resource](#new-podlocator-resource)
     - [New PodLocator controller](#new-podlocator-controller)
+  - [EndpointSlice controller changes](#endpointslice-controller-changes)
   - [Kube-proxy changes](#kube-proxy-changes)
   - [DNS server changes (in beta stage)](#dns-server-changes-in-beta-stage)
   - [Test Plan](#test-plan)
@@ -174,6 +175,12 @@ When a Pod is deleted, PodLocator controller will delete the corresponding PodLo
 When a Node is updated, PodLocator controller will first check if its labels are changed. If changed, will update all the PodLocators whose corresponding Pods running on it.
 
 When a Node is deleted, PodLocator controller will reset the NodeName and NodeLabels of all the PodLocators whose corresponding Pods running on it.
+
+### EndpointSlice controller changes
+
+The EndpointSlice controller will be updated to set values corresponding to the
+TopologyKeys field on Services. All topology values will be derived from labels
+on the Node a Pod is running on.
 
 ### Kube-proxy changes
 
