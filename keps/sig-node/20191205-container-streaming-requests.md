@@ -14,7 +14,7 @@ approvers:
   - "@Random-Liu"
   - "@derekwaynecarr"
 creation-date: 2019-12-05
-status: provisional
+status: implementable
 replaces:
   - "https://docs.google.com/document/d/1OE_QoInPlVCK9rMAx9aybRmgFiVjHpJCHI9LrfdNM_s/edit#heading=h.4yfjiw58o8d3"
 ---
