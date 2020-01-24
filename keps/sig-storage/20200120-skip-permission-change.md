@@ -66,7 +66,7 @@ But this presents following problems:
 
 ### Goals
 
- - Allow volume ownership and permission to be skipped during mount
+ - Allow volume ownership and permission change to be skipped during mount
 
 ### Non-Goals
 
@@ -82,15 +82,13 @@ We propose that an user can optionally opt-in to skip recursive ownership(and pe
 
 When creating a pod, we propose that `pod.Spec.SecurityContext` field expanded to include a new field called `FSGroupPermissionChangePolicy` which can have following possible values:
 
- - `NoChange` --> Don't change permissions and ownership. This could be useful to users when security policy of a cluster prevents users from removing `fsGroup` from their pod's `SecurityContext`.
  - `Always` --> Always change the permissions and ownership to match fsGroup. This is the current behavior and it will be the default one when this proposal is implemented. Algorithm that performs permission change however will be changed to perform permission change of top level directory last.
- - `OnDemand` --> Only perform permission change if permissions of top level directory does not match with expected permissions.
+ - `OnDemand` --> Only perform permission and ownership change if permissions of top level directory does not match with expected permissions.
 
 ```go
 type PodFSGroupPermissionChangePolicy string
 
 const(
-    NeverChangeVolumePermission PodFSGroupPermissionChangePolicy = "NoChange"
     OnDemandChangeVolumePermission PodFSGroupPermissionChangePolicy = "OnDemand"
     AlwaysChangeVolumePermission PodFSGroupPermissionChangePolicy = "Always"
 )
@@ -126,7 +124,7 @@ type PodSecurityContext struct {
 A test plan will consist of the following tests
 
 * Basic tests including a permutation of the following values
-  - PodSecurityContext.FSGroupPermissionChangePolicy (Never/OnDemand/Always)
+  - PodSecurityContext.FSGroupPermissionChangePolicy (OnDemand/Always)
   - PersistentVolumeClaimStatus.FSGroup (matching, non-matching)
   - Volume Filesystem existing permissions (none, matching, non-matching, partial-matching?)
 * E2E tests
