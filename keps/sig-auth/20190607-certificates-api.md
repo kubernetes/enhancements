@@ -2,21 +2,21 @@
 title: Certificates API
 authors:
   - "@mikedanese"
+  - "@deads2k"
 owning-sig: sig-auth
 reviewers:
   - "@liggitt"
   - "@smarterclayton"
+  - "@munnerz"
 approvers:
   - "@liggitt"
   - "@smarterclayton"
 creation-date: 2019-06-07
-last-updated: 2019-12-09
+last-updated: 2020-01-21
 status: implementable
 ---
 
 # Certificates API
-
-## Table of Contents
 
 <!-- toc -->
 - [Summary](#summary)
@@ -139,7 +139,7 @@ A typical successful issuance proceeds as follows.
 CSRs have a `signerName` field which is used to specify which signer the CSR creator wants to sign the certificate.
 To support migration from v1beta1 to v1, this required field will be defaulted in v1beta1 (optional in openapi), but
 not defaulted and required in v1 :
- 1. If it's a kubelet client certificate, it is assigned "kubernetes.io/kubelet-client".
+ 1. If it's a kubelet client certificate, it is assigned "kubernetes.io/kube-apiserver-client-kubelet".
  2. If it's a kubelet serving certificate, it is assigned "kubernetes.io/kubelet-serving". 
  see https://github.com/kubernetes/kubernetes/blob/release-1.10/pkg/controller/certificates/approver/sarapprove.go#L211-L223 for details.
  3. Otherwise, it is assigned "kubernetes.io/legacy-unknown".
@@ -157,6 +157,8 @@ This includes:
  5. Expiration/cert lifetime - (fixed by signer? configurable by admin? CSR-determined?) and behavior when an expiration
  different than the signer-determined expiration is specified in the CSR.
  6. CA bit allowed/disallowed - and behavior if a CSR contains a request a for a CA cert when the signer does not permit it.
+ 7. (optional) Information about the meaning of additional CERTIFICATE PEM blocks in `status.certificate`, if different from the
+ standard behavior of treating the additional certificates as intermediates, and presenting them in TLS handshakes.
 
 
 sig-auth reserves all `kubernetes.io/*` `signerNames` and more may be added in the future.
@@ -236,26 +238,25 @@ Cluster admins can either:
 ### CertificateSigningRequest API Definition
 
 ```go
-// This information is immutable after the request is created. Only the Request
-// and Usages fields can be set on creation, other fields are derived by
-// Kubernetes and cannot be modified by users.
 type CertificateSigningRequest struct {
+  // spec information is immutable after the request is created.
+  // Only the request, usages, and signerName fields can be set on creation,
+  // other fields are derived by Kubernetes and cannot be modified by users.
   Spec   CertificateSigningRequestSpec
   Status CertificateSigningRequestStatus
 }
 
-
 type CertificateSigningRequestSpec struct {
   // requested signer for the request up to 571 characters long.  It is a qualified name in the form: `scope-hostname.io/name`.  
   // If empty, it will be defaulted for v1beta1:
-  //  1. If it's a kubelet client certificate, it is assigned "kubernetes.io/kubelet-client".  This is determined by 
+  //  1. If it's a kubelet client certificate, it is assigned "kubernetes.io/kube-apiserver-client-kubelet".  This is determined by 
   //     Seeing if organizations are exactly `[]string{"system:nodes"}`, common name starts with `"system:node:"`, and
   //     key usages are exactly `[]string{"key encipherment", "digital signature", "client auth"}`
   //  2. Otherwise, it is assigned "kubernetes.io/legacy-unknown".
   // In v1 it will be required.  Distribution of trust for signers happens out of band. 
   // The following signers are known to the kube-controller-manager signer.
   //  1. kubernetes.io/kube-apiserver-client - signs certificates that will be honored as client-certs by the kube-apiserver. Never auto-approved by kube-controller-manager.
-  //  2. kubernetes.io/kubelet-client - signs client certificates that will be honored as client-certs by the kube-apiserver. May be auto-approved by kube-controller-manager.
+  //  2. kubernetes.io/kube-apiserver-client-kubelet - signs client certificates that will be honored as client-certs by the kube-apiserver. May be auto-approved by kube-controller-manager.
   //  3. kubernetes.io/kubelet-serving - signs serving certificates that are honored as a valid kubelet serving certificate by the kube-apiserver, but has no other guarantees.
   //  4. kubernetes.io/legacy-unknown - has no guarantees for trust at all.  Some distributions may honor these as client certs, but that behavior is not standard kubernetes behavior.
   // None of these usages are related to ServiceAccount token secrets `.data[ca.crt]` in any way.
@@ -292,8 +293,33 @@ type CertificateSigningRequestStatus struct {
   // Conditions applied to the request, such as approval or denial.
   Conditions []CertificateSigningRequestCondition
 
-  // If request was approved, the controller will place the issued
-  // certificate here.
+  // Certificate is populated by the signer with the issued certificate in PEM format.
+  // In JSON and YAML output, this entire field is base64-encoded, so it consists of:
+  // base64(
+  // -----BEGIN CERTIFICATE-----
+  // MII...Pb7Yu/E=
+  // -----END CERTIFICATE-----
+  // optional intermediate certificate blocks
+  // -----BEGIN CERTIFICATE-----
+  // MII...MGKB
+  // -----END CERTIFICATE-----
+  // -----BEGIN CERTIFICATE-----
+  // MII...AY1M
+  // -----END CERTIFICATE-----
+  // )
+  //
+  // In v1beta1, this field is unvalidated.
+  //
+  // In v1, modified content in this field is validated:
+  // * Content must contain one or more PEM blocks
+  // * All PEM blocks must have the "CERTIFICATE" label, contain no headers, and the encoded data
+  //   must be a BER-encoded ASN.1 Certificate structure as described in section 4 of RFC5280.
+  // * Non-PEM content may appear before or after the CERTIFICATE PEM blocks and is unvalidated,
+  //   to allow for explanatory text as described in section 5.2 of RFC7468.
+  //
+  // If more than one PEM block is present, and the definition of the requested spec.signerName
+  // does not indicate otherwise, the first block is the issued certificate,
+  // and subsequent blocks should be treated as intermediate certificates and presented in TLS handshakes.
   Certificate []byte
 }
 
@@ -360,11 +386,11 @@ control plane.
 Things to resolve for v1.
 1. .spec.signerName should be non-defaulted and required
 2. Should we disallow the legacy .spec.signerName in v1?
-3. Maybe there should be a way to provide intermediate certificates.  Note that this does not solve trust rotation overall
-since clients still have to trust the certificates after the CSR instance has been reaped.
-4. Define how signers indicate terminal failure in signing on a CSR. Fix status conditions perhaps?
+3. Define how signers indicate terminal failure in signing on a CSR. Fix status conditions perhaps?
 
 ## Implementation History
 
-- The Certificates API was merged as Alpha in 1.4
-- The Certificates API was promoted to Beta in 1.6
+- 1.4: The Certificates API was merged as Alpha
+- 1.6: The Certificates API was promoted to Beta
+- 2020-01-15: Multi-signer design added
+- 2020-01-21: status.certificate field format validation added
