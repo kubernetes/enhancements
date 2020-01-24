@@ -118,11 +118,18 @@ feature](20190212-ephemeral-containers.md).
 ## Proposal
 
 After the [transition period](#rollout-plan), the only way to configure container streaming will be
-using the local redirect with Kubelet proxy (`--redirect-container-streaming=false`) approach. Under
-this configuration, handling streaming redirects are not needed by the apiserver, so
-`StreamingProxyRedirects` will be deprecated and eventually removed. Once `StreamingProxyRedirects`
-are removed, `ValidateProxyRedirects` is no longer needed and can be removed. Finally, the
-`--redirect-container-streaming` flag will be deprecated and eventually removed.
+using the local redirect with Kubelet proxy approach. Under this configuration, handling streaming
+redirects are not needed by the apiserver, so `StreamingProxyRedirects` will be deprecated and
+eventually removed. Once `StreamingProxyRedirects` are removed, `ValidateProxyRedirects` is no
+longer needed and can be removed. Finally, the `--redirect-container-streaming` flag will be
+deprecated and eventually removed.
+
+Upon completion, streaming requests will be forwarded to the Kubelet. The Kubelet will ask the CRI
+to prepare a streaming server, and then open an upgraded connection to the CRI streaming server. The
+kubelet will proxy the connection back to the apiserver (upgrade the original exec request), which
+will in turn proxy the connection back to the client.
+
+![Kubelet-proxied streaming request sequence diagram](kubelet-proxied-streaming-request-sequence.png)
 
 ### Rollout Plan
 
@@ -159,6 +166,10 @@ This could be the case if:
 Without direct evidence of use cases that wouldn't be able to handle the new approach anything here
 is purely speculative. Hopefully the long transition plan would raise any issues in this bucket
 before we pass the point of no return (features removed).
+
+As a mitigation, a new configuration option will be exposed in the Kubelet to limit the data rate
+through the proxied connection, `MaxConnectionBytesPerSec`. This option is analogous to the option
+of the same name on the apiserver, should typically be configured to be match the apiserver's value.
 
 #### Rollout breakage
 
