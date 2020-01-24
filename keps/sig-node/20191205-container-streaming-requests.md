@@ -4,7 +4,7 @@ authors:
   - "@tallclair"
 owning-sig: sig-node
 participating-sigs:
-  - sig-apimachinery
+  - sig-api-machinery
 reviewers:
   - "@Random-Liu"
   - "@yujuhong"
