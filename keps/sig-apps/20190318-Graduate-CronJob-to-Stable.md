@@ -5,7 +5,7 @@ authors:
 
 owning-sig: sig-apps  
 participating-sigs:
-  - sig-scaling
+  - sig-scalability
 
 reviewers:
   - "@liggitt"
@@ -36,9 +36,8 @@ superseded-by:
 - [Summary](#summary)
 - [Motivation](#motivation)
 - [Goals](#goals)
-- [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [Rearchitect CronJob controller](#rearchitect-cronjob-controller)
+  - [Develop new CronJob controller](#develop-new-cronjob-controller)
     - [Existing controller](#existing-controller)
     - [Proposed rearchitect](#proposed-rearchitect)
       - [Informers and Caches](#informers-and-caches)
@@ -49,8 +48,6 @@ superseded-by:
   - [Add .status.nextScheduleTime](#add-statusnextscheduletime)
   - [Add Counters](#add-counters)
   - [Add .status.conditions](#add-statusconditions)
-  - [CatchUp concurrency support](#catchup-concurrency-support)
-  - [Use master timezone instead of UTC](#use-master-timezone-instead-of-utc)
   - [Support Jitter for cronjobs](#support-jitter-for-cronjobs)
   - [Fix applicable open issues](#fix-applicable-open-issues)
   - [Scale Targets for GA](#scale-targets-for-ga)
@@ -84,30 +81,26 @@ CronJob definition has been stable for the last few releases and is useful to ru
 
 ## Goals
 
-- Rearchitect CronJob controller
-- .status.lastSuccessfulTime
-- .status.nextRunTime
-- Use master timezone instead of UTC
-- Fix open issues and add tests
-
-## Non-Goals
-- Changing API field or meaning
-- [When creating a cronjob, Reference an existing job](https://github.com/kubernetes/kubernetes/issues/81329)
-- Add `CatchUp` concurrency policy
+- Write a new controller which will
+  - Use informers instead of polling
+  - Address open issues with the current controller
+  - Add metrics exposing controller throughput, latency etc.
+- Extend CronJob status field
+  - lastSuccesfulTime: tracks the last time the job completed successfully
+  - nextRunTime: tracks the next time the job will be scheduled
 
 ## Proposal
 
-### Rearchitect CronJob controller
+### Develop new CronJob controller
 
 #### Existing controller
 
-The current implementation of the CronJob controller is different that the other workload controllers. 
-Other controller use informers and caches to reduce the load on API server. The conjob controller does a periodic poll and sweep of all the objects and acts on them. Also CronJob controller has only one worker doing this. 
+The current implementation of the CronJob controller is different that the other workload controllers. GA workload controllers use informers and caches to reduce the load on API server. Whereas the conjob controller does a periodic poll and sweep of all the objects and acts on them. The CronJob controller has only one worker doing this. 
 
 1. syncs all CronJob objects [every 10 seconds](https://github.com/kubernetes/kubernetes/blob/master/pkg/controller/cronjob/cronjob_controller.go#L98). 
 2. Using pager library, gets all Pods and all CronJobs and [processes them one by one](https://github.com/kubernetes/kubernetes/blob/master/pkg/controller/cronjob/cronjob_controller.go#L136)
 
-This is not a scalable design and ends up loading the API server.
+This is not a scalable design and ends up loading the API server. Also this does not follow the [recommended guidelines](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-api-machinery/controllers.md) for building controllers.
 
 #### Proposed rearchitect
 
@@ -119,7 +112,7 @@ With proposed rearchitecture we aim to:
 ##### Informers and Caches
 To reduce the need to list all Jobs and CronJobs frequently to reconcile, we propose to replace it with an Informers and WorkQueue based architecture. We would be sharing the [same informer cache](https://github.com/kubernetes/kubernetes/blob/master/cmd/kube-controller-manager/app/controllermanager.go#L450) as the Job controller uses. 
 
-
+We will follow a controller structure similar to existing workload controllers and as [outlined in the guideline](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-api-machinery/controllers.md#rough-structure).
 ```golang
 
 // 
@@ -218,7 +211,7 @@ To detect which CronJob has met its schedule and need to create Jobs we need to 
 |Hierarchical Wheel| multiple timer wheels for different resolutions (Seconds, minutes, hours, days). When seconds rolls over we grab the next minutes timers and recreate the seconds wheel. similarly for minutes and hours. | Sharding at different hierarchy levels improves insertion and bookkeeping performance. |
 
 
-We will introduce a separate queue with the [`DelayingInterface`](https://github.com/kubernetes/client-go/blob/master/util/workqueue/delaying_queue.go#L37) that implements heap based single shot api [`AddAfter`](https://github.com/kubernetes/client-go/blob/master/util/workqueue/delaying_queue.go#L150). Every time we process an entry from this queue, we will add it back to the queue to simulate a periodic timer.
+We shall implement a Heap based timer algorithm. We will introduce a separate queue with the [`DelayingInterface`](https://github.com/kubernetes/client-go/blob/master/util/workqueue/delaying_queue.go#L37) that implements heap based single shot api [`AddAfter`](https://github.com/kubernetes/client-go/blob/master/util/workqueue/delaying_queue.go#L150). Every time we process an entry from this queue, we will add it back to the queue to simulate a periodic timer.
 
 
 For further reading:
@@ -241,19 +234,6 @@ We propose to add metrics that could expose the performance and health of the co
 [#issue/75674](https://github.com/kubernetes/kubernetes/issues/75674)  
 Add `lastSuccessfulTime` to `.status` that tracks the last time the job completed successfully. This will augment the `lastScheduledTime` available in the `.status` in the v1beta1 api. Potential use is in monitoring (e.g. fire an alert if lastSuccessfulTime is more than X ago).
 
-Code for reference, subject to change:
-
-```golang
-func (cjc *CronJobController)  syncOne(sj *batchv1beta1.CronJob, js []batchv1.Job, now time.Time, jc jobControlInterface, sjc sjControlInterface, recorder record.EventRecorder) {
-   ...
-   // Get most recent successfully finished job from current job list.
-   sj.Status.LastSuccessfulTime = &metav1.Time{Time: scheduledTime}
-	if _, err := sjc.UpdateStatus(sj); err != nil {
-		klog.Infof("Unable to update status for %s (rv = %s): %v", nameForLog, sj.ResourceVersion, err)
-	}
-   ...
-}
-```
 
 ### Add .status.nextScheduleTime
 [#issue/78564](https://github.com/kubernetes/kubernetes/issues/78564)
@@ -266,33 +246,18 @@ Sdd `nextScheduleTime` to `.status` that tracks the next time the job will be sc
 | Replace | `nextScheduleTime` would be accurate within a margin of controller scheduling jitter along with older concurrent `Job` cleanup if applicable. |
 
 
-```golang
-func (cjc *CronJobController)  syncOne(sj *batchv1beta1.CronJob, js []batchv1.Job, now time.Time, jc jobControlInterface, sjc sjControlInterface, recorder record.EventRecorder) {
-   ...
-   // Find next schedule time
-   sj.Status.NextScheduleTime = &metav1.Time{Time: scheduledTime}
-	if _, err := sjc.UpdateStatus(sj); err != nil {
-		klog.Infof("Unable to update status for %s (rv = %s): %v", nameForLog, sj.ResourceVersion, err)
-	}
-   ...
-}
-```
 
 ### Add Counters
 Add a set of counters that helps users understand a summary of runs.  
 - `SuccessfulRuns` Count of all successful runs
 - `FailedlRuns` Count of all failed runs
 - `FailuresSinceSuccess` Count of all successful runs since last failure
+These would be added to `.status` section of the CronJob object.
+
 
 ### Add .status.conditions
 Add a condition array with `Settled` condition type. This would help with the effort of standarizng conditions across all core types. `Settled` is set at the end of every successful reconcile run. The key thing to note here is the notions of `Settled` does not imply the `Job`s are running correctly. It just means that the controller is done processing this object successfully.
 
-### CatchUp concurrency support
-[#issue/79995](https://github.com/kubernetes/kubernetes/issues/79995)
-Support for Catch up semantics is being discussed and no consensus has been reached. Adding it to the list for further discussion. Cachup aims to allow for missed runs to be backfilled. We would need to have additional config to bound the backfill and ensure that it doesnt cause the controller to be in backfill mode, never catching up with the current run.
-
-### Use master timezone instead of UTC
-We propose to address this request as well: [CronJob Schedule does not use master's timezone - instead it uses UTC](https://github.com/kubernetes/kubernetes/issues/80577)
 
 ### Support Jitter for cronjobs
 We propose to introduce `.spec.jitter` which is a percentage of the time delta to the next schedule. We propose to cap it to 50%. There is also a [community request](https://github.com/kubernetes/community/issues/2440) for this.
@@ -489,7 +454,8 @@ type CronJobStatus struct {
 ```
 
 ## v1beta1 changes
-None
+All the new fields describedin the v1 section would be introduced in the v1beta1 API as well.
+
 
 ## Validations
 Nothing additional from v1beta1
@@ -505,7 +471,7 @@ We will promote to  GA and create `batch/v1/CronJob` in the [batch/v1 API](https
 ## Tests
 
 ### E2E test
-CronJob E2E test code is [located here](`/test/e2e/apps/cronjob.go`)
+CronJob E2E test code is [located here](https://github.com/kubernetes/kubernetes/blob/master/test/e2e/apps/cronjob.go)
 
 #### Existing test cases
 
@@ -527,8 +493,7 @@ CronJob E2E test code is [located here](`/test/e2e/apps/cronjob.go`)
 - Schedule
   - Should not create a cronjob with invalid schedule format
 - StartingDeadlineSeconds
-  - Should not schedule a job within two minutes when missed the current window if 
-  - StartingDeadlineSeconds is 0
+  - Should not schedule a job within two minutes when missed the current window if StartingDeadlineSeconds is 0
   - Should schedule a job soon when missed the current window if StartingDeadlineSeconds is long 
 - JobTemplate
   - Should not schedule a job with invalid job template
@@ -556,6 +521,25 @@ CronJob E2E test code is [located here](`/test/e2e/apps/cronjob.go`)
 
 ### Conformance Tests
 The conformance tests are a subset of e2e tests. We will select test scenarios that we believe are expected from all conforming clusters. Then modify the test case to use the `framework.ConformanceIt()` function rather than the `framework.It()` function. 
+These e2e tests shall be included in conformance tests:
+
+- ConcurrencyPolicy
+  - should schedule multiple jobs concurrently when AllowConcurrent
+  - should not schedule new jobs when ForbidConcurrent
+  - should replace jobs when ReplaceConcurrent
+- Suspend
+  - should not schedule jobs when suspended
+- SuccessfulJobsHistoryLimit
+  - should delete successful finished jobs when above successfulJobsHistoryLimit
+- FailedJobsHistoryLimit
+  - should delete failed finished jobs when above failedJobsHistoryLimit
+- StartingDeadlineSeconds
+  - Should schedule a job soon when missed the current window if StartingDeadlineSeconds is long
+- Tests covering Bug fixes
+  - [issue/63371 - Should not start “missed” jobs from old cronjob after updating time](https://github.com/kubernetes/kubernetes/issues/63371)
+- Start Stop Tests
+  - Schedule cronjobs and randomly stop the controller and start it.
+  - Schedule cronjobs and stop the controller and start it after the deadline.
 
 
 ### Unit Tests
@@ -581,8 +565,8 @@ This is subject to the new rearchitected controller implementation. Overall thes
 ## Graduation Criteria
 
 - [ ] Implement shared informers to reduce pressure on API Server
-- [ ] Add conformance tests
-- [ ] Update documents to reflect the changes
+- [ ] Pass conformance tests
+- [ ] Update documents reflecting the changes
 - [ ] Pass CronJob e2e tests
 - [ ] Pass CronJob unit-tests
 - [ ] Pass scale tests
