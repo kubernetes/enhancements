@@ -59,6 +59,7 @@ superseded-by:
   - [Pod Resize E2E Tests](#pod-resize-e2e-tests)
   - [Resource Quota and Limit Ranges](#resource-quota-and-limit-ranges)
   - [Resize Policy Tests](#resize-policy-tests)
+  - [Backward Compatibility and Negative Tests](#backward-compatibility-and-negative-tests)
 - [Graduation Criteria](#graduation-criteria)
   - [Alpha](#alpha)
   - [Beta](#beta)
@@ -334,8 +335,13 @@ Status.ContainerStatuses[i].Resources to match the desired limit values.
 
 Pod v1 core API:
 * extended model,
-* new admission controller,
-* added validation.
+* modify RBAC bootstrap policy authorizing Node to update PodSpec,
+* extend NodeRestriction plugin limiting Node's update access to PodSpec only
+  to the ResourcesAllocated field,
+* new admission controller to limit update access to ResourcesAllocated field
+  only to Node, and mutate updates to ResourcesAllocated & ResizePolicy fields
+  for compatibility with older versions of clients,
+* added validation and setting defaults.
 
 Admission Controllers: LimitRanger, ResourceQuota need to support Pod Updates:
 * for ResourceQuota, podEvaluator.Handler implementation is modified to allow
@@ -353,9 +359,6 @@ Kubelet:
 Scheduler:
 * compute resource allocations using Pod.Spec.Containers[i].ResourcesAllocated.
 
-Controllers:
-* propagate Template resources update to running Pod instances.
-
 Other components:
 * check how the change of meaning of resource requests influence other
   Kubernetes components.
@@ -372,6 +375,8 @@ Other components:
 1. Extend Node Information API to report the CPU Manager policy for the Node,
    and enable validation of integral CPU resize for nodes with 'static' CPU
    Manager policy.
+1. Extend controllers (Job, Deployment, etc) to propagate Template resources
+   update to running Pods.
 1. Allow resizing local ephemeral storage.
 1. Allow resource limits to be updated (VPA feature).
 
@@ -387,6 +392,10 @@ Other components:
 1. Resizing memory lower: Lowering cgroup memory limits may not work as pages
    could be in use, and approaches such as setting limit near current usage may
    be required. This issue needs further investigation.
+1. Older client versions: Previous versions of clients that are unaware of the
+   new ResourcesAllocated and ResizePolicy fields would set them to nil. To
+   keep compatibility, PodResourceAllocation admission controller mutates such
+   an update by copying non-nil values from the old Pod to current Pod.
 
 ## Test Plan
 
@@ -484,13 +493,24 @@ Setup a guaranteed class Pod with two containers (c1 & c2).
 1. NoRestart cpu, RestartContainer memory policy for c1. Resize c1 CPU & memory,
    verify container is resized with restart.
 
-### Negative Tests
-TBD
+### Backward Compatibility and Negative Tests
+
+1. Verify that Node can only update ResourcesAllocated field in PodSpec.
+1. Verify that only Node account is allowed to udate ResourcesAllocated field.
+1. Verify that updating Pod Resources in workload template spec retains current
+   behavior:
+   - Updating Pod Resources in Job template is not allowed.
+   - Updating Pod Resources in Deployment template continues to result in Pod
+     being restarted with updated resources.
+1. Verify Pod updates by older version of client-go doesn't result in current
+   values of ResourcesAllocated and ResizePolicy fields being dropped.
+
+TODO: Identify more cases
 
 ## Graduation Criteria
 
 ### Alpha
-- In-Place Pod Resouces Update functionality is implemented,
+- In-Place Pod Resouces Update functionality is implemented for running Pods,
 - LimitRanger and ResourceQuota handling are added,
 - Resize Policies functionality is implemented,
 - Unit tests and E2E tests covering basic functionality are added,
