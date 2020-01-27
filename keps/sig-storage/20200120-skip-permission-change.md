@@ -106,7 +106,11 @@ type Volume struct {
     // +optional
     VolumeSource
     // FSGroupPermissionChangePolicy ← new field
-    // defaults to AlwaysChangeVolumePermission
+    // Defines behavior of changing ownership and permission of the volume
+    // before being exposed inside Pod. This field will only apply to
+    // volume types which support fsGroup based ownership(and permissions).
+    // It will have no effect on ephemeral volume types such as: secret, configmaps
+    // and emptydir.
     // + optional
     FSGroupPermissionChangePolicy *PodFSGroupPermissionChangePolicy
 }
