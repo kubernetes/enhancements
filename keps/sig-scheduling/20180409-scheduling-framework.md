@@ -195,9 +195,19 @@ filter plugin marks the node as infeasible, the remaining plugins will not be
 called for that node. Nodes may be evaluated concurrently, and Filter may be called
 more than once in the same scheduling cycle.
 
-### Pre-Score
+### Post-filter
 
-**Notice: `Pre-Score` is available since v1alpha2, and it's known as `Post-Filter` before this version.**
+- **Before v1alpha2**:
+
+  Before v1alpha2, post-filter plugins just work like pre-score in v1alpha2 (see [Pre-score](#Pre-score) below). Actually, the old post-filter are renamed to pre-score since v1alpha2.
+
+- **Since v1alpha2**:
+
+  Since v1alpha2, post-filter plugins are used to do some filter work with all nodes that passed the [filter](#filter) phase as its input. A post-filter plugin should return an available node list, which is a subset of the input nodes. The scheduler will call post-filter plugins in their configured order, and once a node is eliminated from the returned available nodes, it will not be sent to the next post-filter plugin.
+
+### Pre-score
+
+**Notice: `Pre-score` is available since v1alpha2, and it's known as `post-filter` before this version.**
 
 This is an informational extension point for performing pre-scoring work. Plugins will be called with a list of
 nodes that passed the filtering phase. A plugin may use this data to update internal state or to generate logs/metrics.
@@ -477,6 +487,7 @@ type Plugins struct {
     QueueSort      []Plugin
     PreFilter      []Plugin
     Filter         []Plugin
+    PostFilter     []Plugin
     PreScore       []Plugin
     Score          []Plugin
     Reserve        []Plugin
