@@ -41,6 +41,7 @@ see-also:
   - [K8s 1.13: Alpha](#k8s-113-alpha)
   - [K8s 1.14: Beta](#k8s-114-beta)
   - [K8s 1.17: Beta](#k8s-117-beta)
+  - [K8s 1.18: Targeting GA](#k8s-118-targeting-ga)
 <!-- /toc -->
 
 ## Summary
@@ -162,3 +163,7 @@ and we can test with them
 * Separated NodeStage / NodePublish calls.
 * Fixed volume reconstruction after kubelet restart.
 * Stress tests as noted above.
+
+### K8s 1.18: Targeting GA
+* Added block tests to csi-sanity.
+* Disruptive testing with block devices in /dev reordered after reboot.

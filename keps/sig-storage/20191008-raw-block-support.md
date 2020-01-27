@@ -38,7 +38,8 @@ see-also:
 - [Implementation History](#implementation-history)
   - [K8s 1.9: Alpha](#k8s-19-alpha)
   - [K8s 1.13: Beta](#k8s-113-beta)
-  - [K8s 1.17: GA](#k8s-117-ga)
+  - [K8s 1.17: Beta](#k8s-117-beta)
+  - [K8s 1.18: Targeting GA](#k8s-118-targeting-ga)
 <!-- /toc -->
 
 ## Summary
@@ -158,6 +159,9 @@ Already happened.
 * Enhanced e2e tests.
 * Most block-based volume plugins implemented block volume plugin interfaces.
 
-### K8s 1.17: GA
+### K8s 1.17: Beta
 * Fixed block volume reconstruction.
 * Stress tests as noted above.
+
+### K8s 1.18: Targeting GA
+* Disruptive testing with block devices in /dev reordered after reboot.
