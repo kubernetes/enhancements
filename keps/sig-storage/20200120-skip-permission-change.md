@@ -47,9 +47,9 @@ superseded-by:
 Currently before a volume is bind-mounted inside a container the permissions on
 that volume are changed recursively to the provided fsGroup value.  This change
 in ownership can take an excessively long time to complete, especially for very
-large volumes (>=1TB) as well as a few other reasons detailed in [Motivation].
-To solve this issue we will add a new field called `pod.Spec.SecurityContext.FSGroupPermissionChangePolicy` and
-allow the user to specify whether they want the ownership change to occur.
+large volumes (>=1TB) as well as a few other reasons detailed in [Motivation](#motivation).
+To solve this issue we will add a new field called `pod.Spec.Volumes[].FSGroupPermissionChangePolicy` and
+allow the user to specify whether they want the permission and ownership change to occur for that volume.
 
 ## Motivation
 
@@ -76,25 +76,37 @@ But this presents following problems:
 
 ## Proposal
 
-We propose that an user can optionally opt-in to skip recursive ownership(and permission) change on the volume if volume already has right permissions.
+We propose that an user can optionally opt-in to skip recursive ownership(and permission) change on a volume if volume already has right permissions.
 
 ### Implementation Details/Notes/Constraints [optional]
 
-When creating a pod, we propose that `pod.Spec.SecurityContext` field expanded to include a new field called `FSGroupPermissionChangePolicy` which can have following possible values:
+Currently Volume permission and ownership change is done using a breadth-first algorithm starting from root directory of the volume. As part of this proposal we will change the algorithm to modify permissions/ownership of the root directory after all directories/files underneath have their permissions changed.
+
+When creating a pod, we propose that `pod.Spec.Volumes[]` field expanded to include a new field called `FSGroupPermissionChangePolicy` which can have following possible values:
 
  - `Always` --> Always change the permissions and ownership to match fsGroup. This is the current behavior and it will be the default one when this proposal is implemented. Algorithm that performs permission change however will be changed to perform permission change of top level directory last.
- - `OnDemand` --> Only perform permission and ownership change if permissions of top level directory does not match with expected permissions.
+ - `OnRootDirPermissionMismatch` --> Only perform permission and ownership change if permissions of top level directory does not match with expected permissions and ownership.
 
 ```go
 type PodFSGroupPermissionChangePolicy string
 
 const(
-    OnDemandChangeVolumePermission PodFSGroupPermissionChangePolicy = "OnDemand"
+    ChangePermissionOnRootDirmismatch PodFSGroupPermissionChangePolicy = "OnRootDirPermissionMismatch"
     AlwaysChangeVolumePermission PodFSGroupPermissionChangePolicy = "Always"
 )
 
-type PodSecurityContext struct {
+// Volume represents a named volume in a pod that may be accessed by any containers in the pod.
+type Volume struct {
+    // Required: This must be a DNS_LABEL.  Each volume in a pod must have
+    // a unique name.
+    Name string
+    // The VolumeSource represents the location and type of a volume to mount.
+    // This is optional for now. If not specified, the Volume is implied to be an EmptyDir.
+    // This implied behavior is deprecated and will be removed in a future version.
+    // +optional
+    VolumeSource
     // FSGroupPermissionChangePolicy ← new field
+    // defaults to AlwaysChangeVolumePermission
     // + optional
     FSGroupPermissionChangePolicy *PodFSGroupPermissionChangePolicy
 }
@@ -102,7 +114,7 @@ type PodSecurityContext struct {
 
 ### Risks and Mitigations
 
-- One of the risks is if user volume's permission was previously changed using old algorithm(which changes permission of top level directory first) and user opts in for `OnDemand` `FSGroupPermissionChangePolicy` then we can't distinguish if the volume was previously only partially recursively chown'd.
+- One of the risks is if user volume's permission was previously changed using old algorithm(which changes permission of top level directory first) and user opts in for `ChangePermissionOnRootDirmismatch` `FSGroupPermissionChangePolicy` then we can't distinguish if the volume was previously only partially recursively chown'd.
 
 
 ## Graduation Criteria
@@ -124,7 +136,7 @@ type PodSecurityContext struct {
 A test plan will consist of the following tests
 
 * Basic tests including a permutation of the following values
-  - PodSecurityContext.FSGroupPermissionChangePolicy (OnDemand/Always)
+  - pod.Spec.Volumes[].FSGroupPermissionChangePolicy (ChangePermissionOnRootDirmismatch/Always)
   - PersistentVolumeClaimStatus.FSGroup (matching, non-matching)
   - Volume Filesystem existing permissions (none, matching, non-matching, partial-matching?)
 * E2E tests
