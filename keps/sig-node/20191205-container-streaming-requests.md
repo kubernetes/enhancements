@@ -26,6 +26,7 @@ replaces:
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
+- [Background](#background)
 - [Motivation](#motivation)
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
@@ -79,6 +80,30 @@ consolidate the current options into a single supported configuration. Specifica
 
 1. Deprecate the Kubelet's `--redirect-container-streaming` feature
 2. Deprecate the `StreamingProxyRedirects` feature
+
+## Background
+
+The Kubelet's `--redirect-container-streaming` option controls whether the Kubelet proxies the
+streaming request to the CRI streaming server locally (when `--redirect-container-streaming=false`)
+or if the Kubelet forwards the CRI streaming server address to the apiserver (when
+`--redirect-container-streaming=true`). This option was added in v1.11, and defaults to `false`
+(proxy locally).
+
+The apiserver is expecting to upgrade the connection to the Kubelet to proxy back to the
+client. However, in order to handle a redirect from the Kubelet, the apiserver will peak at the
+first 16384 bytes from the Kubelet to check for and follow a redirect. This behavior is controlled
+by the `StreamingProxyRedirects` feature gate, which is beta and default-enabled as of v1.6. To
+mitigate SSRF attacks from a compromised Kubelet, the `ValidateProxyRedirects` feature was added in
+v1.10 (beta in v1.14). ValidateProxyRedirects ensures that the redirect location is on the same host
+as the original exec request to the Kubelet.
+
+To summarize, here is a table describing the interaction of `redirect-container-streaming` and
+`StreamingProxyRedirects`:
+
+|                                            | `StreamingProxyRedirects=true`                                                            | `StreamingProxyRedirects=false`                                                                |
+|:-------------------------------------------|:------------------------------------------------------------------------------------------|:-----------------------------------------------------------------------------------------------|
+| **`--redirect-container-streaming=false`** | _Default configuration_<br>Kubelet proxies locally<br>(see [Proposal](#proposal) diagram) | Kubelet proxies locally                                                                        |
+| **`--redirect-container-streaming=true`**  | Kubelet responds with a 302 redirect, apiserver follows the redirect.                     | Kubelet responds with a 302 redirect, apiserver proxies redirect to the client, request fails. |
 
 ## Motivation
 
