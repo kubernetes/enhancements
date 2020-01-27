@@ -45,11 +45,12 @@ read from etcd.
     - [Determining if etcd is sending progress notify events](#determining-if-etcd-is-sending-progress-notify-events)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
+  - [Progress notify interval selection](#progress-notify-interval-selection)
   - [Pagination](#pagination)
     - [Option: Continue to serve all paginated requests from etcd](#option-continue-to-serve-all-paginated-requests-from-etcd)
     - [Option: Serve 1st page of paginated requests from the watch cache](#option-serve-1st-page-of-paginated-requests-from-the-watch-cache)
+    - [Option: Enable pagination in the watch cache](#option-enable-pagination-in-the-watch-cache)
     - [Rejected Option: Return unpaginated responses to paginated list requests](#rejected-option-return-unpaginated-responses-to-paginated-list-requests)
-    - [Rejected Option: Enable pagination in the watch cache](#rejected-option-enable-pagination-in-the-watch-cache)
   - [Test Plan](#test-plan)
   - [Rollout Plan](#rollout-plan)
     - [Serving consistent reads from cache](#serving-consistent-reads-from-cache)
@@ -138,7 +139,7 @@ events to the watch automatically. By default etcd sends progress events every
 10 minutes, which is not frequent enough to be useful for our needs, so we will
 modify etcd to send them more frequently.
 
-When an consistent read request is received and the watch cache is enabled:
+When an consistent LIST request is received and the watch cache is enabled:
 
 - Get the current revision from etcd for the resource type being served. The returned revision is strongly consistent (guaranteed to be the latest revision via a quorum read).
 - Use the existing `waitUntilFreshAndBlock` function in the watch cache to wait briefly for the watch to catch up to the current revision.
@@ -149,19 +150,13 @@ To get the revsion we have some options:
 - Use an etcd range request with `WithCount` enabled so etcd return only a count and revision 
 - Use an etcd range request against a known empty range with limit=1 as an additional guard (since etcd does not allow for limit=0)
 
+Consistent GET requests will continue to be served directly from etcd. We will
+only serve consistent LIST requests from cache.
+
 We will explore how long the kube-apiserver should wait for a watch cache to
 catch up to the needed revision. I.e. for our chosen progress event interval,
 should the kube-apiserver also wait a similar interval for the required revision
 to become available or should it fallback to making the request to etcd?
-
-Potential optimiation: We could delay requests, accumulate multiple in-flight
-read requests over some short time period, and at the end of the period, get the
-current revision from etcd, wait for the watch cache to catch up, and then serve
-all the the in-flight reads from cache. This would reduce the number of "get
-current revision" requests that need to be made to etcd in exchange for higher
-request latency (but only for consistent reads). A simple implementation would
-be to do this on a fix interval, where, obviously, if there were not reqests
-during the period, we don't bother to fetch a current revision from etcd.
 
 Optional: For some (but not all) of the etcd progress watch events, also create a
 kubernetes "bookmark" watch event and send it to kube-apiserver clients so that
@@ -193,6 +188,30 @@ to figure out why the events are impacting performance and see if we can optimiz
 it away.
 
 ## Design Details
+
+### Progress notify interval selection
+
+Not all LIST requests require consistency, and we're taking the view that if you
+really want to have a consistent LIST (we should explicitly exclude GETs from
+it), then you may need to pay additional tax latency for it. For this reason, we
+intend to start with a 250ms progress notify interval, which will on average 125ms
+latency to each consistent LIST request.
+
+The requests this is expected to impact are:
+
+- Reflector list/relist requests, which occur at startup and after a reflector
+  falls to far behind processing events (e.g. it was partitioned or resource starved)
+- Controllers that directly perform consistent LIST requests
+- kubectl LIST requests
+
+In all cases, increasing latency in exchange for higher overall system
+throughput seems a good trade off. Use cases that need low latency have multiple
+options: Watching resources with shared informers or reflectors, LIST requests
+with a minimum resource version specified.
+
+During our testing of this feature we will gather more data about the impact of
+selecting 250ms for the progress notify interval. We will also use alpha to
+gather feedback from the community on the latency impact.
 
 ### Pagination
 
@@ -228,7 +247,34 @@ that fit within a single page from the watch cache, in which cache the watch
 cache doesn't need to construct continuation tokens at all.
 
 In practice, this options might be sufficient to get the bulk of the scalability
-benefits of serving consistent reads from cache.
+benefits of serving consistent reads from cache. For example, the kubelet LIST
+pods use case would be handled, as would similar cases. Not all cases would
+be handled.
+
+#### Option: Enable pagination in the watch cache
+
+The problem is that the watch cache ("isn't able to perform
+continuations")[https://github.com/kubernetes/kubernetes/blob/789dc873f6816cc2b9b39e77a9b94f478d3a3134/staging/src/k8s.io/apiserver/pkg/storage/cacher/cacher.go#L595].
+The watch cache is designed to only serve LIST requests at [the latest resource version is has
+available](https://github.com/kubernetes/kubernetes/blob/789dc873f6816cc2b9b39e77a9b94f478d3a3134/staging/src/k8s.io/apiserver/pkg/storage/cacher/watch_cache.go#L115).
+
+To supporting watch cache pagination:
+- The watch cache would to keep a comparable resource version history to the
+  default etcd compaction history of 5 minutes.
+- The watch cache would need to be resturctured so that is can serve LIST for
+  the resource versions it has returned continuation tokens to clients for.
+  
+Both of these are major changes, and would require scalability validation.
+
+Potential approach:
+
+- Watch cache is getting LIST request with pagination
+- List everything from the internal cache and have pointers to those objects
+- Return first LIMIT of those, and in the internal map store the remaining ones indexed by "continuation token" that we just generated
+- GC the items from this map after N seconds from insertion
+- Continuation is set in the request, we lookup that map and return next LIMIT items, if the item doesn't exist in the map we (either fallback to etcd or return an error - probably the former)
+
+Memory would need to be somehow bound with this approach.
 
 #### Rejected Option: Return unpaginated responses to paginated list requests
 
@@ -253,22 +299,6 @@ watch-cache is enabled (which is the default), clients that need pagination
 LIST resourceVersion="".
 
 We are not planning to pursue this option.
-
-#### Rejected Option: Enable pagination in the watch cache
-
-The problem is that the watch cache ("isn't able to perform
-continuations")[https://github.com/kubernetes/kubernetes/blob/789dc873f6816cc2b9b39e77a9b94f478d3a3134/staging/src/k8s.io/apiserver/pkg/storage/cacher/cacher.go#L595].
-The watch cache is designed to only serve LIST requests at [the latest resource version is has
-available](https://github.com/kubernetes/kubernetes/blob/789dc873f6816cc2b9b39e77a9b94f478d3a3134/staging/src/k8s.io/apiserver/pkg/storage/cacher/watch_cache.go#L115).
-
-To supporting watch cache pagination:
-- The watch cache would to keep a comparable resource version history to the
-  default etcd compaction history of 5 minutes.
-- The watch cache would need to be resturctured so that is can serve LIST for
-  the resource versions it has returned continuation tokens to clients for.
-
-Both of these are major changes, and would require scalability validation. We
-are not planning to pursue this option.
 
 ### Test Plan
 
@@ -402,3 +432,14 @@ Modify etcd to allow echo back a user provided ID in progress events.
 - Client generates a UUID and provides to the ProgressNotify request
 - Once client sees a progress event with the same UUID, it knows the watch is up-to-date
 - This reduces the worst case number of round trips required to do a consistent read from two to one since client doesn't need to get the lastest revision from etcd first
+
+Potential optimiation: We could delay requests, accumulate multiple in-flight
+read requests over some short time period, and at the end of the period, get the
+current revision from etcd, wait for the watch cache to catch up, and then serve
+all the the in-flight reads from cache. This would reduce the number of "get
+current revision" requests that need to be made to etcd in exchange for higher
+request latency (but only for consistent reads). A simple implementation would
+be to do this on a fix interval, where, obviously, if there were not reqests
+during the period, we don't bother to fetch a current revision from etcd. It
+is unclear if this will result in actual gain, and it would complicate the
+code, so should be explored with care.
