@@ -33,7 +33,7 @@ superseded-by:
     - [Queue sort](#queue-sort)
     - [Pre-filter](#pre-filter)
     - [Filter](#filter)
-    - [Post-filter](#post-filter)
+    - [Pre-Score](#pre-score)
     - [Scoring](#scoring)
     - [Reserve](#reserve)
     - [Permit](#permit)
@@ -165,7 +165,7 @@ are called.
 One plugin may register at multiple extension points to perform more complex or
 stateful tasks.
 
-![image](20180409-scheduling-framework-extensions.png)
+![image](20200125-scheduling-framework-extensions.png)
 
 ### Queue sort
 
@@ -195,14 +195,12 @@ filter plugin marks the node as infeasible, the remaining plugins will not be
 called for that node. Nodes may be evaluated concurrently, and Filter may be called
 more than once in the same scheduling cycle.
 
-### Post-filter
+### Pre-Score
 
-This is an informational extension point. Plugins will be called with a list of
-nodes that passed the filtering phase. A plugin may use this data to update
-internal state or to generate logs/metrics.
+**Notice: `Pre-Score` is available since v1alpha2, and it's known as `Post-Filter` before this version.**
 
-**Note:** Plugins wishing to perform "pre-scoring" work should use the
-post-filter extension point.
+This is an informational extension point for performing pre-scoring work. Plugins will be called with a list of
+nodes that passed the filtering phase. A plugin may use this data to update internal state or to generate logs/metrics.
 
 ### Scoring
 
@@ -479,7 +477,7 @@ type Plugins struct {
     QueueSort      []Plugin
     PreFilter      []Plugin
     Filter         []Plugin
-    PostFilter     []Plugin
+    PreScore       []Plugin
     Score          []Plugin
     Reserve        []Plugin
     Permit         []Plugin
