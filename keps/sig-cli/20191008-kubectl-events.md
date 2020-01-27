@@ -13,12 +13,12 @@ approvers:
   - "@pwittrock"
 editor: TBD
 creation-date: 2019-10-08
-last-updated: 2019-10-08
-status: provisional
+last-updated: 2020-01-27
+status: implementable
 see-also:
-  - n/a
+  - https://docs.google.com/document/d/1w-HRLtMncDAL_yQQJdHDasyCZRdJTOV1N6y22fGsKkY/edit#
 replaces:
-  - 
+  -
 superseded-by:
   -
 ---
@@ -30,148 +30,103 @@ superseded-by:
 <!-- toc -->
 - [Summary](#summary)
 - [Motivation](#motivation)
-    - [Long standing issues](#long-standing-issues)
+  - [Limitations of the Existing Design](#limitations-of-the-existing-design)
   - [Goals](#goals)
+  - [Non-goals](#non-goals)
 - [Proposal](#proposal)
-  - [Implementation Details/Notes/Constraints [optional]](#implementation-detailsnotesconstraints-optional)
-- [Graduation Criteria](#graduation-criteria)
+  - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
+- [Design Details](#design-details)
+  - [Test Plan](#test-plan)
+  - [Graduation Criteria](#graduation-criteria)
+      - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
+      - [Beta -&gt; GA Graduation](#beta---ga-graduation)
 <!-- /toc -->
 
 ## Summary
 
-Presently, `kubectl get events` has some limitations. It cannot be extended to meet the increasing user needs to 
+Presently, `kubectl get events` has some limitations. It cannot be extended to meet the increasing user needs to
 support more functionality without impacting the `kubectl get`. This KEP proposes a new command `kubectl events` which will help
-address the existing issues and enhance the `events` functionality to accommodate more features.  
+address the existing issues and enhance the `events` functionality to accommodate more features.
 
 For eg: Any modification to `--watch` functionality for `events` will also change the `--watch` for `kubectl get` since the `events` is dependent of `kubectl get`
 
-Some of the requested features for events include: 
+Some of the requested features for events include:
 
-1. Extended behaviour for `--watch` 
+1. Extended behavior for `--watch`
 2. Default sorting of `events`
-3. Union of fields in custom-columns option 
+3. Union of fields in custom-columns option
 4. Listing the events timeline for last N minutes
-5. Soring the events using the other criteria as well 
+5. Sorting the events using the other criteria as well
 
-
-This new `kubectl events` command will be independent of `kubectl get`. This can be 
+This new `kubectl events` command will be independent of `kubectl get`. This can be
 extended to address the user requirements that cannot be achieved if the command is dependent of `get`.
 
 ## Motivation
 
-A separate sub-command for `events` under `kubectl` which can help with long standing issues: 
-Some of these issues that be addressed with the above change are: 
+A separate sub-command for `events` under `kubectl` which can help with long standing issues:
+Some of these issues that be addressed with the above change are:
 
-- User would like to see a stream of "create" or update events, filtering out deletes or any other event type. 
-- User would like to watch an object until it exists. 
-- User would like to see the results of `events` in default sorting order. 
-- User would like to see a timeline of `events`
+- User would like to filter events types
+- User would like to see all change to the an object
+- User would like to watch an object until its deletion
+- User would like to change sorting order
+- User would like to see a timeline/stream of `events`
 
+### Limitations of the Existing Design
 
-Examples:
-
-- Proposed Kubectl events command
-  - `kubectl events`: Default sorted by .lastTimestamp
-     ```
-       LAST SEEN   TYPE      REASON    OBJECT        MESSAGE
-       57m         Normal    Pulling   pod/bad-pod   Pulling image "knginx"
-       7m31s       Warning   Failed    pod/bad-pod   Error: ImagePullBackOff
-       2m32s       Normal    BackOff   pod/bad-pod   Back-off pulling image "knginx" 
-      ```
-  - Following are the proposed options for the command: 
-
-  - `kuebctl events --watch` flag that allows users to subscribe to particular events, 
-     filtering out any other event kind
-
-  - Union of Fields in custom-column `kubectl events -o custom-columns=Object:'.involvedObject.kind'/'.involvedObject.name'`
-  - For a timeline of events for last N minutes `kubectl events --since=1h` 
-  - Sorting based on type `kubectl events --sort-by='.type'`
-
-
-  
-
-Some of the options that will be included in the new command are: 
-
-```
-- Option to sort the events apart from the default time based sorting. 
-- Option to watch on the events streaming
-- Option to provide union of fields
-- Option to list timeline of events for last N hours
-```
-
-Some Other flags that can be included are: 
-
-```
-  Options:
-  -A, --all-namespaces=false: If present, list the requested object(s) across all namespaces. Namespace in current
-context is ignored even if specified with --namespace
-  -L, --label-columns=[]: Accepts a comma separated list of labels that are going to be presented as columns. Names are
-case-sensitive. You can also use multiple flag options like -L label1 -L label2...
-      --no-headers=false: When using the default or custom-column output format, don't print headers (default print
-headers).
-  -o, --output='': Output format. One of:
-json|yaml|wide|name|custom-columns=...|custom-columns-file=...|go-template=...|go-template-file=...|jsonpath=...|jsonpath-file=...
-See custom columns [http://kubernetes.io/docs/user-guide/kubectl-overview/#custom-columns], golang template
-[http://golang.org/pkg/text/template/#pkg-overview] and jsonpath template
-[http://kubernetes.io/docs/user-guide/jsonpath].
-      --output-watch-events=false: Output watch event objects when --watch or --watch-only is used. Existing objects are
-output as initial ADDED events.
-      --raw='': Raw URI to request from the server.  Uses the transport specified by the kubeconfig file.
-  -l, --selector='': Selector (label query) to filter on, supports '=', '==', and '!='.(e.g. -l key1=value1,key2=value2)
-      --server-print=true: If true, have the server return the appropriate table output. Supports extension APIs and CRDs.
-      --show-kind=false: If present, list the resource type for the requested object(s).
-      --show-labels=false: When printing, show all labels as the last column (default hide labels column)
-      --sort-by='': If non-empty, sort list types using this field specification.  The field specification is expressed
-as a JSONPath expression (e.g. '{.metadata.name}'). The field in the API resource specified by this JSONPath expression
-must be an integer or a string.
-  -w, --watch=false: After listing/getting the requested object, watch for changes. Uninitialized objects are excluded
-if no object name is provided.
-      --watch-only=false: Watch for changes to the requested object(s), without listing/getting first.
---watch-event: watch for "create" or update events, filtering out deletes or any other event type:
---watch-until: watch until the event exists
---watch-until-exists: watch until an onbject exists
---watch-for: watch for a particular object. 
-
-  ```
-  
-
-#### Long standing issues
+All of the issues listed below require extending the functionality of `kubectl get events`.
+This would result in `kubectl get` command having a different set of functionality based
+on the resource it is working with. To avoid per-resource functionality, it's best to
+introduce a new command which will be similar to `kubectl get` in functionality, but
+additionally will provide all of the extra functionality.
 
 Following is a list of long standing issues for `events`
 
-- kubectl get events doesnt sort events by last seen time [kubernetes/kubernetes#29838](https://github.com/kubernetes/kubernetes/issues/29838)
-- Improve --watch behavior for events [kubernetes/kubernetes#65646](https://github.com/kubernetes/kubernetes/issues/65646)
+- kubectl get events doesn't sort events by last seen time [kubernetes/kubernetes#29838](https://github.com/kubernetes/kubernetes/issues/29838)
+- Improve watch behavior for events [kubernetes/kubernetes#65646](https://github.com/kubernetes/kubernetes/issues/65646), [kubernetes/kubectl#793](https://github.com/kubernetes/kubectl/issues/793),
+- Improve events printing [kubernetes/kubectl#704](https://github.com/kubernetes/kubectl/issues/704), [kubernetes/kubectl#151](https://github.com/kubernetes/kubectl/issues/151)
+- Events query is too specific in describe [kubernetes/kubectl#147](https://github.com/kubernetes/kubectl/issues/147)
 - kubectl get events should give a timeline of events [kubernetes/kubernetes#36304](https://github.com/kubernetes/kubernetes/issues/36304)
-- Kubectl get events should provide a way to combine ( Union) of columns [kubernetes/kubernetes#82950](https://github.com/kubernetes/kubernetes/issues/82950)
-- 
+- kubectl get events should provide a way to combine ( Union) of columns [kubernetes/kubernetes#82950](https://github.com/kubernetes/kubernetes/issues/82950)
 
 ### Goals
 
-- Add an experimental `events` sub-command under the kubectl and move the existing `events` command from `kubectl get` 
+- Add an experimental `events` sub-command under the kubectl
+- Address existing issues mentioned above
+
+### Non-goals
+
 - This new command will not be dependent on `kubectl get`
-- Help addressing the existing issues which cannot be achieved with `kubectl get events`
 
 ## Proposal
 
-Have a independent *events* command which can perform all the existing tasks that the current `kubectl get events` 
-command is performing and also to extend the `kubectl get events` functionality to address the existing issues. 
+Have an independent *events* sub-command which can perform all the existing tasks that the current `kubectl get events`,
+and most importantly will extend the `kubectl get events` functionality to address the existing issues.
 
+### Implementation Details/Notes/Constraints
 
-### Implementation Details/Notes/Constraints [optional]
+The above use-cases call for the addition of several flags, that would act as filtering mechanisms for events,
+and would work in tandem with the existing --watch flag:
+- Add a new `--watch-event=[]` flag that allows users to subscribe to particular events, filtering out any other event kind
+- Add a new `--watch-until=EventType` flag that would cause the `--watch` flag to behave as normal, but would exit the command as soon as the specified event type is received.
+- Add a new `--watch-for=pod/bar flag` that would filter events to only display those pertaining to the specified resource. A non-existent resource would cause an error. This flag could further be used with the `--watch-until=EventType` flag to watch events for the resource specified, and then exit as soon as the specified `EventType` is seen for that particular resource.
+- Add a new `--watch-until-exists=pod/bar` flag that outputs events as usual, but exits as soon as the specified resource exists. This flag would employ the functionality introduced in the wait command.
 
-Once the experimental kubectl events command is implemented, this can be rolled out in multiple phases: 
--  Release the new command `kubectl events` as experimental command alongside with the existing command. 
--  Gather the feedback,during the initial phase, which will help in improving the command further. 
--  After the initial phase, we can graduate this command. 
--  The new `kubectl events` can further be extended with the new features/long standing issues. 
+Additionally, the new command should support all the printing flags available in `kubectl get`, such as specifying output format, sorting as well as re-use server-side printing mechanism.
 
+## Design Details
 
+### Test Plan
 
-## Graduation Criteria
+In addition to standard unit tests for kubectl, the events command will be released as a kubectl alpha subcommand, signaling users to expect instability. During the alpha phase we will gather feedback from users that we expect will improve the design of debug and identify the Critical User Journeys we should test prior to Alpha -> Beta graduation.
 
-An alpha version of this is new feature is targeted for 1.18 (subjected to change)
+### Graduation Criteria
 
-This can be promoted to beta when it is a drop-in replacement for the existing `kubectl get events`, and has no regressions (which aren't bug fixes). This KEP will be updated when we know the concrete things changing for beta.
+Once the experimental kubectl events command is implemented, this can be rolled out in multiple phases.
 
-This will be promoted to GA once it's gone a sufficient amount of time as beta with no changes. A KEP update will precede this.
+##### Alpha -> Beta Graduation
+- [ ] Gather the feedback, which will help improve the command
+- [ ] Extend with the new features based on feedback
 
+##### Beta -> GA Graduation
+- [ ] Address all major issues and bugs raised by community members
