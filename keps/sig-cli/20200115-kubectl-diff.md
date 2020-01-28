@@ -105,7 +105,7 @@ describes exactly the changes that are happening on the cluster.
 ### Risks and Mitigations
 
 Risks are extremely limited, but can exist since the feature depends on
-server-side Dry-run. If a bug in dry-run ends-up writing a resource by
+server-side dry-run. If a bug in dry-run ends-up writing a resource by
 accident, then `kubectl diff` could be writing to that resource also by
 accident.
 
