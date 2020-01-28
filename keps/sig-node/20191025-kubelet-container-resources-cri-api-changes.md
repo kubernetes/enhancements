@@ -6,12 +6,12 @@ authors:
 owning-sig: sig-node
 participating-sigs:
 reviewers:
-  - @Random-Liu
-  - @yujuhong
-  - @PatrickLang
+  - "@Random-Liu"
+  - "@yujuhong"
+  - "@PatrickLang"
 approvers:
-  - @dchen1107
-  - @derekwaynecarr
+  - "@dchen1107"
+  - "@derekwaynecarr"
 editor: TBD
 creation-date: 2019-10-25
 last-updated: 2020-01-14
