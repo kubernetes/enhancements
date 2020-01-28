@@ -12,12 +12,10 @@ approvers:
 - "@lavalamp"
 creation-date: 2020-01-23
 last-updated: 2020-01-23
-status: provisional
+status: implementable
 ---
 
 # Context support in k8s.io/client-go
-
-## Table of Contents
 
 <!-- toc -->
 - [Summary](#summary)
@@ -26,6 +24,8 @@ status: provisional
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
 - [Design Details](#design-details)
+  - [Cleanup Inconsistent Options Passing](#cleanup-inconsistent-options-passing)
+  - [Client Signatures After Refactor](#client-signatures-after-refactor)
   - [Risks and Mitigations](#risks-and-mitigations)
   - [Graduation Criteria](#graduation-criteria)
 - [Alternatives](#alternatives)
@@ -59,6 +59,7 @@ This functionality initially will include:
 
 - Allow consumers of k8s.io/client-go to propagate context with API requests
   made using a clientset.
+- Cleanup inconsistent \*Option passing in the public API of the clientset.
 
 ### Non-Goals
 
@@ -77,15 +78,14 @@ produces the least error prone API.
 This is an example change to `Pods.Get` implementation:
 
 ```go 
-func (c *pods) Get(ctx context.Context, name string, options meta_v1.GetOptions) (result *v1.Pod, err error) {
+func (c *pods) Get(ctx context.Context, name string, options metav1.GetOptions) (result *v1.Pod, err error) {
 	Result = &v1.Pod{}
 	err = c.client.Get().
-		Context(ctx).
 		Namespace(c.ns).
 		Resource("pods").
 		Name(name).
 		VersionedParams(&options, scheme.ParameterCodec).
-		Do().
+		Do(ctx).
 		Into(result)
 	return
 }
@@ -93,6 +93,51 @@ func (c *pods) Get(ctx context.Context, name string, options meta_v1.GetOptions)
 
 Here we extend the signature to add `context.Context` as the first argument,
 then attach the context to the request.
+
+### Cleanup Inconsistent Options Passing
+
+While we are requiring a migration for consumers of the client, now is a good
+time to fix any issues we have with the API we are deprecating. While lack of
+context support is the primary motivation, clientset methods do not consistently
+support passing \*Options in the current API. Inconstencies we want to fix are:
+
+1. Create does not accept a metav1.CreateOptions.
+1. Update, UpdateStatus and Patch do not accept metav1.UpdateOptions.
+1. Patch does not accept metav1.PatchOptions.
+1. Delete methods accept metav1.DeleteOptions by pointer reference.
+
+To fix these inconstencies, we will pass \*Options to all client methods and we
+will migrate Delete methods to pass `metav1.DeleteOptions` by value.
+
+### Client Signatures After Refactor
+
+These are the signatures of the existing flunders client API:
+
+```
+func (c *flunders) Get(string, metav1.GetOptions) (*v1beta1.Flunder, error)
+func (c *flunders) List(metav1.ListOptions) (*v1beta1.FlunderList, error)
+func (c *flunders) Watch(metav1.ListOptions) (watch.Interface, error)
+func (c *flunders) Create(*v1beta1.Flunder) (*v1beta1.Flunder, error)
+func (c *flunders) Update(*v1beta1.Flunder) (*v1beta1.Flunder, error)
+func (c *flunders) UpdateStatus(*v1beta1.Flunder) (*v1beta1.Flunder, error)
+func (c *flunders) Delete(string, *metav1.DeleteOptions) error
+func (c *flunders) DeleteCollection(*metav1.DeleteOptions, metav1.ListOptions) error
+func (c *flunders) Patch(string, types.PatchType, []byte, ...string) (*v1beta1.Flunder, error)
+```
+
+After all proposed changes, the flunders client will look like:
+
+```
+func (c *flunders) Get(context.Context, string, metav1.GetOptions) (*v1beta1.Flunder, error)
+func (c *flunders) List(context.Context, metav1.ListOptions) (*v1beta1.FlunderList, error)
+func (c *flunders) Watch(context.Context, metav1.ListOptions) (watch.Interface, error)
+func (c *flunders) Create(context.Context, *v1beta1.Flunder, metav1.CreateOptions) (*v1beta1.Flunder, error)
+func (c *flunders) Update(context.Context, *v1beta1.Flunder, metav1.UpdateOptions) (*v1beta1.Flunder, error)
+func (c *flunders) UpdateStatus(context.Context, *v1beta1.Flunder, metav1.UpdateOptions) (*v1beta1.Flunder, error)
+func (c *flunders) Delete(context.Context, string, metav1.DeleteOptions) error
+func (c *flunders) DeleteCollection(context.Context, metav1.DeleteOptions, metav1.ListOptions) error
+func (c *flunders) Patch(context.Context, string, types.PatchType, []byte, metav1.PatchOptions, ...string) (*v1beta1.Flunder, error)
+```
 
 ### Risks and Mitigations
 
