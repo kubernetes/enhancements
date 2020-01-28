@@ -75,7 +75,7 @@ Controlled by [publishing kubernetes-rules-configmap](https://github.com/kuberne
 ## Summary
 
 This KEP outlines the architectural changes required to run the Cloud Controller Manager. This is part of a long-running effort
-to develop cloud provider specific features outside of Kubernetes core (kuberetes/kubernetes repo).
+to develop cloud provider specific features outside of Kubernetes core (kubernetes/kubernetes repo).
 
 ## Motivation
 
