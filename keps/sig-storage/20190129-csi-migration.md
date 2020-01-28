@@ -37,6 +37,9 @@ see-also:
 - [Graduation Criteria](#graduation-criteria)
   - [Alpha -&gt; Beta](#alpha---beta)
   - [Beta -&gt; GA](#beta---ga)
+- [Test Plan](#test-plan)
+  - [Per-driver migration testing](#per-driver-migration-testing)
+  - [Upgrade/Downgrade/Skew Testing](#upgradedowngradeskew-testing)
 - [Implementation History](#implementation-history)
 <!-- /toc -->
 
@@ -122,6 +125,58 @@ The detailed design was originally implemented as a [design proposal](https://gi
 ### Beta -> GA
 
 * All volume operation paths covered by Migration Shim in Beta for >= 1 quarter without significant issues
+
+## Test Plan
+
+### Per-driver migration testing
+
+We will require *each* plugin/driver provider to set up public CI to run all
+existing in-tree plugin driver tests for their migrated driver. The CI should
+include all tests for the in-tree driver with a focus on tests labeled `In-tree
+Volumes [driver: {inTreePluginName}]` with a cluster that has CSI migration
+enabled with feature flags. The driver authors will be expected to prove (using
+the tests) that the driver can handle anything the in-tree plugin can including,
+but not limited to: dynamic provisioning, pre-provisioned volumes, inline
+volumes, resizing, multivolumes, subpath, volume reconstruction. The onus is on
+the storage provider to use appropriate infrastructure to run these tests.
+
+If migration is on for that plugin, the test framework will inspect
+kube-controller-manager and kubelet metrics to make sure that the CSI driver is
+servicing the operations. This enables the test suite to programatically confirm
+migration status. The framework must also observe through metrics that none of
+the in-tree code is being called.
+
+The above is done by checking that no in-tree plugin code is emitting metrics
+when migration is on. We will also confirm that metrics are being emitted in
+general by confirming the existence of an indicator metric.
+
+Passing these tests in Public CI is the main graduation criterea for the
+`CSIMigration{provider}` flag to Beta.
+
+### Upgrade/Downgrade/Skew Testing
+
+The Kubernetes community will have test clusters brought up that have different
+feature flags enabled on different components (ADC and Kubelet). Once these
+feature flag skew configurations are brought up the test itself would have to
+know what configuration it’s running in and validate the expected result.
+
+Configurations to test:
+
+| ADC               | Kubelet                                            | Expected Result                                                          |
+|-------------------|----------------------------------------------------|--------------------------------------------------------------------------|
+| ADC Migration On  | Kubelet Migration On                               | Fully migrated - result should be same as “Migration Shim Testing” above |
+| ADC Migration On  | Kubelet Migration Off (or Kubelet version too low) | No calls made to driver. All operations serviced by in-tree plugin       |
+| ADC Migration Off | Kubelet Migration On                               | Not supported config - Undefined behavior                                |
+| ADC Migration Off | Kubelet Migration Off                              | No calls made to driver. All operations service by in-tree plugin        |
+
+Additionally, the community will craft a test where a cluster should be able to
+run through all plugin tests, do a complete upgrade to a version with CSI
+Migration turned on, then run through all the plugin tests again and verify that
+there is no issue.
+
+Running this set of tests is optional for a per-provider basis. We would
+recommend it for providing extra confidence but the framework for
+upgrade/downgrade is provider agnostic.
 
 ## Implementation History
 
