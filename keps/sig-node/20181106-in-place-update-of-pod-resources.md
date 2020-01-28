@@ -149,6 +149,10 @@ A new admission controller named 'PodResourceAllocation' is introduced in order
 to limit access to ResourcesAllocated field such that only Kubelet can update
 this field.
 
+Additionally, Kubelet is authorized to update PodSpec, and NodeRestriction
+admission plugin is extended to limit Kubelet's update access only to Pod's
+ResourcesAllocated field for CPU and memory resources.
+
 #### Container Resize Policy
 
 To provide fine-grained user control, PodSpec.Containers is extended with
@@ -339,14 +343,16 @@ Pod v1 core API:
 * extend NodeRestriction plugin limiting Node's update access to PodSpec only
   to the ResourcesAllocated field,
 * new admission controller to limit update access to ResourcesAllocated field
-  only to Node, and mutate updates to ResourcesAllocated & ResizePolicy fields
-  for compatibility with older versions of clients,
-* added validation and setting defaults.
+  only to Node, and mutates any updates to ResourcesAllocated & ResizePolicy
+  fields to maintain compatibility with older versions of clients,
+* added validation allowing only CPU and memory resource changes,
+* setting defaults for ResourcesAllocated and ResizePolicy fields.
 
 Admission Controllers: LimitRanger, ResourceQuota need to support Pod Updates:
 * for ResourceQuota, podEvaluator.Handler implementation is modified to allow
   Pod updates, and verify that sum of Pod.Spec.Containers[i].Resources for all
   Pods in the Namespace don't exceed quota,
+* PodResourceAllocation admission plugin is ordered before ResourceQuota.
 * for LimitRanger we check that a resize request does not violate the min and
   max limits specified in LimitRange for the Pod's namespace.
 
@@ -495,7 +501,7 @@ Setup a guaranteed class Pod with two containers (c1 & c2).
 
 ### Backward Compatibility and Negative Tests
 
-1. Verify that Node can only update ResourcesAllocated field in PodSpec.
+1. Verify that Node is allowed to update only a Pod's ResourcesAllocated field.
 1. Verify that only Node account is allowed to udate ResourcesAllocated field.
 1. Verify that updating Pod Resources in workload template spec retains current
    behavior:
@@ -504,6 +510,7 @@ Setup a guaranteed class Pod with two containers (c1 & c2).
      being restarted with updated resources.
 1. Verify Pod updates by older version of client-go doesn't result in current
    values of ResourcesAllocated and ResizePolicy fields being dropped.
+1. Verify that only CPU and memory resources are mutable by user.
 
 TODO: Identify more cases
 
