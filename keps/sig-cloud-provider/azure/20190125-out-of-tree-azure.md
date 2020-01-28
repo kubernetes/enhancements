@@ -148,7 +148,7 @@ This issue is being tracked on [kubernetes/cloud-provider#30](https://github.com
 
 Azure credential provider is also depending on cloud provider codes. Though Azure Managed Service Identity (MSI) is a way to avoid explicit setting of credentials, MSI is not available on all cases (e.g. MSI may not be authorized to specific ACR repository).
 
-This issue is being tracked on KEP [Support Instance Metadata Service with Cloud Controller Manager](https://github.com/kubernetes/enhancements/blob/master/keps/sig-cloud-provider/azure/20190722-ccm-instance-metadata.md). It has been marked as implementable and would be implemented in cloud-provider-auzre.
+This issue is being tracked on KEP [Support Instance Metadata Service with Cloud Controller Manager](https://github.com/kubernetes/enhancements/blob/master/keps/sig-cloud-provider/azure/20190722-ccm-instance-metadata.md). It has been marked as implementable and would be implemented in cloud-provider-azure.
 
 ## Design Details
 
