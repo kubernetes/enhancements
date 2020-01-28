@@ -65,7 +65,7 @@ will affect the state of the cluster.
 
 ## Motivation
 
-Being able to pro-actively understand how configuration changes affect
+Being able to proactively understand how configuration changes affect
 the state of the cluster is a key piece of declarative configuration
 management. It allows integration into tools, but is equally important
 in manual deployments. Without diff, understanding the exact
@@ -76,7 +76,7 @@ by the server.
 
 ### Goals
 
-The goal of this KEP is mostly retro-active, since the feature has
+The goal of this KEP is mostly retroactive, since the feature has
 mostly been implemented before this process existed.
 
 ## Proposal
@@ -88,14 +88,14 @@ consider multiple cases:
 
 2. There is the last-applied-configuration, the one in the file that we applied the last time,
 
-3. There is the current "live" configuration, the one describing the existing state of the server,
+3. There is the "current live" configuration, the one describing the existing state of the server,
 
 4. There is the "future" configuration of the server, if we did apply the configuration.
 
 All the combinations of these diffs initially sounded useful, but after
 providing such a variant in `kubectl alpha diff`, we realized that the
-most relevant is actually "current live" -> "future configuration". This
-describes exactly the changes that are happening on the cluster.
+most relevant is actually "current live" configuration -> "future" configuration.
+This describes exactly the changes that are happening on the cluster.
 
 ### Risks and Mitigations
 
@@ -109,17 +109,16 @@ accident.
 In order to diff the current configuration with the future
 configuration, we do the following:
 
-- get the current object from the server,
-- prepare an apply request that is sent with the `dryRun` flag and returns
+1. get the current object from the server,
+1. prepare an apply request that is sent with the `dryRun` flag and returns
   the hypothetical object,
-- we carefuly insert the resourceVersion in the patch that we send, in
-  order to make sure that we're patching the exact same object we've
-  seen. This guarantees us that we're going to diff the same versions of
-  the objects (which avoids diffing things that are unrelated),
-- each of these objects are saved in files with specific names (using
-  their GVK) to avoid collisions,
-- these files  are diffed either using
-  diff(1), or using the binary provided in `KUBECTL_EXTERNAL_DIFF`.
+1. carefully insert the resourceVersion in the patch that we send, in
+  order to make sure that we're patching and diffing the exact same
+  object version we've seen to avoid diffing unrelated objects,
+1. save each of these objects in files with specific names using
+  their GVK to avoid collisions,
+1. diff these files either using `diff(1)`, or using the binary provided
+  in `KUBECTL_EXTERNAL_DIFF`.
 
 ### Test Plan
 
