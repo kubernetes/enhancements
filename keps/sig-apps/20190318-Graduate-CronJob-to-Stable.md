@@ -12,11 +12,13 @@ reviewers:
   - "@kow3ns"
   - "@janetkuo"
   - “@mortent”
+  - "@wojtek-t"
 
 approvers:
   - "@kow3ns"
   - "@liggitt"
   - "@soltysh"
+  - "@wojtek-t"
 
 editor: TBD  
 creation-date: 2019-04-18  
