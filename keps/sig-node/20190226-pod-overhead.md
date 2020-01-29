@@ -12,16 +12,15 @@ reviewers:
   - "@derekwaynecarr"
   - "@dchen1107"
 approvers:
-  - TBD
-editor: TBD
+  - "@dchen1107"
+  - "@derekwaynecarr"
+editor: Eric Ernst
 creation-date: 2019-02-26
-last-updated: 2019-04-12
-status: implementable
+last-updated: 2020-01-29
+status: implemented (alpha)
 ---
 
 # Pod Overhead
-
-This includes the Summary and Motivation sections.
 
 ## Table of Contents
 
@@ -42,13 +41,15 @@ This includes the Summary and Motivation sections.
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Graduation Criteria](#graduation-criteria)
+  - [Test Plan](#test-plan)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
-- [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
   - [Introduce pod level resource requirements](#introduce-pod-level-resource-requirements)
   - [Leaving the PodSpec unchanged](#leaving-the-podspec-unchanged)
+- [Implementation History](#implementation-history)
+  - [Version 1.16](#version-116)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -246,28 +247,51 @@ are utilized. To help mitigate this risk, I propose that this be treated as a ne
 
 ### Graduation Criteria
 
-This KEP will be treated as a new feature, and will be introduced with a new feature gate, PodOverhead.
+This KEP will be treated as a new feature, and will be introduced with a new feature gate,
+PodOverhead. Plan to introduce this utilizing maturity levels: alpha, beta and stable. The
+following criteria applies to `PodOverhead` feature gate:
 
-Plan to introduce this utilizing maturity levels: alpha, beta and stable.
+Alpha
+ - basic support added in node/core APIs, RuntimeClass admission controller, scheduler and kubelet.
 
-Graduation criteria between these levels to be determined.
+Beta
+- ensure proper node e2e test coverage is integrated verifying PodOverhead accounting, including e2e-node
+and e2e-scheduling.
+- add monitoring to allow monitor if the feature is used and is stable. See:
+https://github.com/kubernetes/kubernetes/issues/87259
+
+GA
+- assuming no negative user feedback based on production experience, promote
+  after 2 releases in beta.
+
+
+### Test Plan
+
+This feature is verified through a combination of unit and e2e tests.
+
+E2E tests will be created to verify appropriate PodOverhead usage by the scheduler
+and Kubelet. RuntimeClass admission controller functionality will be exercised
+within the scheduler and kubelet e2e tests.
+
+The Kubelet test, part of e2e-node, will verify appropriate pod cgroup sizing.
+
+The scheduling test, part of e2e-scheduling, will verify predication accounts
+for overhead when determining node fit.
 
 ### Upgrade / Downgrade Strategy
 
-If applicable, how will the component be upgraded and downgraded? Make sure this is in the test plan.
+If a cluster is upgraded to enable this feature, the cluster administrator would experience pre-upgrade
+behavior until RuntimeClasses are introduced which include a valid overhead field, and workloads are
+created which make use of the new RuntimeClass(es).
 
-Consider the following in developing an upgrade/downgrade strategy for this enhancement:
-- What changes (in invocations, configurations, API use, etc.) is an existing cluster required to make on upgrade in order to keep previous behavior?
-- What changes (in invocations, configurations, API use, etc.) is an existing cluster required to make on upgrade in order to make use of the enhancement?
+If a cluster administrator does not want to utilize this feature's behavior after upgrading their cluster,
+RuntimeClasses should be used which do not define an overhead field, and workloads should avoid specifying
+RuntimeClasses which have an overhead defined.
 
 ### Version Skew Strategy
 
 Set the overhead to the max of the two version until the rollout is complete.  This may be more problematic
 if a new version increases (rather than decreases) the required resources.
-
-## Implementation History
-
-- 2019-04-04: Initial KEP published.
 
 ## Drawbacks
 
@@ -307,3 +331,10 @@ Cons:
  * handling of the pod overhead is spread out across a few components
  * Not user perceptible from a workload perspective.
  * very complicated if the runtimeClass policy changes after workloads are running
+
+## Implementation History
+
+2019-04-04: Initial KEP published.
+
+### Version 1.16
+- Implemented as Alpha.
