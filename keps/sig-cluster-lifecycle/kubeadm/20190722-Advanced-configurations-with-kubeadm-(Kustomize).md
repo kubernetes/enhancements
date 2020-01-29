@@ -123,7 +123,7 @@ to some iterations. The goal of the current iteration is to:
 - To define how to manage “advanced configurations” when kubeadm and [`etcdadm`](https://github.com/kubernetes-sigs/etcdadm)
   project will integrate. This will be defined in following iterations of this KEP.
 - To define how to manage “advanced configurations” for the addons 
-  (this is postponed until kubeadm - [`addons`](https://github.com/kubernetes-sigs/addon-operators) 
+  (this is postponed until kubeadm - [`addons`](https://github.com/kubernetes-sigs/cluster-addons)
   project integration).
 
 ## Proposal
@@ -292,7 +292,7 @@ order to ensure that, we will wait for at least one K8s release cycle for the us
 feedback before moving forward in graduating the feature to beta. 
 
 Similarly, the kubeadm maintainers should work with [`etcdadm`](https://github.com/kubernetes-sigs/etcdadm)
-project and [`addons`](https://github.com/kubernetes-sigs/addon-operators) project
+project and [`addons`](https://github.com/kubernetes-sigs/cluster-addons) project
 to ensure a consistent approach across different components.
 
 _Component version change during upgrades_
