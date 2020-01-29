@@ -14,8 +14,8 @@ approvers:
   - "@thockin"
   - "@saad-ali"
 creation-date: 2019-12-03
-last-updated: 2020-01-26
-status: provisional
+last-updated: 2020-01-29
+status: implementable
 see-also:
 replaces:
 superseded-by:
