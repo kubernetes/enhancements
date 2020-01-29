@@ -98,7 +98,7 @@ The initial KEP [defines an addon](https://github.com/kubernetes/enhancements/bl
 
 > Addons are components that are managed alongside the lifecycle of the cluster. They are often tied to or dependent on the configuration of other cluster components. [..]
 
-The [addon-installer library](https://github.com/kubernetes-sigs/addon-operators/tree/master/installer) functions as a small, vendorable implementation for applying addons to the cluster using kubectl and Kustomize. The `AddonInstallerConfiguration` API kind is intended to be a user-facing ComponentConfig.
+The [addon-installer library](https://github.com/kubernetes-sigs/cluster-addons/tree/master/installer) functions as a small, vendorable implementation for applying addons to the cluster using kubectl and Kustomize. The `AddonInstallerConfiguration` API kind is intended to be a user-facing ComponentConfig.
 This KEP proposes an additional phase to kubeadm that invokes the addon-installer library.
 
 ## Motivation
@@ -163,7 +163,7 @@ Providing an "uninstall" signal, hook, or mechanism for addons is currently out 
 
 An alpha feature gate "`AddonInstaller`" will be added to kubeadm; it will default to false may be user-enabled using the existing flag and `ClusterConfiguration`.
 When this feature gate is enabled, the current `kube-proxy` and `coredns` phases under `init.addon` will noop.
-A new phase called `installer` will activate creating a sensible logger and runtime for `sigs.k8s.io/addon-operators/installer` library.
+A new phase called `installer` will activate creating a sensible logger and runtime for `sigs.k8s.io/cluster-addons/installer` library.
 This phase is expected to operate in an idempotent manner, run properly during `kubeadm init` and `kubeadm upgrade`, and produce helpful output in a dry-run.
 
 An `AddonInstallerConfiguration` will be defaulted but may be overridden by the user.
@@ -248,7 +248,7 @@ addons:
 - name: kube-proxy
   kustomizeRef: github.com/kubernetes/kubernetes//cluster/addons/kustomize/kube-proxy/?ref=v1.17.0
 - name: coredns-operator
-  kustomizeRef: github.com/kubernetes-sigs/addon-operators//kustomize/coredns-operator/?ref=v0.1.0
+  kustomizeRef: github.com/kubernetes-sigs/cluster-addons//kustomize/coredns-operator/?ref=v0.1.0
 - name: my-addon1
   manifestRef: ../my-local-dir/addon1/
 - name: weavenet
@@ -278,7 +278,7 @@ Mirroring git repositories, cloning git repositories to a local filesystem, and 
 
 ### Implementation Details/Notes/Constraints
 
-We intend for the installer library and API to live in `sigs.k8s.io/addon-operators/installer`.
+We intend for the installer library and API to live in `sigs.k8s.io/cluster-addons/installer`.
 Core kustomize addons and images may be hosted in a number of git repositories or image registries.
 
 Internally, the addon-installer library execs `kubectl -k` for kustomize refs.
@@ -444,8 +444,8 @@ Major milestones might include
 - when the KEP was retired or superseded -->
 
 - Overarching Addon-Management design:
-  <https://github.com/kubernetes-sigs/addon-operators/issues/10>
-- addon-installer lib: <https://sigs.k8s.io/addon-operators/installer>
+  <https://github.com/kubernetes-sigs/cluster-addons/issues/10>
+- addon-installer lib: <https://sigs.k8s.io/cluster-addons/installer>
 - kubeadm integration POC:
   <https://github.com/kubernetes/kubernetes/pull/85224>
 
