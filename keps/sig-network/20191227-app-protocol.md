@@ -30,6 +30,7 @@ see-also:
     - [Endpoints:](#endpoints)
   - [Risks and Mitigations](#risks-and-mitigations)
   - [Graduation Criteria](#graduation-criteria)
+  - [Test plan](#test-plan)
 <!-- /toc -->
 
 ## Summary
@@ -44,7 +45,7 @@ proposes adding support for that same attribute to Services and Endpoints.
 
 The lack of direct support for specifying application protocols for ports has
 led to widespread use of annotations, providing a poor user experience and
-general frustration (https://github.com/kubernetes/kubernetes/issues/40244). 
+general frustration (https://github.com/kubernetes/kubernetes/issues/40244).
 Unfortunately annotations are cloud specific and simply can't provide the ease
 of use of a built in attribute like `AppProtocol`. Since application protocols
 are specific to each port specified on a Service or Endpoints resource, it makes
@@ -103,3 +104,11 @@ change well in advance of release so it can be well supported initially.
 This adds a new optional attribute to 2 existing stable APIs. There is no need
 for feature gating or a graduation process, this will be added to the existing
 API versions.
+
+### Test plan
+
+This will replicate the existing validation tests for the AppProtocol field that
+already exists on EndpointSlice. Additionally, it will add tests that ensure
+that both the Endpoints and EndpointSlice controllers appropriately set the
+AppProtocol field on Endpoints and EndpointSlices when it is set on the
+corresponding Service.
