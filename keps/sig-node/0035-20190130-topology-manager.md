@@ -439,11 +439,47 @@ _Figure: Topology Manager fetches affinity from hint providers._
 * User feedback.
 * *TBD*
 
+# Test plan
+
+There is a presubmit job for Topology Manager, that will be run on 
+all PRs. This job is here:
+https://testgrid.k8s.io/wg-resource-management#pr-kubelet-serial-gce-e2e-topology-manager
+
+There is a CI job for Topology Manager that will run periodically. This
+job is here:
+https://testgrid.k8s.io/wg-resource-management#pr-kubelet-serial-gce-e2e-topology-manager
+
+The Topology Manager E2E test will enable the Topology Manager
+feature gate and set the CPU Manager policy to 'static'.
+
+At the beginning of the test, the code will determine if the system
+under test has support for single or multi-NUMA nodes. 
+
+## Single NUMA systems tests
+For each of the four topology manager policies, the tests will
+run a subset of the current CPU Manager tests. This includes spinning 
+up non-guaranteed pods, guaranteed pods, and multiple guaranteed and 
+non-guaranteed pods. As with the CPU Manager tests, CPU assignment is 
+validated. Tests related to multi-NUMA systems will be skipped, and 
+a log will be generated indicating such.
+
+## Multi-NUMA systems test
+For each of the four topology manager policies, the tests will spin up
+guaranteed pods and non-guaranteed pods, requesting CPU and device 
+resources. When the policy is set to single-numa-node for guaranteed pods, 
+the test will verify that guaranteed pods resources (CPU and devices) 
+are aligned on the same NUMA node. Initially, the test will request 
+SR-IOV devices, utilizing the SR-IOV device plugin. 
+
+## Future tests
+It would be good to add additional devices, such as GPU, in the multi-NUMA
+systems test.
+
 # Challenges
 
 * Testing the Topology Manager in a continuous integration environment
   depends on cloud infrastructure to expose multi-node topologies
-  to guest virtual machines.
+  to guest virtual machines. 
 * Implementing the `GetHints()` interface may prove challenging.
 
 # Limitations
