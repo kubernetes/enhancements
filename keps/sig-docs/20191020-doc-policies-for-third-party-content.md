@@ -21,27 +21,28 @@ status: provisional
 ## Table of Contents
 
 <!-- toc -->
-- [Summary](#summary)
-- [Motivation](#motivation)
-  - [Goals](#goals)
-  - [Non-Goals](#non-goals)
-- [Proposal](#proposal)
-  - [User Stories](#user-stories)
-    - [Story 1 (fictional)](#story-1-fictional)
-    - [Story 2 (fictional)](#story-2-fictional)
-    - [Story 3 (actual)](#story-3-actual)
-    - [Story 4 (actual)](#story-4-actual)
-    - [Story 5 (actual)](#story-5-actual)
-    - [Story 6 (actual)](#story-6-actual)
-  - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
-  - [Risks and Mitigations](#risks-and-mitigations)
-- [Design Details](#design-details)
-  - [Graduation Criteria](#graduation-criteria)
+  - [Summary](#summary)
+  - [Introduction](#introduction)
+  - [Motivation](#motivation)
+    - [Goals](#goals)
+    - [Non-Goals](#non-goals)
+  - [Proposal](#proposal)
+    - [User Stories](#user-stories)
+      - [Story 1 (fictional)](#story-1-fictional)
+      - [Story 2 (fictional)](#story-2-fictional)
+      - [Story 3 (actual)](#story-3-actual)
+      - [Story 4 (actual)](#story-4-actual)
+      - [Story 5 (actual)](#story-5-actual)
+      - [Story 6 (actual)](#story-6-actual)
+    - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
+    - [Risks and Mitigations](#risks-and-mitigations)
+  - [Design Details](#design-details)
+    - [Graduation Criteria](#graduation-criteria)
 - [Drawbacks](#drawbacks)
-- [Alternatives](#alternatives)
+  - [Alternatives](#alternatives)
 <!-- /toc -->
 
-**Note:** This KEP does not target any release; SIG Docs follows a continuous 
+**Note:** This KEP does not target any release; SIG Docs follows a continuous
 release process for website content.
 
 ## Summary
