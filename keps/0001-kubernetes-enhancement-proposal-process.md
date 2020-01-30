@@ -184,7 +184,7 @@ Metadata items:
     It is up to the individual SIGs to determine how they pick approvers for KEPs impacting them.
     The approvers are speaking for the SIG in the process of approving this KEP.
     The SIGs in question can modify this list as necessary.
-  * The approvers are the individuals that make the call to move this KEP to the `approved` state.
+  * The approvers are the individuals that make the call to move this KEP to the `implementable` state.
   * Approvers should be a distinct set from authors.
   * If not yet chosen replace with `TBD`
   * Same name/contact scheme as `authors`
