@@ -44,6 +44,9 @@ ExecutionHook API Design
   - [Workflow](#workflow)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Graduation Criteria](#graduation-criteria)
+- [Test Plan](#test-plan)
+  - [Unit tests](#unit-tests)
+  - [E2E tests](#e2e-tests)
 - [Implementation History](#implementation-history)
   - [User Stories](#user-stories)
 - [Workarounds](#workarounds)
@@ -52,8 +55,6 @@ ExecutionHook API Design
   - [Alternative Option 1b](#alternative-option-1b)
   - [Controller Handlings for Option 1a and 1b](#controller-handlings-for-option-1a-and-1b)
   - [Alternative Option 2](#alternative-option-2)
-  - [Risks and Mitigations](#risks-and-mitigations-1)
-- [Graduation Criteria](#graduation-criteria-1)
 - [Implementation History](#implementation-history-1)
 <!-- /toc -->
 
@@ -331,6 +332,17 @@ The security concern is that ExecutionHook controller has the authority to execu
 ## Graduation Criteria
 Please see above Risks and Mitigations
 
+## Test Plan
+### Unit tests
+* Unit tests for the execution hook controller.
+
+### E2E tests
+* e2e tests for the execution hook controller. This should include freezing
+  an example application or filesystem before taking the snapshot and unfreezing
+  it after taking the snapshot. Hostpath CSI driver and GCE PD driver will be
+  used for e2e tests.
+* Add stress and scale tests before moving from beta to GA.
+
 ## Implementation History
 
 * Feature description: https://github.com/kubernetes/enhancements/issues/962
@@ -530,13 +542,6 @@ spec:
       # this command will flush tables with read lock
       value: mysql --user=root --password=$MYSQL_ROOT_PASSWORD -Bse 'flush tables with read lock'
 ```
-
-### Risks and Mitigations
-
-## Graduation Criteria
-
-When the existing volume snapshot alpha feature goes beta, the `ExecutionHook`
-feature will become beta as well.
 
 ## Implementation History
 
