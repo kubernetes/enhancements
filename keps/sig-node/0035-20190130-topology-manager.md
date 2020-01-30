@@ -59,6 +59,10 @@ _Reviewers:_
   - [Alpha (v1.17) [COMPLETED]](#alpha-v117-completed)
   - [Beta (target v1.18)](#beta-target-v118)
   - [GA (stable)](#ga-stable)
+- [Test Plan](#test-plan)
+  - [Single NUMA Systems Tests](#single-numa-systems-tests)
+  - [Multi-NUMA Systems Tests](#multi-numa-systems-tests)
+  - [Future Tests](#future-tests)
 - [Challenges](#challenges)
 - [Limitations](#limitations)
 - [Alternatives](#alternatives)
@@ -439,7 +443,7 @@ _Figure: Topology Manager fetches affinity from hint providers._
 * User feedback.
 * *TBD*
 
-# Test plan
+# Test Plan
 
 There is a presubmit job for Topology Manager, that will be run on 
 all PRs. This job is here:
@@ -455,7 +459,7 @@ feature gate and set the CPU Manager policy to 'static'.
 At the beginning of the test, the code will determine if the system
 under test has support for single or multi-NUMA nodes. 
 
-## Single NUMA systems tests
+## Single NUMA Systems Tests
 For each of the four topology manager policies, the tests will
 run a subset of the current CPU Manager tests. This includes spinning 
 up non-guaranteed pods, guaranteed pods, and multiple guaranteed and 
@@ -463,7 +467,7 @@ non-guaranteed pods. As with the CPU Manager tests, CPU assignment is
 validated. Tests related to multi-NUMA systems will be skipped, and 
 a log will be generated indicating such.
 
-## Multi-NUMA systems test
+## Multi-NUMA Systems Tests
 For each of the four topology manager policies, the tests will spin up
 guaranteed pods and non-guaranteed pods, requesting CPU and device 
 resources. When the policy is set to single-numa-node for guaranteed pods, 
@@ -471,7 +475,7 @@ the test will verify that guaranteed pods resources (CPU and devices)
 are aligned on the same NUMA node. Initially, the test will request 
 SR-IOV devices, utilizing the SR-IOV device plugin. 
 
-## Future tests
+## Future Tests
 It would be good to add additional devices, such as GPU, in the multi-NUMA
 systems test.
 
@@ -479,7 +483,7 @@ systems test.
 
 * Testing the Topology Manager in a continuous integration environment
   depends on cloud infrastructure to expose multi-node topologies
-  to guest virtual machines. 
+  to guest virtual machines.
 * Implementing the `GetHints()` interface may prove challenging.
 
 # Limitations
