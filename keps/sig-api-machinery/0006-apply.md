@@ -201,29 +201,33 @@ atomic. That can be specified with `// +mapType=atomic` or `//
 
 Client side apply in kubectl determines if the applied object would result in any changes on the apiserver and provides the user with this information.
 
-To provided similar information with server-side apply, a dedicated header is set by the apiserver
-if a **successful apply request** caused changes to the existing resource.
+To provide similar information with server-side apply, a dedicated header is set by the apiserver
+if a **successful request** caused changes to the existing resource.
 
 ```txt
-X-Kubernetes-Apply-Success-Type: "changes-made" || "changes-unneeded"
+X-Kubernetes-Operation-Success-Type: "changes-made" || "changes-unneeded"
 ```
+
+This header is initially intended to be implemented for server-side apply,
+but may be added to other operations (Update/Patch) in the future.
 
 The value may be,
 
-- `changes-unneeded` in cases where the request did not cause a change to the resource's managedFields.
-This means changes to fields that don't get owned or get reset, will be ignored when setting the header.
-- `changes-made` in cases where the request causes a change to the resource.
+- `changes-unneeded` in cases where the request did not cause a change to the resourceVersion.
+- `changes-made` in cases where the request caused a change to the resourceVersion.
 
 This header is optional.
 If the header is missing on the response, the apiserver may be older than this feature.
 Clients should never deduce anything from the absence of this header.
 
-This header can then be used by e.g. `kubectl` to provide the user with the desired information (rel: [#85750](https://github.com/kubernetes/kubernetes/issues/85750), [#66450](https://github.com/kubernetes/kubernetes/issues/66450)).
+This header can then be used by e.g. `kubectl` to provide the user with the desired information
+(rel: [#85750](https://github.com/kubernetes/kubernetes/issues/85750), [#66450](https://github.com/kubernetes/kubernetes/issues/66450)).
 
 **The header is intended to be informational only.**
 No behavior should be determined based on it's existence or value.
 
-This header is informational, not a mechanism for controlling multi-step deployments. Since clients may crash and retry from arbitrary points in a multi-step deployment, lack of action at one stage doesn't imply other stages don't need action.
+In particular, this is not a mechanism for controlling multi-step deployments. 
+Since clients may crash and retry from arbitrary points in a multi-step deployment, lack of action at one stage doesn't imply other stages don't need action.
 
 An alternative that was considered is a http status code, indicating the resource was not modified.
 This approach was discarded due to the lack of a matching 2xx status code.
