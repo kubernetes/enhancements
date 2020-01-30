@@ -28,12 +28,65 @@ for the request should be as close as possible to a non dry-run response.
 ## Table of Contents
 
 <!-- toc -->
+- [Release Signoff Checklist](#release-signoff-checklist)
+- [Test Plan](#test-plan)
+- [Graduation Criteria](#graduation-criteria)
+  - [Beta -&gt; GA Graduation](#beta---ga-graduation)
+  - [Removing a deprecated flag](#removing-a-deprecated-flag)
 - [Specifying dry-run](#specifying-dry-run)
 - [Admission controllers](#admission-controllers)
 - [Generated values](#generated-values)
 - [Storage](#storage)
 - [kubectl](#kubectl)
 <!-- /toc -->
+
+## Release Signoff Checklist
+
+Check these off as they are completed for the Release Team to track. These checklist items _must_ be updated for the enhancement to be released.
+
+- [x] kubernetes/enhancements issue in release milestone, which links to KEP (this should be a link to the KEP location in kubernetes/enhancements, not the initial KEP PR)
+- [x] KEP approvers have set the KEP status to `implementable`
+- [x] Design details are appropriately documented
+- [x] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [x] Graduation criteria is in place
+- [x] "Implementation History" section is up-to-date for milestone
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+
+## Test Plan
+
+The plan is to have unit-test to test the basic feature, as well as feature-test
+to make sure that the wiring is properly done. We also have tests that test each
+known Kubernetes types to make sure that nothing is missing. These tests are
+spread out across multiple areas, as well as kubectl.
+- [x] test/integration/dryrun/dryrun_test.go
+- [x] pkg/registry/core/service/storage/rest_test.go
+- [x] staging/src/k8s.io/kubectl/pkg/util/openapi/dryrun_test.go
+- [x] staging/src/k8s.io/apiserver/pkg/registry/generic/registry/dryrun_test.go
+- [x] staging/src/k8s.io/apiserver/pkg/endpoints/apiserver_test.go
+
+## Graduation Criteria
+
+### Beta -> GA Graduation
+
+The flag is useful and used to build the diff feature, which is important for
+declarative resource management. It has finally allowed people to properly
+validate and understand the changes going in their cluster. We have collected
+all the feedback available from stackoverlow, opened issue, new tools being
+built using the feature to improve dry-run.
+
+This feature has now been Beta for 4 full releases without any serious bug nor
+problem.
+
+### Removing a deprecated flag
+
+The flag `--server-dry-run` as well as the current form for `--dry-run=true` are
+starting to be deprecated in 1.18. and is being replaced with
+`--dry-run=server`. The boolean form will be preserved during the deprecation
+before being removed. It's been very clear from usage that the current flag is
+too hard to find and not obvious enough, even though it often matches what
+people are expecting. More details about this strategy are given in the #kubectl
+section below.
 
 ## Specifying dry-run
 
@@ -216,4 +269,3 @@ func AddDryRunFlag(cmd *cobra.Command) {
       )
 }
 ```
-
