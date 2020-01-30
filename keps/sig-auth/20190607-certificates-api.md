@@ -28,13 +28,12 @@ status: implementable
   - [Sequence of an Issuance](#sequence-of-an-issuance)
   - [Signers](#signers)
     - [Limiting approval and signer powers for certain signers.](#limiting-approval-and-signer-powers-for-certain-signers)
+  - [API changes between v1beta1 and v1](#api-changes-between-v1beta1-and-v1)
   - [CertificateSigningRequest API Definition](#certificatesigningrequest-api-definition)
   - [Manual CSR Approval With Kubectl](#manual-csr-approval-with-kubectl)
   - [Automatic CSR Approval Implementations](#automatic-csr-approval-implementations)
   - [Automatic Signer Implementations](#automatic-signer-implementations)
   - [Test Plan](#test-plan)
-- [Graduation Criteria](#graduation-criteria)
-  - [Beta to GA Graduation](#beta-to-ga-graduation)
 - [Implementation History](#implementation-history)
 <!-- /toc -->
 
@@ -101,14 +100,21 @@ committing it to storage so that they can be used later during CSR approval. The
 information contained in the spec is immutable after the request is created.
 
 An approver updates approval status of the CertificateSigningRequest via the
-CertificateSigningRequestStatus. The approval condition can only be updated via
-the `/approval` subresource allowing approval permission to be authorized
+CertificateSigningRequestStatus. `Approved`/`Denied` conditions can only be set via
+the `/approval` subresource, allowing approval permission to be authorized
 independently of other operations on the CertificateSigningRequest.
+`Approved`/`Denied` conditions are mutually exclusive, cannot be removed,
+cannot have a `False` or `Unknown` status, and are treated as `True` if present.
 
-Contingent on approval, a signer posts a signed certificate to the status. The
+Once an `Approved` condition is present, a signer posts a signed certificate to the status. The
 certificate field of the status can only be updated via the `/status`
 subresource allowing signing permission to be authorized independently of other
 operations on the CertificateSigningRequest.
+
+Terminal failures can be indicated with a `Failed` condition added by a controller,
+such as a signer indicating a refusal to sign the CSR.
+A `Failed` condition cannot be removed, cannot have a `False` or `Unknown` status,
+and is treated as `True` if present.
 
 The API is designed to support the standard asynchronous controller model of
 Kubernetes where the approver and signer act as independent controllers of the
@@ -122,7 +128,7 @@ This is typical of many PKI architectures.
 
 ### Sequence of an Issuance
 
-A typical successful issuance proceeds as follows.
+A typical successful issuance proceeds as follows:
 
 ![CSR](/keps/sig-auth/csr.png)
 
@@ -130,10 +136,30 @@ A typical successful issuance proceeds as follows.
    and submits the `CertificateSigningRequest` to the Kubernetes certificates
    API.
 1. The approver controller observes the newly submitted request, validates and
-   authorizes the request and if all goes well, approves the request.
+   authorizes the request and adds an `Approved` condition via the `/approval` subresource.
 1. The signer observes the approval, mints a new certificate and stores it in
-   the `.Status.Certificate` field.
+   the `.Status.Certificate` field via the `/status` subresource.
 1. The requestor observes the update, and stores the certificate locally.
+
+Approver failure sequence:
+
+1. The requestor generates a private key, builds a certificate signing request,
+   and submits the `CertificateSigningRequest` to the Kubernetes certificates
+   API.
+1. The approver controller observes the newly submitted request, determines the
+   request should be denied, and adds a `Denied` condition via the `/approval` subresource.
+1. The requestor observes the `Denied` condition.
+
+Signer failure sequence:
+
+1. The requestor generates a private key, builds a certificate signing request,
+   and submits the `CertificateSigningRequest` to the Kubernetes certificates
+   API.
+1. The approver controller observes the newly submitted request, validates and
+   authorizes the request and adds an `Approved` condition via the `/approval` subresource.
+1. The signer observes the approval, but encounters a terminal failure during the signing process,
+   and adds a `Failed` condition via the `/status` subresrouce.
+1. The requestor observes the `Failed` condition.
 
 ### Signers
 
@@ -196,6 +222,7 @@ Kubernetes provides the following well-known signers.  Today, failures for all o
     6. CA bit allowed/disallowed - not allowed.
  4. kubernetes.io/legacy-unknown - has no guarantees for trust at all.  Some distributions may honor these as client
     certs, but that behavior is not standard kubernetes behavior.  Never auto-approved by kube-controller-manager.
+    This signerName is only permitted in CertificateSigningRequest objects created via the v1beta1 API.
     1. Trust distribution: None.  There is no standard trust or distribution for this signer in a kubernetes cluster.
     2. Permitted subjects - any
     3. Permitted x509 extensions - honors SAN extensions and discards other extensions.
@@ -234,7 +261,31 @@ Cluster admins can either:
 1. grant signer-specific approval permissions using roles they define
 2. grant signer-specific approval permissions using the bootstrap roles starting in 1.18
 3. disable the approval-authorizing admission plugin in 1.18 (if they don't care about partitioning approver rights)
- 
+
+### API changes between v1beta1 and v1
+
+`spec.signerName` validation:
+
+* required, not defaulted
+* `kubernetes.io/legacy-unknown` is disallowed when creating new CSR objects
+
+`status.certificate` validation:
+
+* cannot be unset or changed once set
+* must contain one or more PEM blocks
+* all PEM blocks must have the "CERTIFICATE" label, contain no headers, and the encoded data
+  must be a BER-encoded ASN.1 Certificate structure as described in section 4 of RFC5280.
+* non-PEM content may appear before or after the CERTIFICATE PEM blocks and is unvalidated,
+  to allow for explanatory text as described in section 5.2 of RFC7468.
+
+`status.conditions` validation:
+
+* type is required
+* status is required and must be `True`, `False`, or `Unknown`
+
+`/status` subresource:
+
+* allows modifying `status.conditions` other than `Approved`/`Denied`
 
 ### CertificateSigningRequest API Definition
 
@@ -249,12 +300,13 @@ type CertificateSigningRequest struct {
 
 type CertificateSigningRequestSpec struct {
   // requested signer for the request up to 571 characters long.  It is a qualified name in the form: `scope-hostname.io/name`.  
-  // If empty, it will be defaulted for v1beta1:
+  // In v1beta1, it will be defaulted:
   //  1. If it's a kubelet client certificate, it is assigned "kubernetes.io/kube-apiserver-client-kubelet".  This is determined by 
   //     Seeing if organizations are exactly `[]string{"system:nodes"}`, common name starts with `"system:node:"`, and
   //     key usages are exactly `[]string{"key encipherment", "digital signature", "client auth"}`
   //  2. Otherwise, it is assigned "kubernetes.io/legacy-unknown".
-  // In v1 it will be required.  Distribution of trust for signers happens out of band. 
+  // In v1, it will not be defaulted, is required, and `kubernetes.io/legacy-unknown` is not permitted when creating new requests.
+  // Distribution of trust for signers happens out of band. 
   // The following signers are known to the kube-controller-manager signer.
   //  1. kubernetes.io/kube-apiserver-client - signs certificates that will be honored as client-certs by the kube-apiserver. Never auto-approved by kube-controller-manager.
   //  2. kubernetes.io/kube-apiserver-client-kubelet - signs client certificates that will be honored as client-certs by the kube-apiserver. May be auto-approved by kube-controller-manager.
@@ -291,7 +343,7 @@ type CertificateSigningRequestSpec struct {
 type ExtraValue []string
 
 type CertificateSigningRequestStatus struct {
-  // Conditions applied to the request, such as approval or denial.
+  // Conditions applied to the request, such as approval, denial, or failure.
   Conditions []CertificateSigningRequestCondition
 
   // Certificate is populated by the signer with the issued certificate in PEM format.
@@ -325,8 +377,13 @@ type CertificateSigningRequestStatus struct {
 }
 
 type CertificateSigningRequestCondition struct {
-  // request approval state, currently Approved or Denied.
+  // conditions, including ones that indicate request approval ("Approved", "Denied") and failure ("Failed").
+  // Approved/Denied conditions are mutually exclusive.
+  // Approved, Denied, and Failed conditions cannot be removed once added.
   Type RequestConditionType
+  // status of the condition. Valid values are True, False, and Unknown.
+  // Approved, Denied, and Failed conditions are limited to a value of True.
+  Status v1.ConditionStatus
   // brief reason for the request state
   Reason string
   // human readable message with details about the request state
@@ -335,18 +392,19 @@ type CertificateSigningRequestCondition struct {
 
 type RequestConditionType string
 
-// These are the possible conditions for a certificate request.
+// These are well-known conditions types for a certificate request.
 const (
   CertificateApproved RequestConditionType = "Approved"
   CertificateDenied   RequestConditionType = "Denied"
+  CertificateFailed   RequestConditionType = "Failed"
 )
 ```
 
 ### Manual CSR Approval With Kubectl
 
 A Kubernetes administrator (with appropriate permissions) can manually approve
-(or deny) Certificate Signing Requests by using the `kubectl certificate
-approve` and `kubectl certificate deny` commands.
+(or deny) Certificate Signing Requests by using the `kubectl certificate approve`
+and `kubectl certificate deny` commands.
 
 ### Automatic CSR Approval Implementations
 
@@ -402,18 +460,10 @@ control plane.
   - status subresource get/update behavior
   - creating, approving, and signing a CSR for a custom signerName (e.g. `k8s.example.com/e2e`)
 
-## Graduation Criteria
-
-### Beta to GA Graduation
-
-Things to resolve for v1.
-1. .spec.signerName should be non-defaulted and required
-2. Should we disallow the legacy .spec.signerName in v1?
-3. Define how signers indicate terminal failure in signing on a CSR. Fix status conditions perhaps?
-
 ## Implementation History
 
 - 1.4: The Certificates API was merged as Alpha
 - 1.6: The Certificates API was promoted to Beta
-- 2020-01-15: Multi-signer design added
-- 2020-01-21: status.certificate field format validation added
+- 1.18: 2020-01-15: Multi-signer design added
+- 1.18: 2020-01-21: status.certificate field format validation added
+- 1.19: 2020-04-15: v1 details added
