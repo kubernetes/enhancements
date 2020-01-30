@@ -32,8 +32,10 @@ status: implemented
     - [Container Runtime Interface Changes](#container-runtime-interface-changes)
       - [Targeting a Specific Container's Namespace](#targeting-a-specific-containers-namespace)
     - [dockershim Changes](#dockershim-changes)
+      - [Edge Case: Zombies](#edge-case-zombies)
     - [Deprecation of existing kubelet flag](#deprecation-of-existing-kubelet-flag)
   - [Risks and Mitigations](#risks-and-mitigations)
+  - [Related Work](#related-work)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
@@ -253,13 +255,18 @@ exists for the kubelet to run automation or debugging from a container image in
 the namespace of an existing pod and container. Additionally, we choose to
 explicitly not support sharing namespaces between different pods. The kubelet
 must not generate such a reference, and the runtime should not accept it. That
-is, for pod{Container `A`, Container `B`, Sandbox `S}` and any other unrelated
-Container `C`:
+is, for pod{Container `A`, InitContainer `B`, Sandbox `S}` and any other
+unrelated Container `C`:
 
-valid `target_id` | invalid `target_id`
------------------ | -------------------
-containerID(A)    | sandboxID(S)
-containerID(B)    | containerID(C)
+valid `target_id`s for TARGET | invalid `target_id`is for TARGET
+----------------------------- | --------------------------------
+containerID(A)                | sandboxID(S)
+containerID(B)                | containerID(C)
+
+Note that targeting init containers is allowed and has no special handling.
+The result of targeting a container which is not running is left to the
+descretion of the CRI implementer. For PID namespace targeting with Docker
+this is an error, but it may be allowed by other runtimes.
 
 #### dockershim Changes
 
@@ -291,6 +298,19 @@ false                 | true    | TARGET             | "host"
 If the Docker runtime version does not support sharing pid namespaces, a
 `CreateContainerRequest` with `namespace_options.pid` set to `POD` will return
 an error.
+
+##### Edge Case: Zombies
+
+[Docker's zombie problem][docker-zombies] mentioned above also theoretically
+applies to containers targeting another container's isolated PID namespace.
+Interestingly, this does not occur in practice. At least in Docker version
+19.03, the zombie of the main process of the targeting container is cleaned
+up.
+
+Either way, this does not introduce a new problem: users of isolated namespaces
+without an init process will already be enjoying zombies created by other 
+debugging methods such as `kubectl exec`. Users are encouraged to enable
+pod-level process namespace sharing.
 
 #### Deprecation of existing kubelet flag
 
@@ -331,6 +351,19 @@ isolation. Notably:
     the <code>/proc/$pid/root</code> magic symlink**. This makes debugging
     easier, but it also means that secrets are protected only by standard
     filesystem permissions.
+
+### Related Work
+
+[Enhancement #127][enhancement-127] proposes node-level user namespace
+remapping. The CRI changes proposed in the [current proposal][proposal-user]
+are compatible with the [Container Runtime Interface Changes](
+#container-runtime-interface-changes) described above. The implementers of
+the user namespace should decide whether to support a `TARGET` mode. A
+Non-goal of the [current proposal][proposal-user] is "support pod/container
+level user namespace isolation", so it's likely unnecessary.
+
+[enhancement-127]: https://features.k8s.io/127
+[proposal-user]: https://git.k8s.io/community/contributors/design-proposals/node/node-usernamespace-remapping.md
 
 ## Design Details
 
