@@ -152,10 +152,10 @@ For consumers of cliensets outside of the Kubernetes codebase, we will take
 point-in-time snapshots of the following packages.
 
 ```
-k8s.io/apiextensions-apiserver/pkg/client/{clientset => deprecated}
+k8s.io/apiextensions-apiserver/pkg/client/clientset/{clientset => deprecated}
 k8s.io/client-go/{kubernetes => deprecated}
 k8s.io/kube-aggregator/pkg/client/clientset_generated/{clientset => deprecated}
-k8s.io/metrics/pkg/client/{clientset => deprecated}
+k8s.io/metrics/pkg/client/clientset/{versioned => deprecated}
 ```
 
 These snapshots will live in tree for 2 releases. This allows consumers to
