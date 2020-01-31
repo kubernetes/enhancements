@@ -32,8 +32,9 @@ status: implementable
   - [Manual CSR Approval With Kubectl](#manual-csr-approval-with-kubectl)
   - [Automatic CSR Approval Implementations](#automatic-csr-approval-implementations)
   - [Automatic Signer Implementations](#automatic-signer-implementations)
+  - [Test Plan](#test-plan)
 - [Graduation Criteria](#graduation-criteria)
-  - [Beta -&gt; GA Graduation](#beta---ga-graduation)
+  - [Beta to GA Graduation](#beta-to-ga-graduation)
 - [Implementation History](#implementation-history)
 <!-- /toc -->
 
@@ -379,9 +380,31 @@ that uses a webhook to sign all approved CSRs. This allows the root certificate
 authority secret material to be stored and maintained outside of the Kubernetes
 control plane.
 
+### Test Plan
+
+- unit tests of:
+  - API defaulting
+  - API validation
+  - API round-tripping
+  - Authorizing admission plugin
+  - Admission plugin limiting system:master client CSRs
+  - Auto-approving controller
+  - Auto-signing controller
+
+- integration tests of:
+  - auto-approve and signing of kubelet client CSR
+  - manual-approve and auto-signing of kubelet serving CSR
+  - manual-approve and auto-signing of API client CSR
+  - manual-approve and auto-signing of legacy CSR
+
+- e2e tests (and conformance tests, once v1) of:
+  - CSR API presence, CRUD behavior
+  - status subresource get/update behavior
+  - creating, approving, and signing a CSR for a custom signerName (e.g. `k8s.example.com/e2e`)
+
 ## Graduation Criteria
 
-### Beta -> GA Graduation
+### Beta to GA Graduation
 
 Things to resolve for v1.
 1. .spec.signerName should be non-defaulted and required
