@@ -6,13 +6,15 @@ authors:
 owning-sig: sig-autoscaling
 participating-sigs:
 reviewers:
-  - TBD
+  - "@mwielgus"
+  - "@josephburnett"
 approvers:
-  - TBD
+  - "@mwielgus"
+  - "@josephburnett"
 editor: TBD
 creation-date: 2019-03-07
-last-updated: 2019-09-16
-status: implementable
+last-updated: 2012-01-29
+status: implemented
 superseded-by:
 ---
 
@@ -41,7 +43,9 @@ superseded-by:
     - [API Changes](#api-changes)
     - [HPA Controller State Changes](#hpa-controller-state-changes)
     - [Command Line Options Changes](#command-line-options-changes)
-- [Graduation Criteria](#graduation-criteria)
+- [Design Details](#design-details)
+  - [Test Plan](#test-plan)
+  - [Graduation Criteria](#graduation-criteria)
 <!-- /toc -->
 
 ## Summary
@@ -509,7 +513,18 @@ Check the [Default Values][] section for more information about how to determine
 [--horizontal-pod-autoscaler-downscale-stabilization-window]: https://v1-14.docs.kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#algorithm-details
 [DefaultValues]: #default-values
 
-## Graduation Criteria
+## Design Details
+
+### Test Plan
+
+This feature will include the following unit tests to test the following scenarios:
+
+- [TestGenerateScaleDownRules](https://github.com/kubernetes/kubernetes/blob/928817a26a84d9e3076d110ea30ba994912aa477/pkg/apis/autoscaling/v2beta2/defaults_test.go#L29) and [TestGenerateScaleUpRules](https://github.com/kubernetes/kubernetes/blob/928817a26a84d9e3076d110ea30ba994912aa477/pkg/apis/autoscaling/v2beta2/defaults_test.go#L119) verify that the defaults are populated correctly when only a partial set of fields are specified.
+- [TestValidateScale](https://github.com/kubernetes/kubernetes/blob/928817a26a84d9e3076d110ea30ba994912aa477/pkg/apis/autoscaling/validation/validation_test.go#L33) and [TestValidateBehavior](https://github.com/kubernetes/kubernetes/blob/928817a26a84d9e3076d110ea30ba994912aa477/pkg/apis/autoscaling/validation/validation_test.go#L97) ensure sanity of values specified in the various fields during HPA creation.
+- [TestScaleDownWithScalingRules](https://github.com/kubernetes/kubernetes/blob/928817a26a84d9e3076d110ea30ba994912aa477/pkg/controller/podautoscaler/horizontal_test.go#L1272) and [TestScalingWithRules](https://github.com/kubernetes/kubernetes/blob/928817a26a84d9e3076d110ea30ba994912aa477/pkg/controller/podautoscaler/horizontal_test.go#L3120) test scale up and scale down in single steps when scaling rules are specified.
+- [TestStoreScaleEvents](https://github.com/kubernetes/kubernetes/blob/928817a26a84d9e3076d110ea30ba994912aa477/pkg/controller/podautoscaler/horizontal_test.go#L3598) test the storage of events when scaling happens.
+
+### Graduation Criteria
 
 All the new configuration will be added to the `autoscaling/v2beta2` API which has not yet graduated to GA. So these changes do not need a separate
 Graduation Criteria and will be part of the existing beta API.
