@@ -197,6 +197,24 @@ The funcion ForEach() iterates over all the elements of the bitmap, the time bet
 func (r *AllocationBitmap) ForEach(fn func(int)) {
 ```
 
+The utils/net RangeSize() funcion is limited to MaxInt64 too
+
+```go
+// RangeSize returns the size of a range in valid addresses.
+// returns the size of the subnet (or math.MaxInt64 if the range size would overflow int64)
+func RangeSize(subnet *net.IPNet) int64 {
+	ones, bits := subnet.Mask.Size()
+	if bits == 32 && (bits-ones) >= 31 || bits == 128 && (bits-ones) >= 127 {
+		return 0
+	}
+	// this checks that we are not overflowing an int64
+	if bits-ones >= 63 {
+		return math.MaxInt64
+	}
+	return int64(1) << uint(bits-ones)
+}
+```
+
 https://gitlab.cncf.ci/kubernetes/kubernetes/commit/8725f720831adbdfbd70819c7134111a0967b6a6?view=parallel
 
 ### Node IPAM Controller and Range Allocator
@@ -274,11 +292,19 @@ Beta --> GA
 
 ### Upgrade / Downgrade Strategy
 
-- TBD
+- The ipallocator will need a new prefix in the etcd registry to avoid conflicts with previous
+or older bitmaps versions.
+Once enabled the new bitmap storage, the repair loop will recreate the right entries in the new storage.
+
+- The ipam controller store the status on the node spec fields
 
 ### Version Skew Strategy
 
-- TBD
+- The ipallocator will need a new prefix in the etcd registry to avoid conflicts with previous
+or older bitmaps versions.
+Once enabled the new bitmap storage, the repair loop will recreate the right entries in the new storage.
+
+- The ipam controller store the status on the node spec fields
 
 ## Drawbacks
 
