@@ -9,7 +9,7 @@ participating-sigs:
   - sig-architecture
 reviewers:
   - "@thockin"
-  - "@bgrant0507"
+  - "@bgrant0607"
   - "@dims"
 approvers:
   - "@brancz"
@@ -49,6 +49,7 @@ superseded-by:
     - [Migration being abandoned halfway](#migration-being-abandoned-halfway)
     - [Huge increase of log volume](#huge-increase-of-log-volume)
 - [Design Details](#design-details)
+  - [Proposed list of log messages to change](#proposed-list-of-log-messages-to-change)
   - [Example of migrating klog call](#example-of-migrating-klog-call)
 - [Alternatives](#alternatives)
     - [Just write guideline and update log messages](#just-write-guideline-and-update-log-messages)
@@ -79,9 +80,9 @@ Current logging in the Kubernetes control plane doesn’t guarantee any uniform 
 
 ### Non-Goals
 
-* We are *not* replacing currently used logging library (klog) or the way in which it is used
-* We are *not* preserving full compatibility of logging output
-* We are *not* proposing structuring all logs in Kubernetes
+* We are **not** replacing currently used logging library (klog) or the way in which it is used
+* We are **not** preserving full compatibility of logging output
+* We are **not** proposing structuring all logs in Kubernetes
 
 ## Proposal
 
@@ -323,9 +324,14 @@ If log volume increase cannot be avoided we will include information about large
 
 ## Design Details
 
-|nr |line                        |Log volume|Coverage|
+### Proposed list of log messages to change
+
+Log messages ordered by their share in log line count.
+
+|nr |line                        |Log line share|Coverage|
 |---|----------------------------|----------|--------|
-|2  |[get.go:251](https://github.com/kubernetes/kubernetes/blob/15c3f1b11/staging/src/k8s.io/apiserver/pkg/server/httplog/httplog.go#L90)     |12.48%    |96.92%  |
+|1  |[httplog.go:90](https://github.com/kubernetes/kubernetes/blob/15c3f1b11/staging/src/k8s.io/apiserver/pkg/server/httplog/httplog.go#L90)  |84.44%    |84.44%  |
+|2  |[get.go:251](https://github.com/kubernetes/kubernetes/blob/15c3f1b11/staging/src/k8s.io/apiserver/pkg/endpoints/handlers/get.go#L251)    |12.48%    |96.92%  |
 |3  |[watcher.go:363](https://github.com/kubernetes/kubernetes/blob/15c3f1b11/staging/src/k8s.io/apiserver/pkg/endpoints/handlers/get.go#L251)|0.83%     |97.76%  |
 |4  |[watcher.go:256](https://github.com/kubernetes/kubernetes/blob/15c3f1b11/staging/src/k8s.io/apiserver/pkg/storage/etcd3/watcher.go#L363) |0.52%     |98.28%  |
 |5  |[event.go:278](https://github.com/kubernetes/kubernetes/blob/15c3f1b11/staging/src/k8s.io/apiserver/pkg/storage/etcd3/watcher.go#L256)   |0.42%     |98.70%  |
