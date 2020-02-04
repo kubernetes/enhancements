@@ -6,7 +6,7 @@ authors:
   - "@tpepper"
   - "@jberkus"
   - "@youngnick"
-owning-sig: wg-lts
+owning-sig: sig-release
 participating-sigs:
   - sig-architecture
   - sig-testing
@@ -169,7 +169,7 @@ A visual example today vs. proposed for an adopter of 1.18 in April 2020:
 * Staff patch releases for one more branch for ~3-4 more months
   * Feedback from SIG Release received, see [SIG Release meeting discussion](https://docs.google.com/document/d/1Fu6HxXQu8wl6TwloGUEOXVzZ1rwZ72IAhglnaAMCPqA/edit#bookmark=id.mi11nk75iohl).
 * Maintain CI for one more branch for ~3-4 more months
-  * Modifying test job and infrastructure patterns may need deprecated on a slower schedule or backwards compatibility with older style tests in older branches may need maintained longer.  This is a problem already today (e.g.: bootstrap.py went out of support, but was still in use in release-1.14 branch CI during the end of that branch’s lifetime).
+  * Modifying test job and infrastructure patterns may need to be deprecated on a slower schedule or backwards compatibility with older style tests in older branches may need maintained longer.  This is a problem already today, in that images and jobs need to be maintained for all branches already, but adding another version will make it worse.
 * Formalize turn-down timing of CI/ for oldest release and patch acceptance criteria for release branch:
   * Historically this trailing period outside of support was squishy ("wait a little while, cut a final patch release, turn down jobs").  It is currently specified that oldest release branch CI support is turned off at the time when the newest, under-development release branch is created.  This happens at the first ‘beta’ release, e.g.: ‘1.16.0-beta.0’.  Due to an implementation detail where branches are referred to by “dev”, “beta”, “stable1”, “stable2”, “stable3” there is a rotation of marker variables at the point of new branch creation.  This is an automated process, run by the SIG Release subproject Release Engineering branch manager, and can be adjusted as needed.  But while CI is running if a CVE or upgrade issue is encountered and resolution is able to be backported the community has intended to do so.  In practice this has not been required.
   * This KEP proposes the rotation happen 2 months after the 1 year period, i.e.: 12+2 months patch ability.  This constitutes 12 months of normal patch releases, plus a two month grace period for end users to plan and upgrade their clusters to a supported version. During this special 2-month grace period only critical security and upgrade fixes are acceptable on the branch.  I.e.:
@@ -182,6 +182,10 @@ A visual example today vs. proposed for an adopter of 1.18 in April 2020:
 * Formalize 3rd party dependency update policy (e.g.: golang, but also others too)
     * Patch release updates: Need to track upstream golang patch releases continually.
     * Major release updates: Can we also formalize when to move to a new Golang major release.  This is needed as two of our annual releases today (and all of them if we move to a yearly lifecycle) run beyond the end of Golang’s patch release lifecycle.
+    * Some dependencies in particular need calling out as needing effort for maintaining an extra release branch:
+      * The Bazel testing dependency could add a lot of effort, because it may involve backporting bazel fixes.
+      * golang version support policy could also create a lot of work.
+
 ### Clarify “Support Policy” in community documentation
 * Generally, e.g.:
 https://git.k8s.io/community/contributors/devel/sig-release/cherry-picks.md#what-kind-of-prs-are-good-for-cherry-picks
@@ -255,7 +259,7 @@ Distributors/vendors remain free to carve out their own support niche if they fe
 
 An increase to the support period of Kubernetes also increases the human burden of maintenance on the patch management (Release Engineering), test-infra, k8s-infra, sig-pm/release, and regular SIG functioning.
 Some of these impacts have already been recognized and sub-projects have been set up to mitigate them.
-Still, there will be an unavoidable increased cost in dollars for infrastructure resources kept online 3 additional months.
+Still, there will be an unavoidable increased cost in dollars for infrastructure resources kept online 3 additional months, and additional engineering costs patching critical bugs in more versions.
 
 Other areas of possible concern are listed below, but WG LTS feels these are orthogonal, not blocked by this proposal, and may be addressed independently:
 
