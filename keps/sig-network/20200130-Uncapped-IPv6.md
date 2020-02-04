@@ -220,7 +220,7 @@ https://gitlab.cncf.ci/kubernetes/kubernetes/commit/8725f720831adbdfbd70819c7134
 ### Node IPAM Controller and Range Allocator
 
 We can add new Range allocator based on Roaring Bitmaps
---cidr-allocator-type="RangeAllocator"
+`--cidr-allocator-type="RangeAllocator"`
 https://github.com/kubernetes/kubernetes/blob/ded6ee953c68f8333ee6291e0bcb7e58604fac00/pkg/controller/nodeipam/ipam/doc.go#L17-L29
 
 The Node IPAM controller manages the assigned CIDR ranges to each node.
