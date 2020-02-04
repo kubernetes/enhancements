@@ -63,7 +63,7 @@ address namespace of 2^32 addresses vs 2^128 with IPv6.
 
 ## Motivation
 
-One of the main motivation to restric allocations when using IPv6 is caused because Kubernetes is using internally bitmaps (or bitsets) to store the data.
+One of the main motivation to restrict allocations when using IPv6 is caused because Kubernetes is using internally bitmaps (or bitsets) to store the data.
 Bitmaps are fast data structures, but they can use too much memory and not efficiently. Per example, in sparse scenarios like with the ip allocator,
 if we allocate one IP at the position 1,000,000 we have to use over 100kB only for that IP.
 
