@@ -9,7 +9,6 @@ participating-sigs:
   - sig-architecture
 reviewers:
   - "@thockin"
-  - "@bgrant0607"
   - "@dims"
 approvers:
   - "@brancz"
