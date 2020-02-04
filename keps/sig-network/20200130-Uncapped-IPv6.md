@@ -71,7 +71,7 @@ The IPv6 allocation restrictions can be removed or relaxed if we use compressed 
 
 ### Goals
 
-Replace current bitmap structures that are causing IPv6 restrictions by [roaring bitmaps](http://roaringbitmap.org/about/).
+Remove current bitmap structures where these are causing IPv6 restrictions and replace with [roaring bitmaps](http://roaringbitmap.org/about/).
 
 ### Non-Goals
 
