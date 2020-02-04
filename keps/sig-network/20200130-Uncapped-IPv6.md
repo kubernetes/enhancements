@@ -197,7 +197,7 @@ The funcion ForEach() iterates over all the elements of the bitmap, the time bet
 func (r *AllocationBitmap) ForEach(fn func(int)) {
 ```
 
-The utils/net RangeSize() funcion is limited to MaxInt64 too
+The utils/net `RangeSize()` function is limited to MaxInt64 too
 
 ```go
 // RangeSize returns the size of a range in valid addresses.
