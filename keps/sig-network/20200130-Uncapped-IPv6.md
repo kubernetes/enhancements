@@ -189,7 +189,7 @@ https://github.com/etcd-io/etcd/blob/master/Documentation/dev-guide/limit.md#req
 
 > etcd is designed to handle small key value pairs typical for metadata. Larger > requests will work, but may increase the latency of other requests. By default, the maximum size of any request is 1.5 MiB. This limit is configurable through --max-request-bytes flag for etcd server.
 
-The funcion ForEach() iterates over all the elements of the bitmap, the time between resyncs will impose a limit on the size of the bitmap.
+The function `ForEach()` iterates over all the elements of the bitmap, the time between resyncs will impose a limit on the size of the bitmap.
 
 ```go
 // ForEach calls the provided function for each allocated bit.  The
