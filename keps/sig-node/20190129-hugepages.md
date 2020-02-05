@@ -566,3 +566,11 @@ Beta support for huge pages
 
 GA support for huge pages proposed based on feedback from user community
 using the feature without issue.
+
+### Version 1.18
+
+Extending of huge pages feature to support container isolation of huge pages and multiple sizes of huge pages.
+
+### Version 1.19[TBD]
+
+Extending of huge pages test suit of E2E tests and cri-tools for enhancements after GA.
