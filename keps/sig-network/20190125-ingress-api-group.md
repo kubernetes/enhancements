@@ -679,6 +679,7 @@ backend:
 
 - [ ] 1.17: API finalized and implemented on the branch.
 - [ ] 1.XX: Ingress spec and conformance tests finalized and running against branch.
+- [ ] 1.XX: Review & update Ingress [documentation](https://k8s.io/docs/concepts/services-networking/ingress/)
 - [ ] 1.XX: API changes merged into the main API, with tests from v1beta1 pointing to GA.
 
 ## Implementation History
