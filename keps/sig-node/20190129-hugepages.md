@@ -44,10 +44,14 @@ superseded-by:
     - [Huge pages as shared memory](#huge-pages-as-shared-memory)
     - [NUMA](#numa)
 - [Graduation Criteria](#graduation-criteria)
+- [Test Plan](#test-plan)
 - [Implementation History](#implementation-history)
   - [Version 1.8](#version-18)
   - [Version 1.9](#version-19)
   - [Version 1.14](#version-114)
+  - [Version 1.18](#version-118)
+  - [Version 1.19[TBD]](#version-119tbd)
+- [Release Signoff Checklist](#release-signoff-checklist)
 <!-- /toc -->
 
 ## Summary
