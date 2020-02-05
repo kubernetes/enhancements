@@ -190,7 +190,7 @@ Kubernetes provides the following well-known signers.  Today, failures for all o
     1. Trust distribution: signed certificates must be honored by the kube-apiserver as valid to terminate connections to a kubelet.
        The CA bundle is not distributed by any other means.
     2. Permitted subjects - organizations are exactly `[]string{"system:nodes"}`, common name starts with `"system:node:"`
-    3. Permitted x509 extensions - DNS and IP SANs are allowed
+    3. Permitted x509 extensions - only DNS and IP SANs are allowed, at least one DNS or IP SAN must be present
     4. Permitted key usages - exactly `[]string{"key encipherment", "digital signature", "server auth"}`
     5. Expiration/cert lifetime - minimum of CSR signer or request.
     6. CA bit allowed/disallowed - not allowed.
