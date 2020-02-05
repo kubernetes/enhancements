@@ -586,3 +586,14 @@ Extending of huge pages feature to support container isolation of huge pages and
 ### Version 1.19[TBD]
 
 Extending of huge pages test suit of E2E tests and cri-tools for enhancements after GA.
+
+## Release Signoff Checklist
+- \[x] kubernetes/enhancements issue in release milestone, which links to KEP (this should be a link to the KEP location in kubernetes/enhancements, not the initial KEP PR)
+- \[ ] KEP approvers have set the KEP status to `implementable`
+  - The KEP is already implemented/GA.
+- \[x] Design details are appropriately documented
+- \[x] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- \[x] Graduation criteria is in place
+- \[x] "Implementation History" section is up-to-date for milestone
+- \[x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- \[x] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
