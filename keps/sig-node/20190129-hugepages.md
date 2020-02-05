@@ -552,6 +552,18 @@ locality guarantees as a feature of QoS.  In particular, pods in the
 - E2E testing validating its usage.
 -- https://k8s-testgrid.appspot.com/sig-node-kubelet#node-kubelet-serial&include-filter-by-regex=Feature%3AHugePages
 
+## Test Plan
+
+- A test plan will consist of the following tests
+  - Unit tests
+    - Each unit test for enhancement will be implemented.
+  - E2E tests
+    - There is a test suit for huge pages in e2e test, it will be extended to validate enhancements.
+    - here: https://github.com/kubernetes/kubernetes/blob/master/test/e2e_node/hugepages_test.go
+  - cri-tools
+    - Test case will be added to cri-tools to be used in CRI runtime' test(CI).
+    - here: https://github.com/kubernetes-sigs/cri-tools
+
 ## Implementation History
 
 ### Version 1.8
