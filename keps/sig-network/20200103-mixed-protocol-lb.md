@@ -13,7 +13,7 @@ approvers:
   - "@thockin"
 editor: TBD
 creation-date: 2020-01-03
-last-updated: 2020-01-03
+last-updated: 2020-02-06
 status: provisional
 see-also:
 replaces:
@@ -31,9 +31,9 @@ superseded-by:
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [User Stories [optional]](#user-stories-optional)
+  - [User Stories](#user-stories)
     - [Story 1](#story-1)
-  - [Implementation Details/Notes/Constraints [optional]](#implementation-detailsnotesconstraints-optional)
+  - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
     - [Alibaba](#alibaba)
     - [AWS](#aws)
     - [Azure](#azure)
@@ -43,17 +43,17 @@ superseded-by:
     - [Oracle Cloud](#oracle-cloud)
     - [Tencent Cloud](#tencent-cloud)
   - [Risks and Mitigations](#risks-and-mitigations)
+    - [Billing perspective](#billing-perspective)
+    - [API change and upgrade/downgrade situations](#api-change-and-upgradedowngrade-situations)
 - [Design Details](#design-details)
   - [Option Control Alternatives](#option-control-alternatives)
-    - [Annotiation in the Service definition](#annotiation-in-the-service-definition)
+    - [Annotation in the Service definition](#annotation-in-the-service-definition)
     - [Merging Services in CPI](#merging-services-in-cpi)
+    - [Proposed solution](#proposed-solution)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
-    - [Examples](#examples)
-      - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
-      - [Beta -&gt; GA Graduation](#beta---ga-graduation)
-      - [Removing a deprecated flag](#removing-a-deprecated-flag)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+    - [Downgrade Strategy](#downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Implementation History](#implementation-history)
 - [Drawbacks [optional]](#drawbacks-optional)
