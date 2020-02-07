@@ -130,7 +130,7 @@ In order to make the pods which belongs to the same `PodGroup` to be scheduled t
 
 ```go
 func (cs *Coscheduling) PreFilter(ctx context.Context, state *framework.CycleState, p *v1.Pod) *framework.Status {
-    …
+    ...
  
      // Count the numbers of all pods belongs to the same PodGroup excludes terminating ones.
     total := cs.calculateTotalPods(podGroupName)
