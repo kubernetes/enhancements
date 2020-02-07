@@ -1,3 +1,27 @@
+---
+title: CPU Manager
+authors:
+  - "@ConnorDoyle"
+  - "@flyingcougar"
+  - "@sjenning"
+owning-sig: sig-node
+participating-sigs:
+  - sig-node
+reviewers:
+  - "@derekwaynecarr"
+approvers:
+  - "@dawnchen"
+  - "@derekwaynecarr"
+editor: Connor Doyle
+creation-date: 2017-05-23
+last-updated: 2017-05-23
+status: implementable
+see-also:
+replaces:
+  - " kubernetes/community/contributors/design-proposals/node/cpu-manager.md"
+superseded-by:
+---
+
 # CPU Manager
 
 _Authors:_
@@ -6,14 +30,34 @@ _Authors:_
 * @flyingcougar - Szymon Scharmach &lt;szymon.scharmach@intel.com&gt;
 * @sjenning - Seth Jennings &lt;sjenning@redhat.com&gt;
 
-**Contents:**
+## Table of Contents
 
-* [Overview](#overview)
-* [Proposed changes](#proposed-changes)
-* [Operations and observability](#operations-and-observability)
-* [Practical challenges](#practical-challenges)
-* [Implementation roadmap](#implementation-roadmap)
-* [Appendix A: cpuset pitfalls](#appendix-a-cpuset-pitfalls)
+<!-- toc -->
+- [Overview](#overview)
+  - [Related issues](#related-issues)
+- [Proposed changes](#proposed-changes)
+  - [CPU Manager component](#cpu-manager-component)
+    - [Discovering CPU topology](#discovering-cpu-topology)
+    - [CPU Manager interfaces (sketch)](#cpu-manager-interfaces-sketch)
+    - [Configuring the CPU Manager](#configuring-the-cpu-manager)
+    - [Policy 1: &quot;none&quot; cpuset control [default]](#policy-1-none-cpuset-control-default)
+    - [Policy 2: &quot;static&quot; cpuset control](#policy-2-static-cpuset-control)
+      - [Implementation sketch](#implementation-sketch)
+      - [Example pod specs and interpretation](#example-pod-specs-and-interpretation)
+      - [Example scenarios and interactions](#example-scenarios-and-interactions)
+    - [Policy 3: &quot;dynamic&quot; cpuset control](#policy-3-dynamic-cpuset-control)
+      - [Implementation sketch](#implementation-sketch-1)
+      - [Example pod specs and interpretation](#example-pod-specs-and-interpretation-1)
+- [Operations and observability](#operations-and-observability)
+- [Practical challenges](#practical-challenges)
+- [Implementation roadmap](#implementation-roadmap)
+  - [Phase 1: None policy [TARGET: Kubernetes v1.8]](#phase-1-none-policy-target-kubernetes-v18)
+  - [Phase 2: Static policy [TARGET: Kubernetes v1.8]](#phase-2-static-policy-target-kubernetes-v18)
+  - [Phase 3: Beta support [TARGET: Kubernetes v1.9]](#phase-3-beta-support-target-kubernetes-v19)
+  - [Later phases [TARGET: After Kubernetes v1.9]](#later-phases-target-after-kubernetes-v19)
+- [Appendix A: cpuset pitfalls](#appendix-a-cpuset-pitfalls)
+<!-- /toc -->
+
 
 ## Overview
 
