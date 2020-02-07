@@ -44,10 +44,14 @@ superseded-by:
     - [Huge pages as shared memory](#huge-pages-as-shared-memory)
     - [NUMA](#numa)
 - [Graduation Criteria](#graduation-criteria)
+- [Test Plan](#test-plan)
 - [Implementation History](#implementation-history)
   - [Version 1.8](#version-18)
   - [Version 1.9](#version-19)
   - [Version 1.14](#version-114)
+  - [Version 1.18](#version-118)
+  - [Version 1.19[TBD]](#version-119tbd)
+- [Release Signoff Checklist](#release-signoff-checklist)
 <!-- /toc -->
 
 ## Summary
@@ -552,6 +556,18 @@ locality guarantees as a feature of QoS.  In particular, pods in the
 - E2E testing validating its usage.
 -- https://k8s-testgrid.appspot.com/sig-node-kubelet#node-kubelet-serial&include-filter-by-regex=Feature%3AHugePages
 
+## Test Plan
+
+- A test plan will consist of the following tests
+  - Unit tests
+    - Each unit test for enhancement will be implemented.
+  - E2E tests
+    - There is a test suit for huge pages in e2e test, it will be extended to validate enhancements.
+    - here: https://github.com/kubernetes/kubernetes/blob/master/test/e2e_node/hugepages_test.go
+  - cri-tools
+    - Test case will be added to cri-tools to be used in CRI runtime' test(CI).
+    - here: https://github.com/kubernetes-sigs/cri-tools
+
 ## Implementation History
 
 ### Version 1.8
@@ -566,3 +582,22 @@ Beta support for huge pages
 
 GA support for huge pages proposed based on feedback from user community
 using the feature without issue.
+
+### Version 1.18
+
+Extending of huge pages feature to support container isolation of huge pages and multiple sizes of huge pages.
+
+### Version 1.19[TBD]
+
+Extending of huge pages test suit of E2E tests and cri-tools for enhancements after GA.
+
+## Release Signoff Checklist
+- \[x] kubernetes/enhancements issue in release milestone, which links to KEP (this should be a link to the KEP location in kubernetes/enhancements, not the initial KEP PR)
+- \[ ] KEP approvers have set the KEP status to `implementable`
+  - The KEP is already implemented/GA.
+- \[x] Design details are appropriately documented
+- \[x] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- \[x] Graduation criteria is in place
+- \[x] "Implementation History" section is up-to-date for milestone
+- \[x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- \[x] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
