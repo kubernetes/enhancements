@@ -145,7 +145,7 @@ These KEPs will be owned by SIG-architecture and should be seen as a way to comm
 ### KEP Template
 
 <b>
-The template for a KEP is precisely defined [here](/keps/YYYYMMDD-kep-template.md).
+The template for a KEP is precisely defined [here](/keps/NNNN-kep-template).
 </b>
 
 ### KEP Metadata

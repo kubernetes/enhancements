@@ -1,0 +1,26 @@
+title: Enhance KEP implementation
+kep-number: 617
+authors:
+  - "@calebamiles"
+  - "@deads2k"
+  - "@derekwaynecarr"
+  - "@jdumars"
+  - "@johnbelamaric"
+  - "@justaugustus"
+  - "@thockin"
+owning-sig: sig-pm
+participating-sigs:
+  - sig-architecture
+status: provisional
+creation-date: 2018-09-08
+reviewers:
+  - "@erictune"
+  - "@idvoretskyi"
+  - "@spiffxp"
+  - "@timothysc"
+approvers:
+  - "@bgrant0607"
+  - "@jbeda"
+see-also:
+  - [/keps/0001-kubernetes-enhancement-proposal-process.md]
+replaces: []
