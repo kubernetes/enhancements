@@ -10,8 +10,8 @@ approvers:
   - "@bgrant0607"
 editor: "@jbeda"
 creation-date: 2017-08-22
-last-updated: 2019-04-12
-status: implementable
+last-updated: 2020-02-18
+status: implemented
 ---
 
 # Kubernetes Enhancement Proposal Process
@@ -144,13 +144,21 @@ These KEPs will be owned by SIG-architecture and should be seen as a way to comm
 
 ### KEP Template
 
-The template for a KEP is precisely defined [here](YYYYMMDD-kep-template.md)
+<b>
+The template for a KEP is precisely defined [here](/keps/YYYYMMDD-kep-template.md).
+</b>
 
 ### KEP Metadata
 
 There is a place in each KEP for a YAML document that has standard metadata.
 This will be used to support tooling around filtering and display.  It is also
 critical to clearly communicate the status of a KEP.
+
+<b>
+While this defines the metadata schema for now, these things tend to evolve.
+The KEP template is the authoritative definition of things like the metadata
+schema.
+</b>
 
 Metadata items:
 * **title** Required
