@@ -158,7 +158,7 @@ func (cs *Coscheduling) PreFilter(ctx context.Context, state *framework.CycleSta
 ```
 
 #### Permit
-`Permit` phase we put the pod that doesn't meet min-available into the WaitingMap and reserve resources until min-available are met or timeout is triggered.
+In `Permit` phase, we put the pod that doesn't meet min-available into the WaitingMap and reserve resources until min-available are met or timeout is triggered.
 1. Get the number of Running pods that belong to the same PodGroup
 2. Get the number of WaitingPods (used to record pods in waiting status) that belong to the same PodGroup
 3. If Running + WaitingPods + 1 >= min-available(1 means the pod itself), approve the waiting pods that  belong to the same PodGroup. Otherwise, put the pod into WaitingPods and set the timeout (eg: 10s).
