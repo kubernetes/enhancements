@@ -5,8 +5,12 @@ authors:
 owning-sig: sig-scheduling
 reviewers:
   - "@Huang-Wei"
+  - "@ahg-g"
+  - "@alculquicondor"
+  - "k82cn"
   - "@resouer"
   - "@hex108"
+  - "@everpeace"
 approvers:
   - "@Huang-Wei"
 creation-date: 2020-01-16
@@ -19,25 +23,27 @@ status: provisional
 ## Table of Contents
 
 <!-- toc -->
-- [Motivation](#motivation)
-- [Goals](#goals)
-- [Non-Goals](#non-goals)
-- [Use Cases](#use-cases)
-- [Terms](#terms)
-- [Proposal](#proposal)
-- [Design Details](#design-details)
-  - [PodGroup](#podgroup)
-  - [Coscheduling](#coscheduling)
-  - [Extension points](#extension-points)
-    - [QueueSort](#queuesort)
-    - [Pre-Filter](#pre-filter)
-    - [Permit](#permit)
-    - [UnReserve](#unreserve)
-- [Alternatives considered](#alternatives-considered)
-- [Graduation Criteria](#graduation-criteria)
-- [Testing Plan](#testing-plan)
-- [Implementation History](#implementation-history)
-- [References](#references)
+- [Coscheduling plugin based on scheduler framework](#coscheduling-plugin-based-on-scheduler-framework)
+  - [Table of Contents](#table-of-contents)
+  - [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+  - [Use Cases](#use-cases)
+  - [Terms](#terms)
+  - [Proposal](#proposal)
+  - [Design Details](#design-details)
+    - [PodGroup](#podgroup)
+    - [Coscheduling](#coscheduling)
+    - [Extension points](#extension-points)
+      - [QueueSort](#queuesort)
+      - [Pre-Filter](#pre-filter)
+      - [Permit](#permit)
+      - [UnReserve](#unreserve)
+  - [Alternatives considered](#alternatives-considered)
+  - [Graduation Criteria](#graduation-criteria)
+  - [Testing Plan](#testing-plan)
+  - [Implementation History](#implementation-history)
+  - [References](#references)
 <!-- /toc -->
 
 ## Motivation
@@ -68,13 +74,14 @@ In order to implement coscheduling, we developed plugins in different extension 
 
 ### PodGroup
 
-We use a special label named ```pod-group/name``` to define a PodGroup. Pods that set this label and use the same value belong to the same PodGroup. This is a short term solution, in the future if the definition of `PodGroup` is accepted by the community, we will define it directly through the CRD of `PodGroup`. This is not the focus of this proposal.
+We use a special label named ```pod-group.scheduling.sigs.k8s.io/name``` to define a PodGroup. Pods that set this label and use the same value belong to the same PodGroup. This is a short term solution, in the future if the definition of `PodGroup` is accepted by the community, we will define it directly through the CRD of `PodGroup`. This is not the focus of this proposal. 
 
 ```yaml 
 labels:
-     pod-group/name: nginx
-     pod-group/min-available: "2"
+     pod-group.scheduling.sigs.k8s.io/name: nginx
+     pod-group.scheduling.sigs.k8s.io/min-available: "2"
 ``` 
+`Pods` in the same `PodGroup` with different priorities might lead to unintended behavior, so need to ensure `Pods` in the same `PodGroup` with the same priority.
 
 ### Coscheduling
 ```go
@@ -110,13 +117,13 @@ In order to make the pods which belongs to the same `PodGroup` to be scheduled t
 ```go
   func  Less(podA *PodInfo, podB *PodInfo) bool
 ```
-1. Trying to order by pod priority (i.e. .spec.priorityValue), pod with higher priority is scheduled ahead of other pod with lower priority. When priorities are the same, they are operated according to the following process.
+1. Trying to order by pod priority (i.e. .spec.priorityValue), pod with higher priority is scheduled ahead of other pod with lower priority. When priorities are the same, they are operated according to the following process. 
    
 2. When podA and podB are both regularPods (we will check it by their labels), it follows the same logic of default in-tree [PrioritySort](https://github.com/kubernetes/kubernetes/blob/master/pkg/scheduler/framework/plugins/queuesort/priority_sort.go#L41-L45) plugin.
    
 3. When podA is regularPod, podB is pgPod, trying to order by podA's `Timestamp` (the time pod added to the scheduling queue) and podB’s `LastFailureTimestamp` (we get the PodGroupInfo from the cache). Pod with earlier timestamp is scheduled ahead of other pod.   
    
-4. When podA and podB are both pgPods.
+4. When podA and podB are both pgPods. 
    1. Trying to order by the `LastFailureTimestamp` of the podGroup. Pod with earlier timestamp is scheduled ahead of other pod.
    
    2. If `LastFailureTimestampA` is equal to `LastFailureTimestampB`, trying to order by the `UID` of `PodGroup`,`Pod` with lexicographically greater `UID` is scheduled ahead of other pod. (The purpose is to distinguish different `PodGroup` with the same `LastFailureTimestamp` and to keep the pods of the same `PodGroup` together)
@@ -131,7 +138,6 @@ In order to make the pods which belongs to the same `PodGroup` to be scheduled t
 ```go
 func (cs *Coscheduling) PreFilter(ctx context.Context, state *framework.CycleState, p *v1.Pod) *framework.Status {
     ...
- 
      // Count the numbers of all pods belongs to the same PodGroup excludes terminating ones.
     total := cs.calculateTotalPods(podGroupName)
     if total < minAvailable {
@@ -199,14 +205,13 @@ func (cs *Coscheduling) Unreserve(ctx context.Context, state *framework.CycleSta
 ```
 
 ## Alternatives considered
-1. Change the unit of Queue from `Pod` to `PodGroup`.
-In this way, the workload is huge and it will affect the overall process of scheduling.
+1. Using `PodGroup` as a scheduling unit. This requires major refactoring, which only supports Pods as scheduling unit today.
 
 
 ## Graduation Criteria
 
 ## Testing Plan
-1.  Add detailed unit and integration tests for nonpreempting workloads.
+1.  Add detailed unit and integration tests for workloads.
 2.  Add basic e2e tests, to ensure all components are working together.
  
 ## Implementation History
