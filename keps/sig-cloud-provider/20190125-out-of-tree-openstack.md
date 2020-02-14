@@ -65,7 +65,7 @@ This KEP is specifically tracking progress for the OpenStack cloud provider.
 
 ### Non-Goals
 
-* Removing in-tree OpenStack cloud provider code, this effort falls under the [KEP for removing in-tree providers](https://github.com/kubernetes/enhancements/blob/master/keps/sig-cloud-provider/2019-01-25-removing-in-tree-providers.md).
+* Removing in-tree OpenStack cloud provider code, this effort falls under the [KEP for removing in-tree providers](https://github.com/kubernetes/enhancements/blob/master/keps/sig-cloud-provider/20190125-removing-in-tree-providers.md).
 
 ## Proposal
 The OpenStack Cloud Provider is implemented, tested and documented, It is being released with matching kubernetes version from [release v1.11](https://github.com/kubernetes/cloud-provider-openstack/releases). cloud-provider-openstack release 1.14, 1.15, 1.16 has been running in production.

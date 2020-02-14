@@ -61,7 +61,7 @@ This KEP is specifically tracking progress for the AWS cloud provider.
 
 ### Non-Goals
 
-* Removing in-tree AWS cloud provider code, this effort falls under the [KEP for removing in-tree providers](https://github.com/kubernetes/enhancements/blob/master/keps/sig-cloud-provider/2019-01-25-removing-in-tree-providers.md).
+* Removing in-tree AWS cloud provider code, this effort falls under the [KEP for removing in-tree providers](https://github.com/kubernetes/enhancements/blob/master/keps/sig-cloud-provider/20190125-removing-in-tree-providers.md).
 
 ## Proposal
 
