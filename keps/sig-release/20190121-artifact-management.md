@@ -51,6 +51,7 @@ See the KEP process for details on each of these items.
     - [Configuring the HTTP Redirector](#configuring-the-http-redirector)
 - [Graduation Criteria](#graduation-criteria)
 - [Implementation History](#implementation-history)
+  - [Milestone 0 (MVP): In progress](#milestone-0-mvp-in-progress)
 <!-- /toc -->
 
 ## Summary
@@ -135,7 +136,7 @@ manage the images for a Kubernetes release.
 
 ## Implementation History
 
-### Milestone 0 ("MVP"): In progress
+### Milestone 0 (MVP): In progress
 
 (Described in terms of kops, our first candidate; other candidates welcome!)
 
