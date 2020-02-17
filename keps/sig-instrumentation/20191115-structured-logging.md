@@ -114,8 +114,19 @@ where
 #### New klog methods
 
 To enforce a new log message structure we want to introduce new methods to klog library which will provide a more structured interface for formatting log messages compared to current methods based on fmt format strings.
-For each format method (`Infof`, `Warningf`, `Errorf`, `Fatalf`) we will add matching structured method (`InfoS`, `WarningS`, `ErrorS`, `FatalS`).
+For each format method (`Infof`, `Errorf`) we will add matching structured method (`InfoS`, `ErrorS`). Interface for this methods will model  https://github.com/go-logr/logr (suggested by @thockin)
 Each of those methods will accept log messages as a first argument and a list of key-values pairs as a variadic second argument.
+This approach allows incremental adoption of structured logging without converting ALL of kubernetes to a new API at one time.
+
+Declaration:
+
+```go
+package klog
+
+func InfoS(msg string, keysAndValues ...interface{})
+func ErrorS(err error, msg string, keysAndValues ...interface{})
+```
+
 Example:
 
 ```go
@@ -127,21 +138,34 @@ That would result in log
 I1025 00:15:15.525108       1 controller_utils.go:116] “Pod status updated“ pod=“kubedns“ status=“ready“
 ```
 
+And
+
+```go
+klog.ErrorS(err, "Failed to update pod status")
+```
+
+That would result in log
+```
+E1025 00:15:15.525108       1 controller_utils.go:114] “Failed to update pod status“ err="timeout"
+```
+
 ### References to Kubernetes objects
 
-Currently there is no consistency when logging references to Kubenetes objects like Pods. Depending on a log just the name of a Pod, the name and namespace as separate fields or Pod name prefixed with a namespace and ‘/’ character is logged.
-This makes finding logs related to a given object much harder.
-To address this problem we want to implement helper functions for all standard object types which could be used to build values which when logged will provide a consistent identification of each of those objects.
-For instance for namespaced objects those methods should produce following value: “<namespace>/<name>”.
+To address problem of inconsistency in referencing of Kubernetes objects, new klog methods will include additional logic for handling their formatting. Kubernetes objects will be recognized by checking for `ObjectMeta` structure.
+
+Namespaced objects will be represented by joining their name and namespace with `/` character. Pattern: `<namespace>/<name>`, example for pod: `kube-system/kubedns`
+
+Non-namespaced objects will be represented by their name. Pattern: `<name>`, example for node: `cluster1-vm-72x33b8p-34jz`
 
 Example:
 ```go
-klog.InfoS("Pod status updated", "pod", metadata.Pod(pod), "status", "ready")
+klog.InfoS("Pod status updated", "pod", pod, "status", "ready")
 ```
 That would result in log
 ```
 I1025 00:15:15.525108       1 controller_utils.go:116] “Pod status updated“ pod=“kube-system/kubedns“ status=“ready“
 ```
+Selecting key under which put objects will be left to caller as defining log schema will need more discussion and is outside of scope of this KEP.
 
 ### Selecting most important logs
 
@@ -149,7 +173,7 @@ As migration to new message structure will be done manually we will be focusing 
 
 * Using log data from single run of kubernetes [gce-master-scale-performance](https://k8s-testgrid.appspot.com/sig-scalability-gce#gce-master-scale-performance) tests
 * Based on logs generated on master node
-* Aggregate by components:
+* Aggregate from components:
   * kube-controller-manager
   * kube-scheduler
   * kube-apiserver
@@ -170,6 +194,24 @@ Some pros of using JSON:
 * Easily parsable and transformable
 * Existing tools for ad-hoc analysis (jq)
 
+Proposed default fields:
+* `ts` - timestamp as Unix time (required, `float64`)
+* `v` - verbosity (required, `int`, default 4)
+* `err` - error string (optional, `string`)
+* `msg` - message (required, `string`)
+
+Default Serialization:
+* primitive types (`int`, `float`) - Compatible with [golang json package](https://golang.org/pkg/encoding/json/#Marshal)
+* Kubernetes objects (`Pod`, `Node`) - JSON object consisting of `name` and `namespace`. Example `{"name": "kubedns", "namespace": "kube-system"}`
+* arbitrary structure (`http.Request`) - JSON objects consisting of public non-pointer fields.
+
+Proposed serialization of Kubernetes objects will not include additional fields beside those proposed available in `text` format.
+Discussion for additional fields needed in representation of Kubernetes objects is out of scope of this KEP.
+
+Serialization of arbitrary structures will ignore pointers to avoid hard to predict performance hits caused by deep nested structures or cycles.
+
+Provided serialization should function as good default. Caller can customize how objects is serialized by changing struct beforehand.
+
 Example:
 
 ```go
@@ -180,7 +222,7 @@ That would result in log
 ```json
 {
    "ts": 1580306777.04728,
-   "level": "info",
+   "v": 4,
    "msg": "Updated pod kubedns status to ready"
 }
 ```
@@ -188,14 +230,31 @@ That would result in log
 And
 
 ```go
-klog.InfoS("Pod status updated", "pod"", metadata.Pod(pod), "status"", "ready")
+klog.ErrorS(err, "Failed to update pod status")
+```
+
+That would result in log
+
+```json
+{
+   "ts": 1580306777.04728,
+   "v": 4,
+   "err": "timeout",
+   "msg": "Failed to update pod status"
+}
+```
+
+And
+
+```go
+klog.InfoS("Pod status updated", "pod", pod, "status", "ready")
 ```
 
 That would result in log
 ```json
 {
    "ts": 1580306777.04728,
-   "level": "info",
+   "v": 4,
    "msg": "Pod status updated",
    "pod":{
       "name": "nginx-1",
@@ -258,7 +317,7 @@ We have benchmarked proof of concept implementation of new logging format. Resul
 |JSON InfoS             |319         |67         |1                    |
 
 InfoS implementation for text is 9% slower than Infof. This increase should not have a big impact on overall Kubernetes performance as logging takes less than 2% of overall CPU usage.
-JSON implementation using zapr is much more efficient compared to current implementation.
+For json format we used [zap](https://github.com/uber-go/zap).
 
 #### Log volume increase analysis
 
@@ -292,7 +351,9 @@ Data about byte log length in k8s components. Data taken from scalability test [
 |kubelet                |759    |885   |912   |1143  |
 |kube-scheduler         |217    |225   |226   |227   |
 
-When looking at the whole repository we are not expecting a very big increase of log volume due added metadata. This is due to how big log messages are and low number of arguments passed to formatting messages (average below 2, max 10). Based on this HTTP access logs we are expecting that log volume will not increase by more than 50% for default (text) logging configuration.
+When looking at the whole repository we are not expecting a very big increase of log volume due added metadata.
+ This is due to how big log messages are and low number of arguments passed to formatting messages (average below 2, max 10).
+  Based on this HTTP access logs we are expecting that log volume will not increase by more than 50% for default (text) logging configuration.
 
 ### Future work
 
@@ -385,18 +446,20 @@ klog.InfoS("Access", "method", rl.req.Method, "uri", rl.req.RequestURI, "latency
 * Significantly increases log volume
 * Lack of support of warning and fatal severity levels
 
-## Code organisation / infrastructure needed
+## Code organisation
 
-As a result of this effort we are expecting creation of:
-* `k8s.io/component-base/metadata` - new module with utility functions for extracting metadata from k8s objects.
+As a result of this effort we are expecting changes in:
+* `k8s.io/kubernetes` - Migration of log lines
+* `k8s.io/component-base/logging` - Adding logging configuration
+* `k8s.io/klog` - Implementing new structured logging methods
 
 ## Production Readiness Review Process
 
 **Feature enablement and rollback**
-* How can this feature be enabled / disabled in a live cluster? **Changing logging format in control plane components would require recreation of cluster**
+* How can this feature be enabled / disabled in a live cluster? **Changing logging format requires restarting control plane components**
 * Can the feature be disabled once it has been enabled (i.e., can we roll back the enablement)? **Yes, reverting the change will only effect logs generated when feature was enabled. Rollback can be done by changing flag value to component**
-* Will enabling / disabling the feature require downtime for the control plane? **Yes, changing flag passed will require restarting components**
-* Will enabling / disabling the feature require downtime or reprovisioning of a node? **Yes, if we are changing logging configuration of kubelet will require node downtime**
+* Will enabling / disabling the feature require downtime for the control plane? **Short downtime needed to restart component**
+* Will enabling / disabling the feature require downtime or reprovisioning of a node? **Short downtime needed to restart kubelet**
 * What happens if a cluster with this feature enabled is rolled back? What happens if it is subsequently upgraded again? **Temporary change in log format produced**
 * Are there tests for this? **Klog implementation is covered by integration tests**
 
@@ -412,7 +475,7 @@ As a result of this effort we are expecting creation of:
     * How does this feature respond to complete failures of the services on which it depends? **n/a**
     * How does this feature respond to degraded performance or high error rates from services on which it depends? **n/a**
 * Monitoring requirements
-    * How can an operator determine if the feature is in use by workloads? **Need to verify specific component flag, or look into logs generated by it**
+    * How can an operator determine if the feature is in use by workloads? **Need to verify specific component flag**
     * How can an operator determine if the feature is functioning properly? **By looking at the logs generated by component**
     * What are the service level indicators an operator can use to determine the health of the service? **n/a**
     * What are reasonable service level objectives for the feature? **Defining a proper SLO for logging should consider e2e delivery to backend. This would be outside of scope of kubernetes**
