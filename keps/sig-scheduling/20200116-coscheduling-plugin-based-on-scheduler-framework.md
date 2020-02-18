@@ -23,37 +23,35 @@ status: provisional
 ## Table of Contents
 
 <!-- toc -->
-- [Coscheduling plugin based on scheduler framework](#coscheduling-plugin-based-on-scheduler-framework)
-  - [Table of Contents](#table-of-contents)
-  - [Motivation](#motivation)
-  - [Goals](#goals)
-  - [Non-Goals](#non-goals)
-  - [Use Cases](#use-cases)
-  - [Terms](#terms)
-  - [Proposal](#proposal)
-  - [Design Details](#design-details)
-    - [PodGroup](#podgroup)
-    - [Coscheduling](#coscheduling)
-    - [Extension points](#extension-points)
-      - [QueueSort](#queuesort)
-      - [Pre-Filter](#pre-filter)
-      - [Permit](#permit)
-      - [UnReserve](#unreserve)
-  - [Alternatives considered](#alternatives-considered)
-  - [Graduation Criteria](#graduation-criteria)
-  - [Testing Plan](#testing-plan)
-  - [Implementation History](#implementation-history)
-  - [References](#references)
+- [Motivation](#motivation)
+- [Goals](#goals)
+- [Non-Goals](#non-goals)
+- [Use Cases](#use-cases)
+- [Terms](#terms)
+- [Proposal](#proposal)
+- [Design Details](#design-details)
+  - [PodGroup](#podgroup)
+  - [Coscheduling](#coscheduling)
+  - [Extension points](#extension-points)
+    - [QueueSort](#queuesort)
+    - [Pre-Filter](#pre-filter)
+    - [Permit](#permit)
+    - [UnReserve](#unreserve)
+- [Alternatives considered](#alternatives-considered)
+- [Graduation Criteria](#graduation-criteria)
+- [Testing Plan](#testing-plan)
+- [Implementation History](#implementation-history)
+- [References](#references)
 <!-- /toc -->
 
 ## Motivation
 Kubernetes has become a popular solution for orchestrating containerized workloads. Due to limitation of Kubernetes scheduler, some offline workloads (ML/DL) are managed in a different system. To improve cluster utilization and operation efficiency, we'd like to treat Kubneretes as a unified management platform. But ML jobs are All-or-Nothing: they require all tasks of a job to be scheduled at the same time. If the job only start part of tasks, it will wait for other tasks to be ready to begin to work. In the worst case, all jobs are pending leading to a deadlock. To solve this problem, co-scheduling is needed for the scheduler. The new scheduler framework makes the goal possible.
  
 ## Goals
- Use scheduler plugin, which is the most Kubernetes native way, to implement coscheduling.
+Use scheduler plugin, which is the most Kubernetes native way, to implement coscheduling.
  
 ## Non-Goals
- Discuss the API definition of `PodGroup`.
+Discuss the API definition of `PodGroup`.
  
 ## Use Cases
 when running a Tensorflow/MPI job, all tasks of a job must be start together; otherwise, did not start anyone of tasks. If the resource is enough to run all 'tasks', everything is fine; but it's not true for most of case, especially in the on-premises environment. In worst case, all jobs are pending here because of deadlock: every job only start part of tasks, and waits for the other tasks to start. In worst case, all jobs are pending leading to a deadlock.
@@ -133,76 +131,16 @@ In order to make the pods which belongs to the same `PodGroup` to be scheduled t
 #### Pre-Filter
 1. `PreFilter` validates that if the total number of pods belonging to the same `PodGroup` is less than `minAvailable`. If so, the scheduling process will be interrupted directly.
 
-2. `PreFilter` validates that if we should reject `WaitingPods` in advance. When the pod belongs to a new `PodGroup` (we can check it by the `LastPodGroup` in cache), it indicates that the new PodGroup scheduling cycle has been entered. Then we will check if the last `PodGroup` meets the minAvailable, if not, we will reject it directly in advance. The purpose is 1. To avoid invalid waiting, 2. To make the pod belongs to the same `PodGroup` fail together, rather than waiting partially.
-
-```go
-func (cs *Coscheduling) PreFilter(ctx context.Context, state *framework.CycleState, p *v1.Pod) *framework.Status {
-    ...
-     // Count the numbers of all pods belongs to the same PodGroup excludes terminating ones.
-    total := cs.calculateTotalPods(podGroupName)
-    if total < minAvailable {
-        return framework.NewStatus(framework.UnschedulableAndUnresolvable, "less than minAvailable")
-    }
-    ...
-    if cs.Last != "" && cs.Last != podGroupName {
-        allocated := cs.calculateAllocatedPods(cs.LastPodGroup)
-        pgInfo, ok := cs.PodGroupInfos[cs.LastPodGroup]
-        if ok {
-        	pgInfo.LastFailureTimestamp = time.Now()
-        	if allocated < pgInfo.minAvailable {
-            	cs.FrameworkHandle.IterateOverWaitingPods(func(p framework.WaitingPod) {
-                	if p.GetPod().Labels[PodGroupName] == cs.LastPodGroup {
-                    	p.Reject(cs.Name())
-                	}
-            	})
-        	}
-        }
-    }
-    cs.LastPodGroup = podGroupName
-    return nil
-}
-```
+2. `PreFilter` validates that if we should reject `WaitingPods` in advance. When the pod belongs to a new `PodGroup` (we can check it by the `LastPodGroup` in cache), it indicates that the new PodGroup scheduling cycle has been entered. Then we will check if the last `PodGroup` meets the minAvailable, if not, we will reject it directly in advance. The purpose is 1.To avoid invalid waiting, 2.To make the pod belongs to the same `PodGroup` fail together, rather than waiting partially.
 
 #### Permit
 In `Permit` phase, we put the pod that doesn't meet min-available into the WaitingMap and reserve resources until min-available are met or timeout is triggered.
 1. Get the number of Running pods that belong to the same PodGroup
 2. Get the number of WaitingPods (used to record pods in waiting status) that belong to the same PodGroup
-3. If Running + WaitingPods + 1 >= min-available(1 means the pod itself), approve the waiting pods that  belong to the same PodGroup. Otherwise, put the pod into WaitingPods and set the timeout (eg: 10s).
- 
-```go
-func (cs Coscheduling) Permit(ctx context.Context, state *framework.CycleState, p *v1.Pod, nodeName string) (*framework.Status, time.Duration) {
-    ...
-    running := cs.calculateRunningPods(podGroupName)
-    waiting := cs.calculateWaitingPods(podGroupName)
-    if running+waiting+1 < minAvailable {
-        return framework.NewStatus(framework.Wait, ""), 10 * time.Second
-    }
-    ...
-    cs.FrameworkHandle.IterateOverWaitingPods(func(p framework.WaitingPod) {
-        if p.GetPod().Labels[PodGroupName] == podGroupName {
-        	p.Allow(cs.Name())
-        }
-    })
-   
-    delete(cs.PodGroupInfos, podGroupName)
-    return framework.NewStatus(framework.Success, ""), 0
-}
-```
- 
+3. If Running + WaitingPods + 1 >= min-available(1 means the pod itself), approve the waiting pods that  belong to the same PodGroup. Otherwise, put the pod into WaitingPods and set the timeout (eg: the timeout is dynamic value depends on the size of the `PodGroup`.)
 
 #### UnReserve
 After a pod which belongs to a PodGroup times out in the permit phase.  UnReserve ```Rejects``` the pods that belong to the same PodGroup to avoid long-term invalid reservation of resources.
-
-```go 
-func (cs *Coscheduling) Unreserve(ctx context.Context, state *framework.CycleState, p *v1.Pod, nodeName string) {
-    ...
-    cs.FrameworkHandle.IterateOverWaitingPods(func(p framework.WaitingPod) {
-        if p.GetPod().Labels[PodGroupName] == podGroupName {
-        	p.Reject(cs.Name())
-        }
-    })
-}
-```
 
 ## Alternatives considered
 1. Using `PodGroup` as a scheduling unit. This requires major refactoring, which only supports Pods as scheduling unit today.
