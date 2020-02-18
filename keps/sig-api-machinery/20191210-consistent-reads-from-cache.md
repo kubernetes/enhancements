@@ -14,7 +14,7 @@ approvers:
 editor: TBD
 creation-date: 2019-12-10
 last-updated: 2020-01-21
-status: implementable
+status: provisional
 see-also:
 replaces:
 superseded-by:
@@ -40,7 +40,7 @@ read from etcd.
 - [Motivation](#motivation)
   - [Goals](#goals)
 - [Proposal](#proposal)
-  - [Leveraging the Progress Notify Mechanism](#leveraging-the-progress-notify-mechanism)
+  - [Consistent reads from cache](#consistent-reads-from-cache-1)
     - [Use WithProgressNotify to enable automatic watch updates](#use-withprogressnotify-to-enable-automatic-watch-updates)
     - [Determining if etcd is sending progress notify events](#determining-if-etcd-is-sending-progress-notify-events)
   - [Risks and Mitigations](#risks-and-mitigations)
@@ -51,6 +51,7 @@ read from etcd.
     - [Option: Serve 1st page of paginated requests from the watch cache](#option-serve-1st-page-of-paginated-requests-from-the-watch-cache)
     - [Option: Enable pagination in the watch cache](#option-enable-pagination-in-the-watch-cache)
     - [Rejected Option: Return unpaginated responses to paginated list requests](#rejected-option-return-unpaginated-responses-to-paginated-list-requests)
+  - [What if the watch cache is stale?](#what-if-the-watch-cache-is-stale)
   - [Test Plan](#test-plan)
   - [Rollout Plan](#rollout-plan)
     - [Serving consistent reads from cache](#serving-consistent-reads-from-cache)
@@ -126,7 +127,7 @@ serves the resourceVersion="0" list requests from reflectors today.
 
 ## Proposal
 
-### Leveraging the Progress Notify Mechanism
+### Consistent reads from cache
 
 Guard this by a `WatchCacheConsistentReads` feature gate.
 
@@ -143,7 +144,7 @@ When an consistent LIST request is received and the watch cache is enabled:
 
 - Get the current revision from etcd for the resource type being served. The returned revision is strongly consistent (guaranteed to be the latest revision via a quorum read).
 - Use the existing `waitUntilFreshAndBlock` function in the watch cache to wait briefly for the watch to catch up to the current revision.
-- If the block times out, skip the cache and serve the request directly from storage (etcd).
+- If the block times out, fail the request (see "What if the watch cache is stale?" section for details)
 
 To get the revsion we have some options: 
 
@@ -152,11 +153,6 @@ To get the revsion we have some options:
 
 Consistent GET requests will continue to be served directly from etcd. We will
 only serve consistent LIST requests from cache.
-
-We will explore how long the kube-apiserver should wait for a watch cache to
-catch up to the needed revision. I.e. for our chosen progress event interval,
-should the kube-apiserver also wait a similar interval for the required revision
-to become available or should it fallback to making the request to etcd?
 
 Optional: For some (but not all) of the etcd progress watch events, also create a
 kubernetes "bookmark" watch event and send it to kube-apiserver clients so that
@@ -299,6 +295,20 @@ watch-cache is enabled (which is the default), clients that need pagination
 LIST resourceVersion="".
 
 We are not planning to pursue this option.
+
+### What if the watch cache is stale?
+
+This design requires wait for a watch cache to catch up to the needed revision
+for consistent reads. If the cache doesn't catch up within some time limit we
+either fail the request for have a fallback.
+
+If the fallback it to forward consistent reads to etcd, a cascading failure
+is likely to occur if caches become stale and a large number of read requests
+are forwarded to etcd.
+
+Since falling back to etcd won't work, we should fail the requests and rely on
+rate limiting to prevent cascading failure.  I.e. `Retry-After` HTTP header (for
+well behaved clients) and [Priority and Fairness](https://github.com/kubernetes/enhancements/blob/master/keps/sig-api-machinery/20190228-priority-and-fairness.md).
 
 ### Test Plan
 
