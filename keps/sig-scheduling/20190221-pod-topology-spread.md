@@ -439,6 +439,10 @@ Beta:
   This is particularly for some extended usage such as Cluster Autoscaler.
 - [ ] Add necessary end-to-end tests.
 
+GA:
+
+- [ ] Ensure feature documentation is clear and complete.
+
 ## Alternatives
 
 - mixin new fields into `pod.spec.affinity` to act as a"sub feature" of Affinity
