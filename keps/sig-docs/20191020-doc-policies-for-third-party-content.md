@@ -52,17 +52,21 @@ This KEP seeks consensus on how Kubernetes docs handle two types of content:
 1. Content from or about third-party providers ("third-party content")
 
 Minimize and eliminate third-party content except when necessary for Kubernetes 
-to function in-tree.
+to function in-project.
 
 2. Content hosted on multiple sites ("dual-sourced content")
 
 Minimize and eliminate dual-sourced content except when necessary for Kubernetes
-to function in-tree.
+to function in-project.
+
+**Note:** This KEP defines "in project" to mean projects in the Kubernetes org, 
+which includes the [kubernetes](https://github.com/kubernetes) and 
+[kubernetes-sigs](https://github.com/kubernetes) repositories.
 
 ## Introduction
 
 Kubernetes documentation teaches Kubernetes users about how
-Kubernetes works, how to use in-tree Kubernetes features, and how to
+Kubernetes works, how to use in-project Kubernetes features, and how to
 build on top of Kubernetes infrastucture.
 
 Feature docs are not a place for vendor pitches. Nonetheless, SIG Docs sometimes
@@ -74,6 +78,10 @@ Feature docs also contain dual-sourced content. A good practice for code
 project docs is to host single-sourced content only, and to provide
 links to other providers’ single-sourced content. This simplifies
 version management and reduces the work required to maintain content.
+
+This KEP proposes that Kubernetes documentation sets these boundaries:
+
+- Kubernetes documentation includes 
 
 This KEP defines how to handle third-party and dual-sourced content in 
 documentation, so that authors can
@@ -102,12 +110,12 @@ product documentation than Kubernetes open source documentation.
 
 ### Goals
 
-The goal of Kubernetes documentation is to accurately document in-tree
+The goal of Kubernetes documentation is to accurately document in-project
 functionality for Kubernetes, and to eliminate barriers to effective
 contribution and understanding.
 
 The goal of this KEP is to reach and document a consensus on what
-types of third party content are appropriate for inclusion in Kubernetes
+types of third-party content are appropriate for inclusion in Kubernetes
 documentation; standards for including third-party content; and to create
 consistent policies for docs handle third-party and dual-sourced content.
 
@@ -119,12 +127,14 @@ To address its goal, this KEP focuses on the following issues:
 documentation?
 
 Proposed: Third-party content is permitted if it's required for Kubernetes to
-function in-tree.
+function in-project.
 
 1. Does third party content in sections such as [Getting Started](https://kubernetes.io/docs/setup/)
 in the docs provide sufficient value to the reader that they should remain?
 
-Casual consensus says yes.
+Casual consensus says yes, with one modification:
+- Eliminate the [production environment table](https://kubernetes.io/docs/setup/#production-environment)
+with a link to [certified conformance partners](https://kubernetes.io/partners/#conformance).
 
 1. Is there a list of content pages that are so focused on third party product
 usage that they should be removed or updated from the Kubernetes documentation?
@@ -155,21 +165,27 @@ their discretion, preferably by linking to the third party's own documentation.
 1. What standard of quality and review must be met before docs include
 third-party content?
 
-Third-party content must be necessary for Kubernetes to function in-tree.
+Third-party content must be necessary for Kubernetes to function in-project.
 
 1. To what extent should SIG Docs advocate for third-party content providers to 
 host their own content, or decline to host third-party content altogether?
 
-Third-party content should be linked rather than hosted whenever possible.
+Kubernetes docs publish third-party content only if:
 
-Third-party content isn't accepted unless it's necessary for Kubernetes to
-function in-tree.
+- It's necessary for Kubernetes to function. For example: Docker, networking 
+policy (CNI plugins), Ingress controllers, and logging.
+
+- It's an applied example of another project in the Kubernetes GitHub org. This
+includes the [kubernetes](https://github.com/kubernetes) and 
+[kubernetes-sigs](https://github.com/kubernetes-sigs) repositories.
+
+Third-party content should be linked instead of hosted whenever possible. 
 
 </del>
 
 1. Clearly define what documentation is required so that readers understand
    how to deploy, operate and consume Kubernetes clusters using features from
-   in-tree code and its mandatory dependencies.
+   in-project code and its mandatory dependencies.
 
 ### Non-Goals
 
@@ -181,17 +197,18 @@ function in-tree.
 1. Revise the [content guide](https://github.com/kubernetes/website/blob/master/content/en/docs/contribute/style/content-guide.md#contributing-content) to achieve the KEP goal:
 
 - Specify that Kubernetes docs are limited to content required for Kubernetes to
-function in-tree. Docs may include third-party content for components that 
-require a third-party solution to function. Third-party content should be linked
-to whenever possible, rather than duplicated or hosted in k/website.
+function in-project. Docs may include third-party content for components that 
+require a third-party solution to function. Docs may include content for 
+other projects in the Kubernetes org. Third-party content must be linked 
+whenever possible, rather than duplicated or hosted in k/website.
 
 2. Revise the documentation when the KEP is approved:
 
 - **Third-party content:** Notify stakeholders via GitHub issues in k/website
 that third-party content will be removed after 90 days if content isn't required
-for Kubernetes to function in-tree.
+for Kubernetes to function in-project.
 
-This limits the impact to out-of-tree content and gives current stakeholders 
+This limits the impact to out-of-project content and gives current stakeholders 
 approximately one Kubernetes release cycle to migrate 
 third-party content to an alternate platform before removing content from 
 Kubernetes docs.
@@ -265,7 +282,7 @@ As [hyperkube transitions to third-party maintenance](https://github.com/kuberne
 This KEP originally included language around considering intent of contributors.
 Because intent is effectively impossible to judge (and because contributions
 are nearly always made with the best intent), this KEP now specifies that 
-third-party content is limited to what's required for in-tree functionality.
+third-party content is limited to what's required for in-project functionality.
 
 SIG Docs may add its own guidelines for writing and reviewing ambiguous content.
 
