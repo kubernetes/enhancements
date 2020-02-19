@@ -258,8 +258,7 @@ scheduler when resources on a node are being reserved for a given Pod. This
 happens before the scheduler actually binds the pod to the Node, and it exists
 to prevent race conditions while the scheduler waits for the bind to succeed.
 
-This is the last step in a scheduling cycle. Once a pod is in the reserved
-state, it will either trigger [Un-reserve](#un-reserve) plugins (on failure) or
+Once a pod is in the reserved state, it will either trigger [Un-reserve](#un-reserve) plugins (on failure) or
 [Post-bind](#post-bind) plugins (on success) at the end of the binding cycle.
 
 *Note: This concept used to be referred to as "assume".*
@@ -281,6 +280,10 @@ can do one of three things.
     until a [plugin approves it](#frameworkhandle). If a timeout occurs, **wait**
     becomes **deny** and the pod is returned to the scheduling queue, triggering
     [un-reserve](#un-reserve) plugins.
+
+Permit plugins are executed as the last step of a scheduling cycle, however 
+waiting in the permit phase happens at the beginning of a binding cycle, before pre-bind
+plugins are executed. 
 
 **Approving a pod binding**
 
@@ -436,11 +439,11 @@ a plugin may be called concurrently from *different
 serially.*
 
 In the main thread of the scheduler, only one scheduling cycle is processed at a
-time. Any extension point up to and including [reserve](#reserve) will be
-finished before the next scheduling cycle begins*. After the reserve phase, the
+time. Any extension point up to and including [permit](#permit) will be
+finished before the next scheduling cycle begins*. After the permit extension point, the
 binding cycle is executed asynchronously. This means that a plugin could be
 called concurrently from two different scheduling contexts, provided that at
-least one of the calls is to an extension point after reserve. Stateful plugins
+least one of the calls is to an extension point after permit. Stateful plugins
 should take care to handle these situations.
 
 Finally, [un-reserve](#un-reserve) plugins may be called from either the Permit
