@@ -111,7 +111,7 @@ Optionally, it also supports installing kube-dns in place of CoreDNS.
 Installation of these addons occurs via application of manifests for which the strings are built into and versioned with the kubeadm binary.
 It is not currently possible to disable installation of these addons or modify them with a formal kubeadm init.
 
-Upgrades are accomplished with modifications to kubeadm's upgrade logic, often by introspecting which config maps exist in the current cluster.
+Upgrades are accomplished with modifications to kubeadm's upgrade logic, often by introspecting which hard-coded addon-specific GVK's exist in the current cluster.
 
 Kubeadm installs these "core" addons leaving an almost functioning cluster available for the user, but a CNI implementation is not installed. That is left to the cluster operator.
 
@@ -119,7 +119,7 @@ Maintaining these manifests and this logic with kubeadm has to this point has al
 As the ecosystem grows, this is proving to now be too inflexible for users and vendors.
 
 Use of ClusterAPI means less operators will be manually mutating clusters before they are expected to function.
-Kubeadm does not need to maintain CNI installation, but users should be able to use kubeadm to produce a functioning cluster, complete with with operational CNI.
+Kubeadm does not need to maintain CNI installation, but users should be able to use kubeadm to produce a functioning cluster, complete with an operational CNI.
 
 This creates a level playing-field for third party addons beside the set that the Kubernetes/kubeadm maintainers decide to include.
 
@@ -140,12 +140,16 @@ In the case of CoreDNS, this may even make sense to be managed by the upstream p
 This integration will also allow users to extend these "core" addons using their own kustomize driven patches.
 Patches are expected to be supplied via the API, filesystem, or git with additional potential for OCI images.
 
+Accomplishing the above will allow us to eventually decommission the current hard-coded addon management logic.
+
 This will also enable users to specify additional addons to install such as CNI implementations, drivers, webhook-servers, or other APIs and operators.
 
 Simple upgrades to newer manifests for a given addon should be supported.
 Removal should also be supported.
 
 The mechanisms and APIs for doing this are independently factored from kubeadm meaning other installers such as kops and eksctl as well as cloud and vendor solutions may implement their own defaulting logic and user-interfaces.
+
+We should strive to maintain or improve kubeadm's U/X while working toward these benefits.
 
 ### Non-Goals
 
@@ -154,7 +158,7 @@ No dependency system or DAG is currently proposed or in-scope.
 
 Discussions of how addons may validate ComponentConfigs and other files and how the AddonInstaller API can enable that are welcome. There are existing efforts in this area already (currently championed by @rosti) that may need to be cross-referenced.
 
-Usable operators for addons such as the "CoreDNS Operator" were used as a case study in the Cluster Addons subproject to better understand the motivation, UX, and vision of this KEP's features. However, implementation, packaging, and delivery of these operators is out of scope for the technical implementation of the `AddonInstaller` in kubeadm.
+Usable operators for addons such as the "CoreDNS Operator" were created as a case study in the Cluster Addons sub-project to better understand the motivation, UX, and vision of this KEP's features. However, implementation, packaging, and delivery of these operators is out of scope for the technical implementation of the `AddonInstaller` in kubeadm.
 
 Providing an "uninstall" signal, hook, or mechanism for addons is currently out of scope but is open for discussion.
 
@@ -219,7 +223,7 @@ kubeadm init phase addon installer --feature-gates AddonInstaller=true
 kubeadm init phase addon installer --config
 ```
 
-The feature gate is still expected to be enabled/true when invoking the phase directly.
+The user must still enable the feature gate when invoking the phase directly.
 
 Users may print the default `AddonInstallerConfiguration` using `kubeadm config`:
 
@@ -264,6 +268,7 @@ The AddonInstaller feature composes with kubeadm's global `--dry-run` flag:
 - on `init`, the intended addons (and perhaps manifests) can simply be printed.
 - on `upgrade diff` and `upgrade apply`, the expected difference relative to the cluster can be output.
   `kubectl` already does this currently.
+- on `upgrade plan`, showing a diff of the current/intended `AddonInstallerConfigurations` will communicate the top-level changes for addons.
 
 The difference in behavior between a dryRun init and upgrade is caused by the presence of a working KUBECONFIG and control-plane.
 
@@ -315,16 +320,17 @@ How will UX be reviewed and by whom?
 
 Consider including folks that also work outside the SIG or subproject. -->
 
-The core of this proposal is that it expands on the current packaging of addons within the kubeadm binary.
+The core of this proposal is that it expands beyond the current packaging of addons within the kubeadm binary.
 This binary is currently signed, released, and distributed by kubernetes release machinery.
 
 Since this proposal necessitates new artifacts and distribution channels for default/"core" components, SIG Release will ultimately be interested in providing methods of verification and integrity of those artifacts for users.
 
 Git is a strong tool for versioning manifests and patches but may be questionable for asserting source provenance without instrumenting non-default behavior.
-This attack surface may become more evident when mirroring in an airgap environment.
-When fetching/cloning from GitHub the transport will either be verified by HTTPS or an SSH host key.
+This attack surface may become more evident when mirroring in an air-gapped environment.
+When fetching/cloning from GitHub the transport will either be verified by HTTPS or an SSH host key. The content is verified to be structurally in-tact using SHA-1, but this does not imply anything about identity and would not be a secure vector to do so.
 
 Distributing kustomize dirs via signed OCI images may be a solution for this.
+Signing the relevant release commits would also work.
 
 Proposing additional support for raw manifest lists (with or without kustomization) may also be effective for certain use-cases when sourced over HTTPS from cloud-storage such as GitHub-raw, S3, GCS, or an internal solution like NGINX or Minio.
 
@@ -376,6 +382,7 @@ In general, we try to use the same stages (alpha, beta, GA), regardless how the 
 - Support for API-driven ComponentConfig declaration of addons is working in kubeadm for init and upgrade.
 - ClusterAPI implementations may begin experimenting with producing more functional clusters as a result.
 - Users and vendors can provide feedback.
+- Don't support, ship, or default a config for Kube-Proxy/CoreDNS manifests or operators
 
 ##### Alpha -> Beta Graduation
 
