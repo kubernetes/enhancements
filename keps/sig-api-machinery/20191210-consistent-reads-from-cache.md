@@ -39,6 +39,7 @@ read from etcd.
 - [Summary](#summary)
 - [Motivation](#motivation)
   - [Goals](#goals)
+  - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [Consistent reads from cache](#consistent-reads-from-cache-1)
     - [Use WithProgressNotify to enable automatic watch updates](#use-withprogressnotify-to-enable-automatic-watch-updates)
@@ -52,6 +53,7 @@ read from etcd.
     - [Option: Enable pagination in the watch cache](#option-enable-pagination-in-the-watch-cache)
     - [Rejected Option: Return unpaginated responses to paginated list requests](#rejected-option-return-unpaginated-responses-to-paginated-list-requests)
   - [What if the watch cache is stale?](#what-if-the-watch-cache-is-stale)
+  - [Ability to Opt-out](#ability-to-opt-out)
   - [Test Plan](#test-plan)
   - [Rollout Plan](#rollout-plan)
     - [Serving consistent reads from cache](#serving-consistent-reads-from-cache)
@@ -125,6 +127,12 @@ serves the resourceVersion="0" list requests from reflectors today.
 - Resolve the "stale read" problem (https://github.com/kubernetes/kubernetes/issues/59848)
 - Improve the scalability and performance of Kubernetes for Get and List requests, when the watch cache is enabled
 
+### Non-Goals
+
+<<[UNRESOLVED @deads]>>
+- Avoid allowing true quorum reads. We should think carefully about this, see: https://github.com/kubernetes/enhancements/pull/1404#discussion_r381528406
+<<[/UNRESOLVED]>>
+
 ## Proposal
 
 ### Consistent reads from cache
@@ -144,7 +152,7 @@ When an consistent LIST request is received and the watch cache is enabled:
 
 - Get the current revision from etcd for the resource type being served. The returned revision is strongly consistent (guaranteed to be the latest revision via a quorum read).
 - Use the existing `waitUntilFreshAndBlock` function in the watch cache to wait briefly for the watch to catch up to the current revision.
-- If the block times out, fail the request (see "What if the watch cache is stale?" section for details)
+- If the block times out, the request will result in rejection. (see "What if the watch cache is stale?" section for details)
 
 To get the revsion we have some options: 
 
@@ -153,6 +161,8 @@ To get the revsion we have some options:
 
 Consistent GET requests will continue to be served directly from etcd. We will
 only serve consistent LIST requests from cache.
+
+Important: We are planning to set the progress notify interval to 250ms, which will introduce up to 250ms latency to consistent LIST requests.
 
 Optional: For some (but not all) of the etcd progress watch events, also create a
 kubernetes "bookmark" watch event and send it to kube-apiserver clients so that
@@ -198,7 +208,6 @@ The requests this is expected to impact are:
 - Reflector list/relist requests, which occur at startup and after a reflector
   falls to far behind processing events (e.g. it was partitioned or resource starved)
 - Controllers that directly perform consistent LIST requests
-- kubectl LIST requests
 
 In all cases, increasing latency in exchange for higher overall system
 throughput seems a good trade off. Use cases that need low latency have multiple
@@ -221,6 +230,11 @@ selectively where we believe it will have the most impact.
 
 Later, we could transition to "Serve 1st page of paginated requests from the watch cache"
 which would expand cache usage to a much larger proportion of all consistent read requests.
+
+<<[UNRESOLVED]>>
+That kubectl makes paginated, so if we enable this feature for paginated requests,
+which may add latency to `kubectl get`. We need to be clear on the behavior.
+<<[/UNRESOLVED]>>
 
 #### Option: Continue to serve all paginated requests from etcd
 
@@ -309,6 +323,13 @@ are forwarded to etcd.
 Since falling back to etcd won't work, we should fail the requests and rely on
 rate limiting to prevent cascading failure.  I.e. `Retry-After` HTTP header (for
 well behaved clients) and [Priority and Fairness](https://github.com/kubernetes/enhancements/blob/master/keps/sig-api-machinery/20190228-priority-and-fairness.md).
+
+### Ability to Opt-out
+
+<<[UNRESOLVED @deads2k]>>
+How to opt out of this behavior and still get a "normal" quorum read? We'll need this ability for our own debugging if nothing else.
+See https://github.com/kubernetes/enhancements/pull/1404#issuecomment-588433911
+<<[/UNRESOLVED]>>
 
 ### Test Plan
 
