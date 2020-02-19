@@ -1,5 +1,5 @@
 ---
-title: KEP Template
+title: Consistent Reads from Cache
 authors:
   - "@jpbetz"
   - "@wojtek-t"
@@ -10,10 +10,12 @@ reviewers:
   - "@wojtek-t"
   - "@jingyih"
 approvers:
-  - TBD
+  - "@lavalamp"
+  - "@deads2k"
+  - "@wojtek-t"
 editor: TBD
 creation-date: 2019-12-10
-last-updated: 2020-01-21
+last-updated: 2020-02-19
 status: provisional
 see-also:
 replaces:
