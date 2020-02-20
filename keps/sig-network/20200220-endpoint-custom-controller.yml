@@ -1,0 +1,148 @@
+---
+title: Endpoint/EndpointSlice for Custom Controllers
+authors:
+  - "@s1061123"
+  - "@dosmith"
+owning-sig: sig-network
+reviewers:
+  - TBD
+approvers:
+  - TBD
+editor: TBD
+creation-date: yyyy-mm-dd
+last-updated: yyyy-mm-dd
+status: implementable
+---
+
+# Service for custom controllers
+
+## Table of Contents
+
+<!-- toc -->
+- [Release Signoff Checklist](#release-signoff-checklist)
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [User Stories [optional]](#user-stories-optional)
+    - [Story 1](#story-1)
+    - [Story 2](#story-2)
+  - [Implementation Details/Notes/Constraints [optional]](#implementation-detailsnotesconstraints-optional)
+  - [Risks and Mitigations](#risks-and-mitigations)
+- [Design Details](#design-details)
+  - [Test Plan](#test-plan)
+  - [Graduation Criteria](#graduation-criteria)
+    - [Examples](#examples)
+      - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
+      - [Beta -&gt; GA Graduation](#beta---ga-graduation)
+      - [Removing a deprecated flag](#removing-a-deprecated-flag)
+  - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+  - [Version Skew Strategy](#version-skew-strategy)
+- [Implementation History](#implementation-history)
+- [Drawbacks [optional]](#drawbacks-optional)
+- [Alternatives [optional]](#alternatives-optional)
+- [Infrastructure Needed [optional]](#infrastructure-needed-optional)
+<!-- /toc -->
+
+## Summary
+
+This KEP is to provide a well-known label to Services for interworking Services and 
+Endpoints/EndpointSlices with custom controllers.
+
+## Motivation
+
+Currently Kubernetes EndpointSlice has a label `endpointslice.kubernetes.io/managed-by` 
+which identifies the endpointslice manager and it allows services to be managed by custom 
+controllers by changing to another value. However, Kubernetes EndpointSlice controller 
+automatically creates another EndpointSlice when a different value is set in the label,
+`endpointslice.kubernetes.io/managed-by`.
+
+
+Custom endpoint/endpointslice controller would like to manage their endpoint/endpointslices 
+by themselves. 
+
+On the other hand, regarding kube-proxy iptables, kube-proxy already provides a well-known label, 
+`service.kubernetes.io/service-proxy-name`, which is used to delegate its management to a custom proxy.
+To manage EndpointSlice by custom endpoint controller, Kubernetes EndpointSlice controller 
+needs a similar label, `service.kubernetes.io/managed-by`, which allows Kubernetes 
+EndpointSlice controller to ignore it and to delegate the management to a custom controller. 
+
+### Goals
+
+   * Allow custom endpoint/endpointslice controller to manage endpoints/endpointslices.
+   * Provide the label, `service.kubernetes.io/managed-by` to identify the manager of the Service to be able to create Endpoints/EndpointSlices
+
+### Non-Goals
+
+   * This KEP does not change any semantics in the Endpoint/EndpointSlice 
+   * This KEP does not change any behavior of Services without the label, `service.kubernetes.io/managed-by`
+
+## Proposal
+
+The proposed soltion is to introduce a new "well-known label", `service.kubernetes.io/managed-by` 
+to Services and Kubernetes Endpoint/EndpointSlice controller delegates the management to 
+custom controller.
+
+### User Stories [optional]
+
+#### Service for custom controller
+
+The following YAML is for the Service for a custom controller. `service.kubernetes.io/service-proxy-name` is added to avoid kube-proxy to inject iptables rules for the service (which is already implemented in Kubernetes) and `service.kubernetes.io/managed-by` is newly added to avoid endpoint/endpointslice controller to generate endpoints/endpointslices for the service.
+In this case, custom controllers will generate endpoints/endpointslices by themselves and a custom controller manages them.
+
+```
+---
+kind: Service
+apiVersion: v1
+metadata:
+  name: custom-http-svc
+  labels:
+    service.kubernetes.io/service-proxy-name: controller-example1
+    service.kubernetes.io/managed-by: controller-example1
+spec:
+  selector:
+    app: custom-http-svc
+  ports:
+  - protocol: TCP
+    port: 80
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: custom-nginx
+spec:
+  selector:
+    matchLabels:
+      app: custom-http-svc
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: custom-http-svc
+    spec:
+      containers:
+      - name: nginx
+        image: nginx
+        ports:
+        - containerPort: 80
+```
+
+## Design Details
+
+### Test Plan
+
+The following end-to-end test is implemented in addition to unit tests:
+- Create a Pod and Services with `service.kubernetes.io/managed-by: controller-example1` and check the endpoint/endpointslice is not generated
+- Create a Pod and Services without `service.kubernetes.io/managed-by: controller-example1` and check the endpoint/endpointslice is generated
+
+
+### Graduation Criteria
+
+* Enable by default and soak for 1+ releases
+* Compatible with major systems (e.g. linux, windows)
+
+
+## Implementation History
+
+* 2020- Design proposal first draft
