@@ -45,10 +45,8 @@ superseded-by:
 - [Proposal](#proposal)
 - [Design Details](#design-details)
   - [Component changes](#component-changes)
-  - [Test/release process changes](#testrelease-process-changes)
-  - [Clarify “Support Policy” in community documentation](#clarify-support-policy-in-community-documentation)
-  - [Document impact on external dependencies support windows](#document-impact-on-external-dependencies-support-windows)
   - [Test Plan](#test-plan)
+  - [Documentation](#documentation)
   - [Graduation Criteria](#graduation-criteria)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
     - [Maturity levels (alpha, beta, stable)](#maturity-levels-alpha-beta-stable)
@@ -162,9 +160,20 @@ A visual example today vs. proposed for an adopter of 1.18 in April 2020:
 * Expand supported kubectl/apiserver skew
   * Currently supported skew (+/- 1 minor version) theoretically allows using an n-1 kubectl to work against all supported apiservers (n-2/n-1/n).
   * Ideally, the latest kubectl would support speaking to all supported apiservers (+0/-3 minor versions).
-  * Implementation should include adding a test to cover the added skew variations, have it release informing, watch for any errors, fix them, promote the test to release blocking.  This is already a gap today and can be treated as a project need orthogonal to this KEP.
 
-### Test/release process changes
+## Test Plan
+
+### Additional Version Test Coverage
+
+In order to support the additional version, the following additional jobs will need to be added to testgrid.  These are all copies of existing jobs, spread for the additional versions.
+
+* [SIG Release Jobs](https://testgrid.k8s.io/sig-release-master-blocking): Blocking and informing test job suites would need to be adjusted so that they are dropped after n-4 releases instead of n-3 as they are now.
+* Add [skew tests/jobs](https://testgrid.k8s.io/sig-cli-master#skew-cluster-stable1-kubectl-latest-gke) to test furthest supported skew per above.  These are the only "new" tests that need to be added.
+* [Conformance tests](https://testgrid.k8s.io/conformance-all) will theoretically also have to retire old versions 3 months later, thus running jobs for more versions.  In practice, our conformance test suite rarely retires jobs at all, and runs most jobs back to version 1.11, so no real change is needed here.
+
+A few SIGs will want to expand their version test coverage as well.  [For example, SIG-Cluster-Lifecycle/Kubeadm tests](https://testgrid.k8s.io/sig-cluster-lifecycle-kubeadm) would need to cover an extra version and an extra upgrade version, as would [kubebuilder tests](https://testgrid.k8s.io/sig-api-machinery-kubebuilder).  Most SIGs, however, only run jobs against current and would not require changes.
+
+### Additional test/release process changes
 
 * Staff patch releases for one more branch for ~3-4 more months
   * Feedback from SIG Release received, see [SIG Release meeting discussion](https://docs.google.com/document/d/1Fu6HxXQu8wl6TwloGUEOXVzZ1rwZ72IAhglnaAMCPqA/edit#bookmark=id.mi11nk75iohl).
@@ -186,26 +195,24 @@ A visual example today vs. proposed for an adopter of 1.18 in April 2020:
       * The Bazel testing dependency could add a lot of effort, because it may involve backporting bazel fixes.
       * golang version support policy could also create a lot of work.
 
-### Clarify “Support Policy” in community documentation
+
+### Documentation
+
+Update the [version skew policy](https://kubernetes.io/docs/setup/release/version-skew-policy/), which is currently the only public place we document which versions are supported.  Also update internal documents with the same content such as [kubeadm](https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/create-cluster-kubeadm/#version-skew-policy) and [patch releases](https://github.com/kubernetes/sig-release/blob/master/releases/patch-releases.md)
+
+#### Clarify “Support Policy” in community documentation
 * Generally, e.g.:
 https://git.k8s.io/community/contributors/devel/sig-release/cherry-picks.md#what-kind-of-prs-are-good-for-cherry-picks
 * Specifically:
   * 12 months general bug fix patching and backports
   * 2 months critical security patches and upgrade blocking fixes
 
-### Document impact on external dependencies support windows
+#### Document impact on external dependencies support windows
 
 * Example: golang support for ~1 year (2 6-month releases)
 * Options:
   * Upgrade dependencies more on release branches
   * Note where support gaps exist and create plans for more proactively managing deps
-
-### Test Plan
-
-N/A.
-The project already has pre-release test coverage and test automation.
-This KEP proposes no changes to this.
-Existing tests will continue running.
 
 ### Graduation Criteria
 
@@ -266,9 +273,9 @@ Other areas of possible concern are listed below, but WG LTS feels these are ort
 API Stability
 * Definition: Core APIs have 1 GA (v1) version available (vs beta/alpha versions of the APIs).
 * Refer to https://kubernetes.io/docs/concepts/overview/kubernetes-api/#api-versioning for the existing policy.
-* Deprecation Policy: https://kubernetes.io/docs/reference/using-api/deprecation-policy/ 
-* Version Skew policy: https://kubernetes.io/docs/setup/release/version-skew-policy/ 
-* Conformance without beta REST APIs (KEP): https://github.com/kubernetes/enhancements/pull/1332 
+* Deprecation Policy: https://kubernetes.io/docs/reference/using-api/deprecation-policy/
+* Version Skew policy: https://kubernetes.io/docs/setup/release/version-skew-policy/
+* Conformance without beta REST APIs (KEP): https://github.com/kubernetes/enhancements/pull/1332
 * As the project matures in stability other KEPs may eventually aim to elongate:
   * Active test coverage for version skew and upgrade scenarios
   * Deprecation timelines
@@ -288,8 +295,8 @@ Well defined and predictable path from alpha->beta->stable:
 * These timelines today are not out of harmony with a support lifecycle covering one year. Today a feature cannot become GA and also be deprecated away in a time shorter than one year.
 * As the project matures in stability other KEPs may:
   * Modify alpha->beta->stable graduation criteria.  E.g.: A change to GA feature promotion such that is is accomplished in not less than 4 releases or 12 months may be beneficial.
-  * SIG Arch is investigating this space, e.g.: 
-    * https://kcsna2019.sched.com/event/VvMK/raising-the-bar-production-readiness-in-k8s-john-belamaric 
+  * SIG Arch is investigating this space, e.g.:
+    * https://kcsna2019.sched.com/event/VvMK/raising-the-bar-production-readiness-in-k8s-john-belamaric
     * https://github.com/kubernetes/community/issues/4000
 
 ## Alternatives
