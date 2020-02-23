@@ -58,6 +58,9 @@ superseded-by:
   - [1.16](#116)
   - [1.17](#117)
   - [1.18](#118)
+  - [1.19](#119)
+  - [1.20](#120)
+  - [1.21](#121)
 - [Graduation Criteria](#graduation-criteria)
   - [API group move to <code>networking.k8s.io/v1beta1</code>](#api-group-move-to-)
   - [GA](#ga)
@@ -638,13 +641,24 @@ backend:
   `extensions/v1beta1` until `networking.k8s.io/v1` is available.
 - [x] Update documentation to reference `networking.k8s.io/v1beta1` kubernetes/website#14239
 
-### 1.16
+### 1.18 `networking/v1beta1`
 
-- [ ] Meet graduation criteria and promote API to `networking.k8s.io/v1`
+- [ ] Implement [Path as a prefix](#path-as-a-prefix)
+    - [ ] New resource added with default to Implementation Specific
+- [ ] Implement new resource [Alternative backend types](#alternative-backend-types)
+- [ ] Implement [Hostname wildcards](#hostname-wildcards)
+- [ ] Implement new resource for [Ingress class](#ingress-class)
+    - [ ] Defaulting admission controller for [Ingress class](#ingress-class)
+
+### 1.19
+
 - [ ] Implement API changes to GA version.
+    - [ ] PathType is now required but has no default
+    - [ ] Reorganize IngressBackend types with new ServiceType definition
+    - [ ] Rename backend to DefaultBackend [<code>backend</code> to <code>defaultBackend</code>](#-to-)
 - [ ] Announce `networking.k8s.io/v1beta1` Ingress as deprecated
 
-### 1.17
+### 1.20
 
 - [ ] Update API server to persist in `networking.k8s.io/v1`.
 - [ ] Update in-tree controllers, examples, and clients to target
@@ -655,7 +669,7 @@ backend:
 - [ ] Evangelize availability of v1 Ingress API to out-of-org Ingress
       controllers
 
-### 1.18
+### 1.21
 
 - [ ] Remove ability to serve `extensions/v1beta1` and
   `networking.k8s.io/v1beta1` Ingress resources (preserve ability to
@@ -672,12 +686,12 @@ backend:
   `networking.k8s.io`
 - [x] 1.15: all in-tree use and in-org controllers switch to
   `networking.k8s.io` API group
-- [ ] 1.15: documentation and examples are updated to refer to
+- [ ] 1.18: documentation and examples are updated to refer to
   networking.k8s.io API group `networking.k8s.io/v1`
 
 ### GA
 
-- [ ] 1.17: API finalized and implemented on the branch.
+- [ ] 1.19: API finalized and implemented on the branch.
 - [ ] 1.XX: Ingress spec and conformance tests finalized and running against branch.
 - [ ] 1.XX: Review & update Ingress [documentation](https://k8s.io/docs/concepts/services-networking/ingress/)
 - [ ] 1.XX: API changes merged into the main API, with tests from v1beta1 pointing to GA.
