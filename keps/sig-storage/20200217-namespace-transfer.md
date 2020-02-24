@@ -1,10 +1,10 @@
 ---
-title: Namespace Transfer
+title: Namespace Transfer for Storage Resources
 authors:
   - "@mhenriks"
 owning-sig: sig-storage
 participating-sigs:
-  - TBD
+  - sig-storage
 reviewers:
   - "@saad-ali"
   - "@j-griffith"
