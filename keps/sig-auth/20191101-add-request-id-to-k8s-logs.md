@@ -5,20 +5,19 @@ authors:
  - "@sshukun"
  - "@furukawa3"
  - "@vanou"
-owning-sig: sig-auth
+owning-sig: sig-instrumentation
 participating-sigs:
- - sig-auth
 reviewers:
  - TBD
 approvers:
  - TBD
 editor: TBD
 creation-date: 2019-11-01
-last-updated: 2020-01-09
+last-updated: 2020-02-26
 status: provisional
 ---
 
-# Add Request-ID to each k8s component log
+# Add Request-ID to each Kubernetes component log
 
 ## Table of Contents
 
@@ -34,14 +33,24 @@ status: provisional
  - [Proposal](#proposal)
    - [Basic policy of Request-ID](#basic-policy-of-request-id)
    - [Design Overview](#design-overview)
-   - [Summary of collaboration idea of related KEPs](#summary-of-collaboration-idea-of-related-keps)
+     - [Design overview of Propagate Request-ID](#design-overview-of-propagate-request-id)
+     - [Detail design of Propagate Request-ID](#detail-design-of-propagate-request-id)
+     - [Design overview of Export Request-ID](#design-overview-of-export-request-id)
+     - [Detail design of Export Request-ID](#detail-design-of-export-request-id)
+     - [Design overview of Control Request-ID](#design-overview-of-control-request-id)
+     - [Detail design of Control Request-ID](#detail-design-of-control-request-id)
+ - [Test Plan](#test-plan)
+ - [Migration / Graduation Criteria](#migration--graduation-criteria)
+   - [Alpha](#alpha)
+   - [Beta](#beta)
+   - [GA](#ga)
 
 <!-- /toc -->
 
 ## Summary
 
-This KEP proposes a new unique logging meta-data into all K8s logs. It makes us
-more easy to identfy specfic logs related to a single API request (such as
+This KEP proposes a new unique logging meta-data into all Kubernetes logs. It makes us
+more easy to identify specific logs related to a single user operation (such as
 `kubectl apply -f <my-pod.yaml>`). This feature is similar to
 [Request-ID](https://docs.openstack.org/api-guide/compute/faults.html) for
 OpenStack. It greatly reduces the investigation cost.
@@ -56,13 +65,9 @@ Support team in k8s Service Provider
 
 We'd like to resolve quickly for end users' problem.
 
-Tracking logs among each k8s component related to specific an API request is
-very tough work. It is necessary to match logs with timestamps as hints. If
-multiple users throw many API requests at the same time, it is very difficult to
-track logs across each k8s component log. It is difficult that target user can
-not resolve end user's problem quickly in the above. Therefore, we'd like to add
-a new identifier which is unique to each API request. This feature is useful for
-the following use cases:
+Tracking logs among each Kubernetes component related to specific an user operation is very tough work. It is necessary to match logs with timestamps as hints. If multiple users throw many API requests at the same time, it is very difficult to track logs across each Kubernetes component log. 
+
+It is difficult that support team in k8s Service Provider resolve end user's problem quickly in the above. Therefore, we'd like to add a new identifier which is unique to each user operation. This feature is useful for the following use cases:
 
 #### Case 1
 
@@ -74,146 +79,129 @@ request. We can collect these logs as an evidence.
 #### Case 2
 
 If the container is terminated by OOM killer, there is a case to break down the
-issue into parts(Pod or k8s) from the messages related OOM killer on host logs
+issue into parts(Pod or Kubernetes) from the messages related OOM killer on host logs
 and the API processing just before OOM killer. If the cause is that some unknown
 pod creations, it is helpful to detect the root API request and who called this
 request.
 
 ### Goals
 
-Adding a Request-ID into all K8s component logs. The Request-ID is unique to an
-operation.
+ - Adding a Request-ID into each K8s component log.
+ - The Request-ID is unique to an operation.
+ - Control enabled/disabled Request-ID feature(Request-ID feature is disabled on default to avoid an impact for existing user).
 
 ### Non-Goals
 
-To centrally manage the logs of each k8s component with `Request-ID` (This can
-be realized with existing OSS such as Kibana, so no need to implement into K8s
+ - To centrally manage the logs of each Kubernetes component with Request-ID (This can
+be realized with existing OSS such as Kibana, so no need to implement into Kubernetes
 components).
+ - We don't associate Request-ID to all of operations(Our target is important operations such as `kubectl create/delete/etc.`).
 
 ## Proposal
 
 ### Basic policy of Request-ID
 
- - Minimize the impact to existing features
- - Simple implementation
- - Collaborate with related KEPs. This means as follows.
-   - Ensure consistent metadata(This may need to be considered and managed across the Kubernetes beyond the related KEPs).
-   - Implementation which does not interfere related KEP's implementation
+ - Minimize the impact to existing users who are retrieving logs and analyzing with existing log format.
+   - So we disabled Request-ID feature on default.
+ - Collaborate with related KEPs to avoid unnecessary conflict to them regarding implementation and feature.
+   - Use existing KEP's feature as much as possible.
+   - Therefore, we will merge Request-ID feature after related KEP features are merged.
 
 ### Design Overview
 
-Request-ID feature consists the following two features.
- - Export Request-ID to each kubernetes component log
- - Propagate Request-ID to related objects
-
-#### Design overview of Export Request-ID
-
-**Collaboration with related KEP**  
-There is the existing KEP(structured logging feature) that related log exporting. 
-Main concept of this feature is structuring the log format and replace existing klog with logr for structuring.
-Structured format is attractive, however this replacement is very tough work and may be required troublesome migration steps.
-In this situation, it is expect to take a long time to migration completely.
-In the meantime, Request-ID feature takes more simple way to export ID information to log files.
-(It is possibility that Request-ID feature may take structured logging feature in the future)
-
-There is another related KEP(distributed tracing) that propagate Trace-ID(and etc.) to related kubernetes objects.
-This feature adds these information(e.g. Trace-ID) to Annotations of objects.
-Annotations is existing feature of kubernetes, and Request-ID feature adopts same method.
-
-**Idea of design**  
-As a result, exporting Request-ID is implementable by just reading Annotations from objects when using klog.
-Note that this is no impact to existing klog feature.
-
-##### Example of source code and log output
-
- - Original source code(scheduler.go)
-
-```
-func (sched *Scheduler) scheduleOne(ctx context.Context) {
-	fwk := sched.Framework
-
-	podInfo := sched.NextPod()
-<snip>
-	pod := podInfo.Pod
-<snip>
-	klog.V(3).Infof("Attempting to schedule pod: %v/%v", pod.Namespace, pod.Name)
-```
-
- - Add Request-ID exportation into klog
-
-```
-func (sched *Scheduler) scheduleOne(ctx context.Context) {
-	fwk := sched.Framework
-
-	podInfo := sched.NextPod()
-<snip>
-	pod := podInfo.Pod
-<snip>
-	klog.V(3).Infof("Request-ID: %v Attempting to schedule pod: %v/%v", pod.<Annotations related Request-ID>, pod.Namespace, pod.Name)
-```
-
- - Original log output
-```
-I1220 08:58:31.000196    6869 scheduler.go:564] Attempting to schedule pod: default/nginx
-
-```
-
- - Request-ID log output
-```
-I1220 08:58:31.000196    6869 scheduler.go:564] Request-ID : d0ac7061-d9fc-43d0-957f-dbc7306d3ace Attempting to schedule pod: default/nginx
-
-```
-
-**Pros of this method**  
- - No impact to existing klog feature
- - As a result, no interfere with structured logging implementation during migration to logr
-
-**Restricts**  
- - Only objects that can be obtained within the function scope calling klog can read annotations
-
-#### Step to implementation of Export Request-ID
-
-##### Step1
-
-Target klogs: Only klogs that satisfy both of the following requirements.
- - klogs that are called during typical kubectl operations
-   - e.g. kubectl operation: create, apply, delete, etc.
-   - e.g. kubernetes object: deployment, pod, etc. 
- - klogs that can get object's annotation in the scope which calls the klog.
-
-##### Step2
-
-Expand the range of operations and resources from Step1.
-   - e.g. kubectl operation: rollout, scale, drain, etc.
-   - e.g. kubernetes object: service, secret, pv, etc. 
-
-##### Step3(TBD.)
-
- - Considering a mechanism that can acquire annotations from any objects at any scopes, and then the target is klog that could not be done in Step1 and 2.
+Request-ID feature consists the three features.
+ - Propagate Request-ID to related objects.
+ - Export Request-ID to each kubernetes component log.
+ - Control enabled/disabled the above two features.
 
 #### Design overview of Propagate Request-ID
 
-**Collaboration with related KEP**  
-There is an idea to use `distributed context` of the existing KEP(distributed tracing).
-In this case, use of OpenTelemetry is prerequisite.
-However, Request-ID feature does not need Exporter of OpenTelemetry because Request-ID is exported to only kubernetes log file by klog.
-Request-ID collaborates with distributed tracing KEP in terms of adding context(e.g. Trace-ID such as Request-ID) to Annotations and propagation feature(distributed context of OpenTelemetry).
-At first(in Alpha stage), OpenTelemetry is prerequisite of Request-ID feature.
-Eventually, propagating feature is implemented by in-tree code change only(not use OpenTelemetry).This idea is TBD.
+There is an idea to use `distributed context` of the existing KEP([Distributed Tracing](https://github.com/kubernetes/enhancements/blob/master/keps/sig-instrumentation/0034-distributed-tracing-kep.md)). We use `Distributed Tracing` feature for propagation.
 
-**Idea of design**  
-TBD.
+ - We use Trace-ID as Request-ID
+ - Trace-ID is contained in Annotation of Kubernetes objects. (This is a part of `Distributed Tracing` feature)
+ - Trace-ID is removed when tracing is finished. (This is a part of `Distributed Tracing` feature)
 
+We have two notes should be considered when using `Distributed Tracing` feature for Request-ID feature.
 
-### Summary of collaboration idea of related KEPs
+**NOTE1:**  
+`Distributed Tracing` feature is only enabled when `--trace` option is added to `kubectl` command. However, in order for the Kubernetes service provider's support team to troubleshoot from customer's Kubernetes log files, we would like to ensure that Request-ID is always added to the log file regardless of `--trace` option. So we need to implement additional parameter which called `--request-id`. This parameter can control(enabled/disabled) Request-ID feature(See [Design overview of Control Request-ID](#design-overview-of-control-request-id)). As a result, the customers who want to use Request-ID can always use this feature, and does not affect other users who does not want to use this feature. Below is a table showing the relationship between the `--trace option` and the `--request-id` parameter.
 
-#### distributed tracing
+| | --trace: OFF | --trace: ON |
+| ------ | ------ | ------ |
+| --request-id = 0 | No Tracing / No export Request-ID | Tracing / No export Request-ID |
+| --request-id > 0 | Tracing / Export Request-ID | Tracing / Export Request-ID |
 
- - Adding context information to kubernetes object's Annotations
- - Propagate Annotations by distributed context of OpenTelemetry(Eventually, propagating feature is implemented by in-tree code change only)
- - Consider consistent of metadata
+**NOTE2:**  
+To trace each Kubernetes function, we need to add codes into related k8s function. So the following implementation is needed.
+ - Case1. The function which is added Tracing codes by `Distributed Tracing` KEP
+   - We add Request-ID codes over Tracing codes.
+ - Case2. The function which is not added Tracing codes by `Distributed Tracing` KEP
+   - We add both of Tracing codes and Request-id codes.
 
-#### structured logging
+#### Detail design of Propagate Request-ID
 
- - Request-ID implementation does not interfere with structured logging implementation
- - Consider consistent of metadata
+TBD. I will write down the following things.
+ - List up the target function that we add tracing and Request-id codes
+ - Sample codes of case 1 and 2 of the above `NOTE2`
+
+#### Design overview of Export Request-ID
+
+We add Request-ID information into klog calls. Note that we don't associate Request-ID to all of operations. Our target is important operations such as `kubectl create/delete/etc.`, and our target klog calls is the only klogs which is called via such important operations. Request-ID feature does not change existing klog function, but changes each klog calls and their log format. Currently, there is [Structured logging](https://github.com/serathius/enhancements/blob/structured-logging/keps/sig-instrumentation/20191115-structured-logging.md) KEP, and this KEP also change specific klog calls. We will merge Request-ID feature after Structured logging KEP is merged.
+
+#### Detail design of Export Request-ID
+
+TBD. I will write down the following things.
+ - List up the target klogs that we add Request-id
+ - Sample codes of klog calls that we changes
+ - Sample logs which is added Request-ID
+
+#### Design overview of Control Request-ID
+
+We should control Request-ID feature to avoid an impact to existing users who are retrieving logs and analyzing with existing log format. So we introduce `--request-id` parameter which enables/disables Request-ID feature. We also manage the range of operations which are added Request-ID. The effect of each parameter of `--request-id` is as follows.
+
+| parameter | efficient |
+| ------ | ------ |
+| --request-id=0 | Request-ID feature is disabled (Default) |
+| --request-id=1 | Request-ID feature is enabled, and Request-ID is added to klogs related to the `Alpha` target operations | 
+| --request-id=2 | Request-ID feature is enabled, and Request-ID is added to klogs related to the `Alpha and Beta` target operations | 
+
+Alpha and Beta target operations are described in Migration / Graduation Criteria section.
+
+#### Detail design of Control Request-ID
+
+TBD. I will write down the following things.
+ - How to realize `--request-id` parameter in each Kubernetes component.
+ - Sample codes which is used with `--request-id` and `--trace` option.
+
+### Test Plan
+
+ - test against the combination of following patterns.
+   - --trace(OFF/ON) / --request-id(0/1/2)
+
+### Migration / Graduation Criteria
+
+#### Alpha
+
+ - Add Request-ID against the following operations:
+   - kubectl create/apply/delete
+     - target resources: pod/deployment
+   - kubectl drain
+     - target resources: node
+ - Implement `--request-id` parameter
+ - E2e testing 
+ - User-facing documentation
+
+#### Beta
+
+ - Add Request-ID against the following operations:
+   - kubectl create/apply/delete
+     - target resources: daemonset/pv/pvc/svc
+   - kubectl scale/rollout
+ - Update E2e testing
+ - Update documentation
+
+#### GA
+
+ - All feedback is addressed.
+
