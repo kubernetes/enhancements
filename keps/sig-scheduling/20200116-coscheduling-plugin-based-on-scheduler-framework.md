@@ -57,8 +57,8 @@ Kubernetes has become a popular solution for orchestrating containerized workloa
 Discuss the API definition of `PodGroup`.
  
 ## Use Cases
-when running a Tensorflow/MPI job, all tasks of a job must be start together; otherwise, did not start anyone of tasks. If the resource is enough to run all 'tasks', everything is fine; but it's not true for most of case, especially in the on-premises environment. In worst case, all jobs are pending here because of deadlock: every job only start part of tasks, and waits for the other tasks to start. In worst case, all jobs are pending leading to a deadlock.
- 
+When running a Tensorflow/MPI job, all tasks must start before they can do any work. This becomes a bigger problem when several jobs are competing to get all their tasks started. In worst case, all jobs are pending because of a deadlock: every job only start part of tasks, and waits for the other tasks to start. In worst case, all jobs are pending leading to a deadlock.
+
 ## Terms
 
 - **pgPod**: pod belongs to some `PodGroup`.
