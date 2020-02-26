@@ -23,32 +23,35 @@ status: provisional
 ## Table of Contents
 
 <!-- toc -->
-- [Motivation](#motivation)
-- [Goals](#goals)
-- [Non-Goals](#non-goals)
-- [Use Cases](#use-cases)
-- [Terms](#terms)
-- [Proposal](#proposal)
-- [Design Details](#design-details)
-  - [PodGroup](#podgroup)
-  - [Coscheduling](#coscheduling)
-  - [Extension points](#extension-points)
-    - [QueueSort](#queuesort)
-    - [Pre-Filter](#pre-filter)
-    - [Permit](#permit)
-    - [UnReserve](#unreserve)
-- [Alternatives considered](#alternatives-considered)
-- [Graduation Criteria](#graduation-criteria)
-- [Testing Plan](#testing-plan)
-- [Implementation History](#implementation-history)
-- [References](#references)
+- [Coscheduling plugin based on scheduler framework](#coscheduling-plugin-based-on-scheduler-framework)
+  - [Table of Contents](#table-of-contents)
+  - [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+  - [Use Cases](#use-cases)
+  - [Terms](#terms)
+  - [Proposal](#proposal)
+  - [Design Details](#design-details)
+    - [PodGroup](#podgroup)
+    - [Coscheduling](#coscheduling)
+    - [Extension points](#extension-points)
+      - [QueueSort](#queuesort)
+      - [Pre-Filter](#pre-filter)
+      - [Permit](#permit)
+      - [UnReserve](#unreserve)
+  - [Alternatives considered](#alternatives-considered)
+  - [Graduation Criteria](#graduation-criteria)
+  - [Testing Plan](#testing-plan)
+  - [Implementation History](#implementation-history)
+  - [References](#references)
 <!-- /toc -->
 
 ## Motivation
-Kubernetes has become a popular solution for orchestrating containerized workloads. Due to limitation of Kubernetes scheduler, some offline workloads (ML/DL) are managed in a different system. To improve cluster utilization and operation efficiency, we'd like to treat Kubneretes as a unified management platform. But ML jobs are All-or-Nothing: they require all tasks of a job to be scheduled at the same time. If the job only start part of tasks, it will wait for other tasks to be ready to begin to work. In the worst case, all jobs are pending leading to a deadlock. To solve this problem, co-scheduling is needed for the scheduler. The new scheduler framework makes the goal possible.
+Kubernetes has become a popular solution for orchestrating containerized workloads. Due to limitation of Kubernetes scheduler, some offline workloads (ML/DL) are managed in a different system. To improve cluster utilization and operation efficiency, we'd like to treat Kubneretes as a unified management platform. But ML jobs are All-or-Nothing: they require all tasks of a job to be scheduled at the same time. If the job only start part of tasks, it will wait for other tasks to be ready to begin to work. In the worst case, all jobs are pending leading to a deadlock. To solve this problem, co-scheduling is needed for the scheduler. The new scheduler framework makes the goal possible. 
  
 ## Goals
-Use scheduler plugin, which is the most Kubernetes native way, to implement coscheduling.
+1. Use scheduler plugin, which is the most Kubernetes native way, to implement coscheduling. 
+2. Lightweight implementation of coscheduling without the CRD of `PodGroup`
  
 ## Non-Goals
 Discuss the API definition of `PodGroup`.
@@ -111,6 +114,8 @@ type PodGroupInfo struct {
 
 #### QueueSort
 In order to make the pods which belongs to the same `PodGroup` to be scheduled together as much as possible, implement a strategy in `QueueSort` phase. 
+
+**limition**: `QueueSort` is the core part of our design and only one `QueueSort` plugin is allowed in the scheduling framework. So our design only supports the case that `QueueSort` extension point isn't implemented in other plugins.
 
 ```go
   func  Less(podA *PodInfo, podB *PodInfo) bool
