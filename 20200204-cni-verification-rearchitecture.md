@@ -85,17 +85,17 @@ The current network policy tests have a few issues which, without increasing tec
  
 ### Related issues
 
-As an overall improvement, this KEP will help to address the solutions for several existing issues in upstream Kuberentes.
+As an overall improvement, this KEP will help to address the solutions for several existing issues in upstream Kuberentes.  Some of these issues have been duct taped upstream, but our overarching goal is to reduce the amount of work required to verify that any such issues have been properly addressed and accounted for in the documentation, testing, and semantic aspects of how the API for NetworkPolicy itself is defined.
 
 - https://github.com/kubernetes/kubernetes/issues/87857 (docs and understandability)
 - https://github.com/kubernetes/kubernetes/issues/87893 (holes in our test coverage matrix)
 - https://github.com/kubernetes/kubernetes/issues/85908 (failing tests, unclear semantics)
 - https://github.com/kubernetes/kubernetes/issues/86578 (needs e2e coverage)
 - https://github.com/kubernetes/kubernetes/issues/87709 (logging of netpol actions, will help describing states we reach) 
-- https://github.com/projectcalico/felix/issues/2032 non-deterministic time frames for policy applications
+- https://github.com/projectcalico/felix/issues/2032 non-deterministic time frames for policy applications - addressable through published performance tests which measure time to policy implementation for several pods in several namespaces.
 - https://github.com/projectcalico/felix/issues/2008 need to test postStart pods in networkpolicy upstream
-- https://github.com/vmware-tanzu/antrea/issues/381 "It's not detected by e2e test because it can only happen when more than one Pod is scheduled on a single node."
-- https://github.com/kubernetes/kubernetes/issues/88375 : The test matrix for Egress is almost entirely empty.
+- https://github.com/vmware-tanzu/antrea/issues/381 addressable by performance tests *or* node-targetted tests.
+- https://github.com/kubernetes/kubernetes/issues/88375 : The test matrix for Egress is almost entirely empty, decrease verbosity of new tests will organically increase likeliehood of new test submissions over time.
 
 
 ### Consequences of this problem
