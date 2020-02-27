@@ -54,7 +54,7 @@ superseded-by:
     - [Just write guideline and update log messages](#just-write-guideline-and-update-log-messages)
     - [Replace klog with some other structured logging library](#replace-klog-with-some-other-structured-logging-library)
     - [Use glogr instead of proposed message structure](#use-glogr-instead-of-proposed-message-structure)
-- [Code organisation / infrastructure needed](#code-organisation--infrastructure-needed)
+- [Code organisation](#code-organisation)
 - [Production Readiness Review Process](#production-readiness-review-process)
 <!-- /toc -->
 
@@ -68,7 +68,7 @@ Current logging in the Kubernetes control plane doesn’t guarantee any uniform 
 
 ### Goals
 
-* Improve querability of most common logs in Kubernetes by standardizing log message and references to Kubernetes objects (Pods, Nodes etc.)
+* Make most common logs more queryable by standardizing log message and references to Kubernetes objects (Pods, Nodes etc.)
 * Enforce log structure by introduction of new klog methods that could be used to generate structured logs.
 * Propose reasonable scope of migration:
   * Executable within SIG-instrumentation resources
@@ -105,10 +105,10 @@ For this purpose we suggest to use following log message structure:
 ```
 
 where
-* message is formatted using “%q” fmt logic
-* keys are formatted using “%s” fmt logic
-* values are formatted using “%v” fmt logic and optionally escaped using the “%q” fmt logic if it not a number or a boolean
-* keys are separated from values with a “=” sign
+* message is formatted using `%q` fmt logic
+* keys are formatted using `%s` fmt logic
+* values are formatted using `%q` fmt logic, except for number and boolean
+* keys are separated from values with a "=” sign
 * message and key-values are separated with a single space
 
 #### New klog methods
@@ -135,7 +135,7 @@ klog.InfoS("Pod status updated", "pod", "kubedns", "status", "ready")
 
 That would result in log
 ```
-I1025 00:15:15.525108       1 controller_utils.go:116] “Pod status updated“ pod=“kubedns“ status=“ready“
+I1025 00:15:15.525108       1 controller_utils.go:116] "Pod status updated" pod="kubedns" status="ready"
 ```
 
 And
@@ -146,7 +146,7 @@ klog.ErrorS(err, "Failed to update pod status")
 
 That would result in log
 ```
-E1025 00:15:15.525108       1 controller_utils.go:114] “Failed to update pod status“ err="timeout"
+E1025 00:15:15.525108       1 controller_utils.go:114] "Failed to update pod status" err="timeout"
 ```
 
 ### References to Kubernetes objects
@@ -159,11 +159,12 @@ Non-namespaced objects will be represented by their name. Pattern: `<name>`, exa
 
 Example:
 ```go
+pod := corev1.Pod{Name: "kubedns", Namespace: "kube-system", ...}
 klog.InfoS("Pod status updated", "pod", pod, "status", "ready")
 ```
 That would result in log
 ```
-I1025 00:15:15.525108       1 controller_utils.go:116] “Pod status updated“ pod=“kube-system/kubedns“ status=“ready“
+I1025 00:15:15.525108       1 controller_utils.go:116] "Pod status updated" pod="kube-system/kubedns" status="ready"
 ```
 Selecting key under which put objects will be left to caller as defining log schema will need more discussion and is outside of scope of this KEP.
 
@@ -202,7 +203,8 @@ Proposed default fields:
 
 Default Serialization:
 * primitive types (`int`, `float`) - Compatible with [golang json package](https://golang.org/pkg/encoding/json/#Marshal)
-* Kubernetes objects (`Pod`, `Node`) - JSON object consisting of `name` and `namespace`. Example `{"name": "kubedns", "namespace": "kube-system"}`
+* namespaced Kubernetes objects (`Pod`, `Deployment`) - JSON object consisting of `name` and `namespace`. Example `{"name": "kubedns", "namespace": "kube-system"}`
+* not namespaced Kubernetes objects (`Node`) - JSON object consisting of `name`. Example `{"name": "cluster1-vm-72x33b8p-34jz"}`
 * arbitrary structure (`http.Request`) - JSON objects consisting of public non-pointer fields.
 
 Proposed serialization of Kubernetes objects will not include additional fields beside those proposed available in `text` format.
@@ -217,7 +219,7 @@ Example:
 ```go
 klog.Infof("Updated pod %s status to ready", pod.name)
 ```
-That would result in log
+That would result in log (pretty printed)
 
 ```json
 {
@@ -233,7 +235,7 @@ And
 klog.ErrorS(err, "Failed to update pod status")
 ```
 
-That would result in log
+That would result in log (pretty printed)
 
 ```json
 {
@@ -247,10 +249,11 @@ That would result in log
 And
 
 ```go
+pod := corev1.Pod{Name: "kubedns", Namespace: "kube-system", ...}
 klog.InfoS("Pod status updated", "pod", pod, "status", "ready")
 ```
 
-That would result in log
+That would result in log (pretty printed)
 ```json
 {
    "ts": 1580306777.04728,
@@ -264,6 +267,32 @@ That would result in log
 }
 ```
 
+And
+
+```go
+type Request struct {
+  Method  string
+  Timeout int
+  secret  string
+  Con     *Connection
+}
+req := Request{Method: "GET", Timeout: 30, secret: "pony"}
+klog.InfoS("Request finished", "request", Request)
+```
+
+That would result in log (pretty printed)
+```json
+{
+   "ts": 1580306777.04728,
+   "v": 4,
+   "msg": "Request finished",
+   "request":{
+      "Method": "GET",
+      "Timeout": 30
+   }
+}
+```
+
 
 ### Logging configuration
 
@@ -271,10 +300,10 @@ To allow selection of the logging output format we would like to introduce a new
 
 `LoggingConfig` structure should be implemented as part of `k8s.io/component-base` options and include a common set of flags for logger initialization.
 
-`--logging-format` flag should allow you to pick between logging logging output formats. Setting this flag will select a particular logger implementation.
+`--logging-format` flag should allow you to pick between logging output formats. Setting this flag will select a particular logger implementation.
 
 Proposed flag `--logging-format` values:
-* `text` for old text-based logging format
+* `text` for text-based logging format (default)
 * `json` for new JSON format
 
 ### Migration / Graduation Criteria
@@ -294,6 +323,7 @@ Adding support for JSON output format and guarding against regression:
 * Implementation of logr which will produce logs in JSON format will be created.
 * Flag which will inject new logr implementation into klog if --logging-format is set to json will be added to k8s.io/component-base JSON format
 * Static analysis protects against adding new string formatting logs
+* [Kubernetes Logging convention](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-instrumentation/logging.md) document is updated
 
 #### GA
 
@@ -321,39 +351,49 @@ For json format we used [zap](https://github.com/uber-go/zap).
 
 #### Log volume increase analysis
 
-Example log size change based on apiserver HTTP access log. This log generates most volume in kube-apiserver and accepts lots of arguments. This makes this message a good example of the worst case for log volume increase.
+Changes in format presented in this KEP will result in adding additional metadata to logs, potentially largely increasing log volume.
+Unexpected log volume increase can lead to performance problems due exhausting disk IO or halting whole process when logs cannot be written on full disk.
+To avoid breaking existing poduction clusters we would like to target of around 10% of log volume increase between kubernetes versions (proposed by @wojtekt).
 
+During log volume analysis we would like to mainly focus on Kubernetes apiserver HTTP access logs. Those logs will have biggest impact
+* They are responsible for 85% of log volume generated in cluster
+* They are expected to get at a lot of additional metadata as they take 8 arguments
+
+HTTP access log in Kubernetes 1.17
 ```go
 klog.Infof("%s %s: (%v) %v%v%v [%s %s]", rl.req.Method, rl.req.RequestURI, latency, rl.status, rl.statusStack, rl.addedInfo, rl.req.UserAgent(), rl.req.RemoteAddr)
 ```
 
-Using old format generates 206 characters (before [changes by @lavalamp](https://github.com/kubernetes/kubernetes/pull/87203))
+Resulting log line is 206 characters long
 ```
 I1025 00:15:15.525108       1 httplog.go:79] GET /api/v1/namespaces/kube-system/pods/metrics-server-v0.3.1-57c75779f-9p8wg: (1.512ms) 200 [pod_nanny/v0.0.0 (linux/amd64) kubernetes/$Format 10.56.1.19:51756]
 ```
 
-Migrating to InfoS will result in log of length 284 characters [+38%]
-```
-I0129 14:57:28.832349  102767 experiment.go:26] HTTP method=GET uri=/api/v1/namespaces/kube-system/pods/metrics-server-v0.3.1-57c75779f-9p8wg latency=1.512ms status=200 status-stack= added-info= user-agent=”pod_nanny/v0.0.0 (linux/amd64) kubernetes/$Format” remote-addr=10.56.1.19:51756
-```
-
-InfoS with Json enabled will generate log line with 347 characters [+68%]
-```json
-{"level":"info","ts":1580306777.04728,"caller":"zapr@v0.1.1/zapr.go:69","msg":"HTTP","method":"GET","uri":"/api/v1/namespaces/kube-system/pods/metrics-server-v0.3.1-57c75779f-9p8wg","latency":"1.512ms","status":200,"status-stack":"","added-info":"","user-agent":"pod_nanny/v0.0.0 (linux/amd64) kubernetes/$Format","remote-addr":"10.56.1.19:51756"}
+HTTP access log in Kubernetes 1.18 (after [changes by @lavalamp](https://github.com/kubernetes/kubernetes/pull/87203))
+```go
+klog.Infof("verb=%q URI=%q latency=%v resp=%v UserAgent=%q srcIP=%q: %v%v", rl.req.Method, rl.req.RequestURI, latency, rl.status, rl.req.UserAgent(), rl.req.RemoteAddr, rl.statusStack, rl.addedInfo)
 ```
 
-Data about byte log length in k8s components. Data taken from scalability test [gce-master-scale-performance](https://k8s-testgrid.appspot.com/sig-scalability-gce#gce-master-scale-performance)
+Resulting log line is 248 characters long. Additional 42 characters has resulted in increased log volume by 17% (average size of http log line in 1.17 is 243 characters).
+```
+I0129 03:30:57.673664       1 httplog.go:90] verb="GET" URI="/api/v1/namespaces/kube-system/pods/metrics-server-v0.3.1-57c75779f-9p8wg" latency=1.512ms resp=200 UserAgent="kubelet/v1.18.0 (linux/amd64) kubernetes/15c3f1b" srcIP="10.56.1.19:51756": 
+```
 
-|component              |average|50%ile|75%ile|90%ile|
-|-----------------------|-------|------|------|------|
-|kube-apiserver         |229    |218   |248   |319   |
-|kube-controller-manager|255    |229   |355   |362   |
-|kubelet                |759    |885   |912   |1143  |
-|kube-scheduler         |217    |225   |226   |227   |
+For migration to structured api we would like to propose to remove `statusStack` and `addedInfo` arguments. Our reasons:
+* Log format already neglects to put metadata for them, breaking the convention.
+* We didn't find any case of those fields being non empty in [gce-master-scale-performance](https://k8s-testgrid.appspot.com/sig-scalability-gce#gce-master-scale-performance)
 
-When looking at the whole repository we are not expecting a very big increase of log volume due added metadata.
- This is due to how big log messages are and low number of arguments passed to formatting messages (average below 2, max 10).
-  Based on this HTTP access logs we are expecting that log volume will not increase by more than 50% for default (text) logging configuration.
+Proposed log format for http access:
+```go
+klog.InfoS("HTTP", "verb", rl.req.Method, "URI", rl.req.RequestURI, "latency", latency, "resp", rl.status, "UserAgent", rl.req.UserAgent(), "srcIP", rl.req.RemoteAddr)
+```
+
+Resulting log line is 258 characters long. Additional 10 characters would result in increased log volume by 4% (average size of http log line in 1.18 is 285 characters).
+```
+I0227 11:52:25.212310  138043 experiment.go:38] "HTTP" verb="GET" URI="/api/v1/namespaces/kube-system/pods/metrics-server-v0.3.1-57c75779f-9p8wg" latency="1.512ms" resp=200 UserAgent="pod_nanny/v0.0.0 (linux/amd64) kubernetes/$Format srcIP="10.56.1.19:51756"
+```
+
+Concluding, migration to new logging format will increase log volume by around 4%, meaning it is acceptable from performance standpoint.
 
 ### Future work
 
