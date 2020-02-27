@@ -567,3 +567,4 @@ That said, the work proposed here might be a first step towared a more generic C
 #### Have the CNI organization create such tests
 
 We cannot proxy this work to the individual CNI organization, because in large part, the semantics of how network policy's are implemented and what we care about from an API perspective is defined by Kubernetes itself.  As we propose expansion of the Network Policy API, we need a way to express the effects of these new APIs in code, concisely, in a manner which is gauranteed to test robustly.
+
