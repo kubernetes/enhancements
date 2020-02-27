@@ -22,18 +22,36 @@ Note that this approach of higher level DSL's for testing may be moved broader i
 
 <!-- toc --> 
 
-- [Summary](#Summary)
+- [Summary](#summary)
 - [Motivation](#motivation)
-  - [Goals](#goals)
-  - [Non-Goals](#non-goals)
-- [Related issues](#Related-issues)
-- [Consequences of this problem](#Consequences-of-this-problem)
-- [Pod Traffic Pathways](#Pod-Traffic-Pathways)
-- [Security Boundaries](#Security-Boundaries)
-- [Incompleteness](#Incompleteness)
-- [Implementation History)(#Implementation-History)
-- [Alternative solutions to this proposal](#Alternative-solutions-to-this-proposal)
-
+  * [Goals](#goals)
+  * [Non-goals](#non-goals)
+  * [Related issues](#related-issues)
+  * [Consequences of this problem](#consequences-of-this-problem)
+- [Pod Traffic Pathways](#pod-traffic-pathways)
+- [Security Boundaries](#security-boundaries)
+- [Detailed examples of the Problem statement](#detailed-examples-of-the-problem-statement)
+  * [Incompleteness](#incompleteness)
+    + [Other concrete examples of incompleteness](#other-concrete-examples-of-incompleteness)
+    + [List of missing/incomplete functional test cases.](#list-of-missing-incomplete-functional-test-cases)
+  * [Understandability](#understandability)
+  * [Extensibility](#extensibility)
+  * [Performance](#performance)
+    + [Relationship to Understandability: Logging verbosity is worse for slow tests.](#relationship-to-understandability--logging-verbosity-is-worse-for-slow-tests)
+  * [Documentation](#documentation)
+- [Solution to the Problem](#solution-to-the-problem)
+- [Implementation History](#implementation-history)
+  * [Part 1:](#part-1-)
+  * [Part 2:](#part-2-)
+  * [Note on Acceptance and Backwards compatibility](#note-on-acceptance-and-backwards-compatibility)
+- [Next steps](#next-steps)
+- [Other Improvement Ideas](#other-improvement-ideas)
+  * [Node specific policy validation (Contributed by Sedef Saavas)](#node-specific-policy-validation--contributed-by-sedef-saavas-)
+  * [Ensuring that large policy stacks evaluate correctly](#ensuring-that-large-policy-stacks-evaluate-correctly)
+- [Alternative solutions to this proposal](#alternative-solutions-to-this-proposal)
+    + [Keeping the tests as they are and fixing them one by one](#keeping-the-tests-as-they-are-and-fixing-them-one-by-one)
+    + [Building a framework for NetworkPolicy evaluation](#building-a-framework-for-networkpolicy-evaluation)
+    + [Have the CNI organization create such tests](#have-the-cni-organization-create-such-tests)
 <!-- /toc -->
 
 ## Summary
@@ -54,13 +72,13 @@ The current network policy tests have a few issues which, without increasing tec
 - *Documentation and Community*: The overall situation for these tests is that they are underdocumented and poorly understood by the community, and its not clear how these tests are vetted when they are modified; this makes it difficult for CNI providers to compare and contrast compatibility and conformance to K8s standards for NetworkPolicys.
 - *Continous Integration*: As part of this overall effort, once this test suite is more reliably and determined to be faster, running a basic verification of it in CI with some collection of CNI providers which could feed back into upstream K8s test results would be ideal, so that we know the NetworkPolicy test and specifications, as defined, are implemented/implementable correctly at least some CNI provider.
 
-## Goals
+### Goals
 
 - Rearchitect the way we right and define CNI NetworkPolicy test verifications
 - Increase the visibility and quality of documentation available for network policys
 
 
-## Non-goals
+### Non-goals
 
 - Make tests specific to CNI providers
 - Change NetworkPolicy APIs
