@@ -56,6 +56,7 @@ superseded-by:
     - [CronJob Limits](#cronjob-limits)
     - [Frequency of launched jobs](#frequency-of-launched-jobs)
 - [V1 API](#v1-api)
+    - [CronJob v1 API](#cronjob-v1-api)
 - [v1beta1 changes](#v1beta1-changes)
 - [Validations](#validations)
 - [Plan for promoting CronJob to GA](#plan-for-promoting-cronjob-to-ga)
@@ -71,6 +72,8 @@ superseded-by:
     - [Release X+2](#release-x2)
 - [Graduation Criteria](#graduation-criteria)
 - [Implementation History](#implementation-history)
+- [Alternatives and Further Reading](#alternatives-and-further-reading)
+    - [Cron Aspect](#cron-aspect)
 <!-- /toc -->
 
 ## Summary
@@ -79,7 +82,7 @@ superseded-by:
 
 ## Motivation
 
-CronJob definition has been stable for the last few releases and is useful to run periodic tasks in kubernetes cluster. This API adds the ability to add cron facility to a cluster. We feel the API is ready to be promoted to Stable and be supported longterm by the community.
+CronJob is useful to run periodic tasks using cron like facility in a kubernetes cluster. Its `.spec` has been stable for the last few releases. We feel the API with additional `.status` information is ready to be promoted to Stable and be supported longterm by the community. 
 
 ## Goals
 
@@ -88,7 +91,7 @@ CronJob definition has been stable for the last few releases and is useful to ru
   - Address open issues with the current controller
   - Add metrics exposing controller throughput, latency etc.
 - Extend CronJob status field
-  - lastSuccesfulTime: tracks the last time the job completed successfully
+  - lastSuccessfulTime: tracks the last time the job completed successfully
   - nextRunTime: tracks the next time the job will be scheduled
 
 ## Proposal
@@ -97,7 +100,7 @@ CronJob definition has been stable for the last few releases and is useful to ru
 
 #### Existing controller
 
-The current implementation of the CronJob controller is different that the other workload controllers. GA workload controllers use informers and caches to reduce the load on API server. Whereas the conjob controller does a periodic poll and sweep of all the objects and acts on them. The CronJob controller has only one worker doing this. 
+The current implementation of the CronJob controller is different that the other workload controllers. GA workload controllers use informers and caches to reduce the load on API server. Whereas the cronjob controller does a periodic poll and sweep of all the objects and acts on them. The CronJob controller has only one worker doing this.
 
 1. syncs all CronJob objects [every 10 seconds](https://github.com/kubernetes/kubernetes/blob/master/pkg/controller/cronjob/cronjob_controller.go#L98). 
 2. Using pager library, gets all Pods and all CronJobs and [processes them one by one](https://github.com/kubernetes/kubernetes/blob/master/pkg/controller/cronjob/cronjob_controller.go#L136)
@@ -149,6 +152,7 @@ func (cjc *CronJobController)  Run() {
 	if !cache.WaitForNamedCacheSync("cronjob", stopCh, cjc.jobListerSynced, cjc.cronJobListerSynced) {
 		return
 	}
+    // start multiple workers
     for i := 0; i < workers; i++ {
         go wait.Until(cjc.worker, time.Second, stopCh)
     }
@@ -178,43 +182,13 @@ func (cjc *CronJobController)  sync(cronJobKey) {
 	childrenJobs := cjc.jobLister.GetJobsForCronJob(cronJobKey)
 	// reuse/refactor the existing syncOne function
 }
-
-
 ```
-
 
 ##### Multiple workers
 We also propose to have multiple workers controller by a flag similar to [statefulset controller](https://github.com/kubernetes/kubernetes/blob/master/cmd/kube-controller-manager/app/apps.go#L65). The default would be set to 5 similar to [statefulset](https://github.com/kubernetes/kubernetes/blob/master/pkg/controller/statefulset/config/v1alpha1/defaults.go#L34)
 
-```
-// Controller code
-
-func (cjc *CronJobController)  Run() {
-	...
-    for i := 0; i < workers; i++ {
-        go wait.Until(cjc.worker, time.Second, stopCh)
-    }
-...
-}
-
-```
-
 ##### Handling Cron aspect
-To detect which CronJob has met its schedule and need to create Jobs we need to implement a timer component. These are the possible options for implementing the timer:
-
-| algorithm  | how it works | notes |
-|:----------|:----------|:-------|
-| Unordered timer list | Periodic Sweep from cache | Slower and similar to existing implementation. But improved because we sweep fom the cache instead of API server | 
-|Ordered timer list| Maintain ordered list of Cronjob keys and next time of expiry. Keep starting a timer with the earliest expiry. | Efficient. Reinsertion to list takes O(n) |
-|Timer trees| Instead of ordered list use a sorted binary tree. | More efficient. Insertion is O(log n) |
-|Heap based timer|A variant of ordered timer list where heap is used to store the next expiry time | Efficient compared to ordered list. Bookkeeping and insertion is O(log n). |
-|Simple Timing wheels| circular buffer of MaxTimeOut slots. List of expiring timers at each slot. | Works for small bounded  MaxTimeOut which is not our case. Insertion and removal is O(1) via indexing |
-|Hashed Wheel| Hash expiring time and insert in a hash table with linked list at each index | Bookkeeping is O(1) and worst case insertion is O(n) |
-|Hierarchical Wheel| multiple timer wheels for different resolutions (Seconds, minutes, hours, days). When seconds rolls over we grab the next minutes timers and recreate the seconds wheel. similarly for minutes and hours. | Sharding at different hierarchy levels improves insertion and bookkeeping performance. |
-
-
-We shall implement a Heap based timer algorithm. We will introduce a separate queue with the [`DelayingInterface`](https://github.com/kubernetes/client-go/blob/master/util/workqueue/delaying_queue.go#L37) that implements heap based single shot api [`AddAfter`](https://github.com/kubernetes/client-go/blob/master/util/workqueue/delaying_queue.go#L150). Every time we process an entry from this queue, we will add it back to the queue to simulate a periodic timer.
-
+To detect which CronJob has met its schedule and need to create Jobs we need to implement a timer component. We shall implement a Heap based timer algorithm. We will introduce a separate queue with the [`DelayingInterface`](https://github.com/kubernetes/client-go/blob/master/util/workqueue/delaying_queue.go#L37) that implements heap based single shot api [`AddAfter`](https://github.com/kubernetes/client-go/blob/master/util/workqueue/delaying_queue.go#L150). Every time we process an entry from this queue, we will add it back to the queue to simulate a periodic timer.
 
 For further reading:
 1. [Reinventing timer wheel](https://lwn.net/Articles/646950/)
@@ -224,13 +198,14 @@ For further reading:
 
 ##### Metrics
 We propose to add metrics that could expose the performance and health of the controller including and not limited to: 
-- Skew (actualJobCreationTime-expectedJobCreationTime)
-- Queue depth (pending CronJob and Job entries in the Queue)
-- Job failures (counter)
-- Job successes (counter)
-- API server errors (counter)
-- Job scheduling latency (podCreationTime - jobCreationTime)
+- Skew (actualJobCreationTime-expectedJobCreationTime) - [Histogram](https://prometheus.io/docs/concepts/metric_types/#histogram)
+- Job failures - [Gauge](https://prometheus.io/docs/concepts/metric_types/#counter)
+- Job successes - [Gauge](https://prometheus.io/docs/concepts/metric_types/#counter)
+- API server errors - [Gauge](https://prometheus.io/docs/concepts/metric_types/#counter)
+- Job scheduling latency (podCreationTime - jobCreationTime) - [Histogram](https://prometheus.io/docs/concepts/metric_types/#histogram)
+- Queue depth (pending CronJob and Job entries in the Queue) - [Gauge](https://prometheus.io/docs/concepts/metric_types/#gauge)
 
+Queue depth can be surfaced from existing controller framework.
 
 ### Add .status.lastSuccessfulTime
 [#issue/75674](https://github.com/kubernetes/kubernetes/issues/75674)  
@@ -239,7 +214,7 @@ Add `lastSuccessfulTime` to `.status` that tracks the last time the job complete
 
 ### Add .status.nextScheduleTime
 [#issue/78564](https://github.com/kubernetes/kubernetes/issues/78564)
-Sdd `nextScheduleTime` to `.status` that tracks the next time the job will be scheduled. This may not be accurate with `Forbid` concurrency policy. This only tracks the `Job` creation time and not the actual `Pod` creation time.
+Add `nextScheduleTime` to `.status` that tracks the next time the job will be scheduled. This may not be accurate with `Forbid` concurrency policy. This only tracks the `Job` creation time and not the actual `Pod` creation time.
 
 | Concurrency policy | notes |
 |:----------|:----------|
@@ -250,11 +225,11 @@ Sdd `nextScheduleTime` to `.status` that tracks the next time the job will be sc
 
 
 ### Add Counters
-Add a set of counters that helps users understand a summary of runs.  
+These counters would be added to `.status` section of the CronJob object:
 - `SuccessfulRuns` Count of all successful runs
-- `FailedlRuns` Count of all failed runs
-- `FailuresSinceSuccess` Count of all successful runs since last failure
-These would be added to `.status` section of the CronJob object.
+- `FailedRuns` Count of all failed runs
+- `FailuresSinceSuccess` Count of failed runs since last successful
+
 
 
 ### Add .status.conditions
@@ -283,21 +258,31 @@ These are the [current](https://github.com/kubernetes/kubernetes/issues/82659) l
 
 ### Scale Targets for GA
 
-The scale targets for GA of CronJob are defined by the same [API call latency
-SLIs/SLOs as the Kuberetes native types](https://github.com/kubernetes/community/blob/master/sig-scalability/slos/api_call_latency.md#api-call-latency-slisslos-details).
+The scale targets for CronJob GA API shall conform to existing [SLIs/SLOs of Kubernetes native types](https://github.com/kubernetes/community/blob/master/sig-scalability/slos/slos.md#kubernetes-slisslos).
 
 The targets are defined by the below suggested maximum limits, which are organized the same way as the [Kubernetes native type thresholds](https://github.com/kubernetes/community/blob/master/sig-scalability/configs-and-limits/thresholds.md#kubernetes-thresholds).
 
 #### CronJob Limits
-There should be nothing in the implementation that limits CronJobs per namespace. Overall clusterwide limits of CronJob are important. Cluster wide limits for CronJob should be storage bound since it shares the storage space with all other objects. Determining the appropriate storage limit for a cluster is out-of-scope for this document. We would recommend having CronJob use not more than 15% of the etcd storage. This allows space for Jobs created by CronJobs with the default successfulJobsHistoryLimit of 3 and for other objects.
+There should be nothing in the implementation that limits CronJobs per namespace. Overall clusterwide limits of CronJob are important. Cluster wide limits for CronJob should be storage bound since it shares the storage space with all other objects. Determining the appropriate storage limit for a cluster is out-of-scope for this document. For large clusters we propose to support 10000 CronJobs.
 
 #### Frequency of launched jobs
-The number of CronJobs is also sensitive to the API server QPS and the schedule of the individual CronJobs. This translated to the frequency of launched jobs. We could have large number of CronJobs with a spread of schedule that doenst stress the Job API. At the same time we could have a small number of CronJobs that schedule synchronously stressing the Jobs API. The design must be able to easily saturate the API server QPS.
+The number of CronJobs is also sensitive to the API server QPS and the schedule of the individual CronJobs. This translates to the frequency of launched jobs. We could have large number of CronJobs with a spread of schedule that doenst stress the Job API. At the same time we could have a small number of CronJobs that schedule synchronously stressing the Jobs API. The design must be able to easily saturate the API server QPS. The user can setup ratelimits for CronJob and Job APIs using [API Server ratelimting config](https://kubernetes.io/docs/reference/access-authn-authz/admission-controllers/#eventratelimit).
 
 
 
 ## V1 API
-Most of the changes are adding additional status fields.
+These are the new fields added as part of promotion to stable:
+- `.spec`
+  - `.jitter`
+- `.status`
+  - `.lastSuccessfulTime`
+  - `.nextScheduleTime`
+  - `.successfulRuns`
+  - `.failedRuns`
+  - `.failuresSinceSuccess`
+  - `.conditions`
+
+#### CronJob v1 API
 
 ```golang
 // CronJob represents the configuration of a single cron job.
@@ -368,6 +353,13 @@ type CronJobSpec struct {
 	// This is a pointer to distinguish between explicit zero and not specified.
 	// +optional
 	FailedJobsHistoryLimit *int32
+
+	// Jitter is used to add delay to the start time of the next run
+	// It is expressed as a percentage of the time delta to the next run
+	// Default is 0 (no jitter).
+	// It shall be capped at 50(%)
+	// +optional
+	Jitter int32
 }
 
 // ConcurrencyPolicy describes how the job will be handled.
@@ -394,7 +386,7 @@ type CronJobConditionType string
 // These are valid conditions of a job.
 const (
 	// CronJobSettled means the cron job controller has
-	CronJobSettled JobConditionType = "Settled"
+	CronJobSettled CronJobConditionType = "Settled"
 )
 
 // CronJobCondition describes a condition state
@@ -442,11 +434,11 @@ type CronJobStatus struct {
 
 	// Counter for tracking failed Job runs
 	// +optional
-    FailedlRuns int64
+	FailedRuns int64
 
 	// Counter for tracking failed Job runs since last successful run
 	// +optional
-    FailuresSinceSuccess int64
+	FailuresSinceSuccess int64
 
 	// The set of conditions for this object
 	// +optional
@@ -464,10 +456,16 @@ Nothing additional from v1beta1
 
 ## Plan for promoting CronJob to GA
 
-Dual controller (old and new coexist). Feature flag for new controller. alpha (disabled), beta(enabled, can be disabled), ga(enabled)
-API will track the controller since GAing the API implies GAing scalable implementation
+To promote to GA we would create `batch/v1/CronJob` in the [batch/v1 API](https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/api/batch/v1/types.go). The older versions of CronJob API (batch/v1beta1, batch/v2alpha1) will be deprecated following the [deprecation policy](https://kubernetes.io/docs/reference/using-api/deprecation-policy/) 
 
-We will promote to  GA and create `batch/v1/CronJob` in the [batch/v1 API](https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/api/batch/v1/types.go). The older versions of CronJob API (batch/v1beta1, batch/v2alpha1) will be deprecated following the [deprecation policy](https://kubernetes.io/docs/reference/using-api/deprecation-policy/) 
+We shall have dual implementation of controller (old and new) co-exist. 
+Through a feature flag the new controller implementation is controlled. 
+- alpha (disabled, can be enabled)
+- beta(enabled, can be disabled)
+- ga(enabled, cannot be disabled)
+
+API will track the controller since GAing the API implies GAing the scalable implementation of the API. 
+
 
 
 ## Tests
@@ -576,4 +574,21 @@ This is subject to the new rearchitected controller implementation. Overall thes
 ## Implementation History
 
 - CronJob was introduced in Kubernetes 1.3 as ScheduledJobs
-- In Kuberenetes 1.8 it was renamed to CronJob and promoted to Beta
+- In Kubernetes 1.8 it was renamed to CronJob and promoted to Beta
+
+## Alternatives and Further Reading
+ 
+#### Cron Aspect
+To detect which CronJob has met its schedule and need to create Jobs we need to implement a timer component. These are the possible options for implementing the timer:
+
+| algorithm  | how it works | notes |
+|:----------|:----------|:-------|
+| Unordered timer list | Periodic Sweep from cache | Slower and similar to existing implementation. But improved because we sweep fom the cache instead of API server | 
+|Ordered timer list| Maintain ordered list of Cronjob keys and next time of expiry. Keep starting a timer with the earliest expiry. | Efficient. Reinsertion to list takes O(n) |
+|Timer trees| Instead of ordered list use a sorted binary tree. | More efficient. Insertion is O(log n) |
+|Heap based timer|A variant of ordered timer list where heap is used to store the next expiry time | Efficient compared to ordered list. Bookkeeping and insertion is O(log n). |
+|Simple Timing wheels| circular buffer of MaxTimeOut slots. List of expiring timers at each slot. | Works for small bounded  MaxTimeOut which is not our case. Insertion and removal is O(1) via indexing |
+|Hashed Wheel| Hash expiring time and insert in a hash table with linked list at each index | Bookkeeping is O(1) and worst case insertion is O(n) |
+|Hierarchical Wheel| multiple timer wheels for different resolutions (Seconds, minutes, hours, days). When seconds rolls over we grab the next minutes timers and recreate the seconds wheel. similarly for minutes and hours. | Sharding at different hierarchy levels improves insertion and bookkeeping performance. |
+
+
