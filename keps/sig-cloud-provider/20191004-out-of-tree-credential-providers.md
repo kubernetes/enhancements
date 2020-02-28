@@ -80,7 +80,7 @@ Kubelet uses cloud provider specific SDKs to obtain credentials when pulling con
 
 ### Non-Goals
 
-* Broad removal of cloud SDK usage falls under the [KEP for removing in-tree providers](https://github.com/kubernetes/enhancements/blob/master/keps/sig-cloud-provider/2019-01-25-removing-in-tree-providers.md).
+* Broad removal of cloud SDK usage falls under the [KEP for removing in-tree providers](https://github.com/kubernetes/enhancements/blob/master/keps/sig-cloud-provider/20190125-removing-in-tree-providers.md).
 * Continuing to support projects that import the credential provider package.
 
 ## Proposal
