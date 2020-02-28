@@ -209,28 +209,28 @@ namespaces created in the entire network policy test suite.
 | +-------------------------------+   to one another via a simple         |
 |  +-----------X--X---------------+   truth table.                        |
 |  |           X  X               |                                       |
-|  |  +------XXX  XXX-------+  nsC|   This fulfills one of the cor        |
+|  |  +------XXX  XXX-------+  nsC|   This fulfills one of the core       |
 |  |  |      |      |       |     |   requirements of this proposal:      |
 |  |  |  cA  |      |   cB  |     |   comparing and reasoning about       |
 |  |  |      |      |       |     |   network policy test completeness    |
 |  |  +------+      +-------+     |   in a deterministic manner which     |
-|  |                              |   doesnt require reading the code.    |
+|  |                              |   doesn't require reading the code.   |
 |  +------------------------------+                                       |
 |                                      Note that the tests above are all  |
-|                                      done in the "framework" namespace. |
-|                                                  similar to figure 1.   |
+|                                      done in the "framework" namespace, |
+|                                                  similar to Figure 1.   |
 +-------------------------------------------------------------------------+
 ```
 
 #### Other concrete examples of incompleteness
 
-The above diagrams show that completeness is virtually impossible, the way the tests are written, because of the fact that each test is manually verifiying bespoke cases.  More concretely, however, a look at `should enforce policy to allow traffic only from a different namespace, based on NamespaceSelector [Feature:NetworkPolicy]` reveals that some tests don't do positive controls (validation of preexisting connectivity), whereas others *do* do such controls.
+The above diagrams show that completeness is virtually impossible, the way the tests are written, because of the fact that each test is manually verifying bespoke cases.  More concretely, however, a look at `should enforce policy to allow traffic only from a different namespace, based on NamespaceSelector [Feature:NetworkPolicy]` reveals that some tests don't do positive controls (validation of preexisting connectivity), whereas others *do* do such controls.
 
 #### List of missing/incomplete functional test cases.
 
 TODO: use multiple pods in contiguous CIDR to validate CIDR traffic matching
 
-- IPBlock Except case: Currently, no test case exist to cover a NetworkPolicy
+- IPBlock Except case: Currently, no test case exists to cover a NetworkPolicy
   IPBlock selector which includes an ``except`` clause.
 - Stacked IPBlock case: Need to add a test case to verify the traffic when a
   CIDR (say 10.0.1.0/24) is used in an ``except`` clause in one NetworkPolicy,
@@ -301,10 +301,10 @@ the semantics of it.
  
 ### Extensibility
 
-The previous scenarios look at logical issues with the current tests.  These issues can be mitigated by simply having more tests, which are as verbose as the existing tests.  However.
+The previous scenarios look at logical issues with the current tests.  These issues can be mitigated by simply having more tests, which are as verbose as the existing tests.  However:
  
 - Each test can be between 50 to 100 lines long.
-- The network policy's created in each test can be around 30 lines or so.
+- The network policies created in each test can be around 30 lines or so.
 - There are 23 current tests.
  
 Thus, in order to build a new test:
@@ -324,8 +324,8 @@ As an example of the cost of extensibility, we compare the subtle distinction be
 and
 `should enforce policy based on PodSelector and NamespaceSelector`
  
-tests.  These tests use an almost identical harnesses, with a subtle `},{` clause
-differentiating the stacked network policy (an or selector) vs. a combined policy.
+tests.  These tests use almost identical harnesses, with a subtle `},{` clause
+differentiating the stacked network policy (an *or* selector) vs. a combined policy.
  
 ```
  
@@ -373,17 +373,17 @@ it has been correctly written to be different from the OR test...
                             },
                         },
 ``` 
-We can of course make this much easier to reuse and reasoon about, as well as make it self documenting, and will outline how in the solutions section.
+We can of course make this much easier to reuse and reason about, as well as make it self-documenting, and will outline how in the solutions section.
 
 ### Performance
  
-For every current test, a new container is spun up, and a polling process occurs where we wait for the pod to complete succesfully.  Because all clusters start pods at different rates, heuristics have to be relied on for timing a test out.  A large, slow cluster may not be capable of spinning pods of quickly, and thus may timeout one of the 23 tests, leading to a false negative result.
+For every current test, a new container is spun up, and a polling process occurs where we wait for the pod to complete succesfully.  Because all clusters start pods at different rates, heuristics have to be relied on for timing a test out.  A large, slow cluster may not be capable of spinning pods up quickly, and thus may timeout one of the 23 tests, leading to a false negative result.
  
-In some clusters, for example, namespace deletion is known to be slow - and in these cases the network policy tests may take more then an hour to complete.
+In some clusters, for example, namespace deletion is known to be slow - and in these cases the network policy tests may take more than an hour to complete.
  
-- If network policys or pod CIDR's are not correct, its likely all tests can fail, and thus the network policy suite may take an hour to finish, based on the estimate of 3 minutes, for each failed test, alongside 23 tests (in general , NetworkPolicy tests on a healthy EC2 cluster, with no traffic and broken network policy's, take between 150 and 200 seconds complete).
+- If network policys or pod CIDR's are not correct, it's likely all tests can fail, and thus the network policy suite may take an hour to finish, based on the estimate of 3 minutes, for each failed test, alongside 23 tests (in general, NetworkPolicy tests on a healthy EC2 cluster, with no traffic and broken network policy's, take between 150 and 200 seconds complete).
 
-Using `Pod Exec` Functionality, we've determined that 81 verifications can happen rapidly, within 30 seconds, when tests run inside of Kubernetes pods, compared with about the same time for a single test with < 5 verifications, using Pod status indicators.
+Using `Pod Exec` Functionality, we've determined that 81 verifications can happen rapidly, within 30 seconds, when tests run inside of Kubernetes pods, compared with about the same time for a single test with up to 5 verifications, using Pod status indicators.
 
 #### Relationship to Understandability: Logging verbosity is worse for slow tests.
  
@@ -396,16 +396,16 @@ Feb  4 16:01:16.747: INFO: Pod "client-a-swm8q": Phase="Pending", Reason="", rea
 Feb  4 16:02:04.808: INFO: Pod "client-a-swm8q": Phase="Failed", Reason="", readiness=false. Elapsed: 48.063517483s
 ```
 Thus, the majority of the logging information from a CNI which may have an issue is actually related to the various polling operations
-which occured, rather then to the test itself.  Of course, this makes sense - since we always recreate pods, we have to potentially
+which occurred, rather then to the test itself.  Of course, this makes sense - since we always recreate pods, we have to potentially
 wait many seconds for those pods to come up.
  
 Thus, by increasing the performance of our tests, we also increase their understandability, because the amount of information needed to be
-audited for inspecting a failure may be reduced by a 50% (currently, 50% of the output for failing network policy tests is that of the polling
+audited for inspecting a failure may be reduced by 50% (currently, 50% of the output for failing network policy tests is that of the polling
 process for pods spinning up, which is easily avoided by a fixed server and client pod).
  
 ### Documentation
  
-Documenting network states is very hard, in any scenario.  Since the NetworkPolicy ginkgo tests are curently not documented outside of the code, no specific evidence is required here.  This proposal aims not to Document these tests, but rather , to make the code more readable, and thus self-documenting.  However, formal documentation of how network policies, generally, are evaluated using a truth table approach, is a part of this proposal.  This generic documentation will be insightful and concise for those needing to test their NetworkPolicy implementations, and likely to not go obsolete, due to the generic nature of the truth-table/matrix approach (compared to the highly specific nature of existing tests).
+Documenting network states is very hard, in any scenario.  Since the NetworkPolicy ginkgo tests are curently not documented outside of the code, no specific evidence is required here.  This proposal aims not to Document these tests, but rather, to make the code more readable, and thus self-documenting.  However, formal documentation of how network policies, generally, are evaluated using a truth table approach, is a part of this proposal.  This generic documentation will be insightful and concise for those needing to test their NetworkPolicy implementations, and likely to not become obsolete, due to the generic nature of the truth-table/matrix approach (compared to the highly specific nature of existing tests).
 
 As a few examples of this:
 - the test `Creating a network policy for the server which allows traffic from the pod 'client-a' in same namespace` actually needs to confirm that *no outside* namespace can communicate with the server.
@@ -478,10 +478,10 @@ x/b      sT1
 Most of the Matrices for this table will be permuting the first row and column, since the server pod currently always resides in the framework namespace.  However, tests might confirm two way connectivity
 and other types of connectivity in the future, and such an expansion would work very cleanly with a matrix.
  
-Part of this invovles a pretty-print functionality for these tables, which can be output at the end of each Network policy test.  In failed
+Part of this involves a pretty-print functionality for these tables, which can be output at the end of each Network policy test.  In failed
 test scenarios, these tables can be compared, and one may easily parse out a logical inference such as "Everything outside the frameowrk
 namespace has connectivity, even when the truth table explicitly forbids it", which might, for example, point to a bug in a CNI provider
-related to flagrantly allowing internamespace traffic.  Since it is obvious how such a matrix might be defined in Go, we dont provide a
+related to flagrantly allowing internamespace traffic.  Since it is obvious how such a matrix might be defined in Go, we don't provide a
 code snippet or API example.
  
 ### Part 2:
@@ -492,25 +492,21 @@ information in the truth table is false.
  
 Example:
 
-Initially, to confirm the logical capacity of the builder mechanism for replacing existing tests, a prototype of inplace replacements of NetworkPolicy definitions was done here (prototype) https://gist.github.com/6a62266e0eec2b15e5250bd65daa4faa.  Now, this underlying API has (essentially) been implemented in full, and the following repository https://github.com/jayunit100/k8sprototypes/netpol, demonstrates a working implementation and port of the network policy tests (Currently about half of these have been ported).  Each test follows a simple and easy to read pattern such as this:
+Initially, to confirm the logical capacity of the builder mechanism for replacing existing tests, a prototype of inplace replacements of NetworkPolicy definitions was done here (prototype) https://gist.github.com/6a62266e0eec2b15e5250bd65daa4faa.  Now, this underlying API has (essentially) been implemented in full, and the following repository https://github.com/jayunit100/k8sprototypes/tree/master/netpol, demonstrates a working implementation and port of the network policy tests (Currently about half of these have been ported).  Each test follows a simple and easy to read pattern such as this:
 
  ```
- builder := &utils.NetworkPolicySpecBuilder{}
+	builder := &utils.NetworkPolicySpecBuilder{}
 	builder = builder.SetName("allow-x-via-pod-and-ns-selector").SetPodSelector(map[string]string{"pod": "a"})
 	builder.SetTypeIngress()
 	builder.AddIngress(nil, &p80, nil, nil, map[string]string{"pod":"b"}, map[string]string{"ns":"y"}, nil, nil)
 
 	k8s.CreateNetworkPolicy("x", builder.Get())
-	m := &utils.ReachableMatrix{
-		DefaultExpect: true,
-		Pods:          pods,
-		Namespaces:    namespaces,
-	}
-	reachability := utils.NewReachability(listAllPods())
-	m.ExpectAllIngress("x", "a", false)
-	m.Expect("y", "b", "x", "a", true)
 
-	return m, reachability
+	reachability := utils.NewReachability(allPods, true)
+	reachability.ExpectAllIngress(Pod("x/a"), false)
+	reachability.Expect(Pod("y/b"), Pod("x/a"), true)
+
+	return reachability
   ```
  This represents a significant reduction in code complexity, with the equivalent tests using the existing network_policy.go implementation being 3 to 4 times as long, mostly due to boiler plate around verification and go structures.
 
@@ -520,7 +516,7 @@ Initially, to confirm the logical capacity of the builder mechanism for replacin
 ```
 Pod(...).InNamespace(...).CanAccess(...)
 ```
-- Infer `Egress,Ingress` rules rather then force them to be specified, based on buidler inputs.  They're redundant to begin w/ (i.e. calico doesn't even require them)
+- Infer `Egress,Ingress` rules rather than force them to be specified, based on builder inputs.  They're redundant to begin with (i.e. calico doesn't even require them)
 - Add `From` and `To` semantics to the struct api calls in reachability.
  
 ###  Note on Acceptance and Backwards compatibility
@@ -534,7 +530,7 @@ Thus far there are two obvious ways to ensure backwards compatibility.
 As of now, network policy tests are not run regularly against any CNI.  Although we should not endorse one CNI over another, we should regularly validate
 that the NetworkPolicy tests *can* pass on *some* provider.  As part of this proposal, we propose commiting an annotation to the existing network_policy.go code which states, in clear and simple terms, what environment the network_policy.go test suite was run in, the last time which it was commited and passed.  Its also acceptable to commit this as a Markdown file in the documentation.
  
-There may be other, better ways of doing this.  Running an upstream validation job of these tests as a weekly PROW job, for example, would be a good way to make sure that these tests don't regress in the future.  this comes at the cost of coupling a job to an external CNI provider, so its not being explicitly suggested.
+There may be other, better ways of doing this.  Running an upstream validation job of these tests as a weekly PROW job, for example, would be a good way to make sure that these tests don't regress in the future.  This comes at the cost of coupling a job to an external CNI provider, so its not being explicitly suggested.
 
 ## Other Improvement Ideas
 
@@ -567,5 +563,5 @@ That said, the work proposed here might be a first step towared a more generic C
 
 #### Have the CNI organization create such tests
 
-We cannot proxy this work to the individual CNI organization, because in large part, the semantics of how network policy's are implemented and what we care about from an API perspective is defined by Kubernetes itself.  As we propose expansion of the Network Policy API, we need a way to express the effects of these new APIs in code, concisely, in a manner which is gauranteed to test robustly.
+We cannot proxy this work to the individual CNI organization, because in large part, the semantics of how network policies are implemented and what we care about from an API perspective is defined by Kubernetes itself.  As we propose expansion of the Network Policy API, we need a way to express the effects of these new APIs in code, concisely, in a manner which is gauranteed to test robustly.
 
