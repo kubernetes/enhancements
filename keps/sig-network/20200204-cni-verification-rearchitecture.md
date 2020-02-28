@@ -372,7 +372,22 @@ it has been correctly written to be different from the OR test...
                                 },
                             },
                         },
-``` 
+```
+
+In contrast, we can express the same and test using the API (including its entire connectivity matrix) in this proposal as follows:
+
+```
+        builder1 := &NetworkPolicySpecBuilder{}
+	builder1 = builder1.SetName("myns", "allow-podb-in-nsb").SetPodSelector(map[string]string{"pod": "a"})
+	builder1.SetTypeIngress()
+	builder1.AddIngress(nil, &p80, nil, nil, map[string]string{"pod-name": "b"}, nil, map[string]string{"ns-name": "b"}, nil)
+	policy1 := builder1.Get()
+	reachability1 := NewReachability(allPods, false)
+	reachability1.ExpectAllIngress(Pod("myns/b"), false)
+	reachability1.Expect(Pod("b/b"), Pod("myns/b"), true)
+	reachability1.Expect(Pod("myns/b"), Pod("myns/b"), true)
+
+```
 We can of course make this much easier to reuse and reason about, as well as make it self-documenting, and will outline how in the solutions section.
 
 ### Performance
