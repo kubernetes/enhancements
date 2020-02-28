@@ -160,6 +160,7 @@ To get the revsion we have some options:
 
 - Use an etcd range request with `WithCount` enabled so etcd return only a count and revision 
 - Use an etcd range request against a known empty range with limit=1 as an additional guard (since etcd does not allow for limit=0)
+- Use an etcd range request with `WithLastRev` enabled so etcd return only the item with the last mod revision in the given range
 
 Consistent GET requests will continue to be served directly from etcd. We will
 only serve consistent LIST requests from cache.
