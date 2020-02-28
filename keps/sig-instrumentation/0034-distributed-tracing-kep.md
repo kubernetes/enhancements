@@ -199,7 +199,7 @@ While adding tracing to Pods is a good first step to demonstrate the viability o
 
 #### Tracing best-practices documentation
 
-This KEP introduces a new form of instrumentation to Kubernetes, which necessitates the creation of guidelines for adding effective, standardized traces to Kubernetes components, [similar to what is found here for metrics](https://github.com/kubernetes/community/blob/master/contributors/devel/instrumentation.md).
+This KEP introduces a new form of instrumentation to Kubernetes, which necessitates the creation of guidelines for adding effective, standardized traces to Kubernetes components, [similar to what is found here for metrics](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-instrumentation/instrumentation.md).
 
 This documentation will put forward standards for: 
 
