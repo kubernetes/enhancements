@@ -5,6 +5,7 @@ authors:
   - "@abhiraut"
   - "@sedefsaavas"
   - "@McCodeman"
+  - "@mattfenwick"
 owning-sig: sig-network
 reviewers: 
   - @bowei
@@ -16,7 +17,7 @@ last-updated: 2020-02-05
 status: implementable
 ---
 
-Note that this approach of higher level DSL's for testing may be moved broader into sig-testing for a broader set of tests over time.
+Note that this approach of higher level DSLs for testing may be moved into sig-testing for a broader set of tests over time.
 
 # Architecting NetworkPolicy tests with a DSL for better upstream test coverage of all CNIs.
 
@@ -55,7 +56,7 @@ Note that this approach of higher level DSL's for testing may be moved broader i
 <!-- /toc -->
 
 ## Summary
-This proposal suggest that we leverage truth tables, uniform positive controls tests, and explicit whitelisting mappings to address the opportunities for improvement  in our existing NetworkPolicy test suite, which comprises 23 tests which can take 30 minutes to 1 hour to run.
+This proposal suggests that we leverage truth tables, uniform positive control tests, and explicit whitelisting mappings to address the opportunities for improvement in our existing NetworkPolicy test suite, which comprises 23 tests which can take 30 minutes to 1 hour to run.
 - Defining a common set of test scenarios for all network policy tests and increasing performance by reusing a set of containers.
 - Rearchitecting network policy tests to enhance readibility and reusability.
 - Improve coverage for NetworkPolicy functional tests.
@@ -64,18 +65,18 @@ This proposal suggest that we leverage truth tables, uniform positive controls t
 ## Motivation 
 The current network policy tests have a few issues which, without increasing technical debt, can be addressed architecturally.
  
-- *Incompleteness*: We do not confirm that a common set of negative scenarios for different policies.  We also do not confirm a complete set of *positive* connectivity, before starting tests (note: 4 out of the existing 23 tests actually do *some* positive control validation before applying policies, and all tests do postive validation *after* policy application).
-- *Understandability*: They are difficult to reason about, due to lack of consistency, completeness, and code duplication
+- *Incompleteness*: We do not confirm that a common set of negative scenarios for different policies are actually negative.  We also do not confirm a complete set of *positive* connectivity before starting tests (note: 4 out of the existing 23 tests actually do *some* positive control validation before applying policies, and all tests do positive validation *after* policy application).
+- *Understandability*: They are difficult to reason about, due to lack of consistency, completeness, and code duplication.
 - *Extensibility*: Extending them is a verbose process, which leads to more sprawl in terms of test implementation.
 - *Performance*: They suffer from low performance due to the high number of pods created.  Network policy tests can take 30 minutes or longer.  The lack of completeness in positive controls, if fixed, could allow us to rapidly skip many tests destined for failure due to cluster health issues not related to network policy.
 - *Dynamic scale*: In addition to increasing the performance of these tests, we also should expand their ability to evaluate CNI's with highly dynamic, realistic workloads, outputting summary metrics.
-- *Documentation and Community*: The overall situation for these tests is that they are underdocumented and poorly understood by the community, and its not clear how these tests are vetted when they are modified; this makes it difficult for CNI providers to compare and contrast compatibility and conformance to K8s standards for NetworkPolicys.
-- *Continous Integration*: As part of this overall effort, once this test suite is more reliably and determined to be faster, running a basic verification of it in CI with some collection of CNI providers which could feed back into upstream K8s test results would be ideal, so that we know the NetworkPolicy test and specifications, as defined, are implemented/implementable correctly at least some CNI provider.
+- *Documentation and Community*: The overall situation for these tests is that they are underdocumented and poorly understood by the community, and it's not clear how these tests are vetted when they are modified; this makes it difficult for CNI providers to compare and contrast compatibility and conformance to K8s standards for NetworkPolicys.
+- *Continous Integration*: As part of this overall effort, once this test suite is more reliably and determined to be faster, running a basic verification of it in CI with some collection of CNI providers which could feed back into upstream K8s test results would be ideal, so that we know the NetworkPolicy test and specifications, as defined, are implemented/implementable correctly by at least some CNI provider.
 
 ### Goals
 
-- Rearchitect the way we right and define CNI NetworkPolicy test verifications
-- Increase the visibility and quality of documentation available for network policys
+- Rearchitect the way we write and define CNI NetworkPolicy test verifications
+- Increase the visibility and quality of documentation available for network policies
 
 
 ### Non-goals
@@ -85,7 +86,7 @@ The current network policy tests have a few issues which, without increasing tec
  
 ### Related issues
 
-As an overall improvement, this KEP will help to address the solutions for several existing issues in upstream Kuberentes.  Some of these issues have been duct taped upstream, but our overarching goal is to reduce the amount of work required to verify that any such issues have been properly addressed and accounted for in the documentation, testing, and semantic aspects of how the API for NetworkPolicy itself is defined.
+As an overall improvement, this KEP will help to address the solutions for several existing issues in upstream Kubernetes.  Some of these issues have been duct-taped upstream, but our overarching goal is to reduce the amount of work required to verify that any such issues have been properly addressed and accounted for in the documentation, testing, and semantic aspects of how the API for NetworkPolicy itself is defined.
 
 - https://github.com/kubernetes/kubernetes/issues/87857 (docs and understandability)
 - https://github.com/kubernetes/kubernetes/issues/87893 (holes in our test coverage matrix)
@@ -94,8 +95,8 @@ As an overall improvement, this KEP will help to address the solutions for sever
 - https://github.com/kubernetes/kubernetes/issues/87709 (logging of netpol actions, will help describing states we reach) 
 - https://github.com/projectcalico/felix/issues/2032 non-deterministic time frames for policy applications - addressable through published performance tests which measure time to policy implementation for several pods in several namespaces.
 - https://github.com/projectcalico/felix/issues/2008 need to test postStart pods in networkpolicy upstream
-- https://github.com/vmware-tanzu/antrea/issues/381 addressable by performance tests *or* node-targetted tests.
-- https://github.com/kubernetes/kubernetes/issues/88375 : The test matrix for Egress is almost entirely empty, decrease verbosity of new tests will organically increase likeliehood of new test submissions over time.
+- https://github.com/vmware-tanzu/antrea/issues/381 addressable by performance tests *or* node-targeted tests.
+- https://github.com/kubernetes/kubernetes/issues/88375 : The test matrix for Egress is almost entirely empty, decreasing the verbosity of new tests will organically increase likelihood of new test submissions over time.
 
 
 ### Consequences of this problem
@@ -104,7 +105,7 @@ The consequences of this problem is that
  
 - CNI providers cannot easily be compared for functionality.
 - CNI providers implementing network policies must carry a lot of downstream test functionality.
-- Testing a CNI provider for Kubernetes compatibility requires alot of interpretation and time investment.
+- Testing a CNI provider for Kubernetes compatibility requires a lot of interpretation and time investment.
 - Extending NetworkPolicy tests is time consuming and error prone, without a structured review process and acceptance standard.
 - It is hard to debug tests, due to the performance characteristics - pods are deleted after each test, so we cannot reproduce the state of the cluster easily.
 
