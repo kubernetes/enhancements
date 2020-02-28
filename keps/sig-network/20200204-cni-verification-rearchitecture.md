@@ -56,10 +56,11 @@ Note that this approach of higher level DSLs for testing may be moved into sig-t
 <!-- /toc -->
 
 ## Summary
-This proposal suggests that we leverage truth tables, uniform positive control tests, and explicit whitelisting mappings to address the opportunities for improvement in our existing NetworkPolicy test suite, which comprises 23 tests which can take 30 minutes to 1 hour to run.
-- Defining a common set of test scenarios for all network policy tests and increasing performance by reusing a set of containers.
+This proposal suggests that we create and maintain a DSL for defining NetworkPolicies against connectivity truth tables, so we can automate positive and negative control tests to address the opportunities for improvement in the performance and adherence to Kubernetes network policy.standards of CNI plugins.  We propose that the current NetworkPolicy test suite comprises 23 tests which can take 30 minutes to 1 hour to run, and this time period will be dramatically improved, while increasing test coverage dramatically as well, by following this approach - and initial tests corroborate the findings of this proposal.  In summary, this involves:
+
+- Defining (and redefining in some cases) the common set of test scenarios for all network policy tests and increasing performance by reusing a set of containers.
 - Rearchitecting network policy tests to enhance readibility and reusability.
-- Improve coverage for NetworkPolicy functional tests.
+- Improve coverage for NetworkPolicy functional tests, and making them more hackable.
 - Introduce time to conversion tests to measure performance against perturbed state at scale.
 
 ## Motivation 
