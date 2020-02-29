@@ -109,12 +109,12 @@ be namespaced. Its schema will be as following:
 type Lease struct {
   metav1.TypeMeta `json:",inline"`
   // Standard object's metadata.
-  // More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#metadata
+  // More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
   // +optional
   ObjectMeta metav1.ObjectMeta `json:"metadata,omitempty"`
 
   // Specification of the Lease.
-  // More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#spec-and-status
+  // More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#spec-and-status
   // +optional
   Spec LeaseSpec `json:"spec,omitempty"`
 }
