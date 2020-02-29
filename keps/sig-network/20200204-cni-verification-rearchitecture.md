@@ -378,7 +378,7 @@ it has been correctly written to be different from the OR test...
 In contrast, we can express the same and test using the API (including its entire connectivity matrix) in this proposal as follows:
 
 ```
-        builder1 := &NetworkPolicySpecBuilder{}
+    builder1 := &NetworkPolicySpecBuilder{}
 	builder1 = builder1.SetName("myns", "allow-podb-in-nsb").SetPodSelector(map[string]string{"pod": "a"})
 	builder1.SetTypeIngress()
 	builder1.AddIngress(nil, &p80, nil, nil, map[string]string{"pod-name": "b"}, nil, map[string]string{"ns-name": "b"}, nil)
@@ -397,7 +397,7 @@ For every current test, a new container is spun up, and a polling process occurs
  
 In some clusters, for example, namespace deletion is known to be slow - and in these cases the network policy tests may take more than an hour to complete.
  
-- If network policys or pod CIDR's are not correct, it's likely all tests can fail, and thus the network policy suite may take an hour to finish, based on the estimate of 3 minutes, for each failed test, alongside 23 tests (in general, NetworkPolicy tests on a healthy EC2 cluster, with no traffic and broken network policy's, take between 150 and 200 seconds complete).
+- If network policys or pod CIDR's are not correct, it's likely all tests can fail, and thus the network policy suite may take an hour to finish, based on the estimate of 3 minutes, for each failed test, alongside 23 tests (in general, NetworkPolicy tests on a healthy EC2 cluster, with no traffic and broken network policies, take between 150 and 200 seconds complete).
 
 Using `Pod Exec` Functionality, we've determined that 81 verifications can happen rapidly, within 30 seconds, when tests run inside of Kubernetes pods, compared with about the same time for a single test with up to 5 verifications, using Pod status indicators.
 
@@ -464,7 +464,7 @@ An architectural change to the current testing policies has been implemented and
 These resources are created for every test.
 
  
-2. Define a structure for expressing the truth table of results.   Since clasically a truth table can be expressed as a 2D matrix, where
+2. Define a structure for expressing the truth table of results.   Since classically a truth table can be expressed as a 2D matrix, where
 rows and columns are the lexically sorted list of all pod namespace pairs defined above, formatted as `namespace-pod`.  For example, a truth table defining a NetworkPolicy where only pods in the same namespace of the server can communicate to it, would look like this.  Capital letters are *namespaces*, and lower case letters are *pods* in those namespaces.  The tuple value represents connectivity to ports *80* and *81*, respectively.
  
 Note this matrix is conceptual, the actual implementation of such a matrix is more easily done via other data structures, 
@@ -524,7 +524,7 @@ Initially, to confirm the logical capacity of the builder mechanism for replacin
 
 	return reachability
   ```
- This represents a significant reduction in code complexity, with the equivalent tests using the existing network_policy.go implementation being 3 to 4 times as long, mostly due to boiler plate around verification and go structures.
+ This represents a significant reduction in code complexity, with the equivalent tests using the existing `network_policy.go` implementation being 3 to 4 times as long, mostly due to boilerplate around verification and go structures.
 
 *Further improvements to the testing API*
 
@@ -533,7 +533,7 @@ Initially, to confirm the logical capacity of the builder mechanism for replacin
 Pod(...).InNamespace(...).CanAccess(...)
 ```
 - Infer `Egress,Ingress` rules rather than force them to be specified, based on builder inputs.  They're redundant to begin with (i.e. calico doesn't even require them)
-- Add `From` and `To` semantics to the struct api calls in reachability.
+- Add `From` and `To` semantics to the struct API calls in reachability.
  
 ###  Note on Acceptance and Backwards compatibility
 
@@ -544,7 +544,7 @@ Thus far there are two obvious ways to ensure backwards compatibility.
 ## Next steps
 
 As of now, network policy tests are not run regularly against any CNI.  Although we should not endorse one CNI over another, we should regularly validate
-that the NetworkPolicy tests *can* pass on *some* provider.  As part of this proposal, we propose commiting an annotation to the existing network_policy.go code which states, in clear and simple terms, what environment the network_policy.go test suite was run in, the last time which it was commited and passed.  Its also acceptable to commit this as a Markdown file in the documentation.
+that the NetworkPolicy tests *can* pass on *some* provider.  As part of this proposal, we propose commiting an annotation to the existing `network_policy.go` code which states, in clear and simple terms, what environment the `network_policy.go` test suite was run in, the last time which it was committed and passed.  It's also acceptable to commit this as a Markdown file in the documentation.
  
 There may be other, better ways of doing this.  Running an upstream validation job of these tests as a weekly PROW job, for example, would be a good way to make sure that these tests don't regress in the future.  This comes at the cost of coupling a job to an external CNI provider, so its not being explicitly suggested.
 
@@ -561,7 +561,7 @@ Another important network-policy-test case is testing host-network only containe
 
 ### Ensuring that large policy stacks evaluate correctly
 
-Right now the coverage of Policy stacks is rudimentary, we may want to test for a large number(i.e. 10) of policy's, stacked, depending on wether we think this may be a bug source for providers.
+Right now the coverage of Policy stacks is rudimentary, we may want to test for a large number(i.e. 10) of policies, stacked, depending on whether we think this may be a bug source for providers.
 
 ## Alternative solutions to this proposal
  
@@ -571,8 +571,8 @@ We could simply audit existing tests for completeness, and one-by-one, add new t
  
 #### Building a framework for NetworkPolicy evaluation
  
-In this proposal, we've avoided suggesting a complex framework that could generate large numbers of services and pods, and large permuatations of scenarios.
-However, it should be noted that such a framework might be useful in testing performance at larger scales, and comparing CNI providers with one another. Such a framework could easily be adopted to cover the minimal needs of the NetworkPplicy implemetnation in core Kubernetes, so it might be an interesting initiative to work on.  Such an initiative might fall on the shoulders of another Sig, related to performance or scale.  Since NetworkPolicy's have many easy to address
+In this proposal, we've avoided suggesting a complex framework that could generate large numbers of services and pods, and large permutations of scenarios.
+However, it should be noted that such a framework might be useful in testing performance at larger scales, and comparing CNI providers with one another. Such a framework could easily be adopted to cover the minimal needs of the NetworkPplicy implemetnation in core Kubernetes, so it might be an interesting initiative to work on.  Such an initiative might fall on the shoulders of another Sig, related to performance or scale.  Since NetworkPolicies have many easy-to-address
 problems which are important as they stand, we avoid going down this rat-hole, for now.
  
 That said, the work proposed here might be a first step towared a more generic CNI testing model.
