@@ -333,7 +333,7 @@ differentiating the stacked network policy (an *or* selector) vs. a combined pol
                     Ingress: []networkingv1.NetworkPolicyIngressRule{{
                         From: []networkingv1.NetworkPolicyPeer{
                             {
-                                // TODO add these composably, so that can be disambugated from combo networkpolicypeer
+                                // TODO add these composably, so that can be disambiguated from combo networkpolicypeer
                                 PodSelector: &metav1.LabelSelector{
                                     MatchLabels: map[string]string{
                                         "pod-name": "client-b",
@@ -378,22 +378,21 @@ it has been correctly written to be different from the OR test...
 In contrast, we can express the same and test using the API (including its entire connectivity matrix) in this proposal as follows:
 
 ```
-    builder1 := &NetworkPolicySpecBuilder{}
-	builder1 = builder1.SetName("myns", "allow-podb-in-nsb").SetPodSelector(map[string]string{"pod": "a"})
-	builder1.SetTypeIngress()
-	builder1.AddIngress(nil, &p80, nil, nil, map[string]string{"pod-name": "b"}, nil, map[string]string{"ns-name": "b"}, nil)
-	policy1 := builder1.Get()
-	reachability1 := NewReachability(allPods, false)
-	reachability1.ExpectAllIngress(Pod("myns/b"), false)
-	reachability1.Expect(Pod("b/b"), Pod("myns/b"), true)
-	reachability1.Expect(Pod("myns/b"), Pod("myns/b"), true)
-
+	builder := &NetworkPolicySpecBuilder{}
+	builder = builder.SetName("myns", "allow-podb-in-nsb").SetPodSelector(map[string]string{"pod": "a"})
+	builder.SetTypeIngress()
+	builder.AddIngress(nil, &p80, nil, nil, map[string]string{"pod-name": "b"}, nil, map[string]string{"ns-name": "b"}, nil)
+	policy := builder.Get()
+	reachability := NewReachability(allPods, false)
+	reachability.ExpectAllIngress(Pod("myns/b"), false)
+	reachability.Expect(Pod("b/b"), Pod("myns/b"), true)
+	reachability.Expect(Pod("myns/b"), Pod("myns/b"), true)
 ```
 We can of course make this much easier to reuse and reason about, as well as make it self-documenting, and will outline how in the solutions section.
 
 ### Performance
  
-For every current test, a new container is spun up, and a polling process occurs where we wait for the pod to complete succesfully.  Because all clusters start pods at different rates, heuristics have to be relied on for timing a test out.  A large, slow cluster may not be capable of spinning pods up quickly, and thus may timeout one of the 23 tests, leading to a false negative result.
+For every current test, a new container is spun up, and a polling process occurs where we wait for the pod to complete successfully.  Because all clusters start pods at different rates, heuristics have to be relied on for timing a test out.  A large, slow cluster may not be capable of spinning pods up quickly, and thus may timeout one of the 23 tests, leading to a false negative result.
  
 In some clusters, for example, namespace deletion is known to be slow - and in these cases the network policy tests may take more than an hour to complete.
  
@@ -516,19 +515,16 @@ Initially, to confirm the logical capacity of the builder mechanism for replacin
 	builder.SetTypeIngress()
 	builder.AddIngress(nil, &p80, nil, nil, map[string]string{"pod":"b"}, map[string]string{"ns":"y"}, nil, nil)
 
-	k8s.CreateNetworkPolicy("x", builder.Get())
-
 	reachability := utils.NewReachability(allPods, true)
 	reachability.ExpectAllIngress(Pod("x/a"), false)
 	reachability.Expect(Pod("y/b"), Pod("x/a"), true)
-
-	return reachability
+	reachability.Expect(Pod("x/a"), Pod("x/a"), true)
   ```
  This represents a significant reduction in code complexity, with the equivalent tests using the existing `network_policy.go` implementation being 3 to 4 times as long, mostly due to boilerplate around verification and go structures.
 
 *Further improvements to the testing API*
 
-- Make the function calls in network policy builder *even* more DSL' like, for example, 
+- Make the function calls in network policy builder *even* more DSL-like, for example, 
 ```
 Pod(...).InNamespace(...).CanAccess(...)
 ```
