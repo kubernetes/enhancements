@@ -10,7 +10,7 @@ reviewers:
   - TBD
 approvers:
   - TBD
-editor: TBD
+editor: "@zacharysarah"
 creation-date: 2019-10-20
 last-updated: 2019-10-20
 status: provisional
@@ -328,12 +328,8 @@ Once the KEP is approved, merge the KEP and then update website content accordin
 
 # Drawbacks
 
-_Why should this KEP _not_ be implemented._
-
-TBD
+SIG Docs identified no meaningful drawbacks.
 
 ## Alternatives
 
-_Similar to the `Drawbacks` section the `Alternatives` section is used to highlight and record other possible approaches to delivering the value proposed by a KEP._
-
-TBD
+The only real alternative&mdash;approving third-party content without a vetting policy&mdash;is unacceptable, and would degrade site outcomes across metrics of quality, searchability, and trust.
