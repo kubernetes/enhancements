@@ -1,0 +1,31 @@
+title: Allow DaemonSets to surge during update like Deployments
+kep-number: 1591
+authors:
+  - "@smarterclayton"
+owning-sig: sig-apps
+participating-sigs:
+  - sig-scheduling
+  - sig-node
+reviewers:
+  - "@kow3ns"
+  - "@janetkuo"
+approvers:
+  - "@kow3ns"
+  - "@janetkuo"
+editor: TBD
+creation-date: 2020-03-02
+last-updated: 2020-03-02
+status: implementable
+replaces:
+superseded-by:
+feature-gates:
+  - name: DaemonSetUpdateSurge
+    components:
+      - kube-apiserver
+      - kube-controller-manager
+disable-supported: true
+latest-milestone: "v1.20"
+milestone:
+  alpha: "v1.20"
+  beta: "v1.21"
+  stable: "v1.23"
