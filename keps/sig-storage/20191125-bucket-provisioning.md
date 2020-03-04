@@ -3,8 +3,7 @@ title: Object Bucket Provisioning
 authors:
   - "@jeffvance"
   - "@copejon"
-owning-sig: sig-storage
-  - sig-storage
+owning-sig: "sig-storage"
 reviewers:
   - "@saad-ali"
   - "@alarge"
@@ -30,6 +29,9 @@ status: provisional
   - [Non-Goals](#non-goals)
   - [Vocabulary](#vocabulary)
 - [Proposal](#proposal)
+  - [User Stories](#user-stories)
+      - [Admin](#admin)
+      - [User](#user)
   - [System Configuration](#system-configuration)
   - [Workflows](#workflows)
     - [Create Bucket](#create-bucket)
@@ -76,6 +78,21 @@ File and block are first class citizens within the Kubernetes ecosystem.  Object
 + _Sidecar_ - A controller deployed in the same pod as the Plugin, responsible for managing OBs within its namespace and communicating with the Plugin via gRPC. 
 
 # Proposal
+
+## User Stories
+
+#### Admin
+
+- As a cluster administrator, I can set quotas and resource limits on generated buckets' storage capacity via the Kubernete's API, so that  I can control monthly infrastructure costs.
+- As a cluster administrator, I can use Kubernetes RBAC policies around bucket APIs, so that I may control access to existing buckets from within the cluster, reducing the need to adminster an external storage interface.
+- As a cluster administrator, I can manage multiple object store providers via the Kubernetes interface, so that I do not have to become an expert in several different storage interfaces.
+
+#### User
+
+- As a developer, I can define my object storage needs in the same manifest as my workload, so that deployments are streamlined and encapsulated within the Kubernetes interface.
+- As a developer, I can define a manifest containing my workload and object storage configuration once, so that my app may be ported between clusters as long as the storage provided supports my designated data path protocol.
+
+  
 
 ## System Configuration
 
@@ -229,7 +246,7 @@ status:
 
 
 \* Characters that do not adhere to [Kubernetes label conventions](https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set) will be converted to ‘-’.
-   
+
 #### BucketClass
 
 During greenfield workflows, an OBC references a Bucket Class(BC).  The bucket class defines a release policy, and specifies plugin specific parameters, such as region, bucket lifecycle policies, etc. as well as the name of the plugin as returned by the GetDriverInfo() rpc.  The plugin name is used to filter OBs meant to be handled by the given plugin.
