@@ -53,8 +53,8 @@ This proposal introduces the Container Object Storage Interface (COSI), whose pu
 File and block are first class citizens within the Kubernetes ecosystem.  Object, though different on a fundamental level and lacking an open, committee controlled interface like POSIX, is a popular means of storing data, especially against very large data sources.   As such, we feel it is in the interest of the community to elevate buckets to a community supported feature.  In doing so, we can provide Kubernetes cluster users and administrators a normalized and familiar means of managing object storage.
 
 ## Goals
-+ Define a _control plane_ API in order to standardize and formalize a Kubernetes bucket provisioning
-+ Minimize permissions needed to do a task.
++ Define a control plane API in order to standardize and formalize a Kubernetes bucket provisioning
++ Minimize privileges required to run a storage driver.
 + Minimize technical ramp-up for storage vendors.
 + Be un-opinionated about the underlying object-store.
 + Use Kubernetes Secrets to inject bucket information into application workflows.
