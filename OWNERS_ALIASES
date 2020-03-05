@@ -43,8 +43,9 @@ aliases:
     - kbarnard10
     - zacharysarah
   sig-instrumentation-leads:
-    - piosz
     - brancz
+    - ehashman
+    - logicalhan
   sig-multicluster-leads:
     - csbell
     - quinton-hoole
