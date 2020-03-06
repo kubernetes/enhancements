@@ -46,7 +46,7 @@ status: provisional
 
 # Summary
 
-This proposal introduces the Container Object Storage Interface (COSI), whose purpose is to provide a familiar and standardized method of provisioning object storage buckets in an manner agnostic to the storage vendor. The COSI environment is comprised of Kubernetes CRDs, operators to manage these CRDs, and a gRPC interface by which these operators communicate with vendor plugins.  This design is of course heavily inspired by the Kubernetes’ implementation of the Container Storage Interface (CSI).  However, bucket management lacks some of the notable requirements of block and file provisioning and allows for an architecture with lower overall complexity.  This proposal does not include a standardized protocol or abstraction of storage vendor APIs.  
+This proposal introduces the Container Object Storage Interface (COSI), whose purpose is to provide a familiar and standardized method of provisioning object storage buckets in an manner agnostic to the storage vendor. The COSI environment is comprised of Kubernetes CRDs, operators to manage these CRDs, and a gRPC interface by which these operators communicate with vendor drivers.  This design is of course heavily inspired by the Kubernetes’ implementation of the Container Storage Interface (CSI).  However, bucket management lacks some of the notable requirements of block and file provisioning and allows for an architecture with lower overall complexity.  This proposal does not include a standardized protocol or abstraction of storage vendor APIs.  
 
 ## Motivation 
 
@@ -59,23 +59,25 @@ File and block are first class citizens within the Kubernetes ecosystem.  Object
 + Be un-opinionated about the underlying object-store.
 + Use Kubernetes Secrets to inject bucket information into application workflows.
 + Present similar workflows for both _greenfield_  and _brownfield_ bucket provisioning.
-+ Present a design that is familiar to CSI storage plugin authors and Kubernetes storage admins.
++ Present a design that is familiar to CSI storage driver authors and Kubernetes storage admins.
 
 ## Non-Goals
 + Define a native _data-plane_ object store API which would greatly improve object store app portability.
 
 ## Vocabulary
-+  _Brownfield_ - buckets created outside the COSI system but granted access via COSI.
++  _Brownfield_ - also called "dynamic brownfield" - buckets are created outside the COSI system but granted access via COSI. The OB, driver secret, app secret and binding are all performed by COSI.
 + _Bucket_ - A namespace where objects reside, similar to a flat POSIX directory.
-+ _BucketClass_ (BC) - A provisioner-namespaced custom resource containing fields defining the provisioner and immutable parameter set(s).  Referenced by ObjectBucketClaims and populated into the OB.  Only used for provisioning new buckets.
-+ _Container Object Storage Interface (COSI)_ -  The specification of gRPC data and methods making up the communication protocol between the plugin and the sidecar.
-+ _COSI Controller_ - A single, centralized controller which manages OBCs, OBs, and Secrets cluster-wide.
-+ _Greenfield_ - new buckets dynamically created by a provisioner (plugin).
-+ _OB_ (Object Bucket) - A provisioner-namespaced custom resource representing the provisioned bucket and relevant metadata.
++ _BucketClass_ (BC) - A cluster-wide (non-namespaced) custom resource containing fields defining the provisioner and an immutable parameter set.  Referenced by ObjectBucketClaims and populated into the OB.  Only used for provisioning new buckets.
++ _Container Object Storage Interface (COSI)_ -  The specification of gRPC data and methods making up the communication protocol between the driver and the sidecar.
++ _COSI Controller_ - A single, central controller which manages OBCs, OBs, and Secrets cluster-wide. Often referred to below as the "central controller".
++ _"cosi-system"_ - The namespace name for all COSI drivers and sidecars. Even if a cluster supports different, concurrent object stores, all drivers live in this namespace.
++ _Driver - A containerized gRPC server which implements a storage vendor’s business logic through the COSI interface. It can be written in any language supported by gRPC and is independent of Kubernetes. There is historical precedence in Kubernetes to call this type of container a _plugin_, but going forward _driver_ is the preferred name.
++ _Greenfield_ - new buckets dynamically created by the driver.
++ _OB_ (Object Bucket) - A cluster-wide (non-namespaced) custom resource representing the provisioned bucket and relevant metadata.
 + _OBC_ (Object Bucket Claim) - A user-namespaced custom resource representing a user’s bucket request. 
 + _Object_ - An atomic, immutable unit of data stored in buckets.
-+ _Plugin_ - A containerized gRPC server which implements a storage vendor’s business logic through the COSI interface. It can be written in any language supported by gRPC and is independent of Kubernetes.
-+ _Sidecar_ - A controller deployed in the same pod as the Plugin, responsible for managing OBs within its namespace and communicating with the Plugin via gRPC. 
++ _Sidecar_ - A controller deployed in the same pod as the driver, responsible for managing OBs and communicating with the Driver via gRPC. Needs write access to its OB. Note: the sidecar controller can use [predicates](https://godoc.org/sigs.k8s.io/controller-runtime/pkg/predicate) to filter OBs by driver name (assuming a unique label is added to OBs).
++ _Static_ - also called "static brownfield" - buckets are created outside the COSI system but granted access via COSI without the need for the driver/sidecar. The OB and driver secret are created manually in the expected locations. The app secret and binding are performed by COSI.
 
 # Proposal
 
@@ -96,11 +98,13 @@ File and block are first class citizens within the Kubernetes ecosystem.  Object
 
 ## System Configuration
 
-+ The COSI Controller runs in a protected namespace with RBAC privileges for managing OBCs, OBs, and Secrets cluster wide.
-  
-    + Responsible for the binding relationship of OBs and OBCs
-+ The Plugin and Sidecar containers run together in a single Pod, which may be managed by a Deployment.
++ The central controller runs in a protected namespace with RBAC privileges for managing OBCs, OBs, and Secrets cluster wide.
+    + Responsible for the binding relationship of OBs and OBCs.
++ The "cosi-system" namespace must be created.
+    + This namespace must be granted write access to cluster-wide scoped OBs.
++ The Driver and Sidecar containers run together in a single Pod in the "cosi-system" namespace.
     + The gRPC connection is made through the Pod’s localhost.
++ BucketClasses must exist (cluster-wide scope).
 + No node affinity or other requirements exist.
 + Operations must be idempotent in order to handle failure recovery.
   
@@ -108,44 +112,54 @@ File and block are first class citizens within the Kubernetes ecosystem.  Object
 
 ### Create Bucket
 1. The user creates an OBC in the app’s namespace.
-1. The Controller detects the OBC and creates an OB in the Plugin’s namespace, containing provisioner-relevant data collected from the OBC and BC.
-1. The Sidecar detects the OB and issues a CreateBucket() rpc, passing the provisioner-relevant data.
-1. The Plugin creates the bucket and returns pertinent endpoint, credential, and metadata.
-1. The Sidecar creates a secret in its namespace containing essential connection information.
-1. The Controller copies the secret to the OBC’s namespace and the app is ready to run.
+1. The COSI central controller detects the OBC and creates an OB (cluster-wide), containing driver-relevant data collected from the OBC and BC.
+1. The Sidecar detects the OB and issues a CreateBucket() rpc, passing to the driver config data.
+1. The Driver creates the bucket and returns pertinent endpoint, credential, and metadata.
+1. The Sidecar creates a secret in its namespace ("cosi-system") containing essential connection information.
+1. The central controller copies the secret to the OBC’s namespace and the app is ready to run.
 
 ### Delete Bucket
 1. The user deletes the OBC, which blocks until the finalizer is removed.
-1. The Controller deletes the OB, which also blocks until its finalizer is removed.
-1. The Sidecar detects this and issues a DeleteBucket() rpc to the Plugin.  It passes data stored in the OB.
-1. The Plugin deletes the bucket and responds with no errors.
+1. The central controller deletes the OB, which also blocks until its finalizer is removed.
+1. The Sidecar detects this and issues a DeleteBucket() rpc to the Driver.  It passes data stored in the OB.
+1. The Driver deletes the bucket and responds with no errors.
 1. The Sidecar deletes the OB’s secret.
-1. The Controller deletes the secret’s copy in the app’s namespace.
-1. The Controller removes the finalizers from the OBC, OB, and Secret allowing them to be deleted.
+1. The central controller deletes the secret’s copy in the app’s namespace.
+1. The central controller removes the finalizers from the OBC, OB, and Secret allowing them to be deleted.
 
-### Grant Bucket Access
+### Grant Bucket Access for Static Brownfield
 Reminder: BucketClass is ignored since it is used only for dynamic provisioning.
 
-1. An OB is manually created in the Plugin’s namespace with at least enough information to identify an existing bucket in the object store.
-1. The Controller detects the new OB and sets its status to “Available”.
-1. The user creates an OBC in the app’s namespace which references this pre-existing OB.
-1. The Controller detects the OBC and updates OB Phase and OBC reference.
-1. The Sidecar detects the OB update and calls the `Grant()` gRPC method.
-1. The Plugin grants access to the bucket and returns pertinent endpoint, credential, and metadata.
-1. The Sidecar creates a secret in its namespace containing essential connection information.
-1. The Controller copies the secret to the OBC’s namespace and the app is ready to run.
+1. An OB is manually created with enough information to identify an existing bucket in the object store.
+1. A secret granting bucket-create privilege is manually created in the Driver’s namespace.
+1. The user creates an OBC in the app’s namespace which references the pre-existing OB and driver secret.
+1. The central controller detects the OBC and notices its `objectBucketRef` and `secretRef` are filled in.
+1. The central controller clones the secret from the driver's namespace to the app's namespace.
+1. The central controller binds the OBC to the OB and the app is ready to run.
 
-### Revoke Bucket Access
+### Grant Bucket Access for Dynamic Brownfield
+Reminder: BucketClass is ignored since it is used only for dynamic provisioning.
+
+1. An OB is manually created with enough information to identify an existing bucket in the object store.
+1. The user creates an OBC in the app’s namespace which references the pre-existing OB.
+1. The central controller detects the OBC and notices its `objectBucketRef` is filled in but its `secretRef` is empty.
+1. The central controller updates OB Phase and OBC reference.
+1. The Sidecar detects the OB update and calls the `Grant()` gRPC method.
+1. The Driver grants access to the bucket and returns pertinent endpoint, credential, and metadata.
+1. The Sidecar creates a secret in its namespace containing essential connection information.
+1. The central controller clones the secret to the OBC’s namespace, binds the OB, and the app is ready to run.
+
+### Revoke Bucket Access (needs to handle stratic and dynamic brownfield!)
 
 Reminder: BucketClass is ignored in browfield operations.
 
 1. The user deletes the OBC, which blocks until the finalizer is removed.
-1. The Controller detects the OBC change and updates OB’s Phase.
+1. The central controller detects the OBC change and updates OB’s Phase.
 1. The Sidecar detects the OB update and calls the `Revoke()` gRPC method.
-1. The Plugin revokes access to the bucket and responds with no errors.
+1. The Driver revokes access to the bucket and responds with no errors.
 1. The Sidecar deletes the OB’s secret.
-1. The Controller deletes the secret’s copy in the app’s namespace.
-1. The Controller removes the finalizers from the OBC, OB, and Secret.
+1. The central controller deletes the secret’s copy in the app’s namespace.
+1. The central controller removes the finalizers from the OBC, OB, and Secret.
 1. The OBC and its secret are garbage collected and the OB remains.
 
 ##  Custom Resource Definitions
@@ -159,48 +173,43 @@ A user facing API object representing a request for a bucket, or access to an ex
 apiVersion: cosi.io/v1alpha1
 kind: ObjectBucketClaim
 metadata:
-  name:
+  name: [1]
   namespace:
   labels:
-    “cosi.io/plugin”: [1]
+    “cosi.io/driver”: [2]
   finalizers:
-  - cosi.io/finalizer [2]
+  - cosi.io/finalizer [3]
 spec:
-  bucketName: [3]
-  generateBucketName: [4]
-  bucketClassRef: [5]
-    name:
-    namespace:
-  objectBucketRef: [6]
-    name:
-    namespace:
-  bucketConfig: [7]
+  bucketName: [4]
+  generateBucketName: [5]
+  bucketClassName: [6]
+  objectBucketName: [7]
+  secretName: [8]
+  driverSecretName: [9]
 status:
   phase:
   conditions: []ObjectBucketClaimCondition
 ```
-1. `labels`: COSI Controller adds the label to its managed resources for easy GET ops.  Value is the plugin name returned by GetDriverInfo() rpc*.
-1. `finalizers`: COSI Controller adds the finalizer to defer OBC deletion until backend deletion ops succeed.
+1. `name`: the metadata name of the OBC; however this name can be generated and thus cannot be relied on to predictably name other related resources, eg. secrets. 
+1. `labels`: central controller adds the label to its managed resources for easy GET ops.  Value is the driver name returned by GetDriverInfo() rpc*.
+1. `finalizers`: central controller adds the finalizer to defer OBC deletion until backend deletion ops succeed.
 1. `bucketName`: Desired name of the bucket to be created**.
 1. `generateBucketName`: Prefix to a randomly generated name. Mutually exclusive with `bucketName`**.
-1. `bucketClassRef`: Name and Namespace of the target BucketClass**.
-1. `objectBucketRef`: Name and Namespace of a bound OB.
-
-   - Injected by the controller during greenfield ops.
-
-   - Defined by the OBC author for brownfield ops.
-
-1. `bucketConfig`: Map of key-values defined per provisioner. 
-
-   - Keys here override `BucketClass.defaultConfig` keys and are overridden by `BucketClass.enforceConfig` keys.
-
+1. `bucketClassName`: Name of the target BucketClass**.
+1. `objectBucketName`: Name of a bound OB.
+   - Injected by the central controller during greenfield ops.
+   - Defined by the OBC author for static and dynamic brownfield ops.
+1. `secretName`: Desired name of the app's secret for greenfield. Fails if secret exists. Defined here so that app deployment (where the secret name is required) is independent of OBC creation.
+1. `driverSecretName`: Name of the driver's secret with the namespace assumed to be "cosi-system".
+   - Injected by the central controller during greenfield and dynamic brownfield ops.
+   - Defined by the OBC author for static brownfield ops.
 
 \* Characters that do not adhere to [Kubernetes label conventions](https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set) will be converted to ‘-’.
 
 ** Ignored for brownfield usage.
 
 #### ObjectBucket (OB)
-An admin facing API object representing the bucket. The OB resides in the same namespace as the plugin, and is typically not seen by bucket consumers. The OB is expected to store stateful data relevant to bucket deprovisioning.
+A cluster-wide scoped resource representing the bucket. The OB is expected to store stateful data relevant to bucket deprovisioning. The OB is bound to the OBC in a 1-1 mapping.
 
 ```yaml
 apiVersion: cosi.io/v1alpha1
@@ -209,47 +218,45 @@ Metadata:
   name: [1]
   namespace: [2]
   labels:
-    “cosi.io/plugin”: [3]
+    “cosi.io/driver”: [3]
   finalizers:
   - "cosi.io/finalizer" [4]
 spec:
-  bucketClassRef: [5]
-     name:
-     namespace:
+  bucketClassName: [5]
   releasePolicy: {"Delete", "Retain"} [6]
   bucketConfig: map[string]string [7]
   objectBucketClaimRef: [8]
     name:
     namespace:
-  secretRef: [9]
-    name:
+  secretName: [9]
 status:
   bucketMetaData: <map[string]string> [10]
   phase: {"Bound", "Released", "Failed", “Errored”} [11]
   conditions: []ObjectBucketCondition
 ```
 1. `name`: Generated in the pattern of “obc-”\<OBC-NAMESPACE>"-"\<OBC-NAME>
-1. `namespace`: The namespace of the Plugin.
-1. `labels`: COSI Controller adds the label to its managed resources for easy GET ops.  Value is the plugin name returned by GetDriverInfo() rpc*.
-1. `finalizers`: Set and cleared by the COSIController and prevents accidental deletion of an OB.
-1. `bucketClassRef`: Name and namespace of the bucket class
+1. `namespace`: The namespace of the Driver.
+1. `labels`: central controller adds the label to its managed resources for easy GET ops.  Value is the driver name returned by GetDriverInfo() rpc*.
+1. `finalizers`: Set and cleared by the COSI Controller and prevents accidental deletion of an OB.
+1. `bucketClassName`: Name of the bucket class
 1. `releasePolicy`: release policy from the Bucket Class referenced in the OBC. See `BucketClass` spec for values.
-1. `bucketConfig`: a string:string map of plugin defined key-value pairs
-1. `objectBucketClaimReference`: the name & namespace of the bound OBC.
-1. `secretReference`: the name & namespace of Sidecar-generated secret. 
+1. `bucketConfig`: a string:string map of driver defined key-value pairs
+1. `objectBucketClaimRef`: the name & namespace of the bound OBC.
+1. `secretName`: the name of the sidecar-generated secret. Its namespace is assumed "cosi-system".
 1. `bucketMetaData`: stateful data relevant to the managing of the bucket but potentially inappropriate user knowledge (e.g. the user’s in-store user name)
 1. `phase`: is the current state of the ObjectBucket:
     - `Bound`: the operator finished processing the request and linked the OBC and OB
     - `Released`: the OBC has been deleted, leaving the OB unclaimed.
     - `Failed`: error and all retries have been exhausted.
-    - `Retrying`: set when a recoverable plugin or kubernetes error is encountered during bucket creation or access granting. Will be retried.
+    - `Retrying`: set when a recoverable driver or kubernetes error is encountered during bucket creation or access granting. Will be retried.
 
 
 \* Characters that do not adhere to [Kubernetes label conventions](https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set) will be converted to ‘-’.
 
 #### BucketClass
 
-During greenfield workflows, an OBC references a Bucket Class(BC).  The bucket class defines a release policy, and specifies plugin specific parameters, such as region, bucket lifecycle policies, etc. as well as the name of the plugin as returned by the GetDriverInfo() rpc.  The plugin name is used to filter OBs meant to be handled by the given plugin.
+A cluster-wide scoped custom resource.
+During greenfield workflows an OBC references a Bucket Class (BC).  The bucket class defines a release policy, and specifies driver specific parameters, such as region, bucket lifecycle policies, etc., as well as the name of the driver as returned by the `GetDriverInfo()` rpc.  The driver name is used to filter OBs meant to be handled by the given driver.
 
 ```yaml
 apiVersion: cosi.io/v1alpha1
@@ -257,16 +264,14 @@ kind: BucketClass
 metadata:
   name: 
   namespace: [1]
-plugin: [2]
-defaultConfig: string:string [3]
-enforceConfig: string:string [4]
-releasePolicy: {"Delete", "Retain"} [5]
+driver: [2]  # should this be named "provisioner:" ??
+config: string:string [3]
+releasePolicy: {"Delete", "Retain"} [4]
 ```
 
-1. `namespace`: BucketClasses are co-namespaced with their associated plugin
-1. `plugin`: Name of the plugin, provided via the GetDriverInfo() rpc. Used to filter OBs.
-1. `defaultConfig`: key-value pairs used as defaults by the plugin. May be overridden by OBCs.
-1. `enforceConfig`: key-value pairs which override OBC keys of the same name (e.g. max object count)
+1. `namespace`: BucketClasses are co-namespaced with their associated driver
+1. `driver`: Name of the driver, provided via the GetDriverInfo() rpc. Used to filter OBs.
+1. `config`: object store specific key-value pairs passed to the driver.
 1.  `releasePolicy`: Prescribes outcome of an OBC/OB deletion.
     - `Delete`:  the bucket and its contents are destroyed
     - `Retain`:  the bucket and its contents are preserved, only the user’s access privileges are terminated
