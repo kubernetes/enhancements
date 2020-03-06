@@ -7,7 +7,7 @@ approvers:
   - "@liggitt"
   - TBD
 creation-date: 2019-08-06
-last-updated: 2019-08-06
+last-updated: 2020-03-25
 status: implemented
 ---
 
@@ -30,6 +30,8 @@ status: implemented
     - [Example Flow](#example-flow)
   - [Service Account Authenticator Modification](#service-account-authenticator-modification)
   - [ACLs for TokenRequest](#acls-for-tokenrequest)
+  - [Safe Adoption](#safe-adoption)
+    - [Safe rollout of time-bound token](#safe-rollout-of-time-bound-token)
   - [Graduation Criteria](#graduation-criteria)
     - [Beta -&gt; GA Graduation](#beta---ga-graduation)
 <!-- /toc -->
@@ -262,6 +264,51 @@ The NodeAuthorizer will allow the kubelet to use its credentials to request a
 service account token on behalf of pods running on that node. The
 NodeRestriction admission controller will require that these tokens are pod
 bound.
+
+### Safe Adoption
+
+#### Safe rollout of time-bound token
+
+Legacy service account tokens distributed via secrets are not time-bound. 
+Many client libraries have come to depend on this behavior. After time-bound service 
+account token being used, if in-cluster clients do not periodically reload token 
+from projected volume, requests would be rejected once the initial token got expired.
+
+In order to allow guadual adoption of time-bound token, we would:
+  1. Pick a constant period D between one and two hours. The value of D would be static
+  across Kubernetes deployments, while avoiding collision with common duration.
+  1. Modify service account admission control to inject token valid for D when the 
+  BoundServiceAccountTokenVolume feature is enabled.
+  1. Modify kube apiserver TokenRequest API. When it receives TokenRequest with requested
+  valid period D, extend the token lifetime to one year. At the same time, save
+  the original requested D to `kubernetes.io/warnafter` field in minted token.
+  1. In the TokenRequest status, tell clients that the token would be valid only for D, 
+  encouraging clients to reload token as if the token was valid for D.
+  
+This modification could be optionally enabled by providing a command line flag
+ to kube apiserver.
+
+These extended tokens would not expire and continue to be accepted within one year.
+At the same time, the authentication side could monitor whether clients are properly
+reloading tokens by:
+
+  1. Compare the `kubernetes.io/warnafter` field with current time. If current time
+  is after `kubernetes.io/warnafter` field, it implies calling client is not 
+  reloading token regularly.
+  1. Expose metrics to monitor number of legacy and stale token used.
+  1. Add annotation to audit events for legacy and stale tokens including necessary 
+  information to locate problematic client.
+ 
+This functionality can be implemented entirely in the kube-apiserver and does not 
+require cooperation by the kubelet beyond the standard functionality implemented 
+as part of [Service Account Token Volumes](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/svcacct-token-volume-source.md).
+
+We will direct cluster administrators to adopt bound service account tokens and 
+turn on the command line flag to enable extended token. Fix clients if monitoring or 
+audit report that stale or legacy token are in use. The operator can turn off 
+the command line flag after no stale token is being used.
+
+
 
 ### Graduation Criteria
 
