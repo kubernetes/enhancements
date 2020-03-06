@@ -57,7 +57,7 @@ _Reviewers:_
 - [Graduation Criteria](#graduation-criteria)
   - [Alpha (v1.16) [COMPLETED]](#alpha-v116-completed)
   - [Alpha (v1.17) [COMPLETED]](#alpha-v117-completed)
-  - [Beta (target v1.18)](#beta-target-v118)
+  - [Beta (v1.18) [COMPLETED]](#beta-v118-completed)
   - [GA (stable)](#ga-stable)
 - [Test Plan](#test-plan)
   - [Single NUMA Systems Tests](#single-numa-systems-tests)
@@ -166,11 +166,11 @@ the assigned CPUs and devices.
 
 Topology affinity is tracked at the container level, similar to devices and
 CPU affinity. At pod admission time, a new component called the Topology
-Manager collects possible configurations from the Device Manager and the
-CPU Manager. The Topology Manager acts as an oracle for local alignment by
-those same components when they make concrete resource allocations. We
-expect the consulted components to use the inferred QoS class of each
-pod in order to prioritize the importance of fulfilling optimal locality.
+Manager collects possible configurations for each container in the pod from the
+Device Manager and the CPU Manager. The Topology Manager acts as an oracle
+for local alignment by those same components when they make concrete resource
+allocations. We expect the consulted components to use the inferred QoS class
+of each pod in order to prioritize the importance of fulfilling optimal locality.
 
 ## Proposed Changes
 
@@ -180,7 +180,7 @@ This proposal is focused on a new component in the Kubelet called the
 Topology Manager. The Topology Manager implements the pod admit handler
 interface and participates in Kubelet pod admission. When the `Admit()`
 function is called, the Topology Manager collects topology hints from other
-Kubelet components.
+Kubelet components on a container by container basis.
 
 If the hints are not compatible, the Topology Manager may choose to
 reject the pod. Behavior in this case depends on a new Kubelet configuration
@@ -428,7 +428,7 @@ _Figure: Topology Manager fetches affinity from hint providers._
 
 * Allow pods in all QoS classes to request aligned resources.
 
-## Beta (target v1.18)
+## Beta (v1.18) [COMPLETED]
 
 * Enable the feature gate by default.
 * Provide beta-level documentation.
@@ -484,13 +484,16 @@ systems test.
 * Testing the Topology Manager in a continuous integration environment
   depends on cloud infrastructure to expose multi-node topologies
   to guest virtual machines.
-* Implementing the `GetHints()` interface may prove challenging.
+* Implementing the `HintProvider` interface may prove challenging.
 
 # Limitations
 
-* Alignment is only possible for pods in the `Guaranteed` QoS class.
-* Alignment is only guaranteed for a single container inside a pod.
-
+* The maximum number of NUMA nodes that Topology Manager will allow is 8,
+  past this there will be a state explosion when trying to enumerate the
+  possible NUMA affinities and generating their hints.
+* The scheduler is not topology-aware, so it is possible to be scheduled
+  on a node and then fail on the node due to the Topology Manager.
+  
 # Alternatives
 
 * [AutoNUMA][numa-challenges]: This kernel feature affects memory
