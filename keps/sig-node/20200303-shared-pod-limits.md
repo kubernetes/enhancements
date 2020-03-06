@@ -317,7 +317,7 @@ When users opt to use the feature, the workload must be able to run in a potenti
 1. In the code defining the [resources configuration](https://github.com/kubernetes/kubernetes/blob/master/pkg/kubelet/cm/helpers_linux.go#L109) for the pod, check if the attribute is set and act accordingly.
 
 
-See a PoC implementation in PR [#88722](https://github.com/kubernetes/kubernetes/pull/88722).
+See a PoC implementation in PR [#88899](https://github.com/kubernetes/kubernetes/pull/88899).
 
 ## Implementation History
 
