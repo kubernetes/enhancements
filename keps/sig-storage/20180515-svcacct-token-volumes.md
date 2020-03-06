@@ -4,6 +4,7 @@ authors:
   - "@smarterclayton"
   - "@liggitt"
   - "@mikedanese"
+  - "@zshihang"
 owning-sig: sig-storage
 participating-sigs:
   - sig-auth
@@ -14,7 +15,7 @@ approvers:
   - "@saad-ali"
 editor: "@zshihang"
 creation-date: 2018-05-15
-last-updated: 2020-03-09
+last-updated: 2020-03-27
 status: implemented
 see-also:
   - "https://github.com/kubernetes/community/blob/e3a6b8172fec9506b15520549e52be683e30cbfb/contributors/design-proposals/storage/svcacct-token-volume-source.md"
@@ -29,6 +30,9 @@ see-also:
 - [Motivation](#motivation)
 - [Proposal](#proposal)
   - [Token Volume Projection](#token-volume-projection)
+  - [File Permission](#file-permission)
+    - [Proposed heuristics](#proposed-heuristics)
+    - [Alternatives considered](#alternatives-considered)
   - [Alternatives](#alternatives)
 - [Graduation Criteria](#graduation-criteria)
 <!-- /toc -->
@@ -64,7 +68,6 @@ and see this effort as necessary glue to allow more powerful systems to succeed.
 With this feature, we hope to provide a backwards compatible replacement for
 service account tokens that strengthens the security and improves the
 scalability of the platform.
-
 
 ## Proposal
 
@@ -142,7 +145,6 @@ sources:
       fieldRef: metadata.namespace
 ```
 
-
 This fixes one scalability issue with the current service account token
 deployment model where secret GETs are a large portion of overall apiserver
 traffic.
@@ -159,6 +161,55 @@ sources:
     audience: ca.istio.io
 ```
 
+### File Permission
+
+The secret projections are currently written with world readable (0644,
+effectively 444) file permissions. Given that file permissions are one of the
+oldest and most hardened isolation mechanisms on unix, this is not ideal.
+We would like to opportunistically restrict permissions for projected service
+account tokens as long we can show that they won’t break users if we are to
+migrate away from secrets to distribute service account credentials.
+
+#### Proposed heuristics
+
++   *Case 1*: The pod has an fsGroup set. We can set the file permission on the
+    token file to 0600 and let the fsGroup mechanism work as designed. It will
+    set the permissions to 0640, chown the token file to the fsGroup and start
+    the containers with a supplemental group that grants them access to the
+    token file. This works today.
++   *Case 2*: The pod’s containers declare the same runAsUser for all containers
+    (ephemeral containers are excluded) in the pod. We chown the token file to
+    the pod’s runAsUser to grant the containers access to the token. All
+    containers must have UID either specified in container security context or
+    inherited from pod security context. Preferred UIDs in container images are
+    ignored.
++   *Fallback*: We set the file permissions to world readable (0644) to match
+    the behavior of secrets.
+
+This gives users that run as non-root greater isolation between users without
+breaking existing applications. We also may consider adding more cases in the
+future as long as we can ensure that they won’t break users.
+
+#### Alternatives considered
+
++   We can create a volume for each UserID and set the owner to be that UserID
+    with mode 0400. If user doesn't specify runAsUser, fetching UserID in image
+    requires a re-design of kubelet regarding volume mounts and image pulling.
+    This has significant implementation complexity because:
+    +   We would have to reorder container creation to introspect images (that
+        might declare USER or GROUP directives) to pass this information to the
+        projected volume mounter.
+    +   Further, images are mutable so these directives may change over the
+        lifetime of the pod.
+    +   Volumes are shared between all pods that mount them today. Mapping a
+        single logical volume in a pod spec to distinct mount points is likely a
+        significant architectural change.
++   We pick a random group and set fsGroup on all pods in the service account
+    admission controller. It’s unclear how we would do this without conflicting
+    with usage of groups and potentially compromising security.
++   We set token files to be world readable always. Problems with this are
+    discussed above.
+
 ### Alternatives
 
 1.  Instead of implementing a service account token volume projection, we could
@@ -172,7 +223,6 @@ sources:
     1.  Other core features need service account integration, leading to all
         users needing to install this extension.
     1.  Complicates installation for the majority of users.
-
 
 ## Graduation Criteria
 
