@@ -90,7 +90,7 @@ This proposal aims to:
 
 *  Allow a `Burstable` pod to define that memory and CPU resource limits should be set on the level of the Pod.
 *  Prevent the developer from having to micro-manage the memory and CPU resource assignments for different containers in the same pod.
-*  Keep the current `Burstable` behavior as the default.
+*  Keep the current `Burstable` behavior as the default. 
 
 ### Non-Goals
 
@@ -119,9 +119,9 @@ the `Burstable` QoS level, and **all** of the containers specify limits for each
 assigned to the pod level cgroup.
 
 The implications of the current `Burstable` definition is that if any containers belonging to the Pod don't define a limit, then those containers
-are effectively not limited by the Linux kernel. Conversely, if all of the containers provided a limit, then even though the pod level cgroup is 
-configured with the sum of those limits, there is no significance to this since no container can ever use more of the resource than what is defined
-in the container level cgroup.
+are effectively not limited by the Linux kernel. Conversely (as happens in the `Guaranteed` QoS level), if all of the containers provided a limit, 
+then even though the pod level cgroup is configured with the sum of those limits, there is no significance to this since no container can ever use 
+more of the resource than what is defined in the container level cgroup.
 
 The proposal in this KEP is to allow users to opt-in to a slightly modified definition of the `Burstable` QoS level. In this modified definition,
 the sum of all defined container limits for each resource are always assigned to the pod-level cgroup. This is done by adding an attribute called 
@@ -164,13 +164,13 @@ The cgroup hierarchy for each of these resources (memory and cpu) would be this:
 <pre>
   QoS CGroup (one of guaranteed, burstable, or besteffort)
    |
-   \ pod (memory: unlimited, cpu: unlimited)
+   \ pod (memory: unlimited, cpu: unlimited quota)
       |
-      +-- container0 (pause container, memory: unlimited, cpu: unlimited)
+      +-- container0 (pause container, memory: unlimited, cpu: unlimited quota)
       |
-      +-- container1 (shell container, memory: unlimited, cpu: unlimited)
+      +-- container1 (shell container, memory: unlimited, cpu: unlimited quota)
       |
-      +-- container2 (proxy container, memory: unlimited, CPU: unlimited)
+      +-- container2 (proxy container, memory: unlimited, CPU: unlimited quota)
       |
       +-- container3 (nginx container, memory: 256M limit, CPU: 1 core)
 </pre>
@@ -182,11 +182,11 @@ By setting the `ShareBurstableLimits` attribute on the Pod spec to `true`, the f
    |
    \ pod (memory: 256M limit, CPU: 1 core)
       |
-      +-- container0 (pause container, memory: unlimited, cpu: unlimited)
+      +-- container0 (pause container, memory: unlimited, cpu: unlimited quota)
       |
-      +-- container1 (shell container, memory: unlimited, cpu: unlimited)
+      +-- container1 (shell container, memory: unlimited, cpu: unlimited quota)
       |
-      +-- container2 (proxy container, memory: unlimited, CPU: unlimited)
+      +-- container2 (proxy container, memory: unlimited, CPU: unlimited quota)
       |
       +-- container3 (nginx container, memory: 256M limit, CPU: 1 core)
 </pre>
@@ -239,11 +239,11 @@ In this pod, the cgroups would be set up in the following way:
 <pre>
   QoS CGroup (one of guaranteed, burstable, or besteffort)
    |
-   \ pod (memory: 512 limit, CPU: 2 core)
+   \ pod (memory: 512 limit, CPU: 2 cores)
       |
-      +-- container0 (pause container, memory: unlimited, cpu: unlimited)
+      +-- container0 (pause container, memory: unlimited, cpu: unlimited quota)
       |
-      +-- container1 (shell container, memory: unlimited, cpu: unlimited)
+      +-- container1 (shell container, memory: unlimited, cpu: unlimited quota)
       |
       +-- container2 (proxy container, memory: 256M limit, CPU: 1 core)
       |
@@ -322,5 +322,6 @@ See a PoC implementation in PR [#88899](https://github.com/kubernetes/kubernetes
 ## Implementation History
 
 - 2020-03-04 - v1 of the proposal 
+- 2020-03-06 - Updates due to suggested review
 
 
