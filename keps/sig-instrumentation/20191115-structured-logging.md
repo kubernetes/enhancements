@@ -85,7 +85,7 @@ Current logging in the Kubernetes control plane doesn’t guarantee any uniform 
 
 ## Proposal
 
-This KEP proposes introducing a standardized log message structure. To enforce a new log message structure we are proposing adding new methods to the klog library: `InfoS`, `WarningS` , `ErrorS`  and `FatalS` which will provide a structured interface for building log messages and creating new helper methods which will provide consistent identification of Kubernetes objects in logs.
+This KEP proposes introducing a standardized log message structure. To enforce a new log message structure we are proposing adding new methods to the klog library: `InfoS`, `ErrorS` which will provide a structured interface for building log messages and creating new helper methods which will provide consistent identification of Kubernetes objects in logs.
 
 With the new methods we would like also to migrate to klog v2 and introduce a new JSON logging output format to Kubernetes components that would be an alternative to the current text format and which will make querying and processing Kubernetes logs even simpler.
 
@@ -306,12 +306,17 @@ Proposed flag `--logging-format` values:
 * `text` for text-based logging format (default)
 * `json` for new JSON format
 
+Additionally we propose to expose to allow for customization of logging by providing custom implementation.
+Custom logger format can be introduced by implementing [https://github.com/go-logr/logr](https://github.com/go-logr/logr) interface.
+Registering custom implementation within `LoggingConfig` will allow to pick it by via `--logging-format` flag.
+Klog interface was selected as it is already supported by klog.v2 with `SetLogger` method.
+
 ### Migration / Graduation Criteria
 
 #### Alpha
 
 Preparation and migration of selected logs to new logging methods:
-* Support for the new InfoS, WarningS, ErrorS and FatalS method will be implemented in klog and the new version of klog will be released.
+* Support for the new InfoS and ErrorS method will be implemented in klog and the new version of klog will be released.
 * Kubernetes will be upgraded to use the new klog version.
 * Helper methods for producing consistent Kubernetes resource identifiers to be used in logs will be implemented.
 * Most important klog calls will be identified and will be manually migrated from using format based to structured methods.
