@@ -7,9 +7,12 @@ authors:
   - "@zacharysarah"
 owning-sig: sig-docs
 reviewers:
-  - TBD
+  - "@jaredbhatti"
+  - "@kbarnard10"
 approvers:
-  - TBD
+  - "@cblecker"
+  - "@derekwaynecarr"
+  - "@dims"
 editor: "@zacharysarah"
 creation-date: 2019-10-20
 last-updated: 2019-10-20
@@ -102,9 +105,9 @@ how to install or use Kubernetes on several third party Kubernetes
 offerings.
 
 Some third party content is necessary in order for Kubernetes to
-function. For example: Docker, networking policy (CNI plugins), Ingress
-controllers, and logging all require third party components.
-Pages like [Logging Using Elasticsearch and Kibana](https://kubernetes.io/docs/tasks/debug-application-cluster/logging-elasticsearch-kibana/) 
+function. For example: container runtimes (containerd, CRI-o, Docker), 
+networking policy (CNI plugins), Ingress controllers, and logging all require 
+third party components. Pages like [Logging Using Elasticsearch and Kibana](https://kubernetes.io/docs/tasks/debug-application-cluster/logging-elasticsearch-kibana/) 
 are highly specific to a third party offering and seem more like third party 
 product documentation than Kubernetes open source documentation.
 
@@ -172,8 +175,9 @@ host their own content, or decline to host third-party content altogether?
 
 Kubernetes docs publish third-party content only if:
 
-- It's necessary for Kubernetes to function. For example: Docker, networking 
-policy (CNI plugins), Ingress controllers, and logging.
+- It's necessary for Kubernetes to function. For example: container runtimes 
+(containerd, CRI-o, Docker), networking policy (CNI plugins), Ingress 
+controllers, and logging.
 
 - It's an applied example of another project in the Kubernetes GitHub org. This
 includes the [kubernetes](https://github.com/kubernetes) and 
