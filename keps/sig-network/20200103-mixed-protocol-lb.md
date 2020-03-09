@@ -33,10 +33,12 @@ superseded-by:
 - [Proposal](#proposal)
   - [User Stories](#user-stories)
     - [Story 1](#story-1)
+    - [Story 2](#story-2)
   - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
     - [Alibaba](#alibaba)
     - [AWS](#aws)
     - [Azure](#azure)
+    - [DigitalOcean](#digitalocean)
     - [GCE](#gce)
     - [IBM Cloud](#ibm-cloud)
     - [OpenStack](#openstack)
@@ -120,7 +122,11 @@ Once that limit is removed those Service definitions will reach the Cloud Provid
 
 #### Story 1
 
-As a Kubernetes cluster user I want to expose an application that provides its service on different protocols with a single cloud provider load balancer IP. In order to achieve this I want to define different `ports` with mixed protocols in my Service definition of `type: LoadBalancer`
+As a Kubernetes cluster user I want to have the capability of exposing a DNS server for TCP and UDP based requests on the same Load Balancer IP address. See [RFC7766](https://tools.ietf.org/html/rfc7766).  In order to achieve this I want to define different `ports` with mixed protocols in my Service definition of `type: LoadBalancer`
+
+#### Story 2
+
+As as Kubernetes cluster user I want to have the capability of exposing my SIP Server for TCP and UDP based requests on the same Load Balacer IP address and port. This requirement comes from [RFC3261 Section 18.2.1](https://tools.ietf.org/html/rfc3261#section-18.2.1)
 
 ### Implementation Details/Notes/Constraints
 
@@ -173,6 +179,12 @@ https://docs.microsoft.com/en-us/azure/load-balancer/load-balancer-overview#pric
 A user can ask for an internal Azure Load Balancer via a K8s Service definition that also has the annotation `service.beta.kubernetes.io/azure-load-balancer-internal: true`. There is not any limitation on the usage of mixed service protocols with internal LBs in the Azure CPI.
 
 Summary: Azure already has mixed protocol support for TCP and UDP, and it already affects the bills of the users. The implementation of this feature may require some work in Azure CPI.
+
+#### DigitalOcean
+
+The DigitalOcean CPI does not support mixed protocols in the Service definition, it accepts TCP only for load balancer Services. It is possible to ask for HTTP(S) and HTTP2 ports with Service annotations.
+
+Summary: The DO CPI is the current bottleneck with its TCP-only limitation. As long as it is there the implementation of this feature will have no effect on the DO bills.
 
 #### GCE
 
@@ -269,7 +281,7 @@ We relax here a validation rule, which is considered as an API-breaking act by t
   - turns off the feature flag; or
   - executes K8s version rollback to the N-1 version where this feature is not available at all
 
-When investigating the possible issues with such a change we must consider [the supported version skew among components](https://deploy-preview-11060--kubernetes-io-master-staging.netlify.com/docs/setup/version-skew-policy/), which are the K8s API server and the cloud controller managers (CPI implementations) in our case.
+When investigating the possible issues with such a change we must consider [the supported version skew among components](https://kubernetes.io/docs/setup/release/version-skew-policy/), which are the K8s API server and the cloud controller managers (CPI implementations) in our case.
 
 First of all, feature gate based (a.k.a conditional) field validation must be implemented as defined in the [API change guidelines](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api_changes.md#alpha-field-in-existing-api-version) One can see a good example for a case when an existing field got a new optional value [here](https://github.com/kubernetes/kubernetes/issues/72651). This practice ensures that upgrade and rollback between _future releases_ is safe. Also it enables the further management of existing API objects that were created before turning off the feature flag. Though it does not save us when a K8s API server version rollback is executed to a release in which this feature is not implemented at all.
 
@@ -279,6 +291,7 @@ Our feature does not introduce new values or new fields. It enables the usage of
 - AWS: no risk. The current CPI accepts Services with TCP protocol only, i.e. after a K8s upgrade a user still cannot use this feature. Consequently, a rollback in the K8s version does not introduce any issues.
 - Azure: no risk. The current CPI and LB already supports the mixed protocols in the same Service definition. The situation is the same as with the Alibaba CPI.
 - GCE: currently the GCE CPI assumes that a Service definition contains a single protocol value, as it assumes that the Service Controller already rejected Services with mixed protocols. While the Service Controller really did so a while ago, it does not do this anymore. It means a risk.
+- DigitalOcean: no risk. The current CPI accepts Services with TCP protocol only, i.e. after a K8s upgrade a user still cannot use this feature. Consequently, a rollback in the K8s version does not introduce any issues.
 - IBM Cloud VPC: no risk. The same situation like in the case of AWS.
 - IBM Cloud Classic: no risk. The CPI and NLB already supports TCP and UDP in the same Service definition. The same situation like in the case of Alibaba.
 - OpenStack: no risk. The CPI and NLB already supports TCP and UDP in the same Service definition. The same situation like in the case of Alibaba.
