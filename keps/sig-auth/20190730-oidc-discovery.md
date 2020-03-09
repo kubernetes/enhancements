@@ -245,10 +245,24 @@ field, as it is not necessary for token verification flows.
 The API server would treat these as `nonResourceURLs`, and restrict access
 appropriately. We will provide a default RBAC `ClusterRole` called
 `service-account-issuer-discovery` that provides `GET` access to these
-`nonResourceURLs`, but will *not* provide a default `ClusterRoleBinding`. This
-leaves the decision of who is allowed to access these endpoints up to cluster
-admins. A default binding requires further discussion, including ongoing efforts
-to harden the unauthenticated API surface area.
+`nonResourceURLs`. To make it easy for in-cluster workloads (via their
+service accounts) to consume this info, we will also provide a default
+`ClusterRoleBinding` that binds this role to all service accounts (via
+the `system:serviceaccounts` group).
+
+Users with certain forms of write access (create pods, create secrets,
+create service accounts, etc) can gain access to a service account identity
+which would allow them to access this information. This includes the issuer
+URL, which is already present in the SA token JWT.  Similarly, SAs can already
+gain this same info via introspection of their own token.  Since this discovery
+endpoint points to what issued all service account tokens, it seems fitting for
+SAs to have this access.
+
+Even though this information is not sensitive, we will *not* provide a
+default binding to all *authenticated* and/or *unauthenticated* users.
+Such a binding requires further discussion, including ongoing efforts to
+harden the unauthenticated API surface area. This leaves the decision of
+completely exposing these endpoints up to cluster admins.
 
 ### Risks and Mitigations
 
