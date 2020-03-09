@@ -12,8 +12,8 @@ approvers:
   - "@saad-ali"
 editor: TBD
 creation-date: 2019-01-30
-last-updated: 2019-10-15
-status: implementable
+last-updated: 2020-03-09
+status: implemented
 see-also:
   - "https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/raw-block-pv.md"
   - "https://github.com/kubernetes/enhancements/pull/1288"
@@ -41,7 +41,7 @@ see-also:
   - [K8s 1.13: Alpha](#k8s-113-alpha)
   - [K8s 1.14: Beta](#k8s-114-beta)
   - [K8s 1.17: Beta](#k8s-117-beta)
-  - [K8s 1.18: Targeting GA](#k8s-118-targeting-ga)
+  - [K8s 1.18: GA](#k8s-118-ga)
 <!-- /toc -->
 
 ## Summary
@@ -164,6 +164,6 @@ and we can test with them
 * Fixed volume reconstruction after kubelet restart.
 * Stress tests as noted above.
 
-### K8s 1.18: Targeting GA
+### K8s 1.18: GA
 * Added block tests to csi-sanity.
 * Disruptive testing with block devices in /dev reordered after reboot.

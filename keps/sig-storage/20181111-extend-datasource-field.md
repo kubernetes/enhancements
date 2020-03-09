@@ -12,8 +12,8 @@ approvers:
   - "@thockin"
 editor: "@j-griffith"
 creation-date: 2018-11-11
-last-updated: 2020-01-27
-status: implementable
+last-updated: 2020-03-09
+status: implemented
 see-also:
 replaces:
 superseded-by:
@@ -156,6 +156,7 @@ Given that the only implementation changes in Kuberenetes is to enable the featu
 
 1.15 - Alpha status
 1.16 - Beta status
+1.18 - GA
 
 ## Drawbacks [optional]
 
