@@ -54,7 +54,7 @@ Kubernetes has become a popular solution for orchestrating containerized workloa
 2. Lightweight implementation of coscheduling without the CRD of `PodGroup`
  
 ## Non-Goals
-Discuss the API definition of `PodGroup`.
+Use CRD `PodGroup` - this design proposes a lightweight approach that doesn't need to impose CRD management.
  
 ## Use Cases
 When running a Tensorflow/MPI job, all tasks must start before they can do any work. This becomes a bigger problem when several jobs are competing to get all their tasks started. In worst case, all jobs are pending because of a deadlock: every job only start part of tasks, and waits for the other tasks to start. In worst case, all jobs are pending leading to a deadlock.
