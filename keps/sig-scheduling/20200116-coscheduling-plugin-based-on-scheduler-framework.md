@@ -118,7 +118,7 @@ In order to make the pods which belongs to the same `PodGroup` to be scheduled t
 **limition**: `QueueSort` is the core part of our design and only one `QueueSort` plugin is allowed in the scheduling framework. So our design only supports the case that `QueueSort` extension point isn't implemented in other plugins.
 
 ```go
-  func  Less(podA *PodInfo, podB *PodInfo) bool
+func  Less(podA *PodInfo, podB *PodInfo) bool
 ```
 1. Trying to order by pod priority (i.e. .spec.priorityValue), pod with higher priority is scheduled ahead of other pod with lower priority. When priorities are the same, they are operated according to the following process. 
    
