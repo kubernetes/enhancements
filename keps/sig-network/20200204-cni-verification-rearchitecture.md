@@ -22,41 +22,42 @@ Note that this approach of higher level DSLs for testing may be moved into sig-t
 
 # Architecting NetworkPolicy tests with a DSL for better upstream test coverage of all CNIs
 
-<!-- toc --> 
+## Table of Contents
 
+<!-- toc -->
 - [Summary](#summary)
 - [Motivation](#motivation)
-  * [Goals](#goals)
-  * [Non-goals](#non-goals)
-  * [Related issues](#related-issues)
-  * [Consequences of this problem](#consequences-of-this-problem)
+  - [Goals](#goals)
+  - [Non-goals](#non-goals)
+  - [Related issues](#related-issues)
+  - [Consequences of this problem](#consequences-of-this-problem)
 - [Pod Traffic Pathways](#pod-traffic-pathways)
 - [Security Boundaries](#security-boundaries)
-- [Detailed examples of the Problem statement](#detailed-examples-of-the-problem-statement)
-  * [Incompleteness](#incompleteness)
-    + [Other concrete examples of incompleteness](#other-concrete-examples-of-incompleteness)
-    + [List of missing/incomplete functional test cases](#list-of-missing-incomplete-functional-test-cases)
-  * [Understandability](#understandability)
-  * [Extensibility](#extensibility)
-  * [Performance](#performance)
-    + [Relationship to Understandability: Logging verbosity is worse for slow tests](#relationship-to-understandability--logging-verbosity-is-worse-for-slow-tests)
-  * [Documentation](#documentation)
+- [Detailed examples of the problem statement](#detailed-examples-of-the-problem-statement)
+  - [Incompleteness](#incompleteness)
+    - [Other concrete examples of incompleteness](#other-concrete-examples-of-incompleteness)
+    - [List of missing functional test cases](#list-of-missing-functional-test-cases)
+  - [Understandability](#understandability)
+  - [Extensibility](#extensibility)
+  - [Performance](#performance)
+    - [Logging verbosity is worse for slow tests](#logging-verbosity-is-worse-for-slow-tests)
+  - [Documentation](#documentation)
 - [Solution to the Problem](#solution-to-the-problem)
 - [Implementation History](#implementation-history)
-  * [Part 1](#part-1)
-  * [Part 2](#part-2)
-  * [Note on Acceptance and Backwards compatibility](#note-on-acceptance-and-backwards-compatibility)
+  - [Part 1](#part-1)
+  - [Part 2](#part-2)
+  - [Note on Acceptance and Backwards compatibility](#note-on-acceptance-and-backwards-compatibility)
 - [Next steps](#next-steps)
 - [Other Improvement Ideas](#other-improvement-ideas)
-  * [Finding comprehensive test cases for policy validation](#finding-comprehensive-test-cases-for-policy-validation)
-  * [Ensuring that large policy stacks evaluate correctly](ensuring-that-large-policy-stacks-evaluate-correctly)
-  * [Ensure NetworkPolicy evaluates correctly regardless of the order of events](ensure-networkpolicy-evaluates-correctly-regardless-of-the-order-of-events)
-  * [Generating the reachability matrix on the fly](generating-the-reachability-matrix-on-the-fly)
-  * [Consuming network policies as yaml files](consuming-network-policies-as-yaml-files)
+  - [Finding comprehensive test cases for policy validation](#finding-comprehensive-test-cases-for-policy-validation)
+  - [Ensuring that large policy stacks evaluate correctly](#ensuring-that-large-policy-stacks-evaluate-correctly)
+  - [Ensure NetworkPolicy evaluates correctly regardless of the order of events](#ensure-networkpolicy-evaluates-correctly-regardless-of-the-order-of-events)
+  - [Generating the reachability matrix on the fly](#generating-the-reachability-matrix-on-the-fly)
+  - [Consuming network policies as yaml files](#consuming-network-policies-as-yaml-files)
 - [Alternative solutions to this proposal](#alternative-solutions-to-this-proposal)
-    + [Keeping the tests as they are and fixing them one by one](#keeping-the-tests-as-they-are-and-fixing-them-one-by-one)
-    + [Building a framework for NetworkPolicy evaluation](#building-a-framework-for-networkpolicy-evaluation)
-    + [Have the CNI organization create such tests](#have-the-cni-organization-create-such-tests)
+    - [Keeping the tests as they are and fixing them one by one](#keeping-the-tests-as-they-are-and-fixing-them-one-by-one)
+    - [Building a framework for NetworkPolicy evaluation](#building-a-framework-for-networkpolicy-evaluation)
+    - [Have the CNI organization create such tests](#have-the-cni-organization-create-such-tests)
 <!-- /toc -->
 
 ## Summary
@@ -231,7 +232,7 @@ namespaces created in the entire network policy test suite.
 
 The above diagrams show that completeness is virtually impossible, the way the tests are written, because of the fact that each test is manually verifying bespoke cases.  More concretely, however, a look at `should enforce policy to allow traffic only from a different namespace, based on NamespaceSelector [Feature:NetworkPolicy]` reveals that some tests don't do positive controls (validation of preexisting connectivity), whereas others *do* do such controls.
 
-#### List of missing/incomplete functional test cases
+#### List of missing functional test cases
 
 TODO: use multiple pods in contiguous CIDR to validate CIDR traffic matching
 
@@ -403,7 +404,7 @@ In some clusters, for example, namespace deletion is known to be slow - and in t
 
 Using `Pod Exec` functionality, we've determined that 81 verifications can happen rapidly, within 30 seconds, when tests run inside of Kubernetes pods, compared with about the same time for a single test with up to 5 verifications, using Pod status indicators. In addition to this, after running the 81 verifications concurrently in go routines, the total execution time reduced drastically.
 
-#### Relationship to Understandability: Logging verbosity is worse for slow tests
+#### Logging verbosity is worse for slow tests
  
 Slow running tests are also hard to understand, because logging and metadata is expanded over a larger period of time, increasing the amount
 of information needed to be attended to diagnose an issue. For example, to test this, we have intentionally misconfigured my CIDR information for a calico CNI,
