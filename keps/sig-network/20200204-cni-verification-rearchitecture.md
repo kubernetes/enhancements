@@ -447,26 +447,18 @@ In short, our solution to this problem follows
 ## Implementation History
  
 An architectural change to the current testing policies has been implemented and is described below.
+This implementation runs continously as part of the Antrea CNI project.
 
-###  Part 1
- 
- 
+###  Part 1: Defining a static matrix of ns/pod combinations.
+  
 1. Define a common set of namespaces, and pods, to be used to make a truth table that applies to all tests.  This is demonstrated in diagram 1b and 2.
- 
-- Namespaces
-  - namespace the default framework namespace.
-    - server resides here
-    - client pods  "a" and "b" also reside here.
-  - namespace A
-    - client pods "a" and "b" reside here.
-  - namespace B
-    - client pods "a" and "b" reside here.
-- Pods
-  - pod a
-  - pod b
- 
-These resources are created for every test.
 
+- Namespaces: x,y,z
+- Pods: a,b,c
+- Services: All pods are *both* servers
+- Clients: All pods *can* behave as clients 
+ 
+These resources are *shared* across every test.
  
 2. Define a structure for expressing the truth table of results. Since classically a truth table can be expressed as a 2D matrix, where
 rows and columns are the lexically sorted list of all pod namespace pairs defined above, formatted as `namespace-pod`.  For example, a truth table defining a NetworkPolicy where only pods in the same namespace of the server can communicate to it, would look like this.  Capital letters are *namespaces*, and lower case letters are *pods* in those namespaces.  The tuple value represents connectivity to ports *80* and *81*, respectively.
@@ -506,9 +498,7 @@ namespace has connectivity, even when the truth table explicitly forbids it", wh
 related to flagrantly allowing internamespace traffic.  Since it is obvious how such a matrix might be defined in Go, we don't provide a
 code snippet or API example.
  
-### Part 2
-  
-Rewrite each individual test, reviewing semantics, to be precisely worded (and possibly verbose), and to simply define a specific policy and
+3. (about 80% done modulo ginkgo implementation details) Rewrite each individual test, reviewing semantics, to be precisely worded (and possibly verbose), and to simply define a specific policy and
 set of 'whitelisted' communication associated with this policy. The whitelisting would be defined as a map of namespace->pods, since all other
 information in the truth table is false.
  
