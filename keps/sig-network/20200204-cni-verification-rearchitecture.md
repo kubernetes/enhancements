@@ -27,36 +27,36 @@ Note that this approach of higher level DSLs for testing may be moved into sig-t
 <!-- toc -->
 - [Summary](#summary)
 - [Motivation](#motivation)
-  * [Goals](#goals)
-  * [Non-goals](#non-goals)
-  * [Related issues](#related-issues)
-  * [Consequences of this problem](#consequences-of-this-problem)
+  - [Goals](#goals)
+  - [Non-goals](#non-goals)
+  - [Related issues](#related-issues)
+  - [Consequences of this problem](#consequences-of-this-problem)
 - [Pod Traffic Pathways](#pod-traffic-pathways)
 - [Security Boundaries](#security-boundaries)
 - [Detailed examples of the problem statement](#detailed-examples-of-the-problem-statement)
-  * [Incompleteness](#incompleteness)
-    + [Other concrete examples of incompleteness](#other-concrete-examples-of-incompleteness)
-    + [List of missing functional test cases](#list-of-missing-functional-test-cases)
-  * [Understandability](#understandability)
-  * [Extensibility](#extensibility)
-  * [Performance](#performance)
-    + [Logging verbosity is worse for slow tests](#logging-verbosity-is-worse-for-slow-tests)
-  * [Documentation](#documentation)
+  - [Incompleteness](#incompleteness)
+    - [Other concrete examples of incompleteness](#other-concrete-examples-of-incompleteness)
+    - [List of missing functional test cases](#list-of-missing-functional-test-cases)
+  - [Understandability](#understandability)
+  - [Extensibility](#extensibility)
+  - [Performance](#performance)
+    - [Logging verbosity is worse for slow tests](#logging-verbosity-is-worse-for-slow-tests)
+  - [Documentation](#documentation)
 - [Solution to the Problem](#solution-to-the-problem)
 - [Implementation History](#implementation-history)
-  * [Part 1: Defining a static matrix of ns/pod combinations.](#part-1--defining-a-static-matrix-of-ns-pod-combinations)
-  * [Note on Acceptance and Backwards compatibility](#note-on-acceptance-and-backwards-compatibility)
+  - [Part 1: Defining a static matrix of ns/pod combinations](#part-1-defining-a-static-matrix-of-nspod-combinations)
+  - [Note on Acceptance and Backwards compatibility](#note-on-acceptance-and-backwards-compatibility)
 - [Next steps](#next-steps)
 - [Other Improvement Ideas](#other-improvement-ideas)
-  * [Finding comprehensive test cases for policy validation](#finding-comprehensive-test-cases-for-policy-validation)
-  * [Ensuring that large policy stacks evaluate correctly](#ensuring-that-large-policy-stacks-evaluate-correctly)
-  * [Ensure NetworkPolicy evaluates correctly regardless of the order of events](#ensure-networkpolicy-evaluates-correctly-regardless-of-the-order-of-events)
-  * [Generating the reachability matrix on the fly](#generating-the-reachability-matrix-on-the-fly)
-  * [Consuming network policies as yaml files](#consuming-network-policies-as-yaml-files)
+  - [Finding comprehensive test cases for policy validation](#finding-comprehensive-test-cases-for-policy-validation)
+  - [Ensuring that large policy stacks evaluate correctly](#ensuring-that-large-policy-stacks-evaluate-correctly)
+  - [Ensure NetworkPolicy evaluates correctly regardless of the order of events](#ensure-networkpolicy-evaluates-correctly-regardless-of-the-order-of-events)
+  - [Generating the reachability matrix on the fly](#generating-the-reachability-matrix-on-the-fly)
+  - [Consuming network policies as yaml files](#consuming-network-policies-as-yaml-files)
 - [Alternative solutions to this proposal](#alternative-solutions-to-this-proposal)
-    + [Keeping the tests as they are and fixing them one by one](#keeping-the-tests-as-they-are-and-fixing-them-one-by-one)
-    + [Building a framework for NetworkPolicy evaluation](#building-a-framework-for-networkpolicy-evaluation)
-    + [Have the CNI organization create such tests](#have-the-cni-organization-create-such-tests)
+    - [Keeping the tests as they are and fixing them one by one](#keeping-the-tests-as-they-are-and-fixing-them-one-by-one)
+    - [Building a framework for NetworkPolicy evaluation](#building-a-framework-for-networkpolicy-evaluation)
+    - [Have the CNI organization create such tests](#have-the-cni-organization-create-such-tests)
 <!-- /toc -->
 
 ## Summary
@@ -446,9 +446,9 @@ In short, our solution to this problem follows
 ## Implementation History
  
 An architectural change to the current testing policies has been implemented and is described below.
-This implementation runs continously as part of the Antrea CNI project.
+This implementation runs continuously as part of the Antrea CNI project.
 
-###  Part 1: Defining a static matrix of ns/pod combinations.
+###  Part 1: Defining a static matrix of ns/pod combinations
   
 1. Define a common set of namespaces, and pods, to be used to make a truth table that applies to all tests.  This is demonstrated in diagram 1b and 2.
 
