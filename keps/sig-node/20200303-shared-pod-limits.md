@@ -90,7 +90,9 @@ This proposal aims to:
 
 *  Allow a `Burstable` pod to define that memory and CPU resource limits should be set on the level of the Pod.
 *  Prevent the developer from having to micro-manage the memory and CPU resource assignments for different containers in the same pod.
-*  Keep the current `Burstable` behavior as the default. 
+*  Keep the current `Burstable` behavior as the default.  
+
+For workloads in the `Burstable` QoS level, the resource usage profile can be relativly dynamic. Memory and CPU can be required suddenly for a short period of time, and afterwards relinquished. By utilizing the Linux cgroup controllers this usage profile can be managed directly by the Linux kernel.
 
 ### Non-Goals
 
@@ -252,6 +254,19 @@ In this pod, the cgroups would be set up in the following way:
 
 Both the proxy and the nginx container are constrained, and the entire pod is still limited to the sum of the specified limits of all the containers in the pod.
 
+### Memory Reuse Across `cgroup`s
+
+The Linux kernel allows sibling cgroups to use memory which was released by a different sibling cgroup. The main difficulty here is understanding the term **released**. It is not enough for a programmer to free the memory, the funtime being used to develop the program must also release the memory back to the kernel. Since allocating memory to a process requires a context switch between userspace and kernelspace, most runtimes cache memory which was allocated to the process, and attempt to reuse memory that the program released so as to minimize the number of memory allocations required.
+
+Different runtimes have different heuristics around the best time to release memory. Here are a few popular runtimes:
+
+* GLibc releases memory opportunisticly and only for large amounts. See the free algorithm used by GLibc: https://sourceware.org/glibc/wiki/MallocInternals#line-286 
+* The MUSL libc (used by Alpine) will use the `madvise` system call to [mark freed memory](https://git.musl-libc.org/cgit/musl/tree/src/malloc/malloc.c#n499) ranges with `MADV_DONTNEED`. This allows memory to be reclaimed from the process when memory pressure exists. In this case, memory can be utilized by sibling cgroups.
+* Golang uses the `madvise` system call to mark [unused](https://github.com/golang/go/blob/master/src/runtime/malloc.go#L405) memory as such during garbage collector runs. Memory that is marked as unused can move between sibling cgroups, based on memory pressure.
+* The OpenJDK Java virtual machine uses the standard free function. It is based on the standard C/C++ library, and calls the standard `free()` function, and as such will work as appropriate for the distribution it is installed on (glibc or musl).
+* NodeJS will call `madvise` if the memory reduction feature is used. Follow the code starting at https://github.com/nodejs/node/blob/master/deps/v8/src/heap/sweeper.cc#L322 
+
+
 ### User Stories 
 
 #### Story 1
@@ -303,7 +318,31 @@ This implementation proposal doesn't try to enable a developer to specify a Reso
 
 The proposal is an **opt-in** feature, and will have no effect on existing deployments. Only deployments that explicitly require this functionality should turn it on by specifying the `sharedBurstableLimit` attribute on the Pod specification.
 
+### Interactions With Other Features
+
+#### Support for cgroup v2
+
 This proposal is compatible with both cgroup v1 and cgroup v2. Both versions of cgroup allow specifying limits on all levels of the cgroup hierarchy.
+
+#### ResourceOverhead
+
+As described in the [20190226-pod-overhead](https://github.com/kubernetes/enhancements/blob/6acd3e16806e98fa8545ecf57b02e90384c4bf55/keps/sig-node/20190226-pod-overhead.md) KEP, the pod overhead must be kept separate from the pod resource requirements. However, instead of enforcing the pod overhead on the pod-level cgroup, the pod overhead resources should be assigned to the `pause` container instead, and provided as a `Request` and not as a `Limit`. Since the pause container binary doesn't actually use any resources, doing this would guarentee that the resources required for the pod as overhead are not actually utilized by any other container and are indeed accounted for by Kubelet as reserved for the `RuntimeClass` defined overhead.
+
+#### Memory-based Emptydir volumes
+
+In progress
+
+#### HugeTLB, PID, and other cgroups
+
+In progress
+
+#### Init Containers
+
+In progress
+
+#### NUMA architectures
+
+In progress
 
 ### Risks and Mitigations
 
