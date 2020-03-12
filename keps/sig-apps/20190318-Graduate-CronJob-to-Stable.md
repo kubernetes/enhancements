@@ -51,6 +51,7 @@ superseded-by:
   - [Add Counters](#add-counters)
   - [Add .status.conditions](#add-statusconditions)
   - [Support Jitter for cronjobs](#support-jitter-for-cronjobs)
+  - [Support Timezone for cronjobs](#support-timezone-for-cronjobs)
   - [Fix applicable open issues](#fix-applicable-open-issues)
   - [Scale Targets for GA](#scale-targets-for-ga)
     - [CronJob Limits](#cronjob-limits)
@@ -245,6 +246,17 @@ jitter = delta*cronjob.Spec.Jitter/100
 nextScheduleTime += jitter
 ```
 
+### Support Timezone for cronjobs
+We propose to introduce `.spec.timezone` which indicates the timezone to be considered when scheduling this cronjob.
+
+Clusters across different environments have different timezones. There is no known recommendation or conformance test to define timezone for the master. Different distributions may have different behavior. For cronjob, the timezone is inferred from the master. Someone with just API access has no idea what that controller manager timezone is. Sometimes cluster operators too, who run the controller manager in a container with a UTC timezone on a host with a non-UTC timezone.
+
+These conditions imply that people with just API access who want to predict when their job will run have no guarantee. By providing a timezone field we provide an absolute value instead of relying on the relative timezone of where the master is running. This ensures more portabulity of the CronJob configs across clusters as well.
+
+This is an optional field and when not present reverts to existing behavior of using the master's timezone.
+
+
+
 ### Fix applicable open issues
 These are the [current](https://github.com/kubernetes/kubernetes/issues/82659) list of issues that are being targeted for GA. 
 
@@ -255,6 +267,7 @@ These are the [current](https://github.com/kubernetes/kubernetes/issues/82659) l
 - [Cronjob `spec.schedule` cannot be change when `spec.schedule` value not `"` or `’`](https://github.com/kubernetes/kubernetes/issues/78646)
 - [Kubelet CPU/Memory Usage linearly increases using CronJob](https://github.com/kubernetes/kubernetes/issues/64137)
 - [Stopping cluster overnight prevents scheduled jobs from running after cluster startup](https://github.com/kubernetes/kubernetes/issues/42649)
+- [Fix CronJob missed start time handling](https://github.com/kubernetes/kubernetes/pull/81557)
 
 ### Scale Targets for GA
 
@@ -274,6 +287,7 @@ The number of CronJobs is also sensitive to the API server QPS and the schedule 
 These are the new fields added as part of promotion to stable:
 - `.spec`
   - `.jitter`
+  - `.timezone`
 - `.status`
   - `.lastSuccessfulTime`
   - `.nextScheduleTime`
@@ -360,6 +374,13 @@ type CronJobSpec struct {
 	// It shall be capped at 50(%)
 	// +optional
 	Jitter int32
+
+        // Timezone is used to indicate which timezone to use when scheduling this cronjob
+	// It is a string and can contain a valid entry from https://www.iana.org/time-zones
+	// Example values are: "UTC", "America/New_York", "Europe/London"
+	// Default is "" and indicates using the master's timezone (which depends on cluster installation)
+	// +optional
+	Timezone string
 }
 
 // ConcurrencyPolicy describes how the job will be handled.
