@@ -113,7 +113,7 @@ type PodGroupInfo struct {
 ### Extension points
 
 #### QueueSort
-In order to make the pods which belongs to the same `PodGroup` to be scheduled together as much as possible, implement a strategy in `QueueSort` phase. 
+In order to ensure the pods which belong to the same `PodGroup` to be scheduled consecutively, we need to implement a customized `QueueSort` plugin to sort the Pods properly.
 
 **limition**: `QueueSort` is the core part of our design and only one `QueueSort` plugin is allowed in the scheduling framework. So our design only supports the case that `QueueSort` extension point isn't implemented in other plugins.
 
