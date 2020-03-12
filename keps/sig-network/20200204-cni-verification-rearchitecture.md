@@ -42,7 +42,7 @@ Note that this approach of higher level DSLs for testing may be moved into sig-t
   - [Performance](#performance)
     - [Logging verbosity is worse for slow tests](#logging-verbosity-is-worse-for-slow-tests)
   - [Documentation](#documentation)
-- [Solution to the Problem](#solution-to-the-problem)
+- [Goals](#Goals)
 - [Implementation History](#implementation-history)
   - [Part 1: Defining a static matrix of ns/pod combinations](#part-1-defining-a-static-matrix-of-nspod-combinations)
   - [Note on Acceptance and Backwards compatibility](#note-on-acceptance-and-backwards-compatibility)
