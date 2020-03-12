@@ -31,7 +31,7 @@ Note that this approach of higher level DSLs for testing may be moved into sig-t
   - [Non-goals](#non-goals)
   - [Related issues](#related-issues)
   - [Consequences of this problem](#consequences-of-this-problem)
-- [Pod Traffic Pathways](#pod-traffic-pathways)
+- [A high level outline of Pod Traffic Pathways](#A-high-level-outline-of-Pod-Traffic-Pathwayss)
 - [Security Boundaries](#security-boundaries)
 - [Detailed examples of the problem statement](#detailed-examples-of-the-problem-statement)
   - [Incompleteness](#incompleteness)
