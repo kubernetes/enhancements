@@ -114,8 +114,9 @@ The consequences of this problem is that
 - Extending NetworkPolicy tests is time consuming and error prone, without a structured review process and acceptance standard.
 - It is hard to debug tests, due to the performance characteristics - pods are deleted after each test, so we cannot reproduce the state of the cluster easily.
 
-## Pod Traffic Pathways
-TODO: Complete
+## A high level outline of Pod Traffic Pathways
+
+Before diving into test details, we outline different types of pod traffic.  Each one of these types of traffic may pose different bugs to a CNI provider.  
 
 Intranode
 - pod -> pod
@@ -132,13 +133,6 @@ Internode
 Traffic Transiting Service DNAT
 - Nodeport -> service (DNAT) -> pod
 - pod -> service (DNAT) -> pod
-
-* don't need to test
-(where to put test probes)
-
-## Security Boundaries
-
-TODO: Complete
 
 Intranamespace
 - pod -> pod
@@ -395,17 +389,19 @@ We can of course make this much easier to reuse and reason about, as well as mak
 
 ### Performance
  
-For every current test, a new pod is spun up, and a polling process occurs where we wait for the pod to complete successfully.  Because all clusters start pods at different rates, heuristics have to be relied on for timing a test out.  A large, slow cluster may not be capable of spinning pods up quickly, and thus may timeout one of the 25 tests, leading to a false negative result.
+CURRENTLY: For each test, a few pods are spun up, and a polling process occurs where we wait for the pod to complete successfully and report it could connect to a target pod.  Because all clusters start pods at different rates, heuristics have to be relied on for timing a test out.  A large, slow cluster may not be capable of spinning pods up quickly, and thus may timeout one of the 25 tests, leading to a false negative result.
  
 In some clusters, for example, namespace deletion is known to be slow - and in these cases the network policy tests may take more than an hour to complete.
  
 - If network policies or pod CIDR's are not correct, it's likely all tests can fail, and thus the network policy suite may take an hour to finish, based on the estimate of 3 minutes, for each failed test, alongside 25 tests (in general, NetworkPolicy tests on a healthy EC2 cluster, with no traffic and broken network policies, take between 150 and 200 seconds complete).
 
-Using `Pod Exec` functionality, we've determined that 81 verifications can happen rapidly, within 30 seconds, when tests run inside of Kubernetes pods, compared with about the same time for a single test with up to 5 verifications, using Pod status indicators. In addition to this, after running the 81 verifications concurrently in go routines, the total execution time reduced drastically.
+PROPOSAL: (Implemented and working, as demo'd recently in sig-network) Using `Pod Exec` functionality, we've determined that 81 verifications can happen rapidly, within 30 seconds, when tests run inside of Kubernetes pods, compared with about the same time for a single test with up to 5 verifications, using Pod status indicators. In addition to this, after running the 81 verifications concurrently in go routines, the total execution time reduced drastically.
+
+
 
 #### Logging verbosity is worse for slow tests
  
-Slow running tests are also hard to understand, because logging and metadata is expanded over a larger period of time, increasing the amount
+CURRENTLY: Slow running tests are also hard to understand, because logging and metadata is expanded over a larger period of time, increasing the amount
 of information needed to be attended to diagnose an issue. For example, to test this, we have intentionally misconfigured my CIDR information for a calico CNI,
 and found that the following verbose logging about is returned when running the `NetworkPolicy` suite:
 ```
@@ -432,21 +428,22 @@ As a few examples of this:
 
 In the solutions section, we will highlight how the proposal makes these tests, and thus the semantics of network policies, explicit and self documenting.
  
-## Solution to the Problem
+## GOALS
  
 In short, our solution to this problem follows
- 
+
 - *Increase performance* of tests by using persistent Deployments.
 - *Increase understandability* by defining network scenario objects which can easily by modified and reused between tests, and outputting the entire contents of the truth table for each test, in some manner.
 - *Increase completeness* by using a logical truth table which tests connectivity/disconnectivity for each scenario above.
 - *Increase extensibility* by leveraging the scenario objects and the completeness checking functionality above.
 - *Increase debuggability* by leveraging the performance changes above.
-- *Audit all existing tests* For logical redundancy and consistency
+- *Audit all existing tests and upstream issues* For logical redundancy and consistency.  If a test is missing, we'll add it.  If redundant, we'll remove it if necessary.  All issues upstream such as - https://github.com/kubernetes/kubernetes/issues/46625 will also be audited and implement as needed as part of this enhancment.
  
 ## Implementation History
  
 An architectural change to the current testing policies has been implemented and is described below.
-This implementation runs continuously as part of the Antrea CNI project.
+
+*This implementation runs continuously as part of the Antrea CNI project.*
 
 ###  Part 1: Defining a static matrix of ns/pod combinations
   
