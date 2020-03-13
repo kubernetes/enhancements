@@ -33,8 +33,12 @@ superseded-by:
   - [Log message structure](#log-message-structure)
     - [New klog methods](#new-klog-methods)
   - [References to Kubernetes objects](#references-to-kubernetes-objects)
+    - [Object reference format in Logs](#object-reference-format-in-logs)
+    - [Helper functions for log format](#helper-functions-for-log-format)
   - [Selecting most important logs](#selecting-most-important-logs)
-    - [JSON output format](#json-output-format)
+  - [JSON output format](#json-output-format)
+    - [Reserved JSON keys](#reserved-json-keys)
+    - [Serialization strategy](#serialization-strategy)
   - [Logging configuration](#logging-configuration)
   - [Migration / Graduation Criteria](#migration--graduation-criteria)
     - [Alpha](#alpha)
@@ -93,7 +97,7 @@ Taking into account the size of Kubernetes repository we will not tackle the pro
 
 ### Log message structure
 
-We would like for the Kubernetes community to settle on one preferred log message structure. Proposed structure should:
+We would like for the Kubernetes community to settle on one preferred log message structure, that will be enforced by new klog methods. Proposed structure should:
 * Separate log message from its arguments
 * Treat log arguments as key-value pairs
 * Be easily parsable and queryable
@@ -151,22 +155,71 @@ E1025 00:15:15.525108       1 controller_utils.go:114] "Failed to update pod sta
 
 ### References to Kubernetes objects
 
-To address problem of inconsistency in referencing of Kubernetes objects, new klog methods will include additional logic for handling their formatting. Kubernetes objects will be recognized by checking for `ObjectMeta` structure.
+Kubernetes API first approach has given great importance to Kubernetes objects.
+In this proposal we would like to make sure that transfer their importance to logs, making sure that references to objects are easy to query and correlate.
 
-Namespaced objects will be represented by joining their name and namespace with `/` character. Pattern: `<namespace>/<name>`, example for pod: `kube-system/kubedns`
+When browsing through kubernetes logs you can find a variety of ways how objects are represented, sometimes by only name, sometimes as pair name and namespace and sometimes as uid. We would like for community to settle on one canonical representation of object.
 
-Non-namespaced objects will be represented by their name. Pattern: `<name>`, example for node: `cluster1-vm-72x33b8p-34jz`
+Object reference could be stored under different keys e.g. `pod=kubedns`. For now we don't want to tackle they keys and preserve freedom for caller to choose what's best.
+Enforcing a consistent key space would require defining a schema that would need to handle variety of situations and contexts e.g. `podOld` and `podNew`.
+We expect this to be tackled in future.
+
+To improve how kubernetes objects are referenced we would like to propose:
+* One preferred format for representing references in logs
+* Helper functions for building this format
+
+#### Object reference format in Logs
+
+As first step we propose to go with simple and used format. This will make migration easy and natural.
+Unifying format will need long time to produce measurable benefits, so we want start the migration early.
+
+Proposed references that will be used in text format:
+* Namespaced objects will be represented by joining their name and namespace with `/` character. Pattern: `<namespace>/<name>`, example for pod: `kube-system/kubedns`
+* Non-namespaced objects will be represented by their name. Pattern: `<name>`, example for node: `cluster1-vm-72x33b8p-34jz`
+
+Object UID in logs is much less popular, but still useful in some situation. In situation caller should consider adding a separate field with object UID.
+
+To initiate migration into this format we would like to update logging user guide and introduce helper functions.
+
+#### Helper functions for log format
+
+Logging is needed in variety of situations in object lifecycle: before it was created, during update, after deletion.
+Depending on lifecycle and code location access to whole objects is not always possible/easy.
+Migration to preferred object reference format should not require major code rewrites, that's why we would like to propose two functions that are selected based on if Kubernetes object is easily accessible.
+We expect that in future when passing object meta becomes the standard logging api could be more integrated.
+
+```go
+func KObj(obj ObjectMeta) ObjectRef
+func KRef(namespace, name string) ObjectRef
+
+type ObjectRef struct {
+  Name      string `json:"name"`
+  Namespace string `json:"namespace,omitempty"`
+}
+```
 
 Example:
 ```go
 pod := corev1.Pod{Name: "kubedns", Namespace: "kube-system", ...}
-klog.InfoS("Pod status updated", "pod", pod, "status", "ready")
+klog.InfoS("Pod status updated", "pod", klog.KObj(pod), "status", "ready")
 ```
-That would result in log
+
+And
+
+```go
+klog.InfoS("Pod status updated", "pod", klog.KRef("kube-system", "kubedns"), "status", "ready")
+```
+
+Will result in log
 ```
 I1025 00:15:15.525108       1 controller_utils.go:116] "Pod status updated" pod="kube-system/kubedns" status="ready"
 ```
-Selecting key under which put objects will be left to caller as defining log schema will need more discussion and is outside of scope of this KEP.
+
+For not namespaced objects we propose to use:
+
+```go
+klog.InfoS("Node unavailable", "node", klog.KRef("", "nodepool-1"))
+```
 
 ### Selecting most important logs
 
@@ -184,7 +237,7 @@ As migration to new message structure will be done manually we will be focusing 
 
 We assume that exact details of taking measurements can be improved, but overall methodology is solid. With those criteria we concluded that covering 99.9% of logs on master node are generated by 22 log messages. Exact list of those logs is provided in the detail design section.
 
-#### JSON output format
+### JSON output format
 
 Introduction of new methods to klog library will make identification of different components of the log message much easier.
 With klog v2 we can take further advantage of this fact and add an option to produce structured logs in JSON format.
@@ -195,24 +248,42 @@ Some pros of using JSON:
 * Easily parsable and transformable
 * Existing tools for ad-hoc analysis (jq)
 
-Proposed default fields:
-* `ts` - timestamp as Unix time (required, `float64`)
-* `v` - verbosity (required, `int`, default 4)
+We would like to discuss some details of format definition that will guide implementation. Definition will define:
+* Reserved JSON keys that will have special meaning
+* Serialization strategy for different types
+
+#### Reserved JSON keys
+
+We would like to reserve some JSON keys to preserve same meaning for all logs within kubernetes.
+Those keys will have special meaning and should not be used as arguments.
+We would like to keep this set of keys as minimal to reduce possible changes, before we introduce a way to version the log schema.
+
+For simplicity we will use flat key structure without namespacing.
+We will update Kubernetes logging guide to discourage usage of those keys as log arguments.
+We will decide if additional static analysis or runtime validation is needed if such problems arise.
+
+Special JSON keys:
+* `ts` - timestamp as Unix time (required, `float`)
+* `v` - verbosity (required, `int`, default 0)
 * `err` - error string (optional, `string`)
 * `msg` - message (required, `string`)
 
-Default Serialization:
-* primitive types (`int`, `float`) - Compatible with [golang json package](https://golang.org/pkg/encoding/json/#Marshal)
-* namespaced Kubernetes objects (`Pod`, `Deployment`) - JSON object consisting of `name` and `namespace`. Example `{"name": "kubedns", "namespace": "kube-system"}`
-* not namespaced Kubernetes objects (`Node`) - JSON object consisting of `name`. Example `{"name": "cluster1-vm-72x33b8p-34jz"}`
-* arbitrary structure (`http.Request`) - JSON objects consisting of public non-pointer fields.
+#### Serialization strategy
 
-Proposed serialization of Kubernetes objects will not include additional fields beside those proposed available in `text` format.
-Discussion for additional fields needed in representation of Kubernetes objects is out of scope of this KEP.
+We would like to describe the serialization as it will directly impact results of most logs as it will work as default. What do we want from serialization, it should:
+* Have predictable results and performance
+* Not diverge too much from `text` format (e.g. change formatting, add more information)
 
-Serialization of arbitrary structures will ignore pointers to avoid hard to predict performance hits caused by deep nested structures or cycles.
+Proposed Serialization of types (we will expand list of special cases if needed):
+* Go primitive types (e.g. `int`, `float`, `time.Duration`) - compatible with string format `%v`
+* `time.Time` - special case to Unix time format, as `%v` would result in format meant for [debugging](https://golang.org/pkg/time/#Time.String)
+* arbitrary structure (`http.Request`) - shallow serialization into JSON objects. Object will consist of non-pointer public fields.
 
-Provided serialization should function as good default. Caller can customize how objects is serialized by changing struct beforehand.
+For arbitrary structures we propose to use a shallow strategy as it is:
+* Analogous to `%v` currently used in format strings and in proposed text format (pointers are serialized as numbers)
+* Has much more predictable performance (skips deeply nested structures and pointer cycles)
+
+We will consider adding a way to override serialization strategy to deep, depending of feedback. For now caller can decide on logging particular fields as separate keys.
 
 Example:
 
@@ -250,7 +321,7 @@ And
 
 ```go
 pod := corev1.Pod{Name: "kubedns", Namespace: "kube-system", ...}
-klog.InfoS("Pod status updated", "pod", pod, "status", "ready")
+klog.InfoS("Pod status updated", "pod", klog.KObj(pod), "status", "ready")
 ```
 
 That would result in log (pretty printed)
@@ -293,7 +364,6 @@ That would result in log (pretty printed)
 }
 ```
 
-
 ### Logging configuration
 
 To allow selection of the logging output format we would like to introduce a new logging configuration shared by all kubernetes components.
@@ -315,24 +385,24 @@ Klog interface was selected as it is already supported by klog.v2 with `SetLogge
 
 #### Alpha
 
-Preparation and migration of selected logs to new logging methods:
-* Support for the new InfoS and ErrorS method will be implemented in klog and the new version of klog will be released.
-* Kubernetes will be upgraded to use the new klog version.
-* Helper methods for producing consistent Kubernetes resource identifiers to be used in logs will be implemented.
-* Most important klog calls will be identified and will be manually migrated from using format based to structured methods.
+Introduce structured logging and JSON format:
+* Most important logs are migrated to structured methods.
+* Flag for selecting logging format is implemented
+* JSON format is implemented
 
 #### Beta
 
-Adding support for JSON output format and guarding against regression:
-* klog version used by Kubernetes and all of its dependencies will be upgraded to v2.
-* Implementation of logr which will produce logs in JSON format will be created.
-* Flag which will inject new logr implementation into klog if --logging-format is set to json will be added to k8s.io/component-base JSON format
-* Static analysis protects against adding new string formatting logs
+Adding guarding against regression and update user guideline:
+* Static analysis protects important log lines from reverting to string formating
 * [Kubernetes Logging convention](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-instrumentation/logging.md) document is updated
 
 #### GA
 
-* All feedback for text and json logs output formats is addressed and both output formats become an API.
+Logging formats become an API:
+* Feedback about logging methods and log formats is collected and addressed
+* Format string methods are deprecated
+* Static analysis protects against creating new string format calls
+* Logging output formats fall under [Kubernetes deprecation policy](https://kubernetes.io/docs/reference/using-api/deprecation-policy/)
 
 ### Performance
 
