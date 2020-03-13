@@ -47,7 +47,7 @@ status: provisional
 <!-- /toc -->
 
 ## Motivation
-Kubernetes has become a popular solution for orchestrating containerized workloads. Due to limitation of Kubernetes scheduler, some offline workloads (ML/DL) are managed in a different system. To improve cluster utilization and operation efficiency, we'd like to treat Kubneretes as a unified management platform. But ML jobs are All-or-Nothing: they require all tasks of a job to be scheduled at the same time. If the job only start part of tasks, it will wait for other tasks to be ready to begin to work. In the worst case, all jobs are pending leading to a deadlock. To solve this problem, co-scheduling is needed for the scheduler. The new scheduler framework makes the goal possible. 
+Kubernetes has become a popular solution for orchestrating containerized workloads. Due to limitation of Kubernetes scheduler, some offline workloads (ML/DL) are managed in a different controller. To improve cluster utilization and operation efficiency, we'd like to treat Kubernetes as a unified management platform. But ML jobs are All-or-Nothing: they require all tasks of a job to be scheduled at the same time. If the job only start part of tasks, it will wait for other tasks to be ready to begin to work. In the worst case, all jobs are pending leading to a deadlock. To solve this problem, co-scheduling is needed for the scheduler. The new scheduler framework makes the goal possible. 
  
 ## Goals
 1. Use scheduler plugin, which is the most Kubernetes native way, to implement coscheduling. 
@@ -92,13 +92,11 @@ type Coscheduling struct {
     PodLister               corelisters.PodLister
     // Key is the name of PodGroup.
     PodGroupInfos       	map[string]PodGroupInfo
-    // Name of the last scheduled podgroup
-    LastPodGroup        	string
 }
  
 type PodGroupInfo struct {
-    // LastFailureTimestamp stores the timestamp of last scheduling failure.
-    LastFailureTimestamp 	time.Time
+    // InitialTimestamp stores the timestamp of the initialization time of PodGroup.
+    InitialTimestamp 	time.Time
     UID           			types.UID
     MinAvailable  		int
     Name                                 String
@@ -106,37 +104,39 @@ type PodGroupInfo struct {
 ```
 
 1.  `PodGroupInfo` is initialized the first time the pod belongs to the PodGroup is encountered, and LastFailureTimestamp is updated every time the PodGroup fails to schedule.
-2.  `LastPodGroup` records which `PodGroup` the last scheduled pod belongs to.
+2.  `InitialTimestamp` stores the timestamp of the initialization time of PodGroup.
 3.  `UID` is the unique identification value used to distinguish different podgroups.
  
 
 ### Extension points
 
 #### QueueSort
-In order to ensure the pods which belong to the same `PodGroup` to be scheduled consecutively, we need to implement a customized `QueueSort` plugin to sort the Pods properly.
+In order to maximize the chance that the pods which belong to the same `PodGroup` to be scheduled consecutively, we need to implement a customized `QueueSort` plugin to sort the Pods properly.
 
-**limition**: `QueueSort` is the core part of our design and only one `QueueSort` plugin is allowed in the scheduling framework. So our design only supports the case that `QueueSort` extension point isn't implemented in other plugins.
+**limitation**: `QueueSort` is the core part of our design and only one `QueueSort` plugin is allowed in the scheduling framework. So our design only supports the case that `QueueSort` extension point isn't implemented in other plugins.
 
 ```go
 func  Less(podA *PodInfo, podB *PodInfo) bool
 ```
-1. Trying to order by pod priority (i.e. .spec.priorityValue), pod with higher priority is scheduled ahead of other pod with lower priority. When priorities are the same, they are operated according to the following process. 
-   
-2. When podA and podB are both regularPods (we will check it by their labels), it follows the same logic of default in-tree [PrioritySort](https://github.com/kubernetes/kubernetes/blob/master/pkg/scheduler/framework/plugins/queuesort/priority_sort.go#L41-L45) plugin.
-   
-3. When podA is regularPod, podB is pgPod, trying to order by podA's `Timestamp` (the time pod added to the scheduling queue) and podB’s `LastFailureTimestamp` (we get the PodGroupInfo from the cache). Pod with earlier timestamp is scheduled ahead of other pod.   
-   
-4. When podA and podB are both pgPods. 
-   1. Trying to order by the `LastFailureTimestamp` of the podGroup. Pod with earlier timestamp is scheduled ahead of other pod.
-   
-   2. If `LastFailureTimestampA` is equal to `LastFailureTimestampB`, trying to order by the `UID` of `PodGroup`,`Pod` with lexicographically greater `UID` is scheduled ahead of other pod. (The purpose is to distinguish different `PodGroup` with the same `LastFailureTimestamp` and to keep the pods of the same `PodGroup` together)
 
-**Note1**: There are different `LastFailureTimestamp` (even if they are the same, the UID will be different). So when the pods enter the queue, the pods that belongs to the same PodGroup will be together.
+Firstly, we will inherit the default in-tree PrioritySort plugin so as to honor .spec.priority to ensure high-priority Pods are always sorted ahead of low-priority ones.
+
+Secondly, if two Pods hold the same priority, the sorting precedence is described as below:
+
+- If they are both regularPods (without particular PodGroup label), compare their `InitialAttemptTimestamp` field: the Pod with earlier `InitialAttemptTimestamp` is positioned ahead of the other.
+  
+- If one is regularPod and the other is pgPod, compare regularPod's `InitialAttemptTimestamp` with pgPod's `InitialTimestamp`: the Pod with earlier timestamp is positioned ahead of the other.
+  
+- If they are both pgPods:
+  - Compare their `InitialAttemptTimestamp`: the Pod with earlier timestamp is positioned ahead of the other.
+  - If their `InitialAttemptTimestamp` is identical, order by their UID of PodGroup: a Pod with lexicographically greater UID is scheduled ahead of the other Pod. (The purpose is to tease different PodGroups with the same `InitialAttemptTimestamp` apart, while also keeping Pods belonging to the same PodGroup back-to-back)
+
+**Note1**: There are different `InitialTimestamp` (even if they are the same, the UID will be different). So when the pods enter the queue, the pods that belongs to the same PodGroup will be together.
 
 #### Pre-Filter
-1. `PreFilter` validates that if the total number of pods belonging to the same `PodGroup` is less than `minAvailable`. If so, the scheduling process will be interrupted directly.
+When a `pgGroup` Pod is being scheduled for the first time, we have 2 option to deal with it: either start the full scheduling cycle no matter its grouping Pods are present inside schedule queue, or fail quick its scheduling cycle as its grouping Pods number doesn't meet `minAvailable`. The former case is more efficient, but may cause partial Pods holding system resources until a timeout. The latter case may result in extra scheduling cycles (even if we're going to fail them fast), but will reduce the overall scheduling time for the whole group - as we're waiting them to be all present in the queue first and then start the full scheduling cycle for each).
 
-2. `PreFilter` validates that if we should reject `WaitingPods` in advance. When the pod belongs to a new `PodGroup` (we can check it by the `LastPodGroup` in cache), it indicates that the new PodGroup scheduling cycle has been entered. Then we will check if the last `PodGroup` meets the minAvailable, if not, we will reject it directly in advance. The purpose is 1.To avoid invalid waiting, 2.To make the pod belongs to the same `PodGroup` fail together, rather than waiting partially.
+Here we're adopting the latter approach, `PreFilter` validates that if the total number of pods belonging to the same `PodGroup` is less than `minAvailable`. If so, the scheduling process will be interrupted directly.
 
 #### Permit
 In `Permit` phase, we put the pod that doesn't meet min-available into the WaitingMap and reserve resources until min-available are met or timeout is triggered.
