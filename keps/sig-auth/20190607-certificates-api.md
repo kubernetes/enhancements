@@ -28,6 +28,7 @@ status: implementable
   - [Sequence of an Issuance](#sequence-of-an-issuance)
   - [Signers](#signers)
     - [Limiting approval and signer powers for certain signers.](#limiting-approval-and-signer-powers-for-certain-signers)
+    - [Supporting intermediate certificates.](#supporting-intermediate-certificates)
   - [CertificateSigningRequest API Definition](#certificatesigningrequest-api-definition)
   - [Manual CSR Approval With Kubectl](#manual-csr-approval-with-kubectl)
   - [Automatic CSR Approval Implementations](#automatic-csr-approval-implementations)
@@ -235,6 +236,10 @@ Cluster admins can either:
 2. grant signer-specific approval permissions using the bootstrap roles starting in 1.18
 3. disable the approval-authorizing admission plugin in 1.18 (if they don't care about partitioning approver rights)
  
+#### Supporting intermediate certificates.
+It's important that the Certificates API fully supports using an intermediate certificate as the signer, including the case where the signer is itself signed by an intermediate. As a result, the user must be able to specify that the signing certificates are provided to the client, in which case their PEM values would be appended to the Certificate in the CertificateSigningRequestStatus. Conforming clients will parse the full chain of certificates provided by the apiserver and present them all for new TLS handshakes.
+
+Firstly, we will add a new bool flag to the controller, `cluster-signing-include-signers`, which requires that the signing certificate is always appended in this way. Currently the controller only allows a single signing cert in `cluster-signing-cert-file`, so this approach would only work in the case where the signing certificate is a child of the root CA, in which case it is the only certificate that needs to be provided to the client. To support further nested signing certificates, we additionally need to relax the contraint of the cert file parameter to accept multiple signers in a chain. The additional certificates would only be used if the include signers option is set; they are not needed in signing.
 
 ### CertificateSigningRequest API Definition
 
