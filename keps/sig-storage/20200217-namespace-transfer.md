@@ -88,7 +88,7 @@ When a controller detects matching request/approval resources, a transfer in ini
 When transferring a PersistentVolumeClaim, the associated PersistentVolume will be updated,
 the source PersistentVolumeClaim will be deleted, and the target PersistentVolumeClaim will be created.
 The transfer simply deals with Kubernetes API resources.
-No data on the physical PersistentVolume is accessed/copied. 
+No data on the physical PersistentVolume is accessed/copied.
 
 ## Motivation
 
@@ -119,7 +119,8 @@ spec:
     name: foo
     namespace: source-namespace
     kind: PersistentVolumeClaim
-  targetName: bar #this is optional
+  approvalName: approve-foo
+  targetName: bar
 ```
 
 `StorageTransferApproval` resource:
@@ -135,22 +136,27 @@ spec:
     name: foo
     kind: PersistentVolumeClaim
   targetNamespace: target-namespace
+  requestName: transfer-foo
 ```
 
 When matching `StorageTransferRequest` and `StorageTransferApproval` resources are detected, the transfer process is initiated.
 
-Matching requests/approvals is similar to the process for binding PersistentVolumes with PersistentVolumeClaims.
-If they are not explicitly bound by the user, a controller will attempt to pair them by looking for matching resource types/names.
+A `StorageTransferRequest` named `r` and `StorageTransferApproval` `a` are matched all of the following conditions are met:
+
+- `r.metadata.name == a.spec.requestName`
+- `r.metadata.namespace == a.spec.targetNamespace`
+- `r.spec.source.namespace == a.metadata.namespace`
+- `r.spec.source.name == a.spec.source.name`
+- `r.spec.source.kind == a.spec.source.kind`
+- `r.spec.approvalName == a.metadata.name`
 
 Once matching is complete, a controller will begin the transfer process which does the following (not necessarily in order):
 
-- Make sure the associated PersistentVolume is not deleted/recycled during the transfer by setting reclaim policy to `Retain` (if not already).
+- Set the reclaim policy of the associated PersistentVolume `Retain` (if not already).
 - Delete the PVC `source-namespace\foo`.
 - Bind The PersistentVolume to `target-namespace\bar`.
 - Create the PVC `target-namespace\bar` by copying the spec of `source-namespace\foo` and setting `spec.volumeName` appropriately.
-
-The last step makes it possible for the API to be compatible with the most provisioners
-as they will ignore a PVC that is already bound.  In [previous](https://github.com/kubernetes/enhancements/pull/1112) namespace transfer KEPs, the target PVC is created by the user.  Although, this will probably work with the CSI external provisioner, it will not work with others (like static local volume).
+- Reset the PersistentVolume reclaim policy
 
 Users can monitor the status of a transfer by querying for the existence of the bound target PVC or checking the `status.complete` property of `StorageTransferRequest`.
 
@@ -170,13 +176,9 @@ type StorageTransferRequest struct {
 type StorageTransferRequestSpec struct {
   Source *corev1.ObjectReference
 
-  // ApprovalName is set by the controller when requests/approvals are matched
-  // or by the user when manual binding is preferred
   ApprovalName string
 
-  // TargetName allows for the source and target resources to have different names
-  // It is optional
-  TargetName *string
+  TargetName string
 }
 ```
 
@@ -205,8 +207,6 @@ type StorageTransferApprovalSpec struct {
 
   TargetNamespace string
 
-  // RequestName is set by the controller when requests/approvals are matched
-  // or by the user when manual binding is preferred
   RequestName string
 }
 ```
