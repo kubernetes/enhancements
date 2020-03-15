@@ -332,17 +332,25 @@ As described in the [20190226-pod-overhead](https://github.com/kubernetes/enhanc
 
 In progress
 
-#### HugeTLB, PID, and other cgroups
+#### HugeTLB cgroup
 
 In progress
+
+### PID, and other cgroups
+
+These are out of scope for this proposal. This proposal doesn't remove the ability to set these limits and requests on the container level, if this was already supported by Kubernetes before.
 
 #### Init Containers
 
-In progress
+The current implementation sets up the pod-level cgroup using the requests and limits assigned to the sidecar containers only. 
+
+This means that currently there is a potential issue here for this feature; if an init container defines a limit which is larger than the sum of the limits of all of the sidecar containers, then the pod-level cgroup will have a larger limit than required by the sidecars. 
+
+In order to fix this issue, the pod-level cgroup must be created with the init container limit for the duration of the init container execution, but must then be updated to use the sidecar limit before the sidecars are actually executed.
 
 #### NUMA architectures
 
-In progress
+There should be no issue caused by limiting a non-leaf cgroup for a pod running in a NUMA environment. The Linux cgroup allows memory from any NUMA node to be used in the same cgroup. See section 5.6 of the Lunux memory cgroup [documentation](https://www.kernel.org/doc/Documentation/cgroup-v1/memory.txt).
 
 ### Risks and Mitigations
 
@@ -362,5 +370,6 @@ See a PoC implementation in PR [#88899](https://github.com/kubernetes/kubernetes
 
 - 2020-03-04 - v1 of the proposal 
 - 2020-03-06 - Updates due to suggested review
+- 2020-03-15 - More updates due to suggested review
 
 
