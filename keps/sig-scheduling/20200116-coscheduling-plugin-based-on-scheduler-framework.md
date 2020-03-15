@@ -103,7 +103,7 @@ type PodGroupInfo struct {
 }
 ```
 
-1.  `PodGroupInfo` is initialized the first time the pod belongs to the PodGroup is encountered, and LastFailureTimestamp is updated every time the PodGroup fails to schedule.
+1.  `PodGroupInfo` is initialized the first time the pod belongs to the PodGroup is encountered,
 2.  `InitialTimestamp` stores the timestamp of the initialization time of PodGroup.
 3.  `UID` is the unique identification value used to distinguish different podgroups.
  
@@ -130,8 +130,6 @@ Secondly, if two Pods hold the same priority, the sorting precedence is describe
 - If they are both pgPods:
   - Compare their `InitialAttemptTimestamp`: the Pod with earlier timestamp is positioned ahead of the other.
   - If their `InitialAttemptTimestamp` is identical, order by their UID of PodGroup: a Pod with lexicographically greater UID is scheduled ahead of the other Pod. (The purpose is to tease different PodGroups with the same `InitialAttemptTimestamp` apart, while also keeping Pods belonging to the same PodGroup back-to-back)
-
-**Note1**: There are different `InitialTimestamp` (even if they are the same, the UID will be different). So when the pods enter the queue, the pods that belongs to the same PodGroup will be together.
 
 #### Pre-Filter
 When a `pgGroup` Pod is being scheduled for the first time, we have 2 option to deal with it: either start the full scheduling cycle no matter its grouping Pods are present inside schedule queue, or fail quick its scheduling cycle as its grouping Pods number doesn't meet `minAvailable`. The former case is more efficient, but may cause partial Pods holding system resources until a timeout. The latter case may result in extra scheduling cycles (even if we're going to fail them fast), but will reduce the overall scheduling time for the whole group - as we're waiting them to be all present in the queue first and then start the full scheduling cycle for each).
