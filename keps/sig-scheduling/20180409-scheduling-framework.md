@@ -279,7 +279,7 @@ The selection process are performed in cooperating with scheduler and preempt pl
 
 Thus, the plugin can provide two methods to customize behavior of victim pods selection.
 
-- `SelectVictimCandidatesOnNode`: The method receives a potential victim node and its potential victim pods.  And, the method returns victim candidate pods.  Please note the plugin is responsible that the returned victims can create enough room in the node for the preemptor pod.  That means, even if it can't create enough space for the preemptor pod, the scheduling cycle will not abort.  The plugin can use with the [`FrameworkHandle`](#frameworkhandle) for which it assures the selected victims can surely make enough space for the preemptor pod.
+- `SelectVictimCandidatesOnNode`: The method receives a potential victim node and its potential victim pods.  And, the method returns victim candidate pods.  Please note the plugin is responsible that the returned victims can create enough room in the node for the preemptor pod.  That means, even if it can't create enough space for the preemptor pod, the scheduling cycle will not abort. Scheduler also passes a predicate function which accept victim pods and returns they can make enough room for the preemptor pod or not.  You could use this predicate function iteratively to find minimal victim pods.
 
 - `PickOneNodeForPreemption`: The method receives a map from node to victim candidate pods (it might be filtered by extenders) and returns node which should be the victim consequently.
 
@@ -396,7 +396,7 @@ the `FrameworkHandle` provides APIs relevant to the lifetime of a plugin. This
 is how plugins can get a client (`kubernetes.Interface`) and
 `SharedInformerFactory`, or read data from the scheduler's cache of cluster
 state. The handle will also provide APIs to list and approve or reject
-[waiting pods](#permit) and check [the preemptor pod fits to the node](#victimsselection).
+[waiting pods](#permit).
 
 **WARNING**: `FrameworkHandle` provides access to both the kubernetes API server
 and the scheduler's internal cache. The two are **not guaranteed to be in sync**
