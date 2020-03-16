@@ -330,7 +330,7 @@ As described in the [20190226-pod-overhead](https://github.com/kubernetes/enhanc
 
 #### Memory-based Emptydir volumes
 
-In progress
+This proposal doesn't change the current status quo in any way. Memory used for files in a `tmpfs` volume is accounted for as shared-memory. The Linux kernel charges the used memory to cgroup that first touched the shared page for the memory. Moving the charge for shared memory pages between cgroups is not currently supported by the Linux kernel. Defining a memory limit on the pod cgroup level would not change the underlying limitation that memory used by files in the volume are accounted to the cgroup that first touched the memory.
 
 #### HugeTLB cgroup
 
