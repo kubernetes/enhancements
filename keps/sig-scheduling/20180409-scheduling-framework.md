@@ -37,7 +37,7 @@ superseded-by:
     - [Post-filter](#post-filter)
     - [Scoring](#scoring)
     - [Reserve](#reserve)
-    - [Preempt](#preempt)
+    - [VictimsSelection](#victimsselection)
     - [Permit](#permit)
     - [Pre-bind](#pre-bind)
     - [Bind](#bind)
@@ -266,7 +266,7 @@ state, it will either trigger [Un-reserve](#un-reserve) plugins (on failure) or
 
 *Note: This concept used to be referred to as "assume".*
 
-### Preempt
+### VictimsSelection
 
 The plugin provides an extension point for selecting the victim pods for preemption.  Only one preempt plugin may be enabled at a time.  
 
@@ -396,7 +396,7 @@ the `FrameworkHandle` provides APIs relevant to the lifetime of a plugin. This
 is how plugins can get a client (`kubernetes.Interface`) and
 `SharedInformerFactory`, or read data from the scheduler's cache of cluster
 state. The handle will also provide APIs to list and approve or reject
-[waiting pods](#permit) and check [the preemptor pod fits to the node](#preempt).
+[waiting pods](#permit) and check [the preemptor pod fits to the node](#victimsselection).
 
 **WARNING**: `FrameworkHandle` provides access to both the kubernetes API server
 and the scheduler's internal cache. The two are **not guaranteed to be in sync**
