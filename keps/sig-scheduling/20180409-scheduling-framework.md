@@ -272,7 +272,7 @@ The plugin provides an extension point for selecting the victim pods for preempt
 
 The selection process are performed in cooperating with scheduler and preempt plugin as follows.
 
-1. Scheduler firstly filters _potential victim nodes_ that satisfies the following two conditions.  It contains _potential victim pods_ that are allowed to be preempted by the preemptor pod according to their `spec.preemptionPolicy`.  The other is the preemptor pod can be schedulable when all the potential victim pods are assumed to be preempted.
+1. Scheduler firstly filters _potential victim nodes_ that satisfies the following two conditions.  It contains _potential victim pods_ that are allowed to be preempted by the preemptor pod's `spec.preemptionPolicy`. For example, if the preemptor pods' `spec.preemptionPolicy` is `Never`,  no victims are selected for any nodes.  The other is the preemptor pod can be schedulable when all the potential victim pods are assumed to be preempted.
 1. For each potential victim node, scheduler filters several pods as _victim candidate pods_ from potential victim pods with the plugin's help (see `SelectVictimCandidatesOnNode`).
 1. Scheduler calls scheduler extenders, if configured, to filter victim candidate pods.
 1. Scheduler picks one node from the potential victim nodes for preemption with the plugin's help (see `PickOneNodeForPreemption`).
