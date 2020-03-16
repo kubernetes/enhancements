@@ -64,7 +64,7 @@ to function in-project.
 
 **Note:** This KEP defines "in project" to mean projects in the Kubernetes org, 
 which includes the [kubernetes](https://github.com/kubernetes) and 
-[kubernetes-sigs](https://github.com/kubernetes) repositories.
+[kubernetes-sigs](https://github.com/kubernetes-sigs) repositories.
 
 ## Introduction
 
