@@ -12,11 +12,10 @@ reviewers:
   - "@dims"
 approvers:
   - "@brancz"
-  - "@piosz"
 editor: TBD
 creation-date: 2019-11-15
 last-updated: 2020-01-30
-status: provisional
+status: implementable
 see-also:
 replaces:
 superseded-by:
@@ -275,9 +274,9 @@ We would like to describe the serialization as it will directly impact results o
 * Not diverge too much from `text` format (e.g. change formatting, add more information)
 
 Proposed Serialization of types (we will expand list of special cases if needed):
-* Go primitive types (e.g. `int`, `float`, `time.Duration`) - compatible with string format `%v`
-* `time.Time` - special case to Unix time format, as `%v` would result in format meant for [debugging](https://golang.org/pkg/time/#Time.String)
-* arbitrary structure (`http.Request`) - shallow serialization into JSON objects. Object will consist of non-pointer public fields.
+* Go primitive types (e.g. `int`, `float`, `time.Duration`) - default format `%v`
+* `time.Time` - Unix time format, as `%v` would result in format meant for [debugging](https://golang.org/pkg/time/#Time.String)
+* arbitrary structure (`http.Request`) - shallow reflection into JSON objects. Object will consist of non-pointer public fields.
 
 For arbitrary structures we propose to use a shallow strategy as it is:
 * Analogous to `%v` currently used in format strings and in proposed text format (pointers are serialized as numbers)
@@ -303,6 +302,7 @@ That would result in log (pretty printed)
 And
 
 ```go
+err := fmt.Errorf("timeout")
 klog.ErrorS(err, "Failed to update pod status")
 ```
 
