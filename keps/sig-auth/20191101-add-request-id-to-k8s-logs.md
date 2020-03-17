@@ -1,5 +1,5 @@
 ---
-title: Add Request-ID to each k8s component log
+title: Add Request-ID to each Kubernetes component log
 authors:
  - "@hase1128"
  - "@sshukun"
@@ -13,7 +13,7 @@ approvers:
  - TBD
 editor: TBD
 creation-date: 2019-11-01
-last-updated: 2020-02-26
+last-updated: 2020-03-17
 status: provisional
 ---
 
@@ -50,7 +50,7 @@ status: provisional
 This KEP proposes a new unique logging meta-data into all Kubernetes logs. It makes us
 more easy to identify specific logs related to a single user operation (such as
 `kubectl apply -f <my-pod.yaml>`). This feature is similar to
-[Request-ID](https://docs.openstack.org/api-guide/compute/faults.html) for
+[Global request ID](https://docs.openstack.org/api-guide/compute/faults.html) for
 OpenStack. It greatly reduces investigation cost.
 
 ## Motivation
@@ -72,7 +72,13 @@ It is difficult that support team in k8s Service Provider resolve end user's pro
 In case of insecure or unauthorized operation happens, it is necessary to
 identify what effect that operation caused. This proposed feature helps identify
 what happened at each component or server by each insecure / unauthorized API
-request. We can collect these logs as an evidence.
+request. We can collect these logs as an evidence. This is similar to the 
+[Auditing](https://kubernetes.io/docs/tasks/debug-application-cluster/audit/), 
+except for the following points.
+
+ - Audit only collects information about http request sending and receiving in kube-apiserver, so it can't track internal work of each component.
+ - Audit logs can't be associated to logs related to user operation (kubectl operation), because auditID is different for each http request.
+
 
 #### Case 2
 
@@ -85,7 +91,8 @@ request.
 ### Goals
 
  - Adding a Request-ID into each K8s component log.
- - The Request-ID is unique to an operation.
+ - The Request-ID is unique to a kubectl operation.
+   - (One kubectl operation by user causes multiple API requests and klog calls. Request-ID has same value in these klog calls.)
  - Control enabled/disabled Request-ID feature(Request-ID feature is disabled on default to avoid an impact for existing user).
 
 ### Non-Goals
@@ -119,7 +126,14 @@ There is an idea to use `distributed context` of the existing KEP([Distributed T
  - We just use Tracing codes provided by `Distributed Tracing` feature.
  - We use Trace-ID as Request-ID (This does not interfere Tracing codes).
 
-The target functions that we add Request-id codes are the following tables. The target functions include the klog call which called via important `kubectl` operations. These operations are listed in [Migration / Graduation Criteria](#migration--graduation-criteria) section. As a result, we can propagate Request-ID regarding important `kubectl` operations.
+The target functions that we add Request-id codes are the following tables. The target functions include the klog call which called via important `kubectl` operations. We prioritize `kubectl` operations and target resources by the following criteria.
+
+ - Operations that are frequently used by user
+ - Resources that are user's application and asset
+
+Operations against Pod(Deployment) are the most frequently used by user. PV / PVC stores user assets. In addition to this, network is relatively troublesome for orchestration. These operations are listed in [Migration / Graduation Criteria](#migration--graduation-criteria) section. As a result, we can propagate Request-ID regarding important `kubectl` operations.
+
+Here is the target functions that we add Request-id codes in **Alpha implementation**.
 
 **kube-apiserver.log**
 
@@ -142,7 +156,6 @@ The target functions that we add Request-id codes are the following tables. The 
 | source file | function name |
 | ------ | ------ |
 | pkg/volume/emptydir/empty_dir.go | setupTmpfs |
-| pkg/kubelet/kubelet.go | syncLoopIteration |
 | pkg/kubelet/kubelet.go | HandlePodAdditions |
 | pkg/kubelet/kubelet.go | HandlePodUpdates |
 | pkg/kubelet/kubelet.go | HandlePodRemoves |
@@ -157,7 +170,8 @@ The target functions that we add Request-id codes are the following tables. The 
 | pkg/kubelet/kuberuntime/kuberuntime_container.go | killContainer |
 | pkg/kubelet/kuberuntime/kuberuntime_image.go | PullImage |
 | pkg/kubelet/kuberuntime/kuberuntime_manager.go | podSandboxChanged |
-| pkg/kubelet/kuberuntime/kuberuntime_manager.go | SyncPod |
+| pkg/kubelet/kuberuntime/kuberuntime_manager.go | killPodWithSyncResult |
+| pkg/kubelet/kuberuntime/kuberuntime_sandbox.go | createPodSandbox |
 | pkg/kubelet/dockershim/docker_service.go | GenerateExpectedCgroupParent |
 | pkg/kubelet/dockershim/libdocker/kube_docker_client.go | start |
 | pkg/volume/util/operationexecutor/operation_generator.go | GenerateMountVolumeFunc |
@@ -225,7 +239,7 @@ klog.InfoS("Pod status updated", "pod", pod, "status", "ready")
 ```
 Request-ID with structured format
 ```go
-klog.InfoS("Request-ID", trace-id, "Pod status updated", "pod", pod, "status", "ready")
+klog.InfoS("Pod status updated", "pod", pod, "status", "ready", "Request-ID", trace-id)
 ```
 
 Expected Log
@@ -247,7 +261,6 @@ Request-ID with structured format
 ```json
 {
    "ts": 1580306777.04728,
-   "request-id": 5acf2a4d258157e06402fb734186b684
    "v": 4,
    "msg": "Pod status updated",
    "pod":{
@@ -255,6 +268,7 @@ Request-ID with structured format
       "namespace": "default"
    },
    "status": "ready"
+   "request-id": 5acf2a4d258157e06402fb734186b684
 }
 ```
 #### Design overview of Control Request-ID
