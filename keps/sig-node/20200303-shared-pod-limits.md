@@ -56,13 +56,10 @@ Check these off as they are completed for the Release Team to track. These check
 
 ## Summary
 
-The `Burstable` QoS level is used for any Pod that defines resource limits for at least one container, and doesn't define the same value for both the `request` and `limit` sections. In these Pods, a container which doesn't define any limit for a resource will effectively not be constrained in any way for that resource. Defining a limit for all of the containers in the pod has the implication that it is not possible to define a pod where the resources are controlled on the pod level. 
 
-This KEP proposes a way to define constraints on the Pod level, to allow for a smoother resource allocation strategy for `Burstable` pods.
-
+Pod resources are currently enforced on a container-by-container case. Each container defines a limit for each managed resource, and the Kubelet translates these limits into the appropriate cgroup definitions. Kubelet creates a three-level deep hierarchy of cgroups for each pod. The top-level is the QoS grouping of the pod (`Guaranteed`, `Burstable`, and `BestEffort`), the second level is the pod itself, and the bottom level are the pod containers. The current Pod API doesn't enable developers to define resource limits at the pod level. This KEP proposes a method for developers to define resource limits on the pod level in addition to the resource limits currently possible on the individual container level.
 
 ## Motivation
-
 
 Some workloads are deployed as pods which are comprised of multiple sidecar containers which are strongly coupled in terms of their task. Such containers communicate either across a shared filesystem, or the localhost network, and orchestrate some common task. 
 
@@ -80,19 +77,16 @@ For example, consider the following Pod with the following structure:
    +-- container4 (mesh sidecar)
 </pre>
 
-In some cases deploying a single container with all the tasks is not optimal and not always possible. Kubernetes is not aware of these tasks, and doesn't monitor them for failure, and is not able to manage the resources (cgroups) for each of them. By separating the different tasks to their own containers, the application is able to leverage Kubernetes to monitor the tasks. The current `Burstable` QoS implementation requires the pod to either not limit each individual container at all, or micro-manage the resources allocated to each and every container.
+In some cases deploying a single container with all the tasks is not optimal and not always possible. Kubernetes is not aware of these tasks, and doesn't monitor them for failure, and is not able to manage the resources (cgroups) for each of them. By separating the different tasks to their own containers, the application is able to leverage Kubernetes to monitor the tasks. However, splitting a pod into multiple containers also requires a developer to split the resources allocated to the entire pod into slices allocated to each container. For some workloads this is hard to get right, requiring the developer to over-allocate resources to specific containers because the containers can't share their resources easily. 
 
-This proposal suggests a middle ground, and suggests a way to make it possible to describe to Kubernetes how to limit the resource consumption of multiple containers in the pod at once, on the Pod level, instead of trying to micro-manage the resource limits on the container level. For workloads where the work performed is burstable, this proposal would make it easier to allow the low-level mechanisms available in the underlying operating-system to manage the resources required for the task.
+This proposal suggests a middle ground, and suggests a way to make it possible to describe to Kubernetes how to limit the resource consumption of multiple containers in the pod at the Pod level, instead of trying to micro-manage the resource limits on the container level. For workloads where the work performed is burstable, this proposal would make it easier to allow the low-level mechanisms available in the underlying operating-system to manage the resources required for the task.
 
 ### Goals
 
 This proposal aims to:
 
-*  Allow a `Burstable` pod to define that memory and CPU resource limits should be set on the level of the Pod.
-*  Prevent the developer from having to micro-manage the memory and CPU resource assignments for different containers in the same pod.
-*  Keep the current `Burstable` behavior as the default.  
-
-For workloads in the `Burstable` QoS level, the resource usage profile can be relativly dynamic. Memory and CPU can be required suddenly for a short period of time, and afterwards relinquished. By utilizing the Linux cgroup controllers this usage profile can be managed directly by the Linux kernel.
+* Allow developers to define resource limits on the pod level in addition to the individual container level.
+* Use as much as possible the Linux kernel's cgroup ability to define limits in hierarchies to enforce the defined limits.
 
 ### Non-Goals
 
@@ -103,32 +97,50 @@ For workloads in the `Burstable` QoS level, the resource usage profile can be re
 The Pod QoS enhancement already implemented in Kubernetes manages resources as a hieararchy of cgroups in the following way:
 
 <pre>
-  QoS CGroup (one of guaranteed, burstable, or besteffort)
+  kubepods
    |
-   \ pod 
-      |
-      +-- container0 (pause container)
-      |
-      +-- container1 (first container)
-      |
-   = ... =
-      |
-      +-- containerN (N-th container)
+   +-- Guaranteed-pod0
+   |   |
+   |   +-- container0 (pause container)
+   |   |
+   |   +-- container1 (first container)
+   |   |
+   |  = ... =
+   |   |
+   |   +-- containerN (N-th container)
+   |
+   +-- QoS CGroup (one of burstable, or besteffort)
+       |
+       \ pod 
+          |
+          +-- container0 (pause container)
+          |
+          +-- container1 (first container)
+          |
+        = ... =
+          |
+          +-- containerN (N-th container)
 </pre>
 
-Each container level cgroup is limited based on the information provided in the `Container` specification. Currently, if the pod belongs to 
-the `Burstable` QoS level, and **all** of the containers specify limits for each resource, then these limits are summed, and that limit is
-assigned to the pod level cgroup.
+The current implementation will set the cgroup limits for the memory/CPU resources on the pod level of the hierarchy only in the following cases:
+1. The QoS level is `Guaranteed`. 
+1. The QoS level is `Burstable` and all of the containers specify a limit for the relevant resource. 
 
-The implications of the current `Burstable` definition is that if any containers belonging to the Pod don't define a limit, then those containers
-are effectively not limited by the Linux kernel. Conversely (as happens in the `Guaranteed` QoS level), if all of the containers provided a limit, 
-then even though the pod level cgroup is configured with the sum of those limits, there is no significance to this since no container can ever use 
-more of the resource than what is defined in the container level cgroup.
+For the current definition of the `Guaranteed` QoS level this proposal would not make any modifications. Since each container is provided with its
+own limit, defining a pod-level limit is redundant. If the pod level limit request is smaller than the sum of limit for all the containers, then 
+the limit requested by the containers is unreachable. Conversely if the pod level limit request is larger than the sum of the limit for all the 
+containers then the excess is not relevant since the individual containers can never use more than their requested share, and even if all of the 
+containers use the maximum allowed by their defined limit, it can never amount to the pod-level limit.
 
-The proposal in this KEP is to allow users to opt-in to a slightly modified definition of the `Burstable` QoS level. In this modified definition,
-the sum of all defined container limits for each resource are always assigned to the pod-level cgroup. This is done by adding an attribute called 
-`shareBurstableLimits` on the Pod specification level. If this attribute is set to false (the default) the feature is disabled, and if it is set to 
-true then the feature takes effect.
+For pods in the `Burstable` and `BestEffort` QoS levels specifying a resource limit on the pod level means that resources can be shared across containers.
+Sharing resources across containers is possible only if individual containers release the resources that are not being used. For CPU this is trivial.
+For memory, this depends on the application being run actually releasing the memory back to the operating system. See [below](#Memory-Reuse-Across-cgroups)
+for an analysis.
+
+The proposal in this KEP is to allow users to define resources on the Pod level itself. Only limits will be allowed on this level so that the effect on
+the scheduler algorithm will be minimal. The scheduler will continue to use the resource requests defined on the container level as its input. Kubelet 
+will configure the pod-level cgroups as defined on the pod level. If the pod level doesn't include any resource limits, then kubelet will continue to
+function as it does today.
 
 For example, consider the following Pod:
 
@@ -140,9 +152,11 @@ metadata:
     run: nginx
   name: nginx
 spec:
+  resources:
+    limits:
+      memory: 384M
+      cpu: "2"
   containers:
-  - image: shell
-    name: debian:buster
   - image: proxy
     name: envoy:latest
   - name: nginx
@@ -156,105 +170,35 @@ spec:
         memory: 256M
         cpu: "1"
 ```
-
-This pod belongs to the `Burstable` QoS level because it defines multiple containers, of which only one has resource limits, and there is a 
-difference between the `Request` and the `Limit` for both these resources. Effectively, the containers which don't define any limits are
-not constrained in any way. They are provided the same level of resources as a container in a `BestEffort` pod would, except that they belong to a pod with a higher priority, so they are more proofed from causing evictions.
 
 The cgroup hierarchy for each of these resources (memory and cpu) would be this:
 
 <pre>
   QoS CGroup (one of guaranteed, burstable, or besteffort)
    |
-   \ pod (memory: unlimited, cpu: unlimited quota)
+   \ pod (memory: 384M limit, CPU: 2 core)
       |
       +-- container0 (pause container, memory: unlimited, cpu: unlimited quota)
       |
-      +-- container1 (shell container, memory: unlimited, cpu: unlimited quota)
+      +-- container1 (proxy container, memory: unlimited, CPU: unlimited quota)
       |
-      +-- container2 (proxy container, memory: unlimited, CPU: unlimited quota)
-      |
-      +-- container3 (nginx container, memory: 256M limit, CPU: 1 core)
-</pre>
-
-By setting the `ShareBurstableLimits` attribute on the Pod spec to `true`, the following cgroup hierarchy would be configured:
-
-<pre>
-  QoS CGroup (one of guaranteed, burstable, or besteffort)
-   |
-   \ pod (memory: 256M limit, CPU: 1 core)
-      |
-      +-- container0 (pause container, memory: unlimited, cpu: unlimited quota)
-      |
-      +-- container1 (shell container, memory: unlimited, cpu: unlimited quota)
-      |
-      +-- container2 (proxy container, memory: unlimited, CPU: unlimited quota)
-      |
-      +-- container3 (nginx container, memory: 256M limit, CPU: 1 core)
+      +-- container2 (nginx container, memory: 256M limit, CPU: 1 core)
 </pre>
 
 This has the following effect:
-1. No change will be noticed for the nginx container
-1. The shell and proxy containers will be limited to the amount of resources specified on the Pod cgroup level - no more than 256M memory and 1 CPU core.
+1. The nginx container will continue to be constrained to at most 256M of memory and 1 CPU core.
+1. The Proxy container will be limited to the amount of resources specified on the Pod cgroup level - no more than 384M memory and 2 CPU core.
 1. The pause container will not be affected since it doesn't use any resources anyways.
-1. The total resource usage for this Pod will be more predictable as far as the Kubelet is concerned, since the shell container can't consume an unlimited amount of resources.
 
-Effectively, if the shell isn't being used, all of the currently unused resources which are allowed to be consumed would be usable also in the proxy container.
+Because the Linux cgroup implementation doesn't allocate resources to a specific cgroup before the processes in that cgroup actually use the resource,
+it is possible for the nginx container to try to allocate the memory too late - after one of the other containers has already allocated more than 128M 
+of RAM. In this case, even though the nginx container is technically allowed to allocate more memory, the allocation will fail. This behavior is consistent
+with the way Kubernetes acts today as well, even without pod level resources; if a containers with defined resource `requests` can still fail to allocate
+the resources if other noisy neighbors are lucky enough to allocate the resources faster.
 
-In this example the pod memory limit is set by manipulating the limit on a single container. There is still the possibility to constrain usage for any specific container by specifying the limits in that container's section. For example, consider the following Pod specification:
+### Memory Reuse Across cgroups
 
-```yaml
-apiVersion: v1
-kind: Pod
-metadata:
-  labels:
-    run: nginx
-  name: nginx
-spec:
-  shareBurstableLimits: true
-  containers:
-  - image: shell
-    name: debian:stable
-  - image: proxy
-    name: envoy:latest
-    resources:
-      requests:
-        memory: 128M
-        cpu: "0.5"
-      limits:
-        memory: 256M
-        cpu: "1"
-  - name: nginx
-    image: nginx:latest
-    command: [ "/usr/bin/tail", "-f", "/dev/null"] 
-    resources:
-      requests:
-        memory: 128M
-        cpu: "0.5"
-      limits:
-        memory: 256M
-        cpu: "1"
-```
-
-In this pod, the cgroups would be set up in the following way:
-
-<pre>
-  QoS CGroup (one of guaranteed, burstable, or besteffort)
-   |
-   \ pod (memory: 512 limit, CPU: 2 cores)
-      |
-      +-- container0 (pause container, memory: unlimited, cpu: unlimited quota)
-      |
-      +-- container1 (shell container, memory: unlimited, cpu: unlimited quota)
-      |
-      +-- container2 (proxy container, memory: 256M limit, CPU: 1 core)
-      |
-      +-- container3 (nginx container, memory: 256M limit, CPU: 1 core)
-</pre>
-
-Both the proxy and the nginx container are constrained, and the entire pod is still limited to the sum of the specified limits of all the containers in the pod.
-
-### Memory Reuse Across `cgroup`s
+The memory resource deserves a special discussion due to memory being a non-compressible resource.
 
 The Linux kernel allows sibling cgroups to use memory which was released by a different sibling cgroup. The main difficulty here is understanding the term **released**. It is not enough for a programmer to free the memory, the funtime being used to develop the program must also release the memory back to the kernel. Since allocating memory to a process requires a context switch between userspace and kernelspace, most runtimes cache memory which was allocated to the process, and attempt to reuse memory that the program released so as to minimize the number of memory allocations required.
 
@@ -285,14 +229,13 @@ metadata:
     run: ide
   name: myide
 spec:
-  shareBurstableLimits: true
+  resources:
+    limits:
+      memory: "1024M"
+      cpu: "4"
   containers:
   - image: shell
     name: debian:buster
-    resources:
-      limits:
-        memory: "1024M"
-        cpu: "4"
   - image: tool1
     name: first-tool:latest
   - image: tool2
@@ -308,15 +251,13 @@ spec:
         cpu: "1"
 ```
 
-Using the `ShareBurstableLimits` feature enables the `tool1` and `tool2` containers to be constrained by the total limit for the pod. 
+Using the pod-level resource definition enables the `tool1` and `tool2` containers to be constrained by the total limit for the pod. 
 
 Without this feature, the developer would need to decide a-priori how much resources to allocate to the tools - and this is not easy to do for this workload.
 
 ### Implementation Details/Notes/Constraints 
 
-This implementation proposal doesn't try to enable a developer to specify a Resources section in the Pod spec itself (above the containers definition), so that there would be no need to reconcile the Pod level definition with the definition provided as the sum of the container limits. The basic premise is that the current Kubernetes approach where resource limits are best set (where possible) in the lowest level possible.
-
-The proposal is an **opt-in** feature, and will have no effect on existing deployments. Only deployments that explicitly require this functionality should turn it on by specifying the `sharedBurstableLimit` attribute on the Pod specification.
+The proposal is an **opt-in** feature, and will have no effect on existing deployments. Only deployments that explicitly require this functionality should turn it on by specifying the relevant resource section in the Pod specification.
 
 ### Interactions With Other Features
 
@@ -342,11 +283,14 @@ These are out of scope for this proposal. This proposal doesn't remove the abili
 
 #### Init Containers
 
-The current implementation sets up the pod-level cgroup using the requests and limits assigned to the sidecar containers only. 
+The current implementation (before this proposal) sets up the pod-level cgroup using the maximum between the sum of all the sidecars or the biggest limit for any single Init container. 
 
-This means that currently there is a potential issue here for this feature; if an init container defines a limit which is larger than the sum of the limits of all of the sidecar containers, then the pod-level cgroup will have a larger limit than required by the sidecars. 
+There are a few options: 
+1. Limit the pod-level cgroup only after the `InitContainers` have successfully terminated
+1. Require the pod-level cgroup (if it exists) to apply to the `InitContainers` as well.
+1. Allow specifying pod-level restrictions separately for Init containers and sidecars.
 
-In order to fix this issue, the pod-level cgroup must be created with the init container limit for the duration of the init container execution, but must then be updated to use the sidecar limit before the sidecars are actually executed.
+Since init containers run sequentially, there is no requirement to share resources with any other container. Therefore the first option is the best - the pod-level cgroup should be restricted only after all of the init containers have finished running.
 
 #### NUMA architectures
 
@@ -360,16 +304,20 @@ When users opt to use the feature, the workload must be able to run in a potenti
 
 ## Design Details
 
-1. An attribute called `shareBurstableLimit` is added to the Pod specification, defaulting to `false`.
-1. In the code defining the [resources configuration](https://github.com/kubernetes/kubernetes/blob/master/pkg/kubelet/cm/helpers_linux.go#L109) for the pod, check if the attribute is set and act accordingly.
+1. Add a `Resources` section in the `PodSpec` structure.
+1. Add a parameter to the pod cgroup setup procedure to distinguish between the lifecycle phase of the pod when `InitContainers` are being run and afterwards.
+1. In the initialization lifecycle phase setup the pod-level cgroup should not consider the pod-level definition.
+1. Once the init containers have finished running, the pod-level cgroup limits should be established as per the `Resources` section in the `PodSpec` structure.
+1. In the memory cgroup configuration, in addition to the `memory.limit_in_bytes` field which is set to the limit specified in each container, the `memory.soft_limit_in_bytes` field should also
+   be set to the `request` specified in the container. This field provides some extra information to the memory cgroup controller that long-running processes might benefit from.
 
 
-See a PoC implementation in PR [#88899](https://github.com/kubernetes/kubernetes/pull/88899).
 
 ## Implementation History
 
 - 2020-03-04 - v1 of the proposal 
 - 2020-03-06 - Updates due to suggested review
 - 2020-03-15 - More updates due to suggested review
+- 2020-03-17 - Reworked the proposal based on the suggested reviews
 
 
