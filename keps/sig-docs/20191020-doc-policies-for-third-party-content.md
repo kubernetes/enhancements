@@ -82,10 +82,6 @@ project docs is to host single-sourced content only, and to provide
 links to other providers’ single-sourced content. This simplifies
 version management and reduces the work required to maintain content.
 
-This KEP proposes that Kubernetes documentation sets these boundaries:
-
-- Kubernetes documentation includes 
-
 This KEP defines how to handle third-party and dual-sourced content in 
 documentation, so that authors can
 judge what is appropriate to propose and so that PR approvers can make
@@ -107,7 +103,7 @@ offerings.
 Some third party content is necessary in order for Kubernetes to
 function. For example: container runtimes (containerd, CRI-o, Docker), 
 networking policy (CNI plugins), Ingress controllers, and logging all require 
-third party components. Pages like [Logging Using Elasticsearch and Kibana](https://kubernetes.io/docs/tasks/debug-application-cluster/logging-elasticsearch-kibana/) 
+third party components. Pages like [Logging Using Stackdriver](https://kubernetes.io/docs/tasks/debug-application-cluster/logging-stackdriver/) 
 are highly specific to a third party offering and seem more like third party 
 product documentation than Kubernetes open source documentation.
 
@@ -129,7 +125,7 @@ To address its goal, this KEP focuses on the following issues:
 1. What third party content is appropriate for inclusion in the Kubernetes
 documentation?
 
-Proposed: Third-party content is permitted if it's required for Kubernetes to
+Proposed: Third-party content is permitted if it is required for Kubernetes to
 function in-project.
 
 1. Does third party content in sections such as [Getting Started](https://kubernetes.io/docs/setup/)
@@ -153,7 +149,13 @@ As infrequently as possible, with linking preferred to hosting.
 up to date or hosts?
 
 If content isn't refreshed within 180 days, notify stakeholders of 90 days to 
-update content or migrate it elsewhere before removing it.
+update content or migrate it elsewhere before removing it. Notification
+specifically includes:
+
+- Mailing an initial list of affected pages to kubernetes-dev@googlegroups.com
+- Announcing the policy change in two Kubernetes community meetings in a row
+- Posting a notification of the policy change on the Kubernetes blog
+- Notifying SIG PR review aliases on GitHub in PRs that remove affected content
 
 1. Can feature owners flag when third party content is *required*, as opposed to
 preferable or common?
@@ -193,24 +195,26 @@ Third-party content should be linked instead of hosted whenever possible.
 
 ### Non-Goals
 
-1. Outright removal of all content relating to vendors and projects
-   outside the CNCF ecosystem.
+1. Outright removal of all content relating to vendors and projects outside the 
+   Kubernetes project.
 
 ## Proposal
 
 1. Revise the [content guide](https://github.com/kubernetes/website/blob/master/content/en/docs/contribute/style/content-guide.md#contributing-content) to achieve the KEP goal:
 
 - Specify that Kubernetes docs are limited to content required for Kubernetes to
-function in-project. Docs may include third-party content for components that 
+function in-project. Docs may include third-party OSS content for components that 
 require a third-party solution to function. Docs may include content for 
-other projects in the Kubernetes org. Third-party content must be linked 
+other projects in the Kubernetes org, and content from other OSS projects that
+are necessary for Kubernetes to function. Third-party content must be linked 
 whenever possible, rather than duplicated or hosted in k/website.
 
 2. Revise the documentation when the KEP is approved:
 
-- **Third-party content:** Notify stakeholders via GitHub issues in k/website
-that third-party content will be removed after 90 days if content isn't required
-for Kubernetes to function in-project.
+- **Third-party content:** Notify stakeholders of all affected content via 
+GitHub issues and via a single message containing a summary of all affected
+content to kubernetes-dev@googlegroups.com that non-conforming content will be 
+removed after 90 days.
 
 This limits the impact to out-of-project content and gives current stakeholders 
 approximately one Kubernetes release cycle to migrate 
@@ -219,10 +223,12 @@ Kubernetes docs.
 
 - **Dual-sourced content:** Where sourcing is obvious, replace dual-sourced
 content with links to an authoritative single source. Where sourcing is unclear,
-notify stakeholders via GitHub issues in k/website that dual-sourced content
+notify stakeholders via GitHub issues in k/website and via a single message 
+containing a summary of all affected content to kubernetes-dev@googlegroups.com
+that non-conforming content will be removed after 90 days.
 
 In all cases where content would be removed, provide adequate time for the
-relevant SIG to review changes in content.
+relevant SIG to review changes and notify stakeholders.
 
 ### User Stories
 
