@@ -66,7 +66,7 @@ When running a Tensorflow/MPI job, all tasks must start before they can do any w
 
 ## Proposal
 
-In order to implement coscheduling, we developed plugins in different extension points. In `QueueSort`  we ensure that the Pods belonging to the same PodGroup are queued back-to-back. For example, suppose PodGroup A owns Pod-A1, Pod-A2, Pod-A3, while PodGroup B owns Pod-B1, Pod-B2. The pods of the two PodGroups should not interleave - it should be always <PodGroup-A, PodGroup-B> or the other way around; but never <Pod-A1, Pod-B1, Pod-A2, ...>. In `Permit` phase we put the pod that doesn't meet min-available into the WaitingMap and reserve resources until min-available are met or timeout is triggered. In `Unreserve` phase，clean up the pods that timed-out.
+In order to implement coscheduling, we developed plugins in different extension points. In `QueueSort`  we ensure that the Pods belonging to the same PodGroup are queued back-to-back. For example, suppose PodGroup A owns Pod-A1, Pod-A2, Pod-A3, while PodGroup B owns Pod-B1, Pod-B2. The pods of the two PodGroups should not interleave - it should be always <PodGroup-A, PodGroup-B> or the other way around; but never <Pod-A1, Pod-B1, Pod-A2, ...>. In `Permit` phase we put the pod that doesn't meet `minAvailable` into the WaitingMap and reserve resources until `minAvailable` are met or timeout is triggered. In `Unreserve` phase，clean up the pods that timed-out.
 
 ![image](./20200116-coscheduling-plugin-based-on-scheduler-framework-extensions.png)
 
@@ -132,15 +132,15 @@ Secondly, if two Pods hold the same priority, the sorting precedence is describe
   - If their `InitialAttemptTimestamp` is identical, order by their UID of PodGroup: a Pod with lexicographically greater UID is scheduled ahead of the other Pod. (The purpose is to tease different PodGroups with the same `InitialAttemptTimestamp` apart, while also keeping Pods belonging to the same PodGroup back-to-back)
 
 #### Pre-Filter
-When a `pgGroup` Pod is being scheduled for the first time, we have 2 option to deal with it: either start the full scheduling cycle no matter its grouping Pods are present inside schedule queue, or fail quick its scheduling cycle as its grouping Pods number doesn't meet `minAvailable`. The former case is more efficient, but may cause partial Pods holding system resources until a timeout. The latter case may result in extra scheduling cycles (even if we're going to fail them fast), but will reduce the overall scheduling time for the whole group - as we're waiting them to be all present in the queue first and then start the full scheduling cycle for each).
+When a `pgPod` is being scheduled for the first time, we have 2 option to deal with it: either start the full scheduling cycle no matter its grouping Pods are present inside schedule queue, or fail quick its scheduling cycle as its grouping Pods number doesn't meet `minAvailable`. The former case is more efficient, but may cause partial Pods holding system resources until a timeout. The latter case may result in extra scheduling cycles (even if we're going to fail them fast), but will reduce the overall scheduling time for the whole group - as we're waiting them to be all present in the queue first and then start the full scheduling cycle for each).
 
 Here we're adopting the latter approach, `PreFilter` validates that if the total number of pods belonging to the same `PodGroup` is less than `minAvailable`. If so, the scheduling process will be interrupted directly.
 
 #### Permit
-In `Permit` phase, we put the pod that doesn't meet min-available into the WaitingMap and reserve resources until min-available are met or timeout is triggered.
+In `Permit` phase, we put the pod that doesn't meet `minAvailable` into the WaitingMap and reserve resources until `minAvailable` are met or timeout is triggered.
 1. Get the number of Running pods that belong to the same PodGroup
 2. Get the number of WaitingPods (used to record pods in waiting status) that belong to the same PodGroup
-3. If Running + WaitingPods + 1 >= min-available(1 means the pod itself), approve the waiting pods that  belong to the same PodGroup. Otherwise, put the pod into WaitingPods and set the timeout (eg: the timeout is dynamic value depends on the size of the `PodGroup`.)
+3. If Running + WaitingPods + 1 >= `minAvailable`(1 means the pod itself), approve the waiting pods that  belong to the same PodGroup. Otherwise, put the pod into WaitingPods and set the timeout (eg: the timeout is dynamic value depends on the size of the `PodGroup`.)
 
 #### UnReserve
 After a pod which belongs to a PodGroup times out in the permit phase.  UnReserve ```Rejects``` the pods that belong to the same PodGroup to avoid long-term invalid reservation of resources.
