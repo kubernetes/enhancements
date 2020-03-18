@@ -9,7 +9,7 @@ reviewers:
 approvers:
   - TBD
 creation-date: 2020-03-03
-last-updated: 2020-03-03
+last-updated: 2020-18-03
 status: proposed
 ---
 
@@ -55,7 +55,6 @@ Check these off as they are completed for the Release Team to track. These check
 [kubernetes/website]: https://github.com/kubernetes/website
 
 ## Summary
-
 
 Pod resources are currently enforced on a container-by-container case. Each container defines a limit for each managed resource, and the Kubelet translates these limits into the appropriate cgroup definitions. Kubelet creates a three-level deep hierarchy of cgroups for each pod. The top-level is the QoS grouping of the pod (`Guaranteed`, `Burstable`, and `BestEffort`), the second level is the pod itself, and the bottom level are the pod containers. The current Pod API doesn't enable developers to define resource limits at the pod level. This KEP proposes a method for developers to define resource limits on the pod level in addition to the resource limits currently possible on the individual container level.
 
@@ -267,7 +266,7 @@ This proposal is compatible with both cgroup v1 and cgroup v2. Both versions of 
 
 #### ResourceOverhead
 
-As described in the [20190226-pod-overhead](https://github.com/kubernetes/enhancements/blob/6acd3e16806e98fa8545ecf57b02e90384c4bf55/keps/sig-node/20190226-pod-overhead.md) KEP, the pod overhead must be kept separate from the pod resource requirements. However, instead of enforcing the pod overhead on the pod-level cgroup, the pod overhead resources should be assigned to the `pause` container instead, and provided as a `Request` and not as a `Limit`. Since the pause container binary doesn't actually use any resources, doing this would guarentee that the resources required for the pod as overhead are not actually utilized by any other container and are indeed accounted for by Kubelet as reserved for the `RuntimeClass` defined overhead.
+Since the runtime shim is started in the pod-level cgroup, there should be no bad interactions between this proposed feature and the ResourceOverhead feature.
 
 #### Memory-based Emptydir volumes
 
@@ -304,6 +303,8 @@ When users opt to use the feature, the workload must be able to run in a potenti
 
 ## Design Details
 
+
+The proposed implementation would be along these lines:
 1. Add a `Resources` section in the `PodSpec` structure.
 1. Add a parameter to the pod cgroup setup procedure to distinguish between the lifecycle phase of the pod when `InitContainers` are being run and afterwards.
 1. In the initialization lifecycle phase setup the pod-level cgroup should not consider the pod-level definition.
@@ -319,5 +320,5 @@ When users opt to use the feature, the workload must be able to run in a potenti
 - 2020-03-06 - Updates due to suggested review
 - 2020-03-15 - More updates due to suggested review
 - 2020-03-17 - Reworked the proposal based on the suggested reviews
-
+- 2020-03-18 - More updates, after the sig-node meeting on March 17th.
 
