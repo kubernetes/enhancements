@@ -504,6 +504,7 @@ Initially, to confirm the logical capacity of the builder mechanism for replacin
 Now, this underlying API has (essentially) been implemented in full, and the following repository https://github.com/vmware-tanzu/antrea/tree/master/hack/netpol, demonstrates a working implementation and port of the network policy tests (Most of the tests have been ported).  Each test follows a simple and easy to read pattern such as this:
 
  ```
+ 	// TODO, consider a SpecBuilder.New(...) style of invocation
 	builder := &utils.NetworkPolicySpecBuilder{}
 	builder = builder.SetName("allow-x-via-pod-and-ns-selector").SetPodSelector(map[string]string{"pod": "a"})
 	builder.SetTypeIngress()
