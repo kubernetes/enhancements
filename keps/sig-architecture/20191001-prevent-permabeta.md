@@ -4,6 +4,13 @@ authors:
   - "@deads2k"
 owning-sig: sig-architecture
 participating-sigs:
+  - sig-api-machinery
+  - sig-apps
+  - sig-architecture
+  - sig-auth
+  - sig-network
+  - sig-node
+  - sig-scheduling
 reviewers:
   - "@bgrant0607"
   - "@liggitt"
@@ -12,9 +19,8 @@ approvers:
   - "@dims"
   - "@derekwaynecarr"
   - "@johnbelamaric"
-editor: TBD
 creation-date: 2019-10-01
-last-updated: 2019-10-22
+last-updated: 2020-03-19
 status: implementable
 see-also:
 replaces:
@@ -32,6 +38,13 @@ superseded-by:
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
+- [Impacted APIs](#impacted-apis)
+  - [sig-apimachinery](#sig-apimachinery)
+  - [sig-apps](#sig-apps)
+  - [sig-auth](#sig-auth)
+  - [sig-network](#sig-network)
+  - [sig-node](#sig-node)
+  - [sig-scheduling](#sig-scheduling)
 - [Drawbacks](#drawbacks)
 <!-- /toc -->
 
@@ -117,6 +130,35 @@ Scenario C - deprecation with no replacement. Sample release note and API doc:
 
 By regularly having new beta versions, we can ensure that consumers will not grow long running dependencies on particular betas which could pin design decisions.
 It will also create an incentive for REST API authors to push their APIs to GA instead of letting them live in a permanent beta state.
+
+## Impacted APIs
+These sigs will need to announce in 1.19 that these APIs will be deprecated no later than 1.22 and removed no later than 1.25.
+This is the same as the standard for new beta APIs introduced in 1.19.
+
+### sig-apimachinery
+1. events.v1beta1.events.k8s.io
+
+### sig-apps
+1. jobtemplates.v1beta1.batch
+2. cronjobs.v1beta1.batch
+
+### sig-auth
+1. certificatesigningrequests.v1beta1.certificates.k8s.io
+2. podsecuritypolicies.v1beta1.policy
+
+### sig-network
+1. endpointslices.v1beta1.discovery.k8s.io
+2. ingresses.v1beta1.networking.k8s.io
+3. ingressclasses.v1beta1.networking.k8s.io
+
+### sig-node
+1. runtimeclasses.v1beta1.node.k8s.io
+
+### sig-scheduling
+1. poddisruptionbudgets.v1beta1.policy
+2. evictions.v1beta1.policy
+
+
 
 ## Drawbacks
 
