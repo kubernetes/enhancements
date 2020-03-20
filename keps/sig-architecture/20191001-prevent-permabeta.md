@@ -112,7 +112,7 @@ Once a REST API reaches beta, it has nine months to
 1. reach GA and deprecate the beta or 
 2. have a new beta version and deprecate the previous beta.
 
-If neither of those conditions met, the beta REST API is deprecated in the second release with a stated intent to remove the REST API entirely.
+If neither of those conditions met, the beta REST API is deprecated in the third release with a stated intent to remove the REST API entirely.
 To avoid removal, the REST API must create a new beta version (it cannot go directly from deprecated to GA).
 
 For example, in v1.16, v1beta1 is released. Sample release note and API doc:
@@ -139,8 +139,7 @@ This is the same as the standard for new beta APIs introduced in 1.19.
 1. events.v1beta1.events.k8s.io
 
 ### sig-apps
-1. jobtemplates.v1beta1.batch
-2. cronjobs.v1beta1.batch
+1. cronjobs.v1beta1.batch
 
 ### sig-auth
 1. certificatesigningrequests.v1beta1.certificates.k8s.io
@@ -156,9 +155,6 @@ This is the same as the standard for new beta APIs introduced in 1.19.
 
 ### sig-scheduling
 1. poddisruptionbudgets.v1beta1.policy
-2. evictions.v1beta1.policy
-
-
 
 ## Drawbacks
 
