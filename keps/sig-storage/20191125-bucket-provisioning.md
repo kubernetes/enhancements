@@ -122,28 +122,35 @@ Sidecar start up will follow these steps:
 1. repeat step 2 in an exponential back-off loop until the `COSIDriver` has been created or we timeout.
 1. a timeout fails the sidecar.
 
+Sidecar restart resiliency is needed so that it can distinguish between its own `COSIDriver` already existing vs. failing on driver name collision.
+
+**Note:** the `COSIDriver` object is expected to be deleted when the sidecar exits.
+
 ## Workflows
 
 ### Greenfield Buckets
 
 #### Create Bucket
 
-1. The user creates `Bucket` in the app’s namespace.
-1. The COSI Controller detects the Bucket and creates a `BucketContent` object containing driver-relevant data.
-1. The sidecar detects the `BucketContent` and issues a _CreateBucket()_ rpc with any parameters defined in the `BucketClass`.
-1. The driver provisions the bucket and returns pertinent endpoint, credential, and metadata information.
-1. The sidecar creates a Secret in it's namespace containing endpoint and credential information and an owner reference to the BucketContent.
+1. The user creates a `Bucket` in the app’s namespace.
+1. The COSI controller detects the `Bucket` and creates a `BucketContent` containing driver-relevant data.
+1. The sidecar detects the `BucketContent` and issues a _CreateBucket()_ rpc with parameters defined in the `BucketClass`.
+1. The driver creates the bucket and returns pertinent endpoint, credential, and metadata information.
+1. The sidecar creates a Secret in its namespace containing endpoint and credential information and an owner reference to the `BucketContent`.
 1. The COSI controller copies the sidecar's secret to the `Bucket`'s namespace.
-1. The workflow ingests the Secret to begin operation.
+1. The COSI controller adds a finalizer to the `BucketContent`, `Bucket`, and app secret.
+1. The COSI controller sets owner references on the `Bucket` and secret. Note: the `BucketContent` being cluster-scoped does not have an owner reference.
+1. The workflow ingests the app Secret to begin operation.
 
 #### Delete Bucket
 
-1. The user deletes their `Bucket`, which blocks, due to a finalizer, until backend deletion operations complete.
+1. The user deletes their `Bucket`, which blocks due to a finalizer, until backend deletion operations complete.
 1. The COSI controller detects the update and deletes the `BucketContent`, which also blocks until backend deletion operations complete.
 1. The sidecar detects this and issues a _DeleteBucket()_ rpc to the driver.  It passes pertitent data stored in the `BucketContent`.
 1. The driver deletes the bucket from the object store and responds with no error.
-1. The sidecar removes the `BucketContent`'s finalizer.  The `BucketContent` and the sidecar Secret are garbage collected.
-1. The COSI controller removes the finalizer on the `Bucket`.  The `Bucket` and the app Secret are garbage collected.
+1. The sidecar sets the `BucketContent`'s status to indicate the delete occurred.
+1. The COSI controller deletes the `BucketContent` and app secret.
+1. The COSI controller removes the `Bucket`, app secret, and `BucketContent` finalizers so they are garbage collected.
 
 ### Brownfield Buckets
 
@@ -155,16 +162,20 @@ Sidecar start up will follow these steps:
 1. The sidecar detects the `BucketContent` object and calls the _GrantAccess()_ rpc to the driver, returing a set of credentials for accessing the bucket.
 1. The sidecar writes the credentials and endpoint information to a Secret in its namespace, with an owner reference to the BucketContent.
 1. The COSI controller copies the sidecar's secret to the `Bucket`'s namespace.
+1. The COSI controller adds a finalizer to the `BucketContent`, `Bucket`, and app secret.
+1. The COSI controller sets owner references on the `Bucket` and secret. Note: the `BucketContent` being cluster-scoped does not have an owner reference.
 1. The workflow ingests the Secret to begin operation.
 
 #### Revoke Access
 
 1. The user deletes the `Bucket`, which blocks until revoke operations complete.
-2. The COSI controller detects the update and deletes the `BucketContent`, which also blocks until backend revoke operations complete.
-3. The sidecar detects the `BucketContent` update and invokes the _RevokeAccess()_ rpc method.
-4. The driver terminates the access for the associated credentials.
-5. The sidecar removes the finalizer from and deletes its Secret.
-6. The COSI controller removes the finalizer from the `Bucket`,  allowing it and the app Secret to be garbage collected.
+1. The COSI controller detects the update and deletes the `BucketContent`, which also blocks until backend revoke operations complete.
+1. The sidecar detects the `BucketContent` update and invokes the _RevokeAccess()_ rpc method.
+1. The driver removes access for the associated credentials.
+1. The sidecar removes the finalizer from and deletes its Secret.
+1. The sidecar sets the `BucketContent`'s status to indicate the revoke occurred.
+1. The COSI controller deletes the `BucketContent` and app secret.
+1. The COSI controller removes the `Bucket`, app secret, and `BucketContent` finalizers so they are garbage collected.
 
 ### Static Buckets
 
@@ -172,17 +183,20 @@ Sidecar start up will follow these steps:
 
 #### Grant Access
 
-1. A `BucketClass` is defined specifically referencing an object store bucket (cluster scope) and a Secret (in the driver's namespace).
-1. A user creates a `Bucket` in the app namespace, specifying the BucketClass.
-1. The COSI controller detects the `Bucket` and Secret in the `BucketClass` and creates a `BucketContent`.
-1. The COSI controller copies the sidecar's secret to the `Bucket`'s namespace.
+1. A `BucketClass` is defined specifically naming an object store bucket.
+1. This `BucketClass` also names a Secret and its namespace.
+1. A user creates a `Bucket` in the app namespace, specifying the `BucketClass`.
+1. The COSI controller detects the `Bucket`, sees the `BucketClass`'s secret, and creates a `BucketContent`.
+1. The COSI controller copies the secret referenced in the `BucketClass` to the `Bucket`'s namespace.
+1. The COSI controller adds a finalizer to the `BucketContent`, `Bucket`, and app secret.
+1. The COSI controller sets owner references on the `Bucket` and secret. Note: the `BucketContent` being cluster-scoped does not have an owner reference.
 1. The workflow ingests the Secret to begin operation.
 
 #### Revoke Access
 
 1. The user deletes the `Bucket`, which blocks until revoke operations complete.
-1. The COSI controller deletes the `Bucket`'s bound `BucketContent` object.
-1. The COSI controller removes the finalizer from the `Bucket`, allowing it and the app Secret to be garbage collected.
+1. The COSI controller deletes the associated `BucketContent` and app secret.
+1. The COSI controller removes the `Bucket` and app secret finalizers so they are garbage collected.
 
 ##  Custom Resource Definitions
 
