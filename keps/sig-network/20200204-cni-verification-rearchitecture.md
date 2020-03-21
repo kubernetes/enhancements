@@ -543,9 +543,21 @@ There may be other, better ways of doing this.  Running an upstream validation j
 
 These may be included in this proposal, but as of now, aren't detailed yet.
 
+### Node local traffic: Should it be revisited ? 
+
+There is an interesting caveat in the types.go API definition for NetworkPolicy.Ingress, wherein we mention that node local traffic is ALLOWED by default.  This is to enable health checks.  Although for now we can add this test, it's worth leveraging some of the thought process here to rethink wether this security hole is wanted long term in the network policy API.
+
+### Validation and 'type' : Should it be revisited ?
+
+There are some corner cases for validation (like type=Ingress, but an existing `egress:` stanza is present) which are not currently validated against.  Should we start rejecting such policies, since after all, they don't make any sense (i.e. sending an egress payload when the type is Ingress has no value, unless you're planning on toggling ingress/egress on and off over time, which seems like would be easier done by simply creating/deleting new policies.  And even if toggling were desired, you could do this with explicit API constructs "EgressEnabled:true", "IngressEnabled:true".
+
+
 ### Finding comprehensive test cases for policy validation
+
 The idea of having a set of test scenarios, running the tests on those same test scenarios, and testing positive/negative cases are one of the ways this proposal aims to enhance the current testing.
+
 To make the test cases more comprehensive, all different datapaths that packets follow should be explored. While packet datapaths are different with different CNIs, they may even differ within the same node depending on the subnets the pods belong. For example, some CNIs do not encapsulate packets that is destined to a pod in the same subnet, whereas the rest is encapsulated, which has huge impact on the datapath.
+
 The reasoning behind the need to increase test coverage by adding these scenarios are that at different scenarios packets hit iptables/OVS/BPF rules at different points. To fully ensure that CNI solutions correctly enforce network policies for all cases the following test scenarios should be considered: 
 - Have at least 2 nodes.
 - Have pods that are on host network like kube-api-server.
