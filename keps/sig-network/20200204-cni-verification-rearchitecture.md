@@ -428,7 +428,7 @@ As a few examples of this:
 
 In the solutions section, we will highlight how the proposal makes these tests, and thus the semantics of network policies, explicit and self documenting.
  
-## GOALS
+## Goals
  
 In short, our solution to this problem follows
 
