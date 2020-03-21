@@ -209,6 +209,7 @@ Different runtimes have different heuristics around the best time to release mem
 * The OpenJDK Java virtual machine uses the standard free function. It is based on the standard C/C++ library, and calls the standard `free()` function, and as such will work as appropriate for the distribution it is installed on (glibc or musl).
 * NodeJS will call `madvise` if the memory reduction feature is used. Follow the code starting at https://github.com/nodejs/node/blob/master/deps/v8/src/heap/sweeper.cc#L322 
 
+The Java runtime autoconfigures some garbage collector sizes based on the amount of memory available to it. Since Java 9, the JDK is cgroup aware and will correctly use the amount of memory available to the cgroup that it is running in to perform this initialization. The OpenJDK implementation uses the `hierarchical_memory_limit` field in its `memory.stat` file to determine the amount of memory that is available to it. This field contains the maximum calculated amount of memory available to the cgroup based on the limits set on the entire memory controller hierarchy.
 
 ### User Stories 
 
