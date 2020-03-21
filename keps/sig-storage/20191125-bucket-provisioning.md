@@ -223,7 +223,7 @@ spec:
   bucketClassName: [4]
   secretName: [5]
   protocol: [6]
-    accessMode: {"ro", "rw"} [7]
+  accessMode: {"ro", "rw"} [7]
 status:
   bucketContentName: [8]
   phase:
@@ -231,11 +231,11 @@ status:
 ```
 1. `labels`: COSI controller adds the label to its managed resources to easy CLI GET ops.  Value is the driver name returned by GetDriverInfo() rpc. Characters that do not adhere to [Kubernetes label conventions](https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set) will be converted to ‘-’.
 1. `finalizers`: COSI controller adds the finalizer to defer `Bucket` deletion until backend deletion ops succeed.
-1. `bucketPrefix`: prefix prepended to a randomly generated bucket name, eg. "YosemitePhotos-".
+1. `bucketPrefix`: (Optional) prefix prepended to a randomly generated bucket name, eg. "YosemitePhotos-". If empty no prefix is appended.
 1. `bucketClassName`: Name of the target `BucketClass`.
-1. `secretName`: Desired name for user's credential Secret. API validation for unique name. Controlover this name allows for a single manifest workflow. Of course, there is a window here where API validation passes but the secret creation fails due to an existing secret of the same name just created. The user's (app) secret will continue to be attempted to be created until a timeout.
-1. `protocol`: String array of protocols (e.g. s3, gcs, swift, etc.) requested by the user.  Used in matching Buckets to BucketClasses and ensuring compatibility with backing object stores.
-1. `accessMode`:  The requested level of access provided to the returned access credentials.
+1. `secretName`: Desired name for user's credential Secret. API validation for unique name. Defining this name allows for a single manifest workflow. Of course, there is a window here where API validation passes but the secret creation fails due to an existing secret of the same name just created. Attempting to create the user's (app's) secret will continue until a timeout occurs.
+1. `protocol`: (Optional) String array of protocols (e.g. s3, gcs, swift, etc.) requested by the user. If the specified `BucketClass` does not match one of the protocols then `Bucket` creation fails. If omitted then the `BucketClass` is assumed correct.
+1. `accessMode`:  (Optional) The requested level of access provided to the returned access credentials. If omitted "rw" is assumed.
 1. `bucketContentName`: Name of a bound `BucketContent`.
 
 
@@ -273,16 +273,16 @@ status:
 1. `finalizers`: COSI controller adds the finalizer to defer Bucket deletion until backend deletion ops succeed.
 1. `bucketClassName`: Name of the associated BucketClass
 1. `supportedProtocols`:  String array of protocols (e.g. s3, gcs, swift, etc.) supported by the associated object store.
-1. `releasePolicy`: the release policy defined in the associated BucketClass. (see [BucketClass](#BucketClass) for more information)
-1. `bucketRef`: the name & namespace of the bound Bucket.
-1. `secretRef`: the name & namespace of the sidecar-generated secret.
+1. `releasePolicy`: the release policy defined in the associated BucketClass (see [BucketClass](#BucketClass) for more information).
+1. `bucketRef`: the name & namespace of the bound `Bucket`.
+1. `secretRef`: the name & namespace of the sidecar-generated secret, or the assigned secret in the case of static brownfield.
 1. `accessMode`: The level of access granted to the credentials stored in `secretRef`, one of "read only" or "read/write".
 1. `bucketAttributes`: stateful data relevant to the managing of the bucket but potentially inappropriate user knowledge (e.g. user's IAM role name)
-1. `phase`: is the current state of the BucketContent:
-    - `Bound`: the operator finished processing the request and bound the Bucket and BucketContent
-    - `Released`: the Bucket has been deleted, leaving the BucketContent unclaimed.
-    - `Failed`: error and all retries have been exhausted.
-    - `Retrying`: set when a recoverable driver or kubernetes error is encountered during bucket creation or access granting. Will be retried.
+1. `phase`: is the current state of the `BucketContent`:
+    - _Bound_: the operator finished processing the request and bound the `Bucket` and `BucketContent`
+    - _Released_: the `Bucket` has been deleted, leaving the `BucketContent` unclaimed.
+    - _Failed_: error and all retries have been exhausted.
+    - _Retrying_: set when a recoverable driver or Kubernetes error is encountered during bucket creation or access granting. Will be retried.
 
 #### BucketClass
 
@@ -308,13 +308,13 @@ parameters: string:string [7]
 ```
 
 1. `provisioner`: (Optional) The name of the driver in the form _"driver-namespace/driver-name"_. If supplied the driver container and sidecar container are expected to be deployed in the same pod in the supplied namespace. If omitted the `bucketContentName` is required for static provisioning.
-1. `supportedProtocols`: A strings array of protocols the associated object store supports (e.g. swift, s3, gcs, etc.).
-1. `accessModes`: Declares the level of access given to credentials provisioned through this class.
+1. `supportedProtocols`: (Optional) A strings array of protocols the associated object store supports (e.g. swift, s3, gcs, etc.). If empty then protocol checking is skipped.
+1. `accessModes`: (Optional) Declares the level of access given to credentials provisioned through this class. If empty then "rw" is assumed.
 1.  `releasePolicy`: Prescribes outcome of a Deletion and Revoke events.
-    - `Delete`:  the bucket and its contents are destroyed
-    - `Retain`:  the bucket and its contents are preserved, only the user’s access privileges are terminated
-    - `Reuse` : TBD
-    - `Erase`: TBD
+    - _Delete_:  the bucket and its contents are destroyed
+    - _Retain_:  the bucket and its contents are preserved, only the user’s access privileges are terminated
+    - _Reuse_ :  TBD
+    - _Erase_ :  TBD
 1. `bucketContentName`: (Optional). An admin defined `BucketContent` representing a brownfield or static bucket. A non-empty value in this field indicates brownfield provisioning. An empty value indicates greenfield provisioning.
 1. `secretRef`: (Optional) The name and namespace of an existing secret to be copied to the `Bucket`'s namespace for static brownfield provisioning. If omitted then provisioning is either greenfield or dynamic brownfield, depending on `bucketContentName`.
 1. `parameters`: object store specific key-value pairs passed to the driver.
@@ -334,5 +334,5 @@ flags: [3]
 
 1. `name`: The name here must match the name of the driver, which means that driver names follow Kubernetes naming rules.
 1. `driverNamespace`: The name of the driver's namespace.
-1. `flags`: string:string map. The flags passed to the driver. # or do we want sidecar flags?
+1. `flags`: (Optional) string:string map. The flags passed to the driver. # or do we want sidecar flags?
 
