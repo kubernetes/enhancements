@@ -1,0 +1,16 @@
+title: KEP Template
+kep-number: 1630
+authors:
+  - "@deads2k"
+owning-sig: api-machinery
+participating-sigs:
+status: implementable
+creation-date: 2020-03-23
+reviewers:
+  - "@lavalamp"
+  - "@sttts"
+approvers:
+  - "@lavalamp"
+see-also:
+  - "/keps/sig-api-machinery/20190228-priority-and-fairness.md"
+replaces:
