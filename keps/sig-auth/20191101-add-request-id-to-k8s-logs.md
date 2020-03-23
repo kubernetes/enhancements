@@ -47,7 +47,7 @@ status: provisional
 
 ## Summary
 
-This KEP proposes a new unique logging meta-data into all Kubernetes logs. It makes us
+This KEP proposes a new unique logging meta-data into key Kubernetes logs(Details are described in [Design of Propagate Request-ID section](#design-of-propagate-request-id)). It makes us
 more easy to identify specific logs related to a single user operation (such as
 `kubectl apply -f <my-pod.yaml>`). This feature is similar to
 [Global request ID](https://docs.openstack.org/api-guide/compute/faults.html) for
@@ -88,19 +88,27 @@ and the API processing just before OOM killer. If the cause is that some unknown
 pod creations, it is helpful to detect the root API request and who called this
 request.
 
+#### Summary of Cases
+
+ - Given a component log(such as error log), find the API request that caused this (error) log.
+ - Given an API Request(such as suspicious API request), find the resulting component logs.
+
 ### Goals
 
  - Adding a Request-ID into each K8s component log.
  - The Request-ID is unique to a kubectl operation.
    - (One kubectl operation by user causes multiple API requests and klog calls. Request-ID has same value in these klog calls.)
- - Control enabled/disabled Request-ID feature(Request-ID feature is disabled on default to avoid an impact for existing user).
+ - Control enabled/disabled Request-ID feature
+   - Request-ID feature is disabled on default to avoid an impact for existing user. The expected impacts are as follows.
+     - Increasing log size
+     - Changing log format. (If there is a user who collects various log texts based on specific rules by 3rd party tools etc., it may not be possible to extract it with existing rules.)
 
 ### Non-Goals
 
  - To centrally manage the logs of each Kubernetes component with Request-ID (This can
 be realized with existing OSS such as Kibana, so no need to implement into Kubernetes
 components).
- - We don't associate Request-ID to all of operations(Our target is important operations such as `kubectl create/delete/etc.`).
+ - We don't associate Request-ID to all of operations(Our target is important operations such as `kubectl create/delete/etc.` which cause changes in the system, and read operations such as `kubectl get/describe/etc.` are not our target).
 
 ## Proposal
 
