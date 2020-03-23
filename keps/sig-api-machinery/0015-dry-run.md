@@ -13,8 +13,8 @@ approvers:
   - "@erictune"
 editor: apelisse
 creation-date: 2018-06-21
-last-updated: 2018-06-21
-status: implementable
+last-updated: 2020-03-23
+status: implemented
 ---
 
 # Kubernetes Dry-run
