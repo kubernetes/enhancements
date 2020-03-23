@@ -259,9 +259,7 @@ spec:
   bucketRef: [7]
     name:
     namespace:
-  secretRef: [8]
-    name:
-    namespace:
+  secretName: [8]
   accessMode: {"rw", "ro"} [9]
 status:
   bucketAttributes: <map[string]string> [10]
@@ -274,8 +272,8 @@ status:
 1. `bucketClassName`: Name of the associated `BucketClass`.
 1. `supportedProtocols`:  String array of protocols (e.g. s3, gcs, swift, etc.) supported by the associated object store.
 1. `releasePolicy`: the release policy defined in the associated BucketClass (see [BucketClass](#BucketClass) for more information).
-1. `bucketRef`: the name & namespace of the bound `Bucket`.
-1. `secretName`: the name of the app secret in the `Bucket`'s namespace, as provided in `bucketRef.namespace`.
+1. `bucketRef`: the name & namespace of the associated `Bucket`. For both brownfield cases, `bucketRef` is set by an admin and names the bucket to be accessed. For greenfield, it is added by the COSI controller.
+1. `secretName`: the name of the app secret in the `Bucket`'s namespace, as define in `bucketRef.namespace`. For static brownfield, `secretName` is set by an admin; otherwise it is added by the COSI controller.
 1. `accessMode`: The level of access granted to the credentials stored in `secretRef`, one of "read only" or "read/write".
 1. `bucketAttributes`: stateful data relevant to the managing of the bucket but potentially inappropriate user knowledge (e.g. user's IAM role name).
 1. `phase`: is the current state of the `BucketContent`:
