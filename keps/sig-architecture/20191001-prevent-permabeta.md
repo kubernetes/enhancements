@@ -8,6 +8,7 @@ participating-sigs:
   - sig-apps
   - sig-architecture
   - sig-auth
+  - sig-instrumentation
   - sig-network
   - sig-node
   - sig-scheduling
@@ -20,7 +21,7 @@ approvers:
   - "@derekwaynecarr"
   - "@johnbelamaric"
 creation-date: 2019-10-01
-last-updated: 2020-03-19
+last-updated: 2020-03-23
 status: implementable
 see-also:
 replaces:
@@ -39,9 +40,9 @@ superseded-by:
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
 - [Impacted APIs](#impacted-apis)
-  - [sig-apimachinery](#sig-apimachinery)
   - [sig-apps](#sig-apps)
   - [sig-auth](#sig-auth)
+  - [sig-instrumentation](#sig-instrumentation)
   - [sig-network](#sig-network)
   - [sig-node](#sig-node)
   - [sig-scheduling](#sig-scheduling)
@@ -105,6 +106,7 @@ If we're honest with ourselves, a single actor has been cleaning up behind a lot
 2. Control non-k8s.io REST APIs.
 3. Control features that are not REST APIs.
 4. Control fields on otherwise GA REST APIs.
+   This will likely be a future goal, but it isn't the goal of this KEP.
 
 ## Proposal
 
@@ -114,6 +116,8 @@ Once a REST API reaches beta, it has nine months to
 
 If neither of those conditions met, the beta REST API is deprecated in the third release with a stated intent to remove the REST API entirely.
 To avoid removal, the REST API must create a new beta version (it cannot go directly from deprecated to GA).
+
+This means that every beta API will be deprecated in nine months and removed in 18 months.
 
 For example, in v1.16, v1beta1 is released. Sample release note and API doc:
 > * "The v1beta1 version of this API will be evaluated during v1.16, v1.17, and v1.18, then deprecated in v1.19 (in favor of a new beta version, a GA version, or with no replacement), then removed in v1.22"
@@ -135,15 +139,15 @@ It will also create an incentive for REST API authors to push their APIs to GA i
 These sigs will need to announce in 1.19 that these APIs will be deprecated no later than 1.22 and removed no later than 1.25.
 This is the same as the standard for new beta APIs introduced in 1.19.
 
-### sig-apimachinery
-1. events.v1beta1.events.k8s.io
-
 ### sig-apps
 1. cronjobs.v1beta1.batch
 
 ### sig-auth
 1. certificatesigningrequests.v1beta1.certificates.k8s.io
 2. podsecuritypolicies.v1beta1.policy
+
+### sig-instrumentation
+1. events.v1beta1.events.k8s.io
 
 ### sig-network
 1. endpointslices.v1beta1.discovery.k8s.io
