@@ -94,6 +94,17 @@ making it clear what resource version matching options are available.
 It has the disadvanatage of placing the deprecated behavior on the default
 value of an new optional parameter, which it at risk of not being noticed.
 
+**Backward Compatibility:**
+
+Versions of the kube-apiserver that pre-date the introduction of `ResourceVersionMatch`
+parameter will ignore it.
+
+Versions that support it will include `ResourceVersionMatch` in list responses.
+Clients that set `ResourceVersionMatch` in the request are expected to check for
+`ResourceVersionMatch` in the response. If it is absent from the response, the client
+must assume the server does not support `ResourceVersionMatch` and must interpret the
+response as `Legacy`.
+
 ### Option 2: Introduce new parameters
 
 Deprecate `ResourceVersion` and introduce `ExactResourceVersion` and `MinResourceVersion`.
@@ -105,6 +116,16 @@ This makes it obvious that the `ResourceVersion` parameter is deprecated. It
 does this as the API aesthetic cost of having a top level parameter be forever
 deprecated.
 
+**Backward Compatibility:**
+
+Versions of the kube-apiserver that pre-date the introduction of the `ExactResourceVersion`
+and `MinResourceVersion` parameters will ignore them, resulting in a quorum read.
+
+Versions that support them will need to include information in the list response to make
+it clear to the client what resource version match rule has been used. This could be
+done by adding optional `ExactResourceVersion` and `MinResourceVersion` fields to list responses
+which are set to whatever parameter was provided in the request.
+
 ### Option 3: Use syntax in the query string
 
 Introduce syntax (`=N` and `>=N`) instead of additional parameters.
@@ -112,6 +133,10 @@ Introduce syntax (`=N` and `>=N`) instead of additional parameters.
 The disadvantage of this is that many frameworks expect query parameters to be
 `=` separated key value pairs. It would also need to somehow retain backward
 compatibility (`==N` for exact, `=N` for legacy)?.
+
+**Backward Compatibility:**
+
+TODO
 
 ### Risks and Mitigations
 
