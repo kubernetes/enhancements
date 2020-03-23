@@ -14,7 +14,7 @@ approvers:
 editor: apelisse
 creation-date: 2018-06-21
 last-updated: 2018-06-21
-status: implementable
+status: implemented
 ---
 
 # Kubernetes Dry-run
