@@ -13,7 +13,7 @@ approvers:
 editor: TBD
 creation-date: 2020-01-15
 last-updated: 2020-01-27
-status: implementable
+status: implemented
 see-also:
   - "/keps/sig-api-machinery/0015-dry-run.md"
   - "/keps/sig-api-machinery/0006-apply.md"
