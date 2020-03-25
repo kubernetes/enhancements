@@ -1782,6 +1782,21 @@ Alpha:
 - Adequate documentation for the changes
 - Minimum viable test cases mentioned in Test Plan section
 
+Beta:
+
+- Blocking Items:
+  - Improving observability and robustness: adding debug endpoint dumping fine-grained states of the queues for priority-levels
+  - Providing approaches to opt-out client-side rate-limitting: configurable client-side ratelimitting(QPS/Burst) via either kubeconfig or command-line flags 
+  - Necessary e2e test: adding E2E tests which at least covers:
+    - Basics of `flowcontrol.apiserver.k8s.io/v1beta1` API 
+    - Reloading flowcontrol configurations upon `flowcontrol.apiserver.k8s.io/v1beta1` API resources changes
+- Non-Blocking Items:
+  - Supports concurrency limiting upon long-running requests
+  - Allow constant concurrency/relative shares in the priority-level API model
+  - Automatically manages versions of mandatory/suggested configuration
+  - Discrimates paginated LIST requests
+
+
 ## Implementation History
 
 (none yet)
