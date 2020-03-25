@@ -161,16 +161,18 @@ made to verify that inter-namespace traffic can be blocked via NetworkPolicy.
  
 The "X" lines denote communication which is blocked, whereas standard arrows denote
 traffic that is allowed.
+
+This is from the test "should enforce policy to allow traffic only from a different namespace, based on NamespaceSelector".
  
 ```
 +-------------------------------------------------------------------+
 | +------+    +-------+   Figure 1a: The NetworkPolicy Tests        | TODO: maybe include YAML examples side-by-side
 | |      |    |       |   current logical structure only verifies   |       visual nomenclature (i.e., cA -> podA)
-| |  cA  |    |  cB   |   one of many possible network connectivity |
+| |  a   |    |  b    |   one of many possible network connectivity |
 | |      |    |       |   requirements. Pods and servers are both   |
 | +--+---+    +--X----+   in the same node and namespace.           |
 |    |           X                                                  |
-|    |           X                                                  |
+|    |     ns A  X                                                  |
 +----v-----------X+---+                                             |
 ||     server         |    Note that the server runs in the         |
 ||     80, 81         |    "framework" namespace, and so we don't   |
@@ -189,9 +191,9 @@ namespaces created in the entire network policy test suite.
  
 ```
 +-------------------------------------------------------------------------+
-|  +------+              +------+                                         |
+|  +------+              +------+  nsA                                    |
 |  |      |              |      |                                         |
-|  |   cA |              |  cB  |     Figure 1b: The above test           |
+|  |   b  |              |  c   |     Figure 1b: The above test           |
 |  +--+---+              +----X-+     is only complete if a permutation   |
 |     |   +---------------+   X       of other test scenarios which       |
 |     |   |    server     |   X       guarantee that (1) There is no      |
@@ -202,7 +204,7 @@ namespaces created in the entire network policy test suite.
 | |            X  X               |   We limit the amount of namespaces   |          (client/servers)
 | |   +------XXX  XXX-------+  nsB|   to test to 3 because 3 is the union |
 | |   |      | X  X |       |     |   of all namespaces.                  |
-| |   |  cA  | X  X |   cB  |     |                                       |
+| |   |  b   | X  X |   c   |     |                                       |
 | |   |      | X  X |       |     |   By leveraging the union of all      |
 | |   +------+ X  X +-------+     |   namespaces we make *all* network    |
 | |            X  X               |   policy tests comparable,            |
@@ -211,7 +213,7 @@ namespaces created in the entire network policy test suite.
 |  |           X  X               |                                       |
 |  |  +------XXX  XXX-------+  nsC|   This fulfills one of the core       |
 |  |  |      |      |       |     |   requirements of this proposal:      |
-|  |  |  cA  |      |   cB  |     |   comparing and reasoning about       |
+|  |  |  c   |      |   b   |     |   comparing and reasoning about       |
 |  |  |      |      |       |     |   network policy test completeness    |
 |  |  +------+      +-------+     |   in a deterministic manner which     |
 |  |                              |   doesn't require reading the code.   |
