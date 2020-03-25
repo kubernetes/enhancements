@@ -362,7 +362,7 @@ it has been correctly written to be different from the OR test.
                                         "pod-name": "client-b",
                                     },
                                 },
-                                // because we lack {,} , this is a single Peer selecting
+                                // because we lack },{ , this is a single Peer selecting
                                 // pods, from namespaces selected by namespace selector.
                                 // This is difficult to verify for correctness at a
                                 // glance, due to the verbosity of the struct.
