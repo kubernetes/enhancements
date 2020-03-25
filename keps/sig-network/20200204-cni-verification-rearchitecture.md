@@ -224,6 +224,14 @@ namespaces created in the entire network policy test suite.
 +-------------------------------------------------------------------------+
 ```
 
+##### TODO Temporal tests
+
+Note that we also don't explicitly test a few other scenarios that involve changes over time.
+
+- Old pods obeying new policies
+- New pods obeyeing old policies
+- Extensive changing of pod labels is keeping up with policies
+
 #### Other concrete examples of incompleteness
 
 The above diagrams show that completeness is virtually impossible, the way the tests are written, because of the fact that each test is manually verifying bespoke cases.  More concretely, however, a look at `should enforce policy to allow traffic only from a different namespace, based on NamespaceSelector [Feature:NetworkPolicy]` reveals that some tests don't do positive controls (validation of preexisting connectivity), whereas others *do* do such controls.
