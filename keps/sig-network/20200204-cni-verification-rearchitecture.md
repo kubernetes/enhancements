@@ -1,5 +1,5 @@
 ---
-title: Architecting NetworkPolicy tests with a DSL for better upstream test coverage of all CNIs
+title: Rearchitecting NetworkPolicy tests with a DSL for better upstream test coverage
 authors:
   - "@jayunit100"
   - "@abhiraut"
@@ -97,11 +97,12 @@ As an overall improvement, this KEP will help to address the solutions for sever
 - https://github.com/kubernetes/kubernetes/issues/87893 (holes in our test coverage matrix)
 - https://github.com/kubernetes/kubernetes/issues/85908 (failing tests, unclear semantics)
 - https://github.com/kubernetes/kubernetes/issues/86578 (needs e2e coverage)
-- https://github.com/kubernetes/kubernetes/issues/87709 (logging of netpol actions, will help describing states we reach) 
-- https://github.com/projectcalico/felix/issues/2032 (non-deterministic time frames for policy applications - addressable through published performance tests which measure time to policy implementation for several pods in several namespaces.)
-- https://github.com/projectcalico/felix/issues/2008 (need to test postStart pods in networkpolicy upstream.)
-- https://github.com/vmware-tanzu/antrea/issues/381 (addressable by performance tests *or* node-targeted tests.)
 - https://github.com/kubernetes/kubernetes/issues/88375 (the test matrix for Egress is almost entirely empty, decreasing the verbosity of new tests will organically increase likelihood of new test submissions over time.)
+
+#### Also related but not directly addressed in this KEP
+
+- https://github.com/projectcalico/felix/issues/2008 (Not sure wether we should test this, might not be a true bug - but need to test postStart pods in networkpolicy upstream either way and be explicit)
+- https://github.com/kubernetes/kubernetes/issues/87709 (Separate KEP, complimentary to this logging of netpol actions, will help describing states we reach) 
 
 
 ### Consequences of this problem
@@ -528,29 +529,30 @@ Pod(...).InNamespace(...).CanAccess(...)
  
 ###  Note on Acceptance and Backwards compatibility
 
-Thus far there are two obvious ways to ensure backwards compatibility. 
-- Each old test will be converted to a truth table, first, as part of this work, so that the parity between old and new tests is clear and obvious 
-- Alternatively, these can be a next generation of policy tests which live in parallel to existing network policy tests for a release cycle, while they are vetted
+From discussion in the community, we've decided to manually verify that we haven't lost coverage and trust reviewers to be dilligent in final review of the new architecture, by comparing Ginkgo sentences and old test structs.
 
 ## Next steps
 
 As of now, network policy tests are not run regularly against any CNI.  Although we should not endorse one CNI over another, we should regularly validate
-that the NetworkPolicy tests *can* pass on *some* provider.  As part of this proposal, we propose committing an annotation to the existing `network_policy.go` code which states, in clear and simple terms, what environment the `network_policy.go` test suite was run in, the last time which it was committed and passed.  It's also acceptable to commit this as a Markdown file in the documentation.
+that the NetworkPolicy tests *can* pass on *some* provider.  As part of this proposal we propose committing an annotation to the existing `network_policy.go` code which states...
+- what environment the `network_policy.go` test suite was run in
+- the last time which it was committed and passed.  
+
+It's also acceptable to commit this as a Markdown file in the documentation.
  
 There may be other, better ways of doing this.  Running an upstream validation job of these tests as a weekly PROW job, for example, would be a good way to make sure that these tests don't regress in the future.  This comes at the cost of coupling a job to an external CNI provider, so its not being explicitly suggested.
 
-## Other Improvement Ideas
+## Thoughts from initial research in this proposal (future KEPs)
 
-These may be included in this proposal, but as of now, aren't detailed yet.
+These are not part of this KEP, but came as logical conclusions from doing the initial evaluation of the API testing current-state-of-affairs for discussion in future KEPS with the community.
 
-### Node local traffic: Should it be revisited ? 
+### Node local traffic: Should it be revisited in V2 ?
 
 There is an interesting caveat in the types.go API definition for NetworkPolicy.Ingress, wherein we mention that node local traffic is ALLOWED by default.  This is to enable health checks.  Although for now we can add this test, it's worth leveraging some of the thought process here to rethink wether this security hole is wanted long term in the network policy API.
 
 ### Validation and 'type' : Should it be revisited ?
 
 There are some corner cases for validation (like type=Ingress, but an existing `egress:` stanza is present) which are not currently validated against.  Should we start rejecting such policies, since after all, they don't make any sense (i.e. sending an egress payload when the type is Ingress has no value, unless you're planning on toggling ingress/egress on and off over time, which seems like would be easier done by simply creating/deleting new policies.  And even if toggling were desired, you could do this with explicit API constructs "EgressEnabled:true", "IngressEnabled:true".
-
 
 ### Finding comprehensive test cases for policy validation
 
