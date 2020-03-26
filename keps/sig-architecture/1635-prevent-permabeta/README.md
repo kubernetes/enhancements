@@ -1,36 +1,5 @@
----
-title: Require Transition from Beta
-authors:
-  - "@deads2k"
-owning-sig: sig-architecture
-participating-sigs:
-  - sig-api-machinery
-  - sig-apps
-  - sig-architecture
-  - sig-auth
-  - sig-instrumentation
-  - sig-network
-  - sig-node
-  - sig-scheduling
-reviewers:
-  - "@bgrant0607"
-  - "@liggitt"
-  - "@smarterclayton"
-approvers:
-  - "@dims"
-  - "@derekwaynecarr"
-  - "@johnbelamaric"
-creation-date: 2019-10-01
-last-updated: 2020-03-23
-status: implementable
-see-also:
-replaces:
-superseded-by:
----
 
-# Require Transition from Beta
-
-## Table of Contents
+# KEP-1635: Require Transition from Beta
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
@@ -51,15 +20,22 @@ superseded-by:
 
 ## Release Signoff Checklist
 
-**ACTION REQUIRED:** In order to merge code into a release, there must be an issue in [kubernetes/enhancements] referencing this KEP and targeting a release milestone **before [Enhancement Freeze](https://github.com/kubernetes/sig-release/tree/master/releases)
+<!--
+**ACTION REQUIRED:** In order to merge code into a release, there must be an
+issue in [kubernetes/enhancements] referencing this KEP and targeting a release
+milestone **before the [Enhancement Freeze](https://git.k8s.io/sig-release/releases)
 of the targeted release**.
 
-For enhancements that make changes to code or processes/procedures in core Kubernetes i.e., [kubernetes/kubernetes], we require the following Release Signoff checklist to be completed.
+For enhancements that make changes to code or processes/procedures in core
+Kubernetes i.e., [kubernetes/kubernetes], we require the following Release
+Signoff checklist to be completed.
 
-Check these off as they are completed for the Release Team to track. These checklist items _must_ be updated for the enhancement to be released.
+Check these off as they are completed for the Release Team to track. These
+checklist items _must_ be updated for the enhancement to be released.
+-->
 
-- [ ] kubernetes/enhancements issue in release milestone, which links to KEP (this should be a link to the KEP location in kubernetes/enhancements, not the initial KEP PR)
-- [ ] KEP approvers have set the KEP status to `implementable`
+- [ ] Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [ ] KEP approvers have approved the KEP status as `implementable`
 - [ ] Design details are appropriately documented
 - [ ] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
 - [ ] Graduation criteria is in place
@@ -67,14 +43,14 @@ Check these off as they are completed for the Release Team to track. These check
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
-**Note:** Any PRs to move a KEP to `implementable` or significant changes once it is marked `implementable` should be approved by each of the KEP approvers. If any of those approvers is no longer appropriate than changes to that list should be approved by the remaining approvers and/or the owning SIG (or SIG-arch for cross cutting KEPs).
-
+<!--
 **Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
+-->
 
 [kubernetes.io]: https://kubernetes.io/
-[kubernetes/enhancements]: https://github.com/kubernetes/enhancements/issues
-[kubernetes/kubernetes]: https://github.com/kubernetes/kubernetes
-[kubernetes/website]: https://github.com/kubernetes/website
+[kubernetes/enhancements]: https://git.k8s.io/enhancements
+[kubernetes/kubernetes]: https://git.k8s.io/kubernetes
+[kubernetes/website]: https://git.k8s.io/website
 
 ## Summary
 
