@@ -90,7 +90,7 @@ The current network policy tests have a few issues which, without increasing tec
 
 For a TLDR, see https://github.com/vmware-tanzu/antrea/blob/master/hack/netpol/pkg/main/main.go of roughly what the code looks like that we are proposing to integrate.
 
-Conceptually we have 4 concrete changes that we are proposing:
+Conceptually we have 5 concrete changes that we are proposing:
 
 1. Introduce a simple "DSL" (in golang) for defining network policy's and reachability matrices.
   - Currently, the word `DSL` might be a misnomer, but has taken hold.  Specifically, we are using a Builder API to concsiely define NetworkPolicies in a declarative way.
@@ -106,10 +106,11 @@ Conceptually we have 4 concrete changes that we are proposing:
 	builder.SetTypeIngress()
 
     ```
-2. Rewrite all existing network_policy.go tests using the above DSL using (mostly the same) ginkgo descriptions as current tests do.
-3. Integrate tests with ginkgo by simply replacing existing network policy test declarations to use the new DSL
+2. Create all namespaces and pods in the test matrix before tests start (exceptions for some tests if we want to test pod churn or label changes etc), as part of the testing library itsef.
+3. Rewrite all existing network_policy.go tests using the above DSL using (mostly the same) ginkgo descriptions as current tests do.
+4. Integrate tests with ginkgo by simply replacing existing network policy test declarations to use the new DSL
   - putting initialization into a BeforeAll block for scaffold pods/namespaces
-4. Annotate these tests (in the code) with the CNIs they were run on, the last time they were running, and the test results (in lieu of waiting to decide on a canonical CNI)
+5. Annotate these tests (in the code) with the CNIs they were run on, the last time they were running, and the test results (in lieu of waiting to decide on a canonical CNI)
 
 There are many other concepts discussed after this, justifying and looking at the future of how this work might effect the way we think about network policy testing in the future, including how we might
 use this work to make the e2e suite more decalarative in the future, but these concrete goals are the endpoint for this specific KEP.
