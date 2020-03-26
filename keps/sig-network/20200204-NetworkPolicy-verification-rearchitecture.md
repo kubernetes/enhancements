@@ -8,7 +8,7 @@ authors:
   - "@mattfenwick"
 owning-sig: sig-network
 reviewers:
-  - "@bowie"
+  - "bowie@"
   - TBD
 approvers:
   - TBD
@@ -30,11 +30,12 @@ Note that this approach of higher level DSLs for testing may be moved into sig-t
   - [Goals](#goals)
   - [Non-goals](#non-goals)
   - [Related issues](#related-issues)
+    - [Also related but not directly addressed in this KEP](#also-related-but-not-directly-addressed-in-this-kep)
   - [Consequences of this problem](#consequences-of-this-problem)
-- [A high level outline of Pod Traffic Pathways](#A-high-level-outline-of-Pod-Traffic-Pathways)
-- [Security Boundaries](#security-boundaries)
+- [A high level outline of Pod Traffic Pathways](#a-high-level-outline-of-pod-traffic-pathways)
 - [Detailed examples of the problem statement](#detailed-examples-of-the-problem-statement)
   - [Incompleteness](#incompleteness)
+    - [TODO Temporal tests](#todo-temporal-tests)
     - [Other concrete examples of incompleteness](#other-concrete-examples-of-incompleteness)
     - [List of missing functional test cases](#list-of-missing-functional-test-cases)
   - [Understandability](#understandability)
@@ -42,12 +43,14 @@ Note that this approach of higher level DSLs for testing may be moved into sig-t
   - [Performance](#performance)
     - [Logging verbosity is worse for slow tests](#logging-verbosity-is-worse-for-slow-tests)
   - [Documentation](#documentation)
-- [Goals](#Goals)
+- [Goals](#goals-1)
 - [Implementation History](#implementation-history)
   - [Part 1: Defining a static matrix of ns/pod combinations](#part-1-defining-a-static-matrix-of-nspod-combinations)
   - [Note on Acceptance and Backwards compatibility](#note-on-acceptance-and-backwards-compatibility)
 - [Next steps](#next-steps)
-- [Other Improvement Ideas](#other-improvement-ideas)
+- [Thoughts from initial research in this proposal (future KEPs)](#thoughts-from-initial-research-in-this-proposal-future-keps)
+  - [Node local traffic: Should it be revisited in V2 ?](#node-local-traffic-should-it-be-revisited-in-v2-)
+  - [Validation and 'type' : Should it be revisited ?](#validation-and-type--should-it-be-revisited-)
   - [Finding comprehensive test cases for policy validation](#finding-comprehensive-test-cases-for-policy-validation)
   - [Ensuring that large policy stacks evaluate correctly](#ensuring-that-large-policy-stacks-evaluate-correctly)
   - [Ensure NetworkPolicy evaluates correctly regardless of the order of events](#ensure-networkpolicy-evaluates-correctly-regardless-of-the-order-of-events)
@@ -121,29 +124,28 @@ Before diving into test details, we outline different types of pod traffic.  Eac
 
 Intranode
 - pod -> pod
-- pod -> host 
+- pod -> host
 - host -> pod
 
 Internode
 - pod -> pod
 - pod -> host
 - host -> pod
-- `*`host -> host (out-of-scope for K8s Network Policies API)
-- host -> pod (host networking)
+- `*`host -> host/hostNetwork pod (out-of-scope for K8s Network Policies API)
 
 Traffic Transiting Service DNAT
-- Nodeport -> service (DNAT) -> pod
+- `*`Nodeport -> service (DNAT) -> pod (covered as a non-voting test case)
 - pod -> service (DNAT) -> pod
 
 Intranamespace
 - pod -> pod
-- pod (host networking) -> pod
-- pod -> pod (host networking)
+- hostNetwork pod -> pod
+- pod -> hostNetwork pod
 
 Internamespace
 - pod -> pod
-- pod (host networking) -> pod
-- pod -> pod (host networking)
+- hostNetwork pod -> pod
+- pod -> hostNetwork pod
 
 ## Detailed examples of the problem statement
  
@@ -224,12 +226,12 @@ namespaces created in the entire network policy test suite.
 +-------------------------------------------------------------------------+
 ```
 
-##### TODO Temporal tests
+#### TODO Temporal tests
 
 Note that we also don't explicitly test a few other scenarios that involve changes over time.
 
 - Old pods obeying new policies
-- New pods obeyeing old policies
+- New pods obeying old policies
 - Extensive changing of pod labels is keeping up with policies
 
 #### Other concrete examples of incompleteness
