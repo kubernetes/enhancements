@@ -86,6 +86,29 @@ The current network policy tests have a few issues which, without increasing tec
 - Rearchitect the way we write and define CNI NetworkPolicy test verifications
 - Increase the visibility and quality of documentation available for network policies
 
+#### Concrete goals
+
+- Introduce a simple "DSL" (in golang) for defining network policy's and reachability matrices.
+  - Currently, the word `DSL` might be a misnomer, but has taken hold.  Specifically, we are using a Builder API to concsiely define NetworkPolicies in a declarative way.
+  - The DSL examples are later in this document, for example: 
+    - DFL for defining test expectations:
+    ```
+	reachability := NewReachability(allPods, true).ExpectAllIngress(Pod("x/a"), false).Expect(Pod("x/a"), Pod("x/a"), true)
+    ```
+    - DSL for Defining network policies:
+    ```
+	builder := &NetworkPolicySpecBuilder{}
+	builder = builder.SetName("x", policyName).SetPodSelector(map[string]string{"pod": "a"})
+	builder.SetTypeIngress()
+
+    ```
+- Rewrite all existing network_policy.go tests using the above DSL using (mostly the same) ginkgo descriptions as current tests do.
+- Integrate tests with ginkgo by simply replacing existing network policy test declarations to use the new DSL
+  - putting initialization into a BeforeAll block for scaffold pods/namespaces
+- Annotate these tests (in the code) with the CNIs they were run on, the last time they were running, and the test results (in lieu of waiting to decide on a canonical CNI)
+
+There are many other concepts discussed after this, justifying and looking at the future of how this work might effect the way we think about network policy testing in the future, including how we might
+use this work to make the e2e suite more decalarative in the future, but these concrete goals are the endpoint for this specific KEP.
 
 ### Non-goals
 
