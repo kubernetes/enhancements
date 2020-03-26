@@ -1,25 +1,3 @@
----
-title: Behavior-driven Conformance Testing
-authors:
-  - "@johnbelamaric"
-  - "@hh"
-owning-sig: sig-architecture
-participating-sigs:
-  - sig-testing
-reviewers:
-  - "@timothysc"
-  - "@spiffxp"
-  - "@alejandrox1"
-  - "@johnschnake"
-approvers:
-  - "@bgrant0607"
-  - "@smarterclayton"
-editor: TBD
-creation-date: 2019-04-12
-last-updated: 2010-07-30
-status: implementable
----
-
 # Behavior-driven Conformance Testing
 
 ## Table of Contents
@@ -651,6 +629,7 @@ It('test string')`
 - 2019-07-30: Updated to separate Gherkin / godog into second phase, include
   directory structure for showing behavior/test separation
 - 2019-10-01: Added detailed design; marked implementable
+- 2020-03-26: Reformat for new KEP structure
 
 ## Drawbacks
 
