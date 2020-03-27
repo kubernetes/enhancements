@@ -35,7 +35,7 @@ status: provisional
   - [System Configuration](#system-configuration)
     - [Unique Driver Names](#unique-driver-names)
   - [Workflows](#workflows)
-    - [Distinguishing Bucket Case](#distinguishing-bucket-case)
+    - [Determining Case from BucketClass](#determining-case-from-bucketclass)
       - [Create Bucket (Greenfield)](#create-bucket-greenfield)
       - [Grant Bucket Access (Brownfield)](#grant-bucket-access-brownfield)
       - [Delete Or Revoke Access (Greenfield &amp; Brownfield)](#delete-or-revoke-access-greenfield--brownfield)
@@ -46,7 +46,6 @@ status: provisional
       - [Bucket](#bucket)
       - [BucketContent](#bucketcontent)
       - [BucketClass](#bucketclass)
-      - [COSIRegistration](#cosiregistration)
 <!-- /toc -->
 
 # Summary
@@ -81,7 +80,6 @@ File and block are first class citizens within the Kubernetes ecosystem.  Object
 + _BucketContent_ - A cluster-scoped custom resource bound to a `Bucket` and containing relevant metadata.
 + _Container Object Storage Interface (COSI)_ -  A specification of gRPC data and methods making up the communication protocol between the driver and the sidecar.
 + _COSI Controller_ - A central controller responsible for managing `Buckets`, `BucketContents`, and Secrets.
-+ _COSIRegistration_ - A cluster-scoped custom resource which serves the purpose of registering a driver.
 + _Driver_ - A containerized gRPC server which implements a storage vendor’s business logic through the COSI interface. It can be written in any language supported by gRPC and is independent of Kubernetes.
 + _Greenfield Bucket_ - a new bucket created and managed by the COSI system.
 +  _Object_ - An atomic, immutable unit of data stored in buckets.
@@ -112,31 +110,18 @@ File and block are first class citizens within the Kubernetes ecosystem.  Object
 
 ### Unique Driver Names
 
-**Note:** CSI does _not_ ensure unique driver names. We want to provide a mechanism for this but it may prove too difficult or not worth the time for MVP.
-
-It is important that driver names are unique otherwise multiple sidecars would try to handle the same `BucketContent` events (since the sidecar matches on driver name).  To ensure unique driver names, the sidecar creates the `COSIRegistration` object, which is cluster scoped, and its _metadata.name_ is the name of the driver.
-
-Sidecar start up will follow these steps:
-
-1. make gRPC call to get driver's name.
-1. create a `COSIRegistration` object using the driver's name.
-1. repeat step 2 in an exponential back-off loop until the `COSIRegistration` has been created or we timeout.
-1. a timeout fails the sidecar.
-
-**Note:** the `COSIRegistration` object is expected to be deleted when the sidecar exits.
-
-**Note:** Sidecar _restart_ resiliency is needed so that it can distinguish between its own `COSIRegistration` already existing vs. failing on driver name collision.
+It is important that driver names are unique, otherwise multiple sidecars would try to handle the same `BucketContent` events (since the sidecar matches on driver name).   The prescribed pattern  to be used for all provisioner names
 
 ## Workflows
 
 
 
-### Distinguishing Bucket Case
+### Determining Case from BucketClass
 
 | BucketClassFields             | SecretRef: nil | SecretRef: non-nil |
 | ----------------------------- | -------------- | ------------------ |
-| **objectBucketName: non-nil** | Brownfield     | Undefined          |
-| **objectBucketName: nil**     | Greenfield     | Static             |
+| **bucketIdentifier: non-nil** | Brownfield     | Static             |
+| **bucketIdentifier: nil**     | Greenfield     | Undefined          |
 
 #### Create Bucket (Greenfield)
 
@@ -160,7 +145,7 @@ Sidecar start up will follow these steps:
 1. Controller gets the `BucketClass` referenced by the `Bucket`.
 1. Controller creates a `BucketContent` object with its `BucketClassName` set to the name of its `BucketClass` and a `finalizer`.
 1. Sidecar detects the new `BucketContent` object and gets the associated `BucketClass`.
-1. Sidecar calls the GrantBucketAccess() rpc, passing the `bucketClass.objectBucketName` and the `bucketClass.parameters` and is returned a bucket endpoint and credentials.
+1. Sidecar calls the GrantBucketAccess() rpc, passing the `bucketClass.bucketIdentifier` and the `bucketClass.parameters` and is returned a bucket endpoint and credentials.
 1. Sidecar creates a `secret` containing the endpoint and credentials, with a random/unique name and `ownerRef` set to `BucketContent`.
 1. Sidecar updates `BucketContent.secretRef` with its `secret` name and namespace and sets `BucketContent.status.phase` to *“Ready”*.
 1. Controller detects the `BucketContent` update and sees the *“Ready”* phase. 
@@ -175,7 +160,7 @@ Sidecar start up will follow these steps:
 1. If the `BucketClass.secretRef` is nil, the object store bucket is not static, and the process continues to step 4.
 1. The Controller deletes the referenced `BucketContent` object, which blocks until the `finalizer` is removed.
 1. The Sidecar detects the `BucketContent` event and sees the `deletionTimestamp`, and gets the referenced `BucketClass`.
-1. If the `BucketClass.objectBucketName` is nil, the Sidecar decides the `BucketClass.objectBucket` is a greenfield object store bucket and calls the rpc associated with the `BucketClass.releasePolicy` (*DeleteBucket* or *RevokeBucketAccess*). Otherwise, the `BucketClass.objectBucketName` is non-nil, indicating that it is a brownfield object store bucket, and the Sidecar calls the *RevokeBucketAccess()* rpc.
+1. If the `BucketClass.bucketIdentifier` is nil, the Sidecar decides the `BucketClass.bucketIdentifier` is a greenfield object store bucket and calls the rpc associated with the `BucketClass.releasePolicy` (*DeleteBucket* or *RevokeBucketAccess*). Otherwise, the `BucketClass.bucketIdentifier` is non-nil, indicating that it is a brownfield object store bucket, and the Sidecar calls the *RevokeBucketAccess()* rpc.
 1. The Sidecar sets `BucketContent.status.phase` to *“Released”.*
 1. The Controller sees `BucketContent` status is “*Released*” and removes `BucketContent`’s `finalizer`.
 1. The `BucketContent` and the dependent `Secret` will be garbage collected.
@@ -257,36 +242,54 @@ Metadata:
   finalizers:
   - cosi.io/finalizer [3]
 spec:
-  bucketClassName: [4]
-  bucketRef: [5]
+  provisioner: [4]
+  releasePolicy: [5]
+  accessMode: [6]
+  supportedProtocols: [7]
+  bucketClassName: [8]
+  bucketRef: [9]
     name:
     namespace:
-  secretRef: [6]
+    uuid:
+    resourceVersion:
+  secretRef: [10]
     name:
     namespace:
-  objectBucketName: [7]
+  bucketIdentifier: [11]
+  parameters: [12]
 status:
-  bucketAttributes: <map[string]string> [8]
-  phase: [9]
+  message: [13]
+  phase: [14]
   conditions:
 ```
 1. `name`: Generated in the pattern of `<BUCKET-CLASS-NAME>'-'<RANDOM-SUFFIX>`. 
 1. `labels`: COSI controller adds the label to its managed resources for easy CLI GET ops.  Value is the driver name returned by GetDriverInfo() rpc. Characters that do not adhere to [Kubernetes label conventions](https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set) will be converted to ‘-’.
 1. `finalizers`: COSI controller adds the finalizer to defer Bucket deletion until backend deletion ops succeed.
+1. `provisioner`: The provisioner field defined in the BucketClass.  Used by sidecars to filter BucketContents.
+1. `releasePolicy`: Prescribes outcome of a Delete events. **Note:** In Brownfield and Static cases, *Retain* is mandated.
+    - _Delete_:  the bucket and its contents are destroyed
+    - _Retain_:  the bucket and its data are preserved with only abstracting Kubernetes being destroyed
+1. `accessMode`: Declares the level of access given to credentials provisioned through this class.     If empty, drivers may set defaults.
+1. `supportedProtocols`:  An array of protocols the associated object store supports (e.g. swift, s3, gcs, etc.). *Only* serves a descriptive purpose and is not verified.
 1. `bucketClassName`: Name of the associated `BucketClass`.
 1. `bucketRef`: the name & namespace of the associated `Bucket`.
-1. `secretRef`: the name and namespace of the source secret in the `Bucket`'s namespace.  This `secret` may be generated by the driver or created by an admin.
-1. `objectBucketName`: the name of the actual bucket in the object store.
-1. `bucketAttributes`: stateful data relevant to the managing of the bucket but potentially inappropriate user knowledge (e.g. user's IAM role name).
+    - `name` : the Bucket’s name
+    - `namespace`: the Bucket’s namespace
+    - `uuid`: the Bucket’s API server generated UUID
+    - `resourceVersion`: the Bucket's resourceVersion
+1. `secretRef`: the name and namespace of the source secret.  This `secret` is either generated by the driver or created by an admin.
+1. `bucketIdentifier`: unique, identifiying information defined by the driver as an arbitrary string.  E.g. a bucket name, url, or serialized json object.  Base64 encoded to protect against syntax issues.
+1. `parameters`: a copy of the BucketClass parameters
+1. `message`: a human readable description detailing the reason for the current `phase``
 1. `phase`: is the current state of the `BucketContent`:
-    - _Bound_: the controller finished processing the request and bound the `Bucket` and `BucketContent`
-    - _Released_: the `Bucket` has been deleted, signalling that the `BucketContent` is ready for garbage collection.
-    - _Failed_: error and all retries have been exhausted.
-    - _Retrying_: set when a driver or Kubernetes error is encountered during provisioning operations indicating a retry loop.
+     - _Bound_: the controller finished processing the request and bound the `Bucket` and `BucketContent`
+     - _Released_: the `Bucket` has been deleted, signalling that the `BucketContent` is ready for garbage collection.
+     - _Failed_: error and all retries have been exhausted.
+     - _Retrying_: set when a driver or Kubernetes error is encountered during provisioning operations indicating a retry loop.
 
 #### BucketClass
 
-A cluster-scoped custom resource used to describe both greenfield and brownfield buckets.  The `BucketClass` defines a release policy, and specifies driver specific parameters, such as region, bucket lifecycle policies, etc., as well as the provisioner name. The driver name is used by sidecars to filter `BucketContent` objects.  In dynamic brownfield workflows, the BucketClass contains a reference to a `objectBucketName` which names the existing object store bucket. In static workflows, the provisioner field is empty, the secret used to grant access to the bucket must be specified, and the `objectBucketName` is unnecessary. In static cases, the secret must be manually created exactly as if generated by a driver, including endpoint, credentials, bucket name, etc.
+A cluster-scoped custom resource used to describe both greenfield and brownfield buckets.  The `BucketClass` defines a release policy, and specifies driver specific parameters, such as region, bucket lifecycle policies, etc., as well as the provisioner name. The driver name is used by sidecars to filter `BucketContent` objects.  In dynamic brownfield workflows, the BucketClass contains a reference to a `bucketIdentifier` which names the existing object store bucket. In static workflows, the provisioner field is empty, the secret used to grant access to the bucket must be specified, and the `bucketIdentifier` is unnecessary. In static cases, the secret must be manually created exactly as if generated by a driver, including endpoint, credentials, bucket name, etc.
 
 There is currently no default bucket class.
 
@@ -299,37 +302,23 @@ provisioner: [1]
 supportedProtocols: [2]
 accessMode: {"ro", "wo", "rw"} [3]
 releasePolicy: {"Delete", "Retain"} [4]
-objectBucketName: [5]
+bucketIdentifier: [5]
 secretRef: [6]
   name:
   namespace:
 parameters: string:string [7]
 ```
 
-1. `provisioner`: (Optional) The name of the driver. If supplied the driver container and sidecar container are expected to be deployed. If omitted the `secretRef` is required for static provisioning.
-1. `supportedProtocols`: (Optional) An array of protocols the associated object store supports (e.g. swift, s3, gcs, etc.). *Only* serves a descriptive purpose and is not verified.
-1. `accessModes`: (Optional) Declares the level of access given to credentials provisioned through this class.     If empty, drivers may set defaults.
-1.  `releasePolicy`: Prescribes outcome of a Delete events. **Note:** In Brownfield and Static cases, *Retain* is mandated.
-    - _Delete_:  the bucket and its contents are destroyed
-    - _Retain_:  the bucket and its contents are preserved, only the user’s access privileges are terminated
-    - _Reuse_ :  TBD
-    - _Erase_ :  TBD
-- `objectBucketName`: (Optional) Signals Brownfield use.  Defines the name of an existing bucket in an object store.
-1. `secretRef`: (Optional) Signals Static use. The name and namespace of an existing secret to be copied to the `Bucket`'s namespace for static provisioning.
+1. `provisioner`: The name of the driver. If supplied the driver container and sidecar container are expected to be deployed. If omitted the `secretRef` is required for static provisioning.
+
+1. `supportedProtocols`: An array of protocols the associated object store supports (e.g. swift, s3, gcs, etc.). *Only* serves a descriptive purpose and is not verified.
+
+1. `accessMode`: (Optional) Declares the level of access given to credentials provisioned through this class.     If empty, defaults to `rw`.
+
+1. `releasePolicy`: Prescribes outcome of a Delete events. **Note:** In Brownfield and Static cases, *Retain* is mandated. 
+    - `Delete`:  the bucket and its contents are destroyed
+    - `Retain`:  the bucket and its data are preserved with only abstracting Kubernetes being destroyed
+1. `bucketIdentifier`: (Optional) Defines the name of an existing bucket in an object store.
+1. `secretRef`: (Optional) The name and namespace of an existing secret to be copied to the `Bucket`'s namespace for static provisioning.  Requires that `bucketIdentifier` be defined.
 1. `parameters`: (Optional) Object store specific key-value pairs passed to the driver.
-
-#### COSIRegistration
-
-A cluster-scoped custom resource used to register COSI drivers. It is created by the sidecar and primarily used to guarantee unique driver names. The sidecar is expected to delete this resource upon termination.
-
-```yaml
-apiVersion: cosi.io/v1alpha1
-kind: COSIRegistration
-metadata:
-  name: [1]
-driverNamespace: [2]
-```
-
-1. `name`: The name here must match the name of the driver, which means that driver names follow Kubernetes naming rules.
-1. `driverNamespace`: The name of the driver's namespace.
 
