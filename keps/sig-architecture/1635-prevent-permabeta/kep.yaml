@@ -1,0 +1,25 @@
+title: Require Transition from Beta
+kep-number: 1635
+authors:
+  - "@deads2k"
+owning-sig: sig-architecture
+participating-sigs:
+  - sig-api-machinery
+  - sig-apps
+  - sig-architecture
+  - sig-auth
+  - sig-instrumentation
+  - sig-network
+  - sig-node
+  - sig-scheduling
+status: implementable
+creation-date: 2019-10-01
+reviewers:
+  - "@bgrant0607"
+  - "@liggitt"
+  - "@smarterclayton"
+approvers:
+  - "@derekwaynecarr"
+  - "@johnbelamaric"
+see-also:
+replaces:
