@@ -352,7 +352,7 @@ The proposal above mentions `tests.yaml` but does not describe a format for that
 file. The current conformance frameworks requests that during promotion of the
 test to conformance, the developer adds metadata, including the release name,
 the test name, and description. Tests are identified in the
-[conformance.txt](https://github.com/kubernetes/kubernetes/blob/master/test/conformance/testdata/conformance.txt)
+[conformance.txt](https://github.com/kubernetes/kubernetes/blob/master/test/conformance/testdata/conformance.yaml)
 file by their Ginko description. Unfortunately, this does not produce unique
 test names, as it does not include all of the `Describe` calls from higher in
 the call tree (see this
