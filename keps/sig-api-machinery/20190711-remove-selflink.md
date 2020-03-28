@@ -134,8 +134,6 @@ I went through a k/k repo (including its staging repos) and all repos under [kub
 and this is the list of places that reference `SelfLink` fields (I excluded tests and all places
 in apiserver responsible for setting it):
 
-- [ ] https://github.com/kubernetes/kubernetes/blob/master/pkg/api/ref/ref.go
-  Used for detecting version (which I believe should always be set?).
 - [ ] https://github.com/kubernetes/kubernetes/blob/master/pkg/kubectl/cmd/get/get.go
   Propagating SelfLink in kubectl get.
 - [ ] https://github.com/kubernetes/kubernetes/blob/master/pkg/kubelet/config/common.go
