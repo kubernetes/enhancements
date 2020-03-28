@@ -65,15 +65,6 @@ Example goal to enable:
   and be capable of pulling Secrets from remote locations
 - Alice writes her kustomization.yaml to use the generation options configured by her organization.
 
-Example exploit to avoid:
-
-- Alice wants to run a whitebox mysql instance on a test cluster
-- Chuck publishes a whitebox mysql `kustomization.yaml` on GitHub, with a SecretGenerator
-  that will read Alice's ~/.kube/config and send it to Chuck's server by executing `sh`
-  will run a script to generate some Secret
-- Alice runs `kubectl apply -k https://github.com/chuck/mysql` and has the credentials
-  of all of her Kubernetes clusters sent to Chuck when the Secret is generated.
-
 See [kubernetes-sigs/kustomize#692](https://github.com/kubernetes-sigs/kustomize/issues/692) for more details.
 
 ## Motivation
