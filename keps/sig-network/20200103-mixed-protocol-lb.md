@@ -13,7 +13,7 @@ approvers:
   - "@thockin"
 editor: TBD
 creation-date: 2020-01-03
-last-updated: 2020-02-06
+last-updated: 2020-03-29
 status: provisional
 see-also:
 replaces:
@@ -84,6 +84,10 @@ The ultimate goal of this feature is to support users that want to expose their 
 The following issue and PR shows considerable interest from users that would benefit from this feature:
 https://github.com/kubernetes/kubernetes/issues/23880
 https://github.com/kubernetes/kubernetes/pull/75831
+
+The current restriction that rejects a Service creation request if it has two different protocol definitions was introduced because some cloud implementations may charge their load balancer users on a "per protocol" basis. That is, the current logic is to prevent negative surprises with the load balancer bills. The current implementation enforces a more explicit statement or consent form the end user for the usage of two different protocols on the same load balancer. For example GCE expects that the user creates two load balancer Service definitions for the two different protocols. 
+
+But such workarounds or solutions do not exist in all cloud implementations. According to the feedback from the end users it would be more beneficial to remove this restriction from the Kubernetes code. This KEP is to investigate how the removal of that restriction would affect the billing of load balancer resources in the different clouds, i.e. whether it is safe or not to allow the usage of different protocol values in the same Service definition.
 
 ### Goals
 
