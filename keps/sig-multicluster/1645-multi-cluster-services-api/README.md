@@ -15,14 +15,14 @@ To get started with this template:
   Copy this template into the owning SIG's directory and name it
   `NNNN-short-descriptive-title`, where `NNNN` is the issue number (with no
   leading-zero padding) assigned to your enhancement above.
-- [s] **Fill out as much of the kep.yaml file as you can.**
+- [x] **Fill out as much of the kep.yaml file as you can.**
   At minimum, you should fill in the "title", "authors", "owning-sig",
   "status", and date-related fields.
-- [ ] **Fill out this file as best you can.**
+- [x] **Fill out this file as best you can.**
   At minimum, you should fill in the "Summary", and "Motivation" sections.
   These should be easy if you've preflighted the idea of the KEP with the
   appropriate SIG(s).
-- [ ] **Create a PR for this KEP.**
+- [x] **Create a PR for this KEP.**
   Assign it to people in the SIG that are sponsoring this process.
 - [ ] **Merge early and iterate.**
   Avoid getting hung up on specific details and instead aim to get the goals of
@@ -116,6 +116,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Implementation History](#implementation-history)
   - [Drawbacks](#drawbacks)
   - [Alternatives](#alternatives)
+    - [`ObjectReference` in `ServiceExport.Spec` to directly map to a `Service`](#objectreference-in-serviceexportspec-to-directly-map-to-a-service)
   - [Infrastructure Needed (optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -236,8 +237,13 @@ nitty-gritty.
 -->
 #### Terminology
 
-- **supercluster** - a placeholder name for a group of clusters with a high degree of mutual trust and shared ownership that share services amongst themselves.
-- **mcsd-controller** - a controller that syncs services across clusters. There may be multiple implementations, this doc describes expected common behavior.
+- **supercluster** - a placeholder name for a group of clusters with a high
+  degree of mutual trust and shared ownership that share services amongst
+  themselves.
+- **mcsd-controller** - a controller that syncs services across clusters and
+  makes them available for multi-cluster service discovery (MCSD) and
+  connectivitiy. There may be multiple implementations, this doc describes
+  expected common behavior.
 
 We propose a new CRD called `ServiceExport`, used to specify which services
 should be exposed across all clusters in the supercluster. `ServiceExports` must
@@ -365,6 +371,7 @@ type ServiceExportStatus struct {
         Conditions []ServiceExportCondition `json:"conditions,omitempty"`
 }
 
+// ServiceExportConditionType identifies a specific condition.
 type ServiceExportConditionType string
 
 const {
@@ -380,6 +387,9 @@ const {
 
 // ServiceExportCondition contains details for the current condition of this
 // service export.
+//
+// Once [#1624](https://github.com/kubernetes/enhancements/pull/1624) is
+// merged, this will be replaced by metav1.Condition.
 type ServiceExportCondition struct {
         Type ServiceExportConditionType `json:"type"`
         // Status is one of {"True", "False", "Unknown"}
@@ -455,6 +465,14 @@ the `Service`, with each `EndpointSlice` containing only endpoints from its
 source cluster. These `EndpointSlice` objects will be marked as managed by the
 supercluster service controller, so that the endpoint slice controller doesn’t
 delete them.
+
+```
+<<[UNRESOLVED]>>
+We have not yet sorted out scalability impact here. We hope the upper bound for
+imported endpoints + in-cluster endpoints will be ~= the upper bound for
+in-cluster endpoints today, but this remains to be determined.
+<<[/UNRESOLVED]>>
+```
 
 #### Endpoint TTL
 
@@ -779,6 +797,22 @@ What other approaches did you consider and why did you rule them out?  These do
 not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
 -->
+
+### `ObjectReference` in `ServiceExport.Spec` to directly map to a `Service`
+
+Instead of name mapping, we could use an explicit ObjectReference in a
+`ServiceExport.Spec`. This feels familiar and more explicit, but fundamentally
+changes certain characteristics of the API. Name mapping means that the export
+must be in the same namespace as the `Service` it exports, allowing existing RBAC
+rules to restrict export rights to current namespace owners. We are building on
+the concept that a namespace belongs to a single owner, and it should be the
+`Service` owner who controls whether or not a given `Service` is exported. Using
+`ObjectReference` instead would also open the possibility of having multiple
+exports acting on a single service and would require more effort to determine if
+a given service has been exported.
+
+The above issues could also be solved via controller logic, but we would risk
+differing implementations. Name mapping enforces behavior at the API.
 
 ## Infrastructure Needed (optional)
 
