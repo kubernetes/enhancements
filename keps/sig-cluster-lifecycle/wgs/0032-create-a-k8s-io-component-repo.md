@@ -149,7 +149,7 @@ generic enough to be usable by cloud provider and Cluster API controller extensi
 
 - [Kubernetes Component Configuration](https://docs.google.com/document/d/1arP4T9Qkp2SovlJZ_y790sBeiWXDO6SG10pZ_UUU-Lc/edit) by [@mikedanese](https://github.com/mikedanese)
 - [Versioned Component Configuration Files](https://docs.google.com/document/d/1FdaEJUEh091qf5B98HM6_8MS764iXrxxigNIdwHYW9c/edit#) by [@mtaufen](https://github.com/mtaufen)
-- [Moving ComponentConfig API types to staging repos](https://github.com/kubernetes/community/blob/master/keps/sig-cluster-lifecycle/0014-20180707-componentconfig-api-types-to-staging.md) by [@luxas](https://github.com/luxas) and [@sttts](https://github.com/sttts)
+- [Moving ComponentConfig API types to staging repos](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/component-config-conventions.md) by [@luxas](https://github.com/luxas) and [@sttts](https://github.com/sttts)
  - [Graduating KubeletFlags subfields to KubeletConfiguration](https://docs.google.com/document/d/18-MsChpTkrMGCSqAQN9QGgWuuFoK90SznBbwVkfZryo/edit) by [@mtaufen](https://github.com/mtaufen)
  - [Making /configz better](https://docs.google.com/document/d/1kNVSdw7H9EqyvI2BYH4EqwVtcg9bi9ZCPpJs8aKZFmM/edit) by [@mtaufen](https://github.com/mtaufen)
  - [Platform-Specific Component Configuration (draft)](https://docs.google.com/document/d/1rfSq9PGn_b7ILvWXjkgU9R6h5C84ywbKUrtJWo0IrYw/edit) by [@mtaufen](https://github.com/mtaufen)
