@@ -117,6 +117,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Drawbacks](#drawbacks)
   - [Alternatives](#alternatives)
     - [`ObjectReference` in `ServiceExport.Spec` to directly map to a `Service`](#objectreference-in-serviceexportspec-to-directly-map-to-a-service)
+    - [Export services via label selector](#export-services-via-label-selector)
   - [Infrastructure Needed (optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -800,7 +801,7 @@ information to express the idea and why it was not acceptable.
 
 ### `ObjectReference` in `ServiceExport.Spec` to directly map to a `Service`
 
-Instead of name mapping, we could use an explicit ObjectReference in a
+Instead of name mapping, we could use an explicit `ObjectReference` in a
 `ServiceExport.Spec`. This feels familiar and more explicit, but fundamentally
 changes certain characteristics of the API. Name mapping means that the export
 must be in the same namespace as the `Service` it exports, allowing existing RBAC
@@ -813,6 +814,33 @@ a given service has been exported.
 
 The above issues could also be solved via controller logic, but we would risk
 differing implementations. Name mapping enforces behavior at the API.
+
+### Export services via label selector
+```
+<<[UNRESOLVED still being explored as viable - @thockin @mangelajo]>>
+
+Instead of name mapping, `ServiceExport` could have a
+`ServiceExport.Spec.ServiceSelector` to select matching services for export.
+This approach would make it easy to simply export all services with a given
+label applied and would still scope exports to a namespace, but shares other
+issues with the `ObjectReference` approach above:
+
+- Multiple `ServiceExports` may export a given `Service`, what would that mean?
+- Determining whether or not a service is exported means seaching
+  `ServiceExports` for a matching selector.
+
+Though multiple services may match a single export, the act of exporting would
+still be independent for individual services. A report of status for each export
+seems like it belongs on a service-specific resource.
+
+With name mapping it should be relatively easy to build generic or custom logic
+to automatically ensure a `ServiceExport` exists for each `Service` matching a
+selector - perhaps by introducing something like a `ServiceExportPolicy`
+resource (out of scope for this KEP). This would solve the above issues but
+retain the flexibility of selectors.
+
+<<[/UNRESOLVED]>>
+```
 
 ## Infrastructure Needed (optional)
 
