@@ -137,7 +137,7 @@ PodDisruptionBudget currently has tests in various components that use the featu
 * Kubectl
   - [This test](https://github.com/kubernetes/kubernetes/blob/master/pkg/kubectl/generate/versioned/pdb_test.go)
   tests generation of a PDB objects out of given parameters
-  - [This test](https://github.com/kubernetes/kubernetes/blob/master/pkg/kubectl/cmd/create/create_pdb_test.go)
+  - [This test](https://github.com/kubernetes/kubernetes/blob/release-1.15/pkg/kubectl/cmd/create/create_pdb_test.go)
   tests creation of PDB objects from cmd parameters
 * Scheduler
   - [This test](https://github.com/kubernetes/kubernetes/blob/ac56bd502ab96696682c66ebdff94b6e52471aa3/test/integration/scheduler/preemption_test.go#L731)
