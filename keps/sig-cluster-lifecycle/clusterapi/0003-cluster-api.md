@@ -50,7 +50,7 @@ With the full state of the cluster represented as API objects, Kubernetes instal
 
 ## Motivation
 
-Kubernetes has a common set of APIs (see the [Kubernetes API Conventions](https://github.com/kubernetes/community/blob/master/contributors/devel/api-conventions.md)) to orchestrate containers regardless of deployment mechanism or cloud provider.
+Kubernetes has a common set of APIs (see the [Kubernetes API Conventions](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md)) to orchestrate containers regardless of deployment mechanism or cloud provider.
 Kubernetes also has APIs for handling some infrastructure, like load-balancers, ingress rules, or persistent volumes, but not for creating new machines.
 As a result, the deployment mechanisms that manage Kubernetes clusters each have unique APIs and implementations for how to handle lifecycle events like cluster creation or deletion, master upgrades, and node upgrades.
 Additionally, the cluster-autoscaler is responsible not only for determining when the cluster should be scaled, but also responsible for adding capacity to the cluster by interacting directly with the cloud provider to perform the scaling.
@@ -58,7 +58,7 @@ When another component needs to create or destroy virtual machines, like the nod
 
 ### Goals
 
-* The cluster management APIs should be declarative, Kubernetes-style APIs that follow our existing [API Conventions](https://github.com/kubernetes/community/blob/master/contributors/devel/api-conventions.md).
+* The cluster management APIs should be declarative, Kubernetes-style APIs that follow our existing [API Conventions](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md).
 * To the extent possible, we should separate state that is environment-specific from environment-agnostic.
    * However, we still want the design to be able to utilize environment-specific functionality, or else it likely won’t gain traction in favor of other tooling that is more powerful.
 
