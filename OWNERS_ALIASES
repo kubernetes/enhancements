@@ -76,8 +76,10 @@ aliases:
     - jberkhahn
     #- jboyd01 # not an org member
   sig-storage-leads:
+    - jsafrane
+    - msau42
     - saad-ali
-    - childsb
+    - xing-yang
   sig-testing-leads:
     - spiffxp
     - fejta
