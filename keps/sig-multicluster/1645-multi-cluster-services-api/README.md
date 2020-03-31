@@ -118,6 +118,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Alternatives](#alternatives)
     - [`ObjectReference` in `ServiceExport.Spec` to directly map to a `Service`](#objectreference-in-serviceexportspec-to-directly-map-to-a-service)
     - [Export services via label selector](#export-services-via-label-selector)
+    - [Export via annotation](#export-via-annotation)
   - [Infrastructure Needed (optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -841,6 +842,21 @@ retain the flexibility of selectors.
 
 <<[/UNRESOLVED]>>
 ```
+
+### Export via annotation
+
+`ServiceExport` as described has no spec and seems like it could just be
+replaced with an annotation, e.g. `multicluster.kubernetes.io/export`. When a
+service is found with the annotation, it would be considered marked for export
+to the supercluster. The controller would then create `EndpointSlices` and an
+`ImportedService` in each cluster exactly as described above. Unfortunately,
+`Service` does not have an extensible status and there is no way to represent
+the state of the export on the annotated `Service`. We could extend
+`Service.Status` to include `Conditions` and provide the flexibility we need,
+but requiring changes to `Service` makes this a much more invasive proposal to
+achieve the same result. As the use of a multi-cluster service implementation
+would be an optional addon, it doesn't warrant a change to such a fundamental
+resource.
 
 ## Infrastructure Needed (optional)
 
