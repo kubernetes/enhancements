@@ -1,4 +1,3 @@
-
 ---
 title: Container Resource based Autoscaling
 authors:
@@ -27,6 +26,7 @@ status: provisional
   - [User Stories](#user-stories)
     - [Multiple containers with different scaling thresholds](#multiple-containers-with-different-scaling-thresholds)
     - [Multiple containers but only scaling for one.](#multiple-containers-but-only-scaling-for-one)
+    - [Add container metrics to existing pod resource metric.](#add-container-metrics-to-existing-pod-resource-metric)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
@@ -40,7 +40,7 @@ status: provisional
 The Horizontal Pod Autoscaler supports scaling of targets based on the resource usage
 of the pods in the target. The resource usage of pods is calculated as the sum
 of the individual container usage values of the pod. This is unsuitable for workloads where
-the usage of the containers are not strongly correlated or change in lockstep. This KEP
+the usage of the containers are not strongly correlated or do not change in lockstep. This KEP
 suggests that when scaling based on resource usage the HPA also provide an option
 to consider the usages of individual containers to make scaling decisions.
 
@@ -94,7 +94,7 @@ type ResourceMetricSource struct {
 }
 ```
 
-Here the `Name` is the name of the resource. Currently on `cpu` and `memory` are supported
+Here the `Name` is the name of the resource. Currently only `cpu` and `memory` are supported
 for this field. The other field is used to specify the target at which the HPA should maintain
 the resource usage by adding or removing pods. For instance if the target is _60%_ CPU utilization,
 and the current average of the CPU resources across all the pods of the target is _70%_ then
@@ -131,7 +131,7 @@ usage should be tracked.
 
 2. The `ResourceMetricSource` should be aliased to `PodResourceMetricSource`. It will work
 exactly as the original. The aliasing is done for the sake of consistency. Correspondingly,
-the `type` field for the metric source should be extended support both `ContainerResource`
+the `type` field for the metric source should be extended to support both `ContainerResource`
 and `PodResource` as values.
 
 ### User Stories
@@ -231,7 +231,53 @@ spec:
         averageUtilization: 30
 ```
 
-The HPA controller will then completely ignores the resource usage in other containers.
+The HPA controller will then completely ignore the resource usage in other containers.
+
+#### Add container metrics to existing pod resource metric.
+A user who is already using an HPA to scale their application can add the container metric source to the HPA
+in addition to the existing pod metric source. If there is a single container in the pod then the behavior
+will be exactly the same as before. If there are multiple containers in the application pods then the deployment
+might scale out more than before. This happens when the resource usage of the specified container is more
+than the blended usage as calculated by the pod metric source. If however in the unlikely case, the usage of
+all the containers in the pod change in tandem by the same amount then the behavior will remain as before.
+
+For example consider the HPA object which targets a _Deployement_ with pods that have two containers `application`
+and `log-shipper`:
+
+```yaml
+
+apiVersion: autoscaling/v2beta2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: mission-critical
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: mission-critical
+  minReplicas: 1
+  maxReplicas: 10
+  metrics:
+  - type: ContainerResource
+    resource:
+      name: cpu
+      container: application
+      target:
+        type: Utilization
+        averageUtilization: 50
+  - type: PodResource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 50
+```
+
+If the resource usage of the `application` container increases then the target would be scaled out even if
+the usage of the `log-shipper` container does not increase much. If the resource usage of `log-shipper` container
+increases then the deployment would only be scaled out if the combined resource usage of both containers increases
+above the target.
+
 
 ### Risks and Mitigations
 
