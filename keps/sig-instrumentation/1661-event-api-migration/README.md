@@ -22,15 +22,22 @@
   - [Other Related Changes](#other-related-changes)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
+    - [Beta to GA Graduation](#beta-to-ga-graduation)
 - [Considerations](#considerations)
   - [Performance Impact](#performance-impact)
   - [Backward Compatibility](#backward-compatibility)
-  - [Sample Queries With "New" Events](#sample-queries-with-new-events)
+  - [Sample Queries With &quot;New&quot; Events](#sample-queries-with-new-events)
     - [Get All NodeController Events](#get-all-nodecontroller-events)
     - [Get All Events From Lifetime of a Given Pod](#get-all-events-from-lifetime-of-a-given-pod)
 - [Implementation History](#implementation-history)
   - [Related Work Before This KEP](#related-work-before-this-kep)
 - [Alternatives](#alternatives)
+  - [Leaving Current Dedup Mechanism but Improve Backoff Behavior](#leaving-current-dedup-mechanism-but-improve-backoff-behavior)
+  - [Timestamp List as a Dedup Mechanism](#timestamp-list-as-a-dedup-mechanism)
+  - [Events as an Aggregated Object](#events-as-an-aggregated-object)
+  - [Using New API Group for Storing Data](#using-new-api-group-for-storing-data)
+  - [Pivoting Towards More Machine Readable Events by Introducing Stricter Structure](#pivoting-towards-more-machine-readable-events-by-introducing-stricter-structure)
+  - [Pivoting Towards Making Events More Helpful for Cluster Operator During Debugging](#pivoting-towards-making-events-more-helpful-for-cluster-operator-during-debugging)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -90,7 +97,7 @@ The new Event API makes all semantic information about events first-class fields
 * make timestamps precise enough to allow better events correlation,
 * update the field names to better indicate their function.
 
-In addtion, we will improve 'Event series' detection and send only 'series start' and 'series finish' Events, and add more aggressive backoff policy for Events.
+In addition, we will improve 'Event series' detection and send only 'series start' and 'series finish' Events, and add more aggressive backoff policy for Events.
 
 After the migration is done, users and administrators:
 * will be able to better track interesting changes in the state of objects they're interested in,
@@ -190,7 +197,7 @@ const (
 )
 ```
 
-#### Few Examples:
+#### Few Examples
 
 | Regarding | Action | Reason | ReportingController | Related | 
 | ----------| -------| -------| --------------------|---------| 
@@ -202,7 +209,7 @@ const (
 | Pod X | ScheduledOn | | kubernetes.io/scheduler | Node Y |
 | Pod X | FailedToSchedule | FitResourcesPredicateFailed | kubernetes.io/scheduler | <nil> |
 
-#### Comparison Between Old and New APIs:
+#### Comparison Between Old and New APIs
 
 | Old         | New         |
 |-------------|-------------|
@@ -263,7 +270,7 @@ New deduplication logic will work in the following way:
 - For all active series every 30 minutes EventRecorder will create a "heartbeat" call. Goal of this update is to periodically update user on number of occurrences and prevent garbage collection in etcd. The heartbeat will be an Event update that updates the count and last observed time fields in the series field.
 - For all active series every 6 minutes (longer that the longest backoff period) EventRecorder will check if it noticed any attempts to emit isomorphic Event. If there were, it'll check again after aforementioned period (6 minutes). If there weren't it assumes that series is finished and emits closing Event call. This updates the Event by setting state to EventSeriesStateFinished to true and updating the count and last observed time fields in the series field.
 
-##### Short Examples:
+##### Short Examples
 
 After first occurrence, Event looks like:
 ```
@@ -350,7 +357,7 @@ Scalability and Performance:
 
 The new Event API is in Beta right now. The plan is to graduate API to GA in 1.19, but not necessarily require that all components will be migrated.
 
-#### Beta -> GA Graduation
+#### Beta to GA Graduation
 
 - Gather data from performance and scalability tests
 - Collect and address feedback
@@ -433,28 +440,28 @@ List all Event with field selector `regarding.name = podName, regarding.namespac
 
 ## Alternatives
 
-### Leaving current dedup mechanism but improve backoff behavior
+### Leaving Current Dedup Mechanism but Improve Backoff Behavior
 
 As we're going to move all semantic information to fields, instead of passing some of them in message, we could just call it a day, and leave the deduplication logic as is. When doing that we'd need to depend on the client-recorder library on protecting API server, by using number of techniques, like batching, aggressive backing off and allowing admin to reduce number of Events emitted by the system. This solution wouldn't drastically reduce number of API requests and we'd need to hope that small incremental changes would be enough.
 
-### Timestamp list as a dedup mechanism
+### Timestamp List as a Dedup Mechanism
 
 Another considered solution was to store timestamps of Events explicitly instead of only count. This gives users more information, as people complain that current dedup logic is too strong and it's hard to "decompress" Event if needed. This change has clearly worse performance characteristic, but fixes the problem of "decompressing" Events and generally making deduplication lossless. We believe that individual repeated events are not interesting per se, what's interesting is when given series started and when it finished, which is how we ended with the current proposal.
 
-### Events as an aggregated object
+### Events as an Aggregated Object
 
 We considered adding nested information about occurrences into the Event. In other words we'd have single Event object per Subject and instead of having only `Count`, we could have stored slice of `timestamp-object` pairs, as a slightly heavier deduplication information. This would have non-negligible impact on size of the event-etcd, and additional price for it would be much harder query logic (querying nested slices is currently not implemented in kubernetes API), e.g. "Give me all Events that refer Pod X" would be hard.
 
-### Using new API group for storing data
+### Using New API Group for Storing Data
 
 Instead of adding "new" fields to the "old" versioned type, we could have change the version in which we store Events to the new group and use annotations to store "deprecated" fields. This would allow us to avoid having "hybrid" type, as `v1.Events` became, but the change would have a much higher risk (we would have been moving battle-tested and simple `v1.Event` store to new `events.Event` store with some of the data present only in annotations). Additionally performance would degrade, as we'd need to parse JSONs from annotations to get values for "old" fields.
 Adding panic button that would stop creation/update of Events
 If all other prevention mechanism fail we’d like a way for cluster admin to disable Events in the cluster, to stop them overloading the server. However, we dropped this idea, as it's currently possible to achieve the similar result by changing RBAC rules.
 
-### Pivoting towards more machine readable Events by introducing stricter structure
+### Pivoting Towards More Machine Readable Events by Introducing Stricter Structure
 
 We considered making easier for automated systems to use Events by enforcing "active voice" for Event objects. This would allow us to assure which field in the Event points to the active component, and which to direct and indirect objects. We dropped this idea because Events are supposed to be consumed only by humans.
 
-### Pivoting towards making Events more helpful for cluster operator during debugging
+### Pivoting Towards Making Events More Helpful for Cluster Operator During Debugging
 
 We considered exposing more data that cluster operator would need to use Events for debugging, e.g. making ReportingController more central to the semantics of Event and adding some way to easily grep though the logs of appropriate component when looking for context of a given Event. This idea was dropped because Events are supposed to give application developer who's running his application on the cluster a rough understanding what was happening with his app.
