@@ -9,6 +9,29 @@
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
+  - [User Stories](#user-stories)
+    - [Role: Developer](#role-developer)
+      - [Promote a Non-Optional Feature to GA](#promote-a-non-optional-feature-to-ga)
+      - [Creating a brand new feature, either required or optional](#creating-a-brand-new-feature-either-required-or-optional)
+    - [Role: Kubernetes Vendor](#role-kubernetes-vendor)
+      - [Evaluating a distribution for conformance](#evaluating-a-distribution-for-conformance)
+      - [Identifying the profiles supported by a distribution](#identifying-the-profiles-supported-by-a-distribution)
+    - [Role: CNCF Conformance Program](#role-cncf-conformance-program)
+      - [Evaluate a Vendor Submission](#evaluate-a-vendor-submission)
+    - [Role: CI Job](#role-ci-job)
+      - [Identify a PR as requiring conformance review](#identify-a-pr-as-requiring-conformance-review)
+      - [Evaluating a PR for conformance coverage](#evaluating-a-pr-for-conformance-coverage)
+    - [Role: Behavior Approver](#role-behavior-approver)
+      - [Review / approve new suites and behaviors](#review--approve-new-suites-and-behaviors)
+      - [Verify behaviors follow the rules](#verify-behaviors-follow-the-rules)
+    - [Role: Test Approver](#role-test-approver)
+      - [Review / approve new tests](#review--approve-new-tests)
+      - [Verify behavior coverage](#verify-behavior-coverage)
+      - [Verify non-flakiness of tests](#verify-non-flakiness-of-tests)
+      - [Verify test follows the rules](#verify-test-follows-the-rules)
+    - [Role: SIG](#role-sig)
+      - [Define expected behaviors for their area of responsibility](#define-expected-behaviors-for-their-area-of-responsibility)
+  - [Solution Overview](#solution-overview)
   - [Representation of Behaviors](#representation-of-behaviors)
   - [Behavior and Test Generation Tooling](#behavior-and-test-generation-tooling)
     - [Handwritten Behaviour Scenarios](#handwritten-behaviour-scenarios)
@@ -118,35 +141,228 @@ tests and test scaffolding to quickly cover those behaviors.
 
 ## Proposal
 
-The proposal consists of four deliverables:
+### User Stories
+
+#### Role: Developer
+
+##### Promote a Non-Optional Feature to GA
+
+Conformance tests are required when promoting a non-optional feature to GA.
+
+Today, the desired process consists of writing the tests as ordinary e2e tests,
+making sure they are not flaky by having them run for several weeks without
+flakes, and then including the promotion of those tests in the PR that promotes
+the feature. However, even without the test promotion, PRs that promote
+features are already large; for example:
+
+* [Promote PodDisruptionBudget to
+  GA](https://github.com/kubernetes/kubernetes/pull/81571) (91 files changed)
+* [Promote block volumes to
+  GA](https://github.com/kubernetes/kubernetes/pull/88673) (46 files changed)
+* [Promote node lease to
+  GA](https://github.com/kubernetes/kubernetes/pull/84351) (17 files changed)
+
+Thus, today developers typically submit the test promotions in a separate PR, in
+order to avoid adding more changes, along with an additional review team that
+further slows the merge. This makes it difficult to develop a CI job that
+prevents features from going to GA without conformance tests.
+
+With the separation of behaviors and tests, the tasks a developer needs to
+complete are:
+
+1. Define expected behaviors
+1. Get behaviors approved by the conformance-behavior-approvers
+1. Write tests to cover those behaviors
+1. Get tests approved by the conformance-test-approvers
+   * Prove that the tests that will be conformance are not flaky
+   * Promote the tests to conformance in that PR
+1. Create a PR that promotes my feature to GA
+
+As a developer, I would like to be able to have as much of this completed and
+merged prior to the PR that promotes the feature to GA, in order to avoid
+additional reviews on that PR.
+
+<<[UNRESOLVED context and discussion around solutions this use case ]>>
+@johnbelamaric
+One option: We could get it all to a state where it's all done, but behaviors are
+marked as "PENDING". The promo to GA would still require touching the behaviors,
+to flip the status from PENDING to ACTIVE, but it should be a formality at that
+point. Promo to "conformance" for the tests could have already been done just
+with the PENDING status so it won't count yet. Other ideas?
+@jefftree
+I was thinking something along the same lines. One thing to note is that this is
+promoting a set of tests (that cover a set of behaviors) rather than a set of
+behaviors themselves. Tests could cover existing behaviors (is this a correct
+assumption?) so it might make more sense to have the switch on the tests rather
+than the behaviors side.
+<<[/UNRESOLVED]>>
+
+<<[UNRESOLVED @spiffxp: should this capture preconditions for testing: ]>>
+* All behaviors present
+* All behaviors covered by tests
+* Tests should have been around to verify non-flakiness
+* Tests should have been reviewed by conformance reviewer to make sure they meet
+  the criteria - can we front load this?
+<<[/UNRESOLVED]>>
+
+##### Creating a brand new feature, either required or optional
+During creation of an alpha or beta feature, conformance tests are not required,
+nor are conformance behaviors. However, at the beta stage, the expectation
+should be to have some quality end-to-end tests, and so we may want to allow the
+definition of the behaviors at that time too. Tasks then would be similar to
+some of those for GA promotion:
+1. Define expected behaviors
+1. Get provisional behaviors approved by the conformance-behavior-approvers
+1. Write tests to cover those behaviors
+
+<<[UNRESOLVED]>>
+@johnbelamaric
+Ideally we could avoid the provisional behavior approval. Maybe we can have a
+way to have a separate behaviors area for beta stuff? Or maybe we just don't
+have this at all for beta, and it waits till GA. The reason I bring up making
+bahaviors now is because the initial idea of `kubetestgen` was to support these
+steps: creation of behaviors, and creation of standard e2e tests for those
+behaviors.
+@jefftree
+Getting this list of behaviors approved is something that needs to eventually be
+done before hitting GA. I don't know how much these behaviors would change
+between beta and GA, but if they're relatively stable and mainly additive,
+starting the process early seems fine. Similar to your previous point, we should
+look to move some of these behavior approvals earlier in the process to avoid
+the chaos of reviews when a feature is going to GA.
+<<[/UNRESOLVED]>>
+
+#### Role: Kubernetes Vendor
+
+##### Evaluating a distribution for conformance
+* Must set up test cluster and run sonobuoy conformance tests
+* If successful, submit PR to CNCF. If failures exist, debug them
+
+##### Identifying the profiles supported by a distribution
+* Must run a set of conformance tests for each profile supported
+
+#### Role: CNCF Conformance Program
+
+##### Evaluate a Vendor Submission
+* Must confirm that the version of the tests being run matches the version being
+  certified
+* Must confirm the set of tests being run matches the set of tests for the
+  version (+ profile(s)) being certified
+* Must confirm that all behaviors are covered by a test that executes, and that
+  no tests fail (This isn’t done today: verify skew policy - confirm a cluster
+  being certified for version 1.x also passes conformance tests for version
+  1.x-1)
+
+#### Role: CI Job
+
+##### Identify a PR as requiring conformance review
+PR must touch file in conformance-specific directory
+* eg: update test/conformance/behaviors/..
+* eg: mv from test/e2e to test/conformance
+
+##### Evaluating a PR for conformance coverage
+* Must be able to confirm for each behavior that at least one test exercises a
+  given behavior
+* Must be able to list all expected behaviors for conformance
+* Coverage is defined by (exercised behaviors) / (expected behaviors)
+* May be able to list set of tests that exercise a given behavior
+* Should not bother gating or paying attention too closely to coverage until we
+  have locked (expected behaviors) in place;
+
+#### Role: Behavior Approver
+
+##### Review / approve new suites and behaviors
+* Must verify that the listed behaviors are common across cluster providers and
+  can be supported in new cluster providers.
+* Must be able to identify if all of the expected behaviors are listed; this may
+  mean seeing API definitions and configuration parameters, if those are
+  expected to be part of the defined behaviors.
+* Must be able to identify if any behaviors are LinuxOnly
+
+##### Verify behaviors follow the rules
+* The minimal set of behaviors for a given resource must include the basic
+  functioning of the API CRUD operations, and of the resulting changes in
+  cluster / data plane state.
+* Must be able to verify behaviors do not rely on features that are deprecated
+  (or pending deprecation, eg: componentstatus)
+* May strive to minimize the number behaviors that rely on a specific NodeOS
+
+#### Role: Test Approver
+
+##### Review / approve new tests
+* Should be able to reject addition of a new test if there is no associated
+  behavior
+* Should require a behavior approver if a new behavior is added at the same a
+  test is added
+
+##### Verify behavior coverage
+* Must be able to confirm the test in question actually exercises the
+  described/linked behavior(s)
+* Should NOT require all test code maps directly to behavior(s) (eg: “it looks
+  like you’re exercising the Foo api, is there a Foo behavior that should be
+  associated with this test?”).
+* When promoting to Conformance, must be able to verify no feature flags or
+  additional configuration is necessary to enable the feature
+* Must verify there should be at most one test linked to a given behavior. That
+  is, implicitly covered behaviors should NOT be listed as covered behaviors.
+  There should be a single explicit test for any given behavior.
+* One test may cover multiple behaviors
+
+##### Verify non-flakiness of tests
+* May be able to identify known anti-patterns in the test code (eg: watches that
+  break down at scale, arbitrary sleeps)
+* When promoting to Conformance, test MUST have sufficient history to prove
+  non-flakiness (eg: today, we link to testgrid and confirm that it looks good…
+  we don’t mandate specific thresholds, and we don’t mandate specific cluster
+  configurations)
+
+##### Verify test follows the rules
+* Must be able to confirm all associated Behavior(s) are eligible for
+  Conformance
+* Must be able to confirm the test(s) in question exercise only GA APIs
+* Must be able to confirm the test(s) in question do NOT require access to
+  kubelet APIs to pass
+* Must not depend on specific Events (nor their contents) to pass
+* Must not depend on optional Condition fields
+* etc.
+
+#### Role: SIG
+
+##### Define expected behaviors for their area of responsibility
+* Should be able to enumerate list of behaviors for a given API/resource
+* Should be able to enumerate list of behaviors for a given feature (eg:
+  [Feature:Foo] suite of tests)
+* Should be able to enumerate list of behaviors for a given set of e2e tests
+  owned by the SIG
+
+### Solution Overview
+The proposed solution consists of four deliverables:
 * A machine readable format to define conforming behaviors.
 * Tooling to generate lists of behaviors from the API schemas.
-* Tooling to generate tests and test scaffolding to evaluate those behaviors.
 * Tooling to compare the implemented tests to the list of behaviors and
   calculate coverage.
+* Tooling to generate tests and test scaffolding to evaluate those behaviors.
 
 ### Representation of Behaviors
 
 Behaviors will be captured in prose, which is in turn embedded in a YAML file
-along with meta-data about the behavior.
+along with meta-data about the behavior. More details on exactly what defines
+a behavior is documented in the [behaviors
+README](https://git.k8s.io/kubernetes/test/conformance/behaviors/README.md).
 
 Behaviors must be captured in the repository and agreed upon as required for
-conformance. Behaviors are broken into feature areas, and there are multiple
-test suites (named sets of tests) for each feature area. Some of these suites
+conformance. Behaviors are broken out by owning SIG, and there are multiple
+test suites (named sets of tests) for each SIG. Some of these suites
 may be machine-generated based upon the API schema, whereas others are
 handwritten. Keeping the generated and handwritten suites in separate files
 allows regeneration of the auto-discovered behavior suites. Some areas may be
 defined by API group and Kind, while others will be subjectively defined by
 subject-matter experts.
 
-Validation and conformance designations are made on a per-suite basis,
-not a per-behavior basis. There may be multiple suites in a feature area
-that are required for validation and/or conformance.
-
 The grouping at the suite level should be defined based upon subjective
 judgement of how behaviors relate to one another, along with an understanding
 that all behaviors in a given suite may be required to function for a given
-cluster to pass validation for that suite.
+cluster to pass conformance for that suite.
 
 Typical suites defined for any given feature will include:
  * API spec. This suite is generated from the API schema and represents
@@ -159,27 +375,29 @@ Typical suites defined for any given feature will include:
    and other features.
 
 Each suite may be stored in a separate file in a directory for the specific
-area. For example, a "Pods" area would be structured as a `pods` directory with
+SIG. For example, a "sig-node" my have files such as:
 these files:
  * `api-generated.yaml` describing the set of behaviors auto-generated from the
    API specification.
  * `lifecycle.yaml` describing the set of behaviors expected from the Pod
    lifecycle.
+ * `readiness-gates.yaml` describing the set of behaviors expected for Pod
+   readiness gates functionality.
 
 Behavior files are reviewed separately from the tests themselves, with separate
 OWNERs files corresponding to those tests. This may be captured in a directory
 structure such as:
 
 ```
-test/conformance
-├── behaviors
-│   ├── OWNERS # no-parent: true, approvers: behavior-approvers
-│   └── {area}
-│       ├── OWNERS # optional: reviewers: area-experts
-│       └── {suite}.yaml
-├── OWNERS # approvers: test-approvers
-└── tests.yaml # promotion updates this file; tests MUST map to a behavior
+test/conformance/behaviors
+│── OWNERS # no-parent: true, approvers: behavior-approvers
+│── {sig}
+│   ├── OWNERS # optional: reviewers: area-experts
+│   └── {suite}.yaml
 ```
+
+The relationship between tests and behaviors is captured in the conformance test
+metadata, which contains a list of behavior IDs covered by the test.
 
 The structure of the behavior YAML files is described by these Go types:
 
