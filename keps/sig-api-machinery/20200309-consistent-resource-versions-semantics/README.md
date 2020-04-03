@@ -1,17 +1,3 @@
----
-title: consistent-resource-version-semantics
-authors:
-  - "@jpbetz"
-owning-sig: sig-api-machinery
-reviewers:
-approvers:
-  - "@lavalamp"
-  - "@deads2k"
-creation-date: 2020-03-09
-last-updated: 2020-04-01
-status: provisional
----
-
 # Title
 
 consistent-resource-version-semantics
@@ -25,11 +11,12 @@ consistent-resource-version-semantics
 - [Proposal](#proposal)
   - [Add a ResourceVersionMatch query parameter](#add-a-resourceversionmatch-query-parameter)
   - [Backward Compatibility](#backward-compatibility)
-  - [Get support?](#get-support)
+  - [Impact on get calls](#impact-on-get-calls)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Alternatives Considered](#alternatives-considered)
   - [Alternative: Introduce ExactResourceVersion and MinResourceVersion parameters](#alternative-introduce-exactresourceversion-and-minresourceversion-parameters)
   - [Alternative: Use syntax in the query string](#alternative-use-syntax-in-the-query-string)
+- [Implementation History](#implementation-history)
 <!-- /toc -->
 
 ## Summary
@@ -70,14 +57,14 @@ Add an optional `ResourceVersionMatch` paramater to `ListOptions` and
 
 ```
 // ResourceVersionMatch specifies how the ResourceVersion parameter is applied. ResourceVersionMatch
-// may only be set if ResourceVersion is also set.
+// only applies to list calls and may only be set if ResourceVersion is also set.
 type ResourceVersionMatch string
 
 const (
 	// ResourceVersionMatchNotOlderThan matches data at least as new as the provided
 	// ResourceVersion. The newest available data is preferred, but any data not
 	// older than this ResourceVersion may be served.
-	// This guarantees that ResourceVersion in the ListMeta is not older than the requested
+	// For list calls, this guarantees that ResourceVersion in the ListMeta is not older than the requested
 	// ResourceVersion, but does not make any guarantee about the ResourceVersion in the ObjectMeta
 	// of the list items since ObjectMeta.ResourceVersion tracks when an object was last updated,
 	// not how up-to-date the object is when served.
@@ -85,7 +72,7 @@ const (
 	// ResourceVersionMatchExact matches data at the exact ResourceVersion
 	// provided. If the provided ResourceVersion is unavailable, the server responds with
 	// HTTP 410 “Gone”.
-	// This guarantees that ResourceVersion in the ListMeta is the same as the requested
+	// For list calls, this guarantees that ResourceVersion in the ListMeta is the same as the requested
 	// ResourceVersion, but does not make any guarantee about the ResourceVersion in the ObjectMeta
 	// of the list items since ObjectMeta.ResourceVersion tracks when an object was last updated,
 	// not how up-to-date the object is when served.
@@ -96,28 +83,64 @@ const (
 ```
 type ListOptions struct {
     ...
-    // When specified with a watch call, shows changes that occur after that particular version of a resource.
-	// Defaults to changes from the beginning of history.
-	// If set for a list call, ResourceVersionMatch should also be set.
-	// When specified for list:
-	// - if unset, then the result is returned from remote storage based on quorum-read flag;
-	// - if set and ResourceVersionMatch is set, requests that the server apply the ResourceVersionMatch rule;
+	// ResourceVersion sets a constraint on what resource versions a request may be served from.
+	// If unset, the request is served from latest resource version to ensure strong consistency
+	// (i.e. served from etcd via a quorum read). Setting a ResourceVersion is preferable in cases
+	// where a ResourceVersion is known and can be used as a constraint since better performance
+	// and scalability can be achieved for a cluster by avoiding quorum reads.
+	// When ResourceVersion is set for list, it is highly recommended ResourceVersionMatch is also set.
+	//
+	// ResourceVersion for watch:
+	// - if unset, start a watch at the most recent resource version, which must be consistent
+	//   (i.e. served from etcd via a quorum read). To establish initial state, the watch begins
+	//   with synthetic “Added” events of all resources instances that exist at the starting
+	//   resource version. All following watch events are for all changes that occurred after
+	//   the resource version the watch started at;
+	// - if 0, sStart a watch at any resource version, the most recent resource version available
+	//   is preferred, but not required; any starting resource version is allowed. It is
+	//   possible for the watch to start at a much older resource version that the client
+	//   has previously observed, particularly in high availability configurations, due to
+	//   partitions or stale caches. Clients that cannot tolerate this should not start a
+	//   watch with this semantic. To establish initial state, the watch begins with synthetic
+	//   “Added” events for all resources instances that exist at the starting resource version.
+	//   All following watch events are for all changes that occurred after the resource version
+	//   the watch started at;
+	// - if non-zero, start a watch at an exact resource version. The watch events are for all
+	//   changes after the provided resource version. Watch is not started with synthetic “Added”
+	//   events for the provided resource version. The client is assumed to already have the
+	//   initial state at the starting resource version since the client provided the resource version.
+	//
+	// ResourceVersion for list:
+	// - if unset, then the result is returned at the most recent resource version. The returned
+	//   data must be consistent (i.e. served from etcd via a quorum read);
+	// - if set and ResourceVersionMatch is set, ResourceVersion is applied according to the ResourceVersionMatch rule;
 	// - if set and ResourceVersionMatch is unset or the server ignores ResourceVersionMatch, the legacy behavior applies:
-	//   - if 0, the result may contain arbitrarily old data, no guarantee;
-	//   - if non-zero and Limit is unset, ResourceVersionMatchNotOlderThan rule applies implicitly;
-	//   - if non-zero and Limit is set, ResourceVersionMatchExact rules applies implicitly.
+	//   - if 0, the result may be at any resource version. The newest available resource version
+	//     is preferred, but strong consistency is not required; data at any resource version may
+	//     be served. It is possible for the request to return data at a much older resource version
+	//     that the client has previously observed, particularly in high availability configurations,
+	//     due to partitions or stale caches. Clients that cannot tolerate this should not use this
+	//     semantic;
+	//   - if non-zero and Limit is unset, the ResourceVersionMatchNotOlderThan rule applies implicitly;
+	//   - if non-zero and Limit is set, the ResourceVersionMatchExact rule applies implicitly.
+	//
+	// Defaults to unset
 	// +optional
 	ResourceVersion string `json:"resourceVersion,omitempty" protobuf:"bytes,4,opt,name=resourceVersion"`
 
-	// ResourceVersionMatch determines how ResourceVersion is applied. Not supported for watch calls.
-	// ResourceVersionMatch SHOULD be set for list calls where ResourceVersion is set. If ResourceVersion is unset,
-	// ResourceVersionMatch is ignored.
+	// ResourceVersionMatch determines how ResourceVersion is applied to list calls.
+	// It is highly recommmend that ResourceVersionMatch be set for list calls where ResourceVersion is
+	// set. If ResourceVersion is unset, ResourceVersionMatch is ignored.
 	// For backward compatibility, clients must tolerate the server ignoring ResourceVersionMatch:
 	// - When using ResourceVersionMatchNotOlderThan and Limit is set, clients must handle HTTP 410 “Gone” responses.
-	//   For example, the client might retry with a newer ResourceVersion or fall back to a ResourceVersion="" request.
+	//   For example, the client might retry with a newer ResourceVersion or fall back to ResourceVersion="".
 	// - When using ResourceVersionMatchExact and Limit is unset, clients must verify that the ResourceVersion in the
 	//   ListMeta of the response matches the requested ResourceVersion, and handle the case where it does not. For
 	//   example, the client might fall back to the a request with Limit set.
+	// Unless you have strong consistency requirements, using ResourceVersionMatchNotOlderThan and a known
+	// ResourceVersion is preferable since it can achieve better performance and scalability of your cluster
+	// than leaving ResourceVersion and ResourceVersionMatch unset, which requires quorum read to be served.
+	// Defaults to unset
 	// +optional
 	ResourceVersionMatch ResourceVersionMatch `json:"resourceVersionMatch,omitempty" protobuf:"bytes,10,opt,name=resourceVersionMatch"`
     ...
@@ -137,24 +160,15 @@ parameter will ignore it. Client will need to tolerate this as documented on Res
 
 When 'ResourceVersionMatch' is not provided, the behavior is the same as before it was introduced.
 
-### Get support?
+### Impact on get calls
 
-`ResourceVersionMatch` can also be added to the get operation for consistency. `Get` currently
-`NotOlderThan` semantics by default and this would add support for `Exact`.
+We will not add `ResourceVersionMatch` to get calls. 
 
-In order to be backward compatible, get responses must include the `ResourceVersion` that the request was served at.
-For list responses this is provided in `ListMeta`, but get responses do not have a wrapper object like `ListMeta`.
-The `ObjectMeta.ResourceVersion` cannot be used because it represents the resource version that the object was
-created or last modified at, not the resource version is was served from.
+get provides consistent `NotOlderThan` semantics when `ResourceVersion` is set, which are easy
+to understand and doesn't need to be changed.
 
-Options:
-- Don't support `ResourceVersionMatch` for get.
-- Add a header that provides the `ResourceVersion` the get was served at back to clients, e.g. `ServedAtResourceVersion: 43049`
-
-I am currently considering not including `ResourceVersionMatch` since:
-- The header approach sets precidence for an approach I'm not sure we want to encourage in api-machinery
-- get currently does not have the semantic consistency problems of list, and so does not urgently need this parameter
-- it is possible to use list to get a single item at a specific resource version already
+get does not need the flexibility of `Exact` resource version lookup since it is already possible to
+use a list with `fieldSelector=metadata.name=foo` to get a single object with list.
 
 ### Risks and Mitigations
 
@@ -165,23 +179,16 @@ this proposal, clients at least have the ability to use a consistent set of sema
 Another risk is that clients will either not realize, or not be sufficiently
 motivated, to update their code to move away from the legacy behavior. This
 can be mitigated a couple ways:
-- Update client bindings (client-go, ...) to discourage using the
+- Update client libraries (client-go, ...) to discourage using the
   legacy behavior, and eventually to disallow it.
-- At some point in the future, start logging warning on the server when the
-  legacy behavior is used to make it more obvious what needs to be changed?
+- At some point in the future, start providing warnings to the client that legacy behavior. E.g. via
+  https://github.com/kubernetes/kubernetes/pull/73032.
 
 ## Alternatives Considered
 
 ### Alternative: Introduce ExactResourceVersion and MinResourceVersion parameters
 
 Deprecate `ResourceVersion` and introduce `ExactResourceVersion` and `MinResourceVersion`.
-
-The three cases are equivalent to the `ResourceVersionMatch` cases from option 1
-and would use the equivalent documentation.
-
-This makes it obvious that the `ResourceVersion` parameter is deprecated. It
-does this as the API aesthetic cost of having a top level parameter be forever
-deprecated.
 
 **Backward Compatibility:**
 
@@ -203,14 +210,27 @@ to tolate responses from servers that ignore the new parameters in a backward co
 
 **Disadvantages**
 
-- Clients have to include `ResourceVersion` even when using the new parameters for backward compatibility.
-- `ResourceVersion` becomes deperacated but can never be removed.
+- Since the field will deprecated but never removed, in practice we have 3 options to understand instead of 2.
+- Clients have to include `ResourceVersion` even when using the new parameters for backward compatibility,
+  resulting in `?ResourceVersion=3847&MinResourceVersion=3847` which is less readable than
+  `?ResourceVersion=3847&ResourceVersionMatch=NotOlderThan`.
 
 ### Alternative: Use syntax in the query string
 
 Introduce syntax (`=N` and `>=N`) instead of additional parameters.
 
-The disadvantage of this is that many frameworks expect query parameters to be
-`=` separated key value pairs. It would also need to somehow retain backward
-compatibility (`==N` for exact, `=N` for legacy)?.
+**Advantages**
 
+- consise query parameters: `resourceVersion=234`, `resourceVersion>=234`.
+
+**Disadvantages**
+
+- Still need to deal with backward compatibility, so we end up having to ask clients to do
+  `resourceVersion=234&resourceVersion>=234`.
+- Not clear how we would support 'Exact' matches. `==` doesn't work as well in query params
+  so we'd need to select something else, and we already use `=` for the legacy case.
+
+
+## Implementation History
+
+- Proof of concept: https://github.com/kubernetes/kubernetes/compare/master...jpbetz:rv-semantics
