@@ -239,10 +239,12 @@ nitty-gritty.
 -->
 #### Terminology
 
-- **supercluster** - a placeholder name for a group of clusters with a high
+- **supercluster** - A placeholder name for a group of clusters with a high
   degree of mutual trust and shared ownership that share services amongst
-  themselves.
-- **mcsd-controller** - a controller that syncs services across clusters and
+  themselves. Membership in a supercluster is symmetric and transitive. The set
+  of member clusters are mutually aware, and agree about their collective
+  association.
+- **mcsd-controller** - A controller that syncs services across clusters and
   makes them available for multi-cluster service discovery (MCSD) and
   connectivitiy. There may be multiple implementations, this doc describes
   expected common behavior.
@@ -254,17 +256,18 @@ a `ServiceExport` in a cluster will signify that the `Service` with the same
 name and namespace as the export should be visible to other clusters in the
 supercluster.
 
-Another CRD called `ImportedService` will be introduced to store connection
-information about the `Services` in each cluster, e.g. topology. This is
-analogous to the traditional `Service` type in Kubernetes. Each cluster will
-have an `ImportedService` for each `Service` that has been exported within the
-supercluster, referenced by namespaced name.
+Another CRD called `ImportedService` will be introduced to store information
+about the services exported from each cluster, e.g. topology. This is analogous
+to the traditional `Service` type in Kubernetes. Each cluster will have a
+coresponding `ImportedService` for each uniquely named `Service` that has been
+exported within the supercluster, referenced by namespaced name.
 
 If multiple clusters export a `Service` with the same namespaced name, they will
-be recognized as a single combined service. The resulting `ImportedService` will
-reference endpoints from both clusters. Properties of the `ImportedService`
-(e.g. ports, topology) will be derived from a merger of component Service
-properties.
+be recognized as a single combined service. For example, if 5 clusters export
+`my-svc.my-ns`, there will be one `ImportedService` named `my-svc` in the
+`my-ns` namespace and it will be associated with endpoints from all exporting
+clusters. Properties of the `ImportedService` (e.g. ports, topology) will be
+derived from a merger of component `Service` properties.
 
 Existing implementations of Kubernetes Service API (e.g. kube-proxy) can be
 extended to present `ImportedServices` alongside traditional `Services`.
