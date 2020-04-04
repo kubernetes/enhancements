@@ -1,5 +1,25 @@
 # KEP-NNNN: GRPC Probe
 
+<!-- toc -->
+- [Release Signoff Checklist](#release-signoff-checklist)
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [Risks and Mitigations](#risks-and-mitigations)
+- [Design Details](#design-details)
+  - [Followup work (or optionally part of this)](#followup-work-or-optionally-part-of-this)
+  - [Test Plan](#test-plan)
+  - [Graduation Criteria](#graduation-criteria)
+  - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+  - [Version Skew Strategy](#version-skew-strategy)
+- [Implementation History](#implementation-history)
+- [Drawbacks](#drawbacks)
+- [Alternatives](#alternatives)
+<!-- /toc -->
+
+
 ## Release Signoff Checklist
 
 - [ ] Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
@@ -92,7 +112,13 @@ message GRPCAction {
 }
 ```
 
+### Followup work (or optionally part of this)
+
+API + Prober + Documentation
+
 ### Test Plan
+
+Unit test + functional tests
 
 ### Graduation Criteria
 
@@ -104,13 +130,9 @@ It is not breaking change, dont need
 
 ## Implementation History
 
-I provide initial pull request with unit test for probe:
-
-https://github.com/kubernetes/kubernetes/pull/89832
+* 2020-04-04: First draft MR https://github.com/kubernetes/kubernetes/pull/89832
 
 ## Drawbacks
-
--
 
 ## Alternatives
 
