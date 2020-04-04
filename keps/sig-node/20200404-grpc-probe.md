@@ -50,13 +50,6 @@ Zero risk, users will be happy
 
 ## Design Details
 
-```go
-type GRPCHealth struct {
-    Host string
-    Port int
-}
-```
-
 ```proto
 message Handler {
   // One and only one of the following should be specified.
