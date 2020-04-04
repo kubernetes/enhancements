@@ -1,0 +1,15 @@
+title: Add GRPC Probe
+kep-number: 1665
+authors:
+  - "@PxyUp"
+owning-sig: sig-node
+participating-sigs:
+  - sig-node
+status: provisional
+creation-date: 2020-04-04
+reviewers:
+  - TBD
+approvers:
+  - TBD
+see-also:
+replaces:

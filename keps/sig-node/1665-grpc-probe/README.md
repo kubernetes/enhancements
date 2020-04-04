@@ -1,4 +1,4 @@
-# KEP-NNNN: GRPC Probe
+# KEP-NNNN: Add GRPC Probe
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
