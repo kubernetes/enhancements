@@ -44,6 +44,14 @@ Provide for k8 possability for have grpc probe natively(from box)
       periodSeconds: 10
 ```
 
+Inside metadata will be send user agent:
+
+```go
+md := metadata.New(map[string]string{
+		"User-Agent": fmt.Sprintf("kube-probe/%s.%s", v.Major, v.Minor),
+})
+```
+
 ### Risks and Mitigations
 
 Zero risk, users will be happy
