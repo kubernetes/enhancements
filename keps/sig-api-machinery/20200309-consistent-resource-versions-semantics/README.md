@@ -19,8 +19,7 @@
 
 ## Summary
 
-Make resource version semantics consistent for list and get requests regardless of
-pagination.
+Make resource version semantics consistent for list requests regardless of pagination.
 
 ## Motivation
 
