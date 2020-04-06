@@ -12,8 +12,8 @@ approvers:
   - sig-cloud-provider
 editor:
 creation-date: 2020-01-14
-last-updated: 2020-01-27
-status: implementable
+last-updated: 2020-03-23
+status: implemented
 see-also:
 replaces:
 superseded-by:
