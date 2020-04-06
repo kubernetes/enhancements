@@ -1,4 +1,4 @@
-# KEP-NNNNN: Consistent Resource Version Semantics for List
+# Consistent Resource Version Semantics for List
 
 ## Table of Contents
 
