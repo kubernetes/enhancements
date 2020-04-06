@@ -92,6 +92,7 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Risks and Mitigations](#risks-and-mitigations)
   - [Design Details](#design-details)
     - [Exporting Services](#exporting-services)
+      - [Restricting Exports](#restricting-exports)
     - [Exported Service Behavior Expectations](#exported-service-behavior-expectations)
       - [SuperclusterIP](#superclusterip)
       - [DNS](#dns)
@@ -439,6 +440,15 @@ Most information about the service, including ports, backends and topology, will
 continue to be stored in the Service object, which is name mapped to the service
 export.
 
+#### Restricting Exports ####
+
+Cluster administrators may use RBAC rules to prevent creation of
+`ServiceExports` in select namespaces. While there are no general restrictions
+on which namespaces are allowed, administrators should be especially careful
+about permitting exports from `kube-system` and `default`. As a best practice,
+admins may want to tightly or completely prevent exports from these namespaces
+unless there is a clear use case.
+
 ### Exported Service Behavior Expectations
 
 #### SuperclusterIP
@@ -459,7 +469,11 @@ domain name will be
 `<service-export-name>.<service-export-namespace>.svc.supercluster.local`.
 Requests to this domain name from within the supercluster will resolve to the
 supercluster VIP, which points to the endpoint addresses for pods within the
-underlying `Service`(s) across the supercluster.
+underlying `Service`(s) across the supercluster. All service consumers must use
+the `*.svc.supercluster.local` name to enable supercluster routing, even if
+there is a matching `Service` with the same namespaced name in the local
+cluster. There will be no change to existing behavior of the `svc.cluster.local`
+zone.
 
 #### EndpointSlice
 
