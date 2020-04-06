@@ -1,6 +1,4 @@
-# Title
-
-consistent-resource-version-semantics
+# KEP-NNNNN: Consistent Resource Version Semantics for List
 
 ## Table of Contents
 
