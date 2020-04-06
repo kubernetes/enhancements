@@ -52,8 +52,7 @@ This was discussed in [Feb 12th, 2020 SIG API machinery bi-weekly meeting](https
 
 ### Add a ResourceVersionMatch query parameter
 
-Add an optional `ResourceVersionMatch` paramater to `ListOptions` and
-`GetOptions` with the enumeration values:
+Add an optional `ResourceVersionMatch` paramater to `ListOptions` with the enumeration values:
 
 ```
 // ResourceVersionMatch specifies how the ResourceVersion parameter is applied. ResourceVersionMatch
@@ -91,12 +90,7 @@ type ListOptions struct {
 	// When ResourceVersion is set for list, it is highly recommended ResourceVersionMatch is also set.
 	//
 	// ResourceVersion for watch:
-	// - if unset, start a watch at the most recent resource version, which must be consistent
-	//   (i.e. served from etcd via a quorum read). To establish initial state, the watch begins
-	//   with synthetic “Added” events of all resources instances that exist at the starting
-	//   resource version. All following watch events are for all changes that occurred after
-	//   the resource version the watch started at;
-	// - if 0, sStart a watch at any resource version, the most recent resource version available
+	// - if unset or 0, start a watch at any resource version, the most recent resource version available
 	//   is preferred, but not required; any starting resource version is allowed. It is
 	//   possible for the watch to start at a much older resource version that the client
 	//   has previously observed, particularly in high availability configurations, due to
