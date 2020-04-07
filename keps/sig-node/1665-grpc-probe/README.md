@@ -55,11 +55,20 @@ Provide for k8 possability for have grpc probe natively(from box)
 
 ## Proposal
 
+With host:
 ```shell script
     readinessProbe:
       grpc:
-        port: 8080
-        host: localhost
+        port: 9090
+        host: 172.20.19.97 # default pod ip
+      initialDelaySeconds: 5
+      periodSeconds: 10
+```
+Without host
+```shell script
+    readinessProbe:
+      grpc:
+        port: 9090
       initialDelaySeconds: 5
       periodSeconds: 10
 ```
@@ -74,7 +83,12 @@ md := metadata.New(map[string]string{
 
 ### Risks and Mitigations
 
-Zero risk, users will be happy
+From tech:
+1. Zero risk, it is totally not breaking change, fully new functional
+
+From community:
+1. There's less reason to say no to the next thing
+2. There will possibly be more feature requests
 
 ## Design Details
 
@@ -103,8 +117,7 @@ message Handler {
 message GRPCAction {
   // Number or name of the port to access on the container.
   // Number must be in the range 1 to 65535.
-  // Name must be an IANA_SVC_NAME.
-  optional k8s.io.apimachinery.pkg.util.intstr.IntOrString port = 1;
+  optional int32 port = 3;
 
   // Optional: Host name to connect to, defaults to the pod IP.
   // +optional
