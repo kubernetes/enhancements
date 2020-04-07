@@ -219,7 +219,7 @@ type EndpointPort struct {
 
 ### Mapping
 - 1 Service maps to N EndpointSlice objects.
-- Each EndpointSlice contains at most 100 endpoints by default (MaxEndpointThreshold: configurable via controller flag). 
+- Each EndpointSlice contains at most 100 endpoints by default (MaxEndpointsPerSlice: configurable via controller manager flag).
 - If a EndpointSlice is derived from K8s:
   - The following label is added to identify corresponding service:  
     - Key: kubernetes.io/service
@@ -487,7 +487,7 @@ In addition, the EndpointSlice API is capable to express endpoint subsetting, wh
 
 - #### Why only include up to 100 endpoints in one EndpointSlice object? Why not 1 endpoint? Why not 1000 endpoints?
 
-Based on the data collected from user clusters, vast majority (> 99%) of the k8s services have less than 100 endpoints. For small services, EndpointSlice API will make no difference. If the MaxEndpointThreshold is too small (e.g. 1 endpoint per EndpointSlice), controller loses capability to batch updates, hence causing worse write amplification on service creation/deletion and scale up/down. Etcd write RPS is significant limiting factor.
+Based on the data collected from user clusters, vast majority (> 99%) of the k8s services have less than 100 endpoints. For small services, EndpointSlice API will make no difference. If the MaxEndpointsPerSlice is too small (e.g. 1 endpoint per EndpointSlice), controller loses capability to batch updates, hence causing worse write amplification on service creation/deletion and scale up/down. Etcd write RPS is significant limiting factor.
 
 - #### Why do we have a condition struct for each endpoint? 
 
