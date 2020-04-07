@@ -36,6 +36,7 @@ status: implementable
 - [Proposal](#proposal)
   - [External Credential Provider](#external-credential-provider)
   - [Example](#example)
+  - [Moving Credential Providers to staging](#moving-credential-providers-to-staging)
   - [Alternatives Considered](#alternatives-considered)
     - [API Server Proxy](#api-server-proxy)
     - [Sidecar Credential Daemon](#sidecar-credential-daemon)
@@ -106,6 +107,10 @@ type RegistryCredentialConfig struct {
 type RegistryCredentialProvider struct {
     metav1.TypeMeta `json:",inline"`
 
+    // The name of the plugin.  It must match the name of the binary located in the
+    // search path.
+    Name string `json:"name"`
+
     // ImageMatchers is a list of strings used to match against the image property
     // (sometimes called "registry path") to determine which images to provide
     // credentials for.  If one of the strings matches the image property, then the
@@ -131,15 +136,21 @@ type RegistryCredentialProvider struct {
     // contains a port, then the port must match as well.
     ImageMatchers []string `json:"imageMatchers"`
 
-    // Exec specifies a custom exec-based plugin.  This type is defined in
-    // https://github.com/kubernetes/client-go/blob/62f256057db7571c5ed1aba47eea291f72dd557a/tools/clientcmd/api/types.go#L184
-    Exec clientcmd.ExecConfig
+    // ExtraArgs specifies arguments to be passed to the plugin via environment variables.
+    // +optional
+    ExtraArgs []PluginArg `json:"extraArgs"`
+}
+
+// PluginArg is used for passing extra arguments to the exec credential plugin binary.
+type PluginArg struct {
+    Name  string `json:"name"`
+    Value string `json:"value"`
 }
 ```
 
 The RegistryCredentialConfig will be encoded in YAML and located in a file on disk.  The exact path of the credential provider configuration file will be passed to kubelet via a new configuration option `RegistryCredentialConfigPath`.
 
-We will create new types `RegistryCredentialPluginRequest` and `RegistryCredentialPluginResponse` which will define the interface between the plugin and the kubelet runtime.  After the kubelet matches the image property string to a RegistryCredentialProvider, the kubelet will exec the plugin binary, and pass the JSON encoded request to the plugin via stdin.  This includes the image that is to be pulled.  The plugin will report back the response, which includes the credentials that kubelet needs to pull the image.
+We will create new types `RegistryCredentialPluginRequest` and `RegistryCredentialPluginResponse` which will define the interface between the plugin and the kubelet runtime.  After the kubelet matches the image property string to a RegistryCredentialProvider, the kubelet will exec the plugin binary, providing the argument get-credentials, and pass the JSON encoded request to the plugin via stdin, which includes the image that is to be pulled.  The plugin will report back the response, which includes the credentials that kubelet needs to pull the image.
 
 In the in-tree implementation, the docker keyring, which has N credential providers, returns an `[]AuthConfig` on a Lookup(image string) call.  This struct will be populated by the plugin rather than the in-tree provider.
 
@@ -159,19 +170,8 @@ type RegistryCredentialPluginResponse struct {
     // +optional
     ExpirationTimestamp *metav1.Time `json:"expirationTimestamp,omitempty"`
 
-    // +optional
-    Username *string `json:"username,omitempty"`
-    // +optional
-    Password *string `json:"password,omitempty"`
-
-    // IdentityToken is used to authenticate the user and get
-    // an access token for the registry.
-    // +optional
-    IdentityToken *string `json:"identitytoken,omitempty"`
-
-    // RegistryToken is a bearer token to be sent to a registry
-    // +optional
-    RegistryToken *string `json:"registrytoken,omitempty"`
+    Username string `json:"username"`
+    Password string `json:"password"`
 }
 
 ```
@@ -185,16 +185,23 @@ kind: credentialprovider
 apiVersion: v1alpha1
 providers:
 -
+  name: ecr-creds
   imageMatchers:
   - *.dkr.ecr.*.amazonaws.com
   - *.dkr.ecr.*.amazonaws.com.cn
-  exec:
-    command: ecr-creds
-    args: token
-    apiVersion: v1alpha1
+  extraArgs:
+    region: us-west-2
 ```
 
-Where ecr-creds is a binary that vends ecr credentials.  This would execute the binary `ecr-creds` with the argument `token` for the image `012345678910.dkr.ecr.us-east-1.amazonaws.com/my-image`.
+Where ecr-creds is a binary that vends ecr credentials.  This would execute the binary `ecr-creds` for the image `012345678910.dkr.ecr.us-east-1.amazonaws.com/my-image`.  The extra args would be passed in as environment variables, so the entire command would be:
+
+```
+REGION=us-west-2 ecr-creds get-credentials
+```
+
+### Moving Credential Providers to staging
+
+The credential provider code is currently located in `pkg/credentialprovider`, but the API objects mentioned above must be consumed by the plugins.  To avoid forcing the plugins to consume the entire kubernetes repository as a dependency, we can use the familiar staging export method so that we can create a new github repository which will be consumed by the plugins.  This means all the credential provider code would move to `staging/src/k8s.io/credentialprovider`, and would be exported (mirrored) to github.com/kubernetes/credentialprovider.
 
 ### Alternatives Considered
 
