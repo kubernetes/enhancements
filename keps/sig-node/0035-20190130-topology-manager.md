@@ -14,12 +14,13 @@ reviewers:
   - "@RenaudWasTaken"
   - "@klueska"
   - "@nolancon"
+  - "@swhan91"
 approvers:
   - "@dawnchen"
   - "@derekwaynecarr"
 editor: Louise Daly
 creation-date: 2019-01-30
-last-updated: 2019-01-30
+last-updated: 2020-04-01
 status: implementable
 see-also:
 replaces:
@@ -58,6 +59,7 @@ _Reviewers:_
   - [Alpha (v1.16) [COMPLETED]](#alpha-v116-completed)
   - [Alpha (v1.17) [COMPLETED]](#alpha-v117-completed)
   - [Beta (v1.18) [COMPLETED]](#beta-v118-completed)
+  - [Beta (target v1.19) [WIP]](#beta-target-v119)
   - [GA (stable)](#ga-stable)
 - [Test Plan](#test-plan)
   - [Single NUMA Systems Tests](#single-numa-systems-tests)
@@ -138,7 +140,7 @@ information.
   spread among the available memory nodes in the system. We further assume
   the operating system provides best-effort local page allocation for
   containers (as long as sufficient HugePages are free on the local memory
-  node.
+  node).
 - _CNI:_ Changing the Container Networking Interface is out of scope for
   this proposal. However, this design should be extensible enough to
   accommodate network interface locality if the CNI adds support in the
@@ -184,64 +186,78 @@ Kubelet components on a container by container basis.
 
 If the hints are not compatible, the Topology Manager may choose to
 reject the pod. Behavior in this case depends on a new Kubelet configuration
-value to choose the topology policy. The Topology Manager supports four
-policies: `none`(default), `best-effort`, `restricted` and `single-numa-node`. 
+value to choose the topology policy. The Topology Manager supports five
+policies: `none`(default), `best-effort`, `restricted`,  `single-numa-node` and `pod-level-single-numa-node`.
 
 A topology hint indicates a preference for some well-known local resources.
-The Topology Hint currently consists of 
+The Topology Hint currently consists of
 * A list of bitmasks denoting the possible NUMA Nodes where a request can be satisfied.
 * A preferred field.
     * This field is defined as follows:
-      * For each Hint Provider, there is a possible resource assignment that satisfies the request, such that the least possible number of NUMA nodes is involved (caculated as if the node were empty.)
+      * For each Hint Provider, there is a possible resource assignment that satisfies the request, such that the least possible number of NUMA nodes is involved (calculated as if the node were empty.)
       * There is a possible assignment where the union of involved NUMA nodes for all such resource is no larger than the width required for any single resource.
 
+The Topology Manager component will be disabled behind a feature gate until graduation from alpha to beta.
+
 #### Policies
+The node-level topology policy takes precedence over the pod-level topology policy.
+The node-level policies will be deprecated later, because the utilization is better for servers to have dynamic policies.
 
-**none (default)**: Kubelet does not consult Topology Manager for placement decisions. 
+**Node-level Topology Policy**
 
-**best-effort**: Topology Manager will provide the preferred allocation for the container based
-on the hints provided by the Hint Providers. If an undesirable allocation is determined, the pod will be admitted with this undesirable allocation.
+- **none(default)**
+  * Kubelet does not consult Topology Manager for placement decisions.
+- **best-effort/restricted/single-numa-node/pod-level-single-numa-node**
+  * If the server node is configured with these policies, the pod-level topology policy of a pod is set as node-level topology policy of the serer.
+- **dynamic**
+  * Pods with various pod-level topology policies can be distributed to nodes with dynamic policy.
+  * The node-level topology policy does not affect to pod-level topology policy.
 
-**restricted**: Topology Manager will provide the preferred allocation for the container based
-on the hints provided by the Hint Providers. If an undesirable allocation is determined, the pod will be rejected. 
-This will result in the pod being in a `Terminated` state, with a pod admission failure.
 
-**single-numa-node**: Topology mananager will enforce an allocation of all resources on a single NUMA Node. If such
-an allocation is not possible, the pod will be rejected. This will result in the pod being in a `Terminated` state, with a pod admission failure.
+**Pod-level Topology Policy**
 
-The Topology Manager component will be disabled behind a feature gate until
-graduation from alpha to beta.
+- **none (default)**: Kubelet does not consult Topology Manager for placement decisions.
+- **best-effort**: Topology Manager will provide the preferred allocation for the container based on the hints provided by the Hint Providers. If an undesirable allocation is determined, the pod will be admitted with this undesirable allocation.
+- **restricted**: Topology Manager will provide the preferred allocation for the container based on the hints provided by the Hint Providers. If an undesirable allocation is determined, the pod will be rejected. This will result in the pod being in a `Terminated` state, with a pod admission failure.
+- **single-numa-node**: Topology manager will enforce an allocation of all resources on a single NUMA Node. If such an allocation is not possible, the pod will be rejected. This will result in the pod being in a `Terminated` state, with a pod admission failure.
+- **pod-level-single-numa-node**: Topology manager will enforce an allocation of all container's resources in the pod on a same NUMA Node. If such an allocation is not possible, the pod will be rejected. This will result in the pod being in a `Terminated` state, with a pod admission failure.
+
+
 
 #### Computing Preferred Affinity
 
-After collecting hints from all providers, the chosen Topology Manager policy performs the
-affinity calcuation to determine the best fit Topology Hint.
+After collecting hints from all providers, the chosen Topology policy of the pod performs the affinity calculation to determine the best fit Topology Hint.
 
-The chosen Topology Manager policy then decides to admit or reject the pod based on this hint.
+The chosen Topology policy of the pod then decides to admit or reject the pod based on this hint.
 
-**Policy Affinity Calcuation:**
+**Policy Affinity Calculation:**
 
 - **best-effort/restricted (same affinity calculation algorithm for both policies)**
-1. Loops through the list of hint providers and saves an accumulated list of 
+1. Loops through the list of hint providers and saves an accumulated list of
    the hints returned by each hint provider.
-2. Iterates through all permutations of hints accumulated in Step 1. The hint affinites are merged to a single hint
-   by performing a bitwise AND. The preferred field on the merged hint is set to false if any of the hints in the 
-   permutation returned a false preferred.
+2. Iterates through all permutations of hints accumulated in Step 1. The hint affinities are merged to a single hint by performing a bitwise AND. The preferred field on the merged hint is set to false if any of the hints in the permutation returned a false preferred.
 3. The hint with the narrowest preferred affinity is returned.
    * Narrowest in this case means the least number of NUMA nodes required to satisfy the resource request.      
-4. If no hint with at least one NUMA Node set is found, return a default hint which is a hint
-   with all NUMA Nodes set and preferred set to false.
+4. If no hint with at least one NUMA Node set is found, return a default hint which is a hint with all NUMA Nodes set and preferred set to false.
 
 - **single-numa-node**
-1. Loops through the list of hint providers and saves an accumulated list of 
+1. Loops through the list of hint providers and saves an accumulated list of
    the hints returned by each hint provider.
 2. Filters the list of hints accumulated in Step 1 to only include hints with a single NUMA node and nil NUMA nodes.
-3. Iterates through all permutations of hints filtered in Step 2. The hint affinites are merged to a single hint
-   by performing a bitwise AND. The preferred field on the merged hint is set to false if any of the hints in the 
+3. Iterates through all permutations of hints filtered in Step 2. The hint affinities are merged to a single hint
+   by performing a bitwise AND. The preferred field on the merged hint is set to false if any of the hints in the
    permutation returned a false preferred.
 4. If no hint with a single NUMA Node set is found, return a default hint which is a hint
    with all NUMA Nodes set and preferred set to false.   
-   
+
+- **pod-level-single-numa-node**
+1. Loops through the list of hint providers and saves an accumulated list of
+   the hints returned by each hint provider.
+2. Filters the list of hints accumulated in Step 1 to only include hints with a single NUMA node and nil NUMA nodes.
+3. Iterates through all permutations of hints filtered in Step 2. The hint affinities are merged to a single hint by performing a bitwise AND. The preferred field on the merged hint is set to false if any of the hints in the permutation returned a false preferred.
+4. The hint affinities of the containers in a pod are merged to a single hint by performing a bitwise AND. The preferred field on the merged hint is set to false if any of the hints in the permutation returned a false preferred.
+5. If no hint with a single NUMA Node set is found, return a default hint which is a hint with all NUMA Nodes set and preferred set to false.
+
 **Policy Decisions:**
 
 - **best-effort**
@@ -250,6 +266,8 @@ The chosen Topology Manager policy then decides to admit or reject the pod based
     * Admits the pod to the node if the preferred field of the Topology Hint is set to true.
 - **single-numa-node**:
     * Admits the pod to the node if the preferred field of the Topology is set to true **and** the bitmask is set to a single NUMA node.
+- **pod-level-single-numa-node**:
+    * Admits the pod to the node if the preferred field of the Topology is set to true **and** the bitmask is set to a same NUMA node for all containers in a pod.
 
 #### New Interfaces
 
@@ -339,37 +357,63 @@ _Figure: Topology Manager components._
 ![topology-manager-instantiation](https://user-images.githubusercontent.com/379372/47447526-945a7580-d772-11e8-9761-5213d745e852.png)
 
 _Figure: Topology Manager instantiation and inclusion in pod admit lifecycle._
- 
+
 ### Feature Gate and Kubelet Flags
- 
+
 A new feature gate will be added to enable the Topology Manager feature. This feature gate will be enabled in Kubelet, and will be disabled by default in the Alpha release.  
 
  * Proposed Feature Gate:  
   `--feature-gate=TopologyManager=true`  
- 
+
  This will be also followed by a Kubelet Flag for the Topology Manager Policy, which is described above. The `none` policy will be the default policy.
- 
+
  * Proposed Policy Flag:  
  `--topology-manager-policy=none|best-effort|restricted|single-numa-node`  
- 
+
 ### Changes to Existing Components
 
 1. Kubelet consults Topology Manager for pod admission (discussed above.)
-1. Add two implementations of Topology Manager interface and a feature gate.
+2. Add two implementations of Topology Manager interface and a feature gate.
     1. As much Topology Manager functionality as possible is stubbed when the
-       feature gate is disabled.
-    1. Add a functional Topology Manager that queries hint providers in order
+     feature gate is disabled.
+    2. Add a functional Topology Manager that queries hint providers in order
        to compute a preferred socket mask for each container.
-1. Add `GetTopologyHints()` method to CPU Manager.
+3. Add `GetTopologyHints()` method to CPU Manager.
     1. CPU Manager static policy calls `GetAffinity()` method of
-       Topology Manager when deciding CPU affinity.
-1. Add `GetTopologyHints()` method to Device Manager.
+     Topology Manager when deciding CPU affinity.
+4. Add `GetTopologyHints()` method to Device Manager.
     1. Add `TopologyInfo` to Device structure in the device plugin
-       interface. Plugins should be able to determine the NUMA Node(s)
-       when enumerating supported devices. See the protocol diff below.
-    1. Device Manager calls `GetAffinity()` method of Topology Manager when
-       deciding device allocation.
- 
+     interface. Plugins should be able to determine the NUMA Node(s)
+     when enumerating supported devices. See the protocol diff below.
+    2. Device Manager calls `GetAffinity()` method of Topology Manager when
+     deciding device allocation.
+5. Add `topology` field to Pod Spec.
+    1. Add a field describing the pod-level topology policy in pod spec
+
+```
+apiVersion: v1
+kind: Pod
+Spec:
+  topology:
+    policy: pod-level-single-numa-node
+  containers:
+  - name: dpdk-app1
+    Resources:
+      Requests:
+        cpu: 4
+      Limits:
+        cpu: 4
+  - name: dpdk-app2
+    Resources:
+      Requests:
+        cpu: 2
+      Limits:
+        cpu: 2
+```
+_Listing: Extend a topology field in pod spec._
+
+
+
 ```diff
 diff --git a/pkg/kubelet/apis/deviceplugin/v1beta1/api.proto b/pkg/kubelet/apis/deviceplugin/v1beta1/api.proto
 index efbd72c133..f86a1a5512 100644
@@ -391,9 +435,9 @@ index efbd72c133..f86a1a5512 100644
  * struct Device {
  *    ID: "GPU-fef8089b-4820-abfc-e83e-94318197576e",
  *    State: "Healthy",
-+ *    Topology: 
-+ *      Nodes: 
-+ *        ID: 1 
++ *    Topology:
++ *      Nodes:
++ *        ID: 1
 @@ -85,6 +89,8 @@ message Device {
  	string ID = 1;
  	// Health of the device, can be healthy or unhealthy, see constants.go
@@ -436,16 +480,24 @@ _Figure: Topology Manager fetches affinity from hint providers._
 * Guarantee aligned resources for multiple containers in a pod.
 * Refactor to easily support different merge strategies for different policies.
 
+## Beta (v1.19) [WIP]
+
+* Separate Pod-level topology policy from node-level topology policy.
+* Extend Pod spec to describe a Pod-level topology policy.
+* Add Node-level `dynamic` policy.
+* Add Pod-level `pod-level-single-numa-node` policy.
+
 ## GA (stable)
 
 * Add support for device-specific topology constraints beyond NUMA.
+* Support container-level topology policy.
 * Support hugepages alignment.
 * User feedback.
 * *TBD*
 
 # Test Plan
 
-There is a presubmit job for Topology Manager, that will be run on 
+There is a presubmit job for Topology Manager, that will be run on
 all PRs. This job is here:
 https://testgrid.k8s.io/wg-resource-management#pr-kubelet-serial-gce-e2e-topology-manager
 
@@ -457,23 +509,23 @@ The Topology Manager E2E test will enable the Topology Manager
 feature gate and set the CPU Manager policy to 'static'.
 
 At the beginning of the test, the code will determine if the system
-under test has support for single or multi-NUMA nodes. 
+under test has support for single or multi-NUMA nodes.
 
 ## Single NUMA Systems Tests
-For each of the four topology manager policies, the tests will
-run a subset of the current CPU Manager tests. This includes spinning 
-up non-guaranteed pods, guaranteed pods, and multiple guaranteed and 
-non-guaranteed pods. As with the CPU Manager tests, CPU assignment is 
-validated. Tests related to multi-NUMA systems will be skipped, and 
+For each of the five topology manager policies, the tests will
+run a subset of the current CPU Manager tests. This includes spinning
+up non-guaranteed pods, guaranteed pods, and multiple guaranteed and
+non-guaranteed pods. As with the CPU Manager tests, CPU assignment is
+validated. Tests related to multi-NUMA systems will be skipped, and
 a log will be generated indicating such.
 
 ## Multi-NUMA Systems Tests
-For each of the four topology manager policies, the tests will spin up
-guaranteed pods and non-guaranteed pods, requesting CPU and device 
-resources. When the policy is set to single-numa-node for guaranteed pods, 
-the test will verify that guaranteed pods resources (CPU and devices) 
-are aligned on the same NUMA node. Initially, the test will request 
-SR-IOV devices, utilizing the SR-IOV device plugin. 
+For each of the five topology manager policies, the tests will spin up
+guaranteed pods and non-guaranteed pods, requesting CPU and device
+resources. When the policy is set to single-numa-node for guaranteed pods,
+the test will verify that guaranteed pods resources (CPU and devices)
+are aligned on the same NUMA node. Initially, the test will request
+SR-IOV devices, utilizing the SR-IOV device plugin.
 
 ## Future Tests
 It would be good to add additional devices, such as GPU, in the multi-NUMA
@@ -485,6 +537,7 @@ systems test.
   depends on cloud infrastructure to expose multi-node topologies
   to guest virtual machines.
 * Implementing the `HintProvider` interface may prove challenging.
+* Extending Pod Spec to describe the pod-level topology policy may prove challenging.
 
 # Limitations
 
@@ -493,7 +546,7 @@ systems test.
   possible NUMA affinities and generating their hints.
 * The scheduler is not topology-aware, so it is possible to be scheduled
   on a node and then fail on the node due to the Topology Manager.
-  
+
 # Alternatives
 
 * [AutoNUMA][numa-challenges]: This kernel feature affects memory
