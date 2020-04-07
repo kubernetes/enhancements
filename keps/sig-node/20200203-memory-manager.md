@@ -2,8 +2,8 @@
 title: Memory Manager
 authors:
   - "@bg-chun"
-  - TBD
-  - TBD
+  - "@c.zukowski"
+  - "@alukiano"
 owning-sig: sig-node
 participating-sigs:
   - sig-node
@@ -27,8 +27,8 @@ superseded-by:
 _Authors:_
 
 - @bg-chun - Byonggon Chun &lt;bg.chun@samsung.com&gt;
-- TBD
-- TBD
+- @c.zukowski - Cezary Zukowski &lt;c.zukowski@samsung.com&gt;
+- @alukiano - Artyom Lukianov &lt;alukiano@redhat.com&gt;
 
 ## Table of Contents
 
@@ -99,7 +99,7 @@ _Figure: The sequence of Pod admission in Kubelet._
 
 Detailedly, to get an information that a resource that container requests is available or not, Topology Manager talks to other managers like CPU Manager and Device Manager, called _hint providers_, which can give the needed information of CPU cores and PCIe peripherals like NIC and GPU, respectively, in each NUMA node. Once collecting all the hints in each NUMA node from the managers, then Topology Manager finally determines which NUMA node's resources in a host can be allocatable for the requested container.
 
-However, the problem raising by this KEP is that there is no hint provider which can give a hint for memory and hugepages resources. That is, Topology Manager could not determine NUMA-aware resource allocation in best way due to absence of memory-related information, which causes inter-node commucation overhead among CPU, memory, and PCIe devices and leads overall performance degradation of containers.
+However, the problem raising by this KEP is that there is no hint provider which can give a hint for memory and hugepages resources. That is, Topology Manager could not determine NUMA-aware resource allocation in best way due to absence of memory-related information, which causes inter-node communication overhead among CPU, memory, and PCIe devices and leads overall performance degradation of containers.
 
 To resolve the problem, Memory Manager is proposed in this KEP to provide a way to guarantee NUMA affinity of memory as well as other resources (i.e., CPU and PCIe peripherals) in a procedure of container deployment.
 
@@ -107,7 +107,7 @@ To resolve the problem, Memory Manager is proposed in this KEP to provide a way 
 
 ## Related Features
 
-- [Topology Manager][topology-manager] is a feature that collects topology hints from various hint providers (e.g., CPU Manager and Device Manager) to calculate which NUMA node can give a requested amount of resources for a container. With this calculated hints, Topology Manager also refers to node topology policy (i.e. _burstable, restricted, single-numa-policy_) and NUMA affinity of containers, and then it finally determines if container in a pod can be deployed onto the host machine.
+- [Topology Manager][topology-manager] is a feature that collects topology hints from various hint providers (e.g., CPU Manager and Device Manager) to calculate which NUMA node can give a requested amount of resources for a container. With this calculated hints, Topology Manager also refers to node topology policy (i.e. _best-effort, restricted, single-numa-policy_) and NUMA affinity of containers, and then it finally determines if container in a pod can be deployed onto the host machine.
 
 - [CPU Manager][cpu-manager] is a feature that provides a CPU pinning functionality to a container by cgroups cpuset subsystem and also provides topology hint of CPU core availability in NUMA nodes to Topology Manager.
 
@@ -143,7 +143,7 @@ To resolve the problem, Memory Manager is proposed in this KEP to provide a way 
 
 ### Story 1 : Networking Acceleration using DPDK
 
-- The system such as real-time trading system and 5G system, which requires networking acceleration, uses DPDK to guarantee low latency of packet processing. DPDK (Data Plane Development Kit) is set of libraries to accelerate packet processing on userspace. DPDK requires dedicated resources (such as exclusive CPU, hugepages, and DPDK-compatile Network Interface Card) and alignment of resources to sigle NUMA node to prevent unexpected performance degradation due to inter-node communication overhead. For this reason, there should be a way to guarantee a resource reservation of memory and hugepage as well as other computing resources (e.g., CPU core and NIC) from a single NUMA node for DPDK-based containers.
+- The system such as real-time trading system and 5G system, which requires networking acceleration, uses DPDK to guarantee low latency of packet processing. DPDK (Data Plane Development Kit) is set of libraries to accelerate packet processing on userspace. DPDK requires dedicated resources (such as exclusive CPU, hugepages, and DPDK-compatible Network Interface Card) and alignment of resources to sigle NUMA node to prevent unexpected performance degradation due to inter-node communication overhead. For this reason, there should be a way to guarantee a resource reservation of memory and hugepage as well as other computing resources (e.g., CPU core and NIC) from a single NUMA node for DPDK-based containers.
 
 ### Story 2 : Database
 
@@ -162,7 +162,7 @@ When Guaranteed QoS Pod admission is requested from kubelet, Topology Manager as
 Note:
 - Memory Manager only supports single NUMA affinity, because Linux kernel does not have such a mechanism to reserve memory or set memory limit per NUMA node.
 
-In deployment phase, Memory Manager updates its `Memory Map` on an amount of memory and hugepages as much as a container requests. After that, Memory Manager enforces a consumption of memory and hugepage for the container to a specific NUMA node which Topology Manager selected, by seting [CPUSET enforcement](#cpuset-enforcement). Note that containers of Guaruanteed Pod of which Mamory Manager takes care are guaranteed to consume allocated memory and hugepages on the designated NUMA node while other Pods are deployed later, by utilizing [OOM score enforcement](#oom-score-enforcement) system of Kubelet.
+In deployment phase, Memory Manager updates its `Memory Map` on an amount of memory and hugepages as much as a container requests. After that, Memory Manager enforces a consumption of memory and hugepage for the container to a specific NUMA node which Topology Manager selected, by seting [CPUSET enforcement](#cpuset-enforcement). Note that containers of Guaranteed Pod of which Memory Manager takes care are guaranteed to consume allocated memory and hugepages on the designated NUMA node while other Pods are deployed later, by utilizing [OOM score enforcement](#oom-score-enforcement) system of Kubelet.
 
 By the help of Memory Manager, Topology Manager with _single-numa-node_ policy can coordinate memory and hugepages along with other compute resources like CPU cores and NIC device to same NUMA node. More details of this component are listed below.
 
@@ -187,7 +187,7 @@ type MemoryMap map[NUMA_NODE_INDEX]map[MEMORY_TYPES]MemoryTable
 ```
 _Figure: The construction of Memory Table and Memory Map._
 
-- For a brief example, on a two-socket machine with one size of pre-allocated hugepages, Memory Manager will generate four memory tables (two of NUMA nodes * two of memory types including a conventional memory type).
+- For a brief example, on a two-socket machine with one size of pre-allocated hugepages, Memory Manager will generate four memory tables (two of NUMA nodes * two of memory types including a conventional memory type). (If SNC is enabled, Memory Manager will detect two NUMA nodes from one socket as well.)
 
 `Memory Table` is proposed to represent amount of pre-reserved and allocatable memory for a certain memory type on a certain NUMA node. The table consists of _Pre-reserved Zone_ and _Allocatable Zone_. The following figure shows the structure of `Memory Table`, briefly.
 
@@ -201,7 +201,7 @@ _Figure: The construction of Memory Table and Memory Map._
 _Figure: The construction of Memory Table._
 
 The size of the two zones (_Pre-reserved Zone_ and _Allocatable Zone_) are pre-configured in kubelet configuration by administrator and are immutable values in runtime.
-- _Pre-reserved Zone_ indicates the certain amount of memory which is pre-reserved for system such as kernel, OS deamon, and core components of kubernetes like kubelet. For more details how to configure this size, see [The configuration of Memory Manager](#the-configuration-of-memory-manager) section.
+- _Pre-reserved Zone_ indicates the certain amount of memory which is pre-reserved for system such as kernel, OS daemon, and core components of kubernetes like kubelet. For more details how to configure this size, see [The configuration of Memory Manager](#the-configuration-of-memory-manager) section.
 
 - _Allocatable Zone_ indicates the total size of allocatable memory for containers in Guaranteed QoS Pod. The size of this zone is simply the rest of  _Pre-reserved Zone_ from the total size of the Memory Table.
 
@@ -213,7 +213,7 @@ The size of the two zones (_Pre-reserved Zone_ and _Allocatable Zone_) are pre-c
 
 Memory Manager calculates a topology hint for a container in Guaranteed QoS Pod for conventional memory and hugepages of all sizes. The topology hint is well known as _NUMA affinity_ which represents a possible NUMA node that has enough capacity of required memory for all memory types.
 
-To generate a NUMA affinity for a container, Memory Manager refers to `Memory Map` and decides if _Free_ memory of _Allocatable Zone_ for all memory types from each NUMA node is enough to assign for the container. After collecting _NUMA affinity_ for each NUMA node from the pespective of memory, Memory Manager merges them to a topology hint and send it back to Topology Manager.
+To generate a NUMA affinity for a container, Memory Manager refers to `Memory Map` and decides if _Free_ memory of _Allocatable Zone_ for all memory types from each NUMA node is enough to assign for the container. After collecting _NUMA affinity_ for each NUMA node from the perspective of memory, Memory Manager merges them to a topology hint and send it back to Topology Manager.
 
 - Here is a brief example for two socket machine.
   - A Pod requests 2Gi of memory and 1 hugepages-1Gi.
@@ -222,12 +222,12 @@ To generate a NUMA affinity for a container, Memory Manager refers to `Memory Ma
 
 #### The configuration of Memory Manager
 
-The Node Allocatable memory of Node Allocatable Feature is calculated by following fomula:
+The Node Allocatable memory of Node Allocatable Feature is calculated by following formula:
 - [Node-Allocatable] = [Node-Capacity] - [Kube-Reserved] - [System-Reserved] - [Eviction-Threshold]
 
 The Node Allocatable is exposed to API server as part of `v1.Node` object and referred by scheduler to select appropriate worker node to bind a Pod.
 
-Configuring Memory Manager is important, Memory Manager assumes that components in kube/system-reserved comsumes memory from Pre Reserved Zone so that total amount of Pre Reserved Zone for every NUMA node and memory type should be identical to sum of `Kube-Reserved`, `System-Reserved` and `Eviction-Threshold`.
+Configuring Memory Manager is important, Memory Manager assumes that components in kube/system-reserved consume memory from Pre Reserved Zone so that total amount of Pre Reserved Zone for every NUMA node and memory type should be identical to sum of `Kube-Reserved`, `System-Reserved` and `Eviction-Threshold`.
 
 This constraint is proposed to avoid misconfiguration of Memory Manager that may lead node to Pod binding issue.
 
@@ -245,7 +245,7 @@ As described in Memory Map section, the size of Pre Reserved Zone and Allocatabl
 As mentioned above, This feature will provide basic validation of configuration for administrators.
 
 NOTE:
-- For hugepages, at the moment(v1.17), Node Allocateble feature does not support reserving hugepages, so that Memory Manager will not have Pre Reserved Zone for hugepages. Once Node Allocatable feature will support hugepages reservation(#83541), Pre Reserved Zone for hugapages will work in the same manner of conventional memory.
+- For hugepages, at the moment(v1.17), Node Allocateble feature does not support reserving hugepages, so that Memory Manager will not have Pre Reserved Zone for hugepages. Once Node Allocatable feature will support hugepages reservation(#83541), Pre Reserved Zone for hugepages will work in the same manner of conventional memory.
 
 #### OOM Score Enforcement
 
