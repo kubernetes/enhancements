@@ -16,8 +16,8 @@ approvers:
   - "@thockin"
 editor: TBD
 creation-date: 2019-04-23
-last-updated: 2019-04-29
-status: implementable
+last-updated: 2020-01-06
+status: implemented
 see-also:
 replaces:
 superseded-by:
