@@ -22,6 +22,7 @@
   - [Other Related Changes](#other-related-changes)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
+    - [Deprecated Fields](#deprecated-fields)
     - [Beta to GA Graduation](#beta-to-ga-graduation)
 - [Considerations](#considerations)
   - [Performance Impact](#performance-impact)
@@ -82,11 +83,11 @@ The problem is that neither of those requirements are actually met. Currently Ev
 ### Usability Issues With the Current API
 
 Users would like to be able to use Events also for debugging and trace analysis of Kubernetes clusters. Current implementation makes it hard for the following reasons:
-1s granularity of timestamps (system reacts much quicker than that, making it more or less unusable),
-deduplication, that leaves only count and, first and last timestamps (e.g. when Controller is creating a number of Pods information about it is deduplicated),
-`InvolvedObject`, `Message`, `Reason` and `Source` semantics are far from obvious. If we treat `Event` as a sentence object of this sentence is stored either in `Message` (if the subject is a Kubernetes object (e.g. Controller)), or in `InvolvedObject`, if the subject is some kind of a controller (e.g. Kubelet).
-hard to query for interesting series using standard tools (e.g. all Events mentioning given Pod is pretty much impossible because of deduplication logic)
-As semantic information is passed in the message, which in turn is ignored by the deduplication logic it is not clear that this mechanism will not cause deduplication of Events that are completely different.
+* 1s granularity of timestamps (system reacts much quicker than that, making it more or less unusable),
+* deduplication, that leaves only count and, first and last timestamps (e.g. when Controller is creating a number of Pods information about it is deduplicated),
+* `InvolvedObject`, `Message`, `Reason` and `Source` semantics are far from obvious. If we treat `Event` as a sentence object of this sentence is stored either in `Message` (if the subject is a Kubernetes object (e.g. Controller)), or in `InvolvedObject`, if the subject is some kind of a controller (e.g. Kubelet).
+* hard to query for interesting series using standard tools (e.g. all Events mentioning given Pod is pretty much impossible because of deduplication logic),
+* as semantic information is passed in the message, which in turn is ignored by the deduplication logic it is not clear that this mechanism will not cause deduplication of Events that are completely different.
 
 ## Proposal
 
@@ -238,7 +239,7 @@ Namespace in which Event will live will be equal to
 
 Note that this means that if Event has both Regarding and Related objects, and only one of them is namespaced, it should be used as Regarding object.
 
-The biggest change is the semantics of the Event object in case of loops. If Series is nil it means that Event is a singleton, i.e. it happened only once and the semantics is exactly the same as currently in Events with `count = 1`. If Series is not nil it means that the Event is either beginning or the end of an Event series - equivalence of current Events with `count > 1`. Events for ongoing series have Series.State set to EventSeriesStateOngoing, while endings have Series.State set to EventSeriesStateFinished.
+The biggest change is the semantics of the Event object in case of loops. If Series is nil it means that Event is a singleton, i.e. it happened only once and the semantics is exactly the same as currently in Events with `count = 1`. If Series is not nil it means that the Event is either beginning or the end of an Event series - equivalence of current Events with `count > 1`. Events for ongoing series have Series.State set to EventSeriesStateOngoing, while endings have Series.State set to EventSeriesStateFinished (Series.State field has been deprecated and will be removed before GA graduation).
 
 This change is better described in the section below.
 
@@ -265,10 +266,10 @@ We need to write completely new deduplication logic for new Events, preserving t
 
 New deduplication logic will work in the following way:
 - When event is emitted for the first time it's written to the API server without series field set.
-- When isomorphic event is emitted within the threshold from the original one EventRecorder detects the start of the series, updates the Event object, with the Series field set carrying count and sets State to EventSeriesStateOngoing. In the EventRecorder it also creates an entry in `activeSeries` map with the timestamp of last observed Event in the series.
+- When isomorphic event is emitted within the threshold from the original one EventRecorder detects the start of the series, updates the Event object, with the Series field set carrying count. In the EventRecorder it also creates an entry in `activeSeries` map with the timestamp of last observed Event in the series.
 - All subsequent isomorphic Events don't result in any API calls, they only update last observed timestamp value and count in the EventRecorder.
 - For all active series every 30 minutes EventRecorder will create a "heartbeat" call. Goal of this update is to periodically update user on number of occurrences and prevent garbage collection in etcd. The heartbeat will be an Event update that updates the count and last observed time fields in the series field.
-- For all active series every 6 minutes (longer that the longest backoff period) EventRecorder will check if it noticed any attempts to emit isomorphic Event. If there were, it'll check again after aforementioned period (6 minutes). If there weren't it assumes that series is finished and emits closing Event call. This updates the Event by setting state to EventSeriesStateFinished to true and updating the count and last observed time fields in the series field.
+- For all active series every 6 minutes (longer than the longest backoff period) EventRecorder will check if it noticed any attempts to emit isomorphic Event. If there were, it'll check again after aforementioned period (6 minutes). If there weren't it assumes that series is finished and emits closing Event call. This updates the Event by updating the count and last observed time fields in the series field.
 
 ##### Short Examples
 
@@ -318,11 +319,13 @@ All clients will need to eventually migrate to use new Events, but no other acti
 
 #### Restarts
 
-Event recorder library will list all Events emitted by corresponding components and reconstruct internal activeSeries map from it.
+We don't take specific actions for this case, since:
+- if an Event already ended, it will hang for another hour and will be GC-ed because of TTL;
+- if it didn't end, we will update it after restart anyway
 
 ### Defence in Depth
 
-Because Events proved problematic we want to add multiple levels of protection in the client library to reduce chances that Events will be overloading API servers in the future. We propose to do two things.
+Because Events proved problematic we want to add multiple levels of protection in the client library to reduce chances that Events will be overloading API servers in the future. We propose to do the following thing.
 
 #### Aggressive Backoff
 
@@ -346,21 +349,29 @@ Kubectl will need to be updated to use new Events if present.
 Correctness:
 
 - Update all unit tests that are using Event lib to use the new API and make sure they all pass.
-- Run tests with both healthy and crash-looping clusters that keep generating Events to ensure they are produced in an expected way.
+- Manually run tests with both healthy and crash-looping clusters that keep generating Events to ensure they are produced in an expected way.
 
 Scalability and Performance:
 
+- Run scale tests with the pause pods to be "sleep 5; exist 1" pods.
 - Record the memory usage in both healthy and crash-looping clusters of various size (e.g., 50, 500, 5k nodes).
-- Ensure memory increase can be handled by server and there's no big performance reduction.
+- Ensure Event increase can be handled by etcd and there's no big performance reduction.
 
 ### Graduation Criteria
 
 The new Event API is in Beta right now. The plan is to graduate API to GA in 1.19, but not necessarily require that all components will be migrated.
 
+#### Deprecated Fields
+
+This section lists the deprecated Event API fields that should be removed before graduating to GA.
+
+- State field of EventSeries (planned removal for 1.18)
+  - This field should also be removed from `corev1.Event` API: [#75987](https://github.com/kubernetes/kubernetes/pull/75987)
+
 #### Beta to GA Graduation
 
+- Remove deprecated fields listed above
 - Gather data from performance and scalability tests
-- Collect and address feedback
 
 ## Considerations
 
