@@ -45,10 +45,12 @@ status: implementable
     - ['kubectl describe pod ...' Command Display for Dual-Stack Pod Addresses](#kubectl-describe-pod--command-display-for-dual-stack-pod-addresses)
   - [Container Networking Interface (CNI) Plugin Considerations](#container-networking-interface-cni-plugin-considerations)
   - [Services](#services)
+    - [Type NodePort, LoadBalancer, ClusterIP](#type-nodeport-loadbalancer-clusterip)
+    - [Type Headless services](#type-headless-services)
+    - [Type ExternalName](#type-externalname)
   - [Endpoints](#endpoints)
   - [kube-proxy Operation](#kube-proxy-operation)
     - [Kube-Proxy Startup Configuration Changes](#kube-proxy-startup-configuration-changes)
-      - [Multiple bind addresses configuration](#multiple-bind-addresses-configuration)
       - [Multiple cluster CIDRs configuration](#multiple-cluster-cidrs-configuration)
   - [CoreDNS Operation](#coredns-operation)
   - [Ingress Controller Operation](#ingress-controller-operation)
@@ -59,7 +61,6 @@ status: implementable
     - [Type NodePort](#type-nodeport)
     - [Type Load Balancer](#type-load-balancer)
   - [Cloud Provider Plugins Considerations](#cloud-provider-plugins-considerations)
-    - [Multiple bind addresses configuration](#multiple-bind-addresses-configuration-1)
     - [Multiple cluster CIDRs configuration](#multiple-cluster-cidrs-configuration-1)
   - [Container Environment Variables](#container-environment-variables)
   - [Kubeadm Support](#kubeadm-support)
@@ -282,14 +283,14 @@ The existing "--pod-cidr" option for the [kubelet startup configuration](https:/
 ```
   --pod-cidr  ipNetSlice   [IP CIDRs, comma separated list of CIDRs, Default: []]
 ```
-Only the first address of each IP family will be used; all others will be logged and ignored.
+Only one CIDR or two CIDRs, one of each IP family, will be used; other cases will be invalid.
 
 #### kube-proxy Startup Configuration for Dual-Stack Pod CIDRs
 The existing "cluster-cidr" option for the [kube-proxy startup configuration](https://kubernetes.io/docs/reference/command-line-tools-reference/kube-proxy/) will be modified to support multiple cluster CIDRs in a comma-separated list (rather than a single IP string), i.e:
 ```
   --cluster-cidr  ipNetSlice   [IP CIDRs, comma separated list of CIDRs, Default: []]
 ```
-Only the first address of each IP family will be used; all others will be logged and ignored.
+Only one CIDR or two CIDRs, one of each IP family, will be used; other cases will be invalid.
 
 #### 'kubectl get pods -o wide' Command Display for Dual-Stack Pod Addresses
 The output for the 'kubectl get pods -o wide' command will not need modification and will only display the primary pod IP address as determined by the first IP address block configured via the `--cluster-cidr=` on kube-controller-manager. eg. The following is expected output for a cluster is configured with an IPv4 address block as the first configured via the `--cluster-cidr=` on kube-controller-manager:
@@ -333,6 +334,7 @@ The versions of CNI plugin binaries that must be used for proper dual-stack func
 
 ### Services
 
+#### Type NodePort, LoadBalancer, ClusterIP
 Services will only be assigned an address from a single address family (either IPv4 or IPv6). The address family for the Service’s cluster IP is determined by setting the field, `.spec.ipFamily`, on that Service. You can only set this field when creating a new Service. Setting the `.spec.ipFamily` field is optional and should only be used if you plan to enable IPv4 and IPv6 Services and Ingresses on your cluster. The configuration of this field not a requirement for egress traffic. The default address family for your cluster is the address family of the first service cluster IP range configured via the `--service-cluster-ip-range` flag to the kube-controller-manager. The `.spec.ipFamily` field can be set to either IPv4 or IPv6.
 
 For example, the following Service specification includes the `spec.ipFamily` field. Kubernetes will assign an IPv6 address (also known as a “cluster IP”) from the configured service-cluster-ip-range to this Service.
@@ -353,6 +355,14 @@ spec:
 ```
 
 Dual-stack services (having both an IPv4 and IPv6 cluster IP) are currently out of scope of this proposal. Should there be use-cases where dual-stack Services are needed then we can revisit.
+
+#### Type Headless services
+
+\<TBD\>
+
+#### Type ExternalName
+
+\<TBD\>
 
 ### Endpoints
 
@@ -386,20 +396,13 @@ Kube-proxy will be modified to drive iptables and ip6tables in parallel. This wi
 
 #### Kube-Proxy Startup Configuration Changes
 
-##### Multiple bind addresses configuration
-The existing "--bind-address" option for the [kube-proxy startup configuration](https://kubernetes.io/docs/reference/command-line-tools-reference/kube-proxy/) will be modified to support multiple IP addresses in a comma-separated list (rather than a single IP string).
-```
-  --bind-address  stringSlice   (IP addresses, in a comma separated list, Default: [0.0.0.0,])
-```
-Only the first address of each IP family will be used; all others will be ignored.
-
 ##### Multiple cluster CIDRs configuration
 The existing "--cluster-cidr" option for the [kube-proxy startup configuration](https://kubernetes.io/docs/reference/command-line-tools-reference/kube-proxy/) will be modified to support multiple IP CIDRs in a comma-separated list (rather than a single IP CIDR).
 A new [kube-proxy configuration](https://kubernetes.io/docs/reference/command-line-tools-reference/kube-proxy/) argument will be added to allow a user to specify multiple cluster CIDRs.
 ```
   --cluster-cidr  ipNetSlice   (IP CIDRs, in a comma separated list, Default: [])
 ```
-Only the first CIDR for each IP family will be used; all others will be ignored.
+Only one CIDR or two CIDRs, one of each IP family, will be used; other cases will be invalid.
 
 ### CoreDNS Operation
 
@@ -444,21 +447,13 @@ The cloud provider will provision an external load balancer. If the cloud provid
 
 The [Cloud Providers](https://kubernetes.io/docs/concepts/cluster-administration/cloud-providers/) may have individual requirements for dual-stack in addition to below.
 
-#### Multiple bind addresses configuration
-
-The existing "--bind-address" option for the will be modified to support multiple IP addresses in a comma-separated list (rather than a single IP string).
-```
-  --bind-address  stringSlice   (IP addresses, in a comma separated list, Default: [0.0.0.0,])
-```
-Only the first address of each IP family will be used; all others will be ignored.
-
 #### Multiple cluster CIDRs configuration
 
 The existing "--cluster-cidr" option for the [cloud-controller-manager](https://kubernetes.io/docs/reference/command-line-tools-reference/cloud-controller-manager/) will be modified to support multiple IP CIDRs in a comma-separated list (rather than a single IP CIDR).
 ```
   --cluster-cidr  ipNetSlice   (IP CIDRs, in a comma separated list, Default: [])
 ```
-Only the first CIDR for each IP family will be used; all others will be ignored.
+Only one CIDR or two CIDRs, one of each IP family, will be used; other cases will be invalid.
 
 The cloud_cidr_allocator will be updated to support allocating from multiple CIDRs. The route_controller will be updated to create routes for multiple CIDRs.
 
