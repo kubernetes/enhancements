@@ -1,0 +1,20 @@
+title: Tracking Terminating Endpoints in EndpointSlice
+kep-number: 1672
+authors:
+  - "@andrewsykim"
+owning-sig: sig-network
+participating-sigs:
+  - sig-scalability
+status: implementable
+creation-date: 2020-04-07
+reviewers:
+  - "@thockin"
+  - "@robscott"
+  - "@freehan"
+  - "@smarterclayton"
+  - "@wojtek-t"
+approvers:
+  - "@thockin"
+see-also:
+  - /kep/sig-network/20190603-EndpointSlice-API.md
+replaces: []
