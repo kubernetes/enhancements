@@ -56,6 +56,8 @@ _Reviewers:_
     - [Feature Gate and Kubelet Flags](#feature-gate-and-kubelet-flags)
     - [Changes to Existing Components](#changes-to-existing-components)
     - [Deprecates the Policy Flag of Topology Manager](#deprecates-the-policy-flag-of-topology-manager)
+  - [Practical challenges](#practical-challenges)
+      - [Mitigations](#mitigations)
 - [Graduation Criteria](#graduation-criteria)
   - [Alpha (v1.16) [COMPLETED]](#alpha-v116-completed)
   - [Alpha (v1.17) [COMPLETED]](#alpha-v117-completed)
@@ -180,7 +182,7 @@ of each pod in order to prioritize the importance of fulfilling optimal locality
 
 ### New Component: Topology Manager
 
-This proposal is focused on a new component in the Kubelet called the Topology Manager and and a Pod Spec extension.
+This proposal is focused on a new component in the Kubelet called the Topology Manager and on a Pod Spec extension.
 The Topology Manager implements the pod admit handler interface and participates in Kubelet pod admission.
 When the `Admit()` function is called, the Topology Manager collects topology hints from other Kubelet components on a container by container basis.
 
@@ -201,7 +203,7 @@ The Topology Manager component will be disabled behind a feature gate until grad
 #### Topology Policy in Pod Spec
 The value of `v1core.PodSpec.Topology.Policy` field indicates the desired topology of Pod's resource assignment.
 This value determines how Topology Manager coordinates hardware resource assignment of container during Pod admission.
-If the value is omiited or `none`, the Topology Manager will not intervene to Pod admission.
+If the value is omitted or equal to `none`, the Topology Manager will not intervene in Pod admission.
 
 ```
 apiVersion: v1
@@ -221,14 +223,14 @@ Spec:
         memory: 5Gbi
         nvidia.com/gpu: 4
 ```
-_Listing: Extend a topology field in pod spec._
+_Listing: Extended pod spec with a topology field._
 
 The behavior of Topology Manager for each policy is described in the below section:
 - **none (default)**: Kubelet does not consult Topology Manager for placement decisions.
 - **best-effort**: Topology Manager will provide the preferred allocation for the container based on the hints provided by the Hint Providers. If an undesirable allocation is determined, the pod will be admitted with this undesirable allocation.
 - **restricted**: Topology Manager will provide the preferred allocation for the container based on the hints provided by the Hint Providers. If an undesirable allocation is determined, the pod will be rejected. This will result in the pod being in a `Terminated` state, with a pod admission failure.
 - **single-numa-node**: Topology manager will enforce an allocation of all resources on a single NUMA Node. If such an allocation is not possible, the pod will be rejected. This will result in the pod being in a `Terminated` state, with a pod admission failure.
-- **pod-level-single-numa-node**: Topology manager will enforce an allocation of all container's resources in the pod on a same NUMA Node. If such an allocation is not possible, the pod will be rejected. This will result in the pod being in a `Terminated` state, with a pod admission failure.
+- **pod-level-single-numa-node**: Topology manager will enforce an allocation of all containers in the pod (thus their resources) on the same NUMA Node. If such an allocation is not possible, the pod will be rejected. This will result in the pod being in a `Terminated` state, with a pod admission failure.
 
 #### Computing Preferred Affinity
 
@@ -261,7 +263,7 @@ The given Topology policy of the pod then decides to admit or reject the pod bas
    the hints returned by each hint provider.
 2. Filters the list of hints accumulated in Step 1 to only include hints with a single NUMA node and nil NUMA nodes.
 3. Iterates through all permutations of hints filtered in Step 2. The hint affinities are merged to a single hint by performing a bitwise AND. The preferred field on the merged hint is set to false if any of the hints in the permutation returned a false preferred.
-4. The hint affinities of the containers in a pod are merged to a single hint by performing a bitwise AND. The preferred field on the merged hint is set to false if any of the hints in the permutation returned a false preferred.
+4. The hint affinities for all containers in a pod are merged to a single hint by performing a bitwise AND. The preferred field on the merged hint is set to false if any of the hints in the permutation returned a false preferred.
 5. If no hint with a single NUMA Node set is found, return a default hint which is a hint with all NUMA Nodes set and preferred set to false.
 
 **Policy Decisions:**
@@ -377,13 +379,14 @@ A new feature gate will be added to enable the Topology Manager feature. This fe
  `--topology-manager-policy=none|best-effort|restricted|single-numa-node|dynamic`  
 
  NOTE: 
- - The Policy Flag will be deprecated in Beta(v1.20), since the Pod Spec starts to specify topology policy. See detais on [Deprecates the Policy Flag of Topology Manager](#deprecates-the-policy-flag-of-topology-manager)
+ - The Policy Flag will be deprecated in Beta(v1.20), since the Pod Spec starts to specify topology policy. See detales in [Deprecates the Policy Flag of Topology Manager](#deprecates-the-policy-flag-of-topology-manager)
+ - Until Beta(v1.20) to use a topology policy that is specified in a Pod Spec, dynamic policy must be configured by a Kubelet flag.
 
 
 ### Changes to Existing Components
 
 1. Add `v1core.PodSpec.Topology.Policy` field to Pod Spec.
-    1. Add a field to specify preferred topology polic of a Pod.
+    1. Add a field to specify preferred topology policy for a Pod.
 2. Kubelet consults Topology Manager for pod admission (discussed above.)
 3. Add two implementations of Topology Manager interface and a feature gate.
     1. As much Topology Manager functionality as possible is stubbed when the
@@ -446,22 +449,31 @@ _Figure: Topology Manager fetches affinity from hint providers._
 
 ### Deprecates the Policy Flag of Topology Manager
 Since the Pod Spec is able to specify preferred topology policy of a Pod
-and the Topology Manager starts to see `v1core.PodSpec.Topology.Policy` field when it is configured with the dynamic policy,
-the policy flag will be deprecated on Beta stage(v1.20) and the danamic policy will be a default behavior of the Topology Manager.
+and the Topology Manager is able to read `v1core.PodSpec.Topology.Policy` field when it is configured with the dynamic policy,
+the policy flag will be deprecated on Beta stage(v1.20) and the dynamic policy will be a default behavior of the Topology Manager.
 
 Before the deprecation of the policy flag,
-the dynamic policy should be configured on a node where operator expects that the Topology Manager will see a Pod Spec to get topology policy of a pod.
+the dynamic policy should be configured on a node where operator expects the Topology Manager to get a topology policy of a pod from a Pod Spec.
 
-If the other policy flags are configured on a node than the dynamic policy flag, the cofigured policy flags take precedence over the topology policy of Pod Spec.
-The behavior of Topology policies is listed in the below.
+If topology policy is configured on the node as none/best-effort/restriced/single-numa-node, it takes precedence over the topology policy specified in Pod Spec.
+The behavior of Topology policies is listed below.
 - **none(default)**
-  * Kubelet does not consult Topology Manager for placement decisions.
+  * Kubelet does not consult with Topology Manager for placement decisions.
 - **best-effort/restricted/single-numa-node**
-  * If a node is configured with these policies, the Topology Manager will coordinates resource assignment based on configured topology policy for all the pod of a node.
-  * The Topology Manager will not see the `v1core.PodSpec.Topology.Policy` field of Pod Spec.
+  * If a node is configured with these policies, the Topology Manager will coordinate assignment of resources based on configured topology policy for all pods that were scheduled to the node.
+  * The Topology Manager will not read the `v1core.PodSpec.Topology.Policy` field of Pod Spec.
 - **dynamic**
-  * The Topology Manager see `v1core.PodSpec.Topology.Policy` field to coordinates resource assignment of a Pod.
+  * The Topology Manager reads `v1core.PodSpec.Topology.Policy` field to coordinate assignment of resources for a Pod.
 
+## Practical challenges
+Non-NUMA aware scheduler may bind a pod to a node, where topology requirements cannot be satisfied. Topology Manager will reject a pod admission with TopologyError and pod will result in a `Terminated` state on a node.
+
+#### Mitigations
+1. Using a controller that guarantees to bind a Pod to a node where the desired topology of Pod's resource assignment can be satisfied.
+    1. A new object is required to describe the desired topology, the object can be a new workload type `TopologySet` or CRD.
+2. A Topology-Aware Scheduler that would consider the topology of available resources on nodes.
+    1. Custom Scheduler could be provisioned to take care of the scheduling for high-performance applications. Detection of node's resources topology can be based on Node Feature Discovery with the usage of user-specified features.
+    2. Enhancing Scheduler through Scheduler Framework with ability to check if the selected node has enough resources matching topology requirement.
 
 # Graduation Criteria
 
@@ -493,6 +505,7 @@ The behavior of Topology policies is listed in the below.
 
 ## Beta (v1.20)
 * Deprecates the policy flag of the Topology Manager.
+* Update tests
 
 ## GA (stable)
 
