@@ -55,16 +55,8 @@ Provide for k8 possability for have grpc probe natively(from box)
 
 ## Proposal
 
-With host:
-```shell script
-    readinessProbe:
-      grpc:
-        port: 9090
-        host: 172.20.19.97 # default pod ip
-      initialDelaySeconds: 5
-      periodSeconds: 10
-```
-Without host
+Host: pod ip
+
 ```shell script
     readinessProbe:
       grpc:
@@ -117,11 +109,7 @@ message Handler {
 message GRPCAction {
   // Number or name of the port to access on the container.
   // Number must be in the range 1 to 65535.
-  optional int32 port = 3;
-
-  // Optional: Host name to connect to, defaults to the pod IP.
-  // +optional
-  optional string host = 2;
+  optional int32 port = 1;
 }
 ```
 
@@ -137,7 +125,11 @@ Unit test + functional tests
 
 ### Upgrade / Downgrade Strategy
 
-It is not breaking change, dont need
+
+1. Add in core
+2. Add in api
+3. Update documentation
+
 
 ### Version Skew Strategy
 
