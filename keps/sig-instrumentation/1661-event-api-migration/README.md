@@ -289,7 +289,7 @@ After second occurrence, Event looks like:
   action: B,
   reportingController: C,
   ...,
-  series: {count: 2, state: "Ongoing"},
+  series: {count: 2},
 }
 ```
 After half an hour of crashlooping, Event looks like:
@@ -299,7 +299,7 @@ After half an hour of crashlooping, Event looks like:
   action: B,
   reportingController: C,
   ...,
-  series: {count: 4242, state: "Ongoing"},
+  series: {count: 4242},
 }
 ```
 Minute after crashloop stopped, Event looks like:
@@ -309,7 +309,7 @@ Minute after crashloop stopped, Event looks like:
   action: B,
   reportingController: C,
   ...,
-  series: {count: 424242, state: "Finished"},
+  series: {count: 424242},
 }
 ```
 
@@ -353,7 +353,7 @@ Correctness:
 
 Scalability and Performance:
 
-- Run scale tests with the pause pods to be "sleep 5; exist 1" pods.
+- Run scale tests with the pause pods to be "sleep 5; exit 1" pods.
 - Record the memory usage in both healthy and crash-looping clusters of various size (e.g., 50, 500, 5k nodes).
 - Ensure Event increase can be handled by etcd and there's no big performance reduction.
 
