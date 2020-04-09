@@ -125,6 +125,8 @@ Functional test - execute GRPC probe from api
 
 ### Graduation Criteria
 
+Pass e2e/unit/function tests in CI
+
 ### Upgrade / Downgrade Strategy
 
 1. Implement grpc probe in Prober(core)
