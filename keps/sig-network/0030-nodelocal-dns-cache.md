@@ -17,7 +17,7 @@ approvers:
 editor: TBD
 creation-date: 2018-10-05
 last-updated: 2018-10-30
-status: provisional
+status: implemented
 ---
 
 # NodeLocal DNS Cache
