@@ -1,0 +1,20 @@
+title: Issue Triage Workflow and Automation
+status: provisional
+owning-sig: sig-contributor-experience
+participating-sigs:
+  - sig-pm
+  - sig-release
+authors:
+  - "@justaugustus"
+reviewers:
+  - "@alejandrox1"
+  - "@mrbobbytables"
+  - "@logicalhan"
+  - "@smourapina"
+  - "@thockin"
+approvers:
+  - "@cblecker"
+  - "@nikhita"
+creation-date: 2020-02-15
+see-also:
+replaces:
