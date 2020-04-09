@@ -119,19 +119,27 @@ API + Prober + Documentation
 
 ### Test Plan
 
-Unit test + functional tests
+Unit test - mock grpc service and execute probe for that
+E2E - run container with grpc service and execute probe for that
+Functional test - execute GRPC probe from api
 
 ### Graduation Criteria
 
 ### Upgrade / Downgrade Strategy
 
-
-1. Add in core
-2. Add in api
-3. Update documentation
-
+1. Implement grpc probe in Prober(core)
+2. Release that
+3. Add support in API
+4. Release that
+5. Update documentation
 
 ### Version Skew Strategy
+
+1. API upgraded, core not:
+"No probe response from core"
+
+2. Core upgraded, API not:
+"No probe from API"
 
 ## Implementation History
 
