@@ -16,8 +16,8 @@ approvers:
   - "@dvonthenen"
 editor: TBD
 creation-date: 2019-01-25
-last-updated: 2019-01-25
-status: implementable
+last-updated: 2020-04-09
+status: implemented
 ---
 
 # Supporting Out-of-Tree vSphere Cloud Provider
