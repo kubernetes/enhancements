@@ -1,5 +1,4 @@
 ---
-kep-number: 30
 title: NodeLocal DNS Cache
 authors:
   - "@prameshj"
@@ -16,7 +15,7 @@ approvers:
   - "@bowei"
 editor: TBD
 creation-date: 2018-10-05
-last-updated: 2018-10-30
+last-updated: 2020-04-10
 status: implemented
 ---
 
@@ -24,20 +23,23 @@ status: implemented
 
 ## Table of Contents
 
-* [Table of Contents](#table-of-contents)
-* [Summary](#summary)
-* [Motivation](#motivation)
-    * [Goals](#goals)
-    * [Non-Goals](#non-goals)
-* [Proposal](#proposal)
-    * [Risks and Mitigations](#risks-and-mitigations)
-* [Graduation Criteria](#graduation-criteria)
-* [Rollout Plan](#rollout-plan)
-* [Implementation History](#implementation-history)
-* [Drawbacks [optional]](#drawbacks-optional)
-* [Alternatives [optional]](#alternatives-optional)
-
-[Tools for generating]: https://github.com/ekalinin/github-markdown-toc
+<!-- toc -->
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+    - [Daemonset and Listen Interface for caching agent](#daemonset-and-listen-interface-for-caching-agent)
+    - [iptables NOTRACK](#iptables-notrack)
+    - [Choice of caching agent](#choice-of-caching-agent)
+    - [Metrics](#metrics)
+  - [Risks and Mitigations](#risks-and-mitigations)
+- [Graduation Criteria](#graduation-criteria)
+- [Rollout Plan](#rollout-plan)
+- [Implementation History](#implementation-history)
+- [Drawbacks [optional]](#drawbacks-optional)
+- [Alternatives [optional]](#alternatives-optional)
+<!-- /toc -->
 
 ## Summary
 
@@ -186,11 +188,21 @@ Having the pods query the nodelocal cache introduces a single point of failure.
 
 * The Daemonset is assigned a PriorityClass of "system-node-critical", to ensure it is not evicted.
 
-* Populating both the nodelocal cache ip address and kube-dns ip address in resolv.conf is not a reliable option. Depending on underlying implementation, this can result in kube-dns being queried only if cache ip does not repond, or both queried simultaneously.
+* Populating both the nodelocal cache ip address and kube-dns ip address in resolv.conf is not a reliable option. Depending on underlying implementation, this can result in kube-dns being queried only if cache ip does not respond, or both queried simultaneously.
 
 
 ## Graduation Criteria
-TODO
+This feature has been alpha since 1.13 release and beta since 1.15 release.
+
+Graduation criteria for GA(targeted for 1.18 release):
+- Upgrade to a newer CoreDNS version(1.6.x) in [node-cache](https://github.com/kubernetes/dns/pull/328).
+- Add a plan for periodic upgrade to newer CoreDNS versions.
+- Ensure that Kubernetes [e2e tests with NodeLocal DNSCache](https://k8s-testgrid.appspot.com/sig-network-gce#gci-gce-kube-dns-nodecache) are passing.
+- Scalability tests with NodeLocal DNSCache enabled, verifying the [HA modes](https://github.com/kubernetes/enhancements/blob/master/keps/sig-network/20190424-NodeLocalDNS-beta-proposal.md#design-details) as well as the regular mode.
+- Add tests that clearly demonstrate the benefits of NodeLocal DNSCache and document the steps to run them.
+- Have 10 users running in production with NodeLocal DNSCache enabled.
+- Provide clear documentation on using NodeLocal DNSCache aimed at cluster
+  operators.
 
 ## Rollout Plan
 This feature will be launched with Alpha support in the first release. Master versions v1.13 and above will deploy the new add-on. Node versions v1.13 and above will have kubelet code to modify pods' resolv.conf. Nodes running older versions will run the nodelocal daemonset, but it will not be used. The user can specify a custom dnsConfig to use this local cache dns server.
@@ -199,6 +211,8 @@ This feature will be launched with Alpha support in the first release. Master ve
 
 * 2018-10-05 - Creation of the KEP
 * 2018-10-30 - Follow up comments and choice of cache agent
+* 2018-11-14 - [Changes](https://github.com/kubernetes/kubernetes/pull/70555) to support running NodeLocal DNSCache were merged.
+* 2018-11-02 - Added GA graduation criteria
 
 ## Drawbacks [optional]
 

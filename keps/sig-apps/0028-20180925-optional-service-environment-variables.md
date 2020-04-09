@@ -1,5 +1,4 @@
 ---
-kep-number: 28
 title: Optional Service Environment Variables
 authors:
   - "@bradhoekstra"
@@ -15,7 +14,7 @@ creation-date: 2018-09-25
 last-updated: 2018-09-25
 status: provisional
 see-also:
-  - https://github.com/kubernetes/community/pull/1249
+  - "https://github.com/kubernetes/community/pull/1249"
 replaces:
 superseded-by:
 ---
@@ -24,17 +23,18 @@ superseded-by:
 
 ## Table of Contents
 
-* [Table of Contents](#table-of-contents)
-* [Summary](#summary)
-* [Motivation](#motivation)
-    * [Goals](#goals)
-    * [Non-Goals](#non-goals)
-* [Proposal](#proposal)
-    * [User Stories](#user-stories)
-    * [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
-    * [Risks and Mitigations](#risks-and-mitigations)
-* [Graduation Criteria](#graduation-criteria)
-* [Implementation History](#implementation-history)
+<!-- toc -->
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [User Stories](#user-stories)
+  - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
+  - [Risks and Mitigations](#risks-and-mitigations)
+- [Graduation Criteria](#graduation-criteria)
+- [Implementation History](#implementation-history)
+<!-- /toc -->
 
 ## Summary
 

@@ -1,5 +1,4 @@
 ---
-kep-number: 31
 title: Make kube-proxy service abstraction optional
 authors:
   - "@bradhoekstra"
@@ -22,19 +21,22 @@ superseded-by:
 
 ## Table of Contents
 
-* [Table of Contents](#table-of-contents)
-* [Summary](#summary)
-* [Motivation](#motivation)
-    * [Goals](#goals)
-    * [Non-Goals](#non-goals)
-* [Proposal](#proposal)
-    * [User Stories](#user-stories)
-      * [Story 1](#story-1)
-    * [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
-      * [Design](#design)
-      * [Testing](#testing)
-    * [Risks and Mitigations](#risks-and-mitigations)
-* [Graduation Criteria](#graduation-criteria)
+<!-- toc -->
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [User Stories](#user-stories)
+    - [Story 1](#story-1)
+  - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
+    - [Overview](#overview)
+    - [Design](#design)
+    - [Testing](#testing)
+  - [Risks and Mitigations](#risks-and-mitigations)
+- [Graduation Criteria](#graduation-criteria)
+- [Implementation History](#implementation-history)
+<!-- /toc -->
 
 ## Summary
 

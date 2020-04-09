@@ -3,25 +3,32 @@
 A Kubernetes Enhancement Proposal (KEP) is a way to propose, communicate and coordinate on new efforts for the Kubernetes project.
 You can read the full details of the project in [KEP-1](0001-kubernetes-enhancement-proposal-process.md).
 
-This process is still in a _beta_ state and is opt-in for those that want to provide feedback for the process.
+This process is still in a _beta_ state and is mandatory for all enhancements beginning release 1.14.
 
 ## Quick start for the KEP process
 
 1. Socialize an idea with a sponsoring SIG.
    Make sure that others think the work is worth taking up and will help review the KEP and any code changes required.
-2. Follow the process outlined in the [KEP template](0000-kep-template.md)
+2. Follow the process outlined in the [KEP template](NNNN-kep-template/README.md)
 
 ## FAQs
 
 ### Do I have to use the KEP process?
 
-No... but we hope that you will.
-Over time having a rich set of KEPs in one place will make it easier for people to track what is going in the community and find a structured historic record.
+More or less, yes.
 
-KEPs are only required when the changes are wide ranging and impact most of the project.
-These changes are usually coordinated through SIG-Architecture.
-It is up to any specific SIG if they want to use the KEP process and when.
-The process is available to SIGs to use but not required.
+Having a rich set of KEPs in one place will make it easier for people to track
+what is going in the community and find a structured historical record.
+
+KEPs are required for most non-trivial changes.  Specifically:
+* Anything that may be controversial
+* Most new features (except the very smallest)
+* Major changes to existing features
+* Changes that are wide ranging or impact most of the project (these changes
+  are usually coordinated through SIG-Architecture)
+
+Beyond these, it is up to each SIG to decide when they want to use the KEP
+process.  It should be light-weight enough that KEPs are the default position.
 
 ### Why would I want to use the KEP process?
 
@@ -39,9 +46,10 @@ See [KEP-1](0001-kubernetes-enhancement-proposal-process.md) for more details.
 
 ### Do I put my KEP in the root KEP directory or a SIG subdirectory?
 
-If the KEP is mainly restricted to one SIG's purview then it should be in a KEP directory for that SIG.
-If the KEP is widely impacting much of Kubernetes, it should be put at the root of this directory.
-If in doubt ask [SIG-Architecture](../sig-architecture/README.md) and they can advise.
+Almost all KEPs should go into SIG subdirectories.  In very rare cases, such as
+KEPs about KEPs, we may choose to keep them in the root.
+
+If in doubt ask [SIG Architecture](https://git.k8s.io/community/sig-architecture/README.md) and they can advise.
 
 ### What will it take for KEPs to "graduate" out of "beta"?
 
@@ -55,5 +63,5 @@ Even so, the process can evolve. As we find new techniques we can improve our pr
 ### My FAQ isn't answered here!
 
 The KEP process is still evolving!
-If something is missing or not answered here feel free to reach out to [SIG-Architecture](../sig-architecture/README.md).
+If something is missing or not answered here feel free to reach out to [SIG Architecture](https://git.k8s.io/community/sig-architecture/README.md).
 If you want to propose a change to the KEP process you can open a PR on [KEP-1](0001-kubernetes-enhancement-proposal-process.md) with your proposal.

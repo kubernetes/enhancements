@@ -1,5 +1,4 @@
 ---
-kep-number: 1
 title: Pod Ready++
 authors:
   - "freehan@"
@@ -13,11 +12,10 @@ reviewers:
 approvers:
   - thockin@
   - dchen1107@
-editor: freehan@
+editor: "freehan@"
 creation-date: 2018-04-01
 last-updated: 2018-04-01
 status: provisional
-
 ---
 
 # Pod Ready++
@@ -25,18 +23,27 @@ status: provisional
 
 ## Table of Contents
 
-* [Table of Contents](#table-of-contents)
-* [Summary](#summary)
-* [Motivation](#motivation)
-    * [Goals](#goals)
-    * [Non-Goals](#non-goals)
-* [Proposal](#proposal)
-    * [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints-optional)
-    * [Risks and Mitigations](#risks-and-mitigations)
-* [Graduation Criteria](#graduation-criteria)
-* [Implementation History](#implementation-history)
-* [Alternatives](#alternatives-optional)
-
+<!-- toc -->
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [PodSpec](#podspec)
+    - [Constraints:](#constraints)
+  - [Pod Readiness](#pod-readiness)
+  - [Custom Pod Condition](#custom-pod-condition)
+  - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
+      - [Workloads](#workloads)
+      - [Kubelet](#kubelet)
+  - [Feature Integration](#feature-integration)
+  - [Risks and Mitigations](#risks-and-mitigations)
+- [Graduation Criteria](#graduation-criteria)
+- [Implementation History](#implementation-history)
+- [Alternatives](#alternatives)
+      - [Why not fix the workloads?](#why-not-fix-the-workloads)
+      - [Why not extend container readiness?](#why-not-extend-container-readiness)
+<!-- /toc -->
 
 ## Summary
 
@@ -65,7 +72,7 @@ For example, during deployment rolling update, a new pod becomes ready. On the o
 Introduce an extra field called ReadinessGates in PodSpec. The field stores a list of ReadinessGate structure as follows: 
 ```yaml
 type ReadinessGate struct {
-	conditionType string	
+    conditionType string	
 }
 ```
 The ReadinessGate struct has only one string field called ConditionType. ConditionType refers to a condition in the PodCondition list in PodStatus. And the status of conditions specified in the ReadinessGates will be evaluated for pod readiness. If the condition does not exist in the PodCondition list, its status will be default to false. 

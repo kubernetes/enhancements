@@ -1,8 +1,7 @@
 ---
-kep-number: 18
-title: Kubelet endpoint for device assignment observation details 
+title: Kubelet endpoint for device assignment observation details
 authors:
-  - "@dashpole" 
+  - "@dashpole"
   - "@vikaschoudhary16"
 owning-sig: sig-node
 reviewers:
@@ -12,25 +11,31 @@ reviewers:
   - "@vishh"
 approvers:
   - "@sig-node-leads"
-editors:
-  - "@dashpole"
-  - "@vikaschoudhary16"
+editor: "@dashpole"
 creation-date: "2018-07-19"
-last-updated: "2018-07-19"
-status: provisional
+last-updated: "2019-04-30"
+status: implementable
 ---
 # Kubelet endpoint for device assignment observation details 
 
-Table of Contents
-=================
-* [Abstract](#abstract)
-* [Background](#background)
-* [Objectives](#objectives)
-* [User Journeys](#user-journeys)
-  * [Device Monitoring Agents](#device-monitoring-agents)
-* [Changes](#changes)
-* [Potential Future Improvements](#potential-future-improvements)
-* [Alternatives Considered](#alternatives-considered)
+## Table of Contents
+
+<!-- toc -->
+- [Abstract](#abstract)
+- [Background](#background)
+- [Objectives](#objectives)
+- [User Journeys](#user-journeys)
+  - [Device Monitoring Agents](#device-monitoring-agents)
+- [Changes](#changes)
+  - [Potential Future Improvements](#potential-future-improvements)
+- [Alternatives Considered](#alternatives-considered)
+  - [Add v1alpha1 Kubelet GRPC service, at <code>/var/lib/kubelet/pod-resources/kubelet.sock</code>, which returns a list of <a href="https://github.com/kubernetes/kubernetes/blob/master/pkg/kubelet/apis/cri/runtime/v1alpha2/api.proto#L734">CreateContainerRequest</a>s used to create containers.](#add-v1alpha1-kubelet-grpc-service-at--which-returns-a-list-of-createcontainerrequests-used-to-create-containers)
+  - [Add a field to Pod Status.](#add-a-field-to-pod-status)
+  - [Use the Kubelet Device Manager Checkpoint file](#use-the-kubelet-device-manager-checkpoint-file)
+  - [Add a field to the Pod Spec:](#add-a-field-to-the-pod-spec)
+- [Graduation Criteria](#graduation-criteria)
+- [Implementation History](#implementation-history)
+<!-- /toc -->
 
 ## Abstract
 In this document we will discuss the motivation and code changes required for introducing a kubelet endpoint to expose device to container bindings.
@@ -148,3 +153,20 @@ type Container struct {
 * Allows devices to potentially be assigned by a custom scheduler.
 * Serves as a permanent record of device assignments for the kubelet, and eliminates the need for the kubelet to maintain this state locally.
 
+## Graduation Criteria
+
+Alpha:
+- [x] Implement the endpoint as described above
+- [x] E2e node test tests the endpoint: https://k8s-testgrid.appspot.com/sig-node-kubelet#node-kubelet-serial&include-filter-by-regex=DevicePluginProbe
+
+Beta:
+- [x] Demonstrate in production environments that the endpoint can be used to replace in-tree GPU device metrics (NVIDIA, sig-node April 30, 2019).
+
+## Implementation History
+
+- 2018-09-11: Final version of KEP (proposing pod-resources endpoint) published and presented to sig-node.  [Slides](https://docs.google.com/presentation/u/1/d/1xz-iHs8Ec6PqtZGzsmG1e68aLGCX576j_WRptd2114g/edit?usp=sharing)
+- 2018-10-30: Demo with example gpu monitoring daemonset
+- 2018-11-10: KEP lgtm'd and approved
+- 2018-11-15: Implementation and e2e test merged before 1.13 release: kubernetes/kubernetes#70508
+- 2019-04-30: Demo of production GPU monitoring by NVIDIA
+- 2019-04-30: Agreement in sig-node to move feature to beta in 1.15

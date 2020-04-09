@@ -1,5 +1,4 @@
 ---
-kep-number: 0
 title: Bounding Self-Labeling Kubelets
 authors:
   - "@mikedanese"
@@ -20,6 +19,20 @@ status: implementable
 ---
 
 # Bounding Self-Labeling Kubelets
+
+## Table of Contents
+
+<!-- toc -->
+- [Motivation](#motivation)
+  - [Capturing Dedicated Workloads](#capturing-dedicated-workloads)
+- [Proposal](#proposal)
+- [Implementation Timeline](#implementation-timeline)
+- [Alternatives Considered](#alternatives-considered)
+  - [File or flag-based configuration of the apiserver to allow specifying allowed labels](#file-or-flag-based-configuration-of-the-apiserver-to-allow-specifying-allowed-labels)
+  - [API-based configuration of the apiserver to allow specifying allowed labels](#api-based-configuration-of-the-apiserver-to-allow-specifying-allowed-labels)
+  - [Allow kubelets to add any labels they wish, and add NoSchedule taints if disallowed labels are added](#allow-kubelets-to-add-any-labels-they-wish-and-add-noschedule-taints-if-disallowed-labels-are-added)
+  - [Forbid all labels regardless of namespace except for a specifically allowed set](#forbid-all-labels-regardless-of-namespace-except-for-a-specifically-allowed-set)
+<!-- /toc -->
 
 ## Motivation
 
@@ -105,17 +118,44 @@ and warns when invoked with `kubernetes.io` or `k8s.io` labels outside that set.
 * NodeRestriction admission prevents kubelets from adding/removing/modifying `kubernetes.io` or `k8s.io`
 labels other than the specifically allowed labels/prefixes described above on Node *update* only
 
-v1.15:
+v1.14:
 
+* Begin migration/removal of in-tree `--node-labels` use outside of the allowed set by addons:
+  * `beta.kubernetes.io/fluentd-ds-ready`
+    * addon: remove from the nodeSelector
+    * kube-up: remove from the default `--node-labels` flag
+  * `beta.kubernetes.io/metadata-proxy-ready`
+    * addon: announce the nodeSelector will switch to `cloud.google.com/metadata-proxy-ready` in 1.15
+    * kube-up: add `cloud.google.com/metadata-proxy-ready=true` along with the existing label to `--node-labels`
+    * kube-up: add `cloud.google.com/metadata-proxy-ready=true` to existing nodes with the `beta.kubernetes.io/metadata-proxy-ready=true` label
+  * `beta.kubernetes.io/kube-proxy-ds-ready`
+    * addon: announce the nodeSelector will switch to `node.kubernetes.io/kube-proxy-ds-ready` in 1.15
+    * kube-up: add `node.kubernetes.io/kube-proxy-ds-ready=true` along with the existing label to `--node-labels`
+    * kube-up: add `node.kubernetes.io/kube-proxy-ds-ready=true` to existing nodes with the `beta.kubernetes.io/kube-proxy-ds-ready=true` label
+  * `beta.kubernetes.io/masq-agent-ds-ready`
+    * addon: announce the nodeSelector will switch to `node.kubernetes.io/masq-agent-ds-ready` in 1.16
+    * kube-up: add `node.kubernetes.io/masq-agent-ds-ready=true` to existing nodes with the `beta.kubernetes.io/masq-agent-ds-ready=true` label
+
+v1.16:
+
+* Complete migration/removal of in-tree `--node-labels` use outside of the allowed set by addons:
+  * `beta.kubernetes.io/metadata-proxy-ready`
+    * addon: change the nodeSelector to `cloud.google.com/metadata-proxy-ready`
+    * kube-up: stop setting `beta.kubernetes.io/metadata-proxy-ready`
+  * `beta.kubernetes.io/kube-proxy-ds-ready`
+    * addon: change the nodeSelector to `node.kubernetes.io/kube-proxy-ds-ready`
+    * kube-up: stop setting `beta.kubernetes.io/kube-proxy-ds-ready`
+  * `beta.kubernetes.io/masq-agent-ds-ready`
+    * addon: change the nodeSelector to `node.kubernetes.io/masq-agent-ds-ready`
 * Kubelet removes the ability to set `kubernetes.io` or `k8s.io` labels via `--node-labels`
 other than the specifically allowed labels/prefixes described above (deprecation period
 of 6 months for CLI elements of admin-facing components is complete)
 
-v1.17:
+v1.19:
 
 * NodeRestriction admission prevents kubelets from adding/removing/modifying `kubernetes.io` or `k8s.io`
 labels other than the specifically allowed labels/prefixes described above on Node *update* and *create*
-(oldest supported kubelet running against a v1.17 apiserver is v1.15)
+(oldest supported kubelet running against a v1.19 apiserver is v1.17)
 
 ## Alternatives Considered
 

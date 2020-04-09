@@ -1,0 +1,8 @@
+# See the OWNERS docs at https://go.k8s.io/owners
+
+reviewers:
+  - provider-aws
+approvers:
+  - provider-aws
+labels:
+  - area/provider/aws

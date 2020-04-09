@@ -1,9 +1,7 @@
 ---
-kep-number: TBD
 title: IPVS Load Balancing Mode in Kubernetes
-status: implemented
 authors:
-    - "@rramkumar1"
+  - "@rramkumar1"
 owning-sig: sig-network
 reviewers:
   - "@thockin"
@@ -11,10 +9,10 @@ reviewers:
 approvers:
   - "@thockin"
   - "@m1093782566"
-editor:
-  - "@thockin"
-  - "@m1093782566"
+editor: "@thockin"
 creation-date: 2018-03-21
+last-updated: 2019-06-27
+status: implemented
 ---
 
 # IPVS Load Balancing Mode in Kubernetes
@@ -25,28 +23,34 @@ creation-date: 2018-03-21
 
 ## Table of Contents
 
-* [Summary](#summary)
-* [Motivation](#motivation)
-  * [Goals](#goals)
-  * [Non\-goals](#non-goals)
-* [Proposal](#proposal)
-  * [Kube-Proxy Parameter Changes](#kube-proxy-parameter-changes)
-  * [Build Changes](#build-changes)
-  * [Deployment Changes](#deployment-changes)
-  * [Design Considerations](#design-considerations)
-    * [IPVS service network topology](#ipvs-service-network-topology)
-    * [Port remapping](#port-remapping)
-    * [Falling back to iptables](#falling-back-to-iptables)
-    * [Supporting NodePort service](#supporting-nodeport-service)
-    * [Supporting ClusterIP service](#supporting-clusterip-service)
-    * [Supporting LoadBalancer service](#supporting-loadbalancer-service)
-    * [Session Affinity](#session-affinity)
-    * [Cleaning up inactive rules](#cleaning-up-inactive-rules)
-    * [Sync loop pseudo code](#sync-loop-pseudo-code)
-* [Graduation Criteria](#graduation-criteria)
-* [Implementation History](#implementation-history)
-* [Drawbacks](#drawbacks)
-* [Alternatives](#alternatives)
+<!-- toc -->
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-goals](#non-goals)
+  - [Challenges and Open Questions [optional]](#challenges-and-open-questions-optional)
+- [Proposal](#proposal)
+  - [Kube-Proxy Parameter Changes](#kube-proxy-parameter-changes)
+  - [Build Changes](#build-changes)
+  - [Deployment Changes](#deployment-changes)
+  - [Design Considerations](#design-considerations)
+    - [IPVS service network topology](#ipvs-service-network-topology)
+    - [Port remapping](#port-remapping)
+    - [Falling back to iptables](#falling-back-to-iptables)
+    - [Supporting NodePort service](#supporting-nodeport-service)
+    - [Supporting ClusterIP service](#supporting-clusterip-service)
+  - [Support LoadBalancer service](#support-loadbalancer-service)
+  - [Support Only NodeLocal Endpoints](#support-only-nodelocal-endpoints)
+    - [Session affinity](#session-affinity)
+    - [Cleaning up inactive rules](#cleaning-up-inactive-rules)
+    - [Sync loop pseudo code](#sync-loop-pseudo-code)
+- [Graduation Criteria](#graduation-criteria)
+  - [Beta -&gt; GA](#beta---ga)
+  - [GA -&gt; Future](#ga---future)
+- [Implementation History](#implementation-history)
+- [Drawbacks [optional]](#drawbacks-optional)
+- [Alternatives [optional]](#alternatives-optional)
+<!-- /toc -->
 
 ## Summary
 

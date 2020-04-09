@@ -1,11 +1,8 @@
 # Enhancement Description
 - One-line enhancement description (can be used as a release note):
+- Kubernetes Enhancement Proposal: (link to kubernetes/enhancements file, if none yet, link to PR)
 - Primary contact (assignee):
 - Responsible SIGs:
-- Design proposal link (community repo):
-- Link to e2e and/or unit tests:
-- Reviewer(s) - (for LGTM) recommend having 2+ reviewers (at least one from code-area OWNERS file) agreed to review. Reviewers from multiple companies preferred:
-- Approver (likely from SIG/area to which enhancement belongs):
 - Enhancement target (which target equals to which milestone):
   - Alpha release target (x.y)
   - Beta release target (x.y)

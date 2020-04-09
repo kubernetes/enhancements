@@ -1,5 +1,4 @@
 ---
-kep-number: 0018
 title: Reporting Conformance Test Results to Testgrid
 authors:
   - "@andrewsykim"
@@ -7,12 +6,6 @@ owning-sig: sig-cloud-provider
 participating-sigs:
   - sig-testing
   - sig-release
-  - sig-aws
-  - sig-azure
-  - sig-gcp
-  - sig-ibmcloud
-  - sig-openstack
-  - sig-vmware
 reviewers:
   - TBD
 approvers:
@@ -21,22 +14,40 @@ editor: TBD
 creation-date: 2018-06-06
 last-updated: 2018-11-16
 status: implementable
-
 ---
 
 # Reporting Conformance Test Results to Testgrid
 
 ## Table of Contents
 
-* [Summary](#summary)
-* [Motivation](#motivation)
-    * [Goals](#goals)
-    * [Non-Goals](#non-goals)
-* [Proposal](#proposal)
-    * [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
-    * [Risks and Mitigations](#risks-and-mitigations)
-* [Graduation Criteria](#graduation-criteria)
-* [Implementation History](#implementation-history)
+<!-- toc -->
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
+    - [How to Run E2E Conformance Tests](#how-to-run-e2e-conformance-tests)
+    - [Sonobuoy](#sonobuoy)
+      - [Installing Sonobuoy](#installing-sonobuoy)
+      - [Running Conformance Tests with Sonobuoy](#running-conformance-tests-with-sonobuoy)
+    - [Kubetest](#kubetest)
+      - [Installing Kubetest](#installing-kubetest)
+      - [Running Conformance Test with kubetest](#running-conformance-test-with-kubetest)
+    - [How to Upload Conformance Test Results to Testgrid](#how-to-upload-conformance-test-results-to-testgrid)
+      - [Requesting a GCS Bucket](#requesting-a-gcs-bucket)
+      - [Authenticating to your Testgrid Bucket](#authenticating-to-your-testgrid-bucket)
+      - [Uploading results to Testgrid](#uploading-results-to-testgrid)
+      - [Testgrid Configuration](#testgrid-configuration)
+    - [Lifecycle of Test Results](#lifecycle-of-test-results)
+    - [Examples](#examples)
+  - [Risks and Mitigations](#risks-and-mitigations)
+    - [Operational Overhead](#operational-overhead)
+    - [Misconfigured Tests](#misconfigured-tests)
+    - [Flaky Tests](#flaky-tests)
+- [Graduation Criteria](#graduation-criteria)
+- [Implementation History](#implementation-history)
+<!-- /toc -->
 
 ## Summary
 
@@ -200,7 +211,7 @@ Done.
 
 Next thing you want to do is configure testgrid to read results from your GCS bucket. There are two [configuration](https://github.com/kubernetes/test-infra/tree/master/testgrid#configuration) steps required. One for your [test group](https://github.com/kubernetes/test-infra/tree/master/testgrid#test-groups) and one for your [dashboard](https://github.com/kubernetes/test-infra/tree/master/testgrid#dashboards).
 
-To add a test group update [config.yaml](https://github.com/kubernetes/test-infra/blob/master/testgrid/config.yaml) with something like the following:
+To add a test group update [config.yaml](https://github.com/kubernetes/test-infra/blob/master/config/testgrids/config.yaml) with something like the following:
 ```
 test_groups:
 ...
@@ -209,7 +220,7 @@ test_groups:
   gcs_prefix: k8s-conformance-demo/cloud-provider-demo/e2e-conformance-release-v1.10
 ```
 
-To add a link to your results in the testgrid dashboard, update [config.yaml](https://github.com/kubernetes/test-infra/blob/master/testgrid/config.yaml) with something like the following:
+To add a link to your results in the testgrid dashboard, update [config.yaml](https://github.com/kubernetes/test-infra/blob/master/config/testgrids/config.yaml) with something like the following:
 ```
 dashboards:
 ...

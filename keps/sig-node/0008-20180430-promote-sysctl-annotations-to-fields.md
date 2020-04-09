@@ -1,5 +1,4 @@
 ---
-kep-number: 8
 title: Protomote sysctl annotations to fields
 authors:
   - "@ingvagabund"
@@ -25,19 +24,19 @@ superseded-by:
 
 ## Table of Contents
 
-* [Promote sysctl annotations to fields](#promote-sysctl-annotations-to-fields)
-   * [Table of Contents](#table-of-contents)
-   * [Summary](#summary)
-   * [Motivation](#motivation)
-      * [Promote annotations to fields](#promote-annotations-to-fields)
-      * [Promote --experimental-allowed-unsafe-sysctls kubelet flag to kubelet config api option](#promote---experimental-allowed-unsafe-sysctls-kubelet-flag-to-kubelet-config-api-option)
-      * [Gate the feature](#gate-the-feature)
-   * [Proposal](#proposal)
-      * [User Stories](#user-stories)
-      * [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
-      * [Risks and Mitigations](#risks-and-mitigations)
-   * [Graduation Criteria](#graduation-criteria)
-   * [Implementation History](#implementation-history)
+<!-- toc -->
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Promote annotations to fields](#promote-annotations-to-fields)
+  - [Promote <code>--experimental-allowed-unsafe-sysctls</code> kubelet flag to kubelet config api option](#promote--kubelet-flag-to-kubelet-config-api-option)
+  - [Gate the feature](#gate-the-feature)
+- [Proposal](#proposal)
+  - [User Stories](#user-stories)
+  - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
+  - [Risks and Mitigations](#risks-and-mitigations)
+- [Graduation Criteria](#graduation-criteria)
+- [Implementation History](#implementation-history)
+<!-- /toc -->
 
 ## Summary
 
@@ -86,7 +85,7 @@ The `sysctl` design document with more details and rationals is available at [de
 
 ## Motivation
 
-As mentioned in [contributors/devel/api_changes.md#alpha-field-in-existing-api-version](https://github.com/kubernetes/community/blob/master/contributors/devel/api_changes.md#alpha-field-in-existing-api-version):
+As mentioned in [contributors/devel/api_changes.md#alpha-field-in-existing-api-version](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api_changes.md#alpha-field-in-existing-api-version):
 
 > Previously, annotations were used for experimental alpha features, but are no longer recommended for several reasons:
 >
@@ -201,7 +200,7 @@ type PodSecurityPolicySpec struct {
 }
 ```
 
-Following steps in [devel/api_changes.md#alpha-field-in-existing-api-version](https://github.com/kubernetes/community/blob/master/contributors/devel/api_changes.md#alpha-field-in-existing-api-version)
+Following steps in [devel/api_changes.md#alpha-field-in-existing-api-version](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api_changes.md#alpha-field-in-existing-api-version)
 during implementation.
 
 Validation checks implemented as part of [#27180](https://github.com/kubernetes/kubernetes/pull/27180).

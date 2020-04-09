@@ -1,60 +1,54 @@
 ---
 title: Kustomize Subcommand Integration
 authors:
- - "@Liujingfang1"
+  - "@Liujingfang1"
 owning-sig: sig-cli
 participating-sigs:
- - sig-cli
+  - sig-cli
 reviewers:
- - "@liggitt"
- - "@seans3"
- - "@soltysh"
+  - "@liggitt"
+  - "@seans3"
+  - "@soltysh"
 approvers:
- - "@liggitt"
- - "@seans3"
- - "@soltysh"
-editors:
- - "@pwittrock"
+  - "@liggitt"
+  - "@seans3"
+  - "@soltysh"
+editor: "@pwittrock"
 creation-date: 2018-11-07
-last-updated: 2019-01-17
-status: implementable
+last-updated: 2019-02-15
+status: implemented
 see-also:
- - "[kustomize](https://github.com/kubernetes-sigs/kustomize/blob/master/docs/workflows.md)"
- - "kustomize-file-processing-integration.md" 
+  - "[kustomize](https://github.com/kubernetes-sigs/kustomize/blob/master/docs/workflows.md)"
+  - "kustomize-file-processing-integration.md"
 replaces:
- - "0008-kustomize.md"
+  - "0008-kustomize.md"
 superseded-by:
- - n/a
+  - n/a
 ---
 
 # Kustomize Subcommand Integration
 
 ## Table of Contents
-* [Table of Contents](#table-of-contents)
-* [Summary](#summary)
-* [Motivation](#motivation)
-  * [Goals](#goals)
-  * [Non-Goals](#non-goals)
-* [Kustomize Introduction](#kustomize-introduction)   
-* [Proposal](#proposal)
-  * [UX](#UX)
-     * [apply](#apply)
-     * [get](#get)
-     * [delete](#delete)
-  * [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
-  * [Risks and Mitigations](#risks-and-mitigations)
-* [Graduation Criteria](#graduation-criteria)
-* [Implementation History](#implementation-history)
-* [Alternatives](#alternatives)
 
-[Tools for generating]: https://github.com/ekalinin/github-markdown-toc
-
-Link to tracking issue: kubernetes/enhancements#633
-
-See:
-
-- [KEP FAQ](kep-faq.md) for questions such as "why not as as plugin?".
-- [Why this should be part of kubectl](#why-this-should-be-part-of-kubectl)
+<!-- toc -->
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+  - [Why this should be part of kubectl](#why-this-should-be-part-of-kubectl)
+- [Proposal](#proposal)
+  - [Justification for this approach](#justification-for-this-approach)
+  - [Justification for follow up](#justification-for-follow-up)
+- [Kustomize Example](#kustomize-example)
+  - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
+  - [Risks and Mitigations](#risks-and-mitigations)
+- [Graduation Criteria](#graduation-criteria)
+- [Implementation History](#implementation-history)
+- [Alternatives](#alternatives)
+  - [Copy kustomize code into staging](#copy-kustomize-code-into-staging)
+  - [Leave kustomize functionality separate from kubectl](#leave-kustomize-functionality-separate-from-kubectl)
+  - [Build a separate tools targeted at Kubernetes declarative workflows.](#build-a-separate-tools-targeted-at-kubernetes-declarative-workflows)
+<!-- /toc -->
 
 ## Summary
 

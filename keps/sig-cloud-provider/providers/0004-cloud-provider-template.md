@@ -33,13 +33,24 @@ This is a KEP template, outlining how to propose a new cloud provider into the K
 
 ## Table of Contents
 
-* [Table of Contents](#table-of-contents)
-* [Summary](#summary)
-* [Motivation](#motivation)
-    * [Goals](#goals)
-    * [Non-Goals](#non-goals)
-* [Requirements](#requirements)
-* [Proposal](#proposal)
+<!-- toc -->
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Prerequisites](#prerequisites)
+  - [Repository Requirements](#repository-requirements)
+  - [User Experience Reports](#user-experience-reports)
+  - [Testgrid Integration](#testgrid-integration)
+  - [CNCF Certified Kubernetes](#cncf-certified-kubernetes)
+  - [Documentation](#documentation)
+  - [Technical Leads are members of the Kubernetes Organization](#technical-leads-are-members-of-the-kubernetes-organization)
+- [Proposal](#proposal)
+  - [Subproject Leads](#subproject-leads)
+  - [Repositories](#repositories)
+  - [Meetings](#meetings)
+  - [Others](#others)
+<!-- /toc -->
 
 ## Summary
 
@@ -61,7 +72,7 @@ This is where you outline all the prerequisites for new providers that have been
 
 ### Repository Requirements
 
-For [repository requirements](https://github.com/kubernetes/community/blob/master/keps/sig-cloud-provider/0002-cloud-controller-manager.md#repository-requirements) you are expected to have a repo (belonging to any organization, ideally owned by your cloud provider) that has a working implementation of the [Kubernetes Cloud Controller Manager](https://kubernetes.io/docs/tasks/administer-cluster/running-cloud-controller/). Note that the list of requirements are subject to change.
+For [repository requirements](https://github.com/kubernetes/enhancements/blob/master/keps/sig-cloud-provider/20180530-cloud-controller-manager.md#repository-requirements) you are expected to have a repo (belonging to any organization, ideally owned by your cloud provider) that has a working implementation of the [Kubernetes Cloud Controller Manager](https://kubernetes.io/docs/tasks/administer-cluster/running-cloud-controller/). Note that the list of requirements are subject to change.
 
 ### User Experience Reports
 
@@ -69,7 +80,7 @@ There must be a reasonable amount of user feedback about running Kubernetes for 
 
 ### Testgrid Integration
 
-Your cloud provider is reporting conformance test results to TestGrid as per the [Reporting Conformance Test Results to Testgrid KEP](https://github.com/kubernetes/community/blob/master/keps/sig-cloud-provider/0018-testgrid-conformance-e2e.md).
+Your cloud provider is reporting conformance test results to TestGrid as per the [Reporting Conformance Test Results to Testgrid KEP](https://github.com/kubernetes/enhancements/blob/master/keps/sig-cloud-provider/0018-testgrid-conformance-e2e.md).
 
 ### CNCF Certified Kubernetes
 
@@ -77,7 +88,7 @@ Your cloud provider is accepted as part of the [Certified Kubernetes Conformance
 
 ### Documentation
 
-There is documentation on running Kubernetes on your cloud provider as per the [cloud provider documentation KEP](https://github.com/kubernetes/community/blob/master/keps/sig-cloud-provider/0019-cloud-provider-documentation.md).
+There is documentation on running Kubernetes on your cloud provider as per the [cloud provider documentation KEP](https://github.com/kubernetes/enhancements/blob/master/keps/sig-cloud-provider/20180731-cloud-provider-docs.md).
 
 ### Technical Leads are members of the Kubernetes Organization
 

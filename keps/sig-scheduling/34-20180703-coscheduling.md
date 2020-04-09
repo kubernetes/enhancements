@@ -1,5 +1,4 @@
 ---
-kep-number: 34
 title: Coscheduling
 authors:
   - "@k82cn"
@@ -12,7 +11,7 @@ reviewers:
 approvers:
   - "@bsalamat"
 creation-date: 2018-07-03
-last-updated: 2019-1-3
+last-updated: 2019-01-03
 status: provisional
 ---
 
@@ -20,25 +19,24 @@ status: provisional
 
 ## Table of Contents
 
-* [Table of Contents](#table-of-contents)
-* [Motivation](#motivation)
-* [Function Detail](#function-detail)
-   * [API Definition](#api-definition)
-   * [Lifecycle Management](#lifecycle-management)
-   * [Scheduling](#scheduling)
-   * [Customized Controller](#customized-controller)
-* [Feature Interaction](#feature-interaction)
-   * [Multi-scheduler](#multi-scheduler)
-   * [Priority/Preemption](#prioritypreemption)
-   * [Pod RestartPolicy](#pod-restartpolicy)
-   * [Admission Controller](#admission-controller)
-   * [Cluster Autoscaler](#cluster-autoscaler)
-   * [Kubectl](#kubectl)
-* [Graduation Criteria](#graduation-criteria)
-* [Implementation History](#implementation-history)
-* [References](#references)
-
-[Tools for generating]: https://github.com/ekalinin/github-markdown-toc
+<!-- toc -->
+- [Motivation](#motivation)
+- [Function Detail](#function-detail)
+  - [API Definition](#api-definition)
+  - [Lifecycle Management](#lifecycle-management)
+  - [Scheduling](#scheduling)
+  - [Customized Controller](#customized-controller)
+- [Feature Interaction](#feature-interaction)
+  - [Multi-scheduler](#multi-scheduler)
+  - [Priority/Preemption](#prioritypreemption)
+  - [Pod RestartPolicy](#pod-restartpolicy)
+  - [Admission Controller](#admission-controller)
+  - [Cluster Autoscaler](#cluster-autoscaler)
+  - [Kubectl](#kubectl)
+- [Graduation Criteria](#graduation-criteria)
+- [Implementation History](#implementation-history)
+- [References](#references)
+<!-- /toc -->
 
 ## Motivation
 

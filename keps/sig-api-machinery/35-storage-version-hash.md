@@ -1,5 +1,4 @@
 ---
-kep-number: 35
 title: exposing hashed storage versions via the discovery API
 authors:
   - "@xuchao"
@@ -18,17 +17,19 @@ status: provisional
 # Exposing storage versions in opaque values via the discovery API
 
 ## Table of Contents
-   * [Table of Contents](#table-of-contents)
-   * [Terms](#terms)
-   * [Summary](#summary)
-   * [Motivation](#motivation)
-   * [Proposal](#proposal)
-      * [API changes to the discovery API](#api-changes-to-the-discovery-api)
-      * [Implementation details](#implementation-details)
-   * [Graduation Criteria](#graduation-criteria)
-   * [Risks and mitigation](#risks-and-mitigation)
-      * [HA masters](#ha-masters)
-   * [Alternatives](#alternatives)
+
+<!-- toc -->
+- [Terms](#terms)
+- [Summary](#summary)
+- [Motivation](#motivation)
+- [Proposal](#proposal)
+  - [API changes to the discovery API](#api-changes-to-the-discovery-api)
+  - [Implementation details](#implementation-details)
+- [Graduation Criteria](#graduation-criteria)
+- [Risks and mitigation](#risks-and-mitigation)
+  - [HA masters](#ha-masters)
+- [Alternatives](#alternatives)
+<!-- /toc -->
 
 ## Terms
 
@@ -134,7 +135,7 @@ for the protobuf tag.
 
 The above is a simplified version of Kubernetes API change [guideline][].
 
-[guideline]:https://github.com/kubernetes/community/blob/master/contributors/devel/api_changes.md#alpha-field-in-existing-api-version
+[guideline]:https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api_changes.md#alpha-field-in-existing-api-version
 
 ## Risks and mitigation
 

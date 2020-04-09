@@ -1,5 +1,4 @@
 ---
-kep-number: 28
 title: New label for trusted PR identification
 authors:
   - "@matthyx"
@@ -16,27 +15,28 @@ approvers:
   - TBD
 editor: TBD
 creation-date: 2018-06-25
-last-updated: 2018-09-03
-status: provisional
+last-updated: 2019-01-30
+status: implemented
 ---
 
 # New label for trusted PR identification
 
 ## Table of Contents
 
-* [Table of Contents](#table-of-contents)
-* [Summary](#summary)
-* [Motivation](#motivation)
-  * [Goals](#goals)
-  * [Non-Goals](#non-goals)
-* [Proposal](#proposal)
-  * [Implementation Details/Notes/Constraints [optional]](#implementation-detailsnotesconstraints-optional)
-  * [Benefits](#benefits)
-  * [Risks and Mitigations](#risks-and-mitigations)
-* [Graduation Criteria](#graduation-criteria)
-* [Future evolutions](#future-evolutions)
-* [References](#references)
-* [Implementation History](#implementation-history)
+<!-- toc -->
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
+  - [Benefits](#benefits)
+  - [Risks and Mitigations](#risks-and-mitigations)
+- [Graduation Criteria](#graduation-criteria)
+- [Future evolutions](#future-evolutions)
+- [References](#references)
+- [Implementation History](#implementation-history)
+<!-- /toc -->
 
 ## Summary
 
@@ -104,11 +104,11 @@ This label will be added by members of the *trusted organization* for the reposi
 
 ### Risks and Mitigations
 
-TODO
+N/A
 
 ## Graduation Criteria
 
-TODO
+N/A
 
 ## Future evolutions
 
@@ -133,3 +133,4 @@ This would require adding automatically the `ok-to-test` label to member authore
 * 2018-10-04: KEP merged into master
 * 2018-10-08: start of implementation
 * 2018-10-10: `ok-to-test` label added
+* 2019-01-29: remove comment parsing code for PR trust

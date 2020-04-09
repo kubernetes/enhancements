@@ -1,5 +1,4 @@
 ---
-kep-number: 34
 title: Enabling clients to tell if resource endpoints serve the same set of objects
 authors:
   - "@xuchao"
@@ -11,7 +10,7 @@ approvers:
   - "@deads2k"
   - "@lavalamp"
 creation-date: 2018-10-12
-last-updated: 2018-xx-xx
+last-updated: 2018-12-17
 status: provisional
 ---
 
@@ -19,17 +18,19 @@ status: provisional
 
 ## Table of Contents
 
-      * [Summary](#summary)
-      * [Motivation](#motivation)
-            * [Correctness](#correctness)
-            * [Efficiency](#efficiency)
-      * [Goals](#goals)
-      * [Proposal](#proposal)
-         * [API changes to the discovery API](#api-changes-to-the-discovery-api)
-         * [Implementation details](#implementation-details)
-         * [Risks and Mitigations](#risks-and-mitigations)
-      * [Graduation Criteria](#graduation-criteria)
-      * [Alternatives](#alternatives)
+<!-- toc -->
+- [Summary](#summary)
+- [Motivation](#motivation)
+    - [Correctness](#correctness)
+    - [Efficiency](#efficiency)
+- [Goals](#goals)
+- [Proposal](#proposal)
+  - [API changes to the discovery API](#api-changes-to-the-discovery-api)
+  - [Implementation details](#implementation-details)
+  - [Risks and Mitigations](#risks-and-mitigations)
+- [Graduation Criteria](#graduation-criteria)
+- [Alternatives](#alternatives)
+<!-- /toc -->
 
 ## Summary
 
@@ -184,7 +185,7 @@ for the protobuf tag.
 The above is a simplified version of the Kubernetes API change [guideline][],
 because the discovery API is read-only.
 
-[guideline]:https://github.com/kubernetes/community/blob/master/contributors/devel/api_changes.md#alpha-field-in-existing-api-version
+[guideline]:https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api_changes.md#alpha-field-in-existing-api-version
 
 ## Alternatives
 1. Adding to the discovery API a reference to the canonical endpoint. For

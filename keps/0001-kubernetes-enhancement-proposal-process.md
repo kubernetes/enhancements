@@ -1,45 +1,41 @@
 ---
-kep-number: 1
 title: Kubernetes Enhancement Proposal Process
 authors:
   - "@calebamiles"
   - "@jbeda"
-owning-sig: sig-architecture
-participating-sigs:
-  - kubernetes-wide
+owning-sig: sig-pm
 reviewers:
-  - name: "@timothysc"
+  - "@timothysc"
 approvers:
-  - name: "@bgrant0607"
-editor:
-  name: "@jbeda"
+  - "@bgrant0607"
+editor: "@jbeda"
 creation-date: 2017-08-22
-status: implementable
+last-updated: 2020-02-18
+status: implemented
 ---
 
 # Kubernetes Enhancement Proposal Process
 
 ## Table of Contents
 
-* [Kubernetes Enhancement Proposal Process](#kubernetes-enhancement-proposal-process)
-  * [Metadata](#metadata)
-  * [Table of Contents](#table-of-contents)
-  * [Summary](#summary)
-  * [Motivation](#motivation)
-  * [Reference-level explanation](#reference-level-explanation)
-      * [What type of work should be tracked by a KEP](#what-type-of-work-should-be-tracked-by-a-kep)
-      * [KEP Template](#kep-template)
-      * [KEP Metadata](#kep-metadata)
-      * [KEP Workflow](#kep-workflow)
-      * [Git and GitHub Implementation](#git-and-github-implementation)
-      * [KEP Editor Role](#kep-editor-role)
-      * [Important Metrics](#important-metrics)
-      * [Prior Art](#prior-art)
-  * [Graduation Criteria](#graduation-criteria)
-  * [Drawbacks](#drawbacks)
-  * [Alternatives](#alternatives)
-  * [Unresolved Questions](#unresolved-questions)
-  * [Mentors](#mentors)
+<!-- toc -->
+- [Summary](#summary)
+- [Motivation](#motivation)
+- [Stewardship](#stewardship)
+- [Reference-level explanation](#reference-level-explanation)
+  - [What type of work should be tracked by a KEP](#what-type-of-work-should-be-tracked-by-a-kep)
+  - [KEP Template](#kep-template)
+  - [KEP Metadata](#kep-metadata)
+  - [KEP Workflow](#kep-workflow)
+  - [Git and GitHub Implementation](#git-and-github-implementation)
+  - [KEP Editor Role](#kep-editor-role)
+  - [Important Metrics](#important-metrics)
+  - [Prior Art](#prior-art)
+- [Drawbacks](#drawbacks)
+- [Alternatives](#alternatives)
+  - [GitHub issues vs. KEPs](#github-issues-vs-keps)
+- [Unresolved Questions](#unresolved-questions)
+<!-- /toc -->
 
 ## Summary
 
@@ -102,7 +98,16 @@ is intended to create high quality uniform design and implementation documents
 for SIGs to deliberate.
 
 [road to Go 2]: https://blog.golang.org/toward-go2
-[design proposals]: /contributors/design-proposals
+[design proposals]: https://github.com/kubernetes/community/tree/master/contributors/design-proposals
+
+## Stewardship
+The following DACI model indentifies the responsible parties for KEPs.
+
+**Workstream** | **Driver** | **Approver** | **Contributor** | **Informed**
+--- | --- | --- | --- | ---
+| KEP Process Stewardship | SIG PM | SIG PM | SIG PM / SIG Leadership | Community |
+| Enhancement delivery | Enhancement Owner |  SIG leadership (SIG Chairs + TLs) | Enhancement Implementer(s) (may overlap with Driver) | Community |
+
 
 
 ## Reference-level explanation
@@ -139,7 +144,9 @@ These KEPs will be owned by SIG-architecture and should be seen as a way to comm
 
 ### KEP Template
 
-The template for a KEP is precisely defined [here](0000-kep-template.md)
+<b>
+The template for a KEP is precisely defined [here](/keps/NNNN-kep-template).
+</b>
 
 ### KEP Metadata
 
@@ -147,18 +154,13 @@ There is a place in each KEP for a YAML document that has standard metadata.
 This will be used to support tooling around filtering and display.  It is also
 critical to clearly communicate the status of a KEP.
 
+<b>
+While this defines the metadata schema for now, these things tend to evolve.
+The KEP template is the authoritative definition of things like the metadata
+schema.
+</b>
+
 Metadata items:
-* **kep-number** Required
-  * Each proposal has a number.  This is to make all references to proposals as
-    clear as possible.  This is especially important as we create a network
-    cross references between proposals.
-  * Before having the `Approved` status, the number for the KEP will be in the
-    form of `draft-YYYYMMDD`.  The `YYYYMMDD` is replaced with the current date
-    when first creating the KEP.  The goal is to enable fast parallel merges of
-    pre-acceptance KEPs.
-  * On acceptance a sequential dense number will be assigned.  This will be done
-    by the editor and will be done in such a way as to minimize the chances of
-    conflicts.  The final number for a KEP will have no prefix.
 * **title** Required
   * The title of the KEP in plain language.  The title will also be used in the
     KEP filename.  See the template for instructions and details.
@@ -190,7 +192,7 @@ Metadata items:
     It is up to the individual SIGs to determine how they pick approvers for KEPs impacting them.
     The approvers are speaking for the SIG in the process of approving this KEP.
     The SIGs in question can modify this list as necessary.
-  * The approvers are the individuals that make the call to move this KEP to the `approved` state.
+  * The approvers are the individuals that make the call to move this KEP to the `implementable` state.
   * Approvers should be a distinct set from authors.
   * If not yet chosen replace with `TBD`
   * Same name/contact scheme as `authors`
@@ -236,13 +238,11 @@ A KEP has the following states
 
 ### Git and GitHub Implementation
 
-KEPs are checked into the community repo under the `/kep` directory.
-In the future, as needed we can add SIG specific subdirectories.
+KEPs are checked into the enhancements repo under the `/keps` directory.
 KEPs in SIG specific subdirectories have limited impact outside of the SIG and can leverage SIG specific OWNERS files.
 
 New KEPs can be checked in with a file name in the form of `draft-YYYYMMDD-my-title.md`.
 As significant work is done on the KEP the authors can assign a KEP number.
-This is done by taking the next number in the NEXT_KEP_NUMBER file, incrementing that number, and renaming the KEP.
 No other changes should be put in that PR so that it can be approved quickly and minimize merge conflicts.
 The KEP number can also be done as part of the initial submission if the PR is likely to be uncontested and merged quickly.
 

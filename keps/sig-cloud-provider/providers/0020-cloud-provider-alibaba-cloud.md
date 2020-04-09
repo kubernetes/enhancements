@@ -1,5 +1,4 @@
 ---
-kep-number: 20
 title: Cloud Provider for Alibaba Cloud
 authors:
   - "@aoxn"
@@ -14,7 +13,6 @@ editor: TBD
 creation-date: 2018-06-20
 last-updated: 2018-06-20
 status: provisional
-
 ---
 
 # Cloud Provider for Alibaba Cloud
@@ -23,13 +21,23 @@ This is a KEP for adding ```Cloud Provider for Alibaba Cloud``` into the Kuberne
 
 ## Table of Contents
 
-* [Table of Contents](#table-of-contents)
-* [Summary](#summary)
-* [Motivation](#motivation)
-    * [Goals](#goals)
-    * [Non-Goals](#non-goals)
-* [Requirements](#requirements)
-* [Proposal](#proposal)
+<!-- toc -->
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Prerequisites](#prerequisites)
+  - [Repository Requirements](#repository-requirements)
+  - [User Experience Reports](#user-experience-reports)
+  - [Testgrid Integration](#testgrid-integration)
+  - [CNCF Certified Kubernetes](#cncf-certified-kubernetes)
+  - [Documentation](#documentation)
+  - [Technical Leads are members of the Kubernetes Organization](#technical-leads-are-members-of-the-kubernetes-organization)
+- [Proposal](#proposal)
+  - [Repositories](#repositories)
+  - [Meetings](#meetings)
+  - [Others](#others)
+<!-- /toc -->
 
 ## Summary
 
@@ -67,7 +75,7 @@ E.g.
 
 [Alibaba Cloud Controller Manager](https://github.com/AliyunContainerService/alicloud-controller-manager) is a working implementation of the [Kubernetes Cloud Controller Manager](https://kubernetes.io/docs/tasks/administer-cluster/running-cloud-controller/).
 
-The repo requirements is mainly a copy from [cloudprovider KEP](https://github.com/kubernetes/community/blob/master/keps/sig-cloud-provider/0002-cloud-controller-manager.md#repository-requirements). Open the link for more detail.
+The repo requirements is mainly a copy from [cloudprovider KEP](https://github.com/kubernetes/enhancements/blob/master/keps/sig-cloud-provider/20180530-cloud-controller-manager.md#repository-requirements). Open the link for more detail.
 
 ### User Experience Reports
 As a CNCF Platinum member, Alibaba Cloud is dedicated in providing users with highly secure , stable and efficient cloud service.

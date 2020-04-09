@@ -1,5 +1,4 @@
 ---
-kep-number: 10
 title: Graduate CoreDNS to GA
 authors:
   - "@johnbelamaric"
@@ -16,21 +15,28 @@ editor: "@rajansandeep"
 creation-date: 2018-03-21
 last-updated: 2018-05-18
 status: provisional
-see-also: https://github.com/kubernetes/community/pull/2167
+see-also:
+  - "https://github.com/kubernetes/community/pull/2167"
 ---
- 
+
 # Graduate CoreDNS to GA
 
 ## Table of Contents
 
-* [Summary](#summary)
-* [Motivation](#motivation)
-    * [Goals](#goals)
-    * [Non-Goals](#non-goals)
-* [Proposal](#proposal)
-    * [User Cases](#use-cases)
-* [Graduation Criteria](#graduation-criteria)
-* [Implementation History](#implementation-history)
+<!-- toc -->
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [Use Cases](#use-cases)
+    - [Configuring CoreDNS](#configuring-coredns)
+    - [Kubeadm](#kubeadm)
+    - [Kube-up](#kube-up)
+    - [Minikube](#minikube)
+- [Graduation Criteria](#graduation-criteria)
+- [Implementation History](#implementation-history)
+<!-- /toc -->
 
 ## Summary
 

@@ -1,6 +1,5 @@
 ---
-kep-number: 24
-title: Kubectl Plugins 
+title: Kubectl Plugins
 authors:
   - "@juanvallejo"
 owning-sig: sig-cli
@@ -16,8 +15,8 @@ approvers:
   - "@soltysh"
 editor: juanvallejo
 creation-date: 2018-07-24
-last-updated: 2018-08-09
-status: provisional
+last-updated: 2010-02-26
+status: implemented
 see-also:
   - n/a
 replaces:
@@ -27,26 +26,27 @@ superseded-by:
   - n/a
 ---
 
-# Kubectl Plugins 
+# Kubectl Plugins
 
 ## Table of Contents
 
-* [Table of Contents](#table-of-contents)
-* [Summary](#summary)
-* [Motivation](#motivation)
-    * [Limitations of the Existing Design](#limitations-of-the-existing-design)
-    * [Goals](#goals)
-    * [Non-Goals](#non-goals)
-* [Proposal](#proposal)
-    * [Scenarios](#scenarios)
-    * [Implementation Details/Design/Constraints](#implementation-detailsdesign)
-        * [Naming Conventions](#naming-conventions)
-    * [Implementation Notes/Constraints](#implementation-notesconstraints)
-    * [Risks and Mitigations](#risks-and-mitigations)
-* [Graduation Criteria](#graduation-criteria)
-* [Implementation History](#implementation-history)
-* [Drawbacks](#drawbacks)
-* [Future Improvements/Considerations](#future-improvementsconsiderations)
+<!-- toc -->
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Limitations of the Existing Design](#limitations-of-the-existing-design)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [Scenarios](#scenarios)
+  - [Implementation Details/Design](#implementation-detailsdesign)
+    - [Naming Conventions](#naming-conventions)
+  - [Implementation Notes/Constraints](#implementation-notesconstraints)
+  - [Risks and Mitigations](#risks-and-mitigations)
+- [Graduation Criteria](#graduation-criteria)
+- [Implementation History](#implementation-history)
+- [Drawbacks](#drawbacks)
+- [Future Improvements/Considerations](#future-improvementsconsiderations)
+<!-- /toc -->
 
 ## Summary
 
@@ -86,9 +86,9 @@ release updates and changes at their own pace.
 
 ### Limitations of the Existing Design
 
-The existing alpha plugin system in `kubectl` presents a few limitations with its current design. 
+The existing alpha plugin system in `kubectl` presents a few limitations with its current design.
 It forces plugin scripts and executables to exist in a pre-determined location, requires a per-plugin metadata file for
-interpretation, and does not provide a clear way to override existing command paths or provide additional subcommands 
+interpretation, and does not provide a clear way to override existing command paths or provide additional subcommands
 without having to override a top-level command.
 
 The proposed git-style re-design of the plugin system allows us to implement extensibility requests from users that the
@@ -97,7 +97,7 @@ See https://github.com/kubernetes/kubernetes/issues/53640 and https://github.com
 
 ### Goals
 
-* Avoid any kind of installation process (no additional config, users drop an executable in their `PATH`, for example, 
+* Avoid any kind of installation process (no additional config, users drop an executable in their `PATH`, for example,
   and they are then able to use that plugin with `kubectl`).
   No additional configuration is needed, only the plugin executable.
   A plugin's filename determines the plugin's intention, such as which path in the command tree it applies to:
@@ -111,12 +111,12 @@ See https://github.com/kubernetes/kubernetes/issues/53640 and https://github.com
 
 ### Non-Goals
 
-* The new plugin mechanism will not be a "plugin installer" or wizard. It will not have specific or baked-in knowledge 
-  regarding a plugin's location or composition, nor will it provide a way to download or unpack plugins in a correct 
+* The new plugin mechanism will not be a "plugin installer" or wizard. It will not have specific or baked-in knowledge
+  regarding a plugin's location or composition, nor will it provide a way to download or unpack plugins in a correct
   location.
-* Plugin discovery is not a main focus of this mechanism. As such, it will not attempt to collect data about every 
+* Plugin discovery is not a main focus of this mechanism. As such, it will not attempt to collect data about every
   plugin that exists in an environment.
-* Plugin management is out of the scope of this design. A mechanism for updating and managing lifecycle of existing 
+* Plugin management is out of the scope of this design. A mechanism for updating and managing lifecycle of existing
   plugins should be covered as a separate design (See https://github.com/kubernetes/community/pull/2340).
 * Provide a standard package of common cli utilities that is consumed by `kubectl` and plugins alike.
   This should be done as an independent effort of this plugin mechanism.
@@ -132,7 +132,7 @@ See https://github.com/kubernetes/kubernetes/issues/53640 and https://github.com
 
 ### Implementation Details/Design
 
-The proposed design passes through all environment variables, flags, input, and output streams exactly as they are given 
+The proposed design passes through all environment variables, flags, input, and output streams exactly as they are given
 to the parent `kubectl` process. This has the effect of letting plugins run without the need for any special parsing
 or case-handling in `kubectl`.
 

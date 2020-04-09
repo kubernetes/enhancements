@@ -1,5 +1,4 @@
 ---
-kep-number: 11
 title: Switch CoreDNS to the default DNS
 authors:
   - "@johnbelamaric"
@@ -22,12 +21,18 @@ status: provisional
 
 ## Table of Contents
 
-* [Summary](#summary)
-* [Goals](#goals)
-* [Proposal](#proposal)
-    * [User Cases](#use-cases)
-* [Graduation Criteria](#graduation-criteria)
-* [Implementation History](#implementation-history)
+<!-- toc -->
+- [Summary](#summary)
+- [Goals](#goals)
+- [Proposal](#proposal)
+  - [Use Cases](#use-cases)
+    - [Kubeadm](#kubeadm)
+    - [Kube-up](#kube-up)
+    - [Minikube](#minikube)
+    - [Kops](#kops)
+- [Graduation Criteria](#graduation-criteria)
+- [Implementation History](#implementation-history)
+<!-- /toc -->
 
 ## Summary
 

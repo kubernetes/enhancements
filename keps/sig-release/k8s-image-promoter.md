@@ -4,7 +4,7 @@ authors:
   - "@javier-b-perez"
 owning-sig: sig-release
 participating-sigs:
-  - TBD
+  - wg-k8s-infra
 reviewers:
   - "@AishSundar"
   - "@BenTheElder"
@@ -21,17 +21,17 @@ status: implementable
 
 ## Table of Contents
 
-* [Table of Contents](#table-of-contents)
-* [Summary](#summary)
-* [Motivation](#motivation)
-  * [Goals](#goals)
-* [Proposal](#proposal)
-  * [Staging Container Registry](#staging-container-registry)
-  * [Production Container Registry](#production-container-registry)
-  * [Promotion Process](#promotion-process)
-* [Graduation Criteria](#graduation-criteria)
-* [Infrastructure Needed](#infrastructure-needed)
-
+<!-- toc -->
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+- [Proposal](#proposal)
+  - [Staging Container Registry](#staging-container-registry)
+  - [Production Container Registry](#production-container-registry)
+  - [Promotion Process](#promotion-process)
+- [Graduation Criteria](#graduation-criteria)
+- [Infrastructure Needed](#infrastructure-needed)
+<!-- /toc -->
 
 ## Summary
 

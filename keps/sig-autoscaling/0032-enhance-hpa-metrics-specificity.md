@@ -1,5 +1,4 @@
 ---
-kep-number: 0032
 title: Enhance HPA Metrics Specificity
 authors:
   - "@directxman12"
@@ -15,6 +14,7 @@ approvers:
   - "@directxman12"
 editor: "@directxman12"
 creation-date: 2018-04-19
+last-updated: 2018-04-19
 status: implemented
 ---
 
@@ -22,16 +22,17 @@ status: implemented
 
 ## Table of Contents
 
-* [Table of Contents](#table-of-contents)
-* [Summary](#summary)
-* [Motivation](#motivation)
-    * [Goals](#goals)
-    * [Non-Goals](#non-goals)
-* [Proposal](#proposal)
-    * [Risks and Mitigations](#risks-and-mitigations)
-* [Graduation Criteria](#graduation-criteria)
-* [Implementation History](#implementation-history)
-* [Alternatives](#alternatives)
+<!-- toc -->
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [Risks and Mitigations](#risks-and-mitigations)
+- [Graduation Criteria](#graduation-criteria)
+- [Implementation History](#implementation-history)
+- [Alternatives](#alternatives)
+<!-- /toc -->
 
 ## Summary
 

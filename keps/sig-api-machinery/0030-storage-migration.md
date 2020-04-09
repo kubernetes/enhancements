@@ -1,5 +1,4 @@
 ---
-kep-number: 30
 title: Migrating API objects to latest storage version
 authors:
   - "@xuchao"
@@ -12,36 +11,34 @@ approvers:
   - "@deads2k"
   - "@lavalamp"
 creation-date: 2018-08-06
-last-updated: 2018-10-11
-status: provisional
+last-updated: 2019-03-19
+status: implementable
 ---
 
 # Migrating API objects to latest storage version
 
 ## Table of Contents
 
-   * [Migrating API objects to latest storage version](#migrating-api-objects-to-latest-storage-version)
-      * [Table of Contents](#table-of-contents)
-      * [Summary](#summary)
-      * [Motivation](#motivation)
-         * [Goals](#goals)
-      * [Proposal](#proposal)
-         * [Alpha workflow](#alpha-workflow)
-         * [Alpha API](#alpha-api)
-         * [Failure recovery](#failure-recovery)
-         * [Beta workflow - Automation](#beta-workflow---automation)
-         * [Risks and Mitigations](#risks-and-mitigations)
-      * [Graduation Criteria](#graduation-criteria)
-      * [Alternatives](#alternatives)
-         * [update-storage-objects.sh](#update-storage-objectssh)
+<!-- toc -->
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+- [Proposal](#proposal)
+  - [Alpha workflow](#alpha-workflow)
+  - [Alpha API](#alpha-api)
+  - [Failure recovery](#failure-recovery)
+  - [Beta workflow - Automation](#beta-workflow---automation)
+  - [Risks and Mitigations](#risks-and-mitigations)
+- [Beta Graduation Criteria](#beta-graduation-criteria)
+- [Alternatives](#alternatives)
+  - [update-storage-objects.sh](#update-storage-objectssh)
+<!-- /toc -->
 
 ## Summary
 
 We propose a solution to migrate the stored API objects in Kubernetes clusters.
 In 2018 Q4, we will deliver a tool of alpha quality. The tool extends and
-improves based on the [oc adm migrate storage][] command.  We will integrate the
-storage migration into the Kubernetes upgrade process in 2019 Q1.  We will make
-the migration automatically triggered in 2019.
+improves based on the [oc adm migrate storage][] command.
 
 [oc adm migrate storage]:https://www.mankier.com/1/oc-adm-migrate-storage
 
@@ -69,12 +66,8 @@ A successful storage version migration tool must:
   process get preempted.
 * allow system administrators to track the migration progress.
 
-As to the deliverables,
-* in the short term, providing system administrators with a tool to migrate
-  the Kubernetes built-in API objects to the proper storage versions.
-* in the long term, automating the migration of Kubernetes built-in APIs, CR,
-  aggregated APIs without further burdening system administrators or Kubernetes
-  distributions.
+We will deliver a vendor-agnostic solution to automatically detect and migrate
+resources when the default storage version has changed.
 
 ## Proposal
 
@@ -232,15 +225,14 @@ It is a beta goal to automate the migration workflow. That is, migration does
 not need to be triggered manually by cluster admins, or by custom control loops
 of Kubernetes distributions.
 
-The automated migration should work for Kubernetes built-in resource types,
-custom resources, and aggregated resources.
+The [storage version hash][] is added to the Kubernetes discovery document as an
+alpha feature in 1.14. A [triggering controller][] is added to poll the discovery
+document, and creates migrations when the storage version hash of a resource
+changes. See [KEP][] for the details on the automated migration workflow.
 
-The trigger can be implemented as a separate control loop. It watches for the
-triggering signal, and creates `migration` to notify the **kube-migrator
-controller** to migrate a resource.
-
-We haven't reached consensus on what signal would trigger storage migration. We
-will revisit this section during beta design.
+[storage version hash]:https://github.com/kubernetes/kubernetes/pull/73191
+[triggering controller]:https://github.com/kubernetes-sigs/kube-storage-version-migrator/pull/21
+[KEP]:storage-migration-auto-trigger.md
 
 ### Risks and Mitigations
 
@@ -256,28 +248,33 @@ Before upgrading or downgrading the cluster, the cluster administrator must run
 migrations have completed. Otherwise the apiserver can crash, because it cannot
 interpret the serialized data in etcd. To mitigate, the cluster administrator
 can rollback the apiserver to the old version, and wait for the migration to
-complete. Even if the apiserver does not crash after upgrading or downgrading,
-the `migration` objects are not accurate anymore, because the default storage
-versions might have changed after upgrading or downgrading, but no one
-increments the `migration.spec.generation`.  Administrator needs to re-run the
-`kubectl run migrate --image=migrator-initializer --restart=OnFailure` command
-to recover.
+complete. 
 
-TODO: it is safe to rollback an apiserver to the previous configuration without
-waiting for the migration to complete. It is only unsafe to roll-forward or
-rollback twice. We need to design how to record the previous configuration.
+With the newly introduced [storageStates API][], the cluster administrator can
+fast upgrade/downgrade as long as the new apiserver binaries understand all
+versions recorded in storageState.status.persistedStorageVersionHashes.
 
-## Graduation Criteria
+[storageStates API]:storage-migration-auto-trigger.md#api-design
 
-* alpha: delivering a tool that implements the "alpha workflow" and "failure
-  recovery" sections. ETA is 2018 Q4. 
+## Beta Graduation Criteria
 
-* beta: implementing the "beta workflow" and integrating the storage migration
-  into Kubernetes upgrade tests.
+* Visibility
+  * metrics for the number of migrated objects per resource. This metric also
+    indirectly manifests the speed migration per resource.
+  * metrics for pending, succeeded, and failed migrations. This metric also
+    indirectly manifests the frequency of migrations per resource.
 
-* GA: TBD.
+* End-to-end testing
+  * testing migration for CRDs
+  * chaos testing the migrator with injected network errors, and injected
+    crashes of both the migrator and the apiserver.
+  * stress testing the migrator with large lists of to-be-migrated objects
+  * optional: integrating the migrator into the Kubernetes upgrade tests,
+    verifying all objects are readable after the cluster upgrade
 
-We will revisit this section in 2018 Q4. 
+* Deployment
+  * example manifests for installation (manifests are currently kept at
+    https://github.com/kubernetes-sigs/kube-storage-version-migrator/tree/master/manifests).
 
 ## Alternatives
 

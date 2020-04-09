@@ -1,58 +1,70 @@
 ---
-kep-number: 22
-title: Cloud Provider BaiduCloud
+title: Cloud Provider for BaiduCloud
 authors:
   - "@tizhou86"
 owning-sig: sig-cloud-provider
 reviewers:
   - "@andrewsykim"
+  - "@cheftako"
 approvers:
   - "@andrewsykim"
+  - "@cheftako"
   - "@hogepodge"
   - "@jagosan"
 editor: TBD
-creation-date: 2018-07-23
-last-updated: 2018-07-23
-status: provisional
-
+creation-date: 2020-02-25
+last-updated: 2020-02-25
+status: implementable
 ---
+
 # Cloud Provider BaiduCloud
 
 ## Table of Contents
 
-* [Table of Contents](#table-of-contents)
-* [Summary](#summary)
-* [Motivation](#motivation)
-    * [Goals](#goals)
-    * [Non-Goals](#non-goals)
-* [Requirements](#requirements)
-* [Proposal](#proposal)
+<!-- toc -->
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Prerequisites](#prerequisites)
+  - [Repository Requirements](#repository-requirements)
+  - [User Experience Reports](#user-experience-reports)
+  - [Testgrid Integration](#testgrid-integration)
+  - [CNCF Certified Kubernetes](#cncf-certified-kubernetes)
+  - [Documentation](#documentation)
+  - [Technical Leads are members of the Kubernetes Organization](#technical-leads-are-members-of-the-kubernetes-organization)
+- [Proposal](#proposal)
+  - [Subproject Leads](#subproject-leads)
+  - [Repositories](#repositories)
+  - [Meetings](#meetings)
+  - [Others](#others)
+<!-- /toc -->
 
 ## Summary
 
-Baidu is a gold member of CNCF and we have a large team working on Kubernetes and related projects like complex scheduling, heterogeneous computing, auto-scaling etc. We build cloud platform to support Baidu emerging business including autonomous driving, deep learning, blockchain by leveraging Kubernetes. We also provide public container services named cloud container engine(CCE).
+Baidu is a gold member of CNCF and have a large team working on Kubernetes and related projects like complex scheduling, heterogeneous computing, auto-scaling etc. Baidu build cloud platform to support Baidu emerging business including autonomous driving, deep learning, blockchain by leveraging Kubernetes. Baidu also provide public container services named cloud container engine(CCE) and other services like micro-services management platform(CNAP) and edge computing platform(BEC). In 2019, Baidu ranked 10th globally in Kubernetes contribution.
 
 ## Motivation
 
 ### Goals
 
-- Building, deploying, maintaining, supporting, and using Kubernetes on Baidu Cloud Container Engine(CCE) and Baidu Private Cloud(BPC). Both of the project are built on Kubernetes and related CNCF project.
+- Integrating and extending Kubernetes with Baidu Cloud Container Engine(CCE), Baidu Private Cloud(BPC), Baidu Micro-Services Platform(CNAP) Baidu Edge Computing(BEC).
 
-- Designing, discussing, and maintaining the cloud-provider-baidu repository under Github Kubernetes project.
+- Developing and maintaining cloud resource (node, routing, load balancing, etc.) interface and configurations for full lifecycle management with Kubernetes.
+
+- Developing and maintaining cloud vendor neutral Kubernetes related testing frameworks and tools.
 
 ### Non-Goals
 
-- Identify domain knowledge and work that can be contributed back to Kubernetes and related CNCF projects.
+- The subproject will not provide any standard technical support for specific cloud vendor.
 
-- Mentor CCE and BPC developers to contribute to CNCF projects.
-
-- Focus on Kubernetes and CNCF related projects, the discussion of development issue for CCE and BCP will not be included in the SIG.
+- The subproject will not work on features or bugs which are not related to Kubernetes integration.
 
 ## Prerequisites
 
 ### Repository Requirements
 
-The repository url which meets all the requirements is: https://github.com/baidu/cloud-provider-baiducloud
+[BaiduCloud Controller Manager](https://github.com/baidu/cloud-provider-baiducloud) is a working implementation of the Kubernetes Cloud Controller Manager.
 
 ### User Experience Reports
 
@@ -67,38 +79,41 @@ CCE-ticket-3: User want to have multi-tenant ability in a shared large CCE clust
 
 ### Testgrid Integration
 
-TODO
+Baidu applied for the testgrid in 2018, The original report for testgrid is [here](https://k8s-testgrid.appspot.com/conformance-cloud-provider-baiducloud). We are currently working on renewing the testgrid.
 
 ### CNCF Certified Kubernetes
 
-TODO
+For 1.16, The certified Kubernetes link is [here](https://github.com/cncf/k8s-conformance/tree/master/v1.16/baiducloud).
+For 1.13, The certified Kubernetes link is [here](https://github.com/cncf/k8s-conformance/tree/master/v1.13/baiducloud).
+For 1.11, The certified Kubernetes link is [here](https://github.com/cncf/k8s-conformance/tree/master/v1.11/baiducloud).
 
 ### Documentation
 
-TODO
+BaiduCloud provides documentations for users to build and utilize cloud controller manager. Please refer to this [link](https://github.com/baidu/cloud-provider-baiducloud) for more details.
 
 ### Technical Leads are members of the Kubernetes Organization
 
-TODO
+- @tizhou86 Ti Zhou, Kubernetes Member
 
 ## Proposal
 
 ### Subproject Leads
 
-The subproject will have 3 leaders at any given time. I will be an initial point of contact as we work on creating the subporject. My github account is: tizhou86
+The subproject will have 3 leaders at any given time. 
 
-I will be the subproject leader at this moment. My github account is: tizhou86.
+- @tizhou86 Ti Zhou, Kubernetes Member
+- @hello2mao Hongbin Mao, Kubernetes Member
+- @ZP-AlwaysWin Peng Zhang, Kubernetes Member
 
 ### Repositories
 
-The repository we propose at this moment is: kubernetes/cloud-provider-baiducloud, I'll be the initial point of contact.
+The repository we propose at this moment is: kubernetes/cloud-provider-baiducloud or kubernetes-sigs/cloud-provider-baiducloud. I'll be the initial point of contact.
 
 ### Meetings
 
-We plan to have bi-week online meeting at https://zoom.us/j/5134183949 on every next Wednesday 6pm PST.
-
+We plan to have bi-weekly online meeting on every next Wednesday 6pm PST. Meeting will have notes and agenda and be recorded.
 
 ### Others
 
-NA at this moment.
+NA
 

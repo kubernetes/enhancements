@@ -13,26 +13,31 @@ approvers:
   - "@bowei"
 editor: TBD
 creation-date: 2019-01-18
-last-updated: 2019-01-18
-status: provisional
+last-updated: 2019-02-11
+status: implementable
 ---
 
 # Configurable Pod DNS
 
 ## Table of Contents
 
-* [Table of Contents](#table-of-contents)
-* [Summary](#summary)
-* [Motivation](#motivation)
-    * [Goals](#goals)
-    * [Non-Goals](#non-goals)
-* [Proposal](#proposal)
-    * [Pod API examples](#pod-api-examples)
-    * [API changes](#api-changes)
-* [Graduation Criteria](#graduation-criteria)
-* [Implementation History](#implementation-history)
-
-[Tools for generating]: https://github.com/ekalinin/github-markdown-toc
+<!-- toc -->
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [Pod API examples](#pod-api-examples)
+    - [Host <code>/etc/resolv.conf</code>](#host-)
+    - [Override DNS server and search paths](#override-dns-server-and-search-paths)
+    - [Overriding <code>ndots</code>](#overriding-)
+  - [API changes](#api-changes)
+    - [Semantics](#semantics)
+    - [Invalid configurations](#invalid-configurations)
+  - [Test Plan](#test-plan)
+- [Graduation Criteria](#graduation-criteria)
+- [Implementation History](#implementation-history)
+<!-- /toc -->
 
 ## Summary
 
@@ -230,6 +235,14 @@ The follow configurations will result in an invalid Pod spec:
 * Nameservers or search paths exceed system limits. (Three nameservers, six
   search paths, 256 characters for `glibc`).
 * Invalid option appears for the given platform.
+
+### Test Plan
+
+The following end-to-end test is implemented in addition to unit tests:
+- Create a pod with dns config setup, including nameserver, search path and option.
+- Check if the `resolv.conf` file within the pod is configured properly per the given setup.
+- Send DNS request from the pod and make sure the customized nameserver and
+search path are taking effect.
 
 ## Graduation Criteria
 

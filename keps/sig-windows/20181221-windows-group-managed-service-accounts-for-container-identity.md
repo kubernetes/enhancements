@@ -21,32 +21,48 @@ approvers:
   - "@patricklang"
 editor: TBD
 creation-date: 2018-11-29
-last-updated: 2019-01-25
-status: provisional
+last-updated: 2020-03-20
+status: implemented
 ---
 
 # Windows Group Managed Service Accounts for Container Identity
 
 
 ## Table of Contents
-<!-- TOC -->
 
-- [Table of Contents](#table-of-contents)
+<!-- toc -->
 - [Summary](#summary)
 - [Motivation](#motivation)
-    - [Goals](#goals)
-    - [Non-Goals](#non-goals)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-    - [User Stories [optional]](#user-stories-optional)
-      - [Web Applications with MS SQL Server](#Web-Applications-with-MS-SQL-Server)
-    - [Implementation Details/Notes/Constraints [optional]](#implementation-detailsnotesconstraints-optional)
-    - [Risks and Mitigations](#risks-and-mitigations)
+  - [Background](#background)
+    - [What is Active Directory?](#what-is-active-directory)
+    - [What is a Windows service account?](#what-is-a-windows-service-account)
+    - [How is it applied to containers?](#how-is-it-applied-to-containers)
+  - [User Stories](#user-stories)
+    - [Web Applications with MS SQL Server](#web-applications-with-ms-sql-server)
+  - [Implementation Details/Notes/Constraints [optional]](#implementation-detailsnotesconstraints-optional)
+    - [GMSA specification for pods and containers](#gmsa-specification-for-pods-and-containers)
+    - [GMSAExpander webhook](#gmsaexpander-webhook)
+    - [GMSAExpander and GMSAAuthorizer Webhooks](#gmsaexpander-and-gmsaauthorizer-webhooks)
+    - [Changes in Kubelet/kuberuntime for Windows:](#changes-in-kubeletkuberuntime-for-windows)
+    - [Changes in CRI API:](#changes-in-cri-api)
+    - [Changes in Dockershim](#changes-in-dockershim)
+    - [Changes in CRIContainerD](#changes-in-cricontainerd)
+    - [Changes in Windows OCI runtime](#changes-in-windows-oci-runtime)
+  - [Risks and Mitigations](#risks-and-mitigations)
+    - [Threat vectors and countermeasures](#threat-vectors-and-countermeasures)
+    - [Transitioning from Alpha annotations to Beta/Stable fields](#transitioning-from-alpha-annotations-to-betastable-fields)
 - [Graduation Criteria](#graduation-criteria)
 - [Implementation History](#implementation-history)
 - [Drawbacks [optional]](#drawbacks-optional)
-- [Alternatives [optional]](#alternatives-optional)
-
-<!-- /TOC -->
+- [Alternatives](#alternatives)
+  - [Other authentication methods](#other-authentication-methods)
+  - [Injecting credentials from a volume](#injecting-credentials-from-a-volume)
+  - [Specifying only the name of GMSACredentialSpec objects in pod spec fields/annotations](#specifying-only-the-name-of-gmsacredentialspec-objects-in-pod-spec-fieldsannotations)
+  - [Enforce presence of GMSAAuthorizer and RBAC mode to enable GMSA functionality in Kubelet](#enforce-presence-of-gmsaauthorizer-and-rbac-mode-to-enable-gmsa-functionality-in-kubelet)
+<!-- /toc -->
 
 ## Summary
 
@@ -328,7 +344,7 @@ In the Alpha phase, `applyPlatformSpecificContainerConfig` will be enhanced (und
  - If `<containerName>.container.alpha.windows.kubernetes.io/gmsa-credential-spec` is absent and `pod.alpha.windows.kubernetes.io/gmsa-credential-spec` is absent effective credential spec is nil.
 Next, annotation: `container.alpha.windows.kubernetes.io/gmsa-credential-spec` in `ContainerConfig` will be populated with the effective credential spec of the container.
 
-In the Beta phase, the logic in `applyPlatformSpecificContainerConfig` to populate annotation `container.alpha.windows.kubernetes.io/gmsa-credential-spec` in `ContainerConfig` will be removed. Instad, `DetermineEffectiveSecurityContext` will be enhanced (also under a feature flag: `WindowsGMSA`) to analyze the `securityContext.windows.gmsaCredentialSpec` fields for the pod overall and each container in the podspec and determine an effective credential spec for each container in the same fashion described above (and as it does today for several fields like RunAsUser, etc). Next, `ContainerConfig.WindowsContainerSecurityContext.CredentialSpec` will be populated with the effective credential spec for the container.
+In the Beta phase, the logic in `applyPlatformSpecificContainerConfig` to populate annotation `container.alpha.windows.kubernetes.io/gmsa-credential-spec` in `ContainerConfig` will be removed. Instead, `DetermineEffectiveSecurityContext` will be enhanced (also under a feature flag: `WindowsGMSA`) to analyze the `securityContext.windows.gmsaCredentialSpec` fields for the pod overall and each container in the podspec and determine an effective credential spec for each container in the same fashion described above (and as it does today for several fields like RunAsUser, etc). Next, `ContainerConfig.WindowsContainerSecurityContext.CredentialSpec` will be populated with the effective credential spec for the container.
 
 #### Changes in CRI API:
 
@@ -338,9 +354,9 @@ In the Beta phase, a new field `CredentialSpec String` will be added to `Windows
 
 #### Changes in Dockershim
 
-During Alpha, `dockerService.CreateContainer` function will be enhanced (under a feature flag: `WindowsGMSA`) to create a temporary file with a unique name on the host file system under path `C:\ProgramData\docker\CredentialSpecs\`. This file will be populated with the contents of `container.alpha.windows.kubernetes.io/gmsa-credential-spec` annotation in `CreateContainerRequest.ContainerConfig`. Beta onwards, `dockerService.CreateContainer` (under a feature flag: `WindowsGMSA`) will use the contents of `WindowsContainerSecurityContext.CredentialSpec` to populate the file.
+The GMSA credential spec will be passed to Docker through temporary entries in the Windows registry under SOFTWARE\Microsoft\Windows NT\CurrentVersion\Virtualization\Containers\CredentialSpecs. The registry entries will be created with unique key names that have a common prefix. The contents of the registry entries will be used to populate `HostConfig.SecurityOpt` with a credential spec file specification. The registry entries will be deleted as soon as `CreateContainer` has been invoked on the Docker client. An alternative implementation considered was to utilize files instead of registry entries but the path and drive where the files can be stored is hard to determine as there could be multiple installations of different versions of Docker engine under different directory paths. 
 
-The temporary credential spec file's path will be used to populate `HostConfig.SecurityOpt` with a credential spec file specification. The credential spec file will be deleted as soon as `CreateContainer` has been invoked on the Docker client.
+During Alpha, `dockerService.CreateContainer` function will be enhanced (under a feature flag: `WindowsGMSA`) to create the temporary registry entries and populate them with the contents of `container.alpha.windows.kubernetes.io/gmsa-credential-spec` annotation in `CreateContainerRequest.ContainerConfig`. Beta onwards, `dockerService.CreateContainer` (under a feature flag: `WindowsGMSA`) will use the contents of `WindowsContainerSecurityContext.CredentialSpec` to populate the registry values.
 
 #### Changes in CRIContainerD
 

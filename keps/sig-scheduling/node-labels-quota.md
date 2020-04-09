@@ -1,11 +1,11 @@
 ---
-kep-number: 27
 title: Resource Quota based on Node Labels
 authors:
   - "@vishh"
   - "@bsalamat"
 owning-sig: sig-scheduling
-participating-sigs: sig-architecture
+participating-sigs:
+  - sig-architecture
 reviewers:
   - "@derekwaynecarr"
   - "@davidopp"
@@ -13,10 +13,26 @@ approvers:
   - TBD
 editor: TBD
 creation-date: 2018-08-23
+last-updated: 2018-08-30
 status: provisional
 ---
 
 # Resource Quota based on Node Labels
+
+## Table of Contents
+
+<!-- toc -->
+- [Summary](#summary)
+- [Motivation](#motivation)
+- [Potential solutions](#potential-solutions)
+  - [Solution A - Extend Resource Quota Scopes](#solution-a---extend-resource-quota-scopes)
+    - [Pros](#pros)
+    - [Cons](#cons)
+  - [Solution B - Extend Resource Quota to include an explicit Node Selector field](#solution-b---extend-resource-quota-to-include-an-explicit-node-selector-field)
+  - [Solution C - CRD for expressing Resource Quota for extended resources](#solution-c---crd-for-expressing-resource-quota-for-extended-resources)
+    - [Pros](#pros-1)
+    - [Cons](#cons-1)
+<!-- /toc -->
 
 ## Summary
 
