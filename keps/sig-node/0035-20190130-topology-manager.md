@@ -187,8 +187,8 @@ The Topology Manager implements the pod admit handler interface and participates
 When the `Admit()` function is called, the Topology Manager collects topology hints from other Kubelet components on a container by container basis.
 
 If the hints are not compatible, the Topology Manager may choose to reject the pod. 
-Behavior in this case depends on a new field of Pod Spec(`v1core.PodSpec.Topology.Policy`) to describe desired hardware topology of Pod's resource assignment.
-The field(`v1core.PodSpec.Topology.Policy`) supports five policies: `none`(default), `best-effort`, `restricted`,  `single-numa-node` and `pod-level-single-numa-node`.
+Behavior in this case depends on a new field of Pod Spec(`v1core.PodSpec.topologyPolicy`) to describe desired hardware topology of Pod's resource assignment.
+The field(`v1core.PodSpec.topologyPolicy`) supports five policies: `none`(default), `best-effort`, `restricted`,  `single-numa-node` and `pod-level-single-numa-node`.
 
 A topology hint indicates a preference for some well-known local resources.
 The Topology Hint currently consists of
@@ -201,7 +201,7 @@ The Topology Hint currently consists of
 The Topology Manager component will be disabled behind a feature gate until graduation from alpha to beta.
 
 #### Topology Policy in Pod Spec
-The value of `v1core.PodSpec.Topology.Policy` field indicates the desired topology of Pod's resource assignment.
+The value of `v1core.PodSpec.topologyPolicy` field indicates the desired topology of Pod's resource assignment.
 This value determines how Topology Manager coordinates hardware resource assignment of container during Pod admission.
 If the value is omitted or equal to `none`, the Topology Manager will not intervene in Pod admission.
 
@@ -209,8 +209,7 @@ If the value is omitted or equal to `none`, the Topology Manager will not interv
 apiVersion: v1
 kind: Pod
 Spec:
-  topology:
-    policy: restricted
+  topologyPolicy: restricted
   containers:
   - name: cnn
     Resources:
@@ -385,7 +384,7 @@ A new feature gate will be added to enable the Topology Manager feature. This fe
 
 ### Changes to Existing Components
 
-1. Add `v1core.PodSpec.Topology.Policy` field to Pod Spec.
+1. Add `v1core.PodSpec.topologyPolicy` field to Pod Spec.
     1. Add a field to specify preferred topology policy for a Pod.
 2. Kubelet consults Topology Manager for pod admission (discussed above.)
 3. Add two implementations of Topology Manager interface and a feature gate.
@@ -449,7 +448,7 @@ _Figure: Topology Manager fetches affinity from hint providers._
 
 ### Deprecates the Policy Flag of Topology Manager
 Since the Pod Spec is able to specify preferred topology policy of a Pod
-and the Topology Manager is able to read `v1core.PodSpec.Topology.Policy` field when it is configured with the dynamic policy,
+and the Topology Manager is able to read `v1core.PodSpec.topologyPolicy` field when it is configured with the dynamic policy,
 the policy flag will be deprecated on Beta stage(v1.20) and the dynamic policy will be a default behavior of the Topology Manager.
 
 Before the deprecation of the policy flag,
@@ -461,9 +460,9 @@ The behavior of Topology policies is listed below.
   * Kubelet does not consult with Topology Manager for placement decisions.
 - **best-effort/restricted/single-numa-node**
   * If a node is configured with these policies, the Topology Manager will coordinate assignment of resources based on configured topology policy for all pods that were scheduled to the node.
-  * The Topology Manager will not read the `v1core.PodSpec.Topology.Policy` field of Pod Spec.
+  * The Topology Manager will not read the `v1core.PodSpec.topologyPolicy` field of Pod Spec.
 - **dynamic**
-  * The Topology Manager reads `v1core.PodSpec.Topology.Policy` field to coordinate assignment of resources for a Pod.
+  * The Topology Manager reads `v1core.PodSpec.topologyPolicy` field to coordinate assignment of resources for a Pod.
 
 ## Practical challenges
 Non-NUMA aware scheduler may bind a pod to a node, where topology requirements cannot be satisfied. Topology Manager will reject a pod admission with TopologyError and pod will result in a `Terminated` state on a node.
