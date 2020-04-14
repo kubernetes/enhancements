@@ -164,20 +164,20 @@ Therefore, for each change we recommend the following process to adopt the new l
   * The legacy alpha label `alpha.service-controller.kubernetes.io/exclude-balancer` is marked as deprecated
   * Deprecation of node role behavior in tree is announced for 1.20, with a detailed plan for cluster administrators and deployers
   * Gates are officially alpha
-* Release 3 (1.18):
+* Release 3 (1.19):
   * The old label `alpha.service-controller.kubernetes.io/exclude-balancer` is removed
   * For both labels, usage is reviewed and as appropriate the label is declared beta/GA and the feature gate is set on
   * All Kubernetes deployments should be updated to add node labels as appropriate: `kubectl label nodes -l node-role.kubernetes.io/master LABEL_A=VALUE_A`
   * Documentation will be provided on making the transition
   * Deployments may set `LegacyNodeRoleBehavior=false` after they have set the appropriate labels.
-* Release 4 (1.19):
+* Release 4 (1.20):
   * Default the legacy gate `LegacyNodeRoleBehavior` to off. Admins whose deployments still use the old labels may set `LegacyNodeRoleBehavior=true` during 1.19 to get the legacy behavior.
   * Deployments should stop setting `LegacyNodeRoleBehavior=false` if they opted out early.
-* Release 5 (1.20):
+* Release 5 (1.21):
   * The `LegacyNodeRoleBehavior` gate and all feature-level gates are removed, components that attempt to set these gates will fail to start.
   * Code that references node-roles within Kubernetes will be removed.
 
-In Release 5 (which could be as early as 1.20) this KEP will be considered complete.
+In Release 5 (which could be as early as 1.21) this KEP will be considered complete.
 
 #### Instructions for deployers
 
