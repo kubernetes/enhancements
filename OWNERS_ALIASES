@@ -164,36 +164,13 @@ aliases:
     - spiffxp
     - timothysc
 ## BEGIN CUSTOM CONTENT
-  pm-maintainers:
-    - calebamiles # SIG PM Chair
-    - idvoretskyi # SIG PM Chair
-    - jdumars # SIG PM Chair
-    - justaugustus # SIG PM Chair
-  features-maintainers:
-    - justaugustus # 1.12 Features Lead
-    - claurence # 1.14 Enhancements Lead
-    - kacole2 # 1.15 / 1.13 Enhancements Lead
-  kep-process-approvers:
+  enhancements-approvers:
     - calebamiles
     - idvoretskyi
     - jdumars
     - justaugustus
-  kep-process-reviewers:
+  enhancements-reviewers:
     - lachie83
-  kep-reviewers:
-    - bgrant0607
-    - derekwaynecarr
-    - dims
-    - jbeda
-    - jdumars
-    - mattfarina
-  kep-approvers:
-    - bgrant0607
-    - derekwaynecarr
-    - dims
-    - jbeda
-    - jdumars
-    - mattfarina
   provider-aws:
     - d-nishi
     - justinsb
