@@ -98,6 +98,7 @@ tags, and then generate with `hack/update-toc.sh`.
       - [DNS](#dns)
       - [EndpointSlice](#endpointslice)
       - [Endpoint TTL](#endpoint-ttl)
+      - [Service Types](#service-types)
     - [Consumption of EndpointSlice](#consumption-of-endpointslice)
   - [Constraints and Conflict Resolution](#constraints-and-conflict-resolution)
     - [Global Properties](#global-properties)
@@ -503,6 +504,33 @@ the connection with the source cluster is confirmed alive. A separate
 controller, that may run inside each cluster, is responsible for watching each
 lease and removing all remaining `EndpointSlices` associated with a cluster when
 that cluster’s lease expires.
+
+#### Service Types
+
+- `ClusterIP`: This is the the straightforward case most of the proposal
+  assumes. Each `EndpointSlice` associated with the exported service is combined
+  with slices from other clusters to make up the supercluster service. They will
+  be imported to the cluster behind the supercluster IP.
+
+```
+<<[UNRESOLVED re:stateful sets]>>
+  Today's headless services likely don't want a VIP and may not function
+  properly behind one. It probably doesn't make sense to export a current
+  headless service to the supercluster, it would work, but likely not the way
+  you want.
+<<[/UNRESOLVED]>>
+```
+- `NodePort` and `LoadBalancer`: These create `ClusterIP` services that would
+  sync as expected. For example If you export a `NodePort` service, the
+  resulting cross-cluster service will still be a supercluster IP type. You
+  could use node ports to access the cluster-local service in the source
+  cluster, but not in any other cluster, and it would only route to local
+  endpoints.
+- `ExternalName`: It doesn't make sense to export an `ExternalName` service.
+  They can't be merged with other exports, and it seems like it would only
+  complicate deployments by even attempting to stretch them across clusters.
+  Instead, regular `ExternalName` type `Services` should be created in each
+  cluster individually.
 
 ### Consumption of EndpointSlice
 
