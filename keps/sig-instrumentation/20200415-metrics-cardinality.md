@@ -32,15 +32,14 @@ status: proposal
 
 ## Summary
 
-Metrics emitted by OSS Kubernetes components can have unbounded dimensions, which in turn implies that the metric itself is unbounded in cardinality. Though often innocous, the failure mode of such metrics can be catastrophic, since metrics are held in memory (by default) by the instrumented process (which has a finite amount of memory).
+Metrics emitted by OSS Kubernetes components can have unbounded dimensions, which in turn implies that the metric itself is unbounded in cardinality. Though often innocous, the failure mode of such metrics can be catastrophic, since metrics are held in memory (by default) by the instrumented process (which has a finite amount of memory). This KEP proposes introducing a mechanism through which we can specify a finite set of label values for a metric label.
 
-Usually there are triggering conditions which cause community members to realize that a metric is problematic; oftentimes a metric's dimensions increase in number due to a new OSS feature or, alternatively, increasing the useage of an existing feature can also increase metric cardinality.
-
-Historically, we have patched these metrics in backwards incompatible ways (i.e. removing metrics, deleting labels, etc) and cherry-picked the fixes to older releases. This process is manual and has proven to be both laborious and time-consuming, especially when the metric cardinality issue can be weaponized in a security exploit (making the specific incident considerably higher priority).
 
 ## Motivation
 
+Metric with unbounded dimensions can cause OSS Kubernetes components to OOM (not a desirable outcome). Historically, we have patched these metrics in backwards incompatible ways (i.e. removing metrics, deleting labels, etc) and cherry-picked the fixes to older releases (todo add links to issues/PRs). This process is manual and has proven to be both laborious and time-consuming, especially when the metric cardinality issue can be weaponized in a security exploit (todo add links to issues/PRs), since that greatly increases the urgency to apply a fix.
 
+Usually there are triggering conditions which cause community members to realize that a metric is problematic; oftentimes a metric's dimensions increase in number due to a new OSS feature or, alternatively, increasing the useage of an existing feature can also increase metric cardinality.
 
 ### Goals
 
