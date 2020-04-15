@@ -1,0 +1,13 @@
+title: Dynamic Authentication Config
+kep-number: 1688
+authors:
+  - "@enj"
+owning-sig: sig-auth
+status: provisional
+creation-date: 2020-04-15
+reviewers:
+  - "@liggitt"
+  - "@mikedanese"
+approvers:
+  - "@liggitt"
+  - "@mikedanese"
