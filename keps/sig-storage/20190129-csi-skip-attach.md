@@ -12,8 +12,8 @@ approvers:
   - "@saad-ali"
 editor: TBD
 creation-date: 2019-01-29
-last-updated: 2019-01-29
-status: implementable
+last-updated: 2020-03-09
+status: implemented
 see-also:
   - "https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/container-storage-interface-skip-attach.md"
 replaces:
