@@ -236,8 +236,8 @@ func (v *CounterVec) WithLabelValues(lvs ...string) CounterMetric {
 		newLabels[i] = unexpectedLabel
 	}
 
+	return v.CounterVec.WithLabelValues(newLabels...)
 	// END INJECTED CODE
-	return v.CounterVec.WithLabelValues(lvs...)
 }
 ```
 
