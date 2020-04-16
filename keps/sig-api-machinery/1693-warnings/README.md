@@ -13,8 +13,8 @@
   - [Test Plan](#test-plan)
   - [Risks and Mitigations](#risks-and-mitigations)
   - [Graduation Criteria](#graduation-criteria)
-    - [Beta](#beta)
-    - [GA](#ga)
+    - [Beta graduation](#beta-graduation)
+    - [GA graduation](#ga-graduation)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Implementation History](#implementation-history)
@@ -181,17 +181,20 @@ drive automated action in clients, graduation criteria is primarily oriented
 toward the stability level of the administrator metrics, and the ability to 
 disable the server sending warnings during the beta period.
 
-#### Beta
+#### Beta graduation
 
+* Test plan is implemented
 * API server output of `Warning` headers for deprecated API use is feature-gated and enabled by default
-* Server metric for deprecated API use is marked as beta-level
+* The metric for deprecated API use is registered at [stability level `ALPHA`](https://github.com/kubernetes/enhancements/blob/master/keps/sig-instrumentation/20190404-kubernetes-control-plane-metrics-stability.md#stability-classes)
 * client-go logs warnings by default
 * kubectl outputs warnings to stderr
 
-#### GA
+#### GA graduation
 
-* API server output of warning headers for deprecated API use is unconditionally enabled
-* Server metric for deprecated API use is marked as stable
+* At least two releases after Beta
+* Gathered feedback on metric structure and use from multi-cluster admins
+* API server output of `Warning` headers for deprecated API use is unconditionally enabled
+* Server metric for deprecated API use is registered at [stability level `STABLE`](https://github.com/kubernetes/enhancements/blob/master/keps/sig-instrumentation/20190404-kubernetes-control-plane-metrics-stability.md#stability-classes)
 
 ### Upgrade / Downgrade Strategy
 
