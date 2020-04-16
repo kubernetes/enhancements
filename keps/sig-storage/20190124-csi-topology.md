@@ -13,8 +13,8 @@ approvers:
   - "@saad-ali"
 editor: TBD
 creation-date: 2019-01-24
-last-updated: 2019-10-14
-status: implementable
+last-updated: 2020-04-16
+status: implemented
 see-also:
   - n/a
 replaces:
@@ -122,4 +122,4 @@ Initially topology tests are run against a single CSI driver. As the CSI test su
 
 * K8s 1.12: Alpha
 * K8s 1.14: Beta
-* K8s 1.17: Targeting GA
+* K8s 1.17: GA

@@ -16,8 +16,8 @@ approvers:
   - saad-ali
 editor: TBD
 creation-date: 2019-01-24
-last-updated: 2019-01-24
-status: implementable
+last-updated: 2020-04-16
+status: implemented
 see-also:
   - "https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/volume-topology-scheduling.md"
 replaces:
@@ -73,6 +73,7 @@ superseded-by:
   - [K8s 1.9: Alpha](#k8s-19-alpha)
   - [K8s 1.10: Beta](#k8s-110-beta)
   - [K8s 1.12: Beta](#k8s-112-beta)
+  - [K8s 1.14: GA](#k8s-114-ga)
 - [Infrastructure Needed](#infrastructure-needed)
 <!-- /toc -->
 
@@ -771,6 +772,9 @@ was added to help users migrate from the alpha annotation to the beta field.
 
 * If PV.volumeMode = `Filesystem` but the local volume path was a block device, then Kubernetes will automatically
 format the device with the filesystem type specified in `FSType`.
+
+### K8s 1.14: GA
+
 
 ## Infrastructure Needed
 
