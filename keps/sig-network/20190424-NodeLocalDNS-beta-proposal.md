@@ -12,7 +12,7 @@ approvers:
   - "@thockin"
 creation-date: 2019-04-24
 last-updated: 2019-04-25
-status: implementable
+status: implemented
 see-also:
   - "/keps/sig-network/0030-nodelocal-dns-cache.md"
 ---
