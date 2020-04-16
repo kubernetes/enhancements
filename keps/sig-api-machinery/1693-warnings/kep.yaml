@@ -1,0 +1,21 @@
+title: Warning mechanism for use of deprecated APIs
+kep-number: 1693
+authors:
+  - "@liggitt"
+owning-sig: sig-api-machinery
+participating-sigs:
+  - sig-architecture
+  - sig-cli
+  - sig-instrumentation
+status: provisional
+creation-date: 2020-04-16
+reviewers:
+  - "@lavalamp"
+  - "@deads2k"
+  - "@seans3"
+  - "@logicalhan"
+approvers:
+  - "@lavalamp"
+  - "@smarterclayton"
+see-also:
+  - "/keps/sig-architecture/1635-prevent-permabeta"
