@@ -203,7 +203,7 @@ const (
 | Regarding | Action | Reason | ReportingController | Related | 
 | ----------| -------| -------| --------------------|---------| 
 | Node X | BecameUnreachable | HeartbeatTooOld | kubernetes.io/node-ctrl | <nil> |
-| Node Y | FailedToAttachVolume | Unknown | kubernetes.io/pv-attach-ctrl | PVC X |
+| PVC X | FailedToAttachVolume | Unknown | kubernetes.io/pv-attach-ctrl | Node Y |
 | ReplicaSet X | FailedToInstantiatePod | QuotaExceeded | kubernetes.io/replica-set-ctrl | <nil> |
 | ReplicaSet X | InstantiatedPod | | kubernetes.io/replica-set-ctrl | Pod Y |
 | Ingress X | CreatedLoadBalancer | | kubernetes.io/ingress-ctrl | <nil> |
@@ -256,7 +256,7 @@ The main goal of this change is to limit number of API requests sent to the API 
 
 In the absence of errors in the system (all Pods are happily running/starting, Nodes are healthy, etc.) the number of Events is easily manageable by the system. This means that it's enough to concentrate on erroneous states and limit number of Events published when something's wrong with the cluster.
 
-There are two cases to consider: Event series, which result in ~1 API call per ~30 minutes, so won't cause a problem until there's a huge number of them; and huge number of non-series Events. To improve the latter we require that no high-cardinality data are put into any of Regarding, Action, Reason, ReportingController, ReportingInstance, Related fields. Which bound the number of Events to O(number of objects in the system^2).
+There are two cases to consider: Event series, which result in ~1 API call per ~30 minutes, so won't cause a problem until there's a huge number of them; and huge number of non-series Events. To improve the latter we require that no high-cardinality data are put into any of Regarding, Action, Reason, ReportingController, ReportingInstance, Related fields. Which bound the number of Events to O(number of objects in the system^2). For the present we don't have any automatic way to ensure this, so we will rely on manual inspection and review.
 
 #### Changes in EventRecorder
 
