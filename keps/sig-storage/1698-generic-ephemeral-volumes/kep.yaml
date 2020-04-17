@@ -1,0 +1,30 @@
+title: generic ephemeral inline volumes
+kep-number: 1698
+authors:
+  - "@pohly"
+owning-sig: sig-storage
+participating-sigs:
+  - sig-storage
+status: implementable
+creation-date: 2020-04-17
+reviewers:
+  - "@jsafrane"
+approvers:
+  - "@saad-ali"
+stage: alpha
+latest-milestone: "v1.19"
+milestone:
+  alpha: "v1.19"
+  beta: ""
+  stable: ""
+feature-gate:
+  name: GenericEphemeralVolumes
+  components:
+    - kube-apiserver
+    - kube-controller-manager
+    - kubelet
+disable-supported: true
+
+# The following PRR answers are required at beta release
+#metrics:
+#  - my_feature_metric
