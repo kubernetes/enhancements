@@ -8,9 +8,8 @@ authors:
   - "@johnbelamaric"
   - "@justaugustus"
   - "@thockin"
-owning-sig: sig-pm
+owning-sig: sig-architecture
 participating-sigs:
-  - sig-architecture
 status: provisional
 creation-date: 2018-09-08
 reviewers:

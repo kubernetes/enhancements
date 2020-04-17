@@ -2,7 +2,6 @@ title: Issue Triage Workflow and Automation
 status: provisional
 owning-sig: sig-contributor-experience
 participating-sigs:
-  - sig-pm
   - sig-release
 authors:
   - "@justaugustus"
