@@ -3,7 +3,7 @@ title: Kubernetes Enhancement Proposal Process
 authors:
   - "@calebamiles"
   - "@jbeda"
-owning-sig: sig-pm
+owning-sig: sig-architecture
 reviewers:
   - "@timothysc"
 approvers:
