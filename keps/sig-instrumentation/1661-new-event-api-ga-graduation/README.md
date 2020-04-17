@@ -1,4 +1,4 @@
-# Event API Migration
+# New Event API GA Graduation
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
