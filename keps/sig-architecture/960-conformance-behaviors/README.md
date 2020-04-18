@@ -344,7 +344,7 @@ The proposed solution consists of these deliverables:
   calculate coverage. (Phase 2)
 * Process documentation and supporting tooling to enable developers to move
   their features to GA and add conformance behaviors and tests with minimal
-  review burden and entaglements. (Phase 2)
+  review burden and entanglements. (Phase 2)
 * Migration of the existing tests to use behaviors, and to updates to the
   CNCF conformance program validation of tests to use the behaviors rather
   than simply the test results. (Phase 2)
