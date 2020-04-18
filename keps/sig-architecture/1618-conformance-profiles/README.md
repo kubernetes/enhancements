@@ -263,6 +263,14 @@ As an end user deploying an application on Kubernetes, I must be able to
 identify the profiles supported by my cluster and the application I wish to
 deploy.
 
+ - Should be able to define which tests to run up-front (eg: conformance, plus
+   profiles, profiles only, etc)
+ - May be able to detect or enumerate list of eligible profiles for a given
+   cluster (eg: it looks like you have a cloud provider configured, it looks
+   like you have a storage driver, etc)
+ - Need to be able to selectively schedule Profile tests to nodes that support
+   them (eg: Windows to windows nodes, GPU to nodes that have gpus, etc.)
+
 ### Notes/Constraints/Caveats (optional)
 
 <!--
