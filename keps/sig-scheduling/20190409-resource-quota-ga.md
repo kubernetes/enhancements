@@ -17,8 +17,8 @@ approvers:
   - "@derekwaynecarr"
 editor: TBD
 creation-date: 2019-04-23
-last-updated: 2019-04-23
-status: implementable
+last-updated: 2020-04-18
+status: implemented
 see-also:
 replaces:
 superseded-by:
@@ -93,12 +93,12 @@ We should verify the automatic creation of quota and see if it causes any proble
 
 ### Graduation Criteria
 
-- [ ] Remove limitation of critical pod creation in `kube-system` namespace in pod priority admission plugin
-- [ ] Create a `AdmissionConfiguration` object with `limitedResources` to prevent creation of system critical pods in all namespaces
-- [ ] Add a default quota with scope selector to allow critical pods to be created in `kube-system` namespace only
-- [ ] Graduate ResourceQuotaScopeSelectors API to GA
-- [ ] Needs a conformance test
-- [ ] Update documents to reflect the changes
+- [x] Remove limitation of critical pod creation in `kube-system` namespace in pod priority admission plugin
+- [x] Create a `AdmissionConfiguration` object with `limitedResources` to prevent creation of system critical pods in all namespaces
+- [x] Add a default quota with scope selector to allow critical pods to be created in `kube-system` namespace only
+- [x] Graduate ResourceQuotaScopeSelectors API to GA
+- [x] Needs a conformance test
+- [x] Update documents to reflect the changes
 
 ## Implementation History
 
