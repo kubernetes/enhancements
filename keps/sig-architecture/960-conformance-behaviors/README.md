@@ -32,16 +32,17 @@
     - [Role: SIG](#role-sig)
       - [Define expected behaviors for their area of responsibility](#define-expected-behaviors-for-their-area-of-responsibility)
   - [Solution Overview](#solution-overview)
-  - [Representation of Behaviors](#representation-of-behaviors)
-  - [Behavior and Test Generation Tooling](#behavior-and-test-generation-tooling)
+    - [Representation of Behaviors (Phase 1)](#representation-of-behaviors-phase-1)
+    - [Generating Lists of Behaviors (Phase 1)](#generating-lists-of-behaviors-phase-1)
+    - [Coverage Tooling (Phase 2)](#coverage-tooling-phase-2)
+    - [Developer and CI Support (Phase 2)](#developer-and-ci-support-phase-2)
+  - [Generating Test Scaffolding (Phase 3)](#generating-test-scaffolding-phase-3)
     - [Handwritten Behaviour Scenarios](#handwritten-behaviour-scenarios)
-  - [Coverage Tooling](#coverage-tooling)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Phase 1](#phase-1)
-    - [Tying tests back to behaviors](#tying-tests-back-to-behaviors)
-    - [kubetestgen](#kubetestgen)
   - [Phase 2](#phase-2)
+  - [Phase 3](#phase-3)
   - [Graduation Criteria](#graduation-criteria)
   - [Future development](#future-development)
     - [Complex Storytelling combined with json/yaml](#complex-storytelling-combined-with-jsonyaml)
@@ -336,14 +337,22 @@ PR must touch file in conformance-specific directory
   owned by the SIG
 
 ### Solution Overview
-The proposed solution consists of four deliverables:
-* A machine readable format to define conforming behaviors.
-* Tooling to generate lists of behaviors from the API schemas.
+The proposed solution consists of these deliverables:
+* A machine readable format to define conforming behaviors. (Phase 1)
+* Tooling to generate lists of behaviors from the API schemas. (Phase 1)
 * Tooling to compare the implemented tests to the list of behaviors and
-  calculate coverage.
+  calculate coverage. (Phase 2)
+* Process documentation and supporting tooling to enable developers to move
+  their features to GA and add conformance behaviors and tests with minimal
+  review burden and entaglements. (Phase 2)
+* Migration of the existing tests to use behaviors, and to updates to the
+  CNCF conformance program validation of tests to use the behaviors rather
+  than simply the test results. (Phase 2)
 * Tooling to generate tests and test scaffolding to evaluate those behaviors.
+  (Phase 3)
 
-### Representation of Behaviors
+
+#### Representation of Behaviors (Phase 1)
 
 Behaviors will be captured in prose, which is in turn embedded in a YAML file
 along with meta-data about the behavior. More details on exactly what defines
@@ -375,7 +384,7 @@ Typical suites defined for any given feature will include:
    and other features.
 
 Each suite may be stored in a separate file in a directory for the specific
-SIG. For example, a "sig-node" my have files such as:
+SIG. For example, a `sig-node` directory may have files such as:
 these files:
  * `api-generated.yaml` describing the set of behaviors auto-generated from the
    API specification.
@@ -399,12 +408,16 @@ test/conformance/behaviors
 The relationship between tests and behaviors is captured in the conformance test
 metadata, which contains a list of behavior IDs covered by the test.
 
-The structure of the behavior YAML files is described by these Go types:
+The structure of the behavior YAML files is described by these Go types, which
+have been updated for Phase 2 to add the `Status` field. Use of this field is
+described later in this KEP. The actual implementation of these types can be
+found in
+[types.go](https://git.k8s.io/kubernetes/test/conformance/behaviors/types.go).
 
 ```go
 // Area defines a general grouping of behaviors
 type Area struct {
-        // Area is the name of the area.
+        // Area is the name of the area or SIG.
         Area   string  `json:"area,omitempty"`
 
         // Suites is a list containing each suite of behaviors for this area.
@@ -414,9 +427,6 @@ type Area struct {
 type Suite struct {
         // Suite is the name of this suite.
         Suite       string     `json:"suite,omitempty"`
-
-        // Level is `Conformance` or `Validation`.
-        Level       string     `json:"level,omitempty"`
 
         // Description is a human-friendly description of this suite, possibly
         // for inclusion in the conformance reports.
@@ -428,29 +438,30 @@ type Suite struct {
 }
 
 type Behavior struct {
-        // Id is a unique identifier for this behavior, and will be used to tie
+        // ID is a unique identifier for this behavior, and will be used to tie
         // tests and their results back to this behavior. For example, a
         // behavior describing the defaulting of the PodSpec nodeSelector might
         // have an id like `pods/spec/nodeSelector/default`.
-        Id          string `json:"id,omitempty"`
+        ID          string `json:"id,omitempty"`
 
-        // ApiObject is the object whose behavior is being described. In
+        // APIObject is the object whose behavior is being described. In
         // particular, in generated behaviors, this is the object to which
-        // ApiField belongs. For example, `core.v1.PodSpec` or
+        // APIField belongs. For example, `core.v1.PodSpec` or
         // `core.v1.EnvFromSource`.
-        ApiObject   string `json:"apiObject,omitempty"`
+        APIObject   string `json:"apiObject,omitempty"`
 
-        // ApiField is filled out for generated tests that are testing the
+        // APIField is filled out for generated tests that are testing the
         // behavior associated with a particular field. For example, if
-        // ApiObject is `core.v1.PodSpec`, this could be `nodeSelector`.
-        ApiField    string `json:"apiField,omitempty"`
+        // APIObject is `core.v1.PodSpec`, this could be `nodeSelector`.
+        APIField    string `json:"apiField,omitempty"`
 
-        // ApiType is the data type of the field; for example, `string`.
-        ApiType     string `json:"apiType,omitempty"`
+        // APIType is the data type of the field; for example, `string`.
+        APIType     string `json:"apiType,omitempty"`
 
-        // Generated is set to `true` if this entry was generated by tooling
-        // rather than hand-written.
-        Generated   bool   `json:"generated,omitempty"`
+        // Status is used to create provisional behaviors prior to them becoming
+        // part of the actual conformance criteria, as well as to deprecate
+        // prior behaviors.
+        Status      string `json:"status,omitempty"`
 
         // Description specifies the behavior. For those generated from fields,
         // this will identify if the behavior in question is for defaulting,
@@ -460,7 +471,33 @@ type Behavior struct {
 }
 ```
 
-### Behavior and Test Generation Tooling
+#### Generating Lists of Behaviors (Phase 1)
+
+In Phase 1, a `kubetestgen` tool was created that can be used to generate
+candidate behaviors from the API spec, as described below. In Phase 2 this tool
+is combined into `kubeconform`, which will handle all of the conformance-related
+tooling for developers and CI.
+
+#### Coverage Tooling (Phase 2)
+
+In Phase 1, conformance test meta-data was updated to include a `Behaviors:`
+list, which can contain each of the behavior IDs for behaviors explicitly
+covered by that test. Implicit behaviors should not be included in the list.
+
+In Phase 2, existing tests will be updated to properly set this field, and
+the `kubeconform` tool will be updated to calculate behavior coverage.
+
+#### Developer and CI Support (Phase 2)
+
+Phase 2 will define the process and tooling used by the developer to move a
+feature through to GA. This will include documenting the process and producing
+any supporting tooling as part of `kubeconform`, to be described in the Design
+Details below.
+
+A CI job, and necessary supporting tooling, to verify coverage for features
+going to GA will also be implemented.
+
+### Generating Test Scaffolding (Phase 3)
 
 Some sets of behaviors may be tested in a similar, mechanical way. Basic CRUD
 operations, including updates to specific fields and constraints on immutable
@@ -529,18 +566,6 @@ define:
 With those two, the same creation and update scaffolding defined for individual
 field updates can be reused.
 
-### Coverage Tooling
-
-In order to tie behaviors back to the tests that are generated, including
-existing e2e tests that already cover behaviors, new tags with behavior IDs will
-be added to conformance tests. Using the existing conformance framework
-mechanism allows incremental adoption of this proposal. Thus, rather than a new
-conformance framework function, test authors will indicate the behaviors covered
-by their tests with a tag in the `framework.ConformanceIt` call.
-
-This also enables a single test to validate multiple behaviors, although that
-should be discouraged.
-
 ### Risks and Mitigations
 
 The behavior definitions may not be properly updated if a change is made to a
@@ -549,11 +574,16 @@ However, given that the behaviors defining conformance are generally stable,
 this is not a high risk.
 
 ## Design Details
+<<[UNRESOLVED]>>
+@johnbelamaric: note this section is still not updated for Phase 2
+<<[/UNRESOLVED]>>
 
 Delivery of this KEP shall be done in the following phases:
 
 ### Phase 1
 
+Phase 1 defined the basic behavior structure and enabled the generation of
+behaviors from API schemas.
 In Phase 1, we will:
 * Implement the behavior formats and types described above. This will include
   separate suites for tooling-generated behaviors and handcrafted behaviors.
@@ -565,52 +595,6 @@ In Phase 1, we will:
   tooling around generation of conformance reports will not be changed in this
   phase.
 
-#### Tying tests back to behaviors
-The proposal above mentions `tests.yaml` but does not describe a format for that
-file. The current conformance frameworks requests that during promotion of the
-test to conformance, the developer adds metadata, including the release name,
-the test name, and description. Tests are identified in the
-[conformance.txt](https://github.com/kubernetes/kubernetes/blob/master/test/conformance/testdata/conformance.yaml)
-file by their Ginko description. Unfortunately, this does not produce unique
-test names, as it does not include all of the `Describe` calls from higher in
-the call tree (see this
-[slack discussion](https://kubernetes.slack.com/archives/C78F00H99/p1566324743171500)
-for more details).
-
-As part of this KEP, tests being promoted to conformance must add a unique
-identifier, `TestId`, in their conformance metadata. This will be used, along with
-the behavior IDs, to map which tests validate which behaviors in the
-`tests.yaml` file. The Go structures for `tests.yaml` are shown below.
-
-```go
-type BehaviorTestList struct {
-       Tests []BehaviorTest `json:"tests,omitempty"`
-}
-
-type BehaviorTest struct {
-        BehaviorId  string `json:"behaviorId,omitempty"`
-        TestId      string `json:"testId,omitempty"`
-
-        // Description is optional and is intended to make reviewing easier; the
-        // expectation would be that tooling would copy the value here.
-        Description string `json:"description,omitempty"`
-}
-```
-
-#### kubetestgen
-
-In this phase, the tool will only generate behavior lists in the format defined
-above. It will accept the following flags:
-* `-schema` - a URL or local file name pointing to the JSON OpenAPI schema
-* `-resource` - the specific OpenAPI definition for which to generate behaviors
-* `-area` - the name to use for the area
-* `-suite` - the name to use for the suite
-* `-behaviorsdir` - the path to the behaviors directory (default current
-  directory)
-
-The tool will read the schema, locate the specific definition, and generate the
-`{area}` directory and `{suite}.yaml` as described in the proposal above.
-
 ### Phase 2
 
 In Phase 2, we will:
@@ -620,6 +604,8 @@ In Phase 2, we will:
 * Add test scaffolding generation in parallel with the behavior list generation.
 * Implement coverage metrics comparing behavior lists to the coverage captured
   by existing conformance tests.
+
+### Phase 3
 
 ### Graduation Criteria
 As this is a tooling component and is not user facing, it does not follow the
@@ -848,6 +834,8 @@ It('test string')`
   directory structure for showing behavior/test separation
 - 2019-10-01: Added detailed design; marked implementable
 - 2020-03-26: Reformat for new KEP structure
+- 2020-04-17: Updated to add use cases, reflect what was implemented in Phase 1
+  and add design details for Phase 2
 
 ## Drawbacks
 
