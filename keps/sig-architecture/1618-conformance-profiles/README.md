@@ -235,9 +235,31 @@ the system.  The goal here is to make this feel real for users without getting
 bogged down.
 -->
 
-#### Story 1
+#### Role: Developer
 
-#### Story 2
+As a developer of an optional feature, I must be able to define behaviors for
+that feature that a vendor claiming support for the feature must follow.
+
+#### Role: Plugin API & Plugin Developers
+
+As a developer a pluggable API for Kubernetes, such as CNI, CSI, CRI, and
+Ingress, I must be able to define behaviors which I expect plugins to follow,
+and verify that a specific plugin properly implements those behaviors.
+
+As an developer of a plugin for Kubernetes, I must be able to verify that my
+plugin conforms to the expected behaviors.
+
+#### Role: Application Packager
+
+As an application packager preparing an application for deployment on
+Kubernetes, I must be able to identify the profiles required to run the packaged
+workloads.
+
+#### Role: End User
+
+As an end user deploying an application on Kubernetes, I must be able to
+identify the profiles supported by my cluster and the application I wish to
+deploy.
 
 ### Notes/Constraints/Caveats (optional)
 
