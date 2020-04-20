@@ -1,0 +1,19 @@
+title: New Event API GA Graduation
+authors:
+  - "@gmarek"
+  - "@chelseychen"
+owning-sig: sig-instrumentation
+participating-sigs:
+  - sig-instrumentation
+  - sig-scalability
+  - sig-architecture
+status: provisional
+creation-date: 2020-04-01
+reviewers:
+  - "@yastij"
+  - "@wojtekt"
+approvers:
+  - "@wojtekt"
+  - "@brancz"
+see-also:
+replaces:
