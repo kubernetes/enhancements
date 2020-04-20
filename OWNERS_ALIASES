@@ -45,6 +45,7 @@ aliases:
   sig-instrumentation-leads:
     - brancz
     - ehashman
+    - dashpole
     - logicalhan
   sig-multicluster-leads:
     - csbell
