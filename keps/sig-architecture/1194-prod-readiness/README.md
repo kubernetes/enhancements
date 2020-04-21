@@ -1,23 +1,3 @@
----
-title: Production Readiness Review Process
-authors:
-  - "@johnbelamaric"
-owning-sig: sig-architecture
-participating-sigs:
-  - sig-release
-reviewers:
-  - "@derekwaynecarr"
-  - "@vishh"
-  - "@justaugustus"
-  - "@alejandrox1"
-approvers:
-  - "@derekwaynecarr"
-  - "@dims"
-creation-date: 2019-07-31
-last-updated: 2019-11-12
-status: implementable
----
-
 # Production Readiness Review Process
 
 ## Table of Contents
@@ -31,6 +11,8 @@ status: implementable
 - [Proposal](#proposal)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
+  - [Phase 1 - Research and Pilot](#phase-1---research-and-pilot)
+  - [Phase 2 - Implementation](#phase-2---implementation)
 - [Implementation History](#implementation-history)
 <!-- /toc -->
 
@@ -43,13 +25,13 @@ For enhancements that make changes to code or processes/procedures in core Kuber
 
 Check these off as they are completed for the Release Team to track. These checklist items _must_ be updated for the enhancement to be released.
 
-- [ ] kubernetes/enhancements issue in release milestone, which links to KEP (this should be a link to the KEP location in kubernetes/enhancements, not the initial KEP PR)
-- [ ] KEP approvers have set the KEP status to `implementable`
-- [ ] Design details are appropriately documented
-- [ ] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
-- [ ] Graduation criteria is in place
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] kubernetes/enhancements issue in release milestone, which links to KEP (this should be a link to the KEP location in kubernetes/enhancements, not the initial KEP PR)
+- [x] KEP approvers have set the KEP status to `implementable`
+- [x] Design details are appropriately documented
+- [n/a] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [n/a] Graduation criteria is in place
+- [x] "Implementation History" section is up-to-date for milestone
+- [n/a] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 **Note:** Any PRs to move a KEP to `implementable` or significant changes once it is marked `implementable` should be approved by each of the KEP approvers. If any of those approvers is no longer appropriate than changes to that list should be approved by the remaining approvers and/or the owning SIG (or SIG-arch for cross cutting KEPs).
@@ -82,8 +64,6 @@ oversights in the graduation criteria.
 
 This KEP proposes a process to ensure that production concerns are addressed in
 all new features, at a level appropriate to the features' maturity levels.
-
-* TBD: Document some experiences that motivate the need for this.
 
 ### Goals
 
@@ -137,7 +117,7 @@ include a means of:
 
 ## Design Details
 
-Phase 1 - Research and Pilot
+### Phase 1 - Research and Pilot
 * Targeted to the 1.17 cycle.
 * Setup a pilot PRR team, which will:
   * Deliver an initial PRR questionnaire and pilot it with non-blocking PRRs for
@@ -152,14 +132,35 @@ Phase 1 - Research and Pilot
     time.
   * How do we measure the effectiveness of this effort?
 
+Status update on Phase 1:
 
-Phase 2 - Implementation
-* Details TBD based on outcome of Phase 1.
-* Develop the complete PRR questionnaire.
-* Design and implement the tooling to identify features needing PRR review.
+* Pilot was conducted in 1.17 and 1.18. The questionnaire has been through several
+  revisions and will be required in 1.19 as part of the KEP process.
+* Research was done via a survey, a report on which will be produced, presented
+  to SIG Architecture, and linked in here.
+* Follow-up interviews are in the planning stage as of the beginning of the 1.19
+  release cycle.
+* Post-mortem of past enhancements has not been completed and is deferred until it
+  is deemed necessary by the subproject team.
+* Effectiveness measurement will come via a regular survey of users.
+
+### Phase 2 - Implementation
+
+The questionnaire was put into place in Phase 1, so what remains for Phase 2 is
+to document the review process and implement the tooling supporting it.
+
+The process will be enforced in the enhancements repository. When an enhancement
+is targeted at a release, a production readiness review will be necessary.
+Initially, the Enhancements Team will label the enhancement issue with a
+`prr-required` label; eventually tooling may do this automatically. The
+associated KEP must then be sure to add an approver from the
+`prod-readiness-review` team, which will be created in the `OWNERS_ALIASES` file
+of the enhancements repo. The enhancements verification CI must validate that a
+PRR approver is assigned to the KEP, and approves it prior to merging.
 
 ## Implementation History
 
 - 2019-07-31: Created
 - 2019-10-17: Review feedback, phase 1 implementable
 - 2019-11-12: Add establishment of subproject
+- 2020-04-21: Update for phase 2
