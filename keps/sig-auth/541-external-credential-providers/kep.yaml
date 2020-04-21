@@ -1,0 +1,16 @@
+title: External credential providers
+kep-number: 541
+authors:
+  - "@awly"
+owning-sig: sig-auth
+participating-sigs:
+  - sig-cli
+  - sig-api-machinery
+status: implementable
+creation-date: 2019-07-11
+reviewers:
+  - "@liggitt"
+  - "@mikedanese"
+approvers:
+  - "@liggitt"
+  - "@mikedanese"

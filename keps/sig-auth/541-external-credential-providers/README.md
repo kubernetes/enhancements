@@ -1,22 +1,3 @@
----
-title: External credential providers
-authors:
-  - "@awly"
-owning-sig: sig-auth
-participating-sigs:
-  - sig-cli
-  - sig-api-machinery
-reviewers:
-  - "@liggitt"
-  - "@mikedanese"
-approvers:
-  - "@liggitt"
-  - "@mikedanese"
-creation-date: 2019-07-11
-last-updated: 2019-07-11
-status: implementable
----
-
 # External credential providers
 
 ## Table of Contents
