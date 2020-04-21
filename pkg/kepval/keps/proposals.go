@@ -38,6 +38,7 @@ func (p *Proposals) AddProposal(proposal *Proposal) {
 type Proposal struct {
 	ID                string   `json:"id"`
 	Title             string   `json:"title" yaml:"title"`
+	Number            string   `json:"kep-number" yaml:"kep-number"`
 	Authors           []string `json:"authors" yaml:",flow"`
 	OwningSIG         string   `json:"owningSig" yaml:"owning-sig"`
 	ParticipatingSIGs []string `json:"participatingSigs" yaml:"participating-sigs,flow,omitempty"`
@@ -81,6 +82,12 @@ func (p *Parser) Parse(in io.Reader) *Proposal {
 	if err := scanner.Err(); err != nil {
 		proposal.Error = errors.Wrap(err, "error reading file")
 		return proposal
+	}
+
+	// this file is just the KEP metadata
+	if count == 0 {
+		metadata = body.Bytes()
+		proposal.Contents = ""
 	}
 
 	// First do structural checks
