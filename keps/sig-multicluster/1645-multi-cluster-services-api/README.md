@@ -258,21 +258,21 @@ a `ServiceExport` in a cluster will signify that the `Service` with the same
 name and namespace as the export should be visible to other clusters in the
 supercluster.
 
-Another CRD called `ImportedService` will be introduced to store information
+Another CRD called `ServiceImport` will be introduced to store information
 about the services exported from each cluster, e.g. topology. This is analogous
 to the traditional `Service` type in Kubernetes. Each cluster will have a
-coresponding `ImportedService` for each uniquely named `Service` that has been
+coresponding `ServiceImport` for each uniquely named `Service` that has been
 exported within the supercluster, referenced by namespaced name.
 
 If multiple clusters export a `Service` with the same namespaced name, they will
 be recognized as a single combined service. For example, if 5 clusters export
-`my-svc.my-ns`, there will be one `ImportedService` named `my-svc` in the
+`my-svc.my-ns`, there will be one `ServiceImport` named `my-svc` in the
 `my-ns` namespace and it will be associated with endpoints from all exporting
-clusters. Properties of the `ImportedService` (e.g. ports, topology) will be
+clusters. Properties of the `ServiceImport` (e.g. ports, topology) will be
 derived from a merger of component `Service` properties.
 
 Existing implementations of Kubernetes Service API (e.g. kube-proxy) can be
-extended to present `ImportedServices` alongside traditional `Services`.
+extended to present `ServiceImports` alongside traditional `Services`.
 
 
 ### User Stories (optional)
@@ -536,9 +536,9 @@ that cluster’s lease expires.
 
 To consume a supercluster service, users will use the domain name associated
 with their `ServiceExport`. When the mcsd-controller sees a `ServiceExport`, a
-`ImportedService` will be introduced, which can be largely ignored by the user. 
+`ServiceImport` will be introduced, which can be largely ignored by the user. 
 
-An `ImportedService` is a service that may have endpoints in other clusters.
+An `ServiceImport` is a service that may have endpoints in other clusters.
 This includes 3 scenarios:
 1. This service is running entirely in different cluster(s)
 1. This service has endpoints in other cluster(s) and in this cluster
@@ -546,12 +546,12 @@ This includes 3 scenarios:
 
 For each exported service, one `ServiceExport` will exist in each cluster that
 runs the service. The mcsd-controller will create and maintain a derived
-`ImportedService` in each cluster within the supercluster (see: [constraints and
+`ServiceImport` in each cluster within the supercluster (see: [constraints and
 conflict resolution](#constraints-and-conflict-resolution)). If all `ServiceExport` instances are deleted, each
-`ImportedService` will also be deleted from all clusters.
+`ServiceImport` will also be deleted from all clusters.
 
-Since a given `ImportedService` may be backed by multiple `EndpointSlices`, a
-given `EndpointSlice` will reference its `ImportedService` using the label
+Since a given `ServiceImport` may be backed by multiple `EndpointSlices`, a
+given `EndpointSlice` will reference its `ServiceImport` using the label
 `multicluster.kubernetes.io/imported-service-name` similarly to how an
 `EndpointSlice` is associated with its `Service` in a single cluster. Each
 imported `EndpointSlice` will also have a
@@ -559,17 +559,17 @@ imported `EndpointSlice` will also have a
 identifier for the cluster.
 
 ```golang
-// ImportedService declares that the specified service should be exported to other clusters.
-type ImportedService struct {
+// ServiceImport declares that the specified service should be exported to other clusters.
+type ServiceImport struct {
  metav1.TypeMeta `json:",inline"`
  metav1.ObjectMeta `json:"metadata,omitempty"`
 
- Spec ImportedServiceSpec `json:"spec,omitempty"`
+ Spec ServiceImportSpec `json:"spec,omitempty"`
 }
 
-// ImportedServiceSpec contains the current status of an imported service and the
+// ServiceImportSpec contains the current status of an imported service and the
 // information necessary to consume it
-type ImportedServiceSpec struct {
+type ServiceImportSpec struct {
  Ports []ServicePort `json:"ports"`
  Clusters []ClusterSpec `json:"clusters"`
  IPFamily corev1.IPFamily `json:"ipFamily"`
@@ -587,7 +587,7 @@ type ClusterSpec struct {
 ```
 ```yaml
 apiVersion: multicluster.k8s.io/v1alpha1
-kind: ImportedService
+kind: ServiceImport
 metadata:
   name: my-svc
   namespace: my-ns
@@ -615,7 +615,7 @@ metadata:
   ownerReferences:
   - apiVersion: multicluster.k8s.io/v1alpha1
     controller: false
-    kind: ImportedService
+    kind: ServiceImport
     name: my-svc
 addressType: IPv4
 ports:
@@ -631,7 +631,7 @@ endpoints:
      topology.kubernetes.io/zone: us-west2-a
 ```
 
-The `ImportedService.Spec.IP` (VIP) can be used to access this service from within this cluster. 
+The `ServiceImport.Spec.IP` (VIP) can be used to access this service from within this cluster. 
 
 ## Constraints and Conflict Resolution
 
@@ -650,7 +650,7 @@ there is no clear way to determine how a service should be accessed. **If any
 global properties have conflicts that can not be resolved, a condition will be
 set on the `ServiceExport` with a description of the conflict. The service will
 not be synced, and an error will be set on the status of each affected
-`ServiceExport` and any previously-derived `ImportedServices` will be deleted
+`ServiceExport` and any previously-derived `ServiceImports` will be deleted
 from each cluster in the supercluster.**
 
 
@@ -700,7 +700,7 @@ from applying affinity on a per-slice basis so we will carry it forward.
 A `Service`’s `topologyKeys` dictate how endpoints in all `EndpointSlices`
 associated with a given service should be applied to each node. While a single
 `Service` may have multiple `EndpointSlices`, each `EndpointSlice` will only
-ever originate from a single `Service`. `ImportedService` will contain
+ever originate from a single `Service`. `ServiceImport` will contain
 label-mapped lists of `topologyKeys` synced from each originating exported
 service. Kube-proxy will filter endpoints in each slice based only on the
 `topologyKeys` defined on the slice’s specific source `Service`.
@@ -894,7 +894,7 @@ retain the flexibility of selectors.
 replaced with an annotation, e.g. `multicluster.kubernetes.io/export`. When a
 service is found with the annotation, it would be considered marked for export
 to the supercluster. The controller would then create `EndpointSlices` and an
-`ImportedService` in each cluster exactly as described above. Unfortunately,
+`ServiceImport` in each cluster exactly as described above. Unfortunately,
 `Service` does not have an extensible status and there is no way to represent
 the state of the export on the annotated `Service`. We could extend
 `Service.Status` to include `Conditions` and provide the flexibility we need,
