@@ -175,6 +175,10 @@ aliases:
     - johnbelamaric
     - justaugustus
     - mrbobbytables
+  prod-readiness-approvers:
+    - johnbelamaric
+    - deads2k
+    - wojtek-t
   provider-aws:
     - d-nishi
     - justinsb
