@@ -19,7 +19,7 @@ approvers:
   - "@derekwaynecarr"
 editor: Louise Daly
 creation-date: 2019-01-30
-last-updated: 2019-01-30
+last-updated: 2019-04-22
 status: implementable
 see-also:
 replaces:
@@ -54,6 +54,7 @@ _Reviewers:_
       - [New Interfaces](#new-interfaces)
     - [Feature Gate and Kubelet Flags](#feature-gate-and-kubelet-flags)
     - [Changes to Existing Components](#changes-to-existing-components)
+    - [API change: add topology filed for node and pod](#api-change-add-topology-filed-for-node-and-pod)
 - [Graduation Criteria](#graduation-criteria)
   - [Alpha (v1.16) [COMPLETED]](#alpha-v116-completed)
   - [Alpha (v1.17) [COMPLETED]](#alpha-v117-completed)
@@ -412,6 +413,50 @@ _Figure: Topology Manager hint provider registration._
 ![topology-manager-hints](https://user-images.githubusercontent.com/379372/47447543-a0463780-d772-11e8-8412-8bf4a0571513.png)
 
 _Figure: Topology Manager fetches affinity from hint providers._
+
+### API change: add topology filed for node and pod
+
+In order to be able to schedule better, we need to bring the topological state of nodes and pods to the upper layer.
+Because want to compatible with various scheduling strategies, we only consider how to satisfy the information required for scheduling, and the specific scheduling logic is handed over to the scheduler.
+
+Suppose use `Node.status.topology` as `Node.status.capacity` and `Pod.status.topology` as `Pod.spec.containers.[*].resources` to calculate Node topology useage in scheduler filter stage, We can schedule pods with topology policy just like regular pods.
+
+Topological fields are controlled by kubelet, the field structure and description in the annotations below:
+
+```yaml
+topology:
+  # How the topology is grouped, we have numa now. Looking forward to other topologies, such as nvlink.
+  numaNode:
+    # numa id
+    "0":
+      # some core resource
+      "cpu": 2
+      # some deivce plugin reported resource
+      "nvidia.com/gpu": 1
+    # Use -1 for without numa affinity
+    "-1":
+      ...
+```
+
+For Node api, managed by kubelet, show current node topology:
+
+```yaml
+apiVersion: v1
+kind: Node
+status:
+  topology:
+    ...
+```
+
+For Pod api, managed by kubelet, set on allocate Pod resource:
+
+```yaml
+apiVersion: v1
+kind: Pod
+status:
+  topology:
+    ...
+```
 
 # Graduation Criteria
 
