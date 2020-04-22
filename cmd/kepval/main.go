@@ -32,7 +32,7 @@ func run() int {
 	for _, filename := range os.Args[1:] {
 		file, err := os.Open(filename)
 		if err != nil {
-			fmt.Printf("could not open file: %v", err)
+			fmt.Printf("could not open file %s: %v\n", filename, err)
 			return 1
 		}
 		defer file.Close()
@@ -46,6 +46,6 @@ func run() int {
 		return 1
 	}
 
-	fmt.Printf("No validation errors : %v\n", os.Args[1:])
+	fmt.Printf("No validation errors: %v\n", os.Args[1:])
 	return 0
 }

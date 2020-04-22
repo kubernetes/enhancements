@@ -24,7 +24,8 @@ import (
 )
 
 const (
-	kepsDir = "keps"
+	kepsDir     = "keps"
+	kepMetadata = "kep.yaml"
 )
 
 // This is the actual validation check of all keps in this repo
@@ -40,7 +41,19 @@ func TestValidation(t *testing.T) {
 			if info.IsDir() {
 				return nil
 			}
-			if ignore(info.Name()) {
+
+			dir := filepath.Dir(path)
+			// true if the file is a symlink
+			if info.Mode()&os.ModeSymlink != 0 {
+				// assume symlink from old KEP location to new
+				newLocation, err := os.Readlink(path)
+				if err != nil {
+					return err
+				}
+				files = append(files, filepath.Join(dir, filepath.Dir(newLocation), kepMetadata))
+				return nil
+			}
+			if ignore(dir, info.Name()) {
 				return nil
 			}
 			files = append(files, path)
@@ -69,10 +82,19 @@ func TestValidation(t *testing.T) {
 }
 
 // ignore certain files in the keps/ subdirectory
-func ignore(name string) bool {
+func ignore(dir, name string) bool {
+	if dir == "../../keps/NNNN-kep-template" {
+		return true // ignore the template directory because its metadata file does not use a valid sig name
+	}
+
+	if name == kepMetadata {
+		return false // always check metadata files
+	}
+
 	if !strings.HasSuffix(name, "md") {
 		return true
 	}
+
 	if name == "0023-documentation-for-images.md" ||
 		name == "0004-cloud-provider-template.md" ||
 		name == "YYYYMMDD-kep-template.md" ||
@@ -80,5 +102,6 @@ func ignore(name string) bool {
 		name == "kep-faq.md" {
 		return true
 	}
+
 	return false
 }

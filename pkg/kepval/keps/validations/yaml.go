@@ -91,21 +91,25 @@ var listGroups []string
 func init() {
 	resp, err := http.Get("https://raw.githubusercontent.com/kubernetes/community/master/sigs.yaml")
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "unable to fetch list of sigs: %v", err)
+		fmt.Fprintf(os.Stderr, "unable to fetch list of sigs: %v\n", err)
 		os.Exit(1)
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		fmt.Fprintf(os.Stderr, "invalid status code when fetching list of sigs: %d\n", resp.StatusCode)
+		os.Exit(1)
+	}
 	re := regexp.MustCompile(`- dir: (.*)$`)
 
 	scanner := bufio.NewScanner(resp.Body)
 	for scanner.Scan() {
 		match := re.FindStringSubmatch(scanner.Text())
-		if len(match)>0 {
+		if len(match) > 0 {
 			listGroups = append(listGroups, match[1])
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		fmt.Fprintf(os.Stderr, "unable to scan list of sigs: %v", err)
+		fmt.Fprintf(os.Stderr, "unable to scan list of sigs: %v\n", err)
 		os.Exit(1)
 	}
 	sort.Strings(listGroups)
