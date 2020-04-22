@@ -81,6 +81,11 @@ The current network policy tests have a few issues which, without increasing tec
 - *Understandability*: They are difficult to reason about, due to lack of consistency, completeness, and code duplication.
 - *Extensibility*: Extending them is a verbose process, which leads to more sprawl in terms of test implementation.
 - *Performance*: They suffer from low performance due to the high number of pods created.  Network policy tests can take 30 minutes or longer.  The lack of completeness in positive controls, if fixed, could allow us to rapidly skip many tests destined for failure due to cluster health issues not related to network policy.
+
+### Other benefits
+
+In general, we think that outside the original motivations, these tests will help us along the goal of having more dynamic and easy to integrate CI for network policy tests... 
+
 - *Dynamic scale*: In addition to increasing the performance of these tests, we also should expand their ability to evaluate CNI's with highly dynamic, realistic workloads, outputting summary metrics.
 - *Documentation and Community*: The overall situation for these tests is that they are underdocumented and poorly understood by the community, and it's not clear how these tests are vetted when they are modified; this makes it difficult for CNI providers to compare and contrast compatibility and conformance to K8s standards for NetworkPolicys.
 - *Continuous Integration*: As part of this overall effort, once this test suite is more reliable and proven to be faster, running a basic verification of it in CI with some collection of CNI providers which could feed back into upstream K8s test results would be ideal, so that we know the NetworkPolicy test and specifications, as defined, are implemented/implementable correctly by at least some CNI provider.
