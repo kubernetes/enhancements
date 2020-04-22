@@ -99,7 +99,7 @@ For a TLDR, see https://github.com/vmware-tanzu/antrea/blob/master/hack/netpol/p
 
 Conceptually we have 5 concrete changes that we are proposing:
 
-1. Introduce a simple "DSL" (in golang) for defining network policy's and reachability matrices.
+1. Introduce a simple "DSL" (in golang) for defining network policies and reachability matrices.
   - Currently, the word `DSL` might be a misnomer, but has taken hold.  Specifically, we are using a Builder API to concsiely define NetworkPolicies concisely.
   - The DSL examples are later in this document, for example: 
     - DSL for defining test expectations:
