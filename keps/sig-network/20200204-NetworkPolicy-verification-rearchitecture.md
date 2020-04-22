@@ -117,9 +117,14 @@ Conceptually we have 5 concrete changes that we are proposing:
 3. Rewrite all existing network_policy.go tests using the above DSL using (mostly the same) ginkgo descriptions as current tests do.
 4. Integrate tests with ginkgo by simply replacing existing network policy test declarations to use the new DSL
   - putting initialization into a BeforeAll block for scaffold pods/namespaces
-5. Annotate these tests (in the code) with the CNIs they were run on, the last time they were running, and the test results (in lieu of waiting to decide on a canonical CNI).  This should be done by anyone who presently modifies the testing code.  
-- Since the V1 tests are stable and the population of recent individuals to update these tests are almost always folks who work on CNIs or closely on CNI provider technology, we assert that this is a reasonable expectation to adhere to. 
-- The authors of *this* KEP will of course, while implementing the changes, do the first round of these annotations to set the precedent.
+5. Find **some way** to have an agreed system of record (annotating code, submitting results to a mailing list, updating a markdown file, etc) where we can record successfull test runs for code changes, until a day comes where we run NEtworkPolicy tests in CI.  One proposed solution is to add a simple annotation to the code.
+```
+// Tested by: abhiraut,
+// CNI: calico 11.0
+// K8s: 1.18.2
+// Date: December 25th, 2021 on 4 nodes
+// Result: all tests passed in 15:10 minutes.
+```
 
 There are many other concepts discussed after this, justifying and looking at the future of how this work might effect the way we think about network policy testing in the future, including how we might
 use this work to make the e2e suite more declarative in the future, but these concrete goals are the endpoint for this specific KEP.
@@ -291,11 +296,10 @@ TODO: use multiple pods in contiguous CIDR to validate CIDR traffic matching
   NetworkPolicy rule.
 
 ### Understandability
-
-TODO: test case names mean something, and each test case should have accompanying diagram
  
 In this next case, we'll take another example test, which is meant to confirm that intra-namespace
-traffic rules work properly.  This test has a misleading description, and an incomplete test matrix as well.
+traffic rules work properly.  This test has a misleading description, and an incomplete test matrix as well (see "Figure 2" 
+for details on this test).
  
 "Understandability" and "Completeness" are not entirely orthogonal - as illustrated here.  The fact that
 we do not cover all communication scenarios (as we did in Figure 1b), means that we have to carefully
@@ -310,7 +314,7 @@ enforcing traffic *only* from a different namespace also means:
 As an example of the pitfall in this test, a network policy provider which, by default
 allowed *all internamespaced traffic as whitelisted*, would pass this test while violating
 the semantics of it.
- 
+
 ```
 +----------------------------------------------------------------------------------------------+
 |                                                                                              |
