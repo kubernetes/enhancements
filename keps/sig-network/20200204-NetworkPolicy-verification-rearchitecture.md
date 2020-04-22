@@ -428,6 +428,9 @@ In contrast, we can express the same and test using the API (including its entir
 	builder := &NetworkPolicySpecBuilder{}
 	builder = builder.SetName("myns", "allow-podb-in-nsb").SetPodSelector(map[string]string{"pod": "b"})
 	builder.SetTypeIngress()
+	// Note: We also can implement
+	// a builder that is more descriptive, such as, 
+	// builder.AddIngress().WithProtocol(tcp).ToPort(80).FromNs("x"), in the final implementation...
 	builder.AddIngress(nil, &p80, nil, nil, map[string]string{"pod-name": "b"}, nil, map[string]string{"ns-name": "b"}, nil)
 	policy := builder.Get()
 	reachability := NewReachability(allPods, false)
