@@ -19,7 +19,7 @@ approvers:
   - "@derekwaynecarr"
 editor: Louise Daly
 creation-date: 2019-01-30
-last-updated: 2019-01-30
+last-updated: 2019-04-22
 status: implementable
 see-also:
 replaces:
@@ -54,6 +54,7 @@ _Reviewers:_
       - [New Interfaces](#new-interfaces)
     - [Feature Gate and Kubelet Flags](#feature-gate-and-kubelet-flags)
     - [Changes to Existing Components](#changes-to-existing-components)
+    - [API change: Node status filed add topology tree](#api-change-Node-status-filed-add-topology-tree)
 - [Graduation Criteria](#graduation-criteria)
   - [Alpha (v1.16) [COMPLETED]](#alpha-v116-completed)
   - [Alpha (v1.17) [COMPLETED]](#alpha-v117-completed)
@@ -412,6 +413,37 @@ _Figure: Topology Manager hint provider registration._
 ![topology-manager-hints](https://user-images.githubusercontent.com/379372/47447543-a0463780-d772-11e8-8412-8bf4a0571513.png)
 
 _Figure: Topology Manager fetches affinity from hint providers._
+
+### API change: Node status filed add topology field
+
+The topology field of Node status will be displayed when the node topology manager policy is not none, and it used to display the topology of the current node.
+
+The topology status list each devices field groups hardware resources in a specific way.
+
+The numaNode field uses a number greater than or equal to 0 to indicate that it has NUMA affinity, and -1 indicates that without NUMA affinity.
+
+For example:
+
+```yaml
+apiVersion: v1
+kind: Node
+status:
+  topology:
+    # Group by NUMA. Looking forward to other topologies, such as nvlink.
+    numaNode:
+      # numa id
+      "0":
+        # core resource
+        "cpu": 2
+        # deivce plugin reported resource
+        "nvidia.com/gpu": 1
+      # numa id
+      "1":
+        # core resource
+        "cpu": 2
+        # deivce plugin reported resource
+        "nvidia.com/gpu": 1
+```
 
 # Graduation Criteria
 
