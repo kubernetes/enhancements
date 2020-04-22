@@ -1,0 +1,19 @@
+title: Conformance Profiles
+kep-number: 1618
+authors:
+  - "@johnbelamaric"
+  - "@jefftree"
+owning-sig: sig-architecture
+participating-sigs:
+status: provisional
+creation-date: 2020-03-18
+reviewers:
+  - "@hh"
+  - "@smarterclayton"
+  - "@spiffxp"
+approvers:
+  - "@johnbelamaric"
+  - "@smarterclayton"
+see-also:
+  - "/keps/sig-architecture/20190412-conformance-behaviors.md"
+  - "https://docs.google.com/document/d/1QAXp1xCXh1Bj2Bj-lEzwIVaSQvJRuTwQG7xT2q3me58/edit"
