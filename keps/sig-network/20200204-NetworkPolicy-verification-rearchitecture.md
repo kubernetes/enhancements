@@ -33,7 +33,7 @@ Note that this approach of higher level DSLs for testing may be moved into sig-t
   - [Non-goals](#non-goals)
   - [Related issues](#related-issues)
     - [Also related but not directly addressed in this KEP](#also-related-but-not-directly-addressed-in-this-kep)
-  - [Consequences of this problem](#consequences-of-this-problem)
+  - [Consequences of the current testing situation](#Consequences-of-slow,-non-declarative-tests)
 - [A high level outline of Pod Traffic Pathways](#a-high-level-outline-of-pod-traffic-pathways)
 - [Detailed examples of the problem statement](#detailed-examples-of-the-problem-statement)
   - [Incompleteness](#incompleteness)
@@ -100,9 +100,9 @@ For a TLDR, see https://github.com/vmware-tanzu/antrea/blob/master/hack/netpol/p
 Conceptually we have 5 concrete changes that we are proposing:
 
 1. Introduce a simple "DSL" (in golang) for defining network policy's and reachability matrices.
-  - Currently, the word `DSL` might be a misnomer, but has taken hold.  Specifically, we are using a Builder API to concsiely define NetworkPolicies in a declarative way.
+  - Currently, the word `DSL` might be a misnomer, but has taken hold.  Specifically, we are using a Builder API to concsiely define NetworkPolicies concisely.
   - The DSL examples are later in this document, for example: 
-    - DFL for defining test expectations:
+    - DSL for defining test expectations:
     ```
 	reachability := NewReachability(allPods, true).ExpectAllIngress(Pod("x/a"), false).Expect(Pod("x/a"), Pod("x/a"), true)
     ```
@@ -113,14 +113,16 @@ Conceptually we have 5 concrete changes that we are proposing:
 	builder.SetTypeIngress()
 
     ```
-2. Create all namespaces and pods in the test matrix before tests start (exceptions for some tests if we want to test pod churn or label changes etc), as part of the testing library itsef.
+2. Create all namespaces and pods in the test matrix before tests start (exceptions for some tests if we want to test pod churn or label changes etc), as part of the testing library itself.
 3. Rewrite all existing network_policy.go tests using the above DSL using (mostly the same) ginkgo descriptions as current tests do.
 4. Integrate tests with ginkgo by simply replacing existing network policy test declarations to use the new DSL
   - putting initialization into a BeforeAll block for scaffold pods/namespaces
-5. Annotate these tests (in the code) with the CNIs they were run on, the last time they were running, and the test results (in lieu of waiting to decide on a canonical CNI)
+5. Annotate these tests (in the code) with the CNIs they were run on, the last time they were running, and the test results (in lieu of waiting to decide on a canonical CNI).  This should be done by anyone who presently modifies the testing code.  
+- Since the V1 tests are stable and the population of recent individuals to update these tests are almost always folks who work on CNIs or closely on CNI provider technology, we assert that this is a reasonable expectation to adhere to. 
+- The authors of *this* KEP will of course, while implementing the changes, do the first round of these annotations to set the precedent.
 
 There are many other concepts discussed after this, justifying and looking at the future of how this work might effect the way we think about network policy testing in the future, including how we might
-use this work to make the e2e suite more decalarative in the future, but these concrete goals are the endpoint for this specific KEP.
+use this work to make the e2e suite more declarative in the future, but these concrete goals are the endpoint for this specific KEP.
 
 ### Non-goals
 
@@ -143,7 +145,7 @@ As an overall improvement, this KEP will help to address the solutions for sever
 - https://github.com/kubernetes/kubernetes/issues/87709 (Separate KEP, complimentary to this logging of netpol actions, will help describing states we reach) 
 
 
-### Consequences of this problem
+### Consequences of slow, non declarative tests
  
 The consequences of this problem is that
  
