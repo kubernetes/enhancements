@@ -2,6 +2,7 @@ title: External credential providers
 kep-number: 541
 authors:
   - "@awly"
+  - "@enj"
 owning-sig: sig-auth
 participating-sigs:
   - sig-cli
