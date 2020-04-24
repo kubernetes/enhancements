@@ -99,7 +99,7 @@ For a TLDR, see https://github.com/vmware-tanzu/antrea/blob/master/hack/netpol/p
 
 Conceptually we have 5 concrete changes that we are proposing:
 
-1. Introduce a less redundant way (originally a `builder style` DSL which is exemplified in this KEP, but as of 4/23 this idea was downvoted in favor of a struct-mutation based implementation) to define network policies, which doesnt result in large blocks of duplicated code.
+1. Introduce a less redundant way to define network policies, which doesnt result in large blocks of duplicated code.
 2. Create all namespaces and pods in the test matrix before tests start (exceptions for some tests if we want to test pod churn or label changes etc), as part of the testing library itself.
 3. Rewrite all existing network_policy.go tests using the above DSL using (mostly the same) ginkgo descriptions as current tests do.
 4. Integrate tests with ginkgo by simply replacing existing network policy test declarations to use the new DSL
@@ -649,6 +649,10 @@ Adopting this approach enable users to test any custom network policy without ch
 Another improvement can be to do combinatorial stacking of all the tests that exists, which will be very easy to do, if this approach is adopted.
 
 ## Alternative solutions to this proposal
+ 
+Some changes which have occured since original proposal:
+- a `builder style` DSL which is exemplified in this KEP, but as of 4/23 this idea was downvoted in favor of a struct-mutation based implementation.
+- a proposal that developers annotate test run information in lieu of CI was generalized to "some written record of test execution", to be determined at a later date.
  
 #### Keeping the tests as they are and fixing them one by one
  
