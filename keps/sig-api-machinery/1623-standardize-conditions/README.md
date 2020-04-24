@@ -77,24 +77,32 @@ The pattern is well-established and we have a good sense of the schema we now wa
 Introduce a type into k8s.io/apimachinery/pkg/apis/meta/v1 for `Condition` that looks like 
 ```go
 type Condition struct {
-	// Type of condition in CamelCase.
+	// Type of condition in CamelCase or in foo.example.com/CamelCase.
+	// Many .condition.type values are consistent across resources like Available, but because arbitrary conditions can be
+	// useful (see .node.status.conditions), the ability to deconflict is important.
 	// +required
 	Type string `json:"type" protobuf:"bytes,1,opt,name=type"`
 	// Status of the condition, one of True, False, Unknown.
 	// +required
 	Status ConditionStatus `json:"status" protobuf:"bytes,2,opt,name=status"`
-	// Last time the condition transitioned from one status to another.
-    // This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
-	// +required
-	LastTransitionTime metav1.Time `json:"lastTransitionTime" protobuf:"bytes,3,opt,name=lastTransitionTime"`
-	// The reason for the condition's last transition in CamelCase.
-    // The specific API may choose whether or not this field is considered a guaranteed API.
-	// +required
-	Reason string `json:"reason" protobuf:"bytes,4,opt,name=reason"`
-	// A human readable message indicating details about the transition.
-    // This field is never considered a guaranteed API and may be empty/missing.
+	// If set, this represents the .metadata.generation that the condition was set based upon.
+	// For instance, if .metadata.generation is currently 12, but the .status.condition[x].observedGeneration is 9, the condition is out of date
+	// with respect to the current state of the instance.
 	// +optional
-	Message string `json:"message,omitempty" protobuf:"bytes,5,opt,name=message"`
+	ObservedGeneration int64 `json:"observedGeneration,omitempty" protobuf:"varint,3,opt,name=observedGeneration"`
+	// Last time the condition transitioned from one status to another.
+	// This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+	// +required
+	LastTransitionTime metav1.Time `json:"lastTransitionTime" protobuf:"bytes,4,opt,name=lastTransitionTime"`
+	// The reason for the condition's last transition in CamelCase.
+	// The specific API may choose whether or not this field is considered a guaranteed API.
+	// This field may not be empty.
+	// +required
+	Reason string `json:"reason" protobuf:"bytes,5,opt,name=reason"`
+	// A human readable message indicating details about the transition.
+	// This field may be empty.
+	// +required
+	Message string `json:"message" protobuf:"bytes,6,opt,name=message"`
 }
 ```
 
@@ -106,8 +114,8 @@ However, it encapsulates the best of what we've learned and will allow new APIs 
  1. `lastTransitionTime` is required.
     Some current implementations allow this to be missing, but this makes it difficult for consumers.
     By requiring it, the actor setting the field can set it to the best possible value instead of having clients try to guess.
- 2. `reason` is required.
-    The actor setting the value should always describe why the condition is the way it is, even if that value is, unknown unknowns.
+ 2. `reason` is required and must not be empty.
+    The actor setting the value should always describe why the condition is the way it is, even if that value is "unknown unknowns".
     No other actor has the information to make a better choice.
  3. `lastHeartbeatTime` is removed.
     This field caused excessive write loads as we scaled.
