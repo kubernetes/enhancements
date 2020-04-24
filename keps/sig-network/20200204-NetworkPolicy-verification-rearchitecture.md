@@ -649,11 +649,7 @@ Adopting this approach enable users to test any custom network policy without ch
 Another improvement can be to do combinatorial stacking of all the tests that exists, which will be very easy to do, if this approach is adopted.
 
 ## Alternative solutions to this proposal
- 
-Some changes which have occured since original proposal:
-- a `builder style` DSL which is exemplified in this KEP, but as of 4/23 this idea was downvoted in favor of a struct-mutation based implementation.
-- a proposal that developers annotate test run information in lieu of CI was generalized to "some written record of test execution", to be determined at a later date.
- 
+
 #### Keeping the tests as they are and fixing them one by one
  
 We could simply audit existing tests for completeness, and one-by-one, add new test coverage where it is lacking.  This may be feasible for the 23 tests we currently have, but it would be likely to bit-rot over time, and not solve the extensibility or debuggability problems.
