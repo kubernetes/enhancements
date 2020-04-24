@@ -99,20 +99,7 @@ For a TLDR, see https://github.com/vmware-tanzu/antrea/blob/master/hack/netpol/p
 
 Conceptually we have 5 concrete changes that we are proposing:
 
-1. Introduce a simple "DSL" (in golang) for defining network policies and reachability matrices.
-  - Currently, the word `DSL` might be a misnomer, but has taken hold.  Specifically, we are using a Builder API to concsiely define NetworkPolicies concisely.
-  - The DSL examples are later in this document, for example: 
-    - DSL for defining test expectations:
-    ```
-	reachability := NewReachability(allPods, true).ExpectAllIngress(Pod("x/a"), false).Expect(Pod("x/a"), Pod("x/a"), true)
-    ```
-    - DSL for Defining network policies:
-    ```
-	builder := &NetworkPolicySpecBuilder{}
-	builder = builder.SetName("x", policyName).SetPodSelector(map[string]string{"pod": "a"})
-	builder.SetTypeIngress()
-
-    ```
+1. Introduce a less redundant way (originally a `builder style` DSL which is exemplified in this KEP, but as of 4/23 this idea was downvoted in favor of a struct-mutation based implementation) to define network policies, which doesnt result in large blocks of duplicated code.
 2. Create all namespaces and pods in the test matrix before tests start (exceptions for some tests if we want to test pod churn or label changes etc), as part of the testing library itself.
 3. Rewrite all existing network_policy.go tests using the above DSL using (mostly the same) ginkgo descriptions as current tests do.
 4. Integrate tests with ginkgo by simply replacing existing network policy test declarations to use the new DSL
@@ -405,6 +392,7 @@ The AND test is obviously more selective, although it is tricky to tell from the
 it has been correctly written to be different from the OR test.
  
 ```
+
                     Ingress: []networkingv1.NetworkPolicyIngressRule{{
                         From: []networkingv1.NetworkPolicyPeer{
                             {
@@ -429,6 +417,9 @@ it has been correctly written to be different from the OR test.
 In contrast, we can express the same and test using the API (including its entire connectivity matrix) in this proposal as follows:
 
 ```
+        // NOTE: This DSL is one of many solutions to reducing code bloat.
+	// As of 4/23, the community seemed to lean *against* this DSL, and instead, towards
+	// a struct based implementation.
 	builder := &NetworkPolicySpecBuilder{}
 	builder = builder.SetName("myns", "allow-podb-in-nsb").SetPodSelector(map[string]string{"pod": "b"})
 	builder.SetTypeIngress()
@@ -561,6 +552,8 @@ Initially, to confirm the logical capacity of the builder mechanism for replacin
 Now, this underlying API has (essentially) been implemented in full, and the following repository https://github.com/vmware-tanzu/antrea/tree/master/hack/netpol, demonstrates a working implementation and port of the network policy tests (Most of the tests have been ported).  Each test follows a simple and easy to read pattern such as this:
 
  ```
+	// NOTE: This builder implementation will be replaced based on community feedback as of 4/23, with
+	// a struct implementation similar to what is in current tests.
  	// TODO, consider a SpecBuilder.New(...) style of invocation
 	builder := &utils.NetworkPolicySpecBuilder{}
 	builder = builder.SetName("allow-x-via-pod-and-ns-selector").SetPodSelector(map[string]string{"pod": "a"})
@@ -575,11 +568,6 @@ Now, this underlying API has (essentially) been implemented in full, and the fol
  This represents a significant reduction in code complexity, with the equivalent tests using the existing `network_policy.go` implementation being 3 to 4 times as long, mostly due to boilerplate around verification and go structures.
 
 *Further improvements to the testing API*
-
-- Make the function calls in network policy builder *even* more DSL-like, for example, 
-```
-Pod(...).InNamespace(...).CanAccess(...)
-```
 - Infer `Egress,Ingress` rules rather than force them to be specified, based on builder inputs.  They're redundant to begin with (i.e. calico doesn't even require them)
 - Add `From` and `To` semantics to the struct API calls in reachability.
  
