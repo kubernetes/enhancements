@@ -226,7 +226,7 @@ As a user, I want to be able to determine whether custom seccomp profiles have b
 
 ### No persistence to disk
 
-The profiles will not persisted to disk. The Kubelet will fetch the contents from `ConfigMap` and then returned to be later pass on to the OCI, as per code below:
+The profiles will not persisted to disk. The Kubelet will fetch the contents from `ConfigMap` and then returned to be later pass on to the CRI, as per code below:
 
 ```golang
 scmpWithouPrefix := strings.TrimPrefix(seccompProfile, "configmap/")
