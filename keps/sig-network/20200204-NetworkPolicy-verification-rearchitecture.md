@@ -33,7 +33,7 @@ Note that this approach of higher level DSLs for testing may be moved into sig-t
   - [Non-goals](#non-goals)
   - [Related issues](#related-issues)
     - [Also related but not directly addressed in this KEP](#also-related-but-not-directly-addressed-in-this-kep)
-  - [Consequences of the current testing situation](#Consequences-of-slow,-non-declarative-tests)
+  - [Consequences of slow, non declarative tests](#consequences-of-slow-non-declarative-tests)
 - [A high level outline of Pod Traffic Pathways](#a-high-level-outline-of-pod-traffic-pathways)
 - [Detailed examples of the problem statement](#detailed-examples-of-the-problem-statement)
   - [Incompleteness](#incompleteness)
@@ -104,7 +104,7 @@ Conceptually we have 5 concrete changes that we are proposing:
 3. Rewrite all existing network_policy.go tests using the above DSL using (mostly the same) ginkgo descriptions as current tests do.
 4. Integrate tests with ginkgo by simply replacing existing network policy test declarations to use the new DSL
   - putting initialization into a BeforeAll block for scaffold pods/namespaces
-5. Find **some way** to have an agreed system of record (annotating code, submitting results to a mailing list, updating a markdown file, etc) where we can record successfull test runs for code changes, until a day comes where we run NEtworkPolicy tests in CI.  One proposed solution is to add a simple annotation to the code.
+5. Find **some way** to have an agreed system of record (annotating code, submitting results to a mailing list, updating a markdown file, etc) where we can record successful test runs for code changes, until a day comes where we run NEtworkPolicy tests in CI.  One proposed solution is to add a simple annotation to the code.
 ```
 // Tested by: abhiraut,
 // CNI: calico 11.0
