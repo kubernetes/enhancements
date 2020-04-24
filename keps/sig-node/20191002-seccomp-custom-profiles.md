@@ -226,7 +226,7 @@ As a user, I want to be able to determine whether custom seccomp profiles have b
 
 ### No persistence to disk
 
-The profiles will not persisted to disk. The Kubelet will fetch the contents from `ConfigMap` and then returned to be later pass on to the CRI, as per code below:
+The profiles will not be persisted to disk. The Kubelet will fetch the contents from the `ConfigMap` which will later be passed onto the CRI, as per code below:
 
 ```golang
 scmpWithouPrefix := strings.TrimPrefix(seccompProfile, "configmap/")
@@ -309,7 +309,7 @@ The error message above may change once seccomp [becomes GA](20190717-seccomp-ga
 - 2019-10-17: Add alternative to use CRD instead of ConfigMap
 - 2019-10-27: Add improvements to Design, Version Skew Strategy and Graduation
 - 2019-10-29: Add improvements to alternatives and multiple files support
-
+- 2020-04-24: Fix grammar
 
 ## Alternatives
 
