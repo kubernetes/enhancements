@@ -666,6 +666,6 @@ That said, the work proposed here might be a first step toward a more generic CN
 
 We cannot proxy this work to the individual CNI organization, because in large part, the semantics of how network policies are implemented and what we care about from an API perspective is defined by Kubernetes itself.  As we propose expansion of the Network Policy API, we need a way to express the effects of these new APIs in code, concisely, in a manner which is guaranteed to test robustly.
 
-## Graduation critieria
+# Graduation critieria
 
-The graduation critieria for this KEP is that all existing NetworkPolicy ginkgo tests have been covered by the new framework, and that all tests on the new framework test on at least two community agreed upon CNIs (most likely, the tests will be run on calico, GKE, and antrea).
+Existing NetworkPolicy ginkgo tests have been covered by the new framework, and all tests on the new framework pass on at least two community agreed upon CNIs (most likely, the tests will be run on calico, GKE, and antrea).
