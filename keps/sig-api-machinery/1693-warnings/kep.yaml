@@ -7,7 +7,7 @@ participating-sigs:
   - sig-architecture
   - sig-cli
   - sig-instrumentation
-status: provisional
+status: implementable
 creation-date: 2020-04-16
 reviewers:
   - "@lavalamp"
