@@ -25,44 +25,43 @@ Note that this approach of higher level DSLs for testing may be moved into sig-t
 ## Table of Contents
 
 <!-- toc -->
-
-  * [Summary](#summary)
-  * [Motivation](#motivation)
-    + [Goals](#goals)
-      - [Concrete goals](#concrete-goals)
-    + [Non-goals](#non-goals)
-    + [Related issues](#related-issues)
-      - [Also related but not directly addressed in this KEP](#also-related-but-not-directly-addressed-in-this-kep)
-    + [Consequences of slow, non declarative tests](#consequences-of-slow--non-declarative-tests)
-  * [A high level outline of Pod Traffic Pathways](#a-high-level-outline-of-pod-traffic-pathways)
-  * [Detailed examples of the problem statement](#detailed-examples-of-the-problem-statement)
-    + [Incompleteness](#incompleteness)
-      - [TODO Temporal tests](#todo-temporal-tests)
-      - [Other concrete examples of incompleteness](#other-concrete-examples-of-incompleteness)
-      - [List of missing functional test cases](#list-of-missing-functional-test-cases)
-    + [Understandability](#understandability)
-    + [Extensibility](#extensibility)
-    + [Performance](#performance)
-      - [Logging verbosity is worse for slow tests](#logging-verbosity-is-worse-for-slow-tests)
-    + [Documentation](#documentation)
-  * [Goals](#goals-1)
-  * [Implementation History](#implementation-history)
-    + [Part 1: Defining a static matrix of ns/pod combinations](#part-1--defining-a-static-matrix-of-ns-pod-combinations)
-    + [Note on Acceptance and Backwards compatibility](#note-on-acceptance-and-backwards-compatibility)
-  * [Next steps](#next-steps)
-  * [Thoughts from initial research in this proposal (future KEPs)](#thoughts-from-initial-research-in-this-proposal--future-keps-)
-    + [Node local traffic: Should it be revisited in V2 ?](#node-local-traffic--should-it-be-revisited-in-v2--)
-    + [Validation and 'type' : Should it be revisited ?](#validation-and--type----should-it-be-revisited--)
-    + [Finding comprehensive test cases for policy validation](#finding-comprehensive-test-cases-for-policy-validation)
-    + [Ensuring that large policy stacks evaluate correctly](#ensuring-that-large-policy-stacks-evaluate-correctly)
-    + [Ensure NetworkPolicy evaluates correctly regardless of the order of events](#ensure-networkpolicy-evaluates-correctly-regardless-of-the-order-of-events)
-    + [Generating the reachability matrix on the fly](#generating-the-reachability-matrix-on-the-fly)
-    + [Consuming network policies as yaml files](#consuming-network-policies-as-yaml-files)
-  * [Alternative solutions to this proposal](#alternative-solutions-to-this-proposal)
-      - [Keeping the tests as they are and fixing them one by one](#keeping-the-tests-as-they-are-and-fixing-them-one-by-one)
-      - [Building a framework for NetworkPolicy evaluation](#building-a-framework-for-networkpolicy-evaluation)
-      - [Have the CNI organization create such tests](#have-the-cni-organization-create-such-tests)
-- [Graduation critieria](#graduation-critieria)
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+    - [Concrete goals](#concrete-goals)
+  - [Non-goals](#non-goals)
+  - [Related issues](#related-issues)
+    - [Also related but not directly addressed in this KEP](#also-related-but-not-directly-addressed-in-this-kep)
+  - [Consequences of slow, non declarative tests](#consequences-of-slow-non-declarative-tests)
+- [A high level outline of Pod Traffic Pathways](#a-high-level-outline-of-pod-traffic-pathways)
+- [Detailed examples of the problem statement](#detailed-examples-of-the-problem-statement)
+  - [Incompleteness](#incompleteness)
+    - [TODO Temporal tests](#todo-temporal-tests)
+    - [Other concrete examples of incompleteness](#other-concrete-examples-of-incompleteness)
+    - [List of missing functional test cases](#list-of-missing-functional-test-cases)
+  - [Understandability](#understandability)
+  - [Extensibility](#extensibility)
+  - [Performance](#performance)
+    - [Logging verbosity is worse for slow tests](#logging-verbosity-is-worse-for-slow-tests)
+  - [Documentation](#documentation)
+- [Goals](#goals-1)
+- [Implementation History](#implementation-history)
+  - [Part 1: Defining a static matrix of ns/pod combinations](#part-1-defining-a-static-matrix-of-nspod-combinations)
+  - [Note on Acceptance and Backwards compatibility](#note-on-acceptance-and-backwards-compatibility)
+- [Next steps](#next-steps)
+- [Thoughts from initial research in this proposal (future KEPs)](#thoughts-from-initial-research-in-this-proposal-future-keps)
+  - [Node local traffic: Should it be revisited in V2 ?](#node-local-traffic-should-it-be-revisited-in-v2-)
+  - [Validation and 'type' : Should it be revisited ?](#validation-and-type--should-it-be-revisited-)
+  - [Finding comprehensive test cases for policy validation](#finding-comprehensive-test-cases-for-policy-validation)
+  - [Ensuring that large policy stacks evaluate correctly](#ensuring-that-large-policy-stacks-evaluate-correctly)
+  - [Ensure NetworkPolicy evaluates correctly regardless of the order of events](#ensure-networkpolicy-evaluates-correctly-regardless-of-the-order-of-events)
+  - [Generating the reachability matrix on the fly](#generating-the-reachability-matrix-on-the-fly)
+  - [Consuming network policies as yaml files](#consuming-network-policies-as-yaml-files)
+- [Alternative solutions to this proposal](#alternative-solutions-to-this-proposal)
+  - [Keeping the tests as they are and fixing them one by one](#keeping-the-tests-as-they-are-and-fixing-them-one-by-one)
+  - [Building a framework for NetworkPolicy evaluation](#building-a-framework-for-networkpolicy-evaluation)
+  - [Have the CNI organization create such tests](#have-the-cni-organization-create-such-tests)
+- [Graduation criteria](#graduation-criteria)
 
 <!-- /toc -->
 
@@ -650,11 +649,11 @@ Another improvement can be to do combinatorial stacking of all the tests that ex
 
 ## Alternative solutions to this proposal
 
-#### Keeping the tests as they are and fixing them one by one
+### Keeping the tests as they are and fixing them one by one
  
 We could simply audit existing tests for completeness, and one-by-one, add new test coverage where it is lacking.  This may be feasible for the 23 tests we currently have, but it would be likely to bit-rot over time, and not solve the extensibility or debuggability problems.
  
-#### Building a framework for NetworkPolicy evaluation
+### Building a framework for NetworkPolicy evaluation
  
 In this proposal, we've avoided suggesting a complex framework that could generate large numbers of services and pods, and large permutations of scenarios.
 However, it should be noted that such a framework might be useful in testing performance at larger scales, and comparing CNI providers with one another. Such a framework could easily be adopted to cover the minimal needs of the NetworkPolicy implementation in core Kubernetes, so it might be an interesting initiative to work on.  Such an initiative might fall on the shoulders of another Sig, related to performance or scale.  Since NetworkPolicies have many easy-to-address
@@ -662,10 +661,10 @@ problems which are important as they stand, we avoid going down this rat-hole, f
  
 That said, the work proposed here might be a first step toward a more generic CNI testing model.
 
-#### Have the CNI organization create such tests
+### Have the CNI organization create such tests
 
 We cannot proxy this work to the individual CNI organization, because in large part, the semantics of how network policies are implemented and what we care about from an API perspective is defined by Kubernetes itself.  As we propose expansion of the Network Policy API, we need a way to express the effects of these new APIs in code, concisely, in a manner which is guaranteed to test robustly.
 
-# Graduation critieria
+## Graduation criteria
 
 Existing NetworkPolicy ginkgo tests have been covered by the new framework, and all tests on the new framework pass on at least two community agreed upon CNIs (most likely, the tests will be run on calico, GKE, and antrea).
