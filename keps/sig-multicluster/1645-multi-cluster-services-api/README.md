@@ -77,51 +77,47 @@ tags, and then generate with `hack/update-toc.sh`.
 -->
 
 <!-- toc -->
-- [KEP-1645: Multi-Cluster Services API](#kep-1645-multi-cluster-services-api)
-  - [Release Signoff Checklist](#release-signoff-checklist)
-  - [Summary](#summary)
-  - [Motivation](#motivation)
-    - [Goals](#goals)
-    - [Non-Goals](#non-goals)
-  - [Proposal](#proposal)
-      - [Terminology](#terminology)
-    - [User Stories (optional)](#user-stories-optional)
-      - [Different Services Each Deployed to Separate Cluster](#different-services-each-deployed-to-separate-cluster)
-      - [Single Service Deployed to Multiple Clusters](#single-service-deployed-to-multiple-clusters)
-    - [Notes/Constraints/Caveats (optional)](#notesconstraintscaveats-optional)
-    - [Risks and Mitigations](#risks-and-mitigations)
-  - [Design Details](#design-details)
-    - [Exporting Services](#exporting-services)
-      - [Restricting Exports](#restricting-exports)
-    - [Exported Service Behavior Expectations](#exported-service-behavior-expectations)
-      - [SuperclusterIP](#superclusterip)
-      - [DNS](#dns)
-      - [EndpointSlice](#endpointslice)
-      - [Endpoint TTL](#endpoint-ttl)
-      - [Service Types](#service-types)
-    - [Consumption of EndpointSlice](#consumption-of-endpointslice)
-  - [Constraints and Conflict Resolution](#constraints-and-conflict-resolution)
-    - [Global Properties](#global-properties)
-      - [Service Port](#service-port)
-      - [IP Family](#ip-family)
-    - [Component Level Properties](#component-level-properties)
-      - [Session Affinity](#session-affinity)
-      - [TopologyKeys](#topologykeys)
-      - [Publish Not-Ready Addresses](#publish-not-ready-addresses)
-    - [Test Plan](#test-plan)
-    - [Graduation Criteria](#graduation-criteria)
-      - [Alpha -> Beta Graduation](#alpha---beta-graduation)
-      - [Beta -> GA Graduation](#beta---ga-graduation)
-      - [Removing a deprecated flag](#removing-a-deprecated-flag)
-    - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
-    - [Version Skew Strategy](#version-skew-strategy)
-  - [Implementation History](#implementation-history)
-  - [Drawbacks](#drawbacks)
-  - [Alternatives](#alternatives)
-    - [`ObjectReference` in `ServiceExport.Spec` to directly map to a `Service`](#objectreference-in-serviceexportspec-to-directly-map-to-a-service)
-    - [Export services via label selector](#export-services-via-label-selector)
-    - [Export via annotation](#export-via-annotation)
-  - [Infrastructure Needed (optional)](#infrastructure-needed-optional)
+- [Release Signoff Checklist](#release-signoff-checklist)
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+    - [Terminology](#terminology)
+  - [User Stories (optional)](#user-stories-optional)
+    - [Different Services Each Deployed to Separate Cluster](#different-services-each-deployed-to-separate-cluster)
+    - [Single Service Deployed to Multiple Clusters](#single-service-deployed-to-multiple-clusters)
+  - [Notes/Constraints/Caveats (optional)](#notesconstraintscaveats-optional)
+  - [Risks and Mitigations](#risks-and-mitigations)
+- [Design Details](#design-details)
+  - [Exporting Services](#exporting-services)
+    - [Restricting Exports](#restricting-exports)
+  - [Exported Service Behavior Expectations](#exported-service-behavior-expectations)
+    - [SuperclusterIP](#superclusterip)
+    - [DNS](#dns)
+    - [EndpointSlice](#endpointslice)
+    - [Endpoint TTL](#endpoint-ttl)
+    - [Service Types](#service-types)
+  - [Consumption of EndpointSlice](#consumption-of-endpointslice)
+- [Constraints and Conflict Resolution](#constraints-and-conflict-resolution)
+  - [Global Properties](#global-properties)
+    - [Service Port](#service-port)
+    - [IP Family](#ip-family)
+  - [Component Level Properties](#component-level-properties)
+    - [Session Affinity](#session-affinity)
+    - [TopologyKeys](#topologykeys)
+    - [Publish Not-Ready Addresses](#publish-not-ready-addresses)
+  - [Test Plan](#test-plan)
+  - [Graduation Criteria](#graduation-criteria)
+  - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+  - [Version Skew Strategy](#version-skew-strategy)
+- [Implementation History](#implementation-history)
+- [Drawbacks](#drawbacks)
+- [Alternatives](#alternatives)
+  - [<code>ObjectReference</code> in <code>ServiceExport.Spec</code> to directly map to a Service](#-in--to-directly-map-to-a-service)
+  - [Export services via label selector](#export-services-via-label-selector)
+  - [Export via annotation](#export-via-annotation)
+- [Infrastructure Needed (optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -248,7 +244,7 @@ nitty-gritty.
   association.
 - **mcsd-controller** - A controller that syncs services across clusters and
   makes them available for multi-cluster service discovery (MCSD) and
-  connectivitiy. There may be multiple implementations, this doc describes
+  connectivity. There may be multiple implementations, this doc describes
   expected common behavior.
 
 We propose a new CRD called `ServiceExport`, used to specify which services
@@ -375,6 +371,10 @@ type ServiceExport struct {
 // ServiceExportStatus contains the current status of an export.
 type ServiceExportStatus struct {
         // +optional
+        // +patchStrategy=merge
+        // +patchMergeKey=type
+        // +listType=map
+        // +listMapKey=type
         Conditions []ServiceExportCondition `json:"conditions,omitempty"`
 }
 
@@ -562,26 +562,44 @@ identifier for the cluster.
 // ServiceImport declares that the specified service should be exported to other clusters.
 type ServiceImport struct {
  metav1.TypeMeta `json:",inline"`
+ // +optional
  metav1.ObjectMeta `json:"metadata,omitempty"`
-
+ // +optional
  Spec ServiceImportSpec `json:"spec,omitempty"`
 }
 
 // ServiceImportSpec contains the current status of an imported service and the
 // information necessary to consume it
 type ServiceImportSpec struct {
- Ports []ServicePort `json:"ports"`
+  // +patchStrategy=merge
+  // +patchMergeKey=port
+  // +listType=map
+  // +listMapKey=port
+  // +listMapKey=protocol
+  Ports []ServicePort `json:"ports"`
+  // +optional
+  // +patchStrategy=merge
+  // +patchMergeKey=cluster
+  // +listType=map
+  // +listMapKey=cluster
  Clusters []ClusterSpec `json:"clusters"`
+ // +optional
  IPFamily corev1.IPFamily `json:"ipFamily"`
+ // +optional
  IP string `json:"ip,omitempty"`
 }
 
 // ClusterSpec contains service configuration mapped to a specific cluster
 type ClusterSpec struct {
  Cluster string `json:"cluster"`
+ // +optional
+ // +listType=set
  TopologyKeys []string `json:"topologyKeys"`
+ // +optional
  PublishNotReadyAddresses bool `json:"publishNotReadyAddresses"`
+ // +optional
  SessionAffinity corev1.ServiceAffinity `json:"sessionAffinity"`
+ // +optional
  SessionAffinityConfig *corev1.SessionAffinityConfig `json:"sessionAffinityConfig"`
 }
 ```
@@ -845,7 +863,7 @@ not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
 -->
 
-### `ObjectReference` in `ServiceExport.Spec` to directly map to a `Service`
+### `ObjectReference` in `ServiceExport.Spec` to directly map to a Service
 
 Instead of name mapping, we could use an explicit `ObjectReference` in a
 `ServiceExport.Spec`. This feels familiar and more explicit, but fundamentally
@@ -862,8 +880,6 @@ The above issues could also be solved via controller logic, but we would risk
 differing implementations. Name mapping enforces behavior at the API.
 
 ### Export services via label selector
-```
-<<[UNRESOLVED still being explored as viable - @thockin @mangelajo]>>
 
 Instead of name mapping, `ServiceExport` could have a
 `ServiceExport.Spec.ServiceSelector` to select matching services for export.
@@ -884,9 +900,6 @@ to automatically ensure a `ServiceExport` exists for each `Service` matching a
 selector - perhaps by introducing something like a `ServiceExportPolicy`
 resource (out of scope for this KEP). This would solve the above issues but
 retain the flexibility of selectors.
-
-<<[/UNRESOLVED]>>
-```
 
 ### Export via annotation
 
