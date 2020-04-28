@@ -3,8 +3,11 @@ title: Image garbage collection whitelist
 authors:
   - "@libesz"
   - "@CsatariGergely"
+  - "@BenTheElder"
 owning-sig: sig-node
 participating-sigs:
+- sig-node
+- sig-testing
 reviewers:
   - "@zhangmingld"
   - "@Monkeyanator"
@@ -13,7 +16,7 @@ reviewers:
   - "@timothysc"
 approvers:
   - sig-node-leads
-editor: "@CsatariGergely"
+editor: "@BenTheElder"
 creation-date: 2019-04-26
 last-updated: 2019-04-26
 status: provisional
@@ -23,32 +26,6 @@ superseded-by:
 ---
 
 # image-garbage-collector-whitelist
-
-To get started with this template:
-1. **Pick a hosting SIG.**
-  Make sure that the problem space is something the SIG is interested in taking up.
-  KEPs should not be checked in without a sponsoring SIG.
-1. **Make a copy of this template.**
-  Copy this template into the owning SIG's directory (or KEP root directory, as appropriate) and name it `YYYYMMDD-my-title.md`, where `YYYYMMDD` is the date the KEP was first drafted.
-1. **Fill out the "overview" sections.**
-  This includes the Summary and Motivation sections.
-  These should be easy if you've preflighted the idea of the KEP with the appropriate SIG.
-1. **Create a PR.**
-  Assign it to folks in the SIG that are sponsoring this process.
-1. **Create an issue in kubernetes/enhancements, if the enhancement will be targeting changes to kubernetes/kubernetes**
-  When filing an enhancement tracking issue, please ensure to complete all fields in the template.
-1. **Merge early.**
-  Avoid getting hung up on specific details and instead aim to get the goal of the KEP merged quickly.
-  The best way to do this is to just start with the "Overview" sections and fill out details incrementally in follow on PRs.
-  View anything marked as a `provisional` as a working document and subject to change.
-  Aim for single topic PRs to keep discussions focused.
-  If you disagree with what is already in a document, open a new PR with suggested changes.
-
-The canonical place for the latest set of instructions (and the likely source of this file) is [here](/keps/YYYYMMDD-kep-template.md).
-
-The `Metadata` section above is intended to support the creation of tooling around the KEP process.
-This will be a YAML section that is fenced as a code block.
-See the KEP process for details on each of these items.
 
 ## Table of Contents
 
@@ -87,13 +64,6 @@ See the KEP process for details on each of these items.
 
 ## Release Signoff Checklist
 
-**ACTION REQUIRED:** In order to merge code into a release, there must be an issue in [kubernetes/enhancements] referencing this KEP and targeting a release milestone **before [Enhancement Freeze](https://github.com/kubernetes/sig-release/tree/master/releases)
-of the targeted release**.
-
-For enhancements that make changes to code or processes/procedures in core Kubernetes i.e., [kubernetes/kubernetes], we require the following Release Signoff checklist to be completed.
-
-Check these off as they are completed for the Release Team to track. These checklist items _must_ be updated for the enhancement to be released.
-
 - [ ] kubernetes/enhancements issue in release milestone, which links to KEP (this should be a link to the KEP location in kubernetes/enhancements, not the initial KEP PR)
 - [ ] KEP approvers have set the KEP status to `implementable`
 - [ ] Design details are appropriately documented
@@ -103,24 +73,22 @@ Check these off as they are completed for the Release Team to track. These check
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
-**Note:** Any PRs to move a KEP to `implementable` or significant changes once it is marked `implementable` should be approved by each of the KEP approvers. If any of those approvers is no longer appropriate than changes to that list should be approved by the remaining approvers and/or the owning SIG (or SIG-arch for cross cutting KEPs).
-
-**Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
-
-[kubernetes.io]: https://kubernetes.io/
-[kubernetes/enhancements]: https://github.com/kubernetes/enhancements/issues
-[kubernetes/kubernetes]: https://github.com/kubernetes/kubernetes
-[kubernetes/website]: https://github.com/kubernetes/website
-
 ## Summary
 
-Enhancing Kubelet image garbage collector with a whitelist of container images. Whitelisted images will be ignored during garbage collection.
+Enhancing Kubelet image garbage collector with a whitelist of container images. 
+Whitelisted images will be ignored during garbage collection.
+Currently only the dockershim pod sandbox image is whitelisted, this KEP aims
+to make the whitelist configurable.
 
 ## Motivation
 
 There are some use cases when not all the container images are available from a remote repository, therefore container images are stored locally in the image cache of the Nodes. These container images can be preloaded to the Nodes instead of pulled on demand.
 The image garbage collector in Kubelet deletes all unused images from the image cache in case of storage shortage.
 When a Pod using such preloaded image scheduled to a Node from where the container image was garbage collected the Pod will go to ImagePullBackOff state forever.
+
+Users of container runtimes other than dockershim may wish to whitelist the
+podsandbox image used by their container runtime, which may not be in sync
+with dockershim.
 
 ### Goals
 
@@ -129,7 +97,9 @@ When a Pod using such preloaded image scheduled to a Node from where the contain
 
 ### Non-Goals
 
-N/A
+- Further complicating the kubelet image GC algorithm.
+  - Kubelet already has this logic for the dockershim pause image, we just need
+  to apply it to a configurable list. We do not aim to add any further complexity.
 
 ## Proposal
 
@@ -142,6 +112,8 @@ The user stories in the following chapters are alternatives of each other.
 Optimized for small amount of images
 
 I as a Kubernetes administrator would like to define a set of exact image URLs to exclude these images from image garbage collection.
+
+These images may be core system images that would be counter-productive to GC.
 
 #### Story 2
 
@@ -271,35 +243,34 @@ Consider the following in developing an upgrade/downgrade strategy for this enha
 
 ### Version Skew Strategy
 
-If applicable, how will the component handle version skew with other components? What are the guarantees? Make sure
-this is in the test plan.
-
-Consider the following in developing a version skew strategy for this enhancement:
-- Does this enhancement involve coordinating behavior in the control plane and in the kubelet? How does an n-2 kubelet without this feature available behave when this feature is used?
-- Will any other components on the node change? For example, changes to CSI, CRI or CNI may require updating that component before the kubelet.
+This is a per instance kubelet option, there should not be any version skew.
 
 ## Implementation History
 
-N/A
-
-Major milestones in the life cycle of a KEP should be tracked in `Implementation History`.
-Major milestones might include
-
-- the `Summary` and `Motivation` sections being merged signaling SIG acceptance
-- the `Proposal` section being merged signaling agreement on a proposed design
-- the date implementation started
-- the first Kubernetes release where an initial version of the KEP was available
-- the version of Kubernetes where the KEP graduated to general availability
-- when the KEP was retired or superseded
+- [original KEP PR](https://github.com/kubernetes/enhancements/pull/1007)
 
 ## Drawbacks [optional]
 
-N/A
+This does require introducing a new kubelet flag / config field.
 
 ## Alternatives [optional]
 
-N/A
+We could instead handle this in each container runtime using the runtime's own
+configuration. This is suboptimal because it fragments solving this problem
+while kubelet already has the machinery for this.
+
+It could however be accomplished without any Kubernetes changes.
 
 ## Infrastructure Needed [optional]
 
-N/A
+We should be able to test this using existing CI infrastructure.
+We may want some test for this.
+
+The [kind](https://github.com/kubernetes-sigs/kind) project from SIG Testing
+would be a first-party consumer of this functionality and could be used to verify
+it.
+
+[kubernetes.io]: https://kubernetes.io/
+[kubernetes/enhancements]: https://github.com/kubernetes/enhancements/issues
+[kubernetes/kubernetes]: https://github.com/kubernetes/kubernetes
+[kubernetes/website]: https://github.com/kubernetes/website
