@@ -136,7 +136,7 @@ in apiserver responsible for setting it):
 
 - [ ] https://github.com/kubernetes/kubernetes/blob/master/pkg/api/ref/ref.go
   Used for detecting version (which I believe should always be set?).
-- [ ] https://github.com/kubernetes/kubernetes/blob/master/pkg/kubectl/cmd/get/get.go
+- [ ] https://github.com/kubernetes/kubernetes/blob/feature-rate-limiting/pkg/kubectl/cmd/get/get.go
   Propagating SelfLink in kubectl get.
 - [ ] https://github.com/kubernetes/kubernetes/blob/master/pkg/kubelet/config/common.go
   Doesn't seem to be really used anywhere.
