@@ -99,7 +99,10 @@ There are two modes of authentication:
 2. mTLS
 
 Provider response is cached in-memory by the client and reused in future
-requests (no caching is done across different executions of the client).
+requests (no caching is done across different executions of the client).  Note
+that the executable is free to perform any actions internally (i.e. it may
+cache credentials on disk / external hardware, communicate with arbitrary
+external APIs, perform arbitrary computations, etc).
 
 Client is configured with a binary path, optional arguments and environment
 variables to pass to it.
@@ -172,13 +175,25 @@ variables set in the client process are also passed to the provider.
 ```
 
 The `spec.cluster` field is the current cluster that the client is communicating
-with.  This struct is defined in `k8s.io/client-go/tools/clientcmd/api/v1` (it
-is used in the `kubeconfig` file format).  This allows the executable to perform
-different actions based on the current cluster (i.e. get a token for a particular
-cluster).
+with (i.e it is the cluster the client knows it must communicate with after it
+has completed parsing its `kubeconfig`, flags and environment variables).
+This struct is defined in [k8s.io/client-go/tools/clientcmd/api/v1#Cluster](https://pkg.go.dev/k8s.io/client-go/tools/clientcmd/api/v1?tab=doc#Cluster)
+(it is used in the `kubeconfig` file format).  This allows the executable to
+perform different actions based on the current cluster (i.e. get a token for a
+particular cluster).  The `Cluster` struct is flexible in that it not only
+provides all details required to communicate with the cluster (hostname and TLS
+config), but that is also allows arbitrary per-cluster configuration to be
+passed to the executable via the `extensions` field.  This list of [NamedExtension](https://pkg.go.dev/k8s.io/client-go/tools/clientcmd/api/v1?tab=doc#NamedExtension)
+structs can contain arbitrary data that is passed to the executable without
+modification.  This allows extra user-defined data (i.e. an OAuth client ID for
+audience scoping) to be passed through the `spec.cluster` field via the `Cluster`
+object from the `kubeconfig`.
 
 This data is passed to the executable via the `KUBERNETES_EXEC_INFO` environment
-variable in a JSON serialized object.
+variable in a JSON serialized object.  Note that an environment variable is used
+over passing this information via standard input because standard input is
+reserved for interactive flows between the user and executable (i.e. to prompt
+for username and password).
 
 ### Provider output format
 
@@ -202,8 +217,11 @@ throughout the runtime of the client (no attempt is made to infer an expiration
 time based on the credentials themselves).
 
 After `expirationTimestamp`, client must execute the provider again for any new
-connections. For mTLS connections, this applies even if returned certificate
-is still valid (i.e. the `NotAfter` date is ignored).
+connections. For mTLS connections, this applies even if the returned certificate
+is still valid (i.e. the `NotAfter` date is ignored).  Existing connections can
+be kept open as long as possible even if the associated credential is expired
+(it is the responsibility of the server to close connections for expired
+credentials).
 
 `token` contains a token for use in `Authorization` header of HTTP requests.
 
@@ -303,9 +321,10 @@ host compromise if combined with a privilege escalation exploit, etc.
 
 ### RPC vs exec
 
-Credential provider could be exposed as a network endpoint. Instead of
-executing a binary and passing request/response over `stdin`/`stdout`, client
-could open a network connection and send request/response over that.
+Credential provider could be exposed as a network endpoint. Instead of executing
+a binary and passing request/response over `KUBERNETES_EXEC_INFO` environment
+variable/standard output, client could open a network connection and send
+request/response over that.
 
 The downsides of this approach compared to exec model are:
 
