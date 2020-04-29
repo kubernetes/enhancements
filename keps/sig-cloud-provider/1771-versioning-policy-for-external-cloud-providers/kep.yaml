@@ -1,0 +1,17 @@
+title: Versioning Policy for External Cloud Providers
+kep-number: 1771
+authors:
+  - "@andrewsykim"
+owning-sig: sig-cloud-provider
+participating-sigs:
+  - sig-release
+status: implementable
+creation-date: 2020-04-29
+reviewers:
+  - "@cheftako"
+approvers:
+  - "@cheftako"
+see-also:
+  - "/kep/sig-cloud-provider/20190125-removing-in-tree-providers.md"
+  - "/kep/sig-cloud-provider/20180530-cloud-controller-manager.md"
+replaces:
