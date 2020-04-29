@@ -88,6 +88,9 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Role: Plugin API &amp; Plugin Developers](#role-plugin-api--plugin-developers)
     - [Role: Application Packager](#role-application-packager)
     - [Role: End User](#role-end-user)
+    - [Role: SIG](#role-sig)
+    - [Role: Vendor](#role-vendor)
+    - [Role: CNCF Conformance Program](#role-cncf-conformance-program)
   - [Notes/Constraints/Caveats (optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
@@ -206,9 +209,11 @@ to document the profiles required in order for them to run.
    behavior definitions.
  * Design and implement a mechanism to validate whether a cluster conforms to
    each profile.
- * Document guidance on how to choose the scope of individual profiles.
+ * Document guidance on how to choose the scope of individual profiles. The
+   total number of profiles should be restricted.
  * Document guidance on how to decide the profile in which a new feature
-   belongs.
+   belongs. This could result in a modification of an existing profile or a
+   creation of a new profile.
  * Define a base profile and at least one other profile.
 
 ### Non-Goals
@@ -267,9 +272,34 @@ deploy.
    profiles, profiles only, etc)
  - May be able to detect or enumerate list of eligible profiles for a given
    cluster (eg: it looks like you have a cloud provider configured, it looks
-   like you have a storage driver, etc)
+   like you have a storage driver, etc).
  - Need to be able to selectively schedule Profile tests to nodes that support
    them (eg: Windows to windows nodes, GPU to nodes that have gpus, etc.)
+
+#### Role: SIG
+
+As a SIG community overlooking the future developments of Kubernetes,
+we must be able to identify the addition of new features under our
+ownership, and collaborate with SIG Architecture on finding the most suitable
+profile it belongs under.
+
+#### Role: Vendor
+
+As a vendor under the Certified Kubernetes program, I must identify the profiles
+supported by my distribution(s) and communicate the results to end users and
+CNCF. These results are verifiable through running profile specific conformance
+tests on a given cluster.
+
+#### Role: CNCF Conformance Program
+
+As a reviewer part of the CNCF Conformance Program, I must be able to evaluate a
+vendor submission for key criteria:
+
+- Must confirm that the version of the tests being run matches the version being
+  certified
+- Must confirm the set of tests being run matches the set of tests for the
+  version (+ profile(s)) being certified
+- Must confirm that no tests fail
 
 ### Notes/Constraints/Caveats (optional)
 
