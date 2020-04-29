@@ -25,6 +25,7 @@ status: provisional
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
+- [Open-Question](#open-question)
 - [Graduation Criteria](#graduation-criteria)
 - [Post-Beta tasks](#post-beta-tasks)
 - [Implementation History](#implementation-history)
@@ -34,16 +35,12 @@ status: provisional
 
 TLDR; metrics with unbounded dimensions can cause memory issues in the components they instrument.
 
-The simple solution to this problem is to say "don't do that". We (SIG instrumentation) have already done in our instrumentation guidelines, which specifically states that ["one should know a comprehensive list of all possible values for a label at instrumentation time."](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-instrumentation/instrumentation.md#dimensionality--cardinality).
+The simple solution to this problem is to say "don't do that". SIG instrumentation has already explicitly stated this in our instrumentation guidelines: which says that ["one should know a comprehensive list of all possible values for a label at instrumentation time."](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-instrumentation/instrumentation.md#dimensionality--cardinality).
 
-Unfortunately it's not that simple.
+The problem is more complicated. First, SIG Instrumentation doesn't have a way to validate adherence to SIG instrumentation guidelines outside of reviewing PRs with instrumentation changes. Not only is this highly manual, and error-prone, we do not have a terrific existing procedure for ensuring SIG Instrumentation is tagged on relevant PRs. Even if we do have such a mechanism, it isn't a fully sufficient solution because:
 
-First, we (SIG Instrumentation) don't have a mechanism for validating adherence to SIG instrumentation guidelines on metric cardinality. This could possibly be remedied by [more active curation of metrics issues (thanks @serathius!)](https://github.com/kubernetes/kubernetes/issues/89788), but we do not yet have a good procedure for this at the moment.
-
-Even if we did have such a mechanism, I don't believe it would be a sufficient solution since:
-
-1. metrics changes can be seemingly innocous, even to the most diligent of users (this means it would be hard to catch at review)
-2. these cardinality issues exist latently; in other words, they're all over the place in Kubernetes already (so even if we could prevent 100% of these occurrence from **now on**, that wouldn't guarantee Kubernetes is free of these classes of issues).
+1. metrics changes can be seemingly innocous, even to the most diligent of code reviewers (i.e these issues are hard to catch)
+2. metrics cardinality issues exist latently; in other words, they're all over the place in Kubernetes already (so even if we could prevent 100% of these occurrence from **now on**, that wouldn't guarantee Kubernetes is free of these classes of issues).
 
 
 ## Motivation
@@ -52,7 +49,7 @@ TLDR; Having metrics turn into memory leaks sucks and it sucks even more when we
 
 **Q:** *How have we approached these issues historically?*
 
-**A:** __Definitely not in a consistent manner.__
+**A:** __Unfortunately, not consistently.__
 
 Sometimes, a [metric label dimension is intended to be bound to some known sets of values but coding mistakes cause IDs to be thrown in as a label value](https://github.com/kubernetes/kubernetes/issues/53485).
 
@@ -244,7 +241,7 @@ func (v *CounterVec) WithLabelValues(lvs ...string) CounterMetric {
 This design allows us to optionally adopt @lilic's excellent idea about simplifying the interface for component owners, who can then opt to just specify a metric and label pair *without* having to specify a whitelist. Personally, I like that idea since it simplifies how a component owner can implement our cardinality enforcing helpers without having to necessary plumb through complicated maps. This would make it considerably easier to feed this data in through the command line since you could do something like this:
 
 ```bash
-$ kube-apiserver --bind-metric-labels "some_metric=label_too_many_values"
+$ kube-apiserver --accepted-metric-labels "some_metric=label_too_many_values"
 ```
 
 ..which would then be interpreted by our machinery as this:
@@ -260,6 +257,23 @@ $ kube-apiserver --bind-metric-labels "some_metric=label_too_many_values"
 ]
 
 ```
+
+## Open-Question
+_(Discussion Points which need to be resolved prior to merge)_
+
+- @dashpole
+
+> Should have labels with a specific set of values, should we start enforcing that all metrics have a whitelist at compile-time?
+
+- @x13n
+
+> ... instead of getting label_too_many_values right away, [enforcing the cardinality limit directly] would still work until certain label cardinality limit is reached. Whitelisting would guarantee a value will not be dropped, but other values wouldn't be dropped either unless there is too many of them. Cluster admin can configure the per metric and per label limits once and can get alerted on "some metric labels are dropped" instead of "your metrics storage is getting blown up".
+
+- @brancz/@lilic
+
+> Potentially we would want to treat buckets completely separately (as in a separate flag just for bucket configuration of histograms). @bboreham opened the original PR for apiserver request duration bucket reduction, maybe he has some input as well.
+>
+> My biggest concern I think with all of this is, it's going to be super easy to have extremely customized kubernetes setups where our existing dashboards and alerting rule definitions are just not going to apply generally anymore. I'd like to make sure we emphasize that these flags are really only meant to be used as escape hatches, and we must always strive to truly fix the root of the issue.
 
 
 ## Graduation Criteria
