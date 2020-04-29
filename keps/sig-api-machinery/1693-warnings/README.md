@@ -43,8 +43,8 @@ checklist items _must_ be updated for the enhancement to be released.
 - [x] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
 - [x] Graduation criteria is in place
 - [x] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
-- [ ] KEP approvers have approved the KEP status as `implementable`
-- [ ] "Implementation History" section is up-to-date for milestone
+- [x] KEP approvers have approved the KEP status as `implementable`
+- [x] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 
 <!--
@@ -65,7 +65,7 @@ Administrators are given metrics that show deprecated API use,
 and audit annotations that can be used to identify particular API clients.
 
 ## Motivation
- 
+
 Kubernetes has many deprecations in flight at any given moment, in various stages, with various time horizons.
 Keeping track of all of them is difficult, and has historically required careful reading of release notes,
 and manually sweeping for use of deprecated features.
@@ -76,7 +76,7 @@ Tightening validation to reject previously accepted API requests is generally av
 but surfacing warnings to clients submitting problematic data would help them discover problems earlier.
 
 ### Goals
- 
+
 * When a user makes a request to a deprecated API, present them with a warning
   that includes the target removal release and any replacement API
 * Allow a cluster administrator to programatically determine if deprecated APIs are being used:
@@ -88,9 +88,9 @@ but surfacing warnings to clients submitting problematic data would help them di
 * Allow extension mechanisms (CustomResourceDefinitions, admission webhooks) to contribute warnings 
 
 ## Proposal
- 
+
 ### Server-side changes
- 
+
 When a deprecated API is used:
 
 1. Add a `Warning` header to the response
@@ -102,7 +102,7 @@ Allow custom resource definitions to indicate specific versions are deprecated
 Allow admission webhooks to contribute warnings that are surfaced to the user
 
 ### Client-side changes
- 
+
 In client-go:
 
 1. Parse `Warning` headers from server responses
@@ -112,18 +112,18 @@ In client-go:
    3. log warnings with klog.Warn
 3. Add a process-wide warning handler (defaulting to the klog.Warn handler)
 4. Add a per-client warning handler (defaulting to the process-wide warning handler)
- 
+
 In kubectl, configure the per-process handler to:
 
 1. dedupe warnings (only print a given warning once per invocation)
 2. log to stderr with a `Warning:` prefix
 3. color the `Warning:` prefix if the terminal is capable of displaying color
 4. add a `--warnings-as-errors` option to exit with a non-zero exit code after executing the command if warnings were encountered
- 
+
 In kube-apiserver and kube-controller-manager, configure the process-wide handler to ignore warnings
 
 ## Design Details
- 
+
 ### Server-side
 
 **Warning mechanism:**
@@ -207,7 +207,7 @@ k8s.io/client-go:
 * Pass parsed warnings through the per-client or per-process warning handler
 
 ### Test Plan
- 
+
 Warning mechanism unit tests:
 
 - `Warning` header generation and encoding
@@ -228,17 +228,17 @@ Extension mechanism integration tests:
 ### Risks and Mitigations
 
 **Metric cardinality**
- 
+
 In the past, we have had problems with unbounded metric labels increasing cardinality of 
 metrics and causing significant memory/storage use. Limiting these metrics to bounded values
 (API group, version, resource, API verb, target removal release) and omitting unbounded values
 (resource instance name, client username, etc), metric cardinality is controlled.
- 
+
 Annotating audit events for the deprecated API requests allows an administrator to locate
 the particular client making deprecated requests when metrics indicate an investigation is needed.
 
 **Additional stderr / warning output**
- 
+
 Additional warning messages may be unexpected by kubectl or client-go consumers.
 However, kubectl and client-go already output warning messages to stderr or via `klog.Warn`.
 client-go consumers can programmatically modify or suppress the warning output at a per-process or per-client level.
@@ -252,13 +252,13 @@ This is mitigated by:
 * A warning recorder implementation that limits the individual and total length of warnings returned to a client
 
 ### Graduation Criteria
- 
+
 The structure of the `Warning` header is RFC-defined and unversioned.
 The RFC defines the behavior of the `299` warning code as follows:
 
 > The warning text can include arbitrary information to be presented to a human user or logged.
 > A system receiving this warning MUST NOT take any automated action.
- 
+
 Because the server -> client warning format is fixed, and the warnings do not
 drive automated action in clients, graduation criteria is primarily oriented
 toward the stability level of the administrator metrics, and the ability to 
@@ -275,7 +275,7 @@ disable the server sending warnings during the beta period.
 * kubectl outputs warnings with code `199` and `299` to stderr by default
 
 #### GA
- 
+
 * At least two releases after Beta
 * Gather feedback on metric structure and use from multi-cluster admins
 * Implement in-process helpers for field-level validation warnings and admission warnings
@@ -287,12 +287,12 @@ disable the server sending warnings during the beta period.
 * Server metric for deprecated API use is registered at [stability level `STABLE`](https://github.com/kubernetes/enhancements/blob/master/keps/sig-instrumentation/20190404-kubernetes-control-plane-metrics-stability.md#stability-classes)
 
 ### Upgrade / Downgrade Strategy
- 
+
 client-go consumers wanting to suppress default warning messages would need to override the per-process warning handler.
 Note that client-go already [logs warning messages](https://grep.app/search?q=klog.Warn&filter[repo][0]=kubernetes/client-go).
 
 ### Version Skew Strategy
- 
+
 Old clients making requests to a new API server ignore `Warning` headers.
 
 New clients making requests to old API servers handle requests without `Warning` headers normally.
@@ -307,8 +307,10 @@ New clients making requests to old API servers handle requests without `Warning`
   * [recording](https://www.youtube.com/watch?v=-EZzIk-Ut6o&list=PL69nYSiGNLP21oW3hbLyjjj4XhrwKxH2R&index=2&t=0s)
 * sig-architecture discussion
   * [notes](https://docs.google.com/document/d/1BlmHq5uPyBUDlppYqAAzslVbAO8hilgjqZUTaNXUhKM/edit#bookmark=id.yppt0g2tjwqw)
+  * [recording](https://www.youtube.com/watch?v=VJo7PonPuGA&list=PL69nYSiGNLP2m6198LaLN6YahX7EEac5g&index=2&t=3m13s)
 
 ## Implementation History
 
 - 2020-04-16: KEP introduced
 - 2020-04-27: Updated GA criteria, added extension mechanism warnings, kubectl warnings-as-errors option, size limits
+- 2020-04-27: Moved to implementable
