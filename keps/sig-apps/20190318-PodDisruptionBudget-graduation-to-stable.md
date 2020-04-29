@@ -135,7 +135,7 @@ PodDisruptionBudget currently has tests in various components that use the featu
   - [This test](https://github.com/kubernetes/kubernetes/blob/687d759e362b05dcdf11e336e2799704918e048d/pkg/controller/disruption/disruption_test.go#L140)
   tests PDB MinAvailable, MaxUnavailable, and selector functionality in Disruption controller.
 * Kubectl
-  - [This test](https://github.com/kubernetes/kubernetes/blob/master/pkg/kubectl/generate/versioned/pdb_test.go)
+  - [This test](https://github.com/kubernetes/kubernetes/blob/feature-serverside-apply/pkg/kubectl/generate/versioned/pdb_test.go)
   tests generation of a PDB objects out of given parameters
   - [This test](https://github.com/kubernetes/kubernetes/blob/master/pkg/kubectl/cmd/create/create_pdb_test.go)
   tests creation of PDB objects from cmd parameters
