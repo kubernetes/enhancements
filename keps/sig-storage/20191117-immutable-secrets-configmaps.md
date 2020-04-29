@@ -127,15 +127,21 @@ field:
   Immutable *bool
 ```
 
-If set, the machinery in apiserver will reject any updates of the object
-trying to change anything different than ObjectMetadata.
+If unset or set to false, all updates (including the change of the value
+of Immutable field itself) remain possible.
 
-Note that will NOT reject all updates of the object, as we need to allow
-e.g. for mutating ObjectMetadata (to not break object lifecycle, e.g. by
-introducing a deadlock if Finalizers are set) or to allow rotating
-certificates used for encryption at rest. We will only reject requests
-that are explicitly changing keys and/or values stored in Secrets and/or
-ConfigMaps.
+If set to true, the machinery in apiserver will reject:
+- any updates explicitly changing keys and/or values stored in Secrets
+  and/or ConfigMaps
+- any updates explicitly changing the value of `Immutable` field itself
+  (marking Secret/ConfigMap as immutable cannot be reverted)
+
+Note that mutating ObjectMetadata will remain to be possible independently
+of the value of Immutable field to:
+- not break object lifeycle (e.g. by introducing a deadlock if Finalizers
+  are set)
+- allow rotating certificates used for encryption at rest
+
 
 Based on the value of `Immutable` field Kubelet will or will not:
 - start a watch (or periodic polling) of a given Secret/ConfigMap
@@ -195,6 +201,9 @@ simple have worse scalability characteristic.
 
 2019-11-18: KEP opened
 2019-12-09: KEP marked implementable
+v1.18: Launched in `Alpha`
+2020-04-25: Submitted PR to promote to Beta and enable by default.
+2020-04-28: Scalability tests extended to validate this feature
 
 ## Alternatives
 
