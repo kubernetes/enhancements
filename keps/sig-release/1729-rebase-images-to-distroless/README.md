@@ -1,21 +1,3 @@
----
-title: Rebase Kubernetes Main Master and Node Images to Distroless/static
-authors:
-  - "@yuwenma"
-owning-sig: sig-release
-participating-sigs:
-  - sig-release
-  - sig-cloud-provider
-reviewers:
-  - "@tallclair"
-approvers:
-  - "@tallclair"
-editor: yuwenma
-creation-date: 2019-03-16
-last-updated: 2019-03-21
-status: implementable
----
-
 # Rebase Kubernetes Main Master and Node Images to Distroless/static
 
 <!-- toc -->

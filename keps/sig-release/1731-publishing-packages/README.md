@@ -1,33 +1,4 @@
----
-title: Publishing kubernetes packages
-authors:
-  - "@hoegaarden"
-owning-sig: sig-release
-participating-sigs:
-  - sig-cluster-lifecycle
-reviewers:
-  - "@timothysc"
-  - "@sumitranr"
-  - "@Klaven"
-  - "@ncdc"
-  - "@ixdy"
-  - “@neolit123”
-approvers:
-  - "@spiffxp"
-  - "@tpepper"
-editor: TBD
-creation-date: 2019-02-19
-last-updated: 2019-02-27
-status: provisional
-see-also:
-  - "https://github.com/kubernetes/enhancements/pull/858"
-  - "/keps/sig-release/20190121-artifact-management.md"
-  - "/keps/sig-release/k8s-image-promoter.md"
----
-
 # Publishing kubernetes packages
-
-## Table of Contents
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
@@ -43,8 +14,8 @@ see-also:
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
-    - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
-    - [Beta -&gt; GA Graduation](#beta---ga-graduation)
+    - [Alpha -> Beta Graduation](#alpha---beta-graduation)
+    - [Beta -> GA Graduation](#beta---ga-graduation)
     - [Removing deprecated publishing artifacts](#removing-deprecated-publishing-artifacts)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)

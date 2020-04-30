@@ -1,0 +1,18 @@
+title: Kubernetes Community Artifact Serving
+authors:
+  - "@brendandburns"
+owning-sig: sig-release
+participating-sigs:
+  - sig-architecture
+  - sig-contributor-experience
+  - sig-testing
+reviewers:
+  - "@justinsb"
+  - "@dims"
+approvers:
+  - "@dims"
+editor: "@brendandburns"
+creation-date: 2019-01-23
+last-updated: 2019-01-31
+status: provisional
+see-also:

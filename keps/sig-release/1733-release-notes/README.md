@@ -1,27 +1,4 @@
----
-title: Release Notes Improvements
-authors:
-  - "@jeefy"
-owning-sig: sig-release
-participating-sigs:
-  - sig-contributor-experience
-  - sig-docs
-reviewers:
-  - "@spiffxp"
-  - "@marpaia"
-approvers:
-  - "@calebamiles"
-  - "@tpepper"
-  - "@justaugustus"
-editor: TBD
-creation-date: 2019-03-31
-last-updated: 2019-03-31
-status: provisional
----
-
 # Release Notes Improvements
-
-## Table of Contents
 
 <!-- toc -->
 - [Summary](#summary)
