@@ -246,9 +246,9 @@ provider but before `expirationTimestamp` in the returned `ExecCredential`.
 Credential provider should ensure validity of the credentials it returns and
 return an error if it cannot provide valid credentials.
 
-In case client gets `401 Unauthorized` response status from remote endpoint when
-using credentials from a provider, client should re-execute the provider,
-ignoring `expirationTimestamp`.
+In case the client gets a `401 Unauthorized` response status from the remote
+endpoint when using credentials from a provider, the client should re-execute
+the provider and disregard the `expirationTimestamp`.
 
 ### Test Plan
 
@@ -274,6 +274,7 @@ Integration (or e2e CLI) tests to confirm:
   + Token based auth
   + Cert based auth
 - Interactive login flows work
+  + TTY forwarding between client and executable works
 
 ### Graduation Criteria
 
