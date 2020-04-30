@@ -34,8 +34,6 @@ superseded-by:
 
 # Kubernetes Yearly Support Period
 
-## Table of Contents
-
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
@@ -114,7 +112,7 @@ The survey conducted in early 2019 by the WG LTS showed that a significant subse
 In the graph below, 1.13 was the current version, meaning that 1.9 and 1.10 were a few months out of support.
 Yet about 1/3 of users had production machines on those versions:
 
-![Kubernetes versions in production](./20200122-versions-in-production.png)
+![Kubernetes versions in production](./versions-in-production.png)
 
 This, and other responses from the survey, suggest that this 30% of users would better be able to keep their deployments on supported versions if the patch support period were extended to 12-14 months.
 This appears to be true regardless of whether the users are on DIY build or commercially vendored distributions.
@@ -150,7 +148,7 @@ NOTE: This follows and formalizes today’s practice of retaining patch branch C
 
 A visual example today vs. proposed for an adopter of 1.18 in April 2020:
 
-![Visual example of upgrade cadences](./20200122-upgrade-cadence.png)
+![Visual example of upgrade cadences](./upgrade-cadence.png)
 
 ## Design Details
 

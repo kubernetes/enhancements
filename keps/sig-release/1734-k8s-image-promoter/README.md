@@ -19,8 +19,6 @@ status: implementable
 
 # Image Promoter
 
-## Table of Contents
-
 <!-- toc -->
 - [Summary](#summary)
 - [Motivation](#motivation)
@@ -80,7 +78,7 @@ Ideally we only push images that have been approved by the owners of the product
 
 If the infrastructure support it, the promoter tool could sign container images when pushing to the official container registry.
 
-![Promote process](promote-process.jpg?raw=true "Promote process")
+![Promote process](./promote-process.jpg)
 
 In the future, we could add more information into the context of the PR like the vulnerability scan and test results of the container image.
 

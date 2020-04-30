@@ -18,8 +18,6 @@ status: implementable
 
 # Rebase Kubernetes Main Master and Node Images to Distroless/static
 
-## Table of Contents
-
 <!-- toc -->
 - [Summary](#summary)
 - [Motivation](#motivation)
@@ -33,9 +31,9 @@ status: implementable
   - [Distroless and Previous Work](#distroless-and-previous-work)
 - [Proposal](#proposal)
   - [For Core Master Images](#for-core-master-images)
-    - [<a href="https://github.com/kubernetes/kubernetes/blob/caf9d94d697ce327e0c1c3dee71a1f06a6fc918e/build/root/Makefile#L419">Bash Release</a>](#bash-release)
-    - [<a href="https://github.com/kubernetes/kubernetes/blob/caf9d94d697ce327e0c1c3dee71a1f06a6fc918e/build/root/Makefile#L604">Bazel Release</a>](#bazel-release)
-    - [<a href="https://github.com/kubernetes/test-infra/tree/master/kubetest">Test Release</a>](#test-release)
+    - [Bash Release](#bash-release)
+    - [Bazel Release](#bazel-release)
+    - [Test Release](#test-release)
   - [Solution](#solution)
     - [Notifications to Cloud Providers](#notifications-to-cloud-providers)
   - [For Generic Add-On Images](#for-generic-add-on-images)
@@ -149,7 +147,7 @@ Run `kubetest` or `hack/e2e`. See details in the [test-infra repo](https://githu
 
 This KEP is expected to rebase images for all three workflows. This requires each cloud provider team to be involved in the manifest updates and release workflow testing part (See the graph below). Before we switch the base images to `distroless/static`, each cloud provider team should make sure their manifest config is updated so that the **command doesn’t require shell to run the executable binaries and no log redirection is involved in the command**. Otherwise rebasing images to distroless will **break** the core containers running in the cluster master VMs. The test release should also be updated to `distroless/static` so as we can guarantee further changes wouldn’t be able to add unexpected dependencies (otherwise, they will fail the e2e tests in the github prow test stage).
 
-![Rebase Core Master](RebaseCoreMaster.png?raw=true "Rebase Core Master")
+![Rebase Core Master](./rebase-core-master.png)
 
 #### Notifications to Cloud Providers
 
