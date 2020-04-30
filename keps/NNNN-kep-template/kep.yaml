@@ -13,9 +13,36 @@ reviewers:
   - "@alice.doe"
 approvers:
   - TBD
-  - "@oscar.doe"
+  - "@oscar.doe" # PRR Approver
 see-also:
   - "/keps/sig-aaa/1234-we-heard-you-like-keps"
   - "/keps/sig-bbb/2345-everyone-gets-a-kep"
 replaces:
   - "/keps/sig-ccc/3456-replaced-kep"
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: alpha|beta|stable
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.19"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.19"
+  beta: "v1.20"
+  stable: "v1.22"
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gate:
+  name: MyFeature
+  components:
+    - kube-apiserver
+    - kube-controller-manager
+rollback-supported: true
+
+# The following PRR answers are required at beta release
+metrics:
+  - my_feature_metric
