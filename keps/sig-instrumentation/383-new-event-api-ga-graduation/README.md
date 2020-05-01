@@ -31,7 +31,6 @@
     - [Get All NodeController Events](#get-all-nodecontroller-events)
     - [Get All Events From Lifetime of a Given Pod](#get-all-events-from-lifetime-of-a-given-pod)
 - [Implementation History](#implementation-history)
-  - [Related Work Before This KEP](#related-work-before-this-kep)
 - [Alternatives](#alternatives)
   - [Leaving Current Dedup Mechanism but Improve Backoff Behavior](#leaving-current-dedup-mechanism-but-improve-backoff-behavior)
   - [Timestamp List as a Dedup Mechanism](#timestamp-list-as-a-dedup-mechanism)
@@ -442,7 +441,8 @@ List all Event with field selector `regarding.name = podName, regarding.namespac
 
 ## Implementation History
 
-### Related Work Before This KEP
+- 2017-10-7 design proposal merged under [kubernetes/community](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/instrumentation/events-redesign.md)
+- 2017-11-23 Event API group is [merged](https://github.com/kubernetes/kubernetes/pull/49112)
 - New Event API [staging/src/k8s.io/client-go/kubernetes/typed/events/v1beta1](https://github.com/kubernetes/kubernetes/tree/master/staging/src/k8s.io/client-go/kubernetes/typed/events/v1beta1)
 - Scheduler migration: [#78447](https://github.com/kubernetes/kubernetes/pull/78447/files), [#83692](https://github.com/kubernetes/kubernetes/pull/83692)
 - Migrate the leader election to use v1beta1 Events: [#82861](https://github.com/kubernetes/kubernetes/pull/82861)

@@ -7,13 +7,14 @@ participating-sigs:
   - sig-instrumentation
   - sig-scalability
   - sig-architecture
-status: provisional
-creation-date: 2020-04-01
 reviewers:
   - "@yastij"
   - "@wojtekt"
 approvers:
   - "@wojtekt"
   - "@brancz"
+creation-date: 2019-01-31
+last-updated: 2020-05-01
+status: implementable
 see-also:
 replaces:
