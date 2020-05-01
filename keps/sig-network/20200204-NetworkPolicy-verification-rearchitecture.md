@@ -148,7 +148,7 @@ The consequences of this problem is that
 
 ## A high level outline of Pod Traffic Pathways
 
-Before diving into test details, we outline different types of pod traffic.  Each one of these types of traffic may pose different bugs to a CNI provider.  
+One of the key reasons for better NetworkPolicy tests is to make CNI's more reliable across the board.  Different types of traffic may pose different bugs to a CNI provider, under different load or security use-cases.  In the future, we'd like NetworkPolicy tests to comprehensively address all of these scenarios.  The work in this KEP is the first step in this direction.
 
 Intranode
 - pod -> pod
@@ -196,8 +196,8 @@ This is from the test "should enforce policy to allow traffic only from a differ
  
 ```
 +-------------------------------------------------------------------+
-| +------+    +-------+   Figure 1a: The NetworkPolicy Tests        | TODO: maybe include YAML examples side-by-side
-| |      |    |       |   current logical structure only verifies   |       visual nomenclature (i.e., cA -> podA)
+| +------+    +-------+   Figure 1a: The NetworkPolicy Tests        | 
+| |      |    |       |   current logical structure only verifies   |
 | |  a   |    |  b    |   one of many possible network connectivity |
 | |      |    |       |   requirements. Pods and servers are both   |
 | +--+---+    +--X----+   in the same node and namespace.           |
@@ -228,10 +228,10 @@ namespaces created in the entire network policy test suite.
 |     |   +---------------+   X       of other test scenarios which       |
 |     |   |    server     |   X       guarantee that (1) There is no      |
 |     +--->    80,81      XXXXX       namespace that whitelists traffic   |
-|         |               |           and that (2) there is no "pod"      | TODO: test "default" namespace
-|         +----X--X-------+           which whitelists traffic.           |       check for dropped namespaces
-| +------------X--X---------------+                                       |       make test instances bidirectional
-| |            X  X               |   We limit the amount of namespaces   |          (client/servers)
+|         |               |           and that (2) there is no "pod"      | 
+|         +----X--X-------+           which whitelists traffic.           |       
+| +------------X--X---------------+                                       |       
+| |            X  X               |   We limit the amount of namespaces   |       
 | |   +------XXX  XXX-------+  nsB|   to test to 3 because 3 is the union |
 | |   |      | X  X |       |     |   of all namespaces.                  |
 | |   |  b   | X  X |   c   |     |                                       |
@@ -262,13 +262,15 @@ Note that we also don't explicitly test a few other scenarios that involve chang
 - New pods obeying old policies
 - Extensive changing of pod labels is keeping up with policies
 
+We don't propose that this specific KEP implements complex temporal patterns, but, we note this here so it can be potentially addressed in a potential future KEP around performance and scalability testing of NetworkPolicies.
+
 #### Other concrete examples of incompleteness
 
 The above diagrams show that completeness is virtually impossible, the way the tests are written, because of the fact that each test is manually verifying bespoke cases.  More concretely, however, a look at `should enforce policy to allow traffic only from a different namespace, based on NamespaceSelector [Feature:NetworkPolicy]` reveals that some tests don't do positive controls (validation of preexisting connectivity), whereas others *do* do such controls.
 
 #### List of missing functional test cases
 
-TODO: use multiple pods in contiguous CIDR to validate CIDR traffic matching
+- Multiple pods in contiguous CIDR to validate CIDR traffic matching: Currently we do very limited CIDR policy testing.
 
 - Stacked IPBlock case: Need to add a test case to verify the traffic when a
   CIDR (say 10.0.1.0/24) is used in an ``except`` clause in one NetworkPolicy,
@@ -369,7 +371,6 @@ differentiating the stacked peers in network policy (an *or* selector) vs. a com
                     Ingress: []networkingv1.NetworkPolicyIngressRule{{
                         From: []networkingv1.NetworkPolicyPeer{
                             {
-                                // TODO add these composably, so that can be disambiguated from combo networkpolicypeer
                                 PodSelector: &metav1.LabelSelector{
                                     MatchLabels: map[string]string{
                                         "pod-name": "client-b",
@@ -553,7 +554,6 @@ Now, this underlying API has (essentially) been implemented in full, and the fol
  ```
 	// NOTE: This builder implementation will be replaced based on community feedback as of 4/23, with
 	// a struct implementation similar to what is in current tests.
- 	// TODO, consider a SpecBuilder.New(...) style of invocation
 	builder := &utils.NetworkPolicySpecBuilder{}
 	builder = builder.SetName("allow-x-via-pod-and-ns-selector").SetPodSelector(map[string]string{"pod": "a"})
 	builder.SetTypeIngress()
