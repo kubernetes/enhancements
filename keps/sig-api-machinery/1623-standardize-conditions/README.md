@@ -120,6 +120,16 @@ However, it encapsulates the best of what we've learned and will allow new APIs 
  3. `lastHeartbeatTime` is removed.
     This field caused excessive write loads as we scaled.
     If an API needs this concept, it should codify it separately and possibly using a different resource.
+ 4. `observedGeneration` does not follow the standard requirement of "all optional fields are pointers".
+    This rule originated from the need to distinguish intent of zero value versus unset.
+    The `.metadata.generation` is never set to zero.
+    See the [CR strategy](https://github.com/kubernetes/apiextensions-apiserver/blob/release-1.18/pkg/registry/customresource/strategy.go#L88)
+    and [deployment strategy](https://github.com/kubernetes/kubernetes/blob/release-1.18/pkg/registry/apps/deployment/strategy.go)
+    as examples.
+    Because `.metadata.generation` is never zero-value, it is not necessary to distinguish between absent and zero-value observedGeneration.
+    Whether a client omits `observedGeneration` (because it is unaware of the new field) or explicitly sets it to 0, the
+    meaning is the same: the condition does not correspond to a known generation.
+    This also provides parity the `.metadata.generation` field [Generation int64 \`json:"generation,omitempty" protobuf:"varint,7,opt,name=generation"\`](https://github.com/kubernetes/apimachinery/blob/release-1.18/pkg/apis/meta/v1/types.go#L182-L185).
 
 ### Graduation Criteria
 
