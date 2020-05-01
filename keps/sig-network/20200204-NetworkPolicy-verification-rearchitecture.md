@@ -66,11 +66,14 @@ Note that this approach of higher level DSLs for testing may be moved into sig-t
 <!-- /toc -->
 
 ## Summary
-This proposal suggests that we create and maintain a domain-specific language (DSL) for defining NetworkPolicies against connectivity truth tables, so we can automate positive and negative control tests to address the opportunities for improvement in the performance and adherence to Kubernetes network policy standards of CNI plugins.  We propose that the current NetworkPolicy test suite comprises 25 tests which can take 30 minutes to 1 hour to run, and this time period will be dramatically improved, while increasing test coverage dramatically as well, by following this approach - and initial tests corroborate the findings of this proposal.  In summary, this involves:
+
+We propose that the current NetworkPolicy test suite which comprises 25 tests, and can take 30 minutes to 1 hour to run, should be drastically improved both in terms of readability, performance, coverage, and scalability.  The mechanism we propose for this includes building a "Reachability matrix" for evaluating all pod connectivities, while also building reusable APIs for designing tests in a more modular way for the future.
+
+In summary, this involves:
 
 - Defining (redefining in some cases) the common set of test scenarios for all network policy tests and increasing performance by reusing a set of containers.
 - Rearchitecting network policy tests to enhance readibility and reusability.
-- Improve coverage for NetworkPolicy functional tests, and making them more hackable.
+- Provide comprehnsive coverage for NetworkPolicy communication matrices by using a truth-table approach to define connectivity.
 - Introduce time to conversion tests to measure performance against perturbed state at scale.
 
 ## Motivation 
@@ -89,8 +92,9 @@ In general, we think that outside the original motivations, these tests will hel
 
 ### Goals
 
-- Rearchitect the way we write and define CNI NetworkPolicy test verifications
-- Increase the visibility and quality of documentation available for network policies
+- Rearchitect the way we write and define CNI NetworkPolicy test verifications.
+- Increase the visibility and quality of documentation available for network policies.
+- Drastically improve the performance of existing tests so they can be run continually, or be designed in the future to validate at larger scales.
 
 #### Concrete goals
 
