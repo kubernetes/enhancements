@@ -14,8 +14,8 @@ approvers:
   - "@thockin"
   - "@smarterclayton"
 creation-date: 2017-08-14
-last-updated: 2018-10-31
-status: implementable
+last-updated: 2020-05-01
+status: implemented
 ---
 
 # Bounding Self-Labeling Kubelets
