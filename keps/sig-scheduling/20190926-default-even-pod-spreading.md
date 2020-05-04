@@ -8,7 +8,7 @@ reviewers:
   - "@Huang-Wei"
 approvers:
   - "@ahg-g"
-  - "@k82cn"
+  - "@Huang-Wei"
 creation-date: 2019-09-26
 last-updated: 2010-10-07
 status: implementable
@@ -43,7 +43,7 @@ see-also:
     - [In the scheduler framework](#in-the-scheduler-framework)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
-    - [Alpha (v1.18):](#alpha-v118)
+    - [Alpha (v1.19):](#alpha-v119)
 - [Implementation History](#implementation-history)
 - [Alternatives](#alternatives)
 <!-- /toc -->
@@ -178,10 +178,10 @@ These will be the default constraints for the cluster when the operator doesn't 
 
 ```yaml
 defaultConstraints:
-  - maxSkew: 1
+  - maxSkew: 3
     topologyKey: "kubernetes.io/hostname"
     whenUnsatisfiable: ScheduleAnyway
-  - maxSkew: 1
+  - maxSkew: 5
     topologyKey: "topology.kubernetes.io/zone"
     whenUnsatisfiable: ScheduleAnyway
 ```
@@ -272,12 +272,12 @@ To ensure this feature to be rolled out in high quality. Following tests are man
 
 ### Graduation Criteria
 
-#### Alpha (v1.18):
+#### Alpha (v1.19):
 
-- [ ] Args struct for `podtopologyspread.New`.
+- [x] Args struct for `podtopologyspread.New`.
 - [ ] Defaults and validation.
-- [ ] Score extension point implementation.
-- [ ] Filter extension point implementation.
+- [ ] Score extension point implementation. Add support for `maxSkew`.
+- [x] Filter extension point implementation.
 - [ ] Disabling `DefaultPodTopologySpread` when the feature is enabled.
 - [ ] Test cases mentioned in the [Test Plan](#test-plan).
 
@@ -285,6 +285,7 @@ To ensure this feature to be rolled out in high quality. Following tests are man
 
 - 2019-09-26: Initial KEP sent out for review.
 - 2020-01-20: KEP updated to make use of framework's PluginConfig.
+- 2020-05-04: Update completed tasks and target alpha for 1.19.
 
 ## Alternatives
 
