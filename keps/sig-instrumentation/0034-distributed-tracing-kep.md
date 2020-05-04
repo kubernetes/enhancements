@@ -149,7 +149,7 @@ This KEP suggests that we utilize the OpenTelemetry exporter format in all compo
     of the existing API objects?  **No.**
   - Will enabling / using the feature result in increasing time taken
     by any operations covered by [existing SLIs/SLOs][] (e.g. by adding
-    additional work, introducing new steps in between, etc.)? **Yes.  It will increase API Server request latency by a negligible amount**
+    additional work, introducing new steps in between, etc.)? **Yes.  It will increase API Server request latency by a negligible amount (<1 microsecond) for encoding and decoding the trace contex from headers, and recording spans in memory.  Exporting spans is not in the critical path.**
     Please describe the details if so.
   - Will enabling / using the feature result in non-negligible increase
     of resource usage (CPU, RAM, disk IO, ...) in any components?
