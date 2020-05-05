@@ -12,7 +12,7 @@ approvers:
 editor: TBD
 creation-date: 2019-04-18
 last-updated: 2019-04-18
-status: implementable
+status: implemented
 see-also:
   - "keps/sig-windows/20181221-windows-group-managed-service-accounts-for-container-identity.md"
 replaces:
