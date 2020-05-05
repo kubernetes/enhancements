@@ -94,7 +94,7 @@ but surfacing warnings to clients submitting problematic data would help them di
 When a deprecated API is used:
 
 1. Add a `Warning` header to the response
-2. Increment a counter metric with labels for the API group, version, resource, API verb, and target removal major/minor version
+2. Set a gauge metric to 1 with labels for the API group, version, resource, subresource, and target removal version
 3. Record an audit annotation indicating the request used a deprecated API
 
 Allow custom resource definitions to indicate specific versions are deprecated
@@ -142,7 +142,7 @@ In kube-apiserver and kube-controller-manager, configure the process-wide handle
 
 In the endpoint installer, decorate handlers for deprecated APIs:
   * add a warning header: `<group>/<version> <kind> is deprecated in v1.X+, unavailable in v1.Y+; use <replacementGroup>/<replacementVersion> <replacementKind>`
-  * increment the counter metric for the deprecated use
+  * set the gauge metric for the deprecated group/version/resource/subresource to 1
   * add an audit annotation indicating the request was made to a deprecated API
 
 **In-process validation and admission warnings:**
@@ -176,7 +176,7 @@ type CustomResourceDefinitionVersion struct {
 
 In the custom resource handler, decorate handlers for deprecated versions:
   * add the warning header
-  * increment the counter metric for the deprecated use
+  * set the gauge metric for the deprecated group/version/resource/subresource to 1
   * add an audit annotation indicating the request was made to a deprecated API
 
 **Admission webhook warnings:**
@@ -217,7 +217,7 @@ Warning mechanism unit tests:
 Deprecated API integration tests:
 
 - Warning headers are returned when making requests to deprecated APIs
-- Deprecated metrics are incremented when making requests to deprecated APIs
+- Gauge metrics for deprecated use are set to 1 when making requests to deprecated APIs
 - Audit annotations are added when making requests to deprecated APIs
 
 Extension mechanism integration tests:
@@ -231,7 +231,7 @@ Extension mechanism integration tests:
 
 In the past, we have had problems with unbounded metric labels increasing cardinality of 
 metrics and causing significant memory/storage use. Limiting these metrics to bounded values
-(API group, version, resource, API verb, target removal release) and omitting unbounded values
+(API group, version, resource, subresource, target removal release) and omitting unbounded values
 (resource instance name, client username, etc), metric cardinality is controlled.
 
 Annotating audit events for the deprecated API requests allows an administrator to locate
@@ -308,6 +308,10 @@ New clients making requests to old API servers handle requests without `Warning`
 * sig-architecture discussion
   * [notes](https://docs.google.com/document/d/1BlmHq5uPyBUDlppYqAAzslVbAO8hilgjqZUTaNXUhKM/edit#bookmark=id.yppt0g2tjwqw)
   * [recording](https://www.youtube.com/watch?v=VJo7PonPuGA&list=PL69nYSiGNLP2m6198LaLN6YahX7EEac5g&index=2&t=3m13s)
+* sig-instrumentation discussion
+  * [notes](https://docs.google.com/document/d/1FE4AQ8B49fYbKhfg4Tx0cui1V0eI4o3PxoqQPUwNEiU/edit#bookmark=id.c3qdrgp1fvnc)
+  * [recording](https://www.youtube.com/watch?v=cOoDnSTkMc0&list=PL69nYSiGNLP1tue6RXLncPTGjfnBVHP-f&index=2&t=2m33s)
+  * [mailing list thread](https://groups.google.com/d/msgid/kubernetes-sig-instrumentation/62bfc7c8-aab3-41c7-99cb-e69cf88a0749%40googlegroups.com)
 
 ## Implementation History
 
