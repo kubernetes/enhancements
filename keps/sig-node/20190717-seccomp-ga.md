@@ -193,7 +193,7 @@ for new profile sources to be added in the future (e.g. Kubernetes predefined pr
 profiles). The seccomp options struct leaves room for future extensions, such as defining the
 behavior when a profile cannot be set.
 
-<UNRESOLVED>
+<<[UNRESOLVED]>>
 What to do with the localhost profile type, given that we want to deprecate it? Alternative for
 consideration:
 
@@ -207,9 +207,9 @@ annotation.
 The one gotcha is how to handle annotation update in this case. I'm tempted to say allow the update,
 and if the kubelet goes to enforce it and the annotation isn't set to localhost anymore, just treat
 it as an invalid localhost path (fail the pod).
-</UNRESOLVED>
+<<[/UNRESOLVED]>>
 
-<UNRESOLVED>
+<<[UNRESOLVED]>>
 What to do with RuntimeProfile field? There aren't any runtimes that support multiple built in
 profiles, and this feature has never been requested.
 
@@ -217,7 +217,7 @@ If we dropped this field for now (just assume it's runtime/default), how bad wou
 back at some point in the future if it was needed? As long as we defaulted the new field to
 "default" and it's immutable, it doesn't seem like it would be that problematic? Or am I forgetting
 something?
-</UNRESOLVED>
+<<[/UNRESOLVED]>>
 
 #### PodSecurityPolicy API
 
