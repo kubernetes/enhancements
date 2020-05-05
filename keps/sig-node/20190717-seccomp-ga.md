@@ -4,7 +4,7 @@ authors:
   - "@tallclair"
 owning-sig: sig-node
 participating-sigs:
-  - sig-apimachinery
+  - sig-api-machinery
   - sig-auth
 reviewers:
   - "@liggitt"
@@ -16,7 +16,7 @@ approvers:
   - "@derekwaynecarr"
 editor: TBD
 creation-date: 2019-07-17
-status: implementable
+status: provisional
 ---
 
 # Seccomp to GA
