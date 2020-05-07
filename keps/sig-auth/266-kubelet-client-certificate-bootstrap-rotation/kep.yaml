@@ -1,0 +1,21 @@
+title: Kubelet client certificate bootstrap and rotation
+kep-number: 266
+authors:
+  - "@jcbsmpsn"
+  - "@liggitt"
+owning-sig: sig-auth
+participating-sigs:
+  - sig-auth
+  - sig-node
+status: implementable
+creation-date: 2017-06-27
+reviewers:
+  - "@smarterclayton"
+  - "@mikedanese"
+approvers:
+  - "@smarterclayton"
+  - "@mikedanese"
+see-also:
+  - "/keps/sig-auth/20190607-certificates-api.md"
+replaces:
+  - https://github.com/kubernetes/community/pull/768
