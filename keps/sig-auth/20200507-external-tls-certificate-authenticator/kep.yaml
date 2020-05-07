@@ -1,0 +1,12 @@
+title: External TLS certificate authenticator
+kep-number: NNNN
+authors:
+  - "@cristiklein"
+  - "@jakubkrzywda"
+owning-sig: sig-auth
+status: provisional
+creation-date: 2020-05-07
+reviewers:
+  - TBD
+approvers:
+  - TBD
