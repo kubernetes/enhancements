@@ -34,6 +34,8 @@ status: implementable
   - [Automatic CSR Approval Implementations](#automatic-csr-approval-implementations)
   - [Automatic Signer Implementations](#automatic-signer-implementations)
   - [Test Plan](#test-plan)
+- [Graduation Criteria](#graduation-criteria)
+  - [Beta to GA Graduation](#beta-to-ga-graduation)
 - [Implementation History](#implementation-history)
 <!-- /toc -->
 
@@ -111,10 +113,8 @@ certificate field of the status can only be updated via the `/status`
 subresource allowing signing permission to be authorized independently of other
 operations on the CertificateSigningRequest.
 
-Terminal failures can be indicated with a `Failed` condition added by a controller,
-such as a signer indicating a refusal to sign the CSR.
-A `Failed` condition cannot be removed, cannot have a `False` or `Unknown` status,
-and is treated as `True` if present.
+Terminal signer failures (such as a refusal to sign the CSR) can be indicated with a `Failed` condition.
+A `Failed` condition cannot be removed, cannot have a `False` or `Unknown` status, and is treated as `True` if present.
 
 The API is designed to support the standard asynchronous controller model of
 Kubernetes where the approver and signer act as independent controllers of the
@@ -286,6 +286,9 @@ Cluster admins can either:
 `/status` subresource:
 
 * allows modifying `status.conditions` other than `Approved`/`Denied`
+  (`Approved`/`Denied` conditions are still limited to the `/approval` subresource
+  to ensure version-independent authorization policy grants consistent permissions
+  across v1beta1 and v1 versions)
 
 ### CertificateSigningRequest API Definition
 
@@ -380,14 +383,26 @@ type CertificateSigningRequestCondition struct {
   // conditions, including ones that indicate request approval ("Approved", "Denied") and failure ("Failed").
   // Approved/Denied conditions are mutually exclusive.
   // Approved, Denied, and Failed conditions cannot be removed once added.
+  // Only one condition of a given type is allowed.
   Type RequestConditionType
   // status of the condition. Valid values are True, False, and Unknown.
   // Approved, Denied, and Failed conditions are limited to a value of True.
+  // In v1beta1, this is optional and defaults to True.
+  // In v1, this is required and not defaulted.
   Status v1.ConditionStatus
   // brief reason for the request state
   Reason string
   // human readable message with details about the request state
   Message string
+  // lastUpdateTime timestamp for the last update to this condition.
+  // If unset, when a CSR is written the server defaults this to the current time.
+  // +optional
+  LastUpdateTime metav1.Time
+  // lastTransitionTime is the time the condition last transitioned from one status to another.
+  // If unset, when a new condition type is added or an existing condition's status is changed,
+  // the server defaults this to the current time.
+  // +optional
+  LastTransitionTime metav1.Time
 }
 
 type RequestConditionType string
@@ -448,6 +463,16 @@ control plane.
   - Admission plugin limiting system:master client CSRs
   - Auto-approving controller
   - Auto-signing controller
+  - v1beta1 behavior validation
+    - `Approved`/`Denied` conditions can be added via `/approval` subresource, modifications are ignored via `/status` subresource
+    - `Failed` condition can be added via `/approval` or `/status` subresource
+    - `status.certificate` can be set via `/status` subresource, modification is ignored via `/approval` subresource
+    - `status.certificate` can be set to arbitrary content
+  - v1 behavior validation
+    - `Approved`/`Denied` conditions can be added via `/approval` subresource, modifications are rejected via `/status` subresource
+    - `Failed` condition can be added via `/approval` or `/status` subresource
+    - `status.certificate` can be set via `/status` subresource, modification is rejected via `/approval` subresource
+    - `status.certificate` content is validated when modified
 
 - integration tests of:
   - auto-approve and signing of kubelet client CSR
@@ -460,10 +485,18 @@ control plane.
   - status subresource get/update behavior
   - creating, approving, and signing a CSR for a custom signerName (e.g. `k8s.example.com/e2e`)
 
+## Graduation Criteria	
+
+### Beta to GA Graduation
+
+- Multi-signer API, admission plugins, and controller-handling for `kubernetes.io/*` signers is implemented and tested
+- Test plan is completed
+- e2e tests acceptable as conformance tests exist for all v1 endpoints+verbs
+
 ## Implementation History
 
 - 1.4: The Certificates API was merged as Alpha
 - 1.6: The Certificates API was promoted to Beta
 - 1.18: 2020-01-15: Multi-signer design added
 - 1.18: 2020-01-21: status.certificate field format validation added
-- 1.19: 2020-04-15: v1 details added
+- 1.19: 2020-05-07: v1 details added
