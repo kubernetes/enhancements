@@ -17,7 +17,7 @@ approvers:
 editor: TBD
 creation-date: 2020-02-05
 last-updated: 2020-02-09
-status: provisional
+status: implementable
 see-also:
   - "/keps/sig-cloud-provider/20190729-building-without-in-tree-providers.md"
 ---
@@ -51,14 +51,14 @@ see-also:
 
 ## Release Signoff Checklist
 
-- [ ] kubernetes/enhancements issue in release milestone, which links to KEP (this should be a link to the KEP location in kubernetes/enhancements, not the initial KEP PR)
-- [ ] KEP approvers have set the KEP status to `implementable`
-- [ ] Design details are appropriately documented
-- [ ] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
-- [ ] Graduation criteria is in place
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [X] kubernetes/enhancements issue in release milestone, which links to KEP (this should be a link to the KEP location in kubernetes/enhancements, not the initial KEP PR)
+- [X] KEP approvers have set the KEP status to `implementable`
+- [X] Design details are appropriately documented
+- [X] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [X] Graduation criteria is in place
+- [X] "Implementation History" section is up-to-date for milestone
+- [X] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [X] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 ## Summary
 
@@ -257,7 +257,8 @@ We envision the following testing:
 
 **Note:** *Section not required until targeted at a release.*
 
-TBD
+Since this is a developer facing change, I don't believe there is any graduation
+criteria.
 
 ### Upgrade / Downgrade Strategy
 
@@ -269,8 +270,7 @@ N/A
 
 ## Implementation History
 
-- original prototype [kubernetes/kubernetes#87746](https://github.com/kubernetes/kubernetes/pull/87746)
-- original KEP PR [TBD]
+- original KEP PR [kubernetes/kubernetes#87746](https://github.com/kubernetes/kubernetes/pull/87746)
 
 ## Drawbacks
 
