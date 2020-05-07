@@ -12,7 +12,7 @@ approvers:
   - "@lavalamp"
 creation-date: 2019-08-22
 last-updated: 2019-08-22
-status: provisional
+status: implementable
 ---
 
 # StorageVersion API for HA API servers
