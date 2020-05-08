@@ -94,11 +94,11 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Restricting Exports](#restricting-exports)
   - [Importing Services](#importing-services)
   - [Supercluster Service Behavior Expectations](#supercluster-service-behavior-expectations)
+    - [Service Types](#service-types)
     - [SuperclusterIP](#superclusterip)
     - [DNS](#dns)
     - [EndpointSlice](#endpointslice)
     - [Endpoint TTL](#endpoint-ttl)
-    - [Service Types](#service-types)
 - [Constraints and Conflict Resolution](#constraints-and-conflict-resolution)
   - [Global Properties](#global-properties)
     - [Service Port](#service-port)
@@ -252,7 +252,8 @@ nitty-gritty.
 - **cluster name** - A unique name or identifier for the cluster, scoped to the
   implemenetation's cluster registry. We do not attempt to define the registry.
   Each cluster must have a name that can uniquely identify it within the
-  supercluster.
+  supercluster. A cluster name must be a valid [RFC
+  1123](https://tools.ietf.org/html/rfc1123) DNS label.
 
 [namespace sameness]: https://github.com/kubernetes/community/blob/master/sig-multicluster/namespace-sameness-position-statement.md
 
@@ -503,12 +504,22 @@ registry-scoped unique identifier for the cluster.
 ```golang
 // ServiceImport describes a service imported from clusters in a supercluster.
 type ServiceImport struct {
- metav1.TypeMeta `json:",inline"`
- // +optional
- metav1.ObjectMeta `json:"metadata,omitempty"`
- // +optional
- Spec ServiceImportSpec `json:"spec,omitempty"`
+  metav1.TypeMeta `json:",inline"`
+  // +optional
+  metav1.ObjectMeta `json:"metadata,omitempty"`
+  // +optional
+  Spec ServiceImportSpec `json:"spec,omitempty"`
 }
+
+// ServiceImportType designates the type of a ServiceImport
+type ServiceImportType string
+
+const (
+  // SuperclusterIP are only accessible via the Supercluster IP.
+  SuperclusterIP ServiceImportType = "SuperclusterIP"
+  // Headless services allow backend pods to be addressed directly.
+  Headless ServiceImportType = "Headless"
+)
 
 // ServiceImportSpec describes an imported service and the information necessary to consume it.
 type ServiceImportSpec struct {
@@ -526,6 +537,8 @@ type ServiceImportSpec struct {
   Clusters []ClusterSpec `json:"clusters"`
   // +optional
   IP string `json:"ip,omitempty"`
+  // +optional
+  Type ServiceImportType `json:"type"`
 }
 
 // ClusterSpec contains service configuration mapped to a specific cluster
@@ -545,6 +558,7 @@ metadata:
   namespace: my-ns
 spec:
   ip: 42.42.42.42
+  type: "SuperclusterIP"
   ports:
   - name: http
     protocol: TCP
@@ -584,67 +598,6 @@ The `ServiceImport.Spec.IP` (VIP) can be used to access this service from within
 
 ### Supercluster Service Behavior Expectations
 
-#### SuperclusterIP
-
-A `ServiceImport` is expected to have an associated IP address, the supercluster
-IP, which may be accessed from within an importing cluster. This IP may be
-supercluster-wide, or assigned on a per-cluster basis, but is expected to be
-consistent for the life of a `ServiceImport`. Requests to this IP from within a
-cluster will route to backends for the aggregated Service.
-
-Note: this doc does not discuss `NetworkPolicy`, which cannot currently be used
-to describe a policy that applies to a multi-cluster service.
-
-#### DNS
-
-```
-<<[UNRESOLVED]>>
-Full DNS spec needed
-<<[UNRESOLVED]>>
-```
-When a `ServiceExport` is created, this will cause a domain name for the
-multi-cluster service to become accessible from within the supercluster. The
-domain name will be `<service>.<ns>.svc.supercluster.local`. MCS aims to align
-with the existing [service DNS
-spec](https://github.com/kubernetes/dns/blob/master/docs/specification.md).
-Requests to this domain name from within an importing cluster will resolve to
-the supercluster IP, which points to endpoints for pods within the underlying
-`Service`(s) across the supercluster. All service consumers must use the
-`*.svc.supercluster.local` name to enable supercluster routing, even if there is
-a matching `Service` with the same namespaced name in the local cluster. There
-will be no change to existing behavior of the `cluster.local` zone.
-
-#### EndpointSlice
-
-When a `ServiceExport` is created, this will cause `EndpointSlice` objects for
-the underlying `Service` to be created in each cluster within the supercluster,
-associated with the derived `ServiceImport`. One or more `EndpointSlice`
-resources will exist for each cluster that exported the `Service`, with each
-`EndpointSlice` containing only endpoints from its source cluster. These
-`EndpointSlice` objects will be marked as managed by the supercluster service
-controller, so that the endpoint slice controller doesn’t delete them.
-`EndpointSlices` will have an owner reference to their associated
-`ServiceImport`.
-
-```
-<<[UNRESOLVED]>>
-We have not yet sorted out scalability impact here. We hope the upper bound for
-imported endpoints + in-cluster endpoints will be ~= the upper bound for
-in-cluster endpoints today, but this remains to be determined.
-<<[/UNRESOLVED]>>
-```
-
-#### Endpoint TTL
-
-To prevent stale endpoints from persisting in the event that a cluster becomes
-unreachable to the supercluster controller, each `EndpointSlice` is associated
-with a lease representing connectivity with its source cluster. The supercluster
-service controller is responsible for periodically renewing the lease so long as
-the connection with the source cluster is confirmed alive. A separate
-controller, that may run inside each cluster, is responsible for watching each
-lease and removing all remaining `EndpointSlices` associated with a cluster when
-that cluster’s lease expires.
-
 #### Service Types
 
 - `ClusterIP`: This is the the straightforward case most of the proposal
@@ -668,7 +621,87 @@ that cluster’s lease expires.
   They can't be merged with other exports, and it seems like it would only
   complicate deployments by even attempting to stretch them across clusters.
   Instead, regular `ExternalName` type `Services` should be created in each
-  cluster individually.
+  cluster individually. If a `ServiceExport` is created for an `ExternalName`
+  service, an `InvalidServiceType` condition will be set on the export.
+
+#### SuperclusterIP
+
+A non-headless `ServiceImport` is expected to have an associated IP address, the
+supercluster IP, which may be accessed from within an importing cluster. This IP
+may be supercluster-wide, or assigned on a per-cluster basis, but is expected to
+be consistent for the life of a `ServiceImport`. Requests to this IP from within
+a cluster will route to backends for the aggregated Service.
+
+Note: this doc does not discuss `NetworkPolicy`, which cannot currently be used
+to describe a policy that applies to a multi-cluster service.
+
+#### DNS
+
+_Optional, but recommended._
+
+When a `ServiceExport` is created, this will cause a domain name for the
+multi-cluster service to become accessible from within the supercluster. The
+domain name will be `<service>.<ns>.svc.supercluster.local`. MCS aims to align
+with the existing [service DNS
+spec](https://github.com/kubernetes/dns/blob/master/docs/specification.md). This
+section assumes familiarity with in-cluster Service DNS behavior.
+
+**SuperclusterIP services:** requests to this domain name from within an importing
+cluster will resolve to the supercluster IP, which points to endpoints for pods
+within the underlying `Service`(s) across the supercluster.
+
+**Headless services:** Within an importing cluster, the supercluster domain name
+will have multiple `A`/`AAAA` records, each containing the address of a ready
+endpoint of the headless service. `<service>.<ns>.svc.supercluster.local` will
+resolve to the set of all ready pod IPs for the service.
+
+Pods backing a supercluster service may be addressed individually using the
+`<hostname>.<clustername>.<svc>.<ns>.svc.supercluster.local` format. Necessary
+records will be created based on each ready endpoint's hostname and the
+`multicluster.kubernetes.io/source-cluster` label on the `EndpointSlice`. This
+allows naming collisions to be avoided for headless services backed by identical
+`StatefulSets` deployed in multiple clusters.
+
+All service consumers must use the `*.svc.supercluster.local` name to enable
+supercluster routing, even if there is a matching `Service` with the same
+namespaced name in the local cluster. There will be no change to existing
+behavior of the `cluster.local` zone.
+```
+<<[UNRESOLVED]>>
+Full DNS spec needed prior to Beta graduation following:
+https://github.com/kubernetes/dns/blob/master/docs/specification.md
+<<[UNRESOLVED]>>
+```
+
+#### EndpointSlice
+
+When a `ServiceExport` is created, this will cause `EndpointSlice` objects for
+the underlying `Service` to be created in each cluster within the supercluster,
+associated with the derived `ServiceImport`. One or more `EndpointSlice`
+resources will exist for the exported `Service`, with each `EndpointSlice`
+containing only endpoints from a single source cluster. These `EndpointSlice`
+objects will be marked as managed by the supercluster service controller, so
+that the endpoint slice controller doesn’t delete them. `EndpointSlices` will
+have an owner reference to their associated `ServiceImport`.
+
+```
+<<[UNRESOLVED]>>
+We have not yet sorted out scalability impact here. We hope the upper bound for
+imported endpoints + in-cluster endpoints will be ~= the upper bound for
+in-cluster endpoints today, but this remains to be determined.
+<<[/UNRESOLVED]>>
+```
+
+#### Endpoint TTL
+
+To prevent stale endpoints from persisting in the event that a cluster becomes
+unreachable to the supercluster controller, each `EndpointSlice` is associated
+with a lease representing connectivity with its source cluster. The supercluster
+service controller is responsible for periodically renewing the lease so long as
+the connection with the source cluster is confirmed alive. A separate
+controller, that may run inside each cluster, is responsible for watching each
+lease and removing all remaining `EndpointSlices` associated with a cluster when
+that cluster’s lease expires.
 
 ## Constraints and Conflict Resolution
 
