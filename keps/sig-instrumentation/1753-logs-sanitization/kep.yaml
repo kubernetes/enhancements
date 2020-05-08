@@ -1,0 +1,13 @@
+title: Kubernetes system components logs sanitization
+kep-number: 1753
+authors:
+  - "@44past4"
+  - "@immutableT"
+  - "@PurelyApplied"
+owning-sig: sig-instrumentation
+status: provisional
+creation-date: 2020-05-07
+reviewers:
+  - TBD
+approvers:
+  - TBD
