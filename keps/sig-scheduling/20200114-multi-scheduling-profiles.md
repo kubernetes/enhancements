@@ -16,6 +16,7 @@ status: implementable
 see-also:
   - "/keps/sig-scheduling/20180409-scheduling-framework.md"
   - "/keps/sig-scheduling/20190226-default-even-pod-spreading.md"
+  - "/keps/sig-scheduling/785-scheduler-component-config-api"
 ---
 
 # Multi Scheduling Profiles
@@ -43,6 +44,7 @@ see-also:
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha (v1.18):](#alpha-v118)
+    - [Beta (v1.19):](#beta-v119)
 - [Implementation History](#implementation-history)
 <!-- /toc -->
 
@@ -52,10 +54,10 @@ see-also:
 - [x] KEP approvers have set the KEP status to `implementable`
 - [x] Design details are appropriately documented
 - [x] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
-- [ ] Graduation criteria is in place
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [x] Graduation criteria is in place
+- [x] "Implementation History" section is up-to-date for milestone
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 ## Summary
 
@@ -286,20 +288,29 @@ But, as stated in our goals, this KEP doesn't introduce new default profiles.
 
 These are the required changes:
 
-- [ ] New `kubescheduler.config.k8s.io/v1alpha2` API.
-    - [ ] Conversion from `kubescheduler.config.k8s.io/v1alpha1`
-    - [ ] Validation.
-    - [ ] Defaults.
-- [ ] Scheduler can run more than one framework:
-    - [ ] Scheduler adds unscheduled pods to the pending queue for more than one name.
-    - [ ] Scheduler uses a framework using the scheduler name specified by the pod.
-- [ ] Tests from [Test Plan](#test-plan).
+- [x] New `kubescheduler.config.k8s.io/v1alpha2` API.
+    - [x] Conversion from `kubescheduler.config.k8s.io/v1alpha1`
+    - [x] Validation.
+    - [x] Defaults.
+- [x] Scheduler can run more than one framework:
+    - [x] Scheduler adds unscheduled pods to the pending queue for more than one name.
+    - [x] Scheduler uses a framework using the scheduler name specified by the pod.
+- [x] Tests from [Test Plan](#test-plan).
 
 Note that we don't require a feature gate as users already have to opt-in by using
 `kubescheduler.config.k8s.io/v1alpha2` instead of the previous version.
+
+#### Beta (v1.19):
+
+Scheduling profiles will graduate to beta altogether with the graduation of
+the `kubescheduler.config.k8s.io` configuration API to Beta.
+
+See [KEP 785](/keps/sig-scheduling/785-scheduler-component-config-api) for
+more information.
 
 ## Implementation History
 
 - 2020-01-14: Initial KEP sent out for review, including Summary, Motivation
 and Proposal.
 - 2020-01-21: Test Plan and Alpha Graduation criteria in KEP.
+- 2020-05-08: Beta graduation criteria.
