@@ -18,8 +18,8 @@ approvers:
   - "@stephenaugustus"
 editor: TBD
 creation-date: 2019-07-29
-last-updated: 2019-07-29
-status: implementable
+last-updated: 2020-05-28
+status: implemented
 see-also:
   - "/keps/sig-cloud-provider/20190125-removing-in-tree-providers.md"
   - "/keps/sig-cloud-provider/20180530-cloud-controller-manager.md"
@@ -59,10 +59,10 @@ see-also:
 
 - [x] kubernetes/enhancements issue in release milestone, which links to KEP (this should be a link to the KEP location in kubernetes/enhancements, not the initial KEP PR)
 - [x] KEP approvers have set the KEP status to `implementable`
-- [ ] Design details are appropriately documented
+- [x] Design details are appropriately documented
 - [x] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
 - [x] Graduation criteria is in place
-- [ ] "Implementation History" section is up-to-date for milestone
+- [x] "Implementation History" section is up-to-date for milestone
 - [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [x] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
@@ -228,6 +228,7 @@ N/A ?
 
 - original prototype [kubernetes/kubernetes#80353](https://github.com/kubernetes/kubernetes/pull/80353)
 - original KEP PR [kubernetes/enhancements#1180](https://github.com/kubernetes/enhancements/pull/1180)
+- typechecking CI [kubernetes/kubernetes#85457](https://github.com/kubernetes/kubernetes/pull/85457)
 
 ## Drawbacks [optional]
 
