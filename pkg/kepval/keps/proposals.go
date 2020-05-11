@@ -35,6 +35,17 @@ func (p *Proposals) AddProposal(proposal *Proposal) {
 	*p = append(*p, proposal)
 }
 
+type Milestone struct {
+	Alpha  string `json:"alpha" yaml:"alpha"`
+	Beta   string `json:"beta" yaml:"beta"`
+	Stable string `json:"stable" yaml:"stable"`
+}
+
+type FeatureGate struct {
+	Name       string   `json:"name" yaml:"name"`
+	Components []string `json:"components" yaml:"components"`
+}
+
 type Proposal struct {
 	ID                string   `json:"id"`
 	Title             string   `json:"title" yaml:"title"`
@@ -51,6 +62,13 @@ type Proposal struct {
 	SeeAlso           []string `json:"seeAlso" yaml:"see-also,omitempty"`
 	Replaces          []string `json:"replaces" yaml:"replaces,omitempty"`
 	SupersededBy      []string `json:"supersededBy" yaml:"superseded-by,omitempty"`
+
+	LatestMilestone string    `json:"latestMilestone" yaml:"latest-milestone"`
+	Milestone       Milestone `json:"milestone" yaml:"milestone"`
+
+	FeatureGate       FeatureGate `json:"featureGate" yaml:"feature-gate"`
+	RollbackSupported bool        `json:"rollbackSupported" yaml:"rollback-supported"`
+	Metrics           []string    `json:"metrics" yaml:"metrics"`
 
 	Filename string `json:"-" yaml:"-"`
 	Error    error  `json:"-" yaml:"-"`

@@ -52,6 +52,21 @@ approvers:
 creation-date: 2018-04-15
 last-updated: 2018-04-24
 status: provisional
+
+latest-milestone: "v1.19"
+milestone:
+  alpha: "v1.19"
+  beta: "v1.20"
+  stable: "v1.22"
+
+feature-gate:
+  name: MyFeature
+  components:
+    - kube-apiserver
+    - kube-controller-manager
+rollback-supported: true
+metrics:
+  - my_feature_metric
 ---`,
 		},
 	}
