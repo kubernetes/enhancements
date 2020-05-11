@@ -384,6 +384,10 @@ _This section must be completed when targeting alpha to a release._
     - Will enabling / disabling the feature require downtime or reprovisioning
       of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
 
+* **Does enabling the feature change any default behavior?**
+  Any change of default behavior may be surprising to users or break existing
+  automations, so be extremely careful here.
+
 * **Can the feature be disabled once it has been enabled (i.e. can we rollback
   the enablement)?**
   Also set `rollback-supported` to `true` or `false` in `kep.yaml`.
@@ -412,6 +416,10 @@ _This section must be completed when targeting beta graduation to a release._
   Describe manual testing that was done and the outcomes.
   Longer term, we may want to require automated upgrade/rollback tests, but we
   are missing a bunch of machinery and tooling and do that now.
+
+* **Is the rollout accompanied by any deprecations and/or removals of features,
+  APIs, fields of API types, flags, etc.?**
+  Even if applying deprecation policies, they may still surprise some users.
 
 ### Monitoring requirements
 
