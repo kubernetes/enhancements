@@ -260,18 +260,19 @@ All messages (requests and responses) are in the JSON format. The resources
 (certificates and signatures) are Base64 encoded.
 
 A request message is passed from the authentication provider to the external
-plugin as an environment variable. The external plugin is expected to return the
-response message by printing them to `stdout`. Moreover, the external plugin has
-access to `stdin` for interacting with the user (for example providing a PIN)
-and `stderr` for printing diagnostic information.
+plugin in an environment variable `EXTERNAL_SIGNER_PKCS11_PLUGIN_CONFIG`. The
+external plugin is expected to return the response message by printing them to
+`stdout`. Moreover, the external plugin has access to `stdin` for interacting
+with the user (for example providing a PIN) and `stderr` for printing diagnostic
+information.
 
 #### Obtaining a certificate
 
 ##### Certificate request
 
 The authentication provider sends a request message in the JSON format of
-`CertificateRequest` kind containing the plugin configuration parameters as an
-environment variable.
+`CertificateRequest` kind containing the plugin configuration parameters in an
+environment variable `EXTERNAL_SIGNER_PKCS11_PLUGIN_CONFIG`.
 
 ```json
 {
@@ -307,8 +308,9 @@ printing it to `stdout`.
 
 ##### Sign request
 
-The authentication provider sends a request message as an environment variable
-in the JSON format of `SignRequest` kind containing:
+The authentication provider sends a request message in an environment variable
+`EXTERNAL_SIGNER_PKCS11_PLUGIN_CONFIG` in the JSON format of `SignRequest` kind
+containing:
 
 - the digest,
 - plugin configuration parameters,
