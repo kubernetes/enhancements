@@ -172,7 +172,7 @@ Kubernetes provides the following well-known signers.  Today, failures for all o
        Certain subjects like cluster-admin level users or groups vary between distributions and installations, but deserve
        additional scrutiny before approval and signing.  An admission plugin is available to restrict system:masters, but
        it is often not the only cluster-admin subject in a cluster.
-    3. Permitted x509 extensions - Non-critical extensions should be dropped.
+    3. Permitted x509 extensions - URI, DNS, IP, and Email SAN extensions are honored. Other extensions are discarded.
     4. Permitted key usages - must include `[]string{"client auth"}`.  Must not include key usages beyond `[]string{"digital signature", "key encipherment", "client auth"}`
     5. Expiration/cert lifetime - minimum of CSR signer or request.  Sanity of the time is the concern of the signer.
     6. CA bit allowed/disallowed - not allowed.
@@ -181,7 +181,7 @@ Kubernetes provides the following well-known signers.  Today, failures for all o
     1. Trust distribution: signed certificates must be honored as client-certificates by the kube-apiserver.  The CA bundle
        is not distributed by any other means.
     2. Permitted subjects - organizations are exactly `[]string{"system:nodes"}`, common name starts with `"system:node:"`
-    3. Permitted x509 extensions - none
+    3. Permitted x509 extensions - URI, DNS, IP, and Email SAN extensions are not allowed. Other extensions are discarded.
     4. Permitted key usages - exactly `[]string{"key encipherment", "digital signature", "client auth"}`
     5. Expiration/cert lifetime - minimum of CSR signer or request.  Sanity of the time is the concern of the signer.
     6. CA bit allowed/disallowed - not allowed.
@@ -190,7 +190,7 @@ Kubernetes provides the following well-known signers.  Today, failures for all o
     1. Trust distribution: signed certificates must be honored by the kube-apiserver as valid to terminate connections to a kubelet.
        The CA bundle is not distributed by any other means.
     2. Permitted subjects - organizations are exactly `[]string{"system:nodes"}`, common name starts with `"system:node:"`
-    3. Permitted x509 extensions - only DNS and IP SANs are allowed, at least one DNS or IP SAN must be present
+    3. Permitted x509 extensions - DNS and IP SANs are allowed, and at least one DNS or IP SAN must be present. URI and Email SANs are not allowed. Other extensions are discarded.
     4. Permitted key usages - exactly `[]string{"key encipherment", "digital signature", "server auth"}`
     5. Expiration/cert lifetime - minimum of CSR signer or request.
     6. CA bit allowed/disallowed - not allowed.
@@ -198,7 +198,7 @@ Kubernetes provides the following well-known signers.  Today, failures for all o
     certs, but that behavior is not standard kubernetes behavior.  Never auto-approved by kube-controller-manager.
     1. Trust distribution: None.  There is no standard trust or distribution for this signer in a kubernetes cluster.
     2. Permitted subjects - any
-    3. Permitted x509 extensions - honors SAN extensions and discards other extensions.
+    3. Permitted x509 extensions - URI, DNS, IP, and Email SAN extensions are honored. Other extensions are discarded.
     4. Permitted key usages - any
     5. Expiration/cert lifetime - minimum of CSR signer or request.  Sanity of the time is the concern of the signer.
     6. CA bit allowed/disallowed - not allowed.
