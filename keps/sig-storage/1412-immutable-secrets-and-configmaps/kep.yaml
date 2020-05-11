@@ -1,0 +1,20 @@
+title: Immutable Secrets and ConfigMaps
+kep-number: 1412
+authors:
+  - "@wojtek-t"
+owning-sig: sig-storage
+participating-sigs:
+  - sig-apps
+  - sig-node
+  - sig-scalability
+status: implementable
+reviewers:
+  - "@yujuhong"
+  - "@lavalamp"
+  - "@msau42"
+approvers:
+  - "@saad-ali"
+creation-date: 2019-11-17
+last-updated: 2019-12-09
+see-also:
+replaces:

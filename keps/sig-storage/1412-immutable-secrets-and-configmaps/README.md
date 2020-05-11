@@ -1,26 +1,3 @@
----
-title: Immutable Secrets and ConfigMaps
-authors:
-  - "@wojtek-t"
-owning-sig: sig-storage
-participating-sigs:
-  - sig-apps
-  - sig-node
-  - sig-scalability
-reviewers:
-  - "@yujuhong"
-  - "@lavalamp"
-  - "@msau42"
-approvers:
-  - "@saad-ali"
-creation-date: 2019-11-17
-last-updated: 2019-12-09
-status: implementable
-see-also:
-replaces:
-superseded-by:
----
-
 # Immutable ephemeral volumes
 
 ## Table of Contents
