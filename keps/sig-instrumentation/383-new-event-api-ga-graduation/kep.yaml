@@ -14,7 +14,14 @@ approvers:
   - "@wojtekt"
   - "@brancz"
 creation-date: 2019-01-31
-last-updated: 2020-05-01
+last-updated: 2020-05-19
 status: implementable
 see-also:
 replaces:
+stage: stable
+latest-milestone: "v1.19"
+milestone:
+  stable: "v1.19"
+disable-supported: true
+metrics:
+  - apiserver_requests_total
