@@ -58,10 +58,11 @@ usage.
 - Introduce `kubescheduler.config.k8s.io/v1beta1` as a copy of
 `kubescheduler.config.k8s.io/v1alpha2` with minimal cleanup changes.
 - Use the newly created API objects to build the default configuration for kube-scheduler.
+- Remove support for `kubescheduler.config.k8s.io/v1alpha2`
 
 ### Non-Goals
 
-- Remove support for `kubescheduler.config.k8s.io/v1alpha2`
+- Update configuration scripts in /cluster to use API.
 
 ## Proposal
 
@@ -69,10 +70,7 @@ For the most part, `kubescheduler.config.k8s.io/v1beta1` will be a copy of
 `kubescheduler.config.k8s.io/v1alpha2`, with the following differences:
 
 - [ ] `.bindTimeoutSeconds` will be an argument for `VolumeBinding` plugin.
-- [ ] `.profiles[*].plugins.unreserve` will be removed. We will preserve
-  the extension in the internal type as long as `v1alpha2` is not removed.
-  During conversion of `v1beta1`, all the plugins from `reserve` will be
-  copied into `unreserve`.
+- [ ] `.profiles[*].plugins.unreserve` will be removed.
 - [ ] Embedded types of `RequestedToCapacityRatio` will include missing json tags
   and will be decoded with a case-sensitive decoder.
 
@@ -81,26 +79,22 @@ For the most part, `kubescheduler.config.k8s.io/v1beta1` will be a copy of
 The major risk is around the removal of the `unreserve` extension point.
 However, this is mitigated for the following reasons:
 
-- The interfaces for `Reserve` and `Unreserve` in the scheduler framework won't
-  be merged until `v1alpha2` is removed.
+- The function from `Unreserve` interface will be merged into `Reserve`,
+  effectively requiring plugins to implement both functions.
 - There are no in-tree Reserve or Unreserve plugins prior to 1.19.
   The `VolumeBinding` plugin is now implementing both interfaces.
   
-The caveat is that out-of-tree plugins that want to work for v1beta1 need to
-implement both interfaces. Otherwise scheduler startup will fail. Plugins can
-choose to provide empty implementations.
+The caveat is that out-of-tree plugins that want to work 1.19 need to
+updated to comply with the modified `Reserve` interface, otherwise scheduler
+startup will fail. Plugins can choose to provide empty implementations.
 This will be documented in https://kubernetes.io/docs/reference/scheduling/profiles/
 
 ### Test Plan
 
-- [ ] Compatibility tests for `v1alpha2` that show no internal configuration
-  changes.
-- [ ] Test for `v1alpha2` configurations that exercise plugins that use
-  `Reserve` but not `Unreserve` (and viceversa) are executed accordingly.
-- [ ] Test that `.bindTimeoutSeconds` set in a `v1alpha2` propagates to the
-  volume binding plugin.
-- [ ] Test that args for `RequestedToCapacityRatio` with both casing pass
-  in `v1alpha2`, but not in `v1beta1`.
+- [ ] Compatibility tests for defaults and overrides of `.bindTimeoutSeconds`
+  in `VolumeBindingArgs` type.
+- [ ] Tests for `RequestedToCapacityRatioArgs` that: (1) fail to pass with
+  bad casing and (2) get encoded with lower case.
 
 ### Graduation Criteria
 
@@ -113,3 +107,4 @@ This will be documented in https://kubernetes.io/docs/reference/scheduling/profi
 
 - 2020-05-08: KEP for beta graduation sent for review, including motivation,
   proposal, risks, test plan and graduation criteria.
+- 2020-05-13: KEP updated to remove v1alpha2 support.
