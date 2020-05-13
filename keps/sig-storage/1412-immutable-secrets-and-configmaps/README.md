@@ -1,26 +1,3 @@
----
-title: Immutable Secrets and ConfigMaps
-authors:
-  - "@wojtek-t"
-owning-sig: sig-storage
-participating-sigs:
-  - sig-apps
-  - sig-node
-  - sig-scalability
-reviewers:
-  - "@yujuhong"
-  - "@lavalamp"
-  - "@msau42"
-approvers:
-  - "@saad-ali"
-creation-date: 2019-11-17
-last-updated: 2019-12-09
-status: implementable
-see-also:
-replaces:
-superseded-by:
----
-
 # Immutable ephemeral volumes
 
 ## Table of Contents
@@ -38,6 +15,13 @@ superseded-by:
   - [Graduation Criteria](#graduation-criteria)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
+- [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
+  - [Feature enablement and rollback](#feature-enablement-and-rollback)
+  - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+  - [Monitoring requirements](#monitoring-requirements)
+  - [Dependencies](#dependencies)
+  - [Scalability](#scalability)
+  - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
 - [Alternatives](#alternatives)
   - [Define immutability at VolumeSource level](#define-immutability-at-volumesource-level)
@@ -196,6 +180,139 @@ On Nodes in versions on supporting the feature, Kubelet will still be watching
 immutable Secrets and/or ConfigMaps. That said, this is purely a performance
 improvement and doesn't have correctness implications. So those clusters will
 simple have worse scalability characteristic.
+
+## Production Readiness Review Questionnaire
+
+### Feature enablement and rollback
+
+_This section must be completed when targeting alpha to a release._
+
+* **How can this feature be enabled / disabled in a live cluster?**
+  - [x] Feature gate (also fill in values in `kep.yaml`)
+    - Feature gate name: ImmutableEphemeralVolumes
+    - Components depending on the feature gate: kube-apiserver, kubelet
+
+* **Does enabling the feature change any default behavior?**
+  No, users need to explicitly opt-in for secrets/configmaps immutability.
+
+* **Can the feature be disabled once it has been enabled (i.e. can we rollback
+  the enablement)?**
+  Yes. kube-apiserver rollback allows for modifying secrets/configmaps.
+  kubelet rollback causes that all secrets/configmaps are again being watched.
+
+* **What happens if we reenable the feature if it was previously rolled back?**
+  If the `immutable` field of Secret/ConfigMap wasn't cleared up for some
+  objects, this would result in making the immutable again.
+
+* **Are there any tests for feature enablement/disablement?**
+  Only basic conversions tests.
+
+### Rollout, Upgrade and Rollback Planning
+
+_This section must be completed when targeting beta graduation to a release._
+
+* **How can a rollout fail? Can it impact already running workloads?**
+  If some critical Secrets/Configmaps were marked as immutable it may not be
+  able to update them if needed. No impact for already running workloads.
+
+* **What specific metrics should inform a rollback?**
+  No known rollback criteria.
+
+* **Were upgrade and rollback tested? Was upgrade->downgrade->upgrade path tested?**
+  Manual tests run to confirm that (on top of existing e2e tests):
+  - setting immutable field is impossible when the feature is switched of
+  - upgrade doesn't change behavior of existing objects
+  - immutable fields (if previously set) are not cleared after rollback (which
+    is a generic pattern used for all features)
+  - given validation is not feature-gated, it's impossible to update data even
+    after rollback
+  - on second upgrade, Secrets/Configmaps previously marked as immutable,
+    automatically are stopped being watched after Kubelet upgrade
+
+* **Is the rollout accompanied by any deprecations and/or removals of features,
+  APIs, fields of API types, flags, etc.?**
+  No.
+
+### Monitoring requirements
+
+_This section must be completed when targeting beta graduation to a release._
+
+* **How can an operator determine if the feature is in use by workloads?**
+  Listing secrets/configmaps in the cluster and checking if any has immutable 
+  field set.
+
+* **What are the SLIs (Service Level Indicators) an operator can use to
+  determine the health of the service?**
+  None. It's not a feature, rather defence and optimization.
+  That said, there will be indirect impact on `apiserver_request_total` metric.
+
+* **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
+  None. It's not a feature, rather defence and optimization.
+
+* **Are there any missing metrics that would be useful to have to improve
+  observability if this feature?**
+  Number of currently in-use immutable secrets/configmaps in kubelet to be added.
+
+### Dependencies
+
+_This section must be completed when targeting beta graduation to a release._
+
+* **Does this feature depend on any specific services running in the cluster?**
+  No
+
+### Scalability
+
+_For alpha, this section is encouraged: reviewers should consider these questions
+and attempt to answer them._
+
+_For beta, this section is required: reviewers must answer these questions._
+
+_For GA, this section is required: approvers should be able to confirms the
+previous answers based on experience in the field._
+
+* **Will enabling / using this feature result in any new API calls?**
+  No. It's rather the opposite, Secrets/ConfigMaps marked as immutable will
+  not be watched by kubelets after determining their immutability.
+
+* **Will enabling / using this feature result in introducing new API types?**
+  No.
+
+* **Will enabling / using this feature result in any new calls to cloud
+  provider?**
+  No.
+
+* **Will enabling / using this feature result in increasing size or count
+  of the existing API objects?**
+  Secrets/ConfigMaps marked as immutable will have additional `Immutable` field
+  of boolean type set. Negligible from scalability/performance perspective.
+
+* **Will enabling / using this feature result in increasing time taken by any
+  operations covered by [existing SLIs/SLOs][]?**
+  No.
+
+* **Will enabling / using this feature result in non-negligible increase of
+  resource usage (CPU, RAM, disk, IO, ...) in any components?**
+  No.
+
+### Troubleshooting
+
+Troubleshooting section serves the `Playbook` role as of now. We may consider
+splitting it into a dedicated `Playbook` document (potentially with some monitoring
+details). For now we leave it here though.
+
+_This section must be completed when targeting beta graduation to a release._
+
+* **How does this feature react if the API server and/or etcd is unavailable?**
+  No additional impact comparing to what already exists.
+
+* **What are other known failure modes?**
+  No known failure modes.
+
+* **What steps should be taken if SLOs are not being met to determine the problem?**
+  None.
+
+[supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
+[existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 
 ## Implementation History
 
