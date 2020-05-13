@@ -1,38 +1,16 @@
----
-title: PV Health Monitor
-authors:
-  - "@NickrenREN"
-  - "@xing-yang"
-owning-sig: sig-storage
-reviewers:
-  - "@msau42"
-  - "@jingxu97"
-  - "@liggitt"
-  - "@gnufied"
-approvers:
-  - "@msau42"
-  - "@saad-ali"
-  - "@thockin"
-  - "@liggitt"
-editor: TBD
-creation-date: 2019-05-30
-last-updated: 2020-01-23
-status: implementable
-
----
-
-# PV Health Monitor
+# KEP-1432: Volume Health Monitor
 
 ## Table of Contents
 
 <!-- toc -->
+- [Release Signoff Checklist](#release-signoff-checklist)
 - [Motivation](#motivation)
 - [User Experience](#user-experience)
   - [Use Cases](#use-cases)
 - [Proposal](#proposal)
 - [Implementation](#implementation)
   - [CSI changes](#csi-changes)
-    - [Add GetVolume RPC](#add-getvolume-rpc)
+    - [Add ControllerGetVolume RPC](#add-controllergetvolume-rpc)
     - [Add Node Volume Health Function](#add-node-volume-health-function)
   - [External controller](#external-controller)
     - [CSI interface](#csi-interface)
@@ -45,13 +23,54 @@ status: implementable
     - [Alternative option 3](#alternative-option-3)
     - [Optional HTTP(RPC) service](#optional-httprpc-service)
 - [Graduation Criteria](#graduation-criteria)
+  - [Alpha](#alpha)
   - [Alpha -&gt; Beta](#alpha---beta)
   - [Beta -&gt; GA](#beta---ga)
 - [Test Plan](#test-plan)
   - [Unit tests](#unit-tests)
   - [E2E tests](#e2e-tests)
+- [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
+  - [Feature enablement and rollback](#feature-enablement-and-rollback)
 - [Implementation History](#implementation-history)
 <!-- /toc -->
+
+## Release Signoff Checklist
+
+<!--
+**ACTION REQUIRED:** In order to merge code into a release, there must be an
+issue in [kubernetes/enhancements] referencing this KEP and targeting a release
+milestone **before the [Enhancement Freeze](https://git.k8s.io/sig-release/releases)
+of the targeted release**.
+
+For enhancements that make changes to code or processes/procedures in core
+Kubernetes i.e., [kubernetes/kubernetes], we require the following Release
+Signoff checklist to be completed.
+
+Check these off as they are completed for the Release Team to track. These
+checklist items _must_ be updated for the enhancement to be released.
+-->
+
+Items marked with (R) are required *prior to targeting to a milestone / release*.
+
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Design details are appropriately documented
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [x] (R) Graduation criteria is in place
+- [x] (R) Production readiness review completed
+- [ ] Production readiness review approved
+- [x] "Implementation History" section is up-to-date for milestone
+- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+
+<!--
+**Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
+-->
+
+[kubernetes.io]: https://kubernetes.io/
+[kubernetes/enhancements]: https://git.k8s.io/enhancements
+[kubernetes/kubernetes]: https://git.k8s.io/kubernetes
+[kubernetes/website]: https://git.k8s.io/website
 
 ## Motivation
 
@@ -85,7 +104,9 @@ There could be conditions that cannot be reported by a CSI driver. One or more n
 The Kubernetes components that monitor the volumes and report events with volume health information include the following:
 
 * An external monitoring node agent on each kubernetes worker node.
+  * The node agent watches volume health of the PVCs on that node. If a PVC has an abnormal health condition, an event will to reported on the pod object that is using the PVC. If multiple pods are using the same PVC, events will be reported on multiple pods.
 * An external monitoring controller on the master node.
+  * Monitoring controller reports events on the PVCs.
 
 Details will be described in the following proposal section.
 
@@ -102,7 +123,7 @@ Two main parts are involved here in the architecture.
 - External Controller:
   - The external controller will be deployed as a sidecar together with the CSI controller driver, similar to how the external-provisioner sidecar is deployed.
   - Trigger controller RPC to check the health condition of the CSI volumes.
-  - The external controller sidecar will also watch for node failure events.
+  - The external controller sidecar will also watch for node failure events. This component can be enabled via a flag.
 
 - External Node Agent:
   - The external node agent will be deployed as a sidecar together with the CSI node driver on every Kubernetes worker node.
@@ -115,76 +136,90 @@ Two main parts are involved here in the architecture.
 
 Container Storage Interface (CSI) specification will be modified to provide volume health check leveraging existing RPCs and adding new ones.
 
+- Modify existing ListVolumes controller RPC
+ - External controller calls the existing `ListVolumes` RPC to check health condition of volumes if supported by the CSI driver.
+
 - Add new GetVolume controller RPC
-  - External controller calls a new `GetVolume` RPC to check health condition of a particular PV instead of calling `ListVolumes` with a `volume_id` filter. Some CSI drivers chose not to implement `ListVolumes` as it is an expensive operation. Therefore it is better to introduce a new RPC `GetVolume` which has a new capability.
+  - External controller calls a new `GetVolume` RPC to check health condition of a particular volume if it is supported and ListVolumes is not supported.
+
 - Extend the existing NodeGetVolumeStats RPC
   - For any PV that is mounted, the external node agent calls `NodeGetVolumeStats` to see if volume is still mounted;
   - Calls `NodeGetVolumeStats` to check if volume is usable, e.g., filesystem corruption, bad blocks, etc.
 
-Two new controller capabilities are added. If a CSI driver supports `GET_VOLUME` capability, it MUST support calling `GetVolume` to provide general volume information in `GetVolumeResponse`. If a driver supports `GET_VOLUME_HEALTH`, it MUST provide additional health information in `GetVolumeResponse`.
+A new `VOLUME_CONDITION` controller capability is added. If a CSI driver supports `LIST_VOLUMES` and `VOLUME_CONDITION` capability, it MUST provide volume health information in `ListVolumesResponse`.
 
-A new node capability is added. If CSI driver supports the `GET_VOLUME_STATS_HEALTH` capability, it MUST provide health information in `NodeGetVolumeStats`.
+A new `GET_VOLUME` controller capability is added. If a CSI driver supports `GET_VOLUME` capability, it MUST support calling `GetVolume` to provide general volume information in `GetVolumeResponse`. If a driver supports `VOLUME_CONDITION`, it MUST provide additional health information in `GetVolumeResponse`.
+
+A new node capability is added. If CSI driver supports the `VOLUME_CONDITION` node capability, it MUST provide health information in `NodeGetVolumeStats`.
 
 Detailed changes needed in the CSI Spec are described in the following.
 
-#### Add GetVolume RPC
+#### Add ControllerGetVolume RPC
 
-Add a new `GetVolume` RPC. `GetVolumeResponse` should contain current information of a volume if it exists. If the volume does not exist any more, `GetVolume` should return gRPC error code `NOT_FOUND`.
+Add a new `ControllerGetVolume` RPC. `ControllerGetVolumeResponse` should contain current information of a volume if it exists. If the volume does not exist any more, `ControllerGetVolume` should return gRPC error code `NOT_FOUND`.
 
-Add `VolumeHealth` message in `VolumeStatus` field in `GetVolumeResponse`. This can indicate additional health information for the volume.
+Add `VolumeCondition` message in `VolumeStatus` field in `ControllerGetVolumeResponse`. This can indicate additional health information for the volume.
 
 Whether the volume is still attached to a node is already handled by `LIST_VOLUMES_PUBLISHED_NODES` controller capability. This capability will be used by Kubernetes to reconcile - re-attach the volume if the volume is not attached any more.
 
 ```
-message GetVolumeRequest {
-  // Identity information for a specific volume. This field is
-  // REQUIRED. GetVolume will return with current volume information.
+message ControllerGetVolumeRequest {
+  option (alpha_message) = true;
+
+  // The ID of the volume to fetch current volume information for.
+  // This field is REQUIRED.
   string volume_id = 1;
 }
 ```
 
 ```
-message GetVolumeResponse {
+message ControllerGetVolumeResponse {
+  option (alpha_message) = true;
+
   message VolumeStatus{
-    // health shows error conditions reported by the SP.
+    // A list of all the `node_id` of nodes that this volume is
+    // controller published on.
+    // This field is OPTIONAL.
+    // This field MUST be specified if the PUBLISH_UNPUBLISH_VOLUME
+    // controller capability is supported.
+    // published_node_ids MAY include nodes not published to or
+    // reported by the SP. The CO MUST be resilient to that.
+    repeated string published_node_ids = 1;
+
+    // Information about the current condition of the volume.
+    // This field is OPTIONAL.
     // This field MUST be specified if the
-    // GET_VOLUME_HEALTH controller capability is supported.
-    repeated VolumeHealth health = 1;
+    // VOLUME_CONDITION controller capability is supported.
+    VolumeCondition volume_condition = 2;
   }
 
   // This field is REQUIRED
   Volume volume = 1;
 
-  // This field is OPTIONAL. This field MUST be specified if the
-  // GET_VOLUME_HEALTH controller capability is supported.
+  // This field is REQUIRED.
   VolumeStatus status = 2;
 }
 ```
 
 ```
-message VolumeHealth {
-  // The error code describing the health condition of the volume.
-  // This field is REQUIRED.
-  string error_code = 1;
+// VolumeCondition represents the current condition of a volume.
+message VolumeCondition {
+  option (alpha_message) = true;
 
-  // The error message associated with the above error_code. This field is OPTIONAL.
+  // Normal volumes are available for use and operating optimally.
+  // An abnormal volume does not meet these criteria.
+  // This field is REQUIRED.
+  bool abnormal = 1;
+
+  // The message describing the condition of the volume.
+  // This field is REQUIRED.
   string message = 2;
 }
 ```
 
-The following common error codes are proposed for volume health:
-* VolumeNotFound
-* OutOfCapacity
-* DiskFailure
-* DiskRemoved
-* ConfigError
-* NetworkError
-* DiskDegrading
-* VolumeUnmounted
-* RWIOError
-* FilesystemCorruption
+Add `GET_VOLUME` and `VOLUME_CONDITION` controller capabilities.  If a driver supports `GET_VOLUME` capability, it MUST implement the `ControllerGetVolume` RPC.  If a driver supports `VOLUME_CONDITION`, it MUST supports the `volume_condition` field in the `status` field in `ControllerGetVolumeResponse`.
 
-Add `GET_VOLUME` and `GET_VOLUME_HEALTH` controller capabilities.  If a driver supports `GET_VOLUME` capability, it MUST implement the `GetVolume` RPC.  If a driver supports `GET_VOLUME_HEALTH`, it MUST supports the `health` field in the `status` field in `GetVolumeResponse`.
+If a driver supports `LIST_VOLUMES` and `VOLUME_CONDITION` controller capabilities, it MUST supports the `volume_condition` field in the `status` field in `ListVolumesResponse`.
 
 ```
 // Specifies a capability of the controller service.
@@ -220,12 +255,23 @@ message ControllerServiceCapability {
       // ListVolumesResponse.entry.published_nodes field
       LIST_VOLUMES_PUBLISHED_NODES = 10;
 
-      // Indicates the SP supports the GetVolume RPC
-      GET_VOLUME = 11;
+      // Indicates that the Controller service can report volume
+      // conditions.
+      // An SP MAY implement `VolumeCondition` in only the Controller
+      // Plugin, only the Node Plugin, or both.
+      // If `VolumeCondition` is implemented in both the Controller and
+      // Node Plugins, it SHALL report from different perspectives.
+      // If for some reason Controller and Node Plugins report
+      // misaligned volume conditions, CO SHALL assume the worst case
+      // is the truth.
+      // Note that, for alpha, `VolumeCondition` is intended be
+      // informative for humans only, not for automation.
+      VOLUME_CONDITION = 11 [(alpha_enum_value) = true];
 
-      // Indicates the SP supports the
-      // GetVolumeResponse.volume_health field
-      GET_VOLUME_HEALTH = 12;
+      // Indicates the SP supports the ControllerGetVolume RPC.
+      // This enables COs to, for example, fetch per volume
+      // condition after a volume is provisioned.
+      GET_VOLUME = 12 [(alpha_enum_value) = true];
     }
 
     Type type = 1;
@@ -253,7 +299,7 @@ In the NodeGetVolumeStatsRequest, there are `volume_id`, `volume_path`, and `sta
 
 In NodeGetVolumeStatsResponse, there is already a `VolumeUsage` which includes information (available, used, and total) of the file system on the volume.
 
-A new message `VolumeHealth` will be added to `NodeGetVolumeStatsResponse`. A new Node capability `VOLUME_STATS_HEALTH` will be added to indicate whether a CSI driver has implemented this function. In a `VolumeHeath` message, there is an error code indicating the type of code and a message that describes the details of the error.
+A new message `volume_condition` will be added to `NodeGetVolumeStatsResponse`. A new Node capability `VOLUME_CONDITION` will be added to indicate whether a CSI driver has implemented this function. In a `volume_condition` message, there is a boolean parameter `abnormal` indicating whether the volume is normal or not and a message that describes the details of the volume condition.
 
 ```
 message NodeGetVolumeStatsRequest {
@@ -280,8 +326,11 @@ message NodeGetVolumeStatsRequest {
 message NodeGetVolumeStatsResponse {
   // This field is OPTIONAL.
   repeated VolumeUsage usage = 1;
+  // Information about the current condition of the volume.
   // This field is OPTIONAL.
-  repeated VolumeHealth volume_health = 1;
+  // This field MUST be specified if the VOLUME_CONDITION node
+  // capability is supported.
+  VolumeCondition volume_condition = 2 [(alpha_field) = true];
 }
 ```
 
@@ -310,17 +359,22 @@ message VolumeUsage {
 ```
 
 ```
-message VolumeHealth {
-  // The error code describing the health condition of the volume.
-  // This field is REQUIRED.
-  string error_code = 1;
+// VolumeCondition represents the current condition of a volume.
+message VolumeCondition {
+  option (alpha_message) = true;
 
-  // The error message associated with the above error_code. This field is OPTIONAL.
+  // Normal volumes are available for use and operating optimally.
+  // An abnormal volume does not meet these criteria.
+  // This field is REQUIRED.
+  bool abnormal = 1;
+
+  // The message describing the condition of the volume.
+  // This field is REQUIRED.
   string message = 2;
 }
 ```
 
-Add a `GET_VOLUME_STATS_HEALTH` node capability. If driver supports this capability, it MUST fetch `volume_health` information in `NodeGetVolumeStats`.
+Add a `VOLUME_CONDITION` node capability. If driver supports this capability, it MUST fetch `volume_condition` information in `NodeGetVolumeStats`.
 
 ```
 message NodeGetCapabilitiesRequest {
@@ -349,10 +403,18 @@ message NodeServiceCapability {
       GET_VOLUME_STATS = 2;
       // See VolumeExpansion for details.
       EXPAND_VOLUME = 3;
-      // If Plugin implements GET_VOLUME_STATS_HEALTH capability
-      // then it MUST implement NodeGetVolumeStats RPC
-      // call for fetching volume health information.
-      GET_VOLUME_STATS_HEALTH = 4;
+      // Indicates that the Node service can report volume conditions.
+      // An SP MAY implement `VolumeCondition` in only the Node
+      // Plugin, only the Controller Plugin, or both.
+      // If `VolumeCondition` is implemented in both the Node and
+      // Controller Plugins, it SHALL report from different
+      // perspectives.
+      // If for some reason Node and Controller Plugins report
+      // misaligned volume conditions, CO SHALL assume the worst case
+      // is the truth.
+      // Note that, for alpha, `VolumeCondition` is intended to be
+      // informative for humans only, not for automation.
+      VOLUME_CONDITION = 4 [(alpha_enum_value) = true];
     }
 
     Type type = 1;
@@ -368,12 +430,17 @@ message NodeServiceCapability {
 ### External controller
 
 #### CSI interface
-Call GetVolume() RPC for volumes periodically to check the health condition of volumes themselves. The frequency of the check should be tunable. A configure option will be available in the external controller to adjust this value.
+Call ListVolumes() RPC periodically to check the health condition of volumes themselves. The frequency of the check should be tunable. A configure option will be available in the external controller to adjust this value.
+
+If ListVolumes is not supported but GetVolume is supported, call ControllerGetVolume() RPC for volumes periodically to check the health condition of volumes themselves. The frequency of the check should be tunable. A configure option will be available in the external controller to adjust this value.
+
+The external monitoring controller reports events on the PVCs.
 
 #### Node down event
 * External monitoring controller will check if node is marked as unresponsive by the node controller.
 * The external monitoring controller will track which pods are using which PVCs and what nodes they got scheduled to.
 * In the case that a node goes down, the controller will report an event for all PVCs on that node.
+* The external monitoring controller reports node down events on the PVCs. The node down monitoring component can be enabled via a flag.
 
 ### External node agent
 
@@ -381,6 +448,8 @@ Call GetVolume() RPC for volumes periodically to check the health condition of v
 Call NodeGetVolumeStats() RPC to check the mounting and other health conditions. The frequency of the check should be tunable. A configure option will be available in the external node agent to adjust this value.
 
 The external node agent will go through all the pods on that node and find out all volumes used by those pods. It will watch all those volumes and call NodeGetVolumeStatus() to find out their health status.
+
+The external node agent reports events on the pod object. If multiple pods are using the same volume, report events on all pods.
 
 ### Alternatives
 
@@ -537,11 +606,15 @@ This optional service is out of scope for this KEP but may be introduced in a fu
 This option is not in the main proposal because it is a push-based method while CSI uses pull-based method.
 
 ## Graduation Criteria
-### Alpha -> Beta
-* Feature complete, including:
+### Alpha
+* Initial feature implementation, including:
   * External controller volume health monitoring.
   * External node agent volume health monitoring.
-* Tests outlined in design proposal implemented.
+* Implementation in the csi-mock driver.
+* Add basic unit tests.
+
+### Alpha -> Beta
+* Unit tests and e2e tests outlined in design proposal implemented.
 
 ### Beta -> GA
 * Volume health support is added to multiple CSI drivers.
@@ -549,18 +622,57 @@ This option is not in the main proposal because it is a push-based method while 
 
 ## Test Plan
 ### Unit tests
-* Unit tests for external controller and external node agent volume health monitoring. The following error codes will be simulated in the unit tests:
+* Unit tests for external controller and external node agent volume health monitoring. The following failure scenario will be simulated in the unit tests:
   * VolumeNotFound
   * OutOfCapacity
   * VolumeUnmounted
   * NodeDown
 
 ### E2E tests
-* e2e tests for external controller and external node agent volume health monitoring. Hostpath CSI driver and GCE PD driver will be used for e2e tests. The following error codes will be tested in the e2e tests:
+* e2e tests for external controller and external node agent volume health monitoring. Hostpath CSI driver and GCE PD driver will be used for e2e tests. The following failure scenario will be tested in the e2e tests:
   * VolumeNotFound
   * OutOfCapacity
   * VolumeUnmounted
 * Add stress and scale tests before moving from beta to GA.
+
+## Production Readiness Review Questionnaire
+
+### Feature enablement and rollback
+
+_This section must be completed when targeting alpha to a release._
+
+* **How can this feature be enabled / disabled in a live cluster?**
+  - [x] Other
+    - Describe the mechanism:
+      This feature does not have a feature gate because it is out-of-tree.
+      It is enabled when the health monitoring controller and agent sidecars
+      are deployed with the CSI driver.
+    - Will enabling / disabling the feature require downtime of the control
+      plane?
+      It only affects the health monitoring controller and agent sidecars.
+    - Will enabling / disabling the feature require downtime or reprovisioning
+      of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
+      No.
+
+* **Does enabling the feature change any default behavior?**
+  Enabling the feature will allow events to be reported on PVCs or Pods when
+  abnormal volume conditions are detected.
+
+* **Can the feature be disabled once it has been enabled (i.e. can we rollback
+  the enablement)?**
+  Yes. Uninstalling the health monitoring controller and agent sidecars will
+  disable the feature. Existing events will not be removed but they will
+  disappear after a period of time. Disabling the feature should not break
+  an existing application as these events are for humans only, not for automation. 
+
+* **What happens if we reenable the feature if it was previously rolled back?**
+  Events will be added to PVCs or Pods when abnormal volume conditions are
+  detected again.
+
+* **Are there any tests for feature enablement/disablement?**
+  Since there is no feature gate for this feature and the only way to enable or
+  disable this feature is to install or unistall the sidecars, we cannot write
+  tests for feature enablement/disablement.
 
 ## Implementation History
 
