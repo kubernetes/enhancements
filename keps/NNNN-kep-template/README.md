@@ -390,7 +390,7 @@ _This section must be completed when targeting alpha to a release._
 
 * **Can the feature be disabled once it has been enabled (i.e. can we rollback
   the enablement)?**
-  Also set `rollback-supported` to `true` or `false` in `kep.yaml`.
+  Also set `disable-supported` to `true` or `false` in `kep.yaml`.
   Describe the consequences on existing workloads (e.g. if this is runtime
   feature, can it break the existing applications?).
 

@@ -28,6 +28,6 @@ milestone:
   stable: "v1.21"
 
 feature-gate:
-rollback-supported: true
+disable-supported: true
 
 metrics:
