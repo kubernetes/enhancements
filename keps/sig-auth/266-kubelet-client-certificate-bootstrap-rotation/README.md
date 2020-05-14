@@ -7,6 +7,7 @@
 - [Proposal](#proposal)
   - [During Kubelet Boot Sequence](#during-kubelet-boot-sequence)
   - [As Expiration Approaches](#as-expiration-approaches)
+  - [Implementation notes](#implementation-notes)
   - [Certificate Approval](#certificate-approval)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
@@ -94,7 +95,21 @@ cert/key pair on disk, begin using the new cert/key pair.
         - When the corresponding signed certificate is received,
           the temporary private key is removed, and the the cert/key pair is written to a single file,
           e.g. `kubelet-client-<timestamp>.pem`.
-        - Replace the `kubelet-client-current.pem` symlink to point to the new cert/key pair.
+        - Atomically replace the `kubelet-client-current.pem` symlink to point to the new cert/key pair.
+
+### Implementation notes
+
+* On startup, obtaining a certificate (via bootstrap or certificate renewal) blocks
+  the goroutine that contacts the API server to fetch pods the kubelet should run
+* On startup, obtaining a certificate (via bootstrap or certificate renewal) does *not*
+  block the goroutine that runs static pods. This ensures that a kubelet self-hosting the
+  kube-apiserver it speaks to can successfully start.
+* The kubelet will wait up to five minutes to obtain a valid certificate on startup,
+  then restarts itself. On restart, the last private key used to generate a CSR is reused,
+  so it can resume waiting for an existing CSR without creating another one.
+* On startup, when configured with both a bootstrap kubeconfig and a kubeconfig file,
+  the kubelet validates the credentials in the kubeconfig exist, load successfully, and are not expired.
+  If any of those checks fail, it reruns the bootstrap step using the bootstrap kubeconfig.
 
 ### Certificate Approval
 
