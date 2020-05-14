@@ -13,6 +13,13 @@
   - [Graduation Criteria](#graduation-criteria)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
+- [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
+  - [Feature enablement and rollback](#feature-enablement-and-rollback)
+  - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+  - [Monitoring requirements](#monitoring-requirements)
+  - [Dependencies](#dependencies)
+  - [Scalability](#scalability)
+  - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
 <!-- /toc -->
 
@@ -157,6 +164,222 @@ The Kubernetes skew policy requires API servers to be as new or newer than Kubel
 This means Kubelets can use current versions of the CertificateSigningRequest API.
 Any changes to the CertificateSigningRequest in kube-apiserver for issuing kubelet
 client certificates must remain backwards compatible for at least n-2 releases.
+
+## Production Readiness Review Questionnaire
+
+### Feature enablement and rollback
+
+* **How can this feature be enabled / disabled in a live cluster?**
+
+  - [x] Feature gate (also fill in values in `kep.yaml`)
+    - Feature gate name: RotateKubeletClientCertificate
+    - Components depending on the feature gate: kubelet
+  - [x] Other
+    - Describe the mechanism:
+      - kubelet flag: `--rotate-certificates=true`
+      - kubelet config field: `rotateCertificates: true`
+    - Will enabling / disabling the feature require downtime of the control plane?
+      - No
+    - Will enabling / disabling the feature require downtime or reprovisioning of a node?
+      - This feature is generally expected to be configured on new nodes
+      - This feature is opt-in even after GA, so upgrades of existing nodes with existing credential provisioning strategies are unaffected
+
+* **Does enabling the feature change any default behavior?**
+
+  * Default behavior does not change
+  * This feature is opt-in, even after GA, so upgrades of existing nodes with existing credential provisioning strategies are unaffected
+
+* **Can the feature be disabled once it has been enabled (i.e. can we rollback the enablement)?**
+
+  * A cluster can run with a mix of nodes that use the feature and nodes that do not
+  * The feature can be turned off on a node after it has been enabled
+  * The node deployer must provide a valid and sufficiently long-lived `--kubeconfig` credential (as before this feature)
+
+* **What happens if we reenable the feature if it was previously rolled back?**
+
+  * The kubelet will resume attempting to obtain and rotate client credentials
+
+* **Are there any tests for feature enablement/disablement?**
+
+  * Enabling/disabling this feature does not affect API availability
+  * The CertificateSigningRequests created by this feature have a maximum lifetime of 24 hours before they are removed by the CSR controller
+
+### Rollout, Upgrade and Rollback Planning
+
+* **How can a rollout fail? Can it impact already running workloads?**
+
+  * The recommendation is to enable this feature on new nodes, which would prevent impact to existing workloads
+  * Ensure kube-controller-manager has a cluster signer cert/key that matches the client CA bundle given to kube-apiserver
+  * Ensure Kubelets have permission to create CertificateSigningRequests
+  * Ensure Kubelets have permission to be approved for node client certificates
+
+* **What specific metrics should inform a rollback?**
+
+  - `kubelet_certificate_manager_client_expiration_seconds - now()` on nodes using this feature should be > 5% of cluster expiration duration
+  - `kubelet_certificate_manager_client_expiration_renew_errors` on nodes using this feature should not be increasing
+
+* **Were upgrade and rollback tested? Was upgrade->downgrade->upgrade path tested?**
+
+  * Started kubelet without this feature enabled with `--kubeconfig=static.kubeconfig`
+    * verified it registered successfully with the API server
+  * Restarted the kubelet with `--rotate-certificates=true`,
+    `--bootstrap-kubeconfig=bootstrap.kubeconfig` containing valid bootstrap credentials,
+    and `--kubeconfig=dynamic.kubeconfig` pointed at a non-existent file
+    * verified a CSR was created
+    * verified `dynamic.kubeconfig` was created
+    * verified certificate was created in `/var/lib/kubelet/pki`
+  * Restarted the kubelet without the feature enabled with `--kubeconfig=static.kubeconfig`
+    * verified it established contact with the API server
+
+* **Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?**
+  
+  * No
+
+### Monitoring requirements
+
+* **How can an operator determine if the feature is in use by workloads?**
+
+  * This feature is used by kubelets, not workloads
+
+* **What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?**
+
+  - Metric: `kubelet_certificate_manager_client_expiration_seconds`
+    - Description: Gauge of the lifetime of the active certificate. The value is the date the certificate will expire in seconds since January 1, 1970 UTC.
+    - Components exposing the metric: kubelet
+
+  - Metric: `kubelet_certificate_manager_client_expiration_renew_errors`
+    - Description: Counter of certificate renewal errors.
+    - Components exposing the metric: kubelet
+
+* **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
+
+  * `kubelet_certificate_manager_client_expiration_seconds - now()` should be >= 5% of cluster signing duration
+
+### Dependencies
+
+* **Does this feature depend on any specific services running in the cluster?**
+  
+  * The `certificates.k8s.io` API group must be enabled
+  * An approver for kubelet client certificate requests must be running.
+    A default implementation is built into kube-controller-manager in the `csrapproving`
+    controller loop that uses authorization checks to determine if a request should be approved.
+  * A signer for kubelet client certificate requests must be running.
+    A default implementation is built into kube-controller-manager in the `csrsigning`
+    controller loop that signs approved CSRs with the signing certificate passed to
+    kube-controller-manager using `--cluster-signing-{cert,key}-file` flags.
+
+### Scalability
+
+* **Will enabling / using this feature result in any new API calls?**
+
+  * For each attempt by a kubelet to obtain a certificate, it will:
+    * Create a CertificateSigningRequest API object
+    * Watch the single CertificateSigningRequest API object until it is approved, denied, or deleted
+    * The kubelet attempts to obtain a certificate:
+      * on first bootstrap startup
+      * on certificate expiration (at 80% of lifetime, jittered +/- 10%), lifetime controlled by
+        `--experimental-cluster-signing-duration`, defaults to 1 year
+  
+  * The kube-controller-manager will list/watch CertificateSigningRequest objects using an informer
+    * For each kubelet client certificate CertificateSigningRequest,
+      the approving controller will make 1 update request to approve or deny
+    * For each approved kubelet client certificate CertificateSigningRequest,
+      the signing controller will make 1 update request to add the issued certificate
+    * For each CertificateSigningRequest, the csrcleaner controller will make
+      1 delete request to clean up the API object
+
+* **Will enabling / using this feature result in introducing new API types?**
+
+  * CertificateSigningRequest API type is introduced for this feature.
+  * The lifetime of these objects is limited to 24 hours by the csrcleaner controller,
+    or 1 hour for requests that have been approved or denied.
+  * 1 CertificateSigningRequest in existence per node is expected.
+
+* **Will enabling / using this feature result in any new calls to cloud
+  provider?**
+
+  * Not in the default kube-controller-manager approver/signer implementation
+
+* **Will enabling / using this feature result in increasing size or count
+  of the existing API objects?**
+
+  * Existing types are not modified
+
+* **Will enabling / using this feature result in increasing time taken by any
+  operations covered by [existing SLIs/SLOs][]?**
+
+  * Time to bootstrap the initial credential is added to first Kubelet startup,
+    but node setup time is not a component of existing SLIs/SLOs.
+    Once credentials are established, Kubelet -> API server communication is unchanged.
+
+* **Will enabling / using this feature result in non-negligible increase of
+  resource usage (CPU, RAM, disk, IO, ...) in any components?**
+
+  * `kube-controller-manager` becomes responsible for signing certificate requests for nodes.
+    Adding large numbers of nodes to a cluster simultaneously can increase CPU of the signer.
+
+### Troubleshooting
+
+* **How does this feature react if the API server and/or etcd is unavailable?**
+
+  * Kubelet client credentials allow it to authenticate to the API server.
+    If the API server is unavailable, it will be unable to bootstrap/rotate those credentials,
+    but since the only use for those credentials is speaking with the API server,
+    no other aspects of the kubelet are interrupted.
+
+* **What are other known failure modes?**
+
+  * If a kubelet cannot renew a client credential, it retries in the background.
+    - Detection:
+      - `kubelet_certificate_manager_client_expiration_renew_errors` metric with non-zero value
+      - `kubelet_certificate_manager_client_expiration_seconds` less than 5% of expiration limit
+      - Persistent kubelet client CertificateSigningRequests that are not approved or are not issued
+    - Mitigations:
+      - Replace the node
+      - Reconfigure the node with client cert bootstrap/rotation off
+    - Diagnostics: 
+      - kubelet logs:
+        - certificate_manager and certificate_store errors when rotation fails, diagnostic messages at level 2 verbosity
+      - kube-controller-manager logs
+        - certificate_controller errors when sync fails, diagnostic messages at level 4 verbosity
+      - watching CertificateSigningRequest API objects
+      - audit logs for CertificateSigningRequest API requests
+    - Testing:
+      - certificate manager unit testing
+  
+  * On startup, if a kubelet cannot obtain a client credential, it restarts after 5 minutes.
+    - Detection:
+      - Kubelet process restart count
+      - Presence of kubelet client CertificateSigningRequests that are not approved or are not issued older than 5 minutes
+    - Mitigations: 
+      - Replace the node
+      - Reconfigure the node with client cert bootstrap/rotation off
+    - Diagnostics: 
+      - kubelet logs:
+        - certificate_manager and certificate_store errors when rotation fails, diagnostic messages at level 2 verbosity
+      - kube-controller-manager logs
+        - certificate_controller errors when sync fails, diagnostic messages at level 4 verbosity
+    - Testing: 
+      - certificate manager unit testing for resuming a pre-existing CSR watch at startup
+
+* **What steps should be taken if SLOs are not being met to determine the problem?**
+
+  * Determine which step in certificate renewal is not successful:
+    * CertificateSigningRequest creation
+      * Symptom: No CertificateSigningRequest objects are created by a given node
+      * Troubleshooting: kubelet logs
+    * CertificateSigningRequest approval
+      * Symptom: Kubelet client CertificateSigningRequest objects for a given node exist, but are unapproved
+      * Troubleshooting: kube-controller-manager logs, permissions granted to CertificateSigningRequest requester
+    * CertificateSigningRequest signing
+      * Symptom: Kubelet client CertificateSigningRequest objects for a given node exist and are approved, but are not issued
+      * Troubleshooting: kube-controller-manager logs, `--cluster-signing-{cert,key}-file` setup
+    * CertificateSigningRequest use
+      * Symptom: Kubelet client CertificateSigningRequest objects for a given node exist and are approved and issued, but Kubelet API requests are Unauthorized
+      * Troubleshooting: kubelet logs, verify `--cluster-signing-cert-file` given to kube-controller-manager is included in `--client-ca` bundle given to kube-apiserver
+
+[supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
+[existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 
 ## Implementation History
 
