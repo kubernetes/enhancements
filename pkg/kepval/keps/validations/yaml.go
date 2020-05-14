@@ -115,9 +115,13 @@ func init() {
 	sort.Strings(listGroups)
 }
 
-var mandatoryKeys = []string{"title", "owning-sig"}
-var statuses = []string{"provisional", "implementable", "implemented", "deferred", "rejected", "withdrawn", "replaced"}
-var reStatus = regexp.MustCompile(strings.Join(statuses, "|"))
+var (
+	mandatoryKeys = []string{"title", "owning-sig"}
+	statuses      = []string{"provisional", "implementable", "implemented", "deferred", "rejected", "withdrawn", "replaced"}
+	reStatus      = regexp.MustCompile(strings.Join(statuses, "|"))
+	stages        = []string{"alpha", "beta", "stable"}
+	reStages      = regexp.MustCompile(strings.Join(stages, "|"))
+)
 
 func ValidateStructure(parsed map[interface{}]interface{}) error {
 	for _, key := range mandatoryKeys {
@@ -144,6 +148,15 @@ func ValidateStructure(parsed map[interface{}]interface{}) error {
 			v, _ := value.(string)
 			if !reStatus.Match([]byte(v)) {
 				return &ValueMustBeOneOf{k, v, statuses}
+			}
+		case "stage":
+			switch v := value.(type) {
+			case []interface{}:
+				return &ValueMustBeString{k, v}
+			}
+			v, _ := value.(string)
+			if !reStages.Match([]byte(v)) {
+				return &ValueMustBeOneOf{k, v, stages}
 			}
 		case "owning-sig":
 			switch v := value.(type) {
