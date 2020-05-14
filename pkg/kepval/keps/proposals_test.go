@@ -53,6 +53,7 @@ creation-date: 2018-04-15
 last-updated: 2018-04-24
 status: provisional
 
+stage: beta
 latest-milestone: "v1.19"
 milestone:
   alpha: "v1.19"

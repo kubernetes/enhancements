@@ -63,12 +63,13 @@ type Proposal struct {
 	Replaces          []string `json:"replaces" yaml:"replaces,omitempty"`
 	SupersededBy      []string `json:"supersededBy" yaml:"superseded-by,omitempty"`
 
+	Stage           string    `json:"stage" yaml:"stage"`
 	LatestMilestone string    `json:"latestMilestone" yaml:"latest-milestone"`
 	Milestone       Milestone `json:"milestone" yaml:"milestone"`
 
-	FeatureGate       FeatureGate `json:"featureGate" yaml:"feature-gate"`
+	FeatureGate      FeatureGate `json:"featureGate" yaml:"feature-gate"`
 	DisableSupported bool        `json:"disableSupported" yaml:"disable-supported"`
-	Metrics           []string    `json:"metrics" yaml:"metrics"`
+	Metrics          []string    `json:"metrics" yaml:"metrics"`
 
 	Filename string `json:"-" yaml:"-"`
 	Error    error  `json:"-" yaml:"-"`
