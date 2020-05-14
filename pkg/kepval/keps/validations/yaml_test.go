@@ -101,8 +101,8 @@ func TestUnmarshalSuccess(t *testing.T) {
 		Title:        "test",
 		Authors:      []string{"test", "test", "test"},
 		Reviewers:    []string{"my reviewer"},
-		OwningSIG:    "my-sig",
-		Status:       "some status",
+		OwningSIG:    "sig-architecture",
+		Status:       "provisional",
 		Approvers:    []string{"my approvers"},
 		LastUpdated:  "at some point",
 		CreationDate: "a while ago",
@@ -161,6 +161,11 @@ func TestValidateStructureSuccess(t *testing.T) {
 	}
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
+
+			// add required fields
+			tc.input["title"] = "this is a title"
+			tc.input["owning-sig"] = "sig-architecture"
+
 			err := ValidateStructure(tc.input)
 			if err != nil {
 				t.Fatalf("did not expect an error: %v", err)
