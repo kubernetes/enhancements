@@ -30,6 +30,6 @@ feature-gate:
   components:
     - kube-apiserver
     - kubelet
-rollback-supported: true
+disable-supported: true
 
 metrics:

@@ -67,7 +67,7 @@ type Proposal struct {
 	Milestone       Milestone `json:"milestone" yaml:"milestone"`
 
 	FeatureGate       FeatureGate `json:"featureGate" yaml:"feature-gate"`
-	RollbackSupported bool        `json:"rollbackSupported" yaml:"rollback-supported"`
+	DisableSupported bool        `json:"disableSupported" yaml:"disable-supported"`
 	Metrics           []string    `json:"metrics" yaml:"metrics"`
 
 	Filename string `json:"-" yaml:"-"`

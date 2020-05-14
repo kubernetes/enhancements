@@ -64,7 +64,7 @@ feature-gate:
   components:
     - kube-apiserver
     - kube-controller-manager
-rollback-supported: true
+disable-supported: true
 metrics:
   - my_feature_metric
 ---`,

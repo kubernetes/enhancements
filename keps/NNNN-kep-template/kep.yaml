@@ -41,7 +41,7 @@ feature-gate:
   components:
     - kube-apiserver
     - kube-controller-manager
-rollback-supported: true
+disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics:
