@@ -1,0 +1,30 @@
+title: Multi Scheduling Profiles
+kep-number: 1451
+authors:
+  - "@alculquicondor"
+  - "@ahg-g"
+owning-sig: sig-scheduling
+status: implementable
+creation-date: 2020-01-14
+reviewers:
+  - "@Huang-Wei"
+  - "@liggitt"
+approvers:
+  - "@Huang-Wei"
+  - "@wojtek-t"
+see-also:
+  - "/keps/sig-scheduling/20180409-scheduling-framework.md"
+  - "/keps/sig-scheduling/20190226-default-even-pod-spreading.md"
+  - "/keps/sig-scheduling/785-scheduler-component-config-api"
+stage: beta
+latest-milestone: "v1.19"
+milestone:
+  alpha: "v1.18"
+  beta: "v1.19"
+  stable: "v1.21"
+metrics:
+  - "schedule_attempts_total"
+  - "e2e_scheduling_duration_seconds"
+  - "scheduling_algorithm_duration_seconds"
+  - "scheduling_algorithm_preemption_evaluation_seconds"
+  - "binding_duration_seconds"

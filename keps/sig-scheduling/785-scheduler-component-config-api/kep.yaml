@@ -13,4 +13,4 @@ approvers:
   - "@ahg-g"
   - "@liggitt"
 see-also:
-  - "/keps/sig-scheduling/20200114-multi-scheduling-profiles.md"
+  - "/keps/sig-scheduling/1451-multi-scheduling-profiles"

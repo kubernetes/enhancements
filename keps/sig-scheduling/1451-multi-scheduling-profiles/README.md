@@ -1,24 +1,3 @@
----
-title: Multi Scheduling Profiles
-authors:
-  - "@alculquicondor"
-  - "@ahg-g"
-owning-sig: sig-scheduling
-reviewers:
-  - "@Huang-Wei"
-  - "@liggitt"
-approvers:
-  - "@Huang-Wei"
-editor: TBD
-creation-date: 2020-01-14
-last-updated: 2020-01-14
-status: implementable
-see-also:
-  - "/keps/sig-scheduling/20180409-scheduling-framework.md"
-  - "/keps/sig-scheduling/20190226-default-even-pod-spreading.md"
-  - "/keps/sig-scheduling/785-scheduler-component-config-api"
----
-
 # Multi Scheduling Profiles
 
 ## Table of Contents
@@ -45,16 +24,25 @@ see-also:
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha (v1.18):](#alpha-v118)
     - [Beta (v1.19):](#beta-v119)
+- [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
+  - [Feature enablement and rollback](#feature-enablement-and-rollback)
+  - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+  - [Monitoring requirements](#monitoring-requirements)
+  - [Dependencies](#dependencies)
+  - [Scalability](#scalability)
+  - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
+- [Alternatives](#alternatives)
 <!-- /toc -->
 
 ## Release Signoff Checklist
 
-- [x] kubernetes/enhancements issue in release milestone, which links to KEP (this should be a link to the KEP location in kubernetes/enhancements, not the initial KEP PR)
-- [x] KEP approvers have set the KEP status to `implementable`
-- [x] Design details are appropriately documented
-- [x] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
-- [x] Graduation criteria is in place
+- [x] (R) kubernetes/enhancements issue in release milestone, which links to KEP (this should be a link to the KEP location in kubernetes/enhancements, not the initial KEP PR)
+- [x] (R) KEP approvers have set the KEP status to `implementable`
+- [x] (R) Design details are appropriately documented
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [x] (R) Graduation criteria is in place
+- [x] (R) Production readiness review completed
 - [x] "Implementation History" section is up-to-date for milestone
 - [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [x] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
@@ -305,8 +293,160 @@ Note that we don't require a feature gate as users already have to opt-in by usi
 Scheduling profiles will graduate to beta altogether with the graduation of
 the `kubescheduler.config.k8s.io` configuration API to Beta.
 
-See [KEP 785](/keps/sig-scheduling/785-scheduler-component-config-api) for
-more information.
+See [KEP 785] for more information.
+
+Additionally, we will include the scheduler profile as a field in the
+metrics related to scheduling attempts (counts and latency).
+
+[KEP 785]:(https://git.k8s.io/enhancements/keps/sig-scheduling/785-scheduler-component-config-api)
+
+## Production Readiness Review Questionnaire
+
+### Feature enablement and rollback
+
+* **How can this feature be enabled / disabled in a live cluster?**
+
+  - [ ] Feature gate (also fill in values in `kep.yaml`)
+    - Feature gate name:
+    - Components depending on the feature gate:
+  - [x] Other
+    - Describe the mechanism:
+    
+      Modify kube-scheduler configuration file to use a single profile.
+    - Will enabling / disabling the feature require downtime of the control
+      plane?
+      
+      Yes, but only kube-scheduler.
+    - Will enabling / disabling the feature require downtime or reprovisioning
+      of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled)
+      
+      No
+
+* **Does enabling the feature change any default behavior?**
+
+  No, as long as a profile with the name of `default-scheduler` is kept.
+
+* **Can the feature be disabled once it has been enabled (i.e. can we rollback
+  the enablement)?**
+  
+  Yes.
+
+* **What happens if we reenable the feature if it was previously rolled back?**
+
+  N/A.
+
+* **Are there any tests for feature enablement/disablement?**
+
+  There are tests (unit and integration) exercising single and multiple profiles.
+
+### Rollout, Upgrade and Rollback Planning
+
+* **How can a rollout fail? Can it impact already running workloads?**
+
+  The scheduler errors and exits during start up. Existing workloads are not
+  affected.
+
+* **What specific metrics should inform a rollback?**
+
+  Metric "schedule_attempts_total" remaining at zero when new pods are added.
+  This would be a symptom of a bad profiles configuration.
+
+* **Were upgrade and rollback tested? Was upgrade->downgrade->upgrade path tested?**
+
+  N/A.
+
+* **Is the rollout accompanied by any deprecations and/or removals of features,
+  APIs, fields of API types, flags, etc.?**
+
+  No.
+
+### Monitoring requirements
+
+* **How can an operator determine if the feature is in use by workloads?**
+
+  - The following scheduling metrics will have a sub-field for the profile name
+    that can be used for filtering per profile:
+    - "schedule_attempts_total"
+    - "e2e_scheduling_duration_seconds"
+    - "scheduling_algorithm_duration_seconds"
+    - "scheduling_algorithm_preemption_evaluation_seconds"
+    - "binding_duration_seconds"
+  - Pods have scheduling Events with different scheduler names.
+
+* **What are the SLIs (Service Level Indicators) an operator can use to
+  determine the health of the service?**
+  
+  - [x] Metrics
+    - Metric name: `schedule_attempts_total`, `e2e_scheduling_duration_seconds`
+    - Components exposing the metric: `kube-scheduler`
+
+* **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
+
+  No new SLO.
+  However, any scheduler related SLOs that can be defined in other KEPs or
+  individually by cluster operators, can be split by profile, using the metrics
+  discussed above.
+
+* **Are there any missing metrics that would be useful to have to improve
+  observability if this feature?**
+  
+  No.
+
+### Dependencies
+
+* **Does this feature depend on any specific services running in the cluster?**
+
+  No.
+
+### Scalability
+
+* **Will enabling / using this feature result in any new API calls?**
+
+  No.
+
+* **Will enabling / using this feature result in introducing new API types?**
+
+  No.
+
+* **Will enabling / using this feature result in any new calls to cloud
+  provider?**
+  
+  No.
+
+* **Will enabling / using this feature result in increasing size or count
+  of the existing API objects?**
+  
+  No.
+
+* **Will enabling / using this feature result in increasing time taken by any
+  operations covered by [existing SLIs/SLOs][]?**
+  
+  No.
+
+* **Will enabling / using this feature result in non-negligible increase of
+  resource usage (CPU, RAM, disk, IO, ...) in any components?**
+  
+  The overhead is minimal and far lower than running multiple kube-scheduler
+  binaries. Here is the detail:
+  
+  - Memory: each profile is kept in memory with instantiated plugins.
+  - CPU: There is a map lookup for each pod to obtain the profile.
+  
+  Note that using a single profile (default behavior) won't have any overhead.
+  
+### Troubleshooting
+
+* **How does this feature react if the API server and/or etcd is unavailable?**
+
+  N/A.
+
+* **What are other known failure modes?**
+
+  Malformed profiles cause scheduler to exit.
+
+* **What steps should be taken if SLOs are not being met to determine the problem?**
+
+  Configuration errors in the profiles are visible in logs.
 
 ## Implementation History
 
@@ -314,3 +454,11 @@ more information.
 and Proposal.
 - 2020-01-21: Test Plan and Alpha Graduation criteria in KEP.
 - 2020-05-08: Beta graduation criteria.
+- 2020-05-14: Updated to new KEP template.
+
+## Alternatives
+
+The existing alternative to multiple profiles in a single scheduler is to run
+multiple schedulers with different configurations. The problem with this
+approach is the existence of multiple caches and a scheduler taking decisions
+that might be incompatible with other schedulers.
