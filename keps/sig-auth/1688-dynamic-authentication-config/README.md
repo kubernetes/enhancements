@@ -207,6 +207,7 @@ know that this has succeeded?
   - Token Webhook
 2. Changes made via the REST API should be active in the order of minutes without
 requiring a restart of the API server
+3. Allow the use of a custom authentication stack in hosted Kubernetes offerings
 
 ### Non-Goals
 
@@ -218,6 +219,7 @@ and make progress.
 1. Changing the internal behavior of the authentication modes (ex: using
 different fields in x509 certificates to build the `user.Info` object)
 2. Restricting the REST API to the exact structure of the CLI flags
+3. Any changes to the authentication CLI flags (deprecation, removal, etc)
 
 ## Proposal
 
