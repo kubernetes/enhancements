@@ -2,6 +2,7 @@
 title: EndpointSlice API 
 authors:
   - "@freehan"
+  - "@robertjscott"
 owning-sig: sig-network
 reviewers:
   - "@bowei"
@@ -47,7 +48,16 @@ see-also:
   - [Additional EndpointSlice Controllers](#additional-endpointslice-controllers)
     - [Workflows](#workflows)
   - [Kube-Proxy](#kube-proxy)
-  - [Endpoint Controller (classic)](#endpoint-controller-classic)
+  - [Endpoints Controller (classic)](#endpoints-controller-classic)
+  - [EndpointSliceMirroring Controller](#endpointslicemirroring-controller)
+    - [Mirroring Details](#mirroring-details)
+    - [Handling Endpoints Events](#handling-endpoints-events)
+    - [Controller Start Up](#controller-start-up)
+    - [Corresponding Bug Fix for Endpoints and EndpointSlice Controller](#corresponding-bug-fix-for-endpoints-and-endpointslice-controller)
+    - [Limitations](#limitations)
+    - [Testing Plan](#testing-plan)
+      - [Unit Tests](#unit-tests)
+      - [E2E Tests](#e2e-tests)
 - [Roll Out Plan](#roll-out-plan)
 - [Graduation Criteria](#graduation-criteria)
   - [Splitting IP address type for better dual stack support](#splitting-ip-address-type-for-better-dual-stack-support)
@@ -389,12 +399,9 @@ it manages. It will not modify any EndpointSlices without that label value.
 
 In the alpha release of EndpointSlices in 1.16, this label did not exist and all
 EndpointSlices associated with a Service that had a selector specified were
-managed by the EndpointSlice Controller. To add support for this label in 1.17,
-a temporary `endpointslice.kubernetes.io/managed-by-setup` annotation on the
-Service will be used to provide a seamless upgrade. In 1.17, the EndpointSlice
-controller will claim each EndpointSlice without the corresponding label and
-annotation set, setting those values to claim ownership. In 1.18, the annotation
-on the Service can safely be removed.
+managed by the EndpointSlice Controller. Upgrading clusters that had the
+`EndpointSlice` feature gate enabled in 1.16 will require cleaning up any older
+EndpointSlices without this label.
 
 #### Workflows
 On Service Create/Update/Delete:
@@ -413,28 +420,179 @@ On Pod Create/Update/Delete:
 
 ### Kube-Proxy
 
-Kube-proxy will be modified to consume EndpointSlice instances besides Endpoints resource. A flag will be added to kube-proxy to toggle the mode. 
+Kube-Proxy will support consuming EndpointSlice resources as an alternative to
+Endpoints resources. This will be enabled with the `EndpointSliceProxying`
+feature gate.
 
-```
-Watch: Service, EndpointSlice ==> Manage: iptables, ipvs, etc
-```
-- Merge multiple EndpointSlice into an aggregated list.
-- Reuse the existing processing logic 
+This will require minimal changes to proxier implementations, instead updating
+the shared code that transforms Endpoints into a generic data structure to also
+transform EndpointSlices into that same data structure.
 
-### Endpoint Controller (classic)
+### Endpoints Controller (classic)
 
-In order to ensure backward compatibility for external consumer of the core/v1 Endpoints API, the existing K8s endpoint controller will keep running until the API is EOL. The following limitations will apply:
-- Starting from EndpointSlice beta: If # of endpoints in one Endpoints object exceed 1000, generate a warning event to the object. 
-- Starting from EndpointSlice GA: Only include up to 1000 endpoints in one Endpoints Object and throw events.
+In order to ensure backwards compatibility for external consumer of the core/v1
+Endpoints API, the existing Endpoints controller will keep running until the
+API is EOL. After EndpointSlices become GA, the Endpoints controller will
+gradually limit functionality.
+
+* Kubernetes 1.20: If the number of endpoints in one Endpoints object exceeds
+  1000, set `endpoints.kubernetes.io/over-capacity` label to "warning".
+* Kubernetes 1.21: Limit the number of endpoints in one Endpoints object to 1000
+  and set the `endpoints.kubernetes.io/over-capacity` label to "truncated" when
+  truncation occurs.
+
+### EndpointSliceMirroring Controller
+
+In some cases, custom Endpoints resources are created by applications. To ensure
+that these applications will not need to concurrently write to both Endpoints
+and EndpointSlice resources, a new EndpointSliceMirroring controller will be
+used to mirror custom Endpoints resources to corresponding EndpointSlices.
+
+* A new `endpointslice.kubernetes.io/skip-mirror` label will be introduced.
+  When this label is set to "true" on an Endpoints resource, the
+  EndpointSliceMirroring controller will not mirror this resource to an
+  EndpointSlice.
+* The Endpoints controller will set this new label to "true" for all Endpoints
+  resources it manages.
+* The EndpointSliceMirroring controller will watch for Endpoints without that
+  label set and create equivalent EndpointSlice resources.
+
+#### Mirroring Details
+The EndpointSliceMirroring controller will mirror events on matching Endpoints
+to corresponding EndpointSlices. Individual Endpoints resources may translate
+into multiple EndpointSlices. This will occur if an Endpoints resource has
+multiple subsets or includes endpoints with multiple IP families (IPv4 and
+IPv6). Each mirrored EndpointSlice resource will:
+* Be tied to the corresponding Endpoints resource with an OwnerReference for
+  automatic garbage collection.
+* Have the `kubernetes.io/service-name` label set to the name of the Endpoints
+  resource for easy lookup.
+* Have the `endpointslice.kubernetes.io/managed-by` label set to
+  `endpointslicemirroring-controller.k8s.io` to ensure that the EndpointSlice
+  controller does not modify these EndpointSlices.
+* Mirror all labels from the Endpoints resource and all endpoints and ports
+  from the corresponding subset.
+
+#### Handling Endpoints Events
+The EndpointSliceMirroring controller will have similar logic to the existing
+EndpointSlice controller. There may be opportunities to share some code between
+the implementations.
+* **Create**: The controller will create equivalent EndpointSlices, grouped by
+  unique port and IP family combinations.
+* **Update**: The controller will compare the existing EndpointSlices mirrored
+  for this Endpoints resource with the desired set. Similar to the EndpointSlice
+  controller, it will group endpoints by unique port and IP family combinations
+  and attempt to minimize changes to EndpointSlices by recycling resources
+  wherever possible.
+* **Delete**: The controller will ensure that associated EndpointSlices are
+  removed. Although the OwnerReference should ensure that associated
+  EndpointSlices are automatically removed if the Endpoints resource is deleted,
+  manual cleanup will be required if only the skip label is changed.
+
+The controller will use a label filtered watch, so changing the skip label will
+naturally appear as create or delete events, even if the Endpoints resource is
+only modified.
+
+#### Controller Start Up
+The EndpointSliceMirroring controller will not be started until the Endpoints
+controller indicates that it has completed the first full sync. This will ensure
+that it does not mirror Endpoints that are already managed by the Endpoints
+controller (and therefore would also have EndpointSlices managed by the
+EndpointSlice controller).
+
+When the controller starts up, it will be responsible for cleaning up any excess
+EndpointSlices that it manages that are no longer desired. This will be
+determined by listing EndpointSlices the controller is managing with the
+`endpointslice.kubernetes.io/managed-by` label and comparing those with the
+EndpointSlices desired for any Endpoints with the
+`endpointslice.kubernetes.io/skip-mirror` label set to "true".
+
+#### Corresponding Bug Fix for Endpoints and EndpointSlice Controller
+The Endpoints and EndpointSlice controller currently do not delete Endpoints or
+EndpointSlices when a selector is removed from a Service. This bug will be fixed
+before the EndpointsMirroring controller is added.
+
+#### Limitations
+To simplify implementation and align with the planned limitation on the size of
+Endpoints, the EndpointSliceMirroring controller will limit the number of
+endpoints mirrored to EndpointSlice resources to 1000 per Endpoints resource.
+
+#### Testing Plan
+The following will need to be covered as part of the testing plan:
+
+##### Unit Tests
+* Stale EndpointSlices managed by EndpointSliceMirroring controller are cleaned
+  up by the controller when it starts up.
+* Only Endpoints with the skip label set to "true" will be mirrored by the
+  EndpointSliceMirroring controller.
+* Endpoints transitioning between values of the skip label should result in
+  corresponding EndpointSlices being created or deleted.
+* Mirrored EndpointSlices will:
+  * Include the appropriate labels, endpoints, and ports of the corresponding
+    Endpoints resource.
+  * Refer to the original Endpoints resource with an OwnerReference and a
+    `kubernetes.io/service-name` label.
+  * Include a `endpointslice.kubernetes.io/managed-by` label set to
+    `endpointslicemirroring-controller.k8s.io`.
+* Endpoints with dual stack Endpoints should be represented with multiple
+  EndpointSlices, at least 1 per IP family.
+* Endpoints with multiple subsets should be represented with multiple
+  EndpointSlices, at least 1 per subset.
+* Endpoints with multiple subsets and IP families should be represented with
+  multiple EndpointSlices, at least 1 per subset and IP family.
+* Endpoints with more than 1000 endpoints should result in exactly 1000
+  endpoints being mirrored to corresponding EndpointSlices.
+* EndpointSlices with a different `endpointslice.kubernetes.io/managed-by` will
+  not be modified by the EndpointSlice mirroring controller.
+* When a selector is added to a Service with a preexisting Endpoints resource:
+  * The Endpoints controller will modify the existing Endpoints resource to add
+    the `endpointslice.kubernetes.io/skip-mirror` label.
+  * The EndpointSliceMirroring controller will delete any EndpointSlices it has
+    mirrored for that Endpoints resource.
+
+##### E2E Tests
+* Custom Endpoints are mirrored through create, update, and delete process.
+* Endpoints created by the Endpoints controller include the skip label.
+* EndpointSlices are created with the appropriate labels, endpoints, ports, and
+  Service references (label and owner ref).
 
 ## Roll Out Plan
 
-| K8s Version | State | OSS Controllers                                                            | Internal Consumer (Kube-proxy) |
-|-------------|-------|----------------------------------------------------------------------------|--------------------------------|
-| 1.16        | Alpha | EndpointSliceController (Alpha) EndpointController (GA with normal event)  | Endpoints                      |
-| 1.17        | Beta  | EndpointSliceController (Beta)  EndpointController (GA with warning event) | EndpointSlice                  |
-| 1.19+       | GA    | EndpointSliceController (GA)    EndpointController (GA with limitation)    | EndpointSlice                  |
+**Kubernetes 1.16: Alpha Release**
+* Initial EndpointSlice alpha release. No EndpointSlice functionality enabled by
+  default.
 
+**Kubernetes 1.17: Beta API**
+* EndpointSlice API graduates to beta, no EndpointSlice functionality is enabled
+  by default.
+* API additions include `endpointslice.kubernetes.io/managed-by` label to enable
+  EndpointSlices managed by multiple controllers.
+
+**Kubernetes 1.18: Controller Enabled by Default**
+* EndpointSlice controller is now enabled by default.
+* EndpointSlice functionality for kube-proxy is now guarded by a new alpha
+  `EndpointSliceProxying` feature gate.
+
+**Kubernetes 1.19: Custom Endpoints Mirrroring, Kube-Proxy on Linux uses EndpointSlices by Default**
+* Endpoints not managed by the Endpoints controller will be automatically
+  mirrored with new EndpointsMirroring controller.
+* `EndpointSliceProxying` feature gate will graduate to beta on Linux:
+  * Kube-Proxy on Linux will use EndpointSlices by default.
+  * Kube-Proxy on Windows will support EndpointSlices in an alpha state.
+
+**Kubernetes 1.20: GA API, Kube-Proxy on Windows uses EndpointSlices by Default**
+* The EndpointSlice API will graduate to v1.
+* `EndpointSliceProxying` feature gate will graduate to beta on Linux:
+  * Kube-Proxy on Linux will use EndpointSlices by default.
+* A new `endpoints.kubernetes.io/over-capacity` label will be set to "warning"
+  on Endpoints resources exceeding 1000 endpoints.
+
+**Kubernetes 1.21: Kube-Proxy GA**
+* The `EndpointSliceProxying` feature gate guarding EndpointSlice integration
+  with kube-proxy will graduate to GA on both Linux and Windows.
+* Endpoints resources will be limited to 1000 endpoints. The
+  `endpoints.kubernetes.io/over-capacity` label will continue to be set to
+  "truncated" in these cases.
 
 ## Graduation Criteria
 
