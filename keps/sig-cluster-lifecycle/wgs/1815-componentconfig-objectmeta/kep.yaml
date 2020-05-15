@@ -1,0 +1,45 @@
+title: Support ObjectMeta in ComponentConfig API's
+kep-number: 1815
+authors:
+  - "@phenixblue"
+  - "@mtaufen"
+owning-sig: sig-cluster-lifecycle
+participating-sigs:
+  - sig-cli
+status: provisional
+creation-date: 2020-05-27
+reviewers:
+  - TBD
+approvers:
+  - TBD
+see-also:
+  - NA
+replaces:
+  - NA
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: alpha
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.20"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.20"
+  beta: "v1.21"
+  stable: "v1.22"
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gate:
+  name: MyFeature
+  components:
+    - kube-apiserver
+    - kube-controller-manager
+disable-supported: true
+
+# The following PRR answers are required at beta release
+metrics:
+  - my_feature_metric
