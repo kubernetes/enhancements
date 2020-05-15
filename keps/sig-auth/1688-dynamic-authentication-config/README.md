@@ -147,7 +147,7 @@ useful for a wide audience.
 A good summary is probably at least a paragraph in length.
 -->
 
-Authentication is Kubernetes is quite flexible and unopinionated.  There is no
+Authentication in Kubernetes is quite flexible and unopinionated.  There is no
 requirement for the API server to understand where an identity originates from.
 The API server supports a variety of command line flags that enable authentication
 via x509 certificates, OpenID Connect ID tokens, arbitrary bearer tokens via a
@@ -229,11 +229,11 @@ implementation.  The "Design Details" section below is for the real
 nitty-gritty.
 -->
 
-This change aims to add a new API Kubernetes REST API called
-`AuthenticationConfig`.  It is similar to the `ValidatingWebhookConfiguration`
-API in that it will be watched by the API server and used to construct a struct.
-In this case, this struct with be an `authenticator.Request`, i.e. a dynamic
-authenticator.  This authenticator will be unioned with the other authenticators.
+This change aims to add a new Kubernetes REST API called `AuthenticationConfig`.
+It is similar to the `ValidatingWebhookConfiguration` API in that it will be
+watched by the API server and used to construct a struct.  In this case, this
+struct with be an `authenticator.Request`, i.e. a dynamic authenticator.  This
+authenticator will be unioned with the other authenticators.
 
 ### User Stories (optional)
 
@@ -299,7 +299,7 @@ server, all `AuthenticationConfig` objects will be considered after the other
 authenticators have had a chance to run.  This prevents issues such as a
 misbehaving authenticator attempting to authenticate a Kubernetes service
 account bearer token.  It also prevents performance issues caused by invoking
-a token webhook for the built-in authentication methods.
+a token webhook before the built-in authentication methods.
 
 The ordering of the `AuthenticationConfig` objects in relation to each other is
 (this is based on the performance of each type):
@@ -315,10 +315,10 @@ and there is no concept of priority among them.
 
 #### Source of identity
 
-One important characteristic of the an impersonation based proxy is that it is
-easy to trace when it asserts an identity by looking at the API server's audit
-logs.  This property will be maintained by setting audit annotations upon
-successful authentication.
+One important characteristic of an impersonation based proxy is that it is easy
+to trace when it asserts an identity by looking at the API server's audit logs.
+This property will be maintained by setting audit annotations upon successful
+authentication.
 
 The `authenticationconfigs.authentication.k8s.io/name` key will be set to the
 `metadata.name` of the `AuthenticationConfig` object that asserted the `user.Info`.
