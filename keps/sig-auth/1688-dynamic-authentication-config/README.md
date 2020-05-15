@@ -515,6 +515,12 @@ the `AuthenticationConfig` objects with `spec.type` equal to `x509`.
 
 Question: should we add white listing support to only allow certain identities?
 
+Question: on removal of an `x509` config, should we close open connections?
+What does the API server do today when it reloads a file based CA bundle?
+
+Question: should we allow an `x509` config with an empty bundle that is a no-op
+with the presumption that it will be updated later with a CA bundle?
+
 ### Test Plan
 
 <!--
