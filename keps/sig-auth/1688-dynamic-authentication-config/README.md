@@ -425,6 +425,16 @@ during a mutation of the `aggregationRule` field will be performed when an
 
 Read level access will be controlled through standard authorization mechanisms.
 
+#### Recovering from mistakes
+
+Similar to the RBAC API, it is possible for the cluster-admin to lock themselves
+out by deleting or incorrectly configuring the `authenticationconfigs` API.  The
+`system:masters` group can be used as the explicit break glass mechanism but the
+identity must be asserted by a configuration via the CLI flags.  This config is
+required to set up the `authenticationconfigs` API in the first place, and thus
+the simple recommendation would be to not alter the CLI config even after the
+`authenticationconfigs` API is in use.
+
 ## Design Details
 
 <!--
