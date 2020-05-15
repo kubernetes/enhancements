@@ -469,9 +469,15 @@ type AuthenticationConfigSpec struct {
   // but the fields can be explicitly set to "-" to override it
   Prefix *PrefixConfig `json:"prefix" protobuf:"bytes,2,opt,name=prefix"`
 
-  X509 *X509Config `json:"x509,omitempty" protobuf:"bytes,3,opt,name=x509"`
+  // TODO determine if this is the best approach to make "public" IDPs safe to use
+  // the asserted user must be a member of at least one of these groups to authenticate
+  // set to ["*"] to disable this check
+  // required (cannot be empty)
+  RequiredGroups []string `json:"requiredGroups" protobuf:"bytes,3,opt,name=requiredGroups"`
 
-  OIDC *OIDCConfig `json:"oidc,omitempty" protobuf:"bytes,4,opt,name=oidc"`
+  X509 *X509Config `json:"x509,omitempty" protobuf:"bytes,4,opt,name=x509"`
+
+  OIDC *OIDCConfig `json:"oidc,omitempty" protobuf:"bytes,5,opt,name=oidc"`
 
   // This struct will be defined in a later revision
   // Webhook *WebhookConfig `json:"webhook,omitempty" protobuf:"bytes,5,opt,name=webhook"`
