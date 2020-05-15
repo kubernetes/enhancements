@@ -1,0 +1,13 @@
+title: consistent-resource-version-semantics
+authors:
+  - "@jpbetz"
+owning-sig: sig-api-machinery
+reviewers:
+  - "@lavalamp"
+  - "@wojtek-t"
+approvers:
+  - "@lavalamp"
+  - "@deads2k"
+creation-date: 2020-03-09
+last-updated: 2020-04-02
+status: implementable
