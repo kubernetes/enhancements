@@ -311,8 +311,7 @@ The ordering of the `AuthenticationConfig` objects in relation to each other is
 `AuthenticationConfig` objects of the same type will be ordered lexicographically.
 No explicit control over ordering will be provided to the cluster admin.  All
 `AuthenticationConfig` objects are equally trusted to assert arbitrary identities
-and there is no concept of priority among them.  Token webhook implementations
-are responsible for understanding what tokens are meant for them.
+and there is no concept of priority among them.
 
 #### Source of identity
 
@@ -330,6 +329,69 @@ The `authenticationconfigs.authentication.k8s.io/type` key will be set to the
 More audit annotations may be added in the future to aid in tracing the source
 of the asserted identity.  For example, with the `oidc` type it may be helpful
 to include the issuer URL and client ID.
+
+#### Naming restrictions
+
+The `metadata.name` field of all `AuthenticationConfig` objects must adhere to
+the following validation rules:
+
+1. `<hostname>:<identifier>` (two segments separated by a colon)
+2. `hostname` must be at least two DNS1123 labels separated by `.`
+3. `identifier` must be one or more DNS1123 subdomains separated by `.`
+4. Max length of `571` characters
+
+The validation rules are based off of the CSR API's `spec.signerName` validation
+rules expect that `:` is used as the separator since `/` cannot be used in a the
+`metadata.name` field due to etcd naming restrictions.
+
+The `kubernetes.io` and `k8s.io` domains and all subdomains thereof are reserved
+for future Kubernetes use and will result in a validation error.
+
+`company.com:v1` is an example of a valid `metadata.name`.
+
+#### Webhook restrictions
+
+The aforementioned naming restrictions primarily exist to increase the security
+and performance of token webhook implementations.  While webhook implementations
+are responsible for understanding what tokens are meant for them, there is a
+desire not to "leak" credentials to webhooks.  In particular, authentication
+always falls-through to the next authenticator in the chain.  This can be
+problematic when an authenticator suffers a transient failure.  Instead of
+stopping early, later authenticators in the chain are attempted.  In the case of
+dynamic webhook authenticators, this could result in service account tokens and
+tokens meant for other webhooks being sent "to the wrong place."  Note that
+these concerns do not apply to the `x509` and `oidc` types as the verification
+process is performed locally by the API server.
+
+To address these concerns, a bearer token will only be sent to a `webhook`
+authenticator for verification if the token itself is prefixed with the name of
+the `AuthenticationConfig` object followed by a `/`.  Thus if a webhook
+authenticator is created with the name `company.com:v1`, only tokens with the
+prefix `company.com:v1/` will be sent to it for verification.  The API server
+will strip the prefix from the token before sending it to the webhook.  For
+example, if `company.com:v1` and `panda.io:trees` are configured as webhook
+authenticators and the token `company.com:v1/D2tIR6OugyAi70do2K90TRL5A` is
+bared to the API server, the `panda.io:trees` authenticator will be ignored and
+the token `D2tIR6OugyAi70do2K90TRL5A` will be sent to the `company.com:v1`
+webhook for verification.
+
+This guarantees that a JWT like the ones used for service account tokens and
+with `oidc` are never sent to a `webhook`, increasing both performance and
+preventing any leakage of these credentials.  Furthermore, only one `webhook`
+will be invoked for a given token, thus cross webhook credential leakage cannot
+occur.  Performance will also be increased by limiting the number of webhooks
+that can be invoked on a given request.
+
+It is the responsibility of the token issuer, the webhook, and the client to
+coordinate on how tokens should be correctly prefixed.  For example, the issuer
+could prefix the tokens automatically if it knows the name of the webhook.  Or
+the client could perform the prefixing via an `exec` credential plugin.  In most
+situations it should be possible to perform the prefixing without any end-user
+involvement.
+
+Question: should we support a simple form of wildcard by allowing a token such
+as `company.com:*/D2tIR6OugyAi70do2K90TRL5A` to be sent to all webhooks that
+have a `metadata.name` that starts with `company.com:`?
 
 ## Design Details
 
@@ -588,6 +650,7 @@ Major milestones might include
 -->
 
 2020-04-15: Initial KEP draft created
+2020-05-15: KEP updated to address various comments
 
 ## Drawbacks
 
