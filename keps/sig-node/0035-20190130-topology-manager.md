@@ -49,6 +49,7 @@ _Reviewers:_
 - [Proposal](#proposal)
   - [Proposed Changes](#proposed-changes)
     - [New Component: Topology Manager](#new-component-topology-manager)
+      - [Scopes](#scopes)
       - [Policies](#policies)
       - [Computing Preferred Affinity](#computing-preferred-affinity)
       - [New Interfaces](#new-interfaces)
@@ -58,6 +59,7 @@ _Reviewers:_
   - [Alpha (v1.16) [COMPLETED]](#alpha-v116-completed)
   - [Alpha (v1.17) [COMPLETED]](#alpha-v117-completed)
   - [Beta (v1.18) [COMPLETED]](#beta-v118-completed)
+  - [Beta (v1.19)](#beta-v119)
   - [GA (stable)](#ga-stable)
 - [Test Plan](#test-plan)
   - [Single NUMA Systems Tests](#single-numa-systems-tests)
@@ -180,7 +182,9 @@ This proposal is focused on a new component in the Kubelet called the
 Topology Manager. The Topology Manager implements the pod admit handler
 interface and participates in Kubelet pod admission. When the `Admit()`
 function is called, the Topology Manager collects topology hints from other
-Kubelet components on a container by container basis.
+Kubelet components on a container by container basis(default).
+
+>NOTE: Optionally, the Topology manager can collect topology hint per pod basis by configuring `--topology-manager-scope` flag with a `pod` value.
 
 If the hints are not compatible, the Topology Manager may choose to
 reject the pod. Behavior in this case depends on a new Kubelet configuration
@@ -195,14 +199,22 @@ The Topology Hint currently consists of
       * For each Hint Provider, there is a possible resource assignment that satisfies the request, such that the least possible number of NUMA nodes is involved (caculated as if the node were empty.)
       * There is a possible assignment where the union of involved NUMA nodes for all such resource is no larger than the width required for any single resource.
 
+#### Scopes
+
+The scope determines the basis of how topology manager collects topology hints, this also affects how policy works(container basis or pod basis).
+
+**container (default)**: Topology Manager collects topology hints from the Hint Providers per container basis, and a policy provides an allocation per container basis. A Pod will be admitted if the provided container basis allocation meets the criteria of configured policy.
+
+**pod**: Topology Manager collects topology hints per pod basis, and a policy provides an allocation per pod basis. A Pod will be admitted if the provided pod basis allocation meets the criteria of configured policy.
+
 #### Policies
 
 **none (default)**: Kubelet does not consult Topology Manager for placement decisions. 
 
-**best-effort**: Topology Manager will provide the preferred allocation for the container based
+**best-effort**: Topology Manager will provide the preferred allocation based
 on the hints provided by the Hint Providers. If an undesirable allocation is determined, the pod will be admitted with this undesirable allocation.
 
-**restricted**: Topology Manager will provide the preferred allocation for the container based
+**restricted**: Topology Manager will provide the preferred allocation based
 on the hints provided by the Hint Providers. If an undesirable allocation is determined, the pod will be rejected. 
 This will result in the pod being in a `Terminated` state, with a pod admission failure.
 
@@ -302,13 +314,27 @@ type TopologyHint struct {
     Preferred bool
 }
 
-// HintProvider is implemented by Kubelet components that make
-// topology-related resource assignments. The Topology Manager consults each
-// hint provider at pod admission time.
+// HintProvider is an interface for components that want to collaborate to
+// achieve globally optimal concrete resource alignment with respect to
+// NUMA locality.
 type HintProvider interface {
-  // Returns hints if this hint provider has a preference; otherwise
-  // returns `nil` to indicate "don't care".
+  // GetTopologyHints returns a map of resource names to a list of possible
+  // concrete resource allocations in terms of NUMA locality hints. Each hint
+  // is optionally marked "preferred" and indicates the set of NUMA nodes
+  // involved in the hypothetical allocation. The topology manager calls
+  // this function for each hint provider, and merges the hints to produce
+  // a consensus "best" hint. The hint providers may subsequently query the
+  // topology manager to influence actual resource assignment.
   GetTopologyHints(pod v1.Pod, containerName string) map[string][]TopologyHint
+  // GetPodLevelTopologyHints returns the a map of resource names to a list of 
+  // possible concrete resource allocations in terms of NUMA locality hints.
+  // The returned map contains TopologyHint of requested resource by all containers
+  // in a pod spec.
+  GetPodLevelTopologyHints(pod *v1.Pod) map[string][]TopologyHint
+  // Allocate triggers resource allocation to occur on the HintProvider after
+  // all hints have been gathered and the aggregated Hint is available via a
+  // call to Store.GetAffinity().
+  Allocate(pod *v1.Pod, container *v1.Container) error
 }
 
 // Store manages state related to the Topology Manager.
@@ -351,6 +377,11 @@ A new feature gate will be added to enable the Topology Manager feature. This fe
  
  * Proposed Policy Flag:  
  `--topology-manager-policy=none|best-effort|restricted|single-numa-node`  
+
+ The Scope flag determines the basis of the hint collecting and policy. The `container` scope will be the default scope.
+
+ * proposed Scope Flag:  
+ `--topology-manager-scope=container|pod`  
  
 ### Changes to Existing Components
 
@@ -360,10 +391,10 @@ A new feature gate will be added to enable the Topology Manager feature. This fe
        feature gate is disabled.
     1. Add a functional Topology Manager that queries hint providers in order
        to compute a preferred socket mask for each container.
-1. Add `GetTopologyHints()` method to CPU Manager.
+1. Add `GetTopologyHints()` and `GetPodLevelTopologyHints()` method to CPU Manager.
     1. CPU Manager static policy calls `GetAffinity()` method of
        Topology Manager when deciding CPU affinity.
-1. Add `GetTopologyHints()` method to Device Manager.
+1. Add `GetTopologyHints()` and `GetPodLevelTopologyHints()` method to Device Manager.
     1. Add `TopologyInfo` to Device structure in the device plugin
        interface. Plugins should be able to determine the NUMA Node(s)
        when enumerating supported devices. See the protocol diff below.
@@ -435,6 +466,9 @@ _Figure: Topology Manager fetches affinity from hint providers._
 * Add node E2E tests.
 * Guarantee aligned resources for multiple containers in a pod.
 * Refactor to easily support different merge strategies for different policies.
+
+## Beta (v1.19)
+* Support pod-level resource alignment.
 
 ## GA (stable)
 
