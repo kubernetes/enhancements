@@ -393,6 +393,38 @@ Question: should we support a simple form of wildcard by allowing a token such
 as `company.com:*/D2tIR6OugyAi70do2K90TRL5A` to be sent to all webhooks that
 have a `metadata.name` that starts with `company.com:`?
 
+#### Cluster-admin only
+
+Control over `AuthenticationConfig` objects allows the manufacture of arbitrary
+identities.  As such, great care must be taken to limit access to this API to
+cluster-admins.  Thus an escalation check similar to the one that RBAC performs
+during a mutation of the `aggregationRule` field will be performed when an
+`AuthenticationConfig` object is mutated.  The requirements are:
+
+1. Group membership in `system:masters`, or
+2. Subject access review:
+    verb `escalate`
+    name `metadata.name`
+    namespace `""` (empty string since this API is cluster scoped)
+    group `authentication.k8s.io`
+    version `*`
+    resource `authenticationconfigs`
+    subresource `spec.type:<value>` (to allow for distinct authorization per type)
+   or
+3. Subject access review:
+    verb `*`
+    name `""` (empty string)
+    namespace `""` (empty string)
+    group `*`
+    version `*`
+    resource `*`
+    subresource `""` (empty string)
+   and
+    verb `*`
+    path `*`
+
+Read level access will be controlled through standard authorization mechanisms.
+
 ## Design Details
 
 <!--
