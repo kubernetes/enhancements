@@ -248,12 +248,60 @@ bogged down.
 
 #### Story 1
 
-A user wishes to use Dex on an existing cluster.  They follow Dex's instructions
-to deploy the IDP onto the cluster.  They then create a matching
+Alice wishes to use Dex on an existing cluster.  She follows Dex's instructions
+to deploy the IDP onto the cluster.  She then create a matching
 `AuthenticationConfig` object with the `spec.type` set to `oidc` along with other
 relevant options.  This allows the API server to validate ID tokens issued by Dex.
-The user configures the `kubectl` OIDC integration and uses a Dex provided
-identity to authenticate to the cluster.
+Alice configures the `kubectl` OIDC integration and uses a Dex provided identity
+to authenticate to the cluster.
+
+#### Story 2
+
+Bob creates an `AuthenticationConfig` object with `spec.type` set to `x509`.  He
+is then able to create a custom signer for use with the CSR API.  It can issue
+client certificates that are valid for authentication against the Kube API.
+
+#### Story 3
+
+Charlie creates an `AuthenticationConfig` object with `spec.type` set to `webhook`.
+This webhook is configured to honor GitHub tokens.  He configures an `exec`
+credential plugin to make it easy for him to get tokens.  He is then able to
+authenticate to the cluster using `kubectl` via GitHub tokens.
+
+#### Story 4
+
+(continues on from Story 3)
+
+There is a service running in Charlie's cluster: `metrics.cluster.svc`.  This
+service exposes some metrics about the cluster.  The service is assigned the
+`system:auth-delegator` role and uses the `tokenreviews` API to limit access to
+the data (any bearer token that can be validated via the `tokenreviews` API is
+sufficient to be granted access).  Charlie uses his GitHub token to authenticate
+to the service.  The API server calls the dynamic authentication webhook and is
+able to validate the GitHub token.  Charlie is able to access the service.
+
+#### Story 5
+
+Dan wants to configure multiple `AuthenticationConfig` objects while guaranteeing
+that they will not assert overlapping identities.  He configures each object with
+a unique `spec.prefix`.
+
+#### Story 6
+
+Eve wants to use `gitlab.com` as an `oidc` `AuthenticationConfig`.  To prevent
+every GitLab user from being able to authenticate to her cluster, she sets the
+`spec.requiredGroups` field to her company's GitLab corporation which is
+included as a group in the ID token.  Only users from her company are able to
+authenticate to the cluster.
+
+#### Story 7
+
+Frank is exploring different options for authentication in Kubernetes.  He browses
+various repos on GitHub.  He finds a few projects that are of interest to him.
+He is able to try out the functionality using `kubectl apply` to configure his
+cluster to use the custom authentication stacks.  He finds a solution that he
+likes.  He uses the appropriate `kubectl apply` command to update his existing
+clusters to the new authentication stack.
 
 ### Notes/Constraints/Caveats (optional)
 
