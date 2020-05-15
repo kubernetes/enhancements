@@ -479,8 +479,7 @@ type AuthenticationConfigSpec struct {
 
   OIDC *OIDCConfig `json:"oidc,omitempty" protobuf:"bytes,5,opt,name=oidc"`
 
-  // This struct will be defined in a later revision
-  // Webhook *WebhookConfig `json:"webhook,omitempty" protobuf:"bytes,5,opt,name=webhook"`
+  Webhook *WebhookConfig `json:"webhook,omitempty" protobuf:"bytes,6,opt,name=webhook"`
 }
 
 type AuthenticationConfigType string
@@ -507,6 +506,17 @@ type OIDCConfig struct {
   UsernameClaim string `json:"usernameClaim" protobuf:"bytes,3,opt,name=usernameClaim"`
 
   GroupsClaim string `json:"groupsClaim" protobuf:"bytes,4,opt,name=groupsClaim"`
+}
+
+type WebhookConfig struct {
+  // this type is defined in admission registration
+  ClientConfig admissionregistrationv1.WebhookClientConfig `json:"clientConfig" protobuf:"bytes,1,opt,name=clientConfig"`
+
+  // controls how the API server authenticates to the webhook (client cert, bearer token, etc)
+  // this is just a placeholder as https://github.com/kubernetes/enhancements/pull/658
+  // is tracking the work required to allow for this functionality
+  // it may end up in the WebhookClientConfig struct instead of a new struct
+  // ServerAuthentication *ServerAuthentication `json:"serverAuthentication,omitempty" protobuf:"bytes,2,opt,name=serverAuthentication"`
 }
 
 type PrefixConfig struct {
