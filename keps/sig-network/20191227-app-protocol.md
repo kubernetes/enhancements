@@ -29,6 +29,7 @@ see-also:
     - [Services:](#services)
     - [Endpoints:](#endpoints)
   - [Risks and Mitigations](#risks-and-mitigations)
+  - [Proposed Roadmap](#proposed-roadmap)
   - [Graduation Criteria](#graduation-criteria)
   - [Test plan](#test-plan)
 <!-- /toc -->
@@ -99,11 +100,19 @@ It may take some time for cloud providers and other consumers of these APIs to
 support this attribute. To help with this, we will work to communicate this
 change well in advance of release so it can be well supported initially.
 
+### Proposed Roadmap
+**Kubernetes 1.18**: New field is added but gated behind new alpha
+`ServiceAppProtocol` feature gate.
+**Kubernetes 1.19**: `ServiceAppProtocol` feature gate graduates to beta and is
+enabled by default.
+**Kubernetes 1.20**: `ServiceAppProtocol` feature gate graduates to GA.
+**Kubernetes 1.21**: `ServiceAppProtocol` feature gate is removed.
+
 ### Graduation Criteria
 
-This adds a new optional attribute to 2 existing stable APIs. There is no need
-for feature gating or a graduation process, this will be added to the existing
-API versions.
+This adds a new optional attribute to 2 existing stable APIs. This will follow
+the traditional approach for adding new fields initially guarded by a feature
+gate.
 
 ### Test plan
 
