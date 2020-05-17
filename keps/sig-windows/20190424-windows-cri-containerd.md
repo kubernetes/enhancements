@@ -2,6 +2,7 @@
 title: Supporting CRI-ContainerD on Windows
 authors:
   - "@patricklang"
+  - "@marosset"
 owning-sig: sig-windows
 participating-sigs:
   - sig-windows
@@ -50,11 +51,18 @@ status: implementable
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
-  - [Alpha release](#alpha-release)
-  - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
-      - [Beta -&gt; GA Graduation](#beta---ga-graduation)
+    - [Alpha release](#alpha-release)
+    - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
+    - [Beta -&gt; GA Graduation](#beta---ga-graduation)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
+- [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
+  - [Feature enablement and rollback](#feature-enablement-and-rollback)
+  - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+  - [Monitoring requirements](#monitoring-requirements)
+  - [Dependencies](#dependencies-1)
+  - [Scalability](#scalability)
+  - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
 - [Alternatives](#alternatives)
   - [CRI-O](#cri-o)
@@ -70,12 +78,16 @@ For enhancements that make changes to code or processes/procedures in core Kuber
 
 Check these off as they are completed for the Release Team to track. These checklist items _must_ be updated for the enhancement to be released.
 
-- [x] kubernetes/enhancements issue in release milestone, which links to KEP (this should be a link to the KEP location in kubernetes/enhancements, not the initial KEP PR)
-- [x] KEP approvers have set the KEP status to `implementable`
-- [x] Design details are appropriately documented
+Items marked with (R) are required *prior to targeting to a milestone / release*.
+
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) KEP approvers have set the KEP status to `implementable`
+- [x] (R) Design details are appropriately documented
 - [x] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
-- [x] Graduation criteria is in place
-- [ ] "Implementation History" section is up-to-date for milestone
+- [x] (R) Graduation criteria is in place
+- [ ] (R) Production readiness review completed
+- [ ] Production readiness review approved
+- [x] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
@@ -90,8 +102,8 @@ Check these off as they are completed for the Release Team to track. These check
 
 ## Summary
 
-The ContainerD maintainers have been working on CRI support which is stable on Linux, but is not yet available for Windows as of ContainerD 1.2. Currently it’s planned for ContainerD 1.3, and the developers in the Windows container platform team have most of the key work merged into master already. Supporting CRI-ContainerD on Windows means users will be able to take advantage of the latest container platform improvements that shipped in Windows Server 2019 / 1809 and beyond.
-
+The ContainerD maintainers have been working on CRI support which is stable on Linux and Windows support has been added to ContainerD 1.13.
+Supporting CRI-ContainerD on Windows means users will be able to take advantage of the latest container platform improvements that shipped in Windows Server 2019 / 1809 and beyond.
 
 ## Motivation
 
@@ -128,28 +140,27 @@ Hyper-V enables each pod to run within it’s own hypervisor partition, with a s
 
 In addition, some customers may desire hypervisor-based isolation as an additional line of defense against a container break-out attack.
 
-Adding Hyper-V support would use [RuntimeClass](https://kubernetes.io/docs/concepts/containers/runtime-class/#runtime-class). 
+Adding Hyper-V support would use [RuntimeClass](https://kubernetes.io/docs/concepts/containers/runtime-class/#runtime-class).
 3 typical RuntimeClass names would be configured in CRI-ContainerD to support common deployments:
+
 - runhcs-wcow-process [default] - process isolation is used, container & node OS version must match
 - runhcs-wcow-hypervisor - Hyper-V isolation is used, Pod will be compatible with containers built with Windows Server 2019 / 1809. Physical memory overcommit is allowed with overages filled from pagefile.
 - runhcs-wcow-hypervisor-1903 - Hyper-V isolation is used, Pod will be compatible with containers built with Windows Server 1903. Physical memory overcommit is allowed with overages filled from pagefile.
 
 Using Hyper-V isolation does require some extra memory for the isolated kernel & system processes. This could be accounted for by implementing the [PodOverhead](https://kubernetes.io/docs/concepts/containers/runtime-class/#runtime-class) proposal for those runtime classes. We would include a recommended PodOverhead in the default CRDs, likely between 100-200M.
 
-
 #### Improve Control over Memory & CPU Resources with Hyper-V
 
 The Windows kernel itself cannot provide reserved memory for pods, containers or processes. They are always fulfilled using virtual allocations which could be paged out later. However, using a Hyper-V partition improves control over memory and CPU cores. Hyper-V can either allocate memory on-demand (while still enforcing a hard limit), or it can be reserved as a physical allocation up front. Physical allocations may be able to enable large page allocations within that range (to be confirmed) and improve cache coherency. CPU core counts may also be limited so a pod only has certain cores available, rather than shares spread across all cores, and applications can tune thread counts to the actually available cores.
 
 Operators could deploy additional RuntimeClasses with more granular control for performance critical workloads:
+
 - 2019-Hyper-V-Reserve: Hyper-V isolation is used, Pod will be compatible with containers built with Windows Server 2019 / 1809. Memory reserve == limit, and is guaranteed to not page out.
   - 2019-Hyper-V-Reserve-<N>Core: Same as above, except all but <N> CPU cores are masked out.
 - 1903-Hyper-V-Reserve: Hyper-V isolation is used, Pod will be compatible with containers built with Windows Server 1903. Memory reserve == limit, and is guaranteed to not page out.
   - 1903-Hyper-V-Reserve-<N>Core: Same as above, except all but <N> CPU cores are masked out.
 
-
 #### Improved Storage Control with Hyper-V
-
 
 Hyper-V also brings the capability to attach storage to pods using block-based protocols (SCSI) instead of file-based protocols (host file mapping / NFS / SMB). These capabilities could be enabled in HCSv2 with CRI-ContainerD, so this could be an area of future work. Some examples could include:
 
@@ -157,11 +168,9 @@ Attaching a "physical disk" (such as a local SSD, iSCSI target, Azure Disk or Go
 
 Creating [Persistent Local Volumes](https://kubernetes.io/docs/concepts/storage/volumes/#local) using a local virtual disk attached directly to a pod. This would create local, non-resilient storage that could be formatted from the pod without being mounted on the host. This could be used to build out more resource controls such as fixed disk sizes and QoS based on IOPs or throughput and take advantage of high speed local storage such as temporary SSDs offered by cloud providers.
 
-
 #### Enable runtime resizing of container resources
 
 With virtual-based allocations and Hyper-V, it should be possible to increase the limit for a running pod. This won’t give it a guaranteed allocation, but will allow it to grow without terminating and scheduling a new pod. This could be a path to vertical pod autoscaling. This still needs more investigation and is mentioned as a future possibility.
-
 
 ### Implementation Details/Notes/Constraints
 
@@ -172,6 +181,7 @@ The work needed will span multiple repos, SIG-Windows will be maintaining a [Win
 As of version 1.14, RuntimeClass is not considered by the Kubernetes scheduler. There’s no guarantee that a node can start a pod, and it could fail until it’s scheduled on an appropriate node. Additional node labels and nodeSelectors are required to avoid this problem. [RuntimeClass Scheduling](https://github.com/kubernetes/enhancements/blob/master/keps/sig-node/runtime-class-scheduling.md) proposes being able to add nodeSelectors automatically when using a RuntimeClass, simplifying the deployment.
 
 Windows forward compatibility will bring a new challenge as well because there are two ways a container could be run:
+
 - Constrained to the OS version it was designed for, using process-based isolation
 - Running on a newer OS version using Hyper-V.
 This second case could be enabled with a RuntimeClass. If a separate RuntimeClass was used based on OS version, this means the scheduler could find a node with matching class.
@@ -181,10 +191,11 @@ This second case could be enabled with a RuntimeClass. If a separate RuntimeClas
 There are large number of [Windows annotations](https://github.com/Microsoft/hcsshim/blob/master/internal/oci/uvm.go#L15) defined that can control how Hyper-V will configure its hypervisor partition for the pod. Today, these could be set in the runtimeclasses defined in the CRI-ContainerD configuration file on the node, but it would be easier to maintain them if key settings around resources (cpu+memory+storage) could be aligned across multiple hypervisors and exposed in CRI.
 
 Doing this would make pod definitions more portable between different isolation types. It would also avoid the need for a "t-shirt size" list of RuntimeClass instances to choose from:
+
 - 1809-Hyper-V-Reserve-2Core-PhysicalMemory
 - 1903-Hyper-V-Reserve-1Core-VirtualMemory
 - 1903-Hyper-V-Reserve-4Core-PhysicalMemory
-...
+- etc.
 
 ### Dependencies
 
@@ -205,6 +216,7 @@ CI+CD: lacking
 
 ##### CNI: Flannel 
 Flannel isn’t expected to require any changes since the Windows-specific metaplugins ship outside of the main repo. However, there is still not a stable release supporting Windows so it needs to be built from source. Additionally, the Windows-specific metaplugins to support ContainerD are being developed in a new repo [Microsoft/windows-container-networking](https://github.com/Microsoft/windows-container-networking). It’s still TBD whether this code will be merged into [containernetworking/plugins](https://github.com/containernetworking/plugins/), or maintained in a separate repo.
+
 - Sdnbridge - this works with host-gw mode, replaces win-bridge
 - Sdnoverlay - this works with vxlan overlay mode, replaces win-overlay
 
@@ -224,6 +236,7 @@ GCE uses the win-bridge meta-plugin today for managing Windows network interface
 These are expected to work and the same tests will be run for both dockershim and CRI-ContainerD.
 
 ##### Storage: FlexVolume for iSCSI & SMB
+
 These out-of-tree plugins are expected to work, and are not tested in prow jobs today. If they graduate to stable we’ll add them to testgrid.
 
 ### Risks and Mitigations
@@ -245,14 +258,14 @@ Test cases that depend on ContainerD and won't pass with Dockershim will be mark
 
 ### Graduation Criteria
 
-### Alpha release
+#### Alpha release
 
-> Proposed for 1.18
+> Released with 1.18
 
-- Windows Server 2019 containers can run with process level isolation
+- Windows Server 2019 containers can run with process level isolation using containerd
 - TestGrid has results for Kubernetes master branch. CRI-ContainerD and CNI built from source and may include non-upstream PRs.
 
-### Alpha -> Beta Graduation
+#### Alpha -> Beta Graduation
 
 > Proposed for 1.19 or later
 
@@ -260,15 +273,16 @@ Test cases that depend on ContainerD and won't pass with Dockershim will be mark
   - Group Managed Service Account support
   - Named pipe & Unix domain socket mounts
 - Support RuntimeClass to enable Hyper-V isolation
-- Publically available builds (beta or better) of CRI-ContainerD, at least one CNI
+- Publicly available builds (beta or better) of CRI-ContainerD, at least one CNI
 - TestGrid results for above builds with Kubernetes master branch
 
-##### Beta -> GA Graduation
+#### Beta -> GA Graduation
 
 > Proposed for 1.20 or later
 
 - Stable release of CRI-ContainerD on Windows, at least one CNI
 - Master & release branches on TestGrid
+- Perf analysis of pod-lifecycle operations performed and guidance around resource reservations and/or limits is updated for Windows node configuration and pod scheduling
 
 ### Upgrade / Downgrade Strategy
 
@@ -282,11 +296,142 @@ As discussed in SIG-Node, there's also no testing on switching CRI on an existin
 
 There's no version skew considerations needed for the same reasons described in upgrade/downgrade strategy.
 
+## Production Readiness Review Questionnaire
+
+### Feature enablement and rollback
+
+_This section must be completed when targeting alpha to a release._
+
+- **How can this feature be enabled / disabled in a live cluster?**
+  - [ ] Feature gate (also fill in values in `kep.yaml`)
+    - Feature gate name:
+    - Components depending on the feature gate:
+  - [x] Other
+    - Describe the mechanism: Windows agent nodes are expected to have the CRI installed and configured before joining the node to a cluster.
+    - Will enabling / disabling the feature require downtime of the control
+      plane? No
+    - Will enabling / disabling the feature require downtime or reprovisioning
+      of a node? Yes
+
+- **Does enabling the feature change any default behavior?**
+  No
+
+- **Can the feature be disabled once it has been enabled (i.e. can we rollback
+  the enablement)?**
+  No
+
+- **What happens if we reenable the feature if it was previously rolled back?**
+  This feature is not enabled/disabled like traditional features - nodes are configured with containerd prior to joining a cluster.
+  A single Windows node will be configured with either Docker EE or containerd but different nodes running different CRIs can be joined to the same cluster with no negative impact.
+
+- **Are there any tests for feature enablement/disablement?**
+  No - As mentioned in [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy) there is no testing for switching CRI on an existing node.
+
+### Rollout, Upgrade and Rollback Planning
+
+_This section must be completed when targeting beta graduation to a release._
+
+- **How can a rollout fail? Can it impact already running workloads?**
+  Nodes with improperly configured containerd installations may result in the node never a schedule-able state, pod sandbox creation failures, or issues creating/starting containers.
+  Ensuring proper configuration containerd installation/configuration is out-of-scope for this document.
+
+- **What specific metrics should inform a rollback?**
+  All existing node health metrics should be used to determine/monitor node health.
+
+- **Were upgrade and rollback tested? Was upgrade->downgrade->upgrade path tested?**
+  N/A
+
+- **Is the rollout accompanied by any deprecations and/or removals of features,
+  APIs, fields of API types, flags, etc.?**
+  No
+
+### Monitoring requirements
+
+_This section must be completed when targeting beta graduation to a release._
+
+- **How can an operator determine if the feature is in use by workloads?**
+  The `status.nodeInfo.contaienrRuntimeVersion` property for a node indicates which CRI is being used for a node.
+
+- **What are the SLIs (Service Level Indicators) an operator can use to
+  determine the health of the service?**
+  - [ ] Metrics
+    - Metric name:
+    - [Optional] Aggregation method:
+    - Components exposing the metric:
+  - [x] Other (treat as last resort)
+    - Details: Checking the health of Windows node running containerd should be no different than checking the health of any other node in a cluster.
+
+- **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
+  No
+
+- **Are there any missing metrics that would be useful to have to improve
+  observability if this feature?**
+  No
+
+### Dependencies
+
+_This section must be completed when targeting beta graduation to a release._
+
+- **Does this feature depend on any specific services running in the cluster?**
+  Windows CRI-containerd does not add any additional dependencies/requirements for joining nodes to a cluster.
+
+### Scalability
+
+- **Will enabling / using this feature result in any new API calls?**
+  No
+
+- **Will enabling / using this feature result in introducing new API types?**
+  No
+
+- **Will enabling / using this feature result in any new calls to cloud
+  provider?**
+  No
+
+- **Will enabling / using this feature result in increasing size or count
+  of the existing API objects?**
+  No
+
+- **Will enabling / using this feature result in increasing time taken by any
+  operations covered by [existing SLIs/SLOs][]?**
+  No - But perf testing should be done to validate pod-lifecycle operations are not regressed compared to when equivalent nodes are configured with Docker EE.
+
+- **Will enabling / using this feature result in non-negligible increase of
+  resource usage (CPU, RAM, disk, IO, ...) in any components?**
+  There are no expected increases in resource usage when using containerd - Additional perf testing will be done as prior of GA graduation.
+
+### Troubleshooting
+
+Troubleshooting section serves the `Playbook` role as of now. We may consider
+splitting it into a dedicated `Playbook` document (potentially with some monitoring
+details). For now we leave it here though.
+
+_This section must be completed when targeting beta graduation to a release._
+
+- **How does this feature react if the API server and/or etcd is unavailable?**
+
+- **What are other known failure modes?**
+  For each of them fill in the following information by copying the below template:
+  - [Failure mode brief description]
+    - Detection: How can it be detected via metrics? Stated another way:
+      how can an operator troubleshoot without loogging into a master or worker node?
+    - Mitigations: What can be done to stop the bleeding, especially for already
+      running user workloads?
+    - Diagnostics: What are the useful log messages and their required logging
+      levels that could help debugging the issue?
+      Not required until feature graduated to Beta.
+    - Testing: Are there any tests for failure mode? If not describe why.
+
+- **What steps should be taken if SLOs are not being met to determine the problem?**
+
+[supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
+[existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
+
 ## Implementation History
 
 - 2019-04-24 - KEP started, based on the [earlier doc shared SIG-Windows and SIG-Node](https://docs.google.com/document/d/1NigFz1nxI9XOi6sGblp_1m-rG9Ne6ELUrNO0V_TJqhI/edit)
 - 2019-09-20 - Updated with new milestones
 - 2020-01-21 - Updated with new milestones
+- 2020-05-12 - Minor KEP updates, PRR questionnaire added
 
 ## Alternatives
 
@@ -297,7 +442,5 @@ There's no version skew considerations needed for the same reasons described in 
 ## Infrastructure Needed
 
 No new infrastructure is currently needed from the Kubernetes community. The existing test jobs using prow & testgrid will be copied and modified to test CRI-ContainerD in addition to dockershim.
-
-
 
 [Windows CRI-Containerd Project Board]: https://github.com/orgs/kubernetes/projects/34
