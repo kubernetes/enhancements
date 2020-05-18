@@ -1,0 +1,26 @@
+title: Default Even Pod Spreading
+kep-number: 1258
+authors:
+- "@alculquicondor"
+owning-sig: sig-scheduling
+status: implementable
+creation-date: 2019-09-26
+reviewers:
+- "@ahg-g"
+- "@Huang-Wei"
+approvers:
+- "@ahg-g"
+- "@Huang-Wei"
+see-also:
+- "/keps/sig-scheduling/20190221-even-pods-spreading.md"
+stage: alpha
+latest-milestone: "v1.19"
+milestone:
+  alpha: "v1.19"
+  beta: "v1.20"
+  stable: "v1.22"
+feature-gate:
+  name: DefaultEvenPodsSpread
+  components:
+  - kube-scheduler
+disable-supported: true
