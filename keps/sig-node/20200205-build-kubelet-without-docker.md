@@ -16,8 +16,8 @@ approvers:
   - "@dchen1107"
 editor: TBD
 creation-date: 2020-02-05
-last-updated: 2020-02-09
-status: implementable
+last-updated: 2020-05-11
+status: implemented
 see-also:
   - "/keps/sig-cloud-provider/20190729-building-without-in-tree-providers.md"
 ---
@@ -270,7 +270,7 @@ N/A
 
 ## Implementation History
 
-- original KEP PR [kubernetes/kubernetes#87746](https://github.com/kubernetes/kubernetes/pull/87746)
+- original KEP PR [kubernetes/kubernetes#87746](https://github.com/kubernetes/kubernetes/pull/87746) was merged on 2020-05-09.
 
 ## Drawbacks
 
