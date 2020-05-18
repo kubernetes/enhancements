@@ -1,21 +1,3 @@
----
-title: Default Even Pod Spreading
-authors:
-  - "@alculquicondor"
-owning-sig: sig-scheduling
-reviewers:
-  - "@ahg-g"
-  - "@Huang-Wei"
-approvers:
-  - "@ahg-g"
-  - "@Huang-Wei"
-creation-date: 2019-09-26
-last-updated: 2010-10-07
-status: implementable
-see-also:
-  - "/keps/sig-aaa/20190221-even-pods-spreading.md"
----
-
 # Default Even Pod Spreading
 
 ## Table of Contents
