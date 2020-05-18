@@ -60,6 +60,12 @@ Things we'd like to see happen to consider KEPs well on their way:
 
 Even so, the process can evolve. As we find new techniques we can improve our processes.
 
+### What is the number at the beginning of the KEP name?
+
+KEPs are now prefixed with their associated tracking issue number. This gives
+both the KEP a unique identifier and provides an easy breadcrumb for people to
+find the issue where the current state of the KEP is being updated.
+
 ### My FAQ isn't answered here!
 
 The KEP process is still evolving!
