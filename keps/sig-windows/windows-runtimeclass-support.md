@@ -49,7 +49,7 @@ see-also:
     - [E2E Testing with CRI-ContainerD and Kubernetes](#e2e-testing-with-cri-containerd-and-kubernetes)
     - [Unit testing with CRITest](#unit-testing-with-critest)
   - [Graduation Criteria](#graduation-criteria)
-    - [Alpha - Kubernetes 1.17](#alpha---kubernetes-117)
+    - [Alpha](#alpha)
     - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
     - [Beta -&gt; GA Graduation](#beta---ga-graduation)
       - [Removing a deprecated flag](#removing-a-deprecated-flag)
@@ -75,12 +75,16 @@ For enhancements that make changes to code or processes/procedures in core Kuber
 
 Check these off as they are completed for the Release Team to track. These checklist items _must_ be updated for the enhancement to be released.
 
-- [x] [kubernetes/enhancements issue in release milestone](https://github.com/kubernetes/enhancements/issues/1301)
-- [ ] KEP approvers have set the KEP status to `implementable`
-- [x] Design details are appropriately documented
-- [ ] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
-- [x] Graduation criteria is in place
-- [ ] "Implementation History" section is up-to-date for milestone
+Items marked with (R) are required *prior to targeting to a milestone / release*.
+
+- [x] (R) [kubernetes/enhancements issue in release milestone](https://github.com/kubernetes/enhancements/issues/1301)
+- [x] (R) KEP approvers have set the KEP status to `implementable`
+- [x] (R) Design details are appropriately documented
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [x] (R) Graduation criteria is in place
+- [ ] (R) Production readiness review completed
+- [ ] Production readiness review approved
+- [x] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
@@ -286,7 +290,7 @@ Here are the current product name to build number mappings to illustrate the poi
 | Windows Server 2019                  | 10.0.17763             |
 | Windows Server version 1809          | 10.0.17763             |
 | Windows Server version 1903          | 10.0.18362             |
-| Windows Server vNext Insider Preview | 10.0.18975, 10.0.18985 |
+| Windows Server version 1909          | 10.0.18363             |
 
 [Windows Update History] has a full list of version numbers by release & patch. Starting from an example of `10.0.17763.805` - the OS major, minor, and build number - `10.0.17763` - should match for containers to be compatible. The final `.805` refers to the monthly patches and isn't required for compatibility. Therefore, a value such as `node.kubernetes.io/windows-build = 10.0.17763` will be used. Each one of these Windows Server version will have corresponding containers released - see [Container Base Images] and [Windows Insider Container Images] for details.
 
@@ -294,7 +298,7 @@ This will pass the regex validation for labels (references: [src1](https://githu
 
 To make this easier to consume in the Kubelet and APIs, it will be updated in multiple places:
 
-- Add a well-known label in 
+- Add a well-known label in
   - [k8s.io/api/core/v1/well_known_labels.go](https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/api/core/v1/well_known_labels.go)
   - [pkg/kubelet/apis/well_known_labels.go](https://github.com/kubernetes/kubernetes/blob/5a790bce3b222b7fd1ef1225e3b20700c577088a/pkg/kubelet/apis/well_known_labels.go)
 - Set & update it in Kubelet
@@ -303,7 +307,7 @@ To make this easier to consume in the Kubelet and APIs, it will be updated in mu
 #### Adding annotations to ImageSpec
 
 Current proposal is to change the `ImageSpec` to incorporate annotations for runtime class. These can be passed down to the container runtimes where various actions can be taken as per the runtime class specified. Also proposed is the change to `Image` struct to include the `ImageSpec` and thereby include the annotations.
- 
+
 ##### ImageSpec changes
 
 Currently ImageSpec contains just a string.
@@ -313,7 +317,7 @@ type ImageSpec struct {
   Image string
 }
 ```
- 
+
 The proposal is to add Annotations into the ImageSpec:
 
 ```
@@ -322,14 +326,15 @@ type ImageSpec struct {
   Annotations []Annotation
 }
 ```
- 
+
 The runtimeHandler annotation will be based on the Runtime Class specified by the user:
 
 ```
 “kubernetes.io/runtimehandler”: “<corresponding values>”
- ```
+```
 
 We could potentially also add the kubernetes specification annotations for consideration of the runtime:
+
 ```
 “kubernetes.io/arch”: “amd64”
 “kubernetes.io/os”: ”linux”
@@ -343,18 +348,18 @@ Note that these are currently derived from from GOARCH and GOOS at runtime, whic
 
 ```
 type ImageService interface {
-	// PullImage pulls an image from the network to local storage using the supplied
-	// secrets if necessary. It returns a reference (digest or ID) to the pulled image.
-	PullImage(image ImageSpec, pullSecrets []v1.Secret, podSandboxConfig *runtimeapi.PodSandboxConfig) (string, error)
-	// GetImageRef gets the reference (digest or ID) of the image which has already been in
-	// the local storage. It returns ("", nil) if the image isn't in the local storage.
-	GetImageRef(image ImageSpec) (string, error)
-	// Gets all images currently on the machine.
-	ListImages() ([]Image, error)
-	// Removes the specified image.
-	RemoveImage(image ImageSpec) error
-	// Returns Image statistics.
-	ImageStats() (*ImageStats, error)
+  // PullImage pulls an image from the network to local storage using the supplied
+  // secrets if necessary. It returns a reference (digest or ID) to the pulled image.
+   PullImage(image ImageSpec, pullSecrets []v1.Secret, podSandboxConfig *runtimeapi.PodSandboxConfig) (string, error)
+  // GetImageRef gets the reference (digest or ID) of the image which has already been in
+  // the local storage. It returns ("", nil) if the image isn't in the local storage.
+  GetImageRef(image ImageSpec) (string, error)
+  // Gets all images currently on the machine.
+  ListImages() ([]Image, error)
+  // Removes the specified image.
+  RemoveImage(image ImageSpec) error
+  // Returns Image statistics.
+  ImageStats() (*ImageStats, error)
 }
 ```
 
@@ -362,37 +367,40 @@ The proposal is to change the `Image` from the following :
 
 ```
 type Image struct {
-	// ID of the image.
-	ID string
-	// Other names by which this image is known.
-	RepoTags []string
-	// Digests by which this image is known.
-	RepoDigests []string
-	// The size of the image in bytes.
-	Size int64
+  // ID of the image.
+  ID string
+  // Other names by which this image is known.
+  RepoTags []string
+  // Digests by which this image is known.
+  RepoDigests []string
+  // The size of the image in bytes.
+  Size int64
 }
 ```
+
 to include the ImageSpec as follows:
 
 ```
 type Image struct {
-	// ID of the image.
-	ID string
-	// Other names by which this image is known.
-	RepoTags []string
-	// Digests by which this image is known.
-	RepoDigests []string
-	// The size of the image in bytes.
-	Size int64
-	// ImageSpec for the image which includes the run time annotations
-	Spec ImageSpec
+  // ID of the image.
+  ID string
+  // Other names by which this image is known.
+  RepoTags []string
+  // Digests by which this image is known.
+  RepoDigests []string
+  // The size of the image in bytes.
+  Size int64
+  // ImageSpec for the image which includes the run time annotations
+  Spec ImageSpec
 }
 ```
+
 Note that the ID field will be potentially duplicated in ImageSpec for backward compatibility.
 
 ##### Scenarios
 
 Following is a scenario which is handled precisely by this approach:
+
 1. Same image names with different handlers - `handler1` and `handler2` are getting pulled around the same time.
 2. Image with `handler1` is pulled by `EnsureImageExists`
 3. Image with `handler2` comes via `EnsureImageExists`. With the current code, since `ImageSpec` only has the name, `GetImageRef` would get a reference for the image downloaded for `handler1`.
@@ -405,6 +413,7 @@ Following is a scenario which is handled precisely by this approach:
 The names of aren't part of a versioned API today, so there's no risk to upgrade/downgrade from an API and functionality standpoint. However, if someone wants to keep the node selection experience consistent between Kubernetes 1.14 - 1.17, they may want to manually add the `node.kubernetes.io/windows-build` label to clusters running versions < 1.17. A cluster admin can choose to modify labels using `kubectl label node` after a node has joined the cluster.
 
 #### Annotations in ImageSpec
+
 These annotations will be optional parameters. The runtimes can optionally choose to implement specific behaviour based on these Annotations.
 
 ## Design Details
@@ -425,15 +434,19 @@ Unit tests will be added in CRITest which is in the [Cri-Tools] repo. Tests are 
 
 ### Graduation Criteria
 
-#### Alpha - Kubernetes 1.17
+#### Alpha
+
+> Proposed for 1.19
+
+For alpha graduation containerd annotations will be used instruct ContainerD which runtime class to target for a given pod (as mentioned in the [Proposal](#proposal)). This will reduce the number of changes needed in CRI/Kubernetes while runtime class support for Windows is being developed in containerd.
 
 This timeline should follow that of [Windows CRI-ContainerD].
 
-In addition to what's included there, for alpha: 
+In addition to what's included there, for alpha:
 
-- Unit tests will be added to critest for `runtime_handler`
 - E2E tests for basic coverage of:
   - new label set by kubelet
+  - scheduling pods with different runtime classes on the same Windows node
 
 #### Alpha -> Beta Graduation
 
@@ -448,7 +461,6 @@ In addition to what's included there, for beta:
 #### Beta -> GA Graduation
 
 - Define & add E2E testing for recommended default RuntimeClass configurations for Windows supported with CRI-ContainerD
-
 
 ##### Removing a deprecated flag
 
@@ -472,12 +484,10 @@ Users can only opt-in to use the new `runtime_handler` field after setting up an
 Major milestones in the life cycle of a KEP should be tracked in `Implementation History`.
 Major milestones might include
 
-- the `Summary` and `Motivation` sections being merged signaling SIG acceptance
-- the `Proposal` section being merged signaling agreement on a proposed design
-- the date implementation started
-- the first Kubernetes release where an initial version of the KEP was available
-- the version of Kubernetes where the KEP graduated to general availability
-- when the KEP was retired or superseded
+- 2019-10-08 - KEP started
+- 2019-10-15 - KEP marked implementable
+- 2020-01-14 - KEP updated to specify runtime handler as annotations in ImageSpec for alpha
+- 2020-05-15 - Milestones updates
 
 ## Alternatives
 
@@ -503,7 +513,6 @@ spec:
       - name: iis
         image: mcr.microsoft.com/windows/servercore/iis:windowsservercore-ltsc2019
 ```
-
 
 Here's the steps needed to pull and start a pod+container matching a specific os/arch/version:
 
