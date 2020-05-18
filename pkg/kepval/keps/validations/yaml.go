@@ -136,7 +136,7 @@ func init() {
 		fmt.Fprintf(os.Stderr, "unable to read aliases content: %v\n", err)
 		os.Exit(1)
 	}
-	config := &struct{
+	config := &struct {
 		Data map[string][]string `json:"aliases,omitempty"`
 	}{}
 	if err := yaml.Unmarshal(body, config); err != nil {
@@ -256,6 +256,8 @@ func ValidateStructure(parsed map[interface{}]interface{}) error {
 		case "prr-approvers":
 			switch values := value.(type) {
 			case []interface{}:
+				// prrApprovers must be sorted to use SearchStrings down below...
+				sort.Strings(prrApprovers)
 				for _, value := range values {
 					v := value.(string)
 					if len(v) > 0 && v[0] == '@' {
