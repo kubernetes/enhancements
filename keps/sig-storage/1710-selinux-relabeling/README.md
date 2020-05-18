@@ -46,6 +46,7 @@
   - [<code>FSGroupChangePolicy</code> approach](#-approach)
   - [Change container runtime](#change-container-runtime)
   - [Move SELinux label management to kubelet](#move-selinux-label-management-to-kubelet)
+  - [Merge <code>FSGroupChangePolicy</code> and <code>SELinuxRelabelPolicy</code>](#merge--and-)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -61,7 +62,7 @@
 
 ## Summary
 
-This KEP tries to speed up the way how volumes (incl. persistent volumes) are made available to Pods on systems with SELinux in enforcing mode.
+This KEP tries to speed up the way that volumes (incl. persistent volumes) are made available to Pods on systems with SELinux in enforcing mode.
 Current way includes recursive relabeling of all files on a volume before a container can be started. This is slow for large volumes.
 
 ## Motivation
@@ -685,3 +686,29 @@ We could move SELinux label assignment to kubelet.
 This change would require significant changes both in kubelet (to manage the contexts) and CRI (to list used context after kubelet restart).
 As benefit, kubelet would mount volumes for *all* pods quickly, not only those that have explicit `SELinuxOptions`.
 We are not sure if it's possible to change the default behavior to `OnVolumeMount`, without any field in `PodSecurityPolicy`.
+
+### Merge `FSGroupChangePolicy` and `SELinuxRelabelPolicy`
+With this API, user could ask for any shortcuts that are available regarding SELinux relabeling and ownership change for FSGroup:
+
+```go
+const (
+  // The heuristic policy acts like setting both the OnVolumeMount policy and the OnRootMismatch policy.
+  HeuristicVolumeChangePolicy VolumeChangePolicy = "Heuristic"
+  RecursiveVolumeChangePolicy VolumeChangePolicy = "Recursive"
+)
+
+type PodSecurityContext struct {
+  ...
+  VolumeChangePolicy *VolumeChangePolicy
+  ...
+}
+```
+
+In the vast majority of cases it's what users want.
+
+However, this field is not flexible enough to accommodate special cases.
+If supported by the storage backend and the volume is consumed as whole, `SELinuxRelabelPolicy: OnMount` always works.
+At the same time, `FSGroupChangePolicy: OnRootMismatch` may not be desirable for volumes that are modified outside of Kubernetes,
+where various files on the volume may get random owners.
+
+With a single `VolumeChangePolicy`, user has to fall back to `Recursive` policy and SELinux labels would be unnecessarily changed.
