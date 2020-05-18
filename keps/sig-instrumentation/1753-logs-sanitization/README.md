@@ -22,6 +22,12 @@
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
+  - [Static code analysis](#static-code-analysis)
+    - [Limitations of Static Analysis](#limitations-of-static-analysis)
+      - [Theoretical](#theoretical)
+      - [Practical](#practical)
+    - [Strengths and Weaknesses of Static and Dynamic Analyses](#strengths-and-weaknesses-of-static-and-dynamic-analyses)
+
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -211,3 +217,27 @@ To allow configuring if logs should be sanitized we will introduce a new logging
 ## Drawbacks
 
 ## Alternatives
+
+### Static code analysis
+
+Instead of introducing optional dynamic filtering of logs at runtime we could use the same metadata to perform static code analysis. 
+
+#### Limitations of Static Analysis
+
+##### Theoretical
+
+The major theoretical limitation of static analysis is imposed by results from [decidability theory](https://www.tutorialspoint.com/automata_theory/language_decidability.htm) - given an arbitrary program written in a general-purpose programming language (one capable of simulating a Turing machine), it is impossible to examine the program algorithmically and determine if an arbitrarily chosen statement in the program will be executed when the program operates on arbitrarily chosen input data. Furthermore, there is no algorithmic way to identify those programs for which the analysis is possible; otherwise, the halting problem for Turing machines would be solvable.
+
+One major, ramification of this result concerns the distinctinction between syntactic and semantic control paths. Syntactic paths comprise all possible control paths through the flow graph. Semantic paths are those syntactic paths that can be executed. However, not all syntactic paths are executable paths. Thus, the semantic paths are a subset of the syntactic paths. In static analysis, it would be highly desirable to identify the semantic path. However, decidability results state that there is no algorithmic way to detect the semantic path through an arbitrary program written in a general purpose programming language.
+
+##### Practical 
+
+A major practical limitation of static analysis concerns array references and evaluation of pointer variables. Array subscripts and pointers are mechanisms for selecting a data item at runtime, based on previous computations performed by the program. Static analysis cannot evaluate subscripts pointers and, thus, is unable to distinguish between elements of an array or members of a list. Although it might be possible to analyze subscripts and pointers using techniques of symbolic execution, it is generally simpler and more efficient to use dynamic testing.
+
+The other practical limitation of static analysis is slow execution on large models of state.
+
+#### Strengths and Weaknesses of Static and Dynamic Analyses
+
+Static analysis, with its whitebox visibility, is certainly the more thorough approach and may also prove more cost-efficient with the ability to detect bugs at an early phase of the software development life cycle. Static analysis can also unearth errors that would not emerge in a dynamic test. Dynamic analysis, on the other hand, is capable of exposing a subtle flaw or vulnerability too complicated for static analysis alone to reveal. A dynamic test, however, will only find defects in the part of the code that is actually executed.
+
+Therefore static and dynamic analysis should not be considered as disjoint alternatives but rather as a complementary solutions and in the end we should have both implemented in Kubernetes.
