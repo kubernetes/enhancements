@@ -7,10 +7,12 @@ owning-sig: sig-instrumentation
 participating-sigs:
   - sig-instrumentation
 reviewers:
-  - sig-instrumentation
+  - "@dashpole"
+  - "@brancz"
+  - "@ehashman"
+  - "@x13n"
 approvers:
   - sig-instrumentation
-editor: todo
 creation-date: 2020-04-15
 last-updated: 2020-05-19
 status: provisional
@@ -84,7 +86,7 @@ Purely for illustration, take the following metric:
 ```json
 [
 	{
-		"metric-id": "some_metric"
+		"metricFamily": "some_metric"
 	}
 ]
 
@@ -96,7 +98,7 @@ We want to be able to express this metric and target a label:
 ```json
 [
 	{
-		"metric-id": "some_metric",
+		"metricFamily": "some_metric",
 		"label": "label_too_many_values",
 	}
 ]
@@ -109,7 +111,7 @@ And we want to express a set of expected values:
 ```json
 [
 	{
-		"metric-id": "some_metric",
+		"metricFamily": "some_metric",
 		"label": "label_too_many_values",
 		"labelValueAllowlist": [
 			"1",
@@ -121,11 +123,11 @@ And we want to express a set of expected values:
 
 ```
 
-Since we already have an interception layer built into our Kubernetes monitoring stack (from the metrics stability effort), we can leverage existing wrappers to provide a global entrypoint for intercepting and enforcing rules for individual metrics. 
+Since we already have an interception layer built into our Kubernetes monitoring stack (from the metrics stability effort), we can leverage existing wrappers to provide a global entrypoint for intercepting and enforcing rules for individual metrics.
 
-As a result metric data will not be invalid, just data will be more coarse when the metric type is a counter. In the case of a gauge type metric the data will be invalid but the number of series would be bound.
+As a result metric data will not be invalid, just data will be more coarse when the metric type is a counter. In the case of a gauge type metric the data will be invalid but the number of series would be bound. One exception to our treatment of labels will be histograms (specifically the label which denotes buckets). If we explicitly declare a whitelist of acceptable values for histogram buckets, then we will simply omit buckets which are not in that list, since we can preserve data fidelity for histogram buckets by bucket omission (for everything except the catch-all bucket).
 
-Following is an example used to demonstrate the proposed solution. 
+Following is an example used to demonstrate the proposed solution.
 
 Let's say we have some client code somewhere which instantiates our metric from above:
 
