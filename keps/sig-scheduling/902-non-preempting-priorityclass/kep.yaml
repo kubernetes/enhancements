@@ -1,0 +1,32 @@
+title: Add NonPreempting Option For PriorityClasses
+kep-number: 902
+authors:
+  - "@vllry"
+  - "@denkensk"
+owning-sig: sig-scheduling
+participating-sigs:
+  - sig-scheduling
+status: implemented
+creation-date: 2019-03-17
+reviewers:
+  - "k82cn"
+  - "wgliang"
+  - "Huang-Wei"
+approvers:
+  - "bsalamat"
+  - "Huang-Wei"
+stage: beta
+latest-milestone: "v1.19"
+milestone:
+  alpha: "v1.15"
+  beta: "v1.19"
+feature-gate:
+  name: NonPreemptingPriority
+  components:
+    - kube-apiserver
+    - kube-scheduler
+disable-supported: true
+metrics:
+  - pod_preemption_victims
+  - total_preemption_attempts
+  - scheduling_algorithm_preemption_evaluation_seconds
