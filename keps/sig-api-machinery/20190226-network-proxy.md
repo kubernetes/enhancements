@@ -22,7 +22,7 @@ approvers:
   - "@bowei - For networking/proxy portion of KEP"
 editor: "@calebamiles"
 creation-date: 2019-02-25
-last-updated: 2019-04-30
+last-updated: 2020-01-15
 status: implementable
 see-also:
   - "https://goo.gl/qiARUK - Network Proxy design proposal"
@@ -329,14 +329,8 @@ If destined for a URL then we will use the ‘master’ NetworkContext.
 - **Authentication, Authorization and Audit Webhooks**
 These Webhooks use a kube config file to determine destination.
 Given that we use a ‘master’ NetworkContext.
-- **ImagePolicyWebhook**
-The image policy webhook uses a kube config file to determine destination.
-Given that we use a ‘master’ NetworkContext.
-- **KMS GRPC Service**
-KMS connects with an ‘endpoint’ (not the resource) via gRPC.
-The service at the endpoint provides the secret information for use in encryption.
-This is not a user space configurable system.
-Given that we use a ‘master’ NetworkContext.
+
+**Note**: KMS is also an egress endpoint but will not be covered as egress since it only supports a [Dialer](https://github.com/kubernetes/kubernetes/blob/e8bc121341807f9e33a076f6725b1b1a18d75ba0/staging/src/k8s.io/apiserver/pkg/storage/value/encrypt/envelope/grpc_service.go#L74) using unix domain sockets (UDS). This is used for communicating between processes running on the same host. In the future, we may consider adding egressSelector support if KMS accepts other protocols.
 
 ### Testing the Solution
 
