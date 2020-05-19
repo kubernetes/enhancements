@@ -15,7 +15,7 @@ approvers:
   - sig-instrumentation
 creation-date: 2020-04-15
 last-updated: 2020-05-19
-status: provisional
+status: implementable
 ---
 
 # Dynamic Cardinality Enforcement
