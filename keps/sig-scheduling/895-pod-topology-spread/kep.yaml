@@ -1,0 +1,35 @@
+title: Pod Topology Spread
+kep-number: 895
+authors:
+- "@Huang-Wei"
+owning-sig: sig-scheduling
+participating-sigs:
+- sig-scheduling
+- sig-api-machinery
+status: implemented
+creation-date: 2019-02-21
+reviewers:
+- "@bsalamat"
+- "@lavalamp"
+- "@krmayankk"
+- "@ahg-g"
+- "@alculquicondor"
+approvers:
+- "@ahg-g"
+- "@alculquicondor"
+see-also:
+- "/keps/sig-scheduling/1258-default-even-pods-spreading"
+stage: stable
+latest-milestone: "v1.19"
+milestone:
+  alpha: "v1.16"
+  beta: "v1.18"
+  stable: "v1.19"
+feature-gate:
+  name: EvenPodsSpread
+  components:
+  - kube-scheduler
+  - kube-apiserver
+disable-supported: true
+metrics:
+- plugin_execution_duration_seconds{plugin="PodTopologySpread"}
