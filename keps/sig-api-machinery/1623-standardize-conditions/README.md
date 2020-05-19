@@ -8,6 +8,7 @@
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [Noteworthy choices](#noteworthy-choices)
+  - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
@@ -32,11 +33,11 @@ Check these off as they are completed for the Release Team to track. These
 checklist items _must_ be updated for the enhancement to be released.
 -->
 
-- [ ] Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] KEP approvers have approved the KEP status as `implementable`
-- [ ] Design details are appropriately documented
-- [ ] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
-- [ ] Graduation criteria is in place
+- [x] Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR): https://github.com/kubernetes/enhancements/issues/1623
+- [x] KEP approvers have approved the KEP status as `implementable`
+- [x] Design details are appropriately documented
+- [x] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [x] Graduation criteria is in place
 - [ ] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
@@ -130,6 +131,11 @@ However, it encapsulates the best of what we've learned and will allow new APIs 
     Whether a client omits `observedGeneration` (because it is unaware of the new field) or explicitly sets it to 0, the
     meaning is the same: the condition does not correspond to a known generation.
     This also provides parity the `.metadata.generation` field [Generation int64 \`json:"generation,omitempty" protobuf:"varint,7,opt,name=generation"\`](https://github.com/kubernetes/apimachinery/blob/release-1.18/pkg/apis/meta/v1/types.go#L182-L185).
+
+### Test Plan
+
+Because we're adding a struct, there isn't new functionality to test.
+The type will be linted for well-formedness using our standard verify scripts.
 
 ### Graduation Criteria
 
