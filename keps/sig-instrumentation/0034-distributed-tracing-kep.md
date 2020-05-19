@@ -89,7 +89,7 @@ This KEP proposes the use of the [OpenTelemetry tracing framework](https://opent
 
 The API Server will use the [OpenTelemetry exporter format](https://github.com/open-telemetry/opentelemetry-proto), which exports traces to a local port.  This format is compatible with the [OpenTelemetry Collector](https://github.com/open-telemetry/opentelemetry-collector), which allows importing and configuring exporters for trace storage backends to be done out-of-tree in addition to other useful features.  The exporter stores spans in memory, and uses the [batching processor](https://github.com/open-telemetry/opentelemetry-specification/blob/master/specification/trace/sdk.md#batching-processor) to batch requests and send them asynchronously.
 
-Add configuration to the API Server required to configure the opentelemetry exporter, including the address and network to send spans to.
+Add configuration to the API Server required to configure the opentelemetry exporter, including the address and egress proxy to send spans to. The [egress proxy](https://github.com/kubernetes/enhancements/blob/master/keps/sig-api-machinery/20190226-network-proxy.md) can be added to the opentelemetry exporter by adding a ContextDialer grpc DialOption similar to the one used by the apiserver's etcd client.
 
 ### Controlling use of the OpenTelemetry library
 
