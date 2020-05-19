@@ -541,7 +541,7 @@ enhancement:
   CRI or CNI may require updating that component before the kubelet.
 -->
 
-Old kubelets that do not have support for this feature will just ignore the PodSpec field.
+Old kubelets that do not have support for this feature will just ignore the PodSpec `hostnameFQDN` field.
 
 ## Production Readiness Review Questionnaire
 
