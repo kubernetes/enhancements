@@ -341,7 +341,7 @@ kind: Pod
 metadata: {"namespace": "bar", "name": "foo"}
 spec:
   ...
-  hostname: "bar"  # Optional for this example
+  hostname: "foo"  # Optional for this example
   subdomain: "test"
   fqdnInHostname: "true"
 ```
