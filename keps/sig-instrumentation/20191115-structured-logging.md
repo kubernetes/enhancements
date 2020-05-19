@@ -8,17 +8,20 @@ owning-sig: sig-instrumentation
 participating-sigs:
   - sig-architecture
 reviewers:
-  - "@thockin"
   - "@dims"
+  - "@mtaufen"
+  - "@derekwaynecarr"
 approvers:
   - "@brancz"
+  - "@thockin"
 editor: TBD
 creation-date: 2019-11-15
-last-updated: 2020-01-30
+last-updated: 2020-05-18
 status: implementable
 see-also:
 replaces:
 superseded-by:
+disable-supported: true
 ---
 
 # Structured Logging
@@ -58,7 +61,16 @@ superseded-by:
     - [Replace klog with some other structured logging library](#replace-klog-with-some-other-structured-logging-library)
     - [Use glogr instead of proposed message structure](#use-glogr-instead-of-proposed-message-structure)
 - [Code organisation](#code-organisation)
-- [Production Readiness Review Process](#production-readiness-review-process)
+- [Test Plan](#test-plan)
+- [Release Signoff Checklist](#release-signoff-checklist)
+- [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
+  - [Feature enablement and rollback](#feature-enablement-and-rollback)
+  - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+  - [Monitoring requirements](#monitoring-requirements)
+  - [Dependencies](#dependencies)
+  - [Scalability](#scalability)
+  - [Troubleshooting](#troubleshooting)
+- [Implementation History](#implementation-history)
 <!-- /toc -->
 
 ## Summary
@@ -451,7 +463,7 @@ klog.Infof("verb=%q URI=%q latency=%v resp=%v UserAgent=%q srcIP=%q: %v%v", rl.r
 
 Resulting log line is 248 characters long. Additional 42 characters has resulted in increased log volume by 17% (average size of http log line in 1.17 is 243 characters).
 ```
-I0129 03:30:57.673664       1 httplog.go:90] verb="GET" URI="/api/v1/namespaces/kube-system/pods/metrics-server-v0.3.1-57c75779f-9p8wg" latency=1.512ms resp=200 UserAgent="kubelet/v1.18.0 (linux/amd64) kubernetes/15c3f1b" srcIP="10.56.1.19:51756": 
+I0129 03:30:57.673664       1 httplog.go:90] verb="GET" URI="/api/v1/namespaces/kube-system/pods/metrics-server-v0.3.1-57c75779f-9p8wg" latency=1.512ms resp=200 UserAgent="kubelet/v1.18.0 (linux/amd64) kubernetes/15c3f1b" srcIP="10.56.1.19:51756":
 ```
 
 For migration to structured api we would like to propose to remove `statusStack` and `addedInfo` arguments. Our reasons:
@@ -568,35 +580,168 @@ As a result of this effort we are expecting changes in:
 * `k8s.io/component-base/logging` - Adding logging configuration
 * `k8s.io/klog` - Implementing new structured logging methods
 
-## Production Readiness Review Process
+## Test Plan
 
-**Feature enablement and rollback**
-* How can this feature be enabled / disabled in a live cluster? **Changing logging format requires restarting control plane components**
-* Can the feature be disabled once it has been enabled (i.e., can we roll back the enablement)? **Yes, reverting the change will only effect logs generated when feature was enabled. Rollback can be done by changing flag value to component**
-* Will enabling / disabling the feature require downtime for the control plane? **Short downtime needed to restart component**
-* Will enabling / disabling the feature require downtime or reprovisioning of a node? **Short downtime needed to restart kubelet**
-* What happens if a cluster with this feature enabled is rolled back? What happens if it is subsequently upgraded again? **Temporary change in log format produced**
-* Are there tests for this? **Klog implementation is covered by integration tests**
+Aside ot standard unit tests we propose to add detailed test suite ensuring no unexpected changes in out of both logging formats implementation to ensure their future stability.
 
-**Scalability**
-* Will enabling / using the feature result in any new API calls? Describe them with their impact keeping in mind the supported limits (e.g. 5000 nodes per cluster, 100 pods/s churn): **No**
-* Will enabling / using the feature result in supporting new API types? How many objects of that type will be supported (and how that translates to limitations for users)? **No**
-* Will enabling / using the feature result in increasing size or count of the existing API objects? **No**
-* Will enabling / using the feature result in increasing time taken by any operations covered by existing SLIs/SLOs (e.g. by adding additional work, introducing new steps in between, etc.)? **No**
-* Will enabling / using the feature result in non-negligible increase of resource usage (CPU, RAM, disk IO, ...) in any components? Things to keep in mind include: additional in-memory state, additional non-trivial computations, excessive access to disks (including increased log volume), significant amount of data sent and/or received over network, etc. Think through this in both small and large cases, again with respect to the supported limits. **Yes, increased log volume increase below 50%**
-* Rollout, Upgrade, and Rollback Planning
-* Dependencies
-    * Does this feature depend on any specific services running in the cluster (e.g., a metrics service)? **No**
-    * How does this feature respond to complete failures of the services on which it depends? **n/a**
-    * How does this feature respond to degraded performance or high error rates from services on which it depends? **n/a**
-* Monitoring requirements
-    * How can an operator determine if the feature is in use by workloads? **Need to verify specific component flag**
-    * How can an operator determine if the feature is functioning properly? **By looking at the logs generated by component**
-    * What are the service level indicators an operator can use to determine the health of the service? **n/a**
-    * What are reasonable service level objectives for the feature? **Defining a proper SLO for logging should consider e2e delivery to backend. This would be outside of scope of kubernetes**
-* Troubleshooting
-    * What are the known failure modes? **Logging is a blocking API. This means that in case of full node disk, logging can halt the process**
-    * How can those be detected via metrics or logs? **liveness probes**
-    * What are the mitigations for each of those failure modes? **Monitoring free space on disk**
-    * What are the most useful log messages and what logging levels do they require? **klog will not generate any logs by itself**
-    * What steps should be taken if SLOs are not being met to determine the problem? **n/a**
+## Release Signoff Checklist
+
+Items marked with (R) are required *prior to targeting to a milestone / release*.
+
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Design details are appropriately documented
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [x] (R) Graduation criteria is in place
+- [x] (R) Production readiness review completed
+- [ ] Production readiness review approved
+- [ ] "Implementation History" section is up-to-date for milestone
+- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+
+## Production Readiness Review Questionnaire
+
+For this questionnaire we will consider feature of switching between text (original) and json (new) log formats.
+In this KEP we propose small changes in formatting of variables in text format, but as preamble will stay exacly the same we will not treat it as a change.
+
+### Feature enablement and rollback
+
+_This section must be completed when targeting alpha to a release._
+
+* **How can this feature be enabled / disabled in a live cluster?**
+  - [ ] Feature gate (also fill in values in `kep.yaml`)
+    - Feature gate name:
+    - Components depending on the feature gate:
+  - [x] Other
+    - Describe the mechanism: New flag `--logging-format` will be used to change logging format of component
+    - Will enabling / disabling the feature require downtime of the control
+      plane? Switching between log formats will require restarting control plane
+    - Will enabling / disabling the feature require downtime or reprovisioning
+      of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled). Switching between log formats will require kubelet restart
+
+* **Does enabling the feature change any default behavior?**
+  Default behaviour will not change logging format.
+
+* **Can the feature be disabled once it has been enabled (i.e. can we rollback
+  the enablement)?**
+  Yes
+
+* **What happens if we reenable the feature if it was previously rolled back?**
+  Changing logging format will result in inconsistent schema of logs.
+
+* **Are there any tests for feature enablement/disablement?**
+  The e2e framework does not currently support enabling and disabling feature
+  gates. However, unit tests in each component dealing with managing data created
+  with and without the feature are necessary. At the very least, think about
+  conversion tests if API types are being modified.
+  **Changing logging format is stateless, no need to test this**
+
+### Rollout, Upgrade and Rollback Planning
+
+_This section must be completed when targeting beta graduation to a release._
+
+* **How can a rollout fail? Can it impact already running workloads?**
+  Try to be as paranoid as possible - e.g. what if some components will restart
+  in the middle of rollout? **Failed rollout will cause inconsistent log format from control plane. Users should be
+  already prepared to handle two different log formats when planning to switch logger so this is not a problem. It will
+  not impact running workloads.
+
+* **What specific metrics should inform a rollback?**
+
+* **Were upgrade and rollback tested? Was upgrade->downgrade->upgrade path tested?**
+  Setting logging format is stateless, no need to test upgrade/rollback.
+
+* **Is the rollout accompanied by any deprecations and/or removals of features,
+  APIs, fields of API types, flags, etc.?**
+  When using non default logging format, klog flags will no longer work. Klog will validate if users are using conflicting flags.
+
+### Monitoring requirements
+
+_This section must be completed when targeting beta graduation to a release._
+
+* **How can an operator determine if the feature is in use by workloads?**
+  In this exact case operator should use logs as this feature only impacts log output.
+  Adding a metric doesn't give any additional benefit.
+  Operators should monitor results of parsing logs to determine if all logs are correctly formatted.
+
+* **What are the SLIs (Service Level Indicators) an operator can use to
+  determine the health of the service?**
+  Monitorin of logging pipeline is outside of Kubernetes scope.
+
+* **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
+  N/A
+
+* **Are there any missing metrics that would be useful to have to improve
+  observability if this feature?**
+  N/A
+
+
+### Dependencies
+
+_This section must be completed when targeting beta graduation to a release._
+
+* **Does this feature depend on any specific services running in the cluster?**
+  N/A
+
+
+### Scalability
+
+_For alpha, this section is encouraged: reviewers should consider these questions
+and attempt to answer them._
+
+_For beta, this section is required: reviewers must answer these questions._
+
+_For GA, this section is required: approvers should be able to confirms the
+previous answers based on experience in the field._
+
+* **Will enabling / using this feature result in any new API calls?**
+  N/A
+
+* **Will enabling / using this feature result in introducing new API types?**
+  N/A
+
+* **Will enabling / using this feature result in any new calls to cloud
+  provider?**
+  N/A
+
+* **Will enabling / using this feature result in increasing size or count
+  of the existing API objects?**
+  N/A
+
+* **Will enabling / using this feature result in increasing time taken by any
+  operations covered by [existing SLIs/SLOs][]?**
+  N/A
+
+* **Will enabling / using this feature result in non-negligible increase of
+  resource usage (CPU, RAM, disk, IO, ...) in any components?**
+  Log volume increase analysis discussed in [Log volume increase analysis] section.
+  Expected increase on level of 4% which is considered acceptable by sig scalability.
+
+  Peformance was discussed in [Logger implementation performance] section.
+  InfoS implementation for text is 9% slower than Infof.
+  This increase should not have a big impact on overall Kubernetes performance as logging takes less than 2% of overall CPU usage
+
+### Troubleshooting
+
+Troubleshooting section serves the `Playbook` role as of now. We may consider
+splitting it into a dedicated `Playbook` document (potentially with some monitoring
+details). For now we leave it here though.
+
+_This section must be completed when targeting beta graduation to a release._
+
+* **How does this feature react if the API server and/or etcd is unavailable?**
+  No impact
+
+* **What are other known failure modes?**
+  No failure modes for changing log format.
+
+* **What steps should be taken if SLOs are not being met to determine the problem?**
+  N/A
+
+## Implementation History
+
+* 2019-11-15 - Original proposal
+* 2020-03-13 - Merged as provisional
+* 2020-03-16 - Moved to implementable
+* 2020-03-18 - Implementation started
+* 2020-05-18 - Updated PRR questionnaire added
