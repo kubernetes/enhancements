@@ -10,6 +10,7 @@
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [Implementation](#implementation)
+    - [On using pvc.Spec.AllocatedResources](#on-using-pvcspecallocatedresources)
     - [User flow stories](#user-flow-stories)
         - [Case 1 (controller+node expandable):](#case-1-controllernode-expandable)
         - [Case 2 (controller+node expandable):](#case-2-controllernode-expandable)
@@ -28,6 +29,7 @@
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
+  - [Why not use pvc.Status.Capacity for tracking quota?](#why-not-use-pvcstatuscapacity-for-tracking-quota)
   - [Fix Quota when resize succeeds with reduced size](#fix-quota-when-resize-succeeds-with-reduced-size)
   - [Allow admins to manually fix PVCs which are stuck in resizing condition](#allow-admins-to-manually-fix-pvcs-which-are-stuck-in-resizing-condition)
 - [Infrastructure Needed [optional]](#infrastructure-needed-optional)
@@ -104,6 +106,14 @@ reduces the PVC request size, for both CSI and in-tree plugins they are designed
 We however do have a problem with quota calculation because if a previously issued expansion is successful but is not recorded(or partially recorded) in api-server and user reduces requested size of the PVC, then quota controller will assume it as actual shrinking of volume and reduce used storage size by the user(incorrectly). Since we know actual size of the volume only after performing expansion(either on node or controller), allowing quota to be reduced on PVC size reduction will allow an user to abuse the quota system.
 
 To solve aforementioned problem - we propose that, a new field will be added to PVC, called `pvc.Spec.AllocatedResources`. This field is only allowed to increase and will be set by the api-server to value in `pvc.Spec.Resources` as long as `pvc.Spec.Resources > pvc.Spec.AllocatedResources`.  Quota controller code will be updated to use `max(pvc.Spec.Resources, pvc.Spec.AllocatedResources)` when calculating usage of the PVC under questions.
+
+#### On using pvc.Spec.AllocatedResources
+
+We chose to use `pvc.Spec.AllocatedResources` for storing maximum of user requested pvc capacity because once user requests a new size in `pvc.Spec.Resources` even if she cancels the operation later on, resize-controller may have already started working on reconciling newly requested size.
+
+AllocatedResources is not volume size but more like whatever user has requested and towards which resize-controller was working to reconcile. It is possible that user has requested smaller size since then but that does not changes the fact that resize-controller has already tried to expand to AllocatedResources and might have partially succeeded. So AllocatedResources is maximum user requested size for this volume and does not reflect actual volume size of the PV and hence is not recorded in `pvc.Status.Capacity`.
+
+This also falls inline with how in-place update of Pod is handled(https://github.com/kubernetes/enhancements/pull/1342/files) and allocated resources is recorded in `pod.Spec.Containers[i].ResourcesAllocated`.
 
 #### User flow stories
 
@@ -344,6 +354,11 @@ _This section must be completed when targeting beta graduation to a release._
 ## Alternatives
 
 There were several alternatives considered before proposing this KEP.
+
+### Why not use pvc.Status.Capacity for tracking quota?
+
+
+`pvc.Status.Capacity` can't be used for tracking quota because pvc.Status.Capacity is calculated after binding happens, which could be when pod is started. This would allow an user to overcommit because quota won't reflect accurate value until PVC is bound to a PV.
 
 ### Fix Quota when resize succeeds with reduced size
 
