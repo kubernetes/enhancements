@@ -1,0 +1,34 @@
+title: Skip Volume Ownership Change
+kep-number: 1682
+authors:
+  - "@huffmanca"
+owning-sig: sig-storage
+participating-sigs:
+  - sig-storage
+status: implementable
+creation-date: 2020-04-27
+reviewers:
+  - "@gnuified"
+  - "@msau42"
+  - "@xing-yang"
+approvers:
+  - "@saad-ali"
+see-also:
+replaces:
+
+stage: alpha
+
+latest-milestone: "v1.19"
+
+milestone:
+  alpha: "v1.19"
+  beta: "v1.20"
+  stable: "v1.21"
+
+feature-gate:
+  name: CSIVolumeSupportFSGroup
+  components:
+    - kube-apiserver
+disable-supported: true
+
+metrics:
