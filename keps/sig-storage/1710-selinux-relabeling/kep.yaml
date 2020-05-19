@@ -1,0 +1,34 @@
+title: Skip SELinux relabeling of volumes
+kep-number: 1710
+authors:
+  - "@jsafrane"
+owning-sig: sig-storage
+participating-sigs:
+  - sig-node
+status: implementable
+creation-date: 2020-02-18
+reviewers:
+  - "@msau42"
+  - "@gnufied"
+  - "@rhatdan"
+  - "@haircommander"
+  - "@saschagrunert"
+  - "@tallclair"
+approvers:
+  - "@saad-ali"
+see-also:
+  - /keps/sig-storage/20200120-skip-permission-change.md
+stage: alpha
+latest-milestone: "v1.19"
+milestone:
+  alpha: "v1.19"
+  beta: "v1.20"
+  stable: "v1.22"
+feature-gate:
+  name: SELinuxRelabelPolicy
+  components:
+    - kube-apiserver
+    - kubelet
+disable-supported: true
+metrics:
+  # TODO: fill at beta
