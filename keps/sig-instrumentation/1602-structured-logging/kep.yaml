@@ -1,0 +1,29 @@
+title: Structured Logging
+kep-number: 1602
+authors:
+  - "@serathius"
+  - "@44past4"
+  - "@DirectXMan12"
+owning-sig: sig-instrumentation
+participating-sigs:
+  - sig-architecture
+status: implementable
+creation-date: 2019-11-15
+reviewers:
+  - "@dims"
+  - "@mtaufen"
+  - "@derekwaynecarr"
+approvers:
+  - "@brancz"
+  - "@thockin"
+see-also:
+replaces:
+stage: alpha
+latest-milestone: "v1.19"
+milestone:
+  alpha: "v1.19"
+  beta: "v1.20"
+  stable: "v1.22"
+feature-gate:
+disable-supported: true
+metrics:

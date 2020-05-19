@@ -1,29 +1,3 @@
----
-title: Structured Logging
-authors:
-  - "@serathius"
-  - "@44past4"
-  - "@DirectXMan12"
-owning-sig: sig-instrumentation
-participating-sigs:
-  - sig-architecture
-reviewers:
-  - "@dims"
-  - "@mtaufen"
-  - "@derekwaynecarr"
-approvers:
-  - "@brancz"
-  - "@thockin"
-editor: TBD
-creation-date: 2019-11-15
-last-updated: 2020-05-18
-status: implementable
-see-also:
-replaces:
-superseded-by:
-disable-supported: true
----
-
 # Structured Logging
 
 <!-- toc -->
