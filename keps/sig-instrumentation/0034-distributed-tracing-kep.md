@@ -32,7 +32,6 @@ status: implementable
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [Tracing API Requests](#tracing-api-requests)
-  - [Kubectl integration](#kubectl-integration)
   - [Vendor OpenTelemetry and the OT Exporter](#vendor-opentelemetry-and-the-ot-exporter)
   - [Controlling use of the OpenTelemetry library](#controlling-use-of-the-opentelemetry-library)
 - [Graduation requirements](#graduation-requirements)
@@ -78,10 +77,6 @@ Along with metrics and logs, traces are a useful form of telemetry to aid with d
 We will wrap the API Server's http server and http clients with [othttp](https://github.com/open-telemetry/opentelemetry-go/tree/master/plugin/othttp) to get spans for incoming and outgoing http requests, and add the [otgrpc](https://github.com/grpc-ecosystem/grpc-opentracing/tree/master/go/otgrpc) DialOption to the etcd grpc client.  This generates spans for all sampled incoming requests and propagates context with all client requests.  For incoming requests, this would go below [WithRequestInfo](https://github.com/kubernetes/kubernetes/blob/9eb097c4b07ea59c674a69e19c1519f0d10f2fa8/staging/src/k8s.io/apiserver/pkg/server/config.go#L676) in the filter stack, as it must be after authentication and authorization, before the panic filter, and is closest in function to the WithRequestInfo filter.
 
 Note that some clients of the API Server, such as webhooks, may make reentrant calls to the API Server.  To gain the full benefit of tracing, such clients should propagate context with requests back to the API Server.
-
-### Kubectl integration
-
-Fundamentally, a trace is a graph showing the fulfilment of user intent.  To make tracing in kubernetes useful, we need to ensure users have the ability to declare their intent for their request to be traced.  Add a new `--trace` argument to `kubectl`, which generates a new trace context, sets the trace context to be sampled, and uses the context when sending requests to the API Server.  The option is false by default.
 
 ### Vendor OpenTelemetry and the OT Exporter
 
