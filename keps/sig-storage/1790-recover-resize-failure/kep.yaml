@@ -1,0 +1,34 @@
+---
+title: Recover from volume expansion failure
+authors:
+  - "@gnuified"
+owning-sig: sig-storage
+participating-sigs:
+  - sig-api-machinery
+reviewers:
+  - "@msau42"
+  - "@liggit"
+  - "@xing-yang"
+  - "@jsafrane"
+approvers:
+  - "@saad-ali"
+  - "@xing-yang"
+editor: TBD
+creation-date: 2020-01-27
+last-updated: 2020-05-18
+status: implementable
+see-also:
+replaces:
+superseded-by:
+
+latest-milestone: "v1.19"
+milestone:
+  alpha: "v1.19"
+  beta: "v1.20"
+  stable: "v1.21"
+feature-gate:
+  name: RecoverExpansionFailure
+  components:
+    - kube-apiserver
+    - kube-controller-manager
+    - external-resizer
