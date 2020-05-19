@@ -1,25 +1,4 @@
----
-title: Even Pods Spreading
-authors:
-  - "@Huang-Wei"
-owning-sig: sig-scheduling
-reviewers:
-  - "@bsalamat"
-  - "@lavalamp"
-  - "@krmayankk"
-  - "@ahg-g"
-  - "@alculquicondor"
-approvers:
-  - "@ahg-g"
-  - "@alculquicondor"
-creation-date: 2019-02-21
-last-updated: 2020-01-21
-status: implementable
----
-
-# Pod Topology Spread
-
-## Table of Contents
+# KEP-895: Pod Topology Spread
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
@@ -44,19 +23,28 @@ status: implementable
   - [Graduation Criteria](#graduation-criteria)
 - [Alternatives](#alternatives)
 - [Impact to Other Features](#impact-to-other-features)
+- [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
+  - [Feature enablement and rollback](#feature-enablement-and-rollback)
+  - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+  - [Monitoring requirements](#monitoring-requirements)
+  - [Dependencies](#dependencies)
+  - [Scalability](#scalability)
+  - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
 <!-- /toc -->
 
 ## Release Signoff Checklist
 
-- [x] kubernetes/enhancements issue in release milestone, which links to KEP (this should be a link to the KEP location in kubernetes/enhancements, not the initial KEP PR)
-- [x] KEP approvers have set the KEP status to `implementable`
-- [x] Design details are appropriately documented
-- [x] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
-- [x] Graduation criteria is in place
+- [x] (R kubernetes/enhancements issue in release milestone, which links to KEP (this should be a link to the KEP location in kubernetes/enhancements, not the initial KEP PR)
+- [x] (R) KEP approvers have set the KEP status to `implementable`
+- [x] (R) Design details are appropriately documented
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [x] (R) Graduation criteria is in place
+- [ ] (R) Production readiness review completed
+- [ ] Production readiness review approved
 - [x] "Implementation History" section is up-to-date for milestone
 - [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [x] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 ## Terms
 
@@ -520,6 +508,157 @@ simply achieve the semantics of "PodAntiAffinity in zones" via a combination of
 "Even pods spreading in zones" plus "PodAntiAffinity in nodes" which could be an
 extra benefit of this KEP.
 
+## Production Readiness Review Questionnaire
+
+### Feature enablement and rollback
+
+* **How can this feature be enabled / disabled in a live cluster?**
+  
+  - [x] Feature gate
+    - Feature gate name: EvenPodsSpread
+    - Components depending on the feature gate: kube-scheduler, kube-apiserver
+
+* **Does enabling the feature change any default behavior?**
+
+  No.
+
+* **Can the feature be disabled once it has been enabled (i.e. can we rollback
+  the enablement)?**
+
+  The feature can be disabled in Alpha and Beta versions. In terms of Stable
+  versions, users can choose to opt-out by not setting the
+  `pod.spec.topologySpreadConstraints` field.
+
+* **What happens if we reenable the feature if it was previously rolled back?**
+
+  N/A.
+
+* **Are there any tests for feature enablement/disablement?**
+
+  No.
+
+### Rollout, Upgrade and Rollback Planning
+
+* **How can a rollout fail? Can it impact already running workloads?**
+
+  Since this feature requires users to opt-in by setting new field in pod spec,
+  it should not impact already running workloads.
+
+* **What specific metrics should inform a rollback?**
+
+  - A spike on metric `schedule_attempts_total{result="error|unschedulable"}`
+    when pods using this feature are added.
+  - Metric `plugin_execution_duration_seconds{plugin="PodTopologySpread"}`
+    larger than 100ms on 90-percentile.
+  - A spike on failure events with keyword "failed spreadConstraint" in
+    scheduler log.
+
+* **Were upgrade and rollback tested? Was upgrade->downgrade->upgrade path tested?**
+
+  N/A.
+
+* **Is the rollout accompanied by any deprecations and/or removals of features,
+  APIs, fields of API types, flags, etc.?**
+
+  No.
+
+### Monitoring requirements
+
+* **How can an operator determine if the feature is in use by workloads?**
+
+  Operator can query `pod.spec.topologySpreadConstraints` field and identify if
+  this is being set to non-default values. Also non-zero value of metric
+  `plugin_execution_duration_seconds{plugin="PodTopologySpread"}` is a sign
+  indicating this feature is in use.
+
+* **What are the SLIs (Service Level Indicators) an operator can use to
+  determine the health of the service?**
+
+  - Metric `plugin_execution_duration_seconds{plugin="PodTopologySpread"}` to
+    indicate the scheduling latency for a pod using this feature.
+  - Frequency of critical error keywords in scheduler log:
+    - "PreFilterPodTopologySpread"
+    - "convert to podtopologyspread.preFilterState error"
+    - "hard topology spread constraints"
+    - "internal error: get paths from key"
+  - Frequency of regular scheduling failures (with keyword "failed
+    spreadConstraint") in scheduler log.
+
+* **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
+
+  - Metric `plugin_execution_duration_seconds{plugin="PodTopologySpread"}` <=
+    100ms on 90-percentile.
+  - Frequency of critical error keywords <= 2 times per minute.
+  - Frequency of regular scheduling failures < 10 times per minute.
+
+* **Are there any missing metrics that would be useful to have to improve
+  observability if this feature?**
+
+  N/A.
+
+### Dependencies
+
+* **Does this feature depend on any specific services running in the cluster?**
+
+  No.
+
+### Scalability
+
+* **Will enabling / using this feature result in any new API calls?**
+
+  No
+
+* **Will enabling / using this feature result in introducing new API types?**
+
+  No.
+
+* **Will enabling / using this feature result in any new calls to cloud
+  provider?**
+
+  No.
+
+* **Will enabling / using this feature result in increasing size or count
+  of the existing API objects?**
+
+  Since this feature adds a new field to pod's spec, it will increase API size
+  of Pod object depending on the number of `topologySpreadConstraints`.
+  Typically, a Pod would only require 1 or 2.
+
+* **Will enabling / using this feature result in increasing time taken by any
+  operations covered by [existing SLIs/SLOs][]?**
+
+  This feature needs additional computation, so it's expected to see an
+  increased latency on
+  `plugin_execution_duration_seconds{plugin="PodTopologySpread"}` - comparing to
+  other plugin latency. But workloads not using this feature won't get
+  penalties.
+
+  On the other hand, by enabling this feature, there will be an implicit soft
+  `topologySpreadConstraints` applied to incoming workloads if it's not
+  specified in pod spec or there is no global `topologySpreadConstraints`
+  specified in the scheduler config yaml. There may be a negligible increase in
+  the scheduling latency (`plugin_execution_duration_seconds{plugin=*}`).
+
+* **Will enabling / using this feature result in non-negligible increase of
+  resource usage (CPU, RAM, disk, IO, ...) in any components?**
+
+  No.
+
+### Troubleshooting
+
+* **How does this feature react if the API server and/or etcd is unavailable?**
+
+  Running workloads won't be impacted. Submissions of new workloads using this
+  feature will be rejected by API server.
+
+* **What are other known failure modes?**
+
+  N/A.
+
+* **What steps should be taken if SLOs are not being met to determine the problem?**
+
+  N/A.
+
 ## Implementation History
 
 - 2019-02-21: Initial KEP sent out for review.
@@ -529,3 +668,4 @@ extra benefit of this KEP.
   - NOTE: The term "Even Pods Spreading" is replaced with "Pod Topology Spread",
     to be consistent with the [official doc](https://kubernetes.io/docs/concepts/workloads/pods/pod-topology-spread-constraints/), but
     the featuregate name "EvenPodsSpread" remains unchanged.
+- 2020-05-18: KEP updated to adopt new KEP template (production readiness review).
