@@ -12,10 +12,9 @@ status: provisional
 creation-date: 2020-05-18
 reviewers:
   - "@thockin"
-  - "TBD"
+  - "marosset"
 approvers:
-  - "@thockin"
-  - "TBD"
+  - "@dchen1107"
 see-also:
   - "N/A"
 replaces:
