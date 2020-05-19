@@ -161,10 +161,10 @@ A good summary is probably at least a paragraph in length.
 -->
 
 This proposal gives users the ability to set a pod’s hostname to its Fully Qualified Domain Name (FQDN). 
-A new PodSpec field `fqdnInHostname` will be introduced. When a user sets this field to true, its Linux 
+A new PodSpec field `hostnameFQDN` will be introduced. When a user sets this field to true, its Linux 
 kernel hostname field ([the nodename field of struct utsname](http://man7.org/linux/man-pages/man2/uname.2.html))
 will be set to its fully qualified domain name (FQDN). Hence, both uname -n and hostname --fqdn will return
-the pod’s FQDN. The new PodSpec field `fqdnInHostname` will default to `false` to preserve current behavior, i.e., 
+the pod’s FQDN. The new PodSpec field `hostnameFQDN` will default to `false` to preserve current behavior, i.e., 
 setting the hostname field of the kernel to the pod's shortname.
 
 Related Kubernetes issue [#1791](https://github.com/kubernetes/enhancements/issues/1797).
@@ -275,10 +275,10 @@ you're proposing, but should not include things like API designs or
 implementation.  The "Design Details" section below is for the real
 nitty-gritty.
 -->
-This proposal gives users the ability to set a pod’s hostname to its FQDN. A new PodSpec field named `fqdnInHostname` 
+This proposal gives users the ability to set a pod’s hostname to its FQDN. A new PodSpec field named `hostnameFQDN` 
 will be introduced, with type `*bool`.
 
-The values of `fqdnInHostname` are:
+The values of `hostnameFQDN` are:
 * `nil` (default): The Linux kernel hostname field ([the nodename field of struct utsname](http://man7.org/linux/man-pages/man2/uname.2.html)) 
 of a pod will be set to its shortname. This is the current behavior.
 * `False`: Same as `nil`
@@ -295,7 +295,7 @@ the system.  The goal here is to make this feel real for users without getting
 bogged down.
 -->
 #### Story 1: User does not Configure Pod to have FQDN
-Assume we have a pod named `foo` in a namespace `bar`. The PodSpec `subdomain` is not set. This pod does not have FQDN, so the value of `fqdnInHostname` does not have an impact. The Pod spec for this example would be:
+Assume we have a pod named `foo` in a namespace `bar`. The PodSpec `subdomain` is not set. This pod does not have FQDN, so the value of `hostnameFQDN` does not have an impact. The Pod spec for this example would be:
 
 ```yaml
 # Pod spec
@@ -313,7 +313,7 @@ If we `exec` into the Pod:
 
 #### Story 2: User Configures Pod to have FQDN
 
-Assume we have a pod named `foo` in a namespace `bar`. The PodSpec `subdomain` is set to `test`. We also assume the cluster-domain is set to its default, i.e. `cluster.local`. The FQDN of this pod is defined as `foo.test.bar.svc.cluster.local` (see details [here](https://kubernetes.io/docs/concepts/services-networking/dns-pod-service)). The user does not set `fqdnInHostname`. The Pod spec for this example would be:
+Assume we have a pod named `foo` in a namespace `bar`. The PodSpec `subdomain` is set to `test`. We also assume the cluster-domain is set to its default, i.e. `cluster.local`. The FQDN of this pod is defined as `foo.test.bar.svc.cluster.local` (see details [here](https://kubernetes.io/docs/concepts/services-networking/dns-pod-service)). The user does not set `hostnameFQDN`. The Pod spec for this example would be:
 
 ```yaml
 # Pod spec
@@ -332,7 +332,7 @@ If we `exec` into the Pod:
 
 #### Story 3: User Configures Pod to have FQDN and it would like the pod hostname to be the FQDN
 
-Assume we have a pod named `foo` in a namespace `bar`. The PodSpec `subdomain` is set to `test`. We also assume the cluster-domain is set to its default, i.e. `cluster.local`. The FQDN of this pod is defined as `foo.test.bar.svc.cluster.local` (see details in [here](https://kubernetes.io/docs/concepts/services-networking/dns-pod-service)). Additionally, the user sets `fqdnInHostname`: `true`. The Pod spec for this example would be:
+Assume we have a pod named `foo` in a namespace `bar`. The PodSpec `subdomain` is set to `test`. We also assume the cluster-domain is set to its default, i.e. `cluster.local`. The FQDN of this pod is defined as `foo.test.bar.svc.cluster.local` (see details in [here](https://kubernetes.io/docs/concepts/services-networking/dns-pod-service)). Additionally, the user sets `hostnameFQDN`: `true`. The Pod spec for this example would be:
 
 ```yaml
 # Pod spec
@@ -343,7 +343,7 @@ spec:
   ...
   hostname: "foo"  # Optional for this example
   subdomain: "test"
-  fqdnInHostname: "true"
+  hostnameFQDN: "true"
 ```
 
 If we `exec` into the Pod:
@@ -389,13 +389,7 @@ Events:
   Warning  FailedCreatePodSandBox  1s (x2 over 16s)  kubelet, host.company.com  Failed create pod sandbox: Failed to set FQDN in hostname, Pod hostname longpodnametestsaoitfail23423423432wer-547cc5-st6dd.p1324234234234.foo.svc.test q.company.com is too long (63 characters is the limit).
 ```
 
-This failure mode is not great because it might not be apparent to users that their pods are failing. There are two potential ways 
-to improve UX of the failure-mode:
-* Create an admission plugin that calculates the length of the FQDN of the Pod. The problem of this approach is that it might 
-not cover all scenarios, there are many entry points to generate a pod, i.e., deployments, replicasets, CRD, etc. Another problem 
-is that it breaks Kubernetes abstraction layers as we have to make assumptions from the top layer.
-* Create non-retriable errors for pods. Currently failures like the one generated by this kernel hostname limit retry forever. 
-It would be nice if we can define that an error is fatal, then the pod changes to Failed state.
+This failure mode is not great because it might not be apparent to users that their pods are failing. To improve the UX of this failure mode we will create an example Admission Controller that people can take and customize to apply their own policies. For example, if users care only about Deployments, they can make sure this Admission Controller account for the size of FQDN when the `hostnameFQDN` and `subdomain` flags are set in the PodSpec template.
 
 
 ```
@@ -456,7 +450,7 @@ when drafting this test plan.
 [testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
 -->
 The following end-to-end test is implemented in addition to unit tests:
--   Create a pod with fqdInHostname: true and a subdomain in its spec, and check the value of hostname field in the kernel
+-   Create e2e cases for the 3 User scenarios we described and check value returned by `hostname`/`uname -n` versus `hostname --fqdn`
 
 
 ### Graduation Criteria
@@ -530,6 +524,8 @@ enhancement:
   cluster required to make on upgrade in order to make use of the enhancement?
 -->
 
+We will gate off this feature for one release (1.19), then we enable it as GA in the next release (1.20)
+
 ### Version Skew Strategy
 
 <!--
@@ -544,6 +540,8 @@ enhancement:
 - Will any other components on the node change? For example, changes to CSI,
   CRI or CNI may require updating that component before the kubelet.
 -->
+
+Old kubelets that do not have support for this feature will just ignore the PodSpec field.
 
 ## Production Readiness Review Questionnaire
 
@@ -611,6 +609,8 @@ _This section must be completed when targeting beta graduation to a release._
   is very limited and it is disabled by default.
 
 * **What specific metrics should inform a rollback?**
+  We could have a metric in Kubelet that records number of failed pods that use this feature. If that
+  metric spikes we could trigger a rollback.
 
 * **Were upgrade and rollback tested? Was upgrade->downgrade->upgrade path tested?**
   We tested introducing and removing this feature. Running pods are not affected by
@@ -745,6 +745,9 @@ Major milestones might include
 Why should this KEP _not_ be implemented?
 -->
 
+Setting the FQDN in the hostname field of the Kernel is not the standard in applications that have been developed to run in orchestration platforms such as Kubernetes. Additionally, the fact that the Kernel hostname field is limited to 63 bytes causes pretty poor failure modes, where users might not immediately know that something went wrong.
+
+
 ## Alternatives
 
 <!--
@@ -752,6 +755,19 @@ What other approaches did you consider and why did you rule them out?  These do
 not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
 -->
+Alternative to creating this feature:
+* Make users fix all their own legacy code to not assume the FQDN is the hostname, which does not seem practical.
+
+Alternative to controlling the feature:
+* We could also control the use of this feature using a Kubelet configuration flag. Configuration flags are harder to maintain and it requires from platforms, such as GKE, to include support for them. Additionally, using a PodSpec flag we ensure that the behavior of controllers, like Deployments, is consistent on all its pods. For example, if we were to use a Kubelet config flag we might end up on a situation where different pods of the same deployment behave differently.
+
+Alternatives for improving UX of failure mode:
+* Create an admission plugin that calculates the length of the FQDN of the Pod. The problem of this approach is that it might
+not cover all scenarios, there are many entry points to generate a pod, i.e., deployments, replicasets, CRD, etc. Another problem
+is that it breaks Kubernetes abstraction layers as we have to make assumptions from the top layer.
+* Create non-retriable errors for pods. Currently failures like the one generated by this kernel hostname limit retry forever.
+It would be nice if we can define that an error is fatal, then the pod changes to Failed state.
+
 
 ## Infrastructure Needed (optional)
 
