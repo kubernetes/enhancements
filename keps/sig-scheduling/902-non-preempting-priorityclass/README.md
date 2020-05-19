@@ -192,7 +192,7 @@ Ensure existing tests (for preempting PriorityClasses) do not break.
   Yes, the feature can be disabled if the PreemptionPolicy isn't set.
 
 * **What happens if we reenable the feature if it was previously rolled back?**
-  If we reenable the feature, the Pod with high priority and NonPreemptionPolicy will be eligible to preempt others pods with low priority When cluster resources are tight.
+  If we reenable the feature, the Pod with high priority and NonPreemptionPolicy will be eligible to preempt other pods with low priority when cluster resources are tight.
 
 * **Are there any tests for feature enablement/disablement?**
   No
