@@ -575,7 +575,7 @@ _This section must be completed when targeting alpha to a release._
 
 * **How can this feature be enabled / disabled in a live cluster?**
   - [X] Feature gate (also fill in values in `kep.yaml`)
-    - Feature gate name: FqdnInHostname
+    - Feature gate name: hostnameFQDN
     - Components depending on the feature gate: Kubelet
   - [ ] Other
     - Describe the mechanism:
