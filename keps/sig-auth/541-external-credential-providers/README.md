@@ -105,13 +105,15 @@ cache credentials on disk / external hardware, communicate with arbitrary
 external APIs, perform arbitrary computations, etc).
 
 Client is configured with a binary path, optional arguments and environment
-variables to pass to it.
+variables to pass to it.  An optional install hint can be included to help a
+user determine how to install an executable if it is missing.  A simple mechanism
+is available to handle per cluster configuration.
 
 ## Design Details
 
 ### Provider configuration
 
-Configuration is provided via users section of `kubeconfig` file:
+Configuration is provided via the users and clusters section of `kubeconfig` file:
 
 ```yaml
 apiVersion: v1
@@ -135,17 +137,65 @@ users:
       env:
       - name: "FOO"
         value: "bar"
+
+      # Hint to help the user install the executable. Optional.
+      installHint: |
+      example-client-go-exec-plugin is required to authenticate
+      to the current cluster.  It can be installed:
+
+      On macOS: brew install example-client-go-exec-plugin
+
+      On Ubuntu: apt-get install example-client-go-exec-plugin
+
+      On Fedora: dnf install example-client-go-exec-plugin
+
+      ...
 clusters:
 - name: my-cluster
   cluster:
     server: "https://1.2.3.4:8080"
     certificate-authority: "/etc/kubernetes/ca.pem"
+    extensions:
+    - name: exec  # reserved extension name for per cluster exec config
+      extension:
+        some-config-per-cluster: config-data  # arbitrary config
 contexts:
 - name: my-cluster
   context:
     cluster: my-cluster
     user: my-user
 current-context: my-cluster
+```
+
+The Go struct for the `users[...].user.exec` field:
+
+```golang
+// ExecConfig specifies a command to provide client credentials. The command is exec'd
+// and outputs structured stdout holding credentials.
+//
+// See the client.authentiction.k8s.io API group for specifications of the exact input
+// and output format
+type ExecConfig struct {
+  // Command to execute.
+  Command string `json:"command"`
+  // Arguments to pass to the command when executing it.
+  // +optional
+  Args []string `json:"args"`
+  // Env defines additional environment variables to expose to the process. These
+  // are unioned with the host's environment, as well as variables client-go uses
+  // to pass argument to the plugin.
+  // +optional
+  Env []ExecEnvVar `json:"env"`
+
+  // Preferred input version of the ExecInfo. The returned ExecCredentials MUST use
+  // the same encoding version as the input.
+  APIVersion string `json:"apiVersion,omitempty"`
+
+  // A message to print to the user if the executable is missing.
+  // This can be used to help provide instructions for how to
+  // install the executable, i.e. brew install foo-cli
+  InstallHint string `json:"installHint,omitempty"`
+}
 ```
 
 `apiVersion` specifies the expected version of this API that the plugin
@@ -159,7 +209,12 @@ be readable and executable by the client process.
 `env` specifies environment variables to pass to the provider. The environment
 variables set in the client process are also passed to the provider.
 
+`installHint` specifies help text to print to the user when the required binary
+is missing.
+
 ### Provider input format
+
+In JSON:
 
 ```json
 {
@@ -168,26 +223,99 @@ variables set in the client process are also passed to the provider.
   "spec": {
     "cluster": {
       "server": "https://1.2.3.4:8080",
-      "certificate-authority": "/etc/kubernetes/ca.pem"
+      "serverName": "bar",
+      "caData": " ... ",
+      "config": { ... }
     }
   }
+}
+```
+
+The Go struct:
+
+```golang
+// ExecCredential is used by exec-based plugins to communicate credentials to
+// HTTP transports.
+type ExecCredential struct {
+  metav1.TypeMeta `json:",inline"`
+
+  // Spec holds information passed to the plugin by the transport.
+  Spec ExecCredentialSpec `json:"spec,omitempty"`
+
+  // Status is filled in by the plugin and holds the credentials that the
+  // transport should use to contact the API.
+  // +optional
+  Status *ExecCredentialStatus `json:"status,omitempty"`
+}
+
+// ExecCredentialSpec holds request and runtime specific information provided by
+// the transport.
+type ExecCredentialSpec struct {
+  // Cluster contains information to allow an exec plugin to communicate with the
+  // kubernetes cluster being authenticated to.
+  Cluster Cluster `json:"cluster"`
+}
+
+// Cluster contains information to allow an exec plugin to communicate with the
+// kubernetes cluster being authenticated to.
+type Cluster struct {
+  // Server is the address of the kubernetes cluster (https://hostname:port).
+  Server string `json:"server"`
+  // ServerName is passed to the server for SNI and is used in the client to
+  // check server certificates against. If ServerName is empty, the hostname
+  // used to contact the server is used.
+  // +optional
+  ServerName string `json:"serverName,omitempty"`
+  // CAData contains PEM-encoded certificate authority certificates.
+  // If empty, system roots should be used.
+  // +listType=atomic
+  // +optional
+  CAData []byte `json:"caData,omitempty"`
+  // Config holds additional config data that is specific to the exec plugin
+  // with regards to the cluster being authenticated to.
+  // +optional
+  Config runtime.RawExtension `json:"config,omitempty"`
+}
+```
+
+The Go struct for the `clusters.[...].cluster.extensions[...].extension` field:
+
+```golang
+// Cluster contains information about how to communicate with a kubernetes cluster
+type Cluster struct {
+  // Server is the address of the kubernetes cluster (https://hostname:port).
+  Server string `json:"server"`
+
+  ... omitted for brevity ...
+
+  // Extensions holds additional information. This is useful for extenders so
+  // that reads and writes don't clobber unknown fields
+  // +optional
+  Extensions []NamedExtension `json:"extensions,omitempty"`
+}
+
+// NamedExtension relates nicknames to extension information
+type NamedExtension struct {
+  // Name is the nickname for this Extension
+  Name string `json:"name"`
+  // Extension holds the extension information
+  Extension runtime.RawExtension `json:"extension"`
 }
 ```
 
 The `spec.cluster` field is the current cluster that the client is communicating
 with (i.e it is the cluster the client knows it must communicate with after it
 has completed parsing its `kubeconfig`, flags and environment variables).
-This struct is defined in [k8s.io/client-go/tools/clientcmd/api/v1#Cluster](https://pkg.go.dev/k8s.io/client-go/tools/clientcmd/api/v1?tab=doc#Cluster)
-(it is used in the `kubeconfig` file format).  This allows the executable to
-perform different actions based on the current cluster (i.e. get a token for a
-particular cluster).  The `Cluster` struct is flexible in that it not only
-provides all details required to communicate with the cluster (hostname and TLS
-config), but that is also allows arbitrary per-cluster configuration to be
-passed to the executable via the `extensions` field.  This list of [NamedExtension](https://pkg.go.dev/k8s.io/client-go/tools/clientcmd/api/v1?tab=doc#NamedExtension)
-structs can contain arbitrary data that is passed to the executable without
+This allows the executable to perform different actions based on the current
+cluster (i.e. get a token for a particular cluster).  The `Cluster` struct is
+flexible in that it not only provides all details required to communicate with
+the cluster (hostname and TLS config), but that is also allows arbitrary
+per-cluster configuration to be passed to the executable via the `config` field.
+This field can contain arbitrary data that is passed to the executable without
 modification.  This allows extra user-defined data (i.e. an OAuth client ID for
-audience scoping) to be passed through the `spec.cluster` field via the `Cluster`
-object from the `kubeconfig`.
+audience scoping) to be passed through the `spec.cluster` field.  The user
+configures this via the `kubeconfig`'s `clusters.[...].cluster.extensions[exec].extension`
+field.  The `exec` named extension is reserved for this purpose.
 
 This data is passed to the executable via the `KUBERNETES_EXEC_INFO` environment
 variable in a JSON serialized object.  Note that an environment variable is used
@@ -196,6 +324,8 @@ reserved for interactive flows between the user and executable (i.e. to prompt
 for username and password).
 
 ### Provider output format
+
+In JSON:
 
 ```json
 {
@@ -207,6 +337,27 @@ for username and password).
     "clientKeyData": "$CLIENT_PRIVATE_KEY",
     "clientCertificateData": "$CLIENT_CERTIFICATE",
   }
+}
+```
+
+The Go struct:
+
+```golang
+// ExecCredentialStatus holds credentials for the transport to use.
+//
+// Token and ClientKeyData are sensitive fields. This data should only be
+// transmitted in-memory between client and exec plugin process. Exec plugin
+// itself should at least be protected via file permissions.
+type ExecCredentialStatus struct {
+  // ExpirationTimestamp indicates a time when the provided credentials expire.
+  // +optional
+  ExpirationTimestamp *metav1.Time `json:"expirationTimestamp,omitempty"`
+  // Token is a bearer token used by the client for request authentication.
+  Token string `json:"token,omitempty"`
+  // PEM-encoded client TLS certificates (including intermediates, if any).
+  ClientCertificateData string `json:"clientCertificateData,omitempty"`
+  // PEM-encoded private key for the above certificate.
+  ClientKeyData string `json:"clientKeyData,omitempty"`
 }
 ```
 
