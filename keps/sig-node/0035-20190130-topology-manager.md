@@ -182,9 +182,8 @@ This proposal is focused on a new component in the Kubelet called the
 Topology Manager. The Topology Manager implements the pod admit handler
 interface and participates in Kubelet pod admission. When the `Admit()`
 function is called, the Topology Manager collects topology hints from other
-Kubelet components on a container by container basis(default).
-
->NOTE: Optionally, the Topology manager can collect topology hint per pod basis by configuring `--topology-manager-scope` flag with a `pod` value.
+Kubelet components on either a pod-by-pod, or a container-by-container basis, 
+depending on the scope that has been set via a kubelet flag.
 
 If the hints are not compatible, the Topology Manager may choose to
 reject the pod. Behavior in this case depends on a new Kubelet configuration
@@ -201,11 +200,11 @@ The Topology Hint currently consists of
 
 #### Scopes
 
-The scope determines the basis of how topology manager collects topology hints, this also affects how policy works(container basis or pod basis).
+The Topology Manager will attempt to align resources on either a pod-by-pod or a container-by-container basis depending on the value of a new kubelet flag, `--topology-manager-scope`. The values this flag can take on are detailed below:
 
-**container (default)**: Topology Manager collects topology hints from the Hint Providers per container basis, and a policy provides an allocation per container basis. A Pod will be admitted if the provided container basis allocation meets the criteria of configured policy.
+**container (default)**: The Topology Manager will collect topology hints from all Hint Providers on a container-by-container basis. Individual policies will then attempt to align resources for each container individually, and pod admission will be based on whether all containers were able to achieve their individual alignments or not.
 
-**pod**: Topology Manager collects topology hints per pod basis, and a policy provides an allocation per pod basis. A Pod will be admitted if the provided pod basis allocation meets the criteria of configured policy.
+**pod**: The Topology Manager will collect topology hints from all Hint Providers on a pod-by-pod basis. Individual policies will then attempt to align resources for all containers collectively, and pod admission will be based on whether all containers are able to achieve a common alignment or not.
 
 #### Policies
 
@@ -314,20 +313,20 @@ type TopologyHint struct {
     Preferred bool
 }
 
-// HintProvider is an interface for components that want to collaborate to
-// achieve globally optimal concrete resource alignment with respect to
-// NUMA locality.
+// HintProvider is implemented by Kubelet components that make
+// topology-related resource assignments. The Topology Manager consults each
+// hint provider at pod admission time.
 type HintProvider interface {
-  // GetTopologyHints returns a map of resource names to a list of possible
-  // concrete resource allocations in terms of NUMA locality hints. Each hint
+  // GetTopologyHints returns a map of resource names with a list of possible
+  // resource allocations in terms of NUMA locality hints. Each hint
   // is optionally marked "preferred" and indicates the set of NUMA nodes
   // involved in the hypothetical allocation. The topology manager calls
   // this function for each hint provider, and merges the hints to produce
   // a consensus "best" hint. The hint providers may subsequently query the
   // topology manager to influence actual resource assignment.
   GetTopologyHints(pod v1.Pod, containerName string) map[string][]TopologyHint
-  // GetPodLevelTopologyHints returns the a map of resource names to a list of 
-  // possible concrete resource allocations in terms of NUMA locality hints.
+  // GetPodLevelTopologyHints returns a map of resource names with a list of 
+  // possible resource allocations in terms of NUMA locality hints.
   // The returned map contains TopologyHint of requested resource by all containers
   // in a pod spec.
   GetPodLevelTopologyHints(pod *v1.Pod) map[string][]TopologyHint
@@ -378,9 +377,9 @@ A new feature gate will be added to enable the Topology Manager feature. This fe
  * Proposed Policy Flag:  
  `--topology-manager-policy=none|best-effort|restricted|single-numa-node`  
 
- The Scope flag determines the basis of the hint collecting and policy. The `container` scope will be the default scope.
+Based on the policy chosen, the following flag will determine the scope with which the policy is applied (i.e. either on a pod-by-pod or a container-by-container basis). The `container` scope will be the default scope.
 
- * proposed Scope Flag:  
+ * Proposed Scope Flag:  
  `--topology-manager-scope=container|pod`  
  
 ### Changes to Existing Components
@@ -468,6 +467,7 @@ _Figure: Topology Manager fetches affinity from hint providers._
 * Refactor to easily support different merge strategies for different policies.
 
 ## Beta (v1.19)
+
 * Support pod-level resource alignment.
 
 ## GA (stable)
