@@ -1,0 +1,18 @@
+title: Production Readiness Review Process
+kep-number: 1194
+authors:
+  - "@johnbelamaric"
+owning-sig: sig-architecture
+participating-sigs:
+  - sig-release
+reviewers:
+  - "@derekwaynecarr"
+  - "@vishh"
+  - "@justaugustus"
+  - "@alejandrox1"
+approvers:
+  - "@derekwaynecarr"
+  - "@dims"
+creation-date: 2019-07-31
+last-updated: 2020-04-21
+status: implementable
