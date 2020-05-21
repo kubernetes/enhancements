@@ -333,7 +333,7 @@ We need to make sure that kubernetes client used by EventRecorder uses properly 
 ### Other Related Changes
 
 To allow easier querying we need to make following fields selectable for Events:
-- event.reportingComponent
+- event.reportingController
 - event.reportingInstance
 - event.action
 - event.reason
