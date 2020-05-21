@@ -10,7 +10,7 @@ approvers:
   - "@josephburnett"
 creation-date: 2020-02-18
 last-updated: 2020-02-18
-status: provisional
+status: implementable
 ---
 
 # Kubernetes Enhancement Proposal Process
@@ -290,7 +290,15 @@ There will be no deprecation warning or internal migrations from `ResourceMetric
 ## Design Details
 
 ### Test Plan
-TBD
+Most of the tests will follow the same pattern as the tests for the pod resource metric source. The following
+unit tests will be added:
+
+- **Replica Calculator:** Verify that the number of replicas calculated is based on the metrics of individual
+  containers when a container metric source is specified.
+- **REST Metrics Client:** Verify that the resources returned from the REST metric client is the metrics for only
+  the containers specified in the metric source.
+- **API server validation:** Verify that only valid container metric sources are accepted.
+- **kubectl:** Verify that the new metric sources are displayed correctly.
 
 ### Graduation Criteria
 
