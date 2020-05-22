@@ -100,7 +100,7 @@ Once the annotation will be in place, it will be possible to easily retrieve the
 
 The `LocalAPIEndpoint` is also used in the stacked `etcd` pod manifest for composing the `peer-urls` and the `client-urls`; the latter is used by kubeadm when accessing etcd in an existing cluster, e.g. when doing `join --control-plane`.
 
-We are going to echo the `client-urls` value into a new annotation named `kubeadm.kubernetes.io/etcd.advertise-client-urls`. Once the annotation will be in place, it will be possible to easily retrieve the etcd client urls by querying the `etcd` pods.
+We are going to echo the `client-urls` value into a new annotation named `kubeadm.kubernetes.io/etcd.advertise-client-urls`. Once the annotation will be in place, it will be possible to easily retrieve the etcd client urls by querying the `etcd` pods. Note: Every `etcd` pod's annotation will list only its own client urls.
 
 ### Risks and Mitigations
 
