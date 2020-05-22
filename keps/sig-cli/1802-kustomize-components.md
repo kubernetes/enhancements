@@ -6,7 +6,7 @@ authors:
   - "@pgpx"
 owning-sig: sig-cli
 participating-sigs:
-  - n/a
+  - sig-cli
 reviewers:
   - n/a
 approvers:
@@ -37,6 +37,7 @@ superseded-by:
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha -&gt; Beta](#alpha---beta)
 - [Implementation History](#implementation-history)
 - [Alternatives](#alternatives)
 <!-- /toc -->
@@ -161,7 +162,7 @@ kind: Component
 In order to use a component, the user can refer to it in their
 `kustomization.yaml` via the `components` field:
 
-```yaml:
+```yaml
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
@@ -577,7 +578,7 @@ and giving child components their parent's RA instead of an empty RA. This
 minimizes the amount of code changed to simplify review, but a slightly more
 extensive refactoring is recommended.
 
-Additionaly, we add some checks to ensure that Kustomizations and normal
+Additionally, we add some checks to ensure that Kustomizations and normal
 files are not added to the `components:` list and Components are not added to
 `resources:`.
 
