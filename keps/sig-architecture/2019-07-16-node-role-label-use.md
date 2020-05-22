@@ -15,8 +15,10 @@ reviewers:
 approvers:
   - "@thockin"
   - "@derekwaynecarr"
+prr-approvers:
+  - "@wojtek-t"
 creation-date: 2019-07-16
-last-updated: 2019-07-16
+last-updated: 2020-06-01
 status: implementable
 ---
 
@@ -43,6 +45,13 @@ status: implementable
   - [Graduation Criteria](#graduation-criteria)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
+- [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
+  - [Feature enablement and rollback](#feature-enablement-and-rollback)
+  - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+  - [Monitoring requirements](#monitoring-requirements)
+  - [Dependencies](#dependencies)
+  - [Scalability](#scalability)
+  - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
 - [Future work](#future-work)
 - [Reference](#reference)
@@ -54,14 +63,14 @@ status: implementable
 
 These checklist items _must_ be updated for the enhancement to be released.
 
-- [ ] kubernetes/enhancements issue in release milestone, which links to KEP: https://github.com/kubernetes/enhancements/issues/1143
-- [ ] KEP approvers have set the KEP status to `implementable`
-- [ ] Design details are appropriately documented
-- [ ] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
-- [ ] Graduation criteria is in place
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [x] kubernetes/enhancements issue in release milestone, which links to KEP: https://github.com/kubernetes/enhancements/issues/1143
+- [x] KEP approvers have set the KEP status to `implementable`
+- [x] Design details are appropriately documented
+- [x] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [x] Graduation criteria is in place
+- [x] "Implementation History" section is up-to-date for milestone
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 **Note:** Any PRs to move a KEP to `implementable` or significant changes once it is marked `implementable` should be approved by each of the KEP approvers. If any of those approvers is no longer appropriate than changes to that list should be approved by the remaining approvers and/or the owning SIG (or SIG-arch for cross cutting KEPs).
 
@@ -216,9 +225,113 @@ As described in the migration process, deployers and administrators have 2 relea
 
 Controllers are updated after the control plane, so consumers must update the labels on their nodes before they update controller processes in 1.19.
 
+## Production Readiness Review Questionnaire
+
+### Feature enablement and rollback
+
+* **How can this feature be enabled / disabled in a live cluster?**
+  - [x] Feature gate (also fill in values in `kep.yaml`)
+    - Feature gate name: `LegacyNodeRoleBehavior`, `ServiceNodeExclusion`
+    - Components depending on the feature gate: `kube-apiserver`, `kube-controller-manager`, cloud controller managers
+  - [ ] Other
+    - Describe the mechanism:
+    - Will enabling / disabling the feature require downtime of the control
+      plane?
+    - Will enabling / disabling the feature require downtime or reprovisioning
+      of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
+
+* **Can the feature be disabled once it has been enabled (i.e. can we rollback
+  the enablement)?**
+
+Yes
+
+* **What happens if we reenable the feature if it was previously rolled back?**
+
+The old behavior is present.
+
+* **Are there any tests for feature enablement/disablement?**
+
+Yes
+
+### Rollout, Upgrade and Rollback Planning
+
+Covered in migration strategy.
+
+### Monitoring requirements
+
+* **How can an operator determine if the feature is in use by workloads?**
+
+Not applicable to workloads
+
+* **What are the SLIs (Service Level Indicators) an operator can use to
+  determine the health of the service?**
+
+Not applicable
+
+* **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
+
+Not applicable
+
+* **Are there any missing metrics that would be useful to have to improve
+  observability if this feature?**
+
+No
+
+### Dependencies
+
+* **Does this feature depend on any specific services running in the cluster?**
+
+No
+
+### Scalability
+
+* **Will enabling / using this feature result in any new API calls?**
+
+No
+
+* **Will enabling / using this feature result in introducing new API types?**
+
+No
+
+* **Will enabling / using this feature result in any new calls to cloud
+  provider?**
+
+No
+
+* **Will enabling / using this feature result in increasing size or count
+  of the existing API objects?**
+
+No
+
+* **Will enabling / using this feature result in increasing time taken by any
+  operations covered by [existing SLIs/SLOs][]?**
+
+No
+
+* **Will enabling / using this feature result in non-negligible increase of
+  resource usage (CPU, RAM, disk, IO, ...) in any components?**
+
+No
+
+### Troubleshooting
+
+* **How does this feature react if the API server and/or etcd is unavailable?**
+
+Not applicable
+
+* **What are other known failure modes?**
+
+Not applicable
+
+* **What steps should be taken if SLOs are not being met to determine the problem?**
+
+Not applicable
+
 ## Implementation History
 
 - 2019-07-16: Created
+- 2020-04-15: Labels promoted to beta in 1.19 in https://github.com/kubernetes/kubernetes/pull/90126
+- 2020-06-01: Updated for 1.19 with details of production readiness
 
 ## Future work
 
