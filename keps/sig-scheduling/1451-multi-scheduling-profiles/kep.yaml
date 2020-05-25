@@ -11,7 +11,7 @@ reviewers:
   - "@liggitt"
 approvers:
   - "@Huang-Wei"
-  - "@wojtek-t"
+  - "@wojtek-t" # PRR Approver
 see-also:
   - "/keps/sig-scheduling/20180409-scheduling-framework.md"
   - "/keps/sig-scheduling/20190226-default-even-pod-spreading.md"
