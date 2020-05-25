@@ -9,10 +9,10 @@ status: implementable
 creation-date: 2020-05-08
 reviewers:
   - "@Huang-Wei"
-  - "@wojtek-t"
 approvers:
   - "@ahg-g"
   - "@liggitt"
+  - "@wojtek-t"
 see-also:
   - "/keps/sig-scheduling/1451-multi-scheduling-profiles"
 stage: beta
