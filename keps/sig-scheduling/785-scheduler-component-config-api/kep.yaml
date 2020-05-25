@@ -12,7 +12,7 @@ reviewers:
 approvers:
   - "@ahg-g"
   - "@liggitt"
-  - "@wojtek-t"
+  - "@wojtek-t" # PRR Approver
 see-also:
   - "/keps/sig-scheduling/1451-multi-scheduling-profiles"
 stage: beta
