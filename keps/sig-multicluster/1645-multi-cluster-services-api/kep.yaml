@@ -9,6 +9,8 @@ status: provisional
 creation-date: 2020-03-30
 reviewers:
   - TBD
+  - "@johnbelamaric"
+  - "@janetkuo"
 approvers:
   - "@pmorie"
   - "@thockin"
