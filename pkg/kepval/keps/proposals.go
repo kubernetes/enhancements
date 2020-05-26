@@ -55,6 +55,7 @@ type Proposal struct {
 	ParticipatingSIGs []string `json:"participatingSigs" yaml:"participating-sigs,flow,omitempty"`
 	Reviewers         []string `json:"reviewers" yaml:",flow"`
 	Approvers         []string `json:"approvers" yaml:",flow"`
+	PRRApprovers      []string `json:"prrApprovers" yaml:"prr-approvers,flow"`
 	Editor            string   `json:"editor" yaml:"editor,omitempty"`
 	CreationDate      string   `json:"creationDate" yaml:"creation-date"`
 	LastUpdated       string   `json:"lastUpdated" yaml:"last-updated"`
