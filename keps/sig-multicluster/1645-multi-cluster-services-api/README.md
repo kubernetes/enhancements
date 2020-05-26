@@ -401,16 +401,24 @@ const {
       // ServiceExportExported means that the service referenced by this
       // service export has been synced to all clusters in the supercluster
       ServiceExportExported ServiceExportConditionType = "Exported"
-      // InvalidServiceType means that the service marked for export has an
+      // ServiceExportInvalid means that the service marked for export has an
       // unexportable service type (ExternalName)
-      InvalidServiceType ServiceExportConditionType = "InvalidServiceType"
+      ServiceExportInvalid ServiceExportConditionType = "InvalidServiceType"
+      // ServiceExportHeadless describes the headlessness of the supercluster
+      // service. Only required to be set if at least one cluster (including
+      // the local one) has a matching headless service marked for export.
+      // "True" when the corresponding ServiceImport is headless. "False" if
+      // at least one matching service is not headless.
+      // If any exported services disagree, cluster names and respective
+      // headlessness should be listed in the condition message.
+      ServiceExportHeadless ServiceExportConditionType = "Headless"
 }
 
 // ServiceExportCondition contains details for the current condition of this
 // service export.
 //
-// Once [#1624](https://github.com/kubernetes/enhancements/pull/1624) is
-// merged, this will be replaced by metav1.Condition.
+// Once KEP-1623 (sig-api-machinery/1623-standardize-conditions) is
+// implemented, this will be replaced by metav1.Condition.
 type ServiceExportCondition struct {
         Type ServiceExportConditionType `json:"type"`
         // Status is one of {"True", "False", "Unknown"}
@@ -509,6 +517,8 @@ type ServiceImport struct {
   metav1.ObjectMeta `json:"metadata,omitempty"`
   // +optional
   Spec ServiceImportSpec `json:"spec,omitempty"`
+  // +optional
+  Status ServiceImportStatus `json:"status,omitempty"`
 }
 
 // ServiceImportType designates the type of a ServiceImport
@@ -530,19 +540,23 @@ type ServiceImportSpec struct {
   // +listMapKey=protocol
   Ports []ServicePort `json:"ports"`
   // +optional
-  // +patchStrategy=merge
-  // +patchMergeKey=cluster
-  // +listType=map
-  // +listMapKey=cluster
-  Clusters []ClusterSpec `json:"clusters"`
-  // +optional
   IP string `json:"ip,omitempty"`
   // +optional
   Type ServiceImportType `json:"type"`
 }
 
-// ClusterSpec contains service configuration mapped to a specific cluster
-type ClusterSpec struct {
+// ServiceImportStatus describes derived state of an imported service.
+type ServiceImportStatus struct {
+  // +optional
+  // +patchStrategy=merge
+  // +patchMergeKey=cluster
+  // +listType=map
+  // +listMapKey=cluster
+  Clusters []ClusterStatus `json:"clusters"`
+}
+
+// ClusterStatus contains service configuration mapped to a specific source cluster
+type ClusterStatus struct {
  Cluster string `json:"cluster"`
  // +optional
  SessionAffinity corev1.ServiceAffinity `json:"sessionAffinity"`
