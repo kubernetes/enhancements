@@ -475,9 +475,8 @@ _This section must be completed when targeting alpha to a release._
     - Will enabling / disabling the feature require downtime of the control
       plane?
 
-      (1) Yes, enabling API requires to restart apiserver.
-
-      (2) No, enabling the use of the API doesn't require that.
+      Yes, enabling / disabling API requires to restart apiserver as well as
+      the components using that.
 
     - Will enabling / disabling the feature require downtime or reprovisioning
       of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
@@ -529,10 +528,15 @@ _This section must be completed when targeting beta graduation to a release._
   Try to be as paranoid as possible - e.g. what if some components will restart
   in the middle of rollout?
 
-  A rollout could fail if some components restart in the middle of the rollout.
-  Then those components will continue using the old Event API.
+  The rollout of API won't affect already running workloads.
+  The rollout of the API migration of individual components may cause components
+  fail to initialize in case of bugs. It will not affect running workloads though.
 
 * **What specific metrics should inform a rollback?**
+
+  [apiserver_request_total](https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/apiserver/pkg/endpoints/metrics/metrics.go#L66):
+  If the value is much higher or lower than expected, it might be due to bugs
+  in the library.
 
 * **Were upgrade and rollback tested? Was upgrade->downgrade->upgrade path tested?**
   Describe manual testing that was done and the outcomes.
@@ -618,16 +622,15 @@ previous answers based on experience in the field._
 
   In the new EventRecorder, every 30 minutes a "heartbeat" call will be performed
   to update Event status and prevent garbage collection in etcd. This heartbeat
-  is happening for events that are happening all the time (If an event didn't
+  is happening for events that are happening periodically (If an event didn't
   happen for 6 minutes, it will be GC-ed).
 
 * **Will enabling / using this feature result in introducing new API types?**
 
   Yes, a new API type "eventsv1.Event" is being introduced.
-  The migration of Event API will cause creation of new types of Event objects.
-  The number of Event objects depends on cluster state, which theoretically
-  won't be too large due to deduplication logic and reasonable-cardinality
-  of objects in the system.
+  The number of Event objects depends on cluster state and its churn. Event
+  deduplication and reasonable cardinality of the fields should keep their
+  number within reasonable boundaries (obviously dependent on cluster size).
 
 * **Will enabling / using this feature result in any new calls to cloud
   provider?**
@@ -639,11 +642,14 @@ previous answers based on experience in the field._
   Describe them providing:
   
   The difference in size of the Event object comes from new Action and Related
-  fields. We can safely estimate the increase to be smaller than 30%. We'll
-  also emit additional Event per Pod creation, as currently Events for that
-  are being deduplicated. There are currently at least 6 Events emitted when
-  Pod is started, so impact of this change can be bounded by 20%. This means
-  that in the worst case the increase in Event size can be bounded by 56%.
+  fields. We can safely estimate the increase to be smaller than 30%. However,
+  more events may be emitted. For example, new Events will be emitted for Pod
+  creation done by standard controllers (e.g. ReplicaSet), as they are currently
+  deduplicated across all 'owner' objects. However, given that that are at least
+  5 other events being emitted during pod startup, the impact for it can be
+  bounded by 20%. In total, we estimated that increase in total size of all
+  Events can be conservatively bounded by around 50%, but practical boundary
+  should be much smaller.
 
 * **Will enabling / using this feature result in increasing time taken by any
   operations covered by [existing SLIs/SLOs][]?**
@@ -653,8 +659,8 @@ previous answers based on experience in the field._
 * **Will enabling / using this feature result in non-negligible increase of
   resource usage (CPU, RAM, disk, IO, ...) in any components?**
   
-  The potential increase of Event size might cause non-negligible storage
-  increase in Etcd.
+  The potential increase of Event size might cause non-negligible increase of
+  storage in Etcd, network bandwidth to send them, and CPU to process them.
 
 ### Troubleshooting
 
@@ -666,7 +672,7 @@ _This section must be completed when targeting beta graduation to a release._
 
 * **How does this feature react if the API server and/or etcd is unavailable?**
 
-  The Events will be dropped if API server or etcd is unavailable,
+  The Events will be dropped if API server or etcd is unavailable.
 
 * **What are other known failure modes?**
   

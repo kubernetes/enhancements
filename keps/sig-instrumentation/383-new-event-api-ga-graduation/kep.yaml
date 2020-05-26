@@ -11,10 +11,10 @@ reviewers:
   - "@yastij"
   - "@wojtekt"
 approvers:
-  - "@wojtekt"
+  - "@wojtekt" # PRR Approver
   - "@brancz"
 creation-date: 2019-01-31
-last-updated: 2020-05-19
+last-updated: 2020-05-26
 status: implementable
 see-also:
 replaces:
