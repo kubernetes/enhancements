@@ -30,6 +30,13 @@
   - [Sample Queries With &quot;New&quot; Events](#sample-queries-with-new-events)
     - [Get All NodeController Events](#get-all-nodecontroller-events)
     - [Get All Events From Lifetime of a Given Pod](#get-all-events-from-lifetime-of-a-given-pod)
+- [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
+  - [Feature enablement and rollback](#feature-enablement-and-rollback)
+  - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+  - [Monitoring requirements](#monitoring-requirements)
+  - [Dependencies](#dependencies)
+  - [Scalability](#scalability)
+  - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
 - [Alternatives](#alternatives)
   - [Leaving Current Dedup Mechanism but Improve Backoff Behavior](#leaving-current-dedup-mechanism-but-improve-backoff-behavior)
@@ -42,12 +49,15 @@
 
 ## Release Signoff Checklist
 
-- [ ] Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements]\(not the initial KEP PR)
-- [ ] KEP approvers have approved the KEP status as `implementable`
-- [ ] Design details are appropriately documented
-- [ ] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
-- [ ] Graduation criteria is in place
-- [ ] "Implementation History" section is up-to-date for milestone
+Items marked with (R) are required *prior to targeting to a milestone / release*.
+
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Design details are appropriately documented
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [x] (R) Graduation criteria is in place
+- [ ] (R) Production readiness review completed
+- [x] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
@@ -438,6 +448,242 @@ List Events from the NamespaceSystem with field selector `reportingController = 
 #### Get All Events From Lifetime of a Given Pod
 
 List all Event with field selector `regarding.name = podName, regarding.namespace = podNamespace`, and `related.name = podName, related.namespace = podNamespace`. You need to join results outside of the kubernetes API.
+
+## Production Readiness Review Questionnaire
+
+### Feature enablement and rollback
+
+_This section must be completed when targeting alpha to a release._
+
+* **How can this feature be enabled / disabled in a live cluster?**
+  - [ ] Feature gate (also fill in values in `kep.yaml`)
+    - Feature gate name:
+    - Components depending on the feature gate:
+  - [x] Other
+    - Describe the mechanism:
+
+      (1) The API itself can be enabled / disabled at kube-apiserver level
+      by using `--runtime-config` flag;
+
+      (2) For the use of API, we have a fallback mechanism instead of using
+      a feature gate. That is, we simply fallback to the old Event libraries
+      if the API is diabled.
+
+      Currently this fallback is implemented purely in scheduler but we're
+      planning to move it into the library itself.
+
+    - Will enabling / disabling the feature require downtime of the control
+      plane?
+
+      Yes, enabling / disabling API requires to restart apiserver as well as
+      the components using that.
+
+    - Will enabling / disabling the feature require downtime or reprovisioning
+      of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
+
+      No.
+
+* **Does enabling the feature change any default behavior?**
+  Any change of default behavior may be surprising to users or break existing
+  automations, so be extremely careful here.
+
+  While the graduation of the API itself doesn't change default behavior,
+  migration of individual components does, as the events will be reported
+  differently.
+
+* **Can the feature be disabled once it has been enabled (i.e. can we rollback
+  the enablement)?**
+  Also set `rollback-supported` to `true` or `false` in `kep.yaml`.
+  Describe the consequences on existing workloads (e.g. if this is runtime
+  feature, can it break the existing applications?).
+
+  Yes. If the new Event API is disabled, it will fallback to the original one 
+  (The new events are roundtrippable with the old `corev1.Events`).
+
+  If individual components don't implement it, rollback of client-library use
+  may not be possible (i.e. they only fallback to the old API if the new API
+  is disabled, if there is bug in the client-library, there is no way to
+  fallback as of now).
+
+* **What happens if we reenable the feature if it was previously rolled back?**
+
+  New types of Events will be generated instead of the old one.
+
+* **Are there any tests for feature enablement/disablement?**
+  The e2e framework does not currently support enabling and disabling feature
+  gates. However, unit tests in each component dealing with managing data created
+  with and without the feature are necessary. At the very least, think about
+  conversion tests if API types are being modified.
+
+  Manual tests will be performed to ensure things work when either enabling
+  or disabling the new Event API.
+
+  More information in [Test Plan](#test-plan) section.
+
+### Rollout, Upgrade and Rollback Planning
+
+_This section must be completed when targeting beta graduation to a release._
+
+* **How can a rollout fail? Can it impact already running workloads?**
+  Try to be as paranoid as possible - e.g. what if some components will restart
+  in the middle of rollout?
+
+  The rollout of API won't affect already running workloads.
+  The rollout of the API migration of individual components may cause components
+  fail to initialize in case of bugs. It will not affect running workloads though.
+
+* **What specific metrics should inform a rollback?**
+
+  [apiserver_request_total](https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/apiserver/pkg/endpoints/metrics/metrics.go#L66):
+  If the value is much higher or lower than expected, it might be due to bugs
+  in the library.
+
+* **Were upgrade and rollback tested? Was upgrade->downgrade->upgrade path tested?**
+  Describe manual testing that was done and the outcomes.
+  Longer term, we may want to require automated upgrade/rollback tests, but we
+  are missing a bunch of machinery and tooling and do that now.
+
+  Not yet. It could be done by enabling / disabling new Event API.
+
+* **Is the rollout accompanied by any deprecations and/or removals of features,
+  APIs, fields of API types, flags, etc.?**
+  Even if applying deprecation policies, they may still surprise some users.
+
+  State field of EventSeries will be removed from corev1.Event API.
+
+### Monitoring requirements
+
+_This section must be completed when targeting beta graduation to a release._
+
+* **How can an operator determine if the feature is in use by workloads?**
+  Ideally, this should be a metrics. Operations against Kubernetes API (e.g.
+  checking if there are objects with field X set) may be last resort. Avoid
+  logs or events for this purpose.
+
+  The API, as a feature that workloads may in theory use,
+  can be determined by looking into the apiserver_requests_total metric.
+
+* **What are the SLIs (Service Level Indicators) an operator can use to
+  determine the health of the service?**
+  - [x] Metrics
+    - Metric name: apiserver_requests_total
+    - Components exposing the metric: kube-apiserver
+  - [ ] Other (treat as last resort)
+    - Details:
+
+* **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
+  At the high-level this usually will be in the form of "high percentile of SLI
+  per day <= X". It's impossible to provide a comprehensive guidance, but at the very
+  high level (they needs more precise definitions) those may be things like:
+  - per-day percentage of API calls finishing with 5XX errors <= 1%
+  - 99% percentile over day of absolute value from (job creation time minus expected
+    job creation time) for cron job <= 10%
+  - 99,9% of /health requests per day finish with 200 code
+
+  Events have always been "best-effort".
+  We're sticking to that with the new API too, so no SLO will be introduced.
+
+* **Are there any missing metrics that would be useful to have to improve
+  observability if this feature?**
+  Describe the metrics themselves and the reason they weren't added (e.g. cost,
+  implementation difficulties, etc.).
+
+  No.
+
+### Dependencies
+
+_This section must be completed when targeting beta graduation to a release._
+
+* **Does this feature depend on any specific services running in the cluster?**
+  Think about both cluster-level services (e.g. metrics-server) as well
+  as node-level agents (e.g. specific version of CRI). Focus on external or
+  optional services that are needed. For example, if this feature depends on
+  a cloud provider API, or upon an external software-defined storage or network
+  control plane.
+
+  For each of the fill in the following, thinking both about running user workloads
+  and creating new ones, as well as about cluster-level services (e.g. DNS):
+  
+  N/A
+
+
+### Scalability
+
+_For alpha, this section is encouraged: reviewers should consider these questions
+and attempt to answer them._
+
+_For beta, this section is required: reviewers must answer these questions._
+
+_For GA, this section is required: approvers should be able to confirms the
+previous answers based on experience in the field._
+
+* **Will enabling / using this feature result in any new API calls?**
+  Describe them, providing:
+
+  In the new EventRecorder, every 30 minutes a "heartbeat" call will be performed
+  to update Event status and prevent garbage collection in etcd. This heartbeat
+  is happening for events that are happening periodically (If an event didn't
+  happen for 6 minutes, it will be GC-ed).
+
+* **Will enabling / using this feature result in introducing new API types?**
+
+  Yes, a new API type "eventsv1.Event" is being introduced.
+  The number of Event objects depends on cluster state and its churn. Event
+  deduplication and reasonable cardinality of the fields should keep their
+  number within reasonable boundaries (obviously dependent on cluster size).
+
+* **Will enabling / using this feature result in any new calls to cloud
+  provider?**
+
+  No.
+
+* **Will enabling / using this feature result in increasing size or count
+  of the existing API objects?**
+  Describe them providing:
+  
+  The difference in size of the Event object comes from new Action and Related
+  fields. We can safely estimate the increase to be smaller than 30%. However,
+  more events may be emitted. For example, new Events will be emitted for Pod
+  creation done by standard controllers (e.g. ReplicaSet), as they are currently
+  deduplicated across all 'owner' objects. However, given that that are at least
+  5 other events being emitted during pod startup, the impact for it can be
+  bounded by 20%. In total, we estimated that increase in total size of all
+  Events can be conservatively bounded by around 50%, but practical boundary
+  should be much smaller.
+
+* **Will enabling / using this feature result in increasing time taken by any
+  operations covered by [existing SLIs/SLOs][]?**
+  
+  No
+
+* **Will enabling / using this feature result in non-negligible increase of
+  resource usage (CPU, RAM, disk, IO, ...) in any components?**
+  
+  The potential increase of Event size might cause non-negligible increase of
+  storage in Etcd, network bandwidth to send them, and CPU to process them.
+
+### Troubleshooting
+
+Troubleshooting section serves the `Playbook` role as of now. We may consider
+splitting it into a dedicated `Playbook` document (potentially with some monitoring
+details). For now we leave it here though.
+
+_This section must be completed when targeting beta graduation to a release._
+
+* **How does this feature react if the API server and/or etcd is unavailable?**
+
+  The Events will be dropped if API server or etcd is unavailable.
+
+* **What are other known failure modes?**
+  
+  N/A
+
+* **What steps should be taken if SLOs are not being met to determine the problem?**
+
+  N/A
+
+[supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
+[existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 
 ## Implementation History
 
