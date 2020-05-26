@@ -19,11 +19,14 @@ package validations
 import (
 	"bufio"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"os"
 	"regexp"
 	"sort"
 	"strings"
+
+	"sigs.k8s.io/yaml"
 )
 
 type KeyMustBeSpecified struct {
@@ -86,7 +89,10 @@ func (m *MustHaveAtLeastOneValue) Error() string {
 	return fmt.Sprintf("%q must have at least one value", m.key)
 }
 
-var listGroups []string
+var (
+	listGroups   []string
+	prrApprovers []string
+)
 
 func init() {
 	resp, err := http.Get("https://raw.githubusercontent.com/kubernetes/community/master/sigs.yaml")
@@ -111,6 +117,34 @@ func init() {
 	if err := scanner.Err(); err != nil {
 		fmt.Fprintf(os.Stderr, "unable to scan list of sigs: %v\n", err)
 		os.Exit(1)
+	}
+	sort.Strings(listGroups)
+
+	resp, err = http.Get("https://raw.githubusercontent.com/kubernetes/enhancements/master/OWNERS_ALIASES")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "unable to fetch list of aliases: %v\n", err)
+		os.Exit(1)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		fmt.Fprintf(os.Stderr, "invalid status code when fetching list of aliases: %d\n", resp.StatusCode)
+		os.Exit(1)
+	}
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "unable to read aliases content: %v\n", err)
+		os.Exit(1)
+	}
+	config := &struct{
+		Data map[string][]string `json:"aliases,omitempty"`
+	}{}
+	if err := yaml.Unmarshal(body, config); err != nil {
+		fmt.Fprintf(os.Stderr, "unable to read parse aliases content: %v\n", err)
+		os.Exit(1)
+	}
+	for _, approver := range config.Data["prod-readiness-approvers"] {
+		prrApprovers = append(prrApprovers, approver)
 	}
 	sort.Strings(listGroups)
 }
@@ -214,6 +248,24 @@ func ValidateStructure(parsed map[interface{}]interface{}) error {
 						if index >= len(listGroups) || listGroups[index] != v {
 							return &ValueMustBeOneOf{k, v, listGroups}
 						}
+					}
+				}
+			case interface{}:
+				return &ValueMustBeListOfStrings{k, values}
+			}
+		case "prr-approvers":
+			switch values := value.(type) {
+			case []interface{}:
+				for _, value := range values {
+					v := value.(string)
+					if len(v) > 0 && v[0] == '@' {
+						// If "@" is appeneded at the beginning, remove it.
+						v = v[1:]
+					}
+
+					index := sort.SearchStrings(prrApprovers, v)
+					if index >= len(prrApprovers) || prrApprovers[index] != v {
+						return &ValueMustBeOneOf{k, v, prrApprovers}
 					}
 				}
 			case interface{}:
