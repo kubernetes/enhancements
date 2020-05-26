@@ -49,6 +49,8 @@ reviewers:
 approvers:
   - "@deads2k"
   - "@lavalamp"
+prr-approvers:
+  - "@wojtek-t"
 creation-date: 2018-04-15
 last-updated: 2018-04-24
 status: provisional
