@@ -9,11 +9,11 @@ participating-sigs:
   - sig-architecture
 reviewers:
   - "@yastij"
-  - "@wojtekt"
+  - "@wojtek-t"
 approvers:
   - "@brancz"
 prr-approvers:
-  - "@wojtekt"
+  - "@wojtek-t"
 creation-date: 2019-01-31
 last-updated: 2020-05-26
 status: implementable

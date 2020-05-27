@@ -96,6 +96,7 @@ superseded-by:
 	}
 	return buf.Bytes()
 }
+
 func TestUnmarshalSuccess(t *testing.T) {
 	yamlDoc := &proposal{
 		Title:        "test",
