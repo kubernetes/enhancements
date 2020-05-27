@@ -154,7 +154,7 @@ useful for a wide audience.
 A good summary is probably at least a paragraph in length.
 -->
 
-The proposal is for adding standard ObjectMeta to the ComponentConfig API's to follow the standard pattern for other Kubernetes API's. This will allow for better interpolation with standard tooling like kustomize for managing config templating and substituion.
+The proposal is for adding standard ObjectMeta to the ComponentConfig API's to follow the standard pattern for other Kubernetes API's. This will allow for better interpolation with standard tooling like kustomize for managing config templating and substitution.
 
 ## Motivation
 
