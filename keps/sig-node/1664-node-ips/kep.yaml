@@ -1,0 +1,17 @@
+title: Better Support for Dual-Stack Node Addresses
+kep-number: 1664
+authors:
+  - "@danwinship"
+owning-sig: sig-node
+participating-sigs:
+  - sig-network
+  - sig-cloud-provider
+status: provisional
+creation-date: 2020-04-03
+reviewers:
+  - TBD
+approvers:
+  - TBD
+see-also:
+replaces:
+
