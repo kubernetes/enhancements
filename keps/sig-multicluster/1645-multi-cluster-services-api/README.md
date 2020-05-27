@@ -250,7 +250,7 @@ nitty-gritty.
   to support any implementation that fulfills the behavioral expectations of
   this API.
 - **cluster name** - A unique name or identifier for the cluster, scoped to the
-  implemenetation's cluster registry. We do not attempt to define the registry.
+  implementation's cluster registry. We do not attempt to define the registry.
   Each cluster must have a name that can uniquely identify it within the
   supercluster. A cluster name must be a valid [RFC
   1123](https://tools.ietf.org/html/rfc1123) DNS label.
@@ -266,9 +266,9 @@ supercluster.
 
 Another CRD called `ServiceImport` will be introduced to act as the in-cluster
 representation of a multi-cluster service in each importing cluster. This is
-analogous to the traditional `Service` type in Kubernetes. Each cluster will
-have a coresponding `ServiceImport` for each uniquely named `Service` that has
-been exported within the supercluster, referenced by namespaced name.
+analogous to the traditional `Service` type in Kubernetes. Importing clusters
+will have a coresponding `ServiceImport` for each uniquely named `Service` that
+has been exported within the supercluster, referenced by namespaced name.
 `ServiceImport` resources will be managed by the MCS implementation's
 mcs-controller.
 
@@ -393,11 +393,6 @@ type ServiceExportStatus struct {
 type ServiceExportConditionType string
 
 const {
-      // ServiceExportInitialized means the service export has been noticed
-      // by the controller, has passed validation, has appropriate finalizers
-      // set, and any required supercluster resources like the IP have been
-      // reserved
-      ServiceExportInitialized ServiceExportConditionType = "Initialized"
       // ServiceExportExported means that the service referenced by this
       // service export has been synced to all clusters in the supercluster
       ServiceExportExported ServiceExportConditionType = "Exported"
@@ -495,7 +490,7 @@ This includes 3 scenarios:
 1. This service is running entirely in this cluster, but is exported to other cluster(s) as well
 
 For each exported service, one `ServiceExport` will exist in each cluster that
-runs the service. The mcsd-controller will create and maintain a derived
+runs the service. The mcs-controller will create and maintain a derived
 `ServiceImport` in each cluster within the supercluster (see: [constraints and
 conflict resolution](#constraints-and-conflict-resolution)). If all
 `ServiceExport` instances are deleted, each `ServiceImport` will also be deleted
@@ -625,6 +620,12 @@ The `ServiceImport.Spec.IP` (VIP) can be used to access this service from within
   will be exposed with a regular supercluster IP if any source cluster-level
   service specifies a cluster IP. A supercluster service will be headless if and
   only if all cluster-level services from which it is derived are headless.
+
+  _Exporting a non-headless service to an otherwise headless service can
+  dynamically change the supercluster service type and potentially break
+  existing consumers. This is likely the result of a deployment error.
+  Conditions and events on the `ServiceExport` will be used to communicate the
+  conflict to the user._
 - `NodePort` and `LoadBalancer`: These create `ClusterIP` services that would
   sync as expected. For example If you export a `NodePort` service, the
   resulting cross-cluster service will still be a supercluster IP type. The
@@ -653,14 +654,20 @@ to describe a policy that applies to a multi-cluster service.
 
 _Optional, but recommended._
 
-When a `ServiceExport` is created, this will cause a domain name for the
-multi-cluster service to become accessible from within the supercluster. The
-domain name will be `<service>.<ns>.svc.supercluster.local`. MCS aims to align
-with the existing [service DNS
+MCS aims to align with the existing [service DNS
 spec](https://github.com/kubernetes/dns/blob/master/docs/specification.md). This
 section assumes familiarity with in-cluster Service DNS behavior.
+```
+<<[UNRESOLVED]>>
+Full DNS spec needed prior to Beta graduation following:
+https://github.com/kubernetes/dns/blob/master/docs/specification.md
+<<[UNRESOLVED]>>
+```
+When a `ServiceExport` is created, this will cause a domain name for the
+multi-cluster service to become accessible from within the supercluster. The
+domain name will be `<service>.<ns>.svc.supercluster.local`. 
 
-**SuperclusterIP services:** requests to this domain name from within an importing
+**SuperclusterIP services:** Requests to this domain name from within an importing
 cluster will resolve to the supercluster IP, which points to endpoints for pods
 within the underlying `Service`(s) across the supercluster.
 
@@ -676,16 +683,14 @@ records will be created based on each ready endpoint's hostname and the
 allows naming collisions to be avoided for headless services backed by identical
 `StatefulSets` deployed in multiple clusters.
 
+_Note: the total length of a FQDN is limited to 253 characters. Each label is
+independently limited to 63 characters, so users must choose host/cluster/service
+names to avoid hitting this upper bound._
+
 All service consumers must use the `*.svc.supercluster.local` name to enable
 supercluster routing, even if there is a matching `Service` with the same
 namespaced name in the local cluster. There will be no change to existing
 behavior of the `cluster.local` zone.
-```
-<<[UNRESOLVED]>>
-Full DNS spec needed prior to Beta graduation following:
-https://github.com/kubernetes/dns/blob/master/docs/specification.md
-<<[UNRESOLVED]>>
-```
 
 #### EndpointSlice
 
@@ -809,6 +814,7 @@ when drafting this test plan.
 - Kube-proxy can consume ServiceImport and EndpointSlice.
 - E2E tests exist for MCS services.
 - Beta -> GA Graduation criteria defined.
+- At least one MCS DNS implementation
 
 #### Beta -> GA Graduation
 
