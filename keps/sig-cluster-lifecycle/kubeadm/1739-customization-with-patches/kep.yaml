@@ -11,7 +11,7 @@ reviewers:
   - "@fabriziopandini"
   - "@rosti"
 approvers:
-  - "@fabriziopandini" # PRR Approver
+  - "@fabriziopandini"
 see-also:
   - "/keps/sig-cluster-lifecycle/kubeadm/20190722-Advanced-configurations-with-kubeadm-(Kustomize).md"
 replaces:
