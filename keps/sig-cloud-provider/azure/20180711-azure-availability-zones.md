@@ -156,7 +156,7 @@ Note that
 
 ### PVLabeler interface
 
-To setup AzureDisk's zone label correctly (required by cloud-controller-manager's PersistentVolumeLabelController), Azure cloud provider's [PVLabeler](https://github.com/kubernetes/kubernetes/blob/master/pkg/cloudprovider/cloud.go#L212) interface should be implemented:
+To setup AzureDisk's zone label correctly (required by cloud-controller-manager's PersistentVolumeLabelController), Azure cloud provider's [PVLabeler](https://github.com/kubernetes/kubernetes/blob/release-1.12/pkg/cloudprovider/cloud.go#L212) interface should be implemented:
 
 ```go
 // PVLabeler is an abstract, pluggable interface for fetching labels for volumes

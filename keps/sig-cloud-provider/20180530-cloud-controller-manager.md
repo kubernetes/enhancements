@@ -352,7 +352,7 @@ common integration hooks may be added
 The development of the
 [Cloud Controller Manager](https://github.com/kubernetes/kubernetes/tree/master/cmd/cloud-controller-manager)
 and
-[Cloud Provider Interface](https://github.com/kubernetes/kubernetes/blob/master/pkg/cloudprovider/cloud.go)
+[Cloud Provider Interface](https://github.com/kubernetes/kubernetes/blob/release-1.12/pkg/cloudprovider/cloud.go)
 has enabled the provider SIGs to develop external providers that
 capture the core functionality of the upstream providers. By defining the
 expected locations and naming conventions of where the external provider code

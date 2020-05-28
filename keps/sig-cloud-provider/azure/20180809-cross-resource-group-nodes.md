@@ -105,16 +105,16 @@ kubelet ... \
   --node-labels=alpha.service-controller.kubernetes.io/exclude-balancer=true,kubernetes.azure.com/resource-group=<rg-name>
 ```
 
-[LoadBalancer](https://github.com/kubernetes/kubernetes/blob/master/pkg/cloudprovider/cloud.go#L92) is not required for cross-RG nodes, hence only following features will be implemented for them:
+[LoadBalancer](https://github.com/kubernetes/kubernetes/blob/release-1.12/pkg/cloudprovider/cloud.go#L92) is not required for cross-RG nodes, hence only following features will be implemented for them:
 
-- [Instances](https://github.com/kubernetes/kubernetes/blob/master/pkg/cloudprovider/cloud.go#L121)
-- [Zones](https://github.com/kubernetes/kubernetes/blob/master/pkg/cloudprovider/cloud.go#L194)
-- [Routes](https://github.com/kubernetes/kubernetes/blob/master/pkg/cloudprovider/cloud.go#L169)
+- [Instances](https://github.com/kubernetes/kubernetes/blob/release-1.12/pkg/cloudprovider/cloud.go#L121)
+- [Zones](https://github.com/kubernetes/kubernetes/blob/release-1.12/pkg/cloudprovider/cloud.go#L194)
+- [Routes](https://github.com/kubernetes/kubernetes/blob/release-1.12/pkg/cloudprovider/cloud.go#L169)
 - [Azure managed disks](https://github.com/kubernetes/kubernetes/tree/master/pkg/volume/azure_dd)
 
 Most operations of those features are similar with existing nodes, except the RG name. The existing nodes are using RG from cloud provider configure, while cross-RG nodes will get RG from node label `kubernetes.azure.com/resource-group=<rg-name>`.
 
-To achieve this， [Informers](https://github.com/kubernetes/kubernetes/blob/master/pkg/cloudprovider/cloud.go#L52-L55) will be used to get node labels and then their RGs will be cached in `nodeResourceGroups map[string]string`.
+To achieve this， [Informers](https://github.com/kubernetes/kubernetes/blob/release-1.12/pkg/cloudprovider/cloud.go#L52-L55) will be used to get node labels and then their RGs will be cached in `nodeResourceGroups map[string]string`.
 
 ```go
 type Cloud struct {
