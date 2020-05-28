@@ -115,7 +115,8 @@ in kubectl at all.
   certificate signer, for example a PKCS#11-compatible HSM, such as
   [SoftHSM](https://github.com/opendnssec/SoftHSMv2) or
   [YubiKey](https://www.yubico.com/)
-- kubectl has no access to client key data
+- kubectl, while configured to use the external TLS certificate authenticator,
+  has no access to client key data
 
 ### Non-Goals
 
