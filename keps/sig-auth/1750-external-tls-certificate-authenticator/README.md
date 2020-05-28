@@ -1,4 +1,4 @@
-# KEP-20200507: External TLS certificate authenticator
+# KEP-1750: External TLS certificate authenticator
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
@@ -78,12 +78,12 @@ https://git.k8s.io/kubernetes [kubernetes/website]: https://git.k8s.io/website
 ## Summary
 
 This enhancement proposes adding support for authentication via external TLS
-certificate signers, what would enable usage of Hardware Security Modules (HSMs)
-- also known as smartcards, cryptographic processors or, by a popular brand
-  name, YubiKeys(tm) via the PKCS#11 standard. This enhancement allows
-  developers or automation pipelines to authenticate with the Kubernetes
-  cluster, without requiring access to the client key, hence improving
-  compliance and security.
+certificate signers, what would enable usage of Hardware Security Modules (HSMs),
+also known as smartcards, cryptographic processors or, by a popular brand
+name, YubiKeys(tm) via the PKCS#11 standard. This enhancement allows
+developers or automation pipelines to authenticate with the Kubernetes
+cluster, without requiring access to the client key, hence improving
+compliance and security.
 
 ## Motivation
 
@@ -207,8 +207,11 @@ authentication provider is responsible for reading the configuration from the
 kubeconfig file and exposing the configuration parameters to the external
 plugin.
 
-The internal authentication provider requires only a single parameter, the path
-to the external plugin `pathExec`.
+<!-- The internal authentication provider requires only a single parameter, the path
+to the external plugin `pathExec`. -->
+
+The internal authentication provider requires only a single parameter, the address of an endpoint at which
+the external plugin can be reached `endpoint`.
 
 <!-- TODO: Relative command paths are interpreted as relative to the directory of the config file. If KUBECONFIG is set to /home/jane/kubeconfig and the exec command is ./bin/example-client-go-exec-plugin, the binary /home/jane/bin/example-client-go-exec-plugin is executed. -->
 
@@ -220,13 +223,8 @@ in a form of string-to-string mapping (key-value pairs).
 
 In case of the PKCS#11 protocol, the following parameters are in use:
 
-- `pathLib` - a path to the library used by the authentication protocol
-  (mandatory),
 - `slotId` - an identifier of the slot (mandatory),
-- `objectId` - an identifier of the object (mandatory),
-- `pin` - a PIN code used when accessing the private key during the signing
-  operation (optional, if not provided, the user will be asked to provide the
-  PIN during each signing operation).
+- `objectId` - an identifier of the object (mandatory).
 
 An excerpt from an exemplary kubeconfig file:
 
@@ -239,15 +237,12 @@ users:
     auth-provider:
       name: externalSigner
       config:
-        pathExec: /path/to/externalSigner  
-        pathLib: /path/to/library.so        # library used by the external plugin
-        objectId: "2"                       # PKCS#11 specific configuration
+        endpoint: "unix:///private/hsm.sock"
+        objectId: "2"                         # PKCS#11 specific configuration
         slotId: "0"
-        pin: "123456"                       # (optional)
 ```
 
 ### API specs
-<!-- Input and output formats -->
 
 Communication between the authentication provider and the external plugin is
 bidirectional. The authentication provider initiates the communication by
@@ -260,7 +255,7 @@ All messages (requests and responses) are in the JSON format. The resources
 (certificates and signatures) are Base64 encoded.
 
 A request message is passed from the authentication provider to the external
-plugin in an environment variable `EXTERNAL_SIGNER_PKCS11_PLUGIN_CONFIG`. The
+plugin in an environment variable `EXTERNAL_SIGNER_PLUGIN_CONFIG`. The
 external plugin is expected to return the response message by printing them to
 `stdout`. Moreover, the external plugin has access to `stdin` for interacting
 with the user (for example providing a PIN) and `stderr` for printing diagnostic
@@ -272,7 +267,7 @@ information.
 
 The authentication provider sends a request message in the JSON format of
 `CertificateRequest` kind containing the plugin configuration parameters in an
-environment variable `EXTERNAL_SIGNER_PKCS11_PLUGIN_CONFIG`.
+environment variable `EXTERNAL_SIGNER_PLUGIN_CONFIG`.
 
 ```json
 {
@@ -309,7 +304,7 @@ printing it to `stdout`.
 ##### Sign request
 
 The authentication provider sends a request message in an environment variable
-`EXTERNAL_SIGNER_PKCS11_PLUGIN_CONFIG` in the JSON format of `SignRequest` kind
+`EXTERNAL_SIGNER_PLUGIN_CONFIG` in the JSON format of `SignRequest` kind
 containing:
 
 - the digest,
@@ -452,6 +447,7 @@ https://git.k8s.io/community/contributors/devel/sig-architecture/conformance-tes
 #### Alpha -> Beta Graduation
 
 - Gather feedback regarding the API from developers of external plugins
+- 3+ implementations of external plugins
 
 ### Upgrade / Downgrade Strategy
 
@@ -494,6 +490,8 @@ Major milestones might include
 - the version of Kubernetes where the KEP graduated to general availability
 - when the KEP was retired or superseded
   -->
+
+2020-05-07: initial KEP created
 
 ## Drawbacks
 
@@ -584,7 +582,6 @@ arranged in various way, for example:
 Since some of the configuration parameters have a complex structure (maps) we
 have decided to marshal them to JSON format and pass as a single environment
 variable, instead of creating multiple environment variables.
-<!-- Moreover, this approach fits well also the case of sign operation parameters, which are coming directly from within kubectl/client-go. -->
 
 ### FIDO U2F
 
