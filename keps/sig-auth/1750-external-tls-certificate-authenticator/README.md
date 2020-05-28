@@ -191,6 +191,9 @@ components:
 - an external plugin, which provides the actual certificate and signing
   services.
 
+The components communicate between each other using gRPC over a UNIX domain
+socket.
+
 ![UML sequence diagram](uml_sequence_diagram.png)
 
 The main role of the authentication provider is to pass along requests for
@@ -208,13 +211,8 @@ authentication provider is responsible for reading the configuration from the
 kubeconfig file and exposing the configuration parameters to the external
 plugin.
 
-<!-- The internal authentication provider requires only a single parameter, the path
-to the external plugin `pathExec`. -->
-
-The internal authentication provider requires only a single parameter, the address of an endpoint at which
-the external plugin can be reached `endpoint`.
-
-<!-- TODO: Relative command paths are interpreted as relative to the directory of the config file. If KUBECONFIG is set to /home/jane/kubeconfig and the exec command is ./bin/example-client-go-exec-plugin, the binary /home/jane/bin/example-client-go-exec-plugin is executed. -->
+The internal authentication provider requires only a single parameter, the
+address of an endpoint at which the external plugin can be reached `pathSocket`.
 
 The remaining of the parameters are specific for the external plugin and
 protocol in use. In order to increase flexibility of the solution and support
@@ -238,7 +236,7 @@ users:
     auth-provider:
       name: externalSigner
       config:
-        endpoint: "unix:///private/hsm.sock"
+        pathSocket: "unix:///private/hsm.sock"
         objectId: "2"                         # PKCS#11 specific configuration
         slotId: "0"
 ```
@@ -246,57 +244,57 @@ users:
 ### API specs
 
 Communication between the authentication provider and the external plugin is
-bidirectional. The authentication provider initiates the communication by
-sending a request for performing an operation (obtaining a client certificate or
-signing) to the external plugin and the external plugin replies by sending a
-response with a product of the respective operation (a client certificate or
-signature).
+bidirectional using gRPC over a UNIX domain socket, where the external plugin is
+a server and kubectl/client go is a client. The authentication provider
+initiates the communication by sending a request for performing an operation
+(obtaining a client certificate or signing) to the external plugin and the
+external plugin replies by sending a response with a product of the respective
+operation (a client certificate or signature). Additionally, the external plugin
+can send user prompt messages as intermediate responses, for example to inform
+the user that an action has to be performed before the sign operation can take
+place).
 
-All messages (requests and responses) are in the JSON format. The resources
-(certificates and signatures) are Base64 encoded.
-
-A request message is passed from the authentication provider to the external
-plugin in an environment variable `EXTERNAL_SIGNER_PLUGIN_CONFIG`. The
-external plugin is expected to return the response message by printing them to
-`stdout`. Moreover, the external plugin has access to `stdin` for interacting
-with the user (for example providing a PIN) and `stderr` for printing diagnostic
-information.
+All messages (requests, as well as, intermediate and final responses) are
+serialized using Protocol Buffers in a format specified bellow.
 
 #### Obtaining a certificate
 
 ##### Certificate request
 
-The authentication provider sends a request message in the JSON format of
-`CertificateRequest` kind containing the plugin configuration parameters in an
-environment variable `EXTERNAL_SIGNER_PLUGIN_CONFIG`.
+The authentication provider sends a request message of `CertificateRequest` kind
+containing the cluster name and optionally the plugin configuration parameters.
 
-```json
-{
-  "apiVersion":"external-signer.authentication.k8s.io/v1alpha1",
-  "kind":"CertificateRequest",
-  "configuration":{
-    "objectId":"2",
-    "pathExec":"/path/to/externalSigner",
-    "pathLib":"/path/to/library.so",
-    "pin":"123456",
-    "slotId":"0"
-  }
+```go
+message CertificateRequest {
+    // Version of the external signer plugin API.
+    Version version = 1;
+    // Name of the Kubernetes cluster.
+    string clusterName = 2;
+    // Configuration of the external signer plugin. This configuration is specific
+    // to the external signer, but stored in KUBECONFIG for the user's convenience
+    //to allow multiplexing a single external signer for several K8s users.
+    map<string, string> configuration = 3;
 }
 ```
 
-##### Certificate response
+##### Certificate responses
 
-The external plugin returns a response massage in the JSON format of
-`CertificateResponse` kind containing a Base64-encoded client certificate by
-printing it to `stdout`.
+The external plugin returns response massages of `CertificateResponse` kind.
 
-```json
-{
-  "apiVersion":"external-signer.authentication.k8s.io/v1alpha1",
-  "kind":"CertificateResponse",
-  "certificate":"(CERTIFICATE BASE64 ENCODED)"
+```go
+message CertificateResponse {
+    oneof content {
+        // Client certificate.
+        bytes certificate = 1;
+        // User prompt.
+        string userPrompt = 2;
+    }
 }
 ```
+
+The optional intermediate response containing a user prompts.
+
+The final response containing a client certificate.
 
 `k8s.io/client-go` uses the returned client certificate in the `certificate`.
 
@@ -304,45 +302,64 @@ printing it to `stdout`.
 
 ##### Sign request
 
-The authentication provider sends a request message in an environment variable
-`EXTERNAL_SIGNER_PLUGIN_CONFIG` in the JSON format of `SignRequest` kind
+The authentication provider sends a request message of `SignRequest` kind
 containing:
 
+- the cluster name,
+- optional plugin configuration parameters,
 - the digest,
-- plugin configuration parameters,
-- the type of signer options (`rsa.PSSOptions` by default),
-- signer options as a key-value pairs (`SaltLength` and `Hash` by default).
+- protocol specific signer options.
 
-```json
-{
-  "apiVersion":"external-signer.authentication.k8s.io/v1alpha1",
-  "kind":"SignRequest",
-  "digest":"TqRUvJjLvlp3g9B3elpfzfgrSbukXBP5txkBLIkCSs4=",
-  "configuration":{
-    "objectId":"2",
-    "pathExec":"/path/to/externalSigner",
-    "pathLib":"/path/to/library.so",
-    "pin":"123456",
-    "slotId":"0"
-    },
-  "signerOptsType":"*rsa.PSSOptions",
-  "signerOpts":"{\"SaltLength\":-1,\"Hash\":5}"
+```go
+message SignatureRequest {
+    // Version of the external signer plugin API.
+    Version version = 1;
+    // Name of the Kubernetes cluster.
+    string clusterName = 2;
+    // Configuration of the external signer plugin (HSM protocol specific).
+    map<string, string> configuration = 3;
+    // Digest to be signed.
+    bytes digest = 4;
+    // Definition of options for creating the PSS signature.
+    message RSAPSSOptions {
+        // Length of the salt for creating the PSS signature.
+        int32 saltLenght = 1;
+        // Hash function for creating the PSS signature.
+        uint32 hash = 2;
+    }
+    // Definition of options for creating the generic signature.
+    message GenericSignerOptions {
+        // Hash function for creating the generic signature.
+        uint32 hash = 1;
+    }
+    // Options for creating the signature.
+    oneof signerOpts {
+        GenericSignerOptions signerOptsRSAPKCS1 = 5;
+        RSAPSSOptions signerOptsRSAPSS = 6;
+        GenericSignerOptions signerOptsECDSA = 7;
+        GenericSignerOptions signerOptsED25519 = 8;
+    }
 }
 ```
 
-##### Sign response
+##### Sign responses
 
-The external plugin returns a response massage in the JSON format of
-`SignResponse` kind containing a Base64-encoded signature by printing it to
-`stdout`.
+The external plugin returns response massages of `SignResponse` kind.
 
-```json
-{
-  "apiVersion":"external-signer.authentication.k8s.io/v1alpha1",
-  "kind":"SignResponse",
-  "signature":"(SIGNATURE BASE64 ENCODED)"
+```go
+message SignatureResponse {
+    oneof content {
+        // Signature.
+        bytes signature = 1;
+        // User prompt.
+        string userPrompt = 2;
+    }
 }
 ```
+
+The optional intermediate response containing a user prompts.
+
+The final response containing a signature.
 
 `k8s.io/client-go` authenticates against the Kubernetes API using the signed
 certificate returned in the `signature`.
@@ -374,13 +391,14 @@ This enhancement includes unit and integration tests:
   - test that the external singer authentication provider APIs follow the format
     defined in the specification,
   - test the internal mechanisms of the authentication provider, such as
-    caching, and
-  - test handling of certificates and signatures data (including (un)marshalling
-    the messages and en/decoding values).
+    caching,
+  - test handling of certificates and signatures data (including (de)serializing
+    the messages), and
+  - test
 
-- Integration tests in `test/integration/auth/externalsigner_test.go` to:
+<!-- - Integration tests in `test/integration/auth/externalsigner_test.go` to:
   - attempt an execution of a `kubectl` command with authentication using the
-    external singer authentication provider.
+    external singer authentication provider. -->
 
 ### Graduation Criteria
 
@@ -493,6 +511,7 @@ Major milestones might include
   -->
 
 2020-05-07: initial KEP created
+2020-05-29: KEP updated with a modified API and requirements description
 
 ## Drawbacks
 
