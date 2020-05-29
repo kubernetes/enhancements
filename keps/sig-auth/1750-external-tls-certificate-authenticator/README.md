@@ -16,10 +16,10 @@
   - [API specs](#api-specs)
     - [Obtaining a certificate](#obtaining-a-certificate)
       - [Certificate request](#certificate-request)
-      - [Certificate response](#certificate-response)
+      - [Certificate responses](#certificate-responses)
     - [Signing](#signing)
       - [Sign request](#sign-request)
-      - [Sign response](#sign-response)
+      - [Sign responses](#sign-responses)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
@@ -30,10 +30,8 @@
 - [Alternatives](#alternatives)
   - [External signer vs existing authenticators using TLS certificates](#external-signer-vs-existing-authenticators-using-tls-certificates)
   - [Monolithic vs modular architecture](#monolithic-vs-modular-architecture)
-  - [RPC vs exec](#rpc-vs-exec)
+  - [exec vs RPC](#exec-vs-rpc)
   - [Independent external plugin configuration vs passing configuration parameters from kubectl/client-go](#independent-external-plugin-configuration-vs-passing-configuration-parameters-from-kubectlclient-go)
-  - [Stdin vs program arguments vs environment variables](#stdin-vs-program-arguments-vs-environment-variables)
-  - [Multiple key-value pairs vs a single JSON string](#multiple-key-value-pairs-vs-a-single-json-string)
   - [FIDO U2F](#fido-u2f)
 <!-- /toc -->
 
@@ -559,6 +557,7 @@ provider, which is already available within kubectl/client-go, as well as, would
 spread configuration of authentication process into multiple files.
 
 ### FIDO U2F
+
 Universal 2nd Factor (U2F) is a rather new standard proposed by the FIDO
 Alliance. It is meant to complement user and password authentication with a
 cryptographic signature produced by a cryptographic device, such as an HSM. In
