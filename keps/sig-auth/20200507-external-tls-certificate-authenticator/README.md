@@ -1,78 +1,4 @@
-<!--
-**Note:** When your KEP is complete, all of these comment blocks should be
-removed.
-
-To get started with this template:
-
-- [ ] **Pick a hosting SIG.** Make sure that the problem space is something the
-  SIG is interested in taking up.  KEPs should not be checked in without a
-  sponsoring SIG.
-- [ ] **Create an issue in kubernetes/enhancements** When filing an enhancement
-  tracking issue, please ensure to complete all fields in that template.  One of
-  the fields asks for a link to the KEP.  You can leave that blank until this
-  KEP is filed, and then go back to the enhancement and add the link.
-- [ ] **Make a copy of this template directory.** Copy this template into the
-  owning SIG's directory and name it `NNNN-short-descriptive-title`, where
-  `NNNN` is the issue number (with no leading-zero padding) assigned to your
-  enhancement above.
-- [ ] **Fill out as much of the kep.yaml file as you can.** At minimum, you
-  should fill in the "title", "authors", "owning-sig", "status", and
-  date-related fields.
-- [ ] **Fill out this file as best you can.** At minimum, you should fill in the
-  "Summary", and "Motivation" sections. These should be easy if you've
-  preflighted the idea of the KEP with the appropriate SIG(s).
-- [ ] **Create a PR for this KEP.** Assign it to people in the SIG that are
-  sponsoring this process.
-- [ ] **Merge early and iterate.** Avoid getting hung up on specific details and
-  instead aim to get the goals of the KEP clarified and merged quickly.  The
-  best way to do this is to just start with the high-level sections and fill out
-  details incrementally in subsequent PRs.
-
-Just because a KEP is merged does not mean it is complete or approved.  Any KEP
-marked as a `provisional` is a working document and subject to change.  You can
-denote sections that are under active debate as follows:
-
-```
-<<[UNRESOLVED optional short context or usernames ]>>
-Stuff that is being argued.
-<<[/UNRESOLVED]>>
-```
-
-When editing KEPS, aim for tightly-scoped, single-topic PRs to keep discussions
-focused.  If you disagree with what is already in a document, open a new PR with
-suggested changes.
-
-One KEP corresponds to one "feature" or "enhancement", for its whole lifecycle.
-You do not need a new KEP to move from beta to GA, for example.  If there are
-new details that belong in the KEP, edit the KEP.  Once a feature has become
-"implemented", major changes should get new KEPs.
-
-The canonical place for the latest set of instructions (and the likely source of
-this file) is [here](/keps/NNNN-kep-template/README.md).
-
-**Note:** Any PRs to move a KEP to `implementable` or significant changes once
-it is marked `implementable` must be approved by each of the KEP approvers. If
-any of those approvers is no longer appropriate than changes to that list should
-be approved by the remaining approvers and/or the owning SIG (or SIG
-Architecture for cross cutting KEPs).
--->
-
 # KEP-20200507: External TLS certificate authenticator
-
-<!--
-This is the title of your KEP.  Keep it short, simple, and descriptive.  A good
-title can help communicate what the KEP is and should be considered as part of
-any review.
--->
-
-<!--
-A table of contents is helpful for quickly jumping to sections of a KEP and for
-highlighting any additional information provided beyond the standard KEP
-template.
-
-Ensure the TOC is wrapped with <code>&lt;!-- toc --&rt;&lt;!-- /toc
-  --&rt;</code> tags, and then generate with `hack/update-toc.sh`.
--->
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
@@ -102,19 +28,14 @@ Ensure the TOC is wrapped with <code>&lt;!-- toc --&rt;&lt;!-- /toc
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
-  - [External signer vs existing authenticators using TLS
-    certificates](#external-signer-vs-existing-authenticators-using-tls-certificates)
+  - [External signer vs existing authenticators using TLS certificates](#external-signer-vs-existing-authenticators-using-tls-certificates)
   - [Monolithic vs modular architecture](#monolithic-vs-modular-architecture)
   - [RPC vs exec](#rpc-vs-exec)
-  - [Independent external plugin configuration vs passing configuration
-    parameters from
-    kubectl/client-go](#independent-external-plugin-configuration-vs-passing-configuration-parameters-from-kubectlclient-go)
-  - [Stdin vs program arguments vs environment
-    variables](#stdin-vs-program-arguments-vs-environment-variables)
-  - [Multiple key-value pairs vs a single JSON
-    string](#multiple-key-value-pairs-vs-a-single-json-string)
-- [Infrastructure Needed (optional)](#infrastructure-needed-optional)
-  <!-- /toc -->
+  - [Independent external plugin configuration vs passing configuration parameters from kubectl/client-go](#independent-external-plugin-configuration-vs-passing-configuration-parameters-from-kubectlclient-go)
+  - [Stdin vs program arguments vs environment variables](#stdin-vs-program-arguments-vs-environment-variables)
+  - [Multiple key-value pairs vs a single JSON string](#multiple-key-value-pairs-vs-a-single-json-string)
+  - [FIDO U2F](#fido-u2f)
+<!-- /toc -->
 
 ## Release Signoff Checklist
 
@@ -156,47 +77,21 @@ https://git.k8s.io/kubernetes [kubernetes/website]: https://git.k8s.io/website
 
 ## Summary
 
-<!--
-This section is incredibly important for producing high quality user-focused
-documentation such as release notes or a development roadmap.  It should be
-possible to collect this information before implementation begins in order to
-avoid requiring implementors to split their attention between writing release
-notes and implementing the feature itself.  KEP editors, SIG Docs, and SIG PM
-should help to ensure that the tone and content of the `Summary` section is
-useful for a wide audience.
-
-A good summary is probably at least a paragraph in length.
--->
-
 This enhancement proposes adding support for authentication via external TLS
 certificate signers, what would enable usage of Hardware Security Modules (HSMs)
 - also known as smartcards, cryptographic processors or, by a popular brand
-name, YubiKeys(tm) via the PKCS#11 standard. This enhancement allows developers
-or automation pipelines to authenticate with the Kubernetes cluster, without
-requiring access to the client key, hence improving compliance and security.
+  name, YubiKeys(tm) via the PKCS#11 standard. This enhancement allows
+  developers or automation pipelines to authenticate with the Kubernetes
+  cluster, without requiring access to the client key, hence improving
+  compliance and security.
 
 ## Motivation
 
-<!--
-This section is for explicitly listing the motivation, goals and non-goals of
-this KEP.  Describe why the change is important and the benefits to users.  The
-motivation section can optionally provide links to [experience reports][] to
-demonstrate the interest in a KEP within the wider Kubernetes community.
-
-[experience reports]: https://github.com/golang/go/wiki/ExperienceReports
--->
-
-<!-- How would you react if your laptop was stolen? Are you worried about 
-attackers performing a cold boot attack to extract your Kubernetes 
-credentials?  -->
-Are you worried about someone getting access to your Kubernetes credentials?
-(For example, by extracting private keys from your laptop using malware or by
-performing a cold boot attack.) Do you already use a YubiKey for SSH and GPG,
-and wonder why you cannot use it with kubectl? If yes, then this enhancement is
-for you!
-
-Highly regulated environments, such as FinTech, require delegating all digital
-key operations to specialized [Hardware Security Modules
+A very common way for authenticating with a Kubernetes cluster is via private
+keys. Even if other authentication methods are used, such as OpenID, private
+keys are still necessary for break-glass scenarios. Some companies' key
+management policy -- e.g., based on ISO 27001 Annex A.10 -- require delegating
+all digital key operations to specialized [Hardware Security Modules
 (HSMs)](https://en.wikipedia.org/wiki/Hardware_security_module). Amongst others,
 HSMs increase security by storing digital keys without allow them to be
 extracted. Authentication, encryption and signing is performed via a standard
@@ -216,11 +111,6 @@ in kubectl at all.
 
 ### Goals
 
-<!--
-List the specific goals of the KEP.  What is it trying to achieve?  How will we
-know that this has succeeded?
--->
-
 - kubectl can authenticate to a Kubernetes cluster with an external TLS
   certificate signer, for example a PKCS#11-compatible HSM, such as
   [SoftHSM](https://github.com/opendnssec/SoftHSMv2) or
@@ -229,23 +119,11 @@ know that this has succeeded?
 
 ### Non-Goals
 
-<!--
-What is out of scope for this KEP?  Listing non-goals helps to focus discussion
-and make progress.
--->
-
-- HSM support on the server-side, i.e., kubernetes-apiserver (although a
-  follow-up enhancement would be cool!)
+- HSM support on the server-side, i.e., kubernetes-apiserver
 - Improving PKCS#11 support in the Go runtime or in a Go library
+- FIDO U2F (see [Alternatives](#Alternatives))
 
 ## Proposal
-
-<!--
-This is where we get down to the specifics of what the proposal actually is.
-This should have enough detail that reviewers can understand exactly what you're
-proposing, but should not include things like API designs or implementation.
-The "Design Details" section below is for the real nitty-gritty.
--->
 
 This KEP proposes introducing a new authentication provider to enable a secure
 and complient usage of TLS client certificates within kubectl/client-go, by
@@ -262,16 +140,9 @@ components and establish an API for the communication between them. The internal
 component provides only the general primitives for the authentication process,
 while leaving the implementation of a particular HSM protocol (for example
 PKCS#11) out of kubectl/client-go. Support of a specific protocol can be enabled
-by providing an external plugin that implements the proposed API.
+by providing an external signer that implements the proposed API.
 
 ### User Stories
-
-<!--
-Detail the things that people will be able to do if this KEP is implemented.
-Include as much detail as possible so that people can understand the "how" of
-the system.  The goal here is to make this feel real for users without getting
-bogged down.
--->
 
 #### Story 1
 
@@ -283,55 +154,34 @@ system.
 To authenticate against the API:
 
 - The user issues a `kubectl` command, for example `kubectl get pods`.
-- Authentication provider calls the external plugin to obtain a client
-  certificate and signature.
-- External plugin prompts the user for a PIN to perform signing operation (if
-  the PIN is not provided in the configuration file).
-- External plugin returns a client certificate and a signature to client-go via
-  the authentication provider.
-- API server verifies the signature and processes the request.
-
-<!-- - Credential plugin prompts the user for LDAP credentials, exchanges credentials with external service for a token.
-- Credential plugin returns token to client-go, which uses it as a bearer token against the API server.
-- API server uses the webhook token authenticator to submit a TokenReview to the external service.
-- External service verifies the signature on the token and returns the user’s username and groups. -->
-
-<!-- #### Story 2 -->
+- `kubectl` calls the external signer to obtain a client certificate and
+  signature.
+- The external signer may suggest `kubectl` to show the user a prompt (i.e.,
+  string) directing the user on what actions are necessary for allowing the
+  signature.
+- Depending on various factors, such as the external signer implementation, HSM
+  support and company policy, the user may have to type a PIN in a model
+  graphical pop-up window, touch the HSM or type a PIN on a special keyboard
+  attached to the HSM.
+- The external signer returns a client certificate and a signature to client-go
+  via the authentication provider.
+- The API server verifies the signature and processes the request.
 
 ### Notes/Constraints/Caveats
 
-<!--
-What are the caveats to the proposal? What are some important details that
-didn't come across above. Go in to as much detail as necessary here. This might
-be a good place to talk about core concepts and how they relate.
--->
-
- It was requested by the sig-auth community to come up with a solution that does
- not require CGO during the build process and preferably does not add new
- dependencies to kubectl.
+* The solution does not require `kubectl` with CGO.
+* The solution does not require new secrets in KUBECONFIG.
+* The solution does not invoke executables (executables in KUBECONFIG are
+  considered insecure, due to the risk of distributing mallicious KUBECONFIGs).
+* The solution should work with PKCS#11-based HSM.
 
 ### Risks and Mitigations
 
-<!--
-What are the risks of this proposal and how do we mitigate.  Think broadly. For
-example, consider both security and how this will impact the larger kubernetes
-ecosystem.
-
-How will security be reviewed and by whom?
-
-How will UX be reviewed and by whom?
-
-Consider including folks that also work outside the SIG or subproject.
--->
+To reduce the risk of breaking the existing private key authentication for
+kubectl users, the solution should be minimally intrusive to existing code
+paths.
 
 ## Design Details
-
-<!--
-This section should contain enough information that the specifics of your change
-are understandable.  This may include API specs (though not always required) or
-even code snippets.  If there's any ambiguity about HOW your proposal will be
-implemented, this is the place to discuss them.
--->
 
 The complete solution for external TLS certificate signing includes two
 components:
@@ -651,12 +501,6 @@ Why should this KEP _not_ be implemented?
 
 ## Alternatives
 
-<!--
-What other approaches did you consider and why did you rule them out?  These do
-not need to be as detailed as the proposal, but should include enough
-information to express the idea and why it was not acceptable.
--->
-
 ### External signer vs existing authenticators using TLS certificates
 
 First of all, it should be noted that Kubernetes already offers authentication
@@ -740,10 +584,14 @@ have decided to marshal them to JSON format and pass as a single environment
 variable, instead of creating multiple environment variables.
 <!-- Moreover, this approach fits well also the case of sign operation parameters, which are coming directly from within kubectl/client-go. -->
 
-## Infrastructure Needed (optional)
+### FIDO U2F
 
-<!--
-Use this section if you need things from the project/SIG.  Examples include a
-new subproject, repos requested, github details.  Listing these here allows a
-SIG to get the process for these resources started right away.
--->
+Universal 2nd Factor (U2F) is a rather new standard proposed by the FIDO
+Alliance. It is meant to complement user and password authentication with a
+cryptographic signature produced by a cryptographic device, such as an HSM. In
+fact, many HSM support both PKCS#11 and U2F.
+
+U2F can readily be used against many OpenID providers, including Google, GitHub,
+GitLab and others. However, even with strong authentication using OpenID, it is
+still desirable to allow private key authentication to the Kubernetes cluster in
+break-glass scenarios.
