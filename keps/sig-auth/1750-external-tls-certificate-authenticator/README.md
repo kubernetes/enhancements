@@ -539,20 +539,14 @@ process of the whole kubectl. Such a dependency has been considered unacceptable
 by the sig-auth community ([see the Slack
 thread](https://kubernetes.slack.com/?redir=%2Farchives%2FC0EN96KUY%2Fp1582313541102300%3Fthread_ts%3D1582308815.101400%26cid%3DC0EN96KUY)).
 
-### RPC vs exec
+### exec vs RPC
 
-Similarly as in case of [external credential
-providers](../541-external-credential-providers), external plugin could be
-exposed as a network endpoint. Instead of executing a binary and passing
-request/response over arguments/`stdout`, client could open a network connection
-and send request/response over that.
+External plugin, instead being exposed as a UNIX domain socket, could be
+executed as a binary and communication could take place by passing requests and
+responses over arguments, `stdout`, or environment variables.
 
-The downsides of this approach compared to exec model are:
-
-- if external signer is remote, design for client authentication is required
-  (aka "chicken-and-egg problem"),
-- external signer must constantly run, consuming resources; clients refresh
-  their credentials infrequently.
+This approach has been considered insecured as it potentially allows [execution
+of arbitrary binaries](https://banzaicloud.com/blog/kubeconfig-security/).
 
 ### Independent external plugin configuration vs passing configuration parameters from kubectl/client-go
 
@@ -564,43 +558,7 @@ provider. However, that would require adding additional logic to the external
 provider, which is already available within kubectl/client-go, as well as, would
 spread configuration of authentication process into multiple files.
 
-### Stdin vs program arguments vs environment variables
-
-The authentication provider within the kubectl/client-go process sends to the
-external plugin two categories of data:
-
-- general configuration of the external plugin (as described above), and
-- parameters for the sign operation (digest and signer options).
-
-These data could be passed in various ways, for example:
-
-- writing directly to the `stdin` of the external plugin,
-- as program arguments set when spawning the extenal plugin process by the
-  authentication provider,
-- as environment variables set by the authentication provider and read by the
-  external plugin.
-
-We have decided to reserve `stdin` for the interactive usage of the external
-plugin (for example, entering a PIN code). Since program arguments can be
-visible for other processes running on the same host and we can be passing some
-sensitive date (for example, a PIN code) we decided not to use them. Therefore,
-we use environment variables to pass data from the authentication provider to
-the external plugin.
-
-### Multiple key-value pairs vs a single JSON string
-
-The data passed from the authentication provider to the external plugin could be
-arranged in various way, for example:
-
-- as multiple environment variables, each forming a key-value pair,
-- as a single string in JSON format, containing all the data.
-
-Since some of the configuration parameters have a complex structure (maps) we
-have decided to marshal them to JSON format and pass as a single environment
-variable, instead of creating multiple environment variables.
-
 ### FIDO U2F
-
 Universal 2nd Factor (U2F) is a rather new standard proposed by the FIDO
 Alliance. It is meant to complement user and password authentication with a
 cryptographic signature produced by a cryptographic device, such as an HSM. In
