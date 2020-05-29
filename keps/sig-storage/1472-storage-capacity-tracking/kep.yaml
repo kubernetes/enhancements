@@ -11,9 +11,12 @@ creation-date: 2019-09-19
 reviewers:
   - "@saad-ali"
   - "@xing-yang"
+  - "@msau42"
 approvers:
   - "@saad-ali"
-  - "TODO (?): prod-readiness-approvers, http://git.k8s.io/enhancements/OWNERS_ALIASES"
+  - "@msau42"
+prr-approvers:
+  - "@wojtek-t"
 see-also:
   - "https://docs.google.com/document/d/1WtX2lRJjZ03RBdzQIZY3IOvmoYiF5JxDX35-SsCIAfg"
 latest-milestone: "v1.19"
