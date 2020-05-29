@@ -394,11 +394,7 @@ This enhancement includes unit and integration tests:
     caching,
   - test handling of certificates and signatures data (including (de)serializing
     the messages), and
-  - test
-
-<!-- - Integration tests in `test/integration/auth/externalsigner_test.go` to:
-  - attempt an execution of a `kubectl` command with authentication using the
-    external singer authentication provider. -->
+  - test the entire process of a TLS handshake.
 
 ### Graduation Criteria
 
