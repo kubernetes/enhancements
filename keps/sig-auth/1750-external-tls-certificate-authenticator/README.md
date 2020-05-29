@@ -506,8 +506,8 @@ Major milestones might include
 - when the KEP was retired or superseded
   -->
 
-2020-05-07: initial KEP created
-2020-05-29: KEP updated with a modified API and requirements description
+- 2020-05-07: initial KEP created
+- 2020-06-01: KEP updated with a modified API and requirements description
 
 ## Drawbacks
 
