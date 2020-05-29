@@ -18,21 +18,22 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 
 	"k8s.io/enhancements/pkg/kepval/keps"
 )
 
 func main() {
-	os.Exit(run())
+	os.Exit(run(os.Stderr))
 }
 
-func run() int {
+func run(w io.Writer) int {
 	parser := &keps.Parser{}
 	for _, filename := range os.Args[1:] {
 		file, err := os.Open(filename)
 		if err != nil {
-			fmt.Printf("could not open file %s: %v\n", filename, err)
+			fmt.Fprintf(w, "could not open file %s: %v\n", filename, err)
 			return 1
 		}
 		defer file.Close()
@@ -42,10 +43,10 @@ func run() int {
 			continue
 		}
 
-		fmt.Printf("%v has an error: %q\n", filename, kep.Error.Error())
+		fmt.Fprintf(w, "%v has an error: %q\n", filename, kep.Error.Error())
 		return 1
 	}
 
-	fmt.Printf("No validation errors: %v\n", os.Args[1:])
+	fmt.Fprintf(w, "No validation errors: %v\n", os.Args[1:])
 	return 0
 }

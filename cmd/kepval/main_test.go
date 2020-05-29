@@ -17,6 +17,7 @@ limitations under the License.
 package main
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -74,8 +75,9 @@ func TestValidation(t *testing.T) {
 	for _, file := range files {
 		t.Run(file, func(t *testing.T) {
 			os.Args[1] = file
-			if exit := run(); exit != 0 {
-				t.Fatalf("exit code was %d and not 0. Please see output.", exit)
+			var b bytes.Buffer
+			if exit := run(&b); exit != 0 {
+				t.Fatalf("exit code was %d and not 0. Output:\n%s", exit, b.String())
 			}
 		})
 	}
