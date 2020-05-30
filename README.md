@@ -53,8 +53,7 @@ high standard of conceptual integrity and require consistency with other parts o
 documentation. As the project grows, no single person can track whether all those requirements are met. 
 
 The development
-of an enhancement often spans three stages: Alpha, Beta, and Stable. Enhancement Tracking Issues provide a
-checklist that allows for different approvers for different aspects, and ensures that nothing is forgotten across the
+of an enhancement often spans three stages: Alpha, Beta, and Stable. Enhancement Tracking Issues provide a checklist that allows for different approvers for different aspects, and ensures that nothing is forgotten across the
 development lifetime of an enhancement.
 
 ## When to Comment on an Enhancement Issue
