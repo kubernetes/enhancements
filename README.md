@@ -1,12 +1,18 @@
 # Enhancement Tracking and Backlog
 
+## Table of Contents
+- [Is My Thing an Enhancement?]
+- [When to Create a New Enhancement Issue]
+- [Enhancements Tracking Spreadsheet]
+- [## Labels]
+
 Enhancement tracking repo for Kubernetes releases. Owned by [SIG Architecture](https://git.k8s.io/community/sig-architecture#enhancements).
 
 This repo contains issues and [KEPs](https://git.k8s.io/enhancements/keps). These issues are umbrellas for new enhancements to be added to Kubernetes. An enhancement usually takes multiple releases to complete. And an enhancement can be tracked as backlog items before work begins. An enhancement may be filed once there is consensus in at least one [Kubernetes SIG](https://git.k8s.io/community/sig-list.md).
 
 ## Is My Thing an Enhancement?
 
-We are trying to figure out the exact shape of an enhancement. Until then here are a few rough heuristics.
+We are trying to figure out the exact shape of an enhancement. Until then, here are a few rough heuristics.
 
 An enhancement is anything that:
 
@@ -24,7 +30,7 @@ It is unlikely an enhancement if it is:
 - performance improvements, which are only visible to users as faster API operations, or faster control loops
 - adding error messages or events
 
-If you are not sure, ask someone in the SIG where you initially circulated the idea. If they aren't sure jump into
+If you are not sure, ask someone in the SIG where you initially circulated the idea. If they aren't sure, jump into
 [#enhancements](https://kubernetes.slack.com/messages/enhancements/) on Slack or ping someone listed in [OWNERS](https://github.com/kubernetes/enhancements/blob/master/OWNERS).
 
 ## When to Create a New Enhancement Issue
@@ -36,14 +42,16 @@ Create an issue here once you:
 - have identified people who agree to work on the enhancement
   - many enhancements will take several releases to progress through Alpha, Beta, and Stable stages
   - you and your team should be prepared to work on the approx. 9mo - 1 year that it takes to progress to Stable status
-- are ready to be the project-manager for the enhancement
+- are ready to be the project manager for the enhancement
 
 ## Why are Enhancements Tracked
 
 Once users adopt an enhancement, they expect to use it for an extended period of time. Therefore, we hold new enhancements to a
 high standard of conceptual integrity and require consistency with other parts of the system, thorough testing, and complete
-documentation. As the project grows no single person can track whether all those requirements are met. The development
-of an enhancement often spans three stages: Alpha, Beta, and Stable; Enhancement Tracking Issues provide a
+documentation. As the project grows, no single person can track whether all those requirements are met. 
+
+The development
+of an enhancement often spans three stages: Alpha, Beta, and Stable. Enhancement Tracking Issues provide a
 checklist that allows for different approvers for different aspects, and ensures that nothing is forgotten across the
 development lifetime of an enhancement.
 
@@ -78,8 +86,8 @@ Procedure:
 
 | Label Name | Purpose | How to use this label | Who should use this label |
 | ------ | ------ | ------ | ------ |
-| `sig/foo` | Denotes the SIG(s) which owns this enhancement e.g., `SIG Foo` | Set the label using the comment `/sig foo` (on a separate line) | Anyone |
-| `kind/feature` | Denotes that the issue should be tracked as an enhancement (All enhancement issues should be marked with this label) | Set the label using the comment `/kind feature` (on a separate line) | Anyone |
-| `tracked/yes` | Denotes an issue has been reviewed by a Feature Maintainer (SIG PM / SIG Release) and is actively tracked for the current milestone | Manually set | Feature Maintainers (SIG PM / SIG Release) ONLY |
-| `tracked/no` | Denotes an issue has been reviewed by a Feature Maintainer (SIG PM / SIG Release) and will not actively tracked for the current milestone | Manually set | Feature Maintainers (SIG PM / SIG Release) ONLY |
-| `stage/{alpha,beta,stable}` | Denotes the stage of an issue in the features process. | Set the label using the comment `/stage alpha` (on a separate line) | Anyone |
+| `sig/foo` | Denotes the SIG(s) which owns this enhancement—e.g., `SIG Foo` | Set the label using the comment `/sig foo` (on a separate line) | Anyone |
+| `kind/feature` | Denotes that the issue should be tracked as an enhancement (all enhancement issues should be marked with this label) | Set the label using the comment `/kind feature` (on a separate line) | Anyone |
+| `tracked/yes` | Denotes an issue has been reviewed by a Feature Maintainer (SIG Release) and is actively tracked for the current milestone | Manually set | Feature Maintainers (SIG Release) ONLY |
+| `tracked/no` | Denotes an issue has been reviewed by a Feature Maintainer (SIG Release) and will not actively tracked for the current milestone | Manually set | Feature Maintainers (SIG Release) ONLY |
+| `stage/{alpha,beta,stable}` | Denotes the stage of an issue in the features process | Set the label using the comment `/stage alpha` (on a separate line) | Anyone |
