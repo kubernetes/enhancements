@@ -81,8 +81,9 @@ enhancement from conception through implementation.
 
 Without a standardized mechanism for describing important enhancements, our
 talented technical writers and product managers struggle to weave a coherent
-narrative explaining why a particular release is important. Additionally, adopters of
-critical infrastructure such as Kubernetes need a forward-looking roadmap in order to plan their adoption strategies.
+narrative explaining why a particular release is important. Additionally, adopters
+of critical infrastructure such as Kubernetes need a forward-looking roadmap in
+order to plan their adoption strategies.
 
 The purpose of the KEP process is to reduce the amount of "tribal knowledge" in
 our community. By moving decisions from a smattering of mailing lists, video
