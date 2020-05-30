@@ -577,7 +577,7 @@ not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
 -->
 
-## Infrastructure Needed (optional)
+## Infrastructure Needed (Optional)
 
 <!--
 Use this section if you need things from the project/SIG. Examples include a
