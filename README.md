@@ -1,10 +1,12 @@
 # Enhancement Tracking and Backlog
 
 ## Table of Contents
-- [Is My Thing an Enhancement?]
-- [When to Create a New Enhancement Issue]
-- [Enhancements Tracking Spreadsheet]
-- [## Labels]
+- [Is My Thing an Enhancement?](#is-my-thing-an-enhancement)
+- [When to Create a New Enhancement Issue](#when-to-create-a-new-enhancement-issue)
+- [Why Are Enhancements Tracked](#why-are-enhancements-tracked)
+- [When to Comment on an Enhancement Issue](#when-to-comment-on-an-enhancement-issue)
+- [Enhancements Tracking Spreadsheet](#enhancements-tracking-spreadsheet)
+- [Labels](#labels)
 
 Enhancement tracking repo for Kubernetes releases. Owned by [SIG Architecture](https://git.k8s.io/community/sig-architecture#enhancements).
 
@@ -44,7 +46,7 @@ Create an issue here once you:
   - you and your team should be prepared to work on the approx. 9mo - 1 year that it takes to progress to Stable status
 - are ready to be the project manager for the enhancement
 
-## Why are Enhancements Tracked
+## Why Are Enhancements Tracked
 
 Once users adopt an enhancement, they expect to use it for an extended period of time. Therefore, we hold new enhancements to a
 high standard of conceptual integrity and require consistency with other parts of the system, thorough testing, and complete
