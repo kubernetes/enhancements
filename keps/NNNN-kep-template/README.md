@@ -542,7 +542,7 @@ _This section must be completed when targeting beta graduation to a release._
       running user workloads?
     - Diagnostics: What are the useful log messages and their required logging
       levels that could help debug the issue?
-      Not required until feature graduated to Beta.
+      Not required until feature graduated to beta.
     - Testing: Are there any tests for failure mode? If not, describe why.
 
 * **What steps should be taken if SLOs are not being met to determine the problem?**
