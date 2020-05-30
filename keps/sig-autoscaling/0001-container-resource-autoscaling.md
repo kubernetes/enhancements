@@ -241,7 +241,7 @@ might scale out more than before. This happens when the resource usage of the sp
 than the blended usage as calculated by the pod metric source. If however in the unlikely case, the usage of
 all the containers in the pod change in tandem by the same amount then the behavior will remain as before.
 
-For example consider the HPA object which targets a _Deployement_ with pods that have two containers `application`
+For example consider the HPA object which targets a _Deployment_ with pods that have two containers `application`
 and `log-shipper`:
 
 ```yaml
