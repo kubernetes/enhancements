@@ -415,7 +415,7 @@ _This section must be completed when targeting beta graduation to a release._
 
 * **How can a rollout fail? Can it impact already running workloads?**
   Try to be as paranoid as possible - e.g., what if some components will restart
-mid-rollout?
+   mid-rollout?
 
 * **What specific metrics should inform a rollback?**
 
