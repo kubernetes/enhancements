@@ -48,12 +48,9 @@ Create an issue here once you:
 
 ## Why Are Enhancements Tracked
 
-Once users adopt an enhancement, they expect to use it for an extended period of time. Therefore, we hold new enhancements to a
-high standard of conceptual integrity and require consistency with other parts of the system, thorough testing, and complete
-documentation. As the project grows, no single person can track whether all those requirements are met. 
+Once users adopt an enhancement, they expect to use it for an extended period of time. Therefore, we hold new enhancements to a high standard of conceptual integrity and require consistency with other parts of the system, thorough testing, and complete documentation. As the project grows, no single person can track whether all those requirements are met. 
 
-The development
-of an enhancement often spans three stages: Alpha, Beta, and Stable. Enhancement Tracking Issues provide a checklist that allows for different approvers for different aspects, and ensures that nothing is forgotten across the
+The development of an enhancement often spans three stages: Alpha, Beta, and Stable. Enhancement Tracking Issues provide a checklist that allows for different approvers for different aspects, and ensures that nothing is forgotten across the
 development lifetime of an enhancement.
 
 ## When to Comment on an Enhancement Issue
