@@ -445,7 +445,7 @@ in CONTRIBUTING.md.
 * Testing and documentation.
 
   * High level feature test
-    (like those in [pkg/target](https://github.com/kubernetes-sigs/kustomize/tree/master/pkg/target))
+    (like those in [pkg/target](https://github.com/kubernetes-sigs/kustomize/tree/master/api/internal/target))
   * Field documentarion in the 
     [canonical example file](https://github.com/kubernetes-sigs/kustomize/blob/master/examples/helloWorld/kustomization.yaml)
   * Usage [examples](https://github.com/kubernetes-sigs/kustomize/tree/master/examples).
