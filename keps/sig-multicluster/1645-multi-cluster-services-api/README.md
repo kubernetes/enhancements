@@ -528,12 +528,8 @@ const (
 
 // ServiceImportSpec describes an imported service and the information necessary to consume it.
 type ServiceImportSpec struct {
-  // +patchStrategy=merge
-  // +patchMergeKey=port
-  // +listType=map
-  // +listMapKey=port
-  // +listMapKey=protocol
-  Ports []ServicePort `json:"ports"`
+  // +listType=atomic
+  Ports []corev1.ServicePort `json:"ports"`
   // +optional
   IP string `json:"ip,omitempty"`
   // +optional
