@@ -459,7 +459,7 @@ The cloud_cidr_allocator will be updated to support allocating from multiple CID
 
 ### Container Environment Variables
 
-The [container environmental variables](https://kubernetes.io/docs/concepts/containers/container-environment-variables/#container-environment) should support dual-stack.
+The [container environmental variables](https://kubernetes.io/docs/concepts/containers/container-environment/#container-environment) should support dual-stack.
 
 Pod information is exposed through environmental variables on the pod. There are a few environmental variables that are automatically created, and some need to be specified in the pod definition, through the downward api.
 
