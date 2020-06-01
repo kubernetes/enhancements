@@ -78,7 +78,7 @@ https://git.k8s.io/kubernetes [kubernetes/website]: https://git.k8s.io/website
 This enhancement proposes adding support for authentication via external TLS
 certificate signers, what would enable usage of Hardware Security Modules (HSMs),
 also known as smartcards, cryptographic processors or, by a popular brand
-name, YubiKeys(tm) via the PKCS#11 standard. This enhancement allows
+name, YubiKeys(tm), via standards such as PKCS#11. This enhancement allows
 developers or automation pipelines to authenticate with the Kubernetes
 cluster, without requiring access to the client key, hence improving
 compliance and security.
@@ -563,7 +563,14 @@ Alliance. It is meant to complement user and password authentication with a
 cryptographic signature produced by a cryptographic device, such as an HSM. In
 fact, many HSM support both PKCS#11 and U2F.
 
-U2F can readily be used against many OpenID providers, including Google, GitHub,
-GitLab and others. However, even with strong authentication using OpenID, it is
-still desirable to allow private key authentication to the Kubernetes cluster in
-break-glass scenarios.
+In its [current usage](https://developers.yubico.com/U2F/), there are two
+fundamental differences between PKCS#11 and U2F:
+
+1. U2F is meant to complement username/password authentication with a second
+form authentication.
+2. U2F is meant to perform authentication after TLS handshake is completed.
+
+As a result, U2F can readily be used against many OpenID providers, including
+Google, GitHub, GitLab and others. However, even with strong authentication
+using OpenID, it is still desirable to allow private key authentication during
+TLS handshake to the Kubernetes cluster in break-glass scenarios.
