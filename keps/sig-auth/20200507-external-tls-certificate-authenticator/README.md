@@ -90,8 +90,8 @@ certificate signers, what would enable usage of Hardware Security Modules (HSMs)
 A very common way for authenticating with a Kubernetes cluster is via private
 keys. Even if other authentication methods are used, such as OpenID, private
 keys are still necessary for break-glass scenarios. Some companies' key
-management policy -- e.g., based on ISO 27001 Annex A.10 -- require delegating
-all digital key operations to specialized [Hardware Security Modules
+management policy, for example, based on ISO 27001 Annex A.10, require
+delegating all digital key operations to specialized [Hardware Security Modules
 (HSMs)](https://en.wikipedia.org/wiki/Hardware_security_module). Amongst others,
 HSMs increase security by storing digital keys without allow them to be
 extracted. Authentication, encryption and signing is performed via a standard
@@ -169,11 +169,11 @@ To authenticate against the API:
 
 ### Notes/Constraints/Caveats
 
-* The solution does not require `kubectl` with CGO.
-* The solution does not require new secrets in KUBECONFIG.
-* The solution does not invoke executables (executables in KUBECONFIG are
+- The solution does not require `kubectl` with CGO.
+- The solution does not require new secrets in KUBECONFIG.
+- The solution does not invoke executables (executables in KUBECONFIG are
   considered insecure, due to the risk of distributing mallicious KUBECONFIGs).
-* The solution should work with PKCS#11-based HSM.
+- The solution should work with PKCS#11-based HSM.
 
 ### Risks and Mitigations
 
