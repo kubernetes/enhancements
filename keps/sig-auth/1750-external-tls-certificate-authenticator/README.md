@@ -69,9 +69,10 @@ checklist items _must_ be updated for the enhancement to be released.
 time this enhancement is being considered for a milestone.
 -->
 
-[kubernetes.io]: https://kubernetes.io/ [kubernetes/enhancements]:
-https://git.k8s.io/enhancements [kubernetes/kubernetes]:
-https://git.k8s.io/kubernetes [kubernetes/website]: https://git.k8s.io/website
+[kubernetes.io]: https://kubernetes.io/
+[kubernetes/enhancements]: https://git.k8s.io/enhancements
+[kubernetes/kubernetes]: https://git.k8s.io/kubernetes
+[kubernetes/website]: https://git.k8s.io/website
 
 ## Summary
 
