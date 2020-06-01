@@ -316,7 +316,8 @@ in back-to-back releases.
 - Address feedback on usage/changed behavior, provided on GitHub issues
 - Deprecate the flag
 
-**For non-optional features moving to GA, the graduation criteria must include [conformance tests].**
+**For non-optional features moving to GA, the graduation criteria must include 
+[conformance tests].**
 
 [conformance tests]: https://git.k8s.io/community/contributors/devel/sig-architecture/conformance-tests.md
 -->
@@ -424,7 +425,8 @@ _This section must be completed when targeting beta graduation to a release._
   Longer term, we may want to require automated upgrade/rollback tests, but we
   are missing a bunch of machinery and tooling and can't do that now.
 
-* **Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?**
+* **Is the rollout accompanied by any deprecations and/or removals of features, APIs, 
+fields of API types, flags, etc.?**
   Even if applying deprecation policies, they may still surprise some users.
 
 ### Monitoring Requirements
@@ -436,7 +438,8 @@ _This section must be completed when targeting beta graduation to a release._
   checking if there are objects with field X set) may be a last resort. Avoid
   logs or events for this purpose.
 
-* **What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?**
+* **What are the SLIs (Service Level Indicators) an operator can use to determine 
+the health of the service?**
   - [ ] Metrics
     - Metric name:
     - [Optional] Aggregation method:
@@ -453,7 +456,8 @@ _This section must be completed when targeting beta graduation to a release._
     job creation time) for cron job <= 10%
   - 99,9% of /health requests per day finish with 200 code
 
-* **Are there any missing metrics that would be useful to have to improve observability of this feature?**
+* **Are there any missing metrics that would be useful to have to improve observability 
+of this feature?**
   Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
   implementation difficulties, etc.).
 
@@ -504,19 +508,23 @@ previous answers based on experience in the field._
   - Supported number of objects per cluster
   - Supported number of objects per namespace (for namespace-scoped objects)
 
-* **Will enabling / using this feature result in any new calls to the cloud provider?**
+* **Will enabling / using this feature result in any new calls to the cloud 
+provider?**
 
-* **Will enabling / using this feature result in increasing size or count of the existing API objects?**
+* **Will enabling / using this feature result in increasing size or count of 
+the existing API objects?**
   Describe them, providing:
   - API type(s):
   - Estimated increase in size: (e.g., new annotation of size 32B)
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 
-* **Will enabling / using this feature result in increasing time taken by any operations covered by [existing SLIs/SLOs]?**
+* **Will enabling / using this feature result in increasing time taken by any 
+operations covered by [existing SLIs/SLOs]?**
   Think about adding additional work or introducing new steps in between
   (e.g. need to do X to start a container), etc. Please describe the details.
 
-* **Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?**
+* **Will enabling / using this feature result in non-negligible increase of 
+resource usage (CPU, RAM, disk, IO, ...) in any components?**
   Things to keep in mind include: additional in-memory state, additional
   non-trivial computations, excessive access to disks (including increased log
   volume), significant amount of data sent and/or received over network, etc.
