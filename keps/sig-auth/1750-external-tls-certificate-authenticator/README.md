@@ -202,6 +202,10 @@ responses and return them to the initial caller.
 Users would be required to install an external plugin (possibly along with
 dependencies) on their workstation.
 
+TLS session resumption is disabled by default when using this authentication
+provider in order to ensure that the client has to perform a full TLS Handshake
+for each kubeclt/client-go request.
+
 ### Configuration
 
 Configuration of the both components (authentication provider and external
