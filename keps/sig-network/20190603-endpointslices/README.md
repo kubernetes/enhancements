@@ -1,36 +1,17 @@
----
-title: EndpointSlice API 
-authors:
-  - "@freehan"
-  - "@robertjscott"
-owning-sig: sig-network
-reviewers:
-  - "@bowei"
-  - "@thockin"
-  - "@wojtek-t"
-  - "@johnbelamaric"
-approvers:
-  - "@bowei"
-  - "@thockin"
-creation-date: 2019-06-01
-last-updated: 2019-06-01
-status: implementable
-see-also:
-  - "https://docs.google.com/document/d/1sLJfolOeEVzK5oOviRmtHOHmke8qtteljQPaDUEukxY/edit#"
----
-# EndpointSlice API 
+# KEP-20190603 EndpointSlices
 
 ## Table of Contents
 
 <!-- toc -->
+- [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
 - [Motivation](#motivation)
-  - [Goal](#goal)
-  - [Non-Goal](#non-goal)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [EndpointSlice API](#endpointslice-api-1)
+  - [EndpointSlice API](#endpointslice-api)
   - [Mapping](#mapping)
-  - [EndpointMeta (Per EndpointSlice)](#endpointmeta-per-endpointslice)
+  - [Endpoint Port](#endpoint-port)
   - [Topology (Per Endpoint)](#topology-per-endpoint)
   - [EndpointSlice Naming](#endpointslice-naming)
 - [Estimation](#estimation)
@@ -61,37 +42,89 @@ see-also:
 - [Roll Out Plan](#roll-out-plan)
 - [Graduation Criteria](#graduation-criteria)
   - [Splitting IP address type for better dual stack support](#splitting-ip-address-type-for-better-dual-stack-support)
+- [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
+  - [Feature enablement and rollback](#feature-enablement-and-rollback)
+  - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+  - [Monitoring requirements](#monitoring-requirements)
+  - [Dependencies](#dependencies)
+  - [Scalability](#scalability)
+  - [Troubleshooting](#troubleshooting)
+- [Implementation History](#implementation-history)
 - [Alternatives](#alternatives)
 - [FAQ](#faq)
 <!-- /toc -->
 
-## Summary 
+## Release Signoff Checklist
 
-This KEP was converted from the [original proposal doc][original-doc]. The current  [Core/V1 Endpoints API][v1-endpoints-api] comes with severe performance/scalability drawbacks affecting multiple components in the control-plane (apiserver, etcd, endpoints-controller, kube-proxy). 
-This doc proposes a new EndpointSlice API aiming to replace Core/V1 Endpoints API for most internal consumers, including kube-proxy.
-The new EndpointSlice API aims to address existing problems as well as leaving room for future extension.
+Items marked with (R) are required *prior to targeting to a milestone / release*.
+
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Design details are appropriately documented
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [x] (R) Graduation criteria is in place
+- [x] (R) Production readiness review completed
+- [x] Production readiness review approved
+- [x] "Implementation History" section is up-to-date for milestone
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+
+[kubernetes.io]: https://kubernetes.io/
+[kubernetes/enhancements]: https://git.k8s.io/enhancements
+[kubernetes/kubernetes]: https://git.k8s.io/kubernetes
+[kubernetes/website]: https://git.k8s.io/website
+
+## Summary
+
+This KEP was converted from the [original proposal doc][original-doc]. The
+current  [Core/V1 Endpoints API][v1-endpoints-api] comes with severe
+performance/scalability drawbacks affecting multiple components in the
+control-plane (apiserver, etcd, endpoints-controller, kube-proxy). This doc
+proposes a new EndpointSlice API aiming to replace Core/V1 Endpoints API for
+most internal consumers, including kube-proxy. The new EndpointSlice API aims to
+address existing problems as well as leaving room for future extension.
 
 
 ## Motivation
 
-In the current Endpoints API, one object instance contains all the individual endpoints of a service. Whenever a single pod in a service is added/updated/deleted, the whole Endpoints object (even when the other endpoints didn't change) is re-computed, written to storage (etcd) and sent to all watchers (e.g. kube-proxy). This leads to 2 major problems:
+In the current Endpoints API, one object instance contains all the individual
+endpoints of a service. Whenever a single pod in a service is
+added/updated/deleted, the whole Endpoints object (even when the other endpoints
+didn't change) is re-computed, written to storage (etcd) and sent to all
+watchers (e.g. kube-proxy). This leads to 2 major problems:
 
-- Storing multiple megabytes of endpoints puts strain on multiple parts of the system due to not having a paging system and a monolithic watch/storage design. [The max number of endpoints is bounded by the K8s storage layer (etcd)][max-object-size]], which has a hard limit on the size of a single object (1.5MB by default). That means attempts to write an object larger than the limit will be rejected. Additionally, there is a similar limitation in the watch path in Kubernetes apiserver. For a K8s service, if its Endpoints object is too large, endpoint updates will not be propagated to kube-proxy(s), and thus iptables/ipvs won’t be reprogrammed.
-- [Performance degradation in large k8s deployments.][perf-degrade] Not being able to efficiently read/update individual endpoint changes can lead to (e.g during rolling upgrade of a service) endpoints operations that are quadratic in the number of its elements. If one consider watches in the picture (there's one from each kube-proxy), the situation becomes even worse as the quadratic traffic gets multiplied further with number of watches (usually equal to #nodes in the cluster).
+- Storing multiple megabytes of endpoints puts strain on multiple parts of the
+  system due to not having a paging system and a monolithic watch/storage
+  design. [The max number of endpoints is bounded by the K8s storage layer
+  (etcd)][max-object-size]], which has a hard limit on the size of a single
+  object (1.5MB by default). That means attempts to write an object larger than
+  the limit will be rejected. Additionally, there is a similar limitation in the
+  watch path in Kubernetes apiserver. For a K8s service, if its Endpoints object
+  is too large, endpoint updates will not be propagated to kube-proxy(s), and
+  thus iptables/ipvs won’t be reprogrammed.
+- [Performance degradation in large k8s deployments.][perf-degrade] Not being
+  able to efficiently read/update individual endpoint changes can lead to (e.g
+  during rolling upgrade of a service) endpoints operations that are quadratic
+  in the number of its elements. If one consider watches in the picture (there's
+  one from each kube-proxy), the situation becomes even worse as the quadratic
+  traffic gets multiplied further with number of watches (usually equal to
+  #nodes in the cluster).
 
-The new EndpointSlice API aims to address existing problems as well as leaving room for future extension.
+The new EndpointSlice API aims to address existing problems as well as leaving
+room for future extension.
 
 
-### Goal
+### Goals
 
-- Support tens of thousands of backend endpoints in a single service on cluster with thousands of nodes.
+- Support tens of thousands of backend endpoints in a single service on cluster
+  with thousands of nodes.
 - Move the API towards a general-purpose backend discovery API.
 - Leave room for foreseeable extension:
   - Support multiple IPs per pod
   - More endpoint states than Ready/NotReady
   - Dynamic endpoint subsetting
-  
-### Non-Goal
+
+### Non-Goals
 - Change functionality provided by K8s V1 Service API.
 - Provide better load balancing for K8s service backends.
 
@@ -100,7 +133,7 @@ The new EndpointSlice API aims to address existing problems as well as leaving r
 ### EndpointSlice API
 The following new EndpointSlice API will be added to the `Discovery` API group.
 
-```
+```golang
 type EndpointSlice struct {
     metav1.TypeMeta `json:",inline"`
     // OwnerReferences should be set when the object is derived from a k8s
@@ -229,36 +262,55 @@ type EndpointPort struct {
 
 ### Mapping
 - 1 Service maps to N EndpointSlice objects.
-- Each EndpointSlice contains at most 100 endpoints by default (MaxEndpointsPerSlice: configurable via controller manager flag).
+- Each EndpointSlice contains at most 100 endpoints by default
+  (MaxEndpointsPerSlice: configurable via controller manager flag).
 - If a EndpointSlice is derived from K8s:
-  - The following label is added to identify corresponding service:  
+  - The following label is added to identify corresponding service:
     - Key: kubernetes.io/service
     - Value: ${service name}
-  - For EndpointSlice instances that are not derived from kubernetes Services, the above label must not be applied.
-  - The OwnerReferences of the EndpointSlice instances will be set to the corresponding service.
-- For backend pods with non-uniform named ports (e.g. a service port targets a named port. Backend pods have different port number with the same port name), this would amplify the number of EndpointSlice object depending on the number of backend groups with same ports.
-- EndpointSlice will be covered by resource quota. This is to limit the max number of EndpointSlice objects in one namespace. This would provide protection for k8s apiserver. For instance, a malicious user would not be able to DOS k8s API by creating services selecting all pods.
+  - For EndpointSlice instances that are not derived from kubernetes Services,
+    the above label must not be applied.
+  - The OwnerReferences of the EndpointSlice instances will be set to the
+    corresponding service.
+- For backend pods with non-uniform named ports (e.g. a service port targets a
+  named port. Backend pods have different port number with the same port name),
+  this would amplify the number of EndpointSlice object depending on the number
+  of backend groups with same ports.
+- EndpointSlice will be covered by resource quota. This is to limit the max
+  number of EndpointSlice objects in one namespace. This would provide
+  protection for k8s apiserver. For instance, a malicious user would not be able
+  to DOS k8s API by creating services selecting all pods.
 
-### EndpointMeta (Per EndpointSlice)
-EndpointMeta contains metadata applying to all endpoints contained in the EndpointSlice.
-- **Endpoint Port**: The endpoint port number becomes optional in the EndpointSlice API while the port number field in core/v1 Endpoints API is required. This allows the API to support services with no port remapping or all port services.   
+### Endpoint Port
+Ports apply to all endpoints contained in the EndpointSlice. The endpoint port
+number becomes optional in the EndpointSlice API while the port number field in
+core/v1 Endpoints API is required. This allows the API to support services with
+no port remapping or all port services.
 
 ### Topology (Per Endpoint)
-A new topology field (string to string map) is added to each endpoint. It can contain arbitrary topology information associated with the endpoint. If the EndpointSlice instance is derived from K8s service, the topology may contain following well known key:
-- **kubernetes.io/hostname**: the value indicates the hostname of the node where the endpoint is located. This should match the corresponding node label.
-- **topology.kubernetes.io/zone**: the value indicates the zone where the endpoint is located. This should match the corresponding node label.
-- **topology.kubernetes.io/region**: the value indicates the region where the endpoint is located. This should match the corresponding node label.
+A new topology field (string to string map) is added to each endpoint. It can
+contain arbitrary topology information associated with the endpoint. If the
+EndpointSlice instance is derived from K8s service, the topology may contain
+following well known key:
+- **kubernetes.io/hostname**: the value indicates the hostname of the node where
+  the endpoint is located. This should match the corresponding node label.
+- **topology.kubernetes.io/zone**: the value indicates the zone where the
+  endpoint is located. This should match the corresponding node label.
+- **topology.kubernetes.io/region**: the value indicates the region where the
+  endpoint is located. This should match the corresponding node label.
 
-If the k8s service has topological keys specified, the corresponding node labels will be copied to endpoint topology. 
+If the Kubernetes Service has topological keys specified, the corresponding node
+labels will be copied to endpoint topology.
 
 ### EndpointSlice Naming
-Use `generateName` with service name as prefix:
+Use `generateName` with the Service name as prefix:
 ```
 ${service name}-${random}
 ```
 
 ## Estimation
-This section provides comparisons between Endpoints API and EndpointSlice API under 3 scenarios:
+This section provides comparisons between Endpoints API and EndpointSlice API
+under 3 scenarios:
 - Service Creation/Deletion
 - Single Endpoint Update
 - Rolling Update
@@ -266,11 +318,11 @@ This section provides comparisons between Endpoints API and EndpointSlice API un
 ```
 Number of Backend Pod: P
 Number of Node: N
-Number of Endpoint Per EndpointSlice:B 
+Number of Endpoint Per EndpointSlice:B
 ```
 
 ## Sample Case 1: 20,000 endpoints, 5,000 nodes
- 
+
 ### Service Creation/Deletion
 
 
@@ -320,7 +372,7 @@ Number of Endpoint Per EndpointSlice:B
 
 
 ## Sample Case 2: 20 endpoints, 10 nodes
- 
+
 ### Service Creation/Deletion
 
 |                          | Endpoints             | 100 Endpoints per EndpointSlice | 1 Endpoint per EndpointSlice |
@@ -374,16 +426,16 @@ Number of Endpoint Per EndpointSlice:B
 
 - **Persistence (Minimal Churn of Endpoints)**
 
-Upon service endpoint changes, the # of object writes and disruption to ongoing connections should be minimal. 
+Upon service endpoint changes, the # of object writes and disruption to ongoing connections should be minimal.
 
 - **Handling Restarts & Failures**
 
 The producer/consumer of EndpointSlice must be able to handle restarts and recreate state from scratch with minimal change to existing state.
- 
+
 
 ### EndpointSlice Controller
 
-A new EndpointSlice Controller will be added to `kube-controller-manager`. It will manage the lifecycle EndpointSlice instances derived from services.  
+A new EndpointSlice Controller will be added to `kube-controller-manager`. It will manage the lifecycle EndpointSlice instances derived from services.
 ```
 Watch: Service, Pod, Node ==> Manage: EndpointSlice
 ```
@@ -407,15 +459,15 @@ EndpointSlices without this label.
 On Service Create/Update/Delete:
 - `syncService(svc)`
 
-On Pod Create/Update/Delete: 
+On Pod Create/Update/Delete:
 - Reverse lookup relevant services
-- For each relevant service, 
+- For each relevant service,
   - `syncService(svc)`
 
 `syncService(svc)`:
 - Look up selected backend pods
 - Look up existing EndpointSlices for the service `svc`.
-- Calculate difference between wanted state and current state.  
+- Calculate difference between wanted state and current state.
 - Perform reconciliation with minimized changes.
 
 ### Kube-Proxy
@@ -626,6 +678,195 @@ address types.
 3. Deprecate the `IP` address type, making it invalid for new EndpointSlices in
 1.17 before becoming fully invalid in 1.18.
 
+## Production Readiness Review Questionnaire
+
+### Feature enablement and rollback
+
+* **How can this feature be enabled / disabled in a live cluster?**
+  - [x] Feature gate (also fill in values in `kep.yaml`)
+    - *EndpointSlice*: Enables this feature for kube-apiserver (self referential
+      EndpointSlice management) and kube-controller-manager (EndpointSlice and
+      EndpointSlice mirroring controllers).
+    - *EndpointSliceProxying*: Enables this feature for kube-proxy - it will use
+      EndpointSlices as the source of endpoint data instead of Endpoints.
+
+* **Does enabling the feature change any default behavior?**
+  No. There is potential for noticeable bugs, most likely if there are any bugs
+  with the EndpointSlice implementation of kube-proxy. These bugs could result
+  in proxy rules being programmed with inaccurate or stale data.
+
+* **Can the feature be disabled once it has been enabled (i.e. can we rollback
+  the enablement)?**
+  Yes.
+
+* **What happens if we reenable the feature if it was previously rolled back?**
+  Reenabling the `EndpointSlice` feature gate could result in the controller
+  cleaning up or updating stale EndpointSlices. Reenabling the
+  `EndpointSliceProxying` feature gate should not result in any changes to API
+  resources though it may result in reprogramming iptables/ipvs rules. This
+  would be especially noticeable if EndpointSlices and Endpoints were out of
+  sync.
+
+* **Are there any tests for feature enablement/disablement?**
+  There are unit tests covering kube-proxy with and without the EndpointSlice
+  functionality enabled.
+
+### Rollout, Upgrade and Rollback Planning
+
+* **How can a rollout fail? Can it impact already running workloads?**
+  The biggest risk comes from enabling EndpointSlice functionality as part of an
+  upgrade. The controller needs to be enabled before kube-proxy to ensure it has
+  sufficient time to create EndpointSlices for all endpoints in the cluster. If
+  kube-proxy is started before then and configured to read from EndpointSlices,
+  only the endpoints that have been represented with EndpointSlices at that
+  point in time will be accessible from that Node.
+
+* **What specific metrics should inform a rollback?**
+  It's unlikely that the EndpointSlice controller or API would need to be rolled
+  back as they are additive features. A rollback might be necessary if enabling
+  the EndpointSlice feature gate on kube-controller-manager or kube-apiserver
+  significantly increased the CPU or memory utilization.
+
+  For kube-proxy, a rollback may be necessary if a significant increase in
+  network_programming_duration_seconds is observed. Alternatively, if
+  sync_proxy_rules_endpoint_changes_pending is consistently higher than usual,
+  it may indicate that kube-proxy has fallen behind and a rollback should be
+  considered.
+
+* **Were upgrade and rollback tested? Was upgrade->downgrade->upgrade path tested?**
+  This has been manually tested on a variety of e2e clusters by manually
+  enabling or disabling the feature gate and/or API for api-server,
+  controller-manager, and kube-proxy. These tests showed that transitioning
+  between config states on these components works well for this feature.
+
+* **Is the rollout accompanied by any deprecations and/or removals of features,
+  APIs, fields of API types, flags, etc.?**
+  No.
+
+### Monitoring requirements
+
+* **How can an operator determine if the feature is in use by workloads?**
+  There are a variety of metrics that indicate the quantity and efficiency of
+  EndpointSlices in the cluster. These include:
+  - endpoint_slice_controller/endpoints_added_per_sync
+  - endpoint_slice_controller/endpoints_removed_per_sync
+  - endpoint_slice_controller/endpoints_desired
+  - endpoint_slice_controller/num_endpoint_slices
+  - endpoint_slice_controller/desired_endpoint_slices
+  - endpoint_slice_controller/changes
+
+* **What are the SLIs (Service Level Indicators) an operator can use to
+  determine the health of the service?**
+  - [x] Metrics
+    - Metric name: [network_programming_duration_seconds][]
+    - Components exposing the metric: This requires cooperation between the
+      EndpointSlice controller and kube-proxy. The metric itself is exposed by
+      kube-proxy. This indicates how long it takes for proxy rules to be updated
+      after a Kubernetes resource changes.
+
+* **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
+  <!-- TODO(robscott): Revisit this suggestion -->
+  The network_programming_duration_seconds metric should be under 60 at least
+  95% of the time.
+
+* **Are there any missing metrics that would be useful to have to improve
+  observability if this feature?**
+  Since this is a networking feature, it would be helpful to have more metrics
+  covering things like error rates. Unfortunately request errors can be caused
+  by a wide variety of things so it would likely be a very noisy metric.
+
+### Dependencies
+
+* **Does this feature depend on any specific services running in the cluster?**
+  Enabling the EndpointSliceProxying feature gate on kube-proxy is dependent
+  on the EndpointSlice feature gate being enabled on kube-controller-manager
+  and kube-apiserver. This feature does not depend on any additional services.
+
+### Scalability
+
+
+* **Will enabling / using this feature result in any new API calls?**
+  Enabling the EndpointSlice controller will result in significant numbers of
+  write (create, update, delete) requests to the EndpointSlice API. The
+  throughput will depend on the number of EndpointSlices required and the
+  frequency with which they'll be updated.
+
+  Each EndpointSlice can store up to 100 endpoints by default. If most Services
+  in a cluster have less than 100 endpoints, the load from the EndpointSlice
+  controller will be similar to the Endpoints controller. If many Services have
+  more than 100 endpoints, more EndpointSlices will be required and therefore
+  additional write requests will be sent to the API.
+
+  The frequency that EndpointSlices are updated depends on how frequently
+  Services or their endpoints (typically Pods) are updated. Frequent Pod
+  replacement will result in frequent EndpointSlice updates - similar to the
+  behavior of the Endpoints controller.
+
+  Enabling the EndpointSliceProxying feature gate for kube-proxy will result in
+  changes to read API calls. Instead of watching Endpoints resources, kube-proxy
+  will watch EndpointSlices. This should result in significant decreases in
+  bandwidth for large clusters with large Services.
+
+* **Will enabling / using this feature result in introducing new API types?**
+  - API type: EndpointSlice
+  - Supported number of objects per cluster: ~10,000
+  - Supported number of objects per namespace: ~500
+
+  EndpointSlices have been scale tested up to ~10k total slices in a cluster and
+  ~500 total slices in a Namespace. In practice, these numbers can likely be
+  safely exceeded. As a general rule, larger Services place more load on the
+  controller than more smaller Services with the same total number of endpoints.
+  More testing should be done to determine more precise numbers here.
+
+* **Will enabling / using this feature result in any new calls to cloud
+  provider?**
+  No.
+
+* **Will enabling / using this feature result in increasing size or count
+  of the existing API objects?**
+  No.
+
+* **Will enabling / using this feature result in increasing time taken by any
+  operations covered by [existing SLIs/SLOs][]?**
+  No.
+
+* **Will enabling / using this feature result in non-negligible increase of
+  resource usage (CPU, RAM, disk, IO, ...) in any components?**
+  Enabling the EndpointSlice controller will result in slight increases of CPU
+  and RAM for kube-controller-manager. This will increase with the number of
+  EndpointSlices and frequency of updates. Enabling the EndpointSlice
+  functionality in kube-proxy will result in slight decreases to CPU and RAM
+  utilization, becoming increasingly significant at scale.
+
+### Troubleshooting
+* **How does this feature react if the API server and/or etcd is unavailable?**
+  This would inherit the behavior of kube-controller-manager and kube-proxy.
+  There is nothing in this feature that would make these components more or less
+  resilient.
+
+* **What are other known failure modes?**
+  - EndpointSlice controller is not creating EndpointSlices.
+    - Detection: If endpoint_slice_controller/num_endpoint_slices is 0 or
+      completely missing.
+    - Diagnostics: The EndpointSlice controller will have helpful log messages
+      in the kube-controller manager logs.
+    - Testing: This would be covered by any kube-proxy tests covering an empty
+      state.
+
+* **What steps should be taken if SLOs are not being met to determine the problem?**
+  Review the EndpointSlice controller and kube-proxy logs for any error
+  messages.
+
+[supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
+[existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
+[network_programming_duration_seconds]: https://github.com/kubernetes/community/blob/master/sig-scalability/slos/network_programming_latency.md
+
+## Implementation History
+
+- Alpha: 1.16
+- Beta (disabled by default): 1.17
+- Beta (controller enabled by default): 1.18
+
 ## Alternatives
 
 1. increase the etcd size limits
@@ -637,19 +878,41 @@ address types.
 
 - #### Why not pursue the alternatives?
 
-In order to fulfill the goal of this proposal, without redesigning the Core/V1 Endpoints API, all items listed in the alternatives section are required. Item #1 increase maximum endpoints limitation by increasing the object size limit. This may bring other performance/scalability implications. Item #2 and #3 can reduce transmission overhead but sacrificed endpoint update latency. Item #4 can further reduce transmission overhead, however it is a big change to the existing API machinery. 
+In order to fulfill the goal of this proposal, without redesigning the Core/V1
+Endpoints API, all items listed in the alternatives section are required. Item
+#1 increase maximum endpoints limitation by increasing the object size limit.
+This may bring other performance/scalability implications. Item #2 and #3 can
+reduce transmission overhead but sacrificed endpoint update latency. Item #4 can
+further reduce transmission overhead, however it is a big change to the existing
+API machinery.
 
-In summary, each of the items can only achieve incremental gain to some extent. Compared to this proposal, the combined effort would be equal or more while achieving less performance improvements. 
+In summary, each of the items can only achieve incremental gain to some extent.
+Compared to this proposal, the combined effort would be equal or more while
+achieving less performance improvements.
 
-In addition, the EndpointSlice API is capable to express endpoint subsetting, which is the natural next step for improving k8s service endpoint scalability.      
+In addition, the EndpointSlice API is capable to express endpoint subsetting,
+which is the natural next step for improving k8s service endpoint scalability.
+
 
 - #### Why only include up to 100 endpoints in one EndpointSlice object? Why not 1 endpoint? Why not 1000 endpoints?
 
-Based on the data collected from user clusters, vast majority (> 99%) of the k8s services have less than 100 endpoints. For small services, EndpointSlice API will make no difference. If the MaxEndpointsPerSlice is too small (e.g. 1 endpoint per EndpointSlice), controller loses capability to batch updates, hence causing worse write amplification on service creation/deletion and scale up/down. Etcd write RPS is significant limiting factor.
+Based on the data collected from user clusters, vast majority (> 99%) of the k8s
+services have less than 100 endpoints. For small services, EndpointSlice API
+will make no difference. If the MaxEndpointsPerSlice is too small (e.g. 1
+endpoint per EndpointSlice), controller loses capability to batch updates, hence
+causing worse write amplification on service creation/deletion and scale
+up/down. Etcd write RPS is significant limiting factor.
 
-- #### Why do we have a condition struct for each endpoint? 
+- #### Why do we have a condition struct for each endpoint?
 
-The current Endpoints API only includes a boolean state (Ready vs. NotReady) on individual endpoint. However, according to pod life cycle, there are more states (e.g. Graceful Termination, ContainerReary). In order to represent additional states other than Ready/NotReady,  a status structure is included for each endpoint. More condition types can be added in the future without compatibility disruptions. As more conditions are added, different consumer (e.g. different kube-proxy implementations) will have the option to evaluate the additional conditions. 
+The current Endpoints API only includes a boolean state (Ready vs. NotReady) on
+individual endpoint. However, according to pod life cycle, there are more states
+(e.g. Graceful Termination, ContainerReary). In order to represent additional
+states other than Ready/NotReady,  a status structure is included for each
+endpoint. More condition types can be added in the future without compatibility
+disruptions. As more conditions are added, different consumer (e.g. different
+kube-proxy implementations) will have the option to evaluate the additional
+conditions.
 
 - #### Why not use a CRD?
 
