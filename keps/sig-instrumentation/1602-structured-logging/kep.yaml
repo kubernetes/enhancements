@@ -16,6 +16,8 @@ reviewers:
 approvers:
   - "@brancz"
   - "@thockin"
+prr-approvers:
+  - "@wojtek-t"
 see-also:
 replaces:
 stage: alpha
