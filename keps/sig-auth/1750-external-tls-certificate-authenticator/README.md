@@ -204,7 +204,7 @@ dependencies) on their workstation.
 ### Configuration
 
 Configuration of the both components (authentication provider and external
-plugin) is specified in the kubeconfig files as part of the user fields. The
+plugin) can be specified in the kubeconfig files as part of the user fields. The
 authentication provider is responsible for reading the configuration from the
 kubeconfig file and exposing the configuration parameters to the external
 plugin.
@@ -212,11 +212,11 @@ plugin.
 The internal authentication provider requires only a single parameter, the
 address of an endpoint at which the external plugin can be reached `pathSocket`.
 
-The remaining of the parameters are specific for the external plugin and
-protocol in use. In order to increase flexibility of the solution and support
-for multiple protocols, the authentication provider will pass all the
-configuration parameters specified in the kubeconfig file to the external plugin
-in a form of string-to-string mapping (key-value pairs).
+The remaining of the parameters are optional and can be specific for the
+external plugin and protocol in use. In order to increase flexibility of the
+solution and support for multiple protocols, the authentication provider will
+pass all the configuration parameters specified in the kubeconfig file to the
+external plugin in a form of string-to-string mapping (key-value pairs).
 
 In case of the PKCS#11 protocol, the following parameters are in use:
 
@@ -496,9 +496,15 @@ The external plugin may require configuration with some protocol specific
 parameters, for example the path to a library implementing the communication
 with an HMS, an identifier of HMS unit, etc. This communication could be stored
 and loaded outside of the kubectl/client-go process, directly by the external
-provider. However, that would require adding additional logic to the external
-provider, which is already available within kubectl/client-go, as well as, would
-spread configuration of authentication process into multiple files.
+provider or stored in kubeconfig and forwarded by kubectl/client-go in each
+request.
+
+It has been decided to support both options of providing the configuration. The
+optional, protocol specific parameters are placed as children of
+`auth-provider/config` (at the same level as `pathSocket`), to allow
+configuration with `kubectl config set-credentials --auth-provider-arg`
+parameter. The decision regarding precedence of configuration sources within the
+external signer plugin is left to its developers.
 
 ### FIDO U2F
 
