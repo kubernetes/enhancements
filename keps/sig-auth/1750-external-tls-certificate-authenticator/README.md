@@ -253,9 +253,9 @@ initiates the communication by sending a request for performing an operation
 (obtaining a client certificate or signing) to the external plugin and the
 external plugin replies by sending a response with a product of the respective
 operation (a client certificate or signature). Additionally, the external plugin
-can send user prompt messages as intermediate responses, for example to inform
+can send user prompt messages as intermediate responses, for example, to inform
 the user that an action has to be performed before the sign operation can take
-place).
+place.
 
 All messages (requests, as well as, intermediate and final responses) are
 serialized using Protocol Buffers in a format specified bellow.
