@@ -1,0 +1,25 @@
+---
+title: Simplified version of TopologyManager in kube-scheduler
+kep-number: 2044
+authors:
+  - "@AlexeyPerevalov"
+owning-sig: sig-scheduling
+participating-sigs:
+reviewers:
+  - "@ahg-g"
+  - "@huang-wei"
+  - "@derekwaynecarr"
+approvers:
+  - "@ahg-g"
+  - "@huang-wei"
+editor: TBD
+milestone:
+  alpha: "v1.21"
+  beta: "v1.22"
+  stable: "v1.23"
+creation-date: 2020-05-28
+last-updated: 2020-05-28
+status: implementable
+see-also:
+  - "keps/sig-node/2051-provisioning-resources-with-numa-topology/README.md"
+---
