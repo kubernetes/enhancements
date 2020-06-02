@@ -9,12 +9,19 @@ participating-sigs:
   - sig-architecture
   - wg-component-standard
 reviewers:
-  - TBD
+  - sttts
+  - stealthybox
+  - liggitt
+  - rosti
+  - neolit123
+  - obitech
 approvers:
-  - TBD
+  - sttts
+  - stealthybox
+  - liggitt
 editor: TBD
 creation-date: 2020-01-08
-last-updated: 2020-01-10
+last-updated: 2020-06-02
 status: provisional
 ---
 
@@ -89,6 +96,12 @@ some values are required to be unique to each instance. To date, we have held
 off migrating these parameters to existing ComponentConfig APIs, because we lack
 a decision on how to consistently handle them.
 
+This KEP proposes that components use a separate, instance-specific Kind,
+to clearly identify and separate parameters that are instance-specific from
+parameters that are sharable. It also proposes some mitigations in the event
+that the initial categorization is incorrect, e.g. we discover an
+instance-specific use-case for a sharable field.
+
 The primary goal of this KEP is to make and codify a decision, so that we can
 move forward with ComponentConfig implementation.
 
@@ -137,7 +150,7 @@ See also issue [#61647](https://github.com/kubernetes/kubernetes/issues/61647).
 ### Non-Goals
 
 - Provide a standard way to continue specifying configuration on the
-  command-line. TODO: maybe?? might be important for some cases... pods w/ templates.
+  command-line.
 - Redesign APIs/refactor the existing set of parameters. This is about providing
   a clear migration path for all classes of parameters.
 - Eliminate instance-specific config parameters altogether. This is a special
@@ -147,81 +160,45 @@ See also issue [#61647](https://github.com/kubernetes/kubernetes/issues/61647).
 
 ## Proposal
 
-This KEP has two major parts. First, a simple solution to cleanly separate
-instance-specific parameters from shareable parameters so that the latter may
-continue to be shared via a single ConfigMap. Second, provide examples of how
-to configure instance-specific parameters in the new model for kubelet and
-kube-proxy, which are the two components currently capable of sharing parameters
-from the same ConfigMap.
+Taking the Kubelet as an example, there are three categories of fields
+(identified by @liggitt):
+1. clearly instance-specific (e.g. `--node-ip`, `--provider-id`,
+   `--hostname-override`)
+2. possibly instance-specific (e.g. `--bind-address`, `--root-dir`)
+3. highly unlikely to be instance-specific (e.g. cloud provider, node lease
+   duration)
 
-### Separate config object for instance-specific config
+Today, the "sharable" configuration Kinds may contain (2) or (3); in Kubelet
+we have been careful to keep (1) out of the configuration schema (as mentioned
+above).
 
-The proposal is this: Add a new Kind for instance-specific config, and put
-instance-specific parameters in that object.
+This KEP proposes that components use a separate, instance-specific Kind,
+to clearly identify and separate parameters that are instance-specific from
+parameters that are sharable. It also proposes that components have a way
+to define the same field in both instance-specific and sharable Kinds, and
+define a merge such that the instance-specific field overrides the sharable
+field. This gives us some flexibility if we miscategorize fields, or discover
+an instance-specific use-case for a sharable field.
 
-This is relatively simple and isolates the parameters so that they can be
-dealt with separately. ComponentConfig files containing only sharable parameters
-can continue to be shared via a single ConfigMap. Files containing only
-instance-specific parameters can be provided to components via other means,
-such as the node startup scripts or an init container that inserts values from
-the Pod's Downward API.
+### Separate Kind for instance-specific config
 
-### Why not just keep using flags for instance-specific parameters?
+First, add a new instance-specific ComponentConfig Kind in each component's
+config API. This gives us a clear structure to separate instance-specific and
+sharable fields. This KEP proposes a new flag, `--instance-config`, for this
+new Kind.
 
-Flags have various problems, outlined in the [Versioned Component Configuration Files](https://docs.google.com/document/d/1FdaEJUEh091qf5B98HM6_8MS764iXrxxigNIdwHYW9c)
-doc.
+ComponentConfig files containing only sharable parameters can continue to be
+shared via a single ConfigMap. Files containing only instance-specific
+parameters can be provided to components via other means, such as the node
+startup scripts or an init container that inserts values from the Pod's Downward
+API.
 
-Leaving some parameters as flags while the rest are exposed via ComponentConfig
-results in an inconsistent API surface, and an inconsistent API versioning
-policy. Why fix only part of the problem when we can fix the whole thing?
+### Case-by-case merge if fields are miscategorized
 
-### Why not just auto-detect?
+Second, allow instance-specific configs to override shared config when the same
+field is specified in both.
 
-One alternative that has been proposed in the past is to find a way to
-auto-detect values of instance-specific parameters and simply eliminate them
-from the configuration workflow. This is a great idea in theory, because it
-solves the problem by removing work for users, but it may be difficult in
-practice. For example, on a machine with multiple network cards, which IP should
-the kubelet use?
-
-Implementing the two-object approach does not prevent us from finding ways to
-auto-detect instance specific config in the future. It is worth noting that the
-_possibility_ of someday being able to auto-detect these has led to some
-hesitation to make a firm decision today. We have delayed for too long already,
-and a firm decision is needed to move forward.
-
-### Risks and Mitigations
-
-This creates an additional bucket for config parameters. We must be vigilant
-that only parameters that are truly instance-specific are added to the
-instance-specific Kind. We can provide warnings to developers via comments
-and tests to deter adding parameters to the instance-specific Kind that should
-instead be in the sharable Kind.
-
-For users deploying Pod templates, this solution can make the template more
-verbose. In the future, we can explore more elegant ways of generating files
-with instance-specific parameters correctly substituted. This proposal argues
-that the extra verbosity is worth the benefit of a consistent, versioned API for
-configuring core components.
-
-## Design Details
-
-ComponentConfig APIs are currently defined as a separate API group for each
-component, usually containing a single top-level Kind for configuring that
-component. The naming convention for the API group is `{component}.config.k8s.io`,
-and the convention for the Kind is `{Component}Configuration`. This KEP proposes
-that the naming convention for the new Kind be `{Component}InstanceConfiguration`.
-
-The canonical flag for providing a ComponentConfig file to a component is
-`--config`. This KEP proposes that the canonical flag for providing an
-instance-specific config file be `--instance-config`, and that the
-instance-specific object not initially be permitted as part of a yaml stream
-in the `--config` file (and vice-versa). This is for the sake of a simple
-implementation and can be enabled in the future, if we decide it is useful.
-
-As with sharable ComponentConfig parameters, command line flags for
-instance-specific parameters should continue to function and take precedence
-over values from the config file so that backwards compatibility is maintained.
+Additional implementation details are included in the Design Details section.
 
 ### Kube-proxy Example
 
@@ -305,7 +282,7 @@ spec:
         - bash -c
         args:
         - cat << EOF > /etc/config/kube-proxy-instance.yaml
-          kind: KubeProxyInstanceConfiguration
+          kind: InstanceConfiguration
           apiVersion: kubeproxy.config.k8s.io/v1alpha1
           hostnameOverride: ${NODE_NAME}
           EOF
@@ -359,6 +336,90 @@ When the Dynamic Kubelet Config feature is enabled, the Kubelet only replaces
 the values supplied to `--config` when consuming a remote configuration. Thus,
 the instance-specific parameters would not interfere with sharable parameters
 in this approach.
+
+### Alternative: Define a general merge semantic for ComponentConfig
+
+Prior discussions included the idea to define a general merge option instead,
+which would have pushed the field categorization decision to the user by
+allowing them to specify arbitrary patches on top of the config (for example,
+with repeated invocations of a `--config` flag). This is the most flexible
+solution, but also the most open-ended, and provides the least structural
+guidance to users.
+
+While this KEP recognizes the utility of components that can merge configuration
+and is open to future development in this direction, it proposes that we focus
+on a clear, near-term solution for this ComponentConfig use case, rather than
+attempt to define and standardize a way of merging or generating config outside
+of kube-apiserver, where many competing solutions, such as jsonnet, kustomize,
+etc, already exist, and significant debate is likely required. The priority of
+this KEP is to unblock ComponentConfig so that components can move to versioned
+APIs. Improvements can be made in future API versions.
+
+
+### Why not just keep using flags for instance-specific parameters?
+
+Flags have various problems, outlined in the
+[Versioned Component Configuration Files](https://docs.google.com/document/d/1FdaEJUEh091qf5B98HM6_8MS764iXrxxigNIdwHYW9c)
+doc.
+
+Leaving some parameters as flags while the rest are exposed via ComponentConfig
+results in an inconsistent API surface, and an inconsistent API versioning
+policy. Why fix only part of the problem when we can fix the whole thing?
+
+### Why not just auto-detect?
+
+One alternative that has been proposed in the past is to find a way to
+auto-detect values of instance-specific parameters and simply eliminate them
+from the configuration workflow. This is a great idea in theory, because it
+solves the problem by removing work for users, but it may be difficult in
+practice. For example, on a machine with multiple network cards, which IP should
+the kubelet use?
+
+Implementing the two-object approach does not prevent us from finding ways to
+auto-detect instance specific config in the future. It is worth noting that the
+_possibility_ of someday being able to auto-detect these has led to some
+hesitation to make a firm decision today. We have delayed for too long already,
+and a firm decision is needed to move forward.
+
+### Risks and Mitigations
+
+One risk is that fields get miscategorized. We mitigate this risk by providing a
+way to define the field in both places, where instance-specific overrides
+sharable, as described in the proposal and below design details.
+
+For users deploying Pod templates, this solution can make the template more
+verbose. In the future, we can explore more elegant ways of generating files
+with instance-specific parameters correctly substituted. This proposal argues
+that the extra verbosity is worth the benefit of a consistent, versioned API for
+configuring core components.
+
+## Design Details
+
+TODO:
+- which side gets used at runtime?
+- new naming convention
+- code examples for the merge
+- sketch out the proposed case-by-case merge and see if it would actually be
+  more complicated.
+
+ComponentConfig APIs are currently defined as a separate API group for each
+component, usually containing a single top-level Kind for configuring that
+component. The naming convention for the API group is `{component}.config.k8s.io`,
+and the convention for the Kind is `{Component}Configuration`. This KEP proposes
+that the naming convention for the new Kind be `{Component}InstanceConfiguration`.
+
+The canonical flag for providing a ComponentConfig file to a component is
+`--config`. This KEP proposes that the canonical flag for providing an
+instance-specific config file be `--instance-config`, and that the
+instance-specific object not initially be permitted as part of a yaml stream
+in the `--config` file (and vice-versa). This is for the sake of a simple
+implementation and can be enabled in the future, if we decide it is useful.
+
+As with sharable ComponentConfig parameters, command line flags for
+instance-specific parameters should continue to function and take precedence
+over values from the config file so that backwards compatibility is maintained.
+
+
 
 ### Test Plan
 
