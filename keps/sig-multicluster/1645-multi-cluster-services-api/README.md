@@ -102,7 +102,6 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Constraints and Conflict Resolution](#constraints-and-conflict-resolution)
   - [Global Properties](#global-properties)
     - [Service Port](#service-port)
-  - [Cluster Level Properties](#cluster-level-properties)
     - [Session Affinity](#session-affinity)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
@@ -267,7 +266,7 @@ supercluster.
 Another CRD called `ServiceImport` will be introduced to act as the in-cluster
 representation of a multi-cluster service in each importing cluster. This is
 analogous to the traditional `Service` type in Kubernetes. Importing clusters
-will have a coresponding `ServiceImport` for each uniquely named `Service` that
+will have a corresponding `ServiceImport` for each uniquely named `Service` that
 has been exported within the supercluster, referenced by namespaced name.
 `ServiceImport` resources will be managed by the MCS implementation's
 mcs-controller.
@@ -328,7 +327,12 @@ aware routing, but that API is currently in flux. As a result this proposal is
 only suited to same-region multi-cluster services until the topology API
 progresses.
 
+As the plan for dual stack support is finalized, the Multi-Cluster Services API
+will follow dual stack Service design. Until then, dual stack will not be
+supported.
+
 [Service Topology API]: https://kubernetes.io/docs/concepts/services-networking/service-topology/
+
 
 ### Risks and Mitigations
 
@@ -393,20 +397,16 @@ type ServiceExportStatus struct {
 type ServiceExportConditionType string
 
 const {
-      // ServiceExportExported means that the service referenced by this
-      // service export has been synced to all clusters in the supercluster
-      ServiceExportExported ServiceExportConditionType = "Exported"
+      // ServiceExportReady means that the service referenced by this
+      // service export has been recognized as valid by an mcs-controller.
+      ServiceExportReady ServiceExportConditionType = "Ready"
       // ServiceExportInvalid means that the service marked for export has an
       // unexportable service type (ExternalName)
       ServiceExportInvalid ServiceExportConditionType = "InvalidServiceType"
-      // ServiceExportHeadless describes the headlessness of the supercluster
-      // service. Only required to be set if at least one cluster (including
-      // the local one) has a matching headless service marked for export.
-      // "True" when the corresponding ServiceImport is headless. "False" if
-      // at least one matching service is not headless.
-      // If any exported services disagree, cluster names and respective
-      // headlessness should be listed in the condition message.
-      ServiceExportHeadless ServiceExportConditionType = "Headless"
+      // ServiceExportConflict means that there is a conflict between two
+      // exports for the same Service. When "True", the condition message
+      // should contain enough information to diagnose the conflict.
+      ServiceExportConflict ServiceExportConditionType = "Conflict"
 }
 
 // ServiceExportCondition contains details for the current condition of this
@@ -476,12 +476,12 @@ unless there is a clear use case.
 ### Importing Services
 
 To consume a supercluster service, users will use the domain name associated
-with their `ServiceExport`. When the mcs-controller sees a `ServiceExport`, a
-`ServiceImport` will be introduced in each cluster to represent the imported
-service. Users are primarily expected to consume the service via domain name and
-supercluster VIP, but the `ServiceImport` may be used for imported service
-discovery via the K8s API and will be used internally as the source of routing
-and DNS configuration.
+with their mutli-cluster service (see [DNS](#dns)). When the mcs-controller sees
+a `ServiceExport`, a `ServiceImport` will be introduced in each cluster to
+represent the imported service. Users are primarily expected to consume the
+service via domain name and supercluster VIP, but the `ServiceImport` may be
+used for imported service discovery via the K8s API and will be used internally
+as the source of routing and DNS configuration.
 
 A `ServiceImport` is a service that may have endpoints in other clusters.
 This includes 3 scenarios:
@@ -489,20 +489,31 @@ This includes 3 scenarios:
 1. This service has endpoints in other cluster(s) and in this cluster
 1. This service is running entirely in this cluster, but is exported to other cluster(s) as well
 
+A multi-cluster service be imported only by clusters in which the service's
+namespace exists. All clusters containing the service's namespace will import
+the service.
+
 For each exported service, one `ServiceExport` will exist in each cluster that
-runs the service. The mcs-controller will create and maintain a derived
-`ServiceImport` in each cluster within the supercluster (see: [constraints and
-conflict resolution](#constraints-and-conflict-resolution)). If all
-`ServiceExport` instances are deleted, each `ServiceImport` will also be deleted
-from all clusters.
+exports the service. The mcs-controller will create and maintain a derived
+`ServiceImport` in each cluster within the supercluster so long as the service's
+namespace exists (see: [constraints and conflict
+resolution](#constraints-and-conflict-resolution)). If all `ServiceExport`
+instances are deleted, each `ServiceImport` will also be deleted from all
+clusters.
 
 Since a given `ServiceImport` may be backed by multiple `EndpointSlices`, a
 given `EndpointSlice` will reference its `ServiceImport` using the label
 `multicluster.kubernetes.io/imported-service-name` similarly to how an
-`EndpointSlice` is associated with its `Service` in a single cluster. Each
-imported `EndpointSlice` will also have a
+`EndpointSlice` is associated with its `Service` in a single cluster.
+
+Each imported `EndpointSlice` will also have a
 `multicluster.kubernetes.io/source-cluster` label with the cluster name, a
-registry-scoped unique identifier for the cluster.
+registry-scoped unique identifier for the cluster. The `EndpointSlice`s imported
+for a service are not guaranteed to exactly match the originally exported
+`EndpointSlice`s, but each slice is guaranteed to map only to a single source
+cluster.
+
+The mcs-controller is responsible for managing imported `EndpointSlice`s.
 
 ```golang
 // ServiceImport describes a service imported from clusters in a supercluster.
@@ -605,10 +616,10 @@ The `ServiceImport.Spec.IP` (VIP) can be used to access this service from within
 
 #### Service Types
 
-- `ClusterIP`: This is the the straightforward case most of the proposal
-  assumes. Each `EndpointSlice` associated with the exported service is combined
-  with slices from other clusters to make up the supercluster service. They will
-  be imported to the cluster behind the supercluster IP.
+- `ClusterIP`: This is the straightforward case most of the proposal assumes.
+  Each `EndpointSlice` associated with the exported service is combined with
+  slices from other clusters to make up the supercluster service. They will be
+  imported to the cluster behind the supercluster IP. [Details](#EndpointSlice)
 - `ClusterIP: none` (Headless): Headless services are supported and will be
   imported with a `ServiceImport` and `EndpointSlices` like any other
   `ClusterIP` service, but the way that they are exposed depends on the
@@ -722,52 +733,37 @@ that cluster’s lease expires.
 
 Exported services are derived from the properties of each component service and
 their respective endpoints. However, some properties combine across exports
-better than others. They generally fall into two categories: global properties,
-and cluster-level properties.
+better than others.
 
 ### Global Properties
 
 These properties describe how the service should be consumed as a whole. They
 directly impact service consumption and must be consistent across all child
 services. If these properties are out of sync for a subset of exported services,
-there is no clear way to determine how a service should be accessed. **If any
-global properties have conflicts that can not be resolved, a condition will be
-set on the `ServiceExport` with a description of the conflict. The service will
-not be synced, and an error will be set on the status of each affected
-`ServiceExport` and any previously-derived `ServiceImports` will be deleted
-from each cluster in the supercluster.**
+there is no clear way to determine how a service should be accessed.
+
+Conflict resolution policy: **If any properties have conflicting values that can
+not simply be merged, a condition will be set on the `ServiceExport` with a
+description of the conflict. The conflict will be resolved by assigning
+precendence based on each `ServiceExport`'s `creationTimestamp`, from oldest to
+newest.**
 
 
 #### Service Port
 
 A derived service will be accessible with the supercluster IP at the ports
 dictated by child services. If the external properties of service ports for a
-set of exported services don’t match, we won’t know which port is the correct
-choice for a service. For example, if two exported services use different ports
-with the name “http”, which port is correct? What if a service uses the same
-port with different names? As long as there are no conflicts (different ports
-with the same name), the supercluster service will expose the superset of
-service ports declared on its component services. If a user wants to change a
-service port in a conflicting way, we recommend deploying a new service or
-making the change in non-conflicting phases.
-
-
-### Cluster Level Properties
-
-These properties are export-specific and pertain only to the subset of endpoints
-backed by a single instance of each exported service. They may be safely carried
-throughout the supercluster without risk of conflict. We propagate these
-properties forward with no attempt to merge or alter them.
-
+set of exported services don’t match, the supercluster service will expose the
+union of service ports declared on its constituent services. Should a port name
+be used for multiple non-identical (`port`, `protocol`, `appProtocol`) service
+ports by different constituent services, the conflict resolution policy will
+determine which values are used by the derived service.
 
 #### Session Affinity
 
-Session affinity affects a service as a whole for a given consumer. What would
-it mean for a service to have e.g. client IP session affinity set for half its
-backends? Would sessions only be sticky for those backends, or would there be no
-affinity? If sessions are selectively sticky, we’d expect to see traffic to skew
-toward the sticky subset of endpoints. That said, there’s nothing preventing us
-from applying affinity on a per-slice basis so we will carry it forward.
+Session affinity affects a service as a whole for a given consumer. The derived
+service's session affinity will be decided according to the conflict resolution
+policy.
 
 ### Test Plan
 
