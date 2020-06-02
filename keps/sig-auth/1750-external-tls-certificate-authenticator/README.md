@@ -265,14 +265,14 @@ serialized using Protocol Buffers in a format specified bellow.
 ##### Certificate request
 
 The authentication provider sends a request message of `CertificateRequest` kind
-containing the cluster name and optionally the plugin configuration parameters.
+containing the cluster information and optionally the plugin configuration parameters.
 
 ```go
 message CertificateRequest {
     // Version of the external signer plugin API.
     Version version = 1;
-    // Name of the Kubernetes cluster.
-    string clusterName = 2;
+    // Cluster information.
+    Cluster cluster = 2;
     // Configuration of the external signer plugin. This configuration is specific
     // to the external signer, but stored in KUBECONFIG for the user's convenience
     //to allow multiplexing a single external signer for several K8s users.
@@ -308,7 +308,7 @@ The final response containing a client certificate.
 The authentication provider sends a request message of `SignRequest` kind
 containing:
 
-- the cluster name,
+- the cluster information,
 - optional plugin configuration parameters,
 - the digest,
 - protocol specific signer options.
@@ -317,8 +317,8 @@ containing:
 message SignatureRequest {
     // Version of the external signer plugin API.
     Version version = 1;
-    // Name of the Kubernetes cluster.
-    string clusterName = 2;
+    // Cluster information.
+    Cluster cluster = 2;
     // Configuration of the external signer plugin (HSM protocol specific).
     map<string, string> configuration = 3;
     // Digest to be signed.
