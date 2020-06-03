@@ -39,11 +39,11 @@ milestone:
 
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
-feature-gate:
-  name: MyFeature
-  components:
-    - kube-apiserver
-    - kube-controller-manager
+feature-gates:
+  - name: MyFeature
+    components:
+      - kube-apiserver
+      - kube-controller-manager
 disable-supported: true
 
 # The following PRR answers are required at beta release
