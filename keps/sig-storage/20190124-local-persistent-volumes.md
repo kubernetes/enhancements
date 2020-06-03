@@ -764,7 +764,7 @@ enables delaying PVC binding until a pod is scheduled. This addresses the limita
 ### K8s 1.10: Beta
 
 * `NodeAffinity` beta field was added to PersistentVolume, and the alpha annotation was deprecated.
-    * A [one-time job](https://github.com/kubernetes-sigs/sig-storage-local-static-provisioner/blob/master/utils/update-pv-to-beta)
+    * A [one-time job](https://github.com/kubernetes-sigs/sig-storage-local-static-provisioner/tree/v2.3.0/utils/update-pv-to-beta)
 was added to help users migrate from the alpha annotation to the beta field.
 * Raw block alpha support was added specified by PV.volumeMode = `Block`.
 
