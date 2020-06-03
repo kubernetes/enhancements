@@ -6,8 +6,10 @@ owning-sig: sig-autoscaling
 reviewers:
   - "@josephburnett"
   - "@mwielgus"
+  - "@gjtempleton"
 approvers:
   - "@josephburnett"
+  - "@gjtempleton"
 creation-date: 2020-02-18
 last-updated: 2020-02-18
 status: implementable
