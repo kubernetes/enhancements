@@ -26,10 +26,10 @@ milestone:
   alpha: "v1.4"
   beta: "v1.8"
   stable: "v1.19"
-feature-gate:
-  name: RotateKubeletClientCertificate
-  components:
-    - kubelet
+feature-gates:
+  - name: RotateKubeletClientCertificate
+    components:
+      - kubelet
 disable-supported: true
 metrics:
   - kubelet_certificate_manager_client_expiration_seconds

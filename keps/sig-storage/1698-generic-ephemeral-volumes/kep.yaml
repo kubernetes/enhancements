@@ -17,12 +17,12 @@ milestone:
   alpha: "v1.19"
   beta: ""
   stable: ""
-feature-gate:
-  name: GenericEphemeralVolumes
-  components:
-    - kube-apiserver
-    - kube-controller-manager
-    - kubelet
+feature-gates:
+  - name: GenericEphemeralVolumes
+    components:
+      - kube-apiserver
+      - kube-controller-manager
+      - kubelet
 disable-supported: true
 
 # The following PRR answers are required at beta release

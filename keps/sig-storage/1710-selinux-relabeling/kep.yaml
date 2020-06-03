@@ -24,11 +24,11 @@ milestone:
   alpha: "v1.19"
   beta: "v1.20"
   stable: "v1.22"
-feature-gate:
-  name: SELinuxRelabelPolicy
-  components:
-    - kube-apiserver
-    - kubelet
+feature-gates:
+  - name: SELinuxRelabelPolicy
+    components:
+      - kube-apiserver
+      - kubelet
 disable-supported: true
 metrics:
   # TODO: fill at beta

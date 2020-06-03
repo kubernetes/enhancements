@@ -25,11 +25,11 @@ milestone:
   alpha: "v1.16"
   beta: "v1.18"
   stable: "v1.19"
-feature-gate:
-  name: EvenPodsSpread
-  components:
-  - kube-scheduler
-  - kube-apiserver
+feature-gates:
+  - name: EvenPodsSpread
+    components:
+    - kube-scheduler
+    - kube-apiserver
 disable-supported: true
 metrics:
 - plugin_execution_duration_seconds{plugin="PodTopologySpread"}

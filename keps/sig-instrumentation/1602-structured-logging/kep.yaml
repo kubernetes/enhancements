@@ -26,6 +26,6 @@ milestone:
   alpha: "v1.19"
   beta: "v1.20"
   stable: "v1.22"
-feature-gate:
+feature-gates:
 disable-supported: true
 metrics:

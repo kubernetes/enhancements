@@ -19,8 +19,8 @@ milestone:
   alpha: "v1.19"
   beta: "v1.20"
   stable: "v1.22"
-feature-gate:
-  name: DefaultEvenPodsSpread
-  components:
-  - kube-scheduler
+feature-gates:
+  - name: DefaultEvenPodsSpread
+    components:
+    - kube-scheduler
 disable-supported: true
