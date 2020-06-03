@@ -23,8 +23,8 @@ milestone:
   alpha: "v1.18"
   beta: "v1.19"
   stable: "v1.20"
-feature-gate:
-  name: ConfigurableFSGroupPolicy
-  components:
-    - kube-apiserver
-    - kubelet
+feature-gates:
+  - name: ConfigurableFSGroupPolicy
+    components:
+      - kube-apiserver
+      - kubelet

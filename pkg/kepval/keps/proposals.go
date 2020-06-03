@@ -68,9 +68,9 @@ type Proposal struct {
 	LatestMilestone string    `json:"latestMilestone" yaml:"latest-milestone"`
 	Milestone       Milestone `json:"milestone" yaml:"milestone"`
 
-	FeatureGate      FeatureGate `json:"featureGate" yaml:"feature-gate"`
-	DisableSupported bool        `json:"disableSupported" yaml:"disable-supported"`
-	Metrics          []string    `json:"metrics" yaml:"metrics"`
+	FeatureGates     []FeatureGate `json:"featureGates" yaml:"feature-gates"`
+	DisableSupported bool          `json:"disableSupported" yaml:"disable-supported"`
+	Metrics          []string      `json:"metrics" yaml:"metrics"`
 
 	Filename string `json:"-" yaml:"-"`
 	Error    error  `json:"-" yaml:"-"`

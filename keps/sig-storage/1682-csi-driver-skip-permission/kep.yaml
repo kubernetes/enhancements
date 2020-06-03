@@ -25,10 +25,10 @@ milestone:
   beta: "v1.20"
   stable: "v1.21"
 
-feature-gate:
-  name: CSIVolumeSupportFSGroup
-  components:
-    - kube-apiserver
+feature-gates:
+  - name: CSIVolumeSupportFSGroup
+    components:
+      - kube-apiserver
 disable-supported: true
 
 metrics:

@@ -20,11 +20,11 @@ latest-milestone: "v1.19"
 milestone:
   alpha: "v1.15"
   beta: "v1.19"
-feature-gate:
-  name: NonPreemptingPriority
-  components:
-    - kube-apiserver
-    - kube-scheduler
+feature-gates:
+  - name: NonPreemptingPriority
+    components:
+      - kube-apiserver
+      - kube-scheduler
 disable-supported: true
 metrics:
   - pod_preemption_victims

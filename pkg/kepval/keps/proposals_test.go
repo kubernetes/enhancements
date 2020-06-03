@@ -62,11 +62,11 @@ milestone:
   beta: "v1.20"
   stable: "v1.22"
 
-feature-gate:
-  name: MyFeature
-  components:
-    - kube-apiserver
-    - kube-controller-manager
+feature-gates:
+  - name: MyFeature
+    components:
+      - kube-apiserver
+      - kube-controller-manager
 disable-supported: true
 metrics:
   - my_feature_metric
