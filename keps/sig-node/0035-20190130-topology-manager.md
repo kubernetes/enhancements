@@ -413,6 +413,91 @@ _Figure: Topology Manager hint provider registration._
 
 _Figure: Topology Manager fetches affinity from hint providers._
 
+Additionally, we propose an extension to the device plugin interface as a
+"last-level" filter to help influence overall allocation decisions made by the
+`devicemanager`. The diff below shows the proposed changes:
+
+```
+diff --git a/pkg/kubelet/apis/deviceplugin/v1beta1/api.proto b/pkg/kubelet/apis/deviceplugin/v1beta1/api.proto
+index 758da317fe..1e55d9c541 100644
+--- a/pkg/kubelet/apis/deviceplugin/v1beta1/api.proto
++++ b/pkg/kubelet/apis/deviceplugin/v1beta1/api.proto
+@@ -55,6 +55,11 @@ service DevicePlugin {
+    // returns the new list
+    rpc ListAndWatch(Empty) returns (stream ListAndWatchResponse) {}
+
++   // GetPreferredAllocation returns a preferred set of devices to allocate 
++   // from a list of available ones. The resulting preferred allocation is not
++   // guaranteed to be the allocation ultimately performed by the
++   // `devicemanager`. It is only designed to help the `devicemanager` make a
++   //  more informed allocation decision when possible.
++   rpc GetPreferredAllocation(PreferredAllocationRequest) returns (PreferredAllocationResponse) {}
++
+    // Allocate is called during container creation so that the Device
+    // Plugin can run device specific operations and instruct Kubelet
+    // of the steps to make the Device available in the container
+@@ -99,6 +104,31 @@ message PreStartContainerRequest {
+ message PreStartContainerResponse {
+ }
+
++// PreferredAllocationRequest is passed via a call to
++// `GetPreferredAllocation()` at pod admission time. The device plugin should
++// take the list of `available_deviceIDs` and calculate a preferred allocation
++// of size `size` from them, making sure to include the set of devices listed
++// in `must_include_deviceIDs`.
++message PreferredAllocationRequest {
++   repeated string available_deviceIDs = 1;
++   repeated string must_include_deviceIDs = 2;
++   int32 size = 3;
++}
++
++// PreferredAllocationResponse returns a preferred allocation,
++// resulting from a PreferredAllocationRequest.
++message PreferredAllocationResponse {
++   ContainerAllocateRequest preferred_allocation = 1;
++}
++
+ // - Allocate is expected to be called during pod creation since allocation
+ //   failures for any container would result in pod startup failure.
+ // - Allocate allows kubelet to exposes additional artifacts in a pod's
+```
+
+Using this new API call, the `devicemanager` will call out to a plugin at pod
+admission time, asking it for a preferred device allocation of a given size
+from a list of available devices. One call will be made per-container for each
+pod.
+
+The list of available devices passed to the `GetPreferredAllocation()` call
+do not necessarily match the full list of available devices on the system.
+Instead, the `devicemanager` treats the `GetPreferredAllocation()` call as
+a "last-level" filter on the set of devices it has to choose from after taking
+all `TopologyHint` information into consideration. As such, the list of
+available devices passed to this call will already be pre-filtered by the
+topology constraints encoded in the `TopologyHint`.
+
+The preferred allocation is not guaranteed to be the allocation ultimately
+performed by the `devicemanager`. It is only designed to help the
+`devicemanager` make a more informed allocation decision when possible.
+
+When deciding on a preferred allocation, a device plugin will likely take
+internal topology-constraints into consideration, that the `devicemanager` is
+unaware of. A good example of this is the case of allocating pairs of NVIDIA
+GPUs that always include an NVLINK.
+
+On an 8 GPU machine, with a request for 2 GPUs, the best connected pairs by
+NVLINK might be:
+
+```
+{{0,3}, {1,2}, {4,7}, {5,6}}
+```
+
+Using `GetPreferredAllocation()` the NVIDIA device plugin is able to forward
+one of these preferred allocations to the device manager if the appropriate set
+of devices are still available. Without this extra bit of information, the
+`devicemanager` would end up picking GPUs at random from the list of GPUs
+available after filtering by `TopologyHint`. This API, allows it to ultimately
+perform a much better allocation, with minimal cost.
+
 # Graduation Criteria
 
 ## Alpha (v1.16) [COMPLETED]
