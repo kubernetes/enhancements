@@ -1,0 +1,27 @@
+title: Scheduler Extender
+kep-number: 1819
+authors:
+  - "@ravigadde"
+owning-sig: sig-scheduling
+status: implemented
+creation-date: 2020-05-28
+reviewers:
+  - "@ahg-g"
+  - "@Huang-Wei"
+approvers:
+  - "@ahg-g"
+  - "@Huang-Wei"
+prr-approvers:
+  - "@wojtek-t"
+replaces:
+  - "https://github.com/cofyc/community/blob/master/contributors/design-proposals/scheduling/scheduler_extender.md"
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: stable
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.19"
+
+disable-supported: true
