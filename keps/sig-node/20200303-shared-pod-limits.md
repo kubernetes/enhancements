@@ -1,5 +1,5 @@
 ---
-title: shared-container-limits-in-burstable-pod
+title: pod-level-resource-limits
 authors:
   - "@liorokman"
 owning-sig: sig-node
@@ -9,11 +9,11 @@ reviewers:
 approvers:
   - TBD
 creation-date: 2020-03-03
-last-updated: 2020-18-03
+last-updated: 2020-06-04
 status: proposed
 ---
 
-# Shared Container Limits in Burstable Pods
+# Pod-Level Resource Limits
 
 ## Table of Contents
 
@@ -24,11 +24,27 @@ status: proposed
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
+  - [Memory Reuse Across cgroups](#memory-reuse-across-cgroups)
   - [User Stories](#user-stories)
     - [Story 1](#story-1)
   - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
+  - [Interactions With Other Features](#interactions-with-other-features)
+    - [Support for cgroup v2](#support-for-cgroup-v2)
+    - [ResourceOverhead](#resourceoverhead)
+    - [Memory-based Emptydir volumes](#memory-based-emptydir-volumes)
+    - [HugeTLB cgroup](#hugetlb-cgroup)
+  - [PID, and other cgroups](#pid-and-other-cgroups)
+    - [Init Containers](#init-containers)
+    - [NUMA architectures](#numa-architectures)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
+- [Proof of concept](#proof-of-concept)
+  - [Proof of Concept Architecture](#proof-of-concept-architecture)
+  - [Test Workload](#test-workload)
+  - [Test Results](#test-results)
+    - [Node.JS](#nodejs)
+    - [Java](#java)
+    - [General Load Results](#general-load-results)
 - [Implementation History](#implementation-history)
 <!-- /toc -->
 
@@ -93,7 +109,7 @@ This proposal aims to:
 
 ## Proposal
 
-The Pod QoS enhancement already implemented in Kubernetes manages resources as a hieararchy of cgroups in the following way:
+The Pod QoS enhancement already implemented in Kubernetes manages resources as a hierarchy of cgroups in the following way:
 
 <pre>
   kubepods
@@ -199,11 +215,11 @@ the resources if other noisy neighbors are lucky enough to allocate the resource
 
 The memory resource deserves a special discussion due to memory being a non-compressible resource.
 
-The Linux kernel allows sibling cgroups to use memory which was released by a different sibling cgroup. The main difficulty here is understanding the term **released**. It is not enough for a programmer to free the memory, the funtime being used to develop the program must also release the memory back to the kernel. Since allocating memory to a process requires a context switch between userspace and kernelspace, most runtimes cache memory which was allocated to the process, and attempt to reuse memory that the program released so as to minimize the number of memory allocations required.
+The Linux kernel allows sibling cgroups to use memory which was released by a different sibling cgroup. The main difficulty here is the meaning of the term **released**. It is not enough for a programmer to free the memory, the runtime being used to develop the program must also release the memory back to the kernel. Since allocating memory to a process requires a context switch between userspace and kernelspace, most runtimes cache memory which was allocated to the process, and attempt to reuse memory that the program released so as to minimize the number of memory allocations required.
 
 Different runtimes have different heuristics around the best time to release memory. Here are a few popular runtimes:
 
-* GLibc releases memory opportunisticly and only for large amounts. See the free algorithm used by GLibc: https://sourceware.org/glibc/wiki/MallocInternals#line-286 
+* GLibc releases memory opportunistically and only for large amounts. See the free algorithm used by GLibc: https://sourceware.org/glibc/wiki/MallocInternals#line-286 
 * The MUSL libc (used by Alpine) will use the `madvise` system call to [mark freed memory](https://git.musl-libc.org/cgit/musl/tree/src/malloc/malloc.c#n499) ranges with `MADV_DONTNEED`. This allows memory to be reclaimed from the process when memory pressure exists. In this case, memory can be utilized by sibling cgroups.
 * Golang uses the `madvise` system call to mark [unused](https://github.com/golang/go/blob/master/src/runtime/malloc.go#L405) memory as such during garbage collector runs. Memory that is marked as unused can move between sibling cgroups, based on memory pressure.
 * The OpenJDK Java virtual machine uses the standard free function. It is based on the standard C/C++ library, and calls the standard `free()` function, and as such will work as appropriate for the distribution it is installed on (glibc or musl).
@@ -211,15 +227,17 @@ Different runtimes have different heuristics around the best time to release mem
 
 The Java runtime autoconfigures some garbage collector sizes based on the amount of memory available to it. Since Java 9, the JDK is cgroup aware and will correctly use the amount of memory available to the cgroup that it is running in to perform this initialization. The OpenJDK implementation uses the `hierarchical_memory_limit` field in its `memory.stat` file to determine the amount of memory that is available to it. This field contains the maximum calculated amount of memory available to the cgroup based on the limits set on the entire memory controller hierarchy.
 
+When a process exits, all of the memory that was allocated to it is released back to the operating system and can be used by other processes. In some workloads, tasks are executed by forking and exec-ing child processes from some main process. In this case the memory being used by a short-lived process is made available to the rest of the pod immediately when the short-lived process exits.
+
 ### User Stories 
 
 #### Story 1
 
 A development environment implemented as a Kubernetes Pod allows for separation of tools and a (web-based) IDE between multiple side-cars.
 
-The development environment defines a contantainer with the web-server serving the IDE itself, and constrains it to use a certain amount of memory. Additional tools are provided in additional side-car deployments - for example an [LSP](https://langserver.org/) service, a terminal, and more. 
+The development environment defines a container with the web-server serving the IDE itself, and constrains it to use a certain amount of memory. Additional tools are provided in additional side-car deployments - for example an [LSP](https://langserver.org/) service, a terminal, and more. 
 
-Using this new feature, the containers providing the terminal, the LSP services, and the set of tools being utilizied can share the resource limit defined for the pod. Consider the following pod definition:
+Using this new feature, the containers providing the terminal, the LSP services, and the set of tools being utilized can share the resource limit defined for the pod. Consider the following pod definition:
 
 ```yaml
 apiVersion: v1
@@ -313,7 +331,68 @@ The proposed implementation would be along these lines:
 1. In the memory cgroup configuration, in addition to the `memory.limit_in_bytes` field which is set to the limit specified in each container, the `memory.soft_limit_in_bytes` field should also
    be set to the `request` specified in the container. This field provides some extra information to the memory cgroup controller that long-running processes might benefit from.
 
+## Proof of concept
 
+As per the recommendation given in the SIG-Node meeting on 2020-03-17, a proof-of-concept was developed to allow assessing if setting pod-level limits provides any benefits.
+
+### Proof of Concept Architecture
+
+The PoC (available [here](https://github.com/liorokman/terminus)) implements a `DaemonSet` that watches `Pod` resources on each node. For each `Pod` that is scheduled to run on the same host as the current worker, if the `Pod` is annotated with pod-level limits, the `DaemonSet` worker modifies the pod-level cgroup as outlined in this proposal. 
+
+### Test Workload
+
+The workload with which this concept was tested is a real-world workload currently used by the [SAP Business Application Studio](https://community.sap.com/topics/business-application-studio) product. The SAP Business Application Studio is a powerful and modern development environment, tailored for efficient development of business applications for the Intelligent Enterprise. Available as a cloud service, SAP Business Application Studio provides desktop-like experience similar to leading IDEs with command line, integrated debugging and optimized code editors. At the heart of SAP business Application Studio are the Dev-Spaces, which are like isolated virtual machines in the cloud containing tailored tools and pre-installed runtimes per business scenario, such as: SAP Fiori, SAP S/4 HANA extensions and more. In SAP Business Application Studio, each Dev-Space is a Kubernetes Pod. The Pod is subdivided (to allow for extensibility) into multiple containers, where each container provides some part of the toolset available to the developer. For example, one container provides the web-based IDE, another provides a full Java toolset, a third provides Node.js tools and runtimes, and so on. 
+
+The tested scenario configuration was:
+1. A single `m5.2xlarge` AWS node (8 cores, 32 GB RAM) dedicated to run only the test pods. 
+1. 10 Dev-Spaces were launched on the node, each configured to use no more than 3 CPU cores, and 8 GB or RAM. Half of the Dev-spaces were configured for Java development, the other half were configured for Node.JS development.
+1. The main test loop ran the following loop for 30 minutes in all of the pods on the node:
+  1. Build the project
+  1. Sleep for 30 seconds
+
+
+The project being built was a typical project for SAP workloads, based on the [SAP CDS](https://help.sap.com/viewer/65de2977205c403bbc107264b8eccf4b/Cloud/en-US/855e00bd559742a3b8276fbed4af1008.html) framework, in both Java and Node.JS variants. 
+
+The test was run in two ways:
+1. Without the Terminus DaemonSet. The container limits were set to split the CPU and Memory resources evenly between the containers providing the various development tools.
+1. With the Terminus DaemonSet. The Pod was configured to have the entire budget (3 cores, 8 GB Ram) allocated at the Pod level, and no limits were set on the container level. 
+
+In both cases, the overall node CPU utilization was monitored, and the response time for each build operation was monitored.
+
+### Test Results
+
+#### Node.JS
+
+The Node.JS project uses the NPM tool to fetch dependencies, and then uses the CDS tool to watch for changes in the source files which trigger rebuilding the project. The project was then run locally using `cds deploy` backed with an SQLite3 database, and packaged to a [Multi-Target Application](https://help.sap.com/viewer/65de2977205c403bbc107264b8eccf4b/Cloud/en-US/d04fc0e2ad894545aebfd7126384307c.html) using the [MBT](https://sap.github.io/cloud-mta-build-tool/) tool.
+
+The `npm install` operation was run once before the entire scenario was run.
+
+| Operation     | Response time (sec) w/o pod-level limits | Response time (sec) with pod-level limits | 
+|    :---:      |             :---:                        |        :---:                              |
+| `npm install` |   60  |  43   |
+| `cds watch`   |   5   |  2    |
+| `cds deploy`  |   2   |  0.8  | 
+| `mbt build`   |  90   |  29   |
+
+#### Java
+
+The Java project uses Maven to build and run the project.
+
+A setup operation of `mvn clean install` was performed once, and then the project was either run directly as via `mvn`, or via `cds`.
+
+| Operation           | Response time (sec) w/o pod-level limits | Response time (sec) with pod-level limits | 
+|    :---:            |             :---:                        |            :---:                      |
+| `mvn clean install` | 85 | 42   |
+| `mvn run`           | 50 | 13.5 |
+| `cds deploy`        | 2  | 0.9  |
+
+#### General Load Results
+
+When pod-level resources were defined, the overall CPU utilization (as monitored by Prometheus) was ~70%.
+
+Without pod-level resources, the overall CPU utilization was ~50%.
+
+The Dev-Space load time, measured as the amount of time between Kubernetes launching all of the containers in the Pod and the Dev Space application becoming ready, was also positively affected. Without pod-level resources, the Dev-Space finished loading withing 60 seconds, while when pod-level resources were defined, the Dev-Space finished loading in 10 seconds. The explanation for this huge difference is that some of the containers in the pod need to perform one-time startup operations. With pod-level resources defined, these containers can receive CPU resources that are more adequate for the startup operations, while without the pod-level resources, if more CPU is allocated to these containers, then the CPU is not available to the containers intended to run the main workload in the Dev Space. The fact that pod-level resources are available makes it possible to not have to balance load-time vs. general performance for the Dev-Space.
 
 ## Implementation History
 
@@ -322,4 +401,4 @@ The proposed implementation would be along these lines:
 - 2020-03-15 - More updates due to suggested review
 - 2020-03-17 - Reworked the proposal based on the suggested reviews
 - 2020-03-18 - More updates, after the sig-node meeting on March 17th.
-
+- 2020-06-04 - Updating the KEP after a trial-run on some real-world workloads
