@@ -35,14 +35,14 @@ For enhancements that make changes to code or processes/procedures in core Kuber
 
 Check these off as they are completed for the Release Team to track. These checklist items _must_ be updated for the enhancement to be released.
 
-- [ ] kubernetes/enhancements issue in release milestone, which links to KEP (this should be a link to the KEP location in kubernetes/enhancements, not the initial KEP PR)
-- [ ] KEP approvers have set the KEP status to `implementable`
-- [ ] Design details are appropriately documented
-- [ ] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
-- [ ] Graduation criteria is in place
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- ~~[ ] kubernetes/enhancements issue in release milestone, which links to KEP (this should be a link to the KEP location in kubernetes/enhancements, not the initial KEP PR)~~
+- [x] KEP approvers have set the KEP status to `implementable`
+- [x] Design details are appropriately documented
+- [x] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- ~~[ ] Graduation criteria is in place~~
+- ~~[ ] "Implementation History" section is up-to-date for milestone~~
+- ~~[ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]~~
+- [x] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 **Note:** Any PRs to move a KEP to `implementable` or significant changes once it is marked `implementable` should be approved by each of the KEP approvers. If any of those approvers is no longer appropriate than changes to that list should be approved by the remaining approvers and/or the owning SIG (or SIG-arch for cross cutting KEPs).
 
@@ -57,6 +57,13 @@ Check these off as they are completed for the Release Team to track. These check
 
 The goal of this KEP is to increase patch-fix support for each Kubernetes release from the current 9 months to 1 year.
 The primary motivation is to address an end-user request:  Business cycles (financial, certification, sales, vacation, HR and others) are overwhelmingly annual, leading to many users desiring at least annual support cycles in projects on which they depend.
+
+When we say we provide patch support for a release, what do we mean?
+
+- We will fix security issues in our Kubernetes code
+- We will pick up security fixes from dependencies as they are made available, in specific versioned patch releases of the dependency in use
+- We will not maintain forks of our major dependencies
+- We will not attempt our own back ports of critical fixes to dependencies which are out of support from their own communities
 
 Details of the expected tasks involved in implementing this policy are outlined below, the most major of which are:
 
@@ -179,14 +186,17 @@ https://git.k8s.io/community/contributors/devel/sig-release/cherry-picks.md#what
 
 * Example: golang support for ~1 year (2 6-month releases)
 * Options:
-  * Upgrade dependencies more on release branches
+  * Upgrade dependencies more on release branches (ie: upgrade Kubernetes patch
+    release branches to newer golang release early in the Kubernetes release's lifecycle)
   * Note where support gaps exist and create plans for more proactively managing deps
 
 ### Graduation Criteria
 
 WG LTS proposes this KEP be implemented as of the 1.19.0 release.
-We do not want to retroactively ask the community to add longer support for an already delivered release.
-Starting with 1.19.0 means that the supported range would change to 1.19 - 1.22 when 1.22 comes out.
+
+Through the history of the WG LTS we have not wanted to retroactively ask the community to add longer support for an already delivered release.  Starting with 1.19.0 means that the supported range would be 1.19 - 1.22 when 1.22 comes out, instead of being 1.20 - 1.22 when 1.22 comes out.  There is discussion beyond this KEP for possible retroactive extension of support beyond prior plans for 1.16, 1.17, 1.18.  (see Implementation History below)
+
+This process KEP will be considered implemented and stable graduated when a release version (and newer) are publicly documented to have a year of patch support (eg: 12+2 months as described above) and corresponding coverage is present in our test infrastructure and automation.
 
 ### Upgrade / Downgrade Strategy
 
@@ -207,17 +217,19 @@ Unchanged from existing Kubernetes project deprecation criteria.  Deprecations f
 Incremental change elongating existing Kubernetes project version skew policy, i.e.: where “N+/-1” to “N+/-2” and where “N+/-2” to “N+/-3”.
 This matters, especially for external clients programmatically interacting with a long-lived cluster, beyond the cluster control plane components, moved through the upgrade process.
 
+Note: The above assumes no change in the number of releases made per year. If the number of releases per year increases or decreases, that may additionally modify the version skew strategy.
+
 ## Implementation History
 
-Major milestones in the life cycle of a KEP should be tracked in `Implementation History`.
-Major milestones might include
-
-- the `Summary` and `Motivation` sections being merged signaling SIG acceptance
-- the `Proposal` section being merged signaling agreement on a proposed design
-- the date implementation started
-- the first Kubernetes release where an initial version of the KEP was available
-- the version of Kubernetes where the KEP graduated to general availability
-- when the KEP was retired or superseded
+- 1.19 is planned to be the first release to officially receive a year of
+  patch support
+- discussion is underway (April/May 2020) between SIG Release, WG LTS, and
+  the broader community regarding 1.19 schedule (see [k-dev
+  list thread](https://groups.google.com/d/topic/kubernetes-dev/IVpiIOZ4WcM/discussion))
+  to take the circumstances and operational pressures from COVID-19 into account
+  and extend support additionally for 1.18, 1.17, and 1.16
+- [k-dev list discussion](https://groups.google.com/d/topic/kubernetes-dev/tOe2UFB_weQ/discussion)
+  regarding move of this KEP to `implementable`
 
 ## Drawbacks
 
