@@ -74,7 +74,7 @@ custom resources.
 ### Goals
 
 Make it easy to for the users to specify a time-based clean up mechanism for
-finished resource objects. 
+finished resource objects.
 * It's configurable at resource creation time and after the resource is created.
 
 ## Proposal
@@ -99,7 +99,7 @@ finished resource objects.
 [Prow]: https://github.com/kubernetes/test-infra/tree/master/prow
 [Apache Spark on Kubernetes]: http://spark.apache.org/docs/latest/running-on-kubernetes.html
 
-### Detailed Design 
+### Detailed Design
 
 #### Feature Gate
 
@@ -187,7 +187,7 @@ adding it in Job controller, but decided not to, for the following reasons:
 1. Job controller should focus on managing Pods based on the Job's spec and pod
    template, but not cleaning up Jobs.
 1. We also need the TTL controller to clean up finished Pods, and we consider
-   generalizing TTL controller later for custom resources. 
+   generalizing TTL controller later for custom resources.
 
 The TTL controller utilizes informer framework, watches all Jobs and Pods, and
 read Jobs and Pods from a local cache.
@@ -197,13 +197,13 @@ read Jobs and Pods from a local cache.
 When a Job is created or updated:
 
 1. Check its `.status.conditions` to see if it has finished (`Complete` or
-   `Failed`). If it hasn't finished, do nothing. 
-1. Otherwise, if the Job has finished, check if Job's 
+   `Failed`). If it hasn't finished, do nothing.
+1. Otherwise, if the Job has finished, check if Job's
    `.spec.ttlSecondsAfterFinished` field is set. Do nothing if the TTL field is
-   not set. 
-1. Otherwise, if the TTL field is set, check if the TTL has expired, i.e. 
+   not set.
+1. Otherwise, if the TTL field is set, check if the TTL has expired, i.e.
    `.spec.ttlSecondsAfterFinished` + the time when the Job finishes
-   (`.status.conditions.lastTransitionTime`) > now. 
+   (`.status.conditions.lastTransitionTime`) > now.
 1. If the TTL hasn't expired, delay re-enqueuing the Job after a computed amount
    of time when it will expire. The computed time period is:
    (`.spec.ttlSecondsAfterFinished` + `.status.conditions.lastTransitionTime` -
@@ -214,20 +214,20 @@ When a Job is created or updated:
    before TTL controller observes the new value in its local cache.
    * If it hasn't expired, it is not safe to delete the Job. Delay re-enqueue
      the Job after a computed amount of time when it will expire.
-1. Delete the Job if passing the sanity checks. 
+1. Delete the Job if passing the sanity checks.
 
 #### Finished Pods
 
 When a Pod is created or updated:
 1. Check its `.status.phase` to see if it has finished (`Succeeded` or `Failed`).
-   If it hasn't finished, do nothing. 
+   If it hasn't finished, do nothing.
 1. Otherwise, if the Pod has finished, check if Pod's
    `.spec.ttlSecondsAfterFinished` field is set. Do nothing if the TTL field is
-   not set. 
+   not set.
 1. Otherwise, if the TTL field is set, check if the TTL has expired, i.e.
    `.spec.ttlSecondsAfterFinished` + the time when the Pod finishes (max of all
    of its containers termination time
-   `.containerStatuses.state.terminated.finishedAt`) > now. 
+   `.containerStatuses.state.terminated.finishedAt`) > now.
 1. If the TTL hasn't expired, delay re-enqueuing the Pod after a computed amount
    of time when it will expire. The computed time period is:
    (`.spec.ttlSecondsAfterFinished` + the time when the Pod finishes - now).
@@ -237,7 +237,7 @@ When a Pod is created or updated:
    before TTL controller observes the new value in its local cache.
    * If it hasn't expired, it is not safe to delete the Pod. Delay re-enqueue
      the Pod after a computed amount of time when it will expire.
-1. Delete the Pod if passing the sanity checks. 
+1. Delete the Pod if passing the sanity checks.
 
 #### Owner References
 
@@ -251,14 +251,14 @@ owner's dependents alive. If the Job is owned by a CronJob, the Job can be
 cleaned up based on CronJob's history limit (i.e. the number of dependent Jobs
 to keep), or CronJob can choose not to set history limit but set the TTL of its
 Job template to clean up Jobs after TTL expires instead of based on the history
-limit capacity. 
+limit capacity.
 
 Therefore, a Job/Pod can be deleted after its TTL expires, even if it still has
-owners. 
+owners.
 
 Similarly, the TTL won't block deletion from generic garbage collector. This
 means that when a Job's or Pod's owners are gone, generic garbage collector will
-delete it, even if it hasn't finished or its TTL hasn't expired. 
+delete it, even if it hasn't finished or its TTL hasn't expired.
 
 ### Risks and Mitigations
 
@@ -281,7 +281,7 @@ not, and when it satisfies users' need for cleaning up finished resource
 objects, without regressions.
 
 This will be promoted to GA once it's gone a sufficient amount of time as beta
-with no changes. 
+with no changes.
 
 [umbrella issues]: https://github.com/kubernetes/kubernetes/issues/42752
 

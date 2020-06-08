@@ -71,7 +71,7 @@ TaintNodeByCondition has been beta'ed in 1.12.
 
 TaintNodeByCondition add taints to nodes based on their conditions in the node lifecycle controller. And it could help the default scheduler to not schedule on specific nodes unless they could tolerate them.
 
-The scheduler will remove condition-based predicates after TaintNodeByCondition was graduated to a stable version. 
+The scheduler will remove condition-based predicates after TaintNodeByCondition was graduated to a stable version.
 
 ## Design Details
 

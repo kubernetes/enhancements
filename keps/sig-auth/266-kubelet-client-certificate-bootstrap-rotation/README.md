@@ -38,7 +38,7 @@
 
 Currently, a kubelet has a certificate/key pair that authenticates the kubelet to the kube-apiserver.
 The certificate is supplied to the kubelet when it is first booted, via an out of cluster mechanism.
-This proposal covers a process for obtaining the initial cert/key pair and rotating it as expiration 
+This proposal covers a process for obtaining the initial cert/key pair and rotating it as expiration
 of the certificate approaches.
 
 ### Goals
@@ -69,8 +69,8 @@ issuing a new Certificate Signing Request to the API Server, safely updating the
 cert/key pair on disk, begin using the new cert/key pair.
 
 1. Store the new cert/key pairs in the kubelet's certificate directory.
-   This will allow the kubelet to have a place for storing the multiple 
-   cert/key pairs that it might have available at any given moment 
+   This will allow the kubelet to have a place for storing the multiple
+   cert/key pairs that it might have available at any given moment
    (because of a rotation in progress).
     - When cert/key files are specified in the kubeconfig, these will be used if
       a newer, rotated, cert/key pair does not exist.
@@ -151,7 +151,7 @@ E2E tests:
 Client certificate bootstrap and rotation are opt-in features, controlled by the Node deployer.
 Kubelet upgrades that do not opt-in continue using the provided credentials.
 
-Any upgrade that opts the kubelet into bootstrap/rotation must also provide 
+Any upgrade that opts the kubelet into bootstrap/rotation must also provide
 the kubelet with credentials authorized to obtain an initial client certificate.
 
 Any downgrade that reverts the kubelet to a version that does not support bootstrap/rotation,
@@ -232,7 +232,7 @@ client certificates must remain backwards compatible for at least n-2 releases.
     * verified it established contact with the API server
 
 * **Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?**
-  
+
   * No
 
 ### Monitoring requirements
@@ -258,7 +258,7 @@ client certificates must remain backwards compatible for at least n-2 releases.
 ### Dependencies
 
 * **Does this feature depend on any specific services running in the cluster?**
-  
+
   * The `certificates.k8s.io` API group must be enabled
   * An approver for kubelet client certificate requests must be running.
     A default implementation is built into kube-controller-manager in the `csrapproving`
@@ -279,7 +279,7 @@ client certificates must remain backwards compatible for at least n-2 releases.
       * on first bootstrap startup
       * on certificate expiration (at 80% of lifetime, jittered +/- 10%), lifetime controlled by
         `--experimental-cluster-signing-duration`, defaults to 1 year
-  
+
   * The kube-controller-manager will list/watch CertificateSigningRequest objects using an informer
     * For each kubelet client certificate CertificateSigningRequest,
       the approving controller will make 1 update request to approve or deny
@@ -337,7 +337,7 @@ client certificates must remain backwards compatible for at least n-2 releases.
     - Mitigations:
       - Replace the node
       - Reconfigure the node with client cert bootstrap/rotation off
-    - Diagnostics: 
+    - Diagnostics:
       - kubelet logs:
         - certificate_manager and certificate_store errors when rotation fails, diagnostic messages at level 2 verbosity
       - kube-controller-manager logs
@@ -346,20 +346,20 @@ client certificates must remain backwards compatible for at least n-2 releases.
       - audit logs for CertificateSigningRequest API requests
     - Testing:
       - certificate manager unit testing
-  
+
   * On startup, if a kubelet cannot obtain a client credential, it restarts after 5 minutes.
     - Detection:
       - Kubelet process restart count
       - Presence of kubelet client CertificateSigningRequests that are not approved or are not issued older than 5 minutes
-    - Mitigations: 
+    - Mitigations:
       - Replace the node
       - Reconfigure the node with client cert bootstrap/rotation off
-    - Diagnostics: 
+    - Diagnostics:
       - kubelet logs:
         - certificate_manager and certificate_store errors when rotation fails, diagnostic messages at level 2 verbosity
       - kube-controller-manager logs
         - certificate_controller errors when sync fails, diagnostic messages at level 4 verbosity
-    - Testing: 
+    - Testing:
       - certificate manager unit testing for resuming a pre-existing CSR watch at startup
 
 * **What steps should be taken if SLOs are not being met to determine the problem?**

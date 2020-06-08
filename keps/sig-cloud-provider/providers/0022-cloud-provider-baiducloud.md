@@ -99,7 +99,7 @@ BaiduCloud provides documentations for users to build and utilize cloud controll
 
 ### Subproject Leads
 
-The subproject will have 3 leaders at any given time. 
+The subproject will have 3 leaders at any given time.
 
 - @tizhou86 Ti Zhou, Kubernetes Member
 - @hello2mao Hongbin Mao, Kubernetes Member

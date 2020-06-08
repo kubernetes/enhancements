@@ -513,7 +513,7 @@ extra benefit of this KEP.
 ### Feature enablement and rollback
 
 * **How can this feature be enabled / disabled in a live cluster?**
-  
+
   - [x] Feature gate
     - Feature gate name: EvenPodsSpread
     - Components depending on the feature gate: kube-scheduler, kube-apiserver

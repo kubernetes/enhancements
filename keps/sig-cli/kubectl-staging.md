@@ -167,7 +167,7 @@ would be moved over the next two releases (1.16 and 1.17).
 ## Risks and Mitigations
 
 If a project vendors Kubernetes to import kubectl code, this will break them.
-On the bright side, afterwards, these importers will have a much cleaner path to 
+On the bright side, afterwards, these importers will have a much cleaner path to
 include kubectl code. Before moving forward with this plan, we will identify and
 communicate to these projects.
 

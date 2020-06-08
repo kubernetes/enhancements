@@ -67,7 +67,7 @@ critical applications, like SAP, block storage is a requirement.
 * Enable durable access to block storage
 * Provide flexibility for users/vendors to utilize various types of storage devices
 * Agree on API changes for block
-* Provide a consistent security model for block devices 
+* Provide a consistent security model for block devices
 * Provide a means for running containerized block storage offerings as non-privileged container
 
 ### Non-Goals
@@ -75,7 +75,7 @@ critical applications, like SAP, block storage is a requirement.
 * Support all storage devices natively in upstream Kubernetes. Non-standard storage devices are expected to be managed using extension
   mechanisms.
 * Provide a means for full integration into the scheduler based on non-storage related requests (CPU, etc.)
-* Provide a means of ensuring specific topology to ensure co-location of the data 
+* Provide a means of ensuring specific topology to ensure co-location of the data
 * CSI volume plugin changes - CSI block volumes are tracked as a separate KEP.
 
 ## Proposal

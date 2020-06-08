@@ -76,7 +76,7 @@ Windows-based workloads still account for a significant portion of the enterpris
 
 - Enable users to schedule Windows Server containers in Kubernetes through the introduction of support for Windows compute nodes
 - Document the differences and limitations compared to Linux
-- Create a test suite in testgrid to maintain high quality for this feature and prevent regression of functionality 
+- Create a test suite in testgrid to maintain high quality for this feature and prevent regression of functionality
 
 ### Non-Goals
 
@@ -86,7 +86,7 @@ Windows-based workloads still account for a significant portion of the enterpris
 
 ## Proposal
 
-As of 29-11-2018 much of the work for enabling Windows nodes has already been completed. Both `kubelet` and `kube-proxy` have been adapted to work on Windows Server, and so the first goal of this KEP is largely already complete. 
+As of 29-11-2018 much of the work for enabling Windows nodes has already been completed. Both `kubelet` and `kube-proxy` have been adapted to work on Windows Server, and so the first goal of this KEP is largely already complete.
 
 ### What works today
 - Windows-based containers can be created by kubelet, [provided the host OS version matches the container base image](https://docs.microsoft.com/en-us/virtualization/windowscontainers/deploy-containers/version-compatibility). Microsoft will distribute the operating system-dependent `pause` image (mcr.microsoft.com/k8s/core/pause:1.0.0).
@@ -107,10 +107,10 @@ As of 29-11-2018 much of the work for enabling Windows nodes has already been co
     - Pod & container metrics
     - Horizontal Pod Autoscaling using all metrics
     - KubeCtl Exec
-    - Resource Quotas 
+    - Resource Quotas
 - Windows Server 2019 is the only Windows operating system we will support at GA timeframe. Note above that the host operating system version and the container base image need to match. This is a Windows limitation we cannot overcome.
 - Customers can deploy a heterogeneous cluster, with Windows and Linux compute nodes side-by-side and schedule Docker containers on both operating systems. Of course, Windows Server containers have to be scheduled on Windows and Linux containers on Linux
-- Out-of-tree Pod networking with [Azure-CNI](https://github.com/Azure/azure-container-networking/blob/master/docs/cni.md), [OVN-Kubernetes](https://github.com/openvswitch/ovn-kubernetes), [two CNI meta-plugins](https://github.com/containernetworking/plugins), [Flannel (VXLAN and Host-Gateway)](https://github.com/coreos/flannel) 
+- Out-of-tree Pod networking with [Azure-CNI](https://github.com/Azure/azure-container-networking/blob/master/docs/cni.md), [OVN-Kubernetes](https://github.com/openvswitch/ovn-kubernetes), [two CNI meta-plugins](https://github.com/containernetworking/plugins), [Flannel (VXLAN and Host-Gateway)](https://github.com/coreos/flannel)
 - Dockershim CRI
 - Many<sup id="a1">[1]</sup> of the e2e conformance tests when run with [alternate Windows-based images](https://hub.docker.com/r/e2eteam/) which are being moved to [kubernetes-sigs/windows-testing](https://www.github.com/kubernetes-sigs/windows-testing)
 - Persistent storage: FlexVolume with [SMB + iSCSI](https://github.com/Microsoft/K8s-Storage-Plugins/tree/master/flexvolume/windows), and in-tree AzureFile and AzureDisk providers
@@ -148,7 +148,7 @@ Tracking Issues:
 Note that some features are plain unsupported while some will not work without underlying OS changes
 - Certain Pod functionality
     - Privileged containers
-    - Pod security context privilege and access control settings. Any Linux Capabilities, SELinux, AppArmor, Seccomp, Capabilities (POSIX Capabilities), and others are not supported 
+    - Pod security context privilege and access control settings. Any Linux Capabilities, SELinux, AppArmor, Seccomp, Capabilities (POSIX Capabilities), and others are not supported
     - Reservations are not enforced by the OS, but overprovisioning could be blocked with `--enforce-node-allocatable=pods` (pending: tests needed)
     - Certain volume mappings
       - Subpath volume mounting
@@ -175,14 +175,14 @@ Note that some features are plain unsupported while some will not work without u
       - Since TCP/UDP packets can still be transposed, one can substitute `ping <destination>` with `curl <destination>` to be able to debug connectivity to the outside world.
 
 ### Windows Container Compatibility
-As noted above, there are compatibility issues enforced by Microsoft where the host OS version must match the container base image OS. Changes to this compatibility policy must come from Microsoft. For GA, since we will only support Windows Server 2019 (aka 1809), both `container host OS` and `container OS` must be running the same version of Windows, 1809. 
+As noted above, there are compatibility issues enforced by Microsoft where the host OS version must match the container base image OS. Changes to this compatibility policy must come from Microsoft. For GA, since we will only support Windows Server 2019 (aka 1809), both `container host OS` and `container OS` must be running the same version of Windows, 1809.
 
 Having said that, a customer can deploy Kubernetes v1.14 with Windows 1809.
 - We will support Windows 1809 with at least 2 additional Kuberneres minor releases (v1.15 and v.1.16)
 - It is possible additional Windows releases (for example Windows 1903) will be added to the support matrix of future Kubernetes releases and they will also be supported for the next 2 versions of Kubernetes after their initial support is announced
 - SIG-Windows will announce support for new Windows operating systems at most twice per year, based on Microsoft's published release cycle
 
-Kubernetes minor releases are only supported for 9 months (https://kubernetes.io/docs/setup/version-skew-policy/), which is a smaller support interval than the support interval for Windows bi-annual releases (https://docs.microsoft.com/en-us/windows-server/get-started/windows-server-release-info) 
+Kubernetes minor releases are only supported for 9 months (https://kubernetes.io/docs/setup/version-skew-policy/), which is a smaller support interval than the support interval for Windows bi-annual releases (https://docs.microsoft.com/en-us/windows-server/get-started/windows-server-release-info)
 
 We don't expect all Windows customers to update the operating system for their apps twice a year. Upgrading your applications is what will dictate and necessitate upgrading or introducing new nodes to the cluster. For the customers that chose to upgrade their operating system for containers running on Kubernetes, we will offer guidance and step-by-step instructions when we add support for a new operating system version. This guidance will include recommended upgrade procedures for upgrading user applications together with cluster nodes.
 
@@ -197,7 +197,7 @@ Windows nodes will adhere to Kubernetes version-skew policy (node to control pla
 
 ### Risks and Mitigations
 
-**Second class support**: Kubernetes contributors are likely to be thinking of Linux-based solutions to problems, as Linux remains the primary OS supported. Keeping Windows support working will be an ongoing burden potentially limiting the pace of development. 
+**Second class support**: Kubernetes contributors are likely to be thinking of Linux-based solutions to problems, as Linux remains the primary OS supported. Keeping Windows support working will be an ongoing burden potentially limiting the pace of development.
 
 **User experience**: Users today will need to use some combination of taints and node selectors in order to keep Linux and Windows workloads separated. In the best case this imposes a burden only on Windows users, but this is still less than ideal. The recommended approach is outlined below, with one of its main goals being that we should not break compatibility for existing Linux workloads
 
@@ -206,7 +206,7 @@ As you can see below, we plan to document how Windows containers can be schedule
 - beta.kubernetes.io/os = [windows|linux]
 - beta.kubernetes.io/arch = [amd64|arm64|...]
 
-If a deployment does not specify a nodeSelector like `"beta.kubernetes.io/os": windows`, it is possible the Pods can be scheduled on any host, Windows or Linux. This can be problematic since a Windows container can only run on Windows and a Linux container can only run on Linux. The best practice we will recommend is to use a nodeSelector. 
+If a deployment does not specify a nodeSelector like `"beta.kubernetes.io/os": windows`, it is possible the Pods can be scheduled on any host, Windows or Linux. This can be problematic since a Windows container can only run on Windows and a Linux container can only run on Linux. The best practice we will recommend is to use a nodeSelector.
 
 However, we understand that in many cases customers have a pre-existing large number of deployments for Linux containers, as well as an ecosystem of off-the-shelf configurations, such as community Helm charts, and programmatic pod generation cases, such as with Operators. Customers will be hesitant to make the configuration change to add nodeSelectors. Our proposal as an alternative is to use Taints. Because the kubelet can set Taints during registration, it could easily be modified to automatically add a taint when running on Windows only (`--register-with-taints='os=Win1809:NoSchedule'`). By adding a taint to all Windows nodes, nothing will be scheduled on them (that includes existing Linux Pods). In order for a Windows Pod to be scheduled on a Windows node, it would need both the nodeSelector to choose Windows, and a toleration.
 ```
@@ -225,7 +225,7 @@ Windows always treats all user-mode memory allocations as virtual, and pagefiles
 
 Keeping memory usage within reasonable bounds is possible with a two-step process. First, use the kubelet parameters `--kubelet-reserve` and/or `--system-reserve` to account for memory usage on the node (outside of containers). This will reduce [NodeAllocatable](https://kubernetes.io/docs/tasks/administer-cluster/reserve-compute-resources/#node-allocatable). As you deploy workloads, use resource limits and reserves on containers. This will also subtract from NodeAllocatable and prevent the scheduler from adding more pods once a node is full. These will be documented as best practices for v1.14. The related kubelet parameters `--eviction-hard`, `--eviction-soft`, and `--enforce-node-allocatable` are invalid for v1.14.
 
-For later releases, we can work on a configurable heuristic to detect memory pressure, report it through the kubelet `MemoryPressure` condition, and implement pod eviction. 
+For later releases, we can work on a configurable heuristic to detect memory pressure, report it through the kubelet `MemoryPressure` condition, and implement pod eviction.
 
 ## Graduation Criteria
 - All features and functionality under `What works today` is fully tested and vetted to be working by SIG-Windows
@@ -259,7 +259,7 @@ For later releases, we can work on a configurable heuristic to detect memory pre
 
 ### Test Dashboard
 
-All test cases will be built in kubernetes/test/e2e, scheduled through [prow](https://github.com/kubernetes/test-infra/blob/master/config/jobs/kubernetes-sigs/sig-windows/sig-windows-config.yaml), and published on the [TestGrid SIG-Windows dashboard](https://testgrid.k8s.io/sig-windows#aks-engine-azure-windows-master) daily. This will be the master list of what needs to pass to be declared stable and will include all tests tagged [SIG-Windows] along with the subset of conformance tests that can pass on Windows. 
+All test cases will be built in kubernetes/test/e2e, scheduled through [prow](https://github.com/kubernetes/test-infra/blob/master/config/jobs/kubernetes-sigs/sig-windows/sig-windows-config.yaml), and published on the [TestGrid SIG-Windows dashboard](https://testgrid.k8s.io/sig-windows#aks-engine-azure-windows-master) daily. This will be the master list of what needs to pass to be declared stable and will include all tests tagged [SIG-Windows] along with the subset of conformance tests that can pass on Windows.
 
 Additional dashboard pages will be added over time as we run the same test cases with additional CRI, CNI and cloud providers. They are running the same test cases, and are not required for v1.14 graduation to stable.
 
@@ -324,7 +324,7 @@ These test cases are in review:
 - [x] [sig-network] [sig-windows] Networking Granular Checks: Pods should function for node-pod communication: http - [PR#71468](https://github.com/kubernetes/kubernetes/pull/71468)
 
 
-And these still need to be covered: 
+And these still need to be covered:
 
 - [x] DNS configuration is passed through CNI, not `/etc/resolv.conf` [67435](https://github.com/kubernetes/kubernetes/pull/67435)
   - Test cases needed for `dnsPolicy`: Default, ClusterFirst, None
@@ -382,7 +382,7 @@ The Windows container runtime also has a few important differences:
   - There is no way to run a Windows container without the namespace filtering in place. This means that system privileges cannot be asserted in the context of the host, and privileged containers are not available on Windows. Containers cannot assume an identity from the host because the SAM is separate.
 - Filesystems - Windows has a layered filesystem driver to mount container layers and create a copy filesystem based on NTFS. All file paths in the container are resolved only within the context of that container.
   - Volume mounts can only target a directory in the container, and not an individual file.
-  - Volume mounts cannot project files or directories back to the host filesystem.  
+  - Volume mounts cannot project files or directories back to the host filesystem.
   - Read-only filesystems are not supported because write access is always required for the Windows registry and SAM database. Read-only volumes are supported
   - Volume user-masks and permissions are not available. Because the SAM is not shared between the host & container, there's no mapping between them. All permissions are resolved within the context of the container.
 - Networking - The Windows host networking networking service and virtual switch implement namespacing and can create virtual NICs as needed for a pod or container. However, many configurations such as DNS, routes, and metrics are stored in the Windows registry database rather than /etc/... files as they are on Linux. The Windows registry for the container is separate from that of the host, so concepts like mapping /etc/resolv.conf from the host into a container don't have the same effect they would on Linux. These must be configured using Windows APIs run in the context of that container. Therefore CNI implementations need to call  the HNS instead of relying on file mappings to pass network details into the pod or container.

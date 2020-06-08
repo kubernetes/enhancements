@@ -55,7 +55,7 @@ changes such as:
   align with the new scheduler framework.
 - The introduction of scheduling profiles, that allow a scheduler to appear
   as multiple schedulers under different configurations.
-  
+
 A configuration API allows cluster administrators to build, validate and
 version their configurations in a more robust way than using command line flags.
 
@@ -92,7 +92,7 @@ However, this is mitigated for the following reasons:
   effectively requiring plugins to implement both functions.
 - There are no in-tree Reserve or Unreserve plugins prior to 1.19.
   The `VolumeBinding` plugin is now implementing both interfaces.
-  
+
 The caveat is that out-of-tree plugins that want to work 1.19 need to
 updated to comply with the modified `Reserve` interface, otherwise scheduler
 startup will fail. Plugins can choose to provide empty implementations.
@@ -156,7 +156,7 @@ This will be documented in https://kubernetes.io/docs/reference/scheduling/profi
 
 * **Is the rollout accompanied by any deprecations and/or removals of features,
   APIs, fields of API types, flags, etc.?**
-  
+
   Configuration API `kubescheduler.config.k8s.io/v1alpha2` is removed.
 
 ### Monitoring requirements
@@ -167,7 +167,7 @@ This will be documented in https://kubernetes.io/docs/reference/scheduling/profi
 
 * **What are the SLIs (Service Level Indicators) an operator can use to
   determine the health of the service?**
-  
+
   N/A.
 
 * **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
@@ -198,22 +198,22 @@ This will be documented in https://kubernetes.io/docs/reference/scheduling/profi
 
 * **Will enabling / using this feature result in any new calls to cloud
   provider?**
-  
+
   No.
 
 * **Will enabling / using this feature result in increasing size or count
   of the existing API objects?**
-  
+
   No.
 
 * **Will enabling / using this feature result in increasing time taken by any
   operations covered by [existing SLIs/SLOs][]?**
-  
+
   No.
 
 * **Will enabling / using this feature result in non-negligible increase of
   resource usage (CPU, RAM, disk, IO, ...) in any components?**
-  
+
   No.
 
 ### Troubleshooting

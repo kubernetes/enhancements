@@ -150,7 +150,7 @@ type PodContainerSelector struct {
         // +optional
 	PodSelector *metav1.LabelSelector
 
-        // If specified, controller only select the containers that are listed from the selected pods based on PodSelector. 
+        // If specified, controller only select the containers that are listed from the selected pods based on PodSelector.
 	// Otherwise, all containers of the pods will be selected
         // +optional
         ContainerList []string
@@ -205,7 +205,7 @@ type HookError struct {
         // More detailed reason why error happens
         // +optional
         Reason *string
-	
+
         // It indicates when the error occurred
 	// +optional
         Timestamp *int64
@@ -283,7 +283,7 @@ The following gives an example of how to use ExecutionHook for application-consi
 * Snapshot controller watches Snapshot objects. If there is a request to create a Snapshot, it checks if there is ExecutionHook Information defined in Snapshot.
 * If hook is defined in the snapshot, snapshot controller will create one or multiple ExecutionHooks for quiescing application if necessary, one for each command running in pods/containers.
 * Snapshot controller waits for all Action hooks to complete running before taking snapshot.
-* The ExecutionHook controller watches the ExecutionHook API object and take actions based on the object status and also update the status. 
+* The ExecutionHook controller watches the ExecutionHook API object and take actions based on the object status and also update the status.
 * Snapshot controller waits until hook is run on all pods (if more than 1 pod). No matter the Action succeeds or fails, snapshot controller should create execution hooks for unquiescing application. Snapshot controller can also decide when to delete those hooks.
 
 Here is an example of an HookAction:

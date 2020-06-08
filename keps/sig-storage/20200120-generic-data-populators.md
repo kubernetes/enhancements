@@ -119,7 +119,7 @@ The validation for `DataSource` field should be removed entirely, in the fullnes
 
 Short term, we should add a new alpha feature gate, which allows arbitrary objects to be
 specified for the `DataSource` field, with the intention to eventually make this behavior
-the standard. 
+the standard.
 
 Populators will work by responding to PVC objects with a data source they understand,
 and producing a PV with the expected data, such that ordinary Kubernetes workflows are
@@ -166,7 +166,7 @@ yet need a way to populate volumes with restored volumes.
 It's also likely that multiple backup/restore implementations will be developed,
 and it's not a good idea to pick a winner at the Kubernetes API layer. It makes
 more sense to enable developers to try different approaches by making the API allow
-restoring from various kinds of things. 
+restoring from various kinds of things.
 
 ### Implementation Details/Notes/Constraints
 
@@ -187,7 +187,7 @@ to them.
 I will leave the details of how data populators will work for another KEP. There
 are a few possible implementation that are worth considering, and this change
 is a necessary step to enable prototyping those ideas and deciding which is
-the best approach.  
+the best approach.
 
 ### Risks and Mitigations
 
@@ -205,7 +205,7 @@ problem this leads to is that users might attempt to use a data source that's
 not supported (on a particular cluster), and they won't get any feedback
 telling them that their request will never succeed. This is not unlike a
 situation where a storage class refers to a provisioner that doesn't exist,
-but it's something that will need to be solved eventually. 
+but it's something that will need to be solved eventually.
 
 Security issues are hard to measure, because any security issues would be the
 result of badly designed data populators that failed to put appropriate
@@ -222,7 +222,7 @@ populator to operate requires at minimum, the ability to either create or
 modify PVs. Also the CRD for the data source type needs to be installed.
 This means that populators will generally be installed by cluster admins
 or similarly-powerful users, and those users can be expected to understand
-the uses and implications of any populators they chose to install. 
+the uses and implications of any populators they chose to install.
 
 ## Design Details
 
@@ -265,7 +265,7 @@ relaxes an existing limitation.
 On downgrade, there is a potential for unbound (not yet provisioned) PVCs to
 have data sources that never would have been allowed on the lower version. In
 this case we might want to revalidate the field and possibly wipe it out on
-downgrade. 
+downgrade.
 
 ### Version Skew Strategy
 

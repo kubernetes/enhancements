@@ -318,7 +318,7 @@ Cons:
 ### Events instead of dedicated heartbeat object
 
 Instead of introducing a dedicated object, we considered using “Event” object
-for that purpose. At the high-level the solution looks very similar. 
+for that purpose. At the high-level the solution looks very similar.
 The differences from the initial proposal are:
 
 - we use existing “Event” api instead of introducing a new API

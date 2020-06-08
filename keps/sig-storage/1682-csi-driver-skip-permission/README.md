@@ -20,7 +20,7 @@
   - [Dependencies](#dependencies)
   - [Scalability](#scalability)
   - [Troubleshooting](#troubleshooting)
-- [Implementation History](#implementation-history) 
+- [Implementation History](#implementation-history)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -51,16 +51,16 @@ such as presence of fsType on the PVC to determine if the volume supports fsGrou
 permission change. These heuristics are known to be fragile, and cause problems with different
 storage types.
 
-To solve this issue we will add a new field called `CSIDriver.Spec.SupportsFSGroup` 
+To solve this issue we will add a new field called `CSIDriver.Spec.SupportsFSGroup`
 that allows the driver to define if it supports volume ownership modifications via
 fsGroup.
 
 ## Motivation
 
-When a volume is mounted on the node, we modify volume ownership 
+When a volume is mounted on the node, we modify volume ownership
 before bind mounting the volume inside container; however, if the volume
-does not support these operations (such as NFS), then the change is still attempted. 
-This results in errors being reported to the user if the volume doesn't 
+does not support these operations (such as NFS), then the change is still attempted.
+This results in errors being reported to the user if the volume doesn't
 support these operations.
 
 ### Goals
@@ -73,9 +73,9 @@ support these operations.
 
 ## Proposal
 
-We propose that the `CSIDriver` type include a field that defines if the volume 
+We propose that the `CSIDriver` type include a field that defines if the volume
 provided by the driver supports changing volume ownership. This will be enabled
-with a new feature gate, `CSIVolumeSupportFSGroup`.   
+with a new feature gate, `CSIVolumeSupportFSGroup`.
 
 ### Risks and Mitigations
 
@@ -87,17 +87,17 @@ volumes and attempting to apply volume ownerships and permissions based on the d
 ## Design Details
 
 Currently volume permission and ownership change is examined for every volume. If the PodSecurityPolicy's
-`fsGroup` is defined, `fsType` is defined, and the PersistentVolumes's `accessModes` is RWO, then we will 
+`fsGroup` is defined, `fsType` is defined, and the PersistentVolumes's `accessModes` is RWO, then we will
 attempt to modify the volume ownership and permissions.
 
 As part of this proposal we will change the algorithm that modifies volume ownership and permissions
 for CSIDrivers to check the new field, and skip volume ownership modifications if it is found to be
 `Never`.
 
-When defining a `CSIDriver`, we propose that `CSIDriver.Spec` be expanded to include a new field entitled 
+When defining a `CSIDriver`, we propose that `CSIDriver.Spec` be expanded to include a new field entitled
 `SupportsFSGroup` which can have following possible values:
 
- - `OnlyRWO` --> Current behavior. Attempt to modify the volume ownership and permissions to the defined `fsGroup` when the volume is 
+ - `OnlyRWO` --> Current behavior. Attempt to modify the volume ownership and permissions to the defined `fsGroup` when the volume is
  mounted if accessModes is RWO.
  - `Never` --> New behavior. Attach the volume without attempting to modify volume ownership or permissions.
  - `Always` --> New behavior. Always attempt to apply the defined fsGroup to modify volume ownership and permissions.
@@ -113,11 +113,11 @@ const(
 
 type CSIDriverSpec struct {
     // SupportsFSGroup ← new field
-    // Defines if the underlying volume supports changing ownership and 
-    // permission of the volume before being mounted. 
-    // If set to Always, SupportsFSGroup indicates that 
-    // the volumes provisioned by this CSIDriver support volume ownership and 
-    // permission changes, and the filesystem will be modified to match the 
+    // Defines if the underlying volume supports changing ownership and
+    // permission of the volume before being mounted.
+    // If set to Always, SupportsFSGroup indicates that
+    // the volumes provisioned by this CSIDriver support volume ownership and
+    // permission changes, and the filesystem will be modified to match the
     // defined fsGroup every time the volume is mounted.
     // If set to Never, then the volume will be mounted without modifying
     // the volume's ownership or permissions.
@@ -145,7 +145,7 @@ A test plan will include the following tests:
 
 * Beta in 1.20 with design validated by at least two customer deployments
   (non-production), with discussions in SIG-Storage regarding success of
-  deployments. 
+  deployments.
 * The `CSIVolumeSupportFSGroup` feature gate will graduate to beta.
 
 
@@ -159,7 +159,7 @@ A test plan will include the following tests:
 ### Feature enablement and rollback
 * **How can this feature be enabled / disabled in a live cluster?**
   - [x] Feature gate (also fill in values in `kep.yaml`)
-    - Feature gate name: CSIVolumeSupportFSGroup 
+    - Feature gate name: CSIVolumeSupportFSGroup
     - Components depending on the feature gate: kubelet
 
 * **Does enabling the feature change any default behavior?**
@@ -221,7 +221,7 @@ described in [Design Details](#design-details).
 * **Will enabling / using this feature result in any new calls to cloud provider?**
 There should be no new calls to the cloud providers.
 
-* **Will enabling / using this feature result in increasing size or count 
+* **Will enabling / using this feature result in increasing size or count
   of the existing API objects?**
 There will be a new string that may be defined on each CSIDriver.
 

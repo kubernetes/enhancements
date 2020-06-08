@@ -219,60 +219,60 @@ behavior when a profile cannot be set.
 
 ##### LocalhostProfile
 
-This KEP proposes we GA LocalhostProfile as the only source of user-defined profiles at this point. 
-User-defined profiles are essential for users to realize the full benefits out of seccomp, allowing 
-them to decrease their attack surface based on their own workloads. 
+This KEP proposes we GA LocalhostProfile as the only source of user-defined profiles at this point.
+User-defined profiles are essential for users to realize the full benefits out of seccomp, allowing
+them to decrease their attack surface based on their own workloads.
 
 ###### Updating seccomp profiles
-Seccomp profiles are applied at container creation time. Therefore, updating the file contents of a 
-profile on disk after that point will not cause any changes to the running containers that are using 
-it, but will apply the updated profile on container restart. Note that amending such files is not 
-recommended and may cause containers to fail on next restart, in the case of the new profile being more 
+Seccomp profiles are applied at container creation time. Therefore, updating the file contents of a
+profile on disk after that point will not cause any changes to the running containers that are using
+it, but will apply the updated profile on container restart. Note that amending such files is not
+recommended and may cause containers to fail on next restart, in the case of the new profile being more
 restrictive, invalid or the file no longer being present on disk.
 
 Currently, users have no way to tell whether their physical profiles have been deleted or modified.
 This KEP proposes no changes to the existing functionality.
 
-The recommended approach for rolling out changes to seccomp profiles is to always create _new profiles_ 
+The recommended approach for rolling out changes to seccomp profiles is to always create _new profiles_
 instead of updating existing ones. Create and deploy a new version of the existing Pod Template, changing the
-profile name to the newly created profile. Redeploy, once working delete the former Pod Template. This 
+profile name to the newly created profile. Redeploy, once working delete the former Pod Template. This
 will avoid disruption on in-flight workloads.
 
-The current behavior lacks features to facilitate the maintenance of seccomp profiles across the cluster. 
+The current behavior lacks features to facilitate the maintenance of seccomp profiles across the cluster.
 Two examples being: 1) the lack of profile synchronization across nodes and 2) how difficult it can be to
 identify that profiles have been changed on disk, after pods started using it.
-However, given its current "pseudo-GA" state, we don't want to change it with this KEP. We will explore 
+However, given its current "pseudo-GA" state, we don't want to change it with this KEP. We will explore
 improvements to the behavior through the seccomp-operator and/or a new feature-gated improvement.
 
-###### Profile files managed by the cluster admins 
-The current support relies on profiles being saved as files in all cluster nodes where the pods using 
-them may be scheduled. It is also the cluster admin's responsibility to ensure the files are correctly 
-saved and synchronised across the all nodes. 
+###### Profile files managed by the cluster admins
+The current support relies on profiles being saved as files in all cluster nodes where the pods using
+them may be scheduled. It is also the cluster admin's responsibility to ensure the files are correctly
+saved and synchronised across the all nodes.
 
-Cluster admins can build their own solutions to keep profiles in sync across nodes (e.g. 
-[using daemonsets](https://gardener.cloud/050-tutorials/content/howto/secure-seccomp/)). Or use 
-community driven projects (e.g. [seccomp config](https://github.com/UKHomeOffice/seccomp-config), 
-[openshift's machine config operator](https://github.com/openshift/machine-config-operator), 
-[seccomp operator](https://github.com/saschagrunert/seccomp-operator)) that focuses on solving similar 
+Cluster admins can build their own solutions to keep profiles in sync across nodes (e.g.
+[using daemonsets](https://gardener.cloud/050-tutorials/content/howto/secure-seccomp/)). Or use
+community driven projects (e.g. [seccomp config](https://github.com/UKHomeOffice/seccomp-config),
+[openshift's machine config operator](https://github.com/openshift/machine-config-operator),
+[seccomp operator](https://github.com/saschagrunert/seccomp-operator)) that focuses on solving similar
 problems.
 
 
 ##### RuntimeProfile
 
-We propose maintaining the support to a single runtime profile, which will be defined by using the 
+We propose maintaining the support to a single runtime profile, which will be defined by using the
 SeccompProfileRuntimeDefault SeccompProfileType. The reasons being:
 
 - No changes to the current behavior. Users are currently not allowed to specify other runtime profiles.
-The existing API server rejects runtime profile names that are different than `runtime/default`.  
-The only exception being `docker/default` - for backwards compatibility. 
-- Most runtimes only support the default profile, although the CRI is flexible enough to allow the kubelet 
-to send other profile names. 
+The existing API server rejects runtime profile names that are different than `runtime/default`.
+The only exception being `docker/default` - for backwards compatibility.
+- Most runtimes only support the default profile, although the CRI is flexible enough to allow the kubelet
+to send other profile names.
 - Dockershim does not currently provide a way to pass other runtime profile names.
 - Multiple runtime profiles has never been requested as a feature.
 
-If built-in support for multiple runtime profiles is needed in the future, a new KEP will be created to 
-cover its details. The implementation could be backwards compatible by creating a new profile type 
-(i.e. `SeccompProfileRuntime`). 
+If built-in support for multiple runtime profiles is needed in the future, a new KEP will be created to
+cover its details. The implementation could be backwards compatible by creating a new profile type
+(i.e. `SeccompProfileRuntime`).
 
 
 ## Design Details
@@ -280,7 +280,7 @@ cover its details. The implementation could be backwards compatible by creating 
 
 ### Failure and Fallback Strategy
 
-There are different scenarios in which applying seccomp may fail, below are the ones we mapped 
+There are different scenarios in which applying seccomp may fail, below are the ones we mapped
 and their outcome once this KEP is implemented:
 
 | Scenario | API Server Result | Kubelet Result |
@@ -328,7 +328,7 @@ in API validation.
 
 To raise awareness of annotation usage (in case of old automation), a warning mechanism will be used
 to highlight that support will be dropped in v1.23.
-The mechanisms being considerated are audit annotations, annotations on the object, events, or a 
+The mechanisms being considerated are audit annotations, annotations on the object, events, or a
 warning as described in [KEP #1693](/keps/sig-api-machinery/1693-warnings).
 
 #### PodSecurityPolicy Enforcement
@@ -365,16 +365,16 @@ a seccomp annotation.
 PodTemplates (e.g. ReplaceSets, Deployments, StatefulSets, etc.) will be ignored. The
 field/annotation resolution will happen on template instantiation.
 
-To raise awareness of existing controllers using the seccomp annotations that need to be migrated, 
+To raise awareness of existing controllers using the seccomp annotations that need to be migrated,
 a warning mechanism will be used to highlight that support will be dropped in v1.23.
 
-The mechanisms being considerated are audit annotations, annotations on the object, events, or a 
+The mechanisms being considerated are audit annotations, annotations on the object, events, or a
 warning as described in [KEP #1693](/keps/sig-api-machinery/1693-warnings).
 
-#### Runtime Profiles 
+#### Runtime Profiles
 
-The API Server will continue to reject annotations with runtime profiles different than `runtime/default`, 
-to maintain the existing behavior. 
+The API Server will continue to reject annotations with runtime profiles different than `runtime/default`,
+to maintain the existing behavior.
 
 Violations would lead to the error message:
 ```
@@ -383,8 +383,8 @@ Invalid value: "runtime/profile-name": must be a valid seccomp profile
 
 #### Kubelet Backwards compatibility
 
-The changes brought to the Kubelet by this KEP will ensure backwards compatibility in a similar 
-way the changes above define it at API Server level. Therefore, the seccomp profiles will be applied 
+The changes brought to the Kubelet by this KEP will ensure backwards compatibility in a similar
+way the changes above define it at API Server level. Therefore, the seccomp profiles will be applied
 following the priority order:
 
 1. Container-specific field.
@@ -460,19 +460,19 @@ you need any help or guidance.
 _This section must be completed when targeting alpha to a release._
 
 * **How can this feature be enabled / disabled in a live cluster?**
-  
-  This feature was implemented prior to the concept of feature gates. Meaning, it is already enabled 
+
+  This feature was implemented prior to the concept of feature gates. Meaning, it is already enabled
   in live clusters and cannot be disabled. This KEP is simply "cleaning up" the API to make it GA.
 
 * **Can the feature be disabled once it has been enabled (i.e. can we rollback
   the enablement)?**
 
-  This feature (seccomp) cannot be disabled, as it is currently in a "pseudo-GA" state. 
-  However, the changes it brings are backwards compatible, and the API supports rollback 
+  This feature (seccomp) cannot be disabled, as it is currently in a "pseudo-GA" state.
+  However, the changes it brings are backwards compatible, and the API supports rollback
   of the kubernetes apiserver as described in the [Version Skew Strategy](#version-skew-strategy).
 
 * **What happens if we reenable the feature if it was previously rolled back?**
-  
+
   N/A - the feature is already enabled by default since Kubernetes 1.3.
 
 * **Are there any tests for feature enablement/disablement?**
@@ -492,8 +492,8 @@ _This section must be completed when targeting beta graduation to a release._
   in the middle of rollout?
 
   The [Version Skew Strategy](#version-skew-strategy) section covers this point.
-  Running workloads should have no impact as the Kubelet will support either the 
-  existing annotations or the new fields introduced by this KEP. 
+  Running workloads should have no impact as the Kubelet will support either the
+  existing annotations or the new fields introduced by this KEP.
 
 * **What specific metrics should inform a rollback?**
 
@@ -504,9 +504,9 @@ _This section must be completed when targeting beta graduation to a release._
   Longer term, we may want to require automated upgrade/rollback tests, but we
   are missing a bunch of machinery and tooling and do that now.
 
-  Automated tests will cover the scenarios with and without the changes proposed 
+  Automated tests will cover the scenarios with and without the changes proposed
   on this KEP. As defined under [Version Skew Strategy](#version-skew-strategy),
-  we are assuming the cluster may have kubelets with older versions (without 
+  we are assuming the cluster may have kubelets with older versions (without
   this KEP' changes), therefore this will be covered as part of the new tests.
 
 ### Monitoring requirements
@@ -519,7 +519,7 @@ _This section must be completed when targeting beta graduation to a release._
   logs or events for this purpose.
 
   The feature is built into the kubelet and api server components. No metric is
-  planned at this moment. The way to determine usage is by checking whether the 
+  planned at this moment. The way to determine usage is by checking whether the
   pods/containers have a SeccompProfile set.
 
 * **What are the SLIs (Service Level Indicators) an operator can use to
@@ -564,7 +564,7 @@ _This section must be completed when targeting beta graduation to a release._
 
   For each of the fill in the following, thinking both about running user workloads
   and creating new ones, as well as about cluster-level services (e.g. DNS):
-  
+
   This KEP adds no new dependencies.
 
 
@@ -622,14 +622,14 @@ _This section must be completed when targeting beta graduation to a release._
 * **How does this feature react if the API server and/or etcd is unavailable?**
 
   This is integral part of both API server and the Kubelet. All their dependencies
-  will impact 
+  will impact
 
 * **What are other known failure modes?**
 
-  No impact is being foreseen to running workloads based on the nature of 
+  No impact is being foreseen to running workloads based on the nature of
   changes brought by this KEP.
-  
-  Although some general errors and failures can be seen on [Failure and Fallback Strategy](#failure-and-fallback-strategy). 
+
+  Although some general errors and failures can be seen on [Failure and Fallback Strategy](#failure-and-fallback-strategy).
 
 
 * **What steps should be taken if SLOs are not being met to determine the problem?**
@@ -642,8 +642,8 @@ _This section must be completed when targeting beta graduation to a release._
 ## Implementation History
 
 - 2019-07-17: Initial KEP
-- 2020-05-07: 
-  - Removed field RuntimeProfile from SeccompProfile. 
+- 2020-05-07:
+  - Removed field RuntimeProfile from SeccompProfile.
   - Removed field RuntimeProfiles from SeccompProfileSet.
   - Add validation details for LocalhostProfile.
   - Validation for runtime profiles being migrated.

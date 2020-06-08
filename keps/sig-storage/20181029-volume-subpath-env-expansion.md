@@ -55,7 +55,7 @@ If 2 or more pods run on the same host writing the same log file names to the sa
 
 Using the `subPath` is a neat option but because the `subPath` is "hardcoded" ie. `subPath: mySubPath` it does not enforce uniqueness
 
-To alleviate this, the `subPath` should be able to be configured from an environment variable as `subPath: $(MY_VARIABLE)` 
+To alleviate this, the `subPath` should be able to be configured from an environment variable as `subPath: $(MY_VARIABLE)`
 
 The workaround to this issue is to use symbolic links or relative symbolic links but these introduce sidecar init containers
 and a messy configuration overhead to try to create upfront folders with unique names - examples of this complexity are detailed below
@@ -89,9 +89,9 @@ The subpath code which expands environment variables from the API would (under t
         fieldRef:
           apiVersion: v1
           fieldPath: metadata.name
- 
+
    ...
-   
+
     volumeMounts:
     - name: workdir1
       mountPath: /logs
@@ -196,8 +196,8 @@ The only foreseeable solution is to move directly to 1.11 from 1.9.3 and switch 
 
 ## Alternatives - using subPath directly
 
-An initial attempt has been made for this but there are edge case compatibility issues which are highlighted here 
-https://github.com/kubernetes/kubernetes/pull/65769 regarding the alpha implementation 
+An initial attempt has been made for this but there are edge case compatibility issues which are highlighted here
+https://github.com/kubernetes/kubernetes/pull/65769 regarding the alpha implementation
 
 The objection is regarding backward compatibility with existing users' subpaths
 
@@ -205,7 +205,7 @@ Because of a breaking change in the API, it has been decided to offer an alterna
 original discussion here https://github.com/kubernetes/kubernetes/issues/48677
 
 The `VolumeSubPathEnvExpansion` alpha feature was delivered in k8s 1.11 allowing
-subpaths to be created from downward api variables as 
+subpaths to be created from downward api variables as
 ```
 apiVersion: v1
 kind: Pod
@@ -229,7 +229,7 @@ spec:
   restartPolicy: Never
   volumes:
   - name: workdir1
-    hostPath: 
+    hostPath:
       path: /var/log/pods
 ```
 
@@ -237,7 +237,7 @@ Because of the mentioned breaking changes, this implementation cannot proceed fo
 
 ### Risks and Mitigations
 
-The alpha implementation already provided a number of test cases to ensure that validations of `subPath` configurations 
+The alpha implementation already provided a number of test cases to ensure that validations of `subPath` configurations
 were not circumvented or violated
 
 The API change would ensure that the substitute of the variables takes place immediately before the subpath mount validation
@@ -255,11 +255,11 @@ The existing alpha feature introduced many tests to mitigate issues. These would
 
 [umbrella issues]: https://github.com/kubernetes/kubernetes/pull/49388
 
-The tests that have been approved for 1.14 Alpha include: 
+The tests that have been approved for 1.14 Alpha include:
 * Verification that a failing subpath expansion can be modified during the lifecycle of a container
 * Verification that subpaths can be written correctly
 * Verification that subpath mounts remain consistent on a container restart
-* Verification of consistency if environment variables change 
+* Verification of consistency if environment variables change
 
 Tests that have been operational for the initial feature gate since 1.11 include:
 * Substituting values in a volume subpath

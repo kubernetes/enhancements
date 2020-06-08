@@ -75,7 +75,7 @@ Pods can influence scheduling decisions with features such as node/pod affinity,
 tolerations or (alpha) even pod spreading. But there are 2 problems:
 
 - A single kube-scheduler configuration will weigh scores in such a way that
-  doesn't adjust to all types of workloads. For example, the default 
+  doesn't adjust to all types of workloads. For example, the default
   configuration includes scores that seek high availability of services.
 - Authors of the workloads need to be aware of the cluster characteristics and
   the weights of the scores to influence their pods' scheduling in a meaningful
@@ -206,7 +206,7 @@ produce an empty configuration for `default-scheduler`.
 - `hard-pod-affinity-symmetric-weight` will be bound to a new deprecated option
   that will be processed into a `pluginConfig` slice of the default profile,
   like follows:
-  
+
 ```yaml
 profiles:
   - schedulerName: 'default-scheduler'
@@ -241,7 +241,7 @@ Operators could introduce profiles that disable scheduling features exposed in
 the Pod Spec. Fortunately, the framework's plugins configuration makes it easy
 to [create custom configurations from the default](
 https://github.com/kubernetes/kubernetes/blob/50deec2/pkg/scheduler/apis/config/types.go#L156-L160)
-through its `enabled` and `disabled` lists. 
+through its `enabled` and `disabled` lists.
 However, we should discourage the use of `*` to disable all plugins in
 the scheduler documentation.
 
@@ -311,15 +311,15 @@ metrics related to scheduling attempts (counts and latency).
     - Components depending on the feature gate:
   - [x] Other
     - Describe the mechanism:
-    
+
       Modify kube-scheduler configuration file to use a single profile.
     - Will enabling / disabling the feature require downtime of the control
       plane?
-      
+
       Yes, but only kube-scheduler.
     - Will enabling / disabling the feature require downtime or reprovisioning
       of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled)
-      
+
       No
 
 * **Does enabling the feature change any default behavior?**
@@ -328,7 +328,7 @@ metrics related to scheduling attempts (counts and latency).
 
 * **Can the feature be disabled once it has been enabled (i.e. can we rollback
   the enablement)?**
-  
+
   Yes.
 
 * **What happens if we reenable the feature if it was previously rolled back?**
@@ -375,7 +375,7 @@ metrics related to scheduling attempts (counts and latency).
 
 * **What are the SLIs (Service Level Indicators) an operator can use to
   determine the health of the service?**
-  
+
   - [x] Metrics
     - Metric name: `schedule_attempts_total`, `e2e_scheduling_duration_seconds`
     - Components exposing the metric: `kube-scheduler`
@@ -389,7 +389,7 @@ metrics related to scheduling attempts (counts and latency).
 
 * **Are there any missing metrics that would be useful to have to improve
   observability if this feature?**
-  
+
   No.
 
 ### Dependencies
@@ -410,30 +410,30 @@ metrics related to scheduling attempts (counts and latency).
 
 * **Will enabling / using this feature result in any new calls to cloud
   provider?**
-  
+
   No.
 
 * **Will enabling / using this feature result in increasing size or count
   of the existing API objects?**
-  
+
   No.
 
 * **Will enabling / using this feature result in increasing time taken by any
   operations covered by [existing SLIs/SLOs][]?**
-  
+
   No.
 
 * **Will enabling / using this feature result in non-negligible increase of
   resource usage (CPU, RAM, disk, IO, ...) in any components?**
-  
+
   The overhead is minimal and far lower than running multiple kube-scheduler
   binaries. Here is the detail:
-  
+
   - Memory: each profile is kept in memory with instantiated plugins.
   - CPU: There is a map lookup for each pod to obtain the profile.
-  
+
   Note that using a single profile (default behavior) won't have any overhead.
-  
+
 ### Troubleshooting
 
 * **How does this feature react if the API server and/or etcd is unavailable?**

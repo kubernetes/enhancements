@@ -167,7 +167,7 @@ CSRs have a `signerName` field which is used to specify which signer the CSR cre
 To support migration from v1beta1 to v1, this required field will be defaulted in v1beta1 (optional in openapi), but
 not defaulted and required in v1 :
  1. If it's a kubelet client certificate, it is assigned "kubernetes.io/kube-apiserver-client-kubelet".
- 2. If it's a kubelet serving certificate, it is assigned "kubernetes.io/kubelet-serving". 
+ 2. If it's a kubelet serving certificate, it is assigned "kubernetes.io/kubelet-serving".
  see https://github.com/kubernetes/kubernetes/blob/release-1.10/pkg/controller/certificates/approver/sarapprove.go#L211-L223 for details.
  3. Otherwise, it is assigned "kubernetes.io/legacy-unknown".
 
@@ -211,7 +211,7 @@ Kubernetes provides the following well-known signers.  Today, failures for all o
     4. Permitted key usages - exactly `[]string{"key encipherment", "digital signature", "client auth"}`
     5. Expiration/cert lifetime - minimum of CSR signer or request.  Sanity of the time is the concern of the signer.
     6. CA bit allowed/disallowed - not allowed.
- 3. kubernetes.io/kubelet-serving - signs serving certificates that are honored as a valid kubelet serving certificate 
+ 3. kubernetes.io/kubelet-serving - signs serving certificates that are honored as a valid kubelet serving certificate
     by the kube-apiserver, but has no other guarantees.  Never auto-approved by kube-controller-manager.
     1. Trust distribution: signed certificates must be honored by the kube-apiserver as valid to terminate connections to a kubelet.
        The CA bundle is not distributed by any other means.
@@ -244,14 +244,14 @@ Given multiple signers which may be implemented as "dumb" controllers that sign 
 to providing a simple way to subdivide approval powers through the API.  We will introduce an admission plugin that requires
  1. verb == `approve`
  2. resource == `signers`
- 3. name == `<.spec.signerName>` 
+ 3. name == `<.spec.signerName>`
  4. group == `certificates.k8s.io`
- 
+
 To support a use-case that wants a single rule to allow approving an entire domain (example.com in example.com/cool-signer),
 there will be a second check for
  1. verb == `approve`
  2. resource == `signers`
- 3. name == `<.spec.signerName domain part only>/*` 
+ 3. name == `<.spec.signerName domain part only>/*`
  4. group == `certificates.k8s.io`
 
 There are congruent check for providing a signature that use the verb=="sign" instead of "approve" above.
@@ -302,14 +302,14 @@ type CertificateSigningRequest struct {
 }
 
 type CertificateSigningRequestSpec struct {
-  // requested signer for the request up to 571 characters long.  It is a qualified name in the form: `scope-hostname.io/name`.  
+  // requested signer for the request up to 571 characters long.  It is a qualified name in the form: `scope-hostname.io/name`.
   // In v1beta1, it will be defaulted:
-  //  1. If it's a kubelet client certificate, it is assigned "kubernetes.io/kube-apiserver-client-kubelet".  This is determined by 
+  //  1. If it's a kubelet client certificate, it is assigned "kubernetes.io/kube-apiserver-client-kubelet".  This is determined by
   //     Seeing if organizations are exactly `[]string{"system:nodes"}`, common name starts with `"system:node:"`, and
   //     key usages are exactly `[]string{"key encipherment", "digital signature", "client auth"}`
   //  2. Otherwise, it is assigned "kubernetes.io/legacy-unknown".
   // In v1, it will not be defaulted, is required, and `kubernetes.io/legacy-unknown` is not permitted when creating new requests.
-  // Distribution of trust for signers happens out of band. 
+  // Distribution of trust for signers happens out of band.
   // The following signers are known to the kube-controller-manager signer.
   //  1. kubernetes.io/kube-apiserver-client - signs certificates that will be honored as client-certs by the kube-apiserver. Never auto-approved by kube-controller-manager.
   //  2. kubernetes.io/kube-apiserver-client-kubelet - signs client certificates that will be honored as client-certs by the kube-apiserver. May be auto-approved by kube-controller-manager.
@@ -485,7 +485,7 @@ control plane.
   - status subresource get/update behavior
   - creating, approving, and signing a CSR for a custom signerName (e.g. `k8s.example.com/e2e`)
 
-## Graduation Criteria	
+## Graduation Criteria
 
 ### Beta to GA Graduation
 

@@ -16,7 +16,7 @@ creation-date: 2019-03-18
 last-updated: 2019-03-18
 status: implementable
 see-also:
-  - 
+  -
 replaces:
 superseded-by:
 ---
@@ -84,13 +84,13 @@ This feature is implemented by [this PR](https://github.com/kubernetes/kubernete
 
 #### Eviction of non-ready pods
 
-There are a couple of open issues where pods can't be evicted, even if they not Ready and Running 
+There are a couple of open issues where pods can't be evicted, even if they not Ready and Running
 (https://github.com/kubernetes/kubernetes/issues/72320 and https://github.com/kubernetes/kubernetes/issues/80389).
 The root of this issue, is that the rules in the disruption controller for what is a healthy pod, and the rules
 in the Eviction API for when a pod can be evicted without looking at the PDB are not the same. This means a pod can
 be considered unhealthy by the disruption controller so it does not count as healthy when computing `DisruptionsAllowed`,
 but will still require `DisruptionsAllowed` to be larger than 0 for it to be evicted. Some strange situations can
-arise from this. For example if we have a PDB with `MinAvailable  = 1` and 10 pods that are all in the CrashLoop state 
+arise from this. For example if we have a PDB with `MinAvailable  = 1` and 10 pods that are all in the CrashLoop state
 (`Running`, but not `Ready`), we will not be allowed to evict any of the pods.
 
 #### Make the disruption controller more lenient for pods belonging to non-scale controllers
@@ -104,7 +104,7 @@ controller will set `DisruptionsAllowed` to 0, which means none of the pods can 
 concerning this behavior: https://github.com/kubernetes/kubernetes/issues/77383.
 
 The current behavior of the disruption controller for the different types of input and the different
-types of pods that might be encountered are documented in: 
+types of pods that might be encountered are documented in:
 https://docs.google.com/spreadsheets/d/12HUundBS-slA6axfQYZPRCeIu_Au_wsGD0Vu_oKAnM8/edit?usp=sharing
 
 ### Risks and Mitigations
@@ -122,7 +122,7 @@ PDBs, they must add logic to invalid the cache on updates.
 example, a PDB states that at least 10 replicas of a collection must be alive.
 Kubernetes control plane evicts some of the existing pods, but keeps at least 10
 around. The PDB is updated and states that at least 20 replicas must be kept
-alive. It may appear to an observer that the evictions happened before the PDB 
+alive. It may appear to an observer that the evictions happened before the PDB
 update were incorrect, if they don’t notice the PDB update.
   - Action Item: Update documents and explain mutability of PDB its side effects.
 

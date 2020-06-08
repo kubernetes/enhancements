@@ -173,7 +173,7 @@ should be preventable when this KEP is in place.
   like to prevent some tenants from crowding out the others.  Various
   usage scenarios involve identifying the tenant in the following
   ways.
-  
+
   - Each tenant corresponds with a kube API namespace.
 
   - Each tenant corresponds with a user name.
@@ -887,7 +887,7 @@ spec:
   match:
   - and: [ ] # match everything
 ```
-  
+
 Following is a FlowSchema that might be used for the requests by the
 aggregated apiservers of
 https://github.com/MikeSpreitzer/kube-examples/tree/add-kos/staging/kos
@@ -1786,9 +1786,9 @@ Beta:
 
 - Blocking Items:
   - Improving observability and robustness: adding debug endpoint dumping fine-grained states of the queues for priority-levels
-  - Providing approaches to opt-out client-side rate-limitting: configurable client-side ratelimitting(QPS/Burst) via either kubeconfig or command-line flags 
+  - Providing approaches to opt-out client-side rate-limitting: configurable client-side ratelimitting(QPS/Burst) via either kubeconfig or command-line flags
   - Necessary e2e test: adding E2E tests which at least covers:
-    - Basics of `flowcontrol.apiserver.k8s.io/v1beta1` API 
+    - Basics of `flowcontrol.apiserver.k8s.io/v1beta1` API
     - Reloading flowcontrol configurations upon `flowcontrol.apiserver.k8s.io/v1beta1` API resources changes
 - Non-Blocking Items:
   - Supports concurrency limiting upon long-running requests

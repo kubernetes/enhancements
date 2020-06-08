@@ -68,14 +68,14 @@ It is independent of, but complementary to, the [*server-side apply*](https://gi
 initiative that was started later and targeted at a separate collection of
 `kubectl apply` issues.
 
-Kustomize offers generators and transformations in a declarative form that 
+Kustomize offers generators and transformations in a declarative form that
 improve on functionality provided by existing imperative commands in kubectl.
 
 The declarative approach offers a clear path to accountability (all input can
 be kept in version control), can safely exploit a holistic, unbounded view of
-disparate resources and their interdependence (it's a plan about what to do, 
-not a direct action), and can be easily constrained to verifiable rules 
-across this view (all edits must be structured, no removal semantics, no 
+disparate resources and their interdependence (it's a plan about what to do,
+not a direct action), and can be easily constrained to verifiable rules
+across this view (all edits must be structured, no removal semantics, no
 environment side-effects, etc.).
 
 Imperative kubectl commands / flags available through kustomize:
@@ -186,13 +186,13 @@ User friction solved through capabilities such as:
 
 Kustomize Standalone Sub Command
 
-Publish the `kustomize build` command as `kubectl kustomize`.  Update 
+Publish the `kustomize build` command as `kubectl kustomize`.  Update
 documentation to demonstrate using kustomize as `kubectl kustomize <dir> | kubectl apply -f -`.
 
 `kubectl kustomize` takes a single argument with is the location of a directory containing a file named `kustomization.yaml`
 and writes to stdout the kustomized Resource Config.
 
-If the directory does not contain a `kustomization.yaml` file, it returns an 
+If the directory does not contain a `kustomization.yaml` file, it returns an
 error.
 
 Defer deeper integration into ResourceBuilder (e.g. `kubectl apply -k <dir>`) as a follow up after discussing
@@ -242,7 +242,7 @@ commonAnnotations:
 
 configMapGenerator:
 - name: myJavaServerEnvVars
-  literals:  
+  literals:
   - JAVA_HOME=/opt/java/jdk
   - JAVA_TOOL_OPTIONS=-agentlib:hprof
 
@@ -301,7 +301,7 @@ Low:
 
 - Kustomize has other porcelain commands to facilitate common workflows.  This proposal does not include integrating
   them into kubectl.  Users would need to download kustomize separate to get these benefits.
-  
+
 Low:
 
 - `kubectl kustomize <dir>` doesn't take a `-f` flag like the other commands.
@@ -334,9 +334,9 @@ Most implementation will be in cli-runtime
 
 - [ ] vendor `kustomize/pkg` into kubernetes
 - [ ] copy `kustomize/k8sdeps` into cli-runtime
-  - Once cli-runtime is out of k/k, move the kustomize libraries there (but 
+  - Once cli-runtime is out of k/k, move the kustomize libraries there (but
   not the commands)
-- [ ] Implement a function in cli-runtime to run kustomize build with input as fSys and/or path. 
+- [ ] Implement a function in cli-runtime to run kustomize build with input as fSys and/or path.
    - execute kustomize build to get a list of resources
    - write the output to io.Writer
 - [ ] Add a subcommand `kustomize` in kubectl. This command accepts one argument <dir> and write the output to stdout
@@ -344,7 +344,7 @@ Most implementation will be in cli-runtime
 - [ ] documentation:
   - Write full doc for `kubectl kustomize`
   - Update the examples in kubectl apply/delete to include the usage of kustomize
-  
+
 ## Alternatives
 
 The approaches in this section are considered, but rejected.
@@ -368,7 +368,7 @@ kubernetes/staging and move to this as the source of truth.
 - Cons
   - It leaves long standing issues in kubectl unaddressed within the tool itself.
   - It does not support any deeper integrations - such as giving error messages with meaningful line numbers.
-  
+
 ### Build a separate tools targeted at Kubernetes declarative workflows.
 
 Copy the declarative code from kubectl into a new tool.  Use this for declarative workflows.

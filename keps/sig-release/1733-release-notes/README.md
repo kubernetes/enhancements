@@ -73,7 +73,7 @@ As stated above, this effort should be split into two phases.
 
 #### Updating Anago
 
-Currently, `anago` uses a 
+Currently, `anago` uses a
 [different tool](https://github.com/kubernetes/release/blob/master/relnotes) to generate new
 release notes with every release save for main 1.x.0 releases. We need to ensure that the
 `release-notes` tool can generate the same output as the `relnotes` tool to ensure consistency.

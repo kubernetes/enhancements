@@ -313,7 +313,7 @@ type Command struct {
 	Deprecated string `json:"deprecated,omitempty"`
 
 	// Flags are the command line flags.
-	// 
+	//
 	// Flags are used by the client to expose command line flags to users and populate the Request go-templates
 	// with the user provided values.
 	//

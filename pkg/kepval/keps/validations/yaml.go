@@ -136,7 +136,7 @@ func init() {
 		fmt.Fprintf(os.Stderr, "unable to read aliases content: %v\n", err)
 		os.Exit(1)
 	}
-	config := &struct{
+	config := &struct {
 		Data map[string][]string `json:"aliases,omitempty"`
 	}{}
 	if err := yaml.Unmarshal(body, config); err != nil {

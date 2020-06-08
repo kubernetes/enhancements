@@ -94,5 +94,5 @@ There is no need to develop new tests, IPv6 only clusters should pass the same e
 - [IPv6 Support was introduced as alpha in kubernetes 1.9](https://github.com/kubernetes/kubernetes/blob/release-1.9/CHANGELOG-1.9.md#ipv6)
 - [IPv6 Support enhancement request](https://github.com/kubernetes/enhancements/issues/508)
 - [IPv6 implementation tracking issue](https://github.com/kubernetes/kubernetes/issues/1443)
-- [IPv6 CI](https://testgrid.k8s.io/conformance-kind#kind%20(IPv6),%20master%20(dev)) 
+- [IPv6 CI](https://testgrid.k8s.io/conformance-kind#kind%20(IPv6),%20master%20(dev))
 - [Kind IPv6 support](https://github.com/kubernetes-sigs/kind/pull/636)

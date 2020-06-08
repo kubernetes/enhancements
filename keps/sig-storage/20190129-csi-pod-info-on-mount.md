@@ -45,7 +45,7 @@ This KEP contains details that are missing from the design proposal.
 
 * Unit tests in kubelet volume manager.
 * E2E tests:
-    * `CSI workload information [Feature:CSIDriverRegistry]` via CSI mock driver 
+    * `CSI workload information [Feature:CSIDriverRegistry]` via CSI mock driver
 
 ## Graduation Criteria
 

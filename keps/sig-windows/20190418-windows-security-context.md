@@ -66,15 +66,15 @@ In this KEP, we propose API enhancements in the Kubernetes pod spec to capture W
 ## Motivation
 
  There are two important motivations for the API enhancements described in this KEP:
- 
+
  1. With the introduction of Alpha support for GMSA in Kubernetes v1.14, references to GMSA credential spec custom resources need to be specified through annotations at the pod and container level. However, as detailed in the related [GMSA](https://github.com/kubernetes/enhancements/blob/master/keps/sig-windows/20181221-windows-group-managed-service-accounts-for-container-identity.md) KEP, we want the ability to specify references to GMSA credential specs directly in the pod/container specs as fields (without having to use annotations) beyond the Alpha stage.
- 
+
  2. The Windows implementation of the dockershim, CRI and the low-level OCI spec can already handle a username (instead of UID), which is interpreted inside the container to create a process as the intended user. This however is not surfaced as a field in the pod/container specs that an operator can specify. We want the ability to specify the desired username in the pod/container specs as fields and be able to pass them to the configured Windows runtime.
 
 ### Goals
 
 Propose API enhancements in existing `PodSecurityContext` and `SecurityContext` structs for pods and individual containers respectively to allow operators to specify:
-- Name of a GMSA credential spec custom resource 
+- Name of a GMSA credential spec custom resource
 - Full GMSA credential spec JSON
 - A Windows username whose identity will be used to kick off the entrypoint process in containers.
 
@@ -82,7 +82,7 @@ Propose API enhancements in existing `PodSecurityContext` and `SecurityContext` 
 
 - Details around GMSA end-2-end functionality and interaction with webhooks that is covered in the [GMSA](https://github.com/kubernetes/enhancements/blob/master/keps/sig-windows/20181221-windows-group-managed-service-accounts-for-container-identity.md) KEP.
 - Implementation details and security considerations around how a GMSACredentialSpecName is expanded to GMSACredentialSpec as that is covered in details in the [GMSA](https://github.com/kubernetes/enhancements/blob/master/keps/sig-windows/20181221-windows-group-managed-service-accounts-for-container-identity.md) KEP.
-- Details around how GMSA credential specs or Windows username is passed through CRI and interpreted by Windows container run-times like Docker or ContainerD. Enhancements related to GMSA in CRI is already covered in the [GMSA](https://github.com/kubernetes/enhancements/blob/master/keps/sig-windows/20181221-windows-group-managed-service-accounts-for-container-identity.md) KEP. Enhancements related to Username in CRI was introduced a while back in a [PR](https://github.com/kubernetes/kubernetes/pull/64009) 
+- Details around how GMSA credential specs or Windows username is passed through CRI and interpreted by Windows container run-times like Docker or ContainerD. Enhancements related to GMSA in CRI is already covered in the [GMSA](https://github.com/kubernetes/enhancements/blob/master/keps/sig-windows/20181221-windows-group-managed-service-accounts-for-container-identity.md) KEP. Enhancements related to Username in CRI was introduced a while back in a [PR](https://github.com/kubernetes/kubernetes/pull/64009)
 
 ## Proposal
 

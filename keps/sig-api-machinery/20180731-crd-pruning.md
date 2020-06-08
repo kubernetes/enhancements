@@ -48,9 +48,9 @@ see-also:
 
 ## Summary
 
-CustomResources store arbitrary JSON data without following the typical Kubernetes API  behaviour to prune unknown fields. This makes CRDs different, but also leads to security and general data consistency concerns because it is unclear what is actually stored in etcd. 
+CustomResources store arbitrary JSON data without following the typical Kubernetes API  behaviour to prune unknown fields. This makes CRDs different, but also leads to security and general data consistency concerns because it is unclear what is actually stored in etcd.
 
-This KEP proposes to add pruning of all fields which are not specified in the OpenAPI validation schemas given in the CRD. 
+This KEP proposes to add pruning of all fields which are not specified in the OpenAPI validation schemas given in the CRD.
 
 Pruning will be opt-in in v1beta1 of `apiextensions.k8s.io` via
 
@@ -62,7 +62,7 @@ spec:
   ...
 ```
 
-i.e. CRDs created in v1beta1 default to disabled pruning. 
+i.e. CRDs created in v1beta1 default to disabled pruning.
 
 **Pruning will be enabled for every CRD created in v1** and we will hide `preserveUnknownFields` in v1 in that case.
 
@@ -91,7 +91,7 @@ We assume the CRD has _structural schemas_ (as defined in [KEP Vanilla OpenAPI S
 
 We propose to
 
-1. derive the value-validation-less variant of the structural schema (trivial by definition of _structural schema_) and 
+1. derive the value-validation-less variant of the structural schema (trivial by definition of _structural schema_) and
 2. recursively follow the given CustomResource instance and the structural schema, removing fields from the former if they are not specified in the `properties` of the latter. Skip field removal in that recursion step (not for children) if `additionalProperties` is defined in the schema.
 3. return a deserialization error if the CustomResource instance JSON value and the type in the structural schema do not match
 4. fields of `metav1.TypeMeta` (`apiVersion` and `kind`) and `metav1.ObjectMeta` at the object root are implicitly specified. `metav1.ObjectMeta` is always pruned.
@@ -112,7 +112,7 @@ The vendor extension `x-kubernetes-preserve-unknown-fields: true` proposed in (a
 
 The whole JSON subtree `X` at the level of `x-kubernetes-preserve-unknown-fields: true` and below is excluded from pruning, with the following exceptions:
 1. pruning starts again at `Y` in the subtree of children of `X` if `Y` is specified by `properties`.
-2. pruning starts again in the `metadata` child of `Y` in the subtree of `X` if `Y` is specified by `x-kubernetes-embedded-resource: true`. 
+2. pruning starts again in the `metadata` child of `Y` in the subtree of `X` if `Y` is specified by `x-kubernetes-embedded-resource: true`.
 
 We do not allow `x-kubernetes-preserve-unknown-fields: false`.
 
@@ -125,7 +125,7 @@ Note that (1) does not apply if `X` and  `Y` are the same, compare examples (7) 
    ```yaml
    type: object
    ```
-   
+
    Everything is pruned, i.e.
 
    ```json
@@ -134,13 +134,13 @@ Note that (1) does not apply if `X` and  `Y` are the same, compare examples (7) 
      "json": {"bar": 43}
    }
    ```
-   
+
    is pruned to
-   
+
    ```json
    {}
    ```
-   
+
 2. `properties` at top-level
 
    ```yaml
@@ -149,7 +149,7 @@ Note that (1) does not apply if `X` and  `Y` are the same, compare examples (7) 
      foo:
        type: object
    ```
-   
+
    Everything other than `foo` is pruned, i.e.
 
    ```json
@@ -160,9 +160,9 @@ Note that (1) does not apply if `X` and  `Y` are the same, compare examples (7) 
      "json": {"bar": 43}
    }
    ```
-   
+
    is pruned to
-   
+
    ```json
    {
      "foo": {}
@@ -180,7 +180,7 @@ Note that (1) does not apply if `X` and  `Y` are the same, compare examples (7) 
          bar:
            type: object
    ```
-   
+
    Everything other than `foo` and `bar` is pruned, i.e.
 
    ```json
@@ -194,9 +194,9 @@ Note that (1) does not apply if `X` and  `Y` are the same, compare examples (7) 
      "json": {"ghi": 44}
    }
    ```
-   
+
    is pruned to
-   
+
    ```json
    {
      "foo": {
@@ -204,7 +204,7 @@ Note that (1) does not apply if `X` and  `Y` are the same, compare examples (7) 
      }
    }
    ```
-   
+
 4. `additionalProperties` with a non-empty schema
 
    ```yaml
@@ -215,7 +215,7 @@ Note that (1) does not apply if `X` and  `Y` are the same, compare examples (7) 
        additionalProperties:
          type: object
    ```
-   
+
    Everything directly inside of `foo` stays (it is considered a string map), but
    objects further down are pruned again because they are unspecified, i.e.
 
@@ -228,9 +228,9 @@ Note that (1) does not apply if `X` and  `Y` are the same, compare examples (7) 
      "json": {"ghi": 44}
    }
    ```
-   
+
    is pruned to
-   
+
    ```json
    {
      "foo": {
@@ -249,7 +249,7 @@ Note that (1) does not apply if `X` and  `Y` are the same, compare examples (7) 
        type: object
        additionalProperties: false
    ```
-   
+
    Everything directly inside of `foo` stays (it is considered a string map), but
    objects further down are pruned again because they are unspecified, i.e.
 
@@ -262,9 +262,9 @@ Note that (1) does not apply if `X` and  `Y` are the same, compare examples (7) 
      "json": {"ghi": 44}
    }
    ```
-   
+
    is pruned to
-   
+
    ```json
    {
      "foo": {
@@ -274,7 +274,7 @@ Note that (1) does not apply if `X` and  `Y` are the same, compare examples (7) 
    }
    ```
    but validation will fail. We consider the semantical meaning of `false`  as value validation, not structural.
-   
+
 6. arbitrary JSON
 
    ```yaml
@@ -286,22 +286,22 @@ Note that (1) does not apply if `X` and  `Y` are the same, compare examples (7) 
    ```
 
    Inside of `.json` nothing is pruned, i.e.
-   
+
    ```json
    {
      "foo": 42,
      "json": {"bar": 43}
    }
    ```
-   
+
    is pruned to
-   
+
    ```json
    {
       "json": {"bar": 43}
    }
    ```
-   
+
 7. JSON, but with properties at the same level
 
    ```yaml
@@ -317,7 +317,7 @@ Note that (1) does not apply if `X` and  `Y` are the same, compare examples (7) 
    ```
 
    Inside of `.json` nothing is pruned, including everything in `bar`, i.e.
-   
+
    ```json
    {
      "foo": 42,
@@ -329,9 +329,9 @@ Note that (1) does not apply if `X` and  `Y` are the same, compare examples (7) 
      }
    }
    ```
-   
+
    is pruned to
-   
+
    ```json
    {
       "json": {
@@ -342,7 +342,7 @@ Note that (1) does not apply if `X` and  `Y` are the same, compare examples (7) 
       }
    }
    ```
-   
+
 8. JSON, but with properties at the same **and lower** levels
 
    ```yaml
@@ -361,7 +361,7 @@ Note that (1) does not apply if `X` and  `Y` are the same, compare examples (7) 
    ```
 
    The `properties` for `bar` "resets" pruning to normal behaviour, i.e.
-   
+
    ```json
    {
      "foo": 42,
@@ -374,9 +374,9 @@ Note that (1) does not apply if `X` and  `Y` are the same, compare examples (7) 
      }
    }
    ```
-   
+
    is pruned to
-   
+
    ```json
    {
       "json": {
@@ -387,7 +387,7 @@ Note that (1) does not apply if `X` and  `Y` are the same, compare examples (7) 
       }
    }
    ```
-   
+
 9. `additionalProperties` within JSON
 
    ```yaml
@@ -402,7 +402,7 @@ Note that (1) does not apply if `X` and  `Y` are the same, compare examples (7) 
    ```
 
    The `additionalProperties` disables pruning **at its level**, `x-kubernetes-preserve-unknown-fields: true` already has the same effect. Inside of the additional properties `x-kubernetes-preserve-unknown-fields: true` keeps being effective, i.e.
-   
+
    ```json
    {
      "foo": 42,
@@ -415,9 +415,9 @@ Note that (1) does not apply if `X` and  `Y` are the same, compare examples (7) 
      }
    }
    ```
-   
+
    is pruned to
-   
+
    ```json
    {
      "json": {
@@ -428,7 +428,7 @@ Note that (1) does not apply if `X` and  `Y` are the same, compare examples (7) 
        "def": 45
      }
    }
-   ```   
+   ```
 10. embedded resource
 
    ```yaml
@@ -440,7 +440,7 @@ Note that (1) does not apply if `X` and  `Y` are the same, compare examples (7) 
        x-kubernetes-embedded-resource: true
        x-kubernetes-preserve-unknown-fields: true
    ```
-   
+
    Here, inside of `.object` nothing is pruned with the exception of unknown fields under `.object.metadata`, i.e.
 
    ```json
@@ -456,9 +456,9 @@ Note that (1) does not apply if `X` and  `Y` are the same, compare examples (7) 
      }
    }
    ```
-      
+
    is pruned to
-      
+
    ```json
    {
       "object": {
@@ -470,7 +470,7 @@ Note that (1) does not apply if `X` and  `Y` are the same, compare examples (7) 
       }
    }
    ```
- 
+
 11. implicit `metav1.TypeMeta` and `metav1.ObjectMeta`
 
    ```yaml
@@ -478,7 +478,7 @@ Note that (1) does not apply if `X` and  `Y` are the same, compare examples (7) 
    ```
 
    Pruning takes place, but `apiVersion`, `kind`, `metadata` and known fields under `metadata` are preserved, i.e.
-   
+
    ```json
    {
      "apiVersion": "example/v1",
@@ -490,9 +490,9 @@ Note that (1) does not apply if `X` and  `Y` are the same, compare examples (7) 
      "foo": 42
    }
    ```
-   
+
    is pruned to
-   
+
    ```json
    {
      "apiVersion": "example/v1",
@@ -510,11 +510,11 @@ We will add a `preserveUnknownFields` flag to `CustomResourceDefinitionSpec` of 
 ```go
 type CustomResourceDefinitionSpec struct {
   ...
-	
+
   // PreserveUnknownFields disables pruning of object fields which are not
   // specified in the OpenAPI schema. apiVersion, kind, metadata and known
   // fields inside metadata are excluded from pruning.
-  // Defaults to true in v1beta1, and will default to false in v1. 
+  // Defaults to true in v1beta1, and will default to false in v1.
   // Setting this field to false is considered an beta API.
   PreserveUnknownFields *bool
 }
@@ -526,11 +526,11 @@ For `apiextensions.k8s.io/v1` we will change the default to false and forbid tru
 
 We will hide `preserveUnknownFields` in v1 objects if it is not true.
 
-When CRD authors switch on pruning for an existing CRD, they are supposed to make their users trigger a data migration of existing objects in etcd, be it via an external migration mechanism, an operator rewriting all objects or manual procedures. 
+When CRD authors switch on pruning for an existing CRD, they are supposed to make their users trigger a data migration of existing objects in etcd, be it via an external migration mechanism, an operator rewriting all objects or manual procedures.
 
 ### References
 
-* Old pruning implementation PR https://github.com/kubernetes/kubernetes/pull/64558, to be adapted 
+* Old pruning implementation PR https://github.com/kubernetes/kubernetes/pull/64558, to be adapted
 * [OpenAPI v3 specification](https://github.com/OAI/OpenAPI-Specification/blob/master/versions/3.0.0.md)
 * [JSON Schema](http://json-schema.org/)
 
@@ -546,7 +546,7 @@ We default `preserveUnknownFields` to true and hence switch off the whole code p
   * verify that `preserveUnknownFields` is defaulted to true.
   * verify that pruning happens if `preserveUnknownFields` is false, for all versions in the CRD according to the schema of the respective version.
   * verify that `metadata`, `apiVersion`, `kind` are preserved if `preserveUnknownFields` is false and there is no schema given in the CRD.
-  
+
 **blockers for beta:**
 
 * we implement and verify that `x-kubernetes-embedded-resource` and `x-kubernetes-preserve-unknown-fields` work as expected.
@@ -576,8 +576,8 @@ Hence, we assume to be at beta in 1.15 and GA in 1.16 guided by the graduation c
 * downgrading from 1.16 (where pruning might be GA) to 1.15 will keep the same behaviour as we don't feature gate `preserveUnknownFields: false`.
 * upgrading from 1.14 will default to `preserveUnknownFields: true` and hence changes no behaviour.
 * upgrading from 1.15 will keep the value and hence change no behaviour.
-* when v1 of `apiextensions.k8s.io` is added, we will keep the old pruning behaviour for CRDs created in v1beta1 with `preserveUnknownFields: true`, but forbid `preserveUnknownFields: true` for every newly create v1 CRD. Hence, we keep backwards compatibility. 
-  
+* when v1 of `apiextensions.k8s.io` is added, we will keep the old pruning behaviour for CRDs created in v1beta1 with `preserveUnknownFields: true`, but forbid `preserveUnknownFields: true` for every newly create v1 CRD. Hence, we keep backwards compatibility.
+
   Technically, it is still possible to get the old behaviour even in v1 by setting `x-kubernetes-preserve-unknown-fields: true` at the root level and in each `properties` statement. But we enforce the definition of a schema, at least with this minimal contents.
 
 ### Version Skew Strategy
@@ -591,9 +591,9 @@ Hence, we assume to be at beta in 1.15 and GA in 1.16 guided by the graduation c
 * we could allow nested `x-kubernetes-preserve-unknown-fields: false`, i.e. to switch on pruning again for a subtree. This might encourage non-Kubernetes-like API types. It is unclear whether there are use-cases we want to support which need this. We can add this in the future.
 * we could allow per-version opt-in/out of pruning via `preserveUnknownFields` in `CustomResourceDefinitionVersion`. For the goal of data consistency and security a CRD with semi-enabled pruning does not make much sense. The main reason to not enable pruning will probably be the lack of a complete structural schema. If this is added for one version, it should be possible for all other versions as well as it is less a technical, but a CRD development life-cycle question.
 * we intensively considered avoiding a new `x-kubernetes-preserve-unknown-fields` vendor extension in favor of recursive `additionalProperties` semantics. We decided against because:
-  
+
   None of OpenAPI v3 schema constructs have effects recursively. We would conflict with that pattern.
-    
+
     E.g. `additionalProperties: false` invalidates unknown fields only at its level in OpenAPI v3, for example:
     ```yaml
     type: object
@@ -602,21 +602,21 @@ Hence, we assume to be at beta in 1.15 and GA in 1.16 guided by the graduation c
       foo: {}
     ```
     (note: this is not allowed in CRDs, but in OpenAPI v3) forbids `{"foo":{},"abc":42}`, but not `{"foo":{"abc":42}}`. A recursive interpretation for pruning would diverge from this pattern.
-    
+
     Another example:
     ```yaml
     additionalProperties:
       minimum: 42
     ```
     forbids `{"foo":10}`, but not `{"foo":{"bar":10}}`.
-    
+
 * we stop pruning even for `additionalProperties: false` or any other additional properties schema. We considered to prune for `false`, but not for `true`. We decided against because:
-  
+
   * it is unclear what should happen with pruning for non-empty schemas between `false` and `true`.
   * it is infeasible to compute whether an arbitrary schema is empty (and hence equivalent to `false`) or not. Semantically empty schemas and `false` should behave the same behaviour. This includes pruning.
-  
+
   By not pruning for any explicit value of `additionalProperties` (including `false`) we follow our principle of not trying to consider full semantics of OpenAPI including value validation when doing structural operations like pruning.
-  
+
   Compare example (5): CustomResource validation will eventually forbid unpruned values. The semantical meaning of the schema `false` is considered non-structural and therefore not relevant for pruning.
 
 ## Implementation History

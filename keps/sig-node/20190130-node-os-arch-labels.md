@@ -74,7 +74,7 @@ In *v1.14*,
 - update documentation and examples to the GA labels (noting which version the GA labels were added)
 
 Starting in *v1.14*,
-- kubelets will report *both* the beta and the GA labels. 
+- kubelets will report *both* the beta and the GA labels.
 - the node controller will reconcile a mismatch between a present or missing
   GA label in favor of the beta label to ensure uniform labeling.
   - Pre-1.14 kubelets will only report beta labels.
@@ -86,7 +86,7 @@ Starting in *v1.14*,
 In *v1.15*,
 - update in-org use in manifests targeting 1.15+ kubernetes versions to the GA labels
 
-Starting in *v1.18*, 
+Starting in *v1.18*,
 - kubelet will stop reporting the beta labels.
 - the node controller will switch to reconciling a mismatch between a present
   beta label and a present GA label in favor of the GA label, since pre-1.14

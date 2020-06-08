@@ -72,7 +72,7 @@ duplication of code or in some case inconsistencies between the init and phase i
 - This proposal doesn't include any changes of improvements to the actual `kubeadm init`
   workflow.
 - This proposal doesn't include a plan for implementation of phases in workflows
-  different than the `kubeadm init` workflow; such plans will be defined by the sig 
+  different than the `kubeadm init` workflow; such plans will be defined by the sig
   during release planning for each cycle, and then documented in this KEP.
   - v1.14 implementation of phases in the `kubeadm join` workflow
   - v1.15 implementation of phases in the `kubeadm upgrade node` workflow
@@ -104,10 +104,10 @@ own, nested, ordered sequence of phases. For instance:
 ```bash
   preflight       Run master pre-flight checks
   certs           Generates all PKI assets necessary to establish the control plane
-    /ca             Generates a self-signed kubernetes CA 
+    /ca             Generates a self-signed kubernetes CA
     /apiserver      Generates an API server serving certificate and key
     ...
-  kubeconfig      Generates all kubeconfig files necessary to establish the control plane 
+  kubeconfig      Generates all kubeconfig files necessary to establish the control plane
     /admin          Generates a kubeconfig file for the admin to use and for kubeadm itself
     /kubelet        Generates a kubeconfig file for the kubelet to use.
     ...
@@ -154,7 +154,7 @@ workflows e.g. reuse of phase `certs` in both `kubeadm init` and `kubeadm join` 
 
 ## Implementation History
 
-* [#61631](https://github.com/kubernetes/kubernetes/pull/61631) First prototype implementation 
+* [#61631](https://github.com/kubernetes/kubernetes/pull/61631) First prototype implementation
   (now outdated)
 * v1.13 implementation of phases in the `kubeadm init` workflow
 * v1.14 implementation of phases in the `kubeadm join` workflow

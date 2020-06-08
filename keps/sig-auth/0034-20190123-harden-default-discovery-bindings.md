@@ -77,7 +77,7 @@ Mitigation: During the API server's RBAC auto-reconciliation, if `system:discove
 
 #### Dependence on existing unauthenticated behavior
 
-Some use-cases might require the existing permissions to be preserved for unauthenticated calls, and some currently-working configurations might be broken for new installs. 
+Some use-cases might require the existing permissions to be preserved for unauthenticated calls, and some currently-working configurations might be broken for new installs.
 
 Disambiguating between accidental and necessary dependence on the current behavior will have to be determined by the user on a case-by-case basis. However, in the release notes, we can include easy 'escape hatches' to re-enable unauthenticated access to the discovery APIs, such as the ones recommended to cluster admins below.
 
@@ -105,7 +105,7 @@ A potential future feature could automatically grant discovery permissions to an
 
 This proposal will have 'graduated' once the unauthenticated API surface has been minimized without excessive user impact. Excessive user impact includes issues that can't be mitigated with a single `kubectl` invocation or fixed by enabling request authentication.
 
-### Testing 
+### Testing
 
 To address the addition of `system:public-info-viewer` and the modification of `system:discovery` and `system:basic-user`:
 * update testdata for [ClusterRoles](https://github.com/kubernetes/kubernetes/blob/master/plugin/pkg/auth/authorizer/rbac/bootstrappolicy/testdata/cluster-roles.yaml) and [ClusterRoleBindings](https://github.com/kubernetes/kubernetes/blob/master/plugin/pkg/auth/authorizer/rbac/bootstrappolicy/testdata/cluster-role-bindings.yaml)

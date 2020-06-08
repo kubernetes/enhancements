@@ -163,7 +163,7 @@ that enables it.
 In addition to above, we should have upgrade/downgrade tests that:
 - Verify the downgrade path and ensure service finalizer removal works.
 - Verify the upgrade path and ensure finalizer protection works with existing LB
-services. 
+services.
 
 ### Graduation Criteria
 

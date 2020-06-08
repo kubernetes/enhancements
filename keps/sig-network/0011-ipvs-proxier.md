@@ -154,10 +154,10 @@ There are 3 proxy modes in ipvs - NAT (masq), IPIP and DR. Only NAT mode support
 # ipvsadm -ln
 IP Virtual Server version 1.2.1 (size=4096)
 Port LocalAddress:Port Scheduler Flags
-  -> RemoteAddress:Port           Forward Weight ActiveConn InActConn     
+  -> RemoteAddress:Port           Forward Weight ActiveConn InActConn
 TCP  10.102.128.4:3080 rr
-  -> 10.244.0.235:8080            Masq    1      0          0         
-  -> 10.244.1.237:8080            Masq    1      0          0     
+  -> 10.244.0.235:8080            Masq    1      0          0
+  -> 10.244.1.237:8080            Masq    1      0          0
 
 ```
 
@@ -187,31 +187,31 @@ Suppose there is a service with Cluster IP `10.244.5.1` and port `8080`:
 # iptables -t nat -nL
 
 Chain PREROUTING (policy ACCEPT)
-target     prot opt source               destination         
+target     prot opt source               destination
 KUBE-SERVICES  all  --  0.0.0.0/0            0.0.0.0/0            /* kubernetes service portals */
 
 Chain OUTPUT (policy ACCEPT)
-target     prot opt source               destination         
+target     prot opt source               destination
 KUBE-SERVICES  all  --  0.0.0.0/0            0.0.0.0/0            /* kubernetes service portals */
 
 Chain POSTROUTING (policy ACCEPT)
-target     prot opt source               destination         
+target     prot opt source               destination
 KUBE-POSTROUTING  all  --  0.0.0.0/0            0.0.0.0/0            /* kubernetes postrouting rules */
 
 Chain KUBE-POSTROUTING (1 references)
-target     prot opt source               destination         
+target     prot opt source               destination
 MASQUERADE  all  --  0.0.0.0/0            0.0.0.0/0            /* kubernetes service traffic requiring SNAT */ mark match 0x4000/0x4000
 
 Chain KUBE-MARK-DROP (0 references)
-target     prot opt source               destination         
+target     prot opt source               destination
 MARK       all  --  0.0.0.0/0            0.0.0.0/0            MARK or 0x8000
 
 Chain KUBE-MARK-MASQ (6 references)
-target     prot opt source               destination         
+target     prot opt source               destination
 MARK       all  --  0.0.0.0/0            0.0.0.0/0            MARK or 0x4000
 
 Chain KUBE-SERVICES (2 references)
-target     prot opt source               destination         
+target     prot opt source               destination
 KUBE-MARK-MASQ  tcp  -- 0.0.0.0/0        10.244.5.1            /* default/foo:http cluster IP */ tcp dpt:8080
 ```
 
@@ -224,31 +224,31 @@ Suppose kube-proxy is provided with the cluster cidr `10.244.16.0/24`, and servi
 # iptables -t nat -nL
 
 Chain PREROUTING (policy ACCEPT)
-target     prot opt source               destination         
+target     prot opt source               destination
 KUBE-SERVICES  all  --  0.0.0.0/0            0.0.0.0/0            /* kubernetes service portals */
 
 Chain OUTPUT (policy ACCEPT)
-target     prot opt source               destination         
+target     prot opt source               destination
 KUBE-SERVICES  all  --  0.0.0.0/0            0.0.0.0/0            /* kubernetes service portals */
 
 Chain POSTROUTING (policy ACCEPT)
-target     prot opt source               destination         
+target     prot opt source               destination
 KUBE-POSTROUTING  all  --  0.0.0.0/0            0.0.0.0/0            /* kubernetes postrouting rules */
 
 Chain KUBE-POSTROUTING (1 references)
-target     prot opt source               destination         
+target     prot opt source               destination
 MASQUERADE  all  --  0.0.0.0/0            0.0.0.0/0            /* kubernetes service traffic requiring SNAT */ mark match 0x4000/0x4000
 
 Chain KUBE-MARK-DROP (0 references)
-target     prot opt source               destination         
+target     prot opt source               destination
 MARK       all  --  0.0.0.0/0            0.0.0.0/0            MARK or 0x8000
 
 Chain KUBE-MARK-MASQ (6 references)
-target     prot opt source               destination         
+target     prot opt source               destination
 MARK       all  --  0.0.0.0/0            0.0.0.0/0            MARK or 0x4000
 
 Chain KUBE-SERVICES (2 references)
-target     prot opt source               destination         
+target     prot opt source               destination
 KUBE-MARK-MASQ  tcp  -- !10.244.16.0/24        10.244.5.1            /* default/foo:http cluster IP */ tcp dpt:8080
 ```
 
@@ -262,31 +262,31 @@ Suppose service's `LoadBalancerStatus.ingress.IP` is `10.96.1.2` and service's `
 # iptables -t nat -nL
 
 Chain PREROUTING (policy ACCEPT)
-target     prot opt source               destination         
+target     prot opt source               destination
 KUBE-SERVICES  all  --  0.0.0.0/0            0.0.0.0/0            /* kubernetes service portals */
 
 Chain OUTPUT (policy ACCEPT)
-target     prot opt source               destination         
+target     prot opt source               destination
 KUBE-SERVICES  all  --  0.0.0.0/0            0.0.0.0/0            /* kubernetes service portals */
 
 Chain POSTROUTING (policy ACCEPT)
-target     prot opt source               destination         
+target     prot opt source               destination
 KUBE-POSTROUTING  all  --  0.0.0.0/0            0.0.0.0/0            /* kubernetes postrouting rules */
 
 Chain KUBE-POSTROUTING (1 references)
-target     prot opt source               destination         
+target     prot opt source               destination
 MASQUERADE  all  --  0.0.0.0/0            0.0.0.0/0            /* kubernetes service traffic requiring SNAT */ mark match 0x4000/0x4000
 
 Chain KUBE-MARK-DROP (0 references)
-target     prot opt source               destination         
+target     prot opt source               destination
 MARK       all  --  0.0.0.0/0            0.0.0.0/0            MARK or 0x8000
 
 Chain KUBE-MARK-MASQ (6 references)
-target     prot opt source               destination         
+target     prot opt source               destination
 MARK       all  --  0.0.0.0/0            0.0.0.0/0            MARK or 0x4000
 
 Chain KUBE-SERVICES (2 references)
-target     prot opt source       destination         
+target     prot opt source       destination
 ACCEPT  tcp  -- 10.120.2.0/24    10.96.1.2       /* default/foo:http loadbalancer IP */ tcp dpt:8080
 DROP    tcp  -- 0.0.0.0/0        10.96.1.2       /* default/foo:http loadbalancer IP */ tcp dpt:8080
 ```
@@ -314,21 +314,21 @@ Session Affinity:	None
 
 [root@100-106-179-225 ~]# iptables -t nat -nL
 Chain PREROUTING (policy ACCEPT)
-target     prot opt source               destination         
+target     prot opt source               destination
 KUBE-SERVICES  all  --  0.0.0.0/0            0.0.0.0/0            /* kubernetes service portals */
 
 Chain OUTPUT (policy ACCEPT)
-target     prot opt source               destination         
+target     prot opt source               destination
 KUBE-SERVICES  all  --  0.0.0.0/0            0.0.0.0/0            /* kubernetes service portals */
 
 Chain KUBE-SERVICES (2 references)
-target     prot opt source               destination         
+target     prot opt source               destination
 KUBE-MARK-MASQ  tcp  -- !172.16.0.0/16        10.101.28.148        /* default/nginx-service:http cluster IP */ tcp dpt:3080
 KUBE-SVC-6IM33IEVEEV7U3GP  tcp  --  0.0.0.0/0            10.101.28.148        /* default/nginx-service:http cluster IP */ tcp dpt:3080
 KUBE-NODEPORTS  all  --  0.0.0.0/0            0.0.0.0/0            /* kubernetes service nodeports; NOTE: this must be the last rule in this chain */ ADDRTYPE match dst-type LOCAL
 
 Chain KUBE-NODEPORTS (1 references)
-target     prot opt source               destination         
+target     prot opt source               destination
 KUBE-MARK-MASQ  tcp  --  0.0.0.0/0            0.0.0.0/0            /* default/nginx-service:http */ tcp dpt:31604
 KUBE-SVC-6IM33IEVEEV7U3GP  tcp  --  0.0.0.0/0            0.0.0.0/0            /* default/nginx-service:http */ tcp dpt:31604
 
@@ -336,9 +336,9 @@ Chain KUBE-SVC-6IM33IEVEEV7U3GP (2 references)
 target     prot opt source               destination
 KUBE-SEP-Q3UCPZ54E6Q2R4UT  all  --  0.0.0.0/0            0.0.0.0/0            /* default/nginx-service:http */
 Chain KUBE-SEP-Q3UCPZ54E6Q2R4UT (1 references)
-target     prot opt source               destination         
+target     prot opt source               destination
 KUBE-MARK-MASQ  all  --  172.17.0.2           0.0.0.0/0            /* default/nginx-service:http */
-DNAT  
+DNAT
 ```
 
 #### Supporting ClusterIP service
@@ -371,10 +371,10 @@ Session Affinity:	None
 # ipvsadm -ln
 IP Virtual Server version 1.2.1 (size=4096)
 Prot LocalAddress:Port Scheduler Flags
-  -> RemoteAddress:Port           Forward Weight ActiveConn InActConn     
+  -> RemoteAddress:Port           Forward Weight ActiveConn InActConn
 TCP  10.102.128.4:3080 rr
-  -> 10.244.0.235:8080            Masq    1      0          0         
-  -> 10.244.1.237:8080            Masq    1      0          0   
+  -> 10.244.0.235:8080            Masq    1      0          0
+  -> 10.244.1.237:8080            Masq    1      0          0
 ```
 
 ### Support LoadBalancer service
@@ -409,13 +409,13 @@ Session Affinity:	None
 # ipvsadm -ln
 IP Virtual Server version 1.2.1 (size=4096)
 Prot LocalAddress:Port Scheduler Flags
-  -> RemoteAddress:Port           Forward Weight ActiveConn InActConn     
+  -> RemoteAddress:Port           Forward Weight ActiveConn InActConn
 TCP  10.102.128.4:3080 rr
-  -> 10.244.0.235:8080            Masq    1      0          0           
-TCP  10.96.1.2:3080 rr  
-  -> 10.244.0.235:8080            Masq    1      0          0   
-TCP  10.96.1.3:3080 rr  
-  -> 10.244.0.235:8080            Masq    1      0          0   
+  -> 10.244.0.235:8080            Masq    1      0          0
+TCP  10.96.1.2:3080 rr
+  -> 10.244.0.235:8080            Masq    1      0          0
+TCP  10.96.1.3:3080 rr
+  -> 10.244.0.235:8080            Masq    1      0          0
 ```
 
 Since there is a need of supporting access control for `LB.ingress.IP`. IPVS proxier will fall back on iptables. Iptables will drop any packet which is not from `LB.LoadBalancerSourceRanges`. For example,
@@ -449,9 +449,9 @@ Session Affinity:	None
 [root@SHA1000130405 home]# ipvsadm -ln
 IP Virtual Server version 1.2.1 (size=4096)
 Prot LocalAddress:Port Scheduler Flags
-  -> RemoteAddress:Port           Forward Weight ActiveConn InActConn     
+  -> RemoteAddress:Port           Forward Weight ActiveConn InActConn
 TCP  10.102.128.4:3080 rr
-  -> 10.244.0.235:8080            Masq    1      0          0               
+  -> 10.244.0.235:8080            Masq    1      0          0
 ```
 
 #### Session affinity
@@ -541,13 +541,13 @@ The following requirements should be met before moving from Beta to GA. It is
 suggested to file an issue which tracks all the action items.
 
 - [ ] Testing
-    - [ ] 48 hours of green e2e tests. 
+    - [ ] 48 hours of green e2e tests.
     - [ ] Flakes must be identified and filed as issues.
     - [ ] Integrate with scale tests and. Failures should be filed as issues.
 - [ ] Development work
     - [ ] Identify all pending changes/refactors. Release blockers must be prioritized and fixed.
     - [ ] Identify all bugs. Release blocking bugs must be identified and fixed.
-- [ ] Docs 
+- [ ] Docs
     - [ ] All user-facing documentation must be updated.
 
 ### GA -> Future

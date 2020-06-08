@@ -54,7 +54,7 @@ superseded-by:
 ## Proposal
 
 ### User Stories
-* An application developer or infrastructure engineer who wants to use AWS Network Load balancer can declare their Kubernetes Service with type: Load Balancer for any Kubernetes clusters running in the AWS cloud. 
+* An application developer or infrastructure engineer who wants to use AWS Network Load balancer can declare their Kubernetes Service with type: Load Balancer for any Kubernetes clusters running in the AWS cloud.
 
 ## Design
 

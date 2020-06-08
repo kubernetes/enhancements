@@ -6,7 +6,7 @@ _As contributors and maintainers of this project, and in the interest of fosteri
 
 ## Getting Started
 
-We have full documentation on how to get started contributing here: 
+We have full documentation on how to get started contributing here:
 
 <!---
 If your repo has certain guidelines for contribution, put them here ahead of the general k8s resources
@@ -25,7 +25,7 @@ Custom Information - if you're copying this template for the first time you can 
 
 ## Contact Information
 
-- [Slack channel](https://kubernetes.slack.com/messages/kubernetes-users) - Replace `kubernetes-users` with your slack channel string, this will send users directly to your channel. 
-- [Mailing list](URL) 
+- [Slack channel](https://kubernetes.slack.com/messages/kubernetes-users) - Replace `kubernetes-users` with your slack channel string, this will send users directly to your channel.
+- [Mailing list](URL)
 
 -->

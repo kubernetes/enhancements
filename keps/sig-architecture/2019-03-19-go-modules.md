@@ -71,7 +71,7 @@ and define `go.mod` module files for published components like `k8s.io/client-go
 
 ## Motivation
 
-Since its inception, Kubernetes has used Godep to manage vendored 
+Since its inception, Kubernetes has used Godep to manage vendored
 dependencies, to ensure reproducible builds and auditable source.
 
 As the go ecosystem matured, vendoring became a first-class concept,
@@ -101,7 +101,7 @@ In addition to simply keeping up with the go ecosystem, go modules provide many 
 
 ### Manage vendor folders using go modules
 1. Generate `go.mod` files for `k8s.io/kubernetes` and each staging component (e.g. `k8s.io/client-go` and `k8s.io/api`) as a distinct go module
-  
+
     * Add `require` and `replace` directives in all the `go.mod` files to register a preference for the same dependency versions currently listed in `Godeps.json`
 
         ```
@@ -176,11 +176,11 @@ This proposes publishing components with the following tags:
 * Semver tags of `v0.x.y` (corresponding to kubernetes `v1.x.y`)
 
 `v0.x.y` accurately convey the current guarantees around the go APIs release-to-release.
-The semver tags are preserved in the go.mod files of consuming components, 
+The semver tags are preserved in the go.mod files of consuming components,
 allowing them to see what versions of kubernetes libraries they are using.
 Without semver tags, downstream components see "pseudo-versions" like
-`v0.0.0-20181208010431-42b417875d0f` in their go.mod files, making it 
-extremely difficult to see if there are version mismatches between the 
+`v0.0.0-20181208010431-42b417875d0f` in their go.mod files, making it
+extremely difficult to see if there are version mismatches between the
 kubernetes libraries they are using.
 
 This results in the following usage patterns:
@@ -282,7 +282,7 @@ Not applicable
 ### Alternatives to publishing staging component modules
 
 Since `require` directives allow locating modules within other modules,
-it is theoretically possible to stop publishing staging component repositories and 
+it is theoretically possible to stop publishing staging component repositories and
 require consumers to clone `k8s.io/kubernetes` and reference the staging component
 modules within that clone.
 

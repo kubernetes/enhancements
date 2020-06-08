@@ -75,7 +75,7 @@ The pattern is well-established and we have a good sense of the schema we now wa
 
 ## Proposal
 
-Introduce a type into k8s.io/apimachinery/pkg/apis/meta/v1 for `Condition` that looks like 
+Introduce a type into k8s.io/apimachinery/pkg/apis/meta/v1 for `Condition` that looks like
 ```go
 type Condition struct {
 	// Type of condition in CamelCase or in foo.example.com/CamelCase.

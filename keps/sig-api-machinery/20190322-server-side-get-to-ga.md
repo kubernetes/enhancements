@@ -44,7 +44,7 @@ superseded-by:
 
 ## Summary
 
-Server-side columnar formatting and partial object metadata has been in beta since Kube 1.10 and as of 1.15 is consistently implemented and in wide use as part of `kubectl` and other web interfaces. This document outline required steps to graduate it to GA. 
+Server-side columnar formatting and partial object metadata has been in beta since Kube 1.10 and as of 1.15 is consistently implemented and in wide use as part of `kubectl` and other web interfaces. This document outline required steps to graduate it to GA.
 
 ## Motivation
 
@@ -74,7 +74,7 @@ PartialObjectMetadata exposes our full ObjectMeta interface and no API changes a
   * In the garbage collector, we will remove the need to call `Update` and use a partial object metadata client/informer
   * In the namespace controller, we will use a partial object metadata informer
   * In the quota counting code, we will use a partial object metadata informer
-* Announce deprecation of `v1beta1` objects and removal in 1.19 
+* Announce deprecation of `v1beta1` objects and removal in 1.19
 * `kubectl` should switch to using `meta.k8s.io/v1` `Table` (supporting 1.15+ clusters)
 
 ### 1.19
@@ -84,7 +84,7 @@ PartialObjectMetadata exposes our full ObjectMeta interface and no API changes a
 ### Implementation Details
 
 A new dynamic client variant capable of supporting read and write operations on PartialObjectMetadata
-should be created that hides whether the server supports PartialObjectMetadata. 
+should be created that hides whether the server supports PartialObjectMetadata.
 
 Currently `v1beta1.Table` does not support Protobuf and the generators do not trivially support the
 serialization of the cells. We need to decide on a serialization format for the Protobuf cells and

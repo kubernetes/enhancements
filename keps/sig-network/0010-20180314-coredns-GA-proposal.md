@@ -50,11 +50,11 @@ The purpose of this proposal is to graduate CoreDNS to GA.
 
 ## Motivation
 
-* CoreDNS is more flexible and extensible than kube-dns. 
+* CoreDNS is more flexible and extensible than kube-dns.
 * CoreDNS is easily extensible and maintainable using a plugin architecture.
 * CoreDNS has fewer moving parts than kube-dns, taking advantage of the plugin architecture, making it a single executable and single process.
-* It is written in Go, making it memory-safe (kube-dns includes dnsmasq which is not). 
-* CoreDNS has [better performance](https://github.com/kubernetes/community/pull/1100#issuecomment-337747482) than [kube-dns](https://github.com/kubernetes/community/pull/1100#issuecomment-338329100) in terms of greater QPS, lower latency, and lower memory consumption. 
+* It is written in Go, making it memory-safe (kube-dns includes dnsmasq which is not).
+* CoreDNS has [better performance](https://github.com/kubernetes/community/pull/1100#issuecomment-337747482) than [kube-dns](https://github.com/kubernetes/community/pull/1100#issuecomment-338329100) in terms of greater QPS, lower latency, and lower memory consumption.
 
 ### Goals
 
@@ -84,17 +84,17 @@ For other tools, each maintainer would have to add the upgrade to CoreDNS.
 
 ### Use Cases
 
-* CoreDNS supports all functionality of kube-dns and also addresses [several use-cases kube-dns lacks](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/network/coredns.md#use-cases). Some of the Use Cases are as follows: 
+* CoreDNS supports all functionality of kube-dns and also addresses [several use-cases kube-dns lacks](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/network/coredns.md#use-cases). Some of the Use Cases are as follows:
     * Supporting [Autopath](https://coredns.io/plugins/autopath/), which reduces the high query load caused by the long DNS search path in Kubernetes.
     * Making an alias for an external name [#39792](https://github.com/kubernetes/kubernetes/issues/39792)
-    
+
 * By default, the user experience would be unchanged. For more advanced uses, existing users would need to modify the ConfigMap that contains the CoreDNS configuration file.
 * Since CoreDNS has more supporting features than kube-dns, there will be no path to retain the CoreDNS configuration in case a user wants to switch to kube-dns.
 
 #### Configuring CoreDNS
 
 The CoreDNS configuration file is called a `Corefile` and syntactically is the same as a [Caddyfile](https://caddyserver.com/docs/caddyfile). The file consists of multiple stanzas called _server blocks_.
-Each of these represents a set of zones for which that server block should respond, along with the list of plugins to apply to a given request. More details on this can be found in the 
+Each of these represents a set of zones for which that server block should respond, along with the list of plugins to apply to a given request. More details on this can be found in the
 [Corefile Explained](https://coredns.io/2017/07/23/corefile-explained/) and [How Queries Are Processed](https://coredns.io/2017/06/08/how-queries-are-processed-in-coredns/) blog entries.
 
 The following can be expected when CoreDNS is graduated to GA.

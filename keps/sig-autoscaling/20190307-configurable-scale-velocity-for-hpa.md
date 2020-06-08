@@ -114,9 +114,9 @@ To customize the scaling behavior we should add a `behavior` object with the fol
 A user will specify the parameters for the HPA, thus controlling the HPA logic.
 
 The `selectPolicy` field indicates which policy should be applied. By default the `max` policy is chosen or in other words while scaling up the highest
-possible number of replicas is used and while scaling down the lowest possible number of replicas is chosen. 
+possible number of replicas is used and while scaling down the lowest possible number of replicas is chosen.
 
-If the user does not specify `policies` for either `scaleUp` or `scaleDown` then default value for that policy is used 
+If the user does not specify `policies` for either `scaleUp` or `scaleDown` then default value for that policy is used
 (see the [Default Values] [] section below). Setting the `value` to `0` for `scaleUp` or `scaleDown` disables scaling in that direction.
 
 [Default Values]: #default-values
@@ -256,7 +256,7 @@ Example for `CurReplicas = 10` and HPA controller cycle once per a minute:
 #### Story 6: Avoid false positive signals for scaling up
 
 This mode is useful in Data Processing pipelines when the number of replicas depends on the number of events in the queue.
-The users want to scale up quickly if they have a high number of events in the queue. 
+The users want to scale up quickly if they have a high number of events in the queue.
 However, they do not want to react to false positive signals, i.e. to short spikes of events.
 
 Create an HPA with the following behavior:

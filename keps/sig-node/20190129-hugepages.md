@@ -95,7 +95,7 @@ solution for all applications.
 ### Goals
 
 This proposal only includes pre-allocated huge pages configured on the node by
-the administrator at boot time or by manual dynamic allocation.    
+the administrator at boot time or by manual dynamic allocation.
 
 ### Non-Goals
 
@@ -168,9 +168,9 @@ node will treat pre-allocated huge pages similar to other system reservations
 and reduce the amount of `memory` it reports using the following formula:
 
 ```
-[Allocatable] = [Node Capacity] - 
- [Kube-Reserved] - 
- [System-Reserved] - 
+[Allocatable] = [Node Capacity] -
+ [Kube-Reserved] -
+ [System-Reserved] -
  [Pre-Allocated-HugePages * HugePageSize] -
  [Hard-Eviction-Threshold]
 ```
@@ -193,7 +193,7 @@ status:
   allocatable:
     memory: 9Gi
     hugepages-2Mi: 1Gi
-...  
+...
 ```
 
 #### Pod Specification

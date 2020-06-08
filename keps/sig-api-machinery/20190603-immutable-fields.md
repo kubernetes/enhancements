@@ -69,7 +69,7 @@ currently no way to declaratively specify that fields are immutable, and one
 has to rely on either built-in validation for core types, or have to build a
 validating webhooks for CRDs.
 
-Providing a new `// +immutable` marker would help 
+Providing a new `// +immutable` marker would help
 - to make the API more descriptive to users
 - to help API developers by verifying these assertions automatically
 - and to publish this information via OpenAPI.
@@ -102,7 +102,7 @@ with the unreasonable development overhead of a webhook.
   - the use for existing native types in order to replace complex validation code with a simple declarative marker on the types.
   - the restriction of the equality to only map keys, but not their values.
   - the allowance of addition and/or deletion of map keys.
-  - the allowance of addition and/or deletion of keys in array of list-type `map`.  
+  - the allowance of addition and/or deletion of keys in array of list-type `map`.
 
 ### Non-Goals
 
@@ -121,10 +121,10 @@ We propose
    update validation in the request pipeline, with these exceptions:
    - for fields with `x-kubernetes-immutable-keys: true` only the keys of the map or array (specified via `x-kubernetes-list-map-keys`) are compared.
    - for fields with `x-kubernetes-list-type: set` the order is ignored.
-   
+
    If that comparison fails, the request is rejected as 400 "Bad Request".
-   
-We create another KEP to define custom normalization steps for CRs done during 
+
+We create another KEP to define custom normalization steps for CRs done during
 deserialization from etcd and when receiving a request (just after pruning and defaulting).
 
 ### OpenAPI extension `x-kubernetes-immutable`
@@ -183,7 +183,7 @@ properties:
         x-kubernetes-immutable: true
 ```
 
-can be simplified to 
+can be simplified to
 
 ```yaml
 properties:
@@ -201,7 +201,7 @@ At the root-level and inside `.metadata` of an object, `x-kubernetes-immutable` 
 
 The topology of arrays is specified via `x-kubernetes-list-type` and `x-kubernetes-list-map-keys`. We currently support the `atomic`, `set` and `map` types. These interact with immutability in the following way:
 
-- **Non-recursive** immutability: For an array or a map, one can not remove or add new items/values, but existing items/values can be modified. 
+- **Non-recursive** immutability: For an array or a map, one can not remove or add new items/values, but existing items/values can be modified.
 
   - For maps this means that the the keys stay the same, but values might change:
     ```yaml
@@ -214,10 +214,10 @@ The topology of arrays is specified via `x-kubernetes-list-type` and `x-kubernet
     ```
     with `x-kubernetes-immutable-keys` allowed due to `additionalProperties` and mutually
     exclusive with `x-kubernetes-immutable` on the same node.
-    
+
   - For arrays of list-type `map` (associative lists) we get the same behaviour, but enforce that the map-keys
     are immutable as well (via CRD validation):
-    
+
     ```yaml
     properties:
       someArray:
@@ -236,9 +236,9 @@ The topology of arrays is specified via `x-kubernetes-list-type` and `x-kubernet
               type: integer
      ```
      with `x-kubernetes-immutable-keys` allowed due to `x-kubernetes-list-type: map`.
-     
+
   In any other context, without the concept of keys, we do not allow `x-kubernetes-immutable-keys` to be set. Especially for `x-kubernetes-list-type: set`, by definition the whole list items behave as keys and therefore `x-kubernetes-immutable: true` and `x-kubernetes-immutable-keys: true` coincide. We choose to only allow `x-kubernetes-immutable: true` in that case.
-  
+
 - **Allowed addition and deletion**: New/deleted keys in maps are tolerated.
 
   - For maps, this can be expressed by marking the values immutable,
@@ -285,9 +285,9 @@ The topology of arrays is specified via `x-kubernetes-list-type` and `x-kubernet
               type: integer
     ```
     such that `{"someSet":[{"x":"abc"},{"x":"def","y":1}]}` and `{"someSet":[{"x":"def","y":1},{"x":"abc"}]}` are considered equally and not mutated.
-    
+
 - (Possible future extension) **Addition only/Deletion only**: Maps and arrays of list-type `map` and `set` can be addition-only and deletion-only by setting either `x-kubernetes-addition-only: true` or `x-kubernetes-deletion-only: true`, both mutually exclusive with `x-kubernetes-immutable` and `x-kubernetes-immutable-keys`.
-  
+
   - For maps:
     ```yaml
     properties:
@@ -298,10 +298,10 @@ The topology of arrays is specified via `x-kubernetes-list-type` and `x-kubernet
           type: string
     ```
     and similarly for `x-kubernetes-deletion-only: true`.
-      
+
   - For arrays of list-type `map` we get the same behaviour, but enforce that the map-keys
     are immutable as well (via CRD validation):
-      
+
     ```yaml
     properties:
       someArray:
@@ -320,9 +320,9 @@ The topology of arrays is specified via `x-kubernetes-list-type` and `x-kubernet
               type: integer
     ```
     and similarly for `x-kubernetes-deletion-only: true`.
-      
+
   - For arrays of list-type `set` get:
-  
+
     ```yaml
     properties:
       someSet:
@@ -338,11 +338,11 @@ The topology of arrays is specified via `x-kubernetes-list-type` and `x-kubernet
               type: integer
     ```
     and similarly for `x-kubernetes-deletion-only: true`.
-    
+
 For list type `atomic` we disallow `x-kubernetes-immutable-keys`.
 
 Note: it is planned to add `x-kubernetes-map-type` as the equivalent vendor extensions for map to distinguish between classical and atomic maps with the values `map` and `atomic`. The `map` case is the same as the one without any specified map type, and for atomic maps we disallow `x-kubernetes-immutable-keys` again.
-    
+
 ### Publishing
 
 The `x-kubernetes-immutable` and `x-kubernetes-immutable-keys` vendor extensions are published via `/openapi/v2` as is.
@@ -350,7 +350,7 @@ The `x-kubernetes-immutable` and `x-kubernetes-immutable-keys` vendor extensions
 ### Suggested marker syntax
 
 In analogy to `+required`, `+optional` we propose to add a marker to kubebuilder's
-controller-gen named `+immutable`, which covers the whole subtree of the object 
+controller-gen named `+immutable`, which covers the whole subtree of the object
 (compare field-selection section for extension).
 
 ```
@@ -369,7 +369,7 @@ The `x-kubernetes-immutable-keys: true` vendor extension is expressed via `// +i
 
 ### Future outline sketch: native resources
 
-For native resources we add a pre-immutability-check normalization step for objects 
+For native resources we add a pre-immutability-check normalization step for objects
 decoded from JSON which have normalizations defined:
 
 1. versioned JSON blob comes in a request
@@ -383,20 +383,20 @@ decoded from JSON which have normalizations defined:
 
 ### Future outline: protobuf
 
-Protobuf encoding unifies unset, empty and null values for slices and maps. Those three cases 
+Protobuf encoding unifies unset, empty and null values for slices and maps. Those three cases
 cannot be differentiated an lead to the same on-the-wire value. In native types
 we use a semantic equality to factor those differences out if JSON is used on the wire, but
-protobuf is used for storage. In CRs decoding and encoding is always faithful with the 
+protobuf is used for storage. In CRs decoding and encoding is always faithful with the
 traditional JSON format used on-the-wire and for storage.
 
 When adding protobuf encoding to CRDs in the future, we have to (without major, non-standard
 efforts) identify unset, empty and null for CRs as well. This leads to the idea to use a less
 strict equality in the immutabiltiy checks with that case in mind. But protobuf encoding in
 native types also has a normalization effect, namely posted JSON object are normalized through
-the encoding to protobuf when writing to etcd. 
+the encoding to protobuf when writing to etcd.
 
-Hence, it looks sensible to split normalization from immutability equality, and keep a strict 
-deep-equal equality even for protobuf, and potentially native types (if we decide to implement 
+Hence, it looks sensible to split normalization from immutability equality, and keep a strict
+deep-equal equality even for protobuf, and potentially native types (if we decide to implement
 immutability for those).
 
 With the container example we get this, with a sketch of a `+normalize` marker which
@@ -414,7 +414,7 @@ Containers []Container `json:containers,omitempty` `protobuf:"bytes,2,opt,name=c
 
 For fields which carry no `omitempty`, we could allow more advanced normalization
 modes which replicate the Golang serialization behaviour. Tooling like openapi-gen
-and the CRD validation could verify that the normalization specification matches 
+and the CRD validation could verify that the normalization specification matches
 that of Golang.
 
 ### Mutating admission chain
@@ -451,15 +451,15 @@ immutability of fields.
     - for `x-kubernetes-immutable: true` and `x-kubernetes-immutable-keys: true` only for v1 CRDs, or during ratcheting updates.
   - immutability checking with all variants of `x-kubernetes-immutable`, `x-kubernetes-immutable-keys` and `x-kubernetes-list-type`.
 - integration tests are added for
-  - creation, updates, patches and server-side-apply of partially immutable CRs 
+  - creation, updates, patches and server-side-apply of partially immutable CRs
   - interaction of server-side-apply list-types and immutability
   - OpenAPI publishing of the vendor extensions
   - CRD updates of the immutability extensions and that the new immutability
     schemas are followed.
   - rejection of `x-kubernetes-immutable: true` and `x-kubernetes-immutable-keys: true` for non-v1 CRDs
 - e2e and conformance tests that
-  - immutability is followed during updates, patches and server-side-apply. 
-   
+  - immutability is followed during updates, patches and server-side-apply.
+
 ### Graduation Criteria
 
 Because of the very limited risk of the additional immutability check and our
@@ -481,9 +481,9 @@ N/A
 ## Alternative Considered
 
 - OpenAPI has a notion of `readOnly`. This is meant to restrict fields to be set
-  only in responses, not in a request payload. This does not match our 
+  only in responses, not in a request payload. This does not match our
   `never-change-after-creation` semantics.
 - Allowing `false` as value for `x-kubernetes-immutable: false` was considered to
   disable immutability imposed by a parent node. This complicates the semantics
-  considerably and can be expressed with a combination of `x-kubernetes-immutable-keys` 
+  considerably and can be expressed with a combination of `x-kubernetes-immutable-keys`
   and `x-kubernetes-immutable` on the complementing fields.

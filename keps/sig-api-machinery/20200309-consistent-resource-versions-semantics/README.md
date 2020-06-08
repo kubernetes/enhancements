@@ -153,7 +153,7 @@ When 'ResourceVersionMatch' is not provided, the behavior is the same as before 
 
 ### Impact on get calls
 
-We will not add `ResourceVersionMatch` to get calls. 
+We will not add `ResourceVersionMatch` to get calls.
 
 get provides consistent `NotOlderThan` semantics when `ResourceVersion` is set, which are easy
 to understand and doesn't need to be changed.

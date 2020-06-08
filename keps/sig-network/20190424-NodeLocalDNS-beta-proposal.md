@@ -54,7 +54,7 @@ Graduate NodeLocal DNSCache to beta.
 
 N.B. Although CoreDNS is now the default DNS server on Kubernetes clusters, this document still uses the name kube-dns since the service name is still the same.
 
-Based on the initial feedback for NodeLocal DNSCache feature, HA seems to be the common ask. 
+Based on the initial feedback for NodeLocal DNSCache feature, HA seems to be the common ask.
 
 The current implementation introduces a single point of failure, since all pods on a node rely on the node-local-dns pod that is running on the same node, for DNS requests.
 Any dedicated node-agent brings with it the issue of single-point of failure. Example: kube-proxy or any other CNI pod has a similar issue. These are in the control plane and they do leave behind some state upon exit that is sufficient for services to partially work. In that way, the scenario is a little different from the a node-cache pod going down, since the latter in in the data path. But it is not all that different since kube-proxy if down for long enough, will cause a drift from current configured state resulting in datapath failures.
@@ -63,11 +63,11 @@ Here are some failure modes for the node-cache pod:
 
 1) Pod Evicted - We create this daemonset with `priorityClassName: system-node-critical` setting to greatly reduce the likelihood of eviction.
 2) Config error - node-local-dns restarts repeatedly due to incorrect config. This will be resolved only when the config error has been fixed. There will be DNS downtime until then, even though the kube-dns pods might be available.
-3) OOMKilled - node-local-dns gets OOMKilled due to its own memory usage or some other component using up all memory resources on the node. There is a chance this will cause other disruptions on the node in addition to DNS downtime though. 
+3) OOMKilled - node-local-dns gets OOMKilled due to its own memory usage or some other component using up all memory resources on the node. There is a chance this will cause other disruptions on the node in addition to DNS downtime though.
 4) Upgrades to node-local-dns daemonset - There will be DNS downtime when node-local-dns pods shut down, until the new pods are up and running.
 
 We are proposing a solution that will help in all these cases. For beta, we will start providing enablement for HA, full implementation will be a GA criterion.
- 
+
 The proposal here is to use an additional listen IP for node-local-dns pod. The node-local-dns pod listens on the 169.254.20.10 IP address today. We will extend node-local-dns to listen on the kube-dns service IP as well. Requests to kube-dns service IP will be handled by node-local-dns pod when it is up. If it is unavailable, the requests will go to kube-dns endpoints instead. The determination of whether node-local-dns service is available will be done by an external component - This could be a new daemonset or new functionality in an existing daemonset that manages networking.
 
 ### Risks and Mitigations
@@ -81,8 +81,8 @@ One way to get the desired behavior is to change the selectors for the kube-dns 
 
 ## Design Details
 
-In this new design, node-local-dns pod creates a dummy interface with 2 IP addresses - the link local IP address 169.254.20.10(This happens already today) and the kube-dns service IP address. 
-A new service spec is added to the node-local-dns yaml, this is almost identical to the kube-dns service spec. 
+In this new design, node-local-dns pod creates a dummy interface with 2 IP addresses - the link local IP address 169.254.20.10(This happens already today) and the kube-dns service IP address.
+A new service spec is added to the node-local-dns yaml, this is almost identical to the kube-dns service spec.
 
 ```
 apiVersion: v1
@@ -111,7 +111,7 @@ This new service is required for node-local-dns pod to talk to kube-dns endpoint
 This service spec does not reserve a specific clusterIP, let's assume the assigned IP is 10.0.0.50 (it can be different on each setup). Let's assume the kube-dns IP is 10.0.0.10.
 By default, kube-proxy will install rules so that packets targeting 10.0.0.10 are DNAT'ed to one of the kube-dns endpoints. A similar rule will be installed for 10.0.0.50 as well. However, we need packets to 10.0.0.10 to be sent to the local interface that node-local-dns pod is listening on. This is possible by using the NOTRACK action in iptables.
 
-As mentioned in the previous [KEP](https://github.com/kubernetes/enhancements/blob/master/keps/sig-network/0030-nodelocal-dns-cache.md#proposal), node-local-dns pod installs iptables rule with NOTRACK action so that connections to and from the node-local-dns IP on port 53 can avoid being tracked via CONNTRACK. The purpose was to prevent usage of conntrack entries for DNS requests. Another benefit is that this avoids additional NAT table rules from being applied on the packet. So, as long as we have a rule 
+As mentioned in the previous [KEP](https://github.com/kubernetes/enhancements/blob/master/keps/sig-network/0030-nodelocal-dns-cache.md#proposal), node-local-dns pod installs iptables rule with NOTRACK action so that connections to and from the node-local-dns IP on port 53 can avoid being tracked via CONNTRACK. The purpose was to prevent usage of conntrack entries for DNS requests. Another benefit is that this avoids additional NAT table rules from being applied on the packet. So, as long as we have a rule
 `-d 10.0.0.10 --dport 53 -j NOTRACK`,
 the NAT table rules that reroute the packet to kube-dns endpoints will not be applied. We also need a filter table rule to make sure the packet isn't dropped.
 The request packet can now be locally consumed by node-local-dns pod. The node-local-dns pod will use the new service IP - 10.0.0.50, as its Upstream Nameserver, which will still map to the endpoints.
@@ -135,7 +135,7 @@ The benefits of this approach are:
 
 We still need some component to dynamically determine when to use node-local-dns and when to flip to kube-dns endpoints. This logic can be separated out into an independent container/pod whose function is to query for dns records on 169.254.20.10:53 and follow some threshold to either install or remove the NOTRACK rules. This can be a new Daemonset or combined into an existing Daemonset that is in HostNetwork mode and manages iptables rules in some way - for instance a CNI Daemonset. This component will handle adding all iptables rules needed for node-local-dns.
 
-The caveat of this approach is that it only works in the iptables implementation of kube-proxy. 
+The caveat of this approach is that it only works in the iptables implementation of kube-proxy.
 Another observation is that the upstream dns server IP used by node-local-dns will differ from one setup to another since it is a dynamically allocated service IP.  This doesn't appear to be a major concern.
 
 ### Test Plan

@@ -85,7 +85,7 @@ but surfacing warnings to clients submitting problematic data would help them di
   * Filtered to APIs targeting removal in particular releases
 * Allow a cluster administrator to programatically identify particular clients using deprecated APIs
 * Allow in-process validation mechanisms (API validation, admission, etc) to contribute warnings
-* Allow extension mechanisms (CustomResourceDefinitions, admission webhooks) to contribute warnings 
+* Allow extension mechanisms (CustomResourceDefinitions, admission webhooks) to contribute warnings
 
 ## Proposal
 
@@ -201,7 +201,7 @@ type AdmissionResponse struct {
 k8s.io/client-go:
 
 * Parse `Warning` headers in server responses
-* Ignore malformed warning headers, ensuring that this enhancement 
+* Ignore malformed warning headers, ensuring that this enhancement
   will not cause any previously successful API request to fail
 * Add the parsed warning headers to the `rest.Result` struct
 * Pass parsed warnings through the per-client or per-process warning handler
@@ -229,7 +229,7 @@ Extension mechanism integration tests:
 
 **Metric cardinality**
 
-In the past, we have had problems with unbounded metric labels increasing cardinality of 
+In the past, we have had problems with unbounded metric labels increasing cardinality of
 metrics and causing significant memory/storage use. Limiting these metrics to bounded values
 (API group, version, resource, subresource, target removal release) and omitting unbounded values
 (resource instance name, client username, etc), metric cardinality is controlled.
@@ -261,7 +261,7 @@ The RFC defines the behavior of the `299` warning code as follows:
 
 Because the server -> client warning format is fixed, and the warnings do not
 drive automated action in clients, graduation criteria is primarily oriented
-toward the stability level of the administrator metrics, and the ability to 
+toward the stability level of the administrator metrics, and the ability to
 disable the server sending warnings during the beta period.
 
 #### Beta

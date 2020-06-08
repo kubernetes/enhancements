@@ -131,7 +131,7 @@ In order to support dual-stack in Kubernetes clusters, Kubernetes needs to have 
 
 - Kubernetes needs to be made aware of multiple IPs per pod (limited to one IPv4 and one IPv6 address per pod maximum).
 - Link Local Addresses (LLAs) on a pod will remain implicit (Kubernetes will not display nor track these addresses).
-- Service Cluster IP Range `--service-cluster-ip-range=` will support the configuration of one IPv4 and one IPV6 address block) 
+- Service Cluster IP Range `--service-cluster-ip-range=` will support the configuration of one IPv4 and one IPV6 address block)
 - Service IPs will be allocated from only a single family (either IPv4 or IPv6 as specified in the Service `spec.ipFamily` OR the first configured address block defined via `--service-cluster-ip-range=`).
 - Backend pods for a service can be dual-stack.
 - Endpoints addresses will match the address family of the Service IP address family (eg. An IPv6 Service IP will only have IPv6 Endpoints)
@@ -179,7 +179,7 @@ Phase 4 and beyond
 
 ### Awareness of Multiple IPs per Pod
 
-Since Kubernetes Version 1.9, Kubernetes users have had the capability to use dual-stack-capable CNI network plugins (e.g. Bridge + Host Local, Calico, etc.), using the 
+Since Kubernetes Version 1.9, Kubernetes users have had the capability to use dual-stack-capable CNI network plugins (e.g. Bridge + Host Local, Calico, etc.), using the
 [0.3.1 version of the CNI Networking Plugin API](https://github.com/containernetworking/cni/blob/spec-v0.3.1/SPEC.md), to configure multiple IPv4/IPv6 addresses on pods. However, Kubernetes currently captures and uses only IP address from the pod's main interface.
 
 This proposal aims to extend the Kubernetes Pod Status and the Pod Network Status API so that Kubernetes can track and make use of one or many IPv4 addresses and one or many IPv6 address assignment per pod.
@@ -367,7 +367,7 @@ Dual-stack services (having both an IPv4 and IPv6 cluster IP) are currently out 
 ### Endpoints
 
 The current [Kubernetes Endpoints API](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.10/#endpoints-v1-core) (i.e. before the addition of the dual-stack feature), supports only a single IP address per endpoint. With the addition of the dual-stack feature, pods serving as backends for Kubernetes services may now have both IPv4 and IPv6 addresses. This presents a design choice of how to represent such dual-stack endpoints in the Endpoints API. Two choices worth considering would be:
-- 2 single-family endpoints per backend pod: Make no change to the [Kubernetes Endpoints API](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.10/#endpoints-v1-core). Treat each IPv4/IPv6 address as separate, distinct endpoints, and include each address in the comma-separated list of addresses in an 'Endpoints' API object. 
+- 2 single-family endpoints per backend pod: Make no change to the [Kubernetes Endpoints API](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.10/#endpoints-v1-core). Treat each IPv4/IPv6 address as separate, distinct endpoints, and include each address in the comma-separated list of addresses in an 'Endpoints' API object.
 - 1 dual-stack endpoint per backend pod: Modify the [Kubernetes Endpoints API](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.10/#endpoints-v1-core) so that each endpoint can be associated with a pair of IPv4/IPv6 addresses.
 
 Given a phased approach, the 2 single-family endpoint approach represents the least disruptive change. Services will select only the endpoints that match the `spec.ipFamily` defined in the Service.
@@ -425,7 +425,7 @@ The [NGINX ingress controller](https://github.com/kubernetes/ingress-nginx/blob/
 - Dual-stack external access to NGINX ingress controllers is not supported with GCE/GKE or AWS cloud platforms.
 - NGINX ingress controller needs to be run on a pod with dual-stack external access.
 - On the load balancer (internal) side of the NGINX ingress controller, the controller will load balance to backend service pods on a per dual-stack-endpoint basis, rather than load balancing on a per-address basis. For example, if a given backend pod has both an IPv4 and an IPv6 address, the ingress controller will treat the IPv4 and IPv6 address endpoints as a single load-balance target. Support of dual-stack endpoints may require upstream changes to the NGINX ingress controller.
-- Ingress access can cross IP families. For example, an incoming L7 request that is received via IPv4 can be load balanced to an IPv6 endpoint address in the cluster, and vice versa. 
+- Ingress access can cross IP families. For example, an incoming L7 request that is received via IPv4 can be load balanced to an IPv6 endpoint address in the cluster, and vice versa.
 
 ### Load Balancer Operation
 
@@ -518,7 +518,7 @@ Kubeadm will also need to generate dual-stack CIDRs for the --cluster-cidr argum
 This dual-stack proposal will introduce a new IPNetSlice object to spf13.pflag to allow parsing of comma separated CIDRs. Refer to [https://github.com/spf13/pflag/pull/170](https://github.com/spf13/pflag/pull/170)
 
 ### End-to-End Test Support
-End-to-End tests will be updated for dual-stack. The dual-stack e2e tests will utilized kubernetes-sigs/kind along with supported cloud providers. The e2e test-suite for dual-stack is running [here](https://testgrid.k8s.io/sig-network-dualstack-azure-e2e#dualstack-azure-e2e). Once dual-stack support is added to kind, corresponding dual-stack e2e tests will be run on kind similar to [this](https://testgrid.k8s.io/sig-release-master-blocking#kind-ipv6-master-parallel). 
+End-to-End tests will be updated for dual-stack. The dual-stack e2e tests will utilized kubernetes-sigs/kind along with supported cloud providers. The e2e test-suite for dual-stack is running [here](https://testgrid.k8s.io/sig-network-dualstack-azure-e2e#dualstack-azure-e2e). Once dual-stack support is added to kind, corresponding dual-stack e2e tests will be run on kind similar to [this](https://testgrid.k8s.io/sig-release-master-blocking#kind-ipv6-master-parallel).
 
 The E2E test suite that will be run for dual-stack will be based upon the [IPv6-only test suite](https://github.com/CiscoSystems/kube-v6-test) as a baseline. New versions of the network connectivity test cases that are listed below will need to be created so that both IPv4 and IPv6 connectivity to and from a pod can be tested within the same test case. A new dual-stack test flag will be created to control when the dual-stack tests are run versus single stack versions of the tests:
 ```

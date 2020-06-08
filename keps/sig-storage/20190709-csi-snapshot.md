@@ -1,5 +1,5 @@
 ---
-title: CSI Snapshot 
+title: CSI Snapshot
 authors:
   - "@jingxu97"
   - "@xing-yang"
@@ -86,7 +86,7 @@ The rest of the document includes required information missing from the original
 
 ### Beta->GA
 
-* Snapshot feature is used as a basic building block in other advanced applications. 
+* Snapshot feature is used as a basic building block in other advanced applications.
 * Feature deployed in production and have gone through at least one K8s upgrade.
 
 ## Changes

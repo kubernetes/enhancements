@@ -306,10 +306,10 @@ How will UX be reviewed and by whom?
 Consider including folks that also work outside the SIG or subproject.
 -->
 
-- No additional security tests have been conducted outside of the normal 
+- No additional security tests have been conducted outside of the normal
 review from the CNCF and the API reviewers.
 - UX reviews have been presented to user groups within KubeCon workshops
-and survey results. The API has existed in beta since Kubernetes v1.1. 
+and survey results. The API has existed in beta since Kubernetes v1.1.
 
 ## Design Details
 
@@ -976,18 +976,18 @@ you need any help or guidance.
 
 * **Does enabling the feature change any default behavior?**
     - In 1.18 defaulting was added to the Ingress API for adding Implementation-Specific as the pathType. The GA Ingress
-      API will no longer add this default pathType and validation will require a user to select the type. 
+      API will no longer add this default pathType and validation will require a user to select the type.
 
 * **Can the feature be disabled once it has been enabled (i.e. can we rollback the enablement)?**
     - Yes if the ingress/v1 API is disabled, fallback to the v1beta1 API will happen.
-    - If newer types or features like IngressClass are used from the GA type, they will still be able to be 
+    - If newer types or features like IngressClass are used from the GA type, they will still be able to be
       used in an older version
 
 * **What happens if we reenable the feature if it was previously rolled back?**
-    - Re-enabling the feature will allow for new types to be created again. 
+    - Re-enabling the feature will allow for new types to be created again.
 
 * **Are there any tests for feature enablement/disablement?**
-    - 1.18 ingress/v1beta1 contains many tests for checking whether new types can be used during creation and if 
+    - 1.18 ingress/v1beta1 contains many tests for checking whether new types can be used during creation and if
       they are still allowed if the feature is disabled.
 
 ### Rollout, Upgrade and Rollback Planning
@@ -997,20 +997,20 @@ _This section must be completed when targeting beta graduation to a release._
 * **How can a rollout fail? Can it impact already running workloads?**
   Try to be as paranoid as possible - e.g. what if some components will restart
   in the middle of rollout?
-  1. Bugs within the conversion functions can result in odd validation when creating/updating new objects. 
+  1. Bugs within the conversion functions can result in odd validation when creating/updating new objects.
      Both of these scenarios are tested as detailed in [Test Plan](#test-plan).
   2. Controllers that are not using the new APIs can also experience odd validation or improper type errors if
      they are watching new fields but expecting pathType to be defaulted or path to be regex-compliant.
-  3. Similar to #2, The newer ingressClassName field on Ingresses is a replacement for that annotation, but is not 
-     a direct equivalent. While the annotation was generally used to reference the name of the Ingress controller that 
-     should implement the Ingress, the field is a reference to an IngressClass resource that contains additional Ingress 
-     configuration, including the name of the Ingress controller.  
+  3. Similar to #2, The newer ingressClassName field on Ingresses is a replacement for that annotation, but is not
+     a direct equivalent. While the annotation was generally used to reference the name of the Ingress controller that
+     should implement the Ingress, the field is a reference to an IngressClass resource that contains additional Ingress
+     configuration, including the name of the Ingress controller.
 
 * **What specific metrics should inform a rollback?**
     - Ingress controllers should provide there own metrics as per their implementation-specific SLOs.
     - If a user determines that there CloudProvider or Ingress controller does not accept ingress/v1 or ingressclass/v1
-      specs, then they should [disable these APIs](#feature-enablement-and-rollback) until the respective controller 
-      fully supports the new types. 
+      specs, then they should [disable these APIs](#feature-enablement-and-rollback) until the respective controller
+      fully supports the new types.
 
 * **Were upgrade and rollback tested? Was upgrade->downgrade->upgrade path tested?**
     - The API contains a myriad of API and e2e testing for forward and backward
@@ -1019,7 +1019,7 @@ _This section must be completed when targeting beta graduation to a release._
 * **Is the rollout accompanied by any deprecations and/or removals of features,
   APIs, fields of API types, flags, etc.?**
   Even if applying deprecation policies, they may still surprise some users.
-  
+
     ```
     v1.19 (GA)
     `Ingress` and `IngressClass` resources have graduated to `networking.k8s.io/v1`. Ingress and IngressClass types in the `extensions/v1beta1` and `networking.k8s.io/v1beta1` API versions are deprecated and will no longer be served in 1.22+. Persisted objects can be accessed via the `networking.k8s.io/v1` API. Notable changes in v1 Ingress objects (v1beta1 field names are unchanged):
@@ -1031,7 +1031,7 @@ _This section must be completed when targeting beta graduation to a release._
     Other Ingress API updates:
     * backends can now be resource or service backends
     * `path` is no longer required to be a valid regular expression
-    
+
     v1.18 (Pre-GA changes)
     * Add alternate backends via TypedLocalObjectReference
     * Add Exact and Prefix matching to Ingress PathTypes
@@ -1046,12 +1046,12 @@ _This section must be completed when targeting beta graduation to a release._
   Ideally, this should be a metrics. Operations against Kubernetes API (e.g.
   checking if there are objects with field X set) may be last resort. Avoid
   logs or events for this purpose.
-   - N/A, changes in this KEP are API only. Additional monitoring is  the responsibility of the 
+   - N/A, changes in this KEP are API only. Additional monitoring is  the responsibility of the
      implementation's controller.
 
 * **What are the SLIs (Service Level Indicators) an operator can use to
   determine the health of the service?**
-  - N/A, changes in this KEP are API only. Additional monitoring is the responsibility of the 
+  - N/A, changes in this KEP are API only. Additional monitoring is the responsibility of the
     implementation's controller.
 
 * **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
@@ -1081,8 +1081,8 @@ _This section must be completed when targeting beta graduation to a release._
   and creating new ones, as well as about cluster-level services (e.g. DNS):
   - CloudProvider / Ingress Controller
     - Usage description:
-      - In order for newer features to be utilized like PathType and IngressClass, the 
-      Ingress controller will need to be updated to support these fields and respond 
+      - In order for newer features to be utilized like PathType and IngressClass, the
+      Ingress controller will need to be updated to support these fields and respond
       accordingly.
 
 
@@ -1101,24 +1101,24 @@ previous answers based on experience in the field._
 
 * **Will enabling / using this feature result in introducing new API types?**
   - Yes - this will introduce new types to the Ingress/v1beta1 and Ingress/v1 APIs
-    - Ingress.Spec.Backend.Resource 
-    - Ingress.Spec.IngressClass    
+    - Ingress.Spec.Backend.Resource
+    - Ingress.Spec.IngressClass
     - Ingress.Spec.Rules.HTTP.PathType
-  - The supported number of Ingresses per cluster and per namespace will highly depend on the controller implementation 
-    (and on cloud-provider scalability/performance characteristic if applicable). Given this KEP is about the API 
+  - The supported number of Ingresses per cluster and per namespace will highly depend on the controller implementation
+    (and on cloud-provider scalability/performance characteristic if applicable). Given this KEP is about the API
     itself (and not its implementation), we can't provide any uniformly supportable number here.
 
 * **Will enabling / using this feature result in any new calls to cloud
   provider?**
-  - Cloud providers will need to update their specific Ingress controller if 
+  - Cloud providers will need to update their specific Ingress controller if
     they provide one as part of their offering.
   - New calls will depend on the specific implementation, which is out of scope from this KEP.
 
 * **Will enabling / using this feature result in increasing size or count
   of the existing API objects?**
   - There will be new types under networking.k8s.io for Ingress/v1 and Ingress/v1beta1
-      - Ingress.Spec.Backend.Resource 
-      - Ingress.Spec.IngressClass    
+      - Ingress.Spec.Backend.Resource
+      - Ingress.Spec.IngressClass
       - Ingress.Spec.Rules.HTTP.PathType
   - An increase in object size should be a few hundred bytes, but the actual object size may be more based
     on how many newer fields are set. Specific implementation controllers may also affect this size based on how many
@@ -1152,10 +1152,10 @@ _This section must be completed when targeting beta graduation to a release._
     is unavailable but controllers should be able to continue with last known configuration.
 
 * **What are other known failure modes?**
-    - N/A, changes in this KEP are API only. 
+    - N/A, changes in this KEP are API only.
 
 * **What steps should be taken if SLOs are not being met to determine the problem?**
-    - N/A, changes in this KEP are API only. Appropriate SLOs are the responsibility of the 
+    - N/A, changes in this KEP are API only. Appropriate SLOs are the responsibility of the
       implementation's controller or CloudProvider.
 
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md

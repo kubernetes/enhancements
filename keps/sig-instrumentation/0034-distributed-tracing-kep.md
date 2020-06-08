@@ -57,7 +57,7 @@ This Kubernetes Enhancement Proposal (KEP) introduces a model for adding distrib
 
 Debugging latency issues in Kubernetes is an involved process. There are existing tools which can be used to isolate these issues in Kubernetes, but these methods fall short for various reasons. For instance:
 
-* **Logs**: are fragmented, and finding out which process was the bottleneck involves digging through troves of unstructured text. In addition, logs do not offer higher-level insight into overall system behavior without an extensive background on the process of interest. 
+* **Logs**: are fragmented, and finding out which process was the bottleneck involves digging through troves of unstructured text. In addition, logs do not offer higher-level insight into overall system behavior without an extensive background on the process of interest.
 * **Events**: in Kubernetes are only kept for an hour by default, and don't integrate with visualization of analysis tools. To gain trace-like insights would require a large investment in custom tooling.
 * **Latency metrics**: can only supply limited metadata because of cardinality constraints.  They are useful for showing _that_ a process was slow, but don't provide insight into _why_ it was slow.
 * **Latency Logging**: is a "poor man's" version of tracing that only works within a single binary and outputs log messages.  See [github.com/kubernetes/utils/trace](https://github.com/kubernetes/utils/tree/master/trace).
@@ -119,7 +119,7 @@ When reconciling an object `Foo` a Controller must:
 1. Export a span around work that attempts to drive the actual state of an object towards its desired state
 1. Replace the trace context of `Foo` when updating `Foo`'s status to the desired state
 
-Controllers must _only_ export Spans around work that it is correcting from an undesired state to its desired state.  To avoid exporting pointless spans, controllers must not export spans around reconciliation loops that do not perform actual work.  For example, the kubelet must not export a span around syncPod, which is a generic Reconcile function.  Instead, it should export spans around CreateContainer, or other functions that move the system towards its desired state. 
+Controllers must _only_ export Spans around work that it is correcting from an undesired state to its desired state.  To avoid exporting pointless spans, controllers must not export spans around reconciliation loops that do not perform actual work.  For example, the kubelet must not export a span around syncPod, which is a generic Reconcile function.  Instead, it should export spans around CreateContainer, or other functions that move the system towards its desired state.
 
 This proposal is grounded on the principle that a trace context is attached to and propagated with end-user intent.  When the status of an object is updated to its desired state, the end-user's intent for that object has been fulfilled.  Controllers must "end" tracing for an object when it reaches its desired state.  To accomplish this, Controllers must update the trace context of an object when updating the status of an object from an undesired to a desired state.  For objects that report a status that can reach a desired state, this limits traces to just the actions taken by controllers in the fulfillment of the end-user's intent, and prevents traces from spanning an indefinite period of time.
 
@@ -182,7 +182,7 @@ func StartSpanFromObject(ctx context.Context, obj meta.Object, spanName string) 
 func EncodeContextIntoObject(ctx context.Context, obj meta.Object)
 
 // RemoveSpanContextFromObject removes the SpanContext attached to an object, if one exists
-func RemoveSpanContextFromObject(obj meta.Object) 
+func RemoveSpanContextFromObject(obj meta.Object)
 ```
 
 #### Tracing Pod Lifecycle
@@ -201,7 +201,7 @@ While adding tracing to Pods is a good first step to demonstrate the viability o
 
 This KEP introduces a new form of instrumentation to Kubernetes, which necessitates the creation of guidelines for adding effective, standardized traces to Kubernetes components, [similar to what is found here for metrics](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-instrumentation/instrumentation.md).
 
-This documentation will put forward standards for: 
+This documentation will put forward standards for:
 
 * How to name spans, attributes, and annotations
 * What kind of processes should be wrapped in a span
@@ -209,7 +209,7 @@ This documentation will put forward standards for:
 * What kind of data makes for useful attributes
 * How to propagate trace context as proposed above
 
-Having these standards in place will ensure that our tracing instrumentation works well with all backends, and that reviewers have concrete criteria to cross-check PRs against. 
+Having these standards in place will ensure that our tracing instrumentation works well with all backends, and that reviewers have concrete criteria to cross-check PRs against.
 
 ## Graduation requirements
 

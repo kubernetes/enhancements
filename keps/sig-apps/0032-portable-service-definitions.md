@@ -95,7 +95,7 @@ As a cluster operator or application operator, I can discover controllers implem
 
 #### Story 4
 
-As a cluster operator or application operator, I can set default values and provider custom settings for a service. 
+As a cluster operator or application operator, I can set default values and provider custom settings for a service.
 
 ### Implementation Details/Notes/Constraints
 

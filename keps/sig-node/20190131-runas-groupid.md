@@ -42,8 +42,8 @@ status: implementable
 <!-- /toc -->
 
 ## Abstract
-As a Kubernetes User, we should be able to specify both user id and group id for the containers running 
-inside a pod on a per Container basis, similar to how docker allows that using docker run options `-u`, 
+As a Kubernetes User, we should be able to specify both user id and group id for the containers running
+inside a pod on a per Container basis, similar to how docker allows that using docker run options `-u`,
 ```
 -u, --user="" Username or UID (format: <name|uid>[:<group|gid>]) format
 ```
@@ -53,13 +53,13 @@ in SecurityContext on a per Container basis. There is no equivalent field for sp
 Group of the running container.
 
 ## Motivation
-Enterprise Kubernetes users want to run containers as non root. This means running containers with a 
+Enterprise Kubernetes users want to run containers as non root. This means running containers with a
 non zero user id and non zero primary group id. This gives Enterprises, confidence that their customer code
 is running with least privilege and if it escapes the container boundary, will still cause least harm
 by decreasing the attack surface.
 
 ### What is the significance of Primary Group Id?
-Primary Group Id is the group id used when creating files and directories. It is also the default group 
+Primary Group Id is the group id used when creating files and directories. It is also the default group
 associated with a user, when he/she logins. All groups are defined in `/etc/group` file and are created
 with the `groupadd` command. A Process/Container runs with uid/primary gid of the calling user. If no
 primary group is specified for a user, 0(root) group is assumed. This means, any files/directories created
@@ -74,12 +74,12 @@ by a process running as user with no primary group associated with it, will be o
 ## Use Cases
 
 ### Use Case 1:
-As a Kubernetes User, I should be able to control both user id and primary group id of containers 
+As a Kubernetes User, I should be able to control both user id and primary group id of containers
 launched using Kubernetes at runtime, so that i can run the container as non root with least possible
 privilege.
 
 ### Use Case 2:
-As a Kubernetes User, I should be able to control both user id and primary group id of containers 
+As a Kubernetes User, I should be able to control both user id and primary group id of containers
 launched using Kubernetes at runtime, so that i can override the user id and primary group id specified
 in the Dockerfile of the container image, without having to create a new Docker image.
 
@@ -97,7 +97,7 @@ Introduce a new API field in SecurityContext and PodSecurityContext called `RunA
 // are set, the values in SecurityContext take precedence.
 type SecurityContext struct {
      //Other fields not shown for brevity
-    ..... 
+    .....
 
      // The UID to run the entrypoint of the container process.
      // Defaults to user specified in image metadata if unspecified.
@@ -124,12 +124,12 @@ type SecurityContext struct {
  }
 ```
 
-#### PodSecurityContext 
+#### PodSecurityContext
 
 ```
 type PodSecurityContext struct {
      //Other fields not shown for brevity
-    ..... 
+    .....
 
      // The UID to run the entrypoint of the container process.
      // Defaults to user specified in image metadata if unspecified.
@@ -160,7 +160,7 @@ type PodSecurityContext struct {
 #### PodSecurityPolicy
 
 PodSecurityPolicy defines strategies or conditions that a pod must run with in order to be accepted
-into the system. Two of the relevant strategies are RunAsUser and SupplementalGroups. We introduce 
+into the system. Two of the relevant strategies are RunAsUser and SupplementalGroups. We introduce
 a new strategy called RunAsGroup which will support the following options:
 - MustRunAs
 - RunAsAny
@@ -169,7 +169,7 @@ a new strategy called RunAsGroup which will support the following options:
 // PodSecurityPolicySpec defines the policy enforced.
  type PodSecurityPolicySpec struct {
      //Other fields not shown for brevity
-    ..... 
+    .....
   // RunAsUser is the strategy that will dictate the allowable RunAsUser values that may be set.
   RunAsUser RunAsUserStrategyOptions
   // SupplementalGroups is the strategy that will dictate what supplemental groups are used by the SecurityContext.
@@ -193,7 +193,7 @@ a new strategy called RunAsGroup which will support the following options:
 // RunAsGroupStrategy denotes strategy types for generating RunAsGroup values for a
  // SecurityContext.
  type RunAsGroupStrategy string
- 
+
  const (
      // container must run as a particular gid.
      RunAsGroupStrategyMustRunAs RunAsGroupStrategy = "MustRunAs"
@@ -206,7 +206,7 @@ a new strategy called RunAsGroup which will support the following options:
 
 Following points should be noted:
 
-- `FSGroup` and `SupplementalGroups` will continue to have their old meanings and would be untouched.  
+- `FSGroup` and `SupplementalGroups` will continue to have their old meanings and would be untouched.
 - The `RunAsGroup` In the SecurityContext will override the `RunAsGroup` in the PodSecurityContext.
 - If both `RunAsUser` and `RunAsGroup` are NOT provided, the USER field in Dockerfile is used
 - If both `RunAsUser` and `RunAsGroup` are specified, that is passed directly as User.
@@ -218,7 +218,7 @@ Basically, we guarantee to set the values provided by user, and the runtime dict
 Here is an example of what gets passed to docker User
 - runAsUser set to 9999, runAsGroup set to 9999 -> Config.User set to 9999:9999
 - runAsUser set to 9999, runAsGroup unset -> Config.User set to 9999 -> docker runs you with 9999:0
-- runAsUser unset, runAsGroup set to 9999 -> Config.User set to :9999 -> docker runs you with 0:9999 
+- runAsUser unset, runAsGroup set to 9999 -> Config.User set to :9999 -> docker runs you with 0:9999
 - runAsUser unset, runAsGroup unset -> Config.User set to whatever is present in Dockerfile
 This is to keep the behavior backward compatible and as expected.
 
@@ -252,7 +252,7 @@ There are other potentially unresolved discussions in that PR which need a follo
 ## Implementation History
 - Proposal merged on 9-18-2017
 - Implementation merged as Alpha on 3-1-2018 and Release in 1.10
-- Implementation for Containerd merged on 3-30-2018 
+- Implementation for Containerd merged on 3-30-2018
 - Implementation for CRI-O merged on 6-8-2018
 - Implemented RunAsGroup PodSecurityPolicy Strategy on 10-12-2018
 - Planned Beta in v1.14

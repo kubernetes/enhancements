@@ -65,7 +65,7 @@ Both types need group, version, kind and name(GVKN) of a Kubernetes resource to 
 the unique target to perform the patching. In strategic merge patch, GVKN is included
 in the patch itself. In JSON patch, the GVKN is specified in `kustomization.yaml`.
 
-There have been [requests](https://github.com/kubernetes-sigs/kustomize/issues/720) for patching multiple targets by one patch for different purposes: 
+There have been [requests](https://github.com/kubernetes-sigs/kustomize/issues/720) for patching multiple targets by one patch for different purposes:
 - override one field for all objects of one type
 - add or remove common command arguments for all containers
 - inject a [sidecar proxy](https://istio.io/docs/setup/kubernetes/sidecar-injection/) as in istio to all containers

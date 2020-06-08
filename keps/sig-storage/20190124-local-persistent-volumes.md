@@ -189,7 +189,7 @@ and could be isolated in its own cluster, or shared with other applications.
 In a baremetal environment, nodes may be configured with multiple local disks of
 varying capacity, speeds and mediums.  Mediums include spinning disks (HDDs) and
 solid-state drives (SSDs), and capacities of each disk can range from hundreds
-of GBs to tens of TB. Multiple disks may be arranged in JBOD or RAID configurations 
+of GBs to tens of TB. Multiple disks may be arranged in JBOD or RAID configurations
 to consume as persistent storage.
 
 Currently, the methods to use the additional disks are to:
@@ -571,7 +571,7 @@ data:
 
 With this current approach, filesystems that were meant to be exposed as PVs are supposed to be
 mounted on sub-directories under hostDir and the provisioner running in a container would walk
-through the corresponding "mountDir" to find all the PVs.  
+through the corresponding "mountDir" to find all the PVs.
 
 For block discovery, we will extend the same approach to enable discovering block devices. The
 admin can create symbolic links under hostDir for each block device that should be discovered
@@ -587,14 +587,14 @@ Cleanup of a block device can be a bit more involved for the following reasons:
 block devices one might want to wipe all current content.
 * Overwriting SSDs is not guaranteed to securely cleanup all previous content as there is a
 layer of indirection in SSDs called the FTL (flash translation layer) and also wear leveling
-techniques in SSDs that prevent reliable overwrite of all previous content. 
+techniques in SSDs that prevent reliable overwrite of all previous content.
 * SSDs can also suffer from wear if they are repeatedly subjected to zeroing out, so one would
 need different tools and strategies for HDDs vs SSDs
 * A cleanup process which favors overwriting every block in the disk can take several hours.
 
 For this reason, the cleanup process has been made configurable and extensible, so that admin
 can use the most appropriate method for their environment.
- 
+
 Block device cleanup logic will be encapsulated in separate scripts or binaries. There will be
 several scripts that will be made available out of the box, for example:
 

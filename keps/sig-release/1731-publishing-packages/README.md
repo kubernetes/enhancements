@@ -199,9 +199,9 @@ process (see also: [Risks](#risks-and-mitigations)).
 
 ### Risks and Mitigations
 
-- *Risk*: We don't find a proper way to share secrets like the signing key  
+- *Risk*: We don't find a proper way to share secrets like the signing key
   *Mitigation*: TBA
-- *Risk*: Building all the packages for all the distributions and their version takes too long to be done nightly or via cutting the release  
+- *Risk*: Building all the packages for all the distributions and their version takes too long to be done nightly or via cutting the release
   *Mitigation*: TBA
 
 ## Design Details

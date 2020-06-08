@@ -51,13 +51,13 @@ This KEP started life as [feature #2273](https://github.com/kubernetes/community
 
 
 ## Motivation
-Implementing support for embedding volumes directly in pod specs would allow driver developers to create new types of CSI drivers such as ephemeral volume drivers.  They can be used to inject arbitrary states, such as configuration, secrets, identity, variables or similar information, directly inside pods using a mounted volume. 
+Implementing support for embedding volumes directly in pod specs would allow driver developers to create new types of CSI drivers such as ephemeral volume drivers.  They can be used to inject arbitrary states, such as configuration, secrets, identity, variables or similar information, directly inside pods using a mounted volume.
 
 
-### Goals 
+### Goals
 * Provide a high level design for ephemeral inline CSI volumes support
 * Define API changes needed to support this feature
-* Outlines how ephemeral inline CSI volumes would work 
+* Outlines how ephemeral inline CSI volumes would work
 * Ensure that inline CSI volumes usage is secure
 
 ### Non-goals
@@ -69,7 +69,7 @@ The followings will not be addressed by this KEP:
 * Support for inline pod specs backed by a persistent volumes
 
 ## User stories
-* As a storage provider, I want to use the CSI API to develop drivers that can mount ephemeral volumes that follow the lifecycles of pods where they are embedded.   This feature would allow me to create drivers that work similarly to how the in-tree Secrets or ConfigMaps driver works.  My ephemeral CSI driver should allow me to inject arbitrary data into a pod using a volume mount point inside the pod. 
+* As a storage provider, I want to use the CSI API to develop drivers that can mount ephemeral volumes that follow the lifecycles of pods where they are embedded.   This feature would allow me to create drivers that work similarly to how the in-tree Secrets or ConfigMaps driver works.  My ephemeral CSI driver should allow me to inject arbitrary data into a pod using a volume mount point inside the pod.
 * As a user I want to be able to define pod specs with embedded ephemeral CSI volumes that are created/mounted when the pod is deployed and are deleted when the pod goes away.
 
 ### Examples
@@ -95,7 +95,7 @@ spec:
 ```
 
 ## Ephemeral inline volume proposal
-A CSI driver may be able to support either PV/PVC-originated or pod spec originated volumes. When a volume definition is embedded inside a pod spec, it is considered to be an `ephemeral inline` volume request and can only participate in *mount/unmount* volume operation calls.  Ephemeral inline volume requests have the following characteristics: 
+A CSI driver may be able to support either PV/PVC-originated or pod spec originated volumes. When a volume definition is embedded inside a pod spec, it is considered to be an `ephemeral inline` volume request and can only participate in *mount/unmount* volume operation calls.  Ephemeral inline volume requests have the following characteristics:
 * The inline volume spec will not contain nor require a `volumeHandle`.
 * The CSI Kubelet plugin will internally generate a `volumeHandle` which is passed to the driver.
 * Using existing strategy, the volumeHandle will be cached for future volume operations (i.e. unmount).
@@ -109,11 +109,11 @@ A CSI driver may be able to support either PV/PVC-originated or pod spec origina
 During mount operation, the Kubelet (internal CSI code) will employ a naming strategy to generate the value for the `volumeHandle`.  The generated value will be a combination of `podUID` and `pod.spec.Volume[x].name` to guarantee uniqueness.  The generated value will be stable and the Kubelet will be able to regenerate the value, if needed, during different phases of storage operations.
 
 This approach provides several advantages:
-* It makes sure that each pod can use a different volume handle ID for its ephemeral volumes.  
+* It makes sure that each pod can use a different volume handle ID for its ephemeral volumes.
 * Each pod will get a uniquely generated volume handle, preventing accidental naming conflicts in pods.
 * Each pod created by ReplicaSet, StatefulSet or DaemonSet will get the same copy of a pod template. This makes sure that each pod gets its own unique volume handle ID and thus can get its own volume instance.
 
-Without an auto-generated naming strategy for the `volumeHandle` during an ephemeral lifecycle, a user could guess the volume handle ID of another user causing a security risk. Having a strategy that generates consistent volume handle names, will ensure that drivers obeying idempotency will always return the same volume associated with the podUID. 
+Without an auto-generated naming strategy for the `volumeHandle` during an ephemeral lifecycle, a user could guess the volume handle ID of another user causing a security risk. Having a strategy that generates consistent volume handle names, will ensure that drivers obeying idempotency will always return the same volume associated with the podUID.
 
 ### API updates
 
@@ -219,7 +219,7 @@ To control which CSI driver is allowed to be use ephemeral inline volumes within
   type AllowedCSIDriver struct {
 	// Name of the CSI driver
 	Name string
-  }  
+  }
 ```
 
 Value `PodSecurityPolicy.AllowedCSIDrivers` must be explicitly set with the names of CSI drivers that are allowed to be embedded within a pod spec.  An empty value means no CSI drivers are allowed to be specified inline inside a pod spec.

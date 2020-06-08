@@ -182,8 +182,8 @@ Note that PreFilter is called once in each scheduling cycle.
 
 A Pre-filter plugin can implement the optional `PreFilterExtensions` interface which
 define **AddPod** and **RemovePod** methods to incrementally modify its pre-processed info.
-The framework guarantees that those functions will only be called after PreFilter, possibly 
-on a cloned CycleState, and may call those functions more than once before calling Filter on 
+The framework guarantees that those functions will only be called after PreFilter, possibly
+on a cloned CycleState, and may call those functions more than once before calling Filter on
 a specific node.
 
 
@@ -605,7 +605,7 @@ and https://github.com/kubernetes/community/pull/3008*
 
 ## Interactions with Cluster Autoscaler
 
-The Cluster Autoscaler will have to be changed to run Filter plugins instead of predicates. 
+The Cluster Autoscaler will have to be changed to run Filter plugins instead of predicates.
 This can be done by creating a Framework instance and invoke `RunFilterPlugins`.
 
 # USE CASES
@@ -681,7 +681,7 @@ accompanied by integration tests with reasonable coverage.
   * End-to-end tests should be added for new scheduling features and plugins that
 interact with external components of Kubernetes. For example, if a plugin needs
 to interact with the API server and Kubelets, end-to-end tests may be needed.
-End-to-end tests are not needed when integration tests can provided adequate coverage.  
+End-to-end tests are not needed when integration tests can provided adequate coverage.
 
 # GRADUATION CRITERIA
 

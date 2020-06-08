@@ -54,7 +54,7 @@ This KEP seeks consensus on how Kubernetes docs handle two types of content:
 
 1. Content from or about third-party providers ("third-party content")
 
-Minimize and eliminate third-party content except when necessary for Kubernetes 
+Minimize and eliminate third-party content except when necessary for Kubernetes
 to function in-project.
 
 2. Content hosted on multiple sites ("dual-sourced content")
@@ -62,8 +62,8 @@ to function in-project.
 Minimize and eliminate dual-sourced content except when necessary for Kubernetes
 to function in-project.
 
-**Note:** This KEP defines "in project" to mean projects in the Kubernetes org, 
-which includes the [kubernetes](https://github.com/kubernetes) and 
+**Note:** This KEP defines "in project" to mean projects in the Kubernetes org,
+which includes the [kubernetes](https://github.com/kubernetes) and
 [kubernetes-sigs](https://github.com/kubernetes-sigs) repositories.
 
 ## Introduction
@@ -82,7 +82,7 @@ project docs is to host single-sourced content only, and to provide
 links to other providers’ single-sourced content. This simplifies
 version management and reduces the work required to maintain content.
 
-This KEP defines how to handle third-party and dual-sourced content in 
+This KEP defines how to handle third-party and dual-sourced content in
 documentation, so that authors can
 judge what is appropriate to propose and so that PR approvers can make
 consistent, fair decisions during the review process.
@@ -101,10 +101,10 @@ how to install or use Kubernetes on several third party Kubernetes
 offerings.
 
 Some third party content is necessary in order for Kubernetes to
-function. For example: container runtimes (containerd, CRI-o, Docker), 
-networking policy (CNI plugins), Ingress controllers, and logging all require 
-third party components. Pages like [Logging Using Stackdriver](https://kubernetes.io/docs/tasks/debug-application-cluster/logging-stackdriver/) 
-are highly specific to a third party offering and seem more like third party 
+function. For example: container runtimes (containerd, CRI-o, Docker),
+networking policy (CNI plugins), Ingress controllers, and logging all require
+third party components. Pages like [Logging Using Stackdriver](https://kubernetes.io/docs/tasks/debug-application-cluster/logging-stackdriver/)
+are highly specific to a third party offering and seem more like third party
 product documentation than Kubernetes open source documentation.
 
 ### Goals
@@ -143,12 +143,12 @@ See https://github.com/kubernetes/website/issues/15748.
 1. When should the Kubernetes documentation host third party content that isn't
 maintained by a Kubernetes SIG?
 
-As infrequently as possible, with linking preferred to hosting. 
+As infrequently as possible, with linking preferred to hosting.
 
 1. How does the Kubernetes project handle third party content that is not kept
 up to date or hosts?
 
-If content isn't refreshed within 180 days, notify stakeholders of 90 days to 
+If content isn't refreshed within 180 days, notify stakeholders of 90 days to
 update content or migrate it elsewhere before removing it. Notification
 specifically includes:
 
@@ -172,20 +172,20 @@ third-party content?
 
 Third-party content must be necessary for Kubernetes to function in-project.
 
-1. To what extent should SIG Docs advocate for third-party content providers to 
+1. To what extent should SIG Docs advocate for third-party content providers to
 host their own content, or decline to host third-party content altogether?
 
 Kubernetes docs publish third-party content only if:
 
-- It's necessary for Kubernetes to function. For example: container runtimes 
-(containerd, CRI-o, Docker), networking policy (CNI plugins), Ingress 
+- It's necessary for Kubernetes to function. For example: container runtimes
+(containerd, CRI-o, Docker), networking policy (CNI plugins), Ingress
 controllers, and logging.
 
 - It's an applied example of another project in the Kubernetes GitHub org. This
-includes the [kubernetes](https://github.com/kubernetes) and 
+includes the [kubernetes](https://github.com/kubernetes) and
 [kubernetes-sigs](https://github.com/kubernetes-sigs) repositories.
 
-Third-party content should be linked instead of hosted whenever possible. 
+Third-party content should be linked instead of hosted whenever possible.
 
 </del>
 
@@ -195,7 +195,7 @@ Third-party content should be linked instead of hosted whenever possible.
 
 ### Non-Goals
 
-1. Outright removal of all content relating to vendors and projects outside the 
+1. Outright removal of all content relating to vendors and projects outside the
    Kubernetes project.
 
 ## Proposal
@@ -203,27 +203,27 @@ Third-party content should be linked instead of hosted whenever possible.
 1. Revise the [content guide](https://github.com/kubernetes/website/blob/master/content/en/docs/contribute/style/content-guide.md#contributing-content) to achieve the KEP goal:
 
 - Specify that Kubernetes docs are limited to content required for Kubernetes to
-function in-project. Docs may include third-party OSS content for components that 
-require a third-party solution to function. Docs may include content for 
+function in-project. Docs may include third-party OSS content for components that
+require a third-party solution to function. Docs may include content for
 other projects in the Kubernetes org, and content from other OSS projects that
-are necessary for Kubernetes to function. Third-party content must be linked 
+are necessary for Kubernetes to function. Third-party content must be linked
 whenever possible, rather than duplicated or hosted in k/website.
 
 2. Revise the documentation when the KEP is approved:
 
-- **Third-party content:** Notify stakeholders of all affected content via 
+- **Third-party content:** Notify stakeholders of all affected content via
 GitHub issues and via a single message containing a summary of all affected
-content to kubernetes-dev@googlegroups.com that non-conforming content will be 
+content to kubernetes-dev@googlegroups.com that non-conforming content will be
 removed after 90 days.
 
-This limits the impact to out-of-project content and gives current stakeholders 
-approximately one Kubernetes release cycle to migrate 
-third-party content to an alternate platform before removing content from 
+This limits the impact to out-of-project content and gives current stakeholders
+approximately one Kubernetes release cycle to migrate
+third-party content to an alternate platform before removing content from
 Kubernetes docs.
 
 - **Dual-sourced content:** Where sourcing is obvious, replace dual-sourced
 content with links to an authoritative single source. Where sourcing is unclear,
-notify stakeholders via GitHub issues in k/website and via a single message 
+notify stakeholders via GitHub issues in k/website and via a single message
 containing a summary of all affected content to kubernetes-dev@googlegroups.com
 that non-conforming content will be removed after 90 days.
 
@@ -291,7 +291,7 @@ As [hyperkube transitions to third-party maintenance](https://github.com/kuberne
 
 This KEP originally included language around considering intent of contributors.
 Because intent is effectively impossible to judge (and because contributions
-are nearly always made with the best intent), this KEP now specifies that 
+are nearly always made with the best intent), this KEP now specifies that
 third-party content is limited to what's required for in-project functionality.
 
 SIG Docs may add its own guidelines for writing and reviewing ambiguous content.

@@ -44,7 +44,7 @@
 ## Summary
 
 With [Even Pods Spreading](/keps/sig-scheduling/20190221-even-pods-spreading.md),
-workload authors can define spreading rules for their loads based on the topology of the clusters. 
+workload authors can define spreading rules for their loads based on the topology of the clusters.
 The spreading rules are defined in the `PodSpec`, thus they are tied to the pod.
 
 We propose the introduction of configurable default spreading constraints, i.e. constraints that
@@ -143,7 +143,7 @@ type Args struct {
 	// DefaultConstraints defines topology spread constraints to be applied to pods
 	// that don't define any in `pod.spec.topologySpreadConstraints`. Pod selectors must
 	// be empty, as they are deduced from the resources that the pod belongs to
-	// (includes services, replication controllers, replica sets and stateful sets). 
+	// (includes services, replication controllers, replica sets and stateful sets).
 	// If not specified, the scheduler applies the following default constraints:
 	// <default rules go here. See next section>
 	// +optional
@@ -274,7 +274,7 @@ To ensure this feature to be rolled out in high quality. Following tests are man
 - Make the topology keys used in `SelectorSpreadingPriority` configurable.
 
     While this moves the scheduler in the right direction, there are two problems:
-    
+
     1. We can only support one topology key.
     1. It makes it hard for pods to override the operator-provided spreading rules.
 

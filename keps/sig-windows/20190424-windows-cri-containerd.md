@@ -134,7 +134,7 @@ Moving to the new Windows HCSv2 platform and ContainerD would allow Kubernetes t
 - Termination messages (depends on single file mounts)
 - /etc/hosts (c:\windows\system32\drivers\etc\hosts) file mapping
 
-#### Improved isolation and compatibility between Windows pods using Hyper-V 
+#### Improved isolation and compatibility between Windows pods using Hyper-V
 
 Hyper-V enables each pod to run within it’s own hypervisor partition, with a separate kernel. This means that we can build forward-compatibility for containers across Windows OS versions - for example a container built using Windows Server 1809, could be run on a node running Windows Server 1903. This pod would use the Windows Server 1809 kernel to preserve full compatibility, and other pods could run using either a shared kernel with the node, or their own isolated Windows Server 1903 kernels. Containers requiring 1809 and 1903 (or later) cannot be mixed in the same pod, they must be deployed in separate pods so the matching kernel may be used. Running Windows Server version 1903 containers on a Windows Server 2019/1809 host will not work.
 
@@ -214,7 +214,7 @@ The CRI plugin changes needed to enable Hyper-V isolation are still in a develop
 Code: mostly done
 CI+CD: lacking
 
-##### CNI: Flannel 
+##### CNI: Flannel
 Flannel isn’t expected to require any changes since the Windows-specific metaplugins ship outside of the main repo. However, there is still not a stable release supporting Windows so it needs to be built from source. Additionally, the Windows-specific metaplugins to support ContainerD are being developed in a new repo [Microsoft/windows-container-networking](https://github.com/Microsoft/windows-container-networking). It’s still TBD whether this code will be merged into [containernetworking/plugins](https://github.com/containernetworking/plugins/), or maintained in a separate repo.
 
 - Sdnbridge - this works with host-gw mode, replaces win-bridge

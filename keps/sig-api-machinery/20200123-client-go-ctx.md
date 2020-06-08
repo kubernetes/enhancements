@@ -77,7 +77,7 @@ produces the least error prone API.
 
 This is an example change to `Pods.Get` implementation:
 
-```go 
+```go
 func (c *pods) Get(ctx context.Context, name string, options metav1.GetOptions) (result *v1.Pod, err error) {
 	Result = &v1.Pod{}
 	err = c.client.Get().
@@ -178,7 +178,7 @@ interface:
 type PodsGetter interface {
 	Pods(namespace string) PodInterface
 }
-``` 
+```
 
 We can modify these resource interfaces and their underlying concrete types,
 `pod` in this case, to add a `WithContext` method. This change would be
@@ -210,7 +210,7 @@ func (c *pods) WithContext(ctx context.Context) PodInterface {
 To pass through this context, it would be necessary to change the underlying
 client calls to accept the context. Example:
 
-```go 
+```go
 func (c *pods) Get(name string, options meta_v1.GetOptions) (result *v1.Pod, err error) {
 	result = &v1.Pod{}
 	err = c.client.Get().
@@ -228,7 +228,7 @@ func (c *pods) Get(name string, options meta_v1.GetOptions) (result *v1.Pod, err
 This would result in an API that would be interacted with like so if the
 consumer wished to pass a context:
 
-```go  
+```go
    ctx := req.Context()
    pod, err := k8client.CoreV1().Pods(namespace).WithContext(ctx).Get(podName, ...)
 ```

@@ -149,7 +149,7 @@ Usually, CRD ([CustomResourceDefinitions](https://kubernetes.io/docs/concepts/ex
 
 ### Multi-scheduler
 
-Since multiple schedulers work in parallel, there may be decision conflict between different schedulers; and the kubelet will reject one pod (failed) if conflict. The controller will handle rejected pods based on its lifecycle policy for failed pods. Users and cluster admins may reduce the probability of such conflicts by partitioning the clusters logically, for example, by placing node-affinity to distinct set of nodes on various groups of pods. 
+Since multiple schedulers work in parallel, there may be decision conflict between different schedulers; and the kubelet will reject one pod (failed) if conflict. The controller will handle rejected pods based on its lifecycle policy for failed pods. Users and cluster admins may reduce the probability of such conflicts by partitioning the clusters logically, for example, by placing node-affinity to distinct set of nodes on various groups of pods.
 
 ### Priority/Preemption
 
@@ -185,10 +185,10 @@ kubectl is enhanced to support `PodGroup` by [kubectl plugins](https://kubernete
 
 Coscheduling is going to be implemented in [kube-batch](https://github.com/kubernetes-sigs/kube-batch/);
 we'll consider to migrate when the above features are finished and stable. At least the following two features
-are stable enough: 
+are stable enough:
 
 - Coscheduling based on `PodGroup`
-- Support `.spec.TotalResource` 
+- Support `.spec.TotalResource`
 
 ## Implementation History
 

@@ -16,7 +16,7 @@ creation-date: "2018-07-19"
 last-updated: "2019-04-30"
 status: implementable
 ---
-# Kubelet endpoint for device assignment observation details 
+# Kubelet endpoint for device assignment observation details
 
 ## Table of Contents
 
@@ -113,7 +113,7 @@ message ContainerDevices {
 * Notes:
   * Does not include any reference to resource names.  Monitoring agentes must identify devices by the device or environment variables passed to the pod or container.
 
-### Add a field to Pod Status. 
+### Add a field to Pod Status.
 * Pros:
   * Allows for observation of container to device bindings local to the node through the `/pods` endpoint
 * Cons:
@@ -148,7 +148,7 @@ type Container struct {
 }
 ```
 * During Kubelet pod admission, if `ComputeDevices` is found non-empty, specified devices will be allocated otherwise behaviour will remain same as it is today.
-* Before starting the pod, the kubelet writes the assigned `ComputeDevices` back to the pod spec.  
+* Before starting the pod, the kubelet writes the assigned `ComputeDevices` back to the pod spec.
   * Note: Writing to the Api Server and waiting to observe the updated pod spec in the kubelet's pod watch may add significant latency to pod startup.
 * Allows devices to potentially be assigned by a custom scheduler.
 * Serves as a permanent record of device assignments for the kubelet, and eliminates the need for the kubelet to maintain this state locally.

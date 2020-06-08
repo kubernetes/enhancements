@@ -97,7 +97,7 @@ If it fails, the reconciler retries.
 
 It is important to note that:
 
-- The reconciler triggers resize operations only for volumes that are mounted to pods by reading `ActualStateOfWorld`, which should only be read/written to by reconciler and the operations it starts. operationExecutor's goroutinemap prevents resize operations and other operations (e.g. unmount) from happening simultaneously. 
+- The reconciler triggers resize operations only for volumes that are mounted to pods by reading `ActualStateOfWorld`, which should only be read/written to by reconciler and the operations it starts. operationExecutor's goroutinemap prevents resize operations and other operations (e.g. unmount) from happening simultaneously.
 
 - File system resizing is a global operation for a volume, so if more than one pod mounts the same PVC, the reconciler should avoid triggering unnecessary no-op operations. (The alpha implementation used an in-memory map but it might also be possible to change `PVC.Status.Capacity` for every `mountedPod` of an `attachedVolume`.)
 

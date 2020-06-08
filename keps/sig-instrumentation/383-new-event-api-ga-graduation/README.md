@@ -209,8 +209,8 @@ const (
 
 #### Few Examples
 
-| Regarding | Action | Reason | ReportingController | Related | 
-| ----------| -------| -------| --------------------|---------| 
+| Regarding | Action | Reason | ReportingController | Related |
+| ----------| -------| -------| --------------------|---------|
 | Node X | BecameUnreachable | HeartbeatTooOld | kubernetes.io/node-ctrl | <nil> |
 | PVC X | FailedToAttachVolume | Unknown | kubernetes.io/pv-attach-ctrl | Node Y |
 | ReplicaSet X | FailedToInstantiatePod | QuotaExceeded | kubernetes.io/replica-set-ctrl | <nil> |
@@ -497,7 +497,7 @@ _This section must be completed when targeting alpha to a release._
   Describe the consequences on existing workloads (e.g. if this is runtime
   feature, can it break the existing applications?).
 
-  Yes. If the new Event API is disabled, it will fallback to the original one 
+  Yes. If the new Event API is disabled, it will fallback to the original one
   (The new events are roundtrippable with the old `corev1.Events`).
 
   If individual components don't implement it, rollback of client-library use
@@ -603,7 +603,7 @@ _This section must be completed when targeting beta graduation to a release._
 
   For each of the fill in the following, thinking both about running user workloads
   and creating new ones, as well as about cluster-level services (e.g. DNS):
-  
+
   N/A
 
 
@@ -640,7 +640,7 @@ previous answers based on experience in the field._
 * **Will enabling / using this feature result in increasing size or count
   of the existing API objects?**
   Describe them providing:
-  
+
   The difference in size of the Event object comes from new Action and Related
   fields. We can safely estimate the increase to be smaller than 30%. However,
   more events may be emitted. For example, new Events will be emitted for Pod
@@ -653,12 +653,12 @@ previous answers based on experience in the field._
 
 * **Will enabling / using this feature result in increasing time taken by any
   operations covered by [existing SLIs/SLOs][]?**
-  
+
   No
 
 * **Will enabling / using this feature result in non-negligible increase of
   resource usage (CPU, RAM, disk, IO, ...) in any components?**
-  
+
   The potential increase of Event size might cause non-negligible increase of
   storage in Etcd, network bandwidth to send them, and CPU to process them.
 
@@ -675,7 +675,7 @@ _This section must be completed when targeting beta graduation to a release._
   The Events will be dropped if API server or etcd is unavailable.
 
 * **What are other known failure modes?**
-  
+
   N/A
 
 * **What steps should be taken if SLOs are not being met to determine the problem?**

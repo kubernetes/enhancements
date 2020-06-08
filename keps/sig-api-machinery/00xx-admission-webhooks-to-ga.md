@@ -86,14 +86,14 @@ This section describes each of the goals in the [Goals](#goals) section in more 
 
 ### Object selector
 
-Currently Admission Webhook supports namespace selectors, but that may not be enough 
-for some cases that admission webhook need to be skipped on some objects. For example 
-if the Admission Webhook is running inside cluster and its rules includes wildcards 
-which match required API objects for its own execution, it won't work. An object selector 
-would be useful exclude those objects. 
+Currently Admission Webhook supports namespace selectors, but that may not be enough
+for some cases that admission webhook need to be skipped on some objects. For example
+if the Admission Webhook is running inside cluster and its rules includes wildcards
+which match required API objects for its own execution, it won't work. An object selector
+would be useful exclude those objects.
 
-Also in case of an optional webhooks, an object selector gives the end user ability to 
-include or exclude an object without having access to admission webhook configuration 
+Also in case of an optional webhooks, an object selector gives the end user ability to
+include or exclude an object without having access to admission webhook configuration
 which is normally restricted to cluster admins.
 
 Note that namespaced objects must match both the object selector (if specified) and namespace selector to be sent to the Webhook.
@@ -132,15 +132,15 @@ type {Validating,Mutating}Webhook struct {
 
 ### Scope
 
-Current webhook Rules applies to objects of all scopes. That means a Rule can use wildcards 
-to target both namespaced and cluster-scoped objects. 
+Current webhook Rules applies to objects of all scopes. That means a Rule can use wildcards
+to target both namespaced and cluster-scoped objects.
 
 An evaluation of the targeting capabilities required by in-tree admission plugins showed that
 some plugins (like NamespaceLifecycle and ResourceQuota) require the ability to intercept
 all namespaced resources. This selection is currently inexpressible for webhook admission.
 
-The proposal is to add a scope field to Admission Webhook configuration to limit webhook 
-targeting to namespaced or cluster-scoped objects. This enables webhook developers to 
+The proposal is to add a scope field to Admission Webhook configuration to limit webhook
+targeting to namespaced or cluster-scoped objects. This enables webhook developers to
 target only namespaced objects or cluster-scoped objects, just like in-tree admission plugins can.
 
 The field will be added to both v1 and v1beta1.
@@ -178,12 +178,12 @@ type Rule struct {
 
 ### timeout configuration
 
-Admission Webhook has a default timeout of 30 seconds today, but long running webhooks 
-would result in a poor performance. By adding a timeout field to the configuration, 
-the webhook author can limit the running time of the webhook that either result in 
-failing the API call earlier or ignore the webhook call based on the failure policy. 
-This feature, however, would not let the timeout to be extended more than 30 seconds 
-and the timeout would be defaulted to a shorter value (e.g. 10 seconds) for v1 API while 
+Admission Webhook has a default timeout of 30 seconds today, but long running webhooks
+would result in a poor performance. By adding a timeout field to the configuration,
+the webhook author can limit the running time of the webhook that either result in
+failing the API call earlier or ignore the webhook call based on the failure policy.
+This feature, however, would not let the timeout to be extended more than 30 seconds
+and the timeout would be defaulted to a shorter value (e.g. 10 seconds) for v1 API while
 stays 30 second for v1beta API to keep backward compatibility.
 
 ```golang
@@ -201,10 +201,10 @@ type {Validating,Mutating}Webhook struct {
 
 ### Port configuration
 
-Today Admission Webhook port is always expected to be 443 on service reference. But this 
-limitation was arbitrary and there are cases that Admission Webhook cannot use this port. 
-This feature will add a port field to service based webhooks and allows specifying a port 
-other than 443 for service based webhooks. Specifying port should already be available for 
+Today Admission Webhook port is always expected to be 443 on service reference. But this
+limitation was arbitrary and there are cases that Admission Webhook cannot use this port.
+This feature will add a port field to service based webhooks and allows specifying a port
+other than 443 for service based webhooks. Specifying port should already be available for
 URL based webhooks.
 
 The following field will be added to the `ServiceReference` types used by admission webhooks, `APIService`, and `AuditSink` configurations:
@@ -223,9 +223,9 @@ type ServiceReference struct {
 
 ### Plumbing existing objects to delete admission
 
-Current admission webhooks can hook on `DELETE` events but they won't get any object in 
-`oldObject` or `Object` field of `AdmissionRequest`. The proposal is to send them existing 
-object(s) as the `oldObject`. This is also helpful for applying `ObjectSelector` to these 
+Current admission webhooks can hook on `DELETE` events but they won't get any object in
+`oldObject` or `Object` field of `AdmissionRequest`. The proposal is to send them existing
+object(s) as the `oldObject`. This is also helpful for applying `ObjectSelector` to these
 webhooks. When deleting a collection, each matching object is sent as the `oldObject` to
 to webhooks in individual request.
 
@@ -244,12 +244,12 @@ type AdmissionRequest struct {
 ### Mutating Plugin ordering
 
 A single ordering of mutating admissions plugins (including webhooks) does not work for all cases
-(see https://issue.k8s.io/64333 as an example). A mutating webhook can add a new sub-structure 
-to the object (like adding a `container` to a pod), and other mutating plugins which have already 
-run may have opinions on those new structures (like setting an `imagePullPolicy` on all containers). 
+(see https://issue.k8s.io/64333 as an example). A mutating webhook can add a new sub-structure
+to the object (like adding a `container` to a pod), and other mutating plugins which have already
+run may have opinions on those new structures (like setting an `imagePullPolicy` on all containers).
 
 To allow mutating admission plugins to observe changes made by other plugins, regardless of order,
-admission will add the ability to re-run mutating plugins (including webhooks) a single time if 
+admission will add the ability to re-run mutating plugins (including webhooks) a single time if
 there is any change made by a mutating webhook on the first pass.
 
 1. Initial mutating admission pass
@@ -257,9 +257,9 @@ there is any change made by a mutating webhook on the first pass.
    1. Run all in-tree mutating admission plugins
    2. Run all applicable webhook mutating admission plugins that indicate they want to be reinvoked
 
-Mutating plugins that are reinvoked must be idempotent, able to successfully process an object they have already 
+Mutating plugins that are reinvoked must be idempotent, able to successfully process an object they have already
 admitted and potentially modified. This will be clearly documented in admission webhook documentation,
-examples, and test guidelines. Mutating admission webhooks *should* already support this (since any 
+examples, and test guidelines. Mutating admission webhooks *should* already support this (since any
 change they can make in an object could already exist in the user-provided object), and any webhooks
 that do not are broken for some set of user input.
 
@@ -299,7 +299,7 @@ var (
 ```
 
 Although this problem can go deeper than two levels (for example, if the second mutating webhook added
-a new structure based on the new `container`), a single re-run is sufficient for the current set of 
+a new structure based on the new `container`), a single re-run is sufficient for the current set of
 in-tree plugins and webhook use-cases. If future use cases require additional or more targeted reinvocations,
 the `AdmissionReview` response can be enhanced to provide information to target those reinvocations.
 
@@ -342,9 +342,9 @@ Test scenarios:
 
 ### Passing {Operation}Option to Webhook
 
-Each of the operations webhook can have an `Option` structure (e.g. `DeleteOption` or `CreateOption`) 
-passed by the user. It is useful for some webhooks to know what are those options user requested to 
-better modify or validate object. The proposal is to add those Options as an `Options` field to the 
+Each of the operations webhook can have an `Option` structure (e.g. `DeleteOption` or `CreateOption`)
+passed by the user. It is useful for some webhooks to know what are those options user requested to
+better modify or validate object. The proposal is to add those Options as an `Options` field to the
 `AdmissionRequest` API object.
 
 ```golang
@@ -386,16 +386,16 @@ OpenAPI `x-kubernetes-group-version-kind` property as the
 ### AdmissionReview v1
 
 The payload API server sends to Admission webhooks is called AdmissionReview which is `v1beta1` today.
-The proposal is to promote the API to v1 with no change to the API object definition. Because of different 
-versions of Admission Webhooks, there must be a way for the webhook developer to specify which apiVersion 
-of `AdmissionReview` they support. The field must be an ordered list which reflects the webhooks preference 
+The proposal is to promote the API to v1 with no change to the API object definition. Because of different
+versions of Admission Webhooks, there must be a way for the webhook developer to specify which apiVersion
+of `AdmissionReview` they support. The field must be an ordered list which reflects the webhooks preference
 of `AdmissionReview` apiVersions.
 
-A version list will be added to webhook configuration that would be defaulted to `['v1beta1']` in v1beta1 API 
+A version list will be added to webhook configuration that would be defaulted to `['v1beta1']` in v1beta1 API
 and will be a required field in `v1`.
 
-A webhook must respond with the same apiVersion of the AdmissionReview it received. 
-For example, a webhook that registers admissionReviewVersions:["v1","v1beta1"] must be prepared to receive and respond with those versions. 
+A webhook must respond with the same apiVersion of the AdmissionReview it received.
+For example, a webhook that registers admissionReviewVersions:["v1","v1beta1"] must be prepared to receive and respond with those versions.
 
 V1 API looks like this:
 
@@ -407,7 +407,7 @@ type {Validating,Mutating}Webhook struct {
      // versions the Webhook expects. API server will try to use first version in
      // the list which it supports. If none of the versions specified in this list
      // supported by API server, validation will fail for this object.
-     // If the webhook configuration has already been persisted, calls to the 
+     // If the webhook configuration has already been persisted, calls to the
      // webhook will fail and be subject to the failure policy.
      // This field is required and cannot be empty.
      AdmissionReviewVersions []string `json:"admissionReviewVersions" protobuf:"bytes,9,rep,name=admissionReviewVersions"`
@@ -424,7 +424,7 @@ type {Validating,Mutating}Webhook struct {
      // versions the Webhook expects. API server will try to use first version in
      // the list which it supports. If none of the versions specified in this list
      // supported by API server, validation will fail for this object.
-     // If the webhook configuration has already been persisted, calls to the 
+     // If the webhook configuration has already been persisted, calls to the
      // webhook will fail and be subject to the failure policy.
      // Default to `['v1beta1']`.
      // +optional
@@ -436,21 +436,21 @@ type {Validating,Mutating}Webhook struct {
 
 Webhooks currently register to intercept particular API group/version/resource combinations.
 
-Some resources can be accessed via different versions, or even different API 
-groups (for example, `apps/v1` and `extensions/v1beta1` Deployments). To 
+Some resources can be accessed via different versions, or even different API
+groups (for example, `apps/v1` and `extensions/v1beta1` Deployments). To
 intercept a resource effectively, all accessible groups/versions/resources
 must be registered for and understood by the webhook.
 
-When upgrading to a new version of the apiserver, existing resources can be 
+When upgrading to a new version of the apiserver, existing resources can be
 made available via new versions (or even new groups). Ensuring all webhooks
-(and registered webhook configurations) have been updated to be able to 
-handle the new versions/groups in every upgrade is possible, but easy to 
-forget to do, or to do incorrectly. In the case of webhooks not authored 
-by the cluster-administrator, obtaining updated admission plugins that 
+(and registered webhook configurations) have been updated to be able to
+handle the new versions/groups in every upgrade is possible, but easy to
+forget to do, or to do incorrectly. In the case of webhooks not authored
+by the cluster-administrator, obtaining updated admission plugins that
 understand the new versions could require significant effort and time.
 
-Since the apiserver can convert between all of the versions by which a resource 
-is made available, this situation can be improved by having the apiserver 
+Since the apiserver can convert between all of the versions by which a resource
+is made available, this situation can be improved by having the apiserver
 convert resources to the group/versions a webhook registered for.
 
 Because admission can be used for out-of-tree defaulting and field enforcement,
@@ -465,7 +465,7 @@ For safety, this field defaults to `Exact` in `v1beta1`. In `v1`, we can default
 // Webhook describes an admission webhook and the resources and operations it applies to.
 type {Validating,Mutating}Webhook struct {
      ...
-     // matchPolicy defines how the "rules" field is applied when a request is made 
+     // matchPolicy defines how the "rules" field is applied when a request is made
      // to a different API group or version of a resource listed in "rules".
      // Allowed values are "Exact" or "Equivalent".
      // - Exact: match requests only if they exactly match a given rule. For example, if an object can be modified
@@ -489,9 +489,9 @@ The apiserver will do the following:
     * `apps,v1beta2,deployments/scale` (`apiVersion: apps/v1beta2, kind: Scale`)
     * `apps,v1beta1,deployments/scale` (`apiVersion: apps/v1beta1, kind: Scale`)
     * `extensions,v1beta1,deployments/scale` (`apiVersion: extensions/v1beta1, kind: Scale`)
-2. When evaluating whether to dispatch an incoming request to a webhook with 
-`matchPolicy: Equivalent`, check the request's resource *and* all equivalent 
-resources against the ones the webhook had registered for. If needed, convert 
+2. When evaluating whether to dispatch an incoming request to a webhook with
+`matchPolicy: Equivalent`, check the request's resource *and* all equivalent
+resources against the ones the webhook had registered for. If needed, convert
 the incoming object to one the webhook indicated it understood.
 
 The `AdmissionRequest` sent to a webhook includes the fully-qualified
@@ -513,7 +513,7 @@ type AdmissionRequest struct {
      SubResource string `json:"subResource,omitempty" protobuf:"bytes,4,opt,name=subResource"`
 ```
 
-Prior to this conversion feature, the resource and kind of the request made to the 
+Prior to this conversion feature, the resource and kind of the request made to the
 API server, and the resource and kind sent in the AdmissionRequest were identical.
 
 When a conversion occurs and the object we send to the webhook is a different kind
@@ -628,10 +628,10 @@ type Rule struct {
 type ConversionPolicyType string
 
 const (
-     // ConversionIgnore means that requests that do not match a webhook's rules but could be 
+     // ConversionIgnore means that requests that do not match a webhook's rules but could be
      // converted to a resource the webhook registered for, should be ignored.
      ConversionIgnore ConversionPolicyType = "Ignore"
-     // ConversionConvert means that requests that do not match a webhook's rules but could be 
+     // ConversionConvert means that requests that do not match a webhook's rules but could be
      // converted to a resource the webhook registered for, should be converted and sent to the webhook.
      ConversionConvert ConversionPolicyType = "Convert"
 )
@@ -712,7 +712,7 @@ type ValidatingWebhook struct {
      // on admission requests for ValidatingWebhookConfiguration and MutatingWebhookConfiguration objects.
      Rules []RuleWithOperations `json:"rules,omitempty" protobuf:"bytes,3,rep,name=rules"`
 
-     // matchPolicy defines how the "rules" field is applied when a request is made 
+     // matchPolicy defines how the "rules" field is applied when a request is made
      // to a different API group or version of a resource listed in "rules".
      // Allowed values are "Exact" or "Equivalent".
      // - Exact: match requests only if they exactly match a given rule. For example, if an object can be modified
@@ -728,7 +728,7 @@ type ValidatingWebhook struct {
      // allowed values are Ignore or Fail. Defaults to Ignore.
      // +optional
      FailurePolicy *FailurePolicyType `json:"failurePolicy,omitempty" protobuf:"bytes,4,opt,name=failurePolicy,casttype=FailurePolicyType"`
-    
+
      // NamespaceSelector decides whether to run the webhook on an object based
      // on whether the namespace for that object matches the selector. If the
      // object itself is a namespace, the matching is performed on
@@ -809,7 +809,7 @@ type ValidatingWebhook struct {
      // versions the Webhook expects. API server will try to use first version in
      // the list which it supports. If none of the versions specified in this list
      // supported by API server, validation will fail for this object.
-     // If the webhook configuration has already been persisted, calls to the 
+     // If the webhook configuration has already been persisted, calls to the
      // webhook will fail and be subject to the failure policy.
      // This field is required and cannot be empty.
      AdmissionReviewVersions []string `json:"admissionReviewVersions" protobuf:"bytes,9,rep,name=admissionReviewVersions"`
@@ -866,7 +866,7 @@ type MutatingWebhook struct {
      // on admission requests for ValidatingWebhookConfiguration and MutatingWebhookConfiguration objects.
      Rules []RuleWithOperations `json:"rules,omitempty" protobuf:"bytes,3,rep,name=rules"`
 
-     // matchPolicy defines how the "rules" field is applied when a request is made 
+     // matchPolicy defines how the "rules" field is applied when a request is made
      // to a different API group or version of a resource listed in "rules".
      // Allowed values are "Exact" or "Equivalent".
      // - Exact: match requests only if they exactly match a given rule. For example, if an object can be modified
@@ -900,7 +900,7 @@ type MutatingWebhook struct {
      // Defaults to "Never".
      // +optional
      ReinvocationPolicy *ReinvocationPolicyType `json:"reinvocationPolicy,omitempty"`
-    
+
      // NamespaceSelector decides whether to run the webhook on an object based
      // on whether the namespace for that object matches the selector. If the
      // object itself is a namespace, the matching is performed on
@@ -981,7 +981,7 @@ type MutatingWebhook struct {
      // versions the Webhook expects. API server will try to use first version in
      // the list which it supports. If none of the versions specified in this list
      // supported by API server, validation will fail for this object.
-     // If the webhook configuration has already been persisted, calls to the 
+     // If the webhook configuration has already been persisted, calls to the
      // webhook will fail and be subject to the failure policy.
      // This field is required and cannot be empty.
      AdmissionReviewVersions []string `json:"admissionReviewVersions" protobuf:"bytes,9,rep,name=admissionReviewVersions"`
@@ -1079,7 +1079,7 @@ type ServiceReference struct {
 
 ## V1beta1 changes
 
-All of the proposed changes will be added to `v1beta1` for backward compatibility 
+All of the proposed changes will be added to `v1beta1` for backward compatibility
 and also to keep roundtrip-ability between `v1` and `v1beta1`. The only difference are:
 
 * Default Value for `timeoutSeconds` field will be 30 seconds for `v1beta1`.
@@ -1099,7 +1099,7 @@ The features proposed in this KEP are low risk and mostly bug fixes or new featu
 
 ## Graduation Criteria
 
-To mark these as complete, all of the above features need to be implemented. 
+To mark these as complete, all of the above features need to be implemented.
 An [umbrella issue](https://github.com/kubernetes/kubernetes/issues/73185) is tracking all of these changes.
 Also there need to be sufficient tests for any of these new features and all existing features and documentation should be completed for all features.
 

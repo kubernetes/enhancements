@@ -55,14 +55,14 @@ A [previous proposal](https://docs.google.com/document/d/1_CdNWIjPBqVDMvu82aJICQ
 For the purposes of this document, I will use the following definitions:
 
 * Resource Metrics: Metrics for the consumption of first-class resources (CPU, Memory, Ephemeral Storage) which are aggregated by the [Metrics Server](https://github.com/kubernetes-incubator/metrics-server#kubernetes-metrics-server), and served by the [Resource Metrics API](https://github.com/kubernetes/metrics#resource-metrics-api)
-* Monitoring Metrics: Metrics for observability and introspection of the cluster, which are used by end-users, operators, devs, etc. 
+* Monitoring Metrics: Metrics for observability and introspection of the cluster, which are used by end-users, operators, devs, etc.
 
 
 The Kubelet’s [JSON Summary API](https://github.com/kubernetes/kubernetes/blob/master/pkg/kubelet/apis/stats/v1alpha1/types.go) is currently used by the [Metrics Server](https://github.com/kubernetes-incubator/metrics-server#kubernetes-metrics-server).  It contains far more metrics than are required by the Metrics Server.
 
 [Prometheus](https://prometheus.io/) is commonly used for exposing metrics for kubernetes components, and the [Prometheus Operator](https://github.com/coreos/prometheus-operator#prometheus-operator), which Sig-Instrumentation works on, is commonly used to deploy and manage metrics collection.
 
-[OpenMetrics](https://openmetrics.io/) is a new prometheus-based metric standard which supports both text and protobuf.  
+[OpenMetrics](https://openmetrics.io/) is a new prometheus-based metric standard which supports both text and protobuf.
 
 [GRPC](https://grpc.io/) is commonly used for interfaces between components in kubernetes, such as the [Container Runtime Interface](https://github.com/kubernetes/kubernetes/blob/master/pkg/kubelet/apis/cri/runtime/v1alpha2/api.proto).  GRPC uses [protocol-buffers](https://developers.google.com/protocol-buffers/docs/overview) (protobuf) for serialization and deserialization, which is more performant than other formats.
 
@@ -104,7 +104,7 @@ Labels: container, pod, namespace
 
 # Cumulative cpu time consumed by the node in seconds
 Name: node_cpu_usage_seconds_total
-Labels: 
+Labels:
 
 # Current working set of the node in bytes
 Name: node_memory_working_set_bytes
@@ -157,7 +157,7 @@ This experiment "fakes" large numbers of containers by having the kubelet return
 
 #### Results
 
-Both gRPC and the optimized prometheus were able to scale to 40k containers.  The gRPC implementation was more efficient by a factor of approx. 3.  
+Both gRPC and the optimized prometheus were able to scale to 40k containers.  The gRPC implementation was more efficient by a factor of approx. 3.
 
 <img src="https://user-images.githubusercontent.com/3262098/51704923-173bd800-1fcf-11e9-910d-3fd6606550f3.png" width="600" height="375">
 

@@ -97,6 +97,6 @@ We implement kubetest plugin, out-of-tree and provided as a single binary file. 
 
 ## Implementation History
 
-* Initial integration with upstream has been tracked 
+* Initial integration with upstream has been tracked
 * Initial proposal to SIG 2018-11-26
 * Initial KEP draft 2018-11-26

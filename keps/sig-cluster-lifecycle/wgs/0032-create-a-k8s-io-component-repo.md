@@ -69,41 +69,41 @@ The proposal is about refactoring the Kubernetes core package structure in a way
 - delegated authn/z
 - logging.
 
-Today this code is spread over the `k8s.io/kubernetes` repository, staging repository or pieces of code are in locations they don't belong to (example: `k8s.io/apiserver/pkg/util/logs` is 
-the for general logging, totally independent of API servers). We miss a repository far enough in the dependency hierarchy for code that is or should be common among core Kubernetes 
+Today this code is spread over the `k8s.io/kubernetes` repository, staging repository or pieces of code are in locations they don't belong to (example: `k8s.io/apiserver/pkg/util/logs` is
+the for general logging, totally independent of API servers). We miss a repository far enough in the dependency hierarchy for code that is or should be common among core Kubernetes
 component (neither `k8s.io/apiserver`, `k8s.io/apimachinery` or `k8s.io/client-go` are right for that).
 
-This toolkit with this shared set of code can then be consumed by all the core Kubernetes components, higher-level frameworks like `kubebuilder` and `server-sdk` (which are more targeted 
+This toolkit with this shared set of code can then be consumed by all the core Kubernetes components, higher-level frameworks like `kubebuilder` and `server-sdk` (which are more targeted
 for a specific type of consumer), as well as any other ecosystem component that want to follow these patterns by vendoring this code as-is.
 
-To implement this KEP in a timely manner and to start building a good foundation for Kubernetes component, we propose to create a Working Group, **WG Component Standard** to facilitate 
+To implement this KEP in a timely manner and to start building a good foundation for Kubernetes component, we propose to create a Working Group, **WG Component Standard** to facilitate
 this effort.
 
 ### History and Motivation
 
 By this time in the Kubernetes development, we know pretty well how we want a Kubernetes component to work, function, and look. But achieving this requires a fair amount of more or less
 advanced code. As we scale the ecosystem, and evolve Kubernetes to work more as a kernel, it's increasingly important to make writing extensions and custom Kubernetes-aware components
-relatively easy. As it stands today, this is anything but straightforward. In fact, even the in-core components diverge in terms of configurability (Can it be declaratively configured? Do 
-flag names follow a consistent pattern? Are configuration sources consistently merged?), common functionality (Does it support the common "/version," "/healthz," "/configz," "/pprof," and 
-"/metrics" endpoints? Does it utilize Kubernetes' authentication/authorization mechanisms? Does it write logs in a consistent manner? Does it handle signals as others do?), and testability 
-(Do the internal configuration structs set up correctly to conform with the Kubernetes API machinery, and have roundtrip, defaulting, validation unit tests in place? Does it merge flags 
-and the config file correctly? Is the logging mechanism set up in a testable manner? Can it be verified that the HTTP server has the standard endpoints registered and working? Can it be 
+relatively easy. As it stands today, this is anything but straightforward. In fact, even the in-core components diverge in terms of configurability (Can it be declaratively configured? Do
+flag names follow a consistent pattern? Are configuration sources consistently merged?), common functionality (Does it support the common "/version," "/healthz," "/configz," "/pprof," and
+"/metrics" endpoints? Does it utilize Kubernetes' authentication/authorization mechanisms? Does it write logs in a consistent manner? Does it handle signals as others do?), and testability
+(Do the internal configuration structs set up correctly to conform with the Kubernetes API machinery, and have roundtrip, defaulting, validation unit tests in place? Does it merge flags
+and the config file correctly? Is the logging mechanism set up in a testable manner? Can it be verified that the HTTP server has the standard endpoints registered and working? Can it be
 verified that authentication and authorization is set up correctly?).
 
 ![component architecture](component-arch.png)
 
-This document proposes to create a new Kubernetes staging repository with minimal dependencies (_k8s.io/apimachinery_, _k8s.io/client-go_, and _k8s.io/api_) and good documentation on how 
-to write a Kubernetes-aware component that follows best practices. The code and best practices in this repo would be used by all the core components as well. Unifying the core components 
-would be great progress in terms of the internal code structure, capabilities, and test coverage. Most significantly, this would lead to an adoption of ComponentConfig for all internal 
+This document proposes to create a new Kubernetes staging repository with minimal dependencies (_k8s.io/apimachinery_, _k8s.io/client-go_, and _k8s.io/api_) and good documentation on how
+to write a Kubernetes-aware component that follows best practices. The code and best practices in this repo would be used by all the core components as well. Unifying the core components
+would be great progress in terms of the internal code structure, capabilities, and test coverage. Most significantly, this would lead to an adoption of ComponentConfig for all internal
 components as both a "side effect" and a desired outcome, which is long time overdue.
 
 The current inconsistency is a headache for many Kubernetes developers, and confusing for end users. Implementing this proposal will lead to better code quality, higher test coverage in
-these specific areas of the code, and better reusability possibilities as we grow the ecosystem (e.g. breaking out the _cloud provider_ code, building Cluster API controllers, etc.). 
+these specific areas of the code, and better reusability possibilities as we grow the ecosystem (e.g. breaking out the _cloud provider_ code, building Cluster API controllers, etc.).
 This work consists of three major pillars, and we hope to complete at least the ComponentConfig part of it—if not (ideally) all three pieces of work—in v1.14.
 
 ### "Component" definition
 
-In this case, when talking about a _component_, we mean: "a CLI tool or a long-running server process that consumes configuration from a versioned configuration file and optionally 
+In this case, when talking about a _component_, we mean: "a CLI tool or a long-running server process that consumes configuration from a versioned configuration file and optionally
 overriding flags". The component's implementation of ComponentConfig and command &amp; flag setup is well unit-tested. The component is to some extent Kubernetes-aware. The
 component follows Kubernetes' conventions for config serialization and merging, logging, and common HTTPS endpoints.
 
@@ -188,10 +188,10 @@ This proposal contains three logical units of work. Each subsection is explained
 
 #### Generate OpenAPI specifications
 
-Provide a common way to generate OpenAPI specifications local to the component, so that external consumers can access it, and the component can expose it via e.g. a CLI flag or HTTPS 
+Provide a common way to generate OpenAPI specifications local to the component, so that external consumers can access it, and the component can expose it via e.g. a CLI flag or HTTPS
 endpoint.
 
-The API naming violations handling (right now done monolithically in the core k8s repo) will become local to the component's API group. In other words, if a Go `CapitalCase` field name 
+The API naming violations handling (right now done monolithically in the core k8s repo) will become local to the component's API group. In other words, if a Go `CapitalCase` field name
 doesn't have a similar JSON `camelCase` name, today an OpenAPI exception will be stored in `k8s.io/kubernetes/api/api-rules/violations_exception.list`. This will be changed
 for components though, so that they register their allowed exceptions in the `register_test.go` unit test file in the external API group directory.
 
@@ -205,17 +205,17 @@ Please note that CLI tools are **not** targeted with this shared code here, only
 
 #### Wrapper around cobra.Command
 
-See the `cmd/kubelet` code for how much extra setup a Kubernetes component needs to do for building commands and flag sets. This code can be refactored into a generic wrapper around 
+See the `cmd/kubelet` code for how much extra setup a Kubernetes component needs to do for building commands and flag sets. This code can be refactored into a generic wrapper around
 _cobra_ for use with Kubernetes.
 
 Note: As part of follow-up proposals from the new Working Group, we might also consider using only `pflag` for server/daemon components.
 
 #### Flag precedence over config file
 
-If the component supports both ComponentConfiguration and flags, flags should override fields set in the ComponentConfiguration. This is not straightforward to implement in code, and only 
+If the component supports both ComponentConfiguration and flags, flags should override fields set in the ComponentConfiguration. This is not straightforward to implement in code, and only
 the kubelet does this at the moment. Refactoring this code in a generic helper library in this new repository will make adoption of the feature easy and testable.
 
-The details of flag versus ComponentConfig semantics are _to be decided later in a different proposal_. Meanwhile, this flag precedence feature will be **opt-in**, so the kubelet and 
+The details of flag versus ComponentConfig semantics are _to be decided later in a different proposal_. Meanwhile, this flag precedence feature will be **opt-in**, so the kubelet and
 kubeadm can directly adopt this code, until the details have been decided on for all components.
 
 #### Standardized logging
@@ -224,22 +224,22 @@ Use the _k8s.io/klog_ package in a standardized way.
 
 ### Part 3: HTTPS serving
 
-Many Kubernetes controllers are clients to the API server and run as daemons. In order to expose information on how the component is doing (e.g. profiling, metrics, current configuration, 
+Many Kubernetes controllers are clients to the API server and run as daemons. In order to expose information on how the component is doing (e.g. profiling, metrics, current configuration,
 etc.), an HTTPS server is run.
 
 #### Common endpoints
 
-In order to make it easy to expose this kind of information, a package is made in this new repo that hosts this common code. Initially targeted  
+In order to make it easy to expose this kind of information, a package is made in this new repo that hosts this common code. Initially targeted
 endpoints are "/version," "/healthz," "/configz," "/pprof," and "/metrics."
 
 #### Standardized authentication / authorization
 
-In order to not expose this kind of information (e.g. metrics) to anyone that can talk to the component, it may utilize SubjectAccessReview requests to the API server, and hence delegate 
+In order to not expose this kind of information (e.g. metrics) to anyone that can talk to the component, it may utilize SubjectAccessReview requests to the API server, and hence delegate
 authentication and authorization to the API server. It should be easy to add this functionality to your component.
 
 ### Part 4: Sample implementation in k8s.io/sample-component
 
-Provides an example usage of the three main functions of the _k8s.io/component-base_ repo, implementing ComponentConfig, the CLI wrapper tooling and the common HTTPS endpoints with delegated 
+Provides an example usage of the three main functions of the _k8s.io/component-base_ repo, implementing ComponentConfig, the CLI wrapper tooling and the common HTTPS endpoints with delegated
 auth.
 
 ### Code structure

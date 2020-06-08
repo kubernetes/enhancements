@@ -64,7 +64,7 @@ superseded-by:
 
 ### Implementation Notes
 
-In the current implementation: 
+In the current implementation:
 
 1. Priority admission plugin is blocking [creation of critical pods](https://github.com/kubernetes/kubernetes/blob/90fbbee12950f336db2da94dda7beb87846f94e0/plugin/pkg/admission/priority/admission.go#L150) in namespaces other than `kube-system`.
 
@@ -80,7 +80,7 @@ This ensures:
 
 ### Constraints
 
-We should verify the automatic creation of quota and see if it causes any problems with quotas created in other namespaces. 
+We should verify the automatic creation of quota and see if it causes any problems with quotas created in other namespaces.
 
 ### Test Plan
 

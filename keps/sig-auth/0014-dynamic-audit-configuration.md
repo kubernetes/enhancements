@@ -56,16 +56,16 @@ status: implementable
 
 ## Summary
 
-We want to allow the advanced auditing features to be dynamically configured. Following in the same vein as 
-[Dynamic Admission Control](https://kubernetes.io/docs/admin/extensible-admission-controllers/) we would like to provide 
+We want to allow the advanced auditing features to be dynamically configured. Following in the same vein as
+[Dynamic Admission Control](https://kubernetes.io/docs/admin/extensible-admission-controllers/) we would like to provide
 a means of configuring the auditing features post cluster provisioning.
 
 ## Motivation
 
-The advanced auditing features are a powerful tool, yet difficult to configure. The configuration requires deep insight 
-into the deployment mechanism of choice and often takes many iterations to configure properly requiring a restart of 
-the apiserver each time. Moreover, the ability to install addon tools that configure and enhance auditing is hindered 
-by the overhead in configuration. Such tools frequently run on the cluster requiring future knowledge of how to reach 
+The advanced auditing features are a powerful tool, yet difficult to configure. The configuration requires deep insight
+into the deployment mechanism of choice and often takes many iterations to configure properly requiring a restart of
+the apiserver each time. Moreover, the ability to install addon tools that configure and enhance auditing is hindered
+by the overhead in configuration. Such tools frequently run on the cluster requiring future knowledge of how to reach
 them when the cluster is live. These tools could enhance the security and conformance of the cluster and its applications.
 
 ### Goals
@@ -126,7 +126,7 @@ type WebhookBackend struct {
 }
 
 // WebhookClientConfig contains the information to make a TLS
-// connection with the webhook; this follows: 
+// connection with the webhook; this follows:
 // https://github.com/kubernetes/api/blob/master/admissionregistration/v1beta1/types.go#L222
 // but may require some additive auth parameters
 type WebhookClientConfig struct {
@@ -144,7 +144,7 @@ type WebhookClientConfig struct {
 
 Multiple definitions can exist as independent solutions. These updates will require the audit API to be registered with the apiserver. The dynamic configurations will be wrapped by truncate and batch options, which are set statically through existing flags. Dynamic configuration will be enabled by a feature gate for pre-stable releases. If existing flags are provided to configure the audit backend they will be taken as a separate backend configuration.
 
-Example configuration yaml config:   
+Example configuration yaml config:
 ```yaml
 apiVersion: audit.k8s.io/v1beta1
 kind: AuditConfiguration
@@ -185,38 +185,38 @@ As a kubernetes developer, I will be able to quickly turn up the audit level on 
 ### Implementation Details/Notes/Constraints
 
 #### Feature Gating
-Introduction of dynamic policy requires changes to the current audit pipeline. Care must be taken that these changes are 
-properly gated and do not affect the stability or performance of the current features as they progress to GA. A new decorated 
-handler will be provisioned similar to the [existing handlers](https://github.com/kubernetes/apiserver/blob/master/pkg/endpoints/filters/audit.go#L41) 
-called `withDynamicAudit`. Another conditional clause will be added where the handlers are 
+Introduction of dynamic policy requires changes to the current audit pipeline. Care must be taken that these changes are
+properly gated and do not affect the stability or performance of the current features as they progress to GA. A new decorated
+handler will be provisioned similar to the [existing handlers](https://github.com/kubernetes/apiserver/blob/master/pkg/endpoints/filters/audit.go#L41)
+called `withDynamicAudit`. Another conditional clause will be added where the handlers are
 [provisioned](https://github.com/kubernetes/apiserver/blob/master/pkg/server/config.go#L536) allowing for the proper feature gating.
 
 #### Policy Enforcement
-This addition will move policy enforcement from the main handler to the backends. From the `withDynamicAudit` handler, 
-the full event will be generated and then passed to the backends. Each backend will copy the event and then be required to 
-drop any pieces that do not conform to its policy. A new sink interface will be required for these changes called `EnforcedSink`, 
-this will largely follow suite with the existing sink but take a fully formed event and the authorizer attributes as its 
-parameters. It will then utilize the `LevelAndStages` method in the policy 
-[checker](https://github.com/kubernetes/apiserver/blob/master/pkg/audit/policy/checker.go) to enforce its policy on the event, 
-and drop any unneeded sections. The new dynamic backend will implement the `EnforcedSink` interface, and update its state 
+This addition will move policy enforcement from the main handler to the backends. From the `withDynamicAudit` handler,
+the full event will be generated and then passed to the backends. Each backend will copy the event and then be required to
+drop any pieces that do not conform to its policy. A new sink interface will be required for these changes called `EnforcedSink`,
+this will largely follow suite with the existing sink but take a fully formed event and the authorizer attributes as its
+parameters. It will then utilize the `LevelAndStages` method in the policy
+[checker](https://github.com/kubernetes/apiserver/blob/master/pkg/audit/policy/checker.go) to enforce its policy on the event,
+and drop any unneeded sections. The new dynamic backend will implement the `EnforcedSink` interface, and update its state
 based on a shared informer. For the existing backends to comply, a method will be added that implements the `EnforcedSink` interface.
 
-Implementing the [attribute interface](https://github.com/kubernetes/kubernetes/tree/master/staging/src/k8s.io/apiserver/pkg/authorization/authorizer/interfaces.go) 
-based on the Event struct was also explored. This would allow us to keep the existing `Sink` interfaces, however it would 
-require parsing the request URI twice in the pipeline due to how that field is represented in the Event. This was determined 
+Implementing the [attribute interface](https://github.com/kubernetes/kubernetes/tree/master/staging/src/k8s.io/apiserver/pkg/authorization/authorizer/interfaces.go)
+based on the Event struct was also explored. This would allow us to keep the existing `Sink` interfaces, however it would
+require parsing the request URI twice in the pipeline due to how that field is represented in the Event. This was determined
 to not be worth the cost.
 
 #### Aggregated Servers
-Inherently apiserver aggregates and HA apiserver setups will work off the same dynamic configuration object. If separate 
-audit configuration objects are needed they should be configured as static objects on the node and set through the runtime flags. Aggregated servers will implement the same audit handling mechanisms. A conformance test should be provided as assurance. Metadata level 
-logging will happen by default at the main api server as it proxies the traffic. The aggregated server will then watch the same 
-configuration objects and only log on resource types that it handles. This will duplicate the events sent to the receiving servers 
+Inherently apiserver aggregates and HA apiserver setups will work off the same dynamic configuration object. If separate
+audit configuration objects are needed they should be configured as static objects on the node and set through the runtime flags. Aggregated servers will implement the same audit handling mechanisms. A conformance test should be provided as assurance. Metadata level
+logging will happen by default at the main api server as it proxies the traffic. The aggregated server will then watch the same
+configuration objects and only log on resource types that it handles. This will duplicate the events sent to the receiving servers
 so they should not expect to key off `{ Audit-ID x Stage }`.
 
 ### Risks and Mitigations
 
 #### Privilege Escalation
-This does open up the attack surface of the audit mechanisms. Having them strictly configured through the api server has the advantage of limiting the access of those configurations to those that have access to the master node. This opens a number of potential attack vectors:   
+This does open up the attack surface of the audit mechanisms. Having them strictly configured through the api server has the advantage of limiting the access of those configurations to those that have access to the master node. This opens a number of potential attack vectors:
 
 * privileged user changes audit policy to hide (not audit) malicious actions
 * privileged user changes audit policy to DoS audit endpoint (with malintent, or ignorance)
@@ -240,10 +240,10 @@ This needs further discussion.
 
 #### Performance
 
-These changes will likely have an O(n) performance impact on the api server per policy.  A `DeepCopy` of the event will be 
-required for each backend. Also, the request/response object would now be serialized on every [request](https://github.com/kubernetes/kubernetes/blob/cef2d325ee1be894e883d63013f75cfac5cb1246/staging/src/k8s.io/apiserver/pkg/audit/request.go#L150-L152). 
-Benchmark testing will be required to understand the scope of the impact and what optimizations may be required. This impact 
-is gated by opt-in feature flags, which allows it to move to alpha but these concerns must be tested and reconciled before it 
+These changes will likely have an O(n) performance impact on the api server per policy.  A `DeepCopy` of the event will be
+required for each backend. Also, the request/response object would now be serialized on every [request](https://github.com/kubernetes/kubernetes/blob/cef2d325ee1be894e883d63013f75cfac5cb1246/staging/src/k8s.io/apiserver/pkg/audit/request.go#L150-L152).
+Benchmark testing will be required to understand the scope of the impact and what optimizations may be required. This impact
+is gated by opt-in feature flags, which allows it to move to alpha but these concerns must be tested and reconciled before it
 progresses to beta.
 
 ## Test Plan
@@ -269,18 +269,18 @@ Success will be determined by stability of the provided mechanisms and ease of u
 
 ### Generalized Dynamic Configuration
 
-We could strive for all kube-apiserver flags to be able to be dynamically provisioned in a common way. This is likely a large 
+We could strive for all kube-apiserver flags to be able to be dynamically provisioned in a common way. This is likely a large
 task and out of the scope of the intentions of this feature.
 
 ### Policy Override
 
-There has been discussion over whether the policy configured by api server flags should limit the policies configured dynamically. 
-This would allow a cluster admin to narrowly define what is allowed to be logged by the dynamic configurations. While this has upsides 
-it was ruled out for the following reasons: 
+There has been discussion over whether the policy configured by api server flags should limit the policies configured dynamically.
+This would allow a cluster admin to narrowly define what is allowed to be logged by the dynamic configurations. While this has upsides
+it was ruled out for the following reasons:
 
-* It would limit user story #4 in the ability to quickly turn up logging when needed 
-* It could prove difficult to understand as the policies themselves are fairly complex 
+* It would limit user story #4 in the ability to quickly turn up logging when needed
+* It could prove difficult to understand as the policies themselves are fairly complex
 * The use of CRDs would be difficult to bound
 
-The dynamic policy feature is gated by runtime flags. This still provides the cluster provisioner a means to limit audit logging to the 
+The dynamic policy feature is gated by runtime flags. This still provides the cluster provisioner a means to limit audit logging to the
 single runtime object if needed.

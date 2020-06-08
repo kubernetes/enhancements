@@ -39,7 +39,7 @@ superseded-by:
 
 ## Summary
 
-Pod Priority and Preemption are features introduced in Kubernetes 1.8 as alpha features and 
+Pod Priority and Preemption are features introduced in Kubernetes 1.8 as alpha features and
 promoted to beta in 1.11. Pod Priority enables users to specify importance of
 a Pod. Pods with higher priority are scheduled ahead of other pods with
 lower priority. When a cluster does not have enough capacity for running a high

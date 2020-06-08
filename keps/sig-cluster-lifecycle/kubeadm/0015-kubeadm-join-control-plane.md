@@ -298,7 +298,7 @@ The updated join workflow will be the following:
       > This decision introduce also a limitation, because HA with local etcd won't be supported when the
       > user sets the `--apiserver-advertise-address` of each kube-apiserver instance, including the
       > instance on the bootstrap control plane, _equal to the `controlplaneAddress` endpoint_.
-   
+
    2. Apply master taint and label to the node.
 
    3. Update the `kubeadm-config` configMap with the information about the new control plane instance.
@@ -398,7 +398,7 @@ one control plane instances, but with a new sub-step to be executed on secondary
 ## Drawbacks
 
 The `kubeadm join --control-plane` workflow requires that some condition are satisfied at `kubeadm init` time,
-but the user will be informed about compliance/non compliance of such conditions only when running 
+but the user will be informed about compliance/non compliance of such conditions only when running
 `kubeadm join --control plane`.
 
 ## Alternatives

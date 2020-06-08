@@ -19,5 +19,5 @@
 - There is a risk that publishing each command as a separately built binary could cause the aggregate download
   size of the toolset to balloon.  The kubectl binary is *52M* and the kustomize binary is *31M*.  (extrapolate to
   30+ commands x 30MB).  Before going down this route, we should consider how to we might want to design a solution
-  and the tradeoffs.  
- 
+  and the tradeoffs.
+

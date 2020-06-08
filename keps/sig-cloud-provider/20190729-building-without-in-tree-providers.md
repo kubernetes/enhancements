@@ -80,7 +80,7 @@ will continue to function correctly. Doing so is a bit tricky without ensuring
 that the in-tree provider code is not being used via some unexpected side-channel
 (such as `init()` methods). Building binaries without the in-tree cloud provider
 packages would allow us to verify this and additionally provide experimentally
-smaller / cheaper binaries for parties interested in out of tree provider or 
+smaller / cheaper binaries for parties interested in out of tree provider or
 no provider based clusters.
 
 ### Goals
@@ -93,7 +93,7 @@ no provider based clusters.
 
 - Building the out of tree providers
 - Changing the official Kubernetes release builds
-- Building the e2e tests 
+- Building the e2e tests
   - Decoupling cloud providers is a larger problem there and not necessary to test out-of-tree providers or build smaller binaries
 - Mechanisms for migrating to out of tree providers
   - CSI Migration for in-tree Volumes is already underway in SIG Storage
@@ -131,15 +131,15 @@ of the in-tree providers.
 #### Story 2
 
 As a developer working to replace an in-tree provider with an out-of-tree provider,
-I am attempting to validate that I work with KAS/KCM/Kubelet which do not have 
-(my) in-tree cloud-provider compiled in and have successfully migrated all the 
-functionality I need to CCM/CSI/... Using this build ensures the relevant 
-functionality is not in KAS/KCM/Kubelet. It also allows me to work with 
+I am attempting to validate that I work with KAS/KCM/Kubelet which do not have
+(my) in-tree cloud-provider compiled in and have successfully migrated all the
+functionality I need to CCM/CSI/... Using this build ensures the relevant
+functionality is not in KAS/KCM/Kubelet. It also allows me to work with
 smaller binaries.
 
 #### Story 3
 
-As a [kind](https://github.com/kubernetes-sigs/kind) developer / user I want to 
+As a [kind](https://github.com/kubernetes-sigs/kind) developer / user I want to
 use Kubernetes binaries without cloud providers for local clusters.
 
 Developers and users will be able to build local clusters leveraging this mode
@@ -154,7 +154,7 @@ then the legacy cloud provider pacakges will be excluded from the build.
 In order to make this work the following additional changes are made:
 
 - Packages that we fully exclude (the legacy provider packages) _must_ contain
-a `doc.go` file or any other file that does NOT contain any code or build 
+a `doc.go` file or any other file that does NOT contain any code or build
 constraints. Go will not allow "building" a package without any files passing
 the constraints, however it will happily build a package with no actual methods
 / variables / ...
@@ -162,7 +162,7 @@ the constraints, however it will happily build a package with no actual methods
 - A few locations in the code do not properly use the cloud provider interface
 (instead, importing the cloud provider packages directly),
 some of these must be updated with both a "with provider" version and a
-"without provider" version broken out of the existing code. In particular this 
+"without provider" version broken out of the existing code. In particular this
 includes the in-tree volumes until CSI migration is standard, and the GCE IPAM
 logic in kube-controller-manager.
   - Note that the nodeIpamController GCE IPAM logic is slated for removal (see [the cloud controller manager KEP](https://github.com/kubernetes/enhancements/blob/master/keps/sig-cloud-provider/20180530-cloud-controller-manager.md))
@@ -245,9 +245,9 @@ this may not provide sufficient tools to adequately prepare.
 There is also a risk that cloud providers would each need to duplicate this
 work to test cloud-provider free Kubernetes for their out of tree provider.
 
-We could attempt to create a branch/PR with those changes in them. 
-However the in-tree providers are not guaranteed to exit at the same time. 
-So the branch/PR might have to be kept for a long period of time. 
+We could attempt to create a branch/PR with those changes in them.
+However the in-tree providers are not guaranteed to exit at the same time.
+So the branch/PR might have to be kept for a long period of time.
 In addition to being expensive the maintain such a PR/branch, it would obfuscate
 the effort. So developers would end up changing CP related code and have little
 / no visibility that their changes were CP related.

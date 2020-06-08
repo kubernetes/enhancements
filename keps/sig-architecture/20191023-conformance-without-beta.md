@@ -115,7 +115,7 @@ Attempts to make such a change would be caught/blocked by a CI job.
 
 #### Story 2
 
-As a Kubernetes conformance test author, I cannot accidentally write 
+As a Kubernetes conformance test author, I cannot accidentally write
 (or promote to conformance) tests that require use of beta REST APIs.
 
 Attempts to make such a change would be caught/blocked by a CI job.

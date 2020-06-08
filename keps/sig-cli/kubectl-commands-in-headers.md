@@ -89,7 +89,7 @@ are interacting with the cluster, which could be used for various purposes.
 
 - Allow cluster administrators to identify how requests in the logs were generated from
   kubectl commands.
-  
+
 Possible applications of this information may include but are not limited to:
 
 - Organizations could learn how users are interacting will their clusters to inform what internal
@@ -98,7 +98,7 @@ Possible applications of this information may include but are not limited to:
   when the version of kubectl is upgraded.  They could do this before upgrading kubectl.
   - SIG-CLI could build tools that cluster admins run and perform this analysis
     to them to help with understanding whether they will be impacted by command deprecation
-- Organizations could identify if users are running kubectl commands that are inconsistent with 
+- Organizations could identify if users are running kubectl commands that are inconsistent with
   the organization's internal best practices and recommendations.
 - Organizations could voluntarily choose to bring back high-level learnings to SIG-CLI regarding
   which and how commands are used.  This could be used by the SIG to inform where to invest resources
@@ -115,7 +115,7 @@ Possible applications of this information may include but are not limited to:
 *The following are not goals of this KEP, but could be considered in the future.*
 
 - Supply Headers for requests made by kubectl plugins.  Enforcing this would not be trivial.
-- Send Headers to the apiserver for kubectl command invocations that don't make requests - 
+- Send Headers to the apiserver for kubectl command invocations that don't make requests -
   e.g. `--dry-run`
 
 ### Anti-Goals
@@ -148,7 +148,7 @@ that might have the same name and different paths.
 Examples:
 
 - `X-Kubectl-Command: apply`
-- `X-Kubectl-Command: create secret tls` 
+- `X-Kubectl-Command: create secret tls`
 - `X-Kubectl-Command: delete`
 - `X-Kubectl-Command: get`
 
@@ -164,8 +164,8 @@ alpha-numerically and separated by a ',' to simplify human readability.
 Examples:
 
 - `X-Kubectl-Flags: --filename=local,--recursive,--context`
-- `X-Kubectl-Flags: -f=local,-f=local,-f=remote,-R` 
-- `X-Kubectl-Flags: -f=stdin` 
+- `X-Kubectl-Flags: -f=local,-f=local,-f=remote,-R`
+- `X-Kubectl-Flags: -f=stdin`
 - `X-Kubectl-Flags: --dry-run,-o=custom-columns`
 
 #### Enumerated Flag Values

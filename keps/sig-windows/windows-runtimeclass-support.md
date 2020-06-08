@@ -618,7 +618,7 @@ RuntimeClass aims to replace experimental pod annotations with a [Runtime Handle
 
 ### Multi-arch container image overview
 
-The Open Container Initiative specifications for container runtime support specifying the architecture, os, and version when pulling and starting a container. 
+The Open Container Initiative specifications for container runtime support specifying the architecture, os, and version when pulling and starting a container.
 
 Here's one example of a container image that has a multi-arch manifest with entries for Linux & Windows, multiple CPU architectures, and multiple Windows os versions.
 

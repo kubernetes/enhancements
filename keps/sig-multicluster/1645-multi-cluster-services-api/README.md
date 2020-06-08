@@ -457,7 +457,7 @@ unless there is a clear use case.
 When a `ServiceExport` is created, an IP address is reserved and assigned to
 this supercluster `Service`. This IP may be supercluster-wide, or assigned on a
 per-cluster basis. Requests to the corresponding IP from within a given cluster
-will route to endpoint addresses for the aggregated Service. 
+will route to endpoint addresses for the aggregated Service.
 
 Note: this doc does not discuss `NetworkPolicy`, which cannot currently be used
 to describe a policy that applies to a multi-cluster service.
@@ -536,7 +536,7 @@ that cluster’s lease expires.
 
 To consume a supercluster service, users will use the domain name associated
 with their `ServiceExport`. When the mcsd-controller sees a `ServiceExport`, a
-`ServiceImport` will be introduced, which can be largely ignored by the user. 
+`ServiceImport` will be introduced, which can be largely ignored by the user.
 
 An `ServiceImport` is a service that may have endpoints in other clusters.
 This includes 3 scenarios:
@@ -649,7 +649,7 @@ endpoints:
      topology.kubernetes.io/zone: us-west2-a
 ```
 
-The `ServiceImport.Spec.IP` (VIP) can be used to access this service from within this cluster. 
+The `ServiceImport.Spec.IP` (VIP) can be used to access this service from within this cluster.
 
 ## Constraints and Conflict Resolution
 

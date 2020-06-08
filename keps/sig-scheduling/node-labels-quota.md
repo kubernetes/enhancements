@@ -73,7 +73,7 @@ spec:
   scopeSelector:
    scopeName: NodeAffinityKey
    operator: In
-   values: [“hipaa-compliant: true”] 
+   values: [“hipaa-compliant: true”]
 ```
 
 ``` yaml

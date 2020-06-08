@@ -248,7 +248,7 @@ Before upgrading or downgrading the cluster, the cluster administrator must run
 migrations have completed. Otherwise the apiserver can crash, because it cannot
 interpret the serialized data in etcd. To mitigate, the cluster administrator
 can rollback the apiserver to the old version, and wait for the migration to
-complete. 
+complete.
 
 With the newly introduced [storageStates API][], the cluster administrator can
 fast upgrade/downgrade as long as the new apiserver binaries understand all

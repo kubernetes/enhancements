@@ -180,8 +180,8 @@ Ensure existing tests (for preempting PriorityClasses) do not break.
 * **How can this feature be enabled / disabled in a live cluster?**
   - [x] Feature gate
     - Feature gate name: NonPreemptingPriority
-    - Components depending on the feature gate: 
-      - kube-apiserver 
+    - Components depending on the feature gate:
+      - kube-apiserver
       - kube-scheduler
 
 * **Does enabling the feature change any default behavior?**

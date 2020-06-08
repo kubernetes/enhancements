@@ -94,11 +94,11 @@ Support for containerized Windows workloads on Windows nodes in a Kubernetes clu
 
 Support for CSI in Kubernetes reached GA status in v1.13. CSI plugins provide several benefits to Linux workloads in Kubernetes today over plugins whose code lives in kubernetes/kubernetes as well as plugins that implement the Flexvolume plugin interface. Some of these benefits are:
 
-1. The GRPC based CSI interface allow CSI plugins to be distributed as containers and fully managed through standard Kubernetes constructs like StatefulSets and DaemonSets. This is a superior mechanism compared to the exec model used by the Flexvolume interface where the plugins are distributed as scripts or binaries that need to be installed on each node and maintained. 
+1. The GRPC based CSI interface allow CSI plugins to be distributed as containers and fully managed through standard Kubernetes constructs like StatefulSets and DaemonSets. This is a superior mechanism compared to the exec model used by the Flexvolume interface where the plugins are distributed as scripts or binaries that need to be installed on each node and maintained.
 
-2. CSI offers a rich set of volume management operations (although not at a GA state in Kubernetes yet): resizing of volumes, backup/restore of volumes using snapshots and cloning besides the basic volume life-cycle operations (GA since v1.13): provisioning of storage volumes, attaching/detaching volumes to a node and mounting/dismounting to/from a pod. 
+2. CSI offers a rich set of volume management operations (although not at a GA state in Kubernetes yet): resizing of volumes, backup/restore of volumes using snapshots and cloning besides the basic volume life-cycle operations (GA since v1.13): provisioning of storage volumes, attaching/detaching volumes to a node and mounting/dismounting to/from a pod.
 
-3. CSI plugins are maintained and released independent of the Kubernetes core. This allows features and bug fixes in the CSI plugins to be delivered in a more flexible schedule relative to Kubernetes releases. Transitioning the code for existing in-tree plugins (especially those targeting specific cloud environments or vendor-specific storage systems) to external CSI plugins can also help reduce the volume of vendor-ed code that needs to be maintained in Kubernetes core. 
+3. CSI plugins are maintained and released independent of the Kubernetes core. This allows features and bug fixes in the CSI plugins to be delivered in a more flexible schedule relative to Kubernetes releases. Transitioning the code for existing in-tree plugins (especially those targeting specific cloud environments or vendor-specific storage systems) to external CSI plugins can also help reduce the volume of vendor-ed code that needs to be maintained in Kubernetes core.
 
 Given the above context, the main motivations for this KEP are:
 
@@ -142,7 +142,7 @@ Besides the above enhancements, a new "privileged proxy" binary, named csi-proxy
 
 With the KEP implemented, administrators should be able to deploy CSI Node Plugins that support staging, publishing and other storage management operations on Windows nodes. Operators will be able to schedule Windows workloads that consume persistent storage surfaced by CSI plugins on Windows nodes.
 
-#### Deploy CSI Node Plugin DaemonSet targeting Windows nodes 
+#### Deploy CSI Node Plugin DaemonSet targeting Windows nodes
 
 An administrator should be able to deploy a CSI Node Plugin along with the CSI Node Driver Registrar container targeting Windows nodes with a DaemonSet YAML like the following:
 
@@ -170,7 +170,7 @@ spec:
         kubernetes.io/os: windows
       containers:
         - name: csi-driver-registrar
-          image: gke.gcr.io/csi-node-driver-registrar:win-v1 
+          image: gke.gcr.io/csi-node-driver-registrar:win-v1
           args:
             - "--v=5"
             - "--csi-address=unix://C:\\csi\\csi.sock"
@@ -186,7 +186,7 @@ spec:
             - name: registration-dir
               mountPath: C:\registration
         - name: gce-pd-driver
-          image: gke.gcr.io/gcp-compute-persistent-disk-csi-driver:win-v1 
+          image: gke.gcr.io/gcp-compute-persistent-disk-csi-driver:win-v1
           args:
             - "--v=5"
             - "--endpoint=unix:/csi/csi.sock"
@@ -199,7 +199,7 @@ spec:
               mountPath: \\.\pipe\csi-proxy-v1alpha1
       volumes:
         - name: csi-proxy-pipe
-          hostPath: 
+          hostPath:
             path: \\.\pipe\csi-proxy-v1alpha1
             type: ""
         - name: registration-dir
@@ -304,7 +304,7 @@ The code for the CSI Node Driver Registrar needs to be refactored a bit so that 
 
 Once compiled for Windows, container images based on Window Base images (like NanoServer) needs to be published and maintained.
 
-#### New Component: CSI Proxy 
+#### New Component: CSI Proxy
 
 A "privileged proxy" binary, csi-proxy.exe, will need to be developed and maintained by the Kubernetes CSI community to allow containerized CSI Node Plugins to perform privileged operations at the Windows host OS layer. Kubernetes administrators will need to install and maintain csi-proxy.exe on all Windows nodes in a manner similar to dockerd.exe today or containerd.exe in the future. A Windows node will typically be expected to be configured to run only one instance of csi-proxy.exe as a Windows Service that can be used by all CSI Node Plugins.
 
@@ -841,4 +841,4 @@ At some point in the future, a Windows LTS release may implement support for exe
 
 ## Infrastructure Needed
 
-The code for csi-proxy as well as the GRPC API will be maintained in a dedicated repo: github.com/kubernetes-csi/windows-csi-proxy 
+The code for csi-proxy as well as the GRPC API will be maintained in a dedicated repo: github.com/kubernetes-csi/windows-csi-proxy

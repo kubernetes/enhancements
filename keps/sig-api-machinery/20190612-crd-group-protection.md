@@ -53,7 +53,7 @@ space inside of the kubernetes API groups, the kube-apiserver needs to be update
 This KEP proposes adding an `api-approved.kubernetes.io` annotation to CustomResourceDefinition.  This is only needed if
 the CRD group is `k8s.io`, `kubernetes.io`, or ends with `.k8s.io`, `.kubernetes.io`.  The value should be a link to a
 to a URL where the current spec was approved, so updates to the spec should also update the URL.
- 
+
 ```yaml
 metadata:
   annotations:
@@ -63,10 +63,10 @@ metadata:
 ## Motivation
 
 * Prevent accidentally including an unapproved API in community owned API groups
- 
+
 ### Goals
 
-* Ensure API consistency. 
+* Ensure API consistency.
 * Prevent accidentally claiming reserved named.
 
 ### Non-Goals
@@ -78,9 +78,9 @@ metadata:
 This KEP proposes adding an `api-approved.kubernetes.io` annotation to CustomResourceDefinition.  This is only needed if
 the CRD group is `k8s.io`, `kubernetes.io`, or ends with `.k8s.io`, `.kubernetes.io`.  The value should be a link to the
 pull request where the API has been approved.  If the API is unapproved, you may set the annotation to a string starting
-with `"unapproved"`.  For instance, `"unapproved, temporarily squatting` or `"unapproved, experimental-only"`.  This 
+with `"unapproved"`.  For instance, `"unapproved, temporarily squatting` or `"unapproved, experimental-only"`.  This
 is discouraged.
- 
+
 ```yaml
 metadata:
   annotations:
@@ -93,13 +93,13 @@ metadata:
     "api-approved.kubernetes.io": "unapproved, experimental-only"
 ```
 
-This field is used by new kube-apiservers to set the `KubeAPIApproved` condition.  
+This field is used by new kube-apiservers to set the `KubeAPIApproved` condition.
  1. If a new server sees a CRD for a resource in a kube group and sees the annotation set to a URL, it will set the `KubeAPIApproved` condition to true.
  2. If a new server sees a CRD for a resource in a kube group and sees the annotation set to `"unapproved.*"`, it will set the `KubeAPIApproved` condition to false.
  3. If a new server sees a CRD for a resource in a kube group and does not see the annotation, it will set the `KubeAPIApproved` condition to false.
  4. If a new server sees a CRD for a resource outside a kube group, it does not set the `KubeAPIApproved` condition at all.
 
-In v1, this annotation will be required in order to create a CRD for a resource in one of the kube API groups.  If the `KubeAPIApproved` condition is false, 
+In v1, this annotation will be required in order to create a CRD for a resource in one of the kube API groups.  If the `KubeAPIApproved` condition is false,
 the condition message will include a link to https://github.com/kubernetes/enhancements/pull/1111 for reference.
 
 ### Behavior of new clusters
@@ -109,13 +109,13 @@ the condition message will include a link to https://github.com/kubernetes/enhan
 4. CRD for a resource outside the kube group creating via CRD.v1 is contains the `api-approved.kubernetes.io` - fail validation and do not store in etcd.
 5. In CRD.v1, remove a required `api-approved.kubernetes.io` - fail validation.
 6. In all versions, any update that does not change the `api-approved.kubernetes.io` will go through our current validation rules.
- 
-  
+
+
 ### Behavior of old clusters
 1.  Nothing changes.  The old clusters will persist and keep the annotation
 
 This doesn't actively prevent bad actors from simply setting the annotation, but it does prevent accidentally claiming
-an inappropriate name. 
+an inappropriate name.
 
 ### What to do if you accidentally put an unapproved API in a protected group
 1. Get the current state and future changes approved.  For community projects, this is the best choice if the current state
@@ -123,7 +123,7 @@ an inappropriate name.
 2. If there are structural problems with the API's current state that prevent approval, you have two choices.
    1. restructure in a new version, maintaining a conversion webhook, and plan to stop serving the old version.  There are
       some cases where this may not work if the changes are not roundtrippable, but they should be rare.
-   2. restructure in a new API group. There will be no connection to existing data.  This may be disruptive for non-alpha APIs, but these 
+   2. restructure in a new API group. There will be no connection to existing data.  This may be disruptive for non-alpha APIs, but these
       names are reserved and the process of API review has been in place for some time.  The expectation is that this is
       the exceptional case of an exceptional case.
 3. Indicate that your API is unapproved by setting the `"api-approved.kubernetes.io"` annotation to something starting with

@@ -95,7 +95,7 @@ expected to want to be able to invoke the tools they already use for addressing 
 ### Goals
 
 - Enable users to generate Secrets using the tools they already use to do so
-- Secure by default - Alice must configure her environment in an insecure manner and run the command in an 
+- Secure by default - Alice must configure her environment in an insecure manner and run the command in an
   insecure way for it to be exploitable
 - Support Linux / Mac / Windows OS's
 

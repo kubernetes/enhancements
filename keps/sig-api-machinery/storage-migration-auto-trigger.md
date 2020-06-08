@@ -78,7 +78,7 @@ type StorageStateStatus {
   // +optional
   LastHeartbeatTime metav1.Time
 }
-``` 
+```
 
 We had considered making `PersistedStorageVersionHashes` part of the `spec`
 instead of the `status`, because the stored versions cannot be deduced
@@ -96,7 +96,7 @@ status because
   API.
 
 [CRD.status.StoredVersions]:https://github.com/kubernetes/kubernetes/blob/697c2316faaabae8ef8371032b60be65d7795e68/staging/src/k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1/types.go#L305
-  
+
 ## Storage migration triggering controller
 
 We will add a controller that monitors the discovery documents and the
@@ -204,7 +204,7 @@ versions might be configured differently in different API servers. Storage
 migration shouldn't start until the rolling upgrade is done.
 
 Ideally, for an HA cluster undergoing rolling upgrade, the following should
-happen for each resource: 
+happen for each resource:
 * the discovery document should expose the lack of consensus by listing all
   storage version hashes supported by different API servers.
 * the storage migration triggering controller should

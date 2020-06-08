@@ -71,7 +71,7 @@ Update documentation to reflect the status of the feature.
 
 ### Risks and Mitigations
 
-There is no proposed change to the functionality of this feature, and it has functioned 
+There is no proposed change to the functionality of this feature, and it has functioned
 well since its promotion to beta in 1.13, so no risks are expected.
 
 

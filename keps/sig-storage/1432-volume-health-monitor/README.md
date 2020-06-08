@@ -572,7 +572,7 @@ Alternative option 2 does not address the concerns from option 1. Assuming the n
 
 #### Alternative option 3
 
-We can also reuse the PV Taints and introduce a new Taint called PVUnhealthMessage for PV health condition whose key is specific (PVUnhealthMessage) and value can be set differently. 
+We can also reuse the PV Taints and introduce a new Taint called PVUnhealthMessage for PV health condition whose key is specific (PVUnhealthMessage) and value can be set differently.
 
 For example, if the PV is not attached now, we can mark the PV using the PVUnhealthMessage taint like this:
 ```
@@ -583,7 +583,7 @@ VolumeTaintEffect: NoEffect
 
 If the volume is deleted, we can mark the PV using the PVUnhealthMessage taint like this:
 ```
-Key: “PVUnhealthMessage” 
+Key: “PVUnhealthMessage”
 Value: “VolumeError - the volume is deleted from backend”
 VolumeTaintEffect: NoEffect
 ```
@@ -663,7 +663,7 @@ _This section must be completed when targeting alpha to a release._
   Yes. Uninstalling the health monitoring controller and agent sidecars will
   disable the feature. Existing events will not be removed but they will
   disappear after a period of time. Disabling the feature should not break
-  an existing application as these events are for humans only, not for automation. 
+  an existing application as these events are for humans only, not for automation.
 
 * **What happens if we reenable the feature if it was previously rolled back?**
   Events will be added to PVCs or Pods when abnormal volume conditions are
@@ -682,6 +682,6 @@ _This section must be completed when targeting alpha to a release._
 
 - 20190530: KEP submitted
 
-- Demo implementation (using annotations): 
+- Demo implementation (using annotations):
 https://github.com/NickrenREN/kubemonitor/tree/master/build/kube_storage_monitor/local_monitor
 https://github.com/NickrenREN/kubemonitor/tree/master/build/kube_storage_monitor/node_watcher

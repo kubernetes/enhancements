@@ -179,7 +179,7 @@ The existing process of passing the following files to the kubelet, will be leve
 * /etc/kubernetes/kubelet.conf
 * /var/lib/kubelet/config.yaml
 
-Windows related adjustments to default paths might be required. 
+Windows related adjustments to default paths might be required.
 
 #### Windows vs Linux host paths
 
@@ -264,7 +264,7 @@ Kubeadm's version skew policy will apply to this feature as well.
 
 ## Implementation History
 
-* April 2019 (1.14) KEP was created. 
+* April 2019 (1.14) KEP was created.
 * May 1, 2019       KEP was updated to address PR feedback
 * May 3, 2019       KEP was updated to address PR feedback
 * May 17, 2019      [PR 77989](https://github.com/kubernetes/kubernetes/pull/77989) Remove Powershell dependency for IsPrivilegedUser check on Windows
@@ -276,7 +276,7 @@ Kubeadm's version skew policy will apply to this feature as well.
 * November 1, 2019  [PR 84649](https://github.com/kubernetes/kubernetes/pull/84649) Skip GetPodNetworkStatus when CNI not yet initialized
 * January 15th, 2020 KEP was updated to reflect new approach using Wins as a privileged proxy
 
-## Drawbacks 
+## Drawbacks
 
 ### Non-identical flows for Linux and Windows
 There is overhead to maintaining two different methods for joining a node to a cluster depending on the operating system. However, this is necessary to meet the needs of a typical Windows customer.

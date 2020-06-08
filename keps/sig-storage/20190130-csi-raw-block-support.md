@@ -154,7 +154,7 @@ tests
 ### K8s 1.13: Alpha
 * Multiple third party plugins start to implement the raw block CSI interface
 and we can test with them
-* Bugs fixed in CSI sidecars 
+* Bugs fixed in CSI sidecars
 
 ### K8s 1.14: Beta
 * Bugs fixed

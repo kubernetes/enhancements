@@ -56,13 +56,13 @@ The mount library in k8s/utils/mount is shared by both in-tree volume plugins an
 
 ## Motivation
 
-The main context is that the mount library is useful for csi drivers. Main motivations are: 
+The main context is that the mount library is useful for csi drivers. Main motivations are:
   * We can't backport fixes to the mount library to older Kubernetes releases without potentially pulling in a number of unrelated and potentially breaking changes in other areas.
   * There have been a few instances of breaking changes being made in k8s/utils/mount, but not detected until after we try to update vendor in Kubernetes. We're not able to take advantage of the tests and infrastructure we have in k/k.
 
 ### Goals
 
-To move the mount library into a location that can be shared by kubernetes and external CSI drivers while still being easy to maintain and test. 
+To move the mount library into a location that can be shared by kubernetes and external CSI drivers while still being easy to maintain and test.
 
 ### Non-Goals
 

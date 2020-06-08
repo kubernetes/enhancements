@@ -57,7 +57,7 @@ checklist items _must_ be updated for the enhancement to be released.
 k8s.io REST APIs should not languish in beta.  They should take feedback and progress towards GA by either
 1. meeting GA criteria and getting promoted, or
 2. having a new beta and deprecating the previous beta
-  
+
 This must happen within nine months (three releases).  If it does not,
 the REST API will be deprecated with an announced intent to remove the API per the [deprecation policy](https://kubernetes.io/docs/reference/using-api/deprecation-policy/).
 
@@ -86,8 +86,8 @@ If we're honest with ourselves, a single actor has been cleaning up behind a lot
 
 ## Proposal
 
-Once a REST API reaches beta, it has nine months to 
-1. reach GA and deprecate the beta or 
+Once a REST API reaches beta, it has nine months to
+1. reach GA and deprecate the beta or
 2. have a new beta version and deprecate the previous beta.
 
 If neither of those conditions met, the beta REST API is deprecated in the third release with a stated intent to remove the REST API entirely.
@@ -140,4 +140,4 @@ This is the same as the standard for new beta APIs introduced in 1.19.
 
 1. Consumers of beta APIs will be made aware of the status of the APIs and be given clear dates in documentation about
 when they will have to update.  If the maintainers of these beta APIs do not graduate their API, a new beta version will
-need to exist within 18-ish months and early adopters will have to update their manifests to the new version.  
+need to exist within 18-ish months and early adopters will have to update their manifests to the new version.

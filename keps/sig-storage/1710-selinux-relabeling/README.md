@@ -297,7 +297,7 @@ No change from current Kubernetes behavior:
 
 1. Kubelet does not see any `SELinuxRelabelPolicy` configured in the pod and thus mounts `myclaim` PVC as usual and if the underlying volume supports SELinux, it passes it to the container runtime with ":Z".
    Kubelet passes also implicit Secret volume with token with ":Z".
-2. Container runtime allocates a new unique SELinux label to the pod and recursively relabels all volumes with ":Z" to this label. 
+2. Container runtime allocates a new unique SELinux label to the pod and recursively relabels all volumes with ":Z" to this label.
 
 
 
@@ -406,7 +406,7 @@ _This section must be completed when targeting alpha to a release._
     - Feature gate name: SELinuxRelabelPolicy
     - Components depending on the feature gate: apiserver (API validation only), kubelet
   - [ ] Other
-    - Describe the mechanism: 
+    - Describe the mechanism:
     - Will enabling / disabling the feature require downtime of the control
       plane?
     - Will enabling / disabling the feature require downtime or reprovisioning
@@ -415,7 +415,7 @@ _This section must be completed when targeting alpha to a release._
 * **Does enabling the feature change any default behavior?**
   Any change of default behavior may be surprising to users or break existing
   automations, so be extremely careful here.
-  
+
   No, default behavior is the same as before.
 
 * **Can the feature be disabled once it has been enabled (i.e. can we rollback
@@ -423,19 +423,19 @@ _This section must be completed when targeting alpha to a release._
   Also set `rollback-supported` to `true` or `false` in `kep.yaml`.
   Describe the consequences on existing workloads (e.g. if this is runtime
   feature, can it break the existing applications?).
-  
-  Yes, it can be disabled / rolled back. Corresponding API fields get cleared and Kubernetes uses previous SELinux label handling. 
+
+  Yes, it can be disabled / rolled back. Corresponding API fields get cleared and Kubernetes uses previous SELinux label handling.
 
 * **What happens if we reenable the feature if it was previously rolled back?**
 
   Nothing special happens.
-  
+
 * **Are there any tests for feature enablement/disablement?**
   The e2e framework does not currently support enabling and disabling feature
   gates. However, unit tests in each component dealing with managing data created
   with and without the feature are necessary. At the very least, think about
   conversion tests if API types are being modified.
-  
+
   We plan unit tests for enabled / disable feature.
 
 ### Rollout, Upgrade and Rollback Planning
@@ -445,8 +445,8 @@ _This section must be completed when targeting beta graduation to a release._
 * **How can a rollout fail? Can it impact already running workloads?**
   Try to be as paranoid as possible - e.g. what if some components will restart
   in the middle of rollout?
-  
-  Running workloads are not affected during rollout, because they don't use the new API fields. 
+
+  Running workloads are not affected during rollout, because they don't use the new API fields.
 
 * **What specific metrics should inform a rollback?**
 
@@ -533,36 +533,36 @@ previous answers based on experience in the field._
     heartbeats, leader election, etc.)
 
   No new API calls are required. Kubelet / CSI volume plugin already has CSIDriver informer.
-   
+
 * **Will enabling / using this feature result in introducing new API types?**
   Describe them providing:
   - API type
   - Supported number of objects per cluster
   - Supported number of objects per namespace (for namespace-scoped objects)
-  
+
   No new API types.
 
 * **Will enabling / using this feature result in any new calls to cloud
   provider?**
 
   No new calls to cloud providers.
-  
+
 * **Will enabling / using this feature result in increasing size or count
   of the existing API objects?**
   Describe them providing:
   - API type(s):
   - Estimated increase in size: (e.g. new annotation of size 32B)
   - Estimated amount of new objects: (e.g. new Object X for every existing Pod)
-  
+
   CSIDriver gets one new field. We expect only few CSIDriver objects in a cluster.
-  
+
   Pod gets one new field.
 
 * **Will enabling / using this feature result in increasing time taken by any
   operations covered by [existing SLIs/SLOs][]?**
   Think about adding additional work or introducing new steps in between
   (e.g. need to do X to start a container), etc. Please describe the details.
-  
+
   Each CSI volume setup (mount) may introduce a mount check (for `seclabel`),
   i.e. parsing whole /proc/mounts. It should be OK, since we already do mount
   check in the most volume plugins.
@@ -576,7 +576,7 @@ previous answers based on experience in the field._
   [supported limits][].
 
   No.
-  
+
 ### Troubleshooting
 
 Troubleshooting section serves the `Playbook` role as of now. We may consider

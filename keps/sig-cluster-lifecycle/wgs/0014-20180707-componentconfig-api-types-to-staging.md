@@ -190,7 +190,7 @@ types of the core components’ ComponentConfig in a top-level `config/` package
     * Add at least some kind of minimum validation coverage for the types (e.g. ranges for integer values, URL scheme/hostname/port parsing,
       DNS name/label/domain validation) in the `{internal_api_path}/validation` package, targeting the internal API version. The consequence of
       these validations targeting the internal type is that they can't be exposed in the `k8s.io/{component}` repo, but publishing more
-      functionality like that is out of scope for this KEP and left as a future task. 
+      functionality like that is out of scope for this KEP and left as a future task.
 * Create a "shared types"-package with structs generic to all or many componentconfig API groups, in the `k8s.io/apimachinery`, `k8s.io/apiserver` and `k8s.io/controller-manager` repos, depending on the struct.
     * Location: `k8s.io/{apimachinery,apiserver,controller-manager}/pkg/apis/config/{,v1alpha1}`
     * These aren’t "real" API groups, but they have both internal and external versions

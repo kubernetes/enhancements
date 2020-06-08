@@ -78,7 +78,7 @@ There has been a lot of interest in supporting GMSA for Windows containers since
   - https://artisticcheese.wordpress.com/2017/09/09/enabling-integrated-windows-authentication-in-windows-docker-container/
   - https://community.cireson.com/discussion/3853/example-cireson-scsm-portal-on-docker-windows-containers
   - https://cloudiqtech.com/windows-2016-docker-containers-using-gmsa-connect-to-sql-server/
-  - https://success.docker.com/api/asset/.%2Fmodernizing-traditional-dot-net-applications%2F%23integratedwindowsauthentication 
+  - https://success.docker.com/api/asset/.%2Fmodernizing-traditional-dot-net-applications%2F%23integratedwindowsauthentication
 
 
 ### Goals
@@ -179,7 +179,7 @@ credspec:
     NetBiosName: CONTOSO
     Sid: S-1-5-21-2126729477-2524075714-3094792973
 ```
-  
+
   - With the YAML from above (or generated manually), the cluster admin will create a GMSACredentialSpec object in the cluster.
 
 4. A Kubernetes cluster admin will configure RBAC for the GMSACredentialSpec so that only desired service accounts can use the GMSACredentialSpec:
@@ -215,7 +215,7 @@ roleRef:
   name: webapp1-gmsa-user
   apiGroup: rbac.authorization.k8s.io
 ```
-  
+
 5. Application admins will deploy app pods that require a GMSA identity along with a Service Account authorized to use the GMSAs. There will be two ways to specify the GMSA credential spec details for pods and containers. It is expected that users will typically use the first option as it is more user friendly. The second option is available mainly due to an artifact of the design choices made and described here for completeness.
 
   - Specify the name of the desired GMSACredentialSpec object (e.g. `webapp1-credspec`): If an application administrator wants containers to be initialized with a GMSA identity, specifying the names of the desired GMSACredentialSpec objects is mandatory. In the alpha stage of this feature, the name of the desired GMSACredentialSpec can be set through an annotation on the pod (applicable to all containers): `pod.alpha.windows.kubernetes.io/gmsa-credential-spec-name` as well as for each container through annotations of the form: `<containerName>.container.alpha.windows.kubernetes.io/gmsa-credential-spec-name`. In the beta stage, the annotations will be superseded by fields in the securityContext of the pod: `podspec.securityContext.windows.gmsaCredentialSpecName` and in the securityContext of each container:  `podspec.container[i].securityContext.windows.gmsaCredentialSpecName`. The GMSACredentialSpec name for a container will override the GMSACredentialSpec name specified for the whole pod. Sample pod spec showing specification of GMSACredentialSpec name at the pod level and overriding it for one of the containers:
@@ -248,7 +248,7 @@ spec:
   - Specify the contents of the `credspec` field of GMSACredentialSpec that gets passed down to the container runtime: Specifying the credential spec contents in JSON form is optional and unnecessary. GMSAExpander will automatically populate this field (as described in the next section) based on the name of the GMSACredentialSpec object. In the alpha stage of this feature, a JSON representation of the contents of the desired GMSACredentialSpec may be set through an annotation on the pod (applicable to all containers): `pod.alpha.windows.kubernetes.io/gmsa-credential-spec` as well as for each container through annotations of the form: `<containerName>.container.alpha.windows.kubernetes.io/gmsa-credential-spec`. In the beta stage and beyond, the annotations will be superseded by a field the securityContext of the pod `podspec.securityContext.windows.gmsaCredentialSpec` and in the securityContext of each  container: `podspec.container[i].securityContext.windows.gmsaCredentialSpec`. The credential spec JSON for a container will override the credential spec JSON specified for the whole pod.
 
   The ability to specify credential specs for each container within a pod aligns with how security attributes like `runAsGroup`, `runAsUser`, etc. can be specified at the pod level and overridden at the container level if desired.
-  
+
   Note that as this feature graduates to Beta, support for the annotations will be removed in favor of securityContext fields in podspec. The implication of the removal of support for the Alpha annotations is covered in the Risks and Mitigations section later.
 
 6. A mutating webhook admission controller, GMSAExpander, will act on pod creations. GMSAExpander will look up the GMSACredentialSpec object referred to by name and use the contents in the `credspec` field to populate the GMSA credential spec JSON if absent or empty in the necessary annotations [in Alpha] or securityContext fields [Beta onwards]. Specifics of the checks performed, fields affected and error scenarios for GMSAExpander is covered in details in the Implementation section below.
@@ -336,7 +336,7 @@ Note that the annotations will not be processed/populated once the feature gradu
 
 If the GMSAAuthorizer webhook is not installed and configured, no authorization checks will be performed on the contents of the credential spec JSON. This will allow arbitrary credential spec JSON to be specified for pods/containers and sent down to the container runtime. Therefore when configuring Windows worker nodes for GMSA support, in the Alpha stage, Kubernetes cluster administrators need to ensure that the GMSAAuthorizer webhook is installed and configured.
 
-#### Changes in Kubelet/kuberuntime for Windows: 
+#### Changes in Kubelet/kuberuntime for Windows:
 
 In the Alpha phase, `applyPlatformSpecificContainerConfig` will be enhanced (under a feature flag: `WindowsGMSA`) to analyze the credential spec related annotations on the pod [`pod.alpha.windows.kubernetes.io/gmsa-credential-spec` and `<containerName>.container.alpha.windows.kubernetes.io/gmsa-credential-spec`] and determine an effective credential spec for each container:
  - If `<containerName>.container.alpha.windows.kubernetes.io/gmsa-credential-spec` is populated, effective credential spec of the container is set to that value.
@@ -354,7 +354,7 @@ In the Beta phase, a new field `CredentialSpec String` will be added to `Windows
 
 #### Changes in Dockershim
 
-The GMSA credential spec will be passed to Docker through temporary entries in the Windows registry under SOFTWARE\Microsoft\Windows NT\CurrentVersion\Virtualization\Containers\CredentialSpecs. The registry entries will be created with unique key names that have a common prefix. The contents of the registry entries will be used to populate `HostConfig.SecurityOpt` with a credential spec file specification. The registry entries will be deleted as soon as `CreateContainer` has been invoked on the Docker client. An alternative implementation considered was to utilize files instead of registry entries but the path and drive where the files can be stored is hard to determine as there could be multiple installations of different versions of Docker engine under different directory paths. 
+The GMSA credential spec will be passed to Docker through temporary entries in the Windows registry under SOFTWARE\Microsoft\Windows NT\CurrentVersion\Virtualization\Containers\CredentialSpecs. The registry entries will be created with unique key names that have a common prefix. The contents of the registry entries will be used to populate `HostConfig.SecurityOpt` with a credential spec file specification. The registry entries will be deleted as soon as `CreateContainer` has been invoked on the Docker client. An alternative implementation considered was to utilize files instead of registry entries but the path and drive where the files can be stored is hard to determine as there could be multiple installations of different versions of Docker engine under different directory paths.
 
 During Alpha, `dockerService.CreateContainer` function will be enhanced (under a feature flag: `WindowsGMSA`) to create the temporary registry entries and populate them with the contents of `container.alpha.windows.kubernetes.io/gmsa-credential-spec` annotation in `CreateContainerRequest.ContainerConfig`. Beta onwards, `dockerService.CreateContainer` (under a feature flag: `WindowsGMSA`) will use the contents of `WindowsContainerSecurityContext.CredentialSpec` to populate the registry values.
 
@@ -402,7 +402,7 @@ Major milestones might include
 
 Why should this KEP _not_ be implemented.
 
-## Alternatives 
+## Alternatives
 
 ### Other authentication methods
 
@@ -437,7 +437,7 @@ Today, if PSP or RBAC mode is not configured in a cluster, nothing stops pods wi
 Further, decoupling basic GMSA functionality in the Kubelet and CRI layers from authorization keeps the core Kuberenetes code non-opinionated around enforcement of authorization of service accounts for GMSA usage. Kubernetes cluster setup tools as well as Kubernetes distribution vendors can ensure that RBAC mode is enabled and GMSAAuthorizer is configured and installed when Windows nodes joined to a domain are deployed in a cluster.
 
 
-<!-- end matter --> 
+<!-- end matter -->
 <!-- references -->
 [oci-runtime](https://github.com/opencontainers/runtime-spec/blob/master/config-windows.md#credential-spec)
 [manage-serviceaccounts](https://docs.microsoft.com/en-us/virtualization/windowscontainers/manage-containers/manage-serviceaccounts)

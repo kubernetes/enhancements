@@ -58,14 +58,14 @@ of Kubernetes resources defined via Custom Resource Definitions (CRD).  The API
 Server is extended to call out to a webhook at appropriate parts of the handler
 stack for CRDs.
 
-No new resources are added; the 
+No new resources are added; the
 [CRD resource](https://github.com/kubernetes/kubernetes/blob/34383aa0a49ab916d74ea897cebc79ce0acfc9dd/staging/src/k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/types.go#L187)
 is extended to include conversion information as well as multiple schema
 definitions, one for each apiVersion that is to be served.
 
 ## Definitions
 
-**Webhook Resource**: a Kubernetes resource (or portion of a resource) that informs the API Server that it should call out to a Webhook Host for certain operations. 
+**Webhook Resource**: a Kubernetes resource (or portion of a resource) that informs the API Server that it should call out to a Webhook Host for certain operations.
 
 **Webhook Host**: a process / binary which accepts HTTP connections, intended to be called by the Kubernetes API Server as part of a Webhook.
 
@@ -79,7 +79,7 @@ definitions, one for each apiVersion that is to be served.
 
 ## Motivation
 
-Version conversion is, in our experience, the most requested improvement to CRDs.  Prospective CRD users want to be certain they can evolve their API before they start down the path of developing a CRD + controller. 
+Version conversion is, in our experience, the most requested improvement to CRDs.  Prospective CRD users want to be certain they can evolve their API before they start down the path of developing a CRD + controller.
 
 ### Goals
 
@@ -123,7 +123,7 @@ Version conversion is, in our experience, the most requested improvement to CRDs
 
 ### CRD API Changes
 
-The CustomResourceDefinitionSpec is extended to have a new section where webhooks are defined: 
+The CustomResourceDefinitionSpec is extended to have a new section where webhooks are defined:
 
 ```golang
 // CustomResourceDefinitionSpec describes how a user wants their resource to appear
@@ -137,7 +137,7 @@ type CustomResourceDefinitionSpec struct {
   // Optional, can only be provided if per-version subresource is not provided.
   Subresources *CustomResourceSubresources
   Versions []CustomResourceDefinitionVersion
-  // Optional, can only be provided if per-version additionalPrinterColumns is not provided.  
+  // Optional, can only be provided if per-version additionalPrinterColumns is not provided.
   AdditionalPrinterColumns []CustomResourceColumnDefinition
 
   Conversion *CustomResourceConversion
@@ -151,7 +151,7 @@ type CustomResourceDefinitionVersion struct {
   Schema *JSONSchemaProp
   // Optional, can only be provided if top level subresource is not provided.
   Subresources *CustomResourceSubresources
-  // Optional, can only be provided if top level additionalPrinterColumns is not provided.  
+  // Optional, can only be provided if top level additionalPrinterColumns is not provided.
   AdditionalPrinterColumns []CustomResourceColumnDefinition
 }
 
@@ -205,7 +205,7 @@ Users that need to rollback to version X (but may currently be running version Y
 
 1. The stored custom resources in etcd will not be deleted.
 
-2. Any clients that try to get the custom resources will get a 500 (internal server error). this is distinguishable from a deleted object for get and the list operation will also fail. That means the CRD is not served at all and Clients that try to garbage collect related resources to missing CRs should be aware of this. 
+2. Any clients that try to get the custom resources will get a 500 (internal server error). this is distinguishable from a deleted object for get and the list operation will also fail. That means the CRD is not served at all and Clients that try to garbage collect related resources to missing CRs should be aware of this.
 
 3. Any client (e.g. controller) that tries to list the resource (in preparation for watching it) will get a 500 (this is distinguishable from an empty list or a 404).
 
@@ -259,7 +259,7 @@ To ensure consistent behaviour of converted CRDs following the established API m
 * restrict which fields of `ObjectMeta` a conversion webhook can change to labels and annotations.
 
   Mutations to other fields under `metadata` are ignored (i.e. restored to the values of the original object). This means that mutations to other fields also do not lead to an error (we do this because it is hard to define what a change to `ObjectMeta` actually is, with the known encoding issues of empty and undefined lists and maps in mind).
-  
+
   Labels and annotations are validated with the usual API machinery ObjectMeta validation semantics.
 
 ### Monitorability
@@ -293,7 +293,7 @@ error on server: conversion from stored version v1 to requested version v2 for s
 ```
 
 
-For operations that need more than one conversion (e.g. LIST), no partial result will be returned. Instead the whole operation will fail the same way with detailed error messages. To help debugging these kind of operations, the UID of the first failing conversion will also be included in the error message. 
+For operations that need more than one conversion (e.g. LIST), no partial result will be returned. Instead the whole operation will fail the same way with detailed error messages. To help debugging these kind of operations, the UID of the first failing conversion will also be included in the error message.
 
 
 ### Caching
@@ -318,7 +318,7 @@ Data model for v1:
 
 |data model for v1|
 |-----------------|
-```yaml      
+```yaml
 properties:
   spec:
     properties:
@@ -480,7 +480,7 @@ func extractAPIVersion(in runtime.RawExtension) (string, error) {
 }
 ```
 
-Note: not all code is shown for running a web server.  
+Note: not all code is shown for running a web server.
 
 Note: some of this is boilerplate that we expect tools like Kubebuilder will handle for the user.
 
@@ -523,11 +523,11 @@ func testRoundTripFromV1(t *testing.T, v1Object v1.CronTab) {
 }
 ```
 
-## Example of Updating CRD from one to two versions 
+## Example of Updating CRD from one to two versions
 
 This example uses some files from previous section.
 
-**Step 1**: Start from a CRD with only one version  
+**Step 1**: Start from a CRD with only one version
 
 |crd1.yaml|
 |-|
@@ -755,7 +755,7 @@ v1beta1:
   - Set up a CRD, persist some data, change the storage version, and ensure the previously persisted data is readable
   - Ensure discovery docs track a CRD through creation, version addition, version removal, and deletion
   - Ensure `spec.served` is respected
-- Error-case handling when calling conversion results in an error during 
+- Error-case handling when calling conversion results in an error during
   - {get, list, create, update, patch, delete, deletecollection} calls to the primary resource
   - {get, update, patch} calls to the status subresource
   - {get, update, patch} calls to the scale subresource

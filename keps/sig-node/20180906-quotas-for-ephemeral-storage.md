@@ -648,7 +648,7 @@ files.  The operations performed were as follows, in sequence:
 
 * *Create Files*: Create 4K directories each containing 2K files as
   described, in depth-first order.
-  
+
 * *du*: run `du` immediately after creating the files.
 
 * *quota*: where applicable, run `xfs_quota` immediately after `du`.
@@ -659,10 +659,10 @@ files.  The operations performed were as follows, in sequence:
 
 * *du (after remount)*: run `mount -o remount <filesystem>`
   immediately followed by `du`.
-  
+
 * *quota (after remount)*: run `mount -o remount <filesystem>`
   immediately followed by `xfs_quota`.
-  
+
 * *unmount*: `umount` the filesystem.
 
 * *mount*: `mount` the filesystem.
@@ -672,7 +672,7 @@ files.  The operations performed were as follows, in sequence:
 
 * *du after umount/mount*: run `du` after unmounting and
   mounting the filesystem.
-  
+
 * *Remove Files*: remove the test files.
 
 The test was performed on four separate filesystems:

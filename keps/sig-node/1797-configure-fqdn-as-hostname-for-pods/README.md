@@ -160,11 +160,11 @@ useful for a wide audience.
 A good summary is probably at least a paragraph in length.
 -->
 
-This proposal gives users the ability to set a pod’s hostname to its Fully Qualified Domain Name (FQDN). 
-A new PodSpec field `hostnameFQDN` will be introduced. When a user sets this field to true, its Linux 
+This proposal gives users the ability to set a pod’s hostname to its Fully Qualified Domain Name (FQDN).
+A new PodSpec field `hostnameFQDN` will be introduced. When a user sets this field to true, its Linux
 kernel hostname field ([the nodename field of struct utsname](http://man7.org/linux/man-pages/man2/uname.2.html))
 will be set to its fully qualified domain name (FQDN). Hence, both uname -n and hostname --fqdn will return
-the pod’s FQDN. The new PodSpec field `hostnameFQDN` will default to `false` to preserve current behavior, i.e., 
+the pod’s FQDN. The new PodSpec field `hostnameFQDN` will default to `false` to preserve current behavior, i.e.,
 setting the hostname field of the kernel to the pod's shortname.
 
 Related Kubernetes issue [#1791](https://github.com/kubernetes/enhancements/issues/1797).
@@ -181,10 +181,10 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 -->
 
 This feature would increase the interoperability of Kubernetes with legacy applications.
-Traditionally, Unix and certain Linux distributions, such as 
-[RedHat ](https://access.redhat.com/documentation/en-us/red_hat_enterprise_linux/7/html/networking_guide/ch-configure_host_names) 
+Traditionally, Unix and certain Linux distributions, such as
+[RedHat ](https://access.redhat.com/documentation/en-us/red_hat_enterprise_linux/7/html/networking_guide/ch-configure_host_names)
 and CentOS, have recommended setting the kernel hostname field to the host FQDN. As a consequence,
-many applications created before Kubernetes rely on this behavior. Having this feature would help 
+many applications created before Kubernetes rely on this behavior. Having this feature would help
 containerize existing applications without deep, risky code changes.
 
 ### Goals
@@ -275,14 +275,14 @@ you're proposing, but should not include things like API designs or
 implementation.  The "Design Details" section below is for the real
 nitty-gritty.
 -->
-This proposal gives users the ability to set a pod’s hostname to its FQDN. A new PodSpec field named `hostnameFQDN` 
+This proposal gives users the ability to set a pod’s hostname to its FQDN. A new PodSpec field named `hostnameFQDN`
 will be introduced, with type `*bool`.
 
 The values of `hostnameFQDN` are:
-* `nil` (default): The Linux kernel hostname field ([the nodename field of struct utsname](http://man7.org/linux/man-pages/man2/uname.2.html)) 
+* `nil` (default): The Linux kernel hostname field ([the nodename field of struct utsname](http://man7.org/linux/man-pages/man2/uname.2.html))
 of a pod will be set to its shortname. This is the current behavior.
 * `False`: Same as `nil`
-* `True`: The Linux kernel hostname field ([the nodename field of struct utsname](http://man7.org/linux/man-pages/man2/uname.2.html)) 
+* `True`: The Linux kernel hostname field ([the nodename field of struct utsname](http://man7.org/linux/man-pages/man2/uname.2.html))
 of a pod will be set to its fully qualified domain name (FQDN). FQDN is determined as described [here](https://kubernetes.io/docs/concepts/services-networking/dns-pod-service))
 
 
@@ -360,15 +360,15 @@ Go in to as much detail as necessary here.
 This might be a good place to talk about core concepts and how they relate.
 -->
 
-The hostname field of the Linux Kernel is limited to 63 bytes 
-(see [sethostname(2)](http://man7.org/linux/man-pages/man2/sethostname.2.html)). Kubernetes attempts to include the 
-Pod name as hostname, unless this limit is reached. When the limit is reached, Kubernetes has a series of mechanisms 
-to deal with the issue. These include, truncating Pod hostname when a “Naked” Pod name is longer than 63 bytes, and 
-having an alternative way of generating Pod names when they are part of a Controller, like a Deployment. The proposed 
-feature might still hit the 63 Bytes limit unless we create or adapt similar remediation techniques. Without any 
-remediation, Kubernetes will fail to create the Pod Sandbox and the pod will remain in “ContainerCreating” (Pending status) 
-forever. The feature proposed here will make this issue occur more frequently, as now the whole FQDN would be limited to 63 
-bytes. Next we illustrate the issue with an example of a potential error message, based on an initial draft of this 
+The hostname field of the Linux Kernel is limited to 63 bytes
+(see [sethostname(2)](http://man7.org/linux/man-pages/man2/sethostname.2.html)). Kubernetes attempts to include the
+Pod name as hostname, unless this limit is reached. When the limit is reached, Kubernetes has a series of mechanisms
+to deal with the issue. These include, truncating Pod hostname when a “Naked” Pod name is longer than 63 bytes, and
+having an alternative way of generating Pod names when they are part of a Controller, like a Deployment. The proposed
+feature might still hit the 63 Bytes limit unless we create or adapt similar remediation techniques. Without any
+remediation, Kubernetes will fail to create the Pod Sandbox and the pod will remain in “ContainerCreating” (Pending status)
+forever. The feature proposed here will make this issue occur more frequently, as now the whole FQDN would be limited to 63
+bytes. Next we illustrate the issue with an example of a potential error message, based on an initial draft of this
 feature (PR [#91035](https://github.com/kubernetes/kubernetes/pull/91035)):
 
 ```bash
@@ -395,11 +395,11 @@ This failure mode is not great because it might not be apparent to users that th
 ```
 <<[UNRESOLVED Will this work on Windows? ]>>
 
-We are not certain that this will work on Windows as we could not do full 
-Kubernetes tests on Windows. We did a test some basic test with Docker on 
-a Windows machine. This test did "docker run -h <FQDN>  -it container", 
-and Docker just set the FQDN in the Windows COMPUTENAME environment 
-variable, so hostname returned the FQDN string. I could not find any 
+We are not certain that this will work on Windows as we could not do full
+Kubernetes tests on Windows. We did a test some basic test with Docker on
+a Windows machine. This test did "docker run -h <FQDN>  -it container",
+and Docker just set the FQDN in the Windows COMPUTENAME environment
+variable, so hostname returned the FQDN string. I could not find any
 specific Windows Kubelet Pod runtime class. I guess it might just work as
 Kubernetes simply relies on underlying runtime, e.g., Docker?
 
@@ -589,7 +589,7 @@ _This section must be completed when targeting alpha to a release._
 
 * **Can the feature be disabled once it has been enabled (i.e. can we rollback
   the enablement)?**
-  Yes, it can be disabled. However, it will only have effect on newly created 
+  Yes, it can be disabled. However, it will only have effect on newly created
   pods. Existing pods will keep having their FQDN as hostname, if they were
   configured for it.
 
@@ -614,8 +614,8 @@ _This section must be completed when targeting beta graduation to a release._
 
 * **Were upgrade and rollback tested? Was upgrade->downgrade->upgrade path tested?**
   We tested introducing and removing this feature. Running pods are not affected by
-  either introducing nor removing the feature. When disabling the feature, Pods 
-  using this feature that are "stuck" due to having long FQDNs will go into 
+  either introducing nor removing the feature. When disabling the feature, Pods
+  using this feature that are "stuck" due to having long FQDNs will go into
   running.
 
 * **Is the rollout accompanied by any deprecations and/or removals of features,

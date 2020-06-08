@@ -109,17 +109,17 @@ and an addition argument to `kubectl log`
 
 ## Proposal
 
-In [PodLogOptions](https://github.com/kubernetes/api/blob/d58b53da08f5430bb0f4e1154a73314e82b5b3aa/core/v1/types.go), 
+In [PodLogOptions](https://github.com/kubernetes/api/blob/d58b53da08f5430bb0f4e1154a73314e82b5b3aa/core/v1/types.go),
 add a `InsecureSkipTLSVerifyBackend bool`
 ```go
 // PodLogOptions is the query options for a Pod's logs REST call.
 type PodLogOptions struct {
 	// ... existing fields snipped
-	
-	// insecureSkipTLSVerifyBackend indicates that the apiserver should not confirm the validity of the 
+
+	// insecureSkipTLSVerifyBackend indicates that the apiserver should not confirm the validity of the
 	// serving certificate of the backend it is connecting to.  This will make the HTTPS connection between the apiserver
 	// and the backend insecure. This means the apiserver cannot verify the log data it is receiving came from the real
-	// kubelet.  If the kubelet is configured to verify the apiserver's TLS credentials, it does not mean the 
+	// kubelet.  If the kubelet is configured to verify the apiserver's TLS credentials, it does not mean the
 	// connection to the real kubelet is vulnerable to a man in the middle attack (e.g. an attacker could not intercept
 	// the actual log data coming from the real kubelet).
 	// +optional
@@ -157,19 +157,19 @@ getting logs for one particular pod.
 
 A super user with write permissions to Node and Pod API objects and read permissions to Pod logs to make the API
 server exfiltrate data at `https://<nodeName>:<nodePort>/containerLogs/<podNamespace>/<podName>/<containerName>`, where
-all the bracketed parameters were under their control.  
+all the bracketed parameters were under their control.
 This is ability is already present for someone with full API control via an APIService configured to point to a service
-with `insecureSkipTLSVerify:true`, with a similar restriction on the path of requests sent to it (must have a leading 
+with `insecureSkipTLSVerify:true`, with a similar restriction on the path of requests sent to it (must have a leading
 `/apis/<group>/<version>` path prefix).
-This could affect 
+This could affect
 the only scenarios I can really think of are:
 1. unsecured kubelets from another cluster (or kubelets from another cluster using the same CA)
 2. a non-kubelet endpoint that ignored the specified path and served something confidential (and was unsecured or
 honored the CA that signed the apiserver's cert)
 Both scenarios are pretty unlikely.
 
-Trying to restrict the insecureSkipTLSVerify option to ignoring only the expiry date requires reimplementing the TLS 
-handshake with a custom method to 
+Trying to restrict the insecureSkipTLSVerify option to ignoring only the expiry date requires reimplementing the TLS
+handshake with a custom method to
 1. get the serving cert
 2. pull the notAfter to find a time when the cert was valid
 3. construct a set of custom verify options at that time to verify the signature and hostname

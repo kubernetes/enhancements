@@ -111,9 +111,9 @@ The kubelet will be updated to support reservation of pids so the effective pid
 limit is enabled as follows:
 
 ```
-[Allocatable] = [Node Capacity] - 
- [Kube-Reserved] - 
- [System-Reserved] - 
+[Allocatable] = [Node Capacity] -
+ [Kube-Reserved] -
+ [System-Reserved] -
  [Hard-Eviction-Threshold]
 ```
 
@@ -157,7 +157,7 @@ GA
 
 ### Node to Pod pid isolation
 
-Adding support for pid limiting at the Node Allocatable level 
+Adding support for pid limiting at the Node Allocatable level
 
 Eviction will rank based on priority, followed by the number of processes used.
 To integrate this into the eviction manager's control loops, we will add pod-level
@@ -207,7 +207,7 @@ GA
 - Implement `SupportNodePidsLimit` as Alpha.
 - Graduate `SupportPodPidsLimit` to Beta by adding node e2e test coverage for
   pid cgroup isolation, ensure PidPressure works as intended.
-  
+
 ### Version 1.15
 
 - Graduate `SupportNodePidsLimit` to beta by adding node e2e test

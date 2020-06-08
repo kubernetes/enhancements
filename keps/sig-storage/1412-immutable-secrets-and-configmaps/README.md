@@ -238,7 +238,7 @@ _This section must be completed when targeting beta graduation to a release._
 _This section must be completed when targeting beta graduation to a release._
 
 * **How can an operator determine if the feature is in use by workloads?**
-  Listing secrets/configmaps in the cluster and checking if any has immutable 
+  Listing secrets/configmaps in the cluster and checking if any has immutable
   field set.
 
 * **What are the SLIs (Service Level Indicators) an operator can use to

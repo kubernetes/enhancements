@@ -41,7 +41,7 @@ superseded-by:
 ## Summary
 
 [Pod Disruption Budget (PDB)](https://kubernetes.io/docs/tasks/run-application/configure-pdb/)
-is a Kubernetes API that limits the number of pods of a collection that are down simultaneously from voluntary disruptions. PDBs allows a user to specify the allowed disruption through either min available or max unavailable number of pods. In order to support PDBs where max number of unavailable pods is set, the PDB controller needs to be able to look up the desired number of replicas. It does this by looking at the controller(s) (as specified by the owner ref) for the pods covered by the PDB. Currently only four of the basic workload controllers are supported for PDBs, namely Deployment, StatefulSet, ReplicaSet and ReplicationController. 
+is a Kubernetes API that limits the number of pods of a collection that are down simultaneously from voluntary disruptions. PDBs allows a user to specify the allowed disruption through either min available or max unavailable number of pods. In order to support PDBs where max number of unavailable pods is set, the PDB controller needs to be able to look up the desired number of replicas. It does this by looking at the controller(s) (as specified by the owner ref) for the pods covered by the PDB. Currently only four of the basic workload controllers are supported for PDBs, namely Deployment, StatefulSet, ReplicaSet and ReplicationController.
 
 The scale subresource allows any resource to specify its desired number of replicas and a generic way to look up this information. This document lays out a plan to use the scale subresource to allow setting PDBs for any resource implementing the scale subresource.
 
@@ -58,7 +58,7 @@ PDBs are an important tool to control the number of voluntary disruptions for wo
 
 ### Implementation Details/Notes/Constraints
 
-In the current implementation, the PDB controller identifies the workload controller by going through all the pods covered by the PDB, and for each pod, check in sequence for each of the four workload controllers. Each check looks at the controller reference, and if the kind is correct, looks up the controller from the shared informer. The PDB controller then looks up the desired number of replicas from the identified controller. If the set of pods covered by the PDB identfies more than one controller, that is considered an error. 
+In the current implementation, the PDB controller identifies the workload controller by going through all the pods covered by the PDB, and for each pod, check in sequence for each of the four workload controllers. Each check looks at the controller reference, and if the kind is correct, looks up the controller from the shared informer. The PDB controller then looks up the desired number of replicas from the identified controller. If the set of pods covered by the PDB identfies more than one controller, that is considered an error.
 
 The plan is to keep this approach, but check for the scale subresource if neither of the kubernetes workload controllers match. Each of the kubernetes workload controllers actually implement the scale subresource, so it is possible to only use that one. But since shared informers can not be used with the scale subresource, we want to rely on the informers for checking the kubernetes workload controllers, and only try the scale subresource if none of the them matches. This way the controller will only need to hit the apiserver in the less likely scenario where the pods have a controller other than the standard kubernetes workload controllers.
 
