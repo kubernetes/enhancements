@@ -1,0 +1,15 @@
+title: StatefulSet volume resize
+kep-number: 0661
+authors:
+  - "@kk-src"
+owning-sig: sig-apps
+participating-sigs:
+  - sig-storage
+status: provisional
+creation-date: 2020-06-04
+reviewers:
+  - "kow3ns"
+  - "@gnufied" 
+  - "@msau42"
+approvers:
+  - TBD
