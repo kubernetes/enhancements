@@ -26,8 +26,7 @@
     - [Limitations of Static Analysis](#limitations-of-static-analysis)
       - [Theoretical](#theoretical)
       - [Practical](#practical)
-    - [Strengths and Weaknesses of Static and Dynamic Analyses](#strengths-and-weaknesses-of-static-and-dynamic-analyses)
-
+    - [Strengths and Weaknesses of Static and Dynamic Analyses ([3])](#strengths-and-weaknesses-of-static-and-dynamic-analyses-3)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -148,7 +147,7 @@ func GlobalDatapolicyMapping(val interface{}) []string
 
 ### datapolicy verification library
 
-datapolicy verification library will implement verification if the provided value does not contain any sensitive data identified by the datapolicy tag. Verification will be performed using reflection. Recursion will stop on pointers as values for those are usually not logged. Validation will depend only on the datapol tags values. Values of individual fields of primitive types like string will not be analyzed other than checking if a given field is not empty.
+datapolicy verification library will implement logic for checking if the provided value contains any sensitive data identified by the datapolicy tag. Verification will be performed using reflection. Recursion will stop on pointers as values for those are usually not logged. Verification will depend only on the datapol tags values. Values of individual fields of primitive types like string will not be chec ked other than checking if a given field is not empty.
 
 ```go
 package datapol {
