@@ -102,6 +102,7 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Constraints and Conflict Resolution](#constraints-and-conflict-resolution)
   - [Global Properties](#global-properties)
     - [Service Port](#service-port)
+    - [Headlessness](#headlessness)
     - [Session Affinity](#session-affinity)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
@@ -241,6 +242,9 @@ nitty-gritty.
   of member clusters are mutually aware, and agree about their collective
   association. Within a supercluster, [namespace sameness] applies and all
   namespaces with a given name are considered to be the same namespace.
+  Implementations of this API are responsible for defining and tracking
+  membership in a supercluster. The specific mechanism is out of scope of this
+  proposal.
 - **mcs-controller** - A controller that syncs services across clusters and
   makes them available for multi-cluster service discovery and connectivity.
   There may be multiple implementations, this doc describes expected common
@@ -253,6 +257,10 @@ nitty-gritty.
   Each cluster must have a name that can uniquely identify it within the
   supercluster. A cluster name must be a valid [RFC
   1123](https://tools.ietf.org/html/rfc1123) DNS label.
+
+  The cluster name should be consistent for the life of a cluster and its
+  membership in the supercluster. Implementations should treat name mutation as
+  a delete of the membership followed by recreation with the new name.
 
 [namespace sameness]: https://github.com/kubernetes/community/blob/master/sig-multicluster/namespace-sameness-position-statement.md
 
@@ -273,10 +281,10 @@ mcs-controller.
 
 If multiple clusters export a `Service` with the same namespaced name, they will
 be recognized as a single combined service. For example, if 5 clusters export
-`my-svc.my-ns`, each cluster will have one `ServiceImport` named `my-svc` in the
-`my-ns` namespace and it will be associated with endpoints from all exporting
-clusters. Properties of the `ServiceImport` (e.g. ports, topology) will be
-derived from a merger of component `Service` properties.
+`my-svc.my-ns`, each importing cluster will have one `ServiceImport` named
+`my-svc` in the `my-ns` namespace and it will be associated with endpoints from
+all exporting clusters. Properties of the `ServiceImport` (e.g. ports, topology)
+will be derived from a merger of component `Service` properties.
 
 Existing implementations of Kubernetes Service API (e.g. kube-proxy) can be
 extended to present `ServiceImports` alongside traditional `Services`.
@@ -400,12 +408,15 @@ const {
       // ServiceExportReady means that the service referenced by this
       // service export has been recognized as valid by an mcs-controller.
       ServiceExportReady ServiceExportConditionType = "Ready"
-      // ServiceExportInvalid means that the service marked for export has an
-      // unexportable service type (ExternalName)
-      ServiceExportInvalid ServiceExportConditionType = "InvalidServiceType"
+      // ServiceExportInvalid means that the service marked for export is
+      // unexportable (ExternalName, not found).
+      ServiceExportInvalid ServiceExportConditionType = "InvalidService"
       // ServiceExportConflict means that there is a conflict between two
       // exports for the same Service. When "True", the condition message
-      // should contain enough information to diagnose the conflict.
+      // should contain enough information to diagnose the conflict:
+      // field(s) under contention, which cluster won, and why.
+      // Users should not expect detailed per-cluster information in the
+      // conflict message.
       ServiceExportConflict ServiceExportConditionType = "Conflict"
 }
 
@@ -434,12 +445,16 @@ metadata:
   namespace: my-ns
 status:
   conditions:
-  - type: Initialized
+  - type: Ready
     status: "True"
     lastTransitionTime: "2020-03-30T01:33:51Z"
-  - type: Exported
+  - type: InvalidService
+    status: "False"
+    lastTransitionTime: "2020-03-30T01:33:55Z"
+  - type: Conflict
     status: "True"
     lastTransitionTime: "2020-03-30T01:33:55Z"
+    message: "Conflicting type. Using \"SuperclusterIP\" from oldest service export in \"cluster-1\". 2/5 clusters disagree."
 ```
 
 To export a service, a `ServiceExport` should be created within the cluster and
@@ -475,23 +490,27 @@ unless there is a clear use case.
 
 ### Importing Services
 
-To consume a supercluster service, users will use the domain name associated
-with their mutli-cluster service (see [DNS](#dns)). When the mcs-controller sees
-a `ServiceExport`, a `ServiceImport` will be introduced in each cluster to
-represent the imported service. Users are primarily expected to consume the
-service via domain name and supercluster VIP, but the `ServiceImport` may be
-used for imported service discovery via the K8s API and will be used internally
-as the source of routing and DNS configuration.
+To consume a supercluster service, the domain name associated with the
+mutli-cluster service should be used (see [DNS](#dns)). When the mcs-controller
+sees a `ServiceExport`, a `ServiceImport` will be introduced in each importing
+cluster to represent the imported service. Users are primarily expected to
+consume the service via domain name and supercluster VIP, but the
+`ServiceImport` may be used for imported service discovery via the K8s API and
+will be used internally as the source of truth for routing and DNS
+configuration.
 
 A `ServiceImport` is a service that may have endpoints in other clusters.
 This includes 3 scenarios:
-1. This service is running entirely in different cluster(s)
-1. This service has endpoints in other cluster(s) and in this cluster
-1. This service is running entirely in this cluster, but is exported to other cluster(s) as well
+1. This service is running entirely in different cluster(s).
+2. This service has endpoints in other cluster(s) and in this cluster.
+3. This service is running entirely in this cluster, but is exported to other
+   cluster(s) as well.
 
-A multi-cluster service be imported only by clusters in which the service's
+A multi-cluster service will be imported only by clusters in which the service's
 namespace exists. All clusters containing the service's namespace will import
-the service.
+the service. This means that all exporting clusters will also import the
+multi-cluster service. _An implementation may or may not decide to create
+missing namespaces automatically, that behavior is out of scope of this spec._
 
 For each exported service, one `ServiceExport` will exist in each cluster that
 exports the service. The mcs-controller will create and maintain a derived
@@ -503,7 +522,7 @@ clusters.
 
 Since a given `ServiceImport` may be backed by multiple `EndpointSlices`, a
 given `EndpointSlice` will reference its `ServiceImport` using the label
-`multicluster.kubernetes.io/imported-service-name` similarly to how an
+`multicluster.kubernetes.io/service-name` similarly to how an
 `EndpointSlice` is associated with its `Service` in a single cluster.
 
 Each imported `EndpointSlice` will also have a
@@ -545,6 +564,10 @@ type ServiceImportSpec struct {
   IP string `json:"ip,omitempty"`
   // +optional
   Type ServiceImportType `json:"type"`
+  // +optional
+  SessionAffinity corev1.ServiceAffinity `json:"sessionAffinity"`
+  // +optional
+  SessionAffinityConfig *corev1.SessionAffinityConfig `json:"sessionAffinityConfig"`
 }
 
 // ServiceImportStatus describes derived state of an imported service.
@@ -560,10 +583,6 @@ type ServiceImportStatus struct {
 // ClusterStatus contains service configuration mapped to a specific source cluster
 type ClusterStatus struct {
  Cluster string `json:"cluster"`
- // +optional
- SessionAffinity corev1.ServiceAffinity `json:"sessionAffinity"`
- // +optional
- SessionAffinityConfig *corev1.SessionAffinityConfig `json:"sessionAffinityConfig"`
 }
 ```
 ```yaml
@@ -579,9 +598,9 @@ spec:
   - name: http
     protocol: TCP
     port: 80
+  sessionAffinity: None
   clusters:
     - cluster: us-west2-a-my-cluster
-      sessionAffinity: None
 ---
 apiVersion: discovery.k8s.io/v1beta1
 kind: EndpointSlice
@@ -590,7 +609,7 @@ metadata:
   namespace: my-ns
   labels:
     multicluster.kubernetes.io/source-cluster: us-west2-a-my-cluster
-    multicluster.kubernetes.io/imported-service-name: my-svc
+    multicluster.kubernetes.io/service-name: my-svc
   ownerReferences:
   - apiVersion: multicluster.k8s.io/v1alpha1
     controller: false
@@ -610,7 +629,8 @@ endpoints:
      topology.kubernetes.io/zone: us-west2-a
 ```
 
-The `ServiceImport.Spec.IP` (VIP) can be used to access this service from within this cluster. 
+The `ServiceImport.Spec.IP` (VIP) can be used to access this service from within
+this cluster.
 
 ### Supercluster Service Behavior Expectations
 
@@ -619,43 +639,45 @@ The `ServiceImport.Spec.IP` (VIP) can be used to access this service from within
 - `ClusterIP`: This is the straightforward case most of the proposal assumes.
   Each `EndpointSlice` associated with the exported service is combined with
   slices from other clusters to make up the supercluster service. They will be
-  imported to the cluster behind the supercluster IP. [Details](#EndpointSlice)
+  imported to the cluster behind the supercluster IP, with a `ServiceImport` of
+  type `SuperclusterIP`. [Details](#EndpointSlice)
 - `ClusterIP: none` (Headless): Headless services are supported and will be
   imported with a `ServiceImport` and `EndpointSlices` like any other
-  `ClusterIP` service, but the way that they are exposed depends on the
-  cluster-level services from which they are derived. A supercluster service
-  will be exposed with a regular supercluster IP if any source cluster-level
-  service specifies a cluster IP. A supercluster service will be headless if and
-  only if all cluster-level services from which it is derived are headless.
+  `ClusterIP` service, but do not configure a VIP and must be consumed via
+  [DNS](#DNS). Their `ServiceImport`s will be of type `Headless`. A
+  multi-cluster service's headlessness is derived from it's constituent exported
+  services according to the [conflict resolution
+  policy](#constraints-and-conflict-resolution).
 
   _Exporting a non-headless service to an otherwise headless service can
-  dynamically change the supercluster service type and potentially break
-  existing consumers. This is likely the result of a deployment error.
-  Conditions and events on the `ServiceExport` will be used to communicate the
-  conflict to the user._
+  dynamically change the supercluster service type when an old export is
+  removed, potentially breaking existing consumers. This is likely the result of
+  a deployment error. Conditions and events on the `ServiceExport` will be used
+  to communicate conflicts to the user._
 - `NodePort` and `LoadBalancer`: These create `ClusterIP` services that would
   sync as expected. For example If you export a `NodePort` service, the
   resulting cross-cluster service will still be a supercluster IP type. The
   local service will not be affected. Node ports can still be used to access the
   cluster-local service in the source cluster, and only the supercluster IP will
-  reoute to endpoints in remote cluster.
+  route to endpoints in remote clusters.
 - `ExternalName`: It doesn't make sense to export an `ExternalName` service.
   They can't be merged with other exports, and it seems like it would only
   complicate deployments by even attempting to stretch them across clusters.
   Instead, regular `ExternalName` type `Services` should be created in each
   cluster individually. If a `ServiceExport` is created for an `ExternalName`
-  service, an `InvalidServiceType` condition will be set on the export.
+  service, an `InvalidService` condition will be set on the export.
 
 #### SuperclusterIP
 
 A non-headless `ServiceImport` is expected to have an associated IP address, the
 supercluster IP, which may be accessed from within an importing cluster. This IP
-may be supercluster-wide, or assigned on a per-cluster basis, but is expected to
-be consistent for the life of a `ServiceImport`. Requests to this IP from within
-a cluster will route to backends for the aggregated Service.
+may be a single IP used supercluster-wide or assigned on a per-cluster basis,
+but is expected to be consistent for the life of a `ServiceImport` from the
+perspective of the importing cluster. Requests to this IP from within a cluster
+will route to backends for the aggregated Service.
 
 Note: this doc does not discuss `NetworkPolicy`, which cannot currently be used
-to describe a policy that applies to a multi-cluster service.
+to describe a selector based policy that applies to a multi-cluster service.
 
 #### DNS
 
@@ -702,7 +724,7 @@ behavior of the `cluster.local` zone.
 #### EndpointSlice
 
 When a `ServiceExport` is created, this will cause `EndpointSlice` objects for
-the underlying `Service` to be created in each cluster within the supercluster,
+the underlying `Service` to be created in each importing cluster within the supercluster,
 associated with the derived `ServiceImport`. One or more `EndpointSlice`
 resources will exist for the exported `Service`, with each `EndpointSlice`
 containing only endpoints from a single source cluster. These `EndpointSlice`
@@ -743,10 +765,10 @@ services. If these properties are out of sync for a subset of exported services,
 there is no clear way to determine how a service should be accessed.
 
 Conflict resolution policy: **If any properties have conflicting values that can
-not simply be merged, a condition will be set on the `ServiceExport` with a
-description of the conflict. The conflict will be resolved by assigning
-precendence based on each `ServiceExport`'s `creationTimestamp`, from oldest to
-newest.**
+not simply be merged, a `ServiceExportConflict` condition will be set on the
+`ServiceExport` with a description of the conflict. The conflict will be
+resolved by assigning precedence based on each `ServiceExport`'s
+`creationTimestamp`, from oldest to newest.**
 
 
 #### Service Port
@@ -758,6 +780,12 @@ union of service ports declared on its constituent services. Should a port name
 be used for multiple non-identical (`port`, `protocol`, `appProtocol`) service
 ports by different constituent services, the conflict resolution policy will
 determine which values are used by the derived service.
+
+#### Headlessness
+
+Headlessness affects a service as a whole for a given consumer. Whether or not
+aderived service is headless will be decided according to the conflict
+resolution policy.
 
 #### Session Affinity
 
@@ -806,12 +834,14 @@ when drafting this test plan.
 - Kube-proxy can consume ServiceImport and EndpointSlice.
 - E2E tests exist for MCS services.
 - Beta -> GA Graduation criteria defined.
-- At least one MCS DNS implementation
+- At least one MCS DNS implementation.
+- A formal plan for a standard Cluster ID.
 
 #### Beta -> GA Graduation
 
 - Scalability/performance testing, understanding impact on cluster-local service
   scalability.
+- Cluster ID defined, with at least one other multi-cluster use case.
 
 <!--
 **Note:** *Not required until targeted at a release.*
@@ -871,8 +901,10 @@ in back-to-back releases.
 
 Kube-proxy and must be updated to a supported version before MCS services may be
 used. To take advantage of MCS DNS, the DNS provider must be upgraded to a
-version that implements the MCS spec. Kube-proxy MCS support will be guarded by a
-`MultiClusterServices` feature gate. When enabled
+version that implements the MCS spec. Kube-proxy MCS support will be guarded by
+a `MultiClusterServices` feature gate. When enabled, kube-proxy will watch the
+`serviceimports.multicluster.k8s.io` CRD. MCS support will be dynamically
+enabled and disabled as the CRD is created and deleted.
 <!--
 If applicable, how will the component be upgraded and downgraded? Make sure
 this is in the test plan.
@@ -990,6 +1022,6 @@ Use this section if you need things from the project/SIG.  Examples include a
 new subproject, repos requested, github details.  Listing these here allows a
 SIG to get the process for these resources started right away.
 -->
-To facilitate consumption by kube-proxy, the MCS CRDS/client need to live in
+To facilitate consumption by kube-proxy, the MCS CRDs need to live in
 kubernetes/staging. We will need a new k8s.io/multiclusterservices repo for
 published MCS code.
