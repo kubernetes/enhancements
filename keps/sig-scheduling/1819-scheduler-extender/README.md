@@ -222,6 +222,10 @@ type ExtenderFilterResult struct {
 	NodeNames *[]string
 	// Filtered out nodes where the pod can't be scheduled and the failure messages
 	FailedNodes FailedNodesMap
+	// Filtered out nodes where the pod can't be scheduled and preemption would
+	// not change anything. The value is the failure message same as FailedNodes.
+	// Nodes specified here takes precedence over FailedNodes.
+	FailedAndUnresolvableNodes FailedNodesMap
 	// Error message indicating failure
 	Error string
 }
@@ -305,3 +309,4 @@ type ExtenderPreemptionResult struct {
 - 2017-04-25 Implements [Bind interface](https://github.com/kubernetes/kubernetes/pull/44883)
 - 2018-01-24 Implements [Preemption interface](https://github.com/kubernetes/kubernetes/pull/58717)
 - 2020-06-01 Convert old design proposal to a KEP and sent it out for review
+- 2020-06-09 Extend `ExtenderFilterResult` to include unresolvable nodes and sent it out for review
