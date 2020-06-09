@@ -18,7 +18,7 @@ approvers:
   - "@stephenaugustus"
 editor: TBD
 creation-date: 2019-07-29
-last-updated: 2020-05-28
+last-updated: 2020-05-08
 status: implemented
 see-also:
   - "/keps/sig-cloud-provider/20190125-removing-in-tree-providers.md"
