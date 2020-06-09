@@ -1,0 +1,25 @@
+---
+title: Service Account Token for CSI Driver
+authors:
+  - "@zshihang"
+owning-sig: sig-storage
+participating-sigs:
+  - sig-auth
+  - sig-storage
+reviewers:
+  - "@msau42"
+  - "@seh"
+  - "@jsafrane"
+  - "@mikedanese"
+approvers:
+  - "@msau42"
+  - "@mikedanese"
+creation-date: 2020-06-09
+last-updated: 2020-07-07
+status: implementable
+feature-gates:
+  - name: CSIDriverServiceAccountToken
+    components:
+      - kube-apiserver
+      - kubelet
+---
