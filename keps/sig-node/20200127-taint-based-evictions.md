@@ -94,7 +94,7 @@ and integration tests that are run regularly as part of the Kubernetes CI/CD pip
 * [Taint based evictions integration test](https://github.com/kubernetes/kubernetes/blob/47d5c3ef8df2b1b26da739aec0ada15d41f20cf3/test/integration/scheduler/taint_test.go#L580) (note that prior to 1.17, this test existed as an [end-to-end test](https://github.com/kubernetes/kubernetes/blob/001f2cd2b553d06028c8542c8817820ee05d657f/test/e2e/scheduling/taint_based_evictions.go)
 
 ### e2e tests
-* [Scheduler taints e2e tests](https://github.com/kubernetes/kubernetes/blob/master/test/e2e/scheduling/taints.go)
+* [Scheduler taints e2e tests](https://github.com/kubernetes/kubernetes/blob/v1.18.0-beta.1/test/e2e/scheduling/taints.go)
 
 ## Implementation History
 
