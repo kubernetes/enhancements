@@ -49,6 +49,7 @@ _Reviewers:_
 - [Proposal](#proposal)
   - [Proposed Changes](#proposed-changes)
     - [New Component: Topology Manager](#new-component-topology-manager)
+      - [The Effective Resource Request/Limit of a Pod](#the-effective-resource-requestlimit-of-a-pod)
       - [Scopes](#scopes)
       - [Policies](#policies)
       - [Computing Preferred Affinity](#computing-preferred-affinity)
@@ -197,6 +198,49 @@ The Topology Hint currently consists of
     * This field is defined as follows:
       * For each Hint Provider, there is a possible resource assignment that satisfies the request, such that the least possible number of NUMA nodes is involved (caculated as if the node were empty.)
       * There is a possible assignment where the union of involved NUMA nodes for all such resource is no larger than the width required for any single resource.
+
+#### The Effective Resource Request/Limit of a Pod
+
+All Hint Providers should consider the effective resource request/limit to calculate reliable topology hints, this rule is defined by the [concept of init containers][the-rule-of-effective-request-limit].
+
+The effective resource request/limit of a pod is determined by the larger of :
+- The highest of any particular resource request or limit defined on all init containers.
+- The sum of all app containers request/limit for a resource.
+
+The below example shows how it works briefly.
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: example
+spec:
+  containers:
+  - name: appContainer1
+    resources:
+      requests:
+        cpu: 2
+        memory: 1G
+  - name: appContainer2
+      resources:
+      requests:
+        cpu: 1
+        memory: 1G
+  initContainers:
+  - name: initContainer1
+      resources:
+      requests:
+        cpu: 2
+        memory: 1G
+  - name: initContainer2
+      resources:
+      requests:
+        cpu: 2
+        memory: 3G
+
+#Effective resource request: CPU: 3, Memory: 3G
+```
+
+The [debug][debug-container]/[ephemeral][ephemeral-container] containers are not able to specify resource limit/request, so it does not affect topology hint generation.
 
 #### Scopes
 
@@ -542,3 +586,6 @@ systems test.
 [sriov-issue-10]: https://github.com/hustcat/sriov-cni/issues/10
 [proposal-affinity]: https://github.com/kubernetes/community/pull/171
 [numa-challenges]: https://queue.acm.org/detail.cfm?id=2852078
+[the-rule-of-effective-request-limit]: https://kubernetes.io/docs/concepts/workloads/pods/init-containers/#resources
+[debug-container]: https://kubernetes.io/docs/tasks/debug-application-cluster/debug-running-pod/#ephemeral-container
+[ephemeral-container]: https://kubernetes.io/docs/concepts/workloads/pods/ephemeral-containers/
