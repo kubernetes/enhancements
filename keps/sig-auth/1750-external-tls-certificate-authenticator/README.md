@@ -108,6 +108,14 @@ Because of this, some security bloggers have even argued for [not using
 certificates](https://www.tremolosecurity.com/kubernetes-dont-use-certificates-for-authentication/)
 in kubectl at all.
 
+That being said, private certificates are still widely used. A survey was taken
+at KubeSec in 2020-06-02 with over 150 participants. 31% of respondents used
+private certificates to authenticate to Kubernetes clusters. Further 15% did not
+know how they authenticate with Kubernetes clusters, likely those respondents
+were also using private certificates. Compare this to 53% of respondents which
+did use some HSM, and could increase their security posture by virtue of this
+enhancement.
+
 ### Goals
 
 - kubectl can authenticate to a Kubernetes cluster with an external TLS
