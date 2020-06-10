@@ -1,0 +1,13 @@
+title: Standard for communicating a local registry
+kep-number: 1755
+authors:
+  - "@nicks"
+owning-sig: sig-cluster-lifecycle
+status: implementable
+creation-date: 2020-05-08
+reviewers:
+  - "@neolit123"
+approvers:
+  - "@timothysc"
+  - "@justinsb"
+  - "@neolit123"
