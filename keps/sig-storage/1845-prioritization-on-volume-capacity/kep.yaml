@@ -1,0 +1,42 @@
+title: Prioritization on Volume Capacity
+kep-number: 1845
+authors:
+  - "@cofyc"
+owning-sig: sig-storage
+participating-sigs:
+  - sig-scheduling
+status: implementable
+creation-date: 2020-06-03
+reviewers:
+  - "@msau42"
+  - "@jsafrane"
+  - "@Huang-Wei"
+  - "@ahg-g"
+approvers:
+  - "@msau42"
+  - "@jsafrane"
+  - "@Huang-Wei"
+  - "@ahg-g"
+prr-approvers:
+  - "@wojtek-t"
+
+stage: alpha
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.20"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.20"
+  beta: "v1.21"
+  stable: "v1.22"
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+  - name: VolumeCapacityPriority
+    components:
+      - kube-scheduler
+disable-supported: true
