@@ -234,7 +234,7 @@ V1 validation
 Note: default value are permitted between API versions
 ([reference][api-conv-versions]).
 
-[api-conv-versions]: https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#defaulting
+[api-conv-versions]: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#defaulting
 
 ##### Defaults
 

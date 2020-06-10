@@ -73,7 +73,7 @@ To communicate to the developer that a CRD does not follow the structural schema
 
 ## Motivation
 
-* OpenAPI has the goal of describing every API possible. We have the goal of presenting a consistent API to users of Kubernetes. OpenAPI therefore makes a fantastic output format able to describe anything, but a poor input format, because there's not "one correct way" to do a given thing. It is easy to accidentally (or intentionally) describe things in OpenAPI v3 that are not similar to other Kubernetes APIs and far outside of the [Kuberntes API conversions](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md).
+* OpenAPI has the goal of describing every API possible. We have the goal of presenting a consistent API to users of Kubernetes. OpenAPI therefore makes a fantastic output format able to describe anything, but a poor input format, because there's not "one correct way" to do a given thing. It is easy to accidentally (or intentionally) describe things in OpenAPI v3 that are not similar to other Kubernetes APIs and far outside of the [Kuberntes API conversions](https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md).
 * OpenAPI v3 is a very open and wide spec that can define crazy things using logical operators (`not(anyOf(oneof ...))`), leading to complicated semantics, making advanced CRD features difficult or even impossible to implement.
 
 ### Goals

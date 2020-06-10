@@ -141,7 +141,7 @@ will be added to ```admissionregistration.k8s.io/v1beta1.ValidatingWebhookConfig
 can explicitly register as having dry-run support.
 If dry-run is requested on a non-supported webhook, the request will be completely rejected,
 as a 400: Bad Request. This field will be defaulted to true and deprecated in v1, and completely removed in v2.
-All webhooks registered with v2 will be assumed to support dry run. The [api conventions](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md) advise
+All webhooks registered with v2 will be assumed to support dry run. The [api conventions](https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md) advise
 against bool fields because "many ideas start as boolean but eventually trend towards a small set
 of mutually exclusive options" but in this case, we plan to remove the field in a future version.
 ```golang
