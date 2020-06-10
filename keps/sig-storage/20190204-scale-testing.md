@@ -109,7 +109,7 @@ for volume operations. These are not strictly required but are nice to have:
     latency from a pod's perspective.
 * Enhance the scheduler metrics collection to include
   [volume scheduling
-  metrics](https://github.com/kubernetes/kubernetes/blob/master/pkg/controller/volume/persistentvolume/scheduler_bind_cache_metrics.go)
+  metrics](https://github.com/kubernetes/kubernetes/blob/master/pkg/controller/volume/scheduling/scheduler_binder_cache.go)
 * Timing of volume events. However, events should not be considered a reliable
   measurement because they can be dropped or garbage collected. Also there are
   only events for provision/delete, attach/detach. Mount events were removed due
