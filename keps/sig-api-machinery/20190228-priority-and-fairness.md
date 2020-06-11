@@ -44,6 +44,11 @@ superseded-by:
   - [Queuing](#queuing)
   - [Dispatching](#dispatching)
     - [Fair Queuing for Server Requests](#fair-queuing-for-server-requests)
+      - [The original story](#the-original-story)
+      - [Re-casting the original story](#re-casting-the-original-story)
+      - [From one to many](#from-one-to-many)
+      - [From packets to requests](#from-packets-to-requests)
+      - [Not knowing service duration up front](#not-knowing-service-duration-up-front)
   - [Example Configuration](#example-configuration)
   - [Reaction to Configuration Changes](#reaction-to-configuration-changes)
   - [Default Behavior](#default-behavior)
@@ -656,73 +661,287 @@ ways.  One is that we are dispatching requests to be served rather
 than packets to be transmitted.  Another difference is that multiple
 requests may be served at once.  The third difference is that the
 actual service time (i.e., duration) is not known until a request is
-done being served.  The first two differences can easily be handled by
-straightforward adaptation of the concept called "R(t)" in the
-original paper and "virtual time" in the implementation outline.  In
-that implementation outline, the notation `now()` is used to mean
-reading the _virtual_ clock.  In the original paper’s terms, "R(t)" is
-the number of "rounds" that have been completed at real time t, where
-a round consists of virtually transmitting one bit from every
-non-empty queue in the router (regardless of which queue holds the
-packet that is really being transmitted at the moment); in this
-conception, a packet is considered to be "in" its queue until the
-packet’s transmission is finished.  For our problem, we can define a
-round to be giving one nanosecond of CPU to every non-empty queue in
-the apiserver (where emptiness is judged based on both queued and
-executing requests from that queue), and define R(t) = (server start
-time) + (1 ns) * (number of rounds since server start).  Let us write
-NEQ(t) for that number of non-empty queues in the apiserver at time t.
-For a given queue "q", let us also write "reqs(q, t)" for the number
-of requests of that queue at that time.  Let us also write C for the
-concurrency limit.  At a particular time t, the partial derivative of
-R(t) with respect to t is
+done being served.
+
+To show how to cope with those differences, we start by re-casting the
+original fair queuing story in a way that is more amenable to the
+needed changes and has the same implementation.  Then we work through
+a series of three changes.
+
+##### The original story
+
+We have a collection of FIFO queues of packets to be transmitted, one
+packet at a time, over one link that goes at a fixed rate of
+`mu_single` (quantified in bits/second).  We imagine a virtual world
+called bit-by-bit round-robin (BR), in which the transmitter serves
+the queues in a round-robin fashion but advances from one queue to the
+next not on packet boundaries but rather on bit boundaries.  We define
+a function of time R(t) that counts the number of "rounds" completed,
+where a round is sending one bit from each non-empty queue.  Thus R(t)
+is
 
 ```
-min(sum[over q] reqs(q, t), C) / NEQ(t) .
+Integral[from tau=start_of_story to tau=t] (
+    if NAC(tau) > 0 then mu_single / NAC(tau) else 0) dtau
 ```
 
-In terms of the implementation outline, this is the rate at which
-virtual time (`now()`) is advancing at time t (in virtual nanoseconds
-per real nanosecond).  Where the implementation outline adds packet
-size to a virtual time, in our version this corresponds to adding a
-service time (i.e., duration) to virtual time.
+where `NAC(a time)` is the number of "active" or "non-empty" queues at
+that time, defined precisely below.
 
-The third difference is handled by modifying the algorithm to dispatch
-based on an initial guess at the request’s service time (duration) and
-then make the corresponding adjustments once the request’s actual
-service time is known.  This is similar, although not exactly
-isomorphic, to the original paper’s adjustment by δ for the sake of
-promptness.
+We define start and finish R values for each packet:
 
-For implementation simplicity (see below), let us use the same initial
-service time guess for every request; call that duration G.  A good
-choice might be the service time limit (1 minute).  Different guesses
-will give slightly different dynamics, but any positive number can be
-used for G without ruining the long-term behavior.
+```
+S(i,j) = max(F(i,j-1), R(t_arrive(i,j)))
+F(i,j) = S(i,j) + len(i,j) 
+```
 
-As in ordinary fair queuing, there is a bound on divergence from the
-ideal.  In plain fair queuing the bound is one packet; in our version
-it is C requests.
+where:
+- `S(i,j)` is the R value for the start of the j'th packet of queue i,
+- `F(i,j)` is the R value for the finish of the j'th packet of queue i,
+- `len(i,j)` is the number of bits in that packet, and
+- `t_arrive(i,j)` is the time when that packet arrived.
 
-To support efficiently making the necessary adjustments once a
-request’s actual service time is known, the virtual finish time of a
-request and the last virtual finish time of a queue are not
-represented directly but instead computed from queue length, request
-position in the queue, and an alternate state variable that holds the
-queue’s virtual start time.  While the queue is empty and has no
-requests executing: the value of its virtual start time variable is
-ignored and its last virtual finish time is considered to be in the
-virtual past.  When a request arrives to an empty queue with no
-requests executing, the queue’s virtual start time is set to `now()`.
-The virtual finish time of request number J in the queue (counting
-from J=1 for the head) is J * G + (virtual start time).  While the
-queue is non-empty: the last virtual finish time of the queue is the
-virtual finish time of the last request in the queue.  While the queue
-is empty and has a request executing: the last virtual finish time is
-the queue’s virtual start time.  When a request is dequeued for
-service the queue’s virtual start time is advanced by G.  When a
-request finishes being served, and the actual service time was S, the
-queue’s virtual start time is decremented by G - S.
+We define `NAC(t)` to be the number of queues `i` for which `R(t) <=
+F(i,j)` where `j` is the last packet of queue `i` to arrive at or
+before `t`.
+
+When it is time to start transmitting the next packet in the real
+world, we pick the unsent packet with the smallest `F` value.  If
+there is a tie then we pick the one whose queue follows most closely
+in round-robin order the queue last picked from.
+
+It is not necessary to explicitly represent the S and F values for
+every unsent packet in the virtual world.  It suffices to track R(t)
+and, for each queue, the contents of that queue and the S of the
+queue's oldest unsent packet.  This is enough to make the cost of
+reacting to a packet arrival or completion O(1) with the exception of
+finding the next packet to send.  That costs O(num queues) in a
+straightforward implementation and O(log(num queues) + (num ties)) if
+the queues are kept in a data structure sorted by the F value of the
+queue's oldest packet that has not started transmission.
+
+##### Re-casting the original story
+
+The original fair queuing technique can be understood in the following
+way, which corresponds more directly to max-min fairness.  We have a
+collection of FIFO queues of packets to be transmitted, one packet at
+a time, over one link that goes at a fixed rate of `mu_single` (in
+units of bits/second).  We imagine a virtual world called concurrent
+service (CS), in which transmission is proceeding for all the
+non-empty queues concurrently; queue `i` is transmitted at rate
+`mu(i,t)` at time `t`.  At any given `t` the allocations are given by
+
+```
+mu(i,t) = min(rho(i,t), mu_fair(t))
+```
+
+where:
+- `i` identifies a queue,
+- `rho(i,t)` is the rate requested by queue `i` at time `t` and is defined to be
+  the product of `mu_single` and the number of packets of that queue
+  that are unsent in the virtual world at time `t`,
+- `mu_fair(t)` is the smallest non-negative quantity that solves the equation
+  ```
+  min(mu_single, Sum[over i] rho(i,t)) = Sum[over i] min(rho(i,t), mu_fair(t))
+  ```
+
+That implies that `mu(i,t)` is zero for each empty queue and
+`mu_single / (number of non-empty queues at time t)` for each
+non-empty queue, where emptiness is judged in the virtual world.
+
+In the virtual world bits are transmitted from queue `i` at rate
+`mu(i,t)`, for every non-empty queue `i`.  Each time when a queue
+transitions from empty to non-empty is when bits start being sent from
+that queue in the virtual world; the solution `mu_fair(t)` gets
+adjusted at this time, among others.  In this virtual world a queue's
+packets are divided into three subsets: those that have been
+completely sent, those that are in the process of being sent, and
+those that have not yet started being sent.  That number being sent is
+1 unless it is 0 and the queue has no unsent packets.  Unlike the
+original fantasy, this virtual world uses the same clock as the real
+world.  Whenever a packet finishes being sent in the real world, the
+next packet to be transmitted is the unsent one that will finish being
+sent soonest in the virtual world.  If there is a tie among several,
+we pick the one whose queue is next in round-robin order (following
+the queue last picked).
+
+We can define beginning and end times (B and E) for transmission of
+the j'th packet of queue i in the virtual world, with the following
+equations.
+
+```
+B(i,j) = max(E(i,j-1), t_arrive(i,j))
+Integral[from tau=B(i,j) to tau=E(i,j)] mu(i,tau) dtau = len(i,j)
+```
+
+This has a practical advantage over the original story: the integrals
+are only over the lifetime of a single request's service --- rather
+than over the lifetime of the server.  This makes it easier to use
+floating point representations with sufficient precision.
+
+Note that computing an E value before it has arrived requires
+predicting the course of `mu(i,t)` from now until E arrives.  However,
+because all the non-empty queues have the same value for `mu(i,t)`
+(i.e., `mu_fair(t)`), we can safely make whatever assumption we want
+without distorting the dispatching choice --- all non-empty queues are
+affected equally.
+
+The correspondence with the original telling of the fair queuing story
+goes as follows.  Equate
+
+```
+S(i,j) = R(B(i,j))
+F(i,j) = R(E(i,j))
+```
+
+The recurrence relations for S and F correspond to the recurrence
+relations for B and E.
+
+```
+S(i,j) = R(B(i,j))
+       = R(max(E(i,j-1), t_arrive(i,j)))
+       = max(R(E(i,j-1)), R(t_arrive(i,j)))
+       = max(F(i,j-1), R(t_arrive(i,j)))
+```
+
+(R and max commute because both are monotonically non-decreasing).
+
+Note that `mu_fair(t)` is exactly the same as `dR/dt` in the original
+story.  So we can reason as follows.
+
+```
+Integral[tau=B(i,j) to tau=E(i,j)] mu(i,tau) dtau = len(i,j)
+
+Integral[tau=start to tau=E(i,j)] (dR/dt)(tau) dtau -
+Integral[tau=start to tau=B(i,j)] (dR/dt)(tau) dtau
+= len(i,j)
+
+R(E(i,j)) - R(B(i,j)) = len(i,j)
+
+F(i,j) - S(i,j) = len(i,j)
+
+F(i,j) = S(i,j) + len(i,j)
+```
+
+It is not necessary to track the B and E values for every unsent
+packet in the virtual world.  It suffices to track, for each queue
+`i`, the following things in the virtual world:
+- the contents of the queue
+- B of the packet currently being sent
+- bits of that packet sent so far: `Integral[from tau=B to tau=now] mu(i,tau) dtau`
+
+At any point in time the E of the packet being sent can be calculated,
+under the assumption that `mu(i,t)` will henceforth be constant, by
+adding to the current time the quotient of (remaining bits to send) /
+`mu(i,t)`.  The E of the packet after that can be calculated by
+further adding the quotient (size of packet) / `mu(i,t)`.  This E is
+the value used to pick the next packet to send in the real world.
+
+If we are satisfied with an O(num queues) cost to react to advancing
+the clock or picking a request to dispatch then a direct
+implementation of the above works.
+
+It is possible to reduce those costs to O(log(num queues)) by
+leveraging the above correspondence to work with R values and keep the
+queues in a data structure sorted by F of the next packet to transmit
+in the virtual world.  There will be two classes of queues: those that
+do not and those that do have a packet waiting to start transmission
+in the virtual world.  It is the latter class that is kept in a data
+structure sorted by the F of that packet.  Such a packet's F does not
+change as the system evolves over time, so an incremental step
+requires only manipulating the queue and packet directly involved.
+
+##### From one to many
+
+The first change is to suppose that transmission is being done on
+multiple parallel links.  Call the number of them `C`.  This allows
+`mu_fair` to be higher.  Its constraint changes to
+
+```
+min(C*mu_single, Sum[over i] rho_i) = Sum[over i] min(rho_i, mu_fair)
+```
+
+Because we now have more possible values for `mu(i,t)` than 0 and
+`mu_fair(t)`, it is more computationally complex to adjust the
+`mu(i,t)` values when a packet arrives or completes virtual service.
+That complexity is:
+- O(n log n), where n is the number of queues,
+  in a straightforward implementation;
+- O(log n) if the queues are kept in a data structure sorted by `rho(i,t)`.
+
+We can keep the same virtual transmission scheduling scheme as in the
+single-link world --- that is, each queue sends one packet at a time
+in the virtual world.  This looks a little unreal but that is
+immaterial and keeps the logic simple; we can use the same B and E
+equations.
+
+However, the greater diversity of `mu(i,t)` values breaks the
+correspondence with the original story.  We can still define `R(t) =
+Integral[from tau=start to tau=t] mu_fair(tau) dtau`.  However,
+because sometimes some queues get a rate that is less than
+`mu_fair(t)`, it is not necessarily true that `R(E(i,j)) - R(B(i,j)) =
+len(i,j)`.  Because all non-empty queues do not necessarily get the
+rate `mu_fair(t)`, the prediction of that affects the dispatching
+choice.  This ruins the simple story about how to get logarithmic cost
+for dispatching.
+
+We can partially recover by dividing queues into three classes rather
+than two: empty queues, those for which `rho(i,t) <= mu_fair(t)`, and
+those for which `mu_fair(t) < rho(i,t)`.  We can efficiently make a
+dispatching choice from each of the two latter classes of queues,
+under the assumption that `mu_fair(t)` will be henceforth constant,
+and then efficiently choose between those two choices.  However, it is
+also necessary to react to a stimulus that modifies `mu_fair(t)` or
+some `rho(i,t)` so that some queues move between classes --- and this
+costs O(m log n), where m is the number of queues moved and n is the
+number of queues in the larger class.  The details are as follows.
+
+For queues where `rho(i,t) <= mu_fair(t)` we can keep track of the
+predicted E for the next packet to begin transmitting.  As long as
+that queue's `rho` remains less than or equal to `mu_fair`, these E
+predictions do not change.  We can keep these queues in a data
+structure sorted by those E predictions.
+
+For queues `i` where `mu_fair(t) <= rho(i,t)` we can keep track of the
+F (that is, `R(E)`) of the next packet to begin transmitting.  As long
+as `mu_fair` remains less than or equal to that queue's `rho`, that F
+does not change.  We can keep these queues in a data structure sorted
+by those F predictions.
+
+When a stimulus --- that is, packet arrival or virtual completion ---
+changes `mu_fair(t)` or some `rho(i,t)` in such a way that some queues
+move between classes, those queues get removed from their old class
+data structure and added to the new one.
+
+When it comes time to choose a packet to begin transmitting in the
+real world, we start by choosing the best packet from each non-empty
+class of non-empty queues.  Supposing that gives us two packets, we
+have to compare the E of one packet with the F of the other.  This is
+done by assuming that `mu_fair` will not change henceforth.  Finally,
+we may have to break a tie; that is done by round-robin ordering, as
+usual.
+
+##### From packets to requests
+
+The next change is from transmitting packets to serving requests.  We
+no longer have a collection of C links; instead we have a server
+willing to serve up to C requests at once.  Instead of a packet with a
+length measured in bits, we have a request with a service duration
+measured in seconds.  The units change: `mu_single` and `mu_i` are no
+longer in bits per second but rather are in service-seconds per
+second; we call this unit "seats" for short.  We now say `mu_single`
+is 1 seat.  As before, when it is time to dispatch the next request in
+the real world we pick one that would finish soonest in the virtual
+world, using round-robin ordering to break ties.
+
+##### Not knowing service duration up front
+
+The final change removes the up-front knowledge of the service
+duration of a request.  Instead, we use a guess `G`.  When a request
+finishes execution in the real world, we learn its actual service
+duration `D`.  At this point we adjust the explicitly represented B
+and E (and F, if using those) values of following requests in that
+queue to account for the difference `D - G`.
 
 ### Example Configuration
 
