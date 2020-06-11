@@ -273,7 +273,8 @@ serialized using Protocol Buffers in a format specified bellow.
 ##### Certificate request
 
 The authentication provider sends a request message of `CertificateRequest` kind
-containing the cluster information and optionally the plugin configuration parameters.
+containing a version, the cluster information and optionally the plugin
+configuration parameters.
 
 ```go
 message CertificateRequest {
@@ -285,6 +286,37 @@ message CertificateRequest {
     // to the external signer, but stored in KUBECONFIG for the user's convenience
     //to allow multiplexing a single external signer for several K8s users.
     map<string, string> configuration = 3;
+}
+```
+
+Version field is an enumeration listing supported versions of the protocol.
+
+```go
+enum Version {
+    v1alpha1 = 0;
+}
+```
+
+Cluster field specifies cluster information following the [External credential
+providers
+specification](https://github.com/kubernetes/enhancements/tree/master/keps/sig-auth/541-external-credential-providers#provider-input-format).
+
+```go
+// Cluster contains information to allow an exec plugin to communicate with the
+// kubernetes cluster being authenticated to.
+message Cluster {
+    // Server is the address of the kubernetes cluster (https://hostname:port).
+    string server = 1;
+    // ServerName is passed to the server for SNI and is used in the client to
+    // check server certificates against. If ServerName is empty, the hostname
+    // used to contact the server is used.
+    string serverName = 2;
+    // CAData contains PEM-encoded certificate authority certificates.
+    // If empty, system roots should be used.
+    bytes caData = 3;
+    // Config holds additional config data that is specific to the exec plugin
+    // with regards to the cluster being authenticated to.
+    bytes config = 4;
 }
 ```
 
@@ -316,6 +348,7 @@ The final response containing a client certificate.
 The authentication provider sends a request message of `SignRequest` kind
 containing:
 
+- version,
 - the cluster information,
 - optional plugin configuration parameters,
 - the digest,
@@ -352,6 +385,8 @@ message SignatureRequest {
     }
 }
 ```
+
+Definitions of version and cluster fields are provided in the [Certificate request](#certificate-request) section above.
 
 ##### Sign responses
 
