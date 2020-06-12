@@ -137,42 +137,70 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-This KEP proposes an alternative mechanism for specifying volumes
-inside a pod spec. Those ephemeral volumes then get converted to normal
-volume claim objects for provisioning, so storage drivers do not need
-to be modified.
+This KEP proposes a more generic mechanism for specifying and using ephemeral
+volumes. In contrast to the ephemeral volume types that are built into Kubernetes
+(empty dir, secrets, config map) and CSI ephemeral volumes, the volume can be
+provided by any storage driver that supports dynamic provisioning. All of the
+normal volume operations (snapshotting, resizing, snapshotting, the future
+storage capacity tracking, etc.) are supported.
 
-The lifecycle of those volumes is ephemeral: they will get created
-when the pod is created (for immediate [volume
-binding](https://kubernetes.io/docs/concepts/storage/storage-classes/#volume-binding-mode))
-or when the pod starts (for `WaitForFirstConsumer` volume binding),
-and deleted once the pod terminates.
-
-Because volume creation and deletion is expected to be slower than
-with [CSI ephemeral inline
-volumes](https://github.com/kubernetes/enhancements/issues/596), both
-approaches will need to be supported.
-
+This is achieved by embedding all of the parameters for a PersistentVolumeClaim
+inside a pod spec and automatically creating a PersistentVolumeClaim with those parameters
+for the pod. Then provisioning and pod scheduling work as for a pod with
+a manually created PersistentVolumeClaim.
 
 ## Motivation
 
-The current CSI ephemeral inline volume feature has demonstrated that
-ephemeral inline volumes are a useful concept, for example to provide
-additional scratch space for a pod. Several CSI drivers support it
-now, most of them in addition to normal volumes (see
-https://kubernetes-csi.github.io/docs/drivers.html).
+Kubernetes supports several kinds of ephemeral volumes, but the functionality
+of those is limited to what is implemented inside Kubernetes. For example, EmptyDir can
+only provide a directory on the root disk or RAM. This functionality cannot
+be extended by third-party storage vendors.
 
-However, the original design was intentionally focused on
-light-weight, local volumes. It is not a good fit for volumes provided
-by a more traditional storage system because:
+For light-weight, local volumes, CSI ephemeral volumes were introduced.
+Those can be provided by CSI drivers which were specifically written
+to support this Kubernetes feature. Normal, standard-compliant CSI
+drivers are not supported.
+
+The design for CSI ephemeral volumes is not a good fit for more traditional
+storage systems because:
 - The normal API for selecting volume parameters (like size and
   storage class) is not supported.
 - Integration into storage capacity aware pod scheduling is
   challenging and would depend on extending the CSI ephemeral inline
   volume API.
 - CSI drivers need to be adapted and have to take over some of the
-  work normally done by Kubernetes, like tracking of orphaned volumes.
+  work normally done by Kubernetes, like provisioning volumes,
+  attaching them to nodes and tracking of orphaned volumes.
 
+### User Stories
+
+#### Persistent Memory as DRAM replacement for memcached
+
+Recent releases of memcached added [support for using Persistent
+Memory](https://memcached.org/blog/persistent-memory/) (PMEM) instead
+of normal DRAM. When deploying memcached through one of the app
+controllers, `EphemeralVolumeSource` makes it possible to request a volume
+of a certain size from a CSI driver like
+[PMEM-CSI](https://github.com/intel/pmem-csi).
+
+#### Local LVM storage as scratch space
+
+Applications working with data sets that exceed the RAM size can
+request local storage with performance characteristics or size that is
+not met by the normal Kubernetes `EmptyDir` volumes. For example,
+[TopoLVM](https://github.com/cybozu-go/topolvm) was written for that
+purpose.
+
+#### Read-only access to volumes with data
+
+Provisioning a volume might result in a non-empty volume:
+- [restore a snapshot](https://kubernetes.io/docs/concepts/storage/persistent-volumes/#volume-snapshot-and-restore-volume-from-snapshot-support)
+- [cloning a volume](https://kubernetes.io/docs/concepts/storage/volume-pvc-datasource)
+- [generic data populators](https://github.com/kubernetes/enhancements/blob/master/keps/sig-storage/20200120-generic-data-populators.md)
+
+For those, it might make sense to mount the volume read-only inside
+the pod to prevent accidental modification of the data. For example,
+the goal might be to just retrieve the data and/or copy it elsewhere.
 
 ### Goals
 
@@ -191,7 +219,7 @@ by a more traditional storage system because:
 ### Non-Goals
 
 - This will not replace CSI ephemeral inline volumes because the
-  goals for those (light-weight local volumes) are not a good fit
+  goals for those (light-weight, local volumes) are not a good fit
   for the approach proposed here.
 - These inline volumes will always be ephemeral. If making them persistent
   was allowed, some additional controller would be needed to manage them
@@ -262,36 +290,6 @@ library](https://github.com/kubernetes/kubernetes/tree/v1.18.0/pkg/controller/vo
 inside the kube-scheduler or kubelet encounter such a volume inside a
 pod, they determine the name of the PVC and proceed as they currently
 do for a `PersistentVolumeClaimVolumeSource`.
-
-### User Stories
-
-#### Persistent Memory as DRAM replacement for memcached
-
-Recent releases of memcached added [support for using Persistent
-Memory](https://memcached.org/blog/persistent-memory/) (PMEM) instead
-of normal DRAM. When deploying memcached through one of the app
-controllers, `EphemeralVolumeSource` makes it possible to request a volume
-of a certain size from a CSI driver like
-[PMEM-CSI](https://github.com/intel/pmem-csi).
-
-#### Local LVM storage as scratch space
-
-Applications working with data sets that exceed the RAM size can
-request local storage with performance characteristics or size that is
-not met by the normal Kubernetes `EmptyDir` volumes. For example,
-[TopoLVM](https://github.com/cybozu-go/topolvm) was written for that
-purpose.
-
-#### Read-only access to volumes with data
-
-Provisioning a volume might result in a non-empty volume:
-- [restore a snapshot](https://kubernetes.io/docs/concepts/storage/persistent-volumes/#volume-snapshot-and-restore-volume-from-snapshot-support)
-- [cloning a volume](https://kubernetes.io/docs/concepts/storage/volume-pvc-datasource)
-- [generic data populators](https://github.com/kubernetes/enhancements/blob/master/keps/sig-storage/20200120-generic-data-populators.md)
-
-For those, it might make sense to mount the volume read-only inside
-the pod to prevent accidental modification of the data. For example,
-the goal might be to just retrieve the data and/or copy it elsewhere.
 
 ### Risks and Mitigations
 
@@ -566,6 +564,8 @@ Will be added before the transition to beta.
 
 ## Alternatives
 
+### Embedded PVC with status
+
 The alternative to creating the PVC is to modify components that
 currently interact with a PVC such that they can work with stand-alone
 PVC objects (like they do now) and with the embedded PVCs inside
@@ -580,3 +580,24 @@ The advantage is that no automatically created PVCs are
 needed. However, other controllers also create user-visible objects
 (statefulset -> pod and PVC, deployment -> replicaset -> pod), so this
 concept is familiar to users.
+
+### Extending CSI ephemeral volumes
+
+In the current CSI ephemeral volume design, the CSI driver only gets
+involved after a pod has already been scheduled onto a node. For feature
+parity with normal volumes, the CSI driver would have to reimplement
+the work done by external-provisioner and external-attacher. This makes
+CSI drivers specific to Kubernetes, which is against the philosophy of
+CSI.
+
+The Kubernetes API would have to be extended to make the scheduler aware of volume
+size.
+
+Kubelet would need to be extended to evict a pod when volume creation fails
+because storage is exhausted. Currently it just retries until someone
+or something else deletes the pod.
+
+All of that would lead to additional complexity both in Kubernetes and in
+CSI drivers. Handling volume provisioning and attaching through the
+existing mechanisms is easier and compatible with future enhancements
+of those.
