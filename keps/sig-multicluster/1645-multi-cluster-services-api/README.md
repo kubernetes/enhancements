@@ -405,12 +405,11 @@ type ServiceExportStatus struct {
 type ServiceExportConditionType string
 
 const {
-      // ServiceExportReady means that the service referenced by this
+      // ServiceExportValid means that the service referenced by this
       // service export has been recognized as valid by an mcs-controller.
-      ServiceExportReady ServiceExportConditionType = "Ready"
-      // ServiceExportInvalid means that the service marked for export is
-      // unexportable (ExternalName, not found).
-      ServiceExportInvalid ServiceExportConditionType = "InvalidService"
+      // This will be false if the service is found to be unexportable
+      // (ExternalName, not found).
+      ServiceExportValid ServiceExportConditionType = "Valid"
       // ServiceExportConflict means that there is a conflict between two
       // exports for the same Service. When "True", the condition message
       // should contain enough information to diagnose the conflict:
@@ -512,6 +511,11 @@ the service. This means that all exporting clusters will also import the
 multi-cluster service. _An implementation may or may not decide to create
 missing namespaces automatically, that behavior is out of scope of this spec._
 
+Because of the potential wide impact a `ServiceImport` may have within a
+cluster, non-cluster-admin users should not be allowed to create or modify
+`ServiceImport` resources. The mcs-controller should be solely responsible for
+the lifecycle of a `ServiceImport`.
+
 For each exported service, one `ServiceExport` will exist in each cluster that
 exports the service. The mcs-controller will create and maintain a derived
 `ServiceImport` in each cluster within the supercluster so long as the service's
@@ -559,7 +563,7 @@ const (
 // ServiceImportSpec describes an imported service and the information necessary to consume it.
 type ServiceImportSpec struct {
   // +listType=atomic
-  Ports []corev1.ServicePort `json:"ports"`
+  Ports []ServicePort `json:"ports"`
   // +optional
   IP string `json:"ip,omitempty"`
   // +optional
@@ -568,6 +572,35 @@ type ServiceImportSpec struct {
   SessionAffinity corev1.ServiceAffinity `json:"sessionAffinity"`
   // +optional
   SessionAffinityConfig *corev1.SessionAffinityConfig `json:"sessionAffinityConfig"`
+}
+
+// ServicePort represents the port on which the service is exposed
+type ServicePort struct {
+  // The name of this port within the service. This must be a DNS_LABEL.
+  // All ports within a ServiceSpec must have unique names. When considering
+  // the endpoints for a Service, this must match the 'name' field in the
+  // EndpointPort.
+  // Optional if only one ServicePort is defined on this service.
+  // +optional
+  Name string `json:"name,omitempty"`
+
+  // The IP protocol for this port. Supports "TCP", "UDP", and "SCTP".
+  // Default is TCP.
+  // +optional
+  Protocol Protocol `json:"protocol,omitempty"`
+
+  // The application protocol for this port.
+  // This field follows standard Kubernetes label syntax.
+  // Un-prefixed names are reserved for IANA standard service names (as per
+  // RFC-6335 and http://www.iana.org/assignments/service-names).
+  // Non-standard protocols should use prefixed names such as
+  // mycompany.com/my-custom-protocol.
+  // Field can be enabled with ServiceAppProtocol feature gate.
+  // +optional
+  AppProtocol *string `json:"appProtocol,omitempty"`
+
+  // The port that will be exposed by this service.
+  Port int32 `json:"port"`
 }
 
 // ServiceImportStatus describes derived state of an imported service.
@@ -599,8 +632,9 @@ spec:
     protocol: TCP
     port: 80
   sessionAffinity: None
+status:
   clusters:
-    - cluster: us-west2-a-my-cluster
+  - cluster: us-west2-a-my-cluster
 ---
 apiVersion: discovery.k8s.io/v1beta1
 kind: EndpointSlice
@@ -718,8 +752,13 @@ names to avoid hitting this upper bound._
 
 All service consumers must use the `*.svc.supercluster.local` name to enable
 supercluster routing, even if there is a matching `Service` with the same
-namespaced name in the local cluster. There will be no change to existing
-behavior of the `cluster.local` zone.
+namespaced name in the local cluster. This name allows service consumers to
+opt-in to multi-cluster behavior. There will be no change to existing behavior
+of the `cluster.local` zone.
+
+_It is expected that the `.supercluster.local` zone is standard and available in
+all implementations, but customization and/or alising can be explored if there's
+demand._
 
 #### EndpointSlice
 
@@ -742,14 +781,17 @@ in-cluster endpoints today, but this remains to be determined.
 
 #### Endpoint TTL
 
-To prevent stale endpoints from persisting in the event that a cluster becomes
-unreachable to the supercluster controller, each `EndpointSlice` is associated
-with a lease representing connectivity with its source cluster. The supercluster
-service controller is responsible for periodically renewing the lease so long as
-the connection with the source cluster is confirmed alive. A separate
-controller, that may run inside each cluster, is responsible for watching each
-lease and removing all remaining `EndpointSlices` associated with a cluster when
-that cluster’s lease expires.
+To prevent stale endpoints from persisting in the event that the mcs-controller
+is unable to reach a cluster, it is recommended that an implementation provide
+an in-cluster controller to monitor and remove stale endpoints. This may be the
+mcs-controller itself in distributed implementations.
+
+We recommend creating leases to represent connectivity with source clusters.
+These leases should be periodically renewed by the mcs-controller while the
+connection with the source cluster is confirmed alive. When a lease expires, the
+cluster name and `multicluster.kubernetes.io/source-cluster` label may be used
+to find and remove all `EndpointSlices` containing endpoints from the
+unreachable cluster.
 
 ## Constraints and Conflict Resolution
 
@@ -765,11 +807,10 @@ services. If these properties are out of sync for a subset of exported services,
 there is no clear way to determine how a service should be accessed.
 
 Conflict resolution policy: **If any properties have conflicting values that can
-not simply be merged, a `ServiceExportConflict` condition will be set on the
-`ServiceExport` with a description of the conflict. The conflict will be
-resolved by assigning precedence based on each `ServiceExport`'s
-`creationTimestamp`, from oldest to newest.**
-
+not simply be merged, a `ServiceExportConflict` condition will be set on all
+`ServiceExport`s for the conflicted service with a description of the conflict.
+The conflict will be resolved by assigning precedence based on each
+`ServiceExport`'s `creationTimestamp`, from oldest to newest.**
 
 #### Service Port
 
