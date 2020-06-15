@@ -35,6 +35,8 @@ superseded-by:
   - [Notes/Constraints/Caveats](#notesconstraintscaveats)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
+  - [Why introduce a new <code>components</code> field?](#why-introduce-a-new--field)
+  - [Why introduce a new <code>Component</code> kind?](#why-introduce-a-new--kind)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha -&gt; Beta](#alpha---beta)
@@ -586,7 +588,17 @@ Also, note that we do not change the code that loads the contents of
 Kustomizations, so it should be possible to load Components from any place
 where one expects to load a Kustomization.
 
-Finally, if a new `components:` field is not desired, a variation of the
+### Why introduce a new `components` field?
+
+In principle, a Component is a special case of a Kustomization, so we could
+refer to it from the `resources:` field, as we do for other Kustomizations.
+Unlike the rest of the resources that are referenced in this field though,
+order matters with components, so the semantics of this field would need to
+change. Moreover, we believe that new and existing users should easily
+familiarize with this new field, if one considers that the `resources` and
+`patches` fields share the same difference.
+
+If a new `components:` field is not desired though, a variation of the
 implementation could be to allow Components to be added to the `resources:`
 list. In this case:
 
@@ -597,6 +609,17 @@ list. In this case:
   stored in `overlays/`) but this is less explicit than using a separate
   `components:` list.
 * The semantics of the `resources:` field will change and order will matter.
+
+### Why introduce a new `Component` kind?
+
+Since we have a `components` field, we could forgo introducing a new
+Kustomization kind. However, we decided to add it for two reasons:
+
+1. The `Component` kind is alpha, which communicates to the users that its
+   interface/semantics may change, so they should tread carefully.
+2. A kustomization that patches resources that have not been defined in its
+   `resources:` field can never work outside the `components:` field. So, the
+   kind further expresses how it should be used.
 
 ### Test Plan
 
