@@ -49,6 +49,8 @@ _Reviewers:_
 - [Proposal](#proposal)
   - [Proposed Changes](#proposed-changes)
     - [New Component: Topology Manager](#new-component-topology-manager)
+      - [The Effective Resource Request/Limit of a Pod](#the-effective-resource-requestlimit-of-a-pod)
+      - [Scopes](#scopes)
       - [Policies](#policies)
       - [Computing Preferred Affinity](#computing-preferred-affinity)
       - [New Interfaces](#new-interfaces)
@@ -58,6 +60,7 @@ _Reviewers:_
   - [Alpha (v1.16) [COMPLETED]](#alpha-v116-completed)
   - [Alpha (v1.17) [COMPLETED]](#alpha-v117-completed)
   - [Beta (v1.18) [COMPLETED]](#beta-v118-completed)
+  - [Beta (v1.19)](#beta-v119)
   - [GA (stable)](#ga-stable)
 - [Test Plan](#test-plan)
   - [Single NUMA Systems Tests](#single-numa-systems-tests)
@@ -180,7 +183,8 @@ This proposal is focused on a new component in the Kubelet called the
 Topology Manager. The Topology Manager implements the pod admit handler
 interface and participates in Kubelet pod admission. When the `Admit()`
 function is called, the Topology Manager collects topology hints from other
-Kubelet components on a container by container basis.
+Kubelet components on either a pod-by-pod, or a container-by-container basis, 
+depending on the scope that has been set via a kubelet flag.
 
 If the hints are not compatible, the Topology Manager may choose to
 reject the pod. Behavior in this case depends on a new Kubelet configuration
@@ -195,14 +199,65 @@ The Topology Hint currently consists of
       * For each Hint Provider, there is a possible resource assignment that satisfies the request, such that the least possible number of NUMA nodes is involved (caculated as if the node were empty.)
       * There is a possible assignment where the union of involved NUMA nodes for all such resource is no larger than the width required for any single resource.
 
+#### The Effective Resource Request/Limit of a Pod
+
+All Hint Providers should consider the effective resource request/limit to calculate reliable topology hints, this rule is defined by the [concept of init containers][the-rule-of-effective-request-limit].
+
+The effective resource request/limit of a pod is determined by the larger of :
+- The highest of any particular resource request or limit defined on all init containers.
+- The sum of all app containers request/limit for a resource.
+
+The below example shows how it works briefly.
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: example
+spec:
+  containers:
+  - name: appContainer1
+    resources:
+      requests:
+        cpu: 2
+        memory: 1G
+  - name: appContainer2
+      resources:
+      requests:
+        cpu: 1
+        memory: 1G
+  initContainers:
+  - name: initContainer1
+      resources:
+      requests:
+        cpu: 2
+        memory: 1G
+  - name: initContainer2
+      resources:
+      requests:
+        cpu: 2
+        memory: 3G
+
+#Effective resource request: CPU: 3, Memory: 3G
+```
+
+The [debug][debug-container]/[ephemeral][ephemeral-container] containers are not able to specify resource limit/request, so it does not affect topology hint generation.
+
+#### Scopes
+
+The Topology Manager will attempt to align resources on either a pod-by-pod or a container-by-container basis depending on the value of a new kubelet flag, `--topology-manager-scope`. The values this flag can take on are detailed below:
+
+**container (default)**: The Topology Manager will collect topology hints from all Hint Providers on a container-by-container basis. Individual policies will then attempt to align resources for each container individually, and pod admission will be based on whether all containers were able to achieve their individual alignments or not.
+
+**pod**: The Topology Manager will collect topology hints from all Hint Providers on a pod-by-pod basis. Individual policies will then attempt to align resources for all containers collectively, and pod admission will be based on whether all containers are able to achieve a common alignment or not.
+
 #### Policies
 
 **none (default)**: Kubelet does not consult Topology Manager for placement decisions. 
 
-**best-effort**: Topology Manager will provide the preferred allocation for the container based
+**best-effort**: Topology Manager will provide the preferred allocation based
 on the hints provided by the Hint Providers. If an undesirable allocation is determined, the pod will be admitted with this undesirable allocation.
 
-**restricted**: Topology Manager will provide the preferred allocation for the container based
+**restricted**: Topology Manager will provide the preferred allocation based
 on the hints provided by the Hint Providers. If an undesirable allocation is determined, the pod will be rejected. 
 This will result in the pod being in a `Terminated` state, with a pod admission failure.
 
@@ -306,9 +361,23 @@ type TopologyHint struct {
 // topology-related resource assignments. The Topology Manager consults each
 // hint provider at pod admission time.
 type HintProvider interface {
-  // Returns hints if this hint provider has a preference; otherwise
-  // returns `nil` to indicate "don't care".
+  // GetTopologyHints returns a map of resource names with a list of possible
+  // resource allocations in terms of NUMA locality hints. Each hint
+  // is optionally marked "preferred" and indicates the set of NUMA nodes
+  // involved in the hypothetical allocation. The topology manager calls
+  // this function for each hint provider, and merges the hints to produce
+  // a consensus "best" hint. The hint providers may subsequently query the
+  // topology manager to influence actual resource assignment.
   GetTopologyHints(pod v1.Pod, containerName string) map[string][]TopologyHint
+  // GetPodLevelTopologyHints returns a map of resource names with a list of 
+  // possible resource allocations in terms of NUMA locality hints.
+  // The returned map contains TopologyHint of requested resource by all containers
+  // in a pod spec.
+  GetPodLevelTopologyHints(pod *v1.Pod) map[string][]TopologyHint
+  // Allocate triggers resource allocation to occur on the HintProvider after
+  // all hints have been gathered and the aggregated Hint is available via a
+  // call to Store.GetAffinity().
+  Allocate(pod *v1.Pod, container *v1.Container) error
 }
 
 // Store manages state related to the Topology Manager.
@@ -351,6 +420,11 @@ A new feature gate will be added to enable the Topology Manager feature. This fe
  
  * Proposed Policy Flag:  
  `--topology-manager-policy=none|best-effort|restricted|single-numa-node`  
+
+Based on the policy chosen, the following flag will determine the scope with which the policy is applied (i.e. either on a pod-by-pod or a container-by-container basis). The `container` scope will be the default scope.
+
+ * Proposed Scope Flag:  
+ `--topology-manager-scope=container|pod`  
  
 ### Changes to Existing Components
 
@@ -360,10 +434,10 @@ A new feature gate will be added to enable the Topology Manager feature. This fe
        feature gate is disabled.
     1. Add a functional Topology Manager that queries hint providers in order
        to compute a preferred socket mask for each container.
-1. Add `GetTopologyHints()` method to CPU Manager.
+1. Add `GetTopologyHints()` and `GetPodLevelTopologyHints()` method to CPU Manager.
     1. CPU Manager static policy calls `GetAffinity()` method of
        Topology Manager when deciding CPU affinity.
-1. Add `GetTopologyHints()` method to Device Manager.
+1. Add `GetTopologyHints()` and `GetPodLevelTopologyHints()` method to Device Manager.
     1. Add `TopologyInfo` to Device structure in the device plugin
        interface. Plugins should be able to determine the NUMA Node(s)
        when enumerating supported devices. See the protocol diff below.
@@ -521,6 +595,10 @@ perform a much better allocation, with minimal cost.
 * Guarantee aligned resources for multiple containers in a pod.
 * Refactor to easily support different merge strategies for different policies.
 
+## Beta (v1.19)
+
+* Support pod-level resource alignment.
+
 ## GA (stable)
 
 * Add support for device-specific topology constraints beyond NUMA.
@@ -593,3 +671,6 @@ systems test.
 [sriov-issue-10]: https://github.com/hustcat/sriov-cni/issues/10
 [proposal-affinity]: https://github.com/kubernetes/community/pull/171
 [numa-challenges]: https://queue.acm.org/detail.cfm?id=2852078
+[the-rule-of-effective-request-limit]: https://kubernetes.io/docs/concepts/workloads/pods/init-containers/#resources
+[debug-container]: https://kubernetes.io/docs/tasks/debug-application-cluster/debug-running-pod/#ephemeral-container
+[ephemeral-container]: https://kubernetes.io/docs/concepts/workloads/pods/ephemeral-containers/
