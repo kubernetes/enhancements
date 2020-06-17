@@ -24,13 +24,14 @@ superseded-by:
 ## Table of Contents
 
 <!-- toc -->
-- [Summary](#summary)
-- [Motivation](#motivation)
-  - [Goals](#goals)
-- [Proposal](#proposal)
-  - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
-  - [Workload Implications](#workload-implications)
-  - [Risks and Mitigations](#risks-and-mitigations)
+  - [Summary](#summary)
+  - [Motivation](#motivation)
+    - [Goals](#goals)
+  - [Proposal](#proposal)
+    - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
+    - [Workload Implications](#workload-implications)
+    - [Risks and Mitigations](#risks-and-mitigations)
+- [Alternatives](#alternatives)
 <!-- /toc -->
 
 ## Summary
@@ -83,3 +84,7 @@ AllowSurgeOnTerminationTimeout will help to minimize distruption on problems wit
 ### Risks and Mitigations
 
 The primary risk that in some condition we will have more running pods then it's defined by replicas.
+
+# Alternatives
+
+The alternative would be to have a dedicated worker that counts pods stuck in terminating and automatically updates the replicas count, this option also requires `.spec.podManagementPolicy: Parallel` as we would be waiting for the pod to be in status Ready if `OrderedReady`(default) is set.
