@@ -1,0 +1,19 @@
+---
+title: Graceful Termination for Local External Traffic Policy
+authors:
+  - "@andrewsykim"
+owning-sig: sig-network
+participating-sigs:
+  - sig-scalability
+reviewers:
+  - "@thockin"
+  - "@wojtek-t"
+  - "@smarterclayton"
+approvers:
+  - "@thockin"
+creation-date: 2020-04-07
+last-updated: 2020-04-07
+status: implementable
+see-also:
+  - "/keps/sig-network/1672-tracking-terminating-endpoints/README.md"
+  - https://github.com/kubernetes/kubernetes/issues/85643
