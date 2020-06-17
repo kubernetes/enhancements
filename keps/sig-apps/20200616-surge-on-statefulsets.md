@@ -7,9 +7,11 @@ participating-sigs:
   - sig-scheduling
   - sig-node
 reviewers:
-  - TBD
+  - @mattfarina
+  - @kow3ns
 approvers:
-  - TBD
+  - @mattfarina
+  - @kow3ns
 editor: TBD
 creation-date: 2020-06-16
 last-updated: 2020-06-16
