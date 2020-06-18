@@ -1,0 +1,21 @@
+title: Make Kubernetes aware of the load balancer behaviour
+kep-number: 1860
+authors:
+  - "@Sh4d1"
+owning-sig: sig-network
+participating-sigs:
+  - sig-cloud-provider
+reviewers:
+  - "@thockin"
+  - "@cheftako"
+  - "@MorrisLaw"
+approvers:
+  - "@thockin"
+  - "@andrewsykim"
+editor: "@Sh4d1"
+creation-date: 2019-12-05
+last-updated: 2020-06-18
+status: provisional
+replaces:
+superseded-by:
+see-also:
