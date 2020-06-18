@@ -1,22 +1,3 @@
----
-title: Kubelet endpoint for device assignment observation details
-authors:
-  - "@dashpole"
-  - "@vikaschoudhary16"
-  - "@renaudwastaken"
-owning-sig: sig-node
-reviewers:
-  - "@thockin"
-  - "@derekwaynecarr"
-  - "@dchen1107"
-  - "@vishh"
-approvers:
-  - "@sig-node-leads"
-editor: "@dashpole"
-creation-date: "2018-07-19"
-last-updated: "2019-04-30"
-status: implementable
----
 # Kubelet endpoint for device assignment observation details 
 
 ## Table of Contents
@@ -184,14 +165,12 @@ The infrastructure required is expensive and it is not clear what additional tes
 
 ### Upgrade / Downgrade Strategy
 
-With gRPC the version is part of the service name
-old versions and new versions should always be served and listened by the kubelet
+With gRPC the version is part of the service name.
+Old versions and new versions should always be served and listened by the kubelet.
 
 To a cluster admin upgrading to the newest API version, means upgrading Kubernetes to a newer version as well as upgrading the monitoring component.
 
-To a vendor
-
-Changes in the API should always be backwards compatible.
+To a vendor changes in the API should always be backwards compatible.
 
 Downgrades here are related to downgrading the plugin
 
@@ -221,11 +200,11 @@ Kubelet will always be backwards compatible, so going forward existing plugins a
 
 ### Monitoring requirements
 * **How can an operator determine if the feature is in use by workloads?**
-  - Look at the `pod_resources_requests_total` metric exposed by the kubelet.
+  - Look at the `pod_resources_endpoint_requests_total` metric exposed by the kubelet.
   - Look at hostPath mounts of privileged containers.
 * **What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?**
   - [X] Metrics
-    - Metric name: `pod_resources_requests_total`
+    - Metric name: `pod_resources_endpoint_requests_total`
     - Components exposing the metric: kubelet
 
 * **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?** N/A or refer to Kubelet SLIs.
