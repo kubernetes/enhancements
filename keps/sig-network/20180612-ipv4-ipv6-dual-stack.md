@@ -46,6 +46,10 @@ status: implementable
   - [Container Networking Interface (CNI) Plugin Considerations](#container-networking-interface-cni-plugin-considerations)
   - [Services](#services)
     - [Type NodePort, LoadBalancer, ClusterIP](#type-nodeport-loadbalancer-clusterip)
+      - [Service Object Mutability Rules](#service-object-mutability-rules)
+      - [Creating a New Single Stack Service](#creating-a-new-single-stack-service)
+      - [Creating a New Dual Stack Service](#creating-a-new-dual-stack-service)
+      - [Notes on NodePort Allocation](#notes-on-nodeport-allocation)
     - [Type Headless services](#type-headless-services)
     - [Type ExternalName](#type-externalname)
   - [Endpoints](#endpoints)
@@ -333,19 +337,105 @@ or later. The dual-stack feature requires no changes to this API.
 The versions of CNI plugin binaries that must be used for proper dual-stack functionality (and IPv6 functionality in general) depend upon the version of the container runtime that is used in the cluster nodes (see [CNI issue #531](https://github.com/containernetworking/cni/issues/531) and [CNI plugins PR #113](https://github.com/containernetworking/plugins/pull/113)):
 
 ### Services
+Services depend on `--service-cluster-ip-range` for `ClusterIP` assignment. A dualstack cluster can have this flag configured as `--services-cluster-ip-rang=<cidr>,<cidr>` or `--services-cluster-ip-rang=<cidr>`. The following rules apply:
+
+1. The maximum allowed number of cidrs in this flag is two. Attempting to use more than two cidrs will generate failures during startup. 
+2. When configured with two cidrs then the values are expected to have different ip families. e.g `--service-cluster-ip-range=<ipv4-cidr>,<ipv6-cidr>` or `--service-cluster-ip-range=<ipv6-cidr>,<ipv4-cidr>`. Attempting to configure a cluster with two similar cidrs will generate failures during startup.
+3. It is possible to have a `partially-dual-stack` cluster, with dual-stack pod networking but only a single service cidr. This means that pods in the cluster will be able to send and receive traffic on both ip families, but services which use the `clusterIP` or `ClusterIPs` field will only be able to use the ip family of this flag.
+4. When upgrading a cluster to dualstack, the first element of the `--service-cluster-ip-range` flag MUST NOT change IP families.  As an example, an IPv4 cluster can safely be upgraded to use `--service-cluster-ip-range=<ipv4-cidr>,<ipv6-cidr>`, but can not safely be changed to `--service-cluster-ip-range=<ipv6-cidr>,<ipv4-cidr>`.
+5. The first cidr entry of `--service-cluster-ip-range=<first cidr entry>, <secondary cidr entry>` is considered cluster default ip address family.
+6. Attempting to allocate `ClusterIP` or `ClusterIPs` from an ip address family that is not configured on the cluster will result in an error.
+
+> The below discussion assumes that `Endpoint Slice and Endpoint Slice Controller`  will allow dual stack endpoints, the existing endpoint controller will remain single stack. That means enabling dual stack services by having more than one entry in `--service-cluster-ip-range` without enabling `Endpoint Slice` feature gate will result in validation failures during startup.
 
 #### Type NodePort, LoadBalancer, ClusterIP
-Services will only be assigned an address from a single address family (either IPv4 or IPv6). The address family for the Service’s cluster IP is determined by setting the field, `.spec.ipFamily`, on that Service. You can only set this field when creating a new Service. Setting the `.spec.ipFamily` field is optional and should only be used if you plan to enable IPv4 and IPv6 Services and Ingresses on your cluster. The configuration of this field not a requirement for egress traffic. The default address family for your cluster is the address family of the first service cluster IP range configured via the `--service-cluster-ip-range` flag to the kube-controller-manager. The `.spec.ipFamily` field can be set to either IPv4 or IPv6.
+In a dualstack cluster Services can be:
+1. Single Stack: service ip are allocated (or reserved, if provided by user) from the first or the second cidr (if configured) entry as configured using `--service-cluster-ip-range` flag, in this scenario services will have a single allocated `ClusterIP` (also set in `ClusterIPs`).
+2. Dual Stack (optional): service ip is allocated (or reserved, if provided by user) from both the first and the second cidr (if configured) entries. In this scenario services will have a dual assigned `ClusterIPs`. If the cluster is not configured for dualstack then  the resulting service will be created as a single stack and `ClusterIP/ClusterIPs` will be assigned from a single family.
+3. Dual Stack (required): if the cluster is not configured for dual stack then service creation will fail. If the cluster is configured for dual stack the resulting service will carry two dual stack `ClusterIPs`.
 
-For example, the following Service specification includes the `spec.ipFamily` field. Kubernetes will assign an IPv6 address (also known as a “cluster IP”) from the configured service-cluster-ip-range to this Service.
+The above is achieved using the following changes to Service api.
+1. Add a `spec.preferDualStack` optional boolean field.
+2. Add a `spec.ipFamilies[]` optional field with possible values of `IPv4`, `IPv6` for each each entry or `nil` for the entire slice. Maximum entries in this array is two and each entry must be `IPv4`or `IPv6` in any order. This field identifies the expected ip families of a service. api-server will reject the service creation request if the ip family is not supported by the cluster. Further dependency and validation on this field is described below.
+3. Add a `spec.clusterIPs[]` field that follows the same rules as `status.PodIPs/status.PodIP`. Maximum entries in this array is two entries of two different ip address families. Semantically `spec.clusterIP` will be referred as `Primary Service IP`.
+
+> Services are expected to be semantically valid whenever values for the optional fields are provided. An example a service with `spec.ipFamilies : [ "IPv4" ]` and `spec.clutserIPs: [ "<some-ipv6>" ]` is considered invalid because the family does not match the `ClusterIPs[0]`.
+
+
+The rules that govern these fields are described in the below sections
+
+##### Service Object Mutability Rules
+The existing mutability rules will remain as is. Primarily services can not change their `ClusterIP` (as we move to dual stack, this is considered as `Service Primary ClusterIP`), yet services can change types (e.g. from `ClusterIP` to `ExternalName`). The following are additional immutability rules
+
+1. Services can change from `Single Stack` to `Dual Stack (required)` or `Dual Stack (optional)` as described below.
+2. Services can also change `Dual Stack` to `Single Stack`.
+3. Services `can not` change the primary service ip `spec.clusterIP` or `spec.clusterIPs[0]` because this will break existing mutability rules. This also apply even changing a service from `Single Stack` to `Dual Stack` or the other way around.
+
+##### Creating a New Single Stack Service
+
+User who want to create a new single stack Service can create it using one of the following methods:
+1. Set `spec.preferDualStack: nil` and `spec.ipFamilies: nil` fields. api-server will default `spec.preferDualStack: false` and `spec.ipFamilies: ['default ip family of the cluster']`.
+2. Set `spec.preferDualStack: false` api-server will default `spec.ipFamilies: ['cluster default ip address family']`.
+3. Set `spec.preferDualStack: nil` and `spec.ipFamilies: ['some ip family']`  api-server will default `spec.preferDualStack: false`. api-server will fail the request if the ip family is not configured on the cluster. 
+4. Set `spec.preferDualStack: false` and `spec.ipFamilies: ['some ip family']` api-server will fail the request if the ip family is not configured on the cluster.
+5. Set `spec.clusterIPs: ['some ip']` api-server will default `spec.preferDualStack:false` and `spec.ipFamilies: ['ip family of spec.clusterIP[0]']`. api-server will fail the request if the ip family is not configured on the cluster or the ip is out of cidr range or ip is already allocated to a different service.
+
+The below are examples that follows the above rules.
 
 ```yaml
+# single stack service in cluster that is  configured with --service-cluster-ip-range=<ipv4 cidr> or --service-cluster-ip-range=<ipv4 cidr>,<ipv6 cidr>
 apiVersion: v1
 kind: Service
 metadata:
   name: my-service
 spec:
-  ipFamily: IPv6
+  type: ClusterIP
+  preferDualStack: false # defaulted
+  ipFamilies: # defaulted
+    - IPv4
+  clusterIP: 1.2.3.4 # allocated
+  clusterIPs: # allocated
+    - 1.2.3.4 
+  selector:
+    app: MyApp
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 9376
+
+# single stack service in cluster that is configured with --service-cluster-ip-range=<ipv6 cidr> or --service-cluster-ip-range=<ipv6 cidr>,<ipv4 cidr>
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-service
+spec:
+  type: ClusterIP
+  preferDualStack: false # defaulted
+  ipFamilies: # defaulted
+    - IPv6
+  clusterIP: 2001::1 # allocated
+  clusterIPs: # allocated
+    - 2001::1
+  selector:
+    app: MyApp
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 9376
+
+# single stack service with required ipv6, request would fail if cluster is not configured with ipv6 cidr (either first or second cidr)
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-service
+spec:
+  type: ClusterIP
+  preferDualStack: false # defaulted
+  ipFamilies: # set by user
+    - IPv6
+  clusterIP: 2001::1 # allocated
+  clusterIPs:
+    - 2001::1
   selector:
     app: MyApp
   ports:
@@ -353,16 +443,127 @@ spec:
       port: 80
       targetPort: 9376
 ```
+> It is implicitly assumed that a service with `spec.preferDualStack: nil` is always a single stack. Users can change this behavior using web hooks.
 
-Dual-stack services (having both an IPv4 and IPv6 cluster IP) are currently out of scope of this proposal. Should there be use-cases where dual-stack Services are needed then we can revisit.
+##### Creating a New Dual Stack Service
+
+Users can create dual stack services according to the following rule
+- If the user require dual stack service (service creation will fail if cluster is not configured for dual stack) then they can do one of the following
+  1. Set `spec.preferDualStack: true` and set `spec.ipFamilies` to any two dual stack ip families in any order.
+  2. set `spec.preferDualStack: true` and set `spec.clusterIPs` to any two dual stack ips in any order.
+  3. set `spec.ipFamilies` to any two dual stack ip families in any order.
+  4. Set `spec.clusterIPs` to any two dual stack ip families in any order.
+- If the user prefer dual stack if available (service creation will not fail if the cluster is not configured for dual stack) then they can do one of the following
+  1. Set `spec.preferDualStack: true` api-server will default `spec.ipFamilies` according to how they are configured on the cluster.
+  2. Set `spec.preferDualStack: true` and set `spec.ipFamilies` to max of one ipfamily. This ipfamily will be treated as the primary ip family for the service. api-server will default `spec.ipFamilies: [ 'family provided by user', 'other family configured on cluster, if any']`.
+  3. Set `spec.preferDualStack: true` and set `spec.clusterIPs` to max of one ip. This ip will be treated as the primary ip for the resultant service (if available for allocation). api-server will default `spec.ipFamilies` and set `spec.clusterIPs: ['ip provided by user', 'allocated ip from cluster secondary ip family']`
+
+
+The below are sample services that demonstrate the above rules
+
+```yaml
+# dual stack service (required)
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-service
+spec:
+  type: ClusterIP
+  preferDualStack: true # set by user
+  ipFamilies: # set by user
+    - IPv4
+    - IPv6
+  clusterIP: 1.2.3.4  # allocated
+  clusterIPs: # allocated
+    - 1.2.3.4
+    - 2001::1
+  selector:
+    app: MyApp
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 9376
+
+# dual stack service (required)
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-service
+spec:
+  type: ClusterIP
+  preferDualStack: true # defaulted
+  ipFamilies: # defaulted
+    - IPv6
+    - IPv4
+  clusterIP: 2001::1  # set by user
+  clusterIPs: # set by user
+    - 2001::1
+    - 1.2.3.4
+  selector:
+    app: MyApp
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 9376
+
+# dual stack service (optional)
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-service
+spec:
+  type: ClusterIP
+  preferDualStack: true # set by user 
+  ipFamilies:
+    - IPv6 # defaulted, cluster does not support dual stack services, only one ipv6 cidr is provided for services
+  clusterIP: 2001::1  # allocated
+  clusterIPs: # allocated
+    - 2001::1 # note single entry
+  selector:
+    app: MyApp
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 9376
+
+# dual stack service (optional)
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-service
+spec:
+  type: ClusterIP
+  preferDualStack: true # set by user 
+  ipFamilies:
+    - IPv6 # set by user
+    - IPv4 # defaulted (cluster supports dual stack)
+  clusterIP: 2001::1  # allocated
+  clusterIPs: # allocated
+    - 2001::1
+    - 1.2.3.4
+  selector:
+    app: MyApp
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 9376
+
+```
+
+##### Notes on NodePort Allocation
+
+NodePort reservation will be constant across both families. That mean a reservation of `NodePort: 12345` will happen across both families irrespective of the ip family of the service. `kube-proxy` will ensure that traffic is routed according to the families assigned for services.
 
 #### Type Headless services
 
-\<TBD\>
+1. For Headless with selector, the value of `spec.preferDualStack` and `spec.ipFamilies` will drive the endpoint selection. Endpoint slice controller will select endpoints with ip families that match the value of these two flags.
+2. For Headless without selector the values of `spec.preferDualStack` and `spec.ipFamilies` are treated as saved as they were provided by the user.
+
+> in both cases the values of `spec.preferDualStack` and `spec.ipFamilies` are validated semantically. 
 
 #### Type ExternalName
 
-\<TBD\>
+For ExternalName service the value of `spec.ipFamilyPolicy` and `spec.ipFamilies` is expected to be `nil`. Values will be set to `nil` by the api-server.
 
 ### Endpoints
 
