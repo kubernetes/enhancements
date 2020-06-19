@@ -1,21 +1,21 @@
 ---
 title: Kubernetes Dual-stack Support
 authors:
-  - "leblancd@"
-  - "rpothier@"
-  - "lachie83@"
-  - "khenidak@"
-  - "feiskyer@"
+  - "@leblancd"
+  - "@rpothier"
+  - "@lachie83"
+  - "@khenidak"
+  - "@feiskyer"
 owning-sig: sig-network
 participating-sigs:
   - sig-cluster-lifecycle
 reviewers:
-  - TBD
+  - "@danwinship"
 approvers:
-  - "thockin@"
+  - "@thockin"
 editor: TBD
 creation-date: 2018-05-21
-last-updated: 2019-10-15
+last-updated: 2020-06-19
 status: implementable
 ---
 
