@@ -1,0 +1,21 @@
+---
+title: Provisioning the Node Resources With NUMA Topology Information
+authors:
+  - "@AlexeyPerevalov"
+  - "@swatisehgal"
+owning-sig: sig-node
+participating-sigs:
+  - sig-node
+  - sig-scheduling
+reviewers:
+  - "@dchen1107"
+  - "@derekwaynecarr"
+approvers:
+  - "@dchen1107"
+  - "@derekwaynecarr"
+creation-date: 2020-06-19
+last-updated: 2020-06-19
+status: implementable
+see-also:
+  - "/keps/sig-scheduling/2044-simplified-topology-manager/README.md"
+---
