@@ -13,8 +13,8 @@ approvers:
   - dchen1107
   - derekwaynecarr
 creation-date: 2019-03-14
-last-updated: 2019-05-20
-status: implementable
+last-updated: 2019-10-22
+status: implemented
 see-also:
   - "/keps/sig-node/runtime-class.md"
 replaces:
@@ -249,10 +249,9 @@ the alpha phase. This means the feature is expected to be beta quality at launch
 
 ## Implementation History
 
+- 2019-09-05: Implement RuntimeClass Scheduling as a beta stage feature. [Umbrella issue](https://github.com/kubernetes/kubernetes/issues/81016)
 - 2019-03-14: Initial KEP published.
-- 2018-10-05: [RuntimeClass Scheduling
-  Brainstorm](https://docs.google.com/document/d/1W51yBNTvp0taeEss56GTk8jczqFJ2d6jBeN6sCSlYZU/edit#)
-  published.
+- 2018-10-05: [RuntimeClass Scheduling Brainstorm](https://docs.google.com/document/d/1W51yBNTvp0taeEss56GTk8jczqFJ2d6jBeN6sCSlYZU/edit#) published.
 
 ## Alternatives
 
