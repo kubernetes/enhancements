@@ -89,6 +89,7 @@ status: implementable
 This proposal adds IPv4/IPv6 dual-stack functionality to Kubernetes clusters.
 This includes the following concepts:
 - Awareness of multiple IPv4/IPv6 address assignments per pod
+- Awareness of multiple IPv4/IPv6 address assignments per service
 - Native IPv4-to-IPv4 in parallel with IPv6-to-IPv6 communications to, from,
   and within a cluster
 
@@ -113,23 +114,20 @@ internal or external to the cluster), the above restrictions mean that complex
 and expensive IPv4/IPv6 transition mechanisms (e.g. NAT64/DNS64, stateless
 NAT46, or SIIT/MAP) will need to be implemented in the data center networking.
 
-One alternative to adding transition mechanisms would be to modify Kubernetes
-to provide support for IPv4 and IPv6 communications in parallel, for both pods
-and services, throughout the cluster (a.k.a. "full" dual-stack).
+One path to adding transition mechanisms would be to modify Kubernetes to
+provide support for IPv4 and IPv6 communications in parallel, for both pods and
+services, throughout the cluster (a.k.a. "full" dual-stack).
 
 A second, simpler alternative, which is a variation to the "full" dual-stack
 model, would be to provide dual-stack addresses for pods and nodes, but
 restrict service IPs to be single-family (i.e. allocated from a single service
 CIDR). In this case, service IPs in a cluster would be either all IPv4 or all
-IPv6, as they are now. Compared to a full dual-stack approach, this "dual-stack
-pods / single-family services" approach saves on implementation complexity, but
-would introduce some minor feature restrictions. (For more details on these
-tradeoffs, please refer to the "Variation: Dual-Stack Service CIDRs" section
-under "Alternatives" below).
+IPv6, as they are now. Please refer to the "Variation: Single-Stack Service
+CIDRs" section under "Alternatives" below).
 
-This proposal aims to add "dual-stack pods / single-family services" support to
-Kubernetes clusters, providing native IPv4-to-IPv4 communication and native
-IPv6-to-IPv6 communication to, from and within a Kubernetes cluster.
+This proposal aims to add "full" dual-stack support to Kubernetes clusters,
+providing native IPv4-to-IPv4 communication and native IPv6-to-IPv6
+communication to, from and within a Kubernetes cluster.
 
 ### Goals
 
@@ -138,26 +136,13 @@ IPv6-to-IPv6 communication to, from and within a Kubernetes cluster.
   external servers
 - NGINX Ingress Controller Access: Access from IPv4 and/or IPv6 external
   clients to Kubernetes services via the Kubernetes NGINX Ingress Controller.
-- Dual-stack support for Kubernetes service NodePorts and ExternalIPs
+- Dual-stack support for Kubernetes service IPs, NodePorts, and ExternalIPs
 - Functionality tested with the Bridge CNI plugin, PTP CNI plugin, and
   Host-Local IPAM plugins as references
 - Maintain backwards-compatible support for IPv4-only and IPv6-only clusters
 
 ### Non-Goals
 
-- Service CIDRs: Dual-stack service CIDRs will not be supported for this
-  proposal. Service access within a cluster will be done via all IPv4 service
-  IPs or all IPv6 service IPs.
-- Single-Family Applications: There may be some some clients or applications
-  that only work with (bind to) IPv4 or or only work with (bind to) IPv6. A
-  cluster can support either IPv4-only applications or IPv6-only applications
-  (not both), depending upon the cluster CIDR's IP family. For example, if a
-  cluster uses an IPv6 service CIDR, then IPv6-only applications will work
-  fine, but IPv4-only applications in that cluster will not have IPv4 service
-  IPs (and corresponding DNS A records) with which to access Kubernetes
-  services. If a cluster needs to support legacy IPv4-only applications, but
-  not IPv6-only applications, then the cluster should be configured with an
-  IPv4 service CIDR.
 - Cross-family connectivity: IPv4-to-IPv6 and IPv6-to-IPv4 connectivity is
   considered outside of the scope of this proposal. (As a possible future
   enhancement, the Kubernetes NGINX ingress controller could be modified to
@@ -168,17 +153,14 @@ IPv6-to-IPv6 communication to, from and within a Kubernetes cluster.
   IPAM plugins may support Kubernetes dual-stack, but the development and
   testing of dual-stack support for these other plugins is considered outside
   of the scope of this proposal.
-- Multiple IPs vs. Dual-Stack: Code changes will be done in a way to facilitate
-  future expansion to more general multiple-IPs-per-pod and
+- Multiple IPs within a single family: Code changes will be done in a way to
+  facilitate future expansion to more general multiple-IPs-per-pod and
   multiple-IPs-per-node support. However, this initial release will impose
   "dual-stack-centric" IP address limits as follows:
   - Pod addresses: 1 IPv4 address and 1 IPv6 addresses per pod maximum
-  - Node addresses: 1 IPv4 address and 1 IPv6 addresses per node maximum
-  - Service addresses: 1 service IP address per service
-- Dual-stack service discovery testing will be performed using coreDNS.
-- External load balancers that rely on Kubernetes services for load balancing
-  functionality will only work with the IP family that matches the IP family of
-  the cluster's service CIDR.
+  - Service addresses: 1 IPv4 address and 1 IPv6 addresses per service maximum
+- External load balancers: Load-balancer providers will be expected to update
+  their implementations.
 - Dual-stack support for Kubernetes orchestration tools other than kubeadm
   (e.g. miniKube, KubeSpray, etc.) are considered outside of the scope of this
   proposal. Communication about how to enable dual-stack functionality will be
@@ -196,17 +178,17 @@ summary of the proposal (details follow in subsequent sections):
 - Link Local Addresses (LLAs) on a pod will remain implicit (Kubernetes will
   not display nor track these addresses).
 - Service Cluster IP Range `--service-cluster-ip-range=` will support the
-  configuration of one IPv4 and one IPV6 address block)
-- Service IPs will be allocated from only a single family (either IPv4 or IPv6
-  as specified in the Service `spec.ipFamily` OR the first configured address
-  block defined via `--service-cluster-ip-range=`).
+  configuration of one IPv4 and one IPV6 address block).
+- Service IPs will be allocated from one or both IP families as requested by
+  the Service `spec` OR from the first configured address range if the service
+  expresses nothing about IP families.
 - Backend pods for a service can be dual-stack.
-- Endpoints addresses will match the address family of the Service IP address
-  family (eg. An IPv6 Service IP will only have IPv6 Endpoints)
+- Endpoints (not EndpointSlice) addresses will match the first address family
+  allocated to the Service (eg. An IPv6 Service IP will only have IPv6
+  Endpoints)
+- EndpointSlices will support endpoints of both IP families.
 - Kube-proxy iptables mode needs to drive iptables and ip6tables in parallel.
-  This is required, even though service IP support is single-family, so that
-  Kubernetes services can be exposed to clients external to the cluster via
-  both IPv4 and IPv6. Support includes:
+  Support includes:
   - Service IPs: IPv4 and IPv6 family support
   - NodePort: Support listening on both IPv4 and IPv6 addresses
   - ExternalIPs: Can be IPv4 or IPv6
@@ -214,17 +196,17 @@ summary of the proposal (details follow in subsequent sections):
   kube-proxy iptables mode as described above. IPVS kube-router support for
   dual-stack, on the other hand, is considered outside of the scope of this
   proposal.
+<<[UNRESOLVED]>>
+Are we still intending to do this:
 - For health/liveness/readiness probe support, the default behavior will not
   change and an additional optional field would be added to the pod
   specification and is respected by kubelet. This will allow application
   developers to select a preferred IP family to use for implementing probes on
   dual-stack pods.
-- The pod status API changes will include a per-IP string map for arbitrary
-  annotations, as a placeholder for future Kubernetes enhancements. This
-  mapping is not required for this dual-stack design, but will allow future
-  annotations, e.g. allowing a CNI network plugin to indicate to which network
-  a given IP address applies. The appropriate hooks will be provided to enable
-  CRI/CNI to provide these details.
+<<[/UNRESOLVED]>>
+- The pod status API changes will leave room for per-IP metadata for future
+  Kubernetes enhancements.  The metadata and enhancements themselves are out of
+  scope.
 - Kubectl commands and output displays will need to be modified for dual-stack.
 - Kubeadm support will need to be added to enable spin-up of dual-stack
   clusters. Kubeadm support is required for implementing dual-stack continuous
@@ -1173,28 +1155,13 @@ IPv6-only mode, and then instantiate the following external to the cluster:
   Kubernetes pods, or to exposed services (e.g. via NodePort or ExternalIPs).
   This may require some static configuration for IPv4-to-IPv6 mappings.
 
-### Variation: Dual-Stack Service CIDRs (a.k.a. Full Dual-stack)
+### Variation: Single-Stack Service CIDRs
 
-As a variation to the "Dual-Stack Pods / Single-Family Services" approach
-outlined above, we can consider supporting IPv4 and IPv6 service CIDRs in
-parallel (a.k.a. the "full" dual-stack approach).
-
-#### Benefits
-
-Providing dual-stack service CIDRs would add the following functionality:
-- Dual-Stack Pod-to-Services. Clients would have a choice of using A or AAAA
-  DNS records when resolving Kubernetes services.
-- Simultaneous support for both IPv4-only and IPv6-only applications internal
-  to the cluster. Without dual-stack service CIDRs, a cluster can support
-  either IPv4-only applications or IPv6-only applications, depending upon the
-  cluster CIDR's IP family. For example, if a cluster uses an IPv6 service
-  CIDR, then IPv4-only applications in that cluster will not have IPv4 service
-  IPs (and corresponding DNS A records) with which to access Kubernetes
-  services.
-- External load balancers that use Kubernetes services for load balancing
-  functionality (i.e. by mapping to service IPs) would work in dual-stack mode.
-  (Without dual-stack service CIDRs, these external load balancers would only
-  work for the IP family that matches the cluster service CIDR's family.)
+As a variation to the "full" Dual-Stack approach, we could consider a simpler
+form which adds dual-stack to Pods but not Services.  The main advantage of
+this model would be lower implementation complexity.  This approach was
+explored and it was determined that it was surprising to users, and the
+complexity was not significantly less.
 
 #### Changes Required
 - [controller-manager startup
