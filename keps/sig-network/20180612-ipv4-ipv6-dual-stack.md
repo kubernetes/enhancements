@@ -48,8 +48,8 @@ status: implementable
     - [Type NodePort, LoadBalancer, ClusterIP](#type-nodeport-loadbalancer-clusterip)
       - [Service Object Mutability Rules](#service-object-mutability-rules)
       - [Impact on pre-existing Services](#impact-on-pre-existing-services)
-      - [Creating a New Single Stack Service](#creating-a-new-single-stack-service)
-      - [Creating a New Dual Stack Service](#creating-a-new-dual-stack-service)
+      - [Creating a New Single-Stack Service](#creating-a-new-single-stack-service)
+      - [Creating a New Dual-Stack Service](#creating-a-new-dual-stack-service)
       - [NodePort Allocations](#nodeport-allocations)
     - [Type Headless services](#type-headless-services)
     - [Type ExternalName](#type-externalname)
@@ -494,7 +494,7 @@ PR #113](https://github.com/containernetworking/plugins/pull/113)):
 ### Services
 
 Services depend on `--service-cluster-ip-range` for `ClusterIP` assignment. A
-dualstack cluster can have this flag configured as either
+dual-stack cluster can have this flag configured as either
 `--services-cluster-ip-range=<cidr>,<cidr>` or
 `--services-cluster-ip-range=<cidr>`. The following rules apply:
 
@@ -511,7 +511,7 @@ dualstack cluster can have this flag configured as either
    cluster will be able to send and receive traffic on both IP families, but
    services which use the `clusterIP` or `ClusterIPs` field will only be able
    to use the IP family of this flag.
-4. When upgrading a cluster to dualstack, the first element of the
+4. When upgrading a cluster to dual-stack, the first element of the
    `--service-cluster-ip-range` flag MUST NOT change IP families.  As an
    example, an IPv4 cluster can safely be upgraded to use
    `--service-cluster-ip-range=<ipv4-cidr>,<ipv6-cidr>`, but can not safely be
@@ -522,27 +522,27 @@ dualstack cluster can have this flag configured as either
    that is not configured on the cluster will result in an error.
 
 > The below discussion assumes that `EndpointSlice and EndpointSlice
-> Controller`  will allow dual stack endpoints, the existing Endpoints
-> controller will remain single stack. That means enabling dual stack services
+> Controller`  will allow dual-stack endpoints, the existing Endpoints
+> controller will remain single-stack. That means enabling dual-stack services
 > by having more than one entry in `--service-cluster-ip-range` without
 > enabling `EndpointSlice` feature gate will result in validation failures
 > during startup.
 
 #### Type NodePort, LoadBalancer, ClusterIP
 
-In a dual stack cluster, Services can be:
-1. Single Stack: service IP are allocated (or reserved, if provided by user)
+In a dual-stack cluster, Services can be:
+1. Single-Stack: service IP are allocated (or reserved, if provided by user)
    from the first or the second CIDR (if configured) entry as configured using
    `--service-cluster-ip-range` flag, in this scenario services will have a
    single allocated `ClusterIP` (also set in `ClusterIPs`).
-2. Dual Stack (optional): service IP is allocated (or reserved, if provided by
+2. Dual-Stack (optional): service IP is allocated (or reserved, if provided by
    user) from both the first and the second CIDR (if configured) entries. In
    this scenario services will have one or two assigned `ClusterIPs`. If the
-   cluster is not configured for dualstack then  the resulting service will be
-   created as a single stack and `ClusterIP/ClusterIPs` will be assigned from a
+   cluster is not configured for dual-stack then  the resulting service will be
+   created as a single-stack and `ClusterIP/ClusterIPs` will be assigned from a
    single family.
-3. Dual Stack (required): if the cluster is not configured for dual stack then
-   service creation will fail. If the cluster is configured for dual stack the
+3. Dual-Stack (required): if the cluster is not configured for dual-stack then
+   service creation will fail. If the cluster is configured for dual-stack the
    resulting service will carry two `ClusterIPs`.
 
 The above is achieved using the following changes to Service api.
@@ -575,12 +575,12 @@ change their `clusterIP` (aka `clusterIPs[0]`) - this is considered as
 from `ClusterIP` to `ExternalName`). The following are additional immutability
 rules
 
-1. Services can change from `Single Stack` to `Dual Stack (required)` or `Dual
+1. Services can change from `Single-Stack` to `Dual-Stack (required)` or `Dual
    Stack (optional)` as described below.
-2. Services can also change `Dual Stack` to `Single Stack`.
+2. Services can also change `Dual-Stack` to `Single-Stack`.
 3. Services can not change the primary service IP `spec.clusterIP` or
    `spec.clusterIPs[0]` because this will break existing mutability rules. This
-   also apply even changing a service from `Single Stack` to `Dual Stack` or
+   also apply even changing a service from `Single-Stack` to `Dual-Stack` or
    the other way around.
 
 ##### Impact on pre-existing Services
@@ -589,9 +589,9 @@ Services which existed before this feature will not be changed, and when read
 through an updated apiserver will appear as single-stack Services, with
 `spec.ipFamilies` set to the cluster's default service address family.
 
-##### Creating a New Single Stack Service
+##### Creating a New Single-Stack Service
 
-Users who want to create a new single stack Service can create it using one of
+Users who want to create a new single-stack Service can create it using one of
 the following methods (in increasing specificity):
 1. Do not set `spec.preferDualStack`, `spec.ipFamilies`, or `spec.clusterIPs`
    fields. The apiserver will default `spec.preferDualStack` to `false`, will
@@ -657,8 +657,8 @@ spec:
     - 1.2.3.4
 ```
 
-If that cluster were configured for IPv6-only (single stack) or IPv6 first
-(dual stack) it would have resulted in:
+If that cluster were configured for IPv6-only (single-stack) or IPv6 first
+(dual-stack) it would have resulted in:
 
 ```yaml
 apiVersion: v1
@@ -724,12 +724,12 @@ spec:
 ```
 
 > It is assumed that any service created with `spec.preferDualStack: false` is
-> single stack. Users can change this behavior using admission control web
-> hooks, if they want to default services to dual stack.
+> single-stack. Users can change this behavior using admission control web
+> hooks, if they want to default services to dual-stack.
 
-##### Creating a New Dual Stack Service
+##### Creating a New Dual-Stack Service
 
-Users can create dual stack services according to the following methods (in
+Users can create-dual stack services according to the following methods (in
 increasing specificity):
 - If the user prefers dual stack (if available, service creation will not fail if
   the cluster is not configured for dual stack) then they can do one of the
@@ -741,16 +741,16 @@ increasing specificity):
   2. Set `spec.preferDualStack` to `true`, set `spec.ipFamilies` to one IP
      family, and do not set `spec.clusterIPs`. The apiserver will set
      `spec.ipFamilies` to the requested family if it is available (otherwise it
-     will fail) and the alternate family if dual stack is configured, and will
+     will fail) and the alternate family if dual-stack is configured, and will
      allocate IPs according to those families.
   3. Set `spec.preferDualStack` to `true`, either do not set `spec.ipFamilies`
      or set it to one IP family, and set `spec.clusterIPs` to one IP.
      The apiserver will default `spec.ipFamilies` to the family of
-     `clusterIPs[0]` and the alternate family if dual stack is configured, will
+     `clusterIPs[0]` and the alternate family if dual-stack is configured, will
      reserve the specified IP if possible, and will allocate a second IP of the
-     alternate family if dual stack is configured.
-- If the user *requires* dual stack service (service creation will fail if cluster
-  is not configured for dual stack) then they can do one of the following:
+     alternate family if dual-stack is configured.
+- If the user *requires* dual-stack service (service creation will fail if cluster
+  is not configured for dual-stack) then they can do one of the following:
   1. Either don't set `spec.preferDualStack` or set it to `true`, and set
      `spec.ipFamilies` to the two IP families in any order.
   2. Either don't set `spec.preferDualStack` or set it to `true`, and set
@@ -758,7 +758,7 @@ increasing specificity):
 
 The below are sample services that demonstrate the above rules.
 
-Given a cluster configured for dual stack as `<ipv4-cidr>,<ipv6-cidr>`, this
+Given a cluster configured for dual-stack as `<ipv4-cidr>,<ipv6-cidr>`, this
 input:
 
 ```yaml
@@ -805,7 +805,7 @@ spec:
     - 2001::1
 ```
 
-If the cluster had not been configured for dual stack, this would have failed.
+If the cluster had not been configured for dual-stack, this would have failed.
 The user could have specified `ipFamilies` in the alternate order, and the
 allocated `clusterIPs` would have switched, too.
 
@@ -827,7 +827,7 @@ spec:
   preferDualStack: true # set by user
 ```
 
-...would produce the following result on a single stack IPv6 cluster:
+...would produce the following result on a single-stack IPv6 cluster:
 
 ```yaml
 apiVersion: v1
@@ -850,7 +850,7 @@ spec:
     - 2001::1           # note single entry
 ```
 
-On an IPv6-IPv4  dual stack cluster it would have produced:
+On an IPv6-IPv4  dual-stack cluster it would have produced:
 
 ```yaml
 apiVersion: v1
@@ -879,7 +879,7 @@ spec:
 
 NodePort reservations will apply across both families. That means a
 reservation of `NodePort: 12345` will happen on both families, irrespective
-of the IP family of the service. A single service which is dual stack may use
+of the IP family of the service. A single service which is dual-stack may use
 the same NodePort on both families.  `kube-proxy` will ensure that traffic is
 routed according to the families assigned for services.
 
@@ -1029,7 +1029,7 @@ hosted on baremetal clusters, with little or no changes.
 ### Load Balancer Operation
 
 External load balancers that rely on Kubernetes services for load balancing
-functionality may implement dual stack support, but are not required to.  Some
+functionality may implement dual-stack support, but are not required to.  Some
 implementations will need to instantiate two distinct LBs (e.g. in a cloud).
 If the cloud provider load balancer maps directly to the pod IPs then a
 dual-stack load balancer could be used. Additional information may need to be
