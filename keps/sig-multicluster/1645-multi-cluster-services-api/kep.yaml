@@ -5,10 +5,14 @@ authors:
 owning-sig: sig-multicluster
 participating-sigs:
   - sig-network
-status: provisional
+status: implementable
 creation-date: 2020-03-30
 reviewers:
-  - TBD
+  - "@johnbelamaric"
+  - "@janetkuo"
+  - "@danwinship"
+  - "@deads2k"
+  - "@liggitt"
 approvers:
   - "@pmorie"
   - "@thockin"
