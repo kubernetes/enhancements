@@ -105,7 +105,7 @@ short.
 
 ### 2) Change the names of KEPs
 
-The date-format in the name is not very human friendly and doesn't do anything
+The date-format in the name is not very human-friendly and doesn't do anything
 for machines.  Instead, we propose to use the issue number of the enhancement
 issue as the KEP number.  KEP names would now be:
 `1234-short-human-friendly-string`.  This makes them easier to reference and
@@ -114,8 +114,8 @@ change existing KEPs, so as to not break external links to them.
 
 ### 3) Move KEPs from flat-files to a directory structure
 
-It's sometimes useful to have secondary documents alongside a KEP, for example
-image files.  To make this cleaner, new KEPs will be created in their own
+It's sometimes useful to have secondary documents—for example,
+image files—alongside a KEP.  To make this cleaner, new KEPs will be created in their own
 sub-directories of the SIG-specific directories. As per the above, a KEPs
 directory would be named as `1234-short-human-friendly-string`.  Inside that
 directory, the body of the KEP would be `README.md`.  Supporting documents and
@@ -144,7 +144,7 @@ The `superseded-by` field is never set and can be implied by the corresponding
 ### 6) Formalize one-enhancement == one-KEP
 
 There has been debate about whether a new KEP is needed to move a feature from beta
-to GA.  This proposal defines that one feature or enahancement gets one KEP,
+to GA.  This proposal defines that one feature or enhancement gets one KEP,
 which is updated over its whole lifecycle.
 
 ### 7) Adjust GitHub tooling for KEPs
@@ -164,9 +164,9 @@ which is updated over its whole lifecycle.
 - [ ] Create tombstones / redirects to [k/enhancements]
 - [ ] Prevent new KEPs and design proposals from landing in [k/community]
 - [ ] Remove `kind/kep` from [k/community] once KEP migration is complete
-- [x] Correlate existing Feature tracking issues with links to KEPs
+- [x] Correlate existing feature tracking issues with links to KEPs
 - [x] Fix [KEP numbering races] by using the GitHub issue number of the KEP tracking issue
-- [ ] Coordination of existing KEPs to use new directory structure (with SIG PM guidance per SIG)
+- [ ] Coordination of existing KEPs to use new directory structure
 
 [k/community]: http://git.k8s.io/community
 [k/enhancements]: http://git.k8s.io/enhancements
@@ -175,7 +175,7 @@ which is updated over its whole lifecycle.
 ### Risks and Mitigations
 
 Changing conventions makes for inconsistency.  We believe the quality-of-life
-improvements make these changes worthile anyway.
+improvements make these changes worthwhile anyway.
 
 ## Design Details
 
@@ -189,7 +189,7 @@ N/A
 
 ### Graduation Criteria
 
-Throughout implementation, we will be reaching out across the project to SIG
+Throughout implementation, we will reach out across the project to SIG
 leadership, approvers, and reviewers to capture feedback.
 
 ### Upgrade / Downgrade Strategy
@@ -217,14 +217,14 @@ N/A
 ## Drawbacks
 
 Changing conventions makes for inconsistency.  We believe the quality-of-life
-improvements make these changes worthile anyway.
+improvements make these changes worthwhile anyway.
 
 ## Alternatives
 
 There are many partial solutions to these problems.
 
 Leaving unresolved text out completely or HTML-commented could work, but we
-feel it is more useful to actually show that text and emphasize it's
+feel it is more useful to actually show that text and emphasize its
 non-resolvedness.
 
 Renaming KEPs without making subdirectories incurs most of the same pain with
