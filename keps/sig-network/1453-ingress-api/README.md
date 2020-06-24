@@ -127,7 +127,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [1.18](#118)
   - [1.19](#119)
   - [1.20](#120)
-  - [1.21](#121)
+  - [1.22](#122)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
 - [Appendix](#appendix)
@@ -1212,7 +1212,7 @@ Major milestones might include
 - [ ] Evangelize availability of v1 Ingress API to out-of-org Ingress
       controllers
 
-### 1.21
+### 1.22
 
 - [ ] Remove ability to serve `extensions/v1beta1` and
   `networking.k8s.io/v1beta1` Ingress resources (preserve ability to
