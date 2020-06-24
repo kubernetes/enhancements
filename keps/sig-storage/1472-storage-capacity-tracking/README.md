@@ -717,6 +717,9 @@ checks for events that describe the problem.
     [ignoring storage class
     parameters](#storage-class-parameters-that-never-affect-capacity))
   - [advanced storage placement](https://github.com/kubernetes/enhancements/pull/1347)
+  - [usage of NodeSelector without supporting fields](https://github.com/kubernetes/kubernetes/pull/91939/files#r443081515):
+    either add field support in a generic way or use a different type that
+    does not have filtering by fields
 - Tests are in Testgrid and linked in KEP
 
 #### Beta -> GA Graduation
