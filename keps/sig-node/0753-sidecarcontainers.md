@@ -92,7 +92,25 @@ Check these off as they are completed for the Release Team to track. These check
 
 ## Summary
 
-To solve the problem of container lifecycle dependency we can create a new class of container: a "sidecar container" that behaves primarily like a normal container but is handled differently during termination and startup.
+This KEP adds the notion of sidecar containers to Kubernetes. This KEP proses
+to add a `type` field to the `containers` array in the `pod.spec` to define if a
+container is a sidecar container. The only valid value for now is `sidecar`, but
+other values can be added in the future if needed.
+
+Pods with sidecar containers only change the behavior of the startup and
+shutdown sequence of a pod: sidecar container are started before non-sidecars
+and stopped after non-sidecars.
+
+A pod that has sidecar containers guarantees that non-sidecar containers are
+started only after sidecar containers are started and are in a ready state.
+Furthermore, we propose to treat sidecar containers as regular (non-sidecar)
+containers as much as possible all over the code, except for the mentioned
+special startup and shutdown behavior. The rest of the pod lifecycle (regarding
+restarts, etc.) remains unchanged, this KEP aims to modify only the startup and
+shutdown behavior.
+
+If a pod doesn't have a sidecar container, the behavior is completely unchanged
+by this proposal.
 
 ## Prerequisites
 
