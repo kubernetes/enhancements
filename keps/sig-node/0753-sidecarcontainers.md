@@ -55,6 +55,12 @@ status: provisional
   - [Version Skew Strategy](#version-skew-strategy)
 - [Implementation History](#implementation-history)
 - [Alternatives](#alternatives)
+  - [Add a pod.spec.SidecarContainers array](#add-a-podspecsidecarcontainers-array)
+  - [Mark one container as the Primary Container](#mark-one-container-as-the-primary-container)
+  - [Boolean flag on container, Sidecar: true](#boolean-flag-on-container-sidecar-true)
+  - [Mark containers whose termination kills the pod, terminationFatalToPod: true](#mark-containers-whose-termination-kills-the-pod-terminationfataltopod-true)
+  - [Add &quot;Depends On&quot; semantics to containers](#add-depends-on-semantics-to-containers)
+  - [Pre-defined phases for container startup/shutdown or arbitrary numbers for ordering](#pre-defined-phases-for-container-startupshutdown-or-arbitrary-numbers-for-ordering)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -314,9 +320,96 @@ Older Kubelets should still be able to schedule Pods that have sidecar container
 [stalled]: https://github.com/kubernetes/enhancements/issues/753#issuecomment-597372056
 
 ## Alternatives
+This section contains ideas that were originally discussed but then dismissed in favour of the current design.
+It also includes some links to related discussion on each topic to give some extra context, however not all decisions are documented in Github prs and may have been discussed in sig-meetings or in slack etc.
+### Add a pod.spec.SidecarContainers array
+An early idea was to have a separate list of containers in a similar style to init containers, they would have behaved in the same way that the current KEP details. The reason this was dismissed was due to it being considered too large a change to the API that would require a lot of updates to tooling, for a feature that in most respects would act the same as a normal container.
 
-One alternative would be to have a new field in the Pod Spec of `sidecarContainers:` where you could define a list of sidecar containers, however this would require more work in terms of updating tooling/kubelet to support this.
+```yaml
+initContainers:
+  - name: myInit
+containers:
+  - name: myApp
+sidecarContainers:
+  - name: mySidecar
+```
+Discussion links:
+https://github.com/kubernetes/community/pull/2148#issuecomment-388813902
+https://github.com/kubernetes/community/pull/2148#discussion_r221103216
 
-Another alternative would be to change the Job Spec to have a `primaryContainer` field to tell it which containers are important. However I feel this is perhaps too specific to job when this Sidecar concept could be useful in other scenarios.
+### Mark one container as the Primary Container
+The primary container idea was specific to solving the issue of Jobs that don't complete with a sidecar, the suggestion was to have one container marked as the primary so that the Job would get completed when that container has finished. This was dismissed as it was too specific to Jobs whereas the more generic issues of sidecars could be useful in other places.
+```yaml
+kind: Job
+spec:
+  template:
+    spec:
+      containers:
+      - name: worker
+        command: ["do a job"]
+      - name: "sidecar"
+        command: ["help"]
+  backoffLimit: 4
+  primaryContainer: worker
+```
+Discussion links:
+https://github.com/kubernetes/community/pull/2148#discussion_r192846570
 
-A boolean flag of `sidecar: true` could be used to indicate which pods are sidecars, however this prevents additional ContainerLifecycles from being added in the future.
+### Boolean flag on container, Sidecar: true
+```yaml
+containers:
+  - name: myApp
+  - name: mySidecar
+    sidecar: true
+```
+A boolean flag of `sidecar: true` could be used to indicate which pods are sidecars, this was dismissed as it was considered too specific and potentially other types of container lifecycle may want to be added in the future.
+
+### Mark containers whose termination kills the pod, terminationFatalToPod: true
+This suggestion was to have the ability to mark certain containers as critical to the pod, if they exited it would cause the other containers to exit. While this helped solve things like Jobs it didn't solve the wider issue of ordering startup and shutdown.
+
+```yaml
+containers:
+  - name: myApp
+    terminationFatalToPod: true
+  - name: mySidecar
+```
+Discussion links:
+https://github.com/kubernetes/community/pull/2148#issuecomment-414806613
+
+### Add "Depends On" semantics to containers
+Similar to [systemd](https://www.freedesktop.org/wiki/Software/systemd/) this would allow you to specify that a container depends on another container, preventing that container from starting until the container it depends on has also started. This could also be used in shutdown to ensure that the containers which have dependent containers are only terminated after their dependents have all safely shut down.
+```yaml
+containers:
+  - name: myApp
+    dependsOn: mySidecar
+  - name: mySidecar
+```
+This was rejected as the UX was considered to be overly complicated for the use cases that we were trying to solve. It also doesn't solve the problem of Job termination where you want the sidecars to be terminated once the main containers have exited, to do that you would require some additional fields that would further complicate the UX.
+Discussion links:
+https://github.com/kubernetes/community/pull/2148#discussion_r203071377
+
+### Pre-defined phases for container startup/shutdown or arbitrary numbers for ordering
+There were a few variations of this but they all had a similar idea which was the ability to order both the shutdown and startup of containers using phases or numbers to determine the ordering.
+examples:
+```yaml
+containers:
+  - name: myApp
+    StartupPhase: default
+  - name: mySidecar
+    StartupPhase: post-init
+```
+
+```yaml
+containers:
+  - name: myApp
+    startupOrder: 2
+    shutdownOrder: 1
+  - name: mySidecar
+    startupOrder: 2
+    shutdownOrder: 1
+  ```
+This was dismissed as the UX was considered overly complex for the use cases we were trying to enable and also lacked the semantics around container shutdown triggering for things like Jobs.
+Discussion links:
+https://github.com/kubernetes/community/pull/2148#issuecomment-424494976
+https://github.com/kubernetes/community/pull/2148#discussion_r221094552
+https://github.com/kubernetes/enhancements/pull/841#discussion_r257906512
