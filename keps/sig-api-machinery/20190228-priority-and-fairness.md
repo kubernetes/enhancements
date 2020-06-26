@@ -677,18 +677,17 @@ called bit-by-bit round-robin (BR), in which the transmitter serves
 the queues in a round-robin fashion but advances from one queue to the
 next not on packet boundaries but rather on bit boundaries.  We define
 a function of time R(t) that counts the number of "rounds" completed,
-where a round is sending one bit from each non-empty queue.  Thus R(t)
-is
+where a round is sending one bit from each non-empty queue.  We also
+define `NAQ(a time)` to be the number of "active" or "non-empty"
+queues at that time in the virtual world (there is a precise
+formulation later).  With these definitions in hand we can see that
 
 ```
-Integral[from tau=start_of_story to tau=t] (
-    if NAC(tau) > 0 then mu_single / NAC(tau) else 0) dtau
+R(t) = Integral[from tau=start_of_story to tau=t] (
+    if NAQ(tau) > 0 then mu_single / NAQ(tau) else 0) dtau
 ```
 
-where `NAC(a time)` is the number of "active" or "non-empty" queues at
-that time, defined precisely below.
-
-We define start and finish R values for each packet:
+Next we define start and finish R values for each packet:
 
 ```
 S(i,j) = max(F(i,j-1), R(t_arrive(i,j)))
@@ -701,9 +700,9 @@ where:
 - `len(i,j)` is the number of bits in that packet, and
 - `t_arrive(i,j)` is the time when that packet arrived.
 
-We define `NAC(t)` to be the number of queues `i` for which `R(t) <=
-F(i,j)` where `j` is the last packet of queue `i` to arrive at or
-before `t`.
+Now we can define `NAQ(t)` precisely: it is the number of queues `i`
+for which there exists a `j` such that `R(t) <= F(i,j)` and
+`t_arrive(i,j) <= t`.
 
 When it is time to start transmitting the next packet in the real
 world, we pick the unsent packet with the smallest `F` value.  If
@@ -826,7 +825,9 @@ F(i,j) = S(i,j) + len(i,j)
 It is not necessary to track the B and E values for every unsent
 packet in the virtual world.  It suffices to track, for each queue
 `i`, the following things in the virtual world:
-- the contents of the queue
+- the packets that have not yet finished transmission
+  (this is a superset of the packets that have not yet finished transmission
+   in the real world);
 - B of the packet currently being sent
 - bits of that packet sent so far: `Integral[from tau=B to tau=now] mu(i,tau) dtau`
 
@@ -834,8 +835,8 @@ At any point in time the E of the packet being sent can be calculated,
 under the assumption that `mu(i,t)` will henceforth be constant, by
 adding to the current time the quotient of (remaining bits to send) /
 `mu(i,t)`.  The E of the packet after that can be calculated by
-further adding the quotient (size of packet) / `mu(i,t)`.  This E is
-the value used to pick the next packet to send in the real world.
+further adding the quotient (size of packet) / `mu(i,t)`.  One of
+those two packets is the next one to send in the real world.
 
 If we are satisfied with an O(num queues) cost to react to advancing
 the clock or picking a request to dispatch then a direct
@@ -843,13 +844,13 @@ implementation of the above works.
 
 It is possible to reduce those costs to O(log(num queues)) by
 leveraging the above correspondence to work with R values and keep the
-queues in a data structure sorted by F of the next packet to transmit
-in the virtual world.  There will be two classes of queues: those that
-do not and those that do have a packet waiting to start transmission
-in the virtual world.  It is the latter class that is kept in a data
-structure sorted by the F of that packet.  Such a packet's F does not
-change as the system evolves over time, so an incremental step
-requires only manipulating the queue and packet directly involved.
+queues in a data structure sorted by the F of the next packet to
+finish transmission in the virtual world.  There will be two classes
+of queues: those that do not and those that do have a packet waiting
+to start transmission in the real world.  It is the latter class that
+is kept in the data structure.  A packet's F does not change as the
+system evolves over time, so an incremental step requires only
+manipulating the queue and packet directly involved.
 
 ##### From one to many
 
@@ -871,9 +872,17 @@ That complexity is:
 
 We can keep the same virtual transmission scheduling scheme as in the
 single-link world --- that is, each queue sends one packet at a time
-in the virtual world.  This looks a little unreal but that is
-immaterial and keeps the logic simple; we can use the same B and E
-equations.
+in the virtual world.  We do this even though a queue can have
+multiple packets being sent at a given moment in the real world.  This
+has the virtue of keeping the logic relatively simple; we can use the
+same equations for B and E.  In a world where different packets can
+have very different lengths, this choice of virtual transmission
+schedule looks dubious.  But once we get to the last step below, where
+are talking about serving requests that all have the same guessed
+service duration, this virtual transmission schedule does not look so
+unreasonable.  If some day we wish to make request-specific guesses of
+service duration then we can revisit the virtual transmission
+schedule.
 
 However, the greater diversity of `mu(i,t)` values breaks the
 correspondence with the original story.  We can still define `R(t) =
@@ -897,16 +906,16 @@ costs O(m log n), where m is the number of queues moved and n is the
 number of queues in the larger class.  The details are as follows.
 
 For queues where `rho(i,t) <= mu_fair(t)` we can keep track of the
-predicted E for the next packet to begin transmitting.  As long as
+predicted E for the packet virtually being transmitted.  As long as
 that queue's `rho` remains less than or equal to `mu_fair`, these E
 predictions do not change.  We can keep these queues in a data
 structure sorted by those E predictions.
 
 For queues `i` where `mu_fair(t) <= rho(i,t)` we can keep track of the
-F (that is, `R(E)`) of the next packet to begin transmitting.  As long
-as `mu_fair` remains less than or equal to that queue's `rho`, that F
-does not change.  We can keep these queues in a data structure sorted
-by those F predictions.
+F (that is, `R(E)`) of the packet virtually being transmitted.  As
+long as `mu_fair` remains less than or equal to that queue's `rho`,
+that F does not change.  We can keep these queues in a data structure
+sorted by those F predictions.
 
 When a stimulus --- that is, packet arrival or virtual completion ---
 changes `mu_fair(t)` or some `rho(i,t)` in such a way that some queues
@@ -930,9 +939,10 @@ length measured in bits, we have a request with a service duration
 measured in seconds.  The units change: `mu_single` and `mu_i` are no
 longer in bits per second but rather are in service-seconds per
 second; we call this unit "seats" for short.  We now say `mu_single`
-is 1 seat.  As before, when it is time to dispatch the next request in
-the real world we pick one that would finish soonest in the virtual
-world, using round-robin ordering to break ties.
+is 1 seat.  As before: when it is time to dispatch the next request in
+the real world we pick from the queue whose current packet
+transmission would finish soonest in the virtual world, using
+round-robin ordering to break ties.
 
 ##### Not knowing service duration up front
 
