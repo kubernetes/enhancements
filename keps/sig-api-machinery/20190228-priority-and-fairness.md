@@ -784,7 +784,7 @@ predicting the course of `mu(i,t)` from now until E arrives.  However,
 because all the non-empty queues have the same value for `mu(i,t)`
 (i.e., `mu_fair(t)`), we can safely make whatever assumption we want
 without distorting the dispatching choice --- all non-empty queues are
-affected equally.
+affected equally, so even wildly wrong guesses don't change the ordering.
 
 The correspondence with the original telling of the fair queuing story
 goes as follows.  Equate
