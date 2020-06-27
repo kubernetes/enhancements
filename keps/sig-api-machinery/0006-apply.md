@@ -322,7 +322,7 @@ field.
 
 The webhooks will be called for the subresource and parent using the same
 admission context, such that the original user is represented in the admission
-attributes. Webhooks will opt-in to this behavior on subresources in the
+attributes. Webhooks will opt-in to the new behavior (of being called for subresources, too) in the
 registration.
 
 The webhooks will be called in the following order, considering a request to
