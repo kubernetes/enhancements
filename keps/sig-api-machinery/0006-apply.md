@@ -44,6 +44,9 @@ superseded-by:
       - [Proposed Change](#proposed-change)
       - [Alternatives](#alternatives)
       - [Implementation History](#implementation-history)
+    - [Fix Admission Chain for Resource-Type Subresources](#fix-admission-chain-for-resource-type-subresources)
+      - [Current Behavior](#current-behavior-1)
+      - [Proposed Change](#proposed-change-1)
   - [Risks and Mitigations](#risks-and-mitigations)
   - [Testing Plan](#testing-plan)
 - [Graduation Criteria](#graduation-criteria)
@@ -301,58 +304,66 @@ The conversion between the two and creating the diff was complex and would have 
 
 - 12/2019 [#86083](https://github.com/kubernetes/kubernetes/pull/86083) implementing a poc for the described approach
 
-#### Fix Admission Chain for Subresources
+#### Fix Admission Chain for Resource-Type Subresources
 
 ##### Current Behavior
 
-Currently, the admission chain on a subresource is not propagated for the parent
-resource.
+Resource-type subresources (e.g. /status, /scale) provide access to views of a
+parent resource and may modify the parent resource. Passthrough-type
+subresources (e.g. /proxy, /exec, /logs) are operations other than CRUD on the
+parent resource.
 
-When a user makes a request to a subresource, then admission webhooks and
-validation are skipped on the parent, and we don't have the user information to
-set the field manager for the parent.
+Currently, the admission chain for modifications with a subresource is not
+propagated through to the parent resource. This is important for tracking field
+ownership for resource-type subresources that modify the parent resource.
 
-For example, a validating webhook on Deployments to enforce a replica policy
-can be bypassed by any /scale subresource request because
-the webhook admission chain is called only for the subresource. We cannot track
-that the user who made the request to the /scale resource owns the replicas
-field.
+API requests to subresources are only intercepted by webhooks that registered
+for the subresource, not webhooks that registered for the parent resource.
+
+For example, a validating webhook on Deployments to enforce a replica policy can
+be bypassed by any /scale subresource request. The webhook admission chain is
+called only for the subresource, but not its parent. We cannot track that the
+user who made the request to the /scale resource owns the replicas field.
 
 ##### Proposed Change
 
 The webhooks will be called for the subresource and parent using the same
 admission context, such that the original user is represented in the admission
-attributes. Webhooks will opt-in to the new behavior (of being called for subresources, too) in the
-registration.
+attributes. For compatibility, webhooks will opt-in to the new behavior (of
+being called for subresources, too) in the registration.
 
-The webhooks will be called in the following order, considering a request to
-`/foo/scale` as an example:
-1. mutating webhooks will be called on the included subresource (/foo/scale)
-2. mutating webhooks will be called on the parent (/foo)
-3. optionally, mutating webhooks will be called a second time in the same order
-   (1), then (2) (/foo/scale, then /foo)
-4. validating webhooks will be called in parallel for the subresource and parent
-   (/foo/scale and /foo simultaneously)
+The webhooks will be called in the order below, considering a request to
+`/foo/scale` as an example.
 
-Note that when applying mutating webhooks on the included subresources (1),
-then any modification attempts to implicitly modify fields of the parent that
-are not explicitly fields of the subresource will be discarded before writing to
+1.  Mutating webhooks will be called on the included subresource (/foo/scale).
+1.  Mutating webhooks will be called on the parent. (/foo)
+1.  Optionally, mutating webhooks will be called a second time in the same order
+    (1), then (2) (/foo/scale, then /foo). We already do this for mutating
+    webhooks.
+1.  Validating webhooks will be called in parallel for the subresource and
+    parent (/foo/scale and /foo simultaneously). We already do this for
+    validating webhooks.
+
+Note that when applying mutating webhooks on the included subresources (1), then
+any modification attempts to implicitly modify fields of the parent that are not
+explicitly fields of the subresource will be discarded before writing to
 storage.
 
-After webhooks and validation pass, then we'll use the user in the
-admission context to properly track the field manager for server-side apply when
-writing the parent to storage.
+After webhooks and validation pass, then we'll use the user in the admission
+context to properly track the field manager for server-side apply when writing
+the parent to storage.
 
-We'll add the new field `includeSubresources` to the admission webhook
-configurations to indicate that when a user makes a request to a webhook,
-then the webhook will be called on the subresource and its parent.
-This field will accept a list of subresource names, with support for wildcard matches.
+For compatibility, we will make this behavior opt-in. We'll add the new field
+`includeSubresources` to the admission webhook configurations to indicate that
+when a user makes a request to a webhook, then the webhook will be called on the
+subresource and its parent. This field will accept a list of subresource names,
+with support for wildcard matches.
 
 For example, `includeSubresources: ["*"]` would call a webhook on any
 subresource and its parent when a user makes a request to any subresource.
 
-An example below is included for a validating webhook configuration
-as policy on replicas for Deployments.
+An example below is included for a validating webhook configuration as policy on
+replicas for Deployments.
 
 ```yaml
 apiVersion: admissionregistration.k8s.io/v1
