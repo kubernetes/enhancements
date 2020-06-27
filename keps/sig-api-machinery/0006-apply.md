@@ -314,7 +314,7 @@ set the field manager for the parent.
 
 For example, a validating webhook on Deployments to enforce a replica policy
 can be bypassed by any /scale subresource request because
-the webhook admission chain is not called on the subresource. We cannot track
+the webhook admission chain is called only for the subresource. We cannot track
 that the user who made the request to the /scale resource owns the replicas
 field.
 
