@@ -546,7 +546,8 @@ In a dual-stack cluster, Services can be:
    resulting service will carry two `ClusterIPs`.
 
 The above is achieved using the following changes to Service api.
-1. Add a `spec.preferDualStack` optional boolean field.
+1. Add a `spec.ipFamilyPolicy` optional field with `SingleStack`, `PreferDualStack`, 
+   and `RequireDualStack` as possible values.
 2. Add a `spec.ipFamilies[]` optional field with possible values of
    `nil`, `["IPv4"]`, `["IPv6"]`, `["IPv4", "IPv6"]`, or `["IPv6", "IPv4"]`.
    This field identifies the desired IP families of a service. The apiserver
@@ -587,28 +588,34 @@ rules
 
 Services which existed before this feature will not be changed, and when read
 through an updated apiserver will appear as single-stack Services, with
-`spec.ipFamilies` set to the cluster's default service address family.
+`spec.ipFamilies` set to the cluster's default service address family. The above applies
+on all types of services except
 
+1. Headless services with no selector: they will be defaulted to `spec.ipFamilyPolicy: PreferDualStack`
+and `spec.IPFamilies[ 'IPv4', 'IPv6']`.
+2. `ExternalName` services: they will be defaulted to `nil` to all the new fields
+
+ 
 ##### Creating a New Single-Stack Service
 
 Users who want to create a new single-stack Service can create it using one of
 the following methods (in increasing specificity):
-1. Do not set `spec.preferDualStack`, `spec.ipFamilies`, or `spec.clusterIPs`
-   fields. The apiserver will default `spec.preferDualStack` to `false`, will
+1. Do not set `spec.ipFamilyPolicy`, `spec.ipFamilies`, or `spec.clusterIPs`
+   fields. The apiserver will default `spec.ipFamilyPolicy` to `SingleStack`, will
    assign `spec.ipFamilies` to the cluster's default IP family, and will
    allocate a `clusterIP` of that same family.
-2. Set `spec.preferDualStack:` to `false` and do not set `spec.ipFamilies`, or
+2. Set `spec.ipFamilyPolicy:` to `SingleStack` and do not set `spec.ipFamilies`, or
    `spec.clusterIPs`.  This is the same as case 1, above
-3. Either do not set `spec.preferDualStack` or set it to `false` and
+3. Either do not set `spec.ipFamilyPolicy` or set it to `SingleStack` and
    `spec.ipFamilies` to a one-element list containing a valid IP family value.
-   The apiserver will default `spec.preferDualStack: false`. and will try to
+   The apiserver will default `spec.ipFamilyPolicy: SingleStack`. And it will try to
    allocate a `clusterIP` of the specified family.  It will fail the
    request if the requested IP family is not configured on the cluster.
-4. Either do not set `spec.preferDualStack` or set it to `false`, either do not
+4. Either do not set `spec.ipFamilyPolicy` or set it to `SingleStack`, either do not
    set `spec.ipFamilies` or set to to a valid IP family value, and set
    `spec.clusterIPs` to a valid IP address.  Assuming that all specified values
-   are internally consistent, the apiserver will default `spec.preferDualStack:
-   false` and `spec.ipFamilies: ['family-of-clusterIPs[0]']`. It will fail the
+   are internally consistent, the apiserver will default `spec.ipFamilyPolicy:
+   SingleStack` and `spec.ipFamilies: ['family-of-clusterIPs[0]']`. It will fail the
    request if the IP family is not configured on the cluster, if the IP is out
    of CIDR range, or if the IP is already allocated to a different service.
 
@@ -649,11 +656,11 @@ spec:
     - protocol: TCP
       port: 80
       targetPort: 9376
-  preferDualStack: false # defaulted
-  ipFamilies:            # defaulted
+  ipFamilyPolicy: SingleStack # defaulted
+  ipFamilies:                 # defaulted
     - IPv4
-  clusterIP: 1.2.3.4     # allocated
-  clusterIPs:            # allocated
+  clusterIP: 1.2.3.4          # allocated
+  clusterIPs:                 # allocated
     - 1.2.3.4
 ```
 
@@ -673,11 +680,11 @@ spec:
     - protocol: TCP
       port: 80
       targetPort: 9376
-  preferDualStack: false # defaulted
-  ipFamilies:            # defaulted
+  ipFamilyPolicy: SingleStack # defaulted
+  ipFamilies:                 # defaulted
     - IPv6
-  clusterIP: 2001::1     # allocated
-  clusterIPs:            # allocated
+  clusterIP: 2001::1          # allocated
+  clusterIPs:                 # allocated
     - 2001::1
  ```
 
@@ -715,15 +722,15 @@ spec:
     - protocol: TCP
       port: 80
       targetPort: 9376
-  preferDualStack: false # defaulted
-  ipFamilies:            # set by user
+  ipFamilyPolicy: SingleStack # defaulted
+  ipFamilies:                 # set by user
     - IPv6
-  clusterIP: 2001::1     # allocated
+  clusterIP: 2001::1          # allocated
   clusterIPs:
     - 2001::1
 ```
 
-> It is assumed that any service created with `spec.preferDualStack: false` is
+> It is assumed that any service created with `spec.ipFamilyPolicy: nil` is
 > single-stack. Users can change this behavior using admission control web
 > hooks, if they want to default services to dual-stack.
 
@@ -731,19 +738,19 @@ spec:
 
 Users can create-dual stack services according to the following methods (in
 increasing specificity):
-- If the user prefers dual stack (if available, service creation will not fail if
+- If the user *prefers* dual stack (if available, service creation will not fail if
   the cluster is not configured for dual stack) then they can do one of the
   following:
-  1. Set `spec.preferDualStack` to `true` and do not set `spec.ipFamilies` or
+  1. Set `spec.ipFamilyPolicy` to `PreferDualStack` and do not set `spec.ipFamilies` or
      `spec.clusterIPs`. The apiserver will set `spec.ipFamilies` according to
      how the cluster is configured, and will allocate IPs according to those
      families.
-  2. Set `spec.preferDualStack` to `true`, set `spec.ipFamilies` to one IP
+  2. Set `spec.ipFamilyPolicy` to `PreferDualStack`, set `spec.ipFamilies` to one IP
      family, and do not set `spec.clusterIPs`. The apiserver will set
      `spec.ipFamilies` to the requested family if it is available (otherwise it
      will fail) and the alternate family if dual-stack is configured, and will
      allocate IPs according to those families.
-  3. Set `spec.preferDualStack` to `true`, either do not set `spec.ipFamilies`
+  3. Set `spec.ipFamilyPolicy` to `PreferDualStack`, either do not set `spec.ipFamilies`
      or set it to one IP family, and set `spec.clusterIPs` to one IP.
      The apiserver will default `spec.ipFamilies` to the family of
      `clusterIPs[0]` and the alternate family if dual-stack is configured, will
@@ -751,9 +758,12 @@ increasing specificity):
      alternate family if dual-stack is configured.
 - If the user *requires* dual-stack service (service creation will fail if cluster
   is not configured for dual-stack) then they can do one of the following:
-  1. Either don't set `spec.preferDualStack` or set it to `true`, and set
+  1. set `spec.ipFamilyPolicy` to `RequireDualStack` and apiserver will default
+     `spec.ipFamilies` to ip families configured on cluster and will allocate IPs
+    accordingly.
+  2. Either don't set `spec.ipFamilyPolicy` or set it to `RequireDualStack`, and set
      `spec.ipFamilies` to the two IP families in any order.
-  2. Either don't set `spec.preferDualStack` or set it to `true`, and set
+  3. Either don't set `spec.ipFamilyPolicy` or set it to `RequireDualStack`, and set
      `spec.clusterIPs` to any two IPs of different families, in any order.
 
 The below are sample services that demonstrate the above rules.
@@ -774,8 +784,8 @@ spec:
     - protocol: TCP
       port: 80
       targetPort: 9376
-  preferDualStack: true # set by user
-  ipFamilies:           # set by user
+  ipFamilyPolicy: RequireDualStack # set by user
+  ipFamilies:                      # set by user
     - IPv4
     - IPv6
 ```
@@ -795,12 +805,12 @@ spec:
     - protocol: TCP
       port: 80
       targetPort: 9376
-  preferDualStack: true # set by user
-  ipFamilies:           # set by user
+  ipFamilyPolicy: RequireDualStack # set by user
+  ipFamilies:                      # set by user
     - IPv4
     - IPv6
-  clusterIP: 1.2.3.4    # allocated
-  clusterIPs:           # allocated
+  clusterIP: 1.2.3.4               # allocated
+  clusterIPs:                      # allocated
     - 1.2.3.4
     - 2001::1
 ```
@@ -824,7 +834,7 @@ spec:
     - protocol: TCP
       port: 80
       targetPort: 9376
-  preferDualStack: true # set by user
+  ipFamilyPolicy: PreferDualStack # set by user
 ```
 
 ...would produce the following result on a single-stack IPv6 cluster:
@@ -842,12 +852,12 @@ spec:
     - protocol: TCP
       port: 80
       targetPort: 9376
-  preferDualStack: true # set by user
-  ipFamilies:           # defaulted
-    - IPv6              # note single entry
-  clusterIP: 2001::1    # allocated
-  clusterIPs:           # allocated
-    - 2001::1           # note single entry
+  ipFamilyPolicy: PreferDualStack # set by user
+  ipFamilies:                      # defaulted
+    - IPv6                         # note: single entry
+  clusterIP: 2001::1               # allocated
+  clusterIPs:                      # allocated
+    - 2001::1                      # note: single entry
 ```
 
 On an IPv6-IPv4  dual-stack cluster it would have produced:
@@ -865,13 +875,13 @@ spec:
     - protocol: TCP
       port: 80
       targetPort: 9376
-  preferDualStack: true # set by user
-  ipFamilies:           # defaulted
-    - IPv6              # note two entries
+  ipFamilyPolicy: PreferDualStack # set by user
+  ipFamilies:                      # defaulted
+    - IPv6                         # note: two entries
     - IPv4
-  clusterIP: 2001::1    # allocated
-  clusterIPs:           # allocated
-    - 2001::1           # note two entries
+  clusterIP: 2001::1               # allocated
+  clusterIPs:                      # allocated
+    - 2001::1                      # note: two entries
     - 1.2.3.4
 ```
 
@@ -887,19 +897,26 @@ routed according to the families assigned for services.
 
 1. For Headless with selector, the value of `spec.ipFamilies` will drive the
    endpoint selection. Endpoints will use the value of `ipFamiles[0]`.
-   EndpointSlices will use endpoints with all IP families of the Service.
-2. For Headless without selector the values of `spec.preferDualStack` and
-   `spec.ipFamilies` are defaulted and saved as normal, but are ignored by
-   kubernetes (since the standard endpoint controllers ignore such services).
+   EndpointSlices will use endpoints with all IP families of the Service. This
+   value is expected to match cluster configuration. i.e. creating  service with
+   a family not configured on server will generate an error.
+2. For Headless without selector the values of `spec.ipFamilyPolicy` and
+   `spec.ipFamilies` are semantically validated for correctness but are not 
+   validated against cluster configuration. This means a headless service without
+   selectors can have IP families that are not configured on server.
 
-> In all cases, the values of `spec.preferDualStack`, `spec.ipFamilies`, and
-> `spec.clusterIPs` are validated and must be consistent.
+> headless services with no selectors that are not providing values for `ipFamilies`
+  and/or `ipfamilyPolicy` apiserver will default to `IPFamilyPolicy: PreferDualStack`
+  and `IPFamilies: ["IPv4", "IPv6"]`. If the service have `SingleStack` set to 
+  `IPFamilyPolicy` the following will be set `IPFamilies: [$cluster_default_family]`
 
 #### Type ExternalName
 
-For ExternalName service the value of `spec.preferDualStack` is ignored and
-`spec.ipFamilies` is expected to be `nil`. Values will be set to `nil` by the
-apiserver.
+For ExternalName service the value of `spec.ipFamilyPolicy` and
+`spec.ipFamilies` is expected to be `nil`. Any other value for these fields 
+will cause validation errors. The previous rule does not apply on conversion. apiserver
+will automatically set `spec.ipFamilyPolicy` and `spec.ipFamilies` to nil when converting
+`ClusterIP` service to `ExternalName` service.
 
 ### Endpoints
 
