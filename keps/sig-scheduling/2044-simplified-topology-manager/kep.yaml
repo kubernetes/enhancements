@@ -3,6 +3,7 @@ title: Simplified version of TopologyManager in kube-scheduler
 kep-number: 2044
 authors:
   - "@AlexeyPerevalov"
+  - "@swatisehgal"
 owning-sig: sig-scheduling
 participating-sigs:
 reviewers:

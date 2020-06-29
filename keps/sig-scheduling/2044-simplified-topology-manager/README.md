@@ -11,6 +11,7 @@
   - [Plugin implementation details](#plugin-implementation-details)
     - [Topology information in the TopologyMatch plugin](#topology-information-in-the-topologymatch-plugin)
     - [Description of the Algorithm](#description-of-the-algorithm)
+  - [Accessing NodeResourceTopology CRD](#accessing-noderesourcetopology-crd)
 - [Use cases](#use-cases)
 - [Known limitations](#known-limitations)
 - [Test plans](#test-plans)
@@ -145,6 +146,43 @@ if bitmask.IsEmpty() {
     return framework.NewStatus(framework.Unschedulable, fmt.Sprintf("Can't align container: %s", container.Name))
 }
 ```
+## Accessing NodeResourceTopology CRD
+
+In order to allow the scheduler (deployed as a pod) to access NodeResourceTopology CRD instances, ClusterRole and ClusterRoleBinding would have to be configured as below:
+
+``` yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: noderesourcetopology-handler
+rules:
+- apiGroups: ["k8s.cncf.io"]
+  resources: ["noderesourcetopologies"]
+  verbs: ["*"]
+- apiGroups: ["rbac.authorization.k8s.io"]
+  resources: ["*"]
+  verbs: ["*"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: handle-noderesourcetopology
+subjects:
+- kind: ServiceAccount
+  name: noderesourcetopology-account
+  namespace: default
+roleRef:
+  kind: ClusterRole
+  name: noderesourcetopology-handler
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: noderesourcetopology-account
+```
+
+`serviceAccountName: noderesourcetopology-account` would have to be added to the manifest file of the scheduler deployment file.
 
 # Use cases
 
