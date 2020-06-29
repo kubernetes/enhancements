@@ -177,6 +177,41 @@ One CRD instance contains information of available resources of the appropriate 
 
 ### Integration into Node Feature Discovery
 
+In order to allow the NFD-master Daemon to create, get, update, delete NodeResourceTopology CRD instances, ClusterRole and ClusterRoleBinding would have to be configured as below:
+
+``` yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: noderesourcetopology-handler
+rules:
+- apiGroups: ["topology.node.k8s.io"]
+  resources: ["noderesourcetopologies"]
+  verbs: ["*"]
+- apiGroups: ["rbac.authorization.k8s.io"]
+  resources: ["*"]
+  verbs: ["*"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: handle-noderesourcetopology
+subjects:
+- kind: ServiceAccount
+  name: noderesourcetopology-account
+  namespace: default
+roleRef:
+  kind: ClusterRole
+  name: noderesourcetopology-handler
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: noderesourcetopology-account
+```
+
+`serviceAccountName: noderesourcetopology-account` would have to be added to the manifest file of the Daemon.
 
 ### Graduation Criteria
 

@@ -10,11 +10,12 @@ participating-sigs:
 reviewers:
   - "@dchen1107"
   - "@derekwaynecarr"
+  - "@klueska"
 approvers:
   - "@dchen1107"
   - "@derekwaynecarr"
 creation-date: 2020-06-19
-last-updated: 2020-06-19
+last-updated: 2020-08-12
 status: implementable
 see-also:
   - "/keps/sig-scheduling/2044-simplified-topology-manager/README.md"
