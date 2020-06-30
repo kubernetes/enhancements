@@ -65,6 +65,13 @@
 This KEP tries to speed up the way that volumes (incl. persistent volumes) are made available to Pods on systems with SELinux in enforcing mode.
 Current way includes recursive relabeling of all files on a volume before a container can be started. This is slow for large volumes.
 
+** Status: withdrawn **
+This KEP proposes to mount filesystems with the right SELinux context using `mount -o context=system_u:system_r:container_t:s0:c309,c383` mount option directly, without recursively changing labels on the volume.
+This works well for in-tree volume plugins, that mount volumes on the host, but it's problematic in CSI driver containers.
+`/bin/mount`, running in a privileged container, needs host's `/sys/fs/selinux` and `/etc/selinux/config`, otherwise it [silently discards any SELinux related mount options](https://github.com/karelzak/util-linux/blob/master/libmount/src/context_mount.c#L292).
+Since there are so many CSI drivers around, we can't force them easily to propagate these files from the host into the driver containers.
+In addition, there may be another Linux security modules and CSI drivers should not care if they are enabled and what files they need propagated in the driver containers.
+
 ## Motivation
 
 ### SELinux intro

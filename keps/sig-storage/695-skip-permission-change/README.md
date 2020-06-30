@@ -43,17 +43,22 @@
 ## Summary
 
 Currently before a volume is bind-mounted inside a container the permissions on
-that volume are changed recursively to the provided fsGroup value.  This change
-in ownership can take an excessively long time to complete, especially for very
-large volumes (>=1TB) as well as a few other reasons detailed in [Motivation](#motivation).
-To solve this issue we will add a new field called `pod.Spec.SecurityContext.FSGroupChangePolicy` and
-allow the user to specify how they want the permission and ownership change for volumes used by pod to happen.
+that volume are changed recursively to the provided fsGroup value bu kubelet and
+SELinux label by the container runtime.  This change in ownership can take an
+excessively long time to complete, especially for very large volumes (>=1TB) as
+well as a few other reasons detailed in [Motivation](#motivation).
+To solve this issue we will add a new field called `pod.Spec.SecurityContext.VolumeChangePolicy`
+and allow the user to specify how they want the permission and ownership change
+for volumes used by pod to happen.
 
 ## Motivation
 
 When a volume is mounted on the node, we recursively change permissions of volume
 before bind mounting the volume inside container. The reason of doing this is to ensure
 that volumes are readable/writable by provided fsGroup.
+
+Similarly, the container runtime recursively changes SELinux label on all pod's
+volume that support SELinux.
 
 But this presents following problems:
  - An application(many popular databases) which is sensitive to permission bits changing
@@ -64,50 +69,68 @@ But this presents following problems:
 
 ### Goals
 
- - Allow volume ownership and permission change to be skipped during mount
+ - Allow volume ownership and permission change to be skipped during mount.
 
 ### Non-Goals
 
  - In some cases if user brings in a large enough volume from outside, the first time ownership and permission change still could take lot of time.
- - On SELinux enabled distributions we will still do recursive chcon whenever applicable and handling that is outside the scope.
- - This proposal does not attempt to fix two pods using same volume with conflicting fsgroup. `FSGroupChangePolicy` also will be only applicable to volume types which support setting fsgroup.
+ - This proposal does not attempt to fix two pods using same volume with conflicting fsgroup. `VolumeChangePolicy` also will be only applicable to volume types which support setting fsgroup.
+ - This proposal does not attempt to fix two pods using same volume with conflicting SELinux labels. `VolumeChangePolicy` also will be only applicable to volume types which support setting SELinux.
 
 ## Proposal
 
-We propose that an user can optionally opt-in to skip recursive ownership(and permission) change on the volume if volume already has right permissions.
+We propose that a user can optionally opt-in to skip recursive ownership(and permission) change on the volume if volume already has right permissions and SELinux label.
 
 ### Implementation Details/Notes/Constraints [optional]
 
-Currently Volume permission and ownership change is done using a breadth-first algorithm starting from root directory of the volume. As part of this proposal we will change the algorithm to modify permissions/ownership of the root directory after all directories/files underneath have their permissions changed.
+Currently, Volume permission and ownership change is done using a breadth-first algorithm starting from root directory of the volume. As part of this proposal we will change the algorithm to modify permissions/ownership of the root directory after all directories/files underneath have their permissions changed.
 
-When creating a pod, we propose that `pod.Spec.SecurityContext` field expanded to include a new field called `FSGroupChangePolicy` which can have following possible values:
+When creating a pod, we propose that `pod.Spec.SecurityContext` field expanded to include a new field called `VolumeChangePolicy` which can have following possible values:
 
- - `Always` --> Always change the permissions and ownership to match fsGroup. This is the current behavior and it will be the default one when this proposal is implemented. Algorithm that performs permission change however will be changed to perform permission change of top level directory last.
- - `OnRootMismatch` --> Only perform permission and ownership change if permissions of top level directory does not match with expected permissions and ownership.
+ - `Always`
+   - For `fsGroup`: always change the permissions and ownership to match `fsGroup`.
+   - For SELinux labels: always let the container runtime to recursively change labels on the volume.
+   Both are the current kubelet behavior and it will be the default one when this proposal is implemented. Algorithm that performs permission change however will be changed to perform permission change of top level directory last.
+ - `OnRootMismatch`
+   - Only perform permission, ownership and SELinux label change if permissions of top level directory does not match with expected permissions, ownership or SELinux label.
+   - If `fsGroup` is not used in a pod, no permission and ownership change is performed.
+   - When kubelet does not know at least MCS level part of a SELinux label that needs to be applied to files, kubelet falls back to the current behavior and lets the container runtime to relabel the volumes. The container runtime may allocate a random MCS level *after* kubelet starting the pod's containers.
+     - Kubelet, if not provided in `PodSecurityContext.SELinuxOptions`, fills missing `user`, `role` and `type` parts of the SELinux label from the operating system defaults (typically `/etc/selinux/<policy name>/contexts`).
+     - When the underyting operating system does not support SELinux, kubelet does not change any SELinux labels.
+
 
 ```go
-type PodFSGroupChangePolicy string
+type PodVolumeChangePolicy string
 
 const(
-    OnRootMismatch PodFSGroupChangePolicy = "OnRootMismatch"
-    AlwaysChangeVolumePermission PodFSGroupChangePolicy = "Always"
+    OnRootMismatch PodVolumeChangePolicy = "OnRootMismatch"
+    AlwaysChangeVolumePermission PodVolumeChangePolicy = "Always"
 )
 
 type PodSecurityContext struct {
-    // FSGroupChangePolicy ← new field
+    // VolumeChangePolicy ← new field
     // Defines behavior of changing ownership and permission of the volume
     // before being exposed inside Pod. This field will only apply to
-    // volume types which support fsGroup based ownership(and permissions).
+    // volume types which support fsGroup based ownership(and permissions) or
+    // SELinux labels.
     // It will have no effect on ephemeral volume types such as: secret, configmaps
     // and emptydir.
     // + optional
-    FSGroupChangePolicy *PodFSGroupChangePolicy
+    VolumeChangePolicy *PodVolumeChangePolicy
 }
 ```
 
 ### Risks and Mitigations
 
-- One of the risks is if user volume's permission was previously changed using old algorithm(which changes permission of top level directory first) and user opts in for `OnRootMismatch` `FSGroupChangePolicy` then we can't distinguish if the volume was previously only partially recursively chown'd.
+- One of the risks is if user volume's permission was previously changed using old algorithm(which changes permission of top level directory first) and user opts in for `OnRootMismatch` `VolumeChangePolicy` then we can't distinguish if the volume was previously only partially recursively chown'd.
+
+- When using `VolumeChangePolicy: OnRootMismatch` with SELinux, kubelet always relabels the whole volume. With policy `Always`, the container runtime relabels only the SubPaths that are actually used by the Pod.
+   - This makes a difference when a single volume is used by two different pods that run with different SELinux context, each using distinct SubPath of the volume. These pods can't use  `VolumeChangePolicy: OnRootMismatch`, as the whole volume will get only on SELinux label, preventing one of the pods accessing the data on it.
+
+- It is not possible separately enable `OnRootMismatch` policy for `fsGroup` ownership/permission change or SELinux relabeling. Together with the previous bullet, some Pods may not be able to use `VolumeChangePolicy: OnRootMismatch`. The cluster admin has these possibilities:
+   - Set the same SELinux context to all pods that use the same volume.
+   - Let the pods use separate volumes.
+   - Or use `VolumeChangePolicy: Always`.
 
 ## Production Readiness Review Questionnaire
 
@@ -115,7 +138,7 @@ type PodSecurityContext struct {
 
 * **How can this feature be enabled / disabled in a live cluster?**
   - [x] Feature gate
-    - Feature gate name: ConfigurableFSGroupPolicy
+    - Feature gate name: ConfigurableVolumeChangePolicy
     - Components depending on the feature gate: kubelet, kube-apiserver
 
 * **Does enabling the feature change any default behavior?**
@@ -128,7 +151,7 @@ type PodSecurityContext struct {
   behaviour without the feature gate.
 
 * **What happens if we reenable the feature if it was previously rolled back?**
-  For pods that have expected value in `pod.Spec.SecurityContext.FSGroupChangePolicy` as defined in this KEP,
+  For pods that have expected value in `pod.Spec.SecurityContext.VolumeChangePolicy` as defined in this KEP,
   it will start using specified policy.
 
 * **Are there any tests for feature enablement/disablement?**
@@ -141,7 +164,7 @@ type PodSecurityContext struct {
   not impact already running workloads.
 
 * **What specific metrics should inform a rollback?**
-  If after enabling this feature and setting `pod.Spec.SecurityContext.FSGroupChangePolicy`
+  If after enabling this feature and setting `pod.Spec.SecurityContext.VolumeChangePolicy`
   users notice an increase in volume mount time via `storage_operation_duration_seconds{operation_name=volume_mount}`
   or an increase in mount error count via `storage_operation_errors_total{operation_name=volume_mount}`
   then a cluster-admin may want to rollback the feature.
@@ -158,7 +181,7 @@ type PodSecurityContext struct {
 ### Monitoring requirements
 
 * **How can an operator determine if the feature is in use by workloads?**
-  Operator can query `pod.Spec.SecurityContext.fsGroupChangepolicy` field and identify if this is being set to non-default values.
+  Operator can query `pod.Spec.SecurityContext.volumeChangePolicy` field and identify if this is being set to non-default values.
 
 * **What are the SLIs (Service Level Indicators) an operator can use to
   determine the health of the service?**
@@ -177,7 +200,7 @@ type PodSecurityContext struct {
 
 * **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
   It is hard to give numbers that an admin could use to determine health of mount operation. In general we expect that after this feature is rolled out
-  and user starts using it by selecting `OnRootMismatch` `fsGroupChangepolicy` then - `storage_operation_duration_seconds{operation_name=volume_mount}`
+  and user starts using it by selecting `OnRootMismatch` `volumeChangePolicy` then - `storage_operation_duration_seconds{operation_name=volume_mount}`
   should go down and there should not be an spike in mount error metric (reported via `storage_operation_errors_total{operation_name=volume_mount}`).
 
 * **Are there any missing metrics that would be useful to have to improve
@@ -230,14 +253,14 @@ details). For now we leave it here though.
 
 * **What are other known failure modes?**
   - A brown field volume has correct top level permission but incorrect leaf level permission.
-    - Detection: If user has used `fsGroupChangePolicy` as `OnRootMismatch` in pod's security context and somehow top level directory has right permission but subdirectories don't then when pod attempts to read/write those subdirectories it could fail. So there are no metrics for this error but could result in pod not running correctly.
-    - Mitigations: This failure does not affect existing workloads and user can switch to using `Always` in `fsGroupChangePolicy` of pod's security context.
+    - Detection: If user has used `volumeChangePolicy` as `OnRootMismatch` in pod's security context and somehow top level directory has right permission but subdirectories don't then when pod attempts to read/write those subdirectories it could fail. So there are no metrics for this error but could result in pod not running correctly.
+    - Mitigations: This failure does not affect existing workloads and user can switch to using `Always` in `volumeChangePolicy` of pod's security context.
     - Diagnostics: Pod does not run correctly.
-    - Testing: We do not attempt to check for leaf level perissions if `fsGroupChangePolicy` is set to `OnRootMismatch`(which would defeat the purpose of this feature). But since user needs to opt-in for using this feature, they should be aware of side effects.
+    - Testing: We do not attempt to check for leaf level perissions if `volumeChangePolicy` is set to `OnRootMismatch`(which would defeat the purpose of this feature). But since user needs to opt-in for using this feature, they should be aware of side effects.
 
 * **What steps should be taken if SLOs are not being met to determine the problem?**
   If admin notices an increase in mount errors or increase in mount timings as documented in SLIs then an admin could:
-      - check number of pods that are setting non-defaults in `pod.Spec.SecurityContext.fsGroupChangePolicy`
+      - check number of pods that are setting non-defaults in `pod.Spec.SecurityContext.volumeChangePolicy`
       - Check volume mount and latency metrics (as described in SLI)
       - Check kubelet logs for mount errors or problems.
 
@@ -246,15 +269,24 @@ details). For now we leave it here though.
 
 ## Graduation Criteria
 
-* Alpha in 1.18 provided all tests are passing and gated by the feature Gate
-   `ConfigurableFSGroupPermissions` and set to a default of `False`
+* Alpha in 1.18:
+  * Provided all tests are passing and gated by the feature Gate
+    `ConfigurableFSGroupPermissions` and set to a default of `False`.
+  * Provided field `pod.spec.securityContext.fsGroupChangePolicy`
 
-* Beta in 1.19 with design validated by at least two customer deployments
+
+* Alpha in 1.19:
+  * Renamed `ConfigurableFSGroupPermissions` alpha feature gate to
+    `ConfigurableVolumeChangePolicy`
+  * Renamed `fsGroupChangePolicy` to `volumeChangePolicy` and added SELinux
+    relabeling as outlined above.
+
+* Beta in 1.20 with design validated by at least two customer deployments
   (non-production), with discussions in SIG-Storage regarding success of
   deployments.  A metric will be added to report time taken to perform a
-  volume ownership change. Also e2e tests that verify volume permissions with various `FSGroupChangePolicy`.
-* GA in 1.20, with Node E2E tests in place tagged with feature Storage
+  volume ownership change. Also e2e tests that verify volume permissions with various `VolumeChangePolicy`.
 
+* GA in 1.21, with Node E2E tests in place tagged with feature Storage
 
 [umbrella issues]: https://github.com/kubernetes/kubernetes/issues/69699
 
@@ -263,9 +295,11 @@ details). For now we leave it here though.
 A test plan will consist of the following tests
 
 * Basic tests including a permutation of the following values
-  - pod.Spec.SecurityContext.FSGroupChangePolicy (OnRootMismatch/Always)
+  - pod.Spec.SecurityContext.VolumeChangePolicy (OnRootMismatch/Always)
   - PersistentVolumeClaimStatus.FSGroup (matching, non-matching)
   - Volume Filesystem existing permissions (none, matching, non-matching, partial-matching?)
+  - pod.Spec.SecurityContext.SELinuxOptions (with Level set / empty)
+  - Volume SELinux label (none, matching, non-matching, partial-matching?)
 * E2E tests
 
 
@@ -285,5 +319,7 @@ We will add a metric that measures the volume ownership change times.
 We considered various alternatives before proposing changes mentioned in this proposal.
 - We considered using a shiftfs(https://github.com/linuxkit/linuxkit/tree/master/projects/shiftfs) like solution for mounting volumes inside containers without changing permissions on the host. But any such solution is technically not feasible until support in Linux kernel improves.
 - We also considered redesigning volume permission API to better support different volume types and different operating systems because `fsGroup` is somewhat Linux specific. But any such redesign has to be backward compatible and given lack of clarity about how the new API should look like, we aren't quite ready to do that yet.
+
+We considered setting SELinux label during volume mount, as provided by `mount -o context=XYZ` option. This has proven to be impossible, since `/bin/mount` running in a container (e.g. a CSI driver) silently discards all SELinux mount options. See [SELinux relabeling KEP](../1710-selinux-relabeling/README.md).
 
 ## Infrastructure Needed [optional]

@@ -5,7 +5,7 @@ authors:
 owning-sig: sig-storage
 participating-sigs:
   - sig-node
-status: implementable
+status: withdrawn
 creation-date: 2020-02-18
 reviewers:
   - "@msau42"
