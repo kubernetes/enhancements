@@ -9,9 +9,13 @@ participating-sigs:
   - sig-node
 reviewers:
   - "@fejta"
+  - "@sjenning"
+  - "@SergeyKanzhelev"
 approvers:
   - "@enisoc"
   - "@kow3ns"
+  - "@derekwaynecarr"
+  - "@dchen1107"
 editor: TBD
 creation-date: 2018-05-14
 last-updated: 2020-06-24
