@@ -53,7 +53,7 @@ SIG Architecture for cross cutting KEPs).
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Implementation](#implementation)
-    - [With a Cloud Provider (External or Legacy)](#with-a-cloud-provider-external-or-legacy)
+    - [With a Cloud Provider (External or Built-In)](#with-a-cloud-provider-external-or-built-in)
     - [On Bare Metal](#on-bare-metal)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
@@ -143,7 +143,7 @@ IPv6 addresses according to the user's wishes.
       dual-stack clusters.
 
     - Allow overriding the Primary Node IP in clusters using external
-      cloud providers, just like you can with clusters using legacy
+      cloud providers, just like you can with clusters using built-in
       cloud providers.
 
     - Allow overriding the Secondary Node IP in addition to the
@@ -206,7 +206,7 @@ otherwise single-stack IPv4 clusters would not work correctly. In
 turn, that means that single-stack IPv6 clusters _won't_ work
 correctly with external cloud providers.
 
-When using a legacy cloud provider, the same list of
+When using a built-in cloud provider, the same list of
 cloud-provider-provided addresses is used as a starting point, but:
 
   1. If the user passes `--node-ip IP` to kubelet, and the provided IP
@@ -350,9 +350,11 @@ finding the Primary Node IP is still the same as it used to be; we
 will just adjust `Node.Status.Addresses` to ensure that someone
 following the traditional rule will find the IP we want them to.
 
-There is now also a "Secondary Node IP", which is the first
-`InternalIP` address of the opposite IP family from the Primary Node
-IP, or the first such `ExternalIP` if there is no such `InternalIP`.
+There is now also a "Secondary Node IP", which uses the same rule as
+for Primary Node IP, but only matching IPs of the opposite IP family.
+(Thus, the Secondary Node IP is the first `InternalIP` address of the
+opposite IP family from the Primary Node IP, or the first such
+`ExternalIP` if there is no such `InternalIP`.)
 
 #### Updated Use of `Node.Status.Addresses`
 
@@ -391,9 +393,9 @@ TODO
 
 As before, when using an external cloud provider, the external
 provider deals with setting `Node.Status.Addresses`, and when using a
-legacy cloud provider or bare metal, kubelet deals with setting it.
+built-in cloud provider or bare metal, kubelet deals with setting it.
 
-#### With a Cloud Provider (External or Legacy)
+#### With a Cloud Provider (External or Built-In)
 
 When using an external cloud provider, kubelet will pass the value of
 `--node-ips` (explicit or defaulted) to the provider via a Node
@@ -407,9 +409,9 @@ code (which will hopefully have been updated to return IPv6 node IPs)
 and then modify the list of node addresses as follows. ("Kubelet"
 below really means "Either kubelet or the external cloud provider".)
 
-  1. When using a legacy cloud provider, if the deprecated `--node-ip`
-     argument was passed, then kubelet will first do the filtering and
-     sorting associated with that.
+  1. When using a built-in cloud provider, if the deprecated
+     `--node-ip` argument was passed, then kubelet will first do the
+     filtering and sorting associated with that.
 
   2. If `--node-ips` has a single element, then all addresses of the
      non-matching family will be removed from the list.
@@ -605,9 +607,10 @@ non-existent. And also, this does not _technically_ constitute an API
 break, since `Node.Status.Addresses` was always theoretically
 dual-stack.
 
-The alternative to this would be to make it so that if you pass no
-`--node-ips` you always get a single-stack IPv4 cluster, even in a
-dual-stack environment, which seems non-future-friendly.
+The alternative to this would be to make it so that the default value
+for `--node-ips` was `ipv4` rather than `ipv4,ipv6`, so that if you
+pass no `--node-ips` you always get a single-stack IPv4 cluster, even
+in a dual-stack environment. But this seems non-future-friendly.
 
 We can also phase this functionality in over several releases if we
 wanted. In the first release, we only return IPv6 addresses if you
@@ -670,7 +673,7 @@ argument for not making other modifications to it.
 Instead of deprecating `--node-ip` and replacing it with `--node-ips`,
 we could extend `--node-ip` to allow multiple values instead. I
 decided against primarily because `--node-ip` currently behaves
-inconsistently between legacy cloud providers and external cloud
+inconsistently between built-in cloud providers and external cloud
 providers, and we would have to either keep that inconsistency or else
 change behavior in one of the two cases. (eg, if we made `--node-ip`
 work for changing the Primary Node IP when using an external cloud
@@ -688,12 +691,12 @@ From the official list of [Cloud Providers]:
 exist but it is only fetching IPv4 ones
 (https://github.com/denverdino/aliyungo/blob/master/metadata/client.go#L22).
 
-- **AWS**: CloudProvider currently only fetches IPv4 addresses. A PR to add
-IPv6 addresses to the legacy provider has been open for several months
-(https://github.com/kubernetes/kubernetes/pull/86918).
+- **AWS**: CloudProvider currently only fetches IPv4 addresses. A PR
+to add IPv6 addresses to the built-in provider has been open for
+several months (https://github.com/kubernetes/kubernetes/pull/86918).
 
-- **Azure**: Legacy CloudProvider returns IPv6 addresses if they exist.
-External CloudProvider is out of sync with the legacy provider and is
+- **Azure**: Built-in CloudProvider returns IPv6 addresses if they exist.
+External CloudProvider is out of sync with the built-in provider and is
 IPv4-only.
 
 - **Baidu Cloud**: ??? `kubernetes-sigs/cloud-provider-baiducloud`
