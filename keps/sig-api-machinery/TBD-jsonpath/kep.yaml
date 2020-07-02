@@ -1,0 +1,14 @@
+title: Clarify and Enhance JSONPath
+kep-number: xxxx
+authors:
+  - "@povsister"
+owning-sig: sig-api-machinery
+participating-sigs:
+  - sig-cli
+status: provisional
+creation-date: 2020-07-01
+reviewers:
+  - TBD
+approvers:
+  - TBD
+
