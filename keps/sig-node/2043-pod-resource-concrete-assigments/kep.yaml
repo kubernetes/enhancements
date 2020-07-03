@@ -1,0 +1,49 @@
+title: Kubelet endpoint for pod resource assignment
+kep-number: 1884
+authors:
+  - "@dashpole"
+  - "@vikaschoudhary16"
+  - "@renaudwastaken"
+  - "@fromanirh"
+  - "@alexeyperevalov"
+owning-sig: sig-node
+participating-sigs: []
+status: implementable
+creation-date: "2018-07-19"
+reviewers:
+  - "@derekwaynecarr"
+  - "@renaudwastaken"
+  - "@dashpole"
+approvers:
+  - "@sig-node-leads"
+prr-approvers: []
+see-also:
+  - "keps/sig-node/606-compute-device-assignment/"
+replaces: []
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: stable
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.20"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.13"
+  beta: "v1.15"
+  stable: "v1.20"
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+  - name: "KubeletPodResources"
+    components:
+      - kubelet
+      - kube-controller-manager
+disable-supported: false
+
+# The following PRR answers are required at beta release
+metrics:
+  - pod_resources_endpoint_requests_total
