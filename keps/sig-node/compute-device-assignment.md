@@ -1,5 +1,5 @@
 ---
-title: Kubelet endpoint for device assignment observation details
+title: Kubelet endpoint for device and CPU assignment observation details
 authors:
   - "@dashpole"
   - "@vikaschoudhary16"
@@ -13,10 +13,10 @@ approvers:
   - "@sig-node-leads"
 editor: "@dashpole"
 creation-date: "2018-07-19"
-last-updated: "2019-04-30"
+last-updated: "2020-07-06"
 status: implementable
 ---
-# Kubelet endpoint for device assignment observation details 
+# Kubelet endpoint for device and cpu assignment observation details
 
 ## Table of Contents
 
@@ -26,6 +26,8 @@ status: implementable
 - [Objectives](#objectives)
 - [User Journeys](#user-journeys)
   - [Device Monitoring Agents](#device-monitoring-agents)
+  - [Device aware CNI plugin](#device-aware-cni-plugin)
+  - [Topology aware scheduling](#topology-aware-scheduling)
 - [Changes](#changes)
   - [Potential Future Improvements](#potential-future-improvements)
 - [Alternatives Considered](#alternatives-considered)
@@ -38,7 +40,7 @@ status: implementable
 <!-- /toc -->
 
 ## Abstract
-In this document we will discuss the motivation and code changes required for introducing a kubelet endpoint to expose device to container bindings.
+In this document we will discuss the motivation and code changes required for introducing a kubelet endpoint to expose device and cpu ids to container bindings.
 
 ## Background
 [Device Monitoring](https://docs.google.com/document/d/1NYnqw-HDQ6Y3L_mk85Q3wkxDtGNWTxpsedsgw4NgWpg/edit?usp=sharing) requires external agents to be able to determine the set of devices in-use by containers and attach pod and container metadata for these devices.
@@ -57,10 +59,15 @@ In this document we will discuss the motivation and code changes required for in
 
 ![device monitoring architecture](https://user-images.githubusercontent.com/3262098/43926483-44331496-9bdf-11e8-82a0-14b47583b103.png)
 
+### Device aware CNI plugin
+As soon as this interface has been introduced it was used by CNI plugins like [kuryr-kubernetes](https://review.opendev.org/#/c/651580/) in couple with [intel-sriov-device-plugin](https://github.com/intel/sriov-network-device-plugin) to correctly define which devices were assigned to the pod.
+
+### Topology aware scheduling
+This interface can be used to collect allocated resources with information about the NUMA topology of the worker node. This information can then be used in NUMA aware scheduling.
 
 ## Changes
 
-Add a v1alpha1 Kubelet GRPC service, at `/var/lib/kubelet/pod-resources/kubelet.sock`, which returns information about the kubelet's assignment of devices to containers. It obtains this information from the internal state of the kubelet's Device Manager. The GRPC Service returns a single PodResourcesResponse, which is shown in proto below:
+Add a v1alpha1 Kubelet GRPC service, at /var/lib/kubelet/pod-resources/kubelet.sock, which returns information about the kubelet's assignment of devices and cpus with NUMA id. It obtains this information from the internal state of the kubelet's Device Manager and CPU Manager respectively. The GRPC Service returns a single PodResourcesResponse, which is shown in proto below:
 ```protobuf
 // PodResources is a service provided by the kubelet that provides information about the
 // node resources consumed by pods and containers on the node
@@ -87,12 +94,24 @@ message PodResources {
 message ContainerResources {
     string name = 1;
     repeated ContainerDevices devices = 2;
+    repeated int64 cpu_ids = 3;
+}
+
+// Topology describes hardware topology of the resource
+message Topology {
+	repeated NUMA nodes = 1;
+}
+
+// NUMA representation of NUMA node
+message NUMA {
+	int64 ID = 1;
 }
 
 // ContainerDevices contains information about the devices assigned to a container
 message ContainerDevices {
     string resource_name = 1;
     repeated string device_ids = 2;
+    Topology topology = 3;
 }
 ```
 
@@ -113,7 +132,7 @@ message ContainerDevices {
 * Notes:
   * Does not include any reference to resource names.  Monitoring agentes must identify devices by the device or environment variables passed to the pod or container.
 
-### Add a field to Pod Status. 
+### Add a field to Pod Status.
 * Pros:
   * Allows for observation of container to device bindings local to the node through the `/pods` endpoint
 * Cons:
@@ -148,7 +167,7 @@ type Container struct {
 }
 ```
 * During Kubelet pod admission, if `ComputeDevices` is found non-empty, specified devices will be allocated otherwise behaviour will remain same as it is today.
-* Before starting the pod, the kubelet writes the assigned `ComputeDevices` back to the pod spec.  
+* Before starting the pod, the kubelet writes the assigned `ComputeDevices` back to the pod spec.
   * Note: Writing to the Api Server and waiting to observe the updated pod spec in the kubelet's pod watch may add significant latency to pod startup.
 * Allows devices to potentially be assigned by a custom scheduler.
 * Serves as a permanent record of device assignments for the kubelet, and eliminates the need for the kubelet to maintain this state locally.
@@ -170,3 +189,4 @@ Beta:
 - 2018-11-15: Implementation and e2e test merged before 1.13 release: kubernetes/kubernetes#70508
 - 2019-04-30: Demo of production GPU monitoring by NVIDIA
 - 2019-04-30: Agreement in sig-node to move feature to beta in 1.15
+- 2020-07-06: Add Topology and cpus into PodResources interface
