@@ -55,6 +55,7 @@ SIG Architecture for cross cutting KEPs).
   - [Implementation](#implementation)
     - [With a Cloud Provider (External or Built-In)](#with-a-cloud-provider-external-or-built-in)
     - [On Bare Metal](#on-bare-metal)
+  - [Shared Code](#shared-code)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
@@ -160,6 +161,11 @@ IPv6 addresses according to the user's wishes.
 - Avoiding breaking old components in single-stack IPv6 clusters that
   would be surprised by seeing IPv6 addresses in
   `Node.Status.Addresses`.
+
+- Improve the situation with code which is shared between kubelet and
+  external cloud providers (eg, `PatchNodeStatus`, which is currently
+  duplicated between `k8s.io/kubernetes/pkg/util/node` and
+  `k8s.io/cloud-provider/node/helpers`).
 
 ### Non-Goals
 
@@ -501,6 +507,37 @@ basically as before, based on some combination of explicitly-provided
 IPs, DNS lookups, and IPs from the default interface, except that now
 it is based on `--node-ips` rather than `--node-ip`, and it will
 potentially add two `InternalIP` addresses rather than just one.
+
+### Shared Code
+
+Currently kubelet and the external cloud provider code each have their
+own separate copy of `PatchNodeStatus` (with the code to work around
+the strategic patch annotation bug). A straightforward implementation
+of the plan above would result in them each also needing their own
+copy of the (non-trivial) code to sort/filter addresses based on
+`--node-ips`.
+
+The cloud provider cannot use kubelet's version of these functions
+because it doesn't have access to `"k8s.io/kubernetes/pkg/util/node"`.
+In theory, kubelet could use the cloud provider's version in
+`"k8s.io/cloud-provider/node/helpers"`, although this seems wrong,
+since the code is also used in the bare metal case, so it shouldn't be
+owned by the cloud-provider module.
+
+It would make more sense to move the functions to a lower-level module
+where they could be shared by both kubelet and cloud-provider.
+`"k8s.io/apimachinery"` seems like the most likely bet.
+
+```
+<<[UNRESOLVED code-duplication ]>>
+
+Or we could just have duplicate copies of the code... But in
+particular, note that the duplication doesn't go away when all of the
+built-in cloud providers are moved out-of-tree, since kubelet still
+needs all of that code for bare metal.
+
+<<[/UNRESOLVED]>>
+```
 
 ### Test Plan
 
