@@ -79,7 +79,7 @@ type StatefulSetSpec struct {
 
 ### Workload Implications
 
-The main worload for surging extra pods is to maintain the same amount of pods as was requested, this is especially critical when replicas is set to 1, the service provided by statefulset won't be available until the failed node is back.
+The main workload for surging extra pods is to maintain the same amount of pods as was requested, this is especially critical when replicas is set to 1, the service provided by statefulset won't be available until the failed node is back.
 
 AllowSurgeOnTerminationTimeout will help to minimize distruption on problems with the pod, the new pods will be created on available nodes.
 
