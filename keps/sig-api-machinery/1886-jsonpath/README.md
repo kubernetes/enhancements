@@ -11,6 +11,10 @@
     - [Filter Operators](#filter-operators)
     - [Functions](#build-in-functions)
 - [Design Details](#design-details)
+  - [util/jsonpath](#utiljsonpath)
+  - [forked/golang/template](#forkedgolangtemplate)
+  - [Server-side usage](#server-side-usage)
+  - [Client-side usage](#client-side-usage)
   - [Test Plan](#test-plan)
   - [Risks and Mitigations](#risks-and-mitigations)
   - [Graduation Criteria](#graduation-criteria)
@@ -103,6 +107,8 @@ Both parts should have clear and sufficient documentation about syntax/examples.
 ### Syntax reference
 Three tables including all supported operators and functions.
 
+Note that when you refer a string in JSONPath expression, it should be quoted with single or double quotes.
+
 #### Operators
 Note that typically we refer unspecified length `Array` as `Slice` in Go.
 
@@ -113,7 +119,7 @@ Note that typically we refer unspecified length `Array` as `Slice` in Go.
 `$`                             | The root object to query. <br>Can be ignored at the start of template | `{$.metadata.name}`<br> equals to <br>`{.metadata.name}`
 `@`                             | The current object | `{@}`
 `*`                             | Wildcard operator. <br>Available anywhere a name or numeric index required | `{.metadata.*}`
-`['<name>'(,'<name>')]`         | bracket-notated child operator. <br>`<name>` should always be warped with `''` (a pair of single quota) | `{.metadata['name','namespace']}`
+`['<name>'(,'<name>')]`         | bracket-notated child operator. <br>`<name>` should always be warped with `''` or `""` (a pair of single/double quotes) | `{.metadata['name','namespace']}`
 `[<number>(,<number>)]`         | Slice index operator. <br>Negative index will return the last `N` element. <br>For exmaple: `-1` returns the last one element | `{.spec.containers[0,-1]}`
 `..`                            | Recursive descent, or known as deep scan | `{.spec..image}`
 `[start:end(:step)]`            |  Slice operator. Return elements from `start` to `end`(not include `end`). <br>Similar to [Go slice](https://blog.golang.org/slices) operator, but every `step`(non-zero, default: `1`) element is selected between `start` and `end`. <br>If `step` is negative, the slice will be reverse-processed. | `{.spec.containers[1:]}` <br>`{.spec.containers[:-1]}` <br>`{.spec.containers[::-1]}`
@@ -156,36 +162,170 @@ It takes the output of the expression as input.
 
 ## Design Details
 
-TBD
+### util/jsonpath
 
+Add one field to manually enable enhanced items which may have potential security risk.
+This is a "switch" for developers who may also want the benefits,
+but it depends on whether you trust the given template or not.
+You should never "turn on the switch" on server-side when template is unknown at compile-time.
+
+If risky syntax detected with `allowRiskySyntax: false`, it will be treated as invalid syntax,
+and an error will be returned. This designed error is only for developers and
+user should never see such errors.
+
+[util/jsonpath.go](https://github.com/kubernetes/kubernetes/blob/0c3c2cd6ac8c9ffefc38f9746034e546331b9cd6/staging/src/k8s.io/client-go/util/jsonpath/jsonpath.go)
+```go
+type JSONPath struct {
+	name       string
+	parser     *Parser
+	stack      [][]reflect.Value
+	cur        []reflect.Value
+	beginRange int
+	inRange    int
+	endRange   int
+
+	allowMissingKeys bool
+	allowRiskySyntax bool  // control risky syntax parsing. eg: =~(regex)
+}
+
+// New creates a new JSONPath with the given name.
+func New(name string) *JSONPath {
+	return &JSONPath{
+		name:       name,
+		beginRange: 0,
+		inRange:    0,
+		endRange:   0,
+		// allowRiskySyntax: false // default false
+	}
+}
+
+
+// AllowRiskySyntax allows a caller to specify whether they want risky syntax enabled or not
+// during paring template. Error will be returned if using risky syntax without AllowRiskySyntax.
+func (j *JSONPath) AllowRiskySyntax(allow bool) *JSONPath {
+	j.allowRiskySyntax = allow
+	return j
+}
+
+
+// return error on regex operator without AllowRiskySyntax
+func (j *JSONPath) evalFilter(input []reflect.Value, node *FilterNode) ([]reflect.Value, error) {
+...
+    switch node.Operator {
+    case "<":
+        pass, err = template.Less(left, right)
+...
+    case ">=":
+        pass, err = template.GreaterEqual(left, right)
+    case "=~":
+        if !j.allowRiskySyntax {
+            // return error on allowRiskySyntax=false
+            return false, fmt.Errorf("filter operator %s not allowed by default", node.Operator)
+        }
+...
+    default:
+        return results, fmt.Errorf("unrecognized filter operator %s", node.Operator)
+    }
+...
+}
+```
+
+### forked/golang/template
+
+This package is copied from Go library text/template and expose `eq`, `ge`, `gt`, `le`, `lt`,
+and `ne` as public functions
+
+So we can continue add more functions like `rmatch`(regex match) to keep extending it for Kubernetes.
+
+[template/func.go](https://github.com/kubernetes/kubernetes/blob/2c1c0f3f7295e0d00651d6e30cfcda56239275e4/staging/src/k8s.io/client-go/third_party/forked/golang/template/funcs.go)
+```go
+// rmatch evaluates the strs against given regex pattern
+// using regexp.MatchString(pattern, str)
+// param "pattern" must be string type, "str" could be string or []byte type
+func rmatch(pattern interface{}, strs ...interface{}) (bool, error) {
+    ...
+    return match, err
+}
+```
+
+### Server-side usage
+
+Do not allow risky syntax unless necessary and template is trusty. (eg: given by developer)
+
+### Client-side usage
+
+Allow risky syntax in kubectl. (CustomColumn)
 
 ### Test Plan
 
-TBD
+JSONPath unit tests
+- Cover all path operator
+- Cover all filter operator
+- Cover all function operator
+
+Kubectl integration tests
+- `kubectl` with `-o jsonpath`
 
 ### Risks and Mitigations
-TBD
+
+**Additional errors**
+
+Since some enhanced items are not enabled by default, programmers using client-go may
+encounter related errors with legal template according to documentation.
+To avoid confusion, the returned error message can be more detail about
+how to enable those enhanced syntax. Also we can add some comments
+on `jsonpath.New()` method.
+
 ### Graduation Criteria
-TBD
+
+This is actually an enhancement for JSONPath util, it could be used both on server-side and client-side.
+
+Because we try to make a super-set of current JSONPath, typically it would not introduce any
+compatibility issue and the main task for GA release is eliminating bugs/security risks. 
+
 #### Beta
-TBD
+
+- Implement all syntax referred in above tables
+- Complete test plan
+- Complete documentation and mark enhanced features state as "Beta x.x"
+- Review usage on server-side
+- Enable enhancements on client-side
+
 #### GA
-TBD
+
+- At least two releases after beta
+- Gather user feedback about jsonpath
+- Complete test plan
+- Complete documentation and mark enhanced features "since release x.x"
 
 ### Upgrade / Downgrade Strategy
 
-TBD
+This enhancement only affects client-go consumers.
+
+#### Upgrade
+
+* If they do not wish to use enhanced syntax, no additional steps needed for upgrade.
+* If they want to have a full access to enhanced syntax, they need invoke `AllowRiskySyntax(true)` in the code.
+
+#### Downgrade
+
+* Remove the call for `AllowRiskySyntax(true)` in the code if any.
 
 ### Version Skew Strategy
 
-TBD
+No version skew observed.
 
 ## References
 
-TBD
+- Related issues
+  - [#20352](https://github.com/kubernetes/kubernetes/issues/20352)
+  - [#72220](https://github.com/kubernetes/kubernetes/issues/72220)
+  
+- Related pull-requests
+  - [#79227](https://github.com/kubernetes/kubernetes/pull/79227)
+  - [#90784](https://github.com/kubernetes/kubernetes/pull/90784)
 
 ## Implementation History
 
 - 2020-07-01: KEP introduced
-- 2020-07-02: Finish goals
-- 2020-07-03: Finish proposal
+- 2020-07-07: Finish proposal
