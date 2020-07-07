@@ -1,5 +1,5 @@
 title: Clarify and Enhance JSONPath
-kep-number: xxxx
+kep-number: 1886
 authors:
   - "@povsister"
 owning-sig: sig-api-machinery

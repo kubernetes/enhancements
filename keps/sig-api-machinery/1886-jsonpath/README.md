@@ -1,4 +1,4 @@
-# KEP-xxxx: Clarify and Enhance JSONPath
+# KEP-1886: Clarify and Enhance JSONPath
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
