@@ -1,4 +1,4 @@
-# KEP-1886: Clarify and Enhance JSONPath
+# KEP-1886: Clarify and enhance JSONPath template syntax
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
@@ -96,11 +96,11 @@ Both parts should have clear and sufficient documentation about syntax/examples.
 * Backward compatibility if possible, enhanced JSONPath aims be a super-set to original one
 * Sufficient examples in documentation
 * UnitTest coverage on enhanced syntax
-* Provide a in-code-flag to enable or disable enhanced items
+* Provide a in-code-flag to enable or disable enhanced items which may have security risks
   * Server-side: If an enhancement has security risk. It should be disabled by default.
   (eg: support regular expression filters on server side may cause a DoS attack)
-  * Client-side: Enable as much as enhancement by default if possible
-* Investigate all usage on server side to avoid security problem
+  * Client-side: Enable all enhancements if possible
+* Review all usage on server side to avoid security problem
 
 ## Proposal
 
@@ -147,12 +147,12 @@ Comparison between numeric and non-numeric is typically invalid.
 `<`                           | left is less than right | `{.items[?(@.spec.replicas<2)]}`
 `<=`                          | left is less than or equal to right | `{.items[?(@.spec.replicas<=2)]}`
 `&&`                          | logical AND | `{.items[?(@.spec.replicas==1&&@.status.readyReplicas==1)]}`
-<code>&#124;&#124;</code>    | logical OR | <code>{.items[?(@.status.availableReplicas==1&#124;&#124;@.status.readyReplicas==1)]}</code>
+<code>&#124;&#124;</code>     | logical OR | <code>{.items[?(@.status.availableReplicas==1&#124;&#124;@.status.readyReplicas==1)]}</code>
 `=~`                          | left matches [regular expression](https://golang.org/pkg/regexp/) given in right | `{.items[?(@.metadata.name=~'^myapp.*')]}`
 
 
 #### Build in Functions
-Functions should be invoked at the end of an expression with a single dot(`.`)
+Functions should be invoked at the end of an expression with a single dot(`.`).
 
 It takes the output of the expression as input.
 
@@ -164,7 +164,7 @@ It takes the output of the expression as input.
 
 ### util/jsonpath
 
-Add one field to manually enable enhanced items which may have potential security risk.
+Add one field `allowRiskySyntax` to manually enable enhanced items which may have potential security risk.
 This is a "switch" for developers who may also want the benefits,
 but it depends on whether you trust the given template or not.
 You should never "turn on the switch" on server-side when template is unknown at compile-time.
@@ -254,7 +254,7 @@ Do not allow risky syntax unless necessary and template is trusty. (eg: given by
 
 ### Client-side usage
 
-Allow risky syntax in kubectl. (CustomColumn)
+Allow risky syntax in kubectl. (eg: CustomColumn)
 
 ### Test Plan
 
