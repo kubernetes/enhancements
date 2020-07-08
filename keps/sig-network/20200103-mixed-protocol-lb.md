@@ -149,21 +149,25 @@ Summary: Alibaba CPI and SLB seem to support mixed protocol Services, and the pr
 
 #### AWS
 
-The AWS CPI does not support mixed protocols in the Service definition since it only allows TCP for load balancers. The AWS CPI looks for annotations on the Service to determine whether TCP, TLS or HTTP(S) listener should be created in the AWS ELB for a configured Service port.
+The AWS CPI supports TCP and UDP protocols in Service definitions when an AWS NLB is requested. However, the AWS CPI cannot set up an AWS NLB with TCP and UDP ports behind the same IP address for the same port number currently (for example, the DNS use case that wants to open port 53 with both UDP and TCP would not work right now). See https://github.com/kubernetes/kubernetes/pull/92109#discussion_r439730341
+
+For AWS ELB only TCP is accepted by the CPI. 
+
+The AWS CPI looks for annotations on the Service to determine whether TCP, TLS or HTTP(S) listener should be created in the AWS ELB for a configured Service port.
 
 AWS Classic LB supports TCP,TLS, and HTTP(S) protocols behind the same IP address. 
 
-AWS Network LB supports TCP/TLS and UDP protocols behind the same IP address. As we can see, UDP cannot be utilized currently, due to the limitation in the AWS CPI.
+AWS Network LB supports TCP/TLS and UDP protocols behind the same IP address. 
 
 The usage of TCP+HTTP or UDP+HTTP on the same LB instace behind the same IP address is not possible in AWS.
 
 From a pricing perspective the AWS NLB and the CLB have the following models:
 https://aws.amazon.com/elasticloadbalancing/pricing/
-Both are primarily usage based rather than charging based on the number of protocol, however NLBs have separate pricing unit quotas for TCP, UDP and TLS.
+Both are usage based rather than based on the number of protocols, however NLBs have separate pricing unit quotas for TCP, UDP and TLS.
 
 A user can ask for an internal Load Balancer via a K8s Service definition that also has the annotation `service.beta.kubernetes.io/aws-load-balancer-internal: 0.0.0.0/0`. So far the author could not find any difference in the usage and pricing of those when compared to the external LBs - except the pre-requisite of a private subnet on which the LB can be deployed.
 
-Summary: AWS CPI is the current bottleneck with its TCP-only limitation. As long as it is there the implementation of this feature will have no effect on the AWS bills.
+Summary: AWS CPI supports mixed protocols (TCP and UDP) on AWS NLBs, but the support of the same port number with different protocols still requires some work in the CPI . Once this feature is implemented in the K8s API the users can request for such mixed-protocol NLBs via their Service definitions, and the users will be charged according to the rules defined in the pricing rules.
 
 #### Azure
 
@@ -292,7 +296,7 @@ First of all, feature gate based (a.k.a conditional) field validation must be im
 Our feature does not introduce new values or new fields. It enables the usage of an existing value in existing fields, but with a different logic. I.e. if someone creates a Service with mixed protocol setup and then rollbacks the API server to a version that does not implement this feature the clients will still get the Service with mixed protocols when they read that via the rollback'd API. If the client (CPI implementation) has been rollbacked, too, then the client may receive such a Service setup that it does not support.
 
 - Alibaba: no risk. The current CPI and LB already supports the mixed protocols in the same Service definition. If this feature is enabled in an API server and then the API server rollback is executed the CPI can still handle the Services with mixed protocol sets.
-- AWS: no risk. The current CPI accepts Services with TCP protocol only, i.e. after a K8s upgrade a user still cannot use this feature. Consequently, a rollback in the K8s version does not introduce any issues.
+- AWS: no risk. The current CPI and LB already supports the mixed protocols in the same Service definition. The situation is the same as with the Alibaba CPI.
 - Azure: no risk. The current CPI and LB already supports the mixed protocols in the same Service definition. The situation is the same as with the Alibaba CPI.
 - GCE: currently the GCE CPI assumes that a Service definition contains a single protocol value, as it assumes that the Service Controller already rejected Services with mixed protocols. While the Service Controller really did so a while ago, it does not do this anymore. It means a risk.
 - DigitalOcean: no risk. The current CPI accepts Services with TCP protocol only, i.e. after a K8s upgrade a user still cannot use this feature. Consequently, a rollback in the K8s version does not introduce any issues.
@@ -302,19 +306,16 @@ Our feature does not introduce new values or new fields. It enables the usage of
 - Oracle: no risk. The CPI and LB already supports mixed protocols. The same situation like in the case of Alibaba.
 - Tencent Cloud: no risk. The CPI and LB already supports mixed protocols. The same situation like in the case of Alibaba.
 
-
-The other risk is in the introduction of this feature without an option control mechanism, i.e. as a general change in Service handling. In that case there is the question whether this feature should be a part of the conformance test set, because it can affect the conformance of cloud providers.
-
-A possible mitigation is to put the feature behind option control. 
+As stated above we must implement a feature gate based phased introduction for this feature because of its effects. See the `Proposed solution` part for details in this document below.
 
 ## Design Details
 
 The implementation of the basic logic is ready in this PR:
 https://github.com/kubernetes/kubernetes/pull/75831
 
-Currently a feature gate is used to control its activation status. Though if we want to keep this feature behind option control even after it reaches its GA state we should come up with a different solution, as feature gates are used to control the status of a feature as that graduates from alpha to GA, and they are not meant for option control for features with GA status.
+The current implementation has a feature gate to control its activation status.
 
-### Option Control Alternatives
+### Option Control Alternatives - considered alternatives
 
 #### Annotation in the Service definition
 
@@ -340,16 +341,78 @@ Con:
 - the users must maintain two Service instances
 - Atomic update can be a problem - the key must be such a Service attribute that cannot be patched
 
-#### Proposed solution
+### The selected solution for the option control
 
 In the first release: 
  - a feature flag shall control whether new loadbalancer Services with mixed protcol configuration can be created or not
  - we must add a note to the documentation that if such Service is created then it may break things after a rollback - it depends on the cloud provider implementation
  - the update of such Services shall be possible even if the feature flag is OFF. This is to prepare for the next release when the feature flag is removed from the create path, too, and after a rollback to the first release the update of existing Service objects must be possible
- - the CPI implementations shall be prepared to deal with Services with mixed protocol configurations. It does not mean that the CPI implementations have to accept such Services. It means that the CPI implementations shall be able to process such Services. The CPI implementation can still validate the Service objects to check whether any of those has mixed protocol configuration and if the CPI cannot support such Service for any reasons the CPI shall indicate that clearly to the user, and the CPI should not create Cloud LB resources for the "accepted part" of the Service. The point is, that the system (Service - CPI implementation - cloud LB) must be in a consitent state in the end, and the user must have meaningful information about that state. For example, if the Service is not accepted by the CPI implementation this fact shall be available for the user, either as a new field in `Service.status.loadBalancer` or as a new Event (or both).
+ - the CPI implementations shall be prepared to deal with Services with mixed protocol configurations. Either via supporting such Service definitions, or clearly indicating to the users that the Service could not be processed as specified. As we can see from our analysis some CPIs support other protocols than TCP and UPD in the Service definitions, while others support only TCP and UDP. That is the term "mixed protocol support" does not always mean that all possible protocol values are supported by a CPI. For this reason a nicely behaving CPI shall 
+ - indicate clearly to the user what ports with what protocols have been opened on the LB
+ - preferably not create any Cloud LB resources if the Service definition contains unsupported protocols.
+ 
+ In order to provide a way for the CPI to indicate port statuses to the user we would add the following new `portStatus` list of port statuses to `Service.status.loadBalancer`, so the CPI can indicate the status of the LB:
+
+```
+"io.k8s.api.core.v1.PortStatus": {
+  "description": "PortStatus contains details for the current status of this port.",
+  "properties": {
+    "port": {
+      "description": "Port number",
+      "format": "int32",
+      "type": "integer"
+    },
+    "protocol": {
+      "description": "The protocol for this port",
+      "type": "string"
+    },
+    "name": {
+      "description": "The name of this port within the service.",
+      "type": "string"
+    },
+    "ready": {
+      "description": "Specifies whether the port was configured for the load-balancer.",
+      "type": "boolean"
+    },
+    "message": {
+      "description": "A human readable message indicating details about why the port is in this condition.",
+      "type": "string"
+    }
+  },
+  "type": "object"
+},
+"io.k8s.api.core.v1.LoadBalancerStatus": {
+  "description": "LoadBalancerStatus represents the status of a load-balancer.",
+  "properties": {
+    "ingress": {
+      "description": "Ingress is a list containing ingress points for the load-balancer. Traffic intended for the service ld be sent to these ingress points.",
+      "items": {
+        "$ref": "#/definitions/io.k8s.api.core.v1.LoadBalancerIngress"
+      },
+      "type": "array"
+    },
+    "portStatuses": {
+      "description": "The list has one entry per port in the manifest.
+      "items": {
+        "$ref": "#/definitions/io.k8s.api.core.v1.PortStatus"
+      },
+      "type": "array"
+    },
+    "message": {
+      "description": "A human readable message indicating details about the condition of the load-balancer.",
+      "type": "string"
+    }
+  },
+  "type": "object"
+},
+
+A CPI shall also set an Event in case it cannot create a Cloud LB instance that could fulfill the Service specification.
 
 In the second release: 
 - the feature flag shall be set to ON by default (promoted to beta). Most probably we want to keep the feature flag so cloud providers can decide whether they enable it or not in their managed K8s services depending their CPI implementations.
+
+In the lomg term:
+- the feature flag is removed and the feature becomes generic without option control
 
 ### Test Plan
 
