@@ -353,7 +353,7 @@ In the first release:
  
  In order to provide a way for the CPI to indicate port statuses to the user we would add the following new `portStatus` list of port statuses to `Service.status.loadBalancer`, so the CPI can indicate the status of the LB:
 
-```
+```json
 "io.k8s.api.core.v1.PortStatus": {
   "description": "PortStatus contains details for the current status of this port.",
   "properties": {
@@ -405,6 +405,7 @@ In the first release:
   },
   "type": "object"
 },
+```
 
 A CPI shall also set an Event in case it cannot create a Cloud LB instance that could fulfill the Service specification.
 
