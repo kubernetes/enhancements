@@ -2,19 +2,24 @@
 title: Sidecar Containers
 authors:
   - "@joseph-irving"
+  - "@rata"
 owning-sig: sig-apps
 participating-sigs:
   - sig-apps
   - sig-node
 reviewers:
   - "@fejta"
+  - "@sjenning"
+  - "@SergeyKanzhelev"
 approvers:
   - "@enisoc"
   - "@kow3ns"
+  - "@derekwaynecarr"
+  - "@dchen1107"
 editor: TBD
 creation-date: 2018-05-14
-last-updated: 2019-10-30
-status: implementable
+last-updated: 2020-06-24
+status: provisional
 ---
 
 # Sidecar Containers
@@ -24,6 +29,7 @@ status: implementable
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
+- [Prerequisites](#prerequisites)
 - [Motivation](#motivation)
   - [Jobs](#jobs)
   - [Startup](#startup)
@@ -61,11 +67,11 @@ For enhancements that make changes to code or processes/procedures in core Kuber
 Check these off as they are completed for the Release Team to track. These checklist items _must_ be updated for the enhancement to be released.
 
 - [ ] kubernetes/enhancements issue in release milestone, which links to KEP (this should be a link to the KEP location in kubernetes/enhancements, not the initial KEP PR)
-- [X] KEP approvers have set the KEP status to `implementable`
-- [X] Design details are appropriately documented
-- [X] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
-- [X] Graduation criteria is in place
-- [X] "Implementation History" section is up-to-date for milestone
+- [ ] KEP approvers have set the KEP status to `implementable`
+- [ ] Design details are appropriately documented
+- [ ] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [ ] Graduation criteria is in place
+- [ ] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
@@ -81,6 +87,25 @@ Check these off as they are completed for the Release Team to track. These check
 ## Summary
 
 To solve the problem of container lifecycle dependency we can create a new class of container: a "sidecar container" that behaves primarily like a normal container but is handled differently during termination and startup.
+
+## Prerequisites
+
+On June 23 2020, during SIG-node meeting, it was decided that this KEP has a
+prerequisite on the (not yet submitted KEP) kubelet node graceful shutdown.
+
+As of writing, when a node is shutdown the kubelet doesn't gracefully shutdown
+all of the containers (running preStop hooks and other guarantees users would
+expect). It was then decided that adding more guarantees to pod shutdown
+behavior (as this KEP proposes) depends on having the kubelet gracefully
+shutdown first. The main reason for this is to avoid users relying on something
+we can't guarantee (like the pod shutdown sequence in case the node shutdowns).
+
+Also, authors of this KEP and the (yet not submitted) KEP for node graceful
+shutdown have met several times and are in sync regarding these features
+interoperability.
+
+The details about this dependency is explained in the [graduation criteria
+section][#graduation-criteria].
 
 ## Motivation
 
@@ -257,11 +282,17 @@ Shutdown ordering of Containers in a Pod can not be guaranteed when a node is be
 * Addressed feedback from Alpha testers
 * Thorough E2E and Unit testing in place
 * The beta API either supports the important use cases discovered during alpha testing, or has room for further enhancements that would support them
+* Graduation depends on the (yet not submitted) kubelet graceful shutdown KEP
+  reaching Beta stage and no concerns identified that may affect this KEP
+
 
 #### Beta -> GA Graduation
 * Sufficient number of end users are using the feature
 * We're confident that no further API changes will be needed to achieve the goals of the KEP
 * All known blocking bugs have been fixed
+* Graduation depends on the (not yet submitted) kubelet graceful shutdown KEP
+  being in GA for at least 1 release and no concerns identified that may affect
+  this KEP
 
 ### Upgrade / Downgrade Strategy
 When upgrading no changes should be needed to maintain existing behaviour as all of this behaviour is optional and disabled by default.
@@ -276,6 +307,11 @@ Older Kubelets should still be able to schedule Pods that have sidecar container
 
 - 14th May 2018: Proposal Submitted
 - 26th June 2019: KEP Marked as implementable
+- 24th June 2020: KEP Marked as provisional. Got stalled on [March 10][stalled]
+  with a clear explanation. The topic has been discussed in SIG-node and this
+  KEP will be evolved with, at least, some already discussed changes.
+
+[stalled]: https://github.com/kubernetes/enhancements/issues/753#issuecomment-597372056
 
 ## Alternatives
 
