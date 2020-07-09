@@ -13,7 +13,7 @@ approvers:
   - "@thockin"
 editor: TBD
 creation-date: 2020-01-03
-last-updated: 2020-03-29
+last-updated: 2020-07-09
 status: provisional
 see-also:
 replaces:
@@ -347,7 +347,7 @@ In the first release:
  - a feature flag shall control whether new loadbalancer Services with mixed protcol configuration can be created or not
  - we must add a note to the documentation that if such Service is created then it may break things after a rollback - it depends on the cloud provider implementation
  - the update of such Services shall be possible even if the feature flag is OFF. This is to prepare for the next release when the feature flag is removed from the create path, too, and after a rollback to the first release the update of existing Service objects must be possible
- - the CPI implementations shall be prepared to deal with Services with mixed protocol configurations. Either via supporting such Service definitions, or clearly indicating to the users that the Service could not be processed as specified. As we can see from our analysis some CPIs support other protocols than TCP and UPD in the Service definitions, while others support only TCP and UDP. That is the term "mixed protocol support" does not always mean that all possible protocol values are supported by a CPI. For this reason a nicely behaving CPI shall 
+ - the CPI implementations shall be prepared to deal with Services with mixed protocol configurations. Either via supporting such Service definitions, or clearly indicating to the users that the Service could not be processed as specified. As we can see from our analysis some CPIs support other protocols than TCP and UDP in the Service definitions, while others support only TCP and UDP. That is the term "mixed protocol support" does not always mean that all possible protocol values are supported by a CPI. For this reason a nicely behaving CPI shall 
  - indicate clearly to the user what ports with what protocols have been opened on the LB
  - preferably not create any Cloud LB resources if the Service definition contains unsupported protocols.
  
