@@ -144,9 +144,7 @@ These KEPs will be owned by SIG-architecture and should be seen as a way to comm
 
 ### KEP Template
 
-<b>
-The template for a KEP is precisely defined [here](/keps/NNNN-kep-template).
-</b>
+**The template for a KEP is precisely defined [here](/keps/NNNN-kep-template).**
 
 ### KEP Metadata
 
