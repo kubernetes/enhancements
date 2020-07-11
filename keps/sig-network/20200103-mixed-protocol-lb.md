@@ -210,7 +210,7 @@ Forwarding rule pricing is per rule: there is a flat price up to 5 forwarding ru
 
 [GCP forwarding_rules_charges](https://cloud.google.com/compute/network-pricing#forwarding_rules_charges) suggest that the same K8s Service definition would result in the creation of 2 forwarding rules in GCP. This has the same fixed price up to 5 forwarding rule instances, and each additional rule results in extra cost.
 
-A user can ask for an internal TCP/UDP Load Balancer via a K8s Service definition that also has the annotation `cloud.google.com/load-balancer-type: "Internal"`. Forwarding rules are also part of the GCE Internal TCP/UDP Load Balancer architecture, but in case of Internal TCP/UDP Load Balancer it is not supported to define different forwarding rules with different protocols for the same IP address. That is, for Services with type=LoadBalancer and with annotation `cloud.google.com/load-balancer-type: "Internal"` this feature would not be supported.
+A user can ask for an internal TCP/UDP Load Balancer via a K8s Service definition that also has the annotation `cloud.google.com/load-balancer-type: "Internal"`. Forwarding rules are part of the GCE Internal TCP/UDP Load Balancer architecture, too, and the user can define different forwarding rules with different protocols for the same IP address.
 
 Summary: The implementation of this feature can affect the bills of GCP users. However the following perspectives are also observed:
 - if a user wants to have UDP and TCP ports behind the same NLB two Services with must be defined, one for TCP and one for UDP. As the pricing is based on the number of forwarding rules this setup also means the same pricing as with the single Service instance.
@@ -351,9 +351,35 @@ In the first release:
  - indicate clearly to the user what ports with what protocols have been opened on the LB
  - preferably not create any Cloud LB resources if the Service definition contains unsupported protocols.
  
- In order to provide a way for the CPI to indicate port statuses to the user we would add the following new `portStatus` list of port statuses to `Service.status.loadBalancer`, so the CPI can indicate the status of the LB:
+ In order to provide a way for the CPI to indicate port statuses to the user we would add the following new `portStatus` list of port statuses to `Service.status.loadBalancer.ingress`, so the CPI can indicate the status of the LB. Also we add a `conditions` list of conditions to the `Service.status.loadBalancer`, with the first official condition `LoadBalancerMixedProtocolNotSupported` defined.
 
 ```json
+"io.k8s.api.core.v1.LoadBalancerCondition": {
+  "description": "LoadBalancerCondition contains details for the current condition of this load-balancer.",
+  "properties": {
+    "type": {
+      "description": "Type is the type of the condition. Known conditions are \"LoadBalancerMixedProtocolNotSupported\".\n\nThe  \"LoadBalancerMixedProtocolNotSupported\" condition with \"True\" status means that the cloud provider implementation could not create the requested load-balancer with the specified set of ports because that set contains different protocol values for the ports, and such a configuration is not supported either by the cloud provider or by the load balancer or both.",
+      "type": "string"
+    },
+    "status": {
+      "description": "Status is the status of the condition. Can be True, False, Unknown.",
+      "type": "string"
+    },
+    "message": {
+      "description": "Human-readable message indicating details about last transition.",
+      "type": "string"
+    },
+    "reason": {
+      "description": "Unique, one-word, CamelCase reason for the condition's last transition.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "type",
+    "status"
+  ],
+  "type": "object"
+},
 "io.k8s.api.core.v1.PortStatus": {
   "description": "PortStatus contains details for the current status of this port.",
   "properties": {
@@ -364,10 +390,6 @@ In the first release:
     },
     "protocol": {
       "description": "The protocol for this port",
-      "type": "string"
-    },
-    "name": {
-      "description": "The name of this port within the service.",
       "type": "string"
     },
     "ready": {
@@ -381,18 +403,19 @@ In the first release:
   },
   "type": "object"
 },
-"io.k8s.api.core.v1.LoadBalancerStatus": {
-  "description": "LoadBalancerStatus represents the status of a load-balancer.",
+"io.k8s.api.core.v1.LoadBalancerIngress": {
+  "description": "LoadBalancerIngress represents the status of a load-balancer ingress point: traffic intended for the servicshould be sent to an ingress point.",
   "properties": {
-    "ingress": {
-      "description": "Ingress is a list containing ingress points for the load-balancer. Traffic intended for the service ld be sent to these ingress points.",
-      "items": {
-        "$ref": "#/definitions/io.k8s.api.core.v1.LoadBalancerIngress"
-      },
-      "type": "array"
+    "hostname": {
+      "description": "Hostname is set for load-balancer ingress points that are DNS based (typically AWS load-balancers)",
+      "type": "string"
+    },
+    "ip": {
+      "description": "IP is set for load-balancer ingress points that are IP based (typically GCE or OpenStack load-balancers)",
+      "type": "string"
     },
     "portStatuses": {
-      "description": "The list has one entry per port in the manifest.
+      "description": "The list has one entry per port in the manifest.",
       "items": {
         "$ref": "#/definitions/io.k8s.api.core.v1.PortStatus"
       },
@@ -405,6 +428,28 @@ In the first release:
   },
   "type": "object"
 },
+"io.k8s.api.core.v1.LoadBalancerStatus": {
+  "description": "LoadBalancerStatus represents the status of a load-balancer.",
+  "properties": {
+    "ingress": {
+      "description": "Ingress is a list containing ingress points for the load-balancer. Traffic intended for the servi  should be sent to these ingress points.",
+      "items": {
+        "$ref": "#/definitions/io.k8s.api.core.v1.LoadBalancerIngress"
+      },
+      "type": "array"
+    },
+    "conditions": {
+      "description": "Current service state of the load-balancer",
+      "items": {
+        "$ref": "#/definitions/io.k8s.api.core.v1.LoadBalancerCondition"
+      },
+      "type": "array",
+      "x-kubernetes-patch-merge-key": "type",
+      "x-kubernetes-patch-strategy": "merge"
+    }
+  },
+  "type": "object"
+}
 ```
 
 A CPI shall also set an Event in case it cannot create a Cloud LB instance that could fulfill the Service specification.
