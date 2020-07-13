@@ -354,8 +354,8 @@ In the first release:
  In order to provide a way for the CPI to indicate port statuses to the user we would add the following new `portStatus` list of port statuses to `Service.status.loadBalancer.ingress`, so the CPI can indicate the status of the LB. Also we add a `conditions` list of conditions to the `Service.status.loadBalancer`, with the first official condition `LoadBalancerMixedProtocolNotSupported` defined.
 
 ```json
-"io.k8s.api.core.v1.LoadBalancerCondition": {
-  "description": "LoadBalancerCondition contains details for the current condition of this load-balancer.",
+"io.k8s.api.core.v1.ServiceCondition": {
+  "description": "ServiceCondition contains details for the current condition of this Service.",
   "properties": {
     "type": {
       "description": "Type is the type of the condition. Known conditions are \"LoadBalancerMixedProtocolNotSupported\".\n\nThe  \"LoadBalancerMixedProtocolNotSupported\" condition with \"True\" status means that the cloud provider implementation could not create the requested load-balancer with the specified set of ports because that set contains different protocol values for the ports, and such a configuration is not supported either by the cloud provider or by the load balancer or both.",
@@ -437,11 +437,21 @@ In the first release:
         "$ref": "#/definitions/io.k8s.api.core.v1.LoadBalancerIngress"
       },
       "type": "array"
+    }
+  },
+  "type": "object"
+},
+"io.k8s.api.core.v1.ServiceStatus": {
+  "description": "ServiceStatus represents the current status of a service.",
+  "properties": {
+    "loadBalancer": {
+      "$ref": "#/definitions/io.k8s.api.core.v1.LoadBalancerStatus",
+      "description": "LoadBalancer contains the current status of the load-balancer, if one is present."
     },
     "conditions": {
-      "description": "Current service state of the load-balancer",
+      "description": "Current service state",
       "items": {
-        "$ref": "#/definitions/io.k8s.api.core.v1.LoadBalancerCondition"
+        "$ref": "#/definitions/io.k8s.api.core.v1.ServiceCondition"
       },
       "type": "array",
       "x-kubernetes-patch-merge-key": "type",
@@ -449,7 +459,7 @@ In the first release:
     }
   },
   "type": "object"
-}
+},
 ```
 
 A CPI shall also set an Event in case it cannot create a Cloud LB instance that could fulfill the Service specification.
