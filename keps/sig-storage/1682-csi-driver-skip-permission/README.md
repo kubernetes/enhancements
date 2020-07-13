@@ -51,7 +51,7 @@ such as presence of fsType on the PVC to determine if the volume supports fsGrou
 permission change. These heuristics are known to be fragile, and cause problems with different
 storage types.
 
-To solve this issue we will add a new field called `CSIDriver.Spec.SupportsFSGroup` 
+To solve this issue we will add a new field called `CSIDriver.Spec.FSGroupPolicy` 
 that allows the driver to define if it supports volume ownership modifications via
 fsGroup.
 
@@ -75,12 +75,12 @@ support these operations.
 
 We propose that the `CSIDriver` type include a field that defines if the volume 
 provided by the driver supports changing volume ownership. This will be enabled
-with a new feature gate, `CSIVolumeSupportFSGroup`.   
+with a new feature gate, `CSIVolumeFSGroupPolicy`.   
 
 ### Risks and Mitigations
 
 - The CSIDriver objects will need to be redeployed after this field is introduced if the desired behavior is modified.
-- If a cluster enables the `CSIVolumeSupportFSGroup` feature gate and then this feature gate is disabled,
+- If a cluster enables the `CSIVolumeFSGroupPolicy` feature gate and then this feature gate is disabled,
 such as due to an upgrade or downgrade, then the cluster will revert to the current behavior of examining
 volumes and attempting to apply volume ownerships and permissions based on the defined `fsGroup`.
 
@@ -92,41 +92,40 @@ attempt to modify the volume ownership and permissions.
 
 As part of this proposal we will change the algorithm that modifies volume ownership and permissions
 for CSIDrivers to check the new field, and skip volume ownership modifications if it is found to be
-`Never`.
+`None`.
 
 When defining a `CSIDriver`, we propose that `CSIDriver.Spec` be expanded to include a new field entitled 
-`SupportsFSGroup` which can have following possible values:
+`CSIVolumeFSGroupPolicy` which can have following possible values:
 
- - `OnlyRWO` --> Current behavior. Attempt to modify the volume ownership and permissions to the defined `fsGroup` when the volume is 
- mounted if accessModes is RWO.
- - `Never` --> New behavior. Attach the volume without attempting to modify volume ownership or permissions.
- - `Always` --> New behavior. Always attempt to apply the defined fsGroup to modify volume ownership and permissions.
+ - `ReadWriteOnceWithFSType` --> Current behavior. Attempt to modify the volume ownership and permissions to the defined `fsGroup` when the volume is mounted if accessModes is RWO.
+ - `None` --> New behavior. Attach the volume without attempting to modify volume ownership or permissions.
+ - `File` --> New behavior. Always attempt to apply the defined fsGroup to modify volume ownership and permissions regardless of fstype or access mode.
 
 ```go
-type SupportsFsGroup string
+type FSGroupPolicy string
 
 const(
-    OnlyRWO SupportsFsGroup = "OnlyRWO"
-    Always SupportsFsGroup = "Always"
-    Never SupportsFsGroup = "Never"
+    ReadWriteOnceWithFSTypeFSGroupPolicy FSGroupPolicy = "ReadWriteOnceWithFSType"
+    FileFSGroupPolicy FSGroupPolicy = "File"
+    NoneFSGroupPolicy FSGroupPolicy = "None"
 )
 
 type CSIDriverSpec struct {
-    // SupportsFSGroup ← new field
+    // FSGroupPolicy ← new field
     // Defines if the underlying volume supports changing ownership and 
     // permission of the volume before being mounted. 
-    // If set to Always, SupportsFSGroup indicates that 
+    // If set to File, FSGroupPolicy indicates that 
     // the volumes provisioned by this CSIDriver support volume ownership and 
     // permission changes, and the filesystem will be modified to match the 
     // defined fsGroup every time the volume is mounted.
-    // If set to Never, then the volume will be mounted without modifying
+    // If set to None, then the volume will be mounted without modifying
     // the volume's ownership or permissions.
-    // Defaults to OnlyRWO, which results in the volume being examined
+    // Defaults to ReadWriteOnceWithFSType, which results in the volume being examined
     // and the volume ownership and permissions attempting to be updated
     // only when the PodSecurityPolicy's fsGroup is explicitly defined, the
     // fsType is defined, and the PersistentVolumes's accessModes is RWO.
     // + optional
-    SupportsFSGroup *SupportsFsGroup
+    FSGroupPolicy *FSGroupPolicy
 }
 ```
 ### Test Plan
@@ -134,23 +133,23 @@ type CSIDriverSpec struct {
 A test plan will include the following tests:
 
 * Basic tests including a permutation of the following values:
-  - CSIDriver.Spec.SupportsFSGroup  (`Always`/`Never`/`OnlyRWO`)
+  - CSIDriver.Spec.FSGroupPolicy  (`File`/`None`/`ReadWriteOnceWithFSType`)
   - PersistentVolumeClaim.Status.AccessModes (`ReadWriteOnly`, `ReadOnlyMany`,`ReadWriteMany`)
 * E2E tests
 
 ### Graduation Criteria
 
 * Alpha in 1.19 provided all tests are passing.
-* All functionality is guarded by a new alpha `CSIVolumeSupportFSGroup` feature gate.
+* All functionality is guarded by a new alpha `CSIVolumeFSGroupPolicy` feature gate.
 
 * Beta in 1.20 with design validated by at least two customer deployments
   (non-production), with discussions in SIG-Storage regarding success of
   deployments. 
-* The `CSIVolumeSupportFSGroup` feature gate will graduate to beta.
+* The `CSIVolumeFSGroupPolicy` feature gate will graduate to beta.
 
 
 * GA in 1.21, with E2E tests in place tagged with feature Storage.
-* The `CSIVolumeSupportFSGroup` feature gate will graduate to GA.
+* The `CSIVolumeFSGroupPolicy` feature gate will graduate to GA.
 
 [issues]: https://github.com/kubernetes/enhancements/issues/1682
 
@@ -159,12 +158,12 @@ A test plan will include the following tests:
 ### Feature enablement and rollback
 * **How can this feature be enabled / disabled in a live cluster?**
   - [x] Feature gate (also fill in values in `kep.yaml`)
-    - Feature gate name: CSIVolumeSupportFSGroup 
+    - Feature gate name: CSIVolumeFSGroupPolicy 
     - Components depending on the feature gate: kubelet
 
 * **Does enabling the feature change any default behavior?**
   Enabling the feature gate will **not** change the default behavior.
-  Users must also define the `SupportsFsGroup` type for behavior to
+  Users must also define the `FSGroupPolicy` type for behavior to
   be modified.
 
 * **Can the feature be disabled once it has been enabled (i.e. can we rollback
@@ -173,7 +172,7 @@ A test plan will include the following tests:
 
 * **What happens if we reenable the feature if it was previously rolled back?**
   If reenabled, any subsequent CSIDriver volumes that are mounted
-  will respect the user-defined values for `SupportsFSGroup`. Existing mounted
+  will respect the user-defined values for `FSGroupPolicy`. Existing mounted
   volumes will not be modified.
 
 
