@@ -82,7 +82,7 @@ Add a feature flag and pass the disable option to cadvisor.
 
 ### Test Plan
 
-* E2E tests that checks when the feature flag is enabled if the metrics are present or not.
+* E2E test that checks when the feature flag is enabled if the metrics are present or not.
 
 ### Graduation Criteria
 

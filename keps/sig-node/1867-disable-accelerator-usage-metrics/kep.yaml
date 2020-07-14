@@ -4,12 +4,16 @@ authors:
   - "@RenaudWasTaken"
 owning-sig: sig-node
 participating-sigs: []
-status: provisional
+status: implementable
 creation-date: 2020-06-18
 reviewers:
-  - TBD
+  - "dashpole"
+  - "derekwaynecarr"
+  - "dawnchen"
 approvers:
-  - TBD
+  - "dashpole"
+  - "derekwaynecarr"
+  - "dawnchen"
 prr-approvers:
   - "deads2k"
   - "johnbelamaric"
