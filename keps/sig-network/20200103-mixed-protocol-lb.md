@@ -52,6 +52,7 @@ superseded-by:
     - [Annotation in the Service definition](#annotation-in-the-service-definition)
     - [Merging Services in CPI](#merging-services-in-cpi)
   - [The selected solution for the option control](#the-selected-solution-for-the-option-control)
+  - [Kube-proxy](#kube-proxy)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
@@ -467,8 +468,12 @@ A CPI shall also set an Event in case it cannot create a Cloud LB instance that 
 In the second release: 
 - the feature flag shall be set to ON by default (promoted to beta). Most probably we want to keep the feature flag so cloud providers can decide whether they enable it or not in their managed K8s services depending their CPI implementations.
 
-In the lomg term:
+In the long term:
 - the feature flag is removed and the feature becomes generic without option control
+
+### Kube-proxy
+
+The kube-proxy should use the port status information from `Service.status.loadBalancer.ingress` in order not to allow traffic to those ports that could not be opened by the load balancer either. 
 
 ### Test Plan
 
