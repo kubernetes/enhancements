@@ -1,9 +1,0 @@
-# See the OWNERS docs at https://go.k8s.io/owners
-
-approvers:
-  - enhancements-approvers
-  - sig-architecture-leads
-reviewers:
-  - enhancements-reviewers
-labels:
-  - sig/architecture
