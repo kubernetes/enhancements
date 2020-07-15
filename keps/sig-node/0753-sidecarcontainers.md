@@ -155,11 +155,32 @@ Applications that rely on sidecars may experience a high amount of errors when s
 
 ## Goals
 
+This proposal aims to:
+ * Allow Kubernetes Jobs to have sidecar containers that run continously
+   (servers) without coupling between containers in the pod.
+ * Allow pods to start a subset of containers first and, only when those are
+   ready, start the remaining containers.
+ * Allow pods to stop a subset of containers first and, only when those have
+   been stopped, stop the rest.
+ * Not change the semantics in any way for pods not using this feature.
+ * Only change the semantics of startup/shutdown behavior for pods using this
+   feature.
+
 Solve issues so that they don't require application modification:
 * [25908](https://github.com/kubernetes/kubernetes/issues/25908) - Job completion
-* [65502](https://github.com/kubernetes/kubernetes/issues/65502) - Container startup dependencies
+* [65502](https://github.com/kubernetes/kubernetes/issues/65502) - Container startup dependencies. Istio bug report
 
 ## Non-Goals
+
+This proposal doesn't aim to:
+ * Allow a multi-level ordering of containers start/stop sequence. IOW, only two
+   levels are deinfed: "sidecar" or "standard" containers. It is not a goal to
+   have more than these two levels.
+ * Model startup/shutdown dependencies between different sidecar containers
+ * Change the pod phase in any way, with or without this feature enabled
+ * Reimplement an init-system alike semantics for pod containers
+   startup/shutdown
+ * Allow sidecar containers to run concurrently with initContainers
 
 Allowing multiple containers to run at once during the init phase - this could be solved using the same principal but can be implemented separately. //TODO write up how we could solve the init problem with this proposal
 
