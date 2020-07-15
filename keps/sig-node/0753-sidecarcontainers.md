@@ -477,9 +477,13 @@ Older Kubelets should still be able to schedule Pods that have sidecar container
 [stalled]: https://github.com/kubernetes/enhancements/issues/753#issuecomment-597372056
 
 ## Alternatives
+
+### Alternative designs considered
+
 This section contains ideas that were originally discussed but then dismissed in favour of the current design.
 It also includes some links to related discussion on each topic to give some extra context, however not all decisions are documented in Github prs and may have been discussed in sig-meetings or in slack etc.
-### Add a pod.spec.SidecarContainers array
+
+#### Add a pod.spec.SidecarContainers array
 An early idea was to have a separate list of containers in a similar style to init containers, they would have behaved in the same way that the current KEP details. The reason this was dismissed was due to it being considered too large a change to the API that would require a lot of updates to tooling, for a feature that in most respects would act the same as a normal container.
 
 ```yaml
@@ -494,7 +498,7 @@ Discussion links:
 https://github.com/kubernetes/community/pull/2148#issuecomment-388813902
 https://github.com/kubernetes/community/pull/2148#discussion_r221103216
 
-### Mark one container as the Primary Container
+#### Mark one container as the Primary Container
 The primary container idea was specific to solving the issue of Jobs that don't complete with a sidecar, the suggestion was to have one container marked as the primary so that the Job would get completed when that container has finished. This was dismissed as it was too specific to Jobs whereas the more generic issues of sidecars could be useful in other places.
 ```yaml
 kind: Job
@@ -512,7 +516,7 @@ spec:
 Discussion links:
 https://github.com/kubernetes/community/pull/2148#discussion_r192846570
 
-### Boolean flag on container, Sidecar: true
+#### Boolean flag on container, Sidecar: true
 ```yaml
 containers:
   - name: myApp
@@ -521,7 +525,7 @@ containers:
 ```
 A boolean flag of `sidecar: true` could be used to indicate which pods are sidecars, this was dismissed as it was considered too specific and potentially other types of container lifecycle may want to be added in the future.
 
-### Mark containers whose termination kills the pod, terminationFatalToPod: true
+#### Mark containers whose termination kills the pod, terminationFatalToPod: true
 This suggestion was to have the ability to mark certain containers as critical to the pod, if they exited it would cause the other containers to exit. While this helped solve things like Jobs it didn't solve the wider issue of ordering startup and shutdown.
 
 ```yaml
@@ -533,7 +537,7 @@ containers:
 Discussion links:
 https://github.com/kubernetes/community/pull/2148#issuecomment-414806613
 
-### Add "Depends On" semantics to containers
+#### Add "Depends On" semantics to containers
 Similar to [systemd](https://www.freedesktop.org/wiki/Software/systemd/) this would allow you to specify that a container depends on another container, preventing that container from starting until the container it depends on has also started. This could also be used in shutdown to ensure that the containers which have dependent containers are only terminated after their dependents have all safely shut down.
 ```yaml
 containers:
@@ -545,7 +549,7 @@ This was rejected as the UX was considered to be overly complicated for the use 
 Discussion links:
 https://github.com/kubernetes/community/pull/2148#discussion_r203071377
 
-### Pre-defined phases for container startup/shutdown or arbitrary numbers for ordering
+#### Pre-defined phases for container startup/shutdown or arbitrary numbers for ordering
 There were a few variations of this but they all had a similar idea which was the ability to order both the shutdown and startup of containers using phases or numbers to determine the ordering.
 examples:
 ```yaml
@@ -570,3 +574,118 @@ Discussion links:
 https://github.com/kubernetes/community/pull/2148#issuecomment-424494976
 https://github.com/kubernetes/community/pull/2148#discussion_r221094552
 https://github.com/kubernetes/enhancements/pull/841#discussion_r257906512
+
+### Workarounds sidecars need to do today
+
+This section show the alternatives and workaround app developers need to do
+today. 
+
+#### Jobs with sidecar containers
+
+The problem is described in the [Motivation
+section](#problems-jobs-with-sidecar-containers). Here, we present some
+alternatives and the pain points that affect users today.
+
+Most known work-arounds for this are achieved by building an ad-hoc signalling
+mechanism to communicate completion status between containers. Common
+implementations use a shared scratch volume mounted into all pods, where
+lifecycle status can be communicated by creating and watching for the presence
+of files. With the disadvatages of:
+
+ * Repetitive lifecycle logic must be incorporated into each sidecar (code might
+   be shared, but is usually language dependant)
+ * Wrappers can alliviate that, but it is still quite complex when there are
+   several sidecar to wait for. When more than one sidecar is used, some
+   question arise: how many sidecars a wrapper has to wait for? How can that be
+   configured in a non-error prone way? How can I use wrappers while still inject
+   sidecars automatically and reliably in a mutating webhook or programmatically?
+
+Other possible work-arounds can be using a shared PID namespace and checking for
+other containers running or not. Also, it comes with several disadvatages, like:
+
+ * Security concerns around sharing PID namespace (might be able to see other
+   containers env vars via /proc, or even the root filesystem, depends on
+   permissions used)
+ * Restricts the possibility of changing the container runtime, until all
+   runtimes support a shared PID namespace
+ * Several applications might need re-work, as PID 1 is not the container
+   entrypoint anymore.
+
+Using a wrapper with this approach might sound viable for _some_ use cases, but
+when you add to the mix that containers can have more than one sidecar, then
+each container has to know which other containers are sidecar to know if it is
+safe to proceed. This becomes specially tricky when combined with auto-injection
+of sidecars, and even more complicated if auto-inject is done by a third party
+or independent team.
+
+Furthermore, wrappers have several pain points if you want to use them for
+startup, as explained in the next section.
+
+#### Service mesh or metrics sidecars
+
+Let app container be the main app that just has the service mesh extra container
+in the pod.
+
+Service mesh, today, have to do the following workarounds due to lack of startup
+ordering:
+ * Blackhole all the traffic until service mesh container is up (usually using
+   an initContainer for this)
+ * Some trickery (sleep preStop hooks or some alternative) to not be killed
+   before other containers that need to use the network. Otherwise, traffic for
+   those containers will be blackholed
+
+This means that if the app container is started before the service mesh is
+started and ready, all traffic will be blackholed and the app needs to retry.
+Once the service mesh container is ready, traffic will be allowed.
+
+This has another major disadvantage: several apps crash if traffic is blackholed
+during startup (common in some rails middleware, for example) and have to resort
+to some kind of workaround, like [this one][linkerd-wait] to wait.  This makes
+also service mesh miss their goal of aumenting containers functionality without
+modifying the main application.
+
+Istio has an alternative to the initContainer hack. Istio [has an
+option][istio-cni-opt] to integrate with CNI and inject the blackhole from there
+instead of using the initContainer. In that case, it will do (just c&p from the
+link, in case it breaks in the future):
+
+> By default Istio injects an initContainer, istio-init, in pods deployed in the mesh. The istio-init container sets up the pod network traffic redirection to/from the Istio sidecar proxy. This requires the user or service-account deploying pods to the mesh to have sufficient Kubernetes RBAC permissions to deploy containers with the NET_ADMIN and NET_RAW capabilities. Requiring Istio users to have elevated Kubernetes RBAC permissions is problematic for some organizations’ security compliance
+> ...
+> The Istio CNI plugin performs the Istio mesh pod traffic redirection in the Kubernetes pod lifecycle’s network setup phase, thereby removing the requirement for the NET_ADMIN and NET_RAW capabilities for users deploying pods into the Istio mesh. The Istio CNI plugin replaces the functionality provided by the istio-init container.
+
+In other words, Istio has an alternative to configure the traffic blockhole
+without an initContainer. But the other problems and hacks mentioned remain,
+though.
+
+[linkerd-last-container]: https://github.com/linkerd/linkerd2/issues/4758#issuecomment-658457737
+[istio-cni-opt]: https://istio.io/latest/docs/setup/additional-setup/cni/
+[linkerd-wait]: https://github.com/olix0r/linkerd-await
+
+##### Istio bug report
+
+There is also a [2 years old bug][istio-bug-report] from Istio devs that this
+KEP will fix. In addition, similar benefit is expected for Linkerd, as we talked
+with Linkerd devs.
+
+One of the things mentioned there is that, at least in 2018, a workaround used
+was to tell the user to run a script to wait for the service mesh to start on
+their containers.
+
+Rodrigo will reach out to Istio devs to see if the situation changed since 2018.
+
+[istio-bug-report]: https://github.com/kubernetes/kubernetes/issues/65502
+
+#### Move containers out of the pod
+
+Due to the ordering problems of having the container in the same pod, another
+option is to move it out of the pod. This will, for example, remove the problem
+of shutdown order. Furthermore, Rodrigo will argue than in many cases this is
+better or more elegant in Kubernetes.
+
+While some things might be possible to move to daemonset or others, it is not
+possible for all applications. For example some apps are not multi-tenant and
+this can not be an option security-wise. Or some apps would still like to have a
+sidecar that adds some metadata, for example.
+
+While this is an option, is not possible or extremely costly for several use
+cases.
