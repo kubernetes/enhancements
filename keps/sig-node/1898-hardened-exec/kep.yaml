@@ -1,0 +1,47 @@
+title: Hardening exec endpoints against SSRF
+kep-number: 1898
+authors:
+  - "@tallclair"
+owning-sig: sig-node
+participating-sigs:
+  - sig-apimachinery
+  - sig-auth
+status: provisional
+creation-date: 2020-07-08
+reviewers:
+  - TBD
+approvers:
+  - TBD
+prr-approvers:
+  - TBD
+see-also:
+  - "/keps/sig-node/20191205-container-streaming-requests.md"
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: alpha
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.20"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.20"
+  beta: TBD
+  stable: TBD
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+  - name: HardenedExecRequests
+    components:
+      - kubelet
+      - kube-apiserver
+      - client-go
+      - kubectl
+disable-supported: true
+
+# The following PRR answers are required at beta release
+metrics:
+  - TBD
