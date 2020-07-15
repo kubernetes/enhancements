@@ -98,7 +98,7 @@ container is a sidecar container. The only valid value for now is `sidecar`, but
 other values can be added in the future if needed.
 
 Pods with sidecar containers only change the behavior of the startup and
-shutdown sequence of a pod: sidecar container are started before non-sidecars
+shutdown sequence of a pod: sidecar containers are started before non-sidecars
 and stopped after non-sidecars.
 
 A pod that has sidecar containers guarantees that non-sidecar containers are
@@ -133,25 +133,143 @@ section](#graduation-criteria).
 
 ## Motivation
 
-SideCar containers have always been used in some ways but just not formally identified as such, they are becoming more common in a lot of applications and as more people have used them, more issues have cropped up.
+The concept of sidecar containers has been around almost since Kubernetes early
+days. A clear example is [this Kubernetes blog post][sidecar-blog-post] from
+2015 mentioning the sidecar pattern.
 
-Here are some examples of the main problems:
+Over the years the sidecar pattern has become more common in applications,
+gained popularity and uses cases are getting more diverse. The current
+Kubernetes primitives handled that well, but they are starting to fall short for
+several use cases and force weird work-arounds in the applications. 
 
-### Jobs
- If you have a Job with two containers one of which is actually doing the main processing of the job and the other is just facilitating it, you encounter a problem when the main process finishes; your sidecar container will carry on running so the job will never finish.
+This proposal aims to remediate that by adding a simple set of guarantees for
+sidecar containers, while trying to not do a complete re-implementation of an
+init system to do so. Those alternatives are interesting and were considered,
+but in the end the community decided to go for something simpler that will cover
+most of the use cases. Those options are explored in the
+[alternatives](#alternatives) section.
 
-The only way around this problem is to manage the sidecar container's lifecycle manually and arrange for it to exit when the main container exits. This is typically achieved by building an ad-hoc signalling mechanism to communicate completion status between containers. Common implementations use a shared scratch volume mounted into all pods, where lifecycle status can be communicated by creating and watching for the presence of files. This pattern has several disadvantages:
+The next section expands on what the current problems are. But, to give more
+context, it is important to highlight that some companies are already using a
+fork of Kubernetes with this sidecar functionality added (not all
+implementations are the same, but more than one company has a fork for this).
 
-* Repetitive lifecycle logic must be rewritten in each instance a sidecar is deployed.
-* Third-party containers typically require a wrapper to add this behaviour, normally provided via an entrypoint wrapper script implemented in the k8s container spec. This adds undesirable overhead and introduces repetition between the k8s and upstream container image specs.
-* The wrapping typically requires the presence of a shell in the container image, so this pattern does not work for minimal containers which ship without a toolchain.
+[sidecar-blog-post]: https://kubernetes.io/blog/2015/06/the-distributed-system-toolkit-patterns/#example-1-sidecar-containers
 
-### Startup
-An application that has a proxy container acting as a sidecar may fail when it starts up as it's unable to communicate until its proxy has started up successfully. Readiness probes don't help if the application is trying to talk outbound.
+### Problems: jobs with sidecar containers
 
-### Shutdown
-Applications that rely on sidecars may experience a high amount of errors when shutting down as the sidecar may terminate before the application has finished what it's doing.
+Imagine you have a Job with two containers: one which does the main processing
+of the job and the other is just a sidecar facilitating it. This sidecar can be
+a service mesh, a metrics gathering statsd server, etc.
 
+When the main processing finishes, the pod won't terminate until the sidecar
+container finishes too. This is problematic for sidecar containers that run
+continously, like service-mesh or statsd metrics server or servers in general.
+
+There is no simple way to handle this on Kubernetes today. There are
+work-arounds for this problem, most of them consist of some form of coupling
+between the containers to add some logic where a container that finishes
+communicates it so other containers can react. But it gets tricky when you have
+more than one sidecar container or want to auto-inject sidecars. Some
+alternatives to achieve this currently and their pain points are discussed in
+detail on the [alternatives](#alternatives) section.
+
+### Problems: service mesh or metrics sidecars
+
+While this problem is general to any sidecar container that might need to start
+before others or stop after others with special handling on shutdown, we use
+here a service mesh, metrics gathering and logging sidecar for the examples.
+
+#### Logging/Metrics sidecar
+
+A logging sidecar should start before several other containers, to not
+lose logs from the startup of other applications. Let's call _main container_
+the app that will log and _logging container_ the sidecar that will facilitate
+it.
+
+If the logging container starts after the main app, some logs can be lost.
+Furthermore, if the logging container is not yet started and the main app
+crashes on startup, those logs can be lost (depends if logs to a shared volume
+or over the network on localhost, etc.). Startup is usually not that critical,
+because if the case where the other container is not started (like a restart) is
+important, is usually handled correctly.
+
+On shutdown the ordering behavior is arguably more important: if the logging
+container is stopped first, logs for other containers are lost. No matter if
+those containers queue them and retry to send them to the logging container, or
+if they are persisted to a shared volume. The logging container is already
+killed and will not be started, as the pod is shutting down. In those cases,
+logs are lost.
+
+The same things regarding startup and shutdown apply for a metrics container.
+
+Some work-arounds can be done, to alliviate the symptoms:
+ * Ignore SIGTERM on the sidecar container, so it is alive until the pod is
+   killed. This is not ideal and increases _a lot_ the time a pod will take to
+terminate. For example, if the P99 response time is 2 minutes and therefore the
+TerminationGracePeriodSeconds is set to that, the main container can finish in 2
+seconds (that might be the average) but ignoring SIGTERM in the sidecar
+container will force the pod to live for 2 minutes anyways.
+ * Use preStop hooks that just runs a "sleep X" seconds. This is very similar to
+   the previous item and has the same problems.
+
+#### Service mesh
+
+Service mesh present a similar problem: you want them to be set and ready before
+other containers start, so any inbound/outbound connection that any container can
+initiate goes through the service mesh.
+
+A similar problem happens for shutdown: if the service mesh container is
+terminated prior to other containers, outgoing traffic from other apps will be
+blackholed or not use the service mesh.
+
+However, as none of these are possible to guarantee most service mesh (like
+Linkerd and Istio), for example, need to do several hacks to have the basic
+functionality. These are explained in detail in the
+[alternatives](#alternatives) section. Nonetheless, here is a  quick highlight
+of some of the things some service mesh currently need to do:
+
+ * Recommend users to delay starting their apps by using a script to wait for
+   the service mesh to be ready. The goal of a service mesh to augment the app
+   functionality without modifying it is lost in this case.
+ * To guarantee that traffic goes via the services mesh, an initContainer is
+   added to blackhole traffic until the service mesh containers is up. This way,
+   other containers that might be started before the service mesh container can't
+   use the network until the service mesh container is started and ready. A side
+   effect is that traffic is blackholed until the service mesh is up and in a
+   ready state.
+ * Use preStop hooks with a "sleep infinity" to make sure the service mesh
+   doesn't terminate before other containers that might be serving requests.
+
+The auto-inject of initContainer [has caused bugs][linkerd-bug-init-last], as it
+competes with other tools auto-injecting container to be run last too.
+
+[linkerd-bug-init-last]: https://github.com/linkerd/linkerd2/issues/4758#issuecomment-658457737
+
+### Problems: Coupling infrastructure with applications
+
+The limitations to have some ordering guarantees on startup and shutdown,
+sometimes forces to couple application code with infrastructure. This is not
+nice, as the infrastructure is ideally handled independently, and forces more
+coordination between multiple, possibly indepedant, teams.
+
+An example in the open source world about this is the [Istio CNI
+plugin][istio-cni-plugin]. This was created as an alternative for the
+initContainer hack that service mesh need to do. The initContainer will
+blackhole all traffic until the Istio container is up. But this alternative
+requires that nodes have the CNI plugin installed, effectively coupling the
+service mesh app with the infrastructure.
+
+This KEP proposal removes the need for service mesh to use either an
+initContainer or a CNI plugin: just guarantee that the sidecar container can be
+started first.
+
+While in this specific example the CNI plugin has some benefits too (removes the
+need for some capabilities in the pod) and might be worth pursing, it is used
+here just as an examples of possible coupling apps with infrastructure. Similar
+examples also exist in-house for not open source applications too.
+
+[istio-cni-plugin]: https://istio.io/latest/docs/setup/additional-setup/cni/
 
 ## Goals
 
