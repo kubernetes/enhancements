@@ -19,7 +19,7 @@ milestone:
   beta: "v1.22"
   stable: "v1.23"
 creation-date: 2020-05-28
-last-updated: 2020-05-28
+last-updated: 2020-07-16
 status: implementable
 see-also:
   - "keps/sig-node/2051-provisioning-resources-with-numa-topology/README.md"

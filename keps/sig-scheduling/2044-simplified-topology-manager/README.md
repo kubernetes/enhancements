@@ -121,29 +121,45 @@ NUMAID is an auxiliary field since scheduler version of TopologyManager doesn't 
 The algorithm which implements single-numa-node policy is following:
 
 ```go
-if !guaranteedQoS(pod) {
-    return nil
-}
-for _, container := range(containers) {
-    bitmask := bm.NewEmptyBitMask()
-    for resource, quantity := range(container.Resources.Requests) {
-        resourceBitmask := bm.NewEmptyBitMask()
-        for _, numaNode := range(nodes) {
-            numaQuantity, ok := numaNode.Resources[resource]
-            if !ok || numaQuantity.Cmp(quantity) < 0 {
-                continue
-            }
-            resourceBitmask.Add(numaNode.NUMAID)
-        }
-    }
-    if resourceBitmask.IsEmpty() {
-        continue
-    }
-    bitmask.And(resourceBitmask)
-}
-if bitmask.IsEmpty() {
-    // definitely we can't align container, so we can't align a pod
-    return framework.NewStatus(framework.Unschedulable, fmt.Sprintf("Can't align container: %s", container.Name))
+	if qos == v1.PodQOSBestEffort {
+		return nil
+	}
+
+	zeroQuantity := resource.MustParse("0")
+	for _, container := range containers {
+		bitmask := bm.NewEmptyBitMask()
+		bitmask.Fill()
+		for resource, quantity := range container.Resources.Requests {
+			resourceBitmask := bm.NewEmptyBitMask()
+			for _, numaNode := range nodes {
+				numaQuantity, ok := numaNode.Resources[resource]
+				// if can't find requested resource on the node - skip (don't set it as available NUMA node)
+				// if unfound resource has 0 quantity probably this numa node can be considered
+				if !ok && quantity.Cmp(zeroQuantity) != 0{
+					continue
+				}
+				// Check for the following:
+				// 1. set numa node as possible node if resource is memory or Hugepages (until memory manager will not be merged and
+				// memory will not be provided in CRD
+				// 2. set numa node as possible node if resource is cpu and it's not guaranteed QoS, since cpu will flow
+				// 3. set numa node as possible node if zero quantity for non existing resource was requested (TODO check topology manaager behaviour)
+				// 4. otherwise check amount of resources
+				if resource == v1.ResourceMemory ||
+					strings.HasPrefix(string(resource), string(v1.ResourceHugePagesPrefix)) ||
+					resource == v1.ResourceCPU && qos != v1.PodQOSGuaranteed ||
+					quantity.Cmp(zeroQuantity) == 0 ||
+					numaQuantity.Cmp(quantity) >= 0 {
+					resourceBitmask.Add(numaNode.NUMAID)
+				}
+			}
+			bitmask.And(resourceBitmask)
+		}
+		if bitmask.IsEmpty() {
+			// definitely we can't align container, so we can't align a pod
+			return framework.NewStatus(framework.Unschedulable, fmt.Sprintf("Can't align container: %s", container.Name))
+		}
+	}
+	return nil
 }
 ```
 ## Accessing NodeResourceTopology CRD
