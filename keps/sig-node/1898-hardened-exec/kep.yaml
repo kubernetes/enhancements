@@ -4,7 +4,7 @@ authors:
   - "@tallclair"
 owning-sig: sig-node
 participating-sigs:
-  - sig-apimachinery
+  - sig-api-machinery
   - sig-auth
 status: provisional
 creation-date: 2020-07-08
@@ -13,7 +13,7 @@ reviewers:
 approvers:
   - TBD
 prr-approvers:
-  - TBD
+  - deads2k
 see-also:
   - "/keps/sig-node/20191205-container-streaming-requests.md"
 
