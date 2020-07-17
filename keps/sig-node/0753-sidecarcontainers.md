@@ -1043,8 +1043,8 @@ for examples). It was decided to not have a `standard` container type back then,
 to avoid such issues.
 
 We consider this weird but, as we can't do anything about it and we were okay in
-the past, we propose to keep this as it is (it seems we were okay, judging from [that same
-review comment][pr-kep-type-standard] and [this][apr-kep-api-ok]).
+the past, we propose to keep this as it is. It seems we were okay, judging from [that same
+review comment][pr-kep-type-standard] and [this][pr-kep-api-ok].
 
 [pr-kep-type-standard]: https://github.com/kubernetes/kubernetes/pull/79649#discussion_r362658887
 [pr-kep-api-ok]: https://github.com/kubernetes/kubernetes/pull/79649#issuecomment-589861200
@@ -1197,14 +1197,38 @@ This is very similar to the previous:
 This semantic will just be a 1-1 translation from the proposed KEP to this
 "Depends On" semantic, so it is easy for them to coexist.
 
-#### Proof of concept implementations
+### Proof of concept implementations
 
-##### KEP implementation and Demo
+#### KEP implementation and Demo
 
-#### PoC and Demo
 There is a [PR here](https://github.com/kubernetes/kubernetes/pull/75099) with a working Proof of concept for this KEP, it's just a draft but should help illustrate what these changes would look like.
 
 Please view this [video](https://youtu.be/4hC8t6_8bTs) if you want to see what the PoC looks like in action.
+
+#### Another implementation using pod annotations
+
+Another implementation using pod annotations on top of Kubernetes 1.17 is
+available [here][kinvolk-sidecar-branch].
+
+There are some example yamls in the [sidecar-tests
+folder][kinvolk-poc-sidecar-test], also the yaml output was captured to easily
+see the behavior. [See the commit that created
+them][kinvolk-poc-sidecar-test-commit] for instruction on how to run it.
+
+Some other things worth noting about the implementation:
+ * It is done using pod annotations so it is easy to test for users (doesn't
+   modify pod spec)
+ * It implements the KEP proposal and not the suggested modifications, with one
+   exception: the podPhase is not modified.
+ * [This line][kinvolk-poc-sidecar-prestop] should be modified to use the
+   `TerminationHook` instead, if such alternative is chosen
+ * There is some c&p code to avoid doing refactors and just have a patch that is
+   simpler to cherry-pick on different Kubernetes versions.
+
+[kinvolk-poc-sidecar-prestop]: https://github.com/kinvolk/kubernetes/blob/52a96112b3e7878740a0945ad3fc4c6d0a6c5227/pkg/kubelet/kuberuntime/kuberuntime_container.go#L851
+[kinvolk-sidecar-branch]: https://github.com/kinvolk/kubernetes/tree/rata/sidecar-ordering-annotations-1.17
+[kinvolk-poc-sidecar-test]: https://github.com/kinvolk/kubernetes/tree/52a96112b3e7878740a0945ad3fc4c6d0a6c5227/sidecar-tests
+[kinvolk-poc-sidecar-test-commit]: https://github.com/kinvolk/kubernetes/commit/385a89d83df9c076963d2943507d1527ffa606f7
 
 ### Risks and Mitigations
 
