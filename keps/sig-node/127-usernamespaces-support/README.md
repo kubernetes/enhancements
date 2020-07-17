@@ -58,7 +58,7 @@ If none of those approvers are still appropriate, then changes to that list
 should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross-cutting KEPs).
 -->
-# KEP-NNNN: Your short, descriptive title
+# KEP-127: Support User Namespaces
 
 <!--
 This is the title of your KEP. Keep it short, simple, and descriptive. A good
@@ -165,6 +165,13 @@ updates.
 [documentation style guide]: https://github.com/kubernetes/community/blob/master/contributors/guide/style-guide.md
 -->
 
+Container security consists of many different kernel features that work
+together to make containers secure. User namespaces is one such features that
+enables interesting possibilities for containers by allowing them to be root
+inside the container while not being root on the host. This gives more
+capabilities to the containers while protecting the host from the container
+being root and adds one more layer to container security.
+
 ## Motivation
 
 <!--
@@ -176,6 +183,26 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 [experience reports]: https://github.com/golang/go/wiki/ExperienceReports
 -->
 
+From [user_namespaces(7)](https://man7.org/linux/man-pages/man7/user_namespaces.7.html):
+> User namespaces isolate security-related identifiers and attributes, in
+particular, user IDs and group IDs, the root directory, keys, and capabilities.
+A process's user and group IDs can be different inside and outside a user
+namespace. In particular, a process can have a normal unprivileged user ID
+outside a user namespace while at the same time having a user ID of 0 inside
+the namespace; in other words, the process has full privileges for operations
+inside the user namespace, but is unprivileged for operations outside the
+namespace.
+
+Linux user namespaces allows to run Pods with software that expects to run as
+root or with elevated privileges while still restricting the processes
+permissions on the node, as the effective user ID on the node can be
+unprivileged. This protects the node and other pods running in the node.
+
+The purpose of using user namespaces in Kubernetes is to let the processes in
+Pods think they run as one uid set when in fact they run as different effective
+uids on the host. If a process is able to break into the host, it'll have limited
+impact as it'll be running as an unprivileged user.
+
 ### Goals
 
 <!--
@@ -183,12 +210,21 @@ List the specific goals of the KEP. What is it trying to achieve? How will we
 know that this has succeeded?
 -->
 
+- Increase node to Pod isolation in Kubernetes by mapping the root user in a
+Pod to an unprivileged user in the node.
+- Make workloads that require root user inside the container safer for the
+node using the additional security of user namespaces.
+
 ### Non-Goals
 
 <!--
 What is out of scope for this KEP? Listing non-goals helps to focus discussion
 and make progress.
 -->
+
+- To have different uid/gid mappings per pod/container. All pods/containers
+running in a node share a common user namespace remapping configuration.
+- Remote volumes support e.g. NFS.
 
 ## Proposal
 
@@ -316,7 +352,7 @@ in back-to-back releases.
 - Address feedback on usage/changed behavior, provided on GitHub issues
 - Deprecate the flag
 
-**For non-optional features moving to GA, the graduation criteria must include 
+**For non-optional features moving to GA, the graduation criteria must include
 [conformance tests].**
 
 [conformance tests]: https://git.k8s.io/community/contributors/devel/sig-architecture/conformance-tests.md
@@ -425,7 +461,7 @@ _This section must be completed when targeting beta graduation to a release._
   Longer term, we may want to require automated upgrade/rollback tests, but we
   are missing a bunch of machinery and tooling and can't do that now.
 
-* **Is the rollout accompanied by any deprecations and/or removals of features, APIs, 
+* **Is the rollout accompanied by any deprecations and/or removals of features, APIs,
 fields of API types, flags, etc.?**
   Even if applying deprecation policies, they may still surprise some users.
 
@@ -438,7 +474,7 @@ _This section must be completed when targeting beta graduation to a release._
   checking if there are objects with field X set) may be a last resort. Avoid
   logs or events for this purpose.
 
-* **What are the SLIs (Service Level Indicators) an operator can use to determine 
+* **What are the SLIs (Service Level Indicators) an operator can use to determine
 the health of the service?**
   - [ ] Metrics
     - Metric name:
@@ -456,7 +492,7 @@ the health of the service?**
     job creation time) for cron job <= 10%
   - 99,9% of /health requests per day finish with 200 code
 
-* **Are there any missing metrics that would be useful to have to improve observability 
+* **Are there any missing metrics that would be useful to have to improve observability
 of this feature?**
   Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
   implementation difficulties, etc.).
@@ -508,22 +544,22 @@ previous answers based on experience in the field._
   - Supported number of objects per cluster
   - Supported number of objects per namespace (for namespace-scoped objects)
 
-* **Will enabling / using this feature result in any new calls to the cloud 
+* **Will enabling / using this feature result in any new calls to the cloud
 provider?**
 
-* **Will enabling / using this feature result in increasing size or count of 
+* **Will enabling / using this feature result in increasing size or count of
 the existing API objects?**
   Describe them, providing:
   - API type(s):
   - Estimated increase in size: (e.g., new annotation of size 32B)
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 
-* **Will enabling / using this feature result in increasing time taken by any 
+* **Will enabling / using this feature result in increasing time taken by any
 operations covered by [existing SLIs/SLOs]?**
   Think about adding additional work or introducing new steps in between
   (e.g. need to do X to start a container), etc. Please describe the details.
 
-* **Will enabling / using this feature result in non-negligible increase of 
+* **Will enabling / using this feature result in non-negligible increase of
 resource usage (CPU, RAM, disk, IO, ...) in any components?**
   Things to keep in mind include: additional in-memory state, additional
   non-trivial computations, excessive access to disks (including increased log
