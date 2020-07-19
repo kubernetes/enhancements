@@ -2,16 +2,15 @@ title: Support ObjectMeta in ComponentConfig API's
 kep-number: 1815
 authors:
   - "@phenixblue"
-  - "@mtaufen"
 owning-sig: sig-cluster-lifecycle
 participating-sigs:
   - sig-cli
 status: provisional
 creation-date: 2020-05-27
 reviewers:
-  - TBD
+  - "@mtaufen"
 approvers:
-  - TBD
+  - "@mtaufen"
 see-also:
   - NA
 replaces:
