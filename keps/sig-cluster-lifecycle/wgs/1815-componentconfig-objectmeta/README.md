@@ -212,7 +212,6 @@ nitty-gritty.
     - labels
     - annotations
 
-This additional
 
 ### Risks and Mitigations
 
