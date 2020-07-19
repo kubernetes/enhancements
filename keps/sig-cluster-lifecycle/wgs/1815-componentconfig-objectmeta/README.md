@@ -463,10 +463,10 @@ _This section must be completed when targeting alpha to a release._
   - [ ] Feature gate (also fill in values in `kep.yaml`)
     - Feature gate name:
     - Components depending on the feature gate:
-  - [ ] Other
-    - Describe the mechanism:
+  - [x] Other
+    - Describe the mechanism: Editing the existing component config file to add the new minimum required field (metadata.name)
     - Will enabling / disabling the feature require downtime of the control
-      plane?
+      plane? 
     - Will enabling / disabling the feature require downtime or reprovisioning
       of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
 
@@ -474,13 +474,19 @@ _This section must be completed when targeting alpha to a release._
   Any change of default behavior may be surprising to users or break existing
   automations, so be extremely careful here.
 
+ No, these new fields don't control component behavior. There may be some impact to existing tests making use of previously overloaded component configs with fields of the same name if existing values are out of bounds.
+
 * **Can the feature be disabled once it has been enabled (i.e. can we rollback
   the enablement)?**
   Also set `disable-supported` to `true` or `false` in `kep.yaml`.
   Describe the consequences on existing workloads (e.g. if this is runtime
   feature, can it break the existing applications?).
 
+Yes, this can be disabled once it has been enabled. The existing component API's have a lenient path implementation for thr strict decoders that allow for previously overloaded configs with fields of the same name to pass validation.
+
 * **What happens if we reenable the feature if it was previously rolled back?**
+
+Nothing right now as decoders for the component configs provide a lenient path to allow for the fileds to be included or excluded.
 
 * **Are there any tests for feature enablement/disablement?**
   The e2e framework does not currently support enabling and disabling feature
