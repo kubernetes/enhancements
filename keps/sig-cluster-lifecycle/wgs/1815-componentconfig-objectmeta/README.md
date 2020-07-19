@@ -228,7 +228,7 @@ How will UX be reviewed and by whom?
 Consider including folks that also work outside the SIG or subproject.
 -->
 
-- None
+None. The ObjectMeta schema is standardized throughout the Kubernetes codebase and is already compatible with approaches codified by Kustomize.
 
 ## Design Details
 
@@ -411,6 +411,8 @@ enhancement:
 - What changes (in invocations, configurations, API use, etc.) is an existing
   cluster required to make on upgrade in order to make use of the enhancement?
 -->
+
+Existing configurations that lack the ObjectMeta fields will continue to work. As the ComponentConfig API's mature, this will change as sctrict decoders are defaulted without leniancy. 
 
 ### Version Skew Strategy
 
