@@ -212,6 +212,8 @@ nitty-gritty.
     - labels
     - annotations
 
+This additional
+
 ### Risks and Mitigations
 
 <!--
@@ -236,6 +238,89 @@ change are understandable.  This may include API specs (though not always
 required) or even code snippets.  If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
+
+Add the ObjectMeta definition to the component-base repo to be consumed by all component config API's.
+
+k8s.io/component-base/config/v1alpha1/types.go
+
+```go
+// ObjectMeta is metadata that all persisted resources must have, which includes all objects
+// users must create. This is a copy of customizable fields from metav1.ObjectMeta.
+type ObjectMeta struct {
+	// Name must be unique within a namespace. Is required when creating resources, although
+	// some resources may allow a client to request the generation of an appropriate name
+	// automatically. Name is primarily intended for creation idempotence and configuration
+	// definition.
+	// Cannot be updated.
+	// More info: http://kubernetes.io/docs/user-guide/identifiers#names
+	// +optional
+	Name string `json:"name,omitempty" protobuf:"bytes,1,opt,name=name"`
+
+	// Map of string keys and values that can be used to organize and categorize
+	// (scope and select) objects. May match selectors of replication controllers
+	// and services.
+	// More info: http://kubernetes.io/docs/user-guide/labels
+	// +optional
+	Labels map[string]string `json:"labels,omitempty" protobuf:"bytes,11,rep,name=labels"`
+
+	// Annotations is an unstructured key value map stored with a resource that may be
+	// set by external tools to store and retrieve arbitrary metadata. They are not
+	// queryable and should be preserved when modifying objects.
+	// More info: http://kubernetes.io/docs/user-guide/annotations
+	// +optional
+	Annotations map[string]string `json:"annotations,omitempty" protobuf:"bytes,12,rep,name=annotations"`
+
+}
+```
+
+This will be consumed in each component API similar this (example snippet for kube-proxy):
+
+```go
+// KubeProxyConfiguration contains everything necessary to configure the
+// Kubernetes proxy server.
+type KubeProxyConfiguration struct {
+	metav1.TypeMeta `json:",inline"`
+
+    Metadata     componentbaseconfigv1alpha1.ObjectMeta  `json:"metadata,omitempty"`
+
+	// featureGates is a map of feature names to bools that enable or disable alpha/experimental features.
+	FeatureGates map[string]bool `json:"featureGates,omitempty"`
+
+	// bindAddress is the IP address for the proxy server to serve on (set to 0.0.0.0
+	// for all interfaces)
+	BindAddress string `json:"bindAddress"`
+	// healthzBindAddress is the IP address and port for the health check server to serve on,
+	// defaulting to 0.0.0.0:10256
+	HealthzBindAddress string `json:"healthzBindAddress"`
+	// metricsBindAddress is the IP address and port for the metrics server to serve on,
+	// defaulting to 127.0.0.1:10249 (set to 0.0.0.0 for all interfaces)
+	MetricsBindAddress string `json:"metricsBindAddress"`
+	// bindAddressHardFail, if true, kube-proxy will treat failure to bind to a port as fatal and exit
+  BindAddressHardFail bool `json:"bindAddressHardFail"`
+  ...
+```
+
+A practical example of how this looks in practice with an actual config file (example snippet for kube-proxy):
+
+```yaml
+apiVersion: kubeproxy.config.k8s.io/v1alpha1
+kind: KubeProxyConfiguration
+metadata:
+  name: kube-proxy-config
+  labels:
+    component: "kube-proxy"
+    environment: "production"
+  annotations:
+    description: "This configuration is used for the kube-proxy component"
+bindAddress: 0.0.0.0
+clientConnection:
+  acceptContentTypes: "abc"
+  burst: 100
+  contentType: content-type
+  kubeconfig: "/path/to/kubeconfig"
+  qps: 7
+  ...
+```
 
 ### Test Plan
 
