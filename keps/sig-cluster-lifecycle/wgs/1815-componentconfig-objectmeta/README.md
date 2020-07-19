@@ -397,6 +397,8 @@ in back-to-back releases.
 [conformance tests]: https://git.k8s.io/community/contributors/devel/sig-architecture/conformance-tests.md
 -->
 
+The schema matces a subset of the already GA  ObjectMeta schema (for tooling compatibility) and will be implemented at the current version of each component API.
+
 ### Upgrade / Downgrade Strategy
 
 <!--
