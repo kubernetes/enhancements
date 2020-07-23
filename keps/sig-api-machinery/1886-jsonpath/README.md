@@ -9,7 +9,7 @@
   - [Syntax reference](#syntax-reference)
     - [Operators](#operators)
     - [Filter Operators](#filter-operators)
-    - [Functions](#build-in-functions)
+    - [Build in Functions](#build-in-functions)
 - [Design Details](#design-details)
   - [util/jsonpath](#utiljsonpath)
   - [forked/golang/template](#forkedgolangtemplate)
@@ -21,6 +21,8 @@
     - [Beta](#beta)
     - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+    - [Upgrade](#upgrade)
+    - [Downgrade](#downgrade)
   - [Version Skew Strategy](#version-skew-strategy)
 - [References](#references)
 - [Implementation History](#implementation-history)
@@ -120,7 +122,7 @@ Note that typically we refer unspecified length `Array` as `Slice` in Go.
 `@`                             | The current object | `{@}`
 `*`                             | Wildcard operator. <br>Available anywhere a name or numeric index required | `{.metadata.*}`
 `['<name>'(,'<name>')]`         | bracket-notated child operator. <br>`<name>` should always be warped with `''` or `""` (a pair of single/double quotes) | `{.metadata['name','namespace']}`
-`[<number>(,<number>)]`         | Slice index operator. <br>Negative index will return the last `N` element. <br>For exmaple: `-1` returns the last one element | `{.spec.containers[0,-1]}`
+`[<number>(,<number>)]`         | Slice index operator. <br>Negative index will return the last `N` element. <br>For example: `-1` returns the last one element | `{.spec.containers[0,-1]}`
 `..`                            | Recursive descent, or known as deep scan | `{.spec..image}`
 `[start:end(:step)]`            |  Slice operator. Return elements from `start` to `end`(not include `end`). <br>Similar to [Go slice](https://blog.golang.org/slices) operator, but every `step`(non-zero, default: `1`) element is selected between `start` and `end`. <br>If `step` is negative, the slice will be reverse-processed. | `{.spec.containers[1:]}` <br>`{.spec.containers[:-1]}` <br>`{.spec.containers[::-1]}`
 `[?(<expression>)]`             | Filter expression | `{.spec.containers[?(@.name=='app')].image}`
@@ -271,9 +273,9 @@ Kubectl integration tests
 **Additional errors**
 
 Since some enhanced items are not enabled by default, programmers using client-go may
-encounter related errors with legal template according to documentation.
+encounter related errors with a legal template according to documentation.
 To avoid confusion, the returned error message can be more detail about
-how to enable those enhanced syntax. Also we can add some comments
+how to enable those enhanced syntax. Also, we can add some comments
 on `jsonpath.New()` method.
 
 ### Graduation Criteria
@@ -281,22 +283,22 @@ on `jsonpath.New()` method.
 This is actually an enhancement for JSONPath util, it could be used both on server-side and client-side.
 
 Because we try to make a super-set of current JSONPath, typically it would not introduce any
-compatibility issue and the main task for GA release is eliminating bugs/security risks. 
+compatibility issue, and the main task for GA release is eliminating bugs/security risks. 
 
 #### Beta
 
 - Implement all syntax referred in above tables
 - Complete test plan
-- Complete documentation and mark enhanced features state as "Beta x.x"
+- Complete documentation and mark enhanced features state as "Release x.x beta"
 - Review usage on server-side
 - Enable enhancements on client-side
 
 #### GA
 
 - At least two releases after beta
-- Gather user feedback about jsonpath
+- Gather user feedback about JSPNPath
 - Complete test plan
-- Complete documentation and mark enhanced features "since release x.x"
+- Complete documentation and mark enhanced features "Release x.x stable"
 
 ### Upgrade / Downgrade Strategy
 
@@ -305,7 +307,7 @@ This enhancement only affects client-go consumers.
 #### Upgrade
 
 * If they do not wish to use enhanced syntax, no additional steps needed for upgrade.
-* If they want to have a full access to enhanced syntax, they need invoke `AllowRiskySyntax(true)` in the code.
+* If they want to have full access to enhanced syntax, they need invoke `AllowRiskySyntax(true)` in the code.
 
 #### Downgrade
 
