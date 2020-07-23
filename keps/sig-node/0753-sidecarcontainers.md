@@ -1307,7 +1307,8 @@ Shutdown ordering of Containers in a Pod can not be guaranteed when a node is be
 * Thorough E2E and Unit testing in place
 * The beta API either supports the important use cases discovered during alpha testing, or has room for further enhancements that would support them
 * Graduation depends on the (yet not submitted) kubelet graceful shutdown KEP
-  reaching Beta stage and no concerns identified that may affect this KEP
+  reaching Beta stage. It is okay to for both features to reach Beta in the same
+  release, but this KEP should not reach beta before kubelet graceful shutdown KEP
 
 
 #### Beta -> GA Graduation
