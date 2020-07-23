@@ -1,5 +1,5 @@
 ---
-title: CSI Snapshot 
+title: CSI Snapshot Webhook
 authors:
   - "@andili99"
   - "@yuxiangqian"
@@ -216,7 +216,7 @@ CRD validation is preferred over webhook validation due to their lower complexit
 - Prevent:
   - Invalid VolumeSnapshot/VolumeSnapshotContent from creation and update
   - Invalid updates on immutable fields, i.e., VolumeSnapshot.Spec.Source
-- Provide a pre-built image which can be used to deploy the server
+- Provide a pre-built image which can be used to deploy the webhook *server*
 - Provide a way to deploy the webhook server in cluster
 - Provide a way to authenticate the webhook server to the API server via TLS
 - Provide a release process to safely tighten the validation and move towards the ideal state of using builtin CRD validation while maintaining backwards compatibility
@@ -231,8 +231,8 @@ Tighten the validation on Volume Snapshot objects. The following fields will beg
 
 Due to backwards compatibility concerns, the tightening will occur in two phases.
 
-1. The first phase is webhook-only, and will use ratcheting validation combined with a reconciliation method to delete or fix currently persisted objects which are invalid under the new (strict) validation rules.
-2. The second phase occurs once all invalid objects are cleared from the cluster. The CRD schema validation will be tightened and the webhook will stick around to enforce immutability until immutable fields come to CRDs. (or the crd upgrade could wait until immutable fields are available to do in one go)
+1. The first phase is webhook-only, and will use [ratcheting validation](#backwards-compatibility) combined with a reconciliation method to delete or fix currently persisted objects which are invalid under the new (strict) validation rules.
+2. The second phase occurs once all invalid objects are cleared *from* the cluster. The CRD schema validation will be tightened and the webhook will stick around to enforce immutability until immutable fields come to CRDs. (or the crd upgrade could wait until immutable fields are available to do in one go)
 
 The phases come in separate releases to allow users / cluster admin the opportunity to clean their cluster of any invalid objects. More details are in the Risks and Mitigations section.
 
