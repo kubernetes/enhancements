@@ -216,7 +216,7 @@ CRD validation is preferred over webhook validation due to their lower complexit
 - Prevent:
   - Invalid VolumeSnapshot/VolumeSnapshotContent from creation and update
   - Invalid updates on immutable fields, i.e., VolumeSnapshot.Spec.Source
-- Provide a pre-built image which can be used to deploy the webhook *server*
+- Provide a pre-built image which can be used to deploy the webhook server
 - Provide a way to deploy the webhook server in cluster
 - Provide a way to authenticate the webhook server to the API server via TLS
 - Provide a release process to safely tighten the validation and move towards the ideal state of using builtin CRD validation while maintaining backwards compatibility
@@ -345,13 +345,13 @@ There are two perspectives.
 To tackle the backwards compatibility problem, this KEP proposes the following release process.
 
 Begin with validating webhook only enforcement. The webhook will perform the following validation
-- one release with ratcheting validation (via webhook) and controller removal of invalid objects
- - webhook is strict on create
- - webhook is strict on updates where the existing object passes strict validation 
- - webhook is relaxed on updates where the existing object fails strict validation (allows finalizer removal, status update, deletion, etc)
+- one release with ratcheting validation using the webhook server
+   - webhook is strict on create
+   - webhook is strict on updates where the existing object passes strict validation
+   - webhook is relaxed on updates where the existing object fails strict validation (allows finalizer removal, status update, deletion, etc)
  - some reconciliation process in volume snapshot controller (this is the hard part) that ensures invalid data is fixed or removed
 
-Once we are sure no invalid data is persisted, can switch to CRD schema-enforced validation with validating webhooks for immutability in a subsequent release.
+Once we are sure no invalid data is persisted, we can switch to CRD schema-enforced validation with validating webhooks for immutability in a subsequent release.
 
 We are unsure of the specifics of the reconciliation process in which the controller will remove or fix invalid objects.
 
