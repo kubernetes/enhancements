@@ -1,0 +1,21 @@
+title: RESTClient not follow redirects by default
+kep-number: "1906"
+authors:
+  - "@knight42"
+owning-sig: sig-api-machinery
+participating-sigs: [sig-api-machinery]
+reviewers:
+  - TBD
+approvers:
+  - TBD
+prr-approvers:
+  - TBD
+creation-date: "2020-07-27"
+last-updated: v1.19
+status: provisional
+stage: alpha
+latest-milestone: v1.20
+milestone:
+  alpha: v1.20
+  beta: v1.21
+  stable: v1.22
