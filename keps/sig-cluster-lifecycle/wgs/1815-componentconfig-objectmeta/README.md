@@ -154,7 +154,7 @@ useful for a wide audience.
 A good summary is probably at least a paragraph in length.
 -->
 
-The proposal is for adding standard ObjectMeta to the ComponentConfig API's to follow the standard pattern for other Kubernetes API's. This will allow for better interpolation with standard tooling like kustomize for managing config templating and substitution.
+The proposal is for adding ObjectMeta to the ComponentConfig API's to follow the standard pattern for other Kubernetes API's. This will allow for better interpolation with standard tooling like kustomize for managing config templating and substitution.
 
 ## Motivation
 
@@ -176,7 +176,7 @@ List the specific goals of the KEP.  What is it trying to achieve?  How will we
 know that this has succeeded?
 -->
 
-- Add a standard set of ObjectMeta fields (name, labels, and annotations) to the ComponentConfig API's.
+- Add a standard set of ObjectMeta fields (name) to the ComponentConfig API's.
   - kubelet
   - kube-proxy
   - kube-scheduler
@@ -209,8 +209,6 @@ nitty-gritty.
 - for component in [kubelet kubeproxy kubecontrollermanager kubeapiserver kubescheduler]
   - Add the following ObjectMeta fields
     - name
-    - labels
-    - annotations
 
 
 ### Risks and Mitigations
@@ -254,21 +252,6 @@ type ObjectMeta struct {
 	// More info: http://kubernetes.io/docs/user-guide/identifiers#names
 	// +optional
 	Name string `json:"name,omitempty" protobuf:"bytes,1,opt,name=name"`
-
-	// Map of string keys and values that can be used to organize and categorize
-	// (scope and select) objects. May match selectors of replication controllers
-	// and services.
-	// More info: http://kubernetes.io/docs/user-guide/labels
-	// +optional
-	Labels map[string]string `json:"labels,omitempty" protobuf:"bytes,11,rep,name=labels"`
-
-	// Annotations is an unstructured key value map stored with a resource that may be
-	// set by external tools to store and retrieve arbitrary metadata. They are not
-	// queryable and should be preserved when modifying objects.
-	// More info: http://kubernetes.io/docs/user-guide/annotations
-	// +optional
-	Annotations map[string]string `json:"annotations,omitempty" protobuf:"bytes,12,rep,name=annotations"`
-
 }
 ```
 
@@ -306,11 +289,6 @@ apiVersion: kubeproxy.config.k8s.io/v1alpha1
 kind: KubeProxyConfiguration
 metadata:
   name: kube-proxy-config
-  labels:
-    component: "kube-proxy"
-    environment: "production"
-  annotations:
-    description: "This configuration is used for the kube-proxy component"
 bindAddress: 0.0.0.0
 clientConnection:
   acceptContentTypes: "abc"
@@ -397,7 +375,7 @@ in back-to-back releases.
 [conformance tests]: https://git.k8s.io/community/contributors/devel/sig-architecture/conformance-tests.md
 -->
 
-The schema matces a subset of the already GA  ObjectMeta schema (for tooling compatibility) and will be implemented at the current version of each component API.
+The schema matches a subset of the already GA ObjectMeta schema (for tooling compatibility) and will be implemented at the current version of each component API.
 
 ### Upgrade / Downgrade Strategy
 
