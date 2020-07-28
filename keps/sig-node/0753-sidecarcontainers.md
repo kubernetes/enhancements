@@ -139,24 +139,24 @@ Check these off as they are completed for the Release Team to track. These check
 
 ## Summary
 
-This KEP adds the notion of sidecar containers to Kubernetes. This KEP proses
-to add a `type` field to the `containers` array in the `pod.spec` to define if a
-container is a sidecar container. The only valid value for now is `sidecar`, but
-other values can be added in the future if needed.
+This KEP adds the concept of sidecar containers to Kubernetes. This KEP proposes
+to add a `lifecycle.type` field to the `container` object in the `pod.spec` to
+define if a container is a sidecar container. The only valid value for now is
+`sidecar`, but other values can be added in the future if needed.
 
-Pods with sidecar containers only change the behavior of the startup and
+Pods with sidecar containers only change the behaviour of the startup and
 shutdown sequence of a pod: sidecar containers are started before non-sidecars
 and stopped after non-sidecars.
 
 A pod that has sidecar containers guarantees that non-sidecar containers are
-started only after sidecar containers are started and are in a ready state.
+started only after all sidecar containers are started and are in a ready state.
 Furthermore, we propose to treat sidecar containers as regular (non-sidecar)
 containers as much as possible all over the code, except for the mentioned
-special startup and shutdown behavior. The rest of the pod lifecycle (regarding
+special startup and shutdown behaviour. The rest of the pod lifecycle (regarding
 restarts, etc.) remains unchanged, this KEP aims to modify only the startup and
-shutdown behavior.
+shutdown behaviour.
 
-If a pod doesn't have a sidecar container, the behavior is completely unchanged
+If a pod doesn't have a sidecar container, the behaviour is completely unchanged
 by this proposal.
 
 ## Prerequisites
@@ -180,20 +180,20 @@ section](#graduation-criteria).
 
 ## Motivation
 
-The concept of sidecar containers has been around almost since Kubernetes early
-days. A clear example is [this Kubernetes blog post][sidecar-blog-post] from
-2015 mentioning the sidecar pattern.
+The concept of sidecar containers has been around since the early days of
+Kubernetes. A clear example is [this Kubernetes blog post][sidecar-blog-post]
+from 2015 mentioning the sidecar pattern.
 
 Over the years the sidecar pattern has become more common in applications,
-gained popularity and uses cases are getting more diverse. The current
+gained popularity and the uses cases are getting more diverse. The current
 Kubernetes primitives handled that well, but they are starting to fall short for
-several use cases and force weird work-arounds in the applications. 
+several use cases and force weird work-arounds in the applications.
 
-This proposal aims to remediate that by adding a simple set of guarantees for
-sidecar containers, while trying to not do a complete re-implementation of an
-init system to do so. Those alternatives are interesting and were considered,
+This proposal aims to remediate this by adding a simple set of guarantees for
+sidecar containers, while trying to avoid doing a complete re-implementation of an
+init system. These alternatives are interesting and were considered,
 but in the end the community decided to go for something simpler that will cover
-most of the use cases. Those options are explored in the
+most of the use cases. These options are explored in the
 [alternatives](#alternatives) section.
 
 The next section expands on what the current problems are. But, to give more
@@ -206,12 +206,12 @@ implementations are the same, but more than one company has a fork for this).
 ### Problems: jobs with sidecar containers
 
 Imagine you have a Job with two containers: one which does the main processing
-of the job and the other is just a sidecar facilitating it. This sidecar can be
+of the job and the other is just a sidecar facilitating it. This sidecar could be
 a service mesh, a metrics gathering statsd server, etc.
 
 When the main processing finishes, the pod won't terminate until the sidecar
 container finishes too. This is problematic for sidecar containers that run
-continously, like service-mesh or statsd metrics server or servers in general.
+continuously.
 
 There is no simple way to handle this on Kubernetes today. There are
 work-arounds for this problem, most of them consist of some form of coupling
@@ -223,9 +223,9 @@ detail on the [alternatives](#alternatives) section.
 
 ### Problems: service mesh, metrics and logging sidecars
 
-While this problem is general to any sidecar container that might need to start
-before others or stop after others, we use here a service mesh, metrics
-gathering and logging sidecar for the examples.
+While this problem is generic to any sidecar container that might need to start
+before others or stop after others, in these examples we will use a service
+mesh, metrics gathering and logging sidecar.
 
 #### Logging/Metrics sidecar
 
@@ -235,23 +235,23 @@ will log and _logging container_ the sidecar that will facilitate it.
 
 If the logging container starts after the main app, some logs can be lost.
 Furthermore, if the logging container is not yet started and the main app
-crashes on startup, those logs can be lost (depends if logs to a shared volume
-or over the network on localhost, etc.). Startup is usually not that critical,
-because if the case where the other container is not started (like a restart) is
-important, is usually handled correctly.
+crashes on startup, those logs can be lost (depends if logs go to a shared volume
+or over the network on localhost, etc.). While you can modify your application
+to handle this scenario during startup (as it is probably the change you need to
+do to handle sidecar crashes), for shutdown this approach won't work.
 
-On shutdown the ordering behavior is arguably more important: if the logging
+On shutdown the ordering behaviour is arguably more important: if the logging
 container is stopped first, logs for other containers are lost. No matter if
 those containers queue them and retry to send them to the logging container, or
 if they are persisted to a shared volume. The logging container is already
-killed and will not be started, as the pod is shutting down. In those cases,
+killed and will not be restarted, as the pod is shutting down. In these cases,
 logs are lost.
 
 The same things regarding startup and shutdown apply for a metrics container.
 
-Some work-arounds can be done, to alliviate the symptoms:
+Some work-arounds can be done, to alleviate the symptoms:
  * Ignore SIGTERM on the sidecar container, so it is alive until the pod is
-   killed. This is not ideal and increases _a lot_ the time a pod will take to
+   killed. This is not ideal and _greatly_ increases the time a pod will take to
 terminate. For example, if the P99 response time is 2 minutes and therefore the
 TerminationGracePeriodSeconds is set to that, the main container can finish in 2
 seconds (that might be the average) but ignoring SIGTERM in the sidecar
@@ -261,25 +261,25 @@ container will force the pod to live for 2 minutes anyways.
 
 #### Service mesh
 
-Service mesh present a similar problem: you want them to be set and ready before
-other containers start, so any inbound/outbound connection that any container can
-initiate goes through the service mesh.
+Service mesh presents a similar problem: you want the service mesh container to
+be running and ready before other containers start, so that any inbound/outbound
+connections that a container can initiate goes through the service mesh.
 
 A similar problem happens for shutdown: if the service mesh container is
-terminated prior to other containers, outgoing traffic from other apps will be
+terminated prior to the other containers, outgoing traffic from other apps will be
 blackholed or not use the service mesh.
 
-However, as none of these are possible to guarantee most service mesh (like
-Linkerd and Istio), for example, need to do several hacks to have the basic
+However, as none of these are possible to guarantee, most service meshes (like
+Linkerd and Istio), need to do several hacks to have the basic
 functionality. These are explained in detail in the
 [alternatives](#alternatives) section. Nonetheless, here is a  quick highlight
 of some of the things some service mesh currently need to do:
 
  * Recommend users to delay starting their apps by using a script to wait for
    the service mesh to be ready. The goal of a service mesh to augment the app
-   functionality without modifying it is lost in this case.
+   functionality without modifying it, that goal is lost in this case.
  * To guarantee that traffic goes via the services mesh, an initContainer is
-   added to blackhole traffic until the service mesh containers is up. This way,
+   added to blackhole traffic until the service mesh containers are up. This way,
    other containers that might be started before the service mesh container can't
    use the network until the service mesh container is started and ready. A side
    effect is that traffic is blackholed until the service mesh is up and in a
@@ -288,46 +288,47 @@ of some of the things some service mesh currently need to do:
    doesn't terminate before other containers that might be serving requests.
 
 The auto-inject of initContainer [has caused bugs][linkerd-bug-init-last], as it
-competes with other tools auto-injecting container to be run last too.
+competes with other tools auto-injecting a container to be run last too.
 
 [linkerd-bug-init-last]: https://github.com/linkerd/linkerd2/issues/4758#issuecomment-658457737
 
 ### Problems: Coupling infrastructure with applications
 
-The limitations to have some ordering guarantees on startup and shutdown,
-sometimes forces to couple application code with infrastructure. This is not
-nice, as the infrastructure is ideally handled independently, and forces more
-coordination between multiple, possibly indepedant, teams.
+The limitations due to the lack of ordering guarantees on startup and shutdown,
+can sometimes force the coupling of application code with infrastructure. This
+causes a dependency between applications and infrastructure, and forces more
+coordination between multiple, possibly independent, teams.
 
 An example in the open source world about this is the [Istio CNI
 plugin][istio-cni-plugin]. This was created as an alternative for the
-initContainer hack that service mesh need to do. The initContainer will
-blackhole all traffic until the Istio container is up. But this alternative
-requires that nodes have the CNI plugin installed, effectively coupling the
-service mesh app with the infrastructure.
+initContainer hack that the service mesh needs to do. The initContainer will
+blackhole all traffic until the Istio container is up. The CNI plugin can be
+used to completely remove the need for such an initContainer. But this
+alternative requires that nodes have the CNI plugin installed, effectively
+coupling the service mesh app with the infrastructure.
 
-This KEP proposal removes the need for service mesh to use either an
-initContainer or a CNI plugin: just guarantee that the sidecar container can be
-started first.
+This KEP removes the need for a service mesh to use either an initContainer or a
+CNI plugin: just guarantee that the sidecar container can be started first.
 
 While in this specific example the CNI plugin has some benefits too (removes the
-need for some capabilities in the pod) and might be worth pursing, it is used
-here just as an examples of possible coupling apps with infrastructure. Similar
-examples also exist in-house for not open source applications too.
+need for some capabilities in the pod) and might be worth pursuing, it is used
+here as an example to show thee possibility of coupling apps with
+infrastructure. Similar examples also exist in-house for non-open source
+applications too.
 
 [istio-cni-plugin]: https://istio.io/latest/docs/setup/additional-setup/cni/
 
 ## Goals
 
 This proposal aims to:
- * Allow Kubernetes Jobs to have sidecar containers that run continously
-   (servers) without coupling between containers in the pod.
+ * Allow Kubernetes Jobs to have sidecar containers that run continuously
+   without any coupling between containers in the pod.
  * Allow pods to start a subset of containers first and, only when those are
    ready, start the remaining containers.
  * Allow pods to stop a subset of containers first and, only when those have
    been stopped, stop the rest.
  * Not change the semantics in any way for pods not using this feature.
- * Only change the semantics of startup/shutdown behavior for pods using this
+ * Only change the semantics of startup/shutdown behaviour for pods using this
    feature.
 
 Solve issues so that they don't require application modification:
@@ -337,9 +338,9 @@ Solve issues so that they don't require application modification:
 ## Non-Goals
 
 This proposal doesn't aim to:
- * Allow a multi-level ordering of containers start/stop sequence. IOW, only two
-   levels are deinfed: "sidecar" or "standard" containers. It is not a goal to
-   have more than these two levels.
+ * Allow a multi-level ordering of containers start/stop sequence. Only two
+   types are defined: "sidecar" or "standard" containers. It is not a goal to
+   have more than these two types.
  * Model startup/shutdown dependencies between different sidecar containers
  * Change the pod phase in any way, with or without this feature enabled
  * Reimplement an init-system alike semantics for pod containers
@@ -494,19 +495,20 @@ In other words, the shutdown sequence proposed is:
 1. Send SIGTERM for sidecars
 
 For brevity, what happens when some step timeouts and needs to send a SIGKILL is
-ommited in the above sequence, as it is not relevant for this point.
+omitted in the above sequence, as it is not relevant for this point.
 
 The concerns we see with this are that this changes the [current delivery
 guarantees][hook-delivery] from _at least once_ to _at least twice_ for _some_
 containers (for sidecar containers). Furthermore, before this patch preStop
-hooks were delivered only once for most of the times. The problem is not if this
-is idempotent or not (as it should be in any case), but chaning the most common
-case from deliver preStop hook once to twice.
+hooks were delivered only once most of the time. After this patch is delivered
+twice for most cases (using sidecars). The problem is not if this is idempotent
+or not (as it should be in any case), but chainging the most common case from
+delivering preStop hook once to twice.
 
 Another concern is that in the future a different container type might be added,
 and these semantics seems difficult to extend. For example, let's say a
-containet type "OrderedPhases" with the semantics of the [explained
-altenative][phase-startup] is added in the future. When would the preStop hooks
+container type "OrderedPhases" with the semantics of the [explained
+alternative][phase-startup] is added in the future. When would the preStop hooks
 be executed now that there are several phases? At the beginning? If there are 5
 phases: 0, 1, 2, 3 and 4, how should the shutdown behaviour be? Run preStop
 hooks for containers marked in phase 0, then kill containers in phase 4, then
@@ -521,9 +523,9 @@ what the use case would be for such semantics.
 
 ##### Alternative 1: add a TerminationHook
 
-Add to containers a `TerminationHook` field. It will accept the same values than
+Add to containers a `TerminationHook` field. It will accept the same values as
 preStop hooks and will be called for any container that defines it when the pod
-is switching to a terminating state. This clear semantics seem easy to extend in
+is switching to a terminating state. These clear semantics seem easy to extend in
 the future.
 
 Then, instead of running preStop hooks twice for sidecar containers as it is now
@@ -537,15 +539,15 @@ The shutdown sequence steps in this case would be:
 1. Run preStop hooks for sidecars
 1. Send SIGTERM for sidecars
 
-If containers want to take action when a pod is switching to teminating state,
+If containers want to take action when a pod is switching to terminating state,
 they should use the TerminationHook.
 
 The motivation for running the preStop hooks two times, then, can be implemented
 by adding the TerminationHook field to the service mesh container to drain
 connections.
 
-Furthermore, if a containet type "OrderedPhases" with the semantics of the [explained
-altenative][phase-startup] is added in the future, the semantics are still
+Furthermore, if a container type "OrderedPhases" with the semantics of the [explained
+alternative][phase-startup] is added in the future, the semantics are still
 clear: the TerminationHook will be called for _any_ container (irrespective of
 their phase) when the pod switches to a terminating state.
 
@@ -555,11 +557,13 @@ Do not call preStop hooks for sidecars twice, just remove the first call this
 section discusses.
 
 Then, suggest users that need to know when the pod changes to a terminating state to
-integrate with the Kubernetes API and add a watcher for that. 
+integrate with the Kubernetes API and add a watcher for that.
 
-This might be inconvenient for serveral users and further conversation is needed
-to see if this is feasable. We are aware of some users that this will cause
-issues and will probably need to patch Kubernetes because of this.
+This might be inconvenient for several users and further conversation is needed
+to see if this is feasible. We are aware of some users that this will cause
+issues and will probably need to patch Kubernetes because of this. This could
+also result in a large increase in calls to the Kubernetes API server causing
+scalability issues.
 
 ##### Suggestion
 
@@ -584,8 +588,8 @@ Let's see why this happens first, and then discuss the possible fixes.
 The KEP currently proposes the following shutdown sequence steps (same as explained
 before, with a little more detail on what is blocking or not now):
 
-1. All sidecar containers preStop hook are executed (blocking) until they finished
-1. All non-sidecar containers preStop hook are executed (blocking) until they finished  
+1. All sidecar containers preStop hook are executed (blocking) until they finish
+1. All non-sidecar containers preStop hook are executed (blocking) until they finish
 1. All non-sidecar containers are sent SIGTERM. If they don’t finish during the
    time remaining for this step (more information below), SIGKILL is sent
    (Idem step 1).
@@ -607,14 +611,14 @@ previous steps>` seconds if this value is >= 2
 ([`minimumGracePeriodInSeconds`][min-gracePeriodInSeconds])
 * 2 seconds if the previous value is < 2
 
-A side effect of this behavior is that killing a pod with sidecar containers can
-take in the worst case, approximately: `pod.TerminationGracePeriodSeconds * 3 +
-2 * 2` seconds, compared to `pod.TerminationGracePeriodSeconds + 2` seconds
+A side effect of this behaviour is that killing a pod with sidecar containers
+can take in the worst case, approximately: `pod.TerminationGracePeriodSeconds *
+3 + 2 * 2` seconds, compared to `pod.TerminationGracePeriodSeconds + 2` seconds
 without sidecar containers.
 
-This behavior is because in the PR implementation the `gracePeriodOverride`
-is being used when [calling `killContainer()`][kill-container-param] to specify
-the time left to kill the containers. However, in `KillContainer()` the preStop
+This behaviour is because in the PR implementation the `gracePeriodOverride` is
+being used when [calling `killContainer()`][kill-container-param] to specify the
+time left to kill the containers. However, in `KillContainer()` the preStop
 hooks are run [here][kill-container-preStop] using the `gracePeriod` variable
 defined [here][kill-container-gracePeriod], which ignores the
 `gracePeriodOverride` param for the `killContainer()` function.  That parameter
@@ -625,8 +629,8 @@ sent.
 
 The most important reason is that this KEP needs to interoperate well with the
 kubelet shutdown KEP (KEP not yet created). We have been working together with
-the team working in that KEP and one of the scenarios to handle is shutting down
-a node in time constrained environments (preemt VMs in GCE, spot instances in
+the team working on that KEP and one of the scenarios to handle is shutting down
+a node in time constrained environments (preempt VMs in GCE, spot instances in
 AWS, etc.).
 
 As far as we coordinated, the Kubelet will kill the pods and the field
@@ -686,16 +690,16 @@ handle this. Please let us know what you think :)
 
 #### How to split the shutdown time to kill different types of containers?
 
-The previous section is about how, at the implementation level, respect a given
-time when killing a pod. This section, in contrast, is how to split the
-available time between the different steps in the shutdown sequence.
+The previous section is about how to, at the implementation level, respect a
+given time when killing a pod. This section, in contrast, is about how to split
+the available time between the different steps in the shutdown sequence.
 
 Something worth mentioning is that the time to terminate a pod is defined _per
 pod_ and not _per container_. Therefore, any termination sequence will have to
 deal with how to split that time in the different steps, now that all containers
 are not stopped in parallel.
 
-To avoid confussions, the steps of the shutdown sequence are:
+To avoid confusion, the steps of the shutdown sequence are:
 1. Run TerminationHook for _any_ container that defines it (sidecar or not)
 1. Run preStop hooks for non-sidecars
 1. Send SIGTERM for non-sidecars
@@ -740,7 +744,7 @@ This alternative allows any step in the shutdown sequence to consume all the
 `GraceTime`. In general, any step will have to execute within:
  * Remaining time: `GraceTime - <elapsed time in the previous steps>` if this
    value is >= 2.
- * Minumum time: 2 seconds if the previous value is <2.
+ * Minimum time: 2 seconds if the previous value is <2.
 
 This option can will take, in the worst case, `GraceTime + 8` seconds. The
 reason is simple: there are 5 steps, the first can consume `GraceTime` and the
@@ -771,7 +775,7 @@ ignored and 2s is used to wait for the container to finish when sending SIGTERM.
 ##### Alternative 3: Allow any step to consume all and be over `GraceTime` by 0s
 
 This alternative allows any step in the shutdown sequence to consume all the
-`GraceTime`, but if we run out of time, next steps have 0s to execute. In
+`GraceTime`, but if we run out of time, the next steps have 0s to execute. In
 general, any step will have to execute within:
  * Remaining time: `GraceTime - <elapsed time in the previous steps>`
  * 0s if the remaining time is 0.
@@ -783,10 +787,9 @@ be just sent SIGKILL. Therefore, this alternative will take, in the worst case,
 Skipping the preStop hooks when the gracePeriod is 0, as mentioned in the
 previous alternative, is what is currently done.
 
-This alternative is also weird in the following way: a bad neighbor non-sidecar
-neighbor can make sidecars never execute. The goal of using sidecar containers
-to have some time to do after other containers are killed is not achieved, in
-the end.
+This alternative is also weird in the following way: a non-sidecar container can
+make sidecars never execute. The goal of using sidecar containers to have some
+time to execute after other containers are killed is not achieved, in the end.
 
 ##### Alternative 4: Allow any step to consume all and use 6s as minimum `GraceTime`
 
@@ -806,6 +809,10 @@ take 2s each.
 In this case, it can be validated that TerminationGracePeriodSeconds is >=6 for
 pods with sidecar containers and be properly documented.
 
+The minimum of 6s can be used when the pod is killed, but handling correctly
+when the user wants to override this (being documented that might cause SIGKILL,
+etc.) on commands like: `kubectl delete pod --grace-period 0`.
+
 We will need to gather feedback from users, though, to know if this restriction
 is enough for all use cases.
 
@@ -817,7 +824,7 @@ with the _per pod_ termination.
 The first thing to note is that any defined _per container_ termination time will
 not be guaranteed in case of spot/preempt VMs, as the time to kill the pod might
 be shorter than the one configured. In that case, what is the correct way to
-handle it is unclear. One option is to calculate the weigth or proportional time
+handle it is unclear. One option is to calculate the weight or proportional time
 each container has and use that for each.
 
 The second thing to note about creating _per container_ termination time is that
@@ -830,7 +837,7 @@ Alternatives to combine a _per container_ termination with _per pod_ are not
 very nice either. Some options to combine them are: allow only the _per pod_ or
 _per container_ setting to be set but never both at the same time; allow
 pod.TerminationGracePeriod to be set if some container doesn't have the
-equivalent _per container_ and calculate how much time is left to run those. 
+equivalent _per container_ and calculate how much time is left to run those.
 
 In the latter case, it can be very confusing as some combinations of
 `pod.TerminationGracePeriod` and the _per container_ settings are not compatible
@@ -851,7 +858,11 @@ The rest of the alternatives either take more time, require SIGKILL (that
 defeats the purpose of sidecar containers finishing after) or are way more
 complicated (like alternative 5).
 
-Alternative 4 seems fine Alpha stage and we can use gather feedback to see from
+Having a minimum time of 6s for pods with sidecar containers, as alternative 4
+proposes, is a guarantee that might be difficult to change in the future (after
+GA). However, it seems the cleanest and simplest way to move forward now.
+
+Alternative 4 seems fine for the Alpha stage and we can gather feedback from
 users. Ideas and opinions are _very_ welcome, though.
 
 #### Currently not handling the case of pod=nil
@@ -866,10 +877,10 @@ This can happen in some race scenarios (and it seems now is less likely to
 happen, maybe with static pod) where the kubelet is restarted while the pod is
 being terminated and when the kubelet starts again, the pod is deleted from the
 API server. In that case the kubelet can't get the pod from the API server (so
-pod is nil) but it needs to kill the running contianers.
+pod is nil) but it needs to kill the running containers.
 
 The current open PR doesn't handle this case. This means the sidecar shutdown
-behavior is not used when the pod is nil in the current implementation PR.
+behaviour is not used when the pod is nil in the current implementation PR.
 However, there is another PoC implementation using pod annotations, linked in
 this doc, that handles this case by just adding the labels to the container
 runtime.
@@ -922,7 +933,7 @@ I'd like to know what the rest think about this.
 ##### Alternative 2: Do nothing
 
 Another option is to leave the pod stalled. A pod with containers that crash and
-are not restarted, will have a similar behavior. The main and non-trivial
+are not restarted, will have a similar behaviour. The main and non-trivial
 difference, though, is that in this case some container will not be even
 started (non-sidecar containers won't be started if sidecars crash).
 
@@ -938,13 +949,13 @@ with no explicit mentions seems asking for trouble.
 
 However, this is what the fork of at least one company is doing. Their use case
 is using Jobs to run some workloads where the main (non-sidecar) container has TB
-of mem in RAM, with no way to persist calculated data and may take weeks to run.
+of memory in RAM, with no way to persist calculated data and may take weeks to run.
 In those cases losing all of that because a sidecar crashes is a too expensive
 price to pay and they resorted to always restart them.
 
-We think that in those cases using a OnFailure RestartPolicy for the job might
-seem more appropiate and, in any case, not having any kind of persistance for
-graceful shutdown doesn't seem like a good reason to do have this behavior in
+We think that in those cases using an OnFailure RestartPolicy for the job might
+seem more appropriate and, in any case, not having any kind of persistence for
+graceful shutdown doesn't seem like a good reason to have this behaviour in
 Kubernetes.
 
 In any case, it seems like a real problem and worth exploring ways to handle
@@ -953,12 +964,8 @@ this. As always, ideas are very welcome :).
 ##### Suggestion
 
 Go for Alternative 1. Seems simple and leaves the cluster in a clean state.
-However, I'd really would like to know what others think.
+However, I really would like to know what others think.
 
-Also, having a minimum time of 6s for pods with sidecar containers is a
-guarantee that might be difficult to change in the future (after GA). However,
-it seems the cleanest and simplest way to move forward now. We can use feedback
-from users of the alpha feature to revisit this as needed.
 
 #### Enforce the startup/shutdown behavior only on startup/shutdown
 
@@ -971,7 +978,7 @@ containers in the pod indistinguishable from containers in a pod without
 sidecar containers. That is, once sidecars and non-sidecars containers have
 been started once, the regular kubernetes reconciliation loop is used for all
 the containers in the pod during the pod lifecycle until the shutdown sequence
-is fired. This guarantees that only the startup and shutdown behavior of
+is fired. This guarantees that only the startup and shutdown behaviour of
 sidecar containers is affected and not the rest of the pod lifecycle.
 
 However, one side effect is that if, for example, all containers happen to
@@ -983,8 +990,8 @@ We believe this is fine, though, as the goal is to not change the behaviour
 other than startup/shutdown and this edge case should be handled by users, as
 any other container crashes.
 
-If this behavior is not welcome, however, code probably can be adapted to handle
-the case when all containers crashed differently.
+If this behaviour is not welcome, however, code probably can be adapted to
+handle the case when all containers crashed differently.
 
 #### Sidecar containers won't be available during initContainers phase
 
@@ -996,13 +1003,14 @@ For most users we talked about (some big companies and linkerd, will try to
 contact istio soon) this doesn't seem like a problem. But wanted to make this
 visible, just in case.
 
-Furthermore, service mesh don't provide easy ways to used them with initContainers
-(probably due to Kubernetes limitations). This KEP won't change that.
+Furthermore, service meshes don't provide easy ways to use them with
+initContainers (probably due to Kubernetes limitations). This KEP won't change
+that.
 
 Another thing to take into account is that Istio has an alternative to the
 initContainer approach. Istio [has an option][istio-cni-opt] to integrate with
 CNI and inject the blackhole from there instead of using the initContainer. In
-case that case, it will do (just c&p from the link, in case it breaks in the
+that case, it will do (just c&p from the link, in case it breaks in the
 future):
 
 > By default Istio injects an initContainer, istio-init, in pods deployed in the mesh. The istio-init container sets up the pod network traffic redirection to/from the Istio sidecar proxy. This requires the user or service-account deploying pods to the mesh to have sufficient Kubernetes RBAC permissions to deploy containers with the NET_ADMIN and NET_RAW capabilities. Requiring Istio users to have elevated Kubernetes RBAC permissions is problematic for some organizations’ security compliance
@@ -1018,17 +1026,17 @@ the service mesh either. Rodrigo will double check this, just in case.
 ##### Suggestion
 
 Confirm with users that is okay to not have sidecars during the initContainers
-phase and they don't forsee any reason to add them in the near future.
+phase and they don't foresee any reason to add them in the near future.
 
 It seems likely that is not a problem and this is a win for them, as they can
 remove most of the hacks. However, it seems worth investigating if the CNI
 plugin is a viable alternative for most service mesh and, in that case, how much
-will they benefit from this sidecar KEP. 
+they will benefit from this sidecar KEP.
 
-It seems likely that they will benefit, though, for two reason: (a) this might
-be simpler or model better what serice mesh need during startup, (b) they still
+It seems likely that they will benefit for two reason: (a) this might
+be simpler or model better what service mesh need during startup, (b) they still
 need to solve the problem on shutdown, where the service mesh needs to drain
-connections first and be running until others terminate. Those are needed for
+connections first and be running until others terminate. These are needed for
 graceful shutdown and allowing other containers to use the network on shutdown,
 respectively.
 
@@ -1036,14 +1044,14 @@ Rodrigo will reach out to users to verify, though.
 
 #### Revisit if we want to modify the podPhase
 
-The current proposal modifies the `podPahse`. The reasoning is this (c&p from
+The current proposal modifies the `podPhase`. The reasoning is this (c&p from
 the proposal):
 
 > PodPhase will be modified to not include Sidecars in its calculations, this is so that if a sidecar exits in failure it does not mark the pod as `Failed`. It also avoids the scenario in which a Pod has RestartPolicy `OnFailure`, if the containers all successfully complete, when the sidecar gets sent the shut down signal if it exits with a non-zero code the Pod phase would be calculated as `Running` despite all containers having exited permanently.
 
 As noted by @zhan849 in [this review comment][pod-phase-review-comment], those
-changes to the pod phase is a behavioral change regarding [current documentation
-about the pod phase][pod-phase-doc].
+changes to the pod phase is a behavioural change regarding [current
+documentation about the pod phase][pod-phase-doc].
 
 [pod-phase-review-comment]: https://github.com/kubernetes/kubernetes/pull/80744/files?file-filters%5B%5D=.go#r379928630
 [pod-phase-doc]: https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#pod-phase
@@ -1051,7 +1059,7 @@ about the pod phase][pod-phase-doc].
 ##### Alternative 1: don't change the pod phase
 
 We propose to not change the pod phase due to sidecar containers status. This
-simpliefies the code (no special behavior is needed besides the startup or
+simplifies the code (no special behaviour is needed besides the startup or
 shutdown sequences) and properly reflect the current documented phases.
 
 Documentation says that during pending phase, not all containers have been
@@ -1064,7 +1072,7 @@ containers in the pod are running.
 Furthermore, it seems correct to mark the pod as failed if a sidecar container
 failed. For example, if a job has all containers exited successfully except for
 a sidecar container that failed, marking it as failed seems the right call. That
-sidecar container can be a container uploading files when the main contianer
+sidecar container can be a container uploading files when the main container
 finished. Just making sure it finishes to run seems the right thing to do.
 
 ##### Alternative 2: change the pod phase
@@ -1075,7 +1083,7 @@ on board with this modification.
 ##### Suggestion
 
 Go for alternative 1, seems to lead to simpler code, pod phase seems to be
-correct and no behavioral changes are done regarding the current documentation
+correct and no behavioural changes are done regarding the current documentation
 that might need to have a special case when sidecars are running.
 
 #### No container type standard
@@ -1110,8 +1118,8 @@ help concentrate the discussion about it. Hopefully this section will mention
 most of the concerns reviewers might have.
 
 This KEP proposes basically to fix two different problems:
- * Allow Kubernetes Jobs to have sidecar containers that run continously
-   (servers) without coupling with other containers in the pod.
+ * Allow Kubernetes Jobs to have sidecar containers that run continuously
+   without coupling with other containers in the pod.
  * Allow pods to start a subset of containers first and, only when those are
    ready, start the remaining containers. And similar guarantees during
    shutdown.
@@ -1137,7 +1145,7 @@ plugin: the CNI plugin created the iptables redirect it is needed to proxy the
 traffic. This removed the need for an initContainer. However, some problems
 persist:
 1. If the service mesh is not started before other containers, containers will
-   start without network conectivity
+   start without network connectivity
 1. If the service mesh is killed before other containers, those won't be able to
    use the network during shutdown (and possible finish processing inflight
    requests)
@@ -1161,7 +1169,7 @@ example: let's say a we have a pod with two container: A and B. And let's say
 container B doesn't handle correctly the case when container A crashes.
 
 If a user is unaware of B not handling correctly when A crashes and makes
-container A a sidecar, this may indeed hide most occurrences of B not hadling
+container A a sidecar, this may indeed hide most occurrences of B not handling
 the cases where A crashes. Because B will be started only when A is up and in a
 ready state.
 
@@ -1169,17 +1177,17 @@ This is a valid concern. We think this can be mitigated by good documentation,
 clarifying that this is only at startup and container crashes need to still be
 handled correctly. I'd love to hear other opinions, though.
 
-Furthermore, adding the sidecar functionality can imporve the experience of
-serveral users (properly drain connections, reduce errors on shutdown or even
-not lose events during shutdown as shown in the motivation section) and other
-nice side effects. Those are mentioned in detail in the motivation section.
+Furthermore, adding the sidecar functionality can improve the experience of
+several users (properly drain connections, reduce errors on shutdown or even not
+lose events during shutdown as shown in the motivation section) and other nice
+side effects. Those are mentioned in detail in the motivation section.
 
 Another side effect _can_ be reduced startup time (it might not be the case for
 all users, though). Even when using applications that use a backoff to retry
 when things fails, if containers are started in a "random" order it can increase
 the startup time considerably. If some containers are started only after some
-others are ready, the startup time can be reduced, specially as the number of
-sidecar containers increases (imagine a pod with 6 sidecar containers).  The
+others are ready, the startup time can be reduced, especially as the number of
+sidecar containers increases (imagine a pod with 6 sidecar containers). The
 startup time can have an interesting effect when it is combined with
 autoscaling, for example.
 
@@ -1192,7 +1200,7 @@ seems the right layer to control that.
 We also think that there is some risk of users using `type: sidecar` to any
 sidecar container that doesn't need any startup/shutdown special handling. But
 this is something we can gather feedback during alpha stage and properly
-document. We think that will be enough to aliviete that concern (if anyone
+document. We think that will be enough to alleviate that concern (if anyone
 actually has it) while at the same time achieve the goals this KEP tries to
 achieve.
 
@@ -1200,7 +1208,7 @@ All opinions are very welcome on this. Please comment.
 
 #### Why this design seems extensible?
 
-This is a difficult section to add, as different persons probably have different
+This is a difficult section to add, as different people probably have different
 concerns. So, I'd list the ones that we can think of to open this discussion, and
 encourage everyone to review this critically and see if there is something
 missing to take into account.
@@ -1215,10 +1223,10 @@ future, that also includes another `Order` field that is an int, starting from
 0.
 
 In this case, containers are started from lower to higher. And stopped from
-higher to lower. For example, first contianers with `Order: 0` will be started,
+higher to lower. For example, first containers with `Order: 0` will be started,
 then container with `Order: 1`, etc. And in the reverse order for shutdown.
 
-Let's call standar container type to containers without the `type` field set.
+Let's call standard container type to containers without the `type` field set.
 
 It seems the current containers type `standard` and `sidecar` can be easily
 extended for this: standard is mapped to one particular int (let's say 1) and
@@ -1233,13 +1241,13 @@ shutdown sequence.
 
 ##### What if we add "Depends On" semantics to containers?
 
-Let's call standar container type to containers without the `type` field set.
+Let's call standard container type to containers without the `type` field set.
 
 This is very similar to the previous:
  * TerminationHook doesn't need any adaptation
- * Containers type standard will be trated as having a "Depends On" on all
+ * Containers type standard will be treated as having a "Depends On" on all
    sidecar type containers
- * Type sidecar containers won't depends on other
+ * Type sidecar containers won't depend on other
 
 This semantic will just be a 1-1 translation from the proposed KEP to this
 "Depends On" semantic, so it is easy for them to coexist.
@@ -1440,7 +1448,7 @@ https://github.com/kubernetes/enhancements/pull/841#discussion_r257906512
 ### Workarounds sidecars need to do today
 
 This section show the alternatives and workaround app developers need to do
-today. 
+today.
 
 #### Jobs with sidecar containers
 
@@ -1452,18 +1460,18 @@ Most known work-arounds for this are achieved by building an ad-hoc signalling
 mechanism to communicate completion status between containers. Common
 implementations use a shared scratch volume mounted into all pods, where
 lifecycle status can be communicated by creating and watching for the presence
-of files. With the disadvatages of:
+of files. With the disadvantages of:
 
  * Repetitive lifecycle logic must be incorporated into each sidecar (code might
    be shared, but is usually language dependant)
- * Wrappers can alliviate that, but it is still quite complex when there are
+ * Wrappers can alleviate that, but it is still quite complex when there are
    several sidecar to wait for. When more than one sidecar is used, some
    question arise: how many sidecars a wrapper has to wait for? How can that be
    configured in a non-error prone way? How can I use wrappers while still inject
    sidecars automatically and reliably in a mutating webhook or programmatically?
 
 Other possible work-arounds can be using a shared PID namespace and checking for
-other containers running or not. Also, it comes with several disadvatages, like:
+other containers running or not. Also, it comes with several disadvantages, like:
 
  * Security concerns around sharing PID namespace (might be able to see other
    containers env vars via /proc, or even the root filesystem, depends on
@@ -1502,8 +1510,8 @@ Once the service mesh container is ready, traffic will be allowed.
 
 This has another major disadvantage: several apps crash if traffic is blackholed
 during startup (common in some rails middleware, for example) and have to resort
-to some kind of workaround, like [this one][linkerd-wait] to wait.  This makes
-also service mesh miss their goal of aumenting containers functionality without
+to some kind of workaround, like [this one][linkerd-wait] to wait. This makes
+also service mesh miss their goal of augmenting containers functionality without
 modifying the main application.
 
 Istio has an alternative to the initContainer hack. Istio [has an
