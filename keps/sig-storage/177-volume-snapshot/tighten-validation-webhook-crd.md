@@ -197,14 +197,14 @@ VolumeSnapshot feature has been on the BETA stage in Kubernetes OSS community si
 
 Admission webhooks are HTTP callbacks to intercept requests to the API server. They could be validating webhooks and mutating webhooks(details). Admission webhooks have been released in BETA since K8s v1.9 and GA in v1.16. Following prerequisites are needed to be able to use this feature:
 
-- K8s version, v1.9+ to use admissionregistration.k8s.io/v1beta1 or v1.16+ to use admissionregistration.k8s.io/v1 (Note that volume snapshot moved to BETA in v1.16)
+- K8s version, v1.9+ to use admissionregistration.k8s.io/v1beta1 or v1.16+ to use admissionregistration.k8s.io/v1 (Note that volume snapshot moved to BETA in v1.17)
 - Corresponding admission controllers(MutatingAdmissionWebhook, ValidatingAdmissionWebhook) is enabled. (in v1.18+, both will be enabled by default, with mutating precedes validating)
 - API admissionregistration.k8s.io/v1beta1 or admissionregistration.k8s.io/v1 is enabled.(Prefer v1 over v1beta1)
 
 Admission controllers have been in common use in kubernetes for a long time. Admission webhooks are the new, preferred way to control admission, especially for external (out-of-tree) components like the CSI external snapshotter.
 
 A webhook server receives AdmissionReview(definition) requests from API server, and responses with a response of the same type to either admit/deny the request. Following simplified diagram shows the workflow.
-(Note that the mutatting webhooks will be invoked BEFORE validating).
+(Note that the mutating webhooks will be invoked BEFORE validating).
 
 The webhook server will expose an HTTP endpoint such that to allow the API server to send AdmissionReview requests. Webhook server providers can dynamically(details) configure what type of resources and what type of admission webhooks via creating CRs of type ValidatingWebhookConfiguration and/or MutatingWebhookConfiguration. It’s worth thinking to provide a generic webhook server in csi-repo. At this stage, the proposal is to create a repo under CSI org, however only implement the validating webhooks for VolumeSnapshot.
 
@@ -227,7 +227,9 @@ CRD validation is preferred over webhook validation due to their lower complexit
 
 ## Proposal
 
-Tighten the validation on Volume Snapshot objects. The following fields will begin to enforce immutability: `VolumeSnapshot.Spec.Source` and `VolumeSnapshotContent.Spec.Source`. The following fields will begin to enforce `oneOf`: `VolumeSnapshot.Spec.Source` and `VolumeSnapshotContent.Spec.Source`). The following fields will begin to enforce non-empty strings: `spec.VolumeSnapshotClassName`. More details are in the Validating Scenarios section.
+Tighten the validation on Volume Snapshot objects. The following fields will begin to enforce immutability: `VolumeSnapshot.Spec.Source`, `VolumeSnapshotContent.spec.VolumeSnapshotRef`*, and `VolumeSnapshotContent.Spec.Source`. The following fields will begin to enforce `oneOf`: `VolumeSnapshot.Spec.Source` and `VolumeSnapshotContent.Spec.Source`). The following fields will begin to enforce non-empty strings: `spec.VolumeSnapshotClassName`. More details are in the Validating Scenarios section.
+
+*Immutable only after the UID has been set.
 
 Due to backwards compatibility concerns, the tightening will occur in two phases.
 
@@ -357,7 +359,7 @@ We are unsure of the specifics of the reconciliation process in which the contro
 
 #### Current Controller validation of OneOf semantic
 
-##### Handling [VolumeSnapshot](https://github.com/kubernetes-csi/external-snapshotter/blob/master/pkg/common-controller/snapshot_controller.go#L192).
+##### Handling [VolumeSnapshot](https://github.com/kubernetes-csi/external-snapshotter/blob/v2.1.1/pkg/common-controller/snapshot_controller.go#L192).
 
 If the object violates oneOf semantic: Update the VS status to “SnapshotValidationError” and issue an event.
 
@@ -365,7 +367,7 @@ Note:
 - If the VS object has been updated AFTER binding to a VSC, binding from VS->VSC will be lost.
 - Deletion of an invalid resource is not blocked by that check as the deletion workflow happens before validation(code). This is to ensure that a user can delete an invalid VS resource.
 
-##### Handling [VolumeSnapshotContent](https://github.com/kubernetes-csi/external-snapshotter/blob/master/pkg/common-controller/snapshot_controller.go#L91)
+##### Handling [VolumeSnapshotContent](https://github.com/kubernetes-csi/external-snapshotter/blob/v2.1.1/pkg/common-controller/snapshot_controller.go#L91)
 
 If the object violates oneOf semantic: Update the VSC status to “ContentValidationError” and issue an event.
 
