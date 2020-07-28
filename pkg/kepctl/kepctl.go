@@ -18,13 +18,16 @@ package kepctl
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 
+	"github.com/google/go-github/v32/github"
 	"gopkg.in/yaml.v2"
 	"k8s.io/enhancements/pkg/kepval/keps"
 )
@@ -139,6 +142,63 @@ func validateKEP(p *keps.Proposal) error {
 	return nil
 }
 
+func findLocalKEPs(repoPath string, sig string) ([]string, error) {
+	rootPath := filepath.Join(
+		repoPath,
+		"keps",
+		sig)
+
+	keps := []string{}
+	err := filepath.Walk(rootPath, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if !info.Mode().IsRegular() {
+			return nil
+		}
+		if info.Name() == "kep.yaml" {
+			keps = append(keps, filepath.Base(filepath.Dir(path)))
+			return filepath.SkipDir
+		}
+		if filepath.Ext(path) != ".md" {
+			return nil
+		}
+		if info.Name() == "README.md" {
+			return nil
+		}
+		keps = append(keps, info.Name()[0:len(info.Name())-3])
+		return nil
+	})
+
+	return keps, err
+}
+
+func (c *Client) findPRKEPs(sig string) (*keps.Proposal, error) {
+	gh := github.NewClient(nil)
+	pulls, _, err := gh.PullRequests.List(context.Background(), "kubernetes", "enhancements", &github.PullRequestListOptions{})
+	if err != nil {
+		return nil, err
+	}
+
+	for _, pr := range pulls {
+		foundKind, foundSIG := false, false
+		sigLabel := strings.Replace(sig, "-", "/", 1)
+		for _, l := range pr.Labels {
+			if *l.Name == "kind/kep" {
+				foundKind = true
+			}
+			if *l.Name == sigLabel {
+				foundSIG = true
+			}
+		}
+		if !foundKind || !foundSIG {
+			continue
+		}
+	}
+
+	return nil, nil
+}
+
 func (c *Client) readKEP(repoPath string, sig, name string) (*keps.Proposal, error) {
 	kepPath := filepath.Join(
 		repoPath,
@@ -146,16 +206,38 @@ func (c *Client) readKEP(repoPath string, sig, name string) (*keps.Proposal, err
 		sig,
 		name,
 		"kep.yaml")
-	b, err := ioutil.ReadFile(kepPath)
-	if err != nil {
-		return nil, fmt.Errorf("unable to read KEP metadata: %s", err)
+	_, err := os.Stat(kepPath)
+	if err == nil {
+		b, err := ioutil.ReadFile(kepPath)
+		if err != nil {
+			return nil, fmt.Errorf("unable to read KEP metadata: %s", err)
+		}
+		var p keps.Proposal
+		err = yaml.Unmarshal(b, &p)
+		if err != nil {
+			return nil, fmt.Errorf("unable to load KEP metadata: %s", err)
+		}
+		return &p, nil
 	}
-	var p keps.Proposal
-	err = yaml.Unmarshal(b, &p)
+
+	// No kep.yaml, treat as old-style KEP
+	kepPath = filepath.Join(
+		repoPath,
+		"keps",
+		sig,
+		name) + ".md"
+	b, err := ioutil.ReadFile(kepPath)
 	if err != nil {
 		return nil, fmt.Errorf("unable to load KEP metadata: %s", err)
 	}
-	return &p, nil
+	r := bytes.NewReader(b)
+	parser := &keps.Parser{}
+
+	kep := parser.Parse(r)
+	if kep.Error != nil {
+		return nil, fmt.Errorf("kep is invalid: %s", kep.Error)
+	}
+	return kep, nil
 }
 
 func (c *Client) writeKEP(kep *keps.Proposal, opts CommonArgs) error {
@@ -180,4 +262,74 @@ func (c *Client) writeKEP(kep *keps.Proposal, opts CommonArgs) error {
 	newPath := filepath.Join(path, "keps", opts.SIG, opts.Name, "kep.yaml")
 	fmt.Fprintf(c.Out, "writing KEP to %s\n", newPath)
 	return ioutil.WriteFile(newPath, b, os.ModePerm)
+}
+
+type PrintConfig interface {
+	Title() string
+	Format() string
+	Value(*keps.Proposal) string
+}
+
+type printConfig struct {
+	title     string
+	format    string
+	valueFunc func(*keps.Proposal) string
+}
+
+func (p *printConfig) Title() string  { return p.title }
+func (p *printConfig) Format() string { return p.format }
+func (p *printConfig) Value(k *keps.Proposal) string {
+	return p.valueFunc(k)
+}
+
+var dfltConfig = map[string]printConfig{
+	"Authors":     {"Authors", "%-30s", func(k *keps.Proposal) string { return strings.Join(k.Authors, ", ") }},
+	"LastUpdated": {"Updated", "%-10s", func(k *keps.Proposal) string { return k.LastUpdated }},
+	"SIG": {"SIG", "%-12s", func(k *keps.Proposal) string {
+		if strings.HasPrefix(k.OwningSIG, "sig-") {
+			return k.OwningSIG[4:]
+		} else {
+			return k.OwningSIG
+		}
+	}},
+	"Stage":  {"Stage", "%-6s", func(k *keps.Proposal) string { return k.Stage }},
+	"Status": {"Status", "%-16s", func(k *keps.Proposal) string { return k.Status }},
+	"Title":  {"Title", "%-30s", func(k *keps.Proposal) string { return k.Title }},
+}
+
+func DefaultPrintConfigs(names ...string) []PrintConfig {
+	var configs []PrintConfig
+	for _, n := range names {
+		// copy to allow it to be tweaked by the caller
+		c := dfltConfig[n]
+		configs = append(configs, &c)
+	}
+	return configs
+}
+
+func (c *Client) PrintTable(configs []PrintConfig, proposals []*keps.Proposal) {
+	if len(configs) == 0 {
+		return
+	}
+
+	fstr := configs[0].Format()
+	for _, c := range configs[1:] {
+		fstr += " " + c.Format()
+	}
+	fstr += "\n"
+
+	fmt.Fprintf(c.Out, fstr, mapPrintConfigs(configs, func(p PrintConfig) string { return p.Title() })...)
+	fmt.Fprintf(c.Out, fstr, mapPrintConfigs(configs, func(p PrintConfig) string { return strings.Repeat("-", len(p.Title())) })...)
+
+	for _, k := range proposals {
+		fmt.Fprintf(c.Out, fstr, mapPrintConfigs(configs, func(p PrintConfig) string { return p.Value(k) })...)
+	}
+}
+
+func mapPrintConfigs(configs []PrintConfig, mapFunc func(p PrintConfig) string) []interface{} {
+	var s []interface{}
+	for _, c := range configs {
+		s = append(s, mapFunc(c))
+	}
+	return s
 }
