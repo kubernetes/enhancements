@@ -101,46 +101,45 @@ tags, and then generate with `hack/update-toc.sh`.
 -->
 
 <!-- toc -->
-- [KEP-1900: Add additional validation to volume snapshot objects](#kep-1900-add-additional-validation-to-volume-snapshot-objects)
-  - [Release Signoff Checklist](#release-signoff-checklist)
-  - [Summary](#summary)
-  - [Motivation](#motivation)
-    - [Background on Admission webhooks](#background-on-admission-webhooks)
-    - [Goals](#goals)
-    - [Non-Goals](#non-goals)
-  - [Proposal](#proposal)
-    - [Validating Scenarios](#validating-scenarios)
-      - [VolumeSnapshot](#volumesnapshot)
-      - [VolumeSnapshotContent](#volumesnapshotcontent)
-    - [Authentication](#authentication)
-    - [Timeout](#timeout)
-    - [Idempotency/Deadlock](#idempotencydeadlock)
-    - [User Stories (Optional)](#user-stories-optional)
-      - [Story 1](#story-1)
-    - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
-    - [Risks and Mitigations](#risks-and-mitigations)
-      - [Backwards compatibility](#backwards-compatibility)
-      - [Current Controller validation of OneOf semantic](#current-controller-validation-of-oneof-semantic)
-        - [Handling VolumeSnapshot.](#handling-volumesnapshot)
-        - [Handling VolumeSnapshotContent](#handling-volumesnapshotcontent)
-  - [Design Details](#design-details)
-    - [Deployment](#deployment)
-    - [Kubernetes API Server Configuration](#kubernetes-api-server-configuration)
-    - [Test Plan](#test-plan)
-    - [Graduation Criteria](#graduation-criteria)
-    - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
-    - [Version Skew Strategy](#version-skew-strategy)
-  - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
-    - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
-    - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
-    - [Monitoring Requirements](#monitoring-requirements)
-    - [Dependencies](#dependencies)
-    - [Scalability](#scalability)
-    - [Troubleshooting](#troubleshooting)
-  - [Implementation History](#implementation-history)
-  - [Drawbacks](#drawbacks)
-  - [Alternatives](#alternatives)
-  - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
+- [Release Signoff Checklist](#release-signoff-checklist)
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Background on Admission webhooks](#background-on-admission-webhooks)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [Validating Scenarios](#validating-scenarios)
+    - [VolumeSnapshot](#volumesnapshot)
+    - [VolumeSnapshotContent](#volumesnapshotcontent)
+  - [Authentication](#authentication)
+  - [Timeout](#timeout)
+  - [Idempotency/Deadlock](#idempotencydeadlock)
+  - [User Stories (Optional)](#user-stories-optional)
+    - [Story 1](#story-1)
+  - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
+  - [Risks and Mitigations](#risks-and-mitigations)
+    - [Backwards compatibility](#backwards-compatibility)
+    - [Current Controller validation of OneOf semantic](#current-controller-validation-of-oneof-semantic)
+      - [Handling VolumeSnapshot.](#handling-volumesnapshot)
+      - [Handling VolumeSnapshotContent](#handling-volumesnapshotcontent)
+- [Design Details](#design-details)
+  - [Deployment](#deployment)
+  - [Kubernetes API Server Configuration](#kubernetes-api-server-configuration)
+  - [Test Plan](#test-plan)
+  - [Graduation Criteria](#graduation-criteria)
+  - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+  - [Version Skew Strategy](#version-skew-strategy)
+- [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
+  - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
+  - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+  - [Monitoring Requirements](#monitoring-requirements)
+  - [Dependencies](#dependencies)
+  - [Scalability](#scalability)
+  - [Troubleshooting](#troubleshooting)
+- [Implementation History](#implementation-history)
+- [Drawbacks](#drawbacks)
+- [Alternatives](#alternatives)
+- [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -359,7 +358,9 @@ We are unsure of the specifics of the reconciliation process in which the contro
 
 #### Current Controller validation of OneOf semantic
 
-##### Handling [VolumeSnapshot](https://github.com/kubernetes-csi/external-snapshotter/blob/v2.1.1/pkg/common-controller/snapshot_controller.go#L192).
+##### Handling VolumeSnapshot.
+
+See code [here](https://github.com/kubernetes-csi/external-snapshotter/blob/v2.1.1/pkg/common-controller/snapshot_controller.go#L192).
 
 If the object violates oneOf semantic: Update the VS status to “SnapshotValidationError” and issue an event.
 
@@ -367,8 +368,9 @@ Note:
 - If the VS object has been updated AFTER binding to a VSC, binding from VS->VSC will be lost.
 - Deletion of an invalid resource is not blocked by that check as the deletion workflow happens before validation(code). This is to ensure that a user can delete an invalid VS resource.
 
-##### Handling [VolumeSnapshotContent](https://github.com/kubernetes-csi/external-snapshotter/blob/v2.1.1/pkg/common-controller/snapshot_controller.go#L91)
+##### Handling VolumeSnapshotContent
 
+See code [here](https://github.com/kubernetes-csi/external-snapshotter/blob/v2.1.1/pkg/common-controller/snapshot_controller.go#L91).
 If the object violates oneOf semantic: Update the VSC status to “ContentValidationError” and issue an event.
 
 ## Design Details
