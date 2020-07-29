@@ -55,7 +55,7 @@ func (c *Client) Query(opts QueryOpts) error {
 		for _, k := range names {
 			kep, err := c.readKEP(repoPath, sig, k)
 			if err != nil {
-				fmt.Fprintf(c.Err, "ERROR READING KEP %s: %s\n", err)
+				fmt.Fprintf(c.Err, "ERROR READING KEP %s: %s\n", k, err)
 			} else {
 				allKEPs = append(allKEPs, kep)
 			}

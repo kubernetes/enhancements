@@ -41,7 +41,7 @@ func TestValidate(t *testing.T) {
 		{
 			name: "invalid kep fails valdiate for owning-sig",
 			file: "testdata/invalid-kep.yaml",
-			err:  fmt.Errorf(`kep is invalid: error validating KEP metadata: "owning-sig" must be one of (committee-code-of-conduct,committee-product-security,committee-steering,sig-api-machinery,sig-apps,sig-architecture,sig-auth,sig-autoscaling,sig-cli,sig-cloud-provider,sig-cluster-lifecycle,sig-contributor-experience,sig-docs,sig-instrumentation,sig-multicluster,sig-network,sig-node,sig-release,sig-scalability,sig-scheduling,sig-service-catalog,sig-storage,sig-testing,sig-ui,sig-usability,sig-windows,ug-big-data,ug-vmware-users,wg-api-expression,wg-component-standard,wg-data-protection,wg-iot-edge,wg-k8s-infra,wg-lts,wg-machine-learning,wg-multitenancy,wg-policy,wg-security-audit) but it is a string: sig-awesome`),
+			err:  fmt.Errorf(`kep is invalid: error validating KEP metadata: "owning-sig" must be one of (committee-code-of-conduct,committee-product-security,committee-steering,sig-api-machinery,sig-apps,sig-architecture,sig-auth,sig-autoscaling,sig-cli,sig-cloud-provider,sig-cluster-lifecycle,sig-contributor-experience,sig-docs,sig-instrumentation,sig-multicluster,sig-network,sig-node,sig-release,sig-scalability,sig-scheduling,sig-service-catalog,sig-storage,sig-testing,sig-ui,sig-usability,sig-windows,ug-big-data,ug-vmware-users,wg-api-expression,wg-component-standard,wg-data-protection,wg-iot-edge,wg-k8s-infra,wg-lts,wg-machine-learning,wg-multitenancy,wg-naming,wg-policy,wg-security-audit) but it is a string: sig-awesome`),
 		},
 	}
 
