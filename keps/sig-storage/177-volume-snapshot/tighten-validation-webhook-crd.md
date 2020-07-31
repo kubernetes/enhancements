@@ -205,6 +205,8 @@ Admission controllers have been in common use in kubernetes for a long time. Adm
 A webhook server receives AdmissionReview(definition) requests from API server, and responses with a response of the same type to either admit/deny the request. Following simplified diagram shows the workflow.
 (Note that the mutating webhooks will be invoked BEFORE validating).
 
+![Webhook workflow diagram](./webhook-workflow.png)
+
 The webhook server will expose an HTTP endpoint such that to allow the API server to send AdmissionReview requests. Webhook server providers can dynamically(details) configure what type of resources and what type of admission webhooks via creating CRs of type ValidatingWebhookConfiguration and/or MutatingWebhookConfiguration. It’s worth thinking to provide a generic webhook server in csi-repo. At this stage, the proposal is to create a repo under CSI org, however only implement the validating webhooks for VolumeSnapshot.
 
 CRD validation is preferred over webhook validation due to their lower complexity, however CRD validation schema is unable to enforce immutability or provide ratcheting validation.
