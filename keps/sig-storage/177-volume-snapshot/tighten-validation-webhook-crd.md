@@ -228,7 +228,7 @@ CRD validation is preferred over webhook validation due to their lower complexit
 
 ## Proposal
 
-Tighten the validation on Volume Snapshot objects. The following fields will begin to enforce immutability: `VolumeSnapshot.Spec.Source`, `VolumeSnapshotContent.spec.VolumeSnapshotRef`*, and `VolumeSnapshotContent.Spec.Source`. The following fields will begin to enforce `oneOf`: `VolumeSnapshot.Spec.Source` and `VolumeSnapshotContent.Spec.Source`). The following fields will begin to enforce non-empty strings: `spec.VolumeSnapshotClassName`. More details are in the Validating Scenarios section.
+Tighten the validation on Volume Snapshot objects. The following fields will begin to enforce immutability: `VolumeSnapshot.Spec.Source`, `VolumeSnapshotContent.spec.VolumeSnapshotRef`*, and `VolumeSnapshotContent.Spec.Source`. The following fields will begin to enforce `oneOf`: `VolumeSnapshot.Spec.Source` and `VolumeSnapshotContent.Spec.Source`). The following fields will begin to enforce non-empty strings: `VolumeSnapshot.Spec.VolumeSnapshotClassName`. More details are in the Validating Scenarios section.
 
 *Immutable only after the UID has been set.
 
