@@ -267,48 +267,61 @@ delievered to a subset of kube-apiservers, this is not a problem, because:
   should still be stored there (unless there is heavy churn of those objects
   which is the case that doesn't suffer from this problem)
 
-
 The POC PR can be found in: https://github.com/kubernetes/kubernetes/pull/92472
 
 ### Risks and Mitigations
 
-<!--
-What are the risks of this proposal, and how do we mitigate? Think broadly.
-For example, consider both security and how this will impact the larger
-Kubernetes ecosystem.
-
-How will security be reviewed, and by whom?
-
-How will UX be reviewed, and by whom?
-
-Consider including folks who also work outside the SIG or subproject.
--->
+The biggest risk are bugs in the implementation. To mitigate this, the
+implementation will be hidden behind `EfficientWatchResumption` feature
+gate and necessary tests will be added and/or extended (details below).
 
 ## Design Details
 
 ### Test Plan
 
-TODO: Fill in before making `Implementable`.
+- unit tests for logic enhancing resource version tracking in reflector
+- unit tests for newly added watch cache logic
+- integration test for sending bookmark on kube-apiserver shutdown
+- integration test for proving that resource version that
+   kube-apiserver can serve from cache progresses eventually when objects of
+   other types are being added/updated/deleted;
+   this test should store events (or other type) in a separate etcd cluster
+   (to test split-etcd backend mode) and ensure no RV leak across etcd clusters
 
 ### Graduation Criteria
 
-TODO: Fill in before making `Implementable`.
+Alpha should provide basic functionality covered with tests described above.
 
 #### Alpha -> Beta Graduation
 
-TODO: Fill in before making `Implementable`.
+- Appropriate metrics are agreed on and implemented
+- Ad-hoc manual rolling-upgrade of kube-apiservers in 5k-node cluster
+   is not resulting in required re-listing for watched resources from
+   node components
 
 #### Beta -> GA Graduation
 
-TODO: Fill in before making `Implementable`.
+- Enabled in Beta for at least two releases without complaints
+- Rolling-upgrade of kube-apiservers in 5k-node cluster test is
+   automated and running periodically.
 
 ### Upgrade / Downgrade Strategy
 
-TODO: Fill in before making `Implementable`.
+Kubernetes can be safely updated/downgraded, as the implementation
+is purely in memory:
+- if etcd doesn't support frequent enough progress notify events,
+   we won't get expected benefits (problems may not be addressed),
+   but also no unexpected consequences
+- enabling the feature may only result in additional watch bookmark
+   events for clients, which they are explicitly opting-in anyway
+- disabling the feature reverts the behavior of watchcache being
+   synced to values of objects of different types; however given
+   the initialization is happening at "now" anyway, the time won't
+   go back
 
 ### Version Skew Strategy
 
-TODO: Fill in before making `Implementable`.
+n/a - watch bookmarks don't have any frequency guarantees
 
 ## Production Readiness Review Questionnaire
 
@@ -319,33 +332,23 @@ TODO: Fill in before making `Implementable`.
 _This section must be completed when targeting alpha to a release._
 
 * **How can this feature be enabled / disabled in a live cluster?**
-  - [ ] Feature gate (also fill in values in `kep.yaml`)
-    - Feature gate name:
-    - Components depending on the feature gate:
-  - [ ] Other
-    - Describe the mechanism:
-    - Will enabling / disabling the feature require downtime of the control
-      plane?
-    - Will enabling / disabling the feature require downtime or reprovisioning
-      of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
+  - [x] Feature gate (also fill in values in `kep.yaml`)
+    - Feature gate name: EfficientWatchResumption
+    - Components depending on the feature gate: kube-apiserver
 
 * **Does enabling the feature change any default behavior?**
-  Any change of default behavior may be surprising to users or break existing
-  automations, so be extremely careful here.
+  No.
 
 * **Can the feature be disabled once it has been enabled (i.e. can we roll back
   the enablement)?**
-  Also set `disable-supported` to `true` or `false` in `kep.yaml`.
-  Describe the consequences on existing workloads (e.g., if this is a runtime
-  feature, can it break the existing applications?).
+  Yes, watchcache (and watch bookmark events) will not be propagated with
+  resource versions of objects of other types.
 
 * **What happens if we reenable the feature if it was previously rolled back?**
+  The expected behavior will be restored.
 
 * **Are there any tests for feature enablement/disablement?**
-  The e2e framework does not currently support enabling or disabling feature
-  gates. However, unit tests in each component dealing with managing data, created
-  with and without the feature, are necessary. At the very least, think about
-  conversion tests if API types are being modified.
+  No.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -498,6 +501,7 @@ _This section must be completed when targeting beta graduation to a release._
 ## Implementation History
 
 2020-06-30: KEP Proposed.
+2020-08-04: KEP marked as implementable.
 
 ## Drawbacks
 

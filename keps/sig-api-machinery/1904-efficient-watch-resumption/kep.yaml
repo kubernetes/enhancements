@@ -5,7 +5,7 @@ authors:
 owning-sig: sig-api-machinery
 participating-sigs:
   - sig-scalability
-status: provisional
+status: implementable
 creation-date: 2020-07-23
 reviewers:
   - "@jpbetz"
@@ -33,12 +33,11 @@ milestone:
 
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
-#feature-gates:
-#  - name: MyFeature
-#    components:
-#      - kube-apiserver
-#      - kube-controller-manager
-#disable-supported: true
+feature-gates:
+  - name: EfficientWatchResumption
+    components:
+      - kube-apiserver
+disable-supported: true
 
 # The following PRR answers are required at beta release
 #metrics:
