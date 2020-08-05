@@ -1,0 +1,18 @@
+title: Manifest based registration of Admission webhooks
+authors:
+- "@vivekbagade"
+owning-sig: sig-api-machinery
+participating-sigs:
+- sig-instrumentation
+reviewers:
+- "@liggitt"
+- "@deads2k"
+- "@wojtek-t"
+- "@JeremyOT"
+approvers:
+- "@liggitt"
+- "@deads2k"
+editor: TBD
+creation-date: 2020-04-21
+last-updated: 2020-07-23
+status: provisional
