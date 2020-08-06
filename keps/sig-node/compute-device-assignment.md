@@ -60,18 +60,24 @@ In this document we will discuss the motivation and code changes required for in
 
 ## Changes
 
-Add a v1alpha1 Kubelet GRPC service, at `/var/lib/kubelet/pod-resources/kubelet.sock`, which returns information about the kubelet's assignment of devices to containers. It obtains this information from the internal state of the kubelet's Device Manager. The GRPC Service returns a single PodResourcesResponse, which is shown in proto below:
+Add a v1alpha1 Kubelet GRPC service, at `/var/lib/kubelet/pod-resources/kubelet.sock`, which returns information about the kubelet's assignment of devices to containers. It obtains this information from the internal state of the kubelet's Device Manager.
+The GRPC Service can return:
+- a single PodResourcesResponse, enabling monitor applications to poll for resources allocated to pods and containers on the node.
+- a stream of PodResourcesResponse, enabling monitor applications to be notified of new resource allocation, release or resource allocation updates.
+
+This is shown in proto below:
 ```protobuf
 // PodResources is a service provided by the kubelet that provides information about the
 // node resources consumed by pods and containers on the node
 service PodResources {
     rpc List(ListPodResourcesRequest) returns (ListPodResourcesResponse) {}
+    rpc ListAndWatch(ListPodResourcesRequest) returns (stream ListPodResourcesResponse) {}
 }
 
 // ListPodResourcesRequest is the request made to the PodResources service
 message ListPodResourcesRequest {}
 
-// ListPodResourcesResponse is the response returned by List function
+// ListPodResourcesResponse is the response returned by List and ListAndWatch functions
 message ListPodResourcesResponse {
     repeated PodResources pod_resources = 1;
 }
@@ -98,7 +104,6 @@ message ContainerDevices {
 
 ### Potential Future Improvements
 
-* Add `ListAndWatch()` function to the GRPC endpoint so monitoring agents don't need to poll.
 * Add identifiers for other resources used by pods to the `PodResources` message.
   * For example, persistent volume location on disk
 
@@ -164,6 +169,7 @@ Beta:
 
 ## Implementation History
 
+- 2020-08-XX: KEP extended with ListAndWatch function
 - 2018-09-11: Final version of KEP (proposing pod-resources endpoint) published and presented to sig-node.  [Slides](https://docs.google.com/presentation/u/1/d/1xz-iHs8Ec6PqtZGzsmG1e68aLGCX576j_WRptd2114g/edit?usp=sharing)
 - 2018-10-30: Demo with example gpu monitoring daemonset
 - 2018-11-10: KEP lgtm'd and approved
