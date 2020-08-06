@@ -156,7 +156,7 @@ clusters:
     server: "https://1.2.3.4:8080"
     certificate-authority: "/etc/kubernetes/ca.pem"
     extensions:
-    - name: exec  # reserved extension name for per cluster exec config
+    - name: client.authentication.k8s.io/exec  # reserved extension name for per cluster exec config
       extension:
         some-config-per-cluster: config-data  # arbitrary config
 contexts:
