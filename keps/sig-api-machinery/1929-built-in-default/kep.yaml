@@ -1,0 +1,22 @@
+title: Built-in declarative defaults
+kep-number: 1929
+authors:
+  - apelisse
+owning-sig: sig-api-machinery
+status: implementable
+creation-date: 2020-08-04
+reviewers:
+  - jpbetz
+  - lavalamp
+  - sttts
+  - kensipe
+approvers:
+  - TBD
+prr-approvers:
+  - deads2k
+see-also:
+  - "/keps/sig-api-machinery/20190426-crd-defaulting.md"
+stage: stable
+latest-milestone: "v1.20"
+milestone:
+  stable: "v1.20"
