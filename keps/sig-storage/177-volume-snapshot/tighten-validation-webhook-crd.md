@@ -228,14 +228,12 @@ CRD validation is preferred over webhook validation due to their lower complexit
 
 ## Proposal
 
-Tighten the validation on Volume Snapshot objects. The following fields will begin to enforce immutability: `VolumeSnapshot.Spec.Source`, `VolumeSnapshotContent.spec.VolumeSnapshotRef`*, and `VolumeSnapshotContent.Spec.Source`. The following fields will begin to enforce `oneOf`: `VolumeSnapshot.Spec.Source` and `VolumeSnapshotContent.Spec.Source`). The following fields will begin to enforce non-empty strings: `VolumeSnapshot.Spec.VolumeSnapshotClassName`. More details are in the Validating Scenarios section.
-
-*Immutable only after the UID has been set.
+Tighten the validation on Volume Snapshot objects. The following fields will begin to enforce immutability: `VolumeSnapshot.Spec.Source`, and `VolumeSnapshotContent.Spec.Source`. The following fields will begin to enforce `oneOf`: `VolumeSnapshot.Spec.Source` and `VolumeSnapshotContent.Spec.Source`). The following fields will begin to enforce non-empty strings: `VolumeSnapshot.Spec.VolumeSnapshotClassName`. `VolumeSnapshotContent.spec.VolumeSnapshotRef`will be Immutable only after the UID has been set. More details are in the Validating Scenarios section.
 
 Due to backwards compatibility concerns, the tightening will occur in two phases.
 
-1. The first phase is webhook-only, and will use [ratcheting validation](#backwards-compatibility) combined with a reconciliation method to delete or fix currently persisted objects which are invalid under the new (strict) validation rules.
-2. The second phase occurs once all invalid objects are cleared *from* the cluster. The CRD schema validation will be tightened and the webhook will stick around to enforce immutability until immutable fields come to CRDs. (or the crd upgrade could wait until immutable fields are available to do in one go)
+1. The first phase is webhook-only, and will use [ratcheting validation](#backwards-compatibility). It will be the user's responsibility to clean up invalid objects. The controller will not be able to automatically fix invalid objects. The controller will not automatically delete invalid objects to avoid data loss.
+2. The second phase occurs once all invalid objects are cleared from the cluster. The CRD schema validation will be tightened and the webhook will stick around to enforce immutability until immutable fields come to CRDs. (or the crd upgrade could wait until immutable fields are available to do in one go) This will be accompanied by a version change to make it clear the CRD is using different validation.
 
 The phases come in separate releases to allow users / cluster admin the opportunity to clean their cluster of any invalid objects. More details are in the Risks and Mitigations section.
 
@@ -352,11 +350,11 @@ Begin with validating webhook only enforcement. The webhook will perform the fol
    - webhook is strict on create
    - webhook is strict on updates where the existing object passes strict validation
    - webhook is relaxed on updates where the existing object fails strict validation (allows finalizer removal, status update, deletion, etc)
- - some reconciliation process in volume snapshot controller (this is the hard part) that ensures invalid data is fixed or removed
+ - some reconciliation process in volume snapshot controller that ensures invalid data is fixed or removed. This process will be entirely user managed. The webhook and controllers will not take any automatic action to reconcile invalid objects.
 
 Once we are sure no invalid data is persisted, we can switch to CRD schema-enforced validation with validating webhooks for immutability in a subsequent release.
 
-We are unsure of the specifics of the reconciliation process in which the controller will remove or fix invalid objects.
+If users do not completely remove their invalid objects before upgrading their CRD definition, it should be possible to downgrade the CRD definition to allow invalid objects to get deleted.
 
 #### Current Controller validation of OneOf semantic
 
@@ -386,13 +384,15 @@ proposal will be implemented, this is the place to discuss them.
 
 ### Deployment
 
-There are two main steps to setup validation for the snapshot objects. The kubernetes API server must be configured to connect to the webhook server, and the webhook server must be deployed and reachable. Make sure to take a look at the prerequisites before deploying.
+There are two main steps to setup validation for the snapshot objects. The kubernetes API server must be configured to connect to the webhook server, and the webhook server must be deployed and reachable. Make sure to take a look at the [prerequisites](#background-on-admission-webhooks) before deploying.
+
+A sample script will be provided which will handle the deployment of TLS certificates. It is not considered production ready and users are encouraged to use their own certificate management process. The demo will create certificates as a secret in the cluster and mount them as a volume. The `ValidatingWebhookConfiguration` will need to be updated with the CA bundle.
 
 ### Kubernetes API Server Configuration
 
 The API server must be configured to connect to the webhook server for certain API requests. This is done by creating a ValidatingWebhookConfiguration object. For a more thorough explanation of each field refer to the documentation. An example yaml file is provided below. The value of timeoutSeconds will affect the latency of snapshot creation, and must be considered carefully as it will affect the time the application may be frozen for.
 
-```
+```yaml
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingWebhookConfiguration
 metadata:
@@ -403,13 +403,14 @@ webhooks:
   - apiGroups:   ["snapshot.storage.k8s.io"]
     apiVersions: ["v1beta1"]
     operations:  ["CREATE", "UPDATE"]
-    resources:   ["VolumeSnapshot", "VolumeSnapshotContent"]
+    resources:   ["volumesnapshots", "volumesnapshotcontents"]
     scope:       "*"
   clientConfig:
     service:
-      namespace: "kube-system"
+      namespace: "default"
       name: "snapshot-validation-service"
-    caBundle: "Ci0tLS0tQk...<`caBundle` is a PEM encoded CA bundle which will be used to validate the webhook's server certificate.>...tLS0K" 
+      path: "/path/to/webhook"
+    caBundle: "LS0tLS...base64 encoded of public key...LS0K"
   admissionReviewVersions: ["v1", "v1beta1"]
   sideEffects: None
   failurePolicy: Ignore # We recommend switching to Fail only after successful installation of the server and webhook.
@@ -419,7 +420,7 @@ webhooks:
 Webhook Server Deployment
 The recommended deployment mode for the webhook server is within the cluster to minimize network latency. For high-availability we recommend using a Deployment and Service to deploy the validation server. Some example yaml files are provided, and should be changed to suit the Cluster Admin’s needs.
 
-```
+```yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -438,12 +439,21 @@ spec:
     spec:
       containers:
       - name: snapshot-validation
-        image: snapshot-validation:xxx # change the image if you wish to use your own custom validation server image
+        image: image:xxx # change the image to released image or if you wish to use your own custom validation server image
+        args: ['webhook', '--tls-cert-file=/etc/webhook/certs/cert.pem', '--tls-private-key-file=/etc/webhook/certs/key.pem'] # Change args as needed
         ports:
         - containerPort: 443 # change the port as needed
+        volumeMounts:
+          - name: webhook-certs
+            mountPath: /etc/webhook/certs
+            readOnly: true
+      volumes:
+        - name: webhook-certs
+          secret:
+            secretName: snapshot-validation-secret
 ```
 
-```
+```yaml
 apiVersion: v1
 kind: Service
 metadata:
