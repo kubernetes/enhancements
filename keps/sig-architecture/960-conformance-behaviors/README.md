@@ -86,6 +86,17 @@ Check these off as they are completed for the Release Team to track. These check
 
 ## Summary
 
+
+**NOTE**
+
+This KEP is now withdrawn. After initial attempts at implementation it
+became clear that the effort to rework existing tests to follow this methodology
+was more extensive than expected. Additionally, the problems this KEP intended
+to solve (particularly separate reviewer pools) have not proven to be the
+bottleneck in test creation and promotion.
+
+**END NOTE**
+
 This proposal modifies the conformance testing framework to be driven by a list
 of agreed upon behaviors. These behaviors are identified by processing of the
 API schemas, documentation, expert knowledge, and code examination. They are
