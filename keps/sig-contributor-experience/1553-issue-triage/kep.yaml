@@ -1,10 +1,12 @@
 title: Issue Triage Workflow and Automation
-status: provisional
+status: implementable
 owning-sig: sig-contributor-experience
 participating-sigs:
   - sig-release
 authors:
   - "@justaugustus"
+  - "@mrbobbytables"
+  - "@nikhita"
 reviewers:
   - "@alejandrox1"
   - "@mrbobbytables"
