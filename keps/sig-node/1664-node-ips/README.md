@@ -125,47 +125,37 @@ IPv6 addresses according to the user's wishes.
 
 ### Goals
 
-- Ensure that nodes in single-stack IPv4 clusters always have an IPv4
-  "Primary Node IP" and that nodes in single-stack IPv6 clusters
-  always have an IPv6 Primary Node IP.
+1. Assign dual-stack `Pod.Status.PodIPs` to host-network Pods on nodes
+   that have both IPv4 and IPv6 IPs, so they can be targeted as
+   endpoints of IPv4, IPv6, or dual-stack Services. (This is
+   independent of the question of _how_ the node ends up with both
+   IPv4 and IPv6 IPs in `Node.Status.Addresses`.)
 
-- Have a clearly-defined "Secondary Node IP" for nodes in dual-stack
-  clusters, where the Secondary Node IP is the opposite IP family from
-  the Primary Node IP.
+2. Make the necessary changes to kubelet to allow bare-metal clusters
+   to have dual-stack node IPs (either auto-detected or specified on
+   the command line) rather than limiting them to a single node IP.
 
-- Assign dual-stack `Pod.Status.PodIPs` to host-network Pods in
-  dual-stack clusters, so they can be endpoints of IPv4, IPv6, or
-  dual-stack Services.
+3. Define how cloud providers should handle IPv4 and IPv6 node IPs in
+   different cluster types (single-stack IPv4, single-stack IPv6,
+   dual-stack) so as to enable IPv6/dual-stack functionality in
+   clusters that want it without accidentally breaking old IPv4-only
+   clusters. Update at least a few cloud providers to obey the new
+   rules. File issues against the remaining cloud providers pointing
+   out what needs to be done.
 
-- Make the Node IP detection and overriding behavior consistent across
-  cluster types:
+4. Make built-in cloud providers and external cloud providers behave
+   the same way with respect to detecting and overriding the Node
+   IP(s). Allow administrators to override both IPv4 and IPv6 Node IPs
+   in dual-stack clusters.
 
-    - Autodetect both IPv4 and IPv6 addresses on bare-metal Nodes in
-      dual-stack clusters.
-
-    - Allow overriding the Primary Node IP in clusters using external
-      cloud providers, just like you can with clusters using built-in
-      cloud providers.
-
-    - Allow overriding the Secondary Node IP in addition to the
-      Primary Node IP in dual-stack clusters of all types.
-
-- Fix situations where kubelet ends up running with an inconsistent IP
-  family configuration (either by fixing the inconsistency or by
-  making kubelet exit with an error rather than being inconsistent).
-
-- Begin the process of updating cloud providers to have them return
-  IPv6 Node addresses. (ie, at least file issues against them pointing
-  out what needs to be done)
-
-- Avoiding breaking old components in single-stack IPv6 clusters that
-  would be surprised by seeing IPv6 addresses in
-  `Node.Status.Addresses`.
-
-- Improve the situation with code which is shared between kubelet and
-  external cloud providers (eg, `PatchNodeStatus`, which is currently
-  duplicated between `k8s.io/kubernetes/pkg/util/node` and
-  `k8s.io/cloud-provider/node/helpers`).
+5. Find a home for the node-address-handling code which is shared
+   between kubelet and external cloud providers. (eg,
+   `PatchNodeStatus`, which is currently duplicated between
+   `k8s.io/kubernetes/pkg/util/node` and
+   `k8s.io/cloud-provider/node/helpers`.) Note that even after all
+   built-in cloud providers are deprecated in favor of external ones,
+   this code will still be used by both kubelet and external cloud
+   providers, because kubelet handles the bare metal case.
 
 ### Non-Goals
 
