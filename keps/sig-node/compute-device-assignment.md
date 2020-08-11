@@ -86,9 +86,9 @@ message ListPodResourcesResponse {
 message WatchPodResourcesRequest {}
 
 enum WatchPodAction {
-    UPDATED = 0;
-    DELETED = 1;
-    ADDED = 2;
+    ADDED = 0;
+    MODIFIED = 1;
+    DELETED = 2;
 }
 
 // WatchPodResourcesResponse is the response returned by Watch function
@@ -184,7 +184,7 @@ Beta:
 
 ## Implementation History
 
-- 2020-08-XX: KEP extended with ListAndWatch function
+- 2020-08-XX: KEP extended with Watch function
 - 2018-09-11: Final version of KEP (proposing pod-resources endpoint) published and presented to sig-node.  [Slides](https://docs.google.com/presentation/u/1/d/1xz-iHs8Ec6PqtZGzsmG1e68aLGCX576j_WRptd2114g/edit?usp=sharing)
 - 2018-10-30: Demo with example gpu monitoring daemonset
 - 2018-11-10: KEP lgtm'd and approved
