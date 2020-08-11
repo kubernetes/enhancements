@@ -61,9 +61,9 @@ In this document we will discuss the motivation and code changes required for in
 ## Changes
 
 Add a v1alpha1 Kubelet GRPC service, at `/var/lib/kubelet/pod-resources/kubelet.sock`, which returns information about the kubelet's assignment of devices to containers. It obtains this information from the internal state of the kubelet's Device Manager.
-The GRPC Service can return:
-- a single PodResourcesResponse, enabling monitor applications to poll for resources allocated to pods and containers on the node.
-- a stream of PodResourcesResponse, enabling monitor applications to be notified of new resource allocation, release or resource allocation updates.
+The GRPC Service exposes two endpoints:
+- `List`, which returns a single PodResourcesResponse, enabling monitor applications to poll for resources allocated to pods and containers on the node.
+- `Watch`, which returns a stream of PodResourcesResponse, enabling monitor applications to be notified of new resource allocation, release or resource allocation updates, using the `action` field in the response.
 
 This is shown in proto below:
 ```protobuf
@@ -71,15 +71,30 @@ This is shown in proto below:
 // node resources consumed by pods and containers on the node
 service PodResources {
     rpc List(ListPodResourcesRequest) returns (ListPodResourcesResponse) {}
-    rpc ListAndWatch(ListPodResourcesRequest) returns (stream ListPodResourcesResponse) {}
+    rpc Watch(WatchPodResourcesRequest) returns (stream WatchPodResourcesResponse) {}
 }
 
 // ListPodResourcesRequest is the request made to the PodResources service
 message ListPodResourcesRequest {}
 
-// ListPodResourcesResponse is the response returned by List and ListAndWatch functions
+// ListPodResourcesResponse is the response returned by List function
 message ListPodResourcesResponse {
     repeated PodResources pod_resources = 1;
+}
+
+// WatchPodResourcesRequest is the request made to the Watch PodResourcesLister service
+message WatchPodResourcesRequest {}
+
+enum WatchPodAction {
+    UPDATED = 0;
+    DELETED = 1;
+    ADDED = 2;
+}
+
+// WatchPodResourcesResponse is the response returned by Watch function
+message WatchPodResourcesResponse {
+    WatchPodAction action = 1;
+    repeated PodResources pod_resources = 2;
 }
 
 // PodResources contains information about the node resources assigned to a pod
