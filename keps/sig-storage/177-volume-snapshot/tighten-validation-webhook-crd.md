@@ -19,7 +19,7 @@ approvers:
 editor: TBD
 creation-date: 2020-07-22
 last-updated: 2020-07-22
-status: provisional
+status: implementable
 see-also:
   - n/a
 replaces:
@@ -182,11 +182,11 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-Tighten validation on `VolumeSnapshot` and `VolumeSnapshotContent` by updating the CRD validation schema and providing a webhook server to enforce immutability (until builtin immutable fields for CRD is available).
+Tighten validation on `VolumeSnapshot` and `VolumeSnapshotContent` by updating the CRD validation schema and providing a webhook server to enforce immutability.
 
-This KEP will list the new validation rules. It will also provide the release plan to ensure backwards compatibility. As well, it will outline the deployment plan of the webhook server.
+This KEP will list the new validation rules. It will also provide the release plan to ensure backwards compatibility. As well, it will outline the deployment plan of the webhook server. The webhook server is deployed separately from the snapshot controll
 
-This tightening of the validation on volume snapshot objects is considered a change to the volume snapshot API. Choosing not to install the webhook server and participate in the 2-phase release process can cause future problems when upgrading from v1beta1 to V1 volumesnapshot API if there are currently persisted objects which fail the new stricter validation. Potential impacts include being unable to delete invalid snapshot objects.
+This tightening of the validation on volume snapshot objects is considered a change to the volume snapshot API. Choosing not to install the webhook server and participate in the 2-phase release process can cause future problems when upgrading from v1beta1 to V1 volumesnapshot API if there are currently persisted objects which fail the new stricter validation. Potential impacts include being unable to delete invalid snapshot objects. It should be possible to downgrade the CRD definition as a workaround.
 
 ## Motivation
 
@@ -207,7 +207,7 @@ A webhook server receives AdmissionReview(definition) requests from API server, 
 
 ![Webhook workflow diagram](./webhook-workflow.png)
 
-The webhook server will expose an HTTP endpoint such that to allow the API server to send AdmissionReview requests. Webhook server providers can dynamically(details) configure what type of resources and what type of admission webhooks via creating CRs of type ValidatingWebhookConfiguration and/or MutatingWebhookConfiguration. It’s worth thinking to provide a generic webhook server in csi-repo. At this stage, the proposal is to create a repo under CSI org, however only implement the validating webhooks for VolumeSnapshot.
+The webhook server will expose an HTTP endpoint such that to allow the API server to send AdmissionReview requests. Webhook server providers can dynamically(details) configure what type of resources and what type of admission webhooks via creating CRs of type ValidatingWebhookConfiguration and/or MutatingWebhookConfiguration.
 
 CRD validation is preferred over webhook validation due to their lower complexity, however CRD validation schema is unable to enforce immutability or provide ratcheting validation.
 
@@ -233,7 +233,7 @@ Tighten the validation on Volume Snapshot objects. The following fields will beg
 Due to backwards compatibility concerns, the tightening will occur in two phases.
 
 1. The first phase is webhook-only, and will use [ratcheting validation](#backwards-compatibility). It will be the user's responsibility to clean up invalid objects. The controller will not be able to automatically fix invalid objects. The controller will not automatically delete invalid objects to avoid data loss.
-2. The second phase occurs once all invalid objects are cleared from the cluster. The CRD schema validation will be tightened and the webhook will stick around to enforce immutability until immutable fields come to CRDs. (or the crd upgrade could wait until immutable fields are available to do in one go) This will be accompanied by a version change to make it clear the CRD is using different validation.
+2. The second phase occurs once all invalid objects are cleared from the cluster. The CRD schema validation will be tightened and the webhook will stick around to enforce immutability until immutable fields come to CRDs. This will be accompanied by a version change to make it clear the CRD is using different validation.
 
 The phases come in separate releases to allow users / cluster admin the opportunity to clean their cluster of any invalid objects. More details are in the Risks and Mitigations section.
 
@@ -243,7 +243,9 @@ The server will perform validation on Volume Snapshot objects when CREATE and UP
 
 The following is a list of fields which will get checked when a CREATE or UPDATE operation is sent to the API server. Some validation is already enforced by the CRD schema definition, for example some required fields and enums.
 
-All of the validation desired can be achieved by updating the CRDs to take advantage of the OpenApi v3 schema validation. In particular, the `oneOf` and `minLength` fields can be used. However, there is a desire for some fields to be immutable, which is not yet supported by CRDs. See KEP https://github.com/kubernetes/enhancements/blob/master/keps/sig-api-machinery/20190603-immutable-fields.md for the timeline for immutable fields to come to CRDs.
+All of the validation desired can be achieved by updating the CRDs to take advantage of the OpenApi v3 schema validation. In particular, the `oneOf` and `minLength` fields can be used.
+
+There is a desire for some fields to be immutable, which is not yet supported by CRDs. See the immutable fields [KEP](https://github.com/kubernetes/enhancements/blob/master/keps/sig-api-machinery/20190603-immutable-fields.md) for the latest updates. As of August 2020, the KEP is provisional and has no clear timeline for when immutable fields will come to CRDs.
 
 Note that we may want to consider other fields to be marked as immutable.
 
@@ -257,12 +259,12 @@ Note that we may want to consider other fields to be marked as immutable.
 |  UPDATE   | spec.VolumeSnapshotClassName |                                    Same restrictions as CREATE. We won’t restrict updating by making this field immutable (only applying the same restrictions as creation) but this field should only be changed by those who know exactly what they are doing.                                    |    400     |
 
 #### VolumeSnapshotContent
-| Operation |         Field          |                                                                                                                                                                                                                                                Reason                                                                                                                                                                                                                                                 | HTTP RCode |
-| :-------: | :--------------------: | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------: | :--------: |
-|  CREATE   |      spec.Source       |                                                                                                                                                                          Exactly one of VolumeHandle (dynamic snapshot created by controller) or SnapshotHandle (pre-provisioned snapshot created by CA) should be specified                                                                                                                                                                          |    400     |
-|  UPDATE   |      spec.Source       |                                                                                                                                                                                                                                    Immutable, no updates allowed.                                                                                                                                                                                                                                     |    400     |
-|  CREATE   | spec.VolumeSnapshotRef | Must have both name and namespace fields set. Preprovisioned: This is the reference to the yet to be created VolumeSnapshot object which should bind to this VolumeSnapshotContent. https://github.com/kubernetes-csi/external-snapshotter/blob/097b1fc7d7cd6576182ca34512c14de1c84b2127/pkg/apis/volumesnapshot/v1beta1/types.go#L270. Dynamic: This is the reference to the VS object which triggered the creation of this VSContent. It also has the UID field, but this is set by the controller. |    400     |
-|  UPDATE   | spec.VolumeSnapshotRef |                                                                                                                                                                                                                                    Immutable, no updates allowed, once it's UID has been set.                                                                                                                                                                                                                                     |    400     |
+| Operation |         Field          |                                                                                                                                                                                                                                                            Reason                                                                                                                                                                                                                                                             | HTTP RCode |
+| :-------: | :--------------------: | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------: | :--------: |
+|  CREATE   |      spec.Source       |                                                                                                                                                                                Exactly one of VolumeHandle (dynamic snapshot created by controller) or SnapshotHandle (pre-provisioned snapshot created by cluster admin) should be specified                                                                                                                                                                                 |    400     |
+|  UPDATE   |      spec.Source       |                                                                                                                                                                                                                                                Immutable, no updates allowed.                                                                                                                                                                                                                                                 |    400     |
+|  CREATE   | spec.VolumeSnapshotRef | Must have both name and namespace fields set. Preprovisioned: This is the reference to the yet to be created VolumeSnapshot object which should bind to this VolumeSnapshotContent. https://github.com/kubernetes-csi/external-snapshotter/blob/097b1fc7d7cd6576182ca34512c14de1c84b2127/pkg/apis/volumesnapshot/v1beta1/types.go#L270. Dynamic: This is the reference to the VolumeSnapshot object which triggered the creation of this VolumeSnapshotContent. It also has the UID field, but this is set by the controller. |    400     |
+|  UPDATE   | spec.VolumeSnapshotRef |                                                                                                                                                                                                                                  Immutable, no updates allowed, once it's UID has been set.                                                                                                                                                                                                                                   |    400     |
 
 ### Authentication
 
@@ -294,17 +296,17 @@ bogged down.
 -->
 
 #### Story 1
-CA can deploy the webhook server.
+Cluster admin can deploy the webhook server.
 Users can create and update snapshot objects with confidence invalid updates will be rejected.
 
 Following are some typical scenarios we are aiming to prevent:
 - Creation of invalid CRs
-- Reject if a VolumeSnapshot CR does not have a legit VolumeSnapshotSource, i.e., missing both PersistentVolumeName and VolumeSnapshotContentName.
-- Reject if a VolumeSnapshotContent CR does not have a legit VolumeSnapshotContentSource, i.e., both VolumeHandle and SnapshotHandle have been specified
+  - Reject if a VolumeSnapshot CR does not have a legit VolumeSnapshotSource, i.e., missing both PersistentVolumeName and VolumeSnapshotContentName.
+  - Reject if a VolumeSnapshotContent CR does not have a legit VolumeSnapshotContentSource, i.e., both VolumeHandle and SnapshotHandle have been specified
 - Updating immutable fields
-- Reject updates to VolumeSnapshot’s VolumeSnapshotSource
-- Reject updates to VolumeSnapshotContent’s VolumeSnapshotContentSource
-- Reject updates to VolumeSnapshotContent’s volume snapshot ref after binding
+  - Reject updates to VolumeSnapshot’s VolumeSnapshotSource
+  - Reject updates to VolumeSnapshotContent’s VolumeSnapshotContentSource
+  - Reject updates to VolumeSnapshotContent’s volume snapshot ref after binding
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -362,11 +364,11 @@ If users do not completely remove their invalid objects before upgrading their C
 
 See code [here](https://github.com/kubernetes-csi/external-snapshotter/blob/v2.1.1/pkg/common-controller/snapshot_controller.go#L192).
 
-If the object violates oneOf semantic: Update the VS status to “SnapshotValidationError” and issue an event.
+If the object violates oneOf semantic: Update the VolumeSnapshot status to “SnapshotValidationError” and issue an event.
 
 Note:
-- If the VS object has been updated AFTER binding to a VSC, binding from VS->VSC will be lost.
-- Deletion of an invalid resource is not blocked by that check as the deletion workflow happens before validation(code). This is to ensure that a user can delete an invalid VS resource.
+- If the VolumeSnapshot object has been updated AFTER binding to a VSC, binding from VolumeSnapshot->VSC will be lost.
+- Deletion of an invalid resource is not blocked by that check as the deletion workflow happens before validation(code). This is to ensure that a user can delete an invalid VolumeSnapshot resource.
 
 ##### Handling VolumeSnapshotContent
 
@@ -386,7 +388,7 @@ proposal will be implemented, this is the place to discuss them.
 
 There are two main steps to setup validation for the snapshot objects. The kubernetes API server must be configured to connect to the webhook server, and the webhook server must be deployed and reachable. Make sure to take a look at the [prerequisites](#background-on-admission-webhooks) before deploying.
 
-A sample script will be provided which will handle the deployment of TLS certificates. It is not considered production ready and users are encouraged to use their own certificate management process. The demo will create certificates as a secret in the cluster and mount them as a volume. The `ValidatingWebhookConfiguration` will need to be updated with the CA bundle.
+A sample script will be provided which will handle the deployment of TLS certificates. It is not considered production ready and users are encouraged to use their own certificate management process. The demo will create certificates as a secret in the cluster and mount them as a volume. The `ValidatingWebhookConfiguration` will need to be updated with the cluster admin bundle.
 
 ### Kubernetes API Server Configuration
 
