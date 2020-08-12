@@ -145,7 +145,9 @@ We expect the following functionality to be common to all operators for addons:
 
 
 An example can make this easier to understand, here is what a CRD instance for
-kube-proxy might look like:
+kube-proxy might look like (NOTE: your apiVersion will depend on the group
+you intend to use for your CRDs, and should *not* be in the addons.sig.k8s.io
+group):
 
 ```yaml
 apiVersion: addons.sigs.k8s.io/v1alpha1
