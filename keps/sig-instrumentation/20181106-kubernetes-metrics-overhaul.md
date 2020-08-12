@@ -13,7 +13,7 @@ approvers:
 editor: "@DirectXMan12"
 creation-date: 2018-11-06
 last-updated: 2019-03-21
-status: implementable
+status: implemented
 ---
 
 # Kubernetes Metrics Overhaul
@@ -31,8 +31,6 @@ status: implementable
   - [Changing API latency histogram buckets](#changing-api-latency-histogram-buckets)
   - [Kubelet metric changes](#kubelet-metric-changes)
     - [Make metrics aggregatable](#make-metrics-aggregatable)
-    - [Export less metrics](#export-less-metrics)
-    - [Prevent apiserver's metrics from accidental registration](#prevent-apiservers-metrics-from-accidental-registration)
     - [Prober metrics](#prober-metrics)
   - [Kube-scheduler metric changes](#kube-scheduler-metric-changes)
   - [Kube-proxy metric changes](#kube-proxy-metric-changes)
@@ -46,9 +44,15 @@ status: implementable
     - [Workqueue metrics](#workqueue-metrics)
   - [Convert latency/latencies in metrics name to duration](#convert-latencylatencies-in-metrics-name-to-duration)
   - [Risks and Mitigations](#risks-and-mitigations)
+- [Test Plan](#test-plan)
 - [Deprecation Plan](#deprecation-plan)
 - [Graduation Criteria](#graduation-criteria)
 - [Implementation History](#implementation-history)
+  - [1.14](#114)
+  - [1.15](#115)
+  - [1.16](#116)
+  - [1.17](#117)
+  - [Not attached to a release milestone](#not-attached-to-a-release-milestone)
 <!-- /toc -->
 
 ## Summary
@@ -91,7 +95,7 @@ As Kubernetes currently rewrites meta labels of containers to “well-known” `
 
 API server histogram latency buckets run from 125ms to 8s. This range does not accurately model most API server request latencies, which could run as low as 1ms for GETs or as high as 60s before hitting the API server global timeout.
 
-https://github.com/kubernetes/kubernetes/pull/67476
+https://github.com/kubernetes/kubernetes/pull/73638
 
 ### Kubelet metric changes
 
@@ -107,17 +111,11 @@ https://github.com/kubernetes/kubernetes/pull/72470
 
 https://github.com/kubernetes/kubernetes/pull/73820
 
-#### Export less metrics
-
-https://github.com/kubernetes/kubernetes/issues/68522
-
-#### Prevent apiserver's metrics from accidental registration
-
-https://github.com/kubernetes/kubernetes/pull/63924
-
 #### Prober metrics
 
 Make prober metrics introduced in https://github.com/kubernetes/kubernetes/pull/61369 conform to the [Kubernetes instrumentation guidelines](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-instrumentation/instrumentation.md).
+
+https://github.com/kubernetes/kubernetes/pull/76074
 
 ### Kube-scheduler metric changes
 
@@ -169,6 +167,10 @@ Risks include users upgrading Kubernetes, but not updating their usage of Kubern
 
 To prevent this, we will implement recording rules for Prometheus that allow best effort backward compatibility as well as update uses of breaking metric usages in the [Kubernetes monitoring mixin](https://github.com/kubernetes-monitoring/kubernetes-mixin), a widely used collection of Prometheus alerts and Grafana dashboards for Kubernetes.
 
+## Test Plan
+
+Each individual change for this KEP must be accompanied with appropriate unit tests. As the scope of changes are provided are on the level of individual metrics, integration testing is not required.
+
 ## Deprecation Plan
 
 In our efforts to change existing old metrics, we flag them `(Deprecated)` in the front of metrics help text.
@@ -177,10 +179,63 @@ These old metrics will be deprecated in v1.14 and coexist with the new replaceme
 
 The release target of removing the deprecated metrics is v1.15.
 
+Prior to removing deprecated metrics, we will attend appropriate community meetings (i.e. SIG Node) to provide sufficient notice.
+
 ## Graduation Criteria
 
 All metrics exposed by components from kubernetes/kubernetes follow Prometheus best practices and (nice to have) tooling is built and enabled in CI to prevent simple violations of said best practices.
 
 ## Implementation History
 
-Multiple pull requests have already been opened, but not merged as of writing of this document.
+As of release 1.17, this KEP is considered fully implemented.
+
+### 1.14
+
+- Use prometheus conventions for workqueue metrics [#71300](https://github.com/kubernetes/kubernetes/pull/71300)
+  [@danielqsj](https://github.com/danielqsj) 2018-12-31
+- Change scheduler metrics to conform metrics guidelines [#72332](https://github.com/kubernetes/kubernetes/pull/72332)
+  [@danielqsj](https://github.com/danielqsj) 2019-01-14
+- Change apiserver metrics to conform metrics guidelines [#72336](https://github.com/kubernetes/kubernetes/pull/72336)
+  [@danielqsj](https://github.com/danielqsj) 2019-01-17
+- Change proxy metrics to conform metrics guidelines [#72334](https://github.com/kubernetes/kubernetes/pull/72334)
+  [@danielqsj](https://github.com/danielqsj) 2019-01-25
+- Fix admission metrics in true units [#72343](https://github.com/kubernetes/kubernetes/pull/72343)
+  [@danielqsj](https://github.com/danielqsj) 2019-01-28
+- Adjust buckets in apiserver request latency metrics [#73638](https://github.com/kubernetes/kubernetes/pull/73638)
+  [@wojtek-t](https://github.com/wojtek-t) 2019-02-04
+- Change docker metrics to conform metrics guidelines [#72323](https://github.com/kubernetes/kubernetes/pull/72323)
+  [@danielqsj](https://github.com/danielqsj) 2019-02-06
+- Change kubelet metrics to conform metrics guidelines [#72470](https://github.com/kubernetes/kubernetes/pull/72470)
+  [@danielqsj](https://github.com/danielqsj) 2019-02-18
+- Rename cadvisor metric labels to match instrumentation guidelines [#69099](https://github.com/kubernetes/kubernetes/pull/69099)
+  [@ehashman](https://github.com/ehashman) 2019-02-22
+- Fit RuntimeClass metrics to prometheus conventions [#73820](https://github.com/kubernetes/kubernetes/pull/73820)
+  [@haiyanmeng](https://github.com/haiyanmeng) 2019-02-22
+- Convert latency/latencies in metrics name to duration [#74418](https://github.com/kubernetes/kubernetes/pull/74418)
+  [@danielqsj](https://github.com/danielqsj) 2019-03-01
+- Clean the deprecated metrics which introduced recently [#75023](https://github.com/kubernetes/kubernetes/pull/75023)
+  [@danielqsj](https://github.com/danielqsj) 2019-03-07
+
+### 1.15
+
+- Remove the deprecated admission metrics [#75279](https://github.com/kubernetes/kubernetes/pull/75279)
+  [@danielqsj](https://github.com/danielqsj) 2019-03-20
+- Change kubelet probe metrics to counter [#76074](https://github.com/kubernetes/kubernetes/pull/76074)
+  [@danielqsj](https://github.com/danielqsj) 2019-04-12
+
+### 1.16
+
+- Drop deprecated cadvisor metric labels [#80376](https://github.com/kubernetes/kubernetes/pull/80376)
+  [@ehashman](https://github.com/ehashman) 2019-08-14
+
+### 1.17
+
+- Turn off apiserver deprecated metrics [#83837](https://github.com/kubernetes/kubernetes/pull/83837)
+  [@RainbowMango](https://github.com/RainbowMango) 2019-11-16
+- Turn off kubelet deprecated metrics [#83841](https://github.com/kubernetes/kubernetes/pull/83841)
+  [@RainbowMango](https://github.com/RainbowMango) 2019-12-09
+
+### Not attached to a release milestone
+
+- Introduce promlint to guarantee metrics follow Prometheus best practices [#86477](https://github.com/kubernetes/kubernetes/pull/86477)
+  [@RainbowMango](https://github.com/RainbowMango) 2020-05-25
