@@ -28,7 +28,9 @@ import (
 	"strings"
 
 	"github.com/google/go-github/v32/github"
+	"github.com/olekukonko/tablewriter"
 	"gopkg.in/yaml.v2"
+
 	"k8s.io/enhancements/pkg/kepval/keps"
 )
 
@@ -173,7 +175,7 @@ func findLocalKEPs(repoPath string, sig string) ([]string, error) {
 	return keps, err
 }
 
-func (c *Client) findPRKEPs(sig string) (*keps.Proposal, error) {
+func (c *Client) findKEPPullRequests(sig string) (*keps.Proposal, error) {
 	gh := github.NewClient(nil)
 	pulls, _, err := gh.PullRequests.List(context.Background(), "kubernetes", "enhancements", &github.PullRequestListOptions{})
 	if err != nil {
@@ -266,42 +268,39 @@ func (c *Client) writeKEP(kep *keps.Proposal, opts CommonArgs) error {
 
 type PrintConfig interface {
 	Title() string
-	Format() string
 	Value(*keps.Proposal) string
 }
 
 type printConfig struct {
 	title     string
-	format    string
 	valueFunc func(*keps.Proposal) string
 }
 
-func (p *printConfig) Title() string  { return p.title }
-func (p *printConfig) Format() string { return p.format }
+func (p *printConfig) Title() string { return p.title }
 func (p *printConfig) Value(k *keps.Proposal) string {
 	return p.valueFunc(k)
 }
 
-var dfltConfig = map[string]printConfig{
-	"Authors":     {"Authors", "%-30s", func(k *keps.Proposal) string { return strings.Join(k.Authors, ", ") }},
-	"LastUpdated": {"Updated", "%-10s", func(k *keps.Proposal) string { return k.LastUpdated }},
-	"SIG": {"SIG", "%-12s", func(k *keps.Proposal) string {
+var defaultConfig = map[string]printConfig{
+	"Authors":     {"Authors", func(k *keps.Proposal) string { return strings.Join(k.Authors, ", ") }},
+	"LastUpdated": {"Updated", func(k *keps.Proposal) string { return k.LastUpdated }},
+	"SIG": {"SIG", func(k *keps.Proposal) string {
 		if strings.HasPrefix(k.OwningSIG, "sig-") {
 			return k.OwningSIG[4:]
 		} else {
 			return k.OwningSIG
 		}
 	}},
-	"Stage":  {"Stage", "%-6s", func(k *keps.Proposal) string { return k.Stage }},
-	"Status": {"Status", "%-16s", func(k *keps.Proposal) string { return k.Status }},
-	"Title":  {"Title", "%-30s", func(k *keps.Proposal) string { return k.Title }},
+	"Stage":  {"Stage", func(k *keps.Proposal) string { return k.Stage }},
+	"Status": {"Status", func(k *keps.Proposal) string { return k.Status }},
+	"Title":  {"Title", func(k *keps.Proposal) string { return k.Title }},
 }
 
 func DefaultPrintConfigs(names ...string) []PrintConfig {
 	var configs []PrintConfig
 	for _, n := range names {
 		// copy to allow it to be tweaked by the caller
-		c := dfltConfig[n]
+		c := defaultConfig[n]
 		configs = append(configs, &c)
 	}
 	return configs
@@ -312,24 +311,21 @@ func (c *Client) PrintTable(configs []PrintConfig, proposals []*keps.Proposal) {
 		return
 	}
 
-	fstr := configs[0].Format()
-	for _, c := range configs[1:] {
-		fstr += " " + c.Format()
-	}
-	fstr += "\n"
+	table := tablewriter.NewWriter(c.Out)
 
-	fmt.Fprintf(c.Out, fstr, mapPrintConfigs(configs, func(p PrintConfig) string { return p.Title() })...)
-	fmt.Fprintf(c.Out, fstr, mapPrintConfigs(configs, func(p PrintConfig) string { return strings.Repeat("-", len(p.Title())) })...)
+	var headers []string
+	for _, c := range configs {
+		headers = append(headers, c.Title())
+	}
+	table.SetHeader(headers)
+	table.SetAlignment(tablewriter.ALIGN_LEFT)
 
 	for _, k := range proposals {
-		fmt.Fprintf(c.Out, fstr, mapPrintConfigs(configs, func(p PrintConfig) string { return p.Value(k) })...)
+		var s []string
+		for _, c := range configs {
+			s = append(s, c.Value(k))
+		}
+		table.Append(s)
 	}
-}
-
-func mapPrintConfigs(configs []PrintConfig, mapFunc func(p PrintConfig) string) []interface{} {
-	var s []interface{}
-	for _, c := range configs {
-		s = append(s, mapFunc(c))
-	}
-	return s
+	table.Render()
 }
