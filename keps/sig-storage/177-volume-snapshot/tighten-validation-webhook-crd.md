@@ -228,16 +228,18 @@ CRD validation is preferred over webhook validation due to their lower complexit
 
 ## Proposal
 
-Tighten the validation on Volume Snapshot objects. The following fields will begin to enforce immutability: `VolumeSnapshot.Spec.Source`, and `VolumeSnapshotContent.Spec.Source`. The following fields will begin to enforce `oneOf`: `VolumeSnapshot.Spec.Source` and `VolumeSnapshotContent.Spec.Source`). The following fields will begin to enforce non-empty strings: `VolumeSnapshot.Spec.VolumeSnapshotClassName`. `VolumeSnapshotContent.spec.VolumeSnapshotRef`will be Immutable only after the UID has been set. More details are in the Validating Scenarios section.
+Tighten the validation on Volume Snapshot objects. Please see the tables below for detailed information.
 
 Due to backwards compatibility concerns, the tightening will occur in two phases.
 
-1. The first phase is webhook-only, and will use [ratcheting validation](#backwards-compatibility). It will be the user's responsibility to clean up invalid objects. The controller will not be able to automatically fix invalid objects. The controller will not automatically delete invalid objects to avoid data loss.
-2. The second phase occurs once all invalid objects are cleared from the cluster. The CRD schema validation will be tightened and the webhook will stick around to enforce immutability until immutable fields come to CRDs. This will be accompanied by a version change to make it clear the CRD is using different validation.
+1. The first phase is webhook-only, and will use [ratcheting validation](#backwards-compatibility). It will be the user's responsibility to clean up invalid objects which already existed before the webhook was enabled. Invalid objects are those which fail the new, stricter validation. The controller will not be able to automatically fix invalid objects.
+2. The second phase can occur once all invalid objects are cleared from the cluster. It will be the cluster admin's responsibility to check and detect when it is safe to move to the second phase. The CRD schema validation will be tightened and the webhook will stick around to enforce immutability until immutable fields come to CRDs. This will be accompanied by a version change to make it clear the CRD is using different validation.
 
 The phases come in separate releases to allow users / cluster admin the opportunity to clean their cluster of any invalid objects. More details are in the Risks and Mitigations section.
 
-The server will perform validation on Volume Snapshot objects when CREATE and UPDATE requests are made to the api server for `VolumeSnapshot` and `VolumeSnapshotContent` objects. The webhooks will only use validating webhooks, which are read-only.  An image will be built and example `Deployment` and `Service` yaml files will be provided. Example configuration files for the `ValidatingWebhookConfiguration` will be provided, to be used to register the webhooks on the API server.
+The webhook server will perform validation on Volume Snapshot objects when CREATE and UPDATE requests are made to the api server for `VolumeSnapshot` and `VolumeSnapshotContent` objects. The webhooks will only use validating webhooks, which are read-only.  An image will be built and example `Deployment` and `Service` yaml files will be provided. Example configuration files for the `ValidatingWebhookConfiguration` will be provided, to be used to register the webhooks on the API server.
+
+The webhook will be developed inside the [external-snapshotter](https://github.com/kubernetes-csi/external-snapshotter) repository.
 
 ### Validating Scenarios
 
@@ -268,7 +270,7 @@ Note that we may want to consider other fields to be marked as immutable.
 
 ### Authentication
 
-There are two directions to authentication. Authenticating the webhook server is legitimate, and authenticating the k8s api server is legitimate. 
+There are two directions to authentication. Authenticating the identity of the webhook server, and authenticating the identitiy of the kubernetes api server.
 
 The API server authenticates the webhook server through TLS certificates and HTTPS. This is required, and an example method of deploying the webhook server with HTTPS will be provided.
 
@@ -278,9 +280,9 @@ Authentication on incoming requests to the webhook server is configurable howeve
 
 Webhooks add latency to each API server call, thus setting up a reasonable timeout for each AdmissionReview request from the webhook server side is critical. The default timeout is 10 seconds if not specified. When an AdmissionReview request sent to the webhook server timed out, `failurePolicy`(default to `Fail` which is equivalent to disallow) will be triggered.
 
-In the ValidatingWebhookConfiguration yaml example, a default timeout of two seconds is provided, cluster admins who wish to change the timeout may change the value of `timeoutSeconds`
+In the ValidatingWebhookConfiguration yaml example, a default timeout of two seconds is provided, cluster admins who wish to change the timeout may change the value of `timeoutSeconds`.
 
-To avoid migration pain it is recommended to start with a `failurePolicy` value of `Ignore`, changing it to `Fail` only after the webhook is confirmed to have been installed successfully.
+To avoid migration pain it is recommended to start with a `failurePolicy` value of `Ignore`, changing it to `Fail` only after the webhook is confirmed to have been installed successfully. Choosing `Ignore` means that it would be possible invalid objects can get created/updated in the system.
 
 ### Idempotency/Deadlock
 
@@ -352,7 +354,7 @@ Begin with validating webhook only enforcement. The webhook will perform the fol
    - webhook is strict on create
    - webhook is strict on updates where the existing object passes strict validation
    - webhook is relaxed on updates where the existing object fails strict validation (allows finalizer removal, status update, deletion, etc)
- - some reconciliation process in volume snapshot controller that ensures invalid data is fixed or removed. This process will be entirely user managed. The webhook and controllers will not take any automatic action to reconcile invalid objects.
+ - The user will need to delete or fix all invalid objects. The webhook and controllers will not take any automatic action to reconcile invalid objects.
 
 Once we are sure no invalid data is persisted, we can switch to CRD schema-enforced validation with validating webhooks for immutability in a subsequent release.
 
@@ -471,9 +473,9 @@ spec:
 ```
 
 ### Test Plan
-There will be unit testing on the webserver to ensure that the correct policy gets enforced.
+There will be unit testing on the webserver in the same repository to ensure that the correct policy gets enforced.
 
-There is a cluster available for testing in the external snapshotter repository. We will deploy the webhook validation server and test the e2e functionality.
+Since the webhook is developed in the external-snapshotter repository, and does not test any csi driver, it would not be a good fit for e2e tests to go under the kubernetes core repository. Hence the plan for e2e tests is to add a new test job in external-snapshotter repo that brings up a kind cluster, installs crds and the webhook, and then runs validation tests.
 
 <!--
 **Note:** *Not required until targeted at a release.*
