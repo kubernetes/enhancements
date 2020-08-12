@@ -184,7 +184,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 Tighten validation on `VolumeSnapshot` and `VolumeSnapshotContent` by updating the CRD validation schema and providing a webhook server to enforce immutability.
 
-This KEP will list the new validation rules. It will also provide the release plan to ensure backwards compatibility. As well, it will outline the deployment plan of the webhook server. The webhook server is deployed separately from the snapshot controll
+This KEP will list the new validation rules. It will also provide the release plan to ensure backwards compatibility. As well, it will outline the deployment plan of the webhook server. The webhook server is deployed separately from the snapshot controller
 
 This tightening of the validation on volume snapshot objects is considered a change to the volume snapshot API. Choosing not to install the webhook server and participate in the 2-phase release process can cause future problems when upgrading from v1beta1 to V1 volumesnapshot API if there are currently persisted objects which fail the new stricter validation. Potential impacts include being unable to delete invalid snapshot objects. It should be possible to downgrade the CRD definition as a workaround.
 
@@ -233,7 +233,7 @@ Tighten the validation on Volume Snapshot objects. Please see the tables below f
 Due to backwards compatibility concerns, the tightening will occur in two phases.
 
 1. The first phase is webhook-only, and will use [ratcheting validation](#backwards-compatibility). It will be the user's responsibility to clean up invalid objects which already existed before the webhook was enabled. Invalid objects are those which fail the new, stricter validation. The controller will not be able to automatically fix invalid objects.
-2. The second phase can occur once all invalid objects are cleared from the cluster. It will be the cluster admin's responsibility to check and detect when it is safe to move to the second phase. The CRD schema validation will be tightened and the webhook will stick around to enforce immutability until immutable fields come to CRDs. This will be accompanied by a version change to make it clear the CRD is using different validation.
+2. The second phase can occur once all invalid objects are cleared from the cluster. It will be the cluster admin's responsibility to check and detect when it is safe to move to the second phase. The CRD schema validation will be tightened and the webhook will stick around to enforce immutability until immutable fields come to CRDs (Custom Resource Definition). This will be accompanied by a version change to make it clear the CRD is using different validation.
 
 The phases come in separate releases to allow users / cluster admin the opportunity to clean their cluster of any invalid objects. More details are in the Risks and Mitigations section.
 
@@ -274,7 +274,7 @@ There are two directions to authentication. Authenticating the identity of the w
 
 The API server authenticates the webhook server through TLS certificates and HTTPS. This is required, and an example method of deploying the webhook server with HTTPS will be provided.
 
-Authentication on incoming requests to the webhook server is configurable however out of scope of this document. It’s the user’s responsibility in general to configure the webhook service and the API server if authentication is required(details). The web server implementation, however, should allow users to configure whether authentication is required or not. If no authentication config is specified, the webhook server should default to “NoClientCert”, which effectively will not authenticate the identity of the clients.
+Authentication on incoming requests to the webhook server is configurable however out of scope of this document. It’s the user’s responsibility in general to configure the webhook service and the API server if authentication is required ([details](https://kubernetes.io/docs/reference/access-authn-authz/extensible-admission-controllers/#authenticate-apiservers)). The web server implementation, however, should allow users to configure whether authentication is required or not. If no authentication config is specified, the webhook server should default to “NoClientCert”, which effectively will not authenticate the identity of the clients.
 
 ### Timeout
 
@@ -338,14 +338,14 @@ Consider including folks who also work outside the SIG or subproject.
 
 There is a backwards compatibility issue involved when tightening the validation on snapshot objects. Since the feature is already in beta we are committed to more backward compatibility guarantee than alpha.
 
-There are two perspectives.
-- client perspective: API requests that previously succeeded now fail (these are okay)
-  - create: invalid things get rejected rather than persisted
-  - update: invalid transitions now get rejected
-- API server perspective for existing persisted data
-  - do not tighten validation (via schema or webhook) in a way that would prevent a no-op update (this must not be violated)
-  - reason: removing a finalizer is done via update, causes problems with delete
-  - making a previously optional field required in the schema blocks update of previously persisted data that omitted the field (unless the update populates the newly required field, or you specify a schema default)
+Backward compatibility violations which are okay:
+- create: users can no longer create objects which fail strict validation
+- update: users can no longer update objects to fail strict validation
+
+Backwards compatibility violations which are not okay:
+- delete: users can no longer delete objects which fail strict validation
+
+If the validation tightening would prevent a no-op update, it would prevent deletion of that object because deletions require removing finalizers, which are done via update. Therefore we must support a no-op update, where previously invalid objects can be updated without changes. Making a previously optional field required in the schema blocks update of previously persisted data that omitted the field (unless the update populates the newly required field, or you specify a schema default)
 
 To tackle the backwards compatibility problem, this KEP proposes the following release process.
 
@@ -355,6 +355,8 @@ Begin with validating webhook only enforcement. The webhook will perform the fol
    - webhook is strict on updates where the existing object passes strict validation
    - webhook is relaxed on updates where the existing object fails strict validation (allows finalizer removal, status update, deletion, etc)
  - The user will need to delete or fix all invalid objects. The webhook and controllers will not take any automatic action to reconcile invalid objects.
+
+For `UPDATE` operations, the webhook server will receive the existing object and the new, proposed object. We will use this feature to check when the existing objects passes or fails strict validation.
 
 Once we are sure no invalid data is persisted, we can switch to CRD schema-enforced validation with validating webhooks for immutability in a subsequent release.
 
@@ -421,7 +423,8 @@ webhooks:
   timeoutSeconds: 2 # This will affect the latency and performance. Finetune this value based on your application's tolerance.
 ```
 
-Webhook Server Deployment
+### Webhook Server Deployment
+
 The recommended deployment mode for the webhook server is within the cluster to minimize network latency. For high-availability we recommend using a Deployment and Service to deploy the validation server. Some example yaml files are provided, and should be changed to suit the Cluster Admin’s needs.
 
 ```yaml
@@ -625,7 +628,7 @@ you need any help or guidance.
 
 * **Can the feature be disabled once it has been enabled (i.e. can we roll back
   the enablement)?**
-  In phase one, the feature can be disabled by removing the webhook. However once we update the CRDs users will not easily be able to disable it once they have upgraded the 
+  In phase one, the feature can be disabled by removing the webhook. However once we update the CRDs users will not easily be able to disable it once they have upgraded.
 
 * **What happens if we reenable the feature if it was previously rolled back?** Nothing special.
 
