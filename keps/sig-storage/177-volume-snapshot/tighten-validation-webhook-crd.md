@@ -362,6 +362,13 @@ Once we are sure no invalid data is persisted, we can switch to CRD schema-enfor
 
 If users do not completely remove their invalid objects before upgrading their CRD definition, it should be possible to downgrade the CRD definition to allow invalid objects to get deleted.
 
+The rollback procedure would look like this:
+1. New v1 api with v1beta1 storage is causing problems and user wants to rollback
+2. Control plane (including CRD + snapshot controller) is rolled back and the v1 version is dropped. Objects still persist though since it's stored as v1beta1
+3. User fixes their problems with invalid objects
+4. User upgrades the control plane again.
+5. In an n+2 release, once all the invalid objects are purged, we can switch the storage version to v1.
+
 #### Current Controller validation of OneOf semantic
 
 ##### Handling VolumeSnapshot.
