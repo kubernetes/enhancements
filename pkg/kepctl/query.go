@@ -59,6 +59,8 @@ func (c *Client) Query(opts QueryOpts) error {
 		return errors.Wrap(err, "unable to search KEPs")
 	}
 
+	c.SetGitHubToken(opts.CommonArgs)
+
 	var allKEPs []*keps.Proposal
 	// load the KEPs for each listed SIG
 	for _, sig := range opts.SIG {
@@ -84,7 +86,7 @@ func (c *Client) Query(opts QueryOpts) error {
 				return errors.Wrap(err, "unable to search for KEP PRs")
 			}
 			if prKeps != nil {
-				allKEPs = append(allKEPs, prKeps)
+				allKEPs = append(allKEPs, prKeps...)
 			}
 		}
 	}
@@ -104,7 +106,7 @@ func (c *Client) Query(opts QueryOpts) error {
 		keep = append(keep, k)
 	}
 
-	c.PrintTable(DefaultPrintConfigs("LastUpdated", "Stage", "Status", "SIG", "Authors", "Title"), keep)
+	c.PrintTable(DefaultPrintConfigs("LastUpdated", "Stage", "Status", "SIG", "Authors", "Title", "Link"), keep)
 	return nil
 }
 

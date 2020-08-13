@@ -22,24 +22,29 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/google/go-github/v32/github"
 	"github.com/olekukonko/tablewriter"
+	"golang.org/x/oauth2"
 	"gopkg.in/yaml.v2"
 
 	"k8s.io/enhancements/pkg/kepval/keps"
+	"k8s.io/test-infra/prow/git"
 )
 
 type CommonArgs struct {
-	RepoPath string //override the default settings
-	KEP      string //KEP name sig-xxx/xxx-name
-	Name     string
-	Number   string
-	SIG      string
+	RepoPath  string //override the default settings
+	TokenPath string
+	KEP       string //KEP name sig-xxx/xxx-name
+	Name      string
+	Number    string
+	SIG       string
 }
 
 func (c *CommonArgs) validateAndPopulateKEP(args []string) error {
@@ -65,6 +70,7 @@ func (c *CommonArgs) validateAndPopulateKEP(args []string) error {
 
 type Client struct {
 	RepoPath string
+	Token    string
 	In       io.Reader
 	Out      io.Writer
 	Err      io.Writer
@@ -95,6 +101,7 @@ func New(repo string) (*Client, error) {
 			return nil, fmt.Errorf("unable to determine enhancements repo path: %s", err)
 		}
 	}
+
 	// build a default client with normal os.Stdxx and Filesystem access. Tests can build their own
 	// with appropriate test objects
 	return &Client{
@@ -103,6 +110,17 @@ func New(repo string) (*Client, error) {
 		Out:      os.Stdout,
 		Err:      os.Stderr,
 	}, nil
+}
+
+func (c *Client) SetGitHubToken(opts CommonArgs) error {
+	if opts.TokenPath != "" {
+		token, err := ioutil.ReadFile(opts.TokenPath)
+		if err != nil {
+			return err
+		}
+		c.Token = strings.Trim(string(token), "\n\r")
+	}
+	return nil
 }
 
 // getKepTemplate reads the kep.yaml template from the local
@@ -175,13 +193,21 @@ func findLocalKEPs(repoPath string, sig string) ([]string, error) {
 	return keps, err
 }
 
-func (c *Client) findKEPPullRequests(sig string) (*keps.Proposal, error) {
-	gh := github.NewClient(nil)
-	pulls, _, err := gh.PullRequests.List(context.Background(), "kubernetes", "enhancements", &github.PullRequestListOptions{})
+func (c *Client) findKEPPullRequests(sig string) ([]*keps.Proposal, error) {
+	var auth *http.Client
+	ctx := context.Background()
+	if c.Token != "" {
+		ts := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: c.Token})
+		auth = oauth2.NewClient(ctx, ts)
+	}
+
+	gh := github.NewClient(auth)
+	pulls, _, err := gh.PullRequests.List(ctx, "kubernetes", "enhancements", &github.PullRequestListOptions{})
 	if err != nil {
 		return nil, err
 	}
 
+	var kepPRs []*github.PullRequest
 	for _, pr := range pulls {
 		foundKind, foundSIG := false, false
 		sigLabel := strings.Replace(sig, "-", "/", 1)
@@ -196,9 +222,76 @@ func (c *Client) findKEPPullRequests(sig string) (*keps.Proposal, error) {
 		if !foundKind || !foundSIG {
 			continue
 		}
+
+		kepPRs = append(kepPRs, pr)
 	}
 
-	return nil, nil
+	if len(kepPRs) == 0 {
+		return nil, nil
+	}
+
+	// Pull a temporary clone of the repo
+	g, err := git.NewClient()
+	if err != nil {
+		return nil, err
+	}
+
+	g.SetCredentials("", func() []byte { return []byte{} })
+	g.SetRemote("https://github.com")
+	repo, err := g.Clone("kubernetes", "enhancements")
+	if err != nil {
+		return nil, err
+	}
+
+	// read out each PR, and create a Proposal for each KEP that is
+	// touched by a PR. This may result in multiple versions of the same KEP.
+	var allKEPs []*keps.Proposal
+	for _, pr := range kepPRs {
+		files, _, err := gh.PullRequests.ListFiles(context.Background(), "kubernetes", "enhancements",
+			pr.GetNumber(), &github.ListOptions{})
+		if err != nil {
+			return nil, err
+		}
+
+		kepNames := make(map[string]bool, 10)
+		for _, file := range files {
+			if !strings.HasPrefix(*file.Filename, "keps/"+sig+"/") {
+				continue
+			}
+
+			kk := strings.Split(*file.Filename, "/")
+			if len(kk) < 3 {
+				continue
+			}
+
+			if strings.HasSuffix(kk[2], ".md") {
+				kepNames[kk[2][0:len(kk[2])-3]] = true
+			} else {
+				kepNames[kk[2]] = true
+			}
+		}
+
+		if len(kepNames) == 0 {
+			continue
+		}
+
+		err = repo.CheckoutPullRequest(pr.GetNumber())
+		if err != nil {
+			return nil, err
+		}
+		// read all these KEPs
+		for k := range kepNames {
+			kep, err := c.readKEP(repo.Directory(), sig, k)
+			if err != nil {
+				fmt.Fprintf(c.Err, "ERROR READING KEP %s: %s\n", k, err)
+			} else {
+				kep.PRNumber = strconv.Itoa(pr.GetNumber())
+				allKEPs = append(allKEPs, kep)
+			}
+		}
+	}
+
+	return allKEPs, nil
 }
 
 func (c *Client) readKEP(repoPath string, sig, name string) (*keps.Proposal, error) {
@@ -219,6 +312,7 @@ func (c *Client) readKEP(repoPath string, sig, name string) (*keps.Proposal, err
 		if err != nil {
 			return nil, fmt.Errorf("unable to load KEP metadata: %s", err)
 		}
+		p.Name = name
 		return &p, nil
 	}
 
@@ -230,7 +324,7 @@ func (c *Client) readKEP(repoPath string, sig, name string) (*keps.Proposal, err
 		name) + ".md"
 	b, err := ioutil.ReadFile(kepPath)
 	if err != nil {
-		return nil, fmt.Errorf("unable to load KEP metadata: %s", err)
+		return nil, fmt.Errorf("no kep.yaml, but failed to read as old-style KEP: %s", err)
 	}
 	r := bytes.NewReader(b)
 	parser := &keps.Parser{}
@@ -239,6 +333,7 @@ func (c *Client) readKEP(repoPath string, sig, name string) (*keps.Proposal, err
 	if kep.Error != nil {
 		return nil, fmt.Errorf("kep is invalid: %s", kep.Error)
 	}
+	kep.Name = name + ".md"
 	return kep, nil
 }
 
@@ -293,7 +388,20 @@ var defaultConfig = map[string]printConfig{
 	}},
 	"Stage":  {"Stage", func(k *keps.Proposal) string { return k.Stage }},
 	"Status": {"Status", func(k *keps.Proposal) string { return k.Status }},
-	"Title":  {"Title", func(k *keps.Proposal) string { return k.Title }},
+	"Title": {"Title", func(k *keps.Proposal) string {
+		if k.PRNumber == "" {
+			return k.Title
+		} else {
+			return "PR#" + k.PRNumber + " - " + k.Title
+		}
+	}},
+	"Link": {"Link", func(k *keps.Proposal) string {
+		if k.PRNumber == "" {
+			return "https://git.k8s.io/enhancements/keps/" + k.OwningSIG + "/" + k.Name
+		} else {
+			return "https://github.com/kubernetes/enhancements/pull/" + k.PRNumber
+		}
+	}},
 }
 
 func DefaultPrintConfigs(names ...string) []PrintConfig {

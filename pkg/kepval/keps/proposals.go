@@ -47,7 +47,10 @@ type FeatureGate struct {
 }
 
 type Proposal struct {
-	ID                string   `json:"id"`
+	ID       string `json:"id"`
+	PRNumber string `json:"prNumber,omitempty"`
+	Name     string `json:"name,omitempty"`
+
 	Title             string   `json:"title" yaml:"title"`
 	Number            string   `json:"kep-number" yaml:"kep-number"`
 	Authors           []string `json:"authors" yaml:",flow"`
