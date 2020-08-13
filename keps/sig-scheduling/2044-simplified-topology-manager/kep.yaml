@@ -1,5 +1,5 @@
 ---
-title: Simplified version of TopologyManager in kube-scheduler
+title: Simplified version of Topology Manager in kube-scheduler
 kep-number: 2044
 authors:
   - "@AlexeyPerevalov"
@@ -19,7 +19,7 @@ milestone:
   beta: "v1.22"
   stable: "v1.23"
 creation-date: 2020-05-28
-last-updated: 2020-07-16
+last-updated: 2020-08-13
 status: implementable
 see-also:
   - "keps/sig-node/2051-provisioning-resources-with-numa-topology/README.md"

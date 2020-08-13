@@ -51,8 +51,8 @@ information is necessary.
 
 # Proposal
 
-Kube-scheduler builtin plugin will be added to the main tree. This plugin
-implements a simplified version of TopologyManager it’s different from original topology manager algorithm.
+Kube-scheduler built-in plugin will be added to the main tree. This plugin
+implements a simplified version of Topology Manager it’s different from original topology manager algorithm.
 Plugin checks the ability to run pod only in case of single-numa-node policy on the
 node, since it is the most strict policy, it implies that the launch on the node with
 other existing policies will be successful if the condition for single-numa-node policy passed for the worker node.
@@ -114,7 +114,7 @@ For example we can have policy for HyperThreading and it can live with NUMA poli
 
 To use these policy names both in kube-scheduler and in kubelet, string constants of these labels should be moved from pkg/kubelet/cm/topologymanager/ and pkg/kubelet/apis/config/types.go to pkg/apis/core/types.go a one single place.
 
-NUMAID is an auxiliary field since scheduler version of TopologyManager doesn't make a real assignment.
+NUMAID is an auxiliary field since scheduler version of Topology Manager doesn't make a real assignment.
 
 ### Description of the Algorithm
 
@@ -172,7 +172,7 @@ kind: ClusterRole
 metadata:
   name: noderesourcetopology-handler
 rules:
-- apiGroups: ["k8s.cncf.io"]
+- apiGroups: ["topology.node.k8s.io"]
   resources: ["noderesourcetopologies"]
   verbs: ["*"]
 - apiGroups: ["rbac.authorization.k8s.io"]
@@ -202,7 +202,7 @@ metadata:
 
 # Use cases
 
-Numbers of kubernetes worker nodes on bara metal with NUMA topology. TopologyManager feature gate enabled on the nodes. In this configuration, the operator does not want that in the case of an unsatisfactory host topology, it should be re-scheduled for launch, but wants the scheduling to be successful the first time.
+Numbers of kubernetes worker nodes on bare metal with NUMA topology. TopologyManager feature gate enabled on the nodes. In this configuration, the operator does not want that in the case of an unsatisfactory host topology, it should be re-scheduled for launch, but wants the scheduling to be successful the first time.
 
 # Known limitations
 
