@@ -1,0 +1,20 @@
+title: Defend against accidental credential logging via static analysis interation into Prow.
+kep-number: "1933"
+authors:
+- "@PurelyApplied"
+owning-sig: sig-instrumentation
+participating-sigs:
+- sig-instrumentation
+- sig-testing
+- sig-security
+reviewers:
+- TBD
+approvers:
+- TBD
+creation-date: "2020-08-12"
+last-updated: v1.19
+status: provisional
+see-also:
+- /keps/sig-instrumentation/1753-logs-sanitization
+- /keps/sig-instrumentation/1602-structured-logging
+
