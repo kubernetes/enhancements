@@ -27,4 +27,5 @@ func addRepoPathFlag(
 	opts *kepctl.CommonArgs,
 ) {
 	f.StringVar(&opts.RepoPath, "repo-path", "", "Path to kubernetes/enhancements")
+	f.StringVar(&opts.TokenPath, "gh-token-path", "", "Path to a file with a GitHub API token")
 }
