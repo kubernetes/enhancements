@@ -114,6 +114,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Authentication](#authentication)
   - [Timeout](#timeout)
   - [Idempotency/Deadlock](#idempotencydeadlock)
+  - [Automatic Labelling of Invalid Objects](#automatic-labelling-of-invalid-objects)
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1](#story-1)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
@@ -125,6 +126,7 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Design Details](#design-details)
   - [Deployment](#deployment)
   - [Kubernetes API Server Configuration](#kubernetes-api-server-configuration)
+  - [Webhook Server Deployment](#webhook-server-deployment)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
@@ -232,7 +234,7 @@ Tighten the validation on Volume Snapshot objects. Please see the tables below f
 
 Due to backwards compatibility concerns, the tightening will occur in two phases.
 
-1. The first phase is webhook-only, and will use [ratcheting validation](#backwards-compatibility). It will be the user's responsibility to clean up invalid objects which already existed before the webhook was enabled. Invalid objects are those which fail the new, stricter validation. The controller will not be able to automatically fix invalid objects.
+1. The first phase is webhook-only, and will use [ratcheting validation](#backwards-compatibility). It will be the user's responsibility to clean up invalid objects which already existed before the webhook was enabled. Invalid objects are those which fail the new, stricter validation. The controller will not be able to automatically fix invalid objects, however it will apply a [label](#automatic-labelling-of-invalid-objects) to invalid objects so that users can easily locate them.
 2. The second phase can occur once all invalid objects are cleared from the cluster. It will be the cluster admin's responsibility to check and detect when it is safe to move to the second phase. The CRD schema validation will be tightened and the webhook will stick around to enforce immutability until immutable fields come to CRDs (Custom Resource Definition). This will be accompanied by a version change to make it clear the CRD is using different validation.
 
 The phases come in separate releases to allow users / cluster admin the opportunity to clean their cluster of any invalid objects. More details are in the Risks and Mitigations section.
@@ -248,8 +250,6 @@ The following is a list of fields which will get checked when a CREATE or UPDATE
 All of the validation desired can be achieved by updating the CRDs to take advantage of the OpenApi v3 schema validation. In particular, the `oneOf` and `minLength` fields can be used.
 
 There is a desire for some fields to be immutable, which is not yet supported by CRDs. See the immutable fields [KEP](https://github.com/kubernetes/enhancements/blob/master/keps/sig-api-machinery/20190603-immutable-fields.md) for the latest updates. As of August 2020, the KEP is provisional and has no clear timeline for when immutable fields will come to CRDs.
-
-Note that we may want to consider other fields to be marked as immutable.
 
 #### VolumeSnapshot
 
@@ -287,6 +287,35 @@ To avoid migration pain it is recommended to start with a `failurePolicy` value 
 ### Idempotency/Deadlock
 
 Since only validating webhooks will be introduced in this version, idempotency/deadlock are not relevant.
+
+### Automatic Labelling of Invalid Objects
+
+The controller will apply a label called `snapshot.storage.sigs.k8s.io/invalid-snapshot-resource` to `VolumeSnapshot` and `snapshot.storage.sigs.k8s.io/invalid-snapshot-content-resource` to `VolumeSnapshotContent` objects which fail strict validation. For valid objects the label will not be present, and for invalid objects it will be present. The value of the label does not matter, and is set to the empty string by default. The controller will use the same validation logic in the webhook. 
+
+For example here's the yaml for an invalid `VolumeSnapshot`:
+
+```yaml
+apiVersion: snapshot.storage.k8s.io/v1beta1
+kind: VolumeSnapshot
+metadata:
+  name: snapshot-label-example
+  labels:
+    snapshot.storage.sigs.k8s.io/invalid-snapshot-resource: "" # Label applied for invalid VolumeSnapshot objects
+...
+```
+
+Here's an example for the yaml for an invalid `VolumeSnapshotContent`:
+```yaml
+apiVersion: snapshot.storage.k8s.io/v1beta1
+kind: VolumeSnapshotContent
+metadata:
+  name: snapcontent-72d9a349-aacd-42d2-a240-d775650d2455
+  labels:
+    snapshot.storage.sigs.k8s.io/invalid-snapshot-content-resource: "" # Label applied for invalid VolumeSnapshotContent objects
+...
+```
+
+Users and cluster admins MUST ensure there are NO objects with the labels applied before upgrading to phase 2.
 
 ### User Stories (Optional)
 
@@ -354,7 +383,7 @@ Begin with validating webhook only enforcement. The webhook will perform the fol
    - webhook is strict on create
    - webhook is strict on updates where the existing object passes strict validation
    - webhook is relaxed on updates where the existing object fails strict validation (allows finalizer removal, status update, deletion, etc)
- - The user will need to delete or fix all invalid objects. The webhook and controllers will not take any automatic action to reconcile invalid objects.
+ - The user will need to delete or fix all invalid objects. The webhook and controllers will not take any automatic action to reconcile invalid objects. However, the controller will add a label.
 
 For `UPDATE` operations, the webhook server will receive the existing object and the new, proposed object. We will use this feature to check when the existing objects passes or fails strict validation.
 
