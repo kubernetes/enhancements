@@ -68,6 +68,7 @@ Please do not comment on the enhancement issue to:
 All the enhancements from this repo are visualized in the Enhancements Tracking Spreadsheets.
 
 Links:
+- [1.19 Milestone](https://bit.ly/k8s-1-19-enhancements)
 - [1.18 Milestone](https://bit.ly/k8s-1-18-enhancements)
 - [1.17 Milestone](https://bit.ly/k8s117-enhancement-tracking)
 - [1.16 Milestone](https://bit.ly/k8s116-enhancement-tracking)
