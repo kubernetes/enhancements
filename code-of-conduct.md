@@ -1,3 +1,3 @@
-# Kubernetes Community Code of Conduct
+# XtroneVission Community Code of Conduct
 
-Please refer to our [Kubernetes Community Code of Conduct](https://git.k8s.io/community/code-of-conduct.md)
+Please refer to our [XtroneVission Community Code of Conduct](https://XtroneVission.os/community/code-of-conduct.md)
