@@ -1,23 +1,4 @@
----
-title: Deprecate and remove SelfLink
-authors:
-  - "@wojtek-t"
-owning-sig: sig-api-machinery
-participating-sigs:
-  - sig-scalability
-reviewers:
-  - "@liggitt"
-  - "@smarterclayton"
-approvers:
-  - "@lavalamp"
-  - "@deads2k"
-editor: "@wojtek-t"
-creation-date: 2019-07-11
-last-updated: 2019-07-24
-status: implementable
----
-
-# Deprecate and Remove SelfLink
+# KEP-1164: Deprecate and Remove SelfLink
 
 ## Table of Contents
 

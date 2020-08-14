@@ -138,18 +138,18 @@ users:
       - name: "FOO"
         value: "bar"
 
-      # Hint to help the user install the executable. Optional.
+      # Text shown to the user when the executable doesn't seem to be present. Optional.
       installHint: |
-      example-client-go-exec-plugin is required to authenticate
-      to the current cluster.  It can be installed:
+        example-client-go-exec-plugin is required to authenticate
+        to the current cluster.  It can be installed:
 
-      On macOS: brew install example-client-go-exec-plugin
+        On macOS: brew install example-client-go-exec-plugin
 
-      On Ubuntu: apt-get install example-client-go-exec-plugin
+        On Ubuntu: apt-get install example-client-go-exec-plugin
 
-      On Fedora: dnf install example-client-go-exec-plugin
+        On Fedora: dnf install example-client-go-exec-plugin
 
-      ...
+        ...
 clusters:
 - name: my-cluster
   cluster:
@@ -191,9 +191,9 @@ type ExecConfig struct {
   // the same encoding version as the input.
   APIVersion string `json:"apiVersion,omitempty"`
 
-  // A message to print to the user if the executable is missing.
-  // This can be used to help provide instructions for how to
-  // install the executable, i.e. brew install foo-cli
+  // This text is shown to the user when the executable doesn't seem to be
+  // present. For example, `brew install foo-cli` might be a good InstallHint for
+  // foo-cli on Mac OS systems.
   InstallHint string `json:"installHint,omitempty"`
 }
 ```

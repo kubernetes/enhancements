@@ -93,9 +93,9 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Exporting Services](#exporting-services)
     - [Restricting Exports](#restricting-exports)
   - [Importing Services](#importing-services)
-  - [Supercluster Service Behavior Expectations](#supercluster-service-behavior-expectations)
+  - [ClusterSet Service Behavior Expectations](#clusterset-service-behavior-expectations)
     - [Service Types](#service-types)
-    - [SuperclusterIP](#superclusterip)
+    - [ClusterSetIP](#clustersetip)
     - [DNS](#dns)
     - [EndpointSlice](#endpointslice)
     - [Endpoint TTL](#endpoint-ttl)
@@ -236,14 +236,14 @@ nitty-gritty.
 -->
 #### Terminology
 
-- **supercluster** - A placeholder name for a group of clusters with a high
+- **clusterset** - A placeholder name for a group of clusters with a high
   degree of mutual trust and shared ownership that share services amongst
-  themselves. Membership in a supercluster is symmetric and transitive. The set
+  themselves. Membership in a clusterset is symmetric and transitive. The set
   of member clusters are mutually aware, and agree about their collective
-  association. Within a supercluster, [namespace sameness] applies and all
+  association. Within a clusterset, [namespace sameness] applies and all
   namespaces with a given name are considered to be the same namespace.
   Implementations of this API are responsible for defining and tracking
-  membership in a supercluster. The specific mechanism is out of scope of this
+  membership in a clusterset. The specific mechanism is out of scope of this
   proposal.
 - **mcs-controller** - A controller that syncs services across clusters and
   makes them available for multi-cluster service discovery and connectivity.
@@ -255,27 +255,27 @@ nitty-gritty.
 - **cluster name** - A unique name or identifier for the cluster, scoped to the
   implementation's cluster registry. We do not attempt to define the registry.
   Each cluster must have a name that can uniquely identify it within the
-  supercluster. A cluster name must be a valid [RFC
+  clusterset. A cluster name must be a valid [RFC
   1123](https://tools.ietf.org/html/rfc1123) DNS label.
 
   The cluster name should be consistent for the life of a cluster and its
-  membership in the supercluster. Implementations should treat name mutation as
+  membership in the clusterset. Implementations should treat name mutation as
   a delete of the membership followed by recreation with the new name.
 
 [namespace sameness]: https://github.com/kubernetes/community/blob/master/sig-multicluster/namespace-sameness-position-statement.md
 
 We propose a new CRD called `ServiceExport`, used to specify which services
-should be exposed across all clusters in the supercluster. `ServiceExports` must
+should be exposed across all clusters in the clusterset. `ServiceExports` must
 be created in each cluster that the underlying `Service` resides in. Creation of
 a `ServiceExport` in a cluster will signify that the `Service` with the same
 name and namespace as the export should be visible to other clusters in the
-supercluster.
+clusterset.
 
 Another CRD called `ServiceImport` will be introduced to act as the in-cluster
 representation of a multi-cluster service in each importing cluster. This is
 analogous to the traditional `Service` type in Kubernetes. Importing clusters
 will have a corresponding `ServiceImport` for each uniquely named `Service` that
-has been exported within the supercluster, referenced by namespaced name.
+has been exported within the clusterset, referenced by namespaced name.
 `ServiceImport` resources will be managed by the MCS implementation's
 mcs-controller.
 
@@ -366,7 +366,7 @@ proposal will be implemented, this is the place to discuss them.
 -->
 ### Exporting Services
 
-Services will not be visible to other clusters in the supercluster by default.
+Services will not be visible to other clusters in the clusterset by default.
 They must be explicitly marked for export by the user. This allows users to
 decide exactly which services should be visible outside of the local cluster.
 
@@ -377,7 +377,7 @@ should be automatically exported by default. In that case, a `ServiceExport`
 could be automatically created for all `Services`. This tooling will be designed
 in a separate doc, and is secondary to the main API proposed here.
 
-To mark a service for export to the supercluster, a user will create a
+To mark a service for export to the clusterset, a user will create a
 ServiceExport CR:
 
 ```golang
@@ -453,21 +453,21 @@ status:
   - type: Conflict
     status: "True"
     lastTransitionTime: "2020-03-30T01:33:55Z"
-    message: "Conflicting type. Using \"SuperclusterIP\" from oldest service export in \"cluster-1\". 2/5 clusters disagree."
+    message: "Conflicting type. Using \"ClusterSetIP\" from oldest service export in \"cluster-1\". 2/5 clusters disagree."
 ```
 
 To export a service, a `ServiceExport` should be created within the cluster and
 namespace that the service resides in, name-mapped to the service for export -
 that is, they reference the `Service` with the same name as the export. If
-multiple clusters within the supercluster have `ServiceExports` with the same
+multiple clusters within the clusterset have `ServiceExports` with the same
 name and namespace, these will be considered the same service and will be
-combined at the supercluster level.
+combined at the clusterset level.
 
 _Note: A `Service` without a corresponding `ServiceExport` in its local cluster
 will not be exported even if other clusters are exporting a `Service` with the
 same namespaced name._
 
-This requires that within a supercluster, a given namespace is governed by a
+This requires that within a clusterset, a given namespace is governed by a
 single authority across all clusters. It is that authority’s responsibility to
 ensure that a name is shared by multiple services within the namespace if and
 only if they are instances of the same service.
@@ -489,11 +489,11 @@ unless there is a clear use case.
 
 ### Importing Services
 
-To consume a supercluster service, the domain name associated with the
+To consume a clusterset service, the domain name associated with the
 mutli-cluster service should be used (see [DNS](#dns)). When the mcs-controller
 sees a `ServiceExport`, a `ServiceImport` will be introduced in each importing
 cluster to represent the imported service. Users are primarily expected to
-consume the service via domain name and supercluster VIP, but the
+consume the service via domain name and clusterset VIP, but the
 `ServiceImport` may be used for imported service discovery via the K8s API and
 will be used internally as the source of truth for routing and DNS
 configuration.
@@ -518,7 +518,7 @@ the lifecycle of a `ServiceImport`.
 
 For each exported service, one `ServiceExport` will exist in each cluster that
 exports the service. The mcs-controller will create and maintain a derived
-`ServiceImport` in each cluster within the supercluster so long as the service's
+`ServiceImport` in each cluster within the clusterset so long as the service's
 namespace exists (see: [constraints and conflict
 resolution](#constraints-and-conflict-resolution)). If all `ServiceExport`
 instances are deleted, each `ServiceImport` will also be deleted from all
@@ -539,7 +539,7 @@ cluster.
 The mcs-controller is responsible for managing imported `EndpointSlice`s.
 
 ```golang
-// ServiceImport describes a service imported from clusters in a supercluster.
+// ServiceImport describes a service imported from clusters in a clusterset.
 type ServiceImport struct {
   metav1.TypeMeta `json:",inline"`
   // +optional
@@ -554,8 +554,8 @@ type ServiceImport struct {
 type ServiceImportType string
 
 const (
-  // SuperclusterIP are only accessible via the Supercluster IP.
-  SuperclusterIP ServiceImportType = "SuperclusterIP"
+  // ClusterSetIP are only accessible via the ClusterSet IP.
+  ClusterSetIP ServiceImportType = "ClusterSetIP"
   // Headless services allow backend pods to be addressed directly.
   Headless ServiceImportType = "Headless"
 )
@@ -628,7 +628,7 @@ metadata:
 spec:
   ips:
   - 42.42.42.42
-  type: "SuperclusterIP"
+  type: "ClusterSetIP"
   ports:
   - name: http
     protocol: TCP
@@ -668,15 +668,15 @@ endpoints:
 The `ServiceImport.Spec.IP` (VIP) can be used to access this service from within
 this cluster.
 
-### Supercluster Service Behavior Expectations
+### ClusterSet Service Behavior Expectations
 
 #### Service Types
 
 - `ClusterIP`: This is the straightforward case most of the proposal assumes.
   Each `EndpointSlice` associated with the exported service is combined with
-  slices from other clusters to make up the supercluster service. They will be
-  imported to the cluster behind the supercluster IP, with a `ServiceImport` of
-  type `SuperclusterIP`. [Details](#EndpointSlice)
+  slices from other clusters to make up the clusterset service. They will be
+  imported to the cluster behind the clusterset IP, with a `ServiceImport` of
+  type `ClusterSetIP`. [Details](#EndpointSlice)
 - `ClusterIP: none` (Headless): Headless services are supported and will be
   imported with a `ServiceImport` and `EndpointSlices` like any other
   `ClusterIP` service, but do not configure a VIP and must be consumed via
@@ -686,15 +686,15 @@ this cluster.
   policy](#constraints-and-conflict-resolution).
 
   _Exporting a non-headless service to an otherwise headless service can
-  dynamically change the supercluster service type when an old export is
+  dynamically change the clusterset service type when an old export is
   removed, potentially breaking existing consumers. This is likely the result of
   a deployment error. Conditions and events on the `ServiceExport` will be used
   to communicate conflicts to the user._
 - `NodePort` and `LoadBalancer`: These create `ClusterIP` services that would
   sync as expected. For example If you export a `NodePort` service, the
-  resulting cross-cluster service will still be a supercluster IP type. The
+  resulting cross-cluster service will still be a clusterset IP type. The
   local service will not be affected. Node ports can still be used to access the
-  cluster-local service in the source cluster, and only the supercluster IP will
+  cluster-local service in the source cluster, and only the clusterset IP will
   route to endpoints in remote clusters.
 - `ExternalName`: It doesn't make sense to export an `ExternalName` service.
   They can't be merged with other exports, and it seems like it would only
@@ -703,11 +703,11 @@ this cluster.
   cluster individually. If a `ServiceExport` is created for an `ExternalName`
   service, an `InvalidService` condition will be set on the export.
 
-#### SuperclusterIP
+#### ClusterSetIP
 
 A non-headless `ServiceImport` is expected to have an associated IP address, the
-supercluster IP, which may be accessed from within an importing cluster. This IP
-may be a single IP used supercluster-wide or assigned on a per-cluster basis,
+clusterset IP, which may be accessed from within an importing cluster. This IP
+may be a single IP used clusterset-wide or assigned on a per-cluster basis,
 but is expected to be consistent for the life of a `ServiceImport` from the
 perspective of the importing cluster. Requests to this IP from within a cluster
 will route to backends for the aggregated Service.
@@ -729,20 +729,20 @@ https://github.com/kubernetes/dns/blob/master/docs/specification.md
 <<[UNRESOLVED]>>
 ```
 When a `ServiceExport` is created, this will cause a domain name for the
-multi-cluster service to become accessible from within the supercluster. The
-domain name will be `<service>.<ns>.svc.supercluster.local`. 
+multi-cluster service to become accessible from within the clusterset. The
+domain name will be `<service>.<ns>.svc.clusterset.local`. 
 
-**SuperclusterIP services:** Requests to this domain name from within an importing
-cluster will resolve to the supercluster IP, which points to endpoints for pods
-within the underlying `Service`(s) across the supercluster.
+**ClusterSetIP services:** Requests to this domain name from within an importing
+cluster will resolve to the clusterset IP, which points to endpoints for pods
+within the underlying `Service`(s) across the clusterset.
 
-**Headless services:** Within an importing cluster, the supercluster domain name
+**Headless services:** Within an importing cluster, the clusterset domain name
 will have multiple `A`/`AAAA` records, each containing the address of a ready
-endpoint of the headless service. `<service>.<ns>.svc.supercluster.local` will
+endpoint of the headless service. `<service>.<ns>.svc.clusterset.local` will
 resolve to the set of all ready pod IPs for the service.
 
-Pods backing a supercluster service may be addressed individually using the
-`<hostname>.<clustername>.<svc>.<ns>.svc.supercluster.local` format. Necessary
+Pods backing a clusterset service may be addressed individually using the
+`<hostname>.<clustername>.<svc>.<ns>.svc.clusterset.local` format. Necessary
 records will be created based on each ready endpoint's hostname and the
 `multicluster.kubernetes.io/source-cluster` label on the `EndpointSlice`. This
 allows naming collisions to be avoided for headless services backed by identical
@@ -752,24 +752,24 @@ _Note: the total length of a FQDN is limited to 253 characters. Each label is
 independently limited to 63 characters, so users must choose host/cluster/service
 names to avoid hitting this upper bound._
 
-All service consumers must use the `*.svc.supercluster.local` name to enable
-supercluster routing, even if there is a matching `Service` with the same
+All service consumers must use the `*.svc.clusterset.local` name to enable
+clusterset routing, even if there is a matching `Service` with the same
 namespaced name in the local cluster. This name allows service consumers to
 opt-in to multi-cluster behavior. There will be no change to existing behavior
 of the `cluster.local` zone.
 
-_It is expected that the `.supercluster.local` zone is standard and available in
+_It is expected that the `.clusterset.local` zone is standard and available in
 all implementations, but customization and/or alising can be explored if there's
 demand._
 
 #### EndpointSlice
 
 When a `ServiceExport` is created, this will cause `EndpointSlice` objects for
-the underlying `Service` to be created in each importing cluster within the supercluster,
+the underlying `Service` to be created in each importing cluster within the clusterset,
 associated with the derived `ServiceImport`. One or more `EndpointSlice`
 resources will exist for the exported `Service`, with each `EndpointSlice`
 containing only endpoints from a single source cluster. These `EndpointSlice`
-objects will be marked as managed by the supercluster service controller, so
+objects will be marked as managed by the clusterset service controller, so
 that the endpoint slice controller doesn’t delete them. `EndpointSlices` will
 have an owner reference to their associated `ServiceImport`.
 
@@ -816,9 +816,9 @@ The conflict will be resolved by assigning precedence based on each
 
 #### Service Port
 
-A derived service will be accessible with the supercluster IP at the ports
+A derived service will be accessible with the clusterset IP at the ports
 dictated by child services. If the external properties of service ports for a
-set of exported services don’t match, the supercluster service will expose the
+set of exported services don’t match, the clusterset service will expose the
 union of service ports declared on its constituent services. Should a port name
 be used for multiple non-identical (`port`, `protocol`, `appProtocol`) service
 ports by different constituent services, the conflict resolution policy will
@@ -982,6 +982,11 @@ enhancement:
 
 ## Implementation History
 
+- 2020-02-05 - Initial Proposal
+- 2020-05-10 - Merged as provisional
+- 2020-06-22 - Moved to implementable
+- 2020-08-04 - ClusterSet name finalized
+- 2020-08-10 - Alpha implementation available at [sigs.k8s.io/mcs-api](http://sigs.k8s.io/mcs-api)
 <!--
 Major milestones in the life cycle of a KEP should be tracked in this section.
 Major milestones might include
@@ -1050,7 +1055,7 @@ retain the flexibility of selectors.
 `ServiceExport` as described has no spec and seems like it could just be
 replaced with an annotation, e.g. `multicluster.kubernetes.io/export`. When a
 service is found with the annotation, it would be considered marked for export
-to the supercluster. The controller would then create `EndpointSlices` and an
+to the clusterset. The controller would then create `EndpointSlices` and an
 `ServiceImport` in each cluster exactly as described above. Unfortunately,
 `Service` does not have an extensible status and there is no way to represent
 the state of the export on the annotated `Service`. We could extend

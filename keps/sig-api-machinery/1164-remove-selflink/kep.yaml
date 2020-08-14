@@ -1,26 +1,19 @@
-title: Disable AcceleratorUsage Metrics
-kep-number: 1867
+title: Deprecate and remove SelfLink
+kep-number: 1164
 authors:
-  - "@RenaudWasTaken"
-owning-sig: sig-node
-participating-sigs: []
-status: implementable
-creation-date: 2020-06-18
+  - "@wojtek-t"
+owning-sig: sig-api-machinery
+participating-sigs:
+  - sig-scalability
 reviewers:
-  - "dashpole"
-  - "derekwaynecarr"
-  - "dawnchen"
+  - "@liggitt"
+  - "@smarterclayton"
 approvers:
-  - "dashpole"
-  - "derekwaynecarr"
-  - "dawnchen"
-prr-approvers:
-  - "deads2k"
-  - "johnbelamaric"
-  - "wojtek-t"
-see-also:
-  - "/keps/sig-node/606-compute-device-assignment"
-replaces: []
+  - "@lavalamp"
+  - "@deads2k"
+creation-date: 2019-07-11
+last-updated: 2019-07-24
+status: implementable
 
 # The target maturity stage in the current dev cycle for this KEP.
 stage: alpha
@@ -32,17 +25,15 @@ latest-milestone: "v1.19"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
-  alpha: "v1.19"
-  beta: "v1.21"
-  stable: "v1.22"
+  alpha: "v1.16"
+  beta: "v1.20"
+  stable: "v1.21"
 
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
 feature-gates:
-  - name: DisableAcceleratorUsageMetrics
+  - name: RemoveSelfLink
     components:
-      - kubelet
-disable-supported: true
+    - kube-apiserver
 
-metrics:
-  - "N/A"
+disable-supported: true
