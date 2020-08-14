@@ -232,10 +232,11 @@ CRD validation is preferred over webhook validation due to their lower complexit
 
 Tighten the validation on Volume Snapshot objects. Please see the tables below for detailed information.
 
-Due to backwards compatibility concerns, the tightening will occur in two phases.
+Due to backwards compatibility concerns, the tightening will occur in three phases.
 
 1. The first phase is webhook-only, and will use [ratcheting validation](#backwards-compatibility). It will be the user's responsibility to clean up invalid objects which already existed before the webhook was enabled. Invalid objects are those which fail the new, stricter validation. The controller will not be able to automatically fix invalid objects, however it will apply a [label](#automatic-labelling-of-invalid-objects) to invalid objects so that users can easily locate them.
-2. The second phase can occur once all invalid objects are cleared from the cluster. It will be the cluster admin's responsibility to check and detect when it is safe to move to the second phase. The CRD schema validation will be tightened and the webhook will stick around to enforce immutability until immutable fields come to CRDs (Custom Resource Definition). This will be accompanied by a version change to make it clear the CRD is using different validation.
+2. The second phase can occur once all invalid objects are cleared from the cluster. It will be the cluster admin's responsibility to check and detect when it is safe to move to the second phase. The CRD schema validation will be tightened and the webhook will stick around to enforce immutability until immutable fields come to CRDs (Custom Resource Definition). This will be accompanied by a version change to make it clear the CRD is using different validation, however the storage version will be kept as `v1beta1` to ensure a [rollback](#rollback) is possible at phase 2.
+3. The storage version of the CRD will be changed from `v1beta1` to `v1`
 
 The phases come in separate releases to allow users / cluster admin the opportunity to clean their cluster of any invalid objects. More details are in the Risks and Mitigations section.
 
@@ -280,7 +281,7 @@ Authentication on incoming requests to the webhook server is configurable howeve
 
 Webhooks add latency to each API server call, thus setting up a reasonable timeout for each AdmissionReview request from the webhook server side is critical. The default timeout is 10 seconds if not specified. When an AdmissionReview request sent to the webhook server timed out, `failurePolicy`(default to `Fail` which is equivalent to disallow) will be triggered.
 
-In the ValidatingWebhookConfiguration yaml example, a default timeout of two seconds is provided, cluster admins who wish to change the timeout may change the value of `timeoutSeconds`.
+In the ValidatingWebhookConfiguration yaml [example](#kubernetes-api-server-configuration), a default timeout of two seconds is provided, cluster admins who wish to change the timeout may change the value of `timeoutSeconds`.
 
 To avoid migration pain it is recommended to start with a `failurePolicy` value of `Ignore`, changing it to `Fail` only after the webhook is confirmed to have been installed successfully. Choosing `Ignore` means that it would be possible invalid objects can get created/updated in the system.
 
@@ -389,6 +390,8 @@ For `UPDATE` operations, the webhook server will receive the existing object and
 
 Once we are sure no invalid data is persisted, we can switch to CRD schema-enforced validation with validating webhooks for immutability in a subsequent release.
 
+#### Rollback 
+
 If users do not completely remove their invalid objects before upgrading their CRD definition, it should be possible to downgrade the CRD definition to allow invalid objects to get deleted.
 
 The rollback procedure would look like this:
@@ -397,6 +400,15 @@ The rollback procedure would look like this:
 3. User fixes their problems with invalid objects
 4. User upgrades the control plane again.
 5. In an n+2 release, once all the invalid objects are purged, we can switch the storage version to v1.
+
+In phase 2, the storage version will be kept at v1beta1 in order to ensure the rollback is possible.
+
+In phase 3, the storage version will be changed to v1.
+
+```yaml
+v1 (served=true, storage=false)
+v1beta1 (served=false, storage=true)
+```
 
 #### Current Controller validation of OneOf semantic
 
@@ -451,7 +463,7 @@ webhooks:
     service:
       namespace: "default"
       name: "snapshot-validation-service"
-      path: "/path/to/webhook"
+      path: "/volumesnapshots"
     caBundle: "LS0tLS...base64 encoded of public key...LS0K"
   admissionReviewVersions: ["v1", "v1beta1"]
   sideEffects: None
