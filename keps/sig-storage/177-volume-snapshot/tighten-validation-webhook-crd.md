@@ -120,6 +120,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
     - [Backwards compatibility](#backwards-compatibility)
+    - [Rollback](#rollback)
     - [Current Controller validation of OneOf semantic](#current-controller-validation-of-oneof-semantic)
       - [Handling VolumeSnapshot.](#handling-volumesnapshot)
       - [Handling VolumeSnapshotContent](#handling-volumesnapshotcontent)
