@@ -8,13 +8,13 @@
 - [Enhancements Tracking Spreadsheet](#enhancements-tracking-spreadsheet)
 - [Labels](#labels)
 
-Enhancement tracking repo for Kubernetes releases. Owned by [SIG Architecture](https://git.k8s.io/community/sig-architecture#enhancements).
+Enhancement tracking repository for Kubernetes releases. Owned by [SIG Architecture](https://git.k8s.io/community/sig-architecture#enhancements).
 
-This repo contains issues and [KEPs](https://git.k8s.io/enhancements/keps). These issues are umbrellas for new enhancements to be added to Kubernetes. An enhancement usually takes multiple releases to complete. And an enhancement can be tracked as backlog items before work begins. An enhancement may be filed once there is consensus in at least one [Kubernetes SIG](https://git.k8s.io/community/sig-list.md).
+This repository contains issues and [KEPs](https://git.k8s.io/enhancements/keps). These issues are umbrellas for new enhancements to be added to Kubernetes. An enhancement usually takes multiple releases to complete. And an enhancement can be tracked as backlog items before work begins. An enhancement may be filed once and there is consensus in at least one [Kubernetes SIG](https://git.k8s.io/community/sig-list.md).
 
 ## Is My Thing an Enhancement?
 
-We are trying to figure out the exact shape of an enhancement. Until then, here are a few rough heuristics.
+We are trying to figure out the exact shape of an enhancement. Until then, following are a few rough heuristics.
 
 An enhancement is anything that:
 
@@ -38,7 +38,7 @@ If you are not sure, ask someone in the SIG where you initially circulated the i
 ## When to Create a New Enhancement Issue
 
 Create an issue here once you:
-- have circulated your idea to see if there is interest
+- have circulated your idea to see if there is an interest
    - through Community Meetings, SIG meetings, SIG mailing lists, or an issue in github.com/kubernetes/kubernetes
 - (optionally) have done a prototype in your own fork
 - have identified people who agree to work on the enhancement
