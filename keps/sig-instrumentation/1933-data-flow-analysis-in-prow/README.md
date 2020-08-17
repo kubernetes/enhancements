@@ -653,6 +653,10 @@ not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
 -->
 
+[GitHub's CodeQL](https://securitylab.github.com/tools/codeql) includes taint analysis
+and permits general SSA graph queries.  I am currently investigating if it is viable for this usecase.
+If so, integration with CodeQL / lgtm.com may be better than embedding analysis into the Prow testing.
+
 While other static analysis tools exist for Go, these tend towards more general linters.
 [`gosec`](https://github.com/securego/gosec), for instance, can be used to detect
 hard-coded tokens or use of cryptographically broken packages, e.g., `crypto/md5`.
