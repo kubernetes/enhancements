@@ -6,7 +6,6 @@ owning-sig: sig-instrumentation
 participating-sigs:
 - sig-instrumentation
 - sig-testing
-- sig-security
 reviewers:
 - TBD
 approvers:
@@ -17,4 +16,3 @@ status: provisional
 see-also:
 - /keps/sig-instrumentation/1753-logs-sanitization
 - /keps/sig-instrumentation/1602-structured-logging
-
