@@ -60,7 +60,7 @@ should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross-cutting KEPs).
 -->
 
-# KEP-1933: Defend Against Credential Logging in Prow
+# KEP-1933: Defend Against Logging Secrets via Static Analysis
 
 <!--
 This is the title of your KEP. Keep it short, simple, and descriptive. A good
