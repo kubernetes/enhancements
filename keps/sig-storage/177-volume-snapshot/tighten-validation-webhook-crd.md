@@ -474,7 +474,7 @@ webhooks:
 
 ### Webhook Server Deployment
 
-The recommended deployment mode for the webhook server is within the cluster to minimize network latency. For high-availability we recommend using a Deployment and Service to deploy the validation server. Some example yaml files are provided, and should be changed to suit the Cluster Admin’s needs.
+The recommended deployment mode for the webhook server is within the same node as the api server to minimize network latency. For high-availability we recommend using a Deployment and Service to deploy the validation server. Some example yaml files are provided, and should be changed to suit the Cluster Admin’s needs.
 
 ```yaml
 apiVersion: apps/v1
