@@ -164,9 +164,9 @@ checklist items _must_ be updated for the enhancement to be released.
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
 - [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Design details are appropriately documented
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
 - [ ] (R) Graduation criteria is in place
 - [ ] (R) Production readiness review completed
 - [ ] Production readiness review approved
@@ -187,7 +187,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 Tighten validation on `VolumeSnapshot` and `VolumeSnapshotContent` by updating the CRD validation schema and providing a webhook server to enforce immutability.
 
-This KEP will list the new validation rules. It will also provide the release plan to ensure backwards compatibility. As well, it will outline the deployment plan of the webhook server. The webhook server is deployed separately from the snapshot controller
+This KEP will list the new validation rules. It will also provide the release plan to ensure backwards compatibility. As well, it will outline the deployment plan of the webhook server. The webhook server is deployed separately from the snapshot controller.
 
 This tightening of the validation on volume snapshot objects is considered a change to the volume snapshot API. Choosing not to install the webhook server and participate in the 2-phase release process can cause future problems when upgrading from v1beta1 to V1 volumesnapshot API if there are currently persisted objects which fail the new stricter validation. Potential impacts include being unable to delete invalid snapshot objects. It should be possible to downgrade the CRD definition as a workaround.
 
@@ -205,12 +205,12 @@ Admission webhooks are HTTP callbacks to intercept requests to the API server. T
 
 Admission controllers have been in common use in kubernetes for a long time. Admission webhooks are the new, preferred way to control admission, especially for external (out-of-tree) components like the CSI external snapshotter.
 
-A webhook server receives AdmissionReview(definition) requests from API server, and responses with a response of the same type to either admit/deny the request. Following simplified diagram shows the workflow.
+A webhook server receives [AdmissionReview](https://kubernetes.io/docs/reference/access-authn-authz/extensible-admission-controllers/#request) requests from API server, and responses with a response of the same type to either admit/deny the request. Following simplified diagram shows the workflow.
 (Note that the mutating webhooks will be invoked BEFORE validating).
 
 ![Webhook workflow diagram](./webhook-workflow.png)
 
-The webhook server will expose an HTTP endpoint such that to allow the API server to send AdmissionReview requests. Webhook server providers can dynamically(details) configure what type of resources and what type of admission webhooks via creating CRs of type ValidatingWebhookConfiguration and/or MutatingWebhookConfiguration.
+The webhook server will expose an HTTP endpoint such that to allow the API server to send AdmissionReview requests. Webhook server providers can [dynamically](https://kubernetes.io/docs/reference/access-authn-authz/extensible-admission-controllers/#configure-admission-webhooks-on-the-fly) configure what type of resources and what type of admission webhooks via creating CRs of type ValidatingWebhookConfiguration and/or MutatingWebhookConfiguration.
 
 CRD validation is preferred over webhook validation due to their lower complexity, however CRD validation schema is unable to enforce immutability or provide ratcheting validation.
 
@@ -280,7 +280,7 @@ Authentication on incoming requests to the webhook server is configurable howeve
 
 ### Timeout
 
-Webhooks add latency to each API server call, thus setting up a reasonable timeout for each AdmissionReview request from the webhook server side is critical. The default timeout is 10 seconds if not specified. When an AdmissionReview request sent to the webhook server timed out, `failurePolicy`(default to `Fail` which is equivalent to disallow) will be triggered.
+Webhooks add latency to each API server call configured in the ValidationWebhookConfig/MutatingWebhookConfig, for this KEP it should only affect `CREATE` and `UPDATE` requests on snapshot resources. Thus setting up a reasonable timeout for each AdmissionReview request from the webhook server side is critical. The default timeout is 10 seconds if not specified. When an AdmissionReview request sent to the webhook server timed out, `failurePolicy`(default to `Fail` which is equivalent to disallow) will be triggered.
 
 In the ValidatingWebhookConfiguration yaml [example](#kubernetes-api-server-configuration), a default timeout of two seconds is provided, cluster admins who wish to change the timeout may change the value of `timeoutSeconds`.
 
@@ -292,7 +292,7 @@ Since only validating webhooks will be introduced in this version, idempotency/d
 
 ### Automatic Labelling of Invalid Objects
 
-The controller will apply a label called `snapshot.storage.sigs.k8s.io/invalid-snapshot-resource` to `VolumeSnapshot` and `snapshot.storage.sigs.k8s.io/invalid-snapshot-content-resource` to `VolumeSnapshotContent` objects which fail strict validation. For valid objects the label will not be present, and for invalid objects it will be present. The value of the label does not matter, and is set to the empty string by default. The controller will use the same validation logic in the webhook. 
+The controller will apply a label called `snapshot.storage.sigs.k8s.io/invalid-snapshot-resource` to `VolumeSnapshot` and `snapshot.storage.sigs.k8s.io/invalid-snapshot-content-resource` to `VolumeSnapshotContent` objects which fail strict validation. For valid objects the label will not be present, and for invalid objects it will be present. The value of the label does not matter, and is set to the empty string by default. The controller will use the same validation logic in the webhook.
 
 For example here's the yaml for an invalid `VolumeSnapshot`:
 
@@ -317,7 +317,7 @@ metadata:
 ...
 ```
 
-Users and cluster admins MUST ensure there are NO objects with the labels applied before upgrading to phase 2.
+Users and cluster admins MUST ensure there are NO objects with the labels applied before upgrading to phase 2. The labels are added by the controller, and there may be a delay after deployment. It is recommended to wait 48 hours after installing the webhook and new controller, as the controller does a full resync of each snapshot resource every 24 hours.
 
 ### User Stories (Optional)
 
@@ -445,7 +445,7 @@ A sample script will be provided which will handle the deployment of TLS certifi
 
 ### Kubernetes API Server Configuration
 
-The API server must be configured to connect to the webhook server for certain API requests. This is done by creating a ValidatingWebhookConfiguration object. For a more thorough explanation of each field refer to the documentation. An example yaml file is provided below. The value of timeoutSeconds will affect the latency of snapshot creation, and must be considered carefully as it will affect the time the application may be frozen for.
+The API server must be configured to connect to the webhook server for certain API requests. This is done by creating a ValidatingWebhookConfiguration object. For a more thorough explanation of each field refer to the documentation. An example yaml file is provided below. The value of timeoutSeconds will affect the latency of snapshot creation, and must be considered carefully as it might affect the time the application is frozen for.
 
 ```yaml
 apiVersion: admissionregistration.k8s.io/v1
@@ -527,7 +527,7 @@ spec:
 ### Test Plan
 There will be unit testing on the webserver in the same repository to ensure that the correct policy gets enforced.
 
-Since the webhook is developed in the external-snapshotter repository, and does not test any csi driver, it would not be a good fit for e2e tests to go under the kubernetes core repository. Hence the plan for e2e tests is to add a new test job in external-snapshotter repo that brings up a kind cluster, installs crds and the webhook, and then runs validation tests.
+Since the webhook is developed in the external-snapshotter repository, and does not test any csi driver, it would not be a good fit for e2e tests to go under the kubernetes core repository. Hence the plan for e2e tests is to add a new test job in external-snapshotter repo that brings up a [kind](https://kind.sigs.k8s.io/) cluster, installs crds and the webhook, and then runs validation tests.
 
 <!--
 **Note:** *Not required until targeted at a release.*
