@@ -232,7 +232,7 @@ func (*BlinkingLightScorer) Score(state *CycleState, _ *v1.Pod, nodeName string)
 }
 ```
 
-However, the maximum count of blinking lights may be small compared to
+However, the maximum count of blinking lights may be big compared to
 `MaxNodeScore`. To fix this, `BlinkingLightScorer` should also implement `NormalizeScore`.
 
 ```go
