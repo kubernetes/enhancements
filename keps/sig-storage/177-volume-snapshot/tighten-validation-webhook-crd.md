@@ -302,7 +302,7 @@ kind: VolumeSnapshot
 metadata:
   name: snapshot-label-example
   labels:
-    snapshot.storage.sigs.k8s.io/invalid-snapshot-resource: "" # Label applied for invalid VolumeSnapshot objects
+    snapshot.storage.kubernetes.io/invalid-snapshot-resource: "" # Label applied for invalid VolumeSnapshot objects
 ...
 ```
 
@@ -313,7 +313,7 @@ kind: VolumeSnapshotContent
 metadata:
   name: snapcontent-72d9a349-aacd-42d2-a240-d775650d2455
   labels:
-    snapshot.storage.sigs.k8s.io/invalid-snapshot-content-resource: "" # Label applied for invalid VolumeSnapshotContent objects
+    snapshot.storage.kubernetes.io/invalid-snapshot-content-resource: "" # Label applied for invalid VolumeSnapshotContent objects
 ...
 ```
 
