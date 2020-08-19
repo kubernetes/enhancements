@@ -105,7 +105,7 @@ shutdown have met several times and are in sync regarding these features
 interoperability.
 
 The details about this dependency is explained in the [graduation criteria
-section][#graduation-criteria].
+section](#graduation-criteria).
 
 ## Motivation
 
