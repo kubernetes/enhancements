@@ -15,6 +15,13 @@
   - [Graduation Criteria](#graduation-criteria)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
+- [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
+  - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
+  - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+  - [Monitoring Requirements](#monitoring-requirements)
+  - [Dependencies](#dependencies)
+  - [Scalability](#scalability)
+  - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
 <!-- /toc -->
 
@@ -178,7 +185,130 @@ No specific strategy is required.
 All the references to `SelfLink` should be removed early enough (2 releases before) the field
 itself will be removed.
 
+## Production Readiness Review Questionnaire
+
+### Feature Enablement and Rollback
+
+_This section must be completed when targeting alpha to a release._
+
+* **How can this feature be enabled / disabled in a live cluster?**
+  - [x] Feature gate (also fill in values in `kep.yaml`)
+    - Feature gate name: RemoveSelfLink
+    - Components depending on the feature gate:
+      - kube-apiserver
+
+* **Does enabling the feature change any default behavior?**
+  Yes. SelfLink field is no longer propagated by kube-apiserver.
+
+* **Can the feature be disabled once it has been enabled (i.e. can we roll back
+  the enablement)?**
+  Yes - selflink is set purely in-memory in kube-apiserver, the feature can be
+  switched on and off.
+
+* **What happens if we reenable the feature if it was previously rolled back?**
+  SelfLink will stop being propagated again.
+
+* **Are there any tests for feature enablement/disablement?**
+  No.
+
+### Rollout, Upgrade and Rollback Planning
+
+_This section must be completed when targeting beta graduation to a release._
+
+* **How can a rollout fail? Can it impact already running workloads?**
+  If there is any component relying on the fact that SelfLink field is set,
+  it may stop working as expected.
+
+* **What specific metrics should inform a rollback?**
+  No generic metrics. Health of individual components should be watched.
+  Generic Kubernetes components has been updated to not rely on it.
+
+* **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
+  Manual tests were done, SelfLink was/wasn't set as expected.
+
+* **Is the rollout accompanied by any deprecations and/or removals of features, APIs,
+fields of API types, flags, etc.?**
+  Yes - SelfLink field in ObjectMetadata is being deprecated and removed.
+
+### Monitoring Requirements
+
+_This section must be completed when targeting beta graduation to a release._
+
+* **How can an operator determine if the feature is in use by workloads?**
+  SelfLink is not a runtime feature - it's read-only object identifier.
+
+* **What are the SLIs (Service Level Indicators) an operator can use to determine
+the health of the service?**
+  Existing, so-far used metrics to determine components health should be used.
+
+* **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
+  n/a
+
+* **Are there any missing metrics that would be useful to have to improve observability
+of this feature?**
+  No.
+
+### Dependencies
+
+_This section must be completed when targeting beta graduation to a release._
+
+* **Does this feature depend on any specific services running in the cluster?**
+  No
+
+### Scalability
+
+_For alpha, this section is encouraged: reviewers should consider these questions
+and attempt to answer them._
+
+_For beta, this section is required: reviewers must answer these questions._
+
+_For GA, this section is required: approvers should be able to confirm the
+previous answers based on experience in the field._
+
+* **Will enabling / using this feature result in any new API calls?**
+  No.
+
+* **Will enabling / using this feature result in introducing new API types?**
+  No.
+
+* **Will enabling / using this feature result in any new calls to the cloud
+provider?**
+  No.
+
+* **Will enabling / using this feature result in increasing size or count of
+the existing API objects?**
+  No (in fact returned objects will be smaller as they won't contain selflink).
+
+* **Will enabling / using this feature result in increasing time taken by any
+operations covered by [existing SLIs/SLOs]?**
+  No.
+
+* **Will enabling / using this feature result in non-negligible increase of
+resource usage (CPU, RAM, disk, IO, ...) in any components?**
+  No.
+
+### Troubleshooting
+
+The Troubleshooting section currently serves the `Playbook` role. We may consider
+splitting it into a dedicated `Playbook` document (potentially with some monitoring
+details). For now, we leave it here.
+
+_This section must be completed when targeting beta graduation to a release._
+
+* **How does this feature react if the API server and/or etcd is unavailable?**
+  n/a
+
+* **What are other known failure modes?**
+  n/a
+
+* **What steps should be taken if SLOs are not being met to determine the problem?**
+  n/a
+
+[supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
+[existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
+
 ## Implementation History
 
 2019-07-23: KEP merged.
 2019-07-24: KEP move to implementable.
+v1.16:      Released in Alpha
