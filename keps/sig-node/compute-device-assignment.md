@@ -102,6 +102,7 @@ message PodResources {
     string name = 1;
     string namespace = 2;
     repeated ContainerResources containers = 3;
+    int64 resource_version = 4;
 }
 
 // ContainerResources contains information about the resources assigned to a container
@@ -117,10 +118,24 @@ message ContainerDevices {
 }
 ```
 
+### Consuming the Watch endpoint in client applications
+
+Using the `Watch` endpoint, client applications can be notified of the pod resource allocation changes as soon as possible.
+However, the state of a pod will not be sent up until the first resource allocation change, which is the pod deletion in the worst case.
+Client applications who need to have the complete resource allocation picture thus need to consume both `List` and `Watch` endpoints.
+The `resourceVersion` found in the responses of both APIs allows client applications to identify the most recent information.
+To keep the implementation simple as possible, the kubelet does *not* store any historical list of changes.
+
+In order to make sure not to miss any updates, client application can:
+1. call the `Watch` endpoint to get a stream of changes.
+2. call the `List` endpoint to get the state of all the pods in the node.
+3. reconcile updates using the `resourceVersion`.
+
 ### Potential Future Improvements
 
 * Add identifiers for other resources used by pods to the `PodResources` message.
   * For example, persistent volume location on disk
+* Implement historical list of changes, allowing client applications to call `List` and `Watch` endpoints in a more natural order.
 
 ## Alternatives Considered
 
