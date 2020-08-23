@@ -62,7 +62,7 @@ Streamline the issue triage process used within the [kubernetes/kubernetes]
 repository.
 
 - Create new workflow centered around `needs-triage` label auto-applied to new
-  issues.
+  issues and Pull Requests (PRs).
 
 See [User Stories](#user-stories) for more information.
 
@@ -78,17 +78,22 @@ See [User Stories](#user-stories) for more information.
 ### New Workflow
 
 An additional [required label] called `needs-triage` will be applied automatically
-to issues created within the [kubernetes/kubernetes] repository similar to the
-current `needs-sig` or `needs-kind` labels. This serves as a boolean signal to
-community group members that the issue has not yet been triaged.
+to issues and PRs created within the [kubernetes/kubernetes] repository similar
+to the current `needs-sig` or `needs-kind` labels. This serves as a boolean signal
+to community group members that the issue has not yet been triaged.
 
-After the issue has been evaluated, an org member can apply one of the `triage`
-labels. If there is enough information or supporting evidence in the issue a
-member can signal that it is ready for work by using the `/triage accepted` bot
-command to apply the `triage/accepted` label. If the issue is a duplicate or
+After the issue or PR has been evaluated, an org member can apply one of the
+`triage` labels. If there is enough information or supporting evidence in the
+issue a member can signal that it is ready for work by using the `/triage accepted`
+bot command to apply the `triage/accepted` label. If the issue is a duplicate or
 lacks supporting evidence one of the other [triage labels] can be applied.
 
 In either condition the `needs-triage` label will be removed.
+
+**Note:** While any org member can apply the `triage/*` class of labels it
+should only be applied by those that are affiliated with the owning-sig. A
+mitigation strategy is outlined in the  [Design details](#design-details) if
+this guideline is not being consistently followed.
 
 
 ### Re-categorize the triage/support label
@@ -132,9 +137,10 @@ As a contributor, I want to be able to submit issues or PRs and:
 **The new labels and process are either ignored or fall into dis-use.**
 
 There are close to 200 labels associated with the [kubernetes/kubernetes]
-repository. While this removes some of the labels it does introduce new ones and
-adds an additional process. Both of these could potentially go unused or ignored
-without effort made by the community groups to use them appropriately.
+repository. This workflow introduces two additional labels, reclassifies one and
+adds an additional process. Both the labels and process could potentially go
+unused or ignored without effort made by the community groups to use them
+appropriately.
 
 When the new process is ready to be put into place, the [upstream marketing team]
 will be engaged to ensure there is clear communication regarding the changes.
