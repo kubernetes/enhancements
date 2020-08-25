@@ -564,8 +564,9 @@ const (
 type ServiceImportSpec struct {
   // +listType=atomic
   Ports []ServicePort `json:"ports"`
+  // +kubebuilder:validation:MaxItems:=1
   // +optional
-  IP string `json:"ip,omitempty"`
+  IPs []string `json:"ips,omitempty"`
   // +optional
   Type ServiceImportType `json:"type"`
   // +optional
@@ -625,7 +626,8 @@ metadata:
   name: my-svc
   namespace: my-ns
 spec:
-  ip: 42.42.42.42
+  ips:
+  - 42.42.42.42
   type: "ClusterSetIP"
   ports:
   - name: http
@@ -872,11 +874,13 @@ when drafting this test plan.
 - A detailed DNS spec for multi-cluster services.
 - NetworkPolicy either solved or explicitly ruled out.
 - API group chosen and approved.
+- Implementation strategy defined and approved.
 - Kube-proxy can consume ServiceImport and EndpointSlice.
 - E2E tests exist for MCS services.
 - Beta -> GA Graduation criteria defined.
 - At least one MCS DNS implementation.
 - A formal plan for a standard Cluster ID.
+- Finalize a name for the "supercluster" concept.
 
 #### Beta -> GA Graduation
 
