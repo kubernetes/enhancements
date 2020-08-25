@@ -216,7 +216,7 @@ on the local network (no proxy). "master" specifies the KAS talks to a proxy
 listening at 1.2.3.4:5678. "cluster" specifies the KAS talk to a proxy
 listening at 1.2.3.5:5679. While these are represented as resources
 they are not intended to be loaded dynamically. The names are not case
-sensitive. The KAS loads this resource lsit as a configuration at start time.
+sensitive. The KAS loads this resource list as a configuration at start time.
 
 ```yaml
 apiVersion: apiserver.k8s.io/v1alpha1
