@@ -5,6 +5,7 @@
 - [Summary](#summary)
 - [Motivation](#motivation)
   - [Goals](#goals)
+  - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [Syntax reference](#syntax-reference)
     - [Operators](#operators)
@@ -103,6 +104,11 @@ Both parts should have clear and sufficient documentation about syntax/examples.
   (eg: support regular expression filters on server side may cause a DoS attack)
   * Client-side: Enable all enhancements if possible
 * Review all usage on server side to avoid security problem
+
+### Non-Goals
+
+* Provide a well-documented, modern `go-jsonpath` package for community
+* Propose an IETF draft for modern JSONPath standard
 
 ## Proposal
 
