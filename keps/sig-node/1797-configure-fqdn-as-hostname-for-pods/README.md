@@ -89,10 +89,13 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Story 2: User Configures Pod to have FQDN](#story-2-user-configures-pod-to-have-fqdn)
     - [Story 3: User Configures Pod to have FQDN and it would like the pod hostname to be the FQDN](#story-3-user-configures-pod-to-have-fqdn-and-it-would-like-the-pod-hostname-to-be-the-fqdn)
   - [Notes/Constraints/Caveats](#notesconstraintscaveats)
+    - [Behavior on Windows](#behavior-on-windows)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
+    - [Beta -&gt; GA Graduation](#beta---ga-graduation)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -126,16 +129,16 @@ checklist items _must_ be updated for the enhancement to be released.
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
-- [ ] (R) Graduation criteria is in place
-- [ ] (R) Production readiness review completed
+- [X] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [X] (R) KEP approvers have approved the KEP status as `implementable`
+- [X] (R) Design details are appropriately documented
+- [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [X] (R) Graduation criteria is in place
+- [X] (R) Production readiness review completed
 - [ ] Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [X] "Implementation History" section is up-to-date for milestone
+- [X] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [X] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
 **Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
@@ -161,10 +164,10 @@ A good summary is probably at least a paragraph in length.
 -->
 
 This proposal gives users the ability to set a pod’s hostname to its Fully Qualified Domain Name (FQDN). 
-A new PodSpec field `hostnameFQDN` will be introduced. When a user sets this field to true, its Linux 
+A new PodSpec field `setHostnameAsFQDN` will be introduced. When a user sets this field to true, its Linux 
 kernel hostname field ([the nodename field of struct utsname](http://man7.org/linux/man-pages/man2/uname.2.html))
 will be set to its fully qualified domain name (FQDN). Hence, both uname -n and hostname --fqdn will return
-the pod’s FQDN. The new PodSpec field `hostnameFQDN` will default to `false` to preserve current behavior, i.e., 
+the pod’s FQDN. The new PodSpec field `setHostnameAsFQDN` will default to `false` to preserve current behavior, i.e., 
 setting the hostname field of the kernel to the pod's shortname.
 
 Related Kubernetes issue [#1791](https://github.com/kubernetes/enhancements/issues/1797).
@@ -275,10 +278,10 @@ you're proposing, but should not include things like API designs or
 implementation.  The "Design Details" section below is for the real
 nitty-gritty.
 -->
-This proposal gives users the ability to set a pod’s hostname to its FQDN. A new PodSpec field named `hostnameFQDN` 
+This proposal gives users the ability to set a pod’s hostname to its FQDN. A new PodSpec field named `setHostnameAsFQDN` 
 will be introduced, with type `*bool`.
 
-The values of `hostnameFQDN` are:
+The values of `setHostnameAsFQDN` are:
 * `nil` (default): The Linux kernel hostname field ([the nodename field of struct utsname](http://man7.org/linux/man-pages/man2/uname.2.html)) 
 of a pod will be set to its shortname. This is the current behavior.
 * `False`: Same as `nil`
@@ -295,7 +298,7 @@ the system.  The goal here is to make this feel real for users without getting
 bogged down.
 -->
 #### Story 1: User does not Configure Pod to have FQDN
-Assume we have a pod named `foo` in a namespace `bar`. The PodSpec `subdomain` is not set. This pod does not have FQDN, so the value of `hostnameFQDN` does not have an impact. The Pod spec for this example would be:
+Assume we have a pod named `foo` in a namespace `bar`. The PodSpec `subdomain` is not set. This pod does not have FQDN, so the value of `setHostnameAsFQDN` does not have an impact. The Pod spec for this example would be:
 
 ```yaml
 # Pod spec
@@ -313,7 +316,7 @@ If we `exec` into the Pod:
 
 #### Story 2: User Configures Pod to have FQDN
 
-Assume we have a pod named `foo` in a namespace `bar`. The PodSpec `subdomain` is set to `test`. We also assume the cluster-domain is set to its default, i.e. `cluster.local`. The FQDN of this pod is defined as `foo.test.bar.svc.cluster.local` (see details [here](https://kubernetes.io/docs/concepts/services-networking/dns-pod-service)). The user does not set `hostnameFQDN`. The Pod spec for this example would be:
+Assume we have a pod named `foo` in a namespace `bar`. The PodSpec `subdomain` is set to `test`. We also assume the cluster-domain is set to its default, i.e. `cluster.local`. The FQDN of this pod is defined as `foo.test.bar.svc.cluster.local` (see details [here](https://kubernetes.io/docs/concepts/services-networking/dns-pod-service)). The user does not set `setHostnameAsFQDN`. The Pod spec for this example would be:
 
 ```yaml
 # Pod spec
@@ -322,7 +325,7 @@ kind: Pod
 metadata: {"name": "foo", "namespace": "bar"}
 spec:
   ...
-  hostname: "foo"  # Optional for this example
+  hostname: "foo"  
   subdomain: "test"
 ```
 
@@ -332,7 +335,7 @@ If we `exec` into the Pod:
 
 #### Story 3: User Configures Pod to have FQDN and it would like the pod hostname to be the FQDN
 
-Assume we have a pod named `foo` in a namespace `bar`. The PodSpec `subdomain` is set to `test`. We also assume the cluster-domain is set to its default, i.e. `cluster.local`. The FQDN of this pod is defined as `foo.test.bar.svc.cluster.local` (see details in [here](https://kubernetes.io/docs/concepts/services-networking/dns-pod-service)). Additionally, the user sets `hostnameFQDN`: `true`. The Pod spec for this example would be:
+Assume we have a pod named `foo` in a namespace `bar`. The PodSpec `subdomain` is set to `test`. We also assume the cluster-domain is set to its default, i.e. `cluster.local`. The FQDN of this pod is defined as `foo.test.bar.svc.cluster.local` (see details in [here](https://kubernetes.io/docs/concepts/services-networking/dns-pod-service)). Additionally, the user sets `setHostnameAsFQDN`: `true`. The Pod spec for this example would be:
 
 ```yaml
 # Pod spec
@@ -341,9 +344,9 @@ kind: Pod
 metadata: {"namespace": "bar", "name": "foo"}
 spec:
   ...
-  hostname: "foo"  # Optional for this example
+  hostname: "foo"  
   subdomain: "test"
-  hostnameFQDN: "true"
+  setHostnameAsFQDN: "true"
 ```
 
 If we `exec` into the Pod:
@@ -360,16 +363,10 @@ Go in to as much detail as necessary here.
 This might be a good place to talk about core concepts and how they relate.
 -->
 
-The hostname field of the Linux Kernel is limited to 63 bytes 
-(see [sethostname(2)](http://man7.org/linux/man-pages/man2/sethostname.2.html)). Kubernetes attempts to include the 
-Pod name as hostname, unless this limit is reached. When the limit is reached, Kubernetes has a series of mechanisms 
+The hostname field of the Linux Kernel is limited to 64 bytes 
+(see [sethostname(2)](http://man7.org/linux/man-pages/man2/sethostname.2.html)), while most Kubernetes resource types require a name as defined in [RFC 1123](https://tools.ietf.org/html/rfc1123), which limits them to 63 bytes. Kubernetes attempts to include the Pod name as hostname, unless this limit is reached. When the limit is reached, Kubernetes has a series of mechanisms 
 to deal with the issue. These include, truncating Pod hostname when a “Naked” Pod name is longer than 63 bytes, and 
-having an alternative way of generating Pod names when they are part of a Controller, like a Deployment. The proposed 
-feature might still hit the 63 Bytes limit unless we create or adapt similar remediation techniques. Without any 
-remediation, Kubernetes will fail to create the Pod Sandbox and the pod will remain in “ContainerCreating” (Pending status) 
-forever. The feature proposed here will make this issue occur more frequently, as now the whole FQDN would be limited to 63 
-bytes. Next we illustrate the issue with an example of a potential error message, based on an initial draft of this 
-feature (PR [#91035](https://github.com/kubernetes/kubernetes/pull/91035)):
+having an alternative way of generating Pod names when they are part of a Controller, like a Deployment. When the proposed feature is in used, users might hit the 64 Bytes kernel hostname limit. Without any remediation, Kubernetes will fail to create the Pod Sandbox and the pod will remain in “ContainerCreating” (Pending status) forever. The feature proposed here will make this issue occur more frequently, as now the whole FQDN would be limited to 64 bytes. Next we illustrate the issue with an example of a potential error message:
 
 ```bash
 $ kubectl get pod
@@ -386,25 +383,21 @@ Events:
   Type     Reason                  Age               From                                Message
   ----     ------                  ----              ----                                -------
   Normal   Scheduled               16s               default-scheduler                   Successfully assigned foo/longpodnametestsaoitfail23423423432wer-547cc5-st6dd to host.company.com
-  Warning  FailedCreatePodSandBox  1s (x2 over 16s)  kubelet, host.company.com  Failed create pod sandbox: Failed to set FQDN in hostname, Pod hostname longpodnametestsaoitfail23423423432wer-547cc5-st6dd.p1324234234234.foo.svc.test q.company.com is too long (63 characters is the limit).
+  Warning  FailedCreatePodSandBox  1s (x2 over 16s)  kubelet, host.company.com  Failed create pod sandbox: Failed to set FQDN in hostname, Pod hostname longpodnametestsaoitfail23423423432wer-547cc5-st6dd.p1324234234234.foo.svc.testq.company.com is too long (93 characters requested, 64 characters is the limit).
 ```
 
-This failure mode is not great because it might not be apparent to users that their pods are failing. To improve the UX of this failure mode we will create an example Admission Controller that people can take and customize to apply their own policies. For example, if users care only about Deployments, they can make sure this Admission Controller account for the size of FQDN when the `hostnameFQDN` and `subdomain` flags are set in the PodSpec template.
+This failure mode is not great because it might not be apparent to users that their pods are failing. To improve the UX of this failure mode we will create an example Admission Controller that people can take and customize to apply their own policies. For example, if users care only about Deployments, they can make sure this Admission Controller account for the size of FQDN when the `setHostnameAsFQDN` and `subdomain` flags are set in the PodSpec template.
 
 
-```
-<<[UNRESOLVED Will this work on Windows? ]>>
+#### Behavior on Windows
 
-We are not certain that this will work on Windows as we could not do full 
-Kubernetes tests on Windows. We did a test some basic test with Docker on 
-a Windows machine. This test did "docker run -h <FQDN>  -it container", 
-and Docker just set the FQDN in the Windows COMPUTENAME environment 
-variable, so hostname returned the FQDN string. I could not find any 
-specific Windows Kubelet Pod runtime class. I guess it might just work as
-Kubernetes simply relies on underlying runtime, e.g., Docker?
-
-<<[/UNRESOLVED]>>
-```
+There has been discussions with some members of the Sig-Windows group and it 
+seems this feature does not make sense from the Windows perspective. However, 
+the feature works as intended on Windows. Specifically, when
+the user configures pod to have an FQDN and sets `setHostnameAsFQDN`: `true`, 
+Windows sets the registry value of 'hostname' for the registry key 
+HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters to
+the pod FQDN. When executing the command `hostname`, the pod FQDN is returned.
 
 
 ### Risks and Mitigations
@@ -510,6 +503,16 @@ in back-to-back releases.
 [conformance tests]: https://git.k8s.io/community/contributors/devel/sig-architecture/conformance-tests.md
 -->
 
+#### Alpha -> Beta Graduation
+
+- Gather feedback from developers
+- Tests are in Testgrid and linked in KEP
+
+#### Beta -> GA Graduation
+
+- Allowing time for feedback
+
+
 ### Upgrade / Downgrade Strategy
 
 <!--
@@ -524,7 +527,7 @@ enhancement:
   cluster required to make on upgrade in order to make use of the enhancement?
 -->
 
-We will gate off this feature for one release (1.19), then we enable it as GA in the next release (1.20)
+We will gate off this feature for one release (1.19), then we enable it by default as Beta in the next release (1.20), then GA in release 1.21
 
 ### Version Skew Strategy
 
@@ -541,7 +544,7 @@ enhancement:
   CRI or CNI may require updating that component before the kubelet.
 -->
 
-Old kubelets that do not have support for this feature will just ignore the PodSpec `hostnameFQDN` field.
+Old kubelets that do not have support for this feature will just ignore the PodSpec `setHostnameAsFQDN` field.
 
 ## Production Readiness Review Questionnaire
 
@@ -575,7 +578,7 @@ _This section must be completed when targeting alpha to a release._
 
 * **How can this feature be enabled / disabled in a live cluster?**
   - [X] Feature gate (also fill in values in `kep.yaml`)
-    - Feature gate name: hostnameFQDN
+    - Feature gate name: setHostnameAsFQDN
     - Components depending on the feature gate: Kubelet
   - [ ] Other
     - Describe the mechanism:
@@ -609,8 +612,7 @@ _This section must be completed when targeting beta graduation to a release._
   is very limited and it is disabled by default.
 
 * **What specific metrics should inform a rollback?**
-  We could have a metric in Kubelet that records number of failed pods that use this feature. If that
-  metric spikes we could trigger a rollback.
+  Abnormal increase in `run_podsandbox_errors_total` count could be related to this feature. We should check if the feature gate is enabled and pods are using it.
 
 * **Were upgrade and rollback tested? Was upgrade->downgrade->upgrade path tested?**
   We tested introducing and removing this feature. Running pods are not affected by
@@ -626,17 +628,19 @@ _This section must be completed when targeting beta graduation to a release._
 
 _This section must be completed when targeting beta graduation to a release._
 
-TODO
 
 * **How can an operator determine if the feature is in use by workloads?**
   Ideally, this should be a metrics. Operations against Kubernetes API (e.g.
   checking if there are objects with field X set) may be last resort. Avoid
   logs or events for this purpose.
 
+  For a pod to be using this feature it needs to define the PodSpec fields
+  `subDomain` and `setHostnameAsFQDN`.
+
 * **What are the SLIs (Service Level Indicators) an operator can use to
   determine the health of the service?**
-  - [ ] Metrics
-    - Metric name:
+  - [X] Metrics
+    - Metric name: Abnormal increase in `run_podsandbox_errors_total` might be related to this feature. We should check if the feature gate is enabled and pods are using it.
     - [Optional] Aggregation method:
     - Components exposing the metric:
   - [ ] Other (treat as last resort)
@@ -650,11 +654,13 @@ TODO
   - 99% percentile over day of absolute value from (job creation time minus expected
     job creation time) for cron job <= 10%
   - 99,9% of /health requests per day finish with 200 code
+N/A
 
 * **Are there any missing metrics that would be useful to have to improve
   observability if this feature?**
   Describe the metrics themselves and the reason they weren't added (e.g. cost,
   implementation difficulties, etc.).
+N/A
 
 ### Dependencies
 
@@ -708,18 +714,23 @@ _This section must be completed when targeting beta graduation to a release._
   It is not affected.
 
 * **What are other known failure modes?**
-  TODO
 
   For each of them fill in the following information by copying the below template:
-  - [Failure mode brief description]
+  - Pod FQDN is longer than 64 bytes
     - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without loogging into a master or worker node?
+      how can an operator troubleshoot without logging into a master or worker node?
+      Pods configured to obtain FQDN that make use of this feature will remain in Pending status generating error events regarding failure to create PodSandbox due to too long FQDN. We could use the metric `run_podsandbox_errors_total` to identify abnormal number of failures creating PodSandbox.
+
     - Mitigations: What can be done to stop the bleeding, especially for already
       running user workloads?
+      Pods should either set the PodSpec field `setHostnameAsFQDN`.
+
     - Diagnostics: What are the useful log messages and their required logging
       levels that could help debugging the issue?
-      Not required until feature graduated to Beta.
+      This issue will be logged in Error level log messages. The error will something like`GeneratePodSandboxConfig for pod foo failed: Failed to construct FQDN from pod hostname and cluster domain, FQDN <long-fqdn> is too long (64 characters is the max, 70 characters requested)`      
+
     - Testing: Are there any tests for failure mode? If not describe why.
+      Unittests cover this failure scenario. The e2e tests also check for this error, but only as protection for the CI. A test that purposely hit this issue will be flaky as the pod will remain in Pending status logging errors until the test timesout.
 
 * **What steps should be taken if SLOs are not being met to determine the problem?**
 
@@ -727,6 +738,14 @@ _This section must be completed when targeting beta graduation to a release._
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 
 ## Implementation History
+
+- 2020-05-08: KEP Opened PR kubernetes/enhancement #1792, Issue kubernetes/enhancement #1797
+- 2020-05-20: KEP marked implementable and merged 
+- 2020-07-09: Documentation PR merged kubernetes/website #21210 and #22712
+- 2020-07-19: Implementation of Feature Merged targeting 1.19 for Alpha. kubernetes/kubernetes #91699
+- 2020-07-24: Review for API changes marked as Completed (for kubernetes/kubernetes #91699 changes)
+- 2020-08-26: v1.19 includes feature in Alpha
+- 2020-08-28: Feature e2e tests running in TestGrid under sig-node-kubelet/node-kubelet-alpha
 
 <!--
 Major milestones in the life cycle of a KEP should be tracked in this section.
@@ -745,7 +764,7 @@ Major milestones might include
 Why should this KEP _not_ be implemented?
 -->
 
-Setting the FQDN in the hostname field of the Kernel is not the standard in applications that have been developed to run in orchestration platforms such as Kubernetes. Additionally, the fact that the Kernel hostname field is limited to 63 bytes causes pretty poor failure modes, where users might not immediately know that something went wrong.
+Setting the FQDN in the hostname field of the Kernel is not the standard in applications that have been developed to run in orchestration platforms such as Kubernetes. Additionally, the fact that the Kernel hostname field is limited to 64 bytes causes pretty poor failure modes, where users might not immediately know that something went wrong.
 
 
 ## Alternatives
@@ -769,8 +788,8 @@ is that it breaks Kubernetes abstraction layers as we have to make assumptions f
 It would be nice if we can define that an error is fatal, then the pod changes to Failed state.
 
 
-## Infrastructure Needed (optional)
 
+## Infrastructure Needed (optional)
 <!--
 Use this section if you need things from the project/SIG.  Examples include a
 new subproject, repos requested, github details.  Listing these here allows a
