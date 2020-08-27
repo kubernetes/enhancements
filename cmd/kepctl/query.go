@@ -41,6 +41,7 @@ func buildQueryCommand(k *kepctl.Client) *cobra.Command {
 	f.StringSliceVar(&opts.SIG, "sig", nil, "SIG")
 	f.StringSliceVar(&opts.Status, "status", nil, "Status")
 	f.StringSliceVar(&opts.Stage, "stage", nil, "Stage")
+	f.StringSliceVar(&opts.PRRApprover, "prr", nil, "Prod Readiness Approver")
 	f.BoolVar(&opts.IncludePRs, "include-prs", false, "Include PRs in the results")
 
 	addRepoPathFlag(f, &opts.CommonArgs)

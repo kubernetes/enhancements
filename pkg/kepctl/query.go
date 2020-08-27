@@ -28,10 +28,11 @@ import (
 
 type QueryOpts struct {
 	CommonArgs
-	SIG        []string
-	Status     []string
-	Stage      []string
-	IncludePRs bool
+	SIG         []string
+	Status      []string
+	Stage       []string
+	PRRApprover []string
+	IncludePRs  bool
 }
 
 // Validate checks the args and cleans them up if needed
@@ -94,6 +95,7 @@ func (c *Client) Query(opts QueryOpts) error {
 	// filter the KEPs by criteria
 	allowedStatus := sliceToMap(opts.Status)
 	allowedStage := sliceToMap(opts.Stage)
+	allowedPRR := sliceToMap(opts.PRRApprover)
 
 	var keep []*keps.Proposal
 	for _, k := range allKEPs {
@@ -101,6 +103,9 @@ func (c *Client) Query(opts QueryOpts) error {
 			continue
 		}
 		if len(opts.Stage) > 0 && !allowedStage[k.Stage] {
+			continue
+		}
+		if len(opts.PRRApprover) > 0 && !atLeastOne(k.PRRApprovers, allowedPRR) {
 			continue
 		}
 		keep = append(keep, k)
@@ -135,4 +140,15 @@ func selectByRegexp(vals []string, regexps []string) ([]string, error) {
 		}
 	}
 	return matches, nil
+}
+
+// returns true if at least one of vals is in the allowed map
+func atLeastOne(vals []string, allowed map[string]bool) bool {
+	for _, v := range vals {
+		if allowed[v] {
+			return true
+		}
+	}
+
+	return false
 }
