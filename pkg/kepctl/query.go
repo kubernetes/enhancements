@@ -18,11 +18,12 @@ package kepctl
 
 import (
 	"fmt"
-	"strings"
+	"regexp"
 
 	"github.com/pkg/errors"
 
 	"k8s.io/enhancements/pkg/kepval/keps"
+	"k8s.io/enhancements/pkg/kepval/keps/validations"
 )
 
 type QueryOpts struct {
@@ -36,15 +37,14 @@ type QueryOpts struct {
 // Validate checks the args and cleans them up if needed
 func (c *QueryOpts) Validate(args []string) error {
 	if len(c.SIG) > 0 {
-		var fixed []string
-		for _, s := range c.SIG {
-			if strings.HasPrefix(s, "sig-") {
-				fixed = append(fixed, s)
-			} else {
-				fixed = append(fixed, "sig-"+s)
-			}
+		sigs, err := selectByRegexp(validations.Sigs(), c.SIG)
+		if err != nil {
+			return err
 		}
-		c.SIG = fixed
+		if len(sigs) == 0 {
+			return fmt.Errorf("No SIG matches any of the passed regular expressions")
+		}
+		c.SIG = sigs
 	}
 	//TODO: check the valid values of stage, status, etc.
 	return nil
@@ -67,13 +67,13 @@ func (c *Client) Query(opts QueryOpts) error {
 		// KEPs in the local filesystem
 		names, err := findLocalKEPs(repoPath, sig)
 		if err != nil {
-			return errors.Wrap(err, "unable to search for local KEPs")
+			fmt.Fprintf(c.Err, "error searching for local KEPs from %s: %s\n", sig, err)
 		}
 
 		for _, k := range names {
 			kep, err := c.readKEP(repoPath, sig, k)
 			if err != nil {
-				fmt.Fprintf(c.Err, "ERROR READING KEP %s: %s\n", k, err)
+				fmt.Fprintf(c.Err, "error reading KEP %s: %s\n", k, err)
 			} else {
 				allKEPs = append(allKEPs, kep)
 			}
@@ -83,7 +83,7 @@ func (c *Client) Query(opts QueryOpts) error {
 		if opts.IncludePRs {
 			prKeps, err := c.findKEPPullRequests(sig)
 			if err != nil {
-				return errors.Wrap(err, "unable to search for KEP PRs")
+				fmt.Fprintf(c.Err, "error searching for KEP PRs from %s: %s\n", sig, err)
 			}
 			if prKeps != nil {
 				allKEPs = append(allKEPs, prKeps...)
@@ -116,4 +116,23 @@ func sliceToMap(s []string) map[string]bool {
 		m[v] = true
 	}
 	return m
+}
+
+// returns all strings in vals that match at least one
+// regexp in regexps
+func selectByRegexp(vals []string, regexps []string) ([]string, error) {
+	var matches []string
+	for _, s := range vals {
+		for _, r := range regexps {
+			found, err := regexp.MatchString(r, s)
+			if err != nil {
+				return matches, err
+			}
+			if found {
+				matches = append(matches, s)
+				break
+			}
+		}
+	}
+	return matches, nil
 }
