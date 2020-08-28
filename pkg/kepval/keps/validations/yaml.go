@@ -94,6 +94,10 @@ var (
 	prrApprovers []string
 )
 
+func Sigs() []string {
+	return listGroups
+}
+
 func init() {
 	resp, err := http.Get("https://raw.githubusercontent.com/kubernetes/community/master/sigs.yaml")
 	if err != nil {
