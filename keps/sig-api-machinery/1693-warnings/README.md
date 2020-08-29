@@ -45,7 +45,7 @@ checklist items _must_ be updated for the enhancement to be released.
 - [x] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 - [x] KEP approvers have approved the KEP status as `implementable`
 - [x] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 
 <!--
 **Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
@@ -94,8 +94,8 @@ but surfacing warnings to clients submitting problematic data would help them di
 When a deprecated API is used:
 
 1. Add a `Warning` header to the response
-2. Set a gauge metric to 1 with labels for the API group, version, resource, subresource, and target removal version
-3. Record an audit annotation indicating the request used a deprecated API
+2. Set a `apiserver_requested_deprecated_apis` gauge metric to 1 with labels for the API group, version, resource, subresource, and target removal version
+3. Record a `"k8s.io/deprecated": "true"` audit annotation indicating the request used a deprecated API
 
 Allow custom resource definitions to indicate specific versions are deprecated
 
@@ -121,6 +121,12 @@ In kubectl, configure the per-process handler to:
 4. add a `--warnings-as-errors` option to exit with a non-zero exit code after executing the command if warnings were encountered
 
 In kube-apiserver and kube-controller-manager, configure the process-wide handler to ignore warnings
+
+Example `kubectl` user experience:
+
+![kubectl warnings](kubectl-warnings.png)
+
+![kubectl --warnings-as-errors](kubectl-warnings-as-errors.png)
 
 ## Design Details
 
@@ -271,18 +277,18 @@ disable the server sending warnings during the beta period.
 * Complete test plan for implemented items
 * API server output of `Warning` headers for deprecated API use is feature-gated and enabled by default
 * The metric for deprecated API use is registered at [stability level `ALPHA`](https://github.com/kubernetes/enhancements/blob/master/keps/sig-instrumentation/20190404-kubernetes-control-plane-metrics-stability.md#stability-classes)
-* client-go logs warnings with code `199` and `299` by default
-* kubectl outputs warnings with code `199` and `299` to stderr by default
+* Implement admission webhook warning contributions
+* Implement custom resource version deprecation
+* client-go logs warnings with code `299` by default
+* kubectl outputs warnings with code `299` to stderr by default
+* Custom resource and admission webhook documentation is extended to describe appropriate use of warnings
 
 #### GA
 
 * At least two releases after Beta
 * Gather feedback on metric structure and use from multi-cluster admins
 * Implement in-process helpers for field-level validation warnings and admission warnings
-* Implement admission webhook warning contributions
-* Implement custom resource version deprecation
 * Complete test plan for implemented items
-* Custom resource and admission webhook documentation is extended to describe appropriate use of warnings
 * API server output of `Warning` headers for deprecated API use is unconditionally enabled
 * Server metric for deprecated API use is registered at [stability level `STABLE`](https://github.com/kubernetes/enhancements/blob/master/keps/sig-instrumentation/20190404-kubernetes-control-plane-metrics-stability.md#stability-classes)
 
@@ -318,3 +324,4 @@ New clients making requests to old API servers handle requests without `Warning`
 - 2020-04-16: KEP introduced
 - 2020-04-27: Updated GA criteria, added extension mechanism warnings, kubectl warnings-as-errors option, size limits
 - 2020-04-27: Moved to implementable
+- 2020-08-26: Completed beta items for v1.19
