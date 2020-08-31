@@ -3,22 +3,21 @@
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
-  - [Note to Reviewers](#note-to-reviewers)
 - [Motivation](#motivation)
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
+  - [New Workflow](#new-workflow)
+  - [Re-categorize the triage/support label](#re-categorize-the-triagesupport-label)
   - [User Stories](#user-stories)
     - [Group Leads](#group-leads)
     - [Reviewers and Approvers](#reviewers-and-approvers)
     - [Contributors](#contributors)
-  - [Notes/Constraints/Caveats (optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
+  - [needs-triage and triage/accepted labels](#needs-triage-and-triageaccepted-labels)
+  - [Rename the triage/support label](#rename-the-triagesupport-label)
   - [Graduation Criteria](#graduation-criteria)
-  - [Phase 0](#phase-0)
-    - [needs-triage and triage/accepted labels](#needs-triage-and-triageaccepted-labels)
-    - [Remove or rename unused triage/** labels](#remove-or-rename-unused-triage-labels)
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
@@ -30,11 +29,9 @@
 - [ ] Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
 - [ ] KEP approvers have approved the KEP status as `implementable`
 - [ ] Design details are appropriately documented
-- [ ] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
 - [ ] Graduation criteria is in place
 - [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [ ] Contributor documentation has been created in [kubernetes/community]
 
 [kubernetes.io]: https://kubernetes.io/
 [kubernetes/enhancements]: https://github.com/kubernetes/enhancements
@@ -46,42 +43,71 @@
 To ease the burden of SIG/area reviewers/approvers, we would like to prescribe
 a triage workflow and supporting automation.
 
-### Note to Reviewers
-
-For this `provisional` phase, the details of this KEP are left intentionally
-light. There was significant discussion across issues, mailing list threads,
-and PRs that didn't lead to forward progress because it seemed we were trying
-to solve everything at once.
-
-Here we attempt to scope a single deliverable before moving on to discussing
-workflow, label states, and entry/exit criteria.
-
 ## Motivation
 
-At present, there are [2,155 open issues and 902 pull requests](https://github.com/kubernetes/kubernetes/issues?utf8=%E2%9C%93&q=is%3Aopen) open in
+As of 09-08-2020, there are [3,004 open issues and 975 pull requests](https://github.com/kubernetes/kubernetes/issues?utf8=%E2%9C%93&q=is%3Aopen) open in
 `kubernetes/kubernetes`.
 
-- [356 are categorized as `lifecycle/stale`](https://github.com/kubernetes/kubernetes/labels/lifecycle%2Fstale)
-- [246 are categorized as `lifecycle/rotten`](https://github.com/kubernetes/kubernetes/labels/lifecycle%2Frotten)
-- [690 are categorized as `lifecycle/frozen`](https://github.com/kubernetes/kubernetes/labels/lifecycle%2Ffrozen)
+- [197 are categorized as `lifecycle/stale`](https://github.com/kubernetes/kubernetes/labels/lifecycle%2Fstale)
+- [200 are categorized as `lifecycle/rotten`](https://github.com/kubernetes/kubernetes/labels/lifecycle%2Frotten)
+- [756 are categorized as `lifecycle/frozen`](https://github.com/kubernetes/kubernetes/labels/lifecycle%2Ffrozen)
 
-This makes for about 20% of open issues/PRs that are in some state of staleness.
+This makes for about 13% of open issues/PRs that are in some state of staleness.
 If we consider items marked as `lifecycle/frozen`, then we're looking at around
-42% of issues/PRs that could potentially require attention.
+38% of issues/PRs that could potentially require attention.
 
 ### Goals
 
-See [User Stories](#user-stories).
+Streamline the issue triage process used within the [kubernetes/kubernetes]
+repository.
 
-<<[UNRESOLVED]>>
+- Create new workflow centered around `needs-triage` label auto-applied to new
+  issues and Pull Requests (PRs).
+
+See [User Stories](#user-stories) for more information.
+
 
 ### Non-Goals
 
-- Prescribing an issue triage workflow for all projects within Kubernetes orgs
-
-<<[/UNRESOLVED]>>
+- Prescribing an issue triage workflow for all projects within Kubernetes orgs.
+- Requiring all community groups within Kubernetes to adhere to the issue triage
+  workflow introduced in this KEP.
 
 ## Proposal
+
+### New Workflow
+
+An additional [required label] called `needs-triage` will be applied automatically
+to issues and PRs created within the [kubernetes/kubernetes] repository similar
+to the current `needs-sig` or `needs-kind` labels. This serves as a boolean signal
+to community group members that the issue has not yet been triaged.
+
+After the issue or PR has been evaluated, an org member can apply one of the
+`triage` labels. If there is enough information or supporting evidence in the
+issue a member can signal that it is ready for work by using the `/triage accepted`
+bot command to apply the `triage/accepted` label. If the issue is a duplicate or
+lacks supporting evidence one of the other [triage labels] can be applied.
+
+In either condition the `needs-triage` label will be removed.
+
+**Note:** While any org member can apply the `triage/*` class of labels it
+should only be applied by those that are affiliated with the owning-sig. A
+mitigation strategy is outlined in the  [Design details](#design-details) if
+this guideline is not being consistently followed.
+
+
+### Re-categorize the triage/support label
+
+The label `triage/support` will become `kind/support`. `kind` better reflects
+the class or or type of issue.
+
+**Note:** This is a revert of the previous decision to move the `support` label
+from `kind/*` to `triage/*` introduced in [kubernetes/test-infra#7598]. The
+goal at that time, was to use the label as a signal that the issue was something
+that should be closed. This is still true for [kubernetes/kubernetes], but the
+`triage/support` label's usage has grown outside of the [kubernetes/kubernetes]
+repo.
+
 
 ### User Stories
 
@@ -104,57 +130,27 @@ As a contributor, I want to be able to submit issues or PRs and:
 - have some assurance that they will be routed to the correct group
 - have them addressed in a timely manner
 
-<<[UNRESOLVED]>>
-
-### Notes/Constraints/Caveats (optional)
-
-<!--
-What are the caveats to the proposal?
-What are some important details that didn't come across above.
-Go in to as much detail as necessary here.
-This might be a good place to talk about core concepts and how they releate.
--->
-
-<<[/UNRESOLVED]>>
-
-<<[UNRESOLVED]>>
 
 ### Risks and Mitigations
 
-<!--
-What are the risks of this proposal and how do we mitigate.  Think broadly.
-For example, consider both security and how this will impact the larger
-kubernetes ecosystem.
 
-How will security be reviewed and by whom?
+**The new labels and process are either ignored or fall into dis-use.**
 
-How will UX be reviewed and by whom?
+There are close to 200 labels associated with the [kubernetes/kubernetes]
+repository. This workflow introduces two additional labels, reclassifies one and
+adds an additional process. Both the labels and process could potentially go
+unused or ignored without effort made by the community groups to use them
+appropriately.
 
-Consider including folks that also work outside the SIG or subproject.
--->
+When the new process is ready to be put into place, the [upstream marketing team]
+will be engaged to ensure there is clear communication regarding the changes.
+Their message will be backed by updated documentation regarding the new
+[issue triage process].
 
-<<[/UNRESOLVED]>>
 
 ## Design Details
 
-<!--
-This section should contain enough information that the specifics of your
-change are understandable.  This may include API specs (though not always
-required) or even code snippets.  If there's any ambiguity about HOW your
-proposal will be implemented, this is the place to discuss them.
--->
-
-### Graduation Criteria
-
-<!--
-**Note:** *Not required until targeted at a release.*
--->
-
-_Not required in `provisional` state._
-
-### Phase 0
-
-#### needs-triage and triage/accepted labels
+### needs-triage and triage/accepted labels
 
 We currently have a Prow plugin called `require-matching-label`, which requires
 specific labels to be set on a issue or pull request.
@@ -179,7 +175,7 @@ Upon determining that an issue is ready to be actively worked on, an org member
 can apply the `triage/accepted` label using the following bot command:
 
 ```shell
-/triage accept
+/triage accepted
 ```
 
 (Alternatively, contributors with write access to `kubernetes/kubernetes` would be
@@ -187,12 +183,10 @@ able to manually apply the `triage/accepted` label.)
 
 **Considerations:**
 
-- `triage/accepted` should be considered a placeholder name for the
-  label in this provisional state, depending on what we decide is the most
-  appropriate name.
-- There will be an expectation that only SIG members designated to triage
-  issues are applying triage labels. We're considering limiting application of
-  this label to the [`milestone-maintainers` GitHub team](https://github.com/orgs/kubernetes/teams/milestone-maintainers).
+Any Org member may use the `/triage` command in good faith that the issue is
+valid and belongs to the owning community group associated with the issue. Should
+it be widely misused, the command may be restricted to the [`milestone-maintainers`]
+or another to-be-determined GitHub team in the future.
 
 From here, a group can search the open items labeled with
 `triage/accepted` and proceed to work on them.
@@ -200,38 +194,22 @@ From here, a group can search the open items labeled with
 A nice example of a written SIG workflow is the [grooming document from
 SIG Cluster Lifecycle](https://git.k8s.io/community/sig-cluster-lifecycle/grooming.md).
 
-#### Remove or rename unused triage/** labels
 
-As we're considering reviving the `triage/**` labels in this workflow, it's
-important that all labels with this affix are up-to-date, removing any
-`triage/**` label deemed to be unused.
+### Rename the triage/support label
 
-The current list of `triage/**` labels is as follows:
+The label `triage/support` will become `kind/support`. `kind` better reflects
+the class or or type of issue.
 
-- `triage/duplicate`
-- `triage/needs-information`
-- `triage/not-reproducible`
-- `triage/support`
-- `triage/unresolved`
+For more information on this decision see the [Proposal](#proposal).
 
-We propose here removing the following labels:
 
-- `triage/duplicate`
-- `triage/not-reproducible`
-- `triage/unresolved`
+### Graduation Criteria
 
-We rename the following labels:
+This is a workflow change that will be rolled out at one time. It is not expected
+to go through the `alpha` / `beta` / `stable` stages and will instead go right
+to stable.
 
-- `triage/support` --> `kind/support`: Issue has been identified as a support
-  question, which should be routed to the appropriate forum and closed
-  immediately afterwards
-- `triage/needs-information` --> `lifecycle/needs-information`: Issue requires
-  more information (from submitter or SIG) in order to work on it
 
-Which leaves the following label and accompanying definition:
-
-- `triage/accepted`: Issue has been triaged by a SIG representative and
-  is ready to be worked
 
 ## Implementation History
 
@@ -248,19 +226,15 @@ Which leaves the following label and accompanying definition:
 
 ## Drawbacks
 
-N/A
-
-<<[UNRESOLVED]>>
+- It is yet-another-label for our contributors to keep track of.
+- A new contributor may not understand why it is applied and who can resolve it.
 
 ## Alternatives
 
-<!--
-What other approaches did you consider and why did you rule them out?  These do
-not need to be as detailed as the proposal, but should include enough
-information to express the idea and why it was not acceptable.
--->
-
-<<[/UNRESOLVED]>>
+Potential workflows could be built with the current set of labels in use. For
+example, issue triage teams could apply `triage/unresolved` to open issues that
+have not yet been acted upon. This process is done currently for `sig/network`
+issues automatically by [Athenabot].
 
 ## Infrastructure Needed
 
@@ -268,3 +242,11 @@ At the current stage of this proposal, Prow already supports the behaviors we re
 
 - Adding new labels
 - Enforcing label requirements on issues/PRs
+
+[triage labels]: https://github.com/kubernetes/kubernetes/labels?q=triage
+[kubernetes/test-infra#7598]: https://github.com/kubernetes/test-infra/issues/7598
+[kubernetes/community]: https://git.k8s.io/community
+[required label]: http://git.k8s.io/test-infra/prow/plugins/require-matching-label/require-matching-label.go
+[issue triage process]: https://git.k8s.io/community/contributors/guide/issue-triage.md
+[Athenabot]: https://github.com/athenabot/k8s-issues#what-it-does
+[`milestone-maintainers`]: https://github.com/orgs/kubernetes/teams/milestone-maintainers
