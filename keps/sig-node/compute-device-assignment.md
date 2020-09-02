@@ -104,7 +104,7 @@ message ContainerDevices {
 
 ## Alternatives Considered
 
-### Add v1alpha1 Kubelet GRPC service, at `/var/lib/kubelet/pod-resources/kubelet.sock`, which returns a list of [CreateContainerRequest](https://github.com/kubernetes/kubernetes/blob/master/pkg/kubelet/apis/cri/runtime/v1alpha2/api.proto#L734)s used to create containers.
+### Add v1alpha1 Kubelet GRPC service, at `/var/lib/kubelet/pod-resources/kubelet.sock`, which returns a list of [CreateContainerRequests](https://github.com/kubernetes/kubernetes/blob/master/pkg/kubelet/apis/podresources/v1alpha1/api.proto) used to create containers.
 * Pros:
   * Reuse an existing API for describing containers rather than inventing a new one
 * Cons:
