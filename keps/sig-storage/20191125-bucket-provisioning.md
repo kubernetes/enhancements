@@ -184,7 +184,7 @@ status:
 
 #### Bucket
 
-A cluster-scoped custom resource representing the abstraction of a single backend bucket. A `Bucket` instance stores enough identifying information so that drivers can accurately target the backend object store (e.g. needed during a deletion process).  All of the associated bucket class fields are copied to the `Bucket`. Additionally, endpoint data returned by the driver is copied to the `Bucket` by the sidecar.
+A cluster-scoped custom resource representing the abstraction of a single backend bucket. A `Bucket` instance stores enough identifying information so that drivers can accurately target the backend object store (e.g. needed during a deletion process).  Many of the associated bucket class fields are copied to the `Bucket`. Additionally, endpoint data returned by the driver is copied to the `Bucket` by the sidecar.
 
 For greenfield, COSI creates the `Bucket` based on values in the `BucketRequest` and `BucketClass`. For brownfield, an admin manually creates the `Bucket` and COSI copies bucket class fields, populates fields returned by the provisioner, and binds the `Bucket` to the `BucketAccess`.
 
@@ -207,8 +207,7 @@ spec:
   bucketRequest: [8]
     name:
     namespace:
-  bucketAccessName: [9]
-  protocol: [10]
+  protocol: [9]
     protocolSignature: ""
     azureBlob:
       containerName:
@@ -224,11 +223,10 @@ spec:
       privateKeyName:
       projectId:
       serviceAccount:
-  allowedNamespaces: [11]
     - name:
-  parameters: [12]
+  parameters: [10]
 status:
-  bucketAvailable: [13]
+  bucketAvailable: [11]
 ```
 
 1. `name`: When created by COSI, the `Bucket` name is generated in this format: _"<BR.namespace*>-<BR.name*>-<uuid>"_. If an admin creates a `Bucket`, as is necessary for brownfield access, they can use any name. The uuid is unique within a cluster. `*` the first 10 characters of the namespace and the name are used.
@@ -248,14 +246,12 @@ status:
 > Note: does not reflect or alter the backing storage ACLs or IAM policies.
 7. `bucketClassName`: Name of the associated bucket class.
 8. `bucketRequest`: Name and namespace of the associated `BucketRequest`.
-9. `bucketAccessName`: Name of the bound `BucketAccess` instance.
-10. `protocol`: The protocol the application will use to access the backend storage.
+9. `protocol`: The protocol the application will use to access the backend storage.
    - `protocolSignature`: Specifies the protocol targeted by this Bucket instance.  One of:
      - `azureBlob`: data required to target a provisioned azure container and/or storage account.
      - `s3`: data required to target a provisioned S3 bucket and/or user.
      - `gcs`: data required to target a provisioned GCS bucket and/or service account.
-11. `allowedNamespaces`: a copy of the `BucketClass`'s allowed namespaces. Additionally, this list can be mutated by the admin to allow or deny namespaces over the life of the bucket.
-12. `parameters`: a copy of the BucketClass parameters.
+10. `parameters`: a copy of the BucketClass parameters.
 13. `bucketAvailable`: if true the bucket has been provisioned. If false then the bucket has not been provisioned and is unable to be accessed.
 
 #### BucketClass
@@ -488,7 +484,9 @@ Here is the workflow:
 
 This workflow describes the automation designed for deleting a `Bucket` instance and optionally the related backend bucket. Revoking access to this bucket is covered in [Revoke Bucket Access](#revoke-bucket-access).
 
-A `Bucket` delete is triggered by the user deleting their `BucketRequest`. A `Bucket` instance (and a backend bucket) is not deleted if an associated `BucketAccess` or `BucketRequest` exists. Once these references have been deleted the `Bucket`, **and** if the retention policy is "Delete", the backend bucket, will be deleted. It's up to each provisioner whether or not to physically delete bucket content. But, for idempotency, the expectation is that the backend bucket will at least be made unavailable, pending out-of-band bucket lifecycle policies.
+> Note: it is important to understand that when a `BucketRequest` deletion triggers the delete of the associated `Bucket` instance, the `Bucket` instance is deleted regardless of access. This means that even if a `BucketAccess` references a `Bucket`, the `Bucket is still deleted and the BA is orphaned. Additionally, even if multiple `Bucket` instances point to the same backend bucket, if the retention policy is "Delete" then the bucket is deleted and workloads may fail. Potentially, this may only apply to MVP.
+
+> Note: it's up to each provisioner whether or not to physically delete bucket content. But, for idempotency, the expectation is that the backend bucket will at least be made unavailable, pending out-of-band bucket lifecycle policies.
 
 > Note: delete is described below as a synchronous workflow but it will likely need to be implemented asynchronously to accommodate potentially long delete times when buckets contain many objects. The steps should still mostly follow what's outlined below.
 
@@ -499,10 +497,9 @@ Here is the workflow:
 + If the `Bucket` instance was created by COSI then COSI deletes the `Bucket`, which sets its deleteTimestamp but does not delete it due to finalizer.
 + If the `Bucket` instance was not created by COSI then the `Bucket` is not deleted, but finalizers are removed so that the admin can manually delete it.
 + COSI unbinds the BR from the `Bucket`.
-+ COSI checks the BA-Bucket binding, and if present, stops processing the BR delete, meaning a `Bucket` instance cannot be deleted if its BA is present.
 + Sidecar sees the `Bucket` is unbound, and if the retention policy is "Delete", the gRPC calls the provisoner's _Delete_ interface. Upon successful completion, the `Bucket` is updated to Deleted.
 + If the retention policy is "Retain" then the `Bucket` remains "Released" and it can potentially be reused.
-+ When COSI sees the `Bucket` is "Deleted", it deletes all the finalizers and the real deletions occur.
++ When COSI sees the `Bucket` is "Deleted", it removes all finalizers and the resources are garbage collected.
 
 ## Grant Bucket Access
 This workflow describes the automation supporting granting access to an existing backend bucket.
