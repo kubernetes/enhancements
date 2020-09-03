@@ -207,7 +207,9 @@ spec:
   bucketRequest: [8]
     name:
     namespace:
-  protocol: [9]
+  allowedNamespaces: [9]
+    - name:
+  protocol: [10]
     protocolSignature: ""
     azureBlob:
       containerName:
@@ -224,9 +226,9 @@ spec:
       projectId:
       serviceAccount:
     - name:
-  parameters: [10]
+  parameters: [11]
 status:
-  bucketAvailable: [11]
+  bucketAvailable: [12]
 ```
 
 1. `name`: When created by COSI, the `Bucket` name is generated in this format: _"<BR.namespace*>-<BR.name*>-<uuid>"_. If an admin creates a `Bucket`, as is necessary for brownfield access, they can use any name. The uuid is unique within a cluster. `*` the first 10 characters of the namespace and the name are used.
@@ -246,13 +248,14 @@ status:
 > Note: does not reflect or alter the backing storage ACLs or IAM policies.
 7. `bucketClassName`: Name of the associated bucket class.
 8. `bucketRequest`: Name and namespace of the associated `BucketRequest`.
-9. `protocol`: The protocol the application will use to access the backend storage.
+9. `allowedNamespaces`: a list of namespaces that are permitted to either create new buckets or to access existing buckets.
+10. `protocol`: The protocol the application will use to access the backend storage.
    - `protocolSignature`: Specifies the protocol targeted by this Bucket instance.  One of:
      - `azureBlob`: data required to target a provisioned azure container and/or storage account.
      - `s3`: data required to target a provisioned S3 bucket and/or user.
      - `gcs`: data required to target a provisioned GCS bucket and/or service account.
-10. `parameters`: a copy of the BucketClass parameters.
-13. `bucketAvailable`: if true the bucket has been provisioned. If false then the bucket has not been provisioned and is unable to be accessed.
+11. `parameters`: a copy of the BucketClass parameters.
+12. `bucketAvailable`: if true the bucket has been provisioned. If false then the bucket has not been provisioned and is unable to be accessed.
 
 #### BucketClass
 
