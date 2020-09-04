@@ -49,6 +49,18 @@ status: provisional
       - [BucketAccessRequest](#bucketaccessrequest)
       - [BucketAccess](#bucketaccess)
       - [BucketAccessClass](#bucketaccessclass)
+    - [App Pod](#app-pod)
+    - [Topology](#topology)
+- [Object Relationships](#object-relationships)
+- [Workflows](#workflows)
+  - [Create Bucket](#create-bucket)
+  - [Sharing COSI Created Buckets](#sharing-cosi-created-buckets)
+  - [Delete Bucket](#delete-bucket)
+  - [Grant Bucket Access](#grant-bucket-access)
+  - [Revoke Bucket Access](#revoke-bucket-access)
+  - [Setting Access Permissions](#setting-access-permissions)
+    - [Dynamic Provisioning](#dynamic-provisioning)
+    - [Static Provisioning](#static-provisioning)
 - [Provisioner Secrets](#provisioner-secrets)
 - [gRPC Definitions](#grpc-definitions)
   - [ProvisionerGetInfo](#provisionergetinfo)
@@ -177,7 +189,7 @@ status:
 1. `labels`: added by COSI.  Key’s value should be the provisioner name. Characters that do not adhere to [Kubernetes label conventions](https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set) will be converted to ‘-’.
 1. `finalizers`: added by COSI to defer `BucketRequest` deletion until backend deletion succeeds.
 1. `protocol`: (required) specifies the desired protocol.  One of {“s3”, “gcs”, or “azureBlob”}.
-1. `bucketPrefix`: (optional) prefix prepended to a COSI-generated new bucket name, eg. “yosemite-photos-". If `bucketInstanceName` is supplied then `bucketPrefix` is ignored because the request is for access to an existing bucket.
+1. `bucketPrefix`: (optional) prefix prepended to a COSI-generated new bucket name, eg. “yosemite-photos-". If `bucketInstanceName` is supplied then `bucketPrefix` is ignored because the request is for access to an existing bucket. If `bucketPrexix` is specified then it is added to the `Bucket` instance as a label.
 1. `bucketClassName`: (optional) name of the `BucketClass` used to provision this request. If omitted, a default bucket class matching the protocol is used. If the bucket class does not support the requested protocol, an error is logged and the request is retried. A `BucketClass` is required for both greenfield and brownfield requests since BCs support a list of allowed namespaces.
 1. `bucketInstanceName`: (optional) name of the cluster-wide `Bucket` instance. If blank, then COSI assumes this is a greenfield request an will fill in the name during the binding step. If defined by the user, then this names the `Bucket` instance created by the admin. There is no automation available to make this name known to the user.
 1. `bucketAvailable`: if true the bucket has been provisioned. If false then the bucket has not been provisioned and is unable to be accessed.
@@ -195,8 +207,9 @@ apiVersion: cosi.io/v1alpha1
 kind: Bucket
 metadata:
   name: [1]
-  labels:
-    cosi.io/provisioner: [2]
+  labels: [2]
+    cosi.io/provisioner:
+    cosi.io/bucket-prefix:
   finalizers:
     - cosi.io/finalizer [3]
 spec:
@@ -232,7 +245,9 @@ status:
 ```
 
 1. `name`: When created by COSI, the `Bucket` name is generated in this format: _"<BR.namespace*>-<BR.name*>-<uuid>"_. If an admin creates a `Bucket`, as is necessary for brownfield access, they can use any name. The uuid is unique within a cluster. `*` the first 10 characters of the namespace and the name are used.
-2. `labels`: added by COSI.  Key’s value should be the provisioner name. Characters that do not adhere to [Kubernetes label conventions](https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set) will be converted to ‘-’.
+    cosi.io/provisioner:
+    cosi.io/bucket-prefix:
+2. `labels`: added by COSI. The "cosi.io/provisioner" key's value is the provisioner name. The "cosi.io/bucket-prefix" key's value is the `BucketRequest.bucketPrefix` value when specified. Characters that do not adhere to [Kubernetes label conventions](https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set) will be converted to ‘-’.
 3. `finalizers`: added by COSI to defer `Bucket` deletion until backend deletion ops succeed. Implementation may add one finalizer for the BR and one for the BA.
 4. `provisioner`: The provisioner field as defined in the `BucketClass`.  Used by sidecars to filter `Bucket`s. Format: <provisioner-namespace>"/"<provisioner-name>, eg "ceph-rgw-provisoning/ceph-rgw.cosi.ceph.com".
 5. `retentionPolicy`: Prescribes the outcome when the `BucketRequest` is deleted.
