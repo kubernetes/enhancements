@@ -19,11 +19,11 @@ To get started with this template:
 - [x] **Fill out as much of the kep.yaml file as you can.**
   At minimum, you should fill in the "Title", "Authors", "Owning-sig",
   "Status", and date-related fields.
-- [ ] **Fill out this file as best you can.**
+- [x] **Fill out this file as best you can.**
   At minimum, you should fill in the "Summary" and "Motivation" sections.
   These should be easy if you've preflighted the idea of the KEP with the
   appropriate SIG(s).
-- [ ] **Create a PR for this KEP.**
+- [x] **Create a PR for this KEP.**
   Assign it to people in the SIG who are sponsoring this process.
 - [ ] **Merge early and iterate.**
   Avoid getting hung up on specific details and instead aim to get the goals of
@@ -90,6 +90,9 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
+    - [Beta (1.20+)](#beta-120)
+    - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -315,25 +318,21 @@ Analysis findings reporting the position of both source and sink,
 
 ### Test Plan
 
-<!--
-**Note:** *Not required until targeted at a release.*
-
-Consider the following in developing a test plan for this enhancement:
-- Will there be e2e and integration tests, in addition to unit tests?
-- How will it be tested in isolation vs with other components?
-
-No need to outline all of the test cases, just the general strategy. Anything
-that would count as tricky in the implementation, and anything particularly
-challenging to test, should be called out.
-
-All code is expected to have adequate tests (eventually with coverage
-expectations). Please adhere to the [Kubernetes testing guidelines][testing-guidelines]
-when drafting this test plan.
-
-[testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
--->
+As a testing target, testing will consist of examples of Kubernetes-specific
+cases that we expect static analysis to detect.  No Kubernetes integration/e2e 
+tests will be necessary.
 
 ### Graduation Criteria
+
+#### Alpha
+- Analysis runs as a non-blocking presubmit check, warning developers of any findings in their changes.
+
+#### Beta (1.20+)
+- Analysis consumes fields tags for identification of material that should not be logged.
+
+#### GA
+- No false positives have been produced in <N> weeks.
+- Presmubmit analysis becomes blocking.
 
 <!--
 **Note:** *Not required until targeted at a release.*
@@ -447,78 +446,19 @@ you need any help or guidance.
 
 ### Feature Enablement and Rollback
 
-_This section must be completed when targeting alpha to a release._
-
-* **How can this feature be enabled / disabled in a live cluster?**
-  - [ ] Feature gate (also fill in values in `kep.yaml`)
-    - Feature gate name:
-    - Components depending on the feature gate:
-  - [ ] Other
-    - Describe the mechanism:
-    - Will enabling / disabling the feature require downtime of the control
-      plane?
-    - Will enabling / disabling the feature require downtime or reprovisioning
-      of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
-
-* **Does enabling the feature change any default behavior?**
-  Any change of default behavior may be surprising to users or break existing
-  automations, so be extremely careful here.
-
-* **Can the feature be disabled once it has been enabled (i.e. can we roll back
-  the enablement)?**
-  Also set `disable-supported` to `true` or `false` in `kep.yaml`.
-  Describe the consequences on existing workloads (e.g., if this is a runtime
-  feature, can it break the existing applications?).
-
-* **What happens if we reenable the feature if it was previously rolled back?**
-
-* **Are there any tests for feature enablement/disablement?**
-  The e2e framework does not currently support enabling or disabling feature
-  gates. However, unit tests in each component dealing with managing data, created
-  with and without the feature, are necessary. At the very least, think about
-  conversion tests if API types are being modified.
+This KEP does not change cluster behavior.
 
 ### Rollout, Upgrade and Rollback Planning
 
-_This section must be completed when targeting beta graduation to a release._
-
-* **How can a rollout fail? Can it impact already running workloads?**
-  Try to be as paranoid as possible - e.g., what if some components will restart
-   mid-rollout?
-
-* **What specific metrics should inform a rollback?**
-
-* **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
-  Describe manual testing that was done and the outcomes.
-  Longer term, we may want to require automated upgrade/rollback tests, but we
-  are missing a bunch of machinery and tooling and can't do that now.
-
-* **Is the rollout accompanied by any deprecations and/or removals of features, APIs, 
-fields of API types, flags, etc.?**
-  Even if applying deprecation policies, they may still surprise some users.
+This KEP does not change cluster behavior.
 
 ### Monitoring Requirements
 
-Not applicable to pre-commit testing.
+This KEP does not change cluster behavior.
 
 ### Dependencies
 
-_This section must be completed when targeting beta graduation to a release._
-
-* **Does this feature depend on any specific services running in the cluster?**
-  Think about both cluster-level services (e.g. metrics-server) as well
-  as node-level agents (e.g. specific version of CRI). Focus on external or
-  optional services that are needed. For example, if this feature depends on
-  a cloud provider API, or upon an external software-defined storage or network
-  control plane.
-
-  For each of these, fill in the following—thinking about running existing user workloads
-  and creating new ones, as well as about cluster-level services (e.g. DNS):
-  - [Dependency name]
-    - Usage description:
-      - Impact of its outage on the feature:
-      - Impact of its degraded performance or high-error rates on the feature:
-
+This KEP does not change cluster behavior.
 
 ### Scalability
 
@@ -531,37 +471,19 @@ _For GA, this section is required: approvers should be able to confirm the
 previous answers based on experience in the field._
 
 * **Will enabling / using this feature result in any new API calls?**
-  Describe them, providing:
-  - API call type (e.g. PATCH pods)
-  - estimated throughput
-  - originating component(s) (e.g. Kubelet, Feature-X-controller)
-  focusing mostly on:
-  - components listing and/or watching resources they didn't before
-  - API calls that may be triggered by changes of some Kubernetes resources
-    (e.g. update of object X triggers new updates of object Y)
-  - periodic API calls to reconcile state (e.g. periodic fetching state,
-    heartbeats, leader election, etc.)
 
 * **Will enabling / using this feature result in introducing new API types?**
-  Describe them, providing:
-  - API type
-  - Supported number of objects per cluster
-  - Supported number of objects per namespace (for namespace-scoped objects)
 
 * **Will enabling / using this feature result in any new calls to the cloud 
 provider?**
 
 * **Will enabling / using this feature result in increasing size or count of 
 the existing API objects?**
-  Describe them, providing:
-  - API type(s):
-  - Estimated increase in size: (e.g., new annotation of size 32B)
-  - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 
 * **Will enabling / using this feature result in increasing time taken by any 
 operations covered by [existing SLIs/SLOs]?**
-  Think about adding additional work or introducing new steps in between
-  (e.g. need to do X to start a container), etc. Please describe the details.
+
+This KEP does not change cluster behavior.
 
 * **Will enabling / using this feature result in non-negligible increase of 
 resource usage (CPU, RAM, disk, IO, ...) in any components?**
@@ -571,32 +493,16 @@ resource usage (CPU, RAM, disk, IO, ...) in any components?**
   This through this both in small and large cases, again with respect to the
   [supported limits].
 
+As testing-only changes, Kubernetes components are not impacted.
+There may be non-negligible increase in testing resource usage.
+Implementation should benchmark to estimate.
+
 ### Troubleshooting
 
-The Troubleshooting section currently serves the `Playbook` role. We may consider
-splitting it into a dedicated `Playbook` document (potentially with some monitoring
-details). For now, we leave it here.
-
-_This section must be completed when targeting beta graduation to a release._
-
-* **How does this feature react if the API server and/or etcd is unavailable?**
-
-* **What are other known failure modes?**
-  For each of them, fill in the following information by copying the below template:
-  - [Failure mode brief description]
-    - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without logging into a master or worker node?
-    - Mitigations: What can be done to stop the bleeding, especially for already
-      running user workloads?
-    - Diagnostics: What are the useful log messages and their required logging
-      levels that could help debug the issue?
-      Not required until feature graduated to beta.
-    - Testing: Are there any tests for failure mode? If not, describe why.
-
-* **What steps should be taken if SLOs are not being met to determine the problem?**
-
-[supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
-[existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
+While this KEP does not change cluster behavior, any reported finding should be
+communicated clearly such that developer correction can proceed as smoothly as possible.
+During non-blocking release stages, this should include instructions for reporting false-positives if the PR author believes the findings are incorrect.
+During blocking release stages, this should include instructions for escalating possible false-positives to avoid blocking other PRs and how to contact contributors with `/override` permissions to approve bypass of analysis.
 
 ## Implementation History
 
@@ -611,11 +517,30 @@ Major milestones might include:
 - when the KEP was retired or superseded
 -->
 
+None.
+
 ## Drawbacks
 
 <!--
 Why should this KEP _not_ be implemented?
 -->
+
+> As a blocking test, there is a risk for developer toil in the event of any
+  false-positive or test flakiness.
+  This can be mitigated by any contributed with `/override` permissions.
+
+> Similarly, depending the order in which PRs are tested and merged,
+   it is theoretically possible that a merge would result in a violation reaching master.
+  If this is not properly handled, all PRs made at that time could present as
+   failing analysis.
+  This can be mitigated by consistent scans of `master` as a baseline.
+
+> As this analysis depends on project-specific considerations of what constitutes
+   a secret or a sink, periodic review is required to ensure configuration is kept up-to-date.
+  This is mitigated somewhat with a consistent use of field tags,
+   as proposed in [KEP-1753](https://github.com/kubernetes/enhancements/pull/1754),
+   though correct application of field tags would also be subject to periodic review.
+
 
 ## Alternatives
 
@@ -633,7 +558,8 @@ While other static analysis tools exist for Go, these tend towards more general 
 [`gosec`](https://github.com/securego/gosec), for instance, can be used to detect
 hard-coded tokens or use of cryptographically broken packages, e.g., `crypto/md5`.
 However, such linters are insufficient for our use, as they do not allow for project-specific configuration
-to identify sources, sinks, etc.
+to identify sources, sinks, etc.  Additionally, linters like `gosec` or even `go vet` can change their specification with new versions,
+resulting in new findings breaking CI.
 
 There are few other developer analyzers that provide depth greater than a linter.
 [`gotcha`](https://github.com/akwick/gotcha), the <ins>go</ins> <ins>t</ins>aint <ins>ch</ins>ecker <ins>a</ins>nalyzer,
