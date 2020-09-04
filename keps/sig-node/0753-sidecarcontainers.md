@@ -391,9 +391,7 @@ This will be useful in scenarios such as when your sidecar is a proxy so that it
 
 To solve the problem of Jobs that don't complete: When RestartPolicy!=Always if all normal containers have reached a terminal state (Succeeded for restartPolicy=OnFailure, or Succeeded/Failed for restartPolicy=Never), then all sidecar containers will be sent a SIGTERM.
 
-PodPhase will be modified to not include Sidecars in its calculations, this is so that if a sidecar exits in failure it does not mark the pod as `Failed`. It also avoids the scenario in which a Pod has RestartPolicy `OnFailure`, if the containers all successfully complete, when the sidecar gets sent the shut down signal if it exits with a non-zero code the Pod phase would be calculated as `Running` despite all containers having exited permanently.
-
-Sidecars are just normal containers in almost all respects, they have all the same attributes, they are included in pod state, obey pod restart policy etc. The only differences are lifecycle related.
+Sidecars are just normal containers in almost all respects, they have all the same attributes, they are included in pod state, obey pod restart policy, don't change pod phase in any way etc. The only differences are in the shutdown and startup of the pod.
 
 ### Implementation Details/Notes/Constraints
 
@@ -1039,50 +1037,6 @@ graceful shutdown and allowing other containers to use the network on shutdown,
 respectively.
 
 Rodrigo will reach out to users to verify, though.
-
-#### Revisit if we want to modify the podPhase
-
-The current proposal modifies the `podPhase`. The reasoning is this (c&p from
-the proposal):
-
-> PodPhase will be modified to not include Sidecars in its calculations, this is so that if a sidecar exits in failure it does not mark the pod as `Failed`. It also avoids the scenario in which a Pod has RestartPolicy `OnFailure`, if the containers all successfully complete, when the sidecar gets sent the shut down signal if it exits with a non-zero code the Pod phase would be calculated as `Running` despite all containers having exited permanently.
-
-As noted by @zhan849 in [this review comment][pod-phase-review-comment], those
-changes to the pod phase is a behavioural change regarding [current
-documentation about the pod phase][pod-phase-doc].
-
-[pod-phase-review-comment]: https://github.com/kubernetes/kubernetes/pull/80744/files?file-filters%5B%5D=.go#r379928630
-[pod-phase-doc]: https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#pod-phase
-
-##### Alternative 1: don't change the pod phase
-
-We propose to not change the pod phase due to sidecar containers status. This
-simplifies the code (no special behaviour is needed besides the startup or
-shutdown sequences) and properly reflect the current documented phases.
-
-Documentation says that during pending phase, not all containers have been
-started. This is true for pods with sidecar containers as well, even when
-sidecars are running and non-sidecar not yet.
-
-The running state will also have the same meaning as currently documented: all
-containers in the pod are running.
-
-Furthermore, it seems correct to mark the pod as failed if a sidecar container
-failed. For example, if a job has all containers exited successfully except for
-a sidecar container that failed, marking it as failed seems the right call. That
-sidecar container can be a container uploading files when the main container
-finished. Just making sure it finishes to run seems the right thing to do.
-
-##### Alternative 2: change the pod phase
-
-Keep the current proposal to modify it, making sure everyone on the community is
-on board with this modification.
-
-##### Suggestion
-
-Go for alternative 1, seems to lead to simpler code, pod phase seems to be
-correct and no behavioural changes are done regarding the current documentation
-that might need to have a special case when sidecars are running.
 
 #### No container type standard
 
