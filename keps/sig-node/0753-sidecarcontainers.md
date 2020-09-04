@@ -376,13 +376,13 @@ Sidecars will be started before normal containers but after init, so that they a
 This will change the Pod startup to look like this:
 * Init containers start
 * Init containers finish
-* Sidecars start
+* Sidecars start (all in parallel)
 * Sidecars become ready
-* Containers start
+* Non-sidecar containers start (all in parallel)
 
 During pod termination sidecars will be terminated last:
-* Containers sent SIGTERM
-* Once all Containers have exited: Sidecars sent SIGTERM
+* Non-sidecar containers sent SIGTERM
+* Once all non-sidecar containers have exited: Sidecar container are sent a SIGTERM
 
 Containers and Sidecar will share the TerminationGracePeriod. If Containers don't exit before the end of the TerminationGracePeriod then they will be sent a SIGKIll as normal, Sidecars will then be sent a SIGTERM with a short grace period of 2 Seconds to give them a chance to cleanly exit.
 
