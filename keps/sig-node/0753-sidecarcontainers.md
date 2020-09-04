@@ -347,8 +347,6 @@ This proposal doesn't aim to:
    startup/shutdown
  * Allow sidecar containers to run concurrently with initContainers
 
-Allowing multiple containers to run at once during the init phase - this could be solved using the same principal but can be implemented separately. //TODO write up how we could solve the init problem with this proposal
-
 ## Proposal
 
 Create a way to define containers as sidecars, this will be an additional field to the `container.lifecycle` spec: `Type` which can be either `Standard` (default) or `Sidecar`.
