@@ -13,7 +13,7 @@ approvers:
   - "@sig-node-leads"
 editor: "@dashpole"
 creation-date: "2018-07-19"
-last-updated: "2020-07-06"
+last-updated: "2020-09-02"
 status: implementable
 ---
 # Kubelet endpoint for device and cpu assignment observation details
@@ -63,16 +63,29 @@ In this document we will discuss the motivation and code changes required for in
 As soon as this interface has been introduced it was used by CNI plugins like [kuryr-kubernetes](https://review.opendev.org/#/c/651580/) in couple with [intel-sriov-device-plugin](https://github.com/intel/sriov-network-device-plugin) to correctly define which devices were assigned to the pod.
 
 ### Topology aware scheduling
-This interface can be used to collect allocated resources with information about the NUMA topology of the worker node. This information can then be used in NUMA aware scheduling.
+This interface can be used to collect allocated resources with information about the NUMA topology of the worker node.
+This interface can be used to the available resources on the worker node. The kubelet is the best source of information because it manages the device plugins. The information can then be used in NUMA aware scheduling.
 
 ## Changes
-
-Add a v1alpha1 Kubelet GRPC service, at /var/lib/kubelet/pod-resources/kubelet.sock, which returns information about the kubelet's assignment of devices and cpus with NUMA id. It obtains this information from the internal state of the kubelet's Device Manager and CPU Manager respectively. The GRPC Service returns a single PodResourcesResponse, which is shown in proto below:
+Add a v1alpha1 Kubelet GRPC service, at `/var/lib/kubelet/pod-resources/kubelet.sock`, which returns information about
+- the devices which kubelet knows about from the device plugins.
+- the kubelet's assignment of devices and cpus with NUMA id to containers.
+The GRPC service obtains this information from the internal state of the kubelet's Device Manager and CPU Manager respectively.
+The GRPC Service is described in proto below:
 ```protobuf
 // PodResources is a service provided by the kubelet that provides information about the
 // node resources consumed by pods and containers on the node
 service PodResources {
     rpc List(ListPodResourcesRequest) returns (ListPodResourcesResponse) {}
+    rpc GetAvailableResources(AvailableResourcesRequest) returns (AvailableResourcesResponse) {}
+}
+
+message AvailableResourcesRequest {}
+
+// AvailableResourcesResponses contains informations about all the devices known by the kubelet
+message AvailableResourcesResponse {
+    repeated ContainerDevices devices = 1;
+    repeated int64 cpu_ids = 2;
 }
 
 // ListPodResourcesRequest is the request made to the PodResources service
@@ -190,3 +203,4 @@ Beta:
 - 2019-04-30: Demo of production GPU monitoring by NVIDIA
 - 2019-04-30: Agreement in sig-node to move feature to beta in 1.15
 - 2020-07-06: Add Topology and cpus into PodResources interface
+- 2020-09-02: Add the GetAvailableResources endpoint
