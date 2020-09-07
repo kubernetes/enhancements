@@ -409,7 +409,6 @@ parameters: [3]
 1. `provisioner`: (required) the name of the driver that `BucketAccess` instances should be managed by. Format: <provisioner-namespace>"/"<provisioner-name>, eg "ceph-rgw-provisoning/ceph-rgw.cosi.ceph.com".
 1. `policyActionsConfigMap`: (required) a reference to a ConfigMap that contains a set of provisioner/platform defined policy actions for a given user identity.
 1. `parameters`: (Optional)  A map of string:string key values.  Allows admins to control user and access provisioning by setting provisioner key-values. Optional reserved keys cosi.io/configMap and cosi.io/secrets are used to reference user created resources with provider specific access policies.
-
 ---
 
 ### App Pod
@@ -572,7 +571,6 @@ Upon success, the `BucketAccess` instance is ready and the app workload can acce
 + COSI detects the existence of the BAR and follows the [grant access](#grant-bucket-access) steps.
 + COSI detects the existence of the BAR, BA and executes a validation process.
 + As a validation step, COSI ensures that the `BucketRequest.bucketInstanceName` matches the `BucketAccessRequest.bucketAccessName.bucketInstanceName`. In other words, the two related `Bucket` references match, meaning that the BR and BAR->BA point to the same `Bucket`.
----
 
 # Provisioner Secrets
 
