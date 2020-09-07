@@ -88,6 +88,7 @@ As soon as this interface has been introduced it was used by CNI plugins like [k
 ### Topology aware scheduling
 
 This interface can be used to track down allocated resources with information about the NUMA topology of the worker node in general way.
+This interface can be used to the available resources on the worker node. The kubelet is the best source of information because it manages the device plugins. The information can then be used in NUMA aware scheduling.
 
 
 ### Risks and Mitigations
@@ -108,12 +109,25 @@ This API is read-only, which removes a large class of risks. The aspects that we
 
 We propose to add a new gRPC service to the Kubelet. This gRPC service would be listening on a unix socket at `/var/lib/kubelet/pod-resources/kubelet.sock` and return information about the kubelet's assignment of devices to containers.
 
-This information is obtained from the internal state of the kubelet's Device Manager and CPU Manager respectively. The GRPC Service has a single function named `List`, you will find below the v1 API:
+This gRPC service returns information about
+- the devices which kubelet knows about from the device plugins.
+- the kubelet's assignment of devices and cpus with NUMA id to containers.
+The GRPC service obtains this information from the internal state of the kubelet's Device Manager and CPU Manager respectively.
+The GRPC Service is described in proto below:
 ```protobuf
 // PodResources is a service provided by the kubelet that provides information about the
 // node resources consumed by pods and containers on the node
 service PodResources {
     rpc List(ListPodResourcesRequest) returns (ListPodResourcesResponse) {}
+    rpc GetAvailableResources(AvailableResourcesRequest) returns (AvailableResourcesResponse) {}
+}
+
+message AvailableResourcesRequest {}
+
+// AvailableResourcesResponses contains informations about all the devices known by the kubelet
+message AvailableResourcesResponse {
+    repeated ContainerDevices devices = 1;
+    repeated int64 cpu_ids = 2;
 }
 
 // ListPodResourcesRequest is the request made to the PodResources service
@@ -290,6 +304,7 @@ Feature only collects data when requests comes in, data is then garbage collecte
 - 2019-04-30: Agreement in sig-node to move feature to beta in 1.15
 - 2020-06-17: Agreement in sig-node to move feature to G.A in 1.19 or 1.20
 - 2020-07-06: Add Topology and cpus into PodResources interface
+- 2020-09-02: Add the GetAvailableResources endpoint
 
 ## Alternatives
 
