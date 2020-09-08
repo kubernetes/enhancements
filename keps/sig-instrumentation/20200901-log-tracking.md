@@ -1,49 +1,54 @@
----
-title: Log tracking for K8s component log
-
-authors:
- - "@hase1128"
- - "@KobayashiD27"
- - "@fenggw-fnst"
- - "@zhijianli88"
- - "@Hellcatlk"
-owning-sig: sig-instrumentation
-participating-sigs:
-reviewers:
- - @dashpole
- - @serathius
-approvers:
- - @dashpole
-editor: TBD
-creation-date: 2020-09-01
-last-updated: 2020-09-01
-status: provisional
----
-
-# Log tracking for K8s component log
-
-## Table of Contents
+# KEP-1961: Log tracking for K8s component log
 
 <!-- toc -->
- - [Summary](#summary)
- - [Motivation](#motivation)
-   - [Use Case 1](#use-case-1)
-   - [Use Case 2](#use-case-2)
-   - [Goals](#goals)
-   - [Non-Goals](#non-goals)
- - [Proposal](#proposal)
+- [Release Signoff Checklist](#release-signoff-checklist)
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [User Stories (Optional)](#user-stories-optional)
+    - [Story 1](#story-1)
+    - [Story 2](#story-2)
+  - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
+  - [Risks and Mitigations](#risks-and-mitigations)
+- [Design Details](#design-details)
    - [Logging metadata](#logging-metadata)
    - [Prerequisite](#prerequisite)
    - [Design of ID propagation (incoming request to webhook)](#design-of-id-propagation-incoming-request-to-webhook)
    - [Design of Mutating webhook](#design-of-mutating-webhook)
    - [Design of ID propagation (controller)](#design-of-id-propagation-controller)
- - [Test Plan](#test-plan)
- - [Migration / Graduation Criteria](#migration--graduation-criteria)
-   - [Alpha](#alpha)
-   - [Beta](#beta)
-   - [GA](#ga)
-
+  - [Test Plan](#test-plan)
+  - [Graduation Criteria](#graduation-criteria)
+  - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+  - [Version Skew Strategy](#version-skew-strategy)
+- [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
+  - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
+  - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+  - [Monitoring Requirements](#monitoring-requirements)
+  - [Dependencies](#dependencies)
+  - [Scalability](#scalability)
+  - [Troubleshooting](#troubleshooting)
+- [Implementation History](#implementation-history)
+- [Drawbacks](#drawbacks)
+- [Alternatives](#alternatives)
+- [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
+
+## Release Signoff Checklist
+
+Items marked with (R) are required *prior to targeting to a milestone / release*.
+
+- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [ ] (R) KEP approvers have approved the KEP status as `implementable`
+- [ ] (R) Design details are appropriately documented
+- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [ ] (R) Graduation criteria is in place
+- [ ] (R) Production readiness review completed
+- [ ] Production readiness review approved
+- [ ] "Implementation History" section is up-to-date for milestone
+- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 ## Summary
 
@@ -74,32 +79,6 @@ Tracking logs among each Kubernetes component related to specific an user operat
 It is necessary to match logs by basically using timestamps and object's name as hints.
 If multiple users throw many API requests at the same time, it is very difficult to track logs across each Kubernetes component log.
 
-### Use Case 1
-
-Suspicious user operation(e.g. unknown pod operations) or cluster processing(e.g. unexpected pod migration to another node) is detected.
-Users want to get their mind around the whole picture and root cause.
-As part of the investigation, it may be necessary to scrutinize the relevant logs of each component in order to figure out the series of cluster processing.
-It takes long time to scrutinize the relevant logs without this log tracking feature, because component logs are independent of each other, and it is difficult to find related logs and link them.
-
-This is similar to the [Auditing](https://kubernetes.io/docs/tasks/debug-application-cluster/audit/), except for the following points.
-
- - Audit only collects information about http request sending and receiving in kube-apiserver, so it can't track internal work of each component.
- - Audit logs can't be associated to logs related to user operation (kubectl operation), because auditID is different for each http request.
-
-### Use Case 2
-
-Failed to attach PV to pod
-Prerequisite: It has been confirmed that the PV has been created successfully.
-In this case, the volume generation on the storage side is OK, and there is a possibility that the mount process to the container in the pod is NG.
-In order to identify the cause, it is necessary to look for the problem area while checking the component (kubelet) log as well as the system side syslog and mount related settings.
-
-This log tracking feature is useful to identify the logs related to specific user operation  and cluster processing, and can reduce investigation cost in such cases.
-
-### Summary of Cases
-
- - Given a component log(such as error log), find the API request that caused this (error) log.
- - Given an API Request(such as suspicious API request), find the resulting component logs.
-
 ### Goals
 
  - Implement method which propagates new logging meta-data among each K8s component
@@ -113,6 +92,50 @@ This log tracking feature is useful to identify the logs related to specific use
  - To centrally manage the logs of each Kubernetes component with Request-ID (This can be realized with existing OSS such as Kibana, so no need to implement into Kubernetes components).
 
 ## Proposal
+
+<!--
+This is where we get down to the specifics of what the proposal actually is.
+This should have enough detail that reviewers can understand exactly what
+you're proposing, but should not include things like API designs or
+implementation. The "Design Details" section below is for the real
+nitty-gritty.
+-->
+
+### User Stories (Optional)
+
+ - Given a component log(such as error log), find the API request that caused this (error) log.
+ - Given an API Request(such as suspicious API request), find the resulting component logs.
+
+#### Story 1
+
+Suspicious user operation(e.g. unknown pod operations) or cluster processing(e.g. unexpected pod migration to another node) is detected.
+Users want to get their mind around the whole picture and root cause.
+As part of the investigation, it may be necessary to scrutinize the relevant logs of each component in order to figure out the series of cluster processing.
+It takes long time to scrutinize the relevant logs without this log tracking feature, because component logs are independent of each other, and it is difficult to find related logs and link them.
+
+This is similar to the [Auditing](https://kubernetes.io/docs/tasks/debug-application-cluster/audit/), except for the following points.
+
+ - Audit only collects information about http request sending and receiving in kube-apiserver, so it can't track internal work of each component.
+ - Audit logs can't be associated to logs related to user operation (kubectl operation), because auditID is different for each http request.
+
+#### Story 2
+
+Failed to attach PV to pod
+Prerequisite: It has been confirmed that the PV has been created successfully.
+In this case, the volume generation on the storage side is OK, and there is a possibility that the mount process to the container in the pod is NG.
+In order to identify the cause, it is necessary to look for the problem area while checking the component (kubelet) log as well as the system side syslog and mount related settings.
+
+This log tracking feature is useful to identify the logs related to specific user operation  and cluster processing, and can reduce investigation cost in such cases.
+
+### Notes/Constraints/Caveats (Optional)
+
+TBD
+
+### Risks and Mitigations
+
+TBD
+
+## Design Details
 
 ### Logging metadata
 
@@ -185,15 +208,73 @@ When controllers create/update/delete an object A based on another B, we propaga
 We do propagation across objects without adding traces to that components.
 
 ### Test Plan
+
 TBD
 
-### Migration / Graduation Criteria
+### Graduation Criteria
 
-#### Alpha
 TBD
 
-#### Beta
+#### Alpha -> Beta Graduation
+
 TBD
 
-#### GA
+#### Beta -> GA Graduation
+
+TBD
+
+#### Removing a Deprecated Flag
+
+TBD
+
+### Upgrade / Downgrade Strategy
+
+TBD
+
+### Version Skew Strategy
+
+TBD
+
+## Production Readiness Review Questionnaire
+
+TBD
+
+### Feature Enablement and Rollback
+
+TBD
+
+### Rollout, Upgrade and Rollback Planning
+
+TBD
+
+### Monitoring Requirements
+
+TBD
+
+### Dependencies
+
+TBD
+
+### Scalability
+
+TBD
+
+### Troubleshooting
+
+TBD
+
+## Implementation History
+
+TBD
+
+## Drawbacks
+
+TBD
+
+## Alternatives
+
+TBD
+
+## Infrastructure Needed (Optional)
+
 TBD
