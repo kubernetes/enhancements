@@ -1,30 +1,3 @@
----
-title: Instance-Specific ComponentConfig
-authors:
-  - "@mtaufen"
-owning-sig: sig-cluster-lifecycle
-participating-sigs:
-  - sig-cluster-lifecycle
-  - sig-api-machinery
-  - sig-architecture
-  - wg-component-standard
-reviewers:
-  - sttts
-  - stealthybox
-  - liggitt
-  - rosti
-  - neolit123
-  - obitech
-approvers:
-  - sttts
-  - stealthybox
-  - liggitt
-editor: TBD
-creation-date: 2020-01-08
-last-updated: 2020-06-02
-status: provisional
----
-
 # Instance-Specific ComponentConfig
 
 ## Table of Contents
@@ -40,17 +13,26 @@ Ensure the TOC is wrapped with <code>&lt;!-- toc --&rt;&lt;!-- /toc --&rt;</code
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [Separate config object for instance-specific config](#separate-config-object-for-instance-specific-config)
+  - [Reuse component config Kind for instance-specific config](#reuse-component-config-kind-for-instance-specific-config)
+  - [Kube-proxy Example](#kube-proxy-example)
+  - [Kubelet Example](#kubelet-example)
+  - [Alternative: Define the case-by-case merge semantic for ComponentConfig](#alternative-define-the-case-by-case-merge-semantic-for-componentconfig)
   - [Why not just keep using flags for instance-specific parameters?](#why-not-just-keep-using-flags-for-instance-specific-parameters)
   - [Why not just auto-detect?](#why-not-just-auto-detect)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
-  - [Kube-proxy Example](#kube-proxy-example)
-  - [Kubelet Example](#kubelet-example)
+  - [Configuration merge example](#configuration-merge-example)
+  - [Code merge example](#code-merge-example)
+  - [Limitations](#limitations)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
+- [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
+  - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
+  - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+  - [Monitoring Requirements](#monitoring-requirements)
+  - [Dependencies](#dependencies)
 - [Implementation History](#implementation-history)
 <!-- /toc -->
 
@@ -96,11 +78,11 @@ some values are required to be unique to each instance. To date, we have held
 off migrating these parameters to existing ComponentConfig APIs, because we lack
 a decision on how to consistently handle them.
 
-This KEP proposes that components use a separate, instance-specific Kind,
-to clearly identify and separate parameters that are instance-specific from
-parameters that are sharable. It also proposes some mitigations in the event
-that the initial categorization is incorrect, e.g. we discover an
-instance-specific use-case for a sharable field.
+This KEP proposes that components use a separate, instance-specific configuration
+file, which can override by merge patch any parameter. By using a separate file
+of the same Kind, instead of a separate Kind, we avoid the danger of
+miscategorizing  fields as shared or instance-specific. It also significantly
+simplifies the implementation.
 
 The primary goal of this KEP is to make and codify a decision, so that we can
 move forward with ComponentConfig implementation.
@@ -125,7 +107,7 @@ simpler, and less expensive, than having to create a separate ConfigMap for each
 instance of the component.
 
 Other components may not be deployed as Pods but may still have channels to
-provide configuration via the cluster. kubelet, for example, has the Dynamic
+provide configuration via the cluster. Kubelet, for example, has the Dynamic
 kubelet Config feature, which enables the kubelet to read configuration from
 a ConfigMap designated by its corresponding Node object. With kubelet, it is
 also advantageous for "pools" of nodes to refer to the same ConfigMap.
@@ -168,37 +150,22 @@ Taking the Kubelet as an example, there are three categories of fields
 3. highly unlikely to be instance-specific (e.g. cloud provider, node lease
    duration)
 
-Today, the "sharable" configuration Kinds may contain (2) or (3); in Kubelet
-we have been careful to keep (1) out of the configuration schema (as mentioned
-above).
+This KEP proposes that components have a way to define the same field in
+both instance-specific and shareable configuration files, defining a generic
+merge approach such that the instance-specific field overrides and takes
+precedence over the shareable field.
 
-This KEP proposes that components use a separate, instance-specific Kind,
-to clearly identify and separate parameters that are instance-specific from
-parameters that are sharable. It also proposes that components have a way
-to define the same field in both instance-specific and sharable Kinds, and
-define a merge such that the instance-specific field overrides the sharable
-field. This gives us some flexibility if we miscategorize fields, or discover
-an instance-specific use-case for a sharable field.
+### Reuse component config Kind for instance-specific config
 
-### Separate Kind for instance-specific config
-
-First, add a new instance-specific ComponentConfig Kind in each component's
-config API. This gives us a clear structure to separate instance-specific and
-sharable fields. This KEP proposes a new flag, `--instance-config`, for this
-new Kind.
+This KEP proposes a new flag, `--instance-config`, to specify the instance-specific
+configuration file, the instance-specific configuration has the same Kind as the
+sharable one.
 
 ComponentConfig files containing only sharable parameters can continue to be
 shared via a single ConfigMap. Files containing only instance-specific
 parameters can be provided to components via other means, such as the node
 startup scripts or an init container that inserts values from the Pod's Downward
 API.
-
-### Case-by-case merge if fields are miscategorized
-
-Second, allow instance-specific configs to override shared config when the same
-field is specified in both.
-
-Additional implementation details are included in the Design Details section.
 
 ### Kube-proxy Example
 
@@ -282,7 +249,7 @@ spec:
         - bash -c
         args:
         - cat << EOF > /etc/config/kube-proxy-instance.yaml
-          kind: InstanceConfiguration
+          kind: KubeProxyConfiguration
           apiVersion: kubeproxy.config.k8s.io/v1alpha1
           hostnameOverride: ${NODE_NAME}
           EOF
@@ -337,24 +304,35 @@ the values supplied to `--config` when consuming a remote configuration. Thus,
 the instance-specific parameters would not interfere with sharable parameters
 in this approach.
 
-### Alternative: Define a general merge semantic for ComponentConfig
+### Alternative: Define the case-by-case merge semantic for ComponentConfig
 
-Prior discussions included the idea to define a general merge option instead,
-which would have pushed the field categorization decision to the user by
-allowing them to specify arbitrary patches on top of the config (for example,
-with repeated invocations of a `--config` flag). This is the most flexible
-solution, but also the most open-ended, and provides the least structural
-guidance to users.
+We prototyped the case-by-case merge approach in Kubelet and Kube-proxy. It turns
+out to have a complex and difficult to reuse implementation, with many tricky edge
+cases. The complexity mostly lies in merging different Kinds while preventing
+defaulting from clobbering user-defined options.
 
-While this KEP recognizes the utility of components that can merge configuration
-and is open to future development in this direction, it proposes that we focus
-on a clear, near-term solution for this ComponentConfig use case, rather than
-attempt to define and standardize a way of merging or generating config outside
-of kube-apiserver, where many competing solutions, such as jsonnet, kustomize,
-etc, already exist, and significant debate is likely required. The priority of
-this KEP is to unblock ComponentConfig so that components can move to versioned
-APIs. Improvements can be made in future API versions.
+See the example on [#92348](https://github.com/kubernetes/kubernetes/pull/92348).
 
+To summarize the steps necessary to implement this:
+
+1. Decode `shared.yaml` to `SharedExternal`.
+2. Construct `InstanceExternal` such that any fields that exist in both types are set
+   to the values from `SharedExternal`.
+3. Decode `instance.yaml` over `InstanceExternal`. Values set in `shared.yaml` but not
+   instance.yaml will match intent from `shared.yaml` due to the previous copy from
+   `SharedExternal`.
+4. Run defaulting functions on `SharedExternal` and `InstanceExternal`. Implementations
+   must take care to keep the defaults the same for fields that exist in both types.
+5. Convert `SharedExternal` to `SharedInternal` and `InstanceExternal` to `InstanceInternal`.
+6. Decode flags over `SharedInternal` and `InstanceInternal` to enforce flag precedence.
+   Flags for fields that exist in both types must be registered against `InstanceInternal`,
+   so that we maintain flag precedence when we merge the two.
+7. Copy fields that exist in both types from `InstanceInternal` to `SharedInternal` so that
+   the values from `InstanceInternal` are present everywhere.
+
+In the diagram below it's possible to have a better visualization of the case-by-case merge flow:
+
+![component-case-merge](images/component-case-merge.png)
 
 ### Why not just keep using flags for instance-specific parameters?
 
@@ -375,17 +353,13 @@ solves the problem by removing work for users, but it may be difficult in
 practice. For example, on a machine with multiple network cards, which IP should
 the kubelet use?
 
-Implementing the two-object approach does not prevent us from finding ways to
-auto-detect instance specific config in the future. It is worth noting that the
-_possibility_ of someday being able to auto-detect these has led to some
+This solution is orthogonal and does not prevent us from finding ways to
+auto-detect instance specific config in the future. It is worth noting that
+the _possibility_ of someday being able to auto-detect these has led to some
 hesitation to make a firm decision today. We have delayed for too long already,
-and a firm decision is needed to move forward.
+ and a firm decision is needed to move forward.
 
 ### Risks and Mitigations
-
-One risk is that fields get miscategorized. We mitigate this risk by providing a
-way to define the field in both places, where instance-specific overrides
-sharable, as described in the proposal and below design details.
 
 For users deploying Pod templates, this solution can make the template more
 verbose. In the future, we can explore more elegant ways of generating files
@@ -395,31 +369,194 @@ configuring core components.
 
 ## Design Details
 
-TODO:
-- which side gets used at runtime?
-- new naming convention
-- code examples for the merge
-- sketch out the proposed case-by-case merge and see if it would actually be
-  more complicated.
-
-ComponentConfig APIs are currently defined as a separate API group for each
-component, usually containing a single top-level Kind for configuring that
-component. The naming convention for the API group is `{component}.config.k8s.io`,
-and the convention for the Kind is `{Component}Configuration`. This KEP proposes
-that the naming convention for the new Kind be `{Component}InstanceConfiguration`.
-
 The canonical flag for providing a ComponentConfig file to a component is
 `--config`. This KEP proposes that the canonical flag for providing an
-instance-specific config file be `--instance-config`, and that the
-instance-specific object not initially be permitted as part of a yaml stream
-in the `--config` file (and vice-versa). This is for the sake of a simple
-implementation and can be enabled in the future, if we decide it is useful.
+instance-specific config file be `--instance-config`.
 
 As with sharable ComponentConfig parameters, command line flags for
 instance-specific parameters should continue to function and take precedence
-over values from the config file so that backwards compatibility is maintained.
+over the final merged values from the config file so that backward compatibility
+is maintained.
 
+### Configuration merge example
 
+The merge between both YAML configuration files is provided by the
+[Strategic Merge Patch](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-api-machinery/strategic-merge-patch.md)
+library.
+
+The example below is a sharable Kubelet configuration YAML file.
+
+```yaml
+apiVersion: kubelet.config.k8s.io/v1beta1
+authorization:
+  mode: Webhook
+  webhook:
+    cacheAuthorizedTTL: 0s
+    cacheUnauthorizedTTL: 0s
+clusterDNS:
+- 10.96.0.10
+clusterDomain: cluster.local
+cpuManagerReconcilePeriod: 0s
+evictionHard:
+  imagefs.available: 0%
+  nodefs.available: 0%
+  nodefs.inodesFree: 0%
+evictionPressureTransitionPeriod: 0s
+featureGates:
+  DynamicKubeletConfig: true
+healthzBindAddress: 127.0.0.1
+healthzPort: 10248
+kind: KubeletConfiguration
+rotateCertificates: true
+staticPodPath: /etc/kubernetes/manifests
+```
+
+This is the instance-configuration YAML, which is going to be merged into the sharable:
+
+```yaml
+address: 127.0.0.1
+apiVersion: kubelet.config.k8s.io/v1beta1
+clusterDNS:
+- 10.96.0.11
+evictionHard:
+  imagefs.available: 2%
+featureGates:
+  TaintBasedEvictions: true
+kind: KubeletConfiguration
+```
+
+The final patched YAML, used to unmarshal into the KubeletConfiguration object is:
+
+```yaml
+address: 127.0.0.1
+apiVersion: kubelet.config.k8s.io/v1beta1
+authorization:
+  mode: Webhook
+  webhook:
+    cacheAuthorizedTTL: 0s
+    cacheUnauthorizedTTL: 0s
+clusterDNS:
+- 10.96.0.11
+clusterDomain: cluster.local
+cpuManagerReconcilePeriod: 0s
+evictionHard:
+  imagefs.available: 2%
+  nodefs.available: 0%
+  nodefs.inodesFree: 0%
+evictionPressureTransitionPeriod: 0s
+featureGates:
+  DynamicKubeletConfig: true
+  TaintBasedEviction: true
+healthzBindAddress: 127.0.0.1
+healthzPort: 10248
+kind: KubeletConfiguration
+rotateCertificates: true
+staticPodPath: /etc/kubernetes/manifests
+```
+
+The approach of performing a strategic merge patch of instance-specific over
+shareable config before unmarshalling can decrease the complexity by:
+
+- Using an already proven method from apimachinery.
+- Avoiding complexity around automatic conversions during unmarshaling that might
+  default unset instance-specific fields, which would prevent us from
+  differentiating fields set by the user from fields set by the defaulter.
+- Maintain the independent merge for different fields on each component.
+- The number of steps needed for the strategy merge approach is substantially
+  smaller than the case-by-base solution.
+
+An important note for this solution is the requirement that both sharable and
+instance-specific configuration has the same Kind and APIVersion. This avoids
+the complexities of trying to merge across Kinds, or perform conversions before
+merging.
+
+### Code merge example
+
+In the example above, it's possible to control the patch strategy used in the
+configuration struct field tagging:
+
+```golang
+// External Kubelet configuration API
+// k8s.io/kubelet/config/v1beta1/types.go
+
+type KubeletConfiguration struct {
+    ClusterDNS []string `json:"clusterDNS" strategyMerge:"replace"`
+    FeatureGates map[string]bool `json:"featureGates,omitempty" strategyMerge:"merge"`
+}
+```
+
+The StrategicMergePatch operates directly on the YAML but uses the strategies
+specified in struct tags on the passed-in object. An empty configuration object
+can be passed to the patch function to specify the desired patch strategies.
+
+```golang
+// Some general configuration utilities
+// utils/patch.go
+...
+import (
+    "sigs.k8s.io/yaml"
+)
+...
+
+// ConvertYAMLToJSON convert the YAML configuration to JSON.
+func ConvertYAMLToJSON(yamlSharable, yamlInstance []byte) ([]byte, []byte, error) {
+    jsonSharable, err := yaml.YAMLToJSON(yamlSharable)
+    if err != nil {
+        return nil, nil, err
+    }
+
+    jsonInstance, err := yaml.YAMLToJSON(yamlInstance)
+    if err != nil {
+        return nil, nil, err
+    }
+
+    return jsonSharable, jsonInstance, nil
+}
+
+// PatchConfiguration applies a strategic merge patch and returns the patched JSON result,
+// it is necessary to convert both configurations from YAML to JSON before applying the merge.
+func PatchConfiguration(jsonSharable, jsonInstance []byte) []byte, error {
+    obj := &kubeletv1beta1.KubeletConfiguration{}
+
+    patched, err := strategicpatch.StrategicMergePatch(jsonSharable, jsonInstance, obj)
+    if err != nil {
+        return []byte{}, err
+    }
+
+    return patched, err
+}
+```
+
+The steps for this merges is simpler than the alternative approach:
+
+1. Convert `shared.yaml` configuration from YAML to JSON.
+2. Convert `instance.yaml` configuration from YAML to JSON.
+3. Patch the shared JSON configuration with the instance JSON, the
+   apimachinery strategic merge patch.
+
+In the diagram below it's possible to have a better visualization of the
+strategic merge flow:
+
+![component-smp-merge](images/component-smp-merge.png)
+
+### Limitations
+
+This approach has the following limitations. We may decide to address these in the
+future but it is not a goal of this KEP.
+
+* Users can't currently choose the merge strategy. It might make sense for users
+  to be able to choose, since they are the authors of the configuration.
+* This merge strategy requires both objects to have the same Kind. In the future
+  it may turn out to be a good idea to more carefully categorize fields as shared
+  or instance-specific.
+* This merge strategy requires both objects to have the same API version. In the
+  future, it may be useful to be able to convert versions for one or the other
+  prior to the merge, but set/unset-preserving conversions need to be possible first.
+* If a component has multiple configuration Kinds for sub-components (for instance,
+  some conversations around controller-manager's config have leaned in this
+  direction), it may be useful for the config and instance-config files to contain
+  multiple YAML documents, and merge objects paired by Kind between the two.
+  We can consider supporting this in future iterations.
 
 ### Test Plan
 
@@ -434,8 +571,16 @@ instances.
 
 ### Graduation Criteria
 
-A beta-versioned ComponentConfig API is using the instance-specific object
-approach.
+Implementation of the `--instance-config` flag is alpha for Kubelet and Kube-Proxy
+components, further graduation will be based on feedback, experience, and sufficient
+test coverage of those implementations.
+
+A beta graduation criteria for the KEP is to have both components with a stable and
+consistent behavior of `--instance-config` usage, plus the beta graduation of Kubelet and
+Kube-Proxy ComponentConfig APIs.
+
+Finally, the GA graduation of the KEP is concurrent with both kubelet and kube-proxy
+GA ComponentConfig APIs graduation. Not much change is expected between beta and GA.
 
 ### Upgrade / Downgrade Strategy
 
@@ -475,6 +620,41 @@ To be clear, an old Kubelet can't use the new config format, and shouldn't be
 configured to use it. A new Kubelet can use either the new format, or continue
 to use the old format until the deprecation period is up (in this case, when
 all other flags are also deprecated).
+
+## Production Readiness Review Questionnaire
+
+### Feature Enablement and Rollback
+
+* **How can this feature be enabled / disabled in a live cluster?**
+  - [ ] Feature gate (also fill in values in `kep.yaml`)
+    - Feature gate name: NONE
+    - Components depending on the feature gate: kubelet and kube-proxy
+    - Will enabling / disabling the feature require downtime or reprovisioning
+      of a node? No
+
+* **Does enabling the feature change any default behavior?**
+Yes, the final component configuration will have the values overwritten by the instance
+configuration YAML file.
+
+* **Can the feature be disabled once it has been enabled (i.e. can we roll back
+  the enablement)?**
+Yes, restarting the component without the `--instance-config` flag will disable the feature.
+
+* **Are there any tests for feature enablement/disablement?**
+E2E tests should cover the final marshalled configuration object and test the
+proper field patch.
+
+### Rollout, Upgrade and Rollback Planning
+
+_This section must be completed when targeting beta graduation to a release._
+
+### Monitoring Requirements
+
+_This section must be completed when targeting beta graduation to a release._
+
+### Dependencies
+
+_This section must be completed when targeting beta graduation to a release._
 
 ## Implementation History
 

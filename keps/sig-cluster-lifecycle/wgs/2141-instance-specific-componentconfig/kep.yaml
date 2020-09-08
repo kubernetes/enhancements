@@ -1,0 +1,28 @@
+title: Instance-Specific ComponentConfig
+authors:
+  - mtaufen
+  - knabben
+owning-sig: sig-cluster-lifecycle
+participating-sigs:
+  - sig-cluster-lifecycle
+  - sig-api-machinery
+  - sig-architecture
+  - wg-component-standard
+reviewers:
+  - sttts
+  - stealthybox
+  - liggitt
+  - rosti
+  - neolit123
+  - obitech
+approvers:
+  - sttts
+  - stealthybox
+  - liggitt
+editor: TBD
+stage: alpha
+milestone:
+  alpha: "v1.21"
+creation-date: 2020-01-08
+last-updated: 2020-09-01
+status: implementable
