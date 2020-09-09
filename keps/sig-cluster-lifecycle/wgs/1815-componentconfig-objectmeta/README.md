@@ -393,7 +393,12 @@ enhancement:
   cluster required to make on upgrade in order to make use of the enhancement?
 -->
 
-Existing configurations that lack the ObjectMeta fields will continue to work. As the ComponentConfig API's mature, this will change as sctrict decoders are defaulted without leniancy. 
+Existing configurations that lack the ObjectMeta field will continue to work as the objectMeta field will be optional. This should work within the following guidelines:
+
+- Not specified, not defined: Common case today.
+- Specified, but not defined in the type: Some users do this today for interop with tools. Enabling strict decoding breaks this. Thus, we must define it in the type to enable strict decoding.
+- Not specified, but defined: ObjectMeta should be kept optional, so that this remains backwards-compatible with "not specified, not defined".
+- Specified, and defined: Works correctly with strict decoding. We need to add ObjectMeta so that strict decoding remains backwards with "specified, but not defined in the type".
 
 ### Version Skew Strategy
 
