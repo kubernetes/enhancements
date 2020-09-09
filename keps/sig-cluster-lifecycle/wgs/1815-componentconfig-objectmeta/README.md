@@ -319,6 +319,8 @@ when drafting this test plan.
 [testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
 -->
 
+- Existing ComponentConfig tests will be used and additional tests specific to this change will be implemented.
+
 ### Graduation Criteria
 
 <!--
@@ -443,7 +445,7 @@ _This section must be completed when targeting alpha to a release._
     - Feature gate name:
     - Components depending on the feature gate:
   - [x] Other
-    - Describe the mechanism: Editing the existing component config file to add the new minimum required field (metadata.name)
+    - Describe the mechanism: Editing the existing component config file to add the new minimum required field (metadata.name) and restarting the component.
     - Will enabling / disabling the feature require downtime of the control
       plane? 
     - Will enabling / disabling the feature require downtime or reprovisioning
@@ -461,7 +463,7 @@ _This section must be completed when targeting alpha to a release._
   Describe the consequences on existing workloads (e.g. if this is runtime
   feature, can it break the existing applications?).
 
-Yes, this can be disabled once it has been enabled. The existing component API's have a lenient path implementation for thr strict decoders that allow for previously overloaded configs with fields of the same name to pass validation.
+Yes, this can be disabled once it has been enabled. The existing component API's have a lenient path implementation for the strict decoders that allow for previously overloaded configs with fields of the same name to pass validation.
 
 * **What happens if we reenable the feature if it was previously rolled back?**
 
@@ -473,6 +475,8 @@ Nothing right now as decoders for the component configs provide a lenient path t
   with and without the feature are necessary. At the very least, think about
   conversion tests if API types are being modified.
 
+- NA
+
 ### Rollout, Upgrade and Rollback Planning
 
 _This section must be completed when targeting beta graduation to a release._
@@ -481,6 +485,8 @@ _This section must be completed when targeting beta graduation to a release._
   Try to be as paranoid as possible - e.g. what if some components will restart
   in the middle of rollout?
 
+- There should be no chance of failure while the lenient path for the strict decoder is in place as the filed will be optional.
+
 * **What specific metrics should inform a rollback?**
 
 * **Were upgrade and rollback tested? Was upgrade->downgrade->upgrade path tested?**
@@ -488,9 +494,13 @@ _This section must be completed when targeting beta graduation to a release._
   Longer term, we may want to require automated upgrade/rollback tests, but we
   are missing a bunch of machinery and tooling and do that now.
 
+- NA
+
 * **Is the rollout accompanied by any deprecations and/or removals of features,
   APIs, fields of API types, flags, etc.?**
   Even if applying deprecation policies, they may still surprise some users.
+
+- NA
 
 ### Monitoring requirements
 
@@ -500,6 +510,8 @@ _This section must be completed when targeting beta graduation to a release._
   Ideally, this should be a metrics. Operations against Kubernetes API (e.g.
   checking if there are objects with field X set) may be last resort. Avoid
   logs or events for this purpose.
+
+- NA 
 
 * **What are the SLIs (Service Level Indicators) an operator can use to
   determine the health of the service?**
@@ -519,10 +531,14 @@ _This section must be completed when targeting beta graduation to a release._
     job creation time) for cron job <= 10%
   - 99,9% of /health requests per day finish with 200 code
 
+- NA
+
 * **Are there any missing metrics that would be useful to have to improve
   observability if this feature?**
   Describe the metrics themselves and the reason they weren't added (e.g. cost,
   implementation difficulties, etc.).
+
+- NA
 
 ### Dependencies
 
@@ -535,13 +551,14 @@ _This section must be completed when targeting beta graduation to a release._
   a cloud provider API, or upon an external software-defined storage or network
   control plane.
 
-  For each of the fill in the following, thinking both about running user workloads
+  For each of these, fill in the following, thinking both about running user workloads
   and creating new ones, as well as about cluster-level services (e.g. DNS):
   - [Dependency name]
     - Usage description:
       - Impact of its outage on the feature:
       - Impact of its degraded performance or high error rates on the feature:
 
+- NA
 
 ### Scalability
 
@@ -565,14 +582,20 @@ previous answers based on experience in the field._
   - periodic API calls to reconcile state (e.g. periodic fetching state,
     heartbeats, leader election, etc.)
 
+- NA
+
 * **Will enabling / using this feature result in introducing new API types?**
   Describe them providing:
   - API type
   - Supported number of objects per cluster
   - Supported number of objects per namespace (for namespace-scoped objects)
 
+- NA
+
 * **Will enabling / using this feature result in any new calls to cloud
   provider?**
+
+- NA
 
 * **Will enabling / using this feature result in increasing size or count
   of the existing API objects?**
@@ -581,10 +604,14 @@ previous answers based on experience in the field._
   - Estimated increase in size: (e.g. new annotation of size 32B)
   - Estimated amount of new objects: (e.g. new Object X for every existing Pod)
 
+- NA
+
 * **Will enabling / using this feature result in increasing time taken by any
   operations covered by [existing SLIs/SLOs][]?**
   Think about adding additional work or introducing new steps in between
   (e.g. need to do X to start a container), etc. Please describe the details.
+
+- NA
 
 * **Will enabling / using this feature result in non-negligible increase of
   resource usage (CPU, RAM, disk, IO, ...) in any components?**
@@ -593,6 +620,8 @@ previous answers based on experience in the field._
   volume), significant amount of data send and/or received over network, etc.
   This through this both in small and large cases, again with respect to the
   [supported limits][].
+
+- NA
 
 ### Troubleshooting
 
@@ -603,6 +632,8 @@ details). For now we leave it here though.
 _This section must be completed when targeting beta graduation to a release._
 
 * **How does this feature react if the API server and/or etcd is unavailable?**
+
+- NA
 
 * **What are other known failure modes?**
   For each of them fill in the following information by copying the below template:
@@ -616,10 +647,14 @@ _This section must be completed when targeting beta graduation to a release._
       Not required until feature graduated to Beta.
     - Testing: Are there any tests for failure mode? If not describe why.
 
+- NA
+
 * **What steps should be taken if SLOs are not being met to determine the problem?**
 
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
+
+- NA
 
 ## Implementation History
 
