@@ -386,9 +386,6 @@ During pod termination sidecars will be terminated last:
 
 Containers and Sidecar will share the TerminationGracePeriod. If Containers don't exit before the end of the TerminationGracePeriod then they will be sent a SIGKIll as normal, Sidecars will then be sent a SIGTERM with a short grace period of 2 Seconds to give them a chance to cleanly exit.
 
-PreStop Hooks will be sent to sidecars before containers are terminated.
-This will be useful in scenarios such as when your sidecar is a proxy so that it knows to no longer accept inbound requests but can continue to allow outbound ones until the the primary containers have shut down.
-
 To solve the problem of Jobs that don't complete: When RestartPolicy!=Always if all normal containers have reached a terminal state (Succeeded for restartPolicy=OnFailure, or Succeeded/Failed for restartPolicy=Never), then all sidecar containers will be sent a SIGTERM.
 
 Sidecars are just normal containers in almost all respects, they have all the same attributes, they are included in pod state, obey pod restart policy, don't change pod phase in any way etc. The only differences are in the shutdown and startup of the pod.
@@ -398,7 +395,6 @@ Sidecars are just normal containers in almost all respects, they have all the sa
 The proposal can broken down into four key pieces of implementation that all relatively separate from one another:
 
 * Shutdown triggering for sidecars when RestartPolicy!=Always
-* Pre-stop hooks sent to sidecars before non sidecar containers
 * Sidecars are terminated after normal containers
 * Sidecars start before normal containers
 
@@ -449,11 +445,6 @@ Package `kuberuntime`
 
 Modify `kuberuntime_manager.go`, function `computePodActions`. If pods has sidecars it will return these first in `ContainersToStart`, until they are all ready it will not return the non-sidecars. Readiness changes do not normally trigger a pod sync, so to avoid waiting for the Kubelet's `SyncFrequency` (default 1 minute) we can modify `HandlePodReconcile` in the `kubelet.go` to trigger a sync when the sidecars first become ready (ie only during startup).
 
-##### PreStop hooks sent to Sidecars first
-Package `kuberuntime`
-
-Modify `kuberuntime_container.go`, function `killContainersWithSyncResult`. Loop over sidecars and execute `executePreStopHook` on them before moving on to terminating the containers. This approach would assume that PreStop Hooks are idempotent as the sidecars would get sent the PreStop hook again when they are terminated.
-
 ### Proposal decisions to discuss
 
 This section expands on some decisions or side effects of this proposal that
@@ -468,108 +459,6 @@ They are indeed very much welcome.
 Bear in mind that these edge cases discussed here are either present in the KEP
 design or the KEP design was not clear enough and they are present in the
 [current open PR](https://github.com/kubernetes/kubernetes/pull/80744).
-
-#### preStop hooks delivery guarantees are changed
-
-Kubernetes currently [tries to deliver preStop hooks only once][hook-delivery],
-although in some cases they can be called more than once. [The current
-proposal](#prestop-hooks-sent-to-sidecars-first), however, guarantees that when
-sidecar containers are used preStop hooks will be delivered _at least twice_ for
-sidecar containers.
-
-As explained [here](#proposal) the reason this is done is because (the following
-is just c&p from the relevant paragraphs in the proposal):
-
-> PreStop Hooks will be sent to sidecars before containers are terminated. This will be useful in scenarios such as when your sidecar is a proxy so that it knows to no longer accept inbound requests but can continue to allow outbound ones until the the primary containers have shut down.
-
-In other words, the shutdown sequence proposed is:
-
-1. Run preStop hooks for sidecars
-1. Run preStop hooks for non-sidecars
-1. Send SIGTERM for non-sidecars
-1. Run preStop hooks for sidecars
-1. Send SIGTERM for sidecars
-
-For brevity, what happens when some step timeouts and needs to send a SIGKILL is
-omitted in the above sequence, as it is not relevant for this point.
-
-The concerns we see with this are that this changes the [current delivery
-guarantees][hook-delivery] from _at least once_ to _at least twice_ for _some_
-containers (for sidecar containers). Furthermore, before this patch preStop
-hooks were delivered only once most of the time. After this patch is delivered
-twice for most cases (using sidecars). The problem is not if this is idempotent
-or not (as it should be in any case), but chainging the most common case from
-delivering preStop hook once to twice.
-
-Another concern is that in the future a different container type might be added,
-and these semantics seems difficult to extend. For example, let's say a
-container type "OrderedPhases" with the semantics of the [explained
-alternative][phase-startup] is added in the future. When would the preStop hooks
-be executed now that there are several phases? At the beginning? If there are 5
-phases: 0, 1, 2, 3 and 4, how should the shutdown behaviour be? Run preStop
-hooks for containers marked in phase 0, then kill containers in phase 4, then
-preStop hooks for containers in phase 1, then kill containers in phase 3, etc.?
-Or only the preStop hooks for container 0 are called? Why?
-
-It seems confusing, there doesn't seem to be a clear answer on those cases nor
-what the use case would be for such semantics.
-
-[hook-delivery]: https://kubernetes.io/docs/concepts/containers/container-lifecycle-hooks/#hook-delivery-guarantees
-[phase-startup]: #pre-defined-phases-for-container-startupshutdown-or-arbitrary-numbers-for-ordering
-
-##### Alternative 1: add a TerminationHook
-
-Add to containers a `TerminationHook` field. It will accept the same values as
-preStop hooks and will be called for any container that defines it when the pod
-is switching to a terminating state. These clear semantics seem easy to extend in
-the future.
-
-Then, instead of running preStop hooks twice for sidecar containers as it is now
-proposed, preStop hooks are run only once: just before stopping the
-corresponding containers.
-
-The shutdown sequence steps in this case would be:
-1. Run TerminationHook for _any_ container that defines it (sidecar or not)
-1. Run preStop hooks for non-sidecars
-1. Send SIGTERM for non-sidecars
-1. Run preStop hooks for sidecars
-1. Send SIGTERM for sidecars
-
-If containers want to take action when a pod is switching to terminating state,
-they should use the TerminationHook.
-
-The motivation for running the preStop hooks two times, then, can be implemented
-by adding the TerminationHook field to the service mesh container to drain
-connections.
-
-Furthermore, if a container type "OrderedPhases" with the semantics of the [explained
-alternative][phase-startup] is added in the future, the semantics are still
-clear: the TerminationHook will be called for _any_ container (irrespective of
-their phase) when the pod switches to a terminating state.
-
-##### Alternative 2: Do nothing
-
-Do not call preStop hooks for sidecars twice, just remove the first call this
-section discusses.
-
-Then, suggest users that need to know when the pod changes to a terminating state to
-integrate with the Kubernetes API and add a watcher for that.
-
-This might be inconvenient for several users and further conversation is needed
-to see if this is feasible. We are aware of some users that this will cause
-issues and will probably need to patch Kubernetes because of this. This could
-also result in a large increase in calls to the Kubernetes API server causing
-scalability issues.
-
-##### Suggestion
-
-Aim to use alternative 1, while in parallel we collect more feedback from the
-community.
-
-It will be nice to do nothing (alternative 2), but probably the first step
-calling preStop hooks was added for a reason that couldn't be solved by
-integrating with the Kubernetes API. Therefore, while we double check this,
-seems safe to go with alternative 1.
 
 #### Killing pods take 3x the time
 
@@ -1227,8 +1116,6 @@ Some other things worth noting about the implementation:
    modify pod spec)
  * It implements the KEP proposal and not the suggested modifications, with one
    exception: the podPhase is not modified.
- * [This line][kinvolk-poc-sidecar-prestop] should be modified to use the
-   `TerminationHook` instead, if such alternative is chosen
  * There is some c&p code to avoid doing refactors and just have a patch that is
    simpler to cherry-pick on different Kubernetes versions.
 
