@@ -390,6 +390,43 @@ To solve the problem of Jobs that don't complete: When RestartPolicy!=Always if 
 
 Sidecars are just normal containers in almost all respects, they have all the same attributes, they are included in pod state, obey pod restart policy, don't change pod phase in any way etc. The only differences are in the shutdown and startup of the pod.
 
+### Notes/Constraints/Caveats
+
+#### Pods with RestartPolicy Never
+
+Pods with RestartPolicy Never will never even start non-sidecar containers if
+sidecar containers crash. That is because the sidecar is not restarted due to
+the pod RestartPolicy Never and non-sidecar containers will only start once
+sidecar are up and in a ready state. As sidecars are not ready, non-sidecars are
+not started.
+
+The most common use case is for jobs. If the sidecar crashes and the policy is
+to never restart, the pod will be "stalled" with no way to move forward.
+
+This is quite similar to what happens today if a job (or a pod with
+RestartPolicy Never) has more than one container and some crashes: those are not
+restarted. Therefore is considered a known caveat.
+
+#### Enforce the startup/shutdown behavior only on startup/shutdown
+
+One of the goals of this KEP is to **only modify the startup/shutdown
+sequence**. This makes the semantics clear and helps to have clean code, as only
+those places will be changed.
+
+However, one side effect is that, for example, after pod startup has been
+completed and sidecar and non-sidecar started, if all containers happen to crash
+at the same time, all _can_ be restarted at the same time (if the restart policy
+allows), as it is not done during startup of the pod. This might be surprising,
+as instances of all the containers being started at the same time can be seen by
+the users.
+
+We believe this is fine, though, as the goal is to not change the behaviour
+other than startup/shutdown and this edge case should be handled by users, as
+any other container crashes.
+
+If this behaviour is not welcome, however, code probably can be adapted to
+handle the case when all containers crashed differently.
+
 ### Implementation Details/Notes/Constraints
 
 The proposal can broken down into four key pieces of implementation that all relatively separate from one another:
@@ -749,110 +786,6 @@ GA). However, it seems the cleanest and simplest way to move forward now.
 
 Alternative 4 seems fine for the Alpha stage and we can gather feedback from
 users. Ideas and opinions are _very_ welcome, though.
-
-#### Pods with RestartPolicy Never
-
-This case also derives from a _per pod_ setting that for some use cases having
-it _per container_ can be desired.
-
-The case is simple: pods with RestartPolicy Never will never even start
-non-sidecar containers if sidecar containers crash. That is because the sidecar
-is not restarted due to the pod RestartPolicy and non-sidecar containers will
-only start once sidecar are up and in a ready state. As sidecars are not ready,
-non-sidecars are not started.
-
-The most common use case is for jobs. If the sidecar crashes and the policy is
-to never restart, the pod will be "stalled" with no way to move forward.
-
-Furthermore, if the podPhase is not modified to have a special behavior for
-sidecar containers, the [phase will be pending][pod-phase-pending] (as some
-containers were not started).
-
-[pod-phase-pending]: https://github.com/kubernetes/kubernetes/blob/8398bc3b53cb51b341e14ae2a2cea01cedbf7904/pkg/kubelet/kubelet_pods.go#L1447-L1453
-
-##### Alternative 1: Add a per container fatalToPod field
-
-One option is to add a `fatalToPod` bool field _per container_. This will mean
-that if the given container crashes, that is fatal to the pod so the pod is
-killed.
-
-This will give a clear way to have jobs with restartPolicy never and not leaving
-stalled pods: a sidecar container can define this field and if it crash, it will
-kill the pod.
-
-For different (unclear) reasons, this functionality [was requested on the
-mailing list][ml-kill-pod] in the past.
-
-Another use of this functionality is that in some specific use cases, if a
-container crashes, you just want to kill the entire pod and start again. This
-was requested by some clients, at least.
-
-I'd like to know what the rest think about this.
-
-[ml-kill-pod]: https://discuss.kubernetes.io/t/how-can-i-have-a-pod-delete-itself-on-failure/8699
-
-##### Alternative 2: Do nothing
-
-Another option is to leave the pod stalled. A pod with containers that crash and
-are not restarted, will have a similar behaviour. The main and non-trivial
-difference, though, is that in this case some container will not be even
-started (non-sidecar containers won't be started if sidecars crash).
-
-
-##### Alternative 2: Always restart sidecar containers
-
-Another option is to always restart sidecar containers, under the assumptions
-that they are always needed.
-
-This seems confusing, as doing this when the pod restartPolicy is Never doesn't
-seem right. In other words, having a container not respect the pod restartPolicy
-with no explicit mentions seems asking for trouble.
-
-However, this is what the fork of at least one company is doing. Their use case
-is using Jobs to run some workloads where the main (non-sidecar) container has TB
-of memory in RAM, with no way to persist calculated data and may take weeks to run.
-In those cases losing all of that because a sidecar crashes is a too expensive
-price to pay and they resorted to always restart them.
-
-We think that in those cases using an OnFailure RestartPolicy for the job might
-seem more appropriate and, in any case, not having any kind of persistence for
-graceful shutdown doesn't seem like a good reason to have this behaviour in
-Kubernetes.
-
-In any case, it seems like a real problem and worth exploring ways to handle
-this. As always, ideas are very welcome :).
-
-##### Suggestion
-
-Go for Alternative 1. Seems simple and leaves the cluster in a clean state.
-However, I really would like to know what others think.
-
-
-#### Enforce the startup/shutdown behavior only on startup/shutdown
-
-One of the goals of this KEP is to **only modify the startup/shutdown
-sequence**. This makes the semantics clear and helps to have clean code, as only
-those places will be changed.
-
-Therefore, once non-sidecar containers have been started, kubernetes treats
-containers in the pod indistinguishable from containers in a pod without
-sidecar containers. That is, once sidecars and non-sidecars containers have
-been started once, the regular kubernetes reconciliation loop is used for all
-the containers in the pod during the pod lifecycle until the shutdown sequence
-is fired. This guarantees that only the startup and shutdown behaviour of
-sidecar containers is affected and not the rest of the pod lifecycle.
-
-However, one side effect is that if, for example, all containers happen to
-crash at the same time, all _can_ be restarted at the same time (if the restart
-policy allows). This might be surprising, as instances of all the containers
-being started at the same time can be seen by the users.
-
-We believe this is fine, though, as the goal is to not change the behaviour
-other than startup/shutdown and this edge case should be handled by users, as
-any other container crashes.
-
-If this behaviour is not welcome, however, code probably can be adapted to
-handle the case when all containers crashed differently.
 
 #### Sidecar containers won't be available during initContainers phase
 
