@@ -407,6 +407,35 @@ This is quite similar to what happens today if a job (or a pod with
 RestartPolicy Never) has more than one container and some crashes: those are not
 restarted. Therefore is considered a known caveat.
 
+#### Modify killContainer() to enforece gracePeriodOverride on preStop hooks
+
+The behaviour of `killContainer()` ignoring `gracePeriodOverride` for preStop
+hooks was discussed in [this issue][issue-gracePeriodOverride]. After more
+investigation it seems that gracePeriodOverride is unused, so modifications to
+enforce the time on preStop hooks too seems safe.
+
+The modification can live under the feature gate and if concerns arise a new
+parameter can be added to `killContainer()` to take note of the time left to
+kill the containers and leave gracePeriodOverride untouched.
+
+The param seems unused, as mentioned in the [issue
+comment][issue-gracePeriodOverride-comment], because I can't find any call to
+`killContainer()` that set it to a non-nil value (sometimes it is set to the
+same value another parameter has, but that parameter ends up always being nil).
+Additionally, looking at the [tests for the function][tests-for-func] those were
+created in commit 25bc76dae4cf and always set DeletionGracePeriodSeconds and
+TerminationGracePeriodSeconds to the same value used as gracePeriodOverride.
+Therefore, it seems like a using smaller gracePeriodOverride than those values
+(DeletionGracePeriodSeconds/TerminationGracePeriodSeconds) was overlooked rather
+than an intended change.
+
+Furthermore, changing `killContainer()` to enforce the gracePeriodOverride on
+preStop hooks doesn't break the unit tests either.
+
+[issue-gracePeriodOverride]: https://github.com/kubernetes/kubernetes/issues/92432
+[issue-gracePeriodOverride-comment]: https://github.com/kubernetes/kubernetes/issues/92432#issuecomment-648259349
+[tests-for-func]: https://github.com/kubernetes/kubernetes/blob/47c450776f2731955ee7a4e8cc7ec1b4b6f14851/pkg/kubelet/kuberuntime/kuberuntime_container_test.go#L310-L322
+
 #### Time to kill a pod increased by 4 seconds in the worst case
 
 Currently the shutdown sequence of a pod looks like this **if preStop hooks never
@@ -500,138 +529,15 @@ Package `kuberuntime`
 Modify `kuberuntime_container.go`, function `killContainersWithSyncResult`. Break up the looping over containers so that it goes through killing the non-sidecars before terminating the sidecars.
 Note that the containers in this function are `kubecontainer.Container` instead of `v1.Container` so we would need to cross reference with the `v1.Pod` to check if they are sidecars or not. This Pod can be `nil`, so labels will be added to recover the sidecar information in those cases (just like it is done for the preStop hook and other fields, in `labels.go` of `kuberuntime` package).
 
+To make sure `killContainersWithSyncResult()` finishes in time,
+`killContainer()` will be adapted to enforce the `gracePeriodOverride` parameter
+on preStop hooks too. See the [caveats](#notesconstraintscaveats) section for more details on why this
+is needed.
+
 ##### Sidecars started first
 Package `kuberuntime`
 
 Modify `kuberuntime_manager.go`, function `computePodActions`. If pods has sidecars it will return these first in `ContainersToStart`, until they are all ready it will not return the non-sidecars. Readiness changes do not normally trigger a pod sync, so to avoid waiting for the Kubelet's `SyncFrequency` (default 1 minute) we can modify `HandlePodReconcile` in the `kubelet.go` to trigger a sync when the sidecars first become ready (ie only during startup).
-
-### Proposal decisions to discuss
-
-This section expands on some decisions or side effects of this proposal that
-were identified by Rodrigo Campos (@rata) and discussed during the SIG-node
-meeting on June 23. The conclusion was to open a PR with those things, so this
-section is about them, with some alternatives and suggestions to open up the
-discussion.
-
-This doesn't mean in any way that discussion about other things is not welcome.
-They are indeed very much welcome.
-
-Bear in mind that these edge cases discussed here are either present in the KEP
-design or the KEP design was not clear enough and they are present in the
-[current open PR](https://github.com/kubernetes/kubernetes/pull/80744).
-
-#### Killing pods take 3x the time
-
-In the design, sidecars and non-sidecars containers are supposed to share the
-termination grace period. However, in [the implementation
-PR](https://github.com/kubernetes/kubernetes/pull/80744) it takes up to ~3x the
-length. We think it is nice to discuss it here as the solution might need some
-agreements on how to improve this.
-
-Let's see why this happens first, and then discuss the possible fixes.
-
-The KEP currently proposes the following shutdown sequence steps (same as explained
-before, with a little more detail on what is blocking or not now):
-
-1. All sidecar containers preStop hook are executed (blocking) until they finish
-1. All non-sidecar containers preStop hook are executed (blocking) until they finish
-1. All non-sidecar containers are sent SIGTERM. If they don’t finish during the
-   time remaining for this step (more information below), SIGKILL is sent
-   (Idem step 1).
-1. All sidecar containers preStop hook are executed (blocking) until
-   they finished or are interrupted if exceed pod.TerminationGracePeriodSeconds
-1. All sidecar containers are sent SIGTERM. If they don’t finish during the time
-   remaining for this step (more information below), SIGKILL is sent
-
-In the current implementation PR, steps 1, 2 and 4 should complete within
-`pod.TerminationGracePeriodSeconds` each.  If they don't, the shutdown sequence
-continues with the next step. Please note that each of the mentioned steps has
-this maximum time to execute the hooks: `pod.TerminationGracePeriodSeconds`. In
-other words, elapsed time is ignored during preStop hook execution.
-
-Steps 3 and 5, on the other hand, do take into account the elapsed time and
-should complete within:
-* The remaining time: `pod.TerminationGracePeriodSeconds - <elapsed time in all
-previous steps>` seconds if this value is >= 2
-([`minimumGracePeriodInSeconds`][min-gracePeriodInSeconds])
-* 2 seconds if the previous value is < 2
-
-A side effect of this behaviour is that killing a pod with sidecar containers
-can take in the worst case, approximately: `pod.TerminationGracePeriodSeconds *
-3 + 2 * 2` seconds, compared to `pod.TerminationGracePeriodSeconds + 2` seconds
-without sidecar containers.
-
-This behaviour is because in the PR implementation the `gracePeriodOverride` is
-being used when [calling `killContainer()`][kill-container-param] to specify the
-time left to kill the containers. However, in `KillContainer()` the preStop
-hooks are run [here][kill-container-preStop] using the `gracePeriod` variable
-defined [here][kill-container-gracePeriod], which ignores the
-`gracePeriodOverride` param for the `killContainer()` function.  That parameter
-is used later, as the time to wait since SIGTERM is sent until a SIGKILL will be
-sent.
-
-##### Why is it important to discuss this?
-
-The most important reason is that this KEP needs to interoperate well with the
-kubelet shutdown KEP (KEP not yet created). We have been working together with
-the team working on that KEP and one of the scenarios to handle is shutting down
-a node in time constrained environments (preempt VMs in GCE, spot instances in
-AWS, etc.).
-
-As far as we coordinated, the Kubelet will kill the pods and the field
-`pod.DeletionGracePeriodSeconds` will be set for the time each pod has to
-be properly killed. If we add sidecars and we can't kill pods in a way that respect
-that time, this feature will not work on node shutdown. The whole point of this
-KEP having a [prerequisite](#prerequisites) on that KEP is to avoid that from
-happening.
-
-##### Alternatives to kill the pod in the expected time
-
-The behaviour of `killContainer()` ignoring `gracePeriodOverride` for preStop
-hooks was discussed in [this issue][issue-gracePeriodOverride].
-
-There, [we posted some observations][issue-gracePeriodOverride-comment] in the
-issue:
-
-1. `gracePeriodOverride` variable is not set when running command like `kubectl delete --grace-period 1 pod <pod-name>`.
-   Intuitively, we thought that was the case when the variable was set.
-   However, when running such a command, `pod.DeletionGracePeriodSeconds` is set instead.
-   More details in the link to the issue with this.
-
-1. Changing `killContainer()` to respect `gracePeriodOverride` parameter, as the
-   issue suggest, might be backwards incompatible. At least, if there are still
-   users that call the function with that param set (is a pointer, but it seems to be nil
-   in most cases).
-
-1. If we can't change `killContainer()` to respect `gracePeriodOverride` for
-   preStop hooks too, we should consider another way. One option is to update
-   `pod.DeletionGracePeriodSeconds` with the elapsed time, as that is used by
-   `killContainer()` for the preStop hooks.
-
-The documentation for
-[`pod.DeletionGracePeriodSeconds`][doc-DeletionGracePeriodSeconds] says this
-field can only be shortened. So, while I'm not really sure if this is okay to
-change that field, one option is to use that field for the elapsed time instead
-of the `gracePeriodOverride` parameter. As mentioned, this field is already
-taken into account within `killContainer()` to run preStop hooks, etc.
-
-But even if using `pod.DeletionGracePeriodSeconds` is possible, the current code
-assumes that it is possible that this field is not always set on deletion (for example
-[here][DeletionGracePeriodNotSet]). So, if indeed is not always set, we would need
-to set it (in conjunction to `pod.DeletionTimestamp` as the doc says) and I'd
-like some confirmation from the community to see if this makes sense.
-
-I'd also like to open the discussion about other options that might be better to
-handle this. Please let us know what you think :)
-
-[kill-container-param]: https://github.com/kubernetes/kubernetes/pull/80744/files#diff-44f60dd6d99cb695e5f333647ebd0703R727
-[kill-container-preStop]: https://github.com/kubernetes/kubernetes/blob/75b555241578ac60cbdef21e01604f2bba8d040d/pkg/kubelet/kuberuntime/kuberuntime_container.go#L624
-[kill-container-gracePeriod]: https://github.com/kubernetes/kubernetes/blob/75b555241578ac60cbdef21e01604f2bba8d040d/pkg/kubelet/kuberuntime/kuberuntime_container.go#L604-L610
-[min-gracePeriodInSeconds]: https://github.com/kubernetes/kubernetes/blob/e2d8f6c278011b2eabf5754c3274bc406731933c/pkg/kubelet/kuberuntime/kuberuntime_manager.go#L61-L62
-[issue-gracePeriodOverride]: https://github.com/kubernetes/kubernetes/issues/92432
-[issue-gracePeriodOverride-comment]: https://github.com/kubernetes/kubernetes/issues/92432#issuecomment-648259349
-[doc-DeletionGracePeriodSeconds]: https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.18/#objectmeta-v1-meta
-[DeletionGracePeriodNotSet]: https://github.com/kubernetes/kubernetes/blob/e63fb9a597bfbf6f3d454489e4fb49b40ad8c48f/pkg/kubelet/kuberuntime/kuberuntime_container.go#L604-L610
 
 ### Proof of concept implementations
 
