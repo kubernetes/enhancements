@@ -11,7 +11,18 @@ reviewers:
 approvers:
   - "@liggitt"
   - "@derekwaynecarr"
+prr-approvers:
+  - "@johnbelamaric"
 editor: TBD
 creation-date: 2017-06-21
-last-updated: 2019-02-14
+last-updated: 2021-02-04
 status: implementable
+stage: "stable"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.10"
+  beta: "v1.14"
+  stable: "v1.21"
+
+latest-milestone: "v1.21"
