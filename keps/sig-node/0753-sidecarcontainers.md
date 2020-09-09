@@ -384,7 +384,7 @@ During pod termination sidecars will be terminated last:
 * Non-sidecar containers sent SIGTERM
 * Once all non-sidecar containers have exited: Sidecar container are sent a SIGTERM
 
-Containers and Sidecar will share the TerminationGracePeriod. If Containers don't exit before the end of the TerminationGracePeriod then they will be sent a SIGKIll as normal, Sidecars will then be sent a SIGTERM with a short grace period of 2 Seconds to give them a chance to cleanly exit.
+Containers and Sidecar will share the TerminationGracePeriod. If Containers don't exit before the end of the TerminationGracePeriod then they will be sent a SIGKIll as normal, Sidecars will then be sent a SIGTERM with a short grace period of 2 Seconds to give them a chance to cleanly exit. Prestop hooks will also have a 2 seconds grace period to execute in that case.
 
 To solve the problem of Jobs that don't complete: When RestartPolicy!=Always if all normal containers have reached a terminal state (Succeeded for restartPolicy=OnFailure, or Succeeded/Failed for restartPolicy=Never), then all sidecar containers will be sent a SIGTERM.
 
@@ -406,6 +406,29 @@ to never restart, the pod will be "stalled" with no way to move forward.
 This is quite similar to what happens today if a job (or a pod with
 RestartPolicy Never) has more than one container and some crashes: those are not
 restarted. Therefore is considered a known caveat.
+
+#### Time to kill a pod increased by 4 seconds in the worst case
+
+Currently the shutdown sequence of a pod looks like this **if preStop hooks never
+finish**:
+ 1. Execute prestop hooks until pod.TerminationGracePeriodSeconds
+ 1. Send SIGTERM, wait for 2 seconds. Send SIGKILL to containers that didn't
+    exit.
+
+When sidecar containers are used, the shutdown sequence looks like **if preStop
+hooks never finish**:
+
+1. non-sidecars containers: execute preStop hooks until pod.TerminationGracePeriodSeconds
+1. non-sidecar containers: Send SIGTERM, wait for 2 seconds. Send SIGKILL to containers that didn't
+    exit.
+1. Sidecar containers: execute preStop hooks with 2 seconds grace period
+1. sidecar containers: Send SIGTERM, wait for 2 seconds. Send SIGKILL to containers that didn't
+    exit.
+
+This means that in some cases where one step in the shutdown sequence is
+stalled, the following steps are given 2 seconds to execute.  As there are 2
+more steps in the shutdown sequence when using sidecars, it can take 4 more
+seconds to finish.
 
 #### Enforce the startup/shutdown behavior only on startup/shutdown
 
@@ -609,183 +632,6 @@ handle this. Please let us know what you think :)
 [issue-gracePeriodOverride-comment]: https://github.com/kubernetes/kubernetes/issues/92432#issuecomment-648259349
 [doc-DeletionGracePeriodSeconds]: https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.18/#objectmeta-v1-meta
 [DeletionGracePeriodNotSet]: https://github.com/kubernetes/kubernetes/blob/e63fb9a597bfbf6f3d454489e4fb49b40ad8c48f/pkg/kubelet/kuberuntime/kuberuntime_container.go#L604-L610
-
-#### How to split the shutdown time to kill different types of containers?
-
-The previous section is about how to, at the implementation level, respect a
-given time when killing a pod. This section, in contrast, is about how to split
-the available time between the different steps in the shutdown sequence.
-
-Something worth mentioning is that the time to terminate a pod is defined _per
-pod_ and not _per container_. Therefore, any termination sequence will have to
-deal with how to split that time in the different steps, now that all containers
-are not stopped in parallel.
-
-To avoid confusion, the steps of the shutdown sequence are:
-1. Run TerminationHook for _any_ container that defines it (sidecar or not)
-1. Run preStop hooks for non-sidecars
-1. Send SIGTERM for non-sidecars
-1. Run preStop hooks for sidecars
-1. Send SIGTERM for sidecars
-
-It's important to note that:
- * Pods without sidecar containers terminate in about
-   `TerminationGracePeriodSeconds + 2` seconds in the worst case
-
-This is because if the preStop hooks use all the time available, 2 seconds is
-used as a [minimum grace period][min-gracePeriodInSeconds] to kill the container
-by default (to avoid SIGKILLs).
-
-If the node is running on a preempt VM or spot instance, the time to terminate
-a pod might be shorter than `TerminationGracePeriodSeconds`. In that case, when
-the kubelet graceful shutdown (not yet submitted) KEP is implemented, the
-kubelet will set that time as pod.DeletionGracePeriodSeconds and that will be
-used here. For simplicity, instead of naming the two options, we will only use
-`GraceTime` from now on to mean: if pod.DeletionGracePeriodSeconds is set, then
-`GraceTime` is that and if not set it is `TerminationGracePeriodSeconds`. This
-logic is what is [already used in Kubernetes today][k8s-grace-time-precedence].
-
-We can see the following alternatives to handles this, while trying to respect
-the time to kill a pod: `GraceTime + c` (c being a constant, sometimes 0). As
-pods without sidecars use `GraceTime + 2`, aiming to something close to that (or
-lower) seems good.
-
-Bear in mind that to interoperate correctly with the kubelet graceful shutdown
-(not yet submitted) KEP we should respect the time given to kill the pod.
-
-Also, take into account that this deadline currently takes into account only the
-time the kubelet will wait from sending SIGTERM till it needs to send a SIGKILL,
-or the time it will wait for prestop hooks execution. But it completely ignores
-the time spent in go code that needs to be executed before/after each step.
-
-[k8s-grace-time-precedence]: https://github.com/kubernetes/kubernetes/blob/5a50c5c95fa2e16e9655ab3db2a3e4255aa87e25/pkg/kubelet/kuberuntime/kuberuntime_container.go#L604-L610
-
-##### Alternative 1: Allow any step to consume all and be over `GraceTime` by 8s
-
-This alternative allows any step in the shutdown sequence to consume all the
-`GraceTime`. In general, any step will have to execute within:
- * Remaining time: `GraceTime - <elapsed time in the previous steps>` if this
-   value is >= 2.
- * Minimum time: 2 seconds if the previous value is <2.
-
-This option can will take, in the worst case, `GraceTime + 8` seconds. The
-reason is simple: there are 5 steps, the first can consume `GraceTime` and the
-rest can consume 2 seconds each (`2*4`).
-
-##### Alternative 2: Allow any step to consume all and skip preStop hooks
-
-This alternative allows any step in the shutdown sequence to consume all the
-`GraceTime`, but preStop hooks are skipped if we run out of time. In general,
-any step will have to execute within:
- * Remaining time: `GraceTime - <elapsed time in the previous steps>` if this
-   value is >= 2.
- * preStop hooks will be skipped if the remaining time is <2
- * 2 seconds for containers (SIGTERM) if the remaining time <2
-
-This option can will take, in the worst case, `GraceTime + 4` seconds. The
-explanation is similar to the previous case: there are 5 steps, the first can
-consume `GraceTime`, preStop hooks are skipped and 2 seconds is used in each
-step that sends SIGTERM (`2*2`).
-
-Skipping the preStop hooks is weird, but this option is listed as this is what
-[currently happens][k8s-prestop-skipped] if you use something like `kubectl delete pod --grace-time 0
-<pod>`. In other words, today when running that command the preStop hooks are
-ignored and 2s is used to wait for the container to finish when sending SIGTERM.
-
-[k8s-prestop-skipped]: https://github.com/kubernetes/kubernetes/blob/5a50c5c95fa2e16e9655ab3db2a3e4255aa87e25/pkg/kubelet/kuberuntime/kuberuntime_container.go#L622-L623
-
-##### Alternative 3: Allow any step to consume all and be over `GraceTime` by 0s
-
-This alternative allows any step in the shutdown sequence to consume all the
-`GraceTime`, but if we run out of time, the next steps have 0s to execute. In
-general, any step will have to execute within:
- * Remaining time: `GraceTime - <elapsed time in the previous steps>`
- * 0s if the remaining time is 0.
-
-Running a step with 0s means: preStop hooks will be skipped and containers will
-be just sent SIGKILL. Therefore, this alternative will take, in the worst case,
-`GraceTime` to execute.
-
-Skipping the preStop hooks when the gracePeriod is 0, as mentioned in the
-previous alternative, is what is currently done.
-
-This alternative is also weird in the following way: a non-sidecar container can
-make sidecars never execute. The goal of using sidecar containers to have some
-time to execute after other containers are killed is not achieved, in the end.
-
-##### Alternative 4: Allow any step to consume all and use 6s as minimum `GraceTime`
-
-A different alternative is to force `GraceTime` to be more than 6s to allow all
-steps to have a 2s minimum and still not take more than `GraceTime + 2` overall.
-This is the same time that can take to kill a pod without sidecar containers.
-
-Each step in the shutdown sequence has to execute within:
- * Remaining time: `GraceTime - 6 - <elapsed time in previous steps>` if this
-   value is >2.
- * 2 seconds if the remaining time is <2.
-
-This alternative can take `GraceTime + 2` in the worst case to kill a pod. This
-is because the first step can take `GraceTime - 6` and the following 4 steps can
-take 2s each.
-
-In this case, it can be validated that TerminationGracePeriodSeconds is >=6 for
-pods with sidecar containers and be properly documented.
-
-The minimum of 6s can be used when the pod is killed, but handling correctly
-when the user wants to override this (being documented that might cause SIGKILL,
-etc.) on commands like: `kubectl delete pod --grace-period 0`.
-
-We will need to gather feedback from users, though, to know if this restriction
-is enough for all use cases.
-
-##### Alternative 5: Use _per container_ terminations
-
-Adding _per container_ terminations _can_ create tricky semantics when combined
-with the _per pod_ termination.
-
-The first thing to note is that any defined _per container_ termination time will
-not be guaranteed in case of spot/preempt VMs, as the time to kill the pod might
-be shorter than the one configured. In that case, what is the correct way to
-handle it is unclear. One option is to calculate the weight or proportional time
-each container has and use that for each.
-
-The second thing to note about creating _per container_ termination time is that
-it can be redundant with the _per pod_ setting. For example, if a _per
-container_ TerminationGracePeriod is set for _all_ containers in a pod, the
-pod.TerminationGracePeriod setting doesn't add any information: it can be
-calculated by those _per container_ settings.
-
-Alternatives to combine a _per container_ termination with _per pod_ are not
-very nice either. Some options to combine them are: allow only the _per pod_ or
-_per container_ setting to be set but never both at the same time; allow
-pod.TerminationGracePeriod to be set if some container doesn't have the
-equivalent _per container_ and calculate how much time is left to run those.
-
-In the latter case, it can be very confusing as some combinations of
-`pod.TerminationGracePeriod` and the _per container_ settings are not compatible
-as will create negative timeouts for some steps in the shutdown sequences.
-This needs to be validated at the admission time and calculations are not that
-obvious for users to be doing (I wouldn't like to do that, at least).
-
-If a _per container_ setting is needed, we consider the first option the
-simplest way forward.
-
-##### Suggestion
-
-Use alternative 4. Guarantees to terminate in the same time that pods without
-sidecar containers terminates and adds a simple validation on pod admission for
-pods with sidecar containers.
-
-The rest of the alternatives either take more time, require SIGKILL (that
-defeats the purpose of sidecar containers finishing after) or are way more
-complicated (like alternative 5).
-
-Having a minimum time of 6s for pods with sidecar containers, as alternative 4
-proposes, is a guarantee that might be difficult to change in the future (after
-GA). However, it seems the cleanest and simplest way to move forward now.
-
-Alternative 4 seems fine for the Alpha stage and we can gather feedback from
-users. Ideas and opinions are _very_ welcome, though.
 
 ### Proof of concept implementations
 
