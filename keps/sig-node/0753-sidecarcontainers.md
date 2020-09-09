@@ -438,7 +438,7 @@ Modify `kuberuntime_manager.go`, function `computePodActions`. Have a check in t
 Package `kuberuntime`
 
 Modify `kuberuntime_container.go`, function `killContainersWithSyncResult`. Break up the looping over containers so that it goes through killing the non-sidecars before terminating the sidecars.
-Note that the containers in this function are `kubecontainer.Container` instead of `v1.Container` so we would need to cross reference with the `v1.Pod` to check if they are sidecars or not. This Pod can be `nil` but only if it's not running, in which case we're not worried about ordering.
+Note that the containers in this function are `kubecontainer.Container` instead of `v1.Container` so we would need to cross reference with the `v1.Pod` to check if they are sidecars or not. This Pod can be `nil`, so labels will be added to recover the sidecar information in those cases (just like it is done for the preStop hook and other fields, in `labels.go` of `kuberuntime` package).
 
 ##### Sidecars started first
 Package `kuberuntime`
@@ -749,30 +749,6 @@ GA). However, it seems the cleanest and simplest way to move forward now.
 
 Alternative 4 seems fine for the Alpha stage and we can gather feedback from
 users. Ideas and opinions are _very_ welcome, though.
-
-#### Currently not handling the case of pod=nil
-
-This issue is not a design issue only, but the design doesn't mention what to
-modify for this and [the implementation
-PR](https://github.com/kubernetes/kubernetes/pull/80744) doesn't handle this
-case.
-
-The kubelet tries hard to handle the case where the pod being deleted is nil.
-This can happen in some race scenarios (and it seems now is less likely to
-happen, maybe with static pod) where the kubelet is restarted while the pod is
-being terminated and when the kubelet starts again, the pod is deleted from the
-API server. In that case the kubelet can't get the pod from the API server (so
-pod is nil) but it needs to kill the running containers.
-
-The current open PR doesn't handle this case. This means the sidecar shutdown
-behaviour is not used when the pod is nil in the current implementation PR.
-However, there is another PoC implementation using pod annotations, linked in
-this doc, that handles this case by just adding the labels to the container
-runtime.
-
-From Rodrigo's experience (@rata) writing the PoC implementation, this seems
-easy to fix, so we would suggest to fix it for alpha stage. This will be added
-in detail to the proposal if agreed.
 
 #### Pods with RestartPolicy Never
 
