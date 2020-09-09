@@ -144,9 +144,10 @@ to add a `lifecycle.type` field to the `container` object in the `pod.spec` to
 define if a container is a sidecar container. The only valid value for now is
 `sidecar`, but other values can be added in the future if needed.
 
-Pods with sidecar containers only change the behaviour of the startup and
-shutdown sequence of a pod: sidecar containers are started before non-sidecars
-and stopped after non-sidecars.
+Pods with sidecar containers change the behaviour of the startup and shutdown
+sequence of a pod: sidecar containers are started before non-sidecars and
+stopped after non-sidecars. Sidecar containers are also terminated when all
+non-sidecar containers finished.
 
 A pod that has sidecar containers guarantees that non-sidecar containers are
 started only after all sidecar containers are started and are in a ready state.
