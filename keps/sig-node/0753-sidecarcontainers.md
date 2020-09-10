@@ -472,7 +472,17 @@ any other container crashes.
 If this behaviour is not welcome, however, code probably can be adapted to
 handle the case when all containers crashed differently.
 
-### Implementation Details/Notes/Constraints
+### Risks and Mitigations
+
+You could set all containers to have `lifecycle.type: Sidecar`, this would cause strange behaviour in regards to shutting down the sidecars when all the non-sidecars have exited. To solve this the api could do a validation check that at least one container is not a sidecar.
+
+Init containers would be able to have `lifecycle.type: Sidecar` applied to them as it's an additional field to the container spec, this doesn't currently make sense as init containers are ran sequentially. We could get around this by having the api throw a validation error if you try to use this field on an init container or just ignore the field.
+
+Older Kubelets that don't implement the sidecar logic could have a pod scheduled on them that has the sidecar field. As this field is just an addition to the Container Spec the Kubelet would still be able to schedule the pod, treating the sidecars as if they were just a normal container. This could potentially cause confusion to a user as their pod would not behave in the way they expect, but would avoid pods being unable to schedule.
+
+Shutdown ordering of Containers in a Pod can not be guaranteed when a node is being shutdown, this is due to the fact that the Kubelet is not responsible for stopping containers when the node shuts down, it is instead handed off to systemd (when on Linux) which would not be aware of the ordering requirements. Daemonset and static Pods would be the most effected as they are typically not drained from a node before it is shutdown. This could be seen as a larger issue with node shutdown (also effects things like termination grace period) and does not necessarily need to be addressed in this KEP , however it should be clear in the documentation what guarantees we can provide in regards to the ordering.
+
+## Design Details
 
 The proposal can broken down into four key pieces of implementation that all relatively separate from one another:
 
@@ -480,7 +490,7 @@ The proposal can broken down into four key pieces of implementation that all rel
 * Sidecars are terminated after normal containers
 * Sidecars start before normal containers
 
-#### API Changes:
+### API Changes:
 As this is a change to the Container spec we will be using feature gating, you will be required to explicitly enable this feature on the api server as recommended [here](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api_changes.md#adding-unstable-features-to-stable-versions).
 
 New field `Type` will be added to the lifecycle struct:
@@ -508,15 +518,15 @@ const (
 ```
 Note that currently the `lifecycle` struct is only used for `preStop` and `postStop` so we will need to change its description to reflect the expansion of its uses.
 
-#### Kubelet Changes:
+### Kubelet Changes:
 Broad outline of what places could be modified to implement desired behaviour:
 
-##### Shutdown triggering
+#### Shutdown triggering
 Package `kuberuntime`
 
 Modify `kuberuntime_manager.go`, function `computePodActions`. Have a check in this function that will see if all the non-sidecars had permanently exited, if true: return all the running sidecars in `ContainersToKill`. These containers will then be killed via the `killContainer` function which sends preStop hooks, sig-terms and obeys grace period, thus giving the sidecars a chance to gracefully terminate.
 
-##### Sidecars terminated last
+#### Sidecars terminated last
 Package `kuberuntime`
 
 Modify `kuberuntime_container.go`, function `killContainersWithSyncResult`. Break up the looping over containers so that it goes through killing the non-sidecars before terminating the sidecars.
@@ -527,7 +537,7 @@ To make sure `killContainersWithSyncResult()` finishes in time,
 on preStop hooks too. See the [caveats](#notesconstraintscaveats) section for more details on why this
 is needed.
 
-##### Sidecars started first
+#### Sidecars started first
 Package `kuberuntime`
 
 Modify `kuberuntime_manager.go`, function `computePodActions`. If pods has sidecars it will return these first in `ContainersToStart`, until they are all ready it will not return the non-sidecars. Readiness changes do not normally trigger a pod sync, so to avoid waiting for the Kubelet's `SyncFrequency` (default 1 minute) we can modify `HandlePodReconcile` in the `kubelet.go` to trigger a sync when the sidecars first become ready (ie only during startup).
@@ -562,17 +572,6 @@ Some other things worth noting about the implementation:
 [kinvolk-poc-sidecar-test]: https://github.com/kinvolk/kubernetes/tree/52a96112b3e7878740a0945ad3fc4c6d0a6c5227/sidecar-tests
 [kinvolk-poc-sidecar-test-commit]: https://github.com/kinvolk/kubernetes/commit/385a89d83df9c076963d2943507d1527ffa606f7
 
-### Risks and Mitigations
-
-You could set all containers to have `lifecycle.type: Sidecar`, this would cause strange behaviour in regards to shutting down the sidecars when all the non-sidecars have exited. To solve this the api could do a validation check that at least one container is not a sidecar.
-
-Init containers would be able to have `lifecycle.type: Sidecar` applied to them as it's an additional field to the container spec, this doesn't currently make sense as init containers are ran sequentially. We could get around this by having the api throw a validation error if you try to use this field on an init container or just ignore the field.
-
-Older Kubelets that don't implement the sidecar logic could have a pod scheduled on them that has the sidecar field. As this field is just an addition to the Container Spec the Kubelet would still be able to schedule the pod, treating the sidecars as if they were just a normal container. This could potentially cause confusion to a user as their pod would not behave in the way they expect, but would avoid pods being unable to schedule.
-
-Shutdown ordering of Containers in a Pod can not be guaranteed when a node is being shutdown, this is due to the fact that the Kubelet is not responsible for stopping containers when the node shuts down, it is instead handed off to systemd (when on Linux) which would not be aware of the ordering requirements. Daemonset and static Pods would be the most effected as they are typically not drained from a node before it is shutdown. This could be seen as a larger issue with node shutdown (also effects things like termination grace period) and does not necessarily need to be addressed in this KEP , however it should be clear in the documentation what guarantees we can provide in regards to the ordering.
-
-## Design Details
 
 ### Test Plan
 * Units test in kubelet package `kuberuntime` primarily in the same style as `TestComputePodActions` to test a variety of scenarios.
