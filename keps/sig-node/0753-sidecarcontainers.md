@@ -275,23 +275,18 @@ Linkerd and Istio), need to do several hacks to have the basic
 functionality. These are explained in detail in the
 [alternatives](#alternatives) section. Nonetheless, here is a  quick highlight
 of some of the things some service mesh currently need to do:
-
  * Recommend users to delay starting their apps by using a script to wait for
    the service mesh to be ready. The goal of a service mesh to augment the app
    functionality without modifying it, that goal is lost in this case.
- * To guarantee that traffic goes via the services mesh, an initContainer is
-   added to blackhole traffic until the service mesh containers are up. This way,
-   other containers that might be started before the service mesh container can't
-   use the network until the service mesh container is started and ready. A side
-   effect is that traffic is blackholed until the service mesh is up and in a
-   ready state.
+ * If they don't delay starting their application, the network connection they
+   try to establish are blacklisted until the service mesh container is up.
  * Use preStop hooks with a "sleep infinity" to make sure the service mesh
    doesn't terminate before other containers that might be serving requests.
 
-The auto-inject of initContainer [has caused bugs][linkerd-bug-init-last], as it
-competes with other tools auto-injecting a container to be run last too.
-
-[linkerd-bug-init-last]: https://github.com/linkerd/linkerd2/issues/4758#issuecomment-658457737
+This KEP adds guarantees to startup/shutdown behavior, so _those_ problems will
+be solved for service mesh. However, service mesh do have other problems that
+are out of scope for this KEP, e.g. enable service mesh before initContainers
+are started.
 
 ### Problems: Coupling infrastructure with applications
 
@@ -307,9 +302,6 @@ blackhole all traffic until the Istio container is up. The CNI plugin can be
 used to completely remove the need for such an initContainer. But this
 alternative requires that nodes have the CNI plugin installed, effectively
 coupling the service mesh app with the infrastructure.
-
-This KEP removes the need for a service mesh to use either an initContainer or a
-CNI plugin: just guarantee that the sidecar container can be started first.
 
 While in this specific example the CNI plugin has some benefits too (removes the
 need for some capabilities in the pod) and might be worth pursuing, it is used
@@ -779,11 +771,10 @@ startup, as explained in the next section.
 
 #### Service mesh or metrics sidecars
 
-Let app container be the main app that just has the service mesh extra container
-in the pod.
-
-Service mesh, today, have to do the following workarounds due to lack of startup
-ordering:
+Service mesh, today, have to do the following workarounds due to lack of
+startup/shutdown ordering:
+ * Recommend users to delay starting their apps by using a script to wait for
+   the service mesh to be ready.
  * Blackhole all the traffic until service mesh container is up (usually using
    an initContainer for this)
  * Some trickery (sleep preStop hooks or some alternative) to not be killed
@@ -792,7 +783,9 @@ ordering:
 
 This means that if the app container is started before the service mesh is
 started and ready, all traffic will be blackholed and the app needs to retry.
-Once the service mesh container is ready, traffic will be allowed.
+Once the service mesh container is ready, traffic will be allowed. A similar
+problem happens for shutdown: if the service mesh container is killed first, the
+network is down for the rest of the containers in the pod.
 
 This has another major disadvantage: several apps crash if traffic is blackholed
 during startup (common in some rails middleware, for example) and have to resort
@@ -800,20 +793,16 @@ to some kind of workaround, like [this one][linkerd-wait] to wait. This makes
 also service mesh miss their goal of augmenting containers functionality without
 modifying the main application.
 
-Istio has an alternative to the initContainer hack. Istio [has an
-option][istio-cni-opt] to integrate with CNI and inject the blackhole from there
-instead of using the initContainer. In that case, it will do (just c&p from the
-link, in case it breaks in the future):
+This KEP addresses these 3 problems just listed when initContainer are not used
+by the application. If initContainers are used, the first and the last problem
+are solved only. In other words, traffic might still be blackholed for
+initContainers that run after the service mesh iptables rules are inserted.
 
-> By default Istio injects an initContainer, istio-init, in pods deployed in the mesh. The istio-init container sets up the pod network traffic redirection to/from the Istio sidecar proxy. This requires the user or service-account deploying pods to the mesh to have sufficient Kubernetes RBAC permissions to deploy containers with the NET_ADMIN and NET_RAW capabilities. Requiring Istio users to have elevated Kubernetes RBAC permissions is problematic for some organizations’ security compliance
-> ...
-> The Istio CNI plugin performs the Istio mesh pod traffic redirection in the Kubernetes pod lifecycle’s network setup phase, thereby removing the requirement for the NET_ADMIN and NET_RAW capabilities for users deploying pods into the Istio mesh. The Istio CNI plugin replaces the functionality provided by the istio-init container.
+Such rules are usually inserted as an initContainer (trying to run last, to
+avoid blackholing traffic to other initContainers) or alternatively, in the case
+of Istio, using a [CNI plugin][istio-cni-opt]. When using the CNI plugin all
+traffic from initContainers will be blackholed.
 
-In other words, Istio has an alternative to configure the traffic blockhole
-without an initContainer. But the other problems and hacks mentioned remain,
-though.
-
-[linkerd-last-container]: https://github.com/linkerd/linkerd2/issues/4758#issuecomment-658457737
 [istio-cni-opt]: https://istio.io/latest/docs/setup/additional-setup/cni/
 [linkerd-wait]: https://github.com/olix0r/linkerd-await
 
