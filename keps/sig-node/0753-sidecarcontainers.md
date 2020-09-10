@@ -830,7 +830,9 @@ better or more elegant in Kubernetes.
 While some things might be possible to move to daemonset or others, it is not
 possible for all applications. For example some apps are not multi-tenant and
 this can not be an option security-wise. Or some apps would still like to have a
-sidecar that adds some metadata, for example.
+sidecar that adds some metadata, for example, or just uses a simple sidecar
+(like file uploading after containers finish in a Job, or create/update some
+files in shared emptyDir volumes, etc.).
 
 While this is an option, is not possible or extremely costly for several use
 cases.
