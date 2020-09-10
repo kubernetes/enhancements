@@ -1,31 +1,4 @@
----
-
-title: Object Bucket Provisioning
-authors:
-  - "@jeffvance"
-  - "@copejon"
-  - "@wlan0"
-  - "@brahmaroutu"
-owning-sig: "sig-storage"
-participating-sigs:
-  - sig-storage
-reviewers:
-  - "@saad-ali"
-  - "@alarge"
-  - "@erinboyd"
-  - "@guymguym"
-  - "@rsquared"
-  - "@krishchow"
-approvers:
-  - "@saad-ali"
-  - "@xing-yang"
-editor: TBD
-creation-date: 2019-11-25
-last-updated: 2020-09-01
-status: provisional
----
-
-# Object Bucket Provisioning
+# Object Storage Support
 
 ## Table of Contents
 
@@ -448,13 +421,13 @@ spec:
 
 ### Topology
 
-![Architecture Diagram](COSI%20Architecture_COSI%20architecture.png)
+![Architecture Diagram](images/arch.png)
 
 # Object Relationships
 
 The diagram below describes the relationships between various resources in the COSI ecosystem. 
 
-![Object Relationships](COSI%20Architecture_Object%20Relationships.png)
+![Object Relationships](images/object-rel.png)
 
 # Workflows
 Here we describe the workflows used to automate provisioning of new and existing buckets, and the de-provisioning of these buckets.
@@ -469,7 +442,7 @@ Prep for brownfield:
 
 ## Create Bucket
 
-![CreateBucket Workflow](COSI%20Architecture_Create%20Bucket%20Workflow.png)
+![CreateBucket Workflow](images/create-bucket.png)
 
 This workflow describes the automation supporting creating a new (greenfield) backend bucket. Accessing this bucket is covered in [Sharing COSI Created Buckets](#sharing-cosi-created-buckets).
 
@@ -491,7 +464,7 @@ In addition, the cosi-node-adapter sees a new app pod references a BAR:
 ## Sharing COSI Created Buckets
 This is the greenfield -> brownfield access use case, where COSI has created the `Bucket` instance and the driver has provisioned a new bucket. Now, we want to share access to this bucket in other namespaces.
 
-![ShareBucket Workflow](COSI%20Architecture_Share%20Bucket%20Workflow.png)
+![ShareBucket Workflow](images/share-bucket.png)
 
 > Note: if the bucket sharing is all within the same namespace then each `BucketAccessRequest` (also in that namespace) only needs to reference the existing BR.
 
@@ -503,7 +476,7 @@ Here is the workflow:
 
 ## Delete Bucket
 
-![DeleteBucket Workflow](COSI%20Architecture_Delete%20Bucket%20Workflow.png)
+![DeleteBucket Workflow](images/delete-bucket.png)
 
 This workflow describes the automation designed for deleting a `Bucket` instance and optionally the related backend bucket. Revoking access to this bucket is covered in [Revoke Bucket Access](#revoke-bucket-access).
 
