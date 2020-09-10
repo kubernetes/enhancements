@@ -169,6 +169,10 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 
 The initial implementation of the ComponentConfig API's didn't include OjectMeta fields. The Kubernetes project tooling relies on using Kustomize with manually added ObjectMeta fields in the ComponentConfig manifests. This functionality was broken as strict decoders were implemented for ComponentConfig API's and forced a leninent path to be added for the current ComponentConfig API versions. Adding ObjectMeta will allow for valid usage with Kustomize and strict decoders for current and future ComponentConfig API's.
 
+Related issues for context:
+
+- https://github.com/kubernetes/kubeadm/issues/1727
+
 ### Goals
 
 <!--
@@ -244,11 +248,12 @@ k8s.io/component-base/config/v1alpha1/types.go
 // ObjectMeta is metadata that all persisted resources must have, which includes all objects
 // users must create. This is a copy of customizable fields from metav1.ObjectMeta.
 type ObjectMeta struct {
-	// Name must be unique within a namespace. Is required when creating resources, although
-	// some resources may allow a client to request the generation of an appropriate name
-	// automatically. Name is primarily intended for creation idempotence and configuration
-	// definition.
-	// Cannot be updated.
+  // Name must be unique within a component instance. Name is primarily 
+  // intended for conformance and compatibility with standard project tooling 
+  // as well as configuration definition.
+  //
+  // Cannot be updated.
+  //
 	// More info: http://kubernetes.io/docs/user-guide/identifiers#names
 	// +optional
 	Name string `json:"name,omitempty" protobuf:"bytes,1,opt,name=name"`
