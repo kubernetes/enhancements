@@ -482,10 +482,9 @@ transform EndpointSlices into that same data structure.
 
 ### Endpoints Controller (classic)
 
-In order to ensure backwards compatibility for external consumer of the core/v1
-Endpoints API, the existing Endpoints controller will keep running until the
-API is EOL. After EndpointSlices become GA, the Endpoints controller will
-gradually limit functionality.
+The existing Endpoints controller will continue to run. After EndpointSlices
+become GA, the Endpoints controller may limit the number of endpoints it stores
+per resource.
 
 * Kubernetes 1.20: If the number of endpoints in one Endpoints object exceeds
   1000, set `endpoints.kubernetes.io/over-capacity` label to "warning".
