@@ -553,8 +553,7 @@ them][kinvolk-poc-sidecar-test-commit] for instruction on how to run it.
 Some other things worth noting about the implementation:
  * It is done using pod annotations so it is easy to test for users (doesn't
    modify pod spec)
- * It implements the KEP proposal and not the suggested modifications, with one
-   exception: the podPhase is not modified.
+ * Wasn't updated to call preStop hooks one time only, as this KEP now proposes
  * There is some c&p code to avoid doing refactors and just have a patch that is
    simpler to cherry-pick on different Kubernetes versions.
 
