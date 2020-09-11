@@ -88,7 +88,9 @@ This proposal deals with the first problem, which is that the Summary API is a p
 
 ## Proposal
 
-The kubelet will expose an endpoint at `/metrics/resource/v1alpha1` in prometheus text exposition format using the prometheus client library.
+The kubelet will expose an endpoint at `/metrics/resource` in prometheus text exposition format using the prometheus client library.
+
+The metrics in this endpoint will make use of the [Kubernetes Metrics Stability framework](https://github.com/kubernetes/enhancements/blob/master/keps/sig-instrumentation/20190404-kubernetes-control-plane-metrics-stability.md) for stability and deprecation policies.
 
 
 ### API
@@ -223,3 +225,5 @@ Beta/GA:
 - 2019-01-29: Presentation to Sig-Node
 - 2019-02-04: KEP gets LGTM and Approval
 - 2019-02-07: Presentation to Sig-Instrumentation
+- 2020-01-14: [1.18] Endpoint copied from /metrics/resource/v1alpha1 to /metrics/resource, and adopting the metrics stability framework: https://github.com/kubernetes/kubernetes/pull/86282
+- 2020-09-01: [1.20] /metrics/resource/v1alpha1 removed: https://github.com/kubernetes/kubernetes/pull/94272
