@@ -308,7 +308,7 @@ This proposal doesn't aim to:
 
 ## Proposal
 
-Create a way to define containers as sidecars, this will be an additional field to the `container.lifecycle` spec: `Type` which can be either `Standard` (default) or `Sidecar`.
+Create a way to define containers as sidecars, this will be an additional field to the `container.lifecycle` spec: `Type` can be either nil (default behavior is used) or `Sidecar`. IOW, if the field is not present default behavior is used and the container is not a sidecar container.
 
 e.g:
 ```yaml
@@ -463,22 +463,19 @@ New field `Type` will be added to the lifecycle struct:
 
 ```go
 type Lifecycle struct {
-  // Type
-  // One of Standard, Sidecar.
-  // Defaults to Standard
+  // Type specifies the container type.
+  // It can be sidecar or, if not present, default behavior is used
   // +optional
   Type LifecycleType `json:"type,omitempty" protobuf:"bytes,3,opt,name=type,casttype=LifecycleType"`
 }
 ```
-New type `LifecycleType` will be added with two constants:
+New type `LifecycleType` will be added with one constant:
 ```go
 // LifecycleType describes the lifecycle behaviour of the container
 type LifecycleType string
 
 const (
-  // LifecycleTypeStandard is the default container lifecycle behaviour
-  LifecycleTypeStandard LifecycleType = "Standard"
-  // LifecycleTypeSidecar means that the container will start up before standard containers and be terminated after
+  // LifecycleTypeSidecar means that the container will start up before non-sidecar containers and be terminated after
   LifecycleTypeSidecar LifecycleType = "Sidecar"
 )
 ```
