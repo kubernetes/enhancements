@@ -1,6 +1,7 @@
 # Release Notes Improvements
 
 <!-- toc -->
+
 - [Summary](#summary)
 - [Motivation](#motivation)
   - [Goals](#goals)
@@ -28,13 +29,19 @@ team, this is a visible change large enough to warrant a KEP.
 
 The current release notes process is fraught with inefficiencies that should be streamlined.
 
-- There are two different ways to generate release notes:
-[relnotes](https://github.com/kubernetes/release/blob/master/relnotes) and
-[release-notes](https://github.com/kubernetes/release/tree/master/cmd/release-notes).
-  - Because of this there's duplicate effort maintaining separate tools.
+- There are multiple ways to generate release notes:
+  [release-notes](https://github.com/kubernetes/release/tree/master/cmd/release-notes)
+  [krel release-notes](https://github.com/kubernetes/release/blob/master/docs/krel/release-notes.md)
+  [krel changelog](https://github.com/kubernetes/release/blob/master/docs/krel/changelog.md)
+
+  `krel` and the stand-alone `release-notes` tool are already re-using the
+  golang based libraries and are actively maintained. The former `relnotes`
+  bash-script has been deprecated and therefore removed.
+
 - We are currently shipping entire changelogs within markdown for each release.
-- PRs are frequently categorized within several SIGs, which the release notes team has to
-  distill down for the sake of brevity before the release is actually cut.
+
+  <!-- TODO: this seems not an issue to me -->
+
 - An end-user may not need to see _every single change_ that occurred within a release.
 
 There is room for improvement in the generation as well as the consumption of release notes.
@@ -47,19 +54,20 @@ As this is a somewhat drastic departure from the current process, this should be
 approach:
 
 - Consolidation and Clean-up
-  - Update `anago` to use `release-notes`
-  - Replace the "Detailed Bug Fixes And Changes" section in the release notes with a new
-    website that allows user to filter and search.
-  - Generate a consumable JSON file via `release-notes` as part of the Release Team duties
-  - Identify and stop tracking any "External Dependencies" that a vanilla Kubernetes install
-    does not rely on. (eg. Things in `cluster/addons`)
+  - [x] Update `anago` to use `krel changelog`.
+  - [x] Remove the bash-based `relnotes` script.
+  - [x] Replace the "Detailed Bug Fixes And Changes" section in the release notes with a new
+        website that allows user to filter and search.
+  - [x] Generate a consumable JSON file via `release-notes` as part of the Release Team duties
+  - [ ] Identify and stop tracking any "External Dependencies" that a vanilla Kubernetes install
+        does not rely on. (eg. Things in `cluster/addons`)
 - Automation
-  - Build additional labels to classify:
-    - API Changes
-    - Deprecations
-    - Urgent Upgrade Notes
-  - Capture release notes automatically via GitHub PR webhooks.
-    - Use milestones to capture "Known Issues" at time of release notes generation
+  - [x] Build additional labels to classify:
+    - [x] API Changes (done, since we now sort the release notes by `kind/`)
+    - [x] Deprecations (see above)
+    - [x] Urgent Upgrade Notes
+  - [ ] Put the generated release notes JSON in to a Google Cloud Bucket
+  - [ ] Use milestones to capture "Known Issues" at time of release notes generation
 
 ### Non-Goals
 
@@ -73,7 +81,7 @@ As stated above, this effort should be split into two phases.
 
 #### Updating Anago
 
-Currently, `anago` uses a 
+Currently, `anago` uses a
 [different tool](https://github.com/kubernetes/release/blob/master/relnotes) to generate new
 release notes with every release save for main 1.x.0 releases. We need to ensure that the
 `release-notes` tool can generate the same output as the `relnotes` tool to ensure consistency.
@@ -103,21 +111,15 @@ these labels to ensure less manual classification.
 
 #### Automated release notes
 
-It should be possible to completely automate the generation and publishing of release notes. By
-building a Knative pipeline that is fed from GitHub PR events, we could have it grab, format,
-and commit new entries into the release notes website. As we don't want these notes to be
-published before a release goes live, we would create a "draft" flag in the `release-notes` JSON
-schema.
+It should be possible to completely automate the generation and publishing of
+the release notes for the [website](https://relnotes.k8s.io). The idea is to put
+the (manually) generated JSON into a Google Cloud Bucket and let the website
+scrape the bucket for new notes. This can be done by placing an index.json file
+side-by-side to the actual notes, like we do it in the [current website
+implementation](https://github.com/puerco/release-notes/blob/master/src/environments/assets.ts).
 
-Once a release is ready to be cut, the release notes team would then flip all the 1.x notes that
-have been collected to not be drafts. This would be done by cloning down the release notes
-website, and running the `release-notes` tool over the JSON and committing the new output.
-
-Example:
-
-```bash
-release-notes -i relnotes.json -p 1.15.0
-```
+Once a release is ready to be cut, the release notes team would then run `krel release-notes`
+which takes care of editing the Google Cloud Bucket.
 
 ### Risks and Mitigations
 
@@ -136,7 +138,5 @@ website that is automatically updated with minimal human interaction.
 ## Infrastructure Needed
 
 A GitHub repo will need to be setup to host code for both the `release-notes` tool as well as the
-new release notes website. Said repo will also need to be integrated with Netlify for hosting. An
-initial design idea to power the automatic generation of release notes was to use a Knative pipeline.
-This would require a Kubernetes cluster to run on, as well as a GitHub token and webhook registration.
+new release notes website. Said repo will also need to be integrated with Netlify for hosting.
 Lastly, a DNS entry will be needed to point to the Netlify site (proposal: relnotes.k8s.io)
