@@ -5,5 +5,3 @@ approvers:
   - sig-architecture-leads
 reviewers:
   - enhancements-reviewers
-labels:
-  - sig/architecture
