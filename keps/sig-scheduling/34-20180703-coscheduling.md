@@ -3,8 +3,6 @@ title: Coscheduling
 authors:
   - "@k82cn"
 owning-sig: sig-scheduling
-participating-sigs:
-  - wg-machine-learning
 reviewers:
   - "@bsalamat"
   - "@vishh"
@@ -17,7 +15,7 @@ status: provisional
 
 # Coscheduling
 
-## Table of Contents
+## Table of Contents <!-- omit in toc -->
 
 <!-- toc -->
 - [Motivation](#motivation)

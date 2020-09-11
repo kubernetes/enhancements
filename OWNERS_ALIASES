@@ -51,8 +51,8 @@ aliases:
     - ehashman
     - logicalhan
   sig-multicluster-leads:
+    - jeremyot
     - pmorie
-    - quinton-hoole
   sig-network-leads:
     - caseydavenport
     - dcbw
@@ -61,8 +61,9 @@ aliases:
     - dchen1107
     - derekwaynecarr
   sig-release-leads:
-    - calebamiles
+    - alejandrox1
     - justaugustus
+    - saschagrunert
     - tpepper
   sig-scalability-leads:
     - mm4tt
@@ -71,6 +72,11 @@ aliases:
   sig-scheduling-leads:
     - Huang-Wei
     - ahg-g
+  sig-security-leads:
+    - aasmall
+    - cji
+    - jaybeale
+    - joelsmith
   sig-service-catalog-leads:
     - jberkhahn
     - mszostok
@@ -84,14 +90,12 @@ aliases:
     - spiffxp
     - stevekuznetsov
   sig-ui-leads:
-    - danielromlein
     - floreks
     - jeefy
     - maciaszczykm
   sig-usability-leads:
     - hpandeycodeit
     - tashimi
-    - vllry
   sig-windows-leads:
     - benmoss
     - ddebroy
@@ -103,7 +107,6 @@ aliases:
   wg-component-standard-leads:
     - mtaufen
     - stealthybox
-    - sttts
   wg-data-protection-leads:
     - xing-yang
     - yuxiangqian
@@ -120,13 +123,14 @@ aliases:
     - quinton-hoole
     - tpepper
     - youngnick
-  wg-machine-learning-leads:
-    - k82cn
-    - kow3ns
-    - vishh
   wg-multitenancy-leads:
     - srampal
     - tashimi
+  wg-naming-leads:
+    - celestehorgan
+    - jdumars
+    - justaugustus
+    - zacharysarah
   wg-policy-leads:
     - ericavonb
     - hannibalhuang
@@ -152,10 +156,11 @@ aliases:
     - tpepper
   committee-product-security:
     - cjcullen
+    - cji
     - joelsmith
-    - liggitt
     - lukehinds
     - micahhausler
+    - swamymsft
     - tallclair
   committee-steering:
     - cblecker
