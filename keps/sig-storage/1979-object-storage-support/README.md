@@ -165,7 +165,7 @@ status:
 1. `protocol`: (required) specifies the desired protocol.  One of {“s3”, “gcs”, or “azureBlob”}.
 1. `bucketPrefix`: (optional) prefix prepended to a COSI-generated new bucket name, eg. “yosemite-photos-". If `bucketInstanceName` is supplied then `bucketPrefix` is ignored because the request is for access to an existing bucket. If `bucketPrexix` is specified then it is added to the `Bucket` instance as a label.
 1. `bucketClassName`: (optional) name of the `BucketClass` used to provision this request. If omitted, a default bucket class matching the protocol is used. If the bucket class does not support the requested protocol, an error is logged and the request is retried. A `BucketClass` is required for both greenfield and brownfield requests since BCs support a list of allowed namespaces.
-1. `bucketInstanceName`: (optional) name of the cluster-wide `Bucket` instance. If blank, then COSI assumes this is a greenfield request an will fill in the name during the binding step. If defined by the user, then this names the `Bucket` instance created by the admin. There is no automation available to make this name known to the user.
+1. `bucketInstanceName`: (optional) name of the cluster-wide `Bucket` instance. If blank, then COSI assumes this is a greenfield request and will fill in the name during the binding step. If defined by the user, then this names the `Bucket` instance created by the admin. There is no automation available to make this name known to the user.
 1. `bucketAvailable`: if true the bucket has been provisioned. If false then the bucket has not been provisioned and is unable to be accessed.
 
 #### Bucket
@@ -192,8 +192,6 @@ spec:
   anonymousAccessMode: [6]
   bucketClassName: [7]
   bucketRequest: [8]
-    name:
-    namespace:
   allowedNamespaces: [9]
     - name:
   protocol: [10]
@@ -223,7 +221,7 @@ status:
     cosi.io/bucket-prefix:
 2. `labels`: added by COSI. The "cosi.io/provisioner" key's value is the provisioner name. The "cosi.io/bucket-prefix" key's value is the `BucketRequest.bucketPrefix` value when specified. Characters that do not adhere to [Kubernetes label conventions](https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set) will be converted to ‘-’.
 3. `finalizers`: added by COSI to defer `Bucket` deletion until backend deletion ops succeed. Implementation may add one finalizer for the BR and one for the BA.
-4. `provisioner`: The provisioner field as defined in the `BucketClass`.  Used by sidecars to filter `Bucket`s. Format: <provisioner-namespace>"/"<provisioner-name>, eg "ceph-rgw-provisoning/ceph-rgw.cosi.ceph.com".
+4. `provisioner`: (optional) The provisioner field as defined in the `BucketClass`.  Used by sidecars to filter `Bucket`s. Format: <provisioner-namespace>"/"<provisioner-name>, eg "ceph-rgw-provisoning/ceph-rgw.cosi.ceph.com". If omitted then there is no driver/sidecar so the admin must create the `Bucket` and `BucketAccess` instances.
 5. `retentionPolicy`: Prescribes the outcome when the `BucketRequest` is deleted.
    - _Retain_: (default) the `Bucket` and its data are preserved. The `Bucket` can potentially be reused.
    - _Delete_: the bucket and its contents are destroyed.
@@ -236,7 +234,7 @@ status:
    - "publicReadWrite": Read/Write, same as `ro` with the addition of PutObject being allowed.
 > Note: does not reflect or alter the backing storage ACLs or IAM policies.
 7. `bucketClassName`: Name of the associated bucket class.
-8. `bucketRequest`: Name and namespace of the associated `BucketRequest`.
+8. `bucketRequest`: an `objectReference` containing the name, namespace and UID of the associated `BucketRequest`.
 9. `allowedNamespaces`: a list of namespaces that are permitted to either create new buckets or to access existing buckets.
 10. `protocol`: The protocol the application will use to access the backend storage.
    - `protocolSignature`: Specifies the protocol targeted by this Bucket instance.  One of:
@@ -267,7 +265,7 @@ allowedNamespaces: [6]
 parameters: [7]
 ```
 
-1. `provisioner`: the name of the driver. If supplied the driver container and sidecar container are expected to be deployed. Format: <provisioner-namespace>"/"<provisioner-name>, eg "ceph-rgw-provisoning/ceph-rgw.cosi.ceph.com".
+1. `provisioner`: (required) the name of the driver being deployed. Format: <provisioner-namespace>"/"<provisioner-name>, eg "ceph-rgw-provisoning/ceph-rgw.cosi.ceph.com".
 2. `isDefaultBucketClass`: (optional) boolean, default is false. If set to true then a `BucketRequest` may not need to specify a `BucketClass`. If the greenfield `BucketRequest` omits the `BucketClass` and a default `BucketClass`'s protocol matches the `BucketRequest`'s protocol then the default bucket class is used; otherwise an error is logged.
 3. `protocol`: (required) protocol supported by the associated object store. This field validates that the `BucketRequest`'s desired protocol is supported.
 > Note: if an object store supports more than one protocol then the admin should create a `BucketClass` per protocol.
@@ -338,11 +336,7 @@ metadata:
   provisioner: [4]
   bucketInstanceName: [5]
   bucketAccessRequest: [6]
-    name:
-    namespace:
   serviceAccount: [7]
-    name:
-    namespace:
   mintedSecretName: [8]
   policyActionsConfigMapData: [9]
   principal: [10]
@@ -354,10 +348,10 @@ metadata:
 1. `name`: the BA name is generated by COSI in this format: _"<BAR.namespace*>-<BAR.name*>-<uuid>"_. The uuid is unique within a cluster. `*` the first 100 characters of the namespace and the name are used.
 1. `labels`: added COSI.  Key’s value should be the provisioner name. Characters that do not adhere to [Kubernetes label conventions](https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set) will be converted to ‘-’.
 1. `finalizers`: added by COSI to defer `BucketAccess` deletion until the pod that uses this access terminates, and the related `BucketAccessRequest` is deleted.
-1. `provisioner`:  name of the provisioner that should handle this `BucketAccess` instance.  Copied from the `BucketAccessClass`.
+1. `provisioner`:  Copied from the `BucketAccessClass`.
 1. `bucketInstanceName`:  name of the `Bucket` instance bound to this BA.
-1. `bucketAccessRequest`: name and namespace of the bound `BucketAccessRequest`.
-1. `serviceAccount`: name and namespace of the Kubernetes ServiceAccount, if any, specified by the `BucketAccessRequest`.  Empty when the `BucketAccessRequest.mintedSecretName` was specified.
+1. `bucketAccessRequest`: an `objectReference` containing the name, namespace and UID of the associated `BucketAccessRequest`.
+1. `serviceAccount`: an `objectReference` containing the name, namespace and UID of the associated `ServiceAccount`. Empty when the `BucketAccessRequest.mintedSecretName` is specified.
 1. `mintedSecretName`: name of the provisioner-generated Secret containing access credentials. This Secret exists in the provisioner’s namespace and must be copied to the app namespace by the COSI controller. **Note:** the provisioner's namespace is contained in the registered driver name.
 1. `policyActionsConfigMapData`: encoded data that contains a set of provisioner/platform defined policy actions to a given user identity. Contents of the ConfigMap that the *policyActionsConfigMap* field in the `BucketAccessClass` refers to.
 1. `principal`: username/access-key for the object storage provider to uniquely identify the user who has access to this bucket  
@@ -380,7 +374,7 @@ policyActionsConfigMap: [2]
 parameters: [3]
 ```
 
-1. `provisioner`: (required) the name of the driver that `BucketAccess` instances should be managed by. Format: <provisioner-namespace>"/"<provisioner-name>, eg "ceph-rgw-provisoning/ceph-rgw.cosi.ceph.com".
+1. `provisioner`: (optional) the name of the driver that `BucketAccess` instances should be managed by. Format: <provisioner-namespace>"/"<provisioner-name>, eg "ceph-rgw-provisoning/ceph-rgw.cosi.ceph.com". If omitted then there is no driver/sidecar so the admin must create the `Bucket` and `BucketAccess` instances.
 1. `policyActionsConfigMap`: (required) a reference to a ConfigMap that contains a set of provisioner/platform defined policy actions for a given user identity.
 1. `parameters`: (Optional)  A map of string:string key values.  Allows admins to control user and access provisioning by setting provisioner key-values. Optional reserved keys cosi.io/configMap and cosi.io/secrets are used to reference user created resources with provider specific access policies.
 ---
@@ -537,7 +531,7 @@ Here is the workflow:
 + The sidecar detects the delete and calls the driver to revoke access to the backend bucket.
 + Admin deletes the app pod.
 + The cosi-node-adapter is notified (_NodeUnpublishVolume_) and removes the pod.name finalizer from the BA, and the BA is garbage collected.
-+ The user BAR remains pointing to a BA that no longer exists. It is felt that COSI should not delete user-created instances.:w
++ The user BAR remains pointing to a BA that no longer exists. It is felt that COSI should not delete user-created instances.
 
 ##  Setting Access Permissions
 ### Dynamic Provisioning
@@ -636,7 +630,7 @@ message ProvisionerGetInfoResponse {
 
 ## ProvisonerCreateBucket
 
-This call is made to create the bucket in the backend. If the bucket already exists, then the appropriate error code `ALREADY_EXISTS` must be returned by the provisioner.
+This call is made to create the bucket in the backend. If a bucket that matches both name and parameters already exists, then OK (success) must be returned. If a bucket by same name, but different parameters is provided, then the appropriate error code `ALREADY_EXISTS` must be returned by the provisioner.
 
 ```
 message ProvisionerCreateBucketRequest {    
