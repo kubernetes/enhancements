@@ -42,6 +42,7 @@ superseded-by:
   - [Version 1.10](#version-110)
   - [Version 1.14](#version-114)
   - [Version 1.15](#version-115)
+  - [Version 1.20](#version-120)
 <!-- /toc -->
 
 ## Summary
@@ -212,3 +213,8 @@ GA
 
 - Graduate `SupportNodePidsLimit` to beta by adding node e2e test
   coverage for node cgroup isoation.
+
+### Version 1.20
+
+- Graduate `SupportNodePidsLimit` to GA after year of production usage.
+- Graduate `SupportPodPidsLimit` to GA after year of production usage.
