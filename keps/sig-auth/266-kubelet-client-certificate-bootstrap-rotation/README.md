@@ -392,3 +392,4 @@ client certificates must remain backwards compatible for at least n-2 releases.
 - v1.11 - openshift enables kubelet client certificate rotation
 - v1.18 - CertificateSigningRequest API adds support for specific kubelet client certificate signers
 - v1.19 - Legacy proposal converted to KEP
+- v1.19 - Graduated to GA

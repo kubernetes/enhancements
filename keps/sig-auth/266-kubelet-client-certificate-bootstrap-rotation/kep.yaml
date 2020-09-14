@@ -7,7 +7,7 @@ owning-sig: sig-auth
 participating-sigs:
   - sig-auth
   - sig-node
-status: implementable
+status: implemented
 creation-date: 2017-06-27
 reviewers:
   - "@smarterclayton"
@@ -20,7 +20,6 @@ see-also:
   - "/keps/sig-auth/20190607-certificates-api.md"
 replaces:
   - https://github.com/kubernetes/community/pull/768
-#stage: stable
 latest-milestone: "v1.19"
 milestone:
   alpha: "v1.4"
