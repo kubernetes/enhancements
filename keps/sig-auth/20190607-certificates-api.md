@@ -12,8 +12,8 @@ approvers:
   - "@liggitt"
   - "@smarterclayton"
 creation-date: 2019-06-07
-last-updated: 2020-01-21
-status: implementable
+last-updated: 2020-09-14
+status: implemented
 ---
 
 # Certificates API
@@ -500,3 +500,4 @@ control plane.
 - 1.18: 2020-01-15: Multi-signer design added
 - 1.18: 2020-01-21: status.certificate field format validation added
 - 1.19: 2020-05-07: v1 details added
+- 1.19: 2020-08-26: v1 implementation released
