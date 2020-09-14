@@ -230,6 +230,11 @@ Note: The above assumes no change in the number of releases made per year. If th
   and extend support additionally for 1.18, 1.17, and 1.16
 - [k-dev list discussion](https://groups.google.com/d/topic/kubernetes-dev/tOe2UFB_weQ/discussion)
   regarding move of this KEP to `implementable`
+- implemented state:
+  * 1.19 release and newer will have 1 year support as per this KEP
+  * barring any other changes outside this KEP's implemented state,
+    1.18 and prior will continue to have the 9 months or N-3 support
+    that was the norm when they were releases
 
 ## Drawbacks
 
