@@ -192,8 +192,6 @@ spec:
   anonymousAccessMode: [6]
   bucketClassName: [7]
   bucketRequest: [8]
-    name:
-    namespace:
   allowedNamespaces: [9]
     - name:
   protocol: [10]
@@ -236,7 +234,7 @@ status:
    - "publicReadWrite": Read/Write, same as `ro` with the addition of PutObject being allowed.
 > Note: does not reflect or alter the backing storage ACLs or IAM policies.
 7. `bucketClassName`: Name of the associated bucket class.
-8. `bucketRequest`: Name and namespace of the associated `BucketRequest`.
+8. `bucketRequest`: an `objectReference` containing the name, namespace and UID of the associated `BucketRequest`.
 9. `allowedNamespaces`: a list of namespaces that are permitted to either create new buckets or to access existing buckets.
 10. `protocol`: The protocol the application will use to access the backend storage.
    - `protocolSignature`: Specifies the protocol targeted by this Bucket instance.  One of:
@@ -338,11 +336,7 @@ metadata:
   provisioner: [4]
   bucketInstanceName: [5]
   bucketAccessRequest: [6]
-    name:
-    namespace:
   serviceAccount: [7]
-    name:
-    namespace:
   mintedSecretName: [8]
   policyActionsConfigMapData: [9]
   principal: [10]
@@ -356,8 +350,8 @@ metadata:
 1. `finalizers`: added by COSI to defer `BucketAccess` deletion until the pod that uses this access terminates, and the related `BucketAccessRequest` is deleted.
 1. `provisioner`:  Copied from the `BucketAccessClass`.
 1. `bucketInstanceName`:  name of the `Bucket` instance bound to this BA.
-1. `bucketAccessRequest`: name and namespace of the bound `BucketAccessRequest`.
-1. `serviceAccount`: name and namespace of the Kubernetes ServiceAccount, if any, specified by the `BucketAccessRequest`.  Empty when the `BucketAccessRequest.mintedSecretName` was specified.
+1. `bucketAccessRequest`: an `objectReference` containing the name, namespace and UID of the associated `BucketAccessRequest`.
+1. `serviceAccount`: an `objectReference` containing the name, namespace and UID of the associated `ServiceAccount`. Empty when the `BucketAccessRequest.mintedSecretName` is specified.
 1. `mintedSecretName`: name of the provisioner-generated Secret containing access credentials. This Secret exists in the provisioner’s namespace and must be copied to the app namespace by the COSI controller. **Note:** the provisioner's namespace is contained in the registered driver name.
 1. `policyActionsConfigMapData`: encoded data that contains a set of provisioner/platform defined policy actions to a given user identity. Contents of the ConfigMap that the *policyActionsConfigMap* field in the `BucketAccessClass` refers to.
 1. `principal`: username/access-key for the object storage provider to uniquely identify the user who has access to this bucket  
