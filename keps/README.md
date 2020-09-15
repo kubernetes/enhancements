@@ -8,6 +8,7 @@ This process is still in a _beta_ state and is mandatory for all enhancements be
 ## Quick start for the KEP process
 
 1. Socialize an idea with a sponsoring SIG.
+   You can send your idea to their mailing list, or add it to the agenda for one of their upcoming meetings.
    Make sure that others think the work is worth taking up and will help review the KEP and any code changes required.
 2. Follow the process outlined in the [KEP template](NNNN-kep-template/README.md)
 
