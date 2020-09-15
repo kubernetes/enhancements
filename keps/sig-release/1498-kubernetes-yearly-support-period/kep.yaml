@@ -24,7 +24,7 @@ approvers:
   - "@pwittrock"
 creation-date: 2020-01-22
 latest-milestone: v1.19
-status: implementable
+status: implemented
 see-also:
 replaces:
 superseded-by:
