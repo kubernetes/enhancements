@@ -1,6 +1,6 @@
 
 ---
-title: Pod PVC QoS limitation proposal
+title: Pod QoS limitation proposal on iops 
 authors:
   - "@pacoxu"
 
@@ -11,8 +11,8 @@ participating-sigs:
 
 reviewers:
   - "@mattcary"
-  - "@"
-  - "@"
+  - "@jsafrane"
+  - "@dashpole"
   - "@"
 
 approvers:
@@ -22,7 +22,7 @@ approvers:
 
 editor: TBD
 creation-date: 2020-07-08
-last-updated: 2020-07-08
+last-updated: 2020-09-16
 status: intialized
 see-also:
   - ""
@@ -78,7 +78,7 @@ superseded-by:
 Better resource management for iops or bps of block device in pvc.
 In some senarios, we need to limit PV's iops limit or Pod iops on a device or volume at runtime.
 
-For container runtime, dockerd provides blkio related params in docker run to limit a device's iops and bps. [docker reference #block-io-bandwidth-blkio-constraint](https://docs.docker.com/engine/reference/run/#block-io-bandwidth-blkio-constraint)
+For container runtime, dockerd provides blkio related params in docker run to limit a device's iops and bps. [docker reference #block-io-bandwidth-blkio-constraint](https://docs.docker.com/engine/reference/run/#block-io-bandwidth-blkio-constraint). Containerd use https://github.com/containerd/cgroups. 
 
 
 ## Motivation
@@ -105,23 +105,20 @@ Besides, the rootfs is shared by all pods in your node, the limitation will help
 - The limit is runtime limitation for block device when it is mounted to the pod. The limit is not a volume limitation in IaaS's aspect. If the device is used by multi pods, each pod should limit the iops by itself. 
 - For volume capability of iops, it is a physical limitation on device(PV), and this is not the same as the QoS of PVC in this proposal.
 - As cgroup implement has its limitations, we will not mention kernel buffered writings issues with cgroup limitations. This should be fixed or optimized in kernel side. Detailes will be mentioned in the `risks and limitations` below.
+- Windows host use job object to limit memory and cpu, and currently there is no solutions for disk QoS limitations.
 
 
 ## Proposal
 
-After open a feature gate "VolumeQos=True" or "DeviceIOPS=true", pod volume qos can be added by annotation like below. The alpha MVP would use annotations.
+After open a feature gate "VolumeQos=True" or "DeviceIOPS=true", pod volume qos can be added by annotation like below. The MVP 1 would use like:
+- host root paritition: hostPath may use the rootfs
+- docker layered filesystem: pod/containers read/write on this device
+- volume(local block volumes): set the limitation on pod level during mounting
 
-
-```
-annotations:
-    qos.volume.storage.daocloud.io: >-
-        {"pvc": "snap-03", "iops": {"read": 2000, "write": 1000}, "bps":
-        {"read": 1000000, "write": 1000000}}
-```
 
 
 Then kubelet can get the mount point of the pvc and the device id. Then we use the cgroup to limit iops and bps of the pod.
-We can just edit the cgroup limit files under the pod /sys/fs/cgroup/blkio/kubepods/pod/<Container_ID>/...
+We can just edit the cgroup limit files under the pod /sys/fs/cgroup/blkio/kubepods/pod<UID>/...
 For instance, to limit read iops of a pod
 
 
@@ -156,7 +153,18 @@ spec:
   containers:
   - image: daocloud.io/daocloud/dao-2048:latest
     name: local-2048-1
+    resources:
+      limits:
+        iops:
+          read: 4000
+          write: 2000
+        bps:
+          read: 2000000
+          write: 2000000
     volumeMounts:
+    - name: dce-certs
+      readOnly: true
+      mountPath: /etc/daocloud/certs/
     - mountPath: /data
       name: volume
     - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
@@ -164,6 +172,7 @@ spec:
       readOnly: true
   serviceAccount: default
   serviceAccountName: default
+
   volumes:
   - name: volume
     persistentVolumeClaim:
@@ -174,6 +183,16 @@ spec:
     bps:
       read: 1000000
       write: 1000000
+  - name: dce-certs
+    hostPath:
+      path: /etc/daocloud/certs/
+      type: DirectoryOrCreate
+      iops:
+        read: 2000
+        write: 1000
+      bps:
+        read: 1000000
+        write: 1000000
   - name: default-token-cv7mt
     secret:
       defaultMode: 420
@@ -181,6 +200,46 @@ spec:
 ```
 
 This would be optional properties for volume in Pod Spec. This is the beta design. 
+
+Limit Range would be a plus to help administractors limit default 
+
+```
+- apiVersion: v1
+  kind: LimitRange
+  metadata:
+    name: dce-default-limit-range
+    namespace: default
+  spec:
+    limits:
+    - default:
+        cpu: 500m
+        memory: 1Gi
+        iops:
+          read: 2000
+          write: 1000
+      defaultRequest:
+        cpu: 500m
+        memory: 1Gi
+      maxLimitRequestRatio:
+        cpu: "1"
+        memory: "1"
+      type: Container
+```
+
+#### TBD
+Storage Class add iops limitation.
+
+#### Another proposal
+
+Set limitation in kubelet side.
+
+kubelet new option for iops limitation policy --disk-policy
+- unlimited: default, no limitation
+- fair: run pod in the same weight(or node-iops/max-pods)
+- priority: pod have to specify an iops
+
+I am thinking about this proposal and will add more info later.
+
 
 
 ### API Change
@@ -218,10 +277,12 @@ other stories can be found in
 
 ### Implementation Details/Notes/Constraints
 
+- No Windows support
+- No remote volume support
+- May behave differently in some cloud disk like  GCP PD(IOPS are pooled across all devices attached to a node so that limiting IOPS on a single device may not work as expected (eg, accessing the rootfs may end up throttling an attached PV).)
 
 ### Risks and Mitigations
 I think iops limiting would be a great idea, but I'm not sure if the current cgroups implementation will effectively implement it. For example, with non-direct device access, writes are buffered in the kernel and something like 80% of them will not be accounted to a cgroup (instead they're all aggregated together). I did a little bit of experimentation here: https://gitlab.com/mattcary/blkio_cgroups/-/blob/master/data/blkio_cgroup.md (sorry that the writeup is not very polished).
-
 
 
 
@@ -251,5 +312,4 @@ TBD
 ## Implementation History
 
 # Alternatives
-
 
