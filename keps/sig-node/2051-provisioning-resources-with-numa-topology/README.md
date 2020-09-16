@@ -9,8 +9,6 @@
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
 - [Design Details](#design-details)
-  - [Design based on CRI](#design-based-on-cri)
-    - [Drawbacks](#drawbacks)
   - [Design based on podresources interface of the kubelet](#design-based-on-podresources-interface-of-the-kubelet)
   - [API](#api)
   - [Integration into Node Feature Discovery](#integration-into-node-feature-discovery)
@@ -19,24 +17,28 @@
 - [Alternatives](#alternatives)
   - [Annotation approach](#annotation-approach)
   - [NUMA specification in ResourceName](#numa-specification-in-resourcename)
+  - [Design based on CRI](#design-based-on-cri)
+    - [Drawbacks](#drawbacks)
 <!-- /toc -->
 
 ## Summary
 
-Cluster which contains several nodes with NUMA topology and
-enabled TopologyManager feature gate is not rare now. In such cluster
-could be a situation when TopologyManager's admit handler on the kubelet
-side refuses pod launching since pod's resources request doesn't sutisfy
-selected TopologyManager policy, in this case pod should be rescheduled.
-Also it can get stuck in the rescheduling cycle.
-To avoid such kind of problem scheduler should choose a node considering topology
-of the node and TopologyManager policy on the worker node.
+Kubernetes clusters composed of nodes with complex hardware topology are becoming more prevalent.
+[Topology Manager](https://kubernetes.io/docs/tasks/administer-cluster/topology-manager/) was
+introduced in kubernetes as part of kubelet in order to extract the best performance out of
+these high performance hybrid systems. It performs optimizations related to resource allocation
+in order to make it more likely for a given pod to perform optimally. In scenarios where
+Topology Manager is unable to align topology of requested resources based on the selected
+Topology Manager policy, the pod is rejected with Topology Affinity Error.
+[This](https://github.com/kubernetes/kubernetes/issues/84869) kubernetes issue provides
+further context on how runaway pods are created because the scheduler is topology-unaware.
+
+In order to address this issue, scheduler needs to choose a node considering resource availability along with underlying resource topology and Topology Manager policy on the worker node.
 
 ## Motivation
 
-For the scheduling which is topology aware, resources with topology
-information should be provisioned.
-This KEP describes how it would be implemented.
+In order to enable topology aware scheduling, resource topology information of the nodes in the cluster
+needs to be exposed. This KEP describes how it would be implemented.
 
 ### Goals
 
@@ -63,35 +65,6 @@ which could be used by kubernetes. It could be calculated by
 subtracting resources of kube cgroup and system cgroup from
 system allocatable resources.
 
-### Design based on CRI
-
-The containerStatusResponse returned as a response to the ContainerStatus rpc contains `Info` field which is used by the container runtime for capturing ContainerInfo.
-```go
-message ContainerStatusResponse {
-      ContainerStatus status = 1;
-      map<string, string> info = 2;
-}
-```
-
-Containerd has been used as the container runtime in the initial investigation. The internal container object info
-[here](https://github.com/containerd/cri/blob/master/pkg/server/container_status.go#L130)
-
-The Daemon set is responsible for the following:
-
-- Parsing the info field to obtain container resource information
-- Identifying NUMA nodes of the allocated resources
-- Identifying total number of resources allocated on a NUMA node basis
-- Detecting Node resource capacity on a NUMA node basis
-- Updating the CRD instance per node indicating available resources on NUMA nodes, which is referred to the scheduler
-
-
-#### Drawbacks
-
-The content of the `info` field is free form, unregulated by the API contract. So, CRI-compliant container runtime engines are not required to add any configuration-specific information, like for example cpu allocation, here. In case of containerd container runtime, the Linux Container Configuration is added in the `info` map depending on the verbosity setting of the container runtime engine.
-
-There is currently work going on in the community as part of the the Vertical Pod Autoscaling feature to update the ContainerStatus field to report back containerResources
-[KEP](https://github.com/kubernetes/enhancements/blob/master/keps/sig-node/20191025-kubelet-container-resources-cri-api-changes.md).
-
 
 ### Design based on podresources interface of the kubelet
 
@@ -110,8 +83,15 @@ it could be used to collect used resources on the worker node and to evaluate
 its NUMA assignment (by device id).
 
 Podresources could also be used to obtain initial information on resources of the worker node.
-These resources with additional NUMA topolog could be provided by podresource interface.
-This interface might look like as following:
+
+The PodResource API as it stands today:
+* only provides information from Device Manager but not from CPU Manager.
+* doesn't contain topology information as part of ContainerDevice.
+* doesn't have the capability to let clients enumerate the resources.
+
+This [KEP](https://github.com/kubernetes/enhancements/pull/1884) proposes extension of podresource api to address the above mentioned gaps.
+
+With the changes proposed in the above KEP, this interface might look like as following:
 
 ```proto
 syntax = "proto3";
@@ -119,24 +99,30 @@ syntax = "proto3";
 package v1alpha1;
 
 
-service PodResourcesLister {
-    rpc GetAvailableResources(Empty) returns (AvailableResourcesResponse) {}
+service PodResources {
+    rpc List(ListPodResourcesRequest) returns (ListPodResourcesResponse) {}
+    rpc GetAvailableResources(AvailableResourcesRequest) returns (AvailableResourcesResponse) {}
 }
+
+message ListPodResourcesRequest {}
+
+message ListPodResourcesResponse {
+    repeated PodResources pod_resources = 1;
+}
+
+message AvailableResourcesRequest {}
 
 message AvailableResourcesResponse {
-    repeated ContainerDevice contdevices = 1;
+    repeated ContainerDevices devices = 1;
     repeated int64 cpu_ids = 2;
 }
+
+message ContainerDevices {
+    string resource_name = 1;
+    repeated string device_ids = 2;
+    Topology topology = 3;
+}
 ```
-
-Currently podresources interface doesn't provide information from CPUManager only from
-DeviceManager as well as information about memory which was used,
-and ContainerDevice doesn't contain numa_id.
-But information provided by podresource could be easily extended.
-This [KEP](https://github.com/kubernetes/enhancements/pull/1884) propose such functionality.
-Approach based on podresources doesn't have sufficient drawbacks as approach based on CRI, it
-looks like preferred way to collect resources consumed by the pod.
-
 
 ### API
 
@@ -147,27 +133,28 @@ Available resources with topology of the node should be stored in CRD. Format of
 ```go
 // NodeResourceTopology is a specification for a Foo resource
 type NodeResourceTopology struct {
-    metav1.TypeMeta           `json:",inline"`
-    metav1.ObjectMeta         `json:"metadata,omitempty"`
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-    TopologyPolicies []string `json:"topologyPolicies"`
-    Zones map[string]Zone     `json:"zones"`
+	TopologyPolicies []string `json:"topologyPolicies"`
+	Zones            ZoneMap  `json:"zones"`
 }
 
 // Zone is the spec for a NodeResourceTopology resource
 type Zone struct {
-    Type string
-    Parent string
-    Consts map[int]int
-    Attributes map[string]int
-    Resources ResourceInfoMap
+	Type       string           `json:"type"`
+	Parent     string           `json:"parent,omitempty"`
+	Costs      map[string]int   `json:"costs,omitempty"`
+	Attributes map[string]int   `json:"attributes,omitempty"`
+	Resources  ResourceInfoMap  `json:"resources,omitempty"`
 }
 
 type ResourceInfo struct {
-    Allocatable int
-    Capacity int
+	Allocatable string `json:"allocatable"`
+	Capacity    string `json:"capacity"`
 }
 
+type ZoneMap map[string]Zone
 type ResourceInfoMap map[string]ResourceInfo
 ```
 
@@ -223,6 +210,7 @@ metadata:
 ## Implementation History
 
 - 2020-06-22: Initial KEP published.
+- 2020-09-16: Updated to capture flexible/generic CRD specification. Moved design based on CRI as to the alternatives section because of its drawbacks.
 
 ## Alternatives
 
@@ -252,3 +240,32 @@ numa%d///subdomain/resourceName
 numa%d/// - could be omitted
 
 This approach may have side effects.
+
+### Design based on CRI
+
+The containerStatusResponse returned as a response to the ContainerStatus rpc contains `Info` field which is used by the container runtime for capturing ContainerInfo.
+```go
+message ContainerStatusResponse {
+      ContainerStatus status = 1;
+      map<string, string> info = 2;
+}
+```
+
+Containerd has been used as the container runtime in the initial investigation. The internal container object info
+[here](https://github.com/containerd/cri/blob/master/pkg/server/container_status.go#L130)
+
+The Daemon set is responsible for the following:
+
+- Parsing the info field to obtain container resource information
+- Identifying NUMA nodes of the allocated resources
+- Identifying total number of resources allocated on a NUMA node basis
+- Detecting Node resource capacity on a NUMA node basis
+- Updating the CRD instance per node indicating available resources on NUMA nodes, which is referred to the scheduler
+
+
+#### Drawbacks
+
+The content of the `info` field is free form, unregulated by the API contract. So, CRI-compliant container runtime engines are not required to add any configuration-specific information, like for example cpu allocation, here. In case of containerd container runtime, the Linux Container Configuration is added in the `info` map depending on the verbosity setting of the container runtime engine.
+
+There is currently work going on in the community as part of the the Vertical Pod Autoscaling feature to update the ContainerStatus field to report back containerResources
+[KEP](https://github.com/kubernetes/enhancements/blob/master/keps/sig-node/20191025-kubelet-container-resources-cri-api-changes.md).
