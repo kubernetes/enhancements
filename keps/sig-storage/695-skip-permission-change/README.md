@@ -46,8 +46,10 @@ Currently before a volume is bind-mounted inside a container the permissions on
 that volume are changed recursively to the provided fsGroup value.  This change
 in ownership can take an excessively long time to complete, especially for very
 large volumes (>=1TB) as well as a few other reasons detailed in [Motivation](#motivation).
-To solve this issue we will add a new field called `pod.Spec.SecurityContext.FSGroupChangePolicy` and
-allow the user to specify how they want the permission and ownership change for volumes used by pod to happen.
+
+To solve this issue we will add a new field called `pvc.Status.FSGroup` to record last known
+fsGroup of the volume managed by PVC and if it matches with `fsGroup` requested in pod's spec - kubelet
+will not perform recursive permission and ownership change.
 
 ## Motivation
 
@@ -70,44 +72,99 @@ But this presents following problems:
 
  - In some cases if user brings in a large enough volume from outside, the first time ownership and permission change still could take lot of time.
  - On SELinux enabled distributions we will still do recursive chcon whenever applicable and handling that is outside the scope.
- - This proposal does not attempt to fix two pods using same volume with conflicting fsgroup. `FSGroupChangePolicy` also will be only applicable to volume types which support setting fsgroup.
+ - This proposal does not attempt to fix two pods using same volume with conflicting fsgroup. It also will be only applicable to volume types which support setting fsgroup.
 
 ## Proposal
 
-We propose that an user can optionally opt-in to skip recursive ownership(and permission) change on the volume if volume already has right permissions.
-
 ### Implementation Details/Notes/Constraints [optional]
 
-Currently Volume permission and ownership change is done using a breadth-first algorithm starting from root directory of the volume. As part of this proposal we will change the algorithm to modify permissions/ownership of the root directory after all directories/files underneath have their permissions changed.
 
-When creating a pod, we propose that `pod.Spec.SecurityContext` field expanded to include a new field called `FSGroupChangePolicy` which can have following possible values:
+#### Proposed API changes:
 
- - `Always` --> Always change the permissions and ownership to match fsGroup. This is the current behavior and it will be the default one when this proposal is implemented. Algorithm that performs permission change however will be changed to perform permission change of top level directory last.
- - `OnRootMismatch` --> Only perform permission and ownership change if permissions of top level directory does not match with expected permissions and ownership.
+##### Changes to PVC:
+
 
 ```go
-type PodFSGroupChangePolicy string
-
-const(
-    OnRootMismatch PodFSGroupChangePolicy = "OnRootMismatch"
-    AlwaysChangeVolumePermission PodFSGroupChangePolicy = "Always"
-)
-
-type PodSecurityContext struct {
-    // FSGroupChangePolicy ← new field
-    // Defines behavior of changing ownership and permission of the volume
-    // before being exposed inside Pod. This field will only apply to
-    // volume types which support fsGroup based ownership(and permissions).
-    // It will have no effect on ephemeral volume types such as: secret, configmaps
-    // and emptydir.
-    // + optional
-    FSGroupChangePolicy *PodFSGroupChangePolicy
+type PersistentVolumeClaimStatus struct {
+     // Phase represents the current phase of PersistentVolumeClaim
+     // +optional
+     Phase PersistentVolumeClaimPhase
+     // AccessModes contains all ways the volume backing the PVC can be mounted
+     // +optional
+     AccessModes []PersistentVolumeAccessMode
+     // Represents the actual resources of the underlying volume
+     // +optional
+     Capacity ResourceList
+     // FSGroup of PVC
+     // + optional
+     FSGroup *int64     // <------ NEW ------
+     // +optional
+     Conditions []PersistentVolumeClaimCondition
 }
 ```
 
+##### Changes to CSIDriver
+
+```go
+const (
+    // ReadWriteOnceWithFSTypeFSGroupPolicy indicates that each volume will be examined
+    // to determine if the volume ownership and permissions
+    // should be modified. If a fstype is defined and the volume's access mode
+    // contains ReadWriteOnce, then the defined fsGroup will be applied.
+    // This mode should be defined if it's expected that the
+    // fsGroup may need to be modified depending on the pod's SecurityPolicy.
+    // This is the default behavior if no other FSGroupPolicy is defined.
+    ReadWriteOnceWithFSTypeFSGroupPolicy FSGroupPolicy = "ReadWriteOnceWithFSType"
+
+    // FileFSGroupPolicy indicates that CSI driver supports volume ownership
+    // and permission change via fsGroup, and Kubernetes may use fsGroup
+    // to change permissions and ownership of the volume to match user requested fsGroup in
+    // the pod's SecurityPolicy regardless of fstype or access mode.
+    // This mode should be defined if the fsGroup is expected to always change on mount
+    FileFSGroupPolicy FSGroupPolicy = "File"
+
+    // OnMountFSGroupPolicy indicates that CSI driver supports changing volume ownership via
+    // mount flags and hence fsgroup of pod should be made available to CSI driver in nodePublish
+    // and nodeStage CSI RPC calls. fsGroup can be made available via volume attributes of the form:
+    //   - csi.storage.k8s.io/pod.fsGroup: 1234
+    OnMountFSGroupPolicy FSGroupPolicy = "Mount" <--- new change
+
+    // NoneFSGroupPolicy indicates that volumes will be mounted without performing
+    // any ownership or permission modifications, as the CSIDriver does not support
+    // these operations.
+    // This mode should be selected if the CSIDriver does not support fsGroup modifications,
+    // for example when Kubernetes cannot change ownership and permissions on a volume due
+    // to root-squash settings on a NFS volume.
+    NoneFSGroupPolicy FSGroupPolicy = "None"
+)
+```
+
+#### Implementation details
+
+For all in-tree plugins when a volume is mounted by the kubelet, the plugin in kubelet will check
+if `pvc.Status.FSGroup` match `pod.Spec.SecurityContext.FSGroup` then no recursive permission
+change will be performed.
+
+For CSI drivers:
+
+- Don't do any permission and ownership change if `CSIDriver.Spec.FSGroupPolicy` is `None.`
+- If `CSIDriver.Spec.FSGroupPolicy` is set to `Mount` then pod's fsGroup will be supplied to the
+  CSI driver via volume attributes on nodeStage/nodePublish and it is expected that driver
+  will set right permissions on the volume during mount.
+- If `CSIDriver.Spec.FSGroupPolicy` is set to `File|ReadWriteOnceWithFSType` and `pvc.Status.FSGroup`
+  doesn't match with `pod.Spec.SecurityContext.FSGroup` then a recursive ownership and permission change
+  on volume will be performed by kubelet.
+
+After ownership and permissions are recursively changed, pvc.Status.FSGroup will be updated to reflect
+latest value.
+
 ### Risks and Mitigations
 
-- One of the risks is if user volume's permission was previously changed using old algorithm(which changes permission of top level directory first) and user opts in for `OnRootMismatch` `FSGroupChangePolicy` then we can't distinguish if the volume was previously only partially recursively chown'd.
+- If somehow users have volumes that have right `fsGroup` recorded in PVC's status but actual permissions on disk is different, the volume
+  could become unreadable/unwritable to the pod. This could happen if files inside volume dwerewas changed outside Kubernetes by a different process.
+  User/admin can fix the problem by manually changing permission and ownership of volume by same external process that modifies the volume.
+- If a process running inside pod removes group's permission from certain subdirectories or files and UID of the pod changes, then those subdirectories
+  and files will not be readable/writable by the new pod. To mitigate this - if UID if pod changes then user must change `fsGroup` of the pod too.
 
 ## Production Readiness Review Questionnaire
 
@@ -115,11 +172,11 @@ type PodSecurityContext struct {
 
 * **How can this feature be enabled / disabled in a live cluster?**
   - [x] Feature gate
-    - Feature gate name: ConfigurableFSGroupPolicy
+    - Feature gate name: SkipFSGroupChange
     - Components depending on the feature gate: kubelet, kube-apiserver
 
 * **Does enabling the feature change any default behavior?**
-  No enabling the feature gate does not change any default behaviour.
+  Yes enabling the feature gate could skip permission change for PVCs for which recorded `fsGroup` in `pvc.Status` is already correct.
 
 * **Can the feature be disabled once it has been enabled (i.e. can we rollback
   the enablement)?**
@@ -128,8 +185,8 @@ type PodSecurityContext struct {
   behaviour without the feature gate.
 
 * **What happens if we reenable the feature if it was previously rolled back?**
-  For pods that have expected value in `pod.Spec.SecurityContext.FSGroupChangePolicy` as defined in this KEP,
-  it will start using specified policy.
+  If we reenable feature-gate then for PVCs for which `fsGroup` was already recorded in `pvc.Status` will have recursive permission
+  change skipped if it matches requestes `fsGroup` in pod.
 
 * **Are there any tests for feature enablement/disablement?**
   There aren't any e2e but there are unit tests that cover this behaviour.
@@ -137,12 +194,12 @@ type PodSecurityContext struct {
 ### Rollout, Upgrade and Rollback Planning
 
 * **How can a rollout fail? Can it impact already running workloads?**
-  Since this feature requires users to opt-in by setting new field in pod spec, it should
-  not impact already running workloads.
+  If somehow users have volumes that have right `fsGroup` recorded in PVC but actual permissions on disk is different, the volume
+  could become unreadable/unwritable to the pod.
+
 
 * **What specific metrics should inform a rollback?**
-  If after enabling this feature and setting `pod.Spec.SecurityContext.FSGroupChangePolicy`
-  users notice an increase in volume mount time via `storage_operation_duration_seconds{operation_name=volume_mount}`
+  If after enabling this feature users notice an increase in volume mount time via `storage_operation_duration_seconds{operation_name=volume_mount}`
   or an increase in mount error count via `storage_operation_errors_total{operation_name=volume_mount}`
   then a cluster-admin may want to rollback the feature.
 
@@ -158,7 +215,7 @@ type PodSecurityContext struct {
 ### Monitoring requirements
 
 * **How can an operator determine if the feature is in use by workloads?**
-  Operator can query `pod.Spec.SecurityContext.fsGroupChangepolicy` field and identify if this is being set to non-default values.
+  Operator can query `pvc.Status.FSGroup` field and identify if this is being set to non-default values.
 
 * **What are the SLIs (Service Level Indicators) an operator can use to
   determine the health of the service?**
@@ -177,8 +234,8 @@ type PodSecurityContext struct {
 
 * **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
   It is hard to give numbers that an admin could use to determine health of mount operation. In general we expect that after this feature is rolled out
-  and user starts using it by selecting `OnRootMismatch` `fsGroupChangepolicy` then - `storage_operation_duration_seconds{operation_name=volume_mount}`
-  should go down and there should not be an spike in mount error metric (reported via `storage_operation_errors_total{operation_name=volume_mount}`).
+  for volumes managed by PVC `storage_operation_duration_seconds{operation_name=volume_mount}`
+  should go report lower values and there should not be an spike in mount error metric (reported via `storage_operation_errors_total{operation_name=volume_mount}`).
 
 * **Are there any missing metrics that would be useful to have to improve
   observability if this feature?**
@@ -193,7 +250,7 @@ type PodSecurityContext struct {
 ### Scalability
 
 * **Will enabling / using this feature result in any new API calls?**
-  This feature should cause no new API calls.
+  This feature could trigger additional api call from kubelet to update PVC status after permission/ownership change is complete.
 
 * **Will enabling / using this feature result in introducing new API types?**
   This feature introduces no new API types.
@@ -204,11 +261,11 @@ type PodSecurityContext struct {
 
 * **Will enabling / using this feature result in increasing size or count
   of the existing API objects?**
-  Since this feature adds a new field to pod's securitycontext, it will increase API size of
-  Pod object:
+  Since this feature adds a new field to pvc status, it will increase API size of
+  PVC object:
   Describe them providing:
-  - API type(s): Pod
-  - Estimated increase in size: (e.g. new annotation of size 32B): 35B
+  - API type(s): PVC
+  - Estimated increase in size: (e.g. new annotation of size 32B): 7B
 
 
 * **Will enabling / using this feature result in increasing time taken by any
@@ -229,15 +286,15 @@ details). For now we leave it here though.
   Not applicable
 
 * **What are other known failure modes?**
-  - A brown field volume has correct top level permission but incorrect leaf level permission.
-    - Detection: If user has used `fsGroupChangePolicy` as `OnRootMismatch` in pod's security context and somehow top level directory has right permission but subdirectories don't then when pod attempts to read/write those subdirectories it could fail. So there are no metrics for this error but could result in pod not running correctly.
-    - Mitigations: This failure does not affect existing workloads and user can switch to using `Always` in `fsGroupChangePolicy` of pod's security context.
+  - A volume managed by a PVC has different permissions than the one recorded in `pvc.Status.FSGroup`:
+    - Detection: If user modifies a volume managed by PVC outside Kubernetes, it can result in different permissions on the disk than what is recorded in `pvc.Status.FSGroup` and if that happens pod may not run correctly.
+    - Mitigations: If anything causes creation or modifications of files without group permissions on volume - then user may recreate the pod with different `fsGroup` to force recursive permission and ownership change.
     - Diagnostics: Pod does not run correctly.
-    - Testing: We do not attempt to check for leaf level perissions if `fsGroupChangePolicy` is set to `OnRootMismatch`(which would defeat the purpose of this feature). But since user needs to opt-in for using this feature, they should be aware of side effects.
+    - Testing: If pod can not run correctly after modifying files on volume then `fsGroup` on pod has to be reset.
 
 * **What steps should be taken if SLOs are not being met to determine the problem?**
   If admin notices an increase in mount errors or increase in mount timings as documented in SLIs then an admin could:
-      - check number of pods that are setting non-defaults in `pod.Spec.SecurityContext.fsGroupChangePolicy`
+      - check number of PVCs that are have `pvc.Status.FSGroup` set in them.
       - Check volume mount and latency metrics (as described in SLI)
       - Check kubelet logs for mount errors or problems.
 
@@ -246,13 +303,14 @@ details). For now we leave it here though.
 
 ## Graduation Criteria
 
-* Alpha in 1.18 provided all tests are passing and gated by the feature Gate
-   `ConfigurableFSGroupPermissions` and set to a default of `False`
+* Alpha in 1.20 provided all tests are passing and gated by the feature Gate
+   `SkipFSGroupChange` and set to a default of `false`.
 
-* Beta in 1.19 with design validated by at least two customer deployments
+* Beta in 1.21 with design validated by at least two customer deployments
   (non-production), with discussions in SIG-Storage regarding success of
   deployments.  A metric will be added to report time taken to perform a
-  volume ownership change. Also e2e tests that verify volume permissions with various `FSGroupChangePolicy`.
+  volume ownership change. Also e2e tests that verify volume permissions
+  when PVC is reused by different pods.
 * GA in 1.20, with Node E2E tests in place tagged with feature Storage
 
 
@@ -263,7 +321,6 @@ details). For now we leave it here though.
 A test plan will consist of the following tests
 
 * Basic tests including a permutation of the following values
-  - pod.Spec.SecurityContext.FSGroupChangePolicy (OnRootMismatch/Always)
   - PersistentVolumeClaimStatus.FSGroup (matching, non-matching)
   - Volume Filesystem existing permissions (none, matching, non-matching, partial-matching?)
 * E2E tests
@@ -276,6 +333,7 @@ We will add a metric that measures the volume ownership change times.
 ## Implementation History
 
 - 2020-01-20 Initial KEP pull request submitted
+- 2020-09-16 KEP updated to use `pvc.Status.FSGroup`
 
 ## Drawbacks [optional]
 
