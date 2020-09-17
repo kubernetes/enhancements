@@ -270,7 +270,7 @@ type PodExecOptions struct {
 ### Test Plan
 
 Although `exec` requests are used extensively across E2E tests, the dedicated test coverage is
-severly lacking, and there is no test coverage of `attach` and `portForward`. Tests will be added
+severely lacking, and there is no test coverage of `attach` and `portForward`. Tests will be added
 covering:
 
 1. Parameters provided via query parameters
