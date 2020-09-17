@@ -1,4 +1,3 @@
-
 <!--
 **Note:** When your KEP is complete, all of these comment blocks should be removed.
 
@@ -324,13 +323,13 @@ tests will be necessary.
 
 ### Graduation Criteria
 
-#### Alpha
+#### Alpha (1.20)
 - Analysis runs as a non-blocking presubmit check, warning developers of any findings in their changes.
 
-#### Beta (1.20+)
+#### Beta (1.21)
 - Analysis consumes fields tags for identification of material that should not be logged.
 
-#### GA
+#### GA (1.22)
 - No false positives have been produced in <N> weeks.
 - Presmubmit analysis becomes blocking.
 
@@ -573,3 +572,6 @@ Use this section if you need things from the project/SIG. Examples include a
 new subproject, repos requested, or GitHub details. Listing these here allows a
 SIG to get the process for these resources started right away.
 -->
+
+This KEP will introduce a new Prow test.
+No additional infrastructure beyond that which already exists should be necessary.
