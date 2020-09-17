@@ -200,7 +200,8 @@ be provided in the request body](#4-require-the-request-options-to-be-provided-i
 We cannot completely remove support for GET exec requests without breaking websockets. However, we
 can require the websocket protocol be used to perform a GET exec.
 
-**Risk:** This is a breaking change for non-websocket clients.
+**Risk:** This is a breaking change for non-websocket clients, and leaves websocket clients exposed
+to SSRF risks.
 
 <<[UNRESOLVED]>>
 
@@ -211,22 +212,32 @@ does not. Do we need to do a gradual rollout of this change?
 
 <<[UNRESOLVED]>>
 
-OPTIONAL: As extra protection against redirect attacks, we could use a similar trick as is used for
+Alternative options for protecting websockets at the expense of introducing a breaking change:
+
+1. As extra protection against redirect attacks, we could use a similar trick as is used for
 providing the bearer token as an extra sub-protocol:
 https://github.com/kubernetes/kubernetes/blob/21953d15ea48972f20a8de29d58bd5ce6d913914/staging/src/k8s.io/apiserver/pkg/authentication/request/websocket/protocol.go#L37-L38
-
 In this case, we could take a hash of the request options and provide the hash as an additional
 sub-protocol. Then, the exec handler would need to validate that the request options matched the
 hash value in the sub-protocol.
+
+2. Approve the exec params with a separate POST request. For example, the client issues a POST to
+   `.../exec/token` with the exec params included in the request body. The response includes a token
+   that must be included in the GET exec params. Implementation options include caching a single-use
+   token (similar to how CRI streaming requests work), or signing the request params.
+
+3. The initial websocket request only opens the websocket protocol stream, and a subsequent request
+   must be sent over the websocket to initiate the actual GET request.
 
 <<[/UNRESOLVED]>>
 
 ### Client Changes
 
 Kubernetes clients (except websocket clients) will need to be updated to provide the request options
-in the POST body before the `HardenedExecRequests` feature can graduate to Beta. See [1. Require
-options to be included in the POST request
-body.](#1-require-options-to-be-included-in-the-post-request-body) for the requirements.
+in the POST body before the `HardenedExecRequests` feature can graduate to Beta. Clients must
+continue providing parameters as query parameters in addition to the request body for backwards
+compatibility with older API servers. See [1. Require options to be included in the POST request
+body](#1-require-options-to-be-included-in-the-post-request-body) for the requirements.
 
 ### Risks and Mitigations
 
@@ -258,25 +269,20 @@ type PodExecOptions struct {
 
 ### Test Plan
 
-<!--
-**Note:** *Not required until targeted at a release.*
+Although `exec` requests are used extensively across E2E tests, the dedicated test coverage is
+severly lacking, and there is no test coverage of `attach` and `portForward`. Tests will be added
+covering:
 
-Consider the following in developing a test plan for this enhancement:
-- Will there be e2e and integration tests, in addition to unit tests?
-- How will it be tested in isolation vs with other components?
+1. Parameters provided via query parameters
+2. Parameters provided via request body
+3. Request via client-go
+4. Websocket request (already covered for exec)
 
-No need to outline all of the test cases, just the general strategy. Anything
-that would count as tricky in the implementation, and anything particularly
-challenging to test, should be called out.
+For (1) and (2) the request will need to be crafted manually using the go HTTP client. In the case
+of exec, (1) will need 2 variants controlled with a `[Feature:HardenedExecRequests]` tag, either
+expecting success or failure depending on the status of the `HardenedExecRequests` feature gate.
 
-All code is expected to have adequate tests (eventually with coverage
-expectations). Please adhere to the [Kubernetes testing guidelines][testing-guidelines]
-when drafting this test plan.
-
-[testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
--->
-
-TODO
+The tests should be implemented under `test/e2e/common` for inclusion in the `e2e_node` test suites.
 
 ### Graduation Criteria
 
