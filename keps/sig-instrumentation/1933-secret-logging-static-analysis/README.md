@@ -89,9 +89,11 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
-    - [Alpha](#alpha)
-    - [Beta (1.20+)](#beta-120)
-    - [GA](#ga)
+    - [Alpha (1.20)](#alpha-120)
+    - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
+    - [Beta (1.21)](#beta-121)
+    - [Beta -&gt; GA Graduation](#beta---ga-graduation)
+    - [GA (1.22)](#ga-122)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -326,11 +328,18 @@ tests will be necessary.
 #### Alpha (1.20)
 - Analysis runs as a non-blocking presubmit check, warning developers of any findings in their changes.
 
+#### Alpha -> Beta Graduation
+- Gather feedback from developers regarding any false-positive findings or other pain points.
+
 #### Beta (1.21)
 - Analysis consumes fields tags for identification of material that should not be logged.
+- Continue to gather developer feedback.  Respond to feedback gathered during alpha.
+
+#### Beta -> GA Graduation
+- No false-positives are produced by analysis for <N> weeks.
+- Respond to any remaining issues from developer feedback.
 
 #### GA (1.22)
-- No false positives have been produced in <N> weeks.
 - Presmubmit analysis becomes blocking.
 
 <!--
