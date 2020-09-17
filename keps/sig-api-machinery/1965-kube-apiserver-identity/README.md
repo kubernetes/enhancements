@@ -6,7 +6,6 @@
 - [Motivation](#motivation)
 - [Proposal](#proposal)
   - [Caveats](#caveats)
-  - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
@@ -83,21 +82,16 @@ listing the pods selected by the service, an aggregated server can learn the
 list of living servers with distinct podIPs. A server can get its own IDs via
 downward API.
 
-We prefer false positives over false negatives, because false negatives are more
-harmful. In the storage version API scenario, if a kube-apiserver accidentally
+We prefer that expired Leases remain for a longer duration as opposed to
+collecting them quickly, because in the latter case, if a Lease is falsely
+collected by accident, it can do more damage than the former case. Take the
+storage version API scenario as an example, if a kube-apiserver accidentally
 missed a heartbeat and got its Lease garbage collected, its StorageVersion can
 be falsely garbage collected as a consequence. In this case, the storage
 migrator won’t be able to migrate the storage, unless this kube-aipserver gets
 restarted and re-registers its StorageVersion. On the other hand, if a
 kube-apiserver is gone and its Lease still stays around for an hour or two, it
 will only delay the storage migration for the same period of time.
-
-### Risks and Mitigations
-
-A new namespace will be reserved for storing kube-apiserver identity Lease
-objects. There is a chance that existing clusters may already be using the
-namespace. We mitigate the risk by documenting the namespace in the release
-note and use a feature gate to disable the behavior in alpha release.
 
 ## Design Details
 
@@ -114,7 +108,8 @@ default `leaseDurationSeconds` is chosen to be way longer than the default
 refresh period, to tolerate clock skew and/or accidental refresh failure. The
 default resync period is 1h. By default, assuming negligible clock skew, a Lease
 will be deleted if the kube-apiserver fails to refresh its Lease for one to two
-hours.
+hours. The GC controller will run in kube-controller-manager, to leverage leader
+election and reduce conflicts.
 
 The refresh rate, lease duration will be configurable through kube-apiserver
 flags. The resync period will be configurable through a kube-controller-manager
@@ -136,6 +131,8 @@ Alpha should provide basic functionality covered with tests described above.
 #### Alpha -> Beta Graduation
 
   - Appropriate metrics are agreed on and implemented
+  - An e2e test plan is agreed and implemented (e.g. chaosmonkey in a regional
+    cluster)
 
 #### Beta -> GA Graduation
 
