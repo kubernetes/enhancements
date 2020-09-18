@@ -1,4 +1,4 @@
-# Default Even Pod Spreading
+# Default Pod Topology Spread
 
 ## Table of Contents
 
@@ -14,15 +14,13 @@
     - [Story 2](#story-2)
   - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
     - [Feature gate](#feature-gate)
-    - [Relationship with &quot;DefaultPodTopologySpread&quot; plugin](#relationship-with-defaultpodtopologyspread-plugin)
+    - [Relationship with &quot;SelectorSpread&quot; plugin](#relationship-with-selectorspread-plugin)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [API](#api)
   - [Default constraints](#default-constraints)
   - [How user stories are addressed](#how-user-stories-are-addressed)
   - [Implementation Details](#implementation-details)
-    - [In the metadata/predicates/priorities flow](#in-the-metadatapredicatespriorities-flow)
-    - [In the scheduler framework](#in-the-scheduler-framework)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha (v1.19):](#alpha-v119)
@@ -38,12 +36,12 @@
 - [ ] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
 - [ ] Graduation criteria is in place
 - [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 ## Summary
 
-With [Even Pods Spreading](/keps/sig-scheduling/20190221-even-pods-spreading.md),
+With [Pod Topology Spread](/keps/sig-scheduling/895-pod-topology-spread),
 workload authors can define spreading rules for their loads based on the topology of the clusters. 
 The spreading rules are defined in the `PodSpec`, thus they are tied to the pod.
 
@@ -76,7 +74,7 @@ them suitable to provide default spreading constraints for all workloads in thei
 ### Non-Goals
 
 - Set defaults for specific namespaces or according to other selectors.
-- Removal of `DefaultPodTopologySpread` plugin.
+- Removal of `SelectorSpread` plugin.
 
 ## Proposal
 
@@ -85,7 +83,7 @@ them suitable to provide default spreading constraints for all workloads in thei
 #### Story 1
 
 As a cluster operator, I want to set default spreading constraints for workloads in the cluster.
-Currently, `SelectorSpreadPriority` provides a canned priority that spreads across nodes
+Currently, `SelectorSpread` plugin provides a canned scoring that spreads across nodes
 and zones (`topology.kubernetes.io/zone`). However, the nodes in my cluster have custom topology
 keys (for physical host, rack, etc.).
 
@@ -101,25 +99,25 @@ As a workload author, I want to spread the workload in the cluster, but:
 #### Feature gate
 
 Setting a default for `PodTopologySpread` will be guarded with the feature gate
-`DefaultEvenPodsSpread`. This feature gate will depend on `EvenPodsSpread` to also be enabled.
+`DefaultPodTopologySpread`.
 
-#### Relationship with "DefaultPodTopologySpread" plugin
+#### Relationship with "SelectorSpread" plugin
 
-Note that Default `topologySpreadConstraints` has a similar effect to `DefaultPodTopologySpread`
+Note that Default `topologySpreadConstraints` has a similar effect to `SelectorSpread`
 plugin (`SelectorSpreadingPriority` when using the Policy API).
 Given that the latter is not configurable, they could return conflicting priorities, which
 may not be the intention of the cluster operator or workload author. On the other hand, a proper
-default for `topologySpreadConstraints` could provide the same score as
-`DefaultPodTopologySpread`. Thus, there's no need for the features to co-exist.
+default for `topologySpreadConstraints` can provide the same score as
+`SelectorSpread`. Thus, there's no need for the features to co-exist.
 
 When the feature gate is enabled:
 
-- K8s will set Default `topologySpreadConstraints` and remove `DefaultPodTopologySpread` from the
+- K8s will set Default `topologySpreadConstraints` and remove `SelectorSpread` from the
 k8s providers (`DefaultProvider` and `ClusterAutoscalerProvider`). The
-[Default](#default-constraints) will have a similar effect.
-- When a policy is used, `SelectorSpreadingPriority` will map to `PodTopologySpread`.
-- When setting plugins in the Component Config API, plugins are added as requested. Since an
-  operator is manually enabling the plugins, we assume they are aware of their intentions.
+[Default constraints](#default-constraints) will produce a similar score.
+- When setting plugins in the Component Config API, operators can specify plugins they want to enable.
+  Since this is a manual operation, if an operator decides to enable both plugins, this is respected.
+- [Beta] When using the Policy API, `SelectorSpreadingPriority` will map to `PodTopologySpread`.
 
 ### Risks and Mitigations
 
@@ -127,19 +125,19 @@ The `PodTopologySpread` plugin has some overhead compared to other plugins. We c
 pods that don't use the feature get minimally affected. After Default `topologySpreadConstraints`
 is rolled out, all pods will run through the plugin.
 We should ensure that the running overhead is not significantly higher than
-`DefaultPodTopologySpread` with the k8s Default.
+`SelectorSpread` with the k8s Default.
 
 ## Design Details
 
 ### API
 
-A new structure `Args` is introduced in `pkg/scheduler/framework/plugins/podtopologyspread`.
+A new structure `PodTopologySpreadArgs` is introduced in `pkg/scheduler/apis/config/`.
 Values are decoded from the `pluginConfig` slice in the kube-scheduler Component Config and used in
 `podtopologyspread.New`.
 
 ```go
-// pkg/scheduler/framework/plugins/podtopologyspread/plugin.go
-type Args struct {
+// pkg/scheduler/apis/config/types_pluginargs.go
+type PodTopologySpreadArgs struct {
 	// DefaultConstraints defines topology spread constraints to be applied to pods
 	// that don't define any in `pod.spec.topologySpreadConstraints`. Pod selectors must
 	// be empty, as they are deduced from the resources that the pod belongs to
@@ -166,6 +164,12 @@ defaultConstraints:
   - maxSkew: 5
     topologyKey: "topology.kubernetes.io/zone"
     whenUnsatisfiable: ScheduleAnyway
+```
+
+An operator can choose to disable the default constraints using:
+
+```yaml
+defaultConstraints: []
 ```
 
 ### How user stories are addressed
@@ -225,21 +229,15 @@ topologySpreadConstraints:
         app: demo
 ```
 
-Please note that these constraints are honored internally in the scheduler, but they are NOT
+Please note that these constraints get applied internally in the scheduler, but they are NOT
 persisted in the PodSpec via API Server.
 
 ### Implementation Details
 
-#### In the metadata/predicates/priorities flow
-
-1. Calculate the spreading constraints for the pod as part of the metadata calculation.
-   Use the constraints provided by the pod or calculate the default ones if they don't provide any.
-1. When running the predicates or priorities, use the constraints stored in the metadata.
-
-#### In the scheduler framework
-
 1. Calculate spreading constraints for the pod in the `PreFilter` extension point. Store them
-   in the `PluginContext`.
+   in the `PluginContext`. The constraints are obtained from `.spec.topologySpreadConstraints`. If
+   they are not defined, a default is calculated from the plugin's default constraints, using the
+   selectors of the Services, ReplicaSets, StatefulSets or ReplicationControllers the pod belongs to.
 1. In the `Filter` and `Score` extension points, use the stored spreading constraints instead of
    the ones defined by the pod.
 
@@ -257,11 +255,11 @@ To ensure this feature to be rolled out in high quality. Following tests are man
 #### Alpha (v1.19):
 
 - [x] Args struct for `podtopologyspread.New`.
-- [ ] Defaults and validation.
-- [ ] Score extension point implementation. Add support for `maxSkew`.
+- [x] Defaults and validation.
+- [x] Score extension point implementation. Add support for `maxSkew`.
 - [x] Filter extension point implementation.
-- [ ] Disabling `DefaultPodTopologySpread` when the feature is enabled.
-- [ ] Test cases mentioned in the [Test Plan](#test-plan).
+- [x] Disabling `SelectorSpread` when the feature is enabled.
+- [x] Unit, Integration and benchmark test cases mentioned in the [Test Plan](#test-plan).
 
 ## Implementation History
 
@@ -271,7 +269,7 @@ To ensure this feature to be rolled out in high quality. Following tests are man
 
 ## Alternatives
 
-- Make the topology keys used in `SelectorSpreadingPriority` configurable.
+- Make the topology keys used in `SelectorSpread` configurable.
 
     While this moves the scheduler in the right direction, there are two problems:
     
@@ -282,5 +280,4 @@ To ensure this feature to be rolled out in high quality. Following tests are man
 
   This approach would likely allow us to provide a more flexible interface that
   can set defaults for specific namespaces or with other selectors. However, that
-  wouldn't allow us to replace `SelectorSpreadingPriority` with
-  `EvenPodsSpreading`.
+  wouldn't allow us to replace `SelectorSpread` with `PodTopologySpread`.
