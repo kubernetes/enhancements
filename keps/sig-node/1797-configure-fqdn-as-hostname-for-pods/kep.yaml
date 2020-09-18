@@ -8,7 +8,7 @@ owning-sig: sig-node
 participating-sigs:
   - sig-network
   - sig-node
-status: implemented
+status: implementable
 creation-date: 2020-05-18
 reviewers:
   - "@thockin"
@@ -36,7 +36,7 @@ latest-milestone: "v1.19"
 milestone:
   alpha: "v1.19"
   beta: "v1.20"
-  stable: "v1.21"
+  stable: "v1.22"
 
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled

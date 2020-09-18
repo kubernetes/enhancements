@@ -505,12 +505,12 @@ in back-to-back releases.
 
 #### Alpha -> Beta Graduation
 
-- Gather feedback from developers
-- Tests are in Testgrid and linked in KEP
+- Gather feedback from users
+- Ensure e2e tests are running in Testgrid and they are stable
 
 #### Beta -> GA Graduation
 
-- Allowing time for feedback
+- Allowing time for feedback from production users
 
 
 ### Upgrade / Downgrade Strategy
@@ -527,7 +527,7 @@ enhancement:
   cluster required to make on upgrade in order to make use of the enhancement?
 -->
 
-We will gate off this feature for one release (1.19), then we enable it by default as Beta in the next release (1.20), then GA in release 1.21
+We will gate off this feature for one release (1.19), then we enable it by default as Beta in the next release (1.20), then GA in release 1.22
 
 ### Version Skew Strategy
 
@@ -579,7 +579,7 @@ _This section must be completed when targeting alpha to a release._
 * **How can this feature be enabled / disabled in a live cluster?**
   - [X] Feature gate (also fill in values in `kep.yaml`)
     - Feature gate name: setHostnameAsFQDN
-    - Components depending on the feature gate: Kubelet
+    - Components depending on the feature gate: kube-apiserver and kubelet
   - [ ] Other
     - Describe the mechanism:
     - Will enabling / disabling the feature require downtime of the control
@@ -601,23 +601,22 @@ _This section must be completed when targeting alpha to a release._
   hostname field of kernel.
 
 * **Are there any tests for feature enablement/disablement?**
-  We will have unit tests and integration tests. Not sure if we need conversion tests.
+  No, only manual testing was performed.
 
 ### Rollout, Upgrade and Rollback Planning
 
 _This section must be completed when targeting beta graduation to a release._
 
 * **How can a rollout fail? Can it impact already running workloads?**
-  It is not clear that the rollout can fail due to this feature. The scope of this feature
-  is very limited and it is disabled by default.
+  No known failure modes.
 
 * **What specific metrics should inform a rollback?**
-  Abnormal increase in `run_podsandbox_errors_total` count could be related to this feature. We should check if the feature gate is enabled and pods are using it.
+  Abnormal increase in `run_podsandbox_errors_total` count could be related to this feature. We should filter those pods having issues to create sandbox and check whether they are stuck due to the length of their FQDN, as described in the proposal.
 
 * **Were upgrade and rollback tested? Was upgrade->downgrade->upgrade path tested?**
-  We tested introducing and removing this feature. Running pods are not affected by
-  either introducing nor removing the feature. When disabling the feature, Pods 
-  using this feature that are "stuck" due to having long FQDNs will go into 
+  We tested enabling and disabling this feature. Running pods are not affected by
+  either enabling nor disabling this feature. When disabling the feature, Pods 
+  using it that are "stuck" due to having long FQDNs will go into 
   running.
 
 * **Is the rollout accompanied by any deprecations and/or removals of features,
@@ -634,15 +633,16 @@ _This section must be completed when targeting beta graduation to a release._
   checking if there are objects with field X set) may be last resort. Avoid
   logs or events for this purpose.
 
-  For a pod to be using this feature it needs to define the PodSpec fields
-  `subDomain` and `setHostnameAsFQDN`.
+  Listing pods in the cluster and checking if any has both
+  `subDomain` and `setHostnameAsFQDN` fields set.
 
 * **What are the SLIs (Service Level Indicators) an operator can use to
   determine the health of the service?**
   - [X] Metrics
-    - Metric name: Abnormal increase in `run_podsandbox_errors_total` might be related to this feature. We should check if the feature gate is enabled and pods are using it.
+    - Metric name: `run_podsandbox_errors_total`
+    - Comment: Abnormal increase in `run_podsandbox_errors_total` might be related to this feature. We should check if the feature gate is enabled and pods are using it.
     - [Optional] Aggregation method:
-    - Components exposing the metric:
+    - Components exposing the metric: Kubelet
   - [ ] Other (treat as last resort)
     - Details:
 
@@ -660,7 +660,7 @@ N/A
   observability if this feature?**
   Describe the metrics themselves and the reason they weren't added (e.g. cost,
   implementation difficulties, etc.).
-N/A
+
 
 ### Dependencies
 
@@ -692,7 +692,7 @@ previous answers based on experience in the field._
 
 * **Will enabling / using this feature result in increasing size or count
   of the existing API objects?**
-  No
+Pods using this feature are required to set a new field, which increases the size of their objects by a couple of bytes.
 
 * **Will enabling / using this feature result in increasing time taken by any
   operations covered by [existing SLIs/SLOs][]?**
@@ -723,14 +723,15 @@ _This section must be completed when targeting beta graduation to a release._
 
     - Mitigations: What can be done to stop the bleeding, especially for already
       running user workloads?
-      Pods should either set the PodSpec field `setHostnameAsFQDN`.
+      Pods having problems to start should unset the PodSpec field `setHostnameAsFQDN`.
 
     - Diagnostics: What are the useful log messages and their required logging
       levels that could help debugging the issue?
-      This issue will be logged in Error level log messages. The error will something like`GeneratePodSandboxConfig for pod foo failed: Failed to construct FQDN from pod hostname and cluster domain, FQDN <long-fqdn> is too long (64 characters is the max, 70 characters requested)`      
+      This issue will be logged in Error level log messages and in the Events. The message will be something like `GeneratePodSandboxConfig for pod foo failed: Failed to construct FQDN from pod hostname and cluster domain, FQDN <long-fqdn> is too long (64 characters is the max, 70 characters requested)`      
 
     - Testing: Are there any tests for failure mode? If not describe why.
-      Unittests cover this failure scenario. The e2e tests also check for this error, but only as protection for the CI. A test that purposely hit this issue will be flaky as the pod will remain in Pending status logging errors until the test timesout.
+      Both unittests and e2e tests cover this failure scenario. 
+
 
 * **What steps should be taken if SLOs are not being met to determine the problem?**
 
