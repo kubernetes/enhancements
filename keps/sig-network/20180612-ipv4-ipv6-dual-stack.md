@@ -919,7 +919,7 @@ spec:
   - "1000::1"
 ```
 
-While the `spec.loadBalancerIPs` array has become neccesary for dual-stack the field has
+While the `spec.loadBalancerIPs` array has become necessary for dual-stack the field has
 a broader use. Kubernetes does not use this field but it is a hint to the cloud-provider
 that may or may not be obeyed. For instance it is a valid case for the user to request
 3 IPv6 load-balancer addresses and no IPv4, or to specify both IPv4 and IPv6 addresses
