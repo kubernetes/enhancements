@@ -51,6 +51,7 @@ status: implementable
       - [Creating a New Single-Stack Service](#creating-a-new-single-stack-service)
       - [Creating a New Dual-Stack Service](#creating-a-new-dual-stack-service)
       - [NodePort Allocations](#nodeport-allocations)
+      - [Spec.loadBalancerIP](#specloadbalancerip)
     - [Type Headless services](#type-headless-services)
     - [Type ExternalName](#type-externalname)
   - [Endpoints](#endpoints)
@@ -894,7 +895,7 @@ the same NodePort on both families.  `kube-proxy` will ensure that traffic is
 routed according to the families assigned for services.
 
 
-##### spec.loadBalancerIP
+##### Spec.loadBalancerIP
 
 The `spec.loadBalancerIP` is a string and only allow one load-balancer
 address to be specified. A new multi value `spec.loadBalancerIPs` is added;
