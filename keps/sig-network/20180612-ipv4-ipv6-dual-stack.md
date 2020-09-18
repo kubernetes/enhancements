@@ -893,6 +893,48 @@ of the IP family of the service. A single service which is dual-stack may use
 the same NodePort on both families.  `kube-proxy` will ensure that traffic is
 routed according to the families assigned for services.
 
+
+##### spec.loadBalancerIP
+
+The `spec.loadBalancerIP` is a string and only allow one load-balancer
+address to be specified. A new multi value `spec.loadBalancerIPs` is added;
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-service
+spec:
+  type: LoadBalancer
+  selector:
+    app: MyApp
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 9376
+  ipFamilyPolicy: PreferDualStack
+  loadBalancerIPs:
+  - 10.0.0.1
+  - "1000::1"
+```
+
+While the `spec.loadBalancerIPs` array has become neccesary for dual-stack the field has
+a broader use. Kubernetes does not use this field but it is a hint to the cloud-provider
+that may or may not be obeyed. For instance it is a valid case for the user to request
+3 IPv6 load-balancer addresses and no IPv4, or to specify both IPv4 and IPv6 addresses
+in a single-stack service and let the cloud-provider decide which one to use depending
+on the main family.
+
+Therefore kubernetes will not do the same validation on `spec.loadBalancerIPs` as for
+it's own dual-stack fields: "two addresses, one of each type". The only validation
+for `spec.loadBalancerIPs` is that the strings are valid ip addresses.
+
+On upgrade `spec.loadBalancerIPs[0]` is set from `spec.loadBalancerIP` if it is defined.
+
+The corresponding field in the `status` struct `status.loadBalancer.ingress` is already an array.
+
+
+
 #### Type Headless services
 
 1. For Headless with selector, the value of `spec.ipFamilies` will drive the
