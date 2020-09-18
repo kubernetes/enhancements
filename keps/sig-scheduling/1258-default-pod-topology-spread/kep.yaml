@@ -1,4 +1,4 @@
-title: Default Even Pod Spreading
+title: Default Pod Topology Spread
 kep-number: 1258
 authors:
 - "@alculquicondor"
@@ -12,7 +12,7 @@ approvers:
 - "@ahg-g"
 - "@Huang-Wei"
 see-also:
-- "/keps/sig-scheduling/20190221-even-pods-spreading.md"
+- "/keps/sig-scheduling/895-pod-topology-spread"
 stage: alpha
 latest-milestone: "v1.19"
 milestone:
@@ -20,7 +20,7 @@ milestone:
   beta: "v1.20"
   stable: "v1.22"
 feature-gates:
-  - name: DefaultEvenPodsSpread
+  - name: DefaultPodTopologySpread
     components:
     - kube-scheduler
 disable-supported: true
