@@ -11,10 +11,10 @@ participating-sigs:
 status: provisional
 creation-date: 2020-09-01
 reviewers:
- - @dashpole
- - @serathius
+ - "@dashpole"
+ - "@serathius"
 approvers:
- - @dashpole
+ - "@dashpole"
 prr-approvers:
  - TBD
 see-also:
