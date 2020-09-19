@@ -5,11 +5,11 @@ authors:
 owning-sig: sig-node
 participating-sigs:
 reviewers:
-  - TBD
+  - @thockin
 approvers:
   - TBD
 creation-date: 2020-03-03
-last-updated: 2020-06-04
+last-updated: 2020-09-19
 status: proposed
 ---
 
