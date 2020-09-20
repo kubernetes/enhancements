@@ -1,16 +1,15 @@
 ---
 title: pod-level-resource-limits
 authors:
-  - "@liorokman"
+- "@liorokman"
 owning-sig: sig-node
 participating-sigs:
 reviewers:
-  - @thockin
+- "@thockin"
 approvers:
-  - TBD
+- sig-node
 creation-date: 2020-03-03
 last-updated: 2020-09-19
-status: proposed
 ---
 
 # Pod-Level Resource Limits
@@ -293,7 +292,15 @@ This proposal doesn't change the current status quo in any way. Memory used for 
 
 #### HugeTLB cgroup
 
-In progress
+The hugetlb cgroup is similar to the `memory` cgroup, except that in contrast to memory where unset means unlimited, when `hugetlb` is unset it is essentially the same as enforcing 0. 
+
+The behavior suggested by this KEP then becomes:
+
+1. If no pod-level limits are specified for `hugetlb`, make no change to the current implementation.
+1. If pod-level limits are set, apply them at the pod-level cgroup.
+    1. for each container in the pod, 
+         1. if container-level limits are set, use the values as provided
+         1. if container-level limits are NOT set, then set the container-level cgroup to unlimited.
 
 ### PID, and other cgroups
 
@@ -392,7 +399,7 @@ When pod-level resources were defined, the overall CPU utilization (as monitored
 
 Without pod-level resources, the overall CPU utilization was ~50%.
 
-The Dev-Space load time, measured as the amount of time between Kubernetes launching all of the containers in the Pod and the Dev Space application becoming ready, was also positively affected. Without pod-level resources, the Dev-Space finished loading withing 60 seconds, while when pod-level resources were defined, the Dev-Space finished loading in 10 seconds. The explanation for this huge difference is that some of the containers in the pod need to perform one-time startup operations. With pod-level resources defined, these containers can receive CPU resources that are more adequate for the startup operations, while without the pod-level resources, if more CPU is allocated to these containers, then the CPU is not available to the containers intended to run the main workload in the Dev Space. The fact that pod-level resources are available makes it possible to not have to balance load-time vs. general performance for the Dev-Space.
+The Dev-Space load time, measured as the amount of time between Kubernetes launching all of the containers in the Pod and the Dev Space application becoming ready, was also positively affected. Without pod-level resources, the Dev-Space finished loading within 60 seconds, while when pod-level resources were defined, the Dev-Space finished loading in 10 seconds. The explanation for this huge difference is that some of the containers in the pod need to perform one-time startup operations. With pod-level resources defined, these containers can receive CPU resources that are more adequate for the startup operations, while without the pod-level resources, if more CPU is allocated to these containers, then the CPU is not available to the containers intended to run the main workload in the Dev Space. The fact that pod-level resources are available makes it possible to not have to balance load-time vs. general performance for the Dev-Space.
 
 ## Implementation History
 
