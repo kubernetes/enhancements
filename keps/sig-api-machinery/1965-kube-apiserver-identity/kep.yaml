@@ -13,6 +13,8 @@ reviewers:
 approvers:
   - "@lavalamp"
   - "@deads2k"
+prr-approvers:
+  - "@deads2k"
 see-also:
   - "https://docs.google.com/document/d/1ed7miqlFY7-9lZxE7gzoyx_MFQCtFEDqtcKMpaAmHys/edit?usp=sharing"
 

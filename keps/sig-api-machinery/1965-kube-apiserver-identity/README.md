@@ -35,7 +35,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Design details are appropriately documented
 - [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
 - [x] (R) Graduation criteria is in place
-- [ ] (R) Production readiness review completed
+- [x] (R) Production readiness review completed
 - [ ] Production readiness review approved
 - [ ] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
@@ -187,7 +187,7 @@ _This section must be completed when targeting beta graduation to a release._
 * **Will enabling / using this feature result in any new API calls?**
   Describe them, providing:
   - API call type (e.g. PATCH pods): UPDATE leases
-  - estimated throughput:
+  - estimated throughput: one lease update per 10s per kube-apiserver
   - originating component(s) (e.g. Kubelet, Feature-X-controller):
     kube-apiserver
 
