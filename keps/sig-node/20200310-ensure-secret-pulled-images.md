@@ -60,19 +60,25 @@ superseded-by:
 
 ## Summary
 
-We will add support in kubelet for ensuring images pulled with pod
-imagePullSecrets are always authenticated even if cached. This new feature will
-be enabled via a new kublet flag `ensureSecretPulledImages.` The flag will
-improve the security posture for privacy/security of image contents by forcing
-images pulled with an imagePullSecret of a first pod to be re-authenticated for
-a second pod even if the image is already present on the node. The default
-(false) setting means that if a first pod results in an image pulled with
-imagePullSecrets a second pod would have to be using always pull to ensure
-rights to use the previously pulled image. When set to true always pull would
-not be required, instead kubelet will check if the image was pulled with an
-image pull secret and if so would force a pull of the image to ensure the image
-pulled with the secret is not used by another pod unless that pod also has the
-proper auth.
+We will add support in kubelet for the pullIfNotPresent image pull policy, for
+ensuring images pulled with pod imagePullSecrets are re-authenticated for other
+pods that do not have the same imagePullSecret/auths used to successfully pull
+the images in the first place.  
+
+This policy will have no affect on the `pull never` and `pull always` image pull
+policies or for images that are preloaded.
+
+This new feature will be enabled by default. This feature improves the security
+posture for privacy/security of image contents by forcing images pulled with an
+imagePullSecret/auth of a first pod to be re-authenticated for a second pod even
+if the image is already present through the secure pull of the first pod.
+
+The new behavior means that if a first pod results in an image pulled with
+imagePullSecrets a second pod would have to also have rights to the image in
+order to use a present image.
+
+This means that the image pull policy alwaysPull would no longer be required in
+every scenario to ensure image access rights by pods.
 
 ## Motivation
 
@@ -95,16 +101,19 @@ authentication.)
 
 ### Goals
 
-Add a `kubelet` flag for `ensureSecretPulledImages` (or something
-similarly named) as a security posture enhancement of the kubelet configuration
-that, if true, would force `kubelet` to attempt to pull every
-image that was pulled with image pulled secret based authentication, regardless
-of the container image pull policy.
+Modify the current pullIfNotPresent policy management enforced by `kubelet` to
+ensure the images pulled with a secret by `kublet` since boot. During the
+EnsureImagesExist step `kubelet` will require authentication of present images
+pulled with auth since boot.  
 
-Optimize to only force re-authentication for a pod when the secret used to pull
-the container image is not present. IOW if an image is pulled with
-authentication for a first pod subsequent pods that have the same authentication
-information should not need to re-authenticate.
+Optimize to only force re-authentication for a pod container image when the
+secret used to pull the container image is not present. IOW if an image is
+pulled with authentication for a first pod, subsequent pods that have the same
+authentication information should not need to re-authenticate.
+
+Images already present at boot or loaded externally to `kubelet` or successfully
+pulled through `kubelet` with no imagePullSecret/authentication required will
+not require authentication.
 
 ### Non-Goals
 
@@ -115,28 +124,32 @@ use un-encrypted...
 
 ## Proposal
 
-When `ensureSecretPulledImages` is set, `kubelet` will keep a list of container
-images that required authentication. `kubelet` will ensure any image
-in the list is always pulled thus enforcing authentication / re-authentication
-with the exception of pods with secrets containing an auth that has been
-authenticated.
+`kubelet` will keep a list, since boot, of container images that required
+authentication and a list of the authentications that successfully pulled the image.
+
+`kubelet` will ensure any image in the list is always pulled if an authentication
+used is not present, thus enforcing authentication / re-authentication.
+
 
 ### User Stories
 wip
 
 ### Risks and Mitigations
 
-With the default being false, devops engineers may not know to set the flag to
-true.
-
-A mitigation would be a warning message or we could choose to make the default
-true.
-
 Image authentications with a registry may expire. To mitigate expirations a
 a timeout could be used to force re-authentication. The timeout could be a
-container runtime feature or a `kubelet` feature.
+container runtime feature or a `kubelet` feature. If at the container runtime,
+images would not be present during the EnsureImagesExist step, thus would have
+to be pulled and authenticated if necessary.  
+
+Since images can be pre-loaded, loaded outside the `kubelet` process, and
+garbage collected.. the list of images that required authentication in `kubelet`
+will not be a source of truth for how all images were pulled that are in the
+container runtime cache. To mitigate images can be garbage collected at boot.
 
 ## Design Details
+
+See PR.
 
 ### Test Plan
 
@@ -148,7 +161,7 @@ tbd
 
 #### Examples
 
-These are generalized examples to consider, in addition to the aforementioned [maturity levels][maturity-levels].
+tbd
 
 ##### Alpha -> Beta Graduation
 
@@ -168,7 +181,8 @@ Why should this KEP _not_ be implemented. N/A
 
 ## Alternatives [optional]
 
-- Make the option a `kubelet` configuration switch (This is the SIG-Node suggested option).
+- Make the behavior change a `kubelet` configuration switch (This was the SIG-Node suggested option).
+However after discussions it seems this should be the default security posture for pullIfNotPresent as it is not clear to admins/users that an image pulled by a first pod with authentication can be used by a second pod without authentication. The performance cost should be minimal as only the manifest needs to be re-authenticated.
 - Set the flag at some other scope e.g. pod spec (doing it at the pod spec was rejected by SIG-Node).
 
 ## Infrastructure Needed [optional]
