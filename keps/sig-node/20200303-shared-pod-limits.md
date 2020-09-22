@@ -9,7 +9,7 @@ reviewers:
 approvers:
 - sig-node
 creation-date: 2020-03-03
-last-updated: 2020-09-19
+last-updated: 2020-09-22
 ---
 
 # Pod-Level Resource Limits
@@ -71,7 +71,7 @@ Check these off as they are completed for the Release Team to track. These check
 
 ## Summary
 
-Pod resources are currently enforced on a container-by-container case. Each container defines a limit for each managed resource, and the Kubelet translates these limits into the appropriate cgroup definitions. Kubelet creates a three-level deep hierarchy of cgroups for each pod. The top-level is the QoS grouping of the pod (`Guaranteed`, `Burstable`, and `BestEffort`), the second level is the pod itself, and the bottom level are the pod containers. The current Pod API doesn't enable developers to define resource limits at the pod level. This KEP proposes a method for developers to define resource limits on the pod level in addition to the resource limits currently possible on the individual container level.
+Pod resources are currently enforced on a container-by-container case. Each container defines a limit for each managed resource, and the Kubelet translates these limits into the appropriate cgroup definitions. Kubelet creates a three-level deep hierarchy of cgroups for each pod. The top-level is the QoS grouping of the pod (`Guaranteed`, `Burstable`, and `BestEffort`), the second level is the pod itself, and the bottom level are the pod containers. The current Pod API doesn't enable developers to define resource limits at the pod level. This KEP proposes a method for developers to define resource requests and limits on the pod level in addition to the resource requests and limits currently possible on the individual container level.
 
 ## Motivation
 
@@ -136,25 +136,44 @@ The Pod QoS enhancement already implemented in Kubernetes manages resources as a
           +-- containerN (N-th container)
 </pre>
 
+The proposal in this KEP is to allow users to define resources on the Pod level itself. Both resource requests and limits are allowed. The scheduler
+algorithm will consider the pod-level resources if they exist in preference to the container-level resources. If no pod-level resource section is provided,
+then the scheduler will continue to operate as it does in the current implementation. The QoS definitions will be updated to consider the pod-level resources
+when classifying a pod into one of the QoS levels. If the pod level doesn't include any resource limits, then kubelet will continue to function as it does today.
+
 The current implementation will set the cgroup limits for the memory/CPU resources on the pod level of the hierarchy only in the following cases:
 1. The QoS level is `Guaranteed`. 
 1. The QoS level is `Burstable` and all of the containers specify a limit for the relevant resource. 
 
-For the current definition of the `Guaranteed` QoS level this proposal would not make any modifications. Since each container is provided with its
-own limit, defining a pod-level limit is redundant. If the pod level limit request is smaller than the sum of limit for all the containers, then 
-the limit requested by the containers is unreachable. Conversely if the pod level limit request is larger than the sum of the limit for all the 
-containers then the excess is not relevant since the individual containers can never use more than their requested share, and even if all of the 
-containers use the maximum allowed by their defined limit, it can never amount to the pod-level limit.
+In the current implementation pods are considered `Guaranteed` if and only if all of the included containers define a resource request which is equal
+to the resource limit. The current implementation considers a pod to be `Burstable` if at least one container defines resource requests or limits. Any
+pods not matching the `Guaranteed` or `Burstable` QoS definitions are placed in the `BestEffort` QoS level.
 
-For pods in the `Burstable` and `BestEffort` QoS levels specifying a resource limit on the pod level means that resources can be shared across containers.
+This proposal suggests modifying these definitions the following: 
+
+A pod is considered `Guaranteed` if either of the following two conditions apply: 
+1. All of the containers included in the pod define memory and CPU resource requests equal to resource limits
+1. The pod includes a pod-level memory and CPU resource request which is equal to the resource limit, even if one or more of the included containers doesn't define either a CPU or a memory request or limit.
+
+A pod is considered `Burstable` if at least one container has a resource request, or the pod itself has a resource request.
+
+A pod is considered `BestEffort` if there are not resource request or limits settings on any container or on the pod level itself.
+
+If a developer included a request and limit definition at the pod level, the developer's intent was for Kubernetes to attempt to guarantee resources 
+as a whole, for all the containers included in the pod. This should apply even if the developer is unable to preemptively split the resources correctly
+between all the containers contained in the pod. 
+
+Note that if a pod belongs to the `Guaranteed` QoS level as per the current definition, then defining a pod-level limit is redundant. If the pod level limit
+request is smaller than the sum of limit for all the containers, then the limit requested by the containers is unreachable. Conversely if the pod level 
+limit request is larger than the sum of the limit for all the containers then the excess is not relevant since the individual containers can never use more 
+than their requested share, and even if all of the containers use the maximum allowed by their defined limit, it can never amount to the pod-level limit.
+
+If a there are resource request definition on the pod level, even without any definition on any of the included containers, then it should be considered
+`Burstable` since there is at least some knowledge as to the amount of resources the pod should receive. 
+
 Sharing resources across containers is possible only if individual containers release the resources that are not being used. For CPU this is trivial.
 For memory, this depends on the application being run actually releasing the memory back to the operating system. See [below](#Memory-Reuse-Across-cgroups)
 for an analysis.
-
-The proposal in this KEP is to allow users to define resources on the Pod level itself. Only limits will be allowed on this level so that the effect on
-the scheduler algorithm will be minimal. The scheduler will continue to use the resource requests defined on the container level as its input. Kubelet 
-will configure the pod-level cgroups as defined on the pod level. If the pod level doesn't include any resource limits, then kubelet will continue to
-function as it does today.
 
 For example, consider the following Pod:
 
@@ -224,7 +243,7 @@ Different runtimes have different heuristics around the best time to release mem
 * The OpenJDK Java virtual machine uses the standard free function. It is based on the standard C/C++ library, and calls the standard `free()` function, and as such will work as appropriate for the distribution it is installed on (glibc or musl).
 * NodeJS will call `madvise` if the memory reduction feature is used. Follow the code starting at https://github.com/nodejs/node/blob/master/deps/v8/src/heap/sweeper.cc#L322 
 
-The Java runtime autoconfigures some garbage collector sizes based on the amount of memory available to it. Since Java 9, the JDK is cgroup aware and will correctly use the amount of memory available to the cgroup that it is running in to perform this initialization. The OpenJDK implementation uses the `hierarchical_memory_limit` field in its `memory.stat` file to determine the amount of memory that is available to it. This field contains the maximum calculated amount of memory available to the cgroup based on the limits set on the entire memory controller hierarchy.
+The Java runtime auto-configures some garbage collector sizes based on the amount of memory available to it. Since Java 9, the JDK is cgroup aware and will correctly use the amount of memory available to the cgroup that it is running in to perform this initialization. The OpenJDK implementation uses the `hierarchical_memory_limit` field in its `memory.stat` file to determine the amount of memory that is available to it. This field contains the maximum calculated amount of memory available to the cgroup based on the limits set on the entire memory controller hierarchy.
 
 When a process exits, all of the memory that was allocated to it is released back to the operating system and can be used by other processes. In some workloads, tasks are executed by forking and exec-ing child processes from some main process. In this case the memory being used by a short-lived process is made available to the rest of the pod immediately when the short-lived process exits.
 
@@ -332,6 +351,7 @@ When users opt to use the feature, the workload must be able to run in a potenti
 
 The proposed implementation would be along these lines:
 1. Add a `Resources` section in the `PodSpec` structure.
+1. Update the scheduler to prefer the pod-level resources section to the aggregation of container level resource sections.
 1. Add a parameter to the pod cgroup setup procedure to distinguish between the lifecycle phase of the pod when `InitContainers` are being run and afterwards.
 1. In the initialization lifecycle phase setup the pod-level cgroup should not consider the pod-level definition.
 1. Once the init containers have finished running, the pod-level cgroup limits should be established as per the `Resources` section in the `PodSpec` structure.
@@ -409,3 +429,4 @@ The Dev-Space load time, measured as the amount of time between Kubernetes launc
 - 2020-03-17 - Reworked the proposal based on the suggested reviews
 - 2020-03-18 - More updates, after the sig-node meeting on March 17th.
 - 2020-06-04 - Updating the KEP after a trial-run on some real-world workloads
+- 2020-09-22 - Updating the KEP to allow pod-level resource requests
