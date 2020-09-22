@@ -156,7 +156,7 @@ clusters:
     server: "https://1.2.3.4:8080"
     certificate-authority: "/etc/kubernetes/ca.pem"
     extensions:
-    - name: exec  # reserved extension name for per cluster exec config
+    - name: client.authentication.k8s.io/exec  # reserved extension name for per cluster exec config
       extension:
         some-config-per-cluster: config-data  # arbitrary config
 contexts:
@@ -271,6 +271,10 @@ type Cluster struct {
   // +listType=atomic
   // +optional
   CAData []byte `json:"caData,omitempty"`
+  // ProxyURL is the URL to the proxy to be used for all requests to this
+  // cluster.
+  // +optional
+  ProxyURL string `json:"proxy-url,omitempty"`
   // Config holds additional config data that is specific to the exec plugin
   // with regards to the cluster being authenticated to.
   // +optional
