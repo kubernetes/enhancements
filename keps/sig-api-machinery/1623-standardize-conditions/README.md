@@ -38,9 +38,9 @@ checklist items _must_ be updated for the enhancement to be released.
 - [x] Design details are appropriately documented
 - [x] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
 - [x] Graduation criteria is in place
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [x] "Implementation History" section is up-to-date for milestone
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
 **Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
@@ -156,6 +156,8 @@ that certain optional fields of their conditions will be dropped.
 Depending on the individual APIs and when their extra fields are deprecated, this could be acceptable choice.
 
 ## Implementation History
+
+Implemented in 1.19.
 
 ## Drawbacks
 

@@ -7,7 +7,7 @@ participating-sigs:
   - sig-api-machinery
   - sig-apps
   - sig-architecture
-status: implementable
+status: implemented
 creation-date: 2020-03-23
 reviewers:
   - "@lavalamp"
