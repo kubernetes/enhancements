@@ -87,8 +87,9 @@ authenticated request by:
 ### Non-Goals
 
 - Protecting proxy requests
-- Maintaining backwards compatibility of the Kubelet API
-- Maintaining long-term backwards compatibility of risky exec requests
+- Maintaining backwards compatibility of the Kubelet API, which is only intended for consumption by
+  the kube-apiserver and only requires forwards-compatibility
+- Maintaining long-term backwards compatibility of SSRF-prone exec GET requests
 
 ## Proposal
 
@@ -104,7 +105,10 @@ The changes to the Kubelet API are:
 **Note on backwards compatibility:** This proposal assumes that the only client that should be
 talking to these endpoints on the Kubelet is the kube-apiserver. Therefore, while the changes must
 support API server version skew, endpoints and request types that are unused by the kube-apiserver
-can be removed immediately.
+can be removed immediately. The [version skew
+policy](https://kubernetes.io/docs/setup/release/version-skew-policy/#kubelet) requires that the
+Kubelet not be newer than the kube-apiserver, so backwards compatibility with older apiservers is
+not required.
 
 #### 1. Remove the `/run` endpoint
 
@@ -227,7 +231,7 @@ hash value in the sub-protocol.
    token (similar to how CRI streaming requests work), or signing the request params.
 
 3. The initial websocket request only opens the websocket protocol stream, and a subsequent request
-   must be sent over the websocket to initiate the actual GET request.
+   must be sent over the websocket to initiate the actual exec action.
 
 <<[/UNRESOLVED]>>
 
