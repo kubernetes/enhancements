@@ -66,23 +66,11 @@ func (c *Client) Query(opts QueryOpts) error {
 	// load the KEPs for each listed SIG
 	for _, sig := range opts.SIG {
 		// KEPs in the local filesystem
-		names, err := findLocalKEPs(repoPath, sig)
-		if err != nil {
-			fmt.Fprintf(c.Err, "error searching for local KEPs from %s: %s\n", sig, err)
-		}
-
-		for _, k := range names {
-			kep, err := c.readKEP(repoPath, sig, k)
-			if err != nil {
-				fmt.Fprintf(c.Err, "error reading KEP %s: %s\n", k, err)
-			} else {
-				allKEPs = append(allKEPs, kep)
-			}
-		}
+		allKEPs = append(allKEPs, c.loadLocalKEPs(repoPath, sig)...)
 
 		// Open PRs; existing KEPs with open PRs will be shown twice
 		if opts.IncludePRs {
-			prKeps, err := c.findKEPPullRequests(sig)
+			prKeps, err := c.loadKEPPullRequests(sig)
 			if err != nil {
 				fmt.Fprintf(c.Err, "error searching for KEP PRs from %s: %s\n", sig, err)
 			}

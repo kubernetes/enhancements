@@ -162,13 +162,19 @@ func validateKEP(p *keps.Proposal) error {
 	return nil
 }
 
-func findLocalKEPs(repoPath string, sig string) ([]string, error) {
+func findLocalKEPMeta(repoPath, sig string) ([]string, error) {
 	rootPath := filepath.Join(
 		repoPath,
 		"keps",
 		sig)
 
 	keps := []string{}
+
+	// if the sig doesn't have a dir, it has no KEPs
+	if _, err := os.Stat(rootPath); os.IsNotExist(err) {
+		return keps, nil
+	}
+
 	err := filepath.Walk(rootPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -177,7 +183,7 @@ func findLocalKEPs(repoPath string, sig string) ([]string, error) {
 			return nil
 		}
 		if info.Name() == "kep.yaml" {
-			keps = append(keps, filepath.Base(filepath.Dir(path)))
+			keps = append(keps, path)
 			return filepath.SkipDir
 		}
 		if filepath.Ext(path) != ".md" {
@@ -186,14 +192,42 @@ func findLocalKEPs(repoPath string, sig string) ([]string, error) {
 		if info.Name() == "README.md" {
 			return nil
 		}
-		keps = append(keps, info.Name()[0:len(info.Name())-3])
+		keps = append(keps, path)
 		return nil
 	})
 
 	return keps, err
 }
 
-func (c *Client) findKEPPullRequests(sig string) ([]*keps.Proposal, error) {
+func (c *Client) loadLocalKEPs(repoPath, sig string) ([]*keps.Proposal) {
+	// KEPs in the local filesystem
+	files, err := findLocalKEPMeta(repoPath, sig)
+	if err != nil {
+		fmt.Fprintf(c.Err, "error searching for local KEPs from %s: %s\n", sig, err)
+	}
+
+	var allKEPs []*keps.Proposal
+	for _, k := range files {
+		if filepath.Ext(k) == ".yaml" {
+			kep, err := c.loadKEPFromYaml(k)
+			if err != nil {
+				fmt.Fprintf(c.Err, "error reading KEP %s: %s\n", k, err)
+			} else {
+				allKEPs = append(allKEPs, kep)
+			}
+		} else {
+			kep, err := c.loadKEPFromOldStyle(k)
+			if err != nil {
+				fmt.Fprintf(c.Err, "error reading KEP %s: %s\n", k, err)
+			} else {
+				allKEPs = append(allKEPs, kep)
+			}
+		}
+	}
+	return allKEPs
+}
+
+func (c *Client) loadKEPPullRequests(sig string) ([]*keps.Proposal, error) {
 	var auth *http.Client
 	ctx := context.Background()
 	if c.Token != "" {
@@ -301,19 +335,10 @@ func (c *Client) readKEP(repoPath string, sig, name string) (*keps.Proposal, err
 		sig,
 		name,
 		"kep.yaml")
+
 	_, err := os.Stat(kepPath)
 	if err == nil {
-		b, err := ioutil.ReadFile(kepPath)
-		if err != nil {
-			return nil, fmt.Errorf("unable to read KEP metadata: %s", err)
-		}
-		var p keps.Proposal
-		err = yaml.Unmarshal(b, &p)
-		if err != nil {
-			return nil, fmt.Errorf("unable to load KEP metadata: %s", err)
-		}
-		p.Name = name
-		return &p, nil
+		return c.loadKEPFromYaml(kepPath)
 	}
 
 	// No kep.yaml, treat as old-style KEP
@@ -322,6 +347,25 @@ func (c *Client) readKEP(repoPath string, sig, name string) (*keps.Proposal, err
 		"keps",
 		sig,
 		name) + ".md"
+
+	return c.loadKEPFromOldStyle(kepPath)
+}
+
+func (c *Client) loadKEPFromYaml(kepPath string) (*keps.Proposal, error) {
+	b, err := ioutil.ReadFile(kepPath)
+	if err != nil {
+		return nil, fmt.Errorf("unable to read KEP metadata: %s", err)
+	}
+	var p keps.Proposal
+	err = yaml.Unmarshal(b, &p)
+	if err != nil {
+		return nil, fmt.Errorf("unable to load KEP metadata: %s", err)
+	}
+	p.Name = filepath.Base(filepath.Dir(kepPath))
+	return &p, nil
+}
+
+func (c *Client) loadKEPFromOldStyle(kepPath string) (*keps.Proposal, error) {
 	b, err := ioutil.ReadFile(kepPath)
 	if err != nil {
 		return nil, fmt.Errorf("no kep.yaml, but failed to read as old-style KEP: %s", err)
@@ -333,7 +377,7 @@ func (c *Client) readKEP(repoPath string, sig, name string) (*keps.Proposal, err
 	if kep.Error != nil {
 		return nil, fmt.Errorf("kep is invalid: %s", kep.Error)
 	}
-	kep.Name = name + ".md"
+	kep.Name = filepath.Base(kepPath)
 	return kep, nil
 }
 
