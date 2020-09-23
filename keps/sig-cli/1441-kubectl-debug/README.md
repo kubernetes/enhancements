@@ -15,7 +15,6 @@
     - [Debug Container Naming](#debug-container-naming)
     - [Container Namespace Targeting](#container-namespace-targeting)
     - [Interactive Troubleshooting and Automatic Attaching](#interactive-troubleshooting-and-automatic-attaching)
-    - [Proposed Ephemeral Debug Arguments](#proposed-ephemeral-debug-arguments)
   - [Pod Troubleshooting by Copy](#pod-troubleshooting-by-copy)
     - [Creating a Debug Container by copy](#creating-a-debug-container-by-copy)
     - [Modify Application Image by Copy](#modify-application-image-by-copy)
@@ -28,6 +27,7 @@
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
+  - [Full <code>kubectl debug</code> Arguments](#full--arguments)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
@@ -158,6 +158,9 @@ separate debugging facilities for Windows containers.
 
 ## Proposal
 
+`kubectl debug` supports a number of debugging modes, described in the
+following sections.
+
 ### Pod Troubleshooting with Ephemeral Debug Container
 
 We will add a new command `kubectl debug` that will:
@@ -175,6 +178,17 @@ We will add a new command `kubectl debug` that will:
 
 We will attempt to make `kubectl debug` useful with a minimal of arguments
 by using reasonable defaults where possible.
+
+```
+Examples:
+  # Create an interactive debugging session in pod mypod and immediately attach to it.
+  # (requires the EphemeralContainers feature to be enabled in the cluster)
+  kubectl debug mypod -it --image=busybox
+
+  # Create a debug container named debugger using a custom automated debugging image.
+  # (requires the EphemeralContainers feature to be enabled in the cluster)
+  kubectl debug --image=myproj/debug-tools -c debugger mypod
+```
 
 #### Debug Container Naming
 
@@ -196,39 +210,8 @@ that support container namespace targeting.
 #### Interactive Troubleshooting and Automatic Attaching
 
 Since the primary use case for `kubectl debug` is interactive troubleshooting,
-`kubectl debug` will automatically attach to the console of the newly created
-ephemeral container and will default to creating containers with `Stdin` and
-`TTY` enabled.
-
-These may be disabled via command line flags.
-
-#### Proposed Ephemeral Debug Arguments
-
-```
-% kubectl help debug
-Execute a container in a pod.
-
-Examples:
-  # Start an interactive debugging session with a debian image
-  kubectl debug mypod --image=debian
-
-  # Run a debugging session in the same namespace as target container 'myapp'
-  # (Useful for debugging other containers when shareProcessNamespace is false)
-  kubectl debug mypod --target=myapp
-
-Options:
-  -a, --attach=true: Automatically attach to container once created
-  -c, --container='': Container name.
-  -i, --stdin=true: Pass stdin to the container
-  --image='': Required. Container image to use for debug container.
-  --target='': Target processes in this container name.
-  -t, --tty=true: Stdin is a TTY
-
-Usage:
-  kubectl debug (POD | TYPE/NAME) [-c CONTAINER] [flags] -- COMMAND [args...] [options]
-
-Use "kubectl options" for a list of global command-line options (applies to all commands).
-```
+`kubectl debug` supports automatically attaching to the ephemeral container
+using the same conventions as `kubectl run`.
 
 ### Pod Troubleshooting by Copy
 
@@ -243,16 +226,10 @@ created:
 
 ```
 Options:
-  --copy-to='': Create a copy of the target Pod with this name.
-  --copy-labels=false: When used with `--copy-to`, specifies whether labels
-                       should also be copied. Note that copying labels may cause
-                       the copy to receive traffic from a service or a replicaset
-                       to kill other Pods.
-  --delete-old=false: When used with `--copy-to`, delete the original Pod.
-  --edit=false: Open an editor to modify the generated Pod prior to creation.
-  --same-node=false: Schedule the copy of target Pod on the same node.
-  --share-processes=true: When used with `--copy-to`, enable process namespace
-                          sharing in the copy.
+      --copy-to='': Create a copy of the target Pod with this name.
+      --replace=false: When used with '--copy-to', delete the original Pod
+      --same-node=false: When used with '--copy-to', schedule the copy of target Pod on the same node.
+      --share-processes=true: When used with '--copy-to', enable process namespace sharing in the copy.
 ```
 
 The modification `kubectl debug` makes to `Pod.Spec.Containers` depends on the
@@ -266,8 +243,8 @@ the Pod copy.
 
 ```
 Examples:
-  # Create a copy of 'mypod' with a new debugging container and attach to it
-  kubectl debug mypod --copy-to=mypod-debug --image=debian --attach -- bash
+  # Create a debug container as a copy of the original Pod and attach to it
+  kubectl debug mypod -it --image=busybox --copy-to=my-debugger
 ```
 
 #### Modify Application Image by Copy
@@ -277,8 +254,8 @@ create a copy of the target pod with a new image for one of the containers.
 
 ```
 Examples:
-  # Create a copy of 'mypod' with the debugging image for container 'app'
-  kubectl debug mypod --copy-to=mypod-debug --image=myapp-image:debug --container=myapp -- myapp --debug=5
+  # Create a copy of mypod named my-debugger with my-container's image changed to busybox
+  kubectl debug mypod --image=busybox --container=my-container --copy-to=my-debugger -- sleep 1d
 ```
 
 Note that the Pod API allows updates of container images in-place, so
@@ -297,19 +274,13 @@ pod with the following fields set:
 * `hostPID: true`
 * `restartPolicy: Never`
 
-Additionally, `/` on the node will be mounted as a HostPath volume.
+Additionally, the node's '/' will be mounted at `/host`.
 
 ```
 Examples:
-  # Start an interactive debugging session on mynode with a debian image
-  kubectl debug node/mynode --image=debian
-
-Options:
-  -a, --attach=true: Automatically attach to container once created
-  -c, --container='': Container name.
-  -i, --stdin=true: Pass stdin to the container
-  --image='': Required. Container image to use for debug container.
-  -t, --tty=true: Stdin is a TTY
+  # Create an interactive debugging session on a node and immediately attach to it.
+  # The container will run in the host namespaces and the host's filesystem will be mounted at /host
+  kubectl debug node/mynode -it --image=busybox
 ```
 
 ### User Stories
@@ -433,6 +404,65 @@ is to run his team's autodiagnose script:
 
 ## Design Details
 
+### Full `kubectl debug` Arguments
+
+```
+Debug cluster resources using interactive debugging containers.
+
+ 'debug' provides automation for common debugging tasks for cluster objects identified by resource and name. Pods will
+be used by default if resource is not specified.
+
+ The action taken by 'debug' varies depending on what resource is specified. Supported actions include:
+
+  *  Workload: Create a copy of an existing pod with certain attributes changed, for example changing the image tag to a new version.
+  *  Workload: Add an ephemeral container to an already running pod, for example to add debugging utilities without restarting the pod.
+  *  Node: Create a new pod that runs in the node's host namespaces and can access the node's filesystem.
+
+ Alpha disclaimer: command line flags may change
+
+Examples:
+  # Create an interactive debugging session in pod mypod and immediately attach to it.
+  # (requires the EphemeralContainers feature to be enabled in the cluster)
+  kubectl debug mypod -it --image=busybox
+
+  # Create a debug container named debugger using a custom automated debugging image.
+  # (requires the EphemeralContainers feature to be enabled in the cluster)
+  kubectl debug --image=myproj/debug-tools -c debugger mypod
+
+  # Create a debug container as a copy of the original Pod and attach to it
+  kubectl debug mypod -it --image=busybox --copy-to=my-debugger
+
+  # Create a copy of mypod named my-debugger with my-container's image changed to busybox
+  kubectl debug mypod --image=busybox --container=my-container --copy-to=my-debugger -- sleep 1d
+
+  # Create an interactive debugging session on a node and immediately attach to it.
+  # The container will run in the host namespaces and the host's filesystem will be mounted at /host
+  kubectl debug node/mynode -it --image=busybox
+
+Options:
+      --arguments-only=false: If specified, everything after -- will be passed to the new container as Args instead of
+Command.
+      --attach=false: If true, wait for the container to start running, and then attach as if 'kubectl attach ...' were
+called.  Default false, unless '-i/--stdin' is set, in which case the default is true.
+  -c, --container='': Container name to use for debug container.
+      --copy-to='': Create a copy of the target Pod with this name.
+      --env=[]: Environment variables to set in the container.
+      --image='': Container image to use for debug container.
+      --image-pull-policy='': The image pull policy for the container.
+      --quiet=false: If true, suppress informational messages.
+      --replace=false: When used with '--copy-to', delete the original Pod
+      --same-node=false: When used with '--copy-to', schedule the copy of target Pod on the same node.
+      --share-processes=true: When used with '--copy-to', enable process namespace sharing in the copy.
+  -i, --stdin=false: Keep stdin open on the container(s) in the pod, even if nothing is attached.
+      --target='': When debugging a pod, target processes in this container name.
+  -t, --tty=false: Allocate a TTY for the debugging container.
+
+Usage:
+  kubectl debug (POD | KIND '/' NAME) --image=image [ -- COMMAND [args...] ]
+
+Use "kubectl options" for a list of global command-line options (applies to all commands).
+```
+
 ### Test Plan
 
 In addition to standard unit tests for `kubectl`, the `debug` command will be
@@ -446,7 +476,7 @@ test prior to Alpha -> Beta graduation.
 #### Alpha -> Beta Graduation
 
 - [ ] Ephemeral Containers API has graduated to Beta
-- [ ] A task on https://kubernetes.io/docs/tasks/ describes how to troubleshoot
+- [x] A task on https://kubernetes.io/docs/tasks/ describes how to troubleshoot
   a running pod using Ephemeral Containers.
 - [ ] A survey sent to early adopters doesn't reveal any major shortcomings.
 - [ ] Test plan is amended to address the most common user journeys.
@@ -703,6 +733,7 @@ _This section must be completed when targeting beta graduation to a release._
 - *2019-12-05*: Updated KEP for expanded debug targets.
 - *2020-01-09*: Updated KEP for debugging nodes and mark implementable.
 - *2020-01-15*: Added test plan.
+- *2020-09-20*: Updated to reflect actual implementation details.
 
 ## Drawbacks
 
