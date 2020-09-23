@@ -1,0 +1,36 @@
+---
+title: Bound Service Account Tokens
+authors:
+  - "@mikedanese"
+  - "@zshihang"
+owning-sig: sig-auth
+participating-sigs:
+  - sig-auth
+reviewers:
+  - "@liggitt"
+approvers:
+  - "@liggitt"
+creation-date: 2019-08-06
+last-updated: 2020-09-23
+status: implementable
+stage: beta
+latest-milestone: "v1.20"
+milestone:
+  alpha: "v1.13"
+  beta: "v1.20"
+feature-gates:
+  - name: TokenRequest
+    components:
+    - kube-apiserver
+    - kube-controller-manager
+  - name: TokenRequestProjection
+    components:
+    - kube-apiserver
+    - kubelet
+  - name: BoundServiceAccountTokenVolume
+    components:
+      - kube-apiserver
+      - kube-controller-manager
+metrics:
+  - serviceaccount_stale_tokens_total
+---

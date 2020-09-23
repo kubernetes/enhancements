@@ -1,21 +1,9 @@
----
-title: Bound Service Account Tokens
-authors:
-  - "@mikedanese"
-owning-sig: sig-auth
-approvers:
-  - "@liggitt"
-  - TBD
-creation-date: 2019-08-06
-last-updated: 2020-03-25
-status: implemented
----
-
 # Bound Service Account Tokens
 
 ## Table Of Contents
 
 <!-- toc -->
+
 - [Summary](#summary)
 - [Background](#background)
 - [Motivation](#motivation)
@@ -30,16 +18,21 @@ status: implemented
     - [Example Flow](#example-flow)
   - [Service Account Authenticator Modification](#service-account-authenticator-modification)
   - [ACLs for TokenRequest](#acls-for-tokenrequest)
-  - [Safe Adoption](#safe-adoption)
+  - [ServiceAccount Admission Controller Migration](#serviceaccount-admission-controller-migration)
+    - [Prerequisites](#prerequisites)
     - [Safe rollout of time-bound token](#safe-rollout-of-time-bound-token)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha-&gt;Beta](#alpha-beta)
     - [Beta -&gt; GA Graduation](#beta---ga-graduation)
-<!-- /toc -->
+- [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
+  - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
+  - [Scalability](#scalability)
+  <!-- /toc -->
 
 ## Summary
 
-This KEP describes an API that would allow workloads running on Kubernetes
-to request JSON Web Tokens that are audience, time and eventually key bound.
+This KEP describes an API that would allow workloads running on Kubernetes to
+request JSON Web Tokens that are audience, time and eventually key bound.
 
 ## Background
 
@@ -89,9 +82,9 @@ TokenReview API will support this validation.
 Tokens issued from this API will be time bound. Time validity of these tokens
 will be claimed in the following fields:
 
-* `exp`: expiration time
-* `nbf`: not before
-* `iat`: issued at
+- `exp`: expiration time
+- `nbf`: not before
+- `iat`: issued at
 
 A recipient of a token should verify that the token is valid at the time that
 the token is presented, and should otherwise reject the token. The TokenReview
@@ -112,8 +105,8 @@ object will only be valid for as long as that object exists.
 Only a subset of object kinds will support object binding. Initially the only
 kinds that will be supported are:
 
-* v1/Pod
-* v1/Secret
+- v1/Pod
+- v1/Secret
 
 The TokenRequest API will validate this binding.
 
@@ -121,8 +114,8 @@ The TokenRequest API will validate this binding.
 
 #### Add `tokenrequests.authentication.k8s.io`
 
-We will add an imperative API (a la TokenReview) to the
-`authentication.k8s.io` API group:
+We will add an imperative API (a la TokenReview) to the `authentication.k8s.io`
+API group:
 
 ```golang
 type TokenRequest struct {
@@ -265,53 +258,176 @@ service account token on behalf of pods running on that node. The
 NodeRestriction admission controller will require that these tokens are pod
 bound.
 
-### Safe Adoption
+### ServiceAccount Admission Controller Migration
+
+#### Prerequisites
+
+Before migration to a version with `BoundServiceAccountVolume=true`, cluster
+operators should make sure:
+
+1.  Set feature gate `TokenRequest=true`. (default to `true` since 1.12)
+
+    - This feature requires the following flags to the API server:
+      - `--service-account-issuer`
+      - `--service-account-signing-key-file`
+      - `--service-account-key-file`
+      - `--api-audiences` (default to `--service-account-issuer`)
+
+2.  Set feature gate `TokenRequestProjection=true`. (default to `true` since
+    1.12)
+
+3.  Update all workloads to newer version of officially supported Kubernetes
+    client libraries to reload token:
+
+    - Go: >= v0.15.7
+    - Python: >= v12.0.0
+    - Java: >= v9.0.0
+    - Javascript: >= v0.10.3
+    - Ruby: master branch
+    - Haskell: v0.3.0.0
+
+    For community-maintained client libraries, feel free to contribute to them
+    if the reloading logic is missing.
+
+    **Note**: If having trouble in finding places using in-cluster config
+    completely, cluster operators can specify flag
+    `--service-account-extend-token-expiration` to kube apiserver to allow
+    tokens have longer expiration temporarily during the migration. Any usage of
+    legacy token will be recorded in both metrics and audit logs. After fixing
+    all the potentially broken workloads, don't forget to remove the flag so
+    that the original expiration settings are honored.
+
+    - Metrics: `serviceaccount_stale_tokens_total`
+    - Audit: looking for `authentication.k8s.io/stale-token` annotation
+
+    See next section for the details of how to discover the workloads that will
+    suffer from expired tokens.
+
+If anything goes wrong, please file a bug and CC @kubernetes/sig-auth-bugs. More
+contact information
+[here](https://github.com/kubernetes/community/tree/master/sig-auth#contact).
 
 #### Safe rollout of time-bound token
 
-Legacy service account tokens distributed via secrets are not time-bound. 
-Many client libraries have come to depend on this behavior. After time-bound service 
-account token being used, if in-cluster clients do not periodically reload token 
-from projected volume, requests would be rejected once the initial token got expired.
+Legacy service account tokens distributed via secrets are not time-bound. Many
+client libraries have come to depend on this behavior. After time-bound service
+account token being used, if in-cluster clients do not periodically reload token
+from projected volume, requests would be rejected once the initial token got
+expired.
 
 In order to allow guadual adoption of time-bound token, we would:
-  1. Pick a constant period D between one and two hours. The value of D would be static
-  across Kubernetes deployments, while avoiding collision with common duration.
-  1. Modify service account admission control to inject token valid for D when the 
-  BoundServiceAccountTokenVolume feature is enabled.
-  1. Modify kube apiserver TokenRequest API. When it receives TokenRequest with requested
-  valid period D, extend the token lifetime to one year. At the same time, save
-  the original requested D to `kubernetes.io/warnafter` field in minted token.
-  1. In the TokenRequest status, tell clients that the token would be valid only for D, 
-  encouraging clients to reload token as if the token was valid for D.
-  
+
+1.  Pick a constant period D between one and two hours. The value of D would be
+    static across Kubernetes deployments, while avoiding collision with common
+    duration.
+1.  Modify service account admission control to inject token valid for D when
+    the BoundServiceAccountTokenVolume feature is enabled.
+1.  Modify kube apiserver TokenRequest API. When it receives TokenRequest with
+    requested valid period D, extend the token lifetime to one year. At the same
+    time, save the original requested D to `kubernetes.io/warnafter` field in
+    minted token.
+1.  In the TokenRequest status, tell clients that the token would be valid only
+    for D, encouraging clients to reload token as if the token was valid for D.
+
 This modification could be optionally enabled by providing a command line flag
- to kube apiserver.
+to kube apiserver.
 
-These extended tokens would not expire and continue to be accepted within one year.
-At the same time, the authentication side could monitor whether clients are properly
-reloading tokens by:
+These extended tokens would not expire and continue to be accepted within one
+year. At the same time, the authentication side could monitor whether clients
+are properly reloading tokens by:
 
-  1. Compare the `kubernetes.io/warnafter` field with current time. If current time
-  is after `kubernetes.io/warnafter` field, it implies calling client is not 
-  reloading token regularly.
-  1. Expose metrics to monitor number of legacy and stale token used.
-  1. Add annotation to audit events for legacy and stale tokens including necessary 
-  information to locate problematic client.
- 
-This functionality can be implemented entirely in the kube-apiserver and does not 
-require cooperation by the kubelet beyond the standard functionality implemented 
-as part of [Service Account Token Volumes](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/svcacct-token-volume-source.md).
-
-We will direct cluster administrators to adopt bound service account tokens and 
-turn on the command line flag to enable extended token. Fix clients if monitoring or 
-audit report that stale or legacy token are in use. The operator can turn off 
-the command line flag after no stale token is being used.
-
-
+1.  Compare the `kubernetes.io/warnafter` field with current time. If current
+    time is after `kubernetes.io/warnafter` field, it implies calling client is
+    not reloading token regularly.
+1.  Expose metrics to monitor number of legacy and stale token used.
+1.  Add annotation to audit events for legacy and stale tokens including
+    necessary information to locate problematic client.
 
 ### Graduation Criteria
 
+#### Alpha->Beta
+
+Estimated version: v1.20
+
+All known migration frictions have been fixed:
+
+- PodSecurityPolicies that allow secrets but not projected volumes will
+  prevent the use of token volumes.
+  - Fixed in https://github.com/kubernetes/kubernetes/pull/92006
+- In-cluster clients that don’t reload service account tokens will start
+  failing an hour after deployment.
+  - Mitigation added in https://github.com/kubernetes/kubernetes/issues/68164
+- Pods running as non root may not access the service account token.
+  - Fixed in https://github.com/kubernetes/kubernetes/pull/89193
+
+An upgrade test is passing periodically:
+
+1. Create pod A with feature disabled where pod A is working and a secret volume
+   is mounted.
+2. Enable feature where pod A continue working
+3. Create pod B and it is working and projected volumes are mounted.
+
 #### Beta -> GA Graduation
 
-- TBD
+Estimated version: v1.21+
+
+New `ServiceAccount` admission controller WAI in Beta for >= 1 minor without
+significant issues.
+
+## Production Readiness Review Questionnaire
+
+### Feature Enablement and Rollback
+
+- **How can this feature be enabled / disabled in a live cluster?**
+
+  - Feature gate name: `BoundServiceAccountTokenVolume`
+  - Components depending on the feature gate: kube-apiserver and
+    kube-controller-manager
+  - Will enabling / disabling the feature require downtime of the control
+    plane? yes, need to restart kube-apiserver and kube-controller-manager.
+  - Will enabling / disabling the feature require downtime or reprovisioning
+    of a node? no.
+
+- **Does enabling the feature change any default behavior?** yes, pods'
+  service account tokens will not be long-lived and are not stored as Secrets
+  any more.
+
+- **Can the feature be disabled once it has been enabled (i.e. can we roll
+  back the enablement)?** yes. pods created while the feature was enabled will
+  reference a configmap that can grow stale with the feature disabled.
+
+- **What happens if we reenable the feature if it was previously rolled
+  back?** the same as the first enablement.
+
+- **Are there any tests for feature enablement/disablement?**
+  - unit test: plugin/pkg/admission/serviceaccount/admission_test.go
+  - upgrade test: test/e2e/upgrades/serviceaccount_admission_controller_migration.go
+
+### Scalability
+
+- **Will enabling / using this feature result in any new API calls?**
+
+  - API call type: `TokenRequest`
+  - estimated throughput: 1/pod every ~48 minutes.
+  - originating component: kubelet
+  - components listing and/or watching resources they didn't before: N/A.
+  - API calls that may be triggered by changes of some Kubernetes resources:
+    N/A.
+  - periodic API calls to reconcile state (e.g. periodic fetching state,
+    heartbeats, leader election, etc.): 1 call per pod every ~48 minutes.
+
+- **Will enabling / using this feature result in introducing new API types?**
+  no.
+
+- **Will enabling / using this feature result in any new calls to the cloud
+  provider?** no.
+
+- **Will enabling / using this feature result in increasing size or count of
+  the existing API objects?** no.
+
+- **Will enabling / using this feature result in increasing time taken by any
+  operations covered by [existing SLIs/SLOs]?** no.
+
+- **Will enabling / using this feature result in non-negligible increase of
+  resource usage (CPU, RAM, disk, IO, ...) in any components?** it adds a
+  token minting operation in the API server every ~48 minutes for every pod.
