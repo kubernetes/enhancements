@@ -630,7 +630,7 @@ message ProvisionerGetInfoResponse {
 
 ## ProvisonerCreateBucket
 
-This call is made to create the bucket in the backend. If the bucket already exists, then the appropriate error code `ALREADY_EXISTS` must be returned by the provisioner.
+This call is made to create the bucket in the backend. If a bucket that matches both name and parameters already exists, then OK (success) must be returned. If a bucket by same name, but different parameters is provided, then the appropriate error code `ALREADY_EXISTS` must be returned by the provisioner.
 
 ```
 message ProvisionerCreateBucketRequest {    
