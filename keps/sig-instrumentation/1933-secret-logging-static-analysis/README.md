@@ -320,8 +320,12 @@ Analysis findings reporting the position of both source and sink,
 ### Test Plan
 
 As a testing target, testing will consist of examples of Kubernetes-specific
-cases that we expect static analysis to detect.  No Kubernetes integration/e2e 
-tests will be necessary.
+cases that we expect static analysis to detect.  No full-scale Kubernetes
+integration/e2e tests will be necessary.
+
+For analysis based on `go-flow-levee`, this will consist of sample Kubernetes code based on the same configuration used in presubmit scanning.
+This test will be examined via the `analysistest` package to ensure analysis produces expected diagnostics.
+As part of testing of our testing process, these tests should belong to `kubernetes/test-infra`.
 
 ### Graduation Criteria
 
@@ -332,7 +336,7 @@ tests will be necessary.
 - Gather feedback from developers regarding any false-positive findings or other pain points.
 
 #### Beta (1.21)
-- Analysis consumes fields tags for identification of material that should not be logged.
+- Analysis consumes fields tags introduced by [KEP-1753](https://github.com/kubernetes/enhancements/blob/master/keps/sig-instrumentation/1753-logs-sanitization/README.md) for identification of material that should not be logged.
 - Continue to gather developer feedback.  Respond to feedback gathered during alpha.
 
 #### Beta -> GA Graduation
