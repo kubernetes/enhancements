@@ -79,8 +79,7 @@ This KEP describes the above components, defines our goals and target use-cases,
 # Motivation
 
 File and block are first class citizens within the Kubernetes ecosystem.  Object, though very different under the hood, is a popular means of storing data, especially against very large data sources.   As such, we feel it is in the interest of the community to integrate object storage into Kubernetes, supported by the SIG-Storage community.  In doing so, we can provide Kubernetes cluster users and administrators a normalized and familiar means of managing object storage. 
-
-While absolute portability cannot be guaranteed because of incompatibilities between object store protocols, workloads reliant on a given protocol (e.g. one of S3, GCS, Azure Blob) may be defined in a manifest and deployed wherever that protocol is supported. When a workload (app pod, deployment, configs) is moved to another cluster which supports the basic infrastructure as the original cluster (e.g. namespaces, bucket classes, provisioners, etc.), then the workload can be moved to a new cluster without requiring any changes in the user manifests.
+When a workload (app pod, deployment, configs) is moved to another cluster, as long as the new cluster runs a COSI controller that supports the same object protocol, then the workload can be moved to a new cluster without requiring any changes in the user manifests.
 
 ## User Stories
 
@@ -115,12 +114,13 @@ While absolute portability cannot be guaranteed because of incompatibilities bet
 + _backend bucket_ - any bucket provided by the object store system, completely separate from Kubernetes.
 + _brownfield bucket_ - an existing backend bucket.
 + _Bucket (Bucket Instance)_ - a cluster-scoped custom resource referenced by a `BucketRequest` and containing connection information and metadata for a backend bucket.
-+ _BucketAccessRequest (BAR)_ - a user-namespaced custom resource representing a request for access to an existing bucket.
-+ _BucketRequest (BR)_ - a user-namespaced custom resource representing a request for a new backend bucket, or access to an existing bucket.
-+ _BucketClass (BC)_ - a cluster-scoped custom resource containing fields defining the provisioner and an immutable parameter set for creating new buckets.
++ _BucketAccess (BA)_ - a cluster-scoped custom resource for granting bucket access.
 + _BucketAccessClass (BAC)_ - a cluster-scoped custom resource containing fields defining the provisioner and a ConfigMap reference where policy is defined.
++ _BucketAccessRequest (BAR)_ - a user-namespaced custom resource representing a request for access to an existing bucket.
++ _BucketClass (BC)_ - a cluster-scoped custom resource containing fields defining the provisioner and an immutable parameter set for creating new buckets.
++ _BucketRequest (BR)_ - a user-namespaced custom resource representing a request for a new backend bucket, or access to an existing bucket.
 + _COSI_ - Container _Object_ Store Interface, modeled after CSI.
-+ _cosi-node-adapter_ - a pod per node which receives Kubelet gRPC _NodePublishVolume_ and _NodeUnpublishVolume_ requests, ensures the target bucket has been provisioned, and notifies the kubelet when the pod can be run.
++ _cosi-node-adapter_ - a pod per node which receives Kubelet gRPC _NodeStageVolume_ and _NodeUnstageVolume_ requests, ensures the target bucket has been provisioned, and notifies the kubelet when the pod can be run.
 + _driver_ - a container (usually paired with a sidecar container) that is responsible for communicating with the underlying object store to create, delete, grant access to, and revoke access from buckets. Drivers talk gRPC and need no knowledge of Kubernetes. Drivers are typically written by storage vendors, and should not be given any access outside of their namespace.
 + _driverless_ - a use-case where no driver exists to support the backend object store. Some COSI automation may still be provided, but backend operations such as creating a bucket or minting credentials will not occur.
 + _greenfield bucket_ - a new backend bucket created by COSI.
@@ -153,18 +153,20 @@ metadata:
     - cosi.io/finalizer [2]
 spec:
   protocol: [3]
-  bucketPrefix: [4]
-  bucketClassName: [5]
-  bucketInstanceName: [6]
+  protocolVersion: [4]
+  bucketPrefix: [5]
+  bucketClassName: [6]
+  bucketInstanceName: [7]
 status:
-  bucketAvailable: [7]
+  bucketAvailable: [8]
 ```
 
 1. `labels`: added by COSI.  Key’s value should be the provisioner name. Characters that do not adhere to [Kubernetes label conventions](https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set) will be converted to ‘-’.
 1. `finalizers`: added by COSI to defer `BucketRequest` deletion until backend deletion succeeds.
 1. `protocol`: (required) specifies the desired protocol.  One of {“s3”, “gcs”, or “azureBlob”}.
+1. `protocolVersion`: (optional) specifies the desired version of the `protocol`. For "s3", a value of "v2" or "v4" could be used. This field is a place-holder for version matching.
 1. `bucketPrefix`: (optional) prefix prepended to a COSI-generated new bucket name, eg. “yosemite-photos-". If `bucketInstanceName` is supplied then `bucketPrefix` is ignored because the request is for access to an existing bucket. If `bucketPrexix` is specified then it is added to the `Bucket` instance as a label.
-1. `bucketClassName`: (optional) name of the `BucketClass` used to provision this request. If omitted, a default bucket class matching the protocol is used. If the bucket class does not support the requested protocol, an error is logged and the request is retried. A `BucketClass` is required for both greenfield and brownfield requests since BCs support a list of allowed namespaces.
+1. `bucketClassName`: (optional) name of the `BucketClass` used to provision this request. If omitted, a default bucket class matching the protocol is used. If the bucket class does not support the requested protocol, an error is logged and the request is retried (with exponential backoff). A `BucketClass` is required for both greenfield and brownfield requests since BCs support a list of allowed namespaces.
 1. `bucketInstanceName`: (optional) name of the cluster-wide `Bucket` instance. If blank, then COSI assumes this is a greenfield request and will fill in the name during the binding step. If defined by the user, then this names the `Bucket` instance created by the admin. There is no automation available to make this name known to the user.
 1. `bucketAvailable`: if true the bucket has been provisioned. If false then the bucket has not been provisioned and is unable to be accessed.
 
@@ -221,7 +223,7 @@ status:
     cosi.io/bucket-prefix:
 2. `labels`: added by COSI. The "cosi.io/provisioner" key's value is the provisioner name. The "cosi.io/bucket-prefix" key's value is the `BucketRequest.bucketPrefix` value when specified. Characters that do not adhere to [Kubernetes label conventions](https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set) will be converted to ‘-’.
 3. `finalizers`: added by COSI to defer `Bucket` deletion until backend deletion ops succeed. Implementation may add one finalizer for the BR and one for the BA.
-4. `provisioner`: (optional) The provisioner field as defined in the `BucketClass`.  Used by sidecars to filter `Bucket`s. Format: <provisioner-namespace>"/"<provisioner-name>, eg "ceph-rgw-provisoning/ceph-rgw.cosi.ceph.com". If omitted then there is no driver/sidecar so the admin must create the `Bucket` and `BucketAccess` instances.
+4. `provisioner`: (optional) The provisioner field as defined in the `BucketClass`. If empty then there is no driver/sidecar, thus the admin had to create the `Bucket` and `BucketAccess` instances.
 5. `retentionPolicy`: Prescribes the outcome when the `BucketRequest` is deleted.
    - _Retain_: (default) the `Bucket` and its data are preserved. The `Bucket` can potentially be reused.
    - _Delete_: the bucket and its contents are destroyed.
@@ -265,7 +267,7 @@ allowedNamespaces: [6]
 parameters: [7]
 ```
 
-1. `provisioner`: (required) the name of the driver being deployed. Format: <provisioner-namespace>"/"<provisioner-name>, eg "ceph-rgw-provisoning/ceph-rgw.cosi.ceph.com".
+1. `provisioner`: (required) the name of the vendor-specific driver supporting the `protocol`.
 2. `isDefaultBucketClass`: (optional) boolean, default is false. If set to true then a `BucketRequest` may not need to specify a `BucketClass`. If the greenfield `BucketRequest` omits the `BucketClass` and a default `BucketClass`'s protocol matches the `BucketRequest`'s protocol then the default bucket class is used; otherwise an error is logged.
 3. `protocol`: (required) protocol supported by the associated object store. This field validates that the `BucketRequest`'s desired protocol is supported.
 > Note: if an object store supports more than one protocol then the admin should create a `BucketClass` per protocol.
@@ -348,7 +350,7 @@ metadata:
 1. `name`: the BA name is generated by COSI in this format: _"<BAR.namespace*>-<BAR.name*>-<uuid>"_. The uuid is unique within a cluster. `*` the first 100 characters of the namespace and the name are used.
 1. `labels`: added COSI.  Key’s value should be the provisioner name. Characters that do not adhere to [Kubernetes label conventions](https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set) will be converted to ‘-’.
 1. `finalizers`: added by COSI to defer `BucketAccess` deletion until the pod that uses this access terminates, and the related `BucketAccessRequest` is deleted.
-1. `provisioner`:  Copied from the `BucketAccessClass`.
+1. `provisioner`: (optional) The provisioner field as defined in the `BucketAccessClass`. If empty then there is no driver/sidecar, thus the admin had to create the `Bucket` and `BucketAccess` instances.
 1. `bucketInstanceName`:  name of the `Bucket` instance bound to this BA.
 1. `bucketAccessRequest`: an `objectReference` containing the name, namespace and UID of the associated `BucketAccessRequest`.
 1. `serviceAccount`: an `objectReference` containing the name, namespace and UID of the associated `ServiceAccount`. Empty when the `BucketAccessRequest.mintedSecretName` is specified.
@@ -374,13 +376,13 @@ policyActionsConfigMap: [2]
 parameters: [3]
 ```
 
-1. `provisioner`: (optional) the name of the driver that `BucketAccess` instances should be managed by. Format: <provisioner-namespace>"/"<provisioner-name>, eg "ceph-rgw-provisoning/ceph-rgw.cosi.ceph.com". If omitted then there is no driver/sidecar so the admin must create the `Bucket` and `BucketAccess` instances.
+1. `provisioner`: (optional) the name of the driver that `BucketAccess` instances should be managed by. If empty then there is no driver/sidecar, thus the admin had to create the `Bucket` and `BucketAccess` instances.
 1. `policyActionsConfigMap`: (required) a reference to a ConfigMap that contains a set of provisioner/platform defined policy actions for a given user identity.
 1. `parameters`: (Optional)  A map of string:string key values.  Allows admins to control user and access provisioning by setting provisioner key-values. Optional reserved keys cosi.io/configMap and cosi.io/secrets are used to reference user created resources with provider specific access policies.
 ---
 
 ### App Pod
-The application pod utilizes CSI's inline empheral volume support to provide the endpoint and secret credentials in an in-memory volume. This approach also, importantly, prevents the pod from launching before the bucket has been provisioned since the kubelet waits to start the pod until it has received the cosi-node-adapter's _NodePublishVolume_ response.
+The application pod utilizes CSI's inline ephemeral volume support to provide the endpoint and secret credentials in an in-memory volume. This approach also, importantly, prevents the pod from launching before the bucket has been provisioned since the kubelet waits to start the pod until it has received the cosi-node-adapter's _NodeStageVolume_ response.
 
 Here is a sample pod manifest:
 
@@ -411,7 +413,7 @@ spec:
 1. the name of the cosi-node-adapter.
 1. information needed by the cosi-node-adapter to verify that the bucket has been provisioned.
 
-> Note: `VolumeLifeCycleModes` needs to be set to "empheral" for inline COSI node adapter.
+> Note: `VolumeLifeCycleModes` needs to be set to "ephemeral" for inline COSI node adapter.
 
 ### Topology
 
@@ -426,7 +428,7 @@ The diagram below describes the relationships between various resources in the C
 # Workflows
 Here we describe the workflows used to automate provisioning of new and existing buckets, and the de-provisioning of these buckets.
 
-> Note: when the app pod is started, the kubelet will gRPC call _NodePublishVolume_ which is received by the cosi-node-adapter. The pod waits until the adapter responds to the gRPC request. The adapter ensures that the target bucket has been provisioned and is ready to be accessed.  When the app pod terminates, the kubelet gRPC calls _NodeUnpublishVolume_ which the cosi-node-adapter also receives. The adapter orchestrates tear-down of bucket access resources, but does not delete the `BucketRequest` nor `Bucket` instances.
+> Note: when the app pod is started, the kubelet will gRPC call _NodeStageVolume_ which is received by the cosi-node-adapter. The pod waits until the adapter responds to the gRPC request. The adapter ensures that the target bucket has been provisioned and is ready to be accessed.  When the app pod terminates, the kubelet gRPC calls _NodeUnpublishVolume_ which the cosi-node-adapter also receives. The adapter orchestrates tear-down of bucket access resources, but does not delete the `BucketRequest` nor `Bucket` instances.
 
 General prep:
 + admin creates the needed bucket classes and bucket access classes.
@@ -451,7 +453,7 @@ Here is the workflow:
 + COSI updates the BR and `Bucket` instance to reference each other.
 
 In addition, the cosi-node-adapter sees a new app pod references a BAR:
-+ cosi-node-adapter receives _NodePublishVolume_ request from kubelet.
++ cosi-node-adapter receives _NodeStageVolume_ request from kubelet.
 + adapter add a finalizer to both the BAR.BA and the BAR.BR.
 + the finalizer value is `pod.name`
 
@@ -518,7 +520,7 @@ Here is the workflow:
 + COSI removes the BAR and BA finalizers and these instances are garbage collected.
 
 In addition, the cosi-node-adapter sees the app pod is terminating:
-+ cosi-node-adapter receives _NodeUnPublishVolume_ request from kubelet.
++ cosi-node-adapter receives _NodeUnstageVolume_ request from kubelet.
 + adapter removes its finalizer from both the BAR.BA and the BAR.BR.
 
 ## Delete BucketAccess 
@@ -623,8 +625,15 @@ message ProvisionerGetInfoRequest {
     // Intentionally left blank
 }
 
-message ProvisionerGetInfoResponse {    
-    string provisioner_identity = 1;
+message ProvisionerGetInfoResponse {
+  // The name MUST follow domain name notation format
+  // (https://tools.ietf.org/html/rfc1035#section-2.3.1). It SHOULD
+  // include the plugin's host company name and the plugin name,
+  // to minimize the possibility of collisions. It MUST be 63
+  // characters or less, beginning and ending with an alphanumeric
+  // character ([a-z0-9A-Z]) with dashes (-), dots (.), and
+  // alphanumerics between. This field is REQUIRED.
+  string name = 1;
 }
 ```
 
