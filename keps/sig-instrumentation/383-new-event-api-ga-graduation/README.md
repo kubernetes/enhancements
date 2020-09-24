@@ -56,7 +56,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Design details are appropriately documented
 - [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
 - [x] (R) Graduation criteria is in place
-- [ ] (R) Production readiness review completed
+- [x] (R) Production readiness review completed
 - [x] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
@@ -691,9 +691,11 @@ _This section must be completed when targeting beta graduation to a release._
 - 2017-11-23 Event API group is [merged](https://github.com/kubernetes/kubernetes/pull/49112)
 - New Event API [staging/src/k8s.io/client-go/kubernetes/typed/events/v1beta1](https://github.com/kubernetes/kubernetes/tree/master/staging/src/k8s.io/client-go/kubernetes/typed/events/v1beta1)
 - Scheduler migration: [#78447](https://github.com/kubernetes/kubernetes/pull/78447/files), [#83692](https://github.com/kubernetes/kubernetes/pull/83692)
-- Migrate the leader election to use v1beta1 Events: [#82861](https://github.com/kubernetes/kubernetes/pull/82861)
-- Migrate kubelet to use v1beta1 Events - Part 1: [#82677](https://github.com/kubernetes/kubernetes/pull/82677)
-- feat: migrate kube-controller-manager to use v1beta1 events api: [#82834](https://github.com/kubernetes/kubernetes/pull/82834)
+
+New Events API has been graduated to GA in 1.19:
+- Promoted new Events API from v1beta1 to v1: [#91645](https://github.com/kubernetes/kubernetes/pull/91645), [#92662](https://github.com/kubernetes/kubernetes/pull/92662), [#92874](https://github.com/kubernetes/kubernetes/pull/92874)
+- Implemented a common fallback library for Events API: [#91798](https://github.com/kubernetes/kubernetes/pull/91798), [92082](https://github.com/kubernetes/kubernetes/pull/92082)
+- Implemented CRUD tests for new Events API: [#92607](https://github.com/kubernetes/kubernetes/pull/92607), [#92724](https://github.com/kubernetes/kubernetes/pull/92724), [#92755](https://github.com/kubernetes/kubernetes/pull/92755), [#93296](https://github.com/kubernetes/kubernetes/pull/93296)
 
 ## Alternatives
 
