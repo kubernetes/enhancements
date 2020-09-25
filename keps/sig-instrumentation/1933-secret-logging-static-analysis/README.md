@@ -344,7 +344,7 @@ As part of testing of our testing process, these tests should belong to `kuberne
 - Respond to any remaining issues from developer feedback.
 
 #### GA (1.22)
-- Presmubmit analysis becomes blocking.
+- Presubmit analysis becomes blocking.
 
 <!--
 **Note:** *Not required until targeted at a release.*
