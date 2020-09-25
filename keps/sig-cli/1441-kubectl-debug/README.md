@@ -24,19 +24,27 @@
     - [Debugging](#debugging)
     - [Automation](#automation)
     - [Technical Support](#technical-support)
-  - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
+  - [Notes/Constraints/Caveats](#notesconstraintscaveats)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Full <code>kubectl debug</code> Arguments](#full--arguments)
   - [Test Plan](#test-plan)
+    - [Alpha milestones](#alpha-milestones)
+    - [Beta milestones](#beta-milestones)
+    - [GA milestones](#ga-milestones)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
     - [Beta -&gt; GA Graduation](#beta---ga-graduation)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
+  - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
+  - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+  - [Monitoring Requirements](#monitoring-requirements)
+  - [Dependencies](#dependencies)
+  - [Scalability](#scalability)
+  - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
-- [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
 <!-- /toc -->
 
@@ -46,14 +54,14 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 - [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
 - [x] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
-- [ ] (R) Graduation criteria is in place
-- [ ] (R) Production readiness review completed
-- [ ] Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [x] (R) Design details are appropriately documented
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [x] (R) Graduation criteria is in place
+- [x] (R) Production readiness review completed
+- [x] Production readiness review approved
+- [x] "Implementation History" section is up-to-date for milestone
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
 **Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
@@ -474,144 +482,139 @@ Use "kubectl options" for a list of global command-line options (applies to all 
 
 ### Test Plan
 
+#### Alpha milestones
+
 In addition to standard unit tests for `kubectl`, the `debug` command will be
 released as a `kubectl alpha` subcommand, signaling users to expect instability.
 During the alpha phase we will gather feedback from users that we expect will
 improve the design of `debug` and identify the Critical User Journeys we should
 test prior to Alpha -> Beta graduation.
 
+#### Beta milestones
+
+For Beta release, the following user journeys will have integration tests in the
+`test/cmd` package:
+
+  - [Pod Troubleshooting by Copy](#pod-troubleshooting-by-copy)
+  - [Node Troubleshooting with Privileged Containers](#node-troubleshooting-with-privileged-containers)
+
+Additionally we'll review unit tests to ensure they're complete before
+graduation.
+
+#### GA milestones
+
+If the `EphemeralContainers` feature has reached beta, we will add an
+integration test for [Pod Troubleshooting with Ephemeral Debug Container
+](#pod-troubleshooting-with-ephemeral-debug-container).
+
 ### Graduation Criteria
 
 #### Alpha -> Beta Graduation
 
-- [ ] Ephemeral Containers API has graduated to Beta
 - [x] A task on https://kubernetes.io/docs/tasks/ describes how to troubleshoot
   a running pod using Ephemeral Containers.
 - [ ] A survey sent to early adopters doesn't reveal any major shortcomings.
-- [ ] Test plan is amended to address the most common user journeys.
+- [x] Test plan is amended to address the most common user journeys.
+- [ ] Test plan Beta milestones reached.
 
 #### Beta -> GA Graduation
 
-- [ ] Ephemeral Containers are GA
+- [ ] Test plan GA milestones reached
+- [ ] User feedback gathered over 2 release cycles.
+- [ ] 3 external articles suggest using `kubectl debug`
 
 ### Upgrade / Downgrade Strategy
 
-<!--
-If applicable, how will the component be upgraded and downgraded? Make sure
-this is in the test plan.
-
-Consider the following in developing an upgrade/downgrade strategy for this
-enhancement:
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade, in order to maintain previous behavior?
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade, in order to make use of the enhancement?
--->
+This functionality is contained entirely within `kubectl` and shares its
+strategy. No configuration changes are required.
 
 ### Version Skew Strategy
 
-<!--
-If applicable, how will the component handle version skew with other
-components? What are the guarantees? Make sure this is in the test plan.
+`kubectl debug` makes use the following recent features:
 
-Consider the following in developing a version skew strategy for this
-enhancement:
-- Does this enhancement involve coordinating behavior in the control plane and
-  in the kubelet? How does an n-2 kubelet without this feature available behave
-  when this feature is used?
-- Will any other components on the node change? For example, changes to CSI,
-  CRI or CNI may require updating that component before the kubelet.
--->
+- Process namespace sharing (alpha: 1.10, beta: 1.12, GA: 1.17)
+- Ephemeral containers (alpha: 1.16)
+
+Not all functionality in `kubectl debug` requires these features. If an
+invocation requires a feature that is not enabled in the cluster, the api server
+will reject the pod creation request.
+
+Special consideration is given to the Ephemeral Containers feature since this
+feature will not be enabled on most clusters while it is in alpha. The `kubectl
+debug -h` displays `(requires the EphemeralContainers feature to be enabled in
+the cluster)` for examples that require ephemeral containers.
+
+Since ephemeral containers use a dedicated subresource, the api server will
+return a 404 when the feature is disabled. When this happens for a target that
+exists, kubectl prints `ephemeral containers are disabled for this cluster`.
 
 ## Production Readiness Review Questionnaire
 
-<!--
-
-Production readiness reviews are intended to ensure that features merging into
-Kubernetes are observable, scalable and supportable; can be safely operated in
-production environments, and can be disabled or rolled back in the event they
-cause increased failures in production. See more in the PRR KEP at
-https://git.k8s.io/enhancements/keps/sig-architecture/20190731-production-readiness-review-process.md.
-
-The production readiness review questionnaire must be completed for features in
-v1.19 or later, but is non-blocking at this time. That is, approval is not
-required in order to be in the release.
-
-In some cases, the questions below should also have answers in `kep.yaml`. This
-is to enable automation to verify the presence of the review, and to reduce review
-burden and latency.
-
-The KEP must have a approver from the
-[`prod-readiness-approvers`](http://git.k8s.io/enhancements/OWNERS_ALIASES)
-team. Please reach out on the
-[#prod-readiness](https://kubernetes.slack.com/archives/CPNHUMN74) channel if
-you need any help or guidance.
-
--->
-
-```
-<<[UNRESOLVED copied over from template and needs to be filled. ]>>
-
 ### Feature Enablement and Rollback
-
-_This section must be completed when targeting alpha to a release._
 
 * **How can this feature be enabled / disabled in a live cluster?**
   - [ ] Feature gate (also fill in values in `kep.yaml`)
     - Feature gate name:
     - Components depending on the feature gate:
-  - [ ] Other
-    - Describe the mechanism:
+  - [x] Other
+    - Describe the mechanism: **A new command in `kubectl alpha`**
     - Will enabling / disabling the feature require downtime of the control
-      plane?
+      plane? **no**
     - Will enabling / disabling the feature require downtime or reprovisioning
-      of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
+      of a node? **no**
 
 * **Does enabling the feature change any default behavior?**
-  Any change of default behavior may be surprising to users or break existing
-  automations, so be extremely careful here.
+
+  It's a new command so there's no default behavior in kubectl. If a user
+  has installed a plugin named "debug", that plugin will be masked by the
+  new `kubectl debug` command. This is a known issue with kubectl plugins,
+  and it's being addressed separately by sig-cli, likely by detecting this
+  condition and printing a warning.
 
 * **Can the feature be disabled once it has been enabled (i.e. can we roll back
   the enablement)?**
-  Also set `disable-supported` to `true` or `false` in `kep.yaml`.
-  Describe the consequences on existing workloads (e.g., if this is a runtime
-  feature, can it break the existing applications?).
+
+  Yes, you could roll back to a previous release of `kubectl` and any pods
+  created by `kubectl debug` would still be accessible via other `kubectl`
+  commands.
 
 * **What happens if we reenable the feature if it was previously rolled back?**
 
+  You can create pods again
+
 * **Are there any tests for feature enablement/disablement?**
-  The e2e framework does not currently support enabling or disabling feature
-  gates. However, unit tests in each component dealing with managing data, created
-  with and without the feature, are necessary. At the very least, think about
-  conversion tests if API types are being modified.
+  
+  No, because it cannot be disabled or enabled in a single release
 
 ### Rollout, Upgrade and Rollback Planning
 
-_This section must be completed when targeting beta graduation to a release._
-
 * **How can a rollout fail? Can it impact already running workloads?**
-  Try to be as paranoid as possible - e.g., what if some components will restart
-   mid-rollout?
+
+  The feature is encapsulated entirely within the kubectl binary, so rollout is
+  an atomic client binary update. Pods created by the new command may be
+  manipulated by any version of `kubectl`, so there are no version dependencies.
 
 * **What specific metrics should inform a rollback?**
 
+  There's no need for a rollback unless `kubectl` is not working at all.
+
 * **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
-  Describe manual testing that was done and the outcomes.
-  Longer term, we may want to require automated upgrade/rollback tests, but we
-  are missing a bunch of machinery and tooling and can't do that now.
+
+  No, there's no need.
 
 * **Is the rollout accompanied by any deprecations and/or removals of features, APIs, 
 fields of API types, flags, etc.?**
-  Even if applying deprecation policies, they may still surprise some users.
+
+  The command will move from `kubectl alpha debug` to `kubectl debug`. If the
+  user has a kubectl plugin named "debug", it will be masked.
 
 ### Monitoring Requirements
 
-_This section must be completed when targeting beta graduation to a release._
-
 * **How can an operator determine if the feature is in use by workloads?**
-  Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
-  checking if there are objects with field X set) may be a last resort. Avoid
-  logs or events for this purpose.
+
+  Since it uses the standard core API, there's no way to determine whether a
+  pod or ephemeral container was created by `kubectl debug` or manually by a
+  user.
 
 * **What are the SLIs (Service Level Indicators) an operator can use to determine 
 the health of the service?**
@@ -619,122 +622,85 @@ the health of the service?**
     - Metric name:
     - [Optional] Aggregation method:
     - Components exposing the metric:
-  - [ ] Other (treat as last resort)
-    - Details:
+  - [x] Other (treat as last resort)
+    - Details: There's no running service.
 
 * **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
-  At a high level, this usually will be in the form of "high percentile of SLI
-  per day <= X". It's impossible to provide comprehensive guidance, but at the very
-  high level (needs more precise definitions) those may be things like:
-  - per-day percentage of API calls finishing with 5XX errors <= 1%
-  - 99% percentile over day of absolute value from (job creation time minus expected
-    job creation time) for cron job <= 10%
-  - 99,9% of /health requests per day finish with 200 code
+
+  There's no running service.
 
 * **Are there any missing metrics that would be useful to have to improve observability 
 of this feature?**
-  Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
-  implementation difficulties, etc.).
+
+  It would be easy to add a "created by kubectl debug" annotation to a newly
+  created pod, but we don't want to preemptively add features that are only
+  theoretically useful.
 
 ### Dependencies
 
-_This section must be completed when targeting beta graduation to a release._
-
 * **Does this feature depend on any specific services running in the cluster?**
-  Think about both cluster-level services (e.g. metrics-server) as well
-  as node-level agents (e.g. specific version of CRI). Focus on external or
-  optional services that are needed. For example, if this feature depends on
-  a cloud provider API, or upon an external software-defined storage or network
-  control plane.
 
-  For each of these, fill in the following—thinking about running existing user workloads
-  and creating new ones, as well as about cluster-level services (e.g. DNS):
-  - [Dependency name]
-    - Usage description:
-      - Impact of its outage on the feature:
-      - Impact of its degraded performance or high-error rates on the feature:
-
+  No.
 
 ### Scalability
 
-_For alpha, this section is encouraged: reviewers should consider these questions
-and attempt to answer them._
-
-_For beta, this section is required: reviewers must answer these questions._
-
-_For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field._
-
 * **Will enabling / using this feature result in any new API calls?**
   Describe them, providing:
-  - API call type (e.g. PATCH pods)
-  - estimated throughput
-  - originating component(s) (e.g. Kubelet, Feature-X-controller)
-  focusing mostly on:
-  - components listing and/or watching resources they didn't before
-  - API calls that may be triggered by changes of some Kubernetes resources
-    (e.g. update of object X triggers new updates of object Y)
-  - periodic API calls to reconcile state (e.g. periodic fetching state,
-    heartbeats, leader election, etc.)
+  - API call type (e.g. PATCH pods):
+
+    GET/CREATE/PATCH pods, GET nodes
+
+  - estimated throughput:
+
+    Negligible, because it's human initiated. There will be 1 read + 1 mutate
+    per `kubectl debug` command. At that point there's a new pod for the system
+    to manage.
+
+  - originating component(s):
+
+    kubectl
 
 * **Will enabling / using this feature result in introducing new API types?**
-  Describe them, providing:
-  - API type
-  - Supported number of objects per cluster
-  - Supported number of objects per namespace (for namespace-scoped objects)
+
+  No.
 
 * **Will enabling / using this feature result in any new calls to the cloud 
 provider?**
 
+  No.
+
 * **Will enabling / using this feature result in increasing size or count of 
 the existing API objects?**
-  Describe them, providing:
-  - API type(s):
-  - Estimated increase in size: (e.g., new annotation of size 32B)
-  - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
+
+  One new Pod or EphemeralContainer when initiated by a user.
 
 * **Will enabling / using this feature result in increasing time taken by any 
 operations covered by [existing SLIs/SLOs]?**
-  Think about adding additional work or introducing new steps in between
-  (e.g. need to do X to start a container), etc. Please describe the details.
+
+  No.
 
 * **Will enabling / using this feature result in non-negligible increase of 
 resource usage (CPU, RAM, disk, IO, ...) in any components?**
-  Things to keep in mind include: additional in-memory state, additional
-  non-trivial computations, excessive access to disks (including increased log
-  volume), significant amount of data sent and/or received over network, etc.
-  This through this both in small and large cases, again with respect to the
-  [supported limits].
+
+  Creating a pod will use more resources, but only when initiated by a user.
 
 ### Troubleshooting
 
-The Troubleshooting section currently serves the `Playbook` role. We may consider
-splitting it into a dedicated `Playbook` document (potentially with some monitoring
-details). For now, we leave it here.
-
-_This section must be completed when targeting beta graduation to a release._
-
 * **How does this feature react if the API server and/or etcd is unavailable?**
 
+  `kubectl` is not resilient to API server unavailability.
+
 * **What are other known failure modes?**
-  For each of them, fill in the following information by copying the below template:
-  - [Failure mode brief description]
-    - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without logging into a master or worker node?
-    - Mitigations: What can be done to stop the bleeding, especially for already
-      running user workloads?
-    - Diagnostics: What are the useful log messages and their required logging
-      levels that could help debug the issue?
-      Not required until feature graduated to beta.
-    - Testing: Are there any tests for failure mode? If not, describe why.
+
+  This command creates objects using the core API. Writing a Playbook of how to
+  respond when the system is not creating core Kinds is outside the scope of
+  this KEP.
 
 * **What steps should be taken if SLOs are not being met to determine the problem?**
 
-[supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
-[existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
+  Definitely stop running `kubectl debug`.
 
-<<[/UNRESOLVED]>>
-```
+[existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 
 ## Implementation History
 
@@ -742,15 +708,14 @@ _This section must be completed when targeting beta graduation to a release._
 - *2019-12-05*: Updated KEP for expanded debug targets.
 - *2020-01-09*: Updated KEP for debugging nodes and mark implementable.
 - *2020-01-15*: Added test plan.
-- *2020-09-20*: Updated to reflect actual implementation details.
-- *2020-09-23*: Add support for mutating multiple container images in
-  debug-by-copy.
-
-## Drawbacks
-
-<!--
-Why should this KEP _not_ be implemented?
--->
+- *1.18*: Features released in `kubectl alpha`
+  - [Pod Troubleshooting with Ephemeral Debug Container](#pod-troubleshooting-with-ephemeral-debug-container)
+- *1.19*: Features released in `kubectl alpha`
+  - [Pod Troubleshooting by Copy](#pod-troubleshooting-by-copy)
+  - [Node Troubleshooting with Privileged Containers](#node-troubleshooting-with-privileged-containers)
+- *2020-09-20*: Updated KEP to reflect actual implementation details.
+- *2020-09-23*: Update KEP for mutating multiple container images in debug-by-copy.
+- *2020-09-24*: Update KEP for Production Readiness and beta graduation.
 
 ## Alternatives
 
