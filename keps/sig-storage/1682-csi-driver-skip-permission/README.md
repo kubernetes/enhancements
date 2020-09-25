@@ -135,7 +135,6 @@ A test plan will include the following tests:
 * Basic tests including a permutation of the following values:
   - CSIDriver.Spec.FSGroupPolicy  (`File`/`None`/`ReadWriteOnceWithFSType`)
   - PersistentVolumeClaim.Status.AccessModes (`ReadWriteOnly`, `ReadOnlyMany`,`ReadWriteMany`)
-* E2E tests
 
 ### Graduation Criteria
 
@@ -146,6 +145,7 @@ A test plan will include the following tests:
   (non-production), with discussions in SIG-Storage regarding success of
   deployments. 
 * The `CSIVolumeFSGroupPolicy` feature gate will graduate to beta.
+* E2E tests
 
 
 * GA in 1.21, with E2E tests in place tagged with feature Storage.
@@ -238,3 +238,4 @@ There should be no noticeable increase to resource usage for any components.
 
 - 2020-04-27 Initial KEP pull request submitted
 - 2020-05-12 Updated to use new KEP template
+- 2020-09-25 Moved E2E Tests for beta target
