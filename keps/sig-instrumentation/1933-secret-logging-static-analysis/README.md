@@ -280,22 +280,18 @@ How will UX be reviewed, and by whom?
 Consider including folks who also work outside the SIG or subproject.
 -->
 
-As a blocking test, there is a risk for developer toil in the event of any
-false-positive or test flakiness.
-This can be mitigated by any contributed with `/override` permissions.
+While the test will not initially be blocking, if it produces many false positives, 
+it may train developers to ignore issues.
+Additionally, *because* it is not initially blocking, it risks being overlooked
+as unimportant even when findings are relevant.
 
-Similarly, depending the order in which PRs are tested and merged,
- it is theoretically possible that a merge would result in a violation reaching master.
-If this is not properly handled, all PRs made at that time could present as
- failing analysis.
-This can be mitigated by consistent scans of `master` as a baseline.
+Should issues reach master, either by the happenstance of a merge, ignored warnings, or analysis flakiness,
+reported findings may include those out of scope for the change set in a given PR.
+Such incidents are little more than confusing toil for developers.
 
-As this analysis depends on project-specific considerations of what constitutes
- a secret or a sink, periodic review is required to ensure configuration is kept up-to-date.
-This is mitigated somewhat with a consistent use of field tags,
- as proposed in [KEP-1753](https://github.com/kubernetes/enhancements/pull/1754),
- though correct application of field tags would also be subject to periodic review.
-
+Changes to `test-infra` carry with them the potential for inconvenience,
+should they introduce any instability to wider testing.  While diligent review
+mitigates this, it does not remove the concern completely.
 
 ## Design Details
 
@@ -545,21 +541,21 @@ None.
 Why should this KEP _not_ be implemented?
 -->
 
-> As a blocking test, there is a risk for developer toil in the event of any
-  false-positive or test flakiness.
-  This can be mitigated by any contributed with `/override` permissions.
+As a blocking test, there is a risk for developer toil in the event of any
+false-positive or test flakiness.
+This can be mitigated by any contributor with `/override` permissions.
 
-> Similarly, depending the order in which PRs are tested and merged,
-   it is theoretically possible that a merge would result in a violation reaching master.
-  If this is not properly handled, all PRs made at that time could present as
-   failing analysis.
-  This can be mitigated by consistent scans of `master` as a baseline.
+Similarly, depending the order in which PRs are tested and merged,
+it is theoretically possible that a merge would result in a violation reaching master.
+If this is not properly handled, all PRs made at that time could present as
+failing analysis.
+This can be mitigated by consistent scans of `master` as a baseline.
 
-> As this analysis depends on project-specific considerations of what constitutes
-   a secret or a sink, periodic review is required to ensure configuration is kept up-to-date.
-  This is mitigated somewhat with a consistent use of field tags,
-   as proposed in [KEP-1753](https://github.com/kubernetes/enhancements/pull/1754),
-   though correct application of field tags would also be subject to periodic review.
+As this analysis depends on project-specific considerations of what constitutes
+a secret or a sink, periodic review is required to ensure configuration is kept up-to-date.
+This is mitigated somewhat with a consistent use of field tags,
+as proposed in [KEP-1753](https://github.com/kubernetes/enhancements/pull/1754),
+though correct application of field tags would also be subject to periodic review.
 
 
 ## Alternatives
