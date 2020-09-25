@@ -233,35 +233,44 @@ Options:
 ```
 
 The modification `kubectl debug` makes to `Pod.Spec.Containers` depends on the
-value of the `--container` flag.
+value of the `--container` flag. Unlike with debugging with ephemeral
+containers, debugging by copy does not support generating a name for new
+containers.
 
 #### Creating a Debug Container by copy
 
-If a user does not specify a `--container` or specifies one that does not exist,
+If a user specifies a container name with `--container` that does not exist,
 then the user is instructing `kubectl debug` to create a new Debug Container in
-the Pod copy.
+the Pod copy. In this case `--image` is the container image to use for the new
+container.
 
 ```
 Examples:
   # Create a debug container as a copy of the original Pod and attach to it
-  kubectl debug mypod -it --image=busybox --copy-to=my-debugger
+  kubectl debug mypod -it -container=debug --image=busybox --copy-to=my-debugger
 ```
 
 #### Modify Application Image by Copy
 
-If a user specifies a `--container`, then they are instructing `kubectl debug` to
-create a copy of the target pod with a new image for one of the containers.
+If a user specifies a container name with `--container` that exists, then the
+user is instructing `kubectl debug` to change the image for this one container
+to the image specified in `--image`.
+
+If a user does not specify a `--container`, then they are instructing `kubectl
+debug` to change the image for one or more containers in the pod. In this case,
+`--image` is the image mutation language defined by `kubectl set image`.
 
 ```
 Examples:
   # Create a copy of mypod named my-debugger with my-container's image changed to busybox
   kubectl debug mypod --image=busybox --container=my-container --copy-to=my-debugger -- sleep 1d
-```
 
-Note that the Pod API allows updates of container images in-place, so
-`--copy-to` is not necessary for this operation. `kubectl debug` isn't necessary
-to achieve this -- it can be done today with patch -- but `kubectl debug` could
-implement it as well for completeness.
+  # Create a copy of mypod with the image of all container changed to busybox
+  kubectl debug mypod --image=*=busybox --copy-to=my-debugger
+
+  # Create a copy of mypod with the specified image changes
+  kubectl debug mypod --image=main=busybox,sidecar=debian --copy-to=my-debugger
+```
 
 ### Node Troubleshooting with Privileged Containers
 
@@ -734,6 +743,8 @@ _This section must be completed when targeting beta graduation to a release._
 - *2020-01-09*: Updated KEP for debugging nodes and mark implementable.
 - *2020-01-15*: Added test plan.
 - *2020-09-20*: Updated to reflect actual implementation details.
+- *2020-09-23*: Add support for mutating multiple container images in
+  debug-by-copy.
 
 ## Drawbacks
 
