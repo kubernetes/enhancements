@@ -306,14 +306,22 @@ required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
 
-Similar to [KEP-20190605: Metrics Validation and Verification](keps/sig-instrumentation/20190605-metrics-validation-and-verification.md),
-this KEP would introduce a test build target to execute analysis during testing.
-The target will be introduced to `//test/instrumentation`, with configuration data 
- in `//test/instrumentation/testdata`.
+In-depth analysis interacts with build artifacts, and as a result is quickly
+stymied by Bazel's sandboxing of build and test environments.
+It is similar in this regard to linters, and indeed a standard execution path for
+analysis in Go is via `go vet -vettool=...`.
 
-The test itself will consist of a script which invokes `go-flow-levee` static analysis
-on all Kubernetes Go packages reachable from `//:all-srcs`. 
+This KEP would introduce a execution script to `hack/` which handles passing
+the analyzer and config to our vet process.
+Within Kubernetes, `go vet` is executed via `make vet`.
+The analyzer can be passed to this in the introduced `hack/` script via
+`make vet WHAT="..."`.
+Dependency on `go-flow-levee` will be introduced to `hack/tools` to avoid polluting
+the main Kubernetes dependencies.
+
+This KEP will also introduce execution of this script as a Prow presubmit job.
 Any findings by the analysis will constitute a test failure.
+Failure will be initially non-blocking, per the graduation criteria below.
 Analysis findings reporting the position of both source and sink,
  indicating to a developer which log call must be corrected and/or which argument must be sanitized.
 
