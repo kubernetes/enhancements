@@ -356,7 +356,7 @@ Therefore, seccomp annotation updates will be ignored. This maintains backwards 
 (no tightening validation), and makes a small stabilizing change to behavior (new Kubelets will
 ignore the update).
 
-When an [Ephemeral Container](20190212-ephemeral-containers.md) is added, it will follow the same
+When an [Ephemeral Container](277-ephemeral-containers) is added, it will follow the same
 rules for using or overriding the pod's seccomp profile. Ephemeral container's will never sync with
 a seccomp annotation.
 

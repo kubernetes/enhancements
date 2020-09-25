@@ -139,7 +139,7 @@ graduated or removed.
 Design a high-bandwidth low-latency production ready streaming channel to containers. Such a system
 should go through an ingress point other than the apiserver, and could be implemented (or at least
 prototyped) out of tree by leveraging the new [ephemeral containers
-feature](20190212-ephemeral-containers.md).
+feature](277-ephemeral-containers).
 
 ## Proposal
 
