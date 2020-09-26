@@ -150,6 +150,11 @@ users:
         On Fedora: dnf install example-client-go-exec-plugin
 
         ...
+
+      # Whether or not to provide cluster information, which could potentially contain
+      # very large CA data, to this exec plugin as a part of the KUBERNETES_EXEC_INFO
+      # environment variable.
+      provideClusterInfo: true
 clusters:
 - name: my-cluster
   cluster:
@@ -195,6 +200,12 @@ type ExecConfig struct {
   // present. For example, `brew install foo-cli` might be a good InstallHint for
   // foo-cli on Mac OS systems.
   InstallHint string `json:"installHint,omitempty"`
+
+  // ProvideClusterInfo determines whether or not to provide cluster information,
+  // which could potentially contain very large CA data, to this exec plugin as a
+  // part of the KUBERNETES_EXEC_INFO environment variable. By default, it is set
+  // to false.
+  ProvideClusterInfo bool `json:"provideClusterInfo"`
 }
 ```
 
@@ -211,6 +222,10 @@ variables set in the client process are also passed to the provider.
 
 `installHint` specifies help text to print to the user when the required binary
 is missing.
+
+`provideClusterInfo` specifies whether to provide cluster information, which could
+potentially contain very large CA data, to this exec plugin as a part
+of the `KUBERNETES_EXEC_INFO` environment variable.
 
 ### Provider input format
 
@@ -252,31 +267,61 @@ type ExecCredential struct {
 // the transport.
 type ExecCredentialSpec struct {
   // Cluster contains information to allow an exec plugin to communicate with the
-  // kubernetes cluster being authenticated to.
-  Cluster Cluster `json:"cluster"`
+  // kubernetes cluster being authenticated to. Note that Cluster is non-nil only
+  // when provideClusterInfo is set to true in the exec provider config (i.e.,
+  // ExecConfig.ProvideClusterInfo).
+  // +optional
+  Cluster *Cluster `json:"cluster,omitempty"`
 }
 
 // Cluster contains information to allow an exec plugin to communicate with the
 // kubernetes cluster being authenticated to.
+//
+// To ensure that this struct contains everything someone would need to communicate
+// with a kubernetes cluster (just like they would via a kubeconfig), the fields
+// should shadow "k8s.io/client-go/tools/clientcmd/api/v1".Cluster, with the exception
+// of CertificateAuthority, since CA data will always be passed to the plugin as bytes.
 type Cluster struct {
   // Server is the address of the kubernetes cluster (https://hostname:port).
   Server string `json:"server"`
-  // ServerName is passed to the server for SNI and is used in the client to
+  // TLSServerName is passed to the server for SNI and is used in the client to
   // check server certificates against. If ServerName is empty, the hostname
   // used to contact the server is used.
   // +optional
-  ServerName string `json:"serverName,omitempty"`
+  TLSServerName string `json:"tls-server-name,omitempty"`
+  // InsecureSkipTLSVerify skips the validity check for the server's certificate.
+  // This will make your HTTPS connections insecure.
+  // +optional
+  InsecureSkipTLSVerify bool `json:"insecure-skip-tls-verify,omitempty"`
   // CAData contains PEM-encoded certificate authority certificates.
   // If empty, system roots should be used.
   // +listType=atomic
   // +optional
-  CAData []byte `json:"caData,omitempty"`
+  CertificateAuthorityData []byte `json:"certificate-authority-data,omitempty"`
   // ProxyURL is the URL to the proxy to be used for all requests to this
   // cluster.
   // +optional
   ProxyURL string `json:"proxy-url,omitempty"`
-  // Config holds additional config data that is specific to the exec plugin
-  // with regards to the cluster being authenticated to.
+  // Config holds additional config data that is specific to the exec
+  // plugin with regards to the cluster being authenticated to.
+  //
+  // This data is sourced from the clientcmd Cluster object's extensions[exec] field:
+  //
+  // clusters:
+  // - name: my-cluster
+  //   cluster:
+  //     ...
+  //     extensions:
+  //     - name: client.authentication.k8s.io/exec  # reserved extension name for per cluster exec config
+  //       extension:
+  //         audience: 06e3fbd18de8  # arbitrary config
+  //
+  // In some environments, the user config may be exactly the same across many clusters
+  // (i.e. call this exec plugin) minus some details that are specific to each cluster
+  // such as the audience.  This field allows the per cluster config to be directly
+  // specified with the cluster info.  Using this field to store secret data is not
+  // recommended as one of the prime benefits of exec plugins is that no secrets need
+  // to be stored directly in the kubeconfig.
   // +optional
   Config runtime.RawExtension `json:"config,omitempty"`
 }
@@ -284,7 +329,7 @@ type Cluster struct {
 
 The Go struct for the `clusters.[...].cluster.extensions[...].extension` field:
 
-```golang
+```go
 // Cluster contains information about how to communicate with a kubernetes cluster
 type Cluster struct {
   // Server is the address of the kubernetes cluster (https://hostname:port).
@@ -313,19 +358,71 @@ has completed parsing its `kubeconfig`, flags and environment variables).
 This allows the executable to perform different actions based on the current
 cluster (i.e. get a token for a particular cluster).  The `Cluster` struct is
 flexible in that it not only provides all details required to communicate with
-the cluster (hostname and TLS config), but that is also allows arbitrary
+the cluster as one would via a `kubeconfig` (i.e. everything from
+`"k8s.io/client-go/tools/clientcmd/api/v1".Cluster`), but also allows arbitrary
 per-cluster configuration to be passed to the executable via the `config` field.
 This field can contain arbitrary data that is passed to the executable without
 modification.  This allows extra user-defined data (i.e. an OAuth client ID for
 audience scoping) to be passed through the `spec.cluster` field.  The user
-configures this via the `kubeconfig`'s `clusters.[...].cluster.extensions[exec].extension`
-field.  The `exec` named extension is reserved for this purpose.
+configures this via the `kubeconfig`'s `clusters.[...].cluster.extensions[client.authentication.k8s.io/exec].extension`
+field.  The `client.authentication.k8s.io/exec` named extension is reserved for this
+purpose.
+
+The `spec.cluster` field is a pointer so that the plugin can easily determine whether
+the cluster information is valid. The cluster information will only be provided when 1)
+the `ExecCredential` version supports the `spec.cluster` field (note: `v1alpha1`
+does not support this field) and 2) the `provideClusterInfo` field is set to `true`
+for this `kubeconfig` `AuthInfo` entry. The `provideClusterInfo` option is opt-in for
+the following reasons.
+1. To prevent potentially large CA bundles from being set in the environment via the
+   `Cluster.CertificateAuthorityData` field and causing system issues.
+1. To design for the majority of plugins that will not use this cluster information
+   (this is an assumption).
+1. To give the `kubeconfig` creator, which most likely understands the runtime and
+   security properties of the exec plugin, the power to enable or disable this
+   cluster information being set in the environment for a plugin to consume.
+
+To ensure that the `Cluster` struct maintains the same cluster connection
+capabilities as one gets from a `kubeconfig`, the `Cluster` fields (Go and JSON) must
+be named the same as `"k8s.io/client-go/tools/clientcmd/api/v1".Cluster`, with the
+exception of `CertificateAuthority`, which has been left out since CA data will always
+be passed to the plugin as bytes.
 
 This data is passed to the executable via the `KUBERNETES_EXEC_INFO` environment
 variable in a JSON serialized object.  Note that an environment variable is used
 over passing this information via standard input because standard input is
 reserved for interactive flows between the user and executable (i.e. to prompt
 for username and password).
+
+To make it easier for a plugin to use this `KUBERNETES_EXEC_INFO` environment
+variable to connect to the referent cluster, a set of helper functions will be added
+to create a `"k8s.io/client-go/rest".Config` from the `KUBERNETES_EXEC_INFO`
+environment variable. These helper functions will live in
+`k8s.io/client-go/tools/auth/exec/exec.go` so that non-plugin developers won't pull
+in this new package and the new package can safely depend on
+`k8s.io/client-go/rest`. The helper functions are as follows.
+
+```golang
+// LoadExecCredentialFromEnv is a helper-wrapper around LoadExecCredential that loads from the
+// well-known KUBERNETES_EXEC_INFO environment variable.
+//
+// When the KUBERNETES_EXEC_INFO environment variable is not set or is empty, then this function
+// will immediately return an error.
+func LoadExecCredentialFromEnv() (runtime.Object, *rest.Config, error)
+
+// LoadExecCredential loads the configuration needed for an exec plugin to communicate with a
+// cluster.
+//
+// LoadExecCredential expects the provided data to be a serialized client.authentication.k8s.io
+// ExecCredential object (of any version). If the provided data is invalid (i.e., it cannot be
+// unmarshalled into any known client.authentication.k8s.io ExecCredential version), an error will
+// be returned. A successfully unmarshalled ExecCredential will be returned as the first return
+// value.
+//
+// If the provided data is successfully unmarshalled, but it does not contain cluster information
+// (i.e., ExecCredential.Spec.Cluster == nil), then the returned rest.Config and error will be nil.
+func LoadExecCredential(data []byte) (runtime.Object, *rest.Config, error)
+```
 
 ### Provider output format
 
@@ -416,6 +513,13 @@ Unit tests to confirm:
   + Credentials are used across many requests (as long as they are still valid)
 - Single flight all calls to a given executable (when the config is the same)
 - Reasonable timeout to executable calls so clients do not hang indefinitely
+- `"k8s.io/client-go/pkg/apis/clientauthentication".Cluster` (and external types)
+  fields (Go and JSON) properly shadow
+  `"k8s.io/client-go/tools/clientcmd/api/v1".Cluster` fields (with the exception of
+  `CertificateAuthority` for reasons stated in design) so
+  that structs are kept up to date
+- Helper methods properly create `"k8s.io/client-go/rest".Config` from
+  `"k8s.io/client-go/pkg/apis/clientauthentication".Cluster`
 
 Integration (or e2e CLI) tests to confirm:
 
