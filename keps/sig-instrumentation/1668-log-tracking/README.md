@@ -77,6 +77,7 @@ tags, and then generate with `hack/update-toc.sh`.
 -->
 
 <!-- toc -->
+
 - [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
   - [New three unique logging meta-data](#new-three-unique-logging-meta-data)
@@ -278,6 +279,7 @@ change are understandable. This may include API specs (though not always
 required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
+
 ### Prerequisite
 We need to consider three cases:
 - Case1: Requests from kubectl that creating an object
@@ -286,35 +288,42 @@ We need to consider three cases:
 
 The design below is based on the above three cases
 
-### Design of ID propagation (incoming request to webhook)
+### Design of ID propagation in apiserver (incoming request to webhook)
 
 **1. Incoming request to apiserver from kubectl or controller**
+
 - For request from kubectl, request's header does not have trace-id, span-id or initial-trace-id
 - For request from controller, request's header has trace-id, span-id and initial-trace-id
 
 **2. Preprocessing handler (othttp handler)**  
-2.1 Do othttp's original Extract(), and get SpanContext
-- For request from kubectl, result is null (no trace-id, span-id, initial-trace-id)
-- For request from controller we can get trace-id, span-id and initial-trace-id  
+2.1 Do othttp's original [Extract](https://pkg.go.dev/go.opentelemetry.io/otel/api/propagators#TraceContext.Extract)(), and get [SpanContext](https://pkg.go.dev/go.opentelemetry.io/otel/api/trace#SpanContext)
+
+- For request from kubectl, SpanContext is null
+- For request from controller we can get a valid SpanContext(including trace-id and span-id).
+
 2.2 Create/Update SpanContext
+
 - For request from kubectl
-  - Since we don't get any SpanContext, do StartSpan() to start new trace (new trace-id and span-id)
-  - the new SpanContext will be saved in the request's context "r.ctx"
+  - Since we don't get any SpanContext, do [Start](https://github.com/open-telemetry/opentelemetry-go/blob/3a9f5fe15f50a35ad8da5c5396a9ed3bbb82360c/sdk/trace/tracer.go#L38)() to start new SpanContext (new trace-id and span-id)
+  - Chain the new SpanContext to request's context "r.ctx"
 - For request from controller
-  - Since we get SpanContext, do StartSpanWithRemoteParent() to update the SpanContext (new span-id)
-  - the updated SpanContext will be saved in the request's context "r.ctx"
+  - Since we are able to get SpanContext, do [Start](https://github.com/open-telemetry/opentelemetry-go/blob/3a9f5fe15f50a35ad8da5c5396a9ed3bbb82360c/sdk/trace/tracer.go#L38)()  to update the SpanContext (new span-id)
+  - Chain the updated SpanContext to request's context "r.ctx"
 
 **3. Creation handler**  
 3.1 do our new Extract() to get initial-trace-id from request header to a golang ctx
-- For request from kubectl we can't get initial-trace-id
-- For request from controller we can get initial-trace-id  
-3.2 get SpanContext from r.ctx to golang ctx
+
+- For request from kubectl we can't get initial-trace-id,  chain a empty initial-trace-id to a golang ctx
+- For request from controller we can get initial-trace-id, chain the initial-trace-id to a golang ctx
+
+3.2 get SpanContext from r.ctx(updated in above 2.2) to above 3.1 golang ctx
 
 Notice that in this creation handler, the request will be consumed, so we need golang ctx to carry our information for propagation in apiserver.
 
-**4. Make new request for sending to webhook**  
-4.1 call othttp's original Inject() to inject the trace-id and span-id from golang ctx to header
+**4. Make a new request sent to webhook**
+4.1 call othttp's original [Inject](https://pkg.go.dev/go.opentelemetry.io/otel/api/propagators#TraceContext.Inject)() to inject the trace-id and span-id from golang ctx to header
 4.2 call our new Inject() to inject the initial-trace-id from golang ctx to header  
+
 - For request from kubectl we don't have initial-trace-id, so do nothing
 - For request from controller we can do this
 
@@ -327,13 +336,14 @@ check the request's header
   - if operation is create, copy the trace-id as initial-trace-id, and add trace-id, span-id and initial-trace-id to annotation (This is the case for requests from kubectl create.)
   - if operation is not create, add trace-id, span-id to annotation (This is the case for requests from kubectl other than create.)
 
-### Design of ID propagation (controller)
-When controllers create/update/delete an object A based on another B, we propagate context from B to A. E.g.:
+### Design of ID propagation (controller)When controllers create/update/delete an object A based on another B, we propagate context from B to A. E.g.:
 ```
     ctx = traceutil.WithObject(ctx, objB)
     err = r.KubeClient.CoreV1().Create(ctx, objA...)
 ```
-We do propagation across objects without adding traces to that components.
+`traceutil.WithObject(ctx, objB)` chains the trace-id, span-id, and initial-trace-id(if existed) to ctx.
+
+We do propagation across objects without starting/adding traces in those components.
 
 ### Risks and Mitigations
 
@@ -349,6 +359,7 @@ How will UX be reviewed, and by whom?
 Consider including folks who also work outside the SIG or subproject.
 -->
 TBD
+
 ### Test Plan
 
 <!--
