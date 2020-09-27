@@ -1,12 +1,12 @@
 ---
 title: DNS Autopath in PodSpec
-kep-number: 
+kep-number: 2009 
 authors:
   - "@prameshj"
 owning-sig: sig-network
 participating-sigs:
   - sig-network
-status: provisional
+status: implementable
 creation-date: 2019-04-15
 last-updated: 2020-09-23
 reviewers:

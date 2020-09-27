@@ -8,9 +8,11 @@
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
+  - [New EDNS0 Option](#new-edns0-option)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
+- [Graduation Criteria](#graduation-criteria)
 - [Implementation History](#implementation-history)
 - [Alternatives](#alternatives)
 <!-- /toc -->
@@ -97,10 +99,10 @@ As observed from the list of searchpaths in the current DNS schema, the searchpa
 The new searchpath is of the form: 
 `search.$NS.$SUFFIX.ap.k8s.io`, where $NS is the namespace of the pod and $SUFFIX is the cluster suffix. ap.k8s.io is the delimiter to identify if a query needs search expansion.
 
-This searchpath can be set by using `dnsPolicy:None` to start with, as described [here](https://kubernetes.io/docs/concepts/services-networking/dns-pod-service/#pod-dns-config). A new dnsPolicy "clusterFirstWithAutopath" could be introduced in the future.
+This searchpath can be set by using `dnsPolicy:None` to start with, as described [here](https://kubernetes.io/docs/concepts/services-networking/dns-pod-service/#pod-dns-config).
+Once this feature graduates to GA, the default searchpath for `ClusterFirst` and `ClusterFirstWithHostNet` will include this new searchpath instead of the 3 different k8s specific searchpaths.
 
-
-When a clientPod in the "default" namespace looks up a service - "mytestsvc”:
+With this new searchpath, when a clientPod in the "default" namespace looks up a service - "mytestsvc”:
 
 1) The query will be sent out as `mytestsvc.search.default.cluster.local.ap.k8s.io`. 
 
@@ -109,6 +111,8 @@ When a clientPod in the "default" namespace looks up a service - "mytestsvc”:
 This approach minimizes the number of DNS queries at client side to atmost 2(A, AAAA). The searchpath expansion logic moves to the server side.
 
 However, the above approach requires the clusterDNS server to know about the k8s DNS schema as well as the syntax of this custom searchpath. It does know about k8s DNS schema anyway, but knowledge of the custom searchpath is an additional requirement.
+
+### New EDNS0 Option
 
 As an alternative, we introduce an EDNS0 option which will include a list of
 searchpaths to be applied to the base query. 
@@ -203,6 +207,13 @@ There are 3 parts to the implementation:
 
 The existing DNS conformance tests will be run against clusters with pods using the new "clusterFirstWithAutopath" dnsPolicy.
 
+## Graduation Criteria
+
+In order to graduate to beta, we will need:
+
+Conformance tests exercising this new searchpath.
+Verify performance/scalability via automated testing and measure the improvement over the existing `clusterFirst` mode.
+
 ## Implementation History
 
 * <TBD> - Implementable version merged
@@ -215,24 +226,3 @@ The existing DNS conformance tests will be run against clusters with pods using 
 * Introduce a new dnsPolicy `clusterFirstWithAutopath` that sets this custom searchpath automatically.
 
 * An optimization in the EDNS0 option could be to include a version number and metadata and move the logic of determining searchpaths to the server side. The benefit of this approach is that the size overhead of the EDNS0 option is minimal. But, it requires the server to have logic to compute searchpaths in addition to performing the expanded queries. Also, that makes the EDNS0 option kubernetes-specific.
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
