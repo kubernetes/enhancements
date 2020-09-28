@@ -166,7 +166,8 @@ Here we propose [introducing two new labels](https://github.com/kubernetes/test-
 - `needs-triage`
 - `triage/accepted`
 
-The `needs-triage` label would be automatically applied to incoming issues.
+The `needs-triage` label would be automatically applied to incoming issues and
+PRs.
 
 Current contributors would then need to inspect issues with the `needs-triage`
 label and attempt to triage them.
