@@ -9,5 +9,8 @@
   - Beta release target (x.y)
   - Stable release target (x.y)
 - Documentation PR: <!-- link to kubernetes/website PR -->
+  - Alpha:
+  - Beta:
+  - Stable:
 
 _Please keep this description up to date. This will help the Enhancement Team to track the evolution of the enhancement efficiently._
