@@ -318,19 +318,20 @@ Implement a new initrace handler to propagate the initial-trace-id.
 2.2 chain above golang cxt to r.ctx(updated in above 1.2)
 -  we use r.ctx to propagate those IDs to next handler
 
-**3. Make a new request sent to webhook**
+**3. Inject SpanContext and initial-trace to request header sent to webhook**
+
 - call othttp's original [Inject](https://pkg.go.dev/go.opentelemetry.io/otel/api/propagators#TraceContext.Inject)() to inject the SpanContext from r.ctx to header
 - call our new Inject() to inject the initial-trace-id from r.ctx to header
 
 ### Design of ID propagation (controller)
-When controllers create/update/delete an object A based on another B, we propagate context from B to A. E.g.:
-```
-    ctx = traceutil.WithObject(ctx, objB)
-    err = r.KubeClient.CoreV1().Create(ctx, objA...)
-```
-`traceutil.WithObject(ctx, objB)` chains the SpanContext and initial-trace-id(if existed) to ctx.
+**Extract SpanContext and initial-trace-id from annotation of object to golang ctx**
 
-We can do propagation across objects without starting/adding a new trace in those components.
+**Propagate golang ctx through objects**
+
+**Inject SpanContext and initial-trace to request header sent to apiserver**
+
+- extract SpanContext and initial-trace-id from golang ctx,
+- inject them the header
 
 ### Design of Mutating webhook(Out of tree)
 **Extract SpanContext and initial-trace-id from request's header**
