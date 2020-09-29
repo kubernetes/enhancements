@@ -23,8 +23,7 @@
 
 # Summary
 
-This document describes behavior of the Kubernetes Scheduler which take into
-account worker node NUMA topology.
+This document describes behaviour of the Kubernetes Scheduler which takes worker node topology into account .
 
 # Motivation
 
@@ -52,8 +51,8 @@ information is necessary.
 # Proposal
 
 Kube-scheduler built-in plugin will be added to the main tree. This plugin
-implements a simplified version of Topology Manager it’s different from original topology manager algorithm.
-Plugin checks the ability to run pod only in case of single-numa-node policy on the
+implements a simplified version of Topology Manager and hence is different from original topology manager algorithm.
+Plugin would be disabled by default and when enabled would check for the ability to run pod only in case of single-numa-node policy on the
 node, since it is the most strict policy, it implies that the launch on the node with
 other existing policies will be successful if the condition for single-numa-node policy passed for the worker node.
 Proposed plugin will use [CRD][1] to identify which topology policy is enabled on the node.
@@ -210,7 +209,7 @@ Kube-scheduler makes an assumption about current resource usage on the worker no
 
 # Test plans
 
-Components which should be developed or modified for this feature could be easily tested.
+It would be ensured that the components developed or modified for this feature can be easily tested.
 
 * Unit Tests
 
@@ -221,7 +220,7 @@ Separate tests for CRD informer also should be implemented.
 
 * Integration Tests and End-to-end tests
 
-Implementation of it does not constitute a difficulty, but launching of it requires appropriate equipment.
+Integration and End-to-end would Implementation of it does not constitute a difficulty, but requires appropriate multi-numa hardware for comprehensive testing of this feature. Comprehensive E2E testing of this would be done in order to graduate this feature from Alpha to Beta.
 
 # Graduation criteria
 
@@ -232,6 +231,10 @@ Following changes are required:
 - [ ] New `kube scheduler plugin` TopologyMatch.
     - [ ] Implementation of Filter
 - [ ] Tests from [Test plans](#test-plans).
+
+* Beta
+- [ ] Add node E2E tests.
+- [ ] Provide beta-level documentation.
 
 # Production Readiness Review Questionnaire
 
