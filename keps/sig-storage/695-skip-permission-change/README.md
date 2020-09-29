@@ -10,7 +10,6 @@
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [Implementation Details/Notes/Constraints [optional]](#implementation-detailsnotesconstraints-optional)
-    - [Handling of volume types that apply gid as a mount option](#handling-of-volume-types-that-apply-gid-as-a-mount-option)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature enablement and rollback](#feature-enablement-and-rollback)
@@ -105,37 +104,6 @@ type PodSecurityContext struct {
     FSGroupChangePolicy *PodFSGroupChangePolicy
 }
 ```
-
-#### Handling of volume types that apply gid as a mount option
-
-Handling of volume types that use fsGroup as a mount option is out of scope for 1.20 beta, but following section still describes the general mechanism that will be used.
-
-We propose following API change to `CSIDriver` type to allow drivers to declare support for applying fsGroup during mount time.
-
-```go
-const (
-    ReadWriteOnceWithFSTypeFSGroupPolicy FSGroupPolicy = "ReadWriteOnceWithFSType"
-    FileFSGroupPolicy FSGroupPolicy = "File"
-
-    // OnMountFSGroupPolicy indicates that CSI driver supports changing volume ownership via
-    // mount flags and hence fsgroup of pod should be made available to CSI driver in nodePublish
-    // and nodeStage CSI RPC calls.
-    OnMountFSGroupPolicy FSGroupPolicy = "Mount" <--- new change
-
-    NoneFSGroupPolicy FSGroupPolicy = "None"
-)
-```
-
-If `CSIDriver.Spec.FSGroupPolicy` is set to `Mount` then pod's fsGroup will be supplied to the CSI driver in nodeStage/nodePublish driver RPC
-calls. `FSGroupChangePolicy` of pod will not have any effect because no recursive ownership and permission change is necessary.
-The exact mechanism of supplying `fsGroup` to CSI driver is still being worked out and is not part of 1.20 beta milestone for this feature.
-
-We are currently considering three alternatives for supplying fsGroup to `NodeStage` and `NodePublish` RPC calls:
-
-- Update CSI spec to have explicit field for supplying gid during `NodeStage` and `NodePublish` RPC call. This is being discussed in - https://github.com/container-storage-interface/spec/issues/449
-- We could supply fsGroup of the pod to CSI driver via volume attributes of the form - `csi.storage.k8s.io/pod.fsGroup: 1234`. The problem with this option is - this would make create a coupling between CSI driver and Kubernetes.
-- A third option is to supply fsGroup as existing mount flag support. The problem with this approach is - CO(Kubernetes) does not know how to format gid mount option string and choosing one particular way of formatting it, would stop us from supporting different CSI drivers which need similar parameters.
-
 
 ### Risks and Mitigations
 
