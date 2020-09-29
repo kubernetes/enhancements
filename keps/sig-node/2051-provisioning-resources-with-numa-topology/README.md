@@ -13,6 +13,7 @@
   - [API](#api)
   - [Integration into Node Feature Discovery](#integration-into-node-feature-discovery)
   - [Graduation Criteria](#graduation-criteria)
+  - [Test Plan](#test-plan)
 - [Implementation History](#implementation-history)
 - [Alternatives](#alternatives)
   - [Annotation approach](#annotation-approach)
@@ -202,15 +203,21 @@ metadata:
 
 ### Graduation Criteria
 
+* The feature has been pushed to Node feature discovery.
 * The feature has been stable and reliable in the past several releases.
 * Documentation should exist for the feature.
 * Test coverage of the feature is acceptable.
 
+### Test Plan
+
+* Unit test coverage.
+* E2E tests would be added to Node Feature Discovery repository.
 
 ## Implementation History
 
 - 2020-06-22: Initial KEP published.
 - 2020-09-16: Updated to capture flexible/generic CRD specification. Moved design based on CRI as to the alternatives section because of its drawbacks.
+- 2020-09-29: Capturing the test plan for this feature.
 
 ## Alternatives
 
