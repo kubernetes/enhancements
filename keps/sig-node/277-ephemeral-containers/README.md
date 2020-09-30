@@ -1,25 +1,4 @@
----
-title: Ephemeral Containers
-authors:
-  - "@verb"
-owning-sig: sig-node
-participating-sigs:
-  - sig-auth
-  - sig-node
-reviewers:
-  - "@yujuhong"
-approvers:
-  - "@dchen1107"
-  - "@liggitt"
-editor: TBD
-creation-date: 2019-02-12
-last-updated: 2019-10-02
-status: implementable
----
-
-# Ephemeral Containers
-
-## Table of Contents
+# KEP-277: Ephemeral Containers
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
@@ -30,11 +9,6 @@ status: implementable
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [Kubernetes API Changes](#kubernetes-api-changes)
-    - [Pod Changes](#pod-changes)
-      - [Alternative Considered: Omitting TargetContainerName](#alternative-considered-omitting-targetcontainername)
-    - [Updating a Pod](#updating-a-pod)
-  - [Container Runtime Interface (CRI) changes](#container-runtime-interface-cri-changes)
   - [Creating Ephemeral Containers](#creating-ephemeral-containers)
   - [Restarting and Reattaching Ephemeral Containers](#restarting-and-reattaching-ephemeral-containers)
   - [Killing Ephemeral Containers](#killing-ephemeral-containers)
@@ -43,18 +17,32 @@ status: implementable
     - [Debugging](#debugging)
     - [Automation](#automation)
     - [Technical Support](#technical-support)
-  - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
+  - [Notes/Constraints/Caveats](#notesconstraintscaveats)
   - [Risks and Mitigations](#risks-and-mitigations)
     - [Security Considerations](#security-considerations)
     - [Requiring a Subresource](#requiring-a-subresource)
     - [Creative New Uses of Ephemeral Containers](#creative-new-uses-of-ephemeral-containers)
 - [Design Details](#design-details)
+  - [Kubernetes API Changes](#kubernetes-api-changes)
+    - [Pod Changes](#pod-changes)
+      - [Alternative Considered: Omitting TargetContainerName](#alternative-considered-omitting-targetcontainername)
+    - [Updating a Pod](#updating-a-pod)
+  - [Container Runtime Interface (CRI) changes](#container-runtime-interface-cri-changes)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
     - [Beta -&gt; GA Graduation](#beta---ga-graduation)
+  - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
+- [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
+  - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
+  - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+  - [Monitoring Requirements](#monitoring-requirements)
+  - [Dependencies](#dependencies)
+  - [Scalability](#scalability)
+  - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
+- [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
   - [Container Spec in PodStatus](#container-spec-in-podstatus)
   - [Extend the Existing Exec API (&quot;exec++&quot;)](#extend-the-existing-exec-api-exec)
@@ -71,27 +59,27 @@ status: implementable
 
 ## Release Signoff Checklist
 
-For enhancements that make changes to code or processes/procedures in core Kubernetes i.e., [kubernetes/kubernetes], we require the following Release Signoff checklist to be completed.
+Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-Check these off as they are completed for the Release Team to track. These checklist items _must_ be updated for the enhancement to be released.
-
-- [x] kubernetes/enhancements issue in release milestone, which links to KEP (this should be a link to the KEP location in kubernetes/enhancements, not the initial KEP PR)
-- [x] KEP approvers have set the KEP status to `implementable`
-- [x] Design details are appropriately documented
-- [ ] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
-- [ ] Graduation criteria is in place
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Design details are appropriately documented
+- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [ ] (R) Graduation criteria is in place
+- [ ] (R) Production readiness review completed
+- [ ] Production readiness review approved
 - [ ] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
-**Note:** Any PRs to move a KEP to `implementable` or significant changes once it is marked `implementable` should be approved by each of the KEP approvers. If any of those approvers is no longer appropriate than changes to that list should be approved by the remaining approvers and/or the owning SIG (or SIG-arch for cross cutting KEPs).
-
+<!--
 **Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
+-->
 
 [kubernetes.io]: https://kubernetes.io/
-[kubernetes/enhancements]: https://github.com/kubernetes/enhancements/issues
-[kubernetes/kubernetes]: https://github.com/kubernetes/kubernetes
-[kubernetes/website]: https://github.com/kubernetes/website
+[kubernetes/enhancements]: https://git.k8s.io/enhancements
+[kubernetes/kubernetes]: https://git.k8s.io/kubernetes
+[kubernetes/website]: https://git.k8s.io/website
 
 ## Summary
 
@@ -108,7 +96,7 @@ For example, the following command would attach to a newly created container in
 a pod:
 
 ```
-kubectl debug -c debug-shell --image=debian target-pod -- bash
+kubectl debug -it --image=debian target-pod -- bash
 ```
 
 ## Motivation
@@ -174,162 +162,22 @@ story detailed under [Operations](#operations) would be feasible.
 
 ## Proposal
 
-### Kubernetes API Changes
+In order to execute binaries that may not have been included at pod creation
+type, we will introduce a new type of container, the Ephemeral Container, which
+may be added to a pod that is already running. Ephemeral containers are not the
+building blocks of services: they're an alternative to copying binaries to
+pods or building large container images that may have every binary you might
+need.
 
-Ephemeral Containers are implemented in the Core API to avoid new dependencies
-in the kubelet.  The API doesn't require an Ephemeral Container to be used for
-debugging. It's intended as a general purpose construct for running a
-short-lived container in a pod.
+Because they don't fit within the normal pod lifecycle, and since they're not
+intended for building services, ephemeral containers have a number of
+restrictions:
 
-#### Pod Changes
-
-Ephemeral Containers are represented in `PodSpec` and `PodStatus`:
-
-```
-type PodSpec struct {
-	...
-	// List of user-initiated ephemeral containers to run in this pod.
-	// This field is alpha-level and is only honored by servers that enable the EphemeralContainers feature.
-	// +optional
-	// +patchMergeKey=name
-	// +patchStrategy=merge
-	EphemeralContainers []EphemeralContainer `json:"ephemeralContainers,omitempty" patchStrategy:"merge" patchMergeKey:"name" protobuf:"bytes,34,rep,name=ephemeralContainers"`
-}
-
-type PodStatus struct {
-	...
-	// Status for any Ephemeral Containers that running in this pod.
-	// This field is alpha-level and is only honored by servers that enable the EphemeralContainers feature.
-	// +optional
-	EphemeralContainerStatuses []ContainerStatus `json:"ephemeralContainerStatuses,omitempty" protobuf:"bytes,13,rep,name=ephemeralContainerStatuses"`
-}
-```
-
-`EphemeralContainerStatuses` resembles the existing `ContainerStatuses` and
-`InitContainerStatuses`, but `EphemeralContainers` introduces a new type:
-
-```
-// An EphemeralContainer is a container that may be added temporarily to an existing pod for
-// user-initiated activities such as debugging. Ephemeral containers have no resource or
-// scheduling guarantees, and they will not be restarted when they exit or when a pod is
-// removed or restarted. If an ephemeral container causes a pod to exceed its resource
-// allocation, the pod may be evicted.
-// Ephemeral containers may not be added by directly updating the pod spec. They must be added
-// via the pod's ephemeralcontainers subresource, and they will appear in the pod spec
-// once added.
-// This is an alpha feature enabled by the EphemeralContainers feature flag.
-type EphemeralContainer struct {
-	// Ephemeral containers have all of the fields of Container, plus additional fields
-	// specific to ephemeral containers. Fields in common with Container are in the
-	// following inlined struct so than an EphemeralContainer may easily be converted
-	// to a Container.
-	EphemeralContainerCommon `json:",inline" protobuf:"bytes,1,req"`
-
-	// If set, the name of the container from PodSpec that this ephemeral container targets.
-	// The ephemeral container will be run in the namespaces (IPC, PID, etc) of this container.
-	// If not set then the ephemeral container is run in whatever namespaces are shared
-	// for the pod. Note that the container runtime must support this feature.
-	// +optional
-	TargetContainerName string `json:"targetContainerName,omitempty" protobuf:"bytes,2,opt,name=targetContainerName"`
-}
-```
-
-Much of the utility of Ephemeral Containers comes from the ability to run a
-container within the PID namespace of another container. `TargetContainerName`
-allows targeting a container that doesn't share its PID namespace with the rest
-of the pod. We must modify the CRI to enable this functionality (see below).
-
-`EphemeralContainerCommon` is an inline copy of `Container` that resolves the
-following contradictory requirements:
-
-1. Ephemeral containers should be represented by a type that is easily
-   convertible to `Container` so that code that operations on `Container` can
-   also operate on ephemeral containers.
-1. Fields of `Container` that have different behavior for ephemeral containers
-   should be separately and clearly documented. Since many fields of ephemeral
-   containers have different behavior, this requires a separate type.
-
-`EphemeralContainerCommon` contains fields that ephemeral containers have in
-common with `Container`. It's field-for-field copy of `Container`, which is
-enforced by the compiler:
-
-```
-// EphemeralContainerCommon converts to Container. All fields must be kept in sync between
-// these two types.
-var _ = Container(EphemeralContainerCommon{})
-```
-
-Since `EphemeralContainerCommon` is inlined, the API machinery hides this
-complexity from the end user, who sees a type, `EphemeralContainer` which has
-all of the fields of `Container` plus an additional field `targetContainerName`.
-
-##### Alternative Considered: Omitting TargetContainerName
-
-It would be simpler for the API, kubelet and kubectl if `EphemeralContainers`
-was a `[]Container`, but as isolated PID namespaces will be the default for some
-time, being able to target a container will provide a better user experience.
-
-#### Updating a Pod
-
-Most fields of `Pod.Spec` are immutable once created. There is a short whitelist
-of fields which may be updated, and we will extend this to include
-`EphemeralContainers`. The ability to add new containers is a large change for
-Pod, however, and we'd like to begin conservatively by enforcing the following
-best practices:
-
-1.  Ephemeral Containers lack guarantees for resources or execution, and they
-    will never be automatically restarted. To avoid pods that depend on
-    Ephemeral Containers, we allow their addition only in pod updates and
-    disallow them during pod create.
-1.  Some fields of `v1.Container` imply a fundamental role in a pod. We will
-    disallow the following fields in Ephemeral Containers: `ports`,
-    `livenessProbe`, `readinessProbe`, and `lifecycle.`
-1.  Some fields of `v1.Container` imply consequences for the entire pod. For
-    example, one would expect setting `resources` to increase resources
-    allocated to the pod, but this is not yet supported. We will disallow
-    `resources` in Ephemeral Containers.
-1.  Cluster administrators may want to restrict access to Ephemeral Containers
-    independent of other pod updates.
-
-To enforce these restrictions and enable RBAC, we will introduce a new Pod
-subresource, `/ephemeralcontainers`. `EphemeralContainers` can only be modified
-via this subresource. `EphemeralContainerStatuses` is updated in the same manner
-as everything else in `Pod.Status` via `/status`.
-
-`Pod.Spec.EphemeralContainers` may be updated via `/ephemeralcontainers` as per
-normal (using PUT, PATCH, etc) except that existing Ephemeral Containers may not
-be modified or deleted. Deleting Ephemeral Containers is not supported in the
-initial implementation to reduce complexity. It could be added in the future,
-but see *Killing Ephemeral Containers* below for additional constraints.
-
-The subresources `attach`, `exec`, `log`, and `portforward` are available for
-Ephemeral Containers and will be forwarded by the apiserver. This means `kubectl
-attach`, `kubelet exec`, `kubectl log`, and `kubectl port-forward` will work for
-Ephemeral Containers.
-
-Once the pod is updated, the kubelet worker watching this pod will launch the
-Ephemeral Container and update its status. A client creating a new Ephemeral
-Container is expected to watch for the creation of the container status before
-attaching to the console using the existing attach endpoint,
-`/api/v1/namespaces/$NS/pods/$POD_NAME/attach`. Note that any output of the new
-container occurring between its creation and attach will not be replayed, but it
-can be viewed using `kubectl log`.
-
-### Container Runtime Interface (CRI) changes
-
-Since Ephemeral Containers use the Container Runtime Interface, Ephemeral
-Containers will work for any runtime implementing the CRI, including Windows
-containers. It's worth noting that Ephemeral Containers are significantly more
-useful when the runtime implements [Process Namespace Sharing].
-Windows Server 2019 does not support process namespace sharing
-(see [doc](https://kubernetes.io/docs/setup/windows/intro-windows-in-kubernetes/#v1-pod)).
-
-The CRI requires no changes for basic functionality, but it will need to be
-updated to support container namespace targeting, described fully in
-[Targeting a Namespace].
-
-[Process Namespace Sharing]: https://git.k8s.io/enhancements/keps/sig-node/20190920-pod-pid-namespace.md
-[Targeting a Namespace]: https://git.k8s.io/enhancements/keps/sig-node/20190920-pod-pid-namespace.md#targeting-a-specific-containers-namespace
+* They may only be added a pod that has already been created.
+* They will not be restarted.
+* No resources are reserved for processes in ephemeral containers, and resource
+  configuration may not be specified.
+* Fields used for building services, such as ports, may not be specified.
 
 ### Creating Ephemeral Containers
 
@@ -485,7 +333,7 @@ is to run his team's autodiagnose script:
 % kubectl debug --image=k8s.gcr.io/autodiagnose nginx-pod-1234
 ```
 
-### Implementation Details/Notes/Constraints
+### Notes/Constraints/Caveats
 
 1.  There are no guaranteed resources for ad-hoc troubleshooting. If
     troubleshooting causes a pod to exceed its resource limit it may be evicted.
@@ -545,8 +393,182 @@ should be part of `Spec.Containers`.
 
 ## Design Details
 
+### Kubernetes API Changes
+
+Ephemeral Containers are implemented in the Core API to avoid new dependencies
+in the kubelet.  The API doesn't require an Ephemeral Container to be used for
+debugging. It's intended as a general purpose construct for running a
+short-lived container in a pod.
+
+#### Pod Changes
+
+Ephemeral Containers are represented in `PodSpec` and `PodStatus`:
+
+```
+type PodSpec struct {
+	...
+	// List of user-initiated ephemeral containers to run in this pod.
+	// This field is alpha-level and is only honored by servers that enable the EphemeralContainers feature.
+	// +optional
+	// +patchMergeKey=name
+	// +patchStrategy=merge
+	EphemeralContainers []EphemeralContainer `json:"ephemeralContainers,omitempty" patchStrategy:"merge" patchMergeKey:"name" protobuf:"bytes,34,rep,name=ephemeralContainers"`
+}
+
+type PodStatus struct {
+	...
+	// Status for any Ephemeral Containers that running in this pod.
+	// This field is alpha-level and is only honored by servers that enable the EphemeralContainers feature.
+	// +optional
+	EphemeralContainerStatuses []ContainerStatus `json:"ephemeralContainerStatuses,omitempty" protobuf:"bytes,13,rep,name=ephemeralContainerStatuses"`
+}
+```
+
+`EphemeralContainerStatuses` resembles the existing `ContainerStatuses` and
+`InitContainerStatuses`, but `EphemeralContainers` introduces a new type:
+
+```
+// An EphemeralContainer is a container that may be added temporarily to an existing pod for
+// user-initiated activities such as debugging. Ephemeral containers have no resource or
+// scheduling guarantees, and they will not be restarted when they exit or when a pod is
+// removed or restarted. If an ephemeral container causes a pod to exceed its resource
+// allocation, the pod may be evicted.
+// Ephemeral containers may not be added by directly updating the pod spec. They must be added
+// via the pod's ephemeralcontainers subresource, and they will appear in the pod spec
+// once added.
+// This is an alpha feature enabled by the EphemeralContainers feature flag.
+type EphemeralContainer struct {
+	// Ephemeral containers have all of the fields of Container, plus additional fields
+	// specific to ephemeral containers. Fields in common with Container are in the
+	// following inlined struct so than an EphemeralContainer may easily be converted
+	// to a Container.
+	EphemeralContainerCommon `json:",inline" protobuf:"bytes,1,req"`
+
+	// If set, the name of the container from PodSpec that this ephemeral container targets.
+	// The ephemeral container will be run in the namespaces (IPC, PID, etc) of this container.
+	// If not set then the ephemeral container is run in whatever namespaces are shared
+	// for the pod. Note that the container runtime must support this feature.
+	// +optional
+	TargetContainerName string `json:"targetContainerName,omitempty" protobuf:"bytes,2,opt,name=targetContainerName"`
+}
+```
+
+Much of the utility of Ephemeral Containers comes from the ability to run a
+container within the PID namespace of another container. `TargetContainerName`
+allows targeting a container that doesn't share its PID namespace with the rest
+of the pod. We must modify the CRI to enable this functionality (see below).
+
+`EphemeralContainerCommon` is an inline copy of `Container` that resolves the
+following contradictory requirements:
+
+1. Ephemeral containers should be represented by a type that is easily
+   convertible to `Container` so that code that operations on `Container` can
+   also operate on ephemeral containers.
+1. Fields of `Container` that have different behavior for ephemeral containers
+   should be separately and clearly documented. Since many fields of ephemeral
+   containers have different behavior, this requires a separate type.
+
+`EphemeralContainerCommon` contains fields that ephemeral containers have in
+common with `Container`. It's field-for-field copy of `Container`, which is
+enforced by the compiler:
+
+```
+// EphemeralContainerCommon converts to Container. All fields must be kept in sync between
+// these two types.
+var _ = Container(EphemeralContainerCommon{})
+```
+
+Since `EphemeralContainerCommon` is inlined, the API machinery hides this
+complexity from the end user, who sees a type, `EphemeralContainer` which has
+all of the fields of `Container` plus an additional field `targetContainerName`.
+
+##### Alternative Considered: Omitting TargetContainerName
+
+It would be simpler for the API, kubelet and kubectl if `EphemeralContainers`
+was a `[]Container`, but as isolated PID namespaces will be the default for some
+time, being able to target a container will provide a better user experience.
+
+#### Updating a Pod
+
+Most fields of `Pod.Spec` are immutable once created. There is a short allow
+list of fields which may be updated, and we will extend this to include
+`EphemeralContainers`. The ability to add new containers is a large change for
+Pod, however, and we'd like to begin conservatively by enforcing the following
+best practices:
+
+1.  Ephemeral Containers lack guarantees for resources or execution, and they
+    will never be automatically restarted. To avoid pods that depend on
+    Ephemeral Containers, we allow their addition only in pod updates and
+    disallow them during pod create.
+1.  Some fields of `v1.Container` imply a fundamental role in a pod. We will
+    disallow the following fields in Ephemeral Containers: `ports`,
+    `livenessProbe`, `readinessProbe`, and `lifecycle.`
+1.  Some fields of `v1.Container` imply consequences for the entire pod. For
+    example, one would expect setting `resources` to increase resources
+    allocated to the pod, but this is not yet supported. We will disallow
+    `resources` in Ephemeral Containers.
+1.  Cluster administrators may want to restrict access to Ephemeral Containers
+    independent of other pod updates.
+
+To enforce these restrictions and enable RBAC, we will introduce a new Pod
+subresource, `/ephemeralcontainers`. `EphemeralContainers` can only be modified
+via this subresource. `EphemeralContainerStatuses` is updated in the same manner
+as everything else in `Pod.Status` via `/status`.
+
+`Pod.Spec.EphemeralContainers` may be updated via `/ephemeralcontainers` as per
+normal (using PUT, PATCH, etc) except that existing Ephemeral Containers may not
+be modified or deleted. Deleting Ephemeral Containers is not supported in the
+initial implementation to reduce complexity. It could be added in the future,
+but see *Killing Ephemeral Containers* below for additional constraints.
+
+The subresources `attach`, `exec`, `log`, and `portforward` are available for
+Ephemeral Containers and will be forwarded by the apiserver. This means `kubectl
+attach`, `kubelet exec`, `kubectl log`, and `kubectl port-forward` will work for
+Ephemeral Containers.
+
+Once the pod is updated, the kubelet worker watching this pod will launch the
+Ephemeral Container and update its status. A client creating a new Ephemeral
+Container is expected to watch for the creation of the container status before
+attaching to the console using the existing attach endpoint,
+`/api/v1/namespaces/$NS/pods/$POD_NAME/attach`. Note that any output of the new
+container occurring between its creation and attach will not be replayed, but it
+can be viewed using `kubectl log`.
+
+### Container Runtime Interface (CRI) changes
+
+Since Ephemeral Containers use the Container Runtime Interface, Ephemeral
+Containers will work for any runtime implementing the CRI, including Windows
+containers. It's worth noting that Ephemeral Containers are significantly more
+useful when the runtime implements [Process Namespace Sharing].
+Windows Server 2019 does not support process namespace sharing
+(see [doc](https://kubernetes.io/docs/setup/windows/intro-windows-in-kubernetes/#v1-pod)).
+
+The CRI requires no changes for basic functionality, but it will need to be
+updated to support container namespace targeting, described fully in
+[Targeting a Namespace].
+
+[Process Namespace Sharing]: https://git.k8s.io/enhancements/keps/sig-node/20190920-pod-pid-namespace.md
+[Targeting a Namespace]: https://git.k8s.io/enhancements/keps/sig-node/20190920-pod-pid-namespace.md#targeting-a-specific-containers-namespace
+
 ### Test Plan
 
+<!--
+**Note:** *Not required until targeted at a release.*
+
+Consider the following in developing a test plan for this enhancement:
+- Will there be e2e and integration tests, in addition to unit tests?
+- How will it be tested in isolation vs with other components?
+
+No need to outline all of the test cases, just the general strategy. Anything
+that would count as tricky in the implementation, and anything particularly
+challenging to test, should be called out.
+
+All code is expected to have adequate tests (eventually with coverage
+expectations). Please adhere to the [Kubernetes testing guidelines][testing-guidelines]
+when drafting this test plan.
+
+[testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
+-->
 This feature will be tested with a combination of unit, integration and e2e
 tests. In particular:
 
@@ -576,6 +598,23 @@ None of the tests for this feature are unusual or tricky.
 
 - [ ] Ephemeral Containers have been in beta for at least 2 releases.
 - [ ] Ephemeral Containers see use in 3 projects or articles.
+- [ ] Ephemeral Container creation is covered by conformance tests
+
+[conformance tests]: https://git.k8s.io/community/contributors/devel/sig-architecture/conformance-tests.md
+
+### Upgrade / Downgrade Strategy
+
+<!--
+If applicable, how will the component be upgraded and downgraded? Make sure
+this is in the test plan.
+
+Consider the following in developing an upgrade/downgrade strategy for this
+enhancement:
+- What changes (in invocations, configurations, API use, etc.) is an existing
+  cluster required to make on upgrade, in order to maintain previous behavior?
+- What changes (in invocations, configurations, API use, etc.) is an existing
+  cluster required to make on upgrade, in order to make use of the enhancement?
+-->
 
 ### Version Skew Strategy
 
@@ -593,6 +632,214 @@ CRI is still in alpha.) Runtimes will be expected to handle an unknown
 [Adding Unstable Features to Stable Versions]: https://git.k8s.io/community/contributors/devel/sig-architecture/api_changes.md#adding-unstable-features-to-stable-versions
 [CRI Optional Runtime Features]: https://issues.k8s.io/32803
 
+
+## Production Readiness Review Questionnaire
+
+<!--
+
+Production readiness reviews are intended to ensure that features merging into
+Kubernetes are observable, scalable and supportable; can be safely operated in
+production environments, and can be disabled or rolled back in the event they
+cause increased failures in production. See more in the PRR KEP at
+https://git.k8s.io/enhancements/keps/sig-architecture/20190731-production-readiness-review-process.md.
+
+The production readiness review questionnaire must be completed for features in
+v1.19 or later, but is non-blocking at this time. That is, approval is not
+required in order to be in the release.
+
+In some cases, the questions below should also have answers in `kep.yaml`. This
+is to enable automation to verify the presence of the review, and to reduce review
+burden and latency.
+
+The KEP must have a approver from the
+[`prod-readiness-approvers`](http://git.k8s.io/enhancements/OWNERS_ALIASES)
+team. Please reach out on the
+[#prod-readiness](https://kubernetes.slack.com/archives/CPNHUMN74) channel if
+you need any help or guidance.
+
+-->
+
+### Feature Enablement and Rollback
+
+_This section must be completed when targeting alpha to a release._
+
+* **How can this feature be enabled / disabled in a live cluster?**
+  - [ ] Feature gate (also fill in values in `kep.yaml`)
+    - Feature gate name:
+    - Components depending on the feature gate:
+  - [ ] Other
+    - Describe the mechanism:
+    - Will enabling / disabling the feature require downtime of the control
+      plane?
+    - Will enabling / disabling the feature require downtime or reprovisioning
+      of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
+
+* **Does enabling the feature change any default behavior?**
+  Any change of default behavior may be surprising to users or break existing
+  automations, so be extremely careful here.
+
+* **Can the feature be disabled once it has been enabled (i.e. can we roll back
+  the enablement)?**
+  Also set `disable-supported` to `true` or `false` in `kep.yaml`.
+  Describe the consequences on existing workloads (e.g., if this is a runtime
+  feature, can it break the existing applications?).
+
+* **What happens if we reenable the feature if it was previously rolled back?**
+
+* **Are there any tests for feature enablement/disablement?**
+  The e2e framework does not currently support enabling or disabling feature
+  gates. However, unit tests in each component dealing with managing data, created
+  with and without the feature, are necessary. At the very least, think about
+  conversion tests if API types are being modified.
+
+### Rollout, Upgrade and Rollback Planning
+
+_This section must be completed when targeting beta graduation to a release._
+
+* **How can a rollout fail? Can it impact already running workloads?**
+  Try to be as paranoid as possible - e.g., what if some components will restart
+   mid-rollout?
+
+* **What specific metrics should inform a rollback?**
+
+* **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
+  Describe manual testing that was done and the outcomes.
+  Longer term, we may want to require automated upgrade/rollback tests, but we
+  are missing a bunch of machinery and tooling and can't do that now.
+
+* **Is the rollout accompanied by any deprecations and/or removals of features, APIs, 
+fields of API types, flags, etc.?**
+  Even if applying deprecation policies, they may still surprise some users.
+
+### Monitoring Requirements
+
+_This section must be completed when targeting beta graduation to a release._
+
+* **How can an operator determine if the feature is in use by workloads?**
+  Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
+  checking if there are objects with field X set) may be a last resort. Avoid
+  logs or events for this purpose.
+
+* **What are the SLIs (Service Level Indicators) an operator can use to determine 
+the health of the service?**
+  - [ ] Metrics
+    - Metric name:
+    - [Optional] Aggregation method:
+    - Components exposing the metric:
+  - [ ] Other (treat as last resort)
+    - Details:
+
+* **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
+  At a high level, this usually will be in the form of "high percentile of SLI
+  per day <= X". It's impossible to provide comprehensive guidance, but at the very
+  high level (needs more precise definitions) those may be things like:
+  - per-day percentage of API calls finishing with 5XX errors <= 1%
+  - 99% percentile over day of absolute value from (job creation time minus expected
+    job creation time) for cron job <= 10%
+  - 99,9% of /health requests per day finish with 200 code
+
+* **Are there any missing metrics that would be useful to have to improve observability 
+of this feature?**
+  Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
+  implementation difficulties, etc.).
+
+### Dependencies
+
+_This section must be completed when targeting beta graduation to a release._
+
+* **Does this feature depend on any specific services running in the cluster?**
+  Think about both cluster-level services (e.g. metrics-server) as well
+  as node-level agents (e.g. specific version of CRI). Focus on external or
+  optional services that are needed. For example, if this feature depends on
+  a cloud provider API, or upon an external software-defined storage or network
+  control plane.
+
+  For each of these, fill in the following—thinking about running existing user workloads
+  and creating new ones, as well as about cluster-level services (e.g. DNS):
+  - [Dependency name]
+    - Usage description:
+      - Impact of its outage on the feature:
+      - Impact of its degraded performance or high-error rates on the feature:
+
+
+### Scalability
+
+_For alpha, this section is encouraged: reviewers should consider these questions
+and attempt to answer them._
+
+_For beta, this section is required: reviewers must answer these questions._
+
+_For GA, this section is required: approvers should be able to confirm the
+previous answers based on experience in the field._
+
+* **Will enabling / using this feature result in any new API calls?**
+  Describe them, providing:
+  - API call type (e.g. PATCH pods)
+  - estimated throughput
+  - originating component(s) (e.g. Kubelet, Feature-X-controller)
+  focusing mostly on:
+  - components listing and/or watching resources they didn't before
+  - API calls that may be triggered by changes of some Kubernetes resources
+    (e.g. update of object X triggers new updates of object Y)
+  - periodic API calls to reconcile state (e.g. periodic fetching state,
+    heartbeats, leader election, etc.)
+
+* **Will enabling / using this feature result in introducing new API types?**
+  Describe them, providing:
+  - API type
+  - Supported number of objects per cluster
+  - Supported number of objects per namespace (for namespace-scoped objects)
+
+* **Will enabling / using this feature result in any new calls to the cloud 
+provider?**
+
+* **Will enabling / using this feature result in increasing size or count of 
+the existing API objects?**
+  Describe them, providing:
+  - API type(s):
+  - Estimated increase in size: (e.g., new annotation of size 32B)
+  - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
+
+* **Will enabling / using this feature result in increasing time taken by any 
+operations covered by [existing SLIs/SLOs]?**
+  Think about adding additional work or introducing new steps in between
+  (e.g. need to do X to start a container), etc. Please describe the details.
+
+* **Will enabling / using this feature result in non-negligible increase of 
+resource usage (CPU, RAM, disk, IO, ...) in any components?**
+  Things to keep in mind include: additional in-memory state, additional
+  non-trivial computations, excessive access to disks (including increased log
+  volume), significant amount of data sent and/or received over network, etc.
+  This through this both in small and large cases, again with respect to the
+  [supported limits].
+
+### Troubleshooting
+
+The Troubleshooting section currently serves the `Playbook` role. We may consider
+splitting it into a dedicated `Playbook` document (potentially with some monitoring
+details). For now, we leave it here.
+
+_This section must be completed when targeting beta graduation to a release._
+
+* **How does this feature react if the API server and/or etcd is unavailable?**
+
+* **What are other known failure modes?**
+  For each of them, fill in the following information by copying the below template:
+  - [Failure mode brief description]
+    - Detection: How can it be detected via metrics? Stated another way:
+      how can an operator troubleshoot without logging into a master or worker node?
+    - Mitigations: What can be done to stop the bleeding, especially for already
+      running user workloads?
+    - Diagnostics: What are the useful log messages and their required logging
+      levels that could help debug the issue?
+      Not required until feature graduated to beta.
+    - Testing: Are there any tests for failure mode? If not, describe why.
+
+* **What steps should be taken if SLOs are not being met to determine the problem?**
+
+[supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
+[existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
+
 ## Implementation History
 
 - *2016-06-09*: Opened [#27140](https://issues.k8s.io/27140) to explore
@@ -603,6 +850,13 @@ CRI is still in alpha.) Runtimes will be expected to handle an unknown
   [kubernetes/community#1269](https://github.com/kubernetes/community/pull/1269)
 - *2019-02-12*: Ported design proposal to KEP.
 - *2019-04-24*: Added notes on Windows feature compatibility
+- *2020-09-29*: Ported KEP to directory-based template.
+
+## Drawbacks
+
+<!--
+Why should this KEP _not_ be implemented?
+-->
 
 ## Alternatives
 
