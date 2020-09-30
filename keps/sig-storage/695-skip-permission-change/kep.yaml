@@ -15,6 +15,7 @@ creation-date: 2020-01-20
 last-updated: 2020-01-20
 status: implementable
 see-also:
+  - https://github.com/kubernetes/enhancements/issues/1682
 replaces:
 superseded-by:
 
@@ -28,3 +29,4 @@ feature-gates:
     components:
       - kube-apiserver
       - kubelet
+
