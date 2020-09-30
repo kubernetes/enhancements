@@ -1,4 +1,4 @@
-# KEP-20190603 EndpointSlices
+# KEP-0752 EndpointSlices
 
 ## Table of Contents
 
@@ -41,6 +41,8 @@
       - [E2E Tests](#e2e-tests)
 - [Roll Out Plan](#roll-out-plan)
 - [Graduation Criteria](#graduation-criteria)
+  - [Alpha -&gt; Beta](#alpha---beta)
+  - [Beta -&gt; GA](#beta---ga)
   - [Splitting IP address type for better dual stack support](#splitting-ip-address-type-for-better-dual-stack-support)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature enablement and rollback](#feature-enablement-and-rollback)
@@ -647,7 +649,7 @@ The following will need to be covered as part of the testing plan:
 
 ## Graduation Criteria
 
-In order to graduate to beta, we will:
+### Alpha -> Beta
 
 - Kube-proxy switch to consume EndpointSlice API. (Already done in Alpha)
 - Verify performance/scalability via testing. (Scale tested to 50k endpoints in
@@ -659,6 +661,13 @@ In order to graduate to beta, we will:
 - Add support for `endpointslice.kubernetes.io/managed-by` label.
 - Add FQDN addressType.
 - Add support for optional appProtocol field on `EndpointPort`.
+
+### Beta -> GA
+
+- EndpointSlice API has been stable at beta for at least 2 minor releases.
+- EndpointSlice Controller has been enabled by default for 2 minor releases.
+- EndpointSlices has been used by default for at least 1 minor release.
+- Implementation has been scaled tested beyond 100k endpoints.
 
 ### Splitting IP address type for better dual stack support
 
