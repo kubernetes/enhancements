@@ -3,20 +3,21 @@ title: Tracing API Server Requests
 authors:
   - "@Monkeyanator"
   - "@dashpole"
+  - "@logicalhan"
 editor: "@dashpole"
 owning-sig: sig-instrumentation
 participating-sigs:
   - sig-architecture
   - sig-api-machinery
   - sig-scalability
-  - sig-cli
 reviewers:
   - "@logicalhan"
+  - "@caesarxuchao"
 approvers:
   - "@brancz"
   - "@lavalamp"
 creation-date: 2018-12-04
-last-updated: 2020-04-29
+last-updated: 2020-09-30
 status: implementable
 ---
 
@@ -32,10 +33,13 @@ status: implementable
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [Tracing API Requests](#tracing-api-requests)
-  - [Vendor OpenTelemetry and the OT Exporter](#vendor-opentelemetry-and-the-ot-exporter)
+  - [Exporting Spans](#exporting-spans)
+  - [Running the OpenTelemetry Collector](#running-the-opentelemetry-collector)
+  - [APIServer Configuration and EgressSelectors](#apiserver-configuration-and-egressselectors)
   - [Controlling use of the OpenTelemetry library](#controlling-use-of-the-opentelemetry-library)
 - [Graduation requirements](#graduation-requirements)
 - [Alternatives considered](#alternatives-considered)
+  - [Introducing a new EgressSelector type](#introducing-a-new-egressselector-type)
   - [Other OpenTelemetry Exporters](#other-opentelemetry-exporters)
 - [Production Readiness Survey](#production-readiness-survey)
 - [Implementation History](#implementation-history)
@@ -44,7 +48,6 @@ status: implementable
 ## Summary
 
 This Kubernetes Enhancement Proposal (KEP) proposes enhancing the API Server to allow tracing requests.
-
 
 ## Motivation
 
@@ -60,7 +63,6 @@ Along with metrics and logs, traces are a useful form of telemetry to aid with d
 
 * The API Server generates and exports spans for incoming and outgoing requests.
 * The API Server propagates context from incoming requests to outgoing requests.
-* Kubectl clients can easily specify that a request should be traced.
 
 ### Non-Goals
 
@@ -69,22 +71,69 @@ Along with metrics and logs, traces are a useful form of telemetry to aid with d
 * Trace operations from all Kubernetes resource types in a generic manner (i.e. without manual instrumentation)
 * Change metrics or logging (e.g. to support trace-metric correlation)
 * Access control to tracing backends
+* Add tracing to components outside kubernetes (e.g. etcd client library).
 
 ## Proposal
 
 ### Tracing API Requests
 
-We will wrap the API Server's http server and http clients with [othttp](https://github.com/open-telemetry/opentelemetry-go/tree/master/plugin/othttp) to get spans for incoming and outgoing http requests, and add the [otgrpc](https://github.com/grpc-ecosystem/grpc-opentracing/tree/master/go/otgrpc) DialOption to the etcd grpc client.  This generates spans for all sampled incoming requests and propagates context with all client requests.  For incoming requests, this would go below [WithRequestInfo](https://github.com/kubernetes/kubernetes/blob/9eb097c4b07ea59c674a69e19c1519f0d10f2fa8/staging/src/k8s.io/apiserver/pkg/server/config.go#L676) in the filter stack, as it must be after authentication and authorization, before the panic filter, and is closest in function to the WithRequestInfo filter.
+We will wrap the API Server's http server and http clients with [othttp](https://github.com/open-telemetry/opentelemetry-go/tree/master/plugin/othttp) to get spans for incoming and outgoing http requests.  This generates spans for all sampled incoming requests and propagates context with all client requests.  For incoming requests, this would go below [WithRequestInfo](https://github.com/kubernetes/kubernetes/blob/9eb097c4b07ea59c674a69e19c1519f0d10f2fa8/staging/src/k8s.io/apiserver/pkg/server/config.go#L676) in the filter stack, as it must be after authentication and authorization, before the panic filter, and is closest in function to the WithRequestInfo filter.
 
 Note that some clients of the API Server, such as webhooks, may make reentrant calls to the API Server.  To gain the full benefit of tracing, such clients should propagate context with requests back to the API Server.
 
-### Vendor OpenTelemetry and the OT Exporter
+### Exporting Spans
 
 This KEP proposes the use of the [OpenTelemetry tracing framework](https://opentelemetry.io/) to create and export spans to configured backends.
 
-The API Server will use the [OpenTelemetry exporter format](https://github.com/open-telemetry/opentelemetry-proto), which exports traces to a local port.  This format is compatible with the [OpenTelemetry Collector](https://github.com/open-telemetry/opentelemetry-collector), which allows importing and configuring exporters for trace storage backends to be done out-of-tree in addition to other useful features.  The exporter stores spans in memory, and uses the [batching processor](https://github.com/open-telemetry/opentelemetry-specification/blob/master/specification/trace/sdk.md#batching-processor) to batch requests and send them asynchronously.
+The API Server will use the [OpenTelemetry exporter format](https://github.com/open-telemetry/opentelemetry-proto), and the [OTlp exporter](https://github.com/open-telemetry/opentelemetry-go/tree/master/exporters/otlp#opentelemetry-collector-go-exporter) which can export traces.  This format is easy to use with the [OpenTelemetry Collector](https://github.com/open-telemetry/opentelemetry-collector), which allows importing and configuring exporters for trace storage backends to be done out-of-tree in addition to other useful features.
 
-Add configuration to the API Server required to configure the opentelemetry exporter, including the address and egress proxy to send spans to. The [egress proxy](https://github.com/kubernetes/enhancements/blob/master/keps/sig-api-machinery/20190226-network-proxy.md) can be added to the opentelemetry exporter by adding a ContextDialer grpc DialOption similar to the one used by the apiserver's etcd client.  This will add a new "OpenTelemetry" [EgressType](https://github.com/kubernetes/kubernetes/blob/4b9b9ab75376b7b53876ab6b2be42d0940c7eb26/staging/src/k8s.io/apiserver/pkg/server/egressselector/egress_selector.go#L53) to the API Server's configuration.
+### Running the OpenTelemetry Collector
+
+The [OpenTelemetry Collector](https://github.com/open-telemetry/opentelemetry-collector) can be run as a sidecar, a daemonset, a deployment , or a combination in which the daemonset buffers telemetry and forwards to the deployment for aggregation (e.g. tail-base sampling) and routing to a telemetry backend.  To support these various setups, the API Server should be able to send traffic either to a local (on the master) collector, or to a cluster service (in the cluster).
+
+### APIServer Configuration and EgressSelectors
+
+The API Server controls where traffic is sent using an [EgressSelector](https://github.com/kubernetes/enhancements/blob/master/keps/sig-api-machinery/20190226-network-proxy.md), and has separate controls for `Master`, `Cluster`, and `Etcd` traffic.  As described above, we would like to support either sending telemetry to a url using the `Master` egress, or a service using the `Cluster` egress.  To accomplish this, we will introduce a flag, `--opentelemetry-config-file`, that will point to the file that defines the opentelemetry exporter configuration.  That file will have the following format:
+
+```golang
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+// OpenTelemetryClientConfiguration provides versioned configuration for opentelemetry clients.
+type OpenTelemetryClientConfiguration struct {
+  metav1.TypeMeta `json:",inline"`
+
+	// +optional
+	// URL of the collector that's running on the master.
+  // if URL is specified, APIServer uses the egressType Master when sending tracing data to the collector.
+	URL *string `json:"url,omitempty" protobuf:"bytes,3,opt,name=url"`
+
+	// +optional
+	// Service that's the frontend of the collector deployment running in the cluster.
+	// If Service is specified, APIServer uses the egressType Cluster when sending tracing data to the collector.
+	Service *ServiceReference `json:"service,omitempty" protobuf:"bytes,1,opt,name=service"`
+}
+
+// ServiceReference holds a reference to Service.legacy.k8s.io
+type ServiceReference struct {
+	// `namespace` is the namespace of the service.
+	// Required
+	Namespace string `json:"namespace" protobuf:"bytes,1,opt,name=namespace"`
+	// `name` is the name of the service.
+	// Required
+	Name string `json:"name" protobuf:"bytes,2,opt,name=name"`
+
+	// `path` is an optional URL path which will be sent in any request to
+	// this service.
+	// +optional
+	Path *string `json:"path,omitempty" protobuf:"bytes,3,opt,name=path"`
+
+	// If specified, the port on the service that hosting webhook.
+	// Default to 443 for backward compatibility.
+	// `port` should be a valid port number (1-65535, inclusive).
+	// +optional
+	Port *int32 `json:"port,omitempty" protobuf:"varint,4,opt,name=port"`
+}
+```
 
 ### Controlling use of the OpenTelemetry library
 
@@ -101,10 +150,15 @@ Alpha
 Beta
 
 - [] Tracing 100% of requests does not break scalability tests. 
+- [] OpenTelemetry reaches GA
 - [] Publish documentation on examples of how to use the OT Collector with kubernetes
 
 
 ## Alternatives considered
+
+### Introducing a new EgressSelector type
+
+Instead of a configuration file to choose between a url on the `Master` network, or a service on the `Cluster` network, we considered introducing a new `OpenTelemetry` egress type, which could be configured separately.  However, we aren't actually introducing a new destination for traffic, so it is more conventional to make use of existing egress types.  We will also likely want to add additional configuration for the OpenTelemetry client in the future.
 
 ### Other OpenTelemetry Exporters
 
