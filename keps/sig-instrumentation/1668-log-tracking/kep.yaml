@@ -35,7 +35,10 @@ milestone:
 
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
-feature-gates: ObjectTraceIDs
+feature-gates:
+   - name: ObjectTraceIDs
+     components:
+       - kube-apiserver
 disable-supported: true
 
 # The following PRR answers are required at beta release
