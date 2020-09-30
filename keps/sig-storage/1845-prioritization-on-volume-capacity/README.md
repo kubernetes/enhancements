@@ -15,8 +15,9 @@
   - [Configuring the weight of storage class](#configuring-the-weight-of-storage-class)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
-    - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
-    - [Beta -&gt; GA Graduation](#beta---ga-graduation)
+    - [Alpha](#alpha)
+    - [Beta](#beta)
+    - [GA](#ga)
 - [Alternatives](#alternatives)
   - [Maintain multiple storage classes for different storage capacities](#maintain-multiple-storage-classes-for-different-storage-capacities)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -248,18 +249,35 @@ Cons:
 - **Integration Tests** Typical user cases will be covered in scheduler
   integration tests with this feature enabled.
 - **Benchmark Tests** Add benchmarking tests for VolumeBinding with this
-  feature enabled.
+  feature enabled. (This is required in Beta and GA)
 
 ### Graduation Criteria
 
-#### Alpha -> Beta Graduation
+#### Alpha
 
-- Gather feedback from developers and users
-- Algorithm used is efficient
+Target: v1.20
 
-#### Beta -> GA Graduation
+- [ ] Add `VolumeCapacityPriority` feature gate
+- [ ] Add priority extension point implementation for VolumeBinding plugin
+- [ ] Able to prioritizing nodes based on the best matching size of statically
+  provisioned PVs
+- [ ] Arg struct for `VolumeBindingArgs.Shape`
+- [ ] Tests for basic functionalities
 
-- Code is thoroughly tested
+#### Beta
+
+Target: v1.21
+
+- [ ] Add benchmarking tests
+- [ ] Turn algorithm based on feedback from developers and users
+- [ ] Able to configure the weight of storage class (implementation TBD)
+
+#### GA
+
+Target: TBD
+
+- [ ] Code is thoroughly tested
+- TBD
 
 ## Alternatives
 
