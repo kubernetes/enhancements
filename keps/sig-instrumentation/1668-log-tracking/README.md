@@ -245,8 +245,14 @@ _This section must be completed when targeting alpha to a release._
       of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
 
 * **Does enabling the feature change any default behavior?**
-  Any change of default behavior may be surprising to users or break existing
-  automations, so be extremely careful here.
+
+  In apiserver, new request handlers added by this feature will generate
+  or update the trace information (ids), then the ids will be added to the
+  object's annotation by the webhook provided by this feature.
+
+  In controller-manager, when sending request to apiserver, it will get the
+  ids from the referenced object's annotation and inject the ids into the
+  outgoing request header with the W3C format.
 
 * **Can the feature be disabled once it has been enabled (i.e. can we roll back
   the enablement)?**
