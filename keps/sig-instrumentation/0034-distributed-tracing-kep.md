@@ -77,7 +77,7 @@ Along with metrics and logs, traces are a useful form of telemetry to aid with d
 
 ### Tracing API Requests
 
-We will wrap the API Server's http server and http clients with [othttp](https://github.com/open-telemetry/opentelemetry-go/tree/master/plugin/othttp) to get spans for incoming and outgoing http requests.  This generates spans for all sampled incoming requests and propagates context with all client requests.  For incoming requests, this would go below [WithRequestInfo](https://github.com/kubernetes/kubernetes/blob/9eb097c4b07ea59c674a69e19c1519f0d10f2fa8/staging/src/k8s.io/apiserver/pkg/server/config.go#L676) in the filter stack, as it must be after authentication and authorization, before the panic filter, and is closest in function to the WithRequestInfo filter.
+We will wrap the API Server's http server and http clients with [otelhttp](https://github.com/open-telemetry/opentelemetry-go-contrib/tree/master/instrumentation/net/http/otelhttp) to get spans for incoming and outgoing http requests.  This generates spans for all sampled incoming requests and propagates context with all client requests.  For incoming requests, this would go below [WithRequestInfo](https://github.com/kubernetes/kubernetes/blob/9eb097c4b07ea59c674a69e19c1519f0d10f2fa8/staging/src/k8s.io/apiserver/pkg/server/config.go#L676) in the filter stack, as it must be after authentication and authorization, before the panic filter, and is closest in function to the WithRequestInfo filter.
 
 Note that some clients of the API Server, such as webhooks, may make reentrant calls to the API Server.  To gain the full benefit of tracing, such clients should propagate context with requests back to the API Server.
 
@@ -102,36 +102,31 @@ The API Server controls where traffic is sent using an [EgressSelector](https://
 type OpenTelemetryClientConfiguration struct {
   metav1.TypeMeta `json:",inline"`
 
-	// +optional
-	// URL of the collector that's running on the master.
+  // +optional
+  // URL of the collector that's running on the master.
   // if URL is specified, APIServer uses the egressType Master when sending tracing data to the collector.
-	URL *string `json:"url,omitempty" protobuf:"bytes,3,opt,name=url"`
+  URL *string `json:"url,omitempty" protobuf:"bytes,3,opt,name=url"`
 
-	// +optional
-	// Service that's the frontend of the collector deployment running in the cluster.
-	// If Service is specified, APIServer uses the egressType Cluster when sending tracing data to the collector.
-	Service *ServiceReference `json:"service,omitempty" protobuf:"bytes,1,opt,name=service"`
+  // +optional
+  // Service that's the frontend of the collector deployment running in the cluster.
+  // If Service is specified, APIServer uses the egressType Cluster when sending tracing data to the collector.
+  Service *ServiceReference `json:"service,omitempty" protobuf:"bytes,1,opt,name=service"`
 }
 
 // ServiceReference holds a reference to Service.legacy.k8s.io
 type ServiceReference struct {
-	// `namespace` is the namespace of the service.
-	// Required
-	Namespace string `json:"namespace" protobuf:"bytes,1,opt,name=namespace"`
-	// `name` is the name of the service.
-	// Required
-	Name string `json:"name" protobuf:"bytes,2,opt,name=name"`
+  // `namespace` is the namespace of the service.
+  // Required
+  Namespace string `json:"namespace" protobuf:"bytes,1,opt,name=namespace"`
+  // `name` is the name of the service.
+  // Required
+  Name string `json:"name" protobuf:"bytes,2,opt,name=name"`
 
-	// `path` is an optional URL path which will be sent in any request to
-	// this service.
-	// +optional
-	Path *string `json:"path,omitempty" protobuf:"bytes,3,opt,name=path"`
-
-	// If specified, the port on the service that hosting webhook.
-	// Default to 443 for backward compatibility.
-	// `port` should be a valid port number (1-65535, inclusive).
-	// +optional
-	Port *int32 `json:"port,omitempty" protobuf:"varint,4,opt,name=port"`
+  // If specified, the port on the service.
+  // Defaults to 55680.
+  // `port` should be a valid port number (1-65535, inclusive).
+  // +optional
+  Port *int32 `json:"port,omitempty" protobuf:"varint,3,opt,name=port"`
 }
 ```
 
