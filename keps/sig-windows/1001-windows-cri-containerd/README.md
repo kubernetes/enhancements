@@ -1,23 +1,3 @@
----
-title: Supporting CRI-ContainerD on Windows
-authors:
-  - "@patricklang"
-  - "@marosset"
-owning-sig: sig-windows
-participating-sigs:
-  - sig-windows
-reviewers:
-  - "@yujuhong"
-  - "@derekwaynecarr"
-  - "@tallclair"
-approvers:
-  - "@michmike"
-editor: TBD
-creation-date: 2019-04-24
-last-updated: 2019-09-20
-status: implementable
----
-
 # Supporting CRI-ContainerD on Windows
 
 ## Table of Contents
