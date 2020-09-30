@@ -88,7 +88,7 @@ As soon as this interface has been introduced it was used by CNI plugins like [k
 ### Topology aware scheduling
 
 This interface can be used to track down allocated resources with information about the NUMA topology of the worker node in general way.
-This interface can be used to the available resources on the worker node. The kubelet is the best source of information because it manages the device plugins. The information can then be used in NUMA aware scheduling.
+This interface can be used to the available resources on the worker node. The kubelet is the best source of information because it manages concrete resources assignment. The information can then be used in NUMA aware scheduling.
 
 
 ### Risks and Mitigations
@@ -119,13 +119,13 @@ The GRPC Service is described in proto below:
 // node resources consumed by pods and containers on the node
 service PodResources {
     rpc List(ListPodResourcesRequest) returns (ListPodResourcesResponse) {}
-    rpc GetAvailableResources(AvailableResourcesRequest) returns (AvailableResourcesResponse) {}
+    rpc GetAllocatableResources(AllocatableResourcesRequest) returns (AllocatableResourcesResponse) {}
 }
 
-message AvailableResourcesRequest {}
+message AllocatableResourcesRequest {}
 
 // AvailableResourcesResponses contains informations about all the devices known by the kubelet
-message AvailableResourcesResponse {
+message AllocatableResourcesResponse {
     repeated ContainerDevices devices = 1;
     repeated int64 cpu_ids = 2;
 }
@@ -170,6 +170,8 @@ message ContainerDevices {
 }
 ```
 
+When new `HintProvider`s will be added to the `kubelet`, ContainerDevices will be updated accordingly to expose
+the resources managed by the new `HintProvider`.
 ContainerDevices reflects information obtained from device plugins. For example, device plugin could describe
 resource which spread across NUMA nodes. Also it's possible to have a device located on the different NUMA nodes.
 ContainerDevices could represent it as following:
@@ -304,7 +306,7 @@ Feature only collects data when requests comes in, data is then garbage collecte
 - 2019-04-30: Agreement in sig-node to move feature to beta in 1.15
 - 2020-06-17: Agreement in sig-node to move feature to G.A in 1.19 or 1.20
 - 2020-07-06: Add Topology and cpus into PodResources interface
-- 2020-09-02: Add the GetAvailableResources endpoint
+- 2020-09-02: Add the GetAllocatableResources endpoint
 
 ## Alternatives
 
