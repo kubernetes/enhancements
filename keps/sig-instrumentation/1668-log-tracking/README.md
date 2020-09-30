@@ -162,7 +162,7 @@ we don't have any modifications in kubectl in this design.
 
 **2. inittrace handler**
 
-Implement a new initrace handler to propagate the initial-trace-id.
+Implement a new inittrace handler to propagate the initial-trace-id.
 
 2.1 do our new Extract() to get initial-trace-id from request header
 
@@ -178,19 +178,21 @@ Implement a new initrace handler to propagate the initial-trace-id.
 - call our new Inject() to inject the initial-trace-id from r.ctx to header
 
 ### Design of ID propagation (controller)
-**Extract SpanContext and initial-trace-id from annotation of object to golang ctx**
 
-**Propagate golang ctx through objects**
+**1. Extract SpanContext and initial-trace-id from annotation of object to golang ctx**
 
-**Inject SpanContext and initial-trace to request header sent to apiserver**
+**2. Propagate golang ctx through objects**
+
+**3. Inject SpanContext and initial-trace to request header sent to apiserver**
 
 - extract SpanContext and initial-trace-id from golang ctx,
 - inject them the header
 
 ### Design of Mutating webhook(Out of tree)
-**Extract SpanContext and initial-trace-id from request's header**
 
-**Update SpanContext and initial-trace-id to object**
+**1. Extract SpanContext and initial-trace-id from request's header**
+
+**2. Update SpanContext and initial-trace-id to object**
 
 - if there is initial-trace-id, add trace-id, span-id and initial-trace-id to annotation (This is the case for requests from controller.)
 
@@ -198,7 +200,7 @@ Implement a new initrace handler to propagate the initial-trace-id.
   - if operation is create, copy the trace-id as initial-trace-id, and add trace-id, span-id and initial-trace-id to annotation (This is the case for requests from kubectl create.)
   - if operation is not create, add trace-id, span-id to annotation (This is the case for requests from kubectl other than create.)
 
-**Persist object to etcd**
+**3. Persist object to etcd**
 
 ### Risks and Mitigations
 
@@ -210,14 +212,17 @@ All added code will be covered by unit tests.
 
 ### Graduation Criteria
 
-Alpha should provide basic functionality covered with tests described in this KEP.
+#### Alpha
 
-#### Alpha -> Beta Graduation
+- Feature covers 3 important workload objects: Deployment, Statefulset, Daemonset
+- Related unit tests described in this KEP are completed
 
-- Feature covers all important workload objects
+#### Beta
+
+- Feature covers other objects which not limited to ownerRef relationship
 - All necessary tests are completed
 
-#### Beta -> GA Graduation
+#### GA
 
 - Feedback about this feature is collected and addressed
 - Enabled in Beta for at least two releases without complaints
