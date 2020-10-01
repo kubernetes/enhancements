@@ -81,11 +81,11 @@ As such the external monitoring agents need to be able to determine the set of d
 
 ![device monitoring architecture](https://user-images.githubusercontent.com/3262098/43926483-44331496-9bdf-11e8-82a0-14b47583b103.png)
 
-### Device aware CNI plugin
+#### Device aware CNI plugin
 
-As soon as this interface has been introduced it was used by CNI plugins like [kuryr-kubernetes](https://review.opendev.org/#/c/651580/) in tandem with [intel-sriov-device-plugin](https://github.com/intel/sriov-network-device-plugin) to correctly define which devices were assigned to the pod. Since intel-sriov-device-plugin provides pci address of the device as a device id, CNI plugin can make correct assumption about the exact device. When CNI plugin knows concrete device, in most cases it's a VF of SR-IOV, it puts it into network namespace of the container. It allows to use a device from appropriate NUMA node. 
+As soon as this interface has been introduced it was used by CNI plugins like [kuryr-kubernetes](https://review.opendev.org/#/c/651580/) in tandem with [intel-sriov-device-plugin](https://github.com/intel/sriov-network-device-plugin) to correctly define which devices were assigned to the pod. Since intel-sriov-device-plugin provides pci address of the device as a device id, CNI plugin can make correct assumption about the exact device. When CNI plugin knows concrete device, in most cases it's a VF of SR-IOV, it puts it into network namespace of the container. It allows to use a device from appropriate NUMA node.
 
-### Topology aware scheduling
+#### Topology aware scheduling
 
 This interface can be used to track down allocated resources with information about the NUMA topology of the worker node in general way.
 This interface can be used to the available resources on the worker node. The kubelet is the best source of information because it manages concrete resources assignment. The information can then be used in NUMA aware scheduling.
