@@ -31,15 +31,15 @@
 ## Release Signoff Checklist
 
 - [X] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements](https://github.com/kubernetes/enhancements/issues/1867)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
+- [X] (R) KEP approvers have approved the KEP status as `implementable`
 - [X] (R) Design details are appropriately documented
 - [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
 - [X] (R) Graduation criteria is in place
 - [X] (R) Production readiness review completed
 - [ ] Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [X] "Implementation History" section is up-to-date for milestone
+- [X] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [X] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 [kubernetes.io]: https://kubernetes.io/
 [kubernetes/enhancements]: https://git.k8s.io/enhancements
@@ -170,6 +170,9 @@ Add a feature flag and pass the disable option to cadvisor.
 ## Implementation History
 
 - 2020-06-18: Initial version of the KEP
+- 2020-07-21: [Implementation of the docs merged](https://github.com/kubernetes/website/pull/22628)
+- 2020-07-22: [Implementation of the feature merged](https://github.com/kubernetes/kubernetes/pull/91930)
+- 2020-09-30: Graduate feature to beta
 
 ## Drawbacks
 
