@@ -366,7 +366,7 @@ This might be a good place to talk about core concepts and how they relate.
 The hostname field of the Linux Kernel is limited to 64 bytes 
 (see [sethostname(2)](http://man7.org/linux/man-pages/man2/sethostname.2.html)), while most Kubernetes resource types require a name as defined in [RFC 1123](https://tools.ietf.org/html/rfc1123), which limits them to 63 bytes. Kubernetes attempts to include the Pod name as hostname, unless this limit is reached. When the limit is reached, Kubernetes has a series of mechanisms 
 to deal with the issue. These include, truncating Pod hostname when a “Naked” Pod name is longer than 63 bytes, and 
-having an alternative way of generating Pod names when they are part of a Controller, like a Deployment. When the proposed feature is in used, users might hit the 64 Bytes kernel hostname limit. Without any remediation, Kubernetes will fail to create the Pod Sandbox and the pod will remain in “ContainerCreating” (Pending status) forever. The feature proposed here will make this issue occur more frequently, as now the whole FQDN would be limited to 64 bytes. Next we illustrate the issue with an example of a potential error message:
+having an alternative way of generating Pod names when they are part of a Controller, like a Deployment. Without any remediation, users might hit the 64 bytes kernel hostname limit, and Kubernetes will fail to create the Pod Sandbox and the pod will remain in “ContainerCreating” (Pending status) forever. The feature proposed here will make this issue occur more frequently, as now the whole FQDN would be limited to 64 bytes. Next we illustrate the issue with an example of a potential error message:
 
 ```bash
 $ kubectl get pod
