@@ -87,14 +87,14 @@ message WatchPodResourcesRequest {}
 
 enum WatchPodAction {
     ADDED = 0;
-    MODIFIED = 1;
-    DELETED = 2;
+    DELETED = 1;
 }
 
 // WatchPodResourcesResponse is the response returned by Watch function
 message WatchPodResourcesResponse {
     WatchPodAction action = 1;
-    repeated PodResources pod_resources = 2;
+    string uid = 2;
+    repeated PodResources pod_resources = 3;
 }
 
 // PodResources contains information about the node resources assigned to a pod
@@ -123,13 +123,23 @@ message ContainerDevices {
 Using the `Watch` endpoint, client applications can be notified of the pod resource allocation changes as soon as possible.
 However, the state of a pod will not be sent up until the first resource allocation change, which is the pod deletion in the worst case.
 Client applications who need to have the complete resource allocation picture thus need to consume both `List` and `Watch` endpoints.
+
 The `resourceVersion` found in the responses of both APIs allows client applications to identify the most recent information.
+The `resourceVersion` value is updated following the same semantics of pod `resourceVersion` value, and the implementation
+may use the same value from the corresponding pods.
 To keep the implementation simple as possible, the kubelet does *not* store any historical list of changes.
 
 In order to make sure not to miss any updates, client application can:
 1. call the `Watch` endpoint to get a stream of changes.
 2. call the `List` endpoint to get the state of all the pods in the node.
 3. reconcile updates using the `resourceVersion`.
+
+In order to make the resource accounting on the client side, safe and easy as possible the `Watch` implementation
+will guarantee ordering of the event delivery in such a way that the capacity invariants are always preserved, and the value
+will be consistent after each event received - not only at steady state.
+Consider the following scenario with 10 devices, all allocated: pod A with device D1 allocated gets deleted, then
+pod B starts and gets device D1 again. In this case `Watch` will guarantee that `DELETE` and `ADDED` events are delivered
+in the correct order.
 
 ### Potential Future Improvements
 
@@ -199,7 +209,7 @@ Beta:
 
 ## Implementation History
 
-- 2020-08-XX: KEP extended with Watch function
+- 2020-10-01: KEP extended with Watch API
 - 2018-09-11: Final version of KEP (proposing pod-resources endpoint) published and presented to sig-node.  [Slides](https://docs.google.com/presentation/u/1/d/1xz-iHs8Ec6PqtZGzsmG1e68aLGCX576j_WRptd2114g/edit?usp=sharing)
 - 2018-10-30: Demo with example gpu monitoring daemonset
 - 2018-11-10: KEP lgtm'd and approved
