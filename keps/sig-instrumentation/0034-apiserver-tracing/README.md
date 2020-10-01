@@ -1,31 +1,7 @@
----
-title: Tracing API Server Requests
-authors:
-  - "@Monkeyanator"
-  - "@dashpole"
-  - "@logicalhan"
-editor: "@dashpole"
-owning-sig: sig-instrumentation
-participating-sigs:
-  - sig-architecture
-  - sig-api-machinery
-  - sig-scalability
-reviewers:
-  - "@logicalhan"
-  - "@caesarxuchao"
-approvers:
-  - "@brancz"
-  - "@lavalamp"
-creation-date: 2018-12-04
-last-updated: 2020-09-30
-status: implementable
----
-
-# Tracing API Server Requests
-
-## Table of Contents
+# KEP-0034: APIServer Tracing
 
 <!-- toc -->
+- [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
 - [Motivation](#motivation)
   - [Definitions](#definitions)
@@ -37,17 +13,33 @@ status: implementable
   - [Running the OpenTelemetry Collector](#running-the-opentelemetry-collector)
   - [APIServer Configuration and EgressSelectors](#apiserver-configuration-and-egressselectors)
   - [Controlling use of the OpenTelemetry library](#controlling-use-of-the-opentelemetry-library)
+  - [Test Plan](#test-plan)
 - [Graduation requirements](#graduation-requirements)
+- [Production Readiness Survey](#production-readiness-survey)
+- [Implementation History](#implementation-history)
 - [Alternatives considered](#alternatives-considered)
   - [Introducing a new EgressSelector type](#introducing-a-new-egressselector-type)
   - [Other OpenTelemetry Exporters](#other-opentelemetry-exporters)
-- [Production Readiness Survey](#production-readiness-survey)
-- [Implementation History](#implementation-history)
 <!-- /toc -->
+
+## Release Signoff Checklist
+
+Items marked with (R) are required *prior to targeting to a milestone / release*.
+
+- [X] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [X] (R) KEP approvers have approved the KEP status as `implementable`
+- [X] (R) Design details are appropriately documented
+- [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [X] (R) Graduation criteria is in place
+- [x] (R) Production readiness review completed
+- [ ] Production readiness review approved
+- [X] "Implementation History" section is up-to-date for milestone
+- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 ## Summary
 
-This Kubernetes Enhancement Proposal (KEP) proposes enhancing the API Server to allow tracing requests.
+This Kubernetes Enhancement Proposal (KEP) proposes enhancing the API Server to allow tracing requests.  For this, it proposes using OpenTelemetry libraries, and exports in the OpenTelemetry format.
 
 ## Motivation
 
@@ -134,34 +126,24 @@ type ServiceReference struct {
 
 As the community found in the [Metrics Stability Framework KEP](https://github.com/kubernetes/enhancements/blob/master/keps/sig-instrumentation/20190404-kubernetes-control-plane-metrics-stability.md#kubernetes-control-plane-metrics-stability), having control over how the client libraries are used in kubernetes can enable maintainers to enforce policy and make broad improvements to the quality of telemetry.  To enable future improvements to tracing, we will restrict the direct use of the OpenTelemetry library within the kubernetes code base, and provide wrapped versions of functions we wish to expose in a utility library.
 
+### Test Plan
+
+We will e2e test this feature by deploying an OpenTelemetry Collector on the master, and configure it to export traces using the [stdout exporter](https://github.com/open-telemetry/opentelemetry-go/tree/master/exporters/stdout), which logs the spans in json format.  We can then verify that the logs contain our expected traces when making calls to the API Server.
+
 ## Graduation requirements
 
 Alpha
 
 - [] Implement tracing of incoming and outgoing http/grpc requests in the kube-apiserver
-- [] E2e testing of apiserver tracing
-- [] User-facing documentation
+- [] Tests are in testgrid and linked in KEP
 
 Beta
 
-- [] Tracing 100% of requests does not break scalability tests. 
+- [] Tracing 100% of requests does not break scalability tests (this does not necessarily mean trace backends can handle all the data).
 - [] OpenTelemetry reaches GA
-- [] Publish documentation on examples of how to use the OT Collector with kubernetes
-
-
-## Alternatives considered
-
-### Introducing a new EgressSelector type
-
-Instead of a configuration file to choose between a url on the `Master` network, or a service on the `Cluster` network, we considered introducing a new `OpenTelemetry` egress type, which could be configured separately.  However, we aren't actually introducing a new destination for traffic, so it is more conventional to make use of existing egress types.  We will also likely want to add additional configuration for the OpenTelemetry client in the future.
-
-### Other OpenTelemetry Exporters
-
-This KEP suggests that we utilize the OpenTelemetry exporter format in all components.  Alternative options include:
-
-1. Add configuration for many exporters in-tree by vendoring multiple "supported" exporters. These exporters are the only compatible backends for tracing in kubernetes.
-  a. This places the kubernetes community in the position of curating supported tracing backends
-2. Support *both* a curated set of in-tree exporters, and the collector exporter
+- [] Publish examples of how to use the OT Collector with kubernetes
+- [] Allow time for feedback
+- [] Collect feedback from users
 
 ## Production Readiness Survey
 
@@ -229,3 +211,17 @@ This KEP suggests that we utilize the OpenTelemetry exporter format in all compo
 * [Instrumentation of Kubernetes components for 1/24/2019 community demo](https://github.com/kubernetes/kubernetes/compare/master...dashpole:tracing)
 * KEP merged as provisional on 1/8/2020, including controller tracing
 * KEP scoped down to only API Server traces on 5/1/2020
+
+## Alternatives considered
+
+### Introducing a new EgressSelector type
+
+Instead of a configuration file to choose between a url on the `Master` network, or a service on the `Cluster` network, we considered introducing a new `OpenTelemetry` egress type, which could be configured separately.  However, we aren't actually introducing a new destination for traffic, so it is more conventional to make use of existing egress types.  We will also likely want to add additional configuration for the OpenTelemetry client in the future.
+
+### Other OpenTelemetry Exporters
+
+This KEP suggests that we utilize the OpenTelemetry exporter format in all components.  Alternative options include:
+
+1. Add configuration for many exporters in-tree by vendoring multiple "supported" exporters. These exporters are the only compatible backends for tracing in kubernetes.
+  a. This places the kubernetes community in the position of curating supported tracing backends
+2. Support *both* a curated set of in-tree exporters, and the collector exporter

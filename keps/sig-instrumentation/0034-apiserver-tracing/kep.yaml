@@ -1,0 +1,31 @@
+title: APIServer Tracing
+kep-number: 0034
+authors:
+  - "@Monkeyanator"
+  - "@dashpole"
+  - "@logicalhan"
+owning-sig: sig-instrumentation
+participating-sigs:
+  - sig-architecture
+  - sig-api-machinery
+  - sig-scalability
+status: implementable
+creation-date: 2018-12-04
+reviewers:
+  - "@logicalhan"
+  - "@caesarxuchao"
+approvers:
+  - "@brancz"
+  - "@lavalamp"
+prr-approvers:
+  - "@wojtek-t"
+see-also:
+replaces:
+stage: alpha
+latest-milestone: "v1.20"
+milestone:
+  alpha: "v1.20"
+feature-gates:
+  - name: APIServerTracing
+disable-supported: true
+metrics:
