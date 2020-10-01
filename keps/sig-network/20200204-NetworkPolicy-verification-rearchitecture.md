@@ -497,6 +497,14 @@ An architectural change to the current testing policies has been implemented and
 
 *This implementation runs continuously as part of the Antrea CNI project.*
 
+In order to avoid disruptions and minimize risks and/or regressions, new and old implementation will live in parallel during some time:
+
+- The new network policy test suite will be added in a new folder `kubernetes/test/e2e/network/netpol`
+- The new network policy test suite will use the same tag [Feature:NetworkPolicy]
+- The new network policy test suite will prepend the name `Netpol` to the test title, in order to differentiate them from the previous ones.
+
+Once the new implementation has finished and is stable (it should be able to pass 10/10 jobs consecutively without any code change ), the legacy tests and the additional tag will be removed.
+
 ###  Part 1: Defining a static matrix of ns/pod combinations
   
 1. Define a common set of namespaces, and pods, to be used to make a truth table that applies to all tests.  This is demonstrated in diagram 1b and 2.
