@@ -565,6 +565,10 @@ in back-to-back releases.
 
 * Implemented the feature for Linux (systemd) only
 * Unit tests
+  * Unit tests will mock out system components (i.e. systemd, inhibitors) for
+    alpha
+* Investigate how e2e tests can be implemented (e.g. may need to create fake
+  shutdown event)
 
 #### Alpha -> Beta Graduation
 
