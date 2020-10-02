@@ -1,33 +1,3 @@
----
-title: CSI Snapshot Webhook
-authors:
-  - "@andili99"
-  - "@yuxiangqian"
-owning-sig: sig-storage
-participating-sigs:
-  - sig-storage
-reviewers:
-  - "@msau42"
-  - "@liggit"
-  - "@xing-yang"
-  - "@mattcary"
-approvers:
-  - "@msau42"
-  - "@liggit"
-  - "@xing-yang"
-  - "@mattcary"
-editor: TBD
-creation-date: 2020-07-22
-last-updated: 2020-07-22
-status: implementable
-see-also:
-  - n/a
-replaces:
-  - n/a
-superseded-by:
-  - n/a
----
-
 <!--
 **Note:** When your KEP is complete, all of these comment blocks should be removed.
 
