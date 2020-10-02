@@ -5,9 +5,12 @@ authors:
   - "@immutableT"
   - "@PurelyApplied"
 owning-sig: sig-instrumentation
-status: provisional
+status: implementable
 creation-date: 2020-05-07
 reviewers:
-  - TBD
+  - "@ehashman"
 approvers:
-  - TBD
+  - "@dashpole"
+prr-approvers:
+  - "@wojtek-t"
+disable-supported: true
