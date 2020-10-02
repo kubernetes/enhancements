@@ -9,14 +9,14 @@ participating-sigs:
 status: implementable
 creation-date: "2020-08-12"
 reviewers:
-- @BenTheElder
-- @dashpole
-- @ehashman
-- @logicalhan
-- @mikejoh
+- "@BenTheElder"
+- "@dashpole"
+- "@ehashman"
+- "@logicalhan"
+- "@mikejoh"
 approvers:
 - TBD
-- @dashpole
+- "@dashpole"
 prr-approvers:
 - TBD
 see-also:
