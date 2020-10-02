@@ -62,9 +62,9 @@ We use three meta-data. These meta-data have different features and are used for
 
 | meta-data name | feature |
 | ------ | ------ |
-| trace-id | spans an user request. unique for user's request |
-| span-id | spans a controller action. unique for controller action |
-| initial-trace-id | spans the entire object lifecycle. unique for related objects |
+| traceid | spans an user request. unique for user's request |
+| spanid | spans a controller action. unique for controller action |
+| initialtraceid | spans the entire object lifecycle. unique for related objects |
 
 ### Note
 
@@ -83,7 +83,7 @@ If multiple users throw many API requests at the same time, it is very difficult
 
  - Implement method which propagates new logging meta-data among each K8s component
  - Design and implement so as not to interfere with [Tracing KEP](https://github.com/kubernetes/enhancements/pull/1458)
-   - e.g. implement of initial-trace-id, adding trace-id to object annotation executed in mutating webhook, etc.
+   - e.g. implement of initialtraceid, adding traceid to object annotation executed in mutating webhook, etc.
 
 ### Non-Goals
 
@@ -127,9 +127,9 @@ OpenTelemetry has SpanContext which is used for propagation of K8s component.
 
 | meta-data name | feature |
 | ------ | ------ |
-| trace-id | We use SpanContext.TraceID as trace-id<br>trace-id spans an user request.<br>trace-id is unique for user's request |
-| span-id | We use SpanContext.SpanID as span-id<br>span-id spans a controller action.<br>span-id is unique for controller action |
-| initial-trace-id | We implement new id(InitialTraceID) to SpanContext<br>We use SpanContext.InitialTraceID as initial-trace-id<br>initial-trace-id spans the entire object lifecycle. <br> initial-trace-id is unique for related objects |
+| traceid | We use SpanContext.TraceID as traceid<br>traceid spans an user request.<br>traceid is unique for user's request |
+| spanid | We use SpanContext.SpanID as spanid<br>spanid spans a controller action.<br>spanid is unique for controller action |
+| initialtraceid | We implement new id(InitialTraceID) to SpanContext<br>We use SpanContext.InitialTraceID as initialtraceid<br>initialtraceid spans the entire object lifecycle. <br> initialtraceid is unique for related objects |
 
 All of three id's inception is from object creation and it dies with object deletion
 
@@ -156,21 +156,21 @@ we don't have any modifications in kubectl in this design.
 
 1.1 Do othttp's original [Extract](https://pkg.go.dev/go.opentelemetry.io/otel/api/propagators#TraceContext.Extract)() to get [SpanContext](https://pkg.go.dev/go.opentelemetry.io/otel/api/trace#SpanContext)
 
-- For request from kubectl, SpanContext is null,  do [Start](https://github.com/open-telemetry/opentelemetry-go/blob/3a9f5fe15f50a35ad8da5c5396a9ed3bbb82360c/sdk/trace/tracer.go#L38)() to start new SpanContext (new trace-id and span-id)
-- For request from controller we can get a valid SpanContext(including trace-id and span-id), do [Start](https://github.com/open-telemetry/opentelemetry-go/blob/3a9f5fe15f50a35ad8da5c5396a9ed3bbb82360c/sdk/trace/tracer.go#L38)() to update the SpanContext (new span-id)
+- For request from kubectl, SpanContext is null,  do [Start](https://github.com/open-telemetry/opentelemetry-go/blob/3a9f5fe15f50a35ad8da5c5396a9ed3bbb82360c/sdk/trace/tracer.go#L38)() to start new SpanContext (new traceid and spanid)
+- For request from controller we can get a valid SpanContext(including traceid and spanid), do [Start](https://github.com/open-telemetry/opentelemetry-go/blob/3a9f5fe15f50a35ad8da5c5396a9ed3bbb82360c/sdk/trace/tracer.go#L38)() to update the SpanContext (new spanid)
 
-1.2 Chain SpanContext and initial-trace-id to "r.ctx"
+1.2 Chain SpanContext and initialtraceid to "r.ctx"
 
 - we use r.ctx to propagate those IDs to next handler
 
 **2. inittrace handler**
 
-Implement a new inittrace handler to propagate the initial-trace-id.
+Implement a new inittrace handler to propagate the initialtraceid.
 
-2.1 do our new Extract() to get initial-trace-id from request header
+2.1 do our new Extract() to get initialtraceid from request header
 
-- For request from kubectl we can't get initial-trace-id,  chain a empty initial-trace-id to a golang ctx
-- For request from controller we can get initial-trace-id, chain the initial-trace-id to a golang ctx
+- For request from kubectl we can't get initialtraceid,  chain a empty initialtraceid to a golang ctx
+- For request from controller we can get initialtraceid, chain the initialtraceid to a golang ctx
 
 2.2 chain above golang cxt to r.ctx(updated in above 1.2)
 -  we use r.ctx to propagate those IDs to next handler
@@ -178,32 +178,42 @@ Implement a new inittrace handler to propagate the initial-trace-id.
 **3. Inject SpanContext and initial-trace to request header sent to webhook**
 
 - call othttp's original [Inject](https://pkg.go.dev/go.opentelemetry.io/otel/api/propagators#TraceContext.Inject)() to inject the SpanContext from r.ctx to header
-- call our new Inject() to inject the initial-trace-id from r.ctx to header
+- call our new Inject() to inject the initialtraceid from r.ctx to header
 
 ### Design of ID propagation (controller)
 
-**1. Extract SpanContext and initial-trace-id from annotation of object to golang ctx**
+**1. Extract SpanContext and initialtraceid from annotation of object to golang ctx**
 
 **2. Propagate golang ctx through objects**
 
+When controllers create/update/delete an object A based on another B, we propagate context from B to A. E.g.:
+```
+    ctx = traceutil.WithObject(ctx, objB)
+    err = r.KubeClient.CoreV1().Create(ctx, objA...)
+```
+We do propagation across objects without adding traces to that components.
+
 **3. Inject SpanContext and initial-trace to request header sent to apiserver**
 
-- extract SpanContext and initial-trace-id from golang ctx,
+- extract SpanContext and initialtraceid from golang ctx,
 - inject them the header
 
 ### Design of Mutating webhook(Out of tree)
 
-**1. Extract SpanContext and initial-trace-id from request's header**
+**1. Extract SpanContext and initialtraceid from request's header**
 
-**2. Update SpanContext and initial-trace-id to object**
+**2. Update SpanContext and initialtraceid to object**
 
-- if there is initial-trace-id, add trace-id, span-id and initial-trace-id to annotation (This is the case for requests from controller.)
+- For traceid and spanid
 
-- if there is no initial-trace-id, check the request's operation
-  - if operation is create, copy the trace-id as initial-trace-id, and add trace-id, span-id and initial-trace-id to annotation (This is the case for requests from kubectl create.)
-  - if operation is not create, add trace-id, span-id to annotation (This is the case for requests from kubectl other than create.)
+Always set the trace context annotation based on the incoming request.
 
-**3. Persist object to etcd**
+
+- For initialtraceid
+
+if initialtraceid is nil, set initialtraceid to traceid
+else, leave initialtraceid as it is.
+
 
 ### Risks and Mitigations
 
@@ -262,7 +272,7 @@ _This section must be completed when targeting alpha to a release._
   Yes.
 
 * **What happens if we reenable the feature if it was previously rolled back?**
-  Objects created during the rollback will have no initial-trace-id until they
+  Objects created during the rollback will have no initialtrace-id until they
   are recreated.
 
 * **Are there any tests for feature enablement/disablement?**
