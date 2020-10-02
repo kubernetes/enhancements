@@ -41,12 +41,12 @@
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
-- [ ] (R) Graduation criteria is in place
-- [ ] (R) Production readiness review completed
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Design details are appropriately documented
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [x] (R) Graduation criteria is in place
+- [x] (R) Production readiness review completed
 - [ ] Production readiness review approved
 - [ ] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
@@ -110,16 +110,16 @@ policy](https://kubernetes.io/docs/setup/release/version-skew-policy/#kubelet) r
 Kubelet not be newer than the kube-apiserver, so backwards compatibility with older apiservers is
 not required.
 
+Incase there are non-apiserver clients, all the backwards-incompatible Kubelet changes described
+below will be guarded by the feature gate `DeprecatedKubeletStreamingAPI`. This feature gate will
+start in the default-disabled state and `Deprecated` prerelease channel, and serves to provide a
+temporary escape hatch for these API changes.
+
 #### 1. Remove the `/run` endpoint
 
 The `run` endpoint provides the option to run a command in a container with a synchronous
 request. This endpoint is not used by any Kubernetes components, and should be removed to reduce the
 attack surface.
-
-**Risk:** Although this endpoint is not exposed in the Kubernetes API, it is still reachable via a
-proxy request to a node, or by connecting to the Kubelet directly. If desired, we could tie the
-removal to the deprecation feature gate discussed
-[below](#1-require-options-to-be-included-in-the-post-request-body-for-exec-requests).
 
 #### 2. Require a `POST` request to the streaming endpoints
 
@@ -184,7 +184,7 @@ supported clients have been updated with the new request format.
 
 <<[UNRESOLVED]>>
 
-OPEN QUESTION: How many releases should we wait before requiring request body parameters?
+OPEN QUESTION: How many releases should we wait before graduating `HardenedExecRequests` to Beta?
 
 <<[/UNRESOLVED]>>
 
@@ -202,7 +202,8 @@ be provided in the request body](#4-require-the-request-options-to-be-provided-i
 #### 3. Require the websocket protocol for GET requests.
 
 We cannot completely remove support for GET exec requests without breaking websockets. However, we
-can require the websocket protocol be used to perform a GET exec.
+can require the websocket protocol be used to perform a GET exec. This requirement is guarded by the
+`HardenedExecRequests` feature gate.
 
 **Risk:** This is a breaking change for non-websocket clients, and leaves websocket clients exposed
 to SSRF risks.
@@ -307,64 +308,31 @@ send both query & body parameters, both old and new Kubelets will accept the req
 
 ## Production Readiness Review Questionnaire
 
-<!--
-
-Production readiness reviews are intended to ensure that features merging into
-Kubernetes are observable, scalable and supportable; can be safely operated in
-production environments, and can be disabled or rolled back in the event they
-cause increased failures in production. See more in the PRR KEP at
-https://git.k8s.io/enhancements/keps/sig-architecture/20190731-production-readiness-review-process.md.
-
-The production readiness review questionnaire must be completed for features in
-v1.19 or later, but is non-blocking at this time. That is, approval is not
-required in order to be in the release.
-
-In some cases, the questions below should also have answers in `kep.yaml`. This
-is to enable automation to verify the presence of the review, and to reduce review
-burden and latency.
-
-The KEP must have a approver from the
-[`prod-readiness-approvers`](http://git.k8s.io/enhancements/OWNERS_ALIASES)
-team. Please reach out on the
-[#prod-readiness](https://kubernetes.slack.com/archives/CPNHUMN74) channel if
-you need any help or guidance.
-
--->
-
-TODO
-
 ### Feature Enablement and Rollback
 
 _This section must be completed when targeting alpha to a release._
 
 * **How can this feature be enabled / disabled in a live cluster?**
-  - [ ] Feature gate (also fill in values in `kep.yaml`)
-    - Feature gate name:
-    - Components depending on the feature gate:
-  - [ ] Other
-    - Describe the mechanism:
-    - Will enabling / disabling the feature require downtime of the control
-      plane?
-    - Will enabling / disabling the feature require downtime or reprovisioning
-      of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
+  - Feature gate `HardenedExecRequests`
+    - Components depending on the feature gate: kube-apiserver
+    - Description: Guards new backwards-incompatible requirements on pod exec requests to the
+      kube-apiserver
+  - Feature gate: `DeprecatedKubeletStreamingAPI`
+    - Components depending on the feature gate: kubelet
+    - Description: Enables the unused (by kube-apiserver) kubelet streaming APIs. Default disabled.
 
 * **Does enabling the feature change any default behavior?**
-  Any change of default behavior may be surprising to users or break existing
-  automations, so be extremely careful here.
+  Yes, enabling `HardenedExecRequests` alters the pod exec API by adding additional constraints.
 
-* **Can the feature be disabled once it has been enabled (i.e. can we roll back
-  the enablement)?**
-  Also set `disable-supported` to `true` or `false` in `kep.yaml`.
-  Describe the consequences on existing workloads (e.g., if this is a runtime
-  feature, can it break the existing applications?).
+* **Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?**
+  Yes, both features are stateless and can be enabled or disabled without any consequence outside of
+  those explicitly controlled by the feature gates.
 
 * **What happens if we reenable the feature if it was previously rolled back?**
+  Nothing. See previous question.
 
 * **Are there any tests for feature enablement/disablement?**
-  The e2e framework does not currently support enabling or disabling feature
-  gates. However, unit tests in each component dealing with managing data, created
-  with and without the feature, are necessary. At the very least, think about
-  conversion tests if API types are being modified.
+  See [Test Plan](#test-plan)
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -447,45 +415,26 @@ _For GA, this section is required: approvers should be able to confirm the
 previous answers based on experience in the field._
 
 * **Will enabling / using this feature result in any new API calls?**
-  Describe them, providing:
-  - API call type (e.g. PATCH pods)
-  - estimated throughput
-  - originating component(s) (e.g. Kubelet, Feature-X-controller)
-  focusing mostly on:
-  - components listing and/or watching resources they didn't before
-  - API calls that may be triggered by changes of some Kubernetes resources
-    (e.g. update of object X triggers new updates of object Y)
-  - periodic API calls to reconcile state (e.g. periodic fetching state,
-    heartbeats, leader election, etc.)
+  No.
 
 * **Will enabling / using this feature result in introducing new API types?**
-  Describe them, providing:
-  - API type
-  - Supported number of objects per cluster
-  - Supported number of objects per namespace (for namespace-scoped objects)
+  No.
 
 * **Will enabling / using this feature result in any new calls to the cloud 
 provider?**
+  No.
 
 * **Will enabling / using this feature result in increasing size or count of 
 the existing API objects?**
-  Describe them, providing:
-  - API type(s):
-  - Estimated increase in size: (e.g., new annotation of size 32B)
-  - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
+  This will expand the `PodExecOptions` API, but this API is not stored.
 
 * **Will enabling / using this feature result in increasing time taken by any 
 operations covered by [existing SLIs/SLOs]?**
-  Think about adding additional work or introducing new steps in between
-  (e.g. need to do X to start a container), etc. Please describe the details.
+  No.
 
 * **Will enabling / using this feature result in non-negligible increase of 
 resource usage (CPU, RAM, disk, IO, ...) in any components?**
-  Things to keep in mind include: additional in-memory state, additional
-  non-trivial computations, excessive access to disks (including increased log
-  volume), significant amount of data sent and/or received over network, etc.
-  This through this both in small and large cases, again with respect to the
-  [supported limits].
+  No.
 
 ### Troubleshooting
 
