@@ -186,6 +186,13 @@ Implement a new inittrace handler to propagate the initialtraceid.
 
 **2. Propagate golang ctx through objects**
 
+When controllers create/update/delete an object A based on another B, we propagate context from B to A. E.g.:
+```
+    ctx = traceutil.WithObject(ctx, objB)
+    err = r.KubeClient.CoreV1().Create(ctx, objA...)
+```
+We do propagation across objects without adding traces to that components.
+
 **3. Inject SpanContext and initial-trace to request header sent to apiserver**
 
 - extract SpanContext and initialtraceid from golang ctx,
@@ -197,13 +204,16 @@ Implement a new inittrace handler to propagate the initialtraceid.
 
 **2. Update SpanContext and initialtraceid to object**
 
-- if there is initialtraceid, add traceid, spanid and initialtraceid to annotation (This is the case for requests from controller.)
+- For trace-id, span-id, and trace flags (sampled/not sampled)
 
-- if there is no initialtraceid, check the request's operation
-  - if operation is create, copy the traceid as initialtraceid, and add traceid, spanid and initialtraceid to annotation (This is the case for requests from kubectl create.)
-  - if operation is not create, add traceid, spanid to annotation (This is the case for requests from kubectl other than create.)
+Always set the trace context annotation based on the incoming request.
 
-**3. Persist object to etcd**
+
+- For initial-trace-id
+
+if initial-trace-id is nil, set initial-trace-id to trace-id
+else, leave initial-trace-id as it is.
+
 
 ### Risks and Mitigations
 
