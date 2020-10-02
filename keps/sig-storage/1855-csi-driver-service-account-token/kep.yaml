@@ -17,8 +17,12 @@ approvers:
 creation-date: 2020-06-09
 last-updated: 2020-07-07
 status: implementable
+stage: alpha
+latest-milestone: "v1.20"
+milestone:
+  alpha: "v1.20"
 feature-gates:
-  - name: CSIDriverServiceAccountToken
+  - name: CSIServiceAccountToken
     components:
       - kube-apiserver
       - kubelet
