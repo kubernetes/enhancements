@@ -204,15 +204,15 @@ We do propagation across objects without adding traces to that components.
 
 **2. Update SpanContext and initialtraceid to object**
 
-- For trace-id, span-id, and trace flags (sampled/not sampled)
+- For traceid and spanid
 
 Always set the trace context annotation based on the incoming request.
 
 
-- For initial-trace-id
+- For initialtraceid
 
-if initial-trace-id is nil, set initial-trace-id to trace-id
-else, leave initial-trace-id as it is.
+if initialtraceid is nil, set initialtraceid to traceid
+else, leave initialtraceid as it is.
 
 
 ### Risks and Mitigations
