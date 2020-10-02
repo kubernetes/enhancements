@@ -1,28 +1,4 @@
----
-title: Different protocols in the same Service definition with type=LoadBalancer
-authors:
-  - "@janosi"
-owning-sig: sig-network
-participating-sigs:
-  - sig-cloud-provider
-reviewers:
-  - "@thockin"
-  - "@dcbw"
-  - "@andrewsykim"
-approvers:
-  - "@thockin"
-editor: TBD
-creation-date: 2020-01-03
-last-updated: 2020-07-09
-status: provisional
-see-also:
-replaces:
-superseded-by:
----
-
-# different protocols in the same service definition with type=loadbalancer
-
-## Table of Contents
+# KEP-NNNN: different protocols in the same service definition with type=loadbalancer
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
@@ -55,29 +31,50 @@ superseded-by:
   - [Kube-proxy](#kube-proxy)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
+    - [Beta -&gt; GA Graduation](#beta---ga-graduation)
+    - [Removing a Deprecated Flag](#removing-a-deprecated-flag)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
     - [Downgrade Strategy](#downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
+- [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
+  - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
+  - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+  - [Monitoring Requirements](#monitoring-requirements)
+  - [Dependencies](#dependencies)
+  - [Scalability](#scalability)
+  - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
-- [Drawbacks [optional]](#drawbacks-optional)
-- [Alternatives [optional]](#alternatives-optional)
-- [Infrastructure Needed [optional]](#infrastructure-needed-optional)
+- [Drawbacks](#drawbacks)
+- [Alternatives](#alternatives)
+- [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
 ## Release Signoff Checklist
 
-- [ ] kubernetes/enhancements issue in release milestone, which links to KEP (this should be a link to the KEP location in kubernetes/enhancements, not the initial KEP PR) https://github.com/kubernetes/enhancements/issues/1435
-- [ ] KEP approvers have set the KEP status to `implementable`
-- [ ] Design details are appropriately documented
-- [ ] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
-- [ ] Graduation criteria is in place
+Items marked with (R) are required *prior to targeting to a milestone / release*.
+
+- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [ ] (R) KEP approvers have approved the KEP status as `implementable`
+- [ ] (R) Design details are appropriately documented
+- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [ ] (R) Graduation criteria is in place
+- [ ] (R) Production readiness review completed
+- [ ] Production readiness review approved
 - [ ] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+
+
+[kubernetes.io]: https://kubernetes.io/
+[kubernetes/enhancements]: https://git.k8s.io/enhancements
+[kubernetes/kubernetes]: https://git.k8s.io/kubernetes
+[kubernetes/website]: https://git.k8s.io/website
 
 ## Summary
 
 This feature enables the creation of a LoadBalancer Service that has different port definitions with different protocols. 
+
 
 ## Motivation
 
@@ -98,7 +95,6 @@ The goals of this KEP are:
 - define how the activation of this feature could be made configurable if certain cloud-provider load-balancer implementations do not want to provide this feature
 
 ### Non-Goals
-
 
 ## Proposal
 
@@ -266,7 +262,6 @@ https://intl.cloud.tencent.com/document/product/214/8848
 A user can ask for an internal Load Balancer via a K8s Service definition that  has the annotation `service.kubernetes.io/qcloud-loadbalancer-internal-subnetid: subnet-xxxxxxxx`. Internal CLBs are free.
 
 Summary: Tencent Cloud CPI and LBs seem to support mixed protocol Services, and the pricing is not based on the number of protocols per Service.
-
 
 ### Risks and Mitigations
 
@@ -475,9 +470,14 @@ In the long term:
 
 The kube-proxy should use the port status information from `Service.status.loadBalancer.ingress` in order not to allow traffic to those ports that could not be opened by the load balancer either. 
 
+
 ### Test Plan
 
 There must be e2e cases that test whether CPI implementations handle Service definitions with mixed protocol configuration on a consistent way. I.e. either the cloud LB is set up properly or the Service is rejected by the CPI implementation.
+The e2e tests shall check that
+- a multi-protocol Service triggers the creation of a multi-protocol cloud load balancer 
+Optionally, if the CPI supports that:
+- the CPI sets the new Conditions and or Port Status in the Load Balancer Service after creating the cloud load balancer
 
 ### Graduation Criteria
 
@@ -487,6 +487,35 @@ From CPI implementation perspective thet feature can be graduated to beta, as th
 
 Graduating to GA means, that the feature flag checking is removed from the code. It means, that all CPI implementations must be ready to deal with Services with mixed protocol configuration - either rejecting such Services properly or managing the cloud load balancers according to the Service definition.
 
+#### Alpha -> Beta Graduation
+
+- Gather feedback from developers and surveys
+- Complete features A, B, C
+- Tests are in Testgrid and linked in KEP
+
+#### Beta -> GA Graduation
+
+- N examples of real-world usage
+- N installs
+- More rigorous forms of testing—e.g., downgrade tests and scalability tests
+- Allowing time for feedback
+
+**Note:** Generally we also wait at least two releases between beta and
+GA/stable, because there's no opportunity for user feedback, or even bug reports,
+in back-to-back releases.
+
+#### Removing a Deprecated Flag
+
+- Announce deprecation and support policy of the existing flag
+- Two versions passed since introducing the functionality that deprecates the flag (to address version skew)
+- Address feedback on usage/changed behavior, provided on GitHub issues
+- Deprecate the flag
+
+**For non-optional features moving to GA, the graduation criteria must include 
+[conformance tests].**
+
+[conformance tests]: https://git.k8s.io/community/contributors/devel/sig-architecture/conformance-tests.md
+-->
 
 ### Upgrade / Downgrade Strategy
 
@@ -504,20 +533,180 @@ Version skew is possible among the following components in this case: K8s API se
 
 Once this feature is implemented in the API server there is a chance that the CPI implementation has to deal with load balancer Services with mixed protocol configuration anytime, even if the API server is downgraded later. The CPI implementation shall be prepared for this, i.e. the CPI implementation cannot expect anymore that the API Server (or any other component, like the Service Controller) filters out such Service definitions. If the CPI implementation wants to have such filtering it has to implement that on its own. In this case the CPI implementation shall be upgraded before the feature is enabled on the API server. In case of a rollback of the API Server such Services can still exist in the cluster, so the CPI implementation should not be downgraded to a version that does not implement that filtering. This is the reason why the CPI implementations shall be updated (if necessary) to be able to deal with such Service definitions already in the first release of this feature.
 
+## Production Readiness Review Questionnaire
+
+### Feature Enablement and Rollback
+
+_This section must be completed when targeting alpha to a release._
+
+* **How can this feature be enabled / disabled in a live cluster?**
+  - [ ] Feature gate (also fill in values in `kep.yaml`)
+    - Feature gate name:
+    - Components depending on the feature gate:
+  - [ ] Other
+    - Describe the mechanism:
+    - Will enabling / disabling the feature require downtime of the control
+      plane?
+    - Will enabling / disabling the feature require downtime or reprovisioning
+      of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
+
+* **Does enabling the feature change any default behavior?**
+  Any change of default behavior may be surprising to users or break existing
+  automations, so be extremely careful here.
+
+* **Can the feature be disabled once it has been enabled (i.e. can we roll back
+  the enablement)?**
+  Also set `disable-supported` to `true` or `false` in `kep.yaml`.
+  Describe the consequences on existing workloads (e.g., if this is a runtime
+  feature, can it break the existing applications?).
+
+* **What happens if we reenable the feature if it was previously rolled back?**
+
+* **Are there any tests for feature enablement/disablement?**
+  The e2e framework does not currently support enabling or disabling feature
+  gates. However, unit tests in each component dealing with managing data, created
+  with and without the feature, are necessary. At the very least, think about
+  conversion tests if API types are being modified.
+
+### Rollout, Upgrade and Rollback Planning
+
+_This section must be completed when targeting beta graduation to a release._
+
+* **How can a rollout fail? Can it impact already running workloads?**
+  Try to be as paranoid as possible - e.g., what if some components will restart
+   mid-rollout?
+
+* **What specific metrics should inform a rollback?**
+
+* **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
+  Describe manual testing that was done and the outcomes.
+  Longer term, we may want to require automated upgrade/rollback tests, but we
+  are missing a bunch of machinery and tooling and can't do that now.
+
+* **Is the rollout accompanied by any deprecations and/or removals of features, APIs, 
+fields of API types, flags, etc.?**
+  Even if applying deprecation policies, they may still surprise some users.
+
+### Monitoring Requirements
+
+_This section must be completed when targeting beta graduation to a release._
+
+* **How can an operator determine if the feature is in use by workloads?**
+  Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
+  checking if there are objects with field X set) may be a last resort. Avoid
+  logs or events for this purpose.
+
+* **What are the SLIs (Service Level Indicators) an operator can use to determine 
+the health of the service?**
+  - [ ] Metrics
+    - Metric name:
+    - [Optional] Aggregation method:
+    - Components exposing the metric:
+  - [ ] Other (treat as last resort)
+    - Details:
+
+* **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
+  At a high level, this usually will be in the form of "high percentile of SLI
+  per day <= X". It's impossible to provide comprehensive guidance, but at the very
+  high level (needs more precise definitions) those may be things like:
+  - per-day percentage of API calls finishing with 5XX errors <= 1%
+  - 99% percentile over day of absolute value from (job creation time minus expected
+    job creation time) for cron job <= 10%
+  - 99,9% of /health requests per day finish with 200 code
+
+* **Are there any missing metrics that would be useful to have to improve observability 
+of this feature?**
+  Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
+  implementation difficulties, etc.).
+
+### Dependencies
+
+_This section must be completed when targeting beta graduation to a release._
+
+* **Does this feature depend on any specific services running in the cluster?**
+  Think about both cluster-level services (e.g. metrics-server) as well
+  as node-level agents (e.g. specific version of CRI). Focus on external or
+  optional services that are needed. For example, if this feature depends on
+  a cloud provider API, or upon an external software-defined storage or network
+  control plane.
+
+  For each of these, fill in the following—thinking about running existing user workloads
+  and creating new ones, as well as about cluster-level services (e.g. DNS):
+  - [Dependency name]
+    - Usage description:
+      - Impact of its outage on the feature:
+      - Impact of its degraded performance or high-error rates on the feature:
+
+
+### Scalability
+
+_For alpha, this section is encouraged: reviewers should consider these questions
+and attempt to answer them._
+
+_For beta, this section is required: reviewers must answer these questions._
+
+_For GA, this section is required: approvers should be able to confirm the
+previous answers based on experience in the field._
+
+* **Will enabling / using this feature result in any new API calls?**
+  If a CPI supports the management of the new Conditions and PortStatus in the LoadBalancer Service the managemenof of those fileds will mean additional traffic on the API
+
+* **Will enabling / using this feature result in introducing new API types?**
+ No
+
+* **Will enabling / using this feature result in any new calls to the cloud 
+provider?**
+  If the cloud provider requires more calls to add ports/listeners with different protocols to a load balancer then this feature introduces additional calls
+
+* **Will enabling / using this feature result in increasing size or count of 
+the existing API objects?**
+  Yes. As detailed above, the Status of the Service is planned to be extended with new Conditions and PortStatus
+
+* **Will enabling / using this feature result in increasing time taken by any 
+operations covered by [existing SLIs/SLOs]?**
+  The setup of more ports/listeners with different protocols may take more time, depending on how the CPI and the cloud provider API is implemented
+
+* **Will enabling / using this feature result in non-negligible increase of 
+resource usage (CPU, RAM, disk, IO, ...) in any components?**
+  Not expected.
+
+### Troubleshooting
+
+The Troubleshooting section currently serves the `Playbook` role. We may consider
+splitting it into a dedicated `Playbook` document (potentially with some monitoring
+details). For now, we leave it here.
+
+_This section must be completed when targeting beta graduation to a release._
+
+* **How does this feature react if the API server and/or etcd is unavailable?**
+
+* **What are other known failure modes?**
+  For each of them, fill in the following information by copying the below template:
+  - [Failure mode brief description]
+    - Detection: How can it be detected via metrics? Stated another way:
+      how can an operator troubleshoot without logging into a master or worker node?
+    - Mitigations: What can be done to stop the bleeding, especially for already
+      running user workloads?
+    - Diagnostics: What are the useful log messages and their required logging
+      levels that could help debug the issue?
+      Not required until feature graduated to beta.
+    - Testing: Are there any tests for failure mode? If not, describe why.
+
+* **What steps should be taken if SLOs are not being met to determine the problem?**
+
+[supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
+[existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
+
 ## Implementation History
 
-Major milestones in the life cycle of a KEP should be tracked in `Implementation History`.
-Major milestones might include
-
-- the `Summary` and `Motivation` sections being merged signaling SIG acceptance
-- the `Proposal` section being merged signaling agreement on a proposed design
+- the `Proposal` section being merged, signaling agreement on a proposed design: 14th July 2020
 - the date implementation started
 - the first Kubernetes release where an initial version of the KEP was available
 - the version of Kubernetes where the KEP graduated to general availability
 - when the KEP was retired or superseded
 
-## Drawbacks [optional]
+## Drawbacks
 
-## Alternatives [optional]
+## Alternatives
 
-## Infrastructure Needed [optional]
+## Infrastructure Needed (Optional)
