@@ -153,6 +153,10 @@ Provide a way to user to migrate a cluster to a different service CIDR Block ran
 If user needs to change Service CIDR block, there should be a way to do it without 
 forcing them to recreate the cluster and migrate workload and/or causing downtime.
 
+I understand, that it might be not possible to automate it and provide OOTB support for it,
+but at least there should be a documented and approved way to do it. 
+This KEP is opened to get better understanding the complexity of doing it in existing clusters.
+
 <!--
 This section is for explicitly listing the motivation, goals and non-goals of
 this KEP.  Describe why the change is important and the benefits to users. The
@@ -179,6 +183,24 @@ Proposed solution is the following:
 API Server will allocate new Cluster IP from the new Service CIDR block. 
 
 With these changes it should be possible to do the migration.
+Example patch on top 1.19: https://github.com/uthark/kubernetes/compare/release-1.19...oatamanenko/proxy-service-cidr-block-1.19
+
+### Challenges / Caveats
+
+1. Can't just recreate services. It is a disruptive procedure, especially for Services of type `LoadBalancer`. Current implementation
+   use UID of the service as a LoadBalancer name, so recreating service would generate new UID and it is not possible
+   right now to attach existing Loadbalancer to any specific service. Moreover, it will break any additional configuration
+   done on top (in case of AWS and Route53 it would also require updating Route53 to point to the new LoadBalancer).
+   There maybe be other issues related to it.
+
+2. Pods that use ClusterIPs via injected environment variables should not break during migration. 
+   If cluster IP of the service changes, then either clients should be recreated at the same
+   time, which might be disruptive or there should be a mechanism to enable routing via old Cluster IP. 
+   Current proposal suggests updating kube-proxy to support routing during migration.
+   
+3. Kubernetes APIServer certificate should include ClusterIPs from both new and old Service CIDR Blocks.
+   This will allow workload that talks to API Server (i.e. custom CRD controllers) to continue work during
+   migration.
 
 ### Migration procedure
 
@@ -207,13 +229,6 @@ With these changes it should be possible to do the migration.
    This is safe because there should be no clients after previous step. 
 1. Rollout API Server again with the certificates that will not have old Service CIDR Block.
 1. Update all Service and remove `externalIPs` from old Service CIDR block that were added during migration.
-
-### Why don't recreate services?
-1. Recreating services is a disruptive procedure, especially for Services of type `LoadBalancer`. Current implementation
-use UID of the service as a LoadBalancer name, so recreating service would generate new UID and it is not possible
-   right now to attach existing Loadbalancer to any specific service. Moreover, it will break any additional configuration
-   done on top (in case of AWS and Route53 it would also require updating Route53 to point to the new LoadBalancer).
-   There maybe be other issues related to it.
 
 <!--
 This is where we get down to the specifics of what the proposal actually is.
@@ -568,24 +583,10 @@ _This section must be completed when targeting beta graduation to a release._
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 
-## Implementation History
-
-<!--
-Major milestones in the lifecycle of a KEP should be tracked in this section.
-Major milestones might include:
-- the `Summary` and `Motivation` sections being merged, signaling SIG acceptance
-- the `Proposal` section being merged, signaling agreement on a proposed design
-- the date implementation started
-- the first Kubernetes release where an initial version of the KEP was available
-- the version of Kubernetes where the KEP graduated to general availability
-- when the KEP was retired or superseded
--->
-
 ## Drawbacks
 
-<!--
-Why should this KEP _not_ be implemented?
--->
+1. Might be impossible to implement automatic migration due to the broad mechanisms 
+   of installing/maintaining Kubernetes components (APIServer; kube-proxy). 
 
 ## Alternatives
 
