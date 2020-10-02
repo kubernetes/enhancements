@@ -4,7 +4,7 @@ authors:
   - "bobbypage"
   - "mrunalp"
 owning-sig: sig-node
-status: provisional
+status: implementable
 creation-date: 2020-09-21
 
 # The target maturity stage in the current dev cycle for this KEP.

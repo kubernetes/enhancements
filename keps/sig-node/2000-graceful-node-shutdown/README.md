@@ -364,23 +364,26 @@ classes](https://kubernetes.io/docs/tasks/administer-cluster/guaranteed-scheduli
 
 Upon shutdown Kubelet will:
 
-1. Gracefully terminate all non critical system pods with a gracePeriodOverride
-computed as `min(podSpec.terminationGracePeriodSeconds, ShutdownGracePeriod)`
-2. Gracefully terminate all critical system pods with gracePeriodOverride of 2
-seconds
+1. Update the Node's `Ready` condition to `false`, with the reason `Node is
+   shutting down`
+2. Gracefully terminate all non critical system pods with a gracePeriodOverride
+   computed as `min(podSpec.terminationGracePeriodSeconds,
+   ShutdownGracePeriod-ShutdownGracePeriodCriticalPods)`
+3. Gracefully terminate all critical system pods with gracePeriodOverride of
+   `ShutdownGracePeriodCriticalPods` seconds
 
 Kubelet will use the same existing
 [killPod](https://github.com/kubernetes/kubernetes/blob/release-1.19/pkg/kubelet/pod_workers.go#L292)
 function to perform the termination of pods, using `gracePeriodOverride` to set
 the appropriate grace period. During the termination process, normal [pod
 termination](https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#pod-termination)
-processes will apply, e.g. preStopHooks will be called,  SIGTERM to containers
+processes will apply, e.g. preStop Hooks will be called, `SIGTERM` to containers
 delivered, etc.
 
-2 seconds as gracePeriodOverride for critical system pods was decided to ensure
-that they can also perform a graceful shutdown and 2 seconds is currently
-[defined](https://github.com/kubernetes/kubernetes/blob/release-1.19/pkg/kubelet/kuberuntime/kuberuntime_container.go#L626-L629)
-as the minimum grace period defined in the kubelet.
+To ensure `gracePeriodOverride` is respected, Github issue
+[#92432](https://github.com/kubernetes/kubernetes/issues/92432) should also be
+addressed to ensure that `gracePeriod` override will be respected for `preStop`
+hooks.
 
 POC: I’ve prototyped an initial POC
 [here](https://github.com/bobbypage/kubernetes/tree/shutdown) of the proposed
@@ -412,7 +415,10 @@ Consider including folks who also work outside the SIG or subproject.
 
 *   Kubelet does not receive shutdown event or is able to create inhibitor lock
     *   Mitigation: Kubelet does not provide graceful shutdown to pods (same as
-        today’s existing behavior)
+        today’s existing behavior). For alpha stage, to track shutdown behavior
+        and if it was successful, we plan to add a debugging log statement just
+        prior to kubelet's shutdown process being completed, so it's possible
+        to verify if kubelet shutdown the node gracefully.
 *   Kubelet is unable to update `InhibitDelayMaxSec` in logind to match that of
     `kubeletConfig.ShutdownGracePeriod`
     *   If there are multiple logind configuration file overrides in
@@ -440,10 +446,18 @@ The design proposes adding a new KubeletConfig field `ShutdownGracePeriod` used
 to specify total time period kubelet should delay shutdown by and thus total time
 allocated to the graceful termination process.
 
+In addition to `ShutdownGracePeriod`, another KubeletConfig field will be added
+`ShutdownGracePeriodCriticalPods`. During the shutdown, the
+`ShutdownGracePeriod-ShutdownGracePeriodCriticalPods` duration will be grace
+period for non critical system pods like user workloads, while the remaining
+time of `ShutdownGracePeriodCriticalPods` will be the grace period for critical
+pods like node logging daemonsets.
+
 ```
 type KubeletConfiguration struct {
     ...
     ShutdownGracePeriod metav1.Duration
+    ShutdownGracePeriodCriticalPods metav1.Duration
 }
 ```
 
