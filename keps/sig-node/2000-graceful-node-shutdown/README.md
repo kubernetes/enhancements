@@ -94,6 +94,8 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
+    - [Beta -&gt; GA Graduation](#beta---ga-graduation)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -530,15 +532,16 @@ Below are some examples to consider, in addition to the aforementioned [maturity
 
 #### Alpha -> Beta Graduation
 
-*   Addresses feedback from alpha testers
-*   Sufficient E2E and unit testing
+- Gather feedback from developers and surveys
+- Complete features A, B, C
+- Tests are in Testgrid and linked in KEP
 
 #### Beta -> GA Graduation
 
-*   Addresses feedback from beta
-*   Sufficient number of users using the feature
-*   Confident that no further API / kubeletConfig configuration options changes are needed
-*   Close on any remaining open issues / bugs
+- N examples of real-world usage
+- N installs
+- More rigorous forms of testing—e.g., downgrade tests and scalability tests
+- Allowing time for feedback
 
 **Note:** Generally we also wait at least two releases between beta and
 GA/stable, because there's no opportunity for user feedback, or even bug reports,
@@ -556,6 +559,18 @@ in back-to-back releases.
 
 [conformance tests]: https://git.k8s.io/community/contributors/devel/sig-architecture/conformance-tests.md
 -->
+
+#### Alpha -> Beta Graduation
+
+* Addresses feedback from alpha testers
+* Sufficient E2E and unit testing
+
+#### Beta -> GA Graduation
+
+* Addresses feedback from beta
+* Sufficient number of users using the feature
+* Confident that no further API / kubelet config configuration options changes are needed
+* Close on any remaining open issues & bugs
 
 ### Upgrade / Downgrade Strategy
 
