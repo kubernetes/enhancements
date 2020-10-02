@@ -6,13 +6,34 @@ owning-sig: sig-instrumentation
 participating-sigs:
 - sig-instrumentation
 - sig-testing
+status: implementable
+creation-date: "2020-08-12"
 reviewers:
-- TBD
+- @BenTheElder
+- @dashpole
+- @ehashman
+- @logicalhan
+- @mikejoh
 approvers:
 - TBD
-creation-date: "2020-08-12"
-last-updated: v1.19
-status: implementable
+- @dashpole
+prr-approvers:
+- TBD
 see-also:
 - /keps/sig-instrumentation/1753-logs-sanitization
 - /keps/sig-instrumentation/1602-structured-logging
+replaces: []
+
+stage: alpha
+
+latest-milestone: "v1.20"
+
+milestone:
+  alpha: "v1.20"
+  beta: "v1.21"
+  stable: "v1.22"
+
+# This KEP enhances Kubernetes testing.  It does not directly impact any component.
+feature-gates: []
+disable-supported: true
+metrics: []
