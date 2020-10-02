@@ -18,7 +18,7 @@ approvers:
   - "@bowei"
   - "@johnbelamaric"
 stage: alpha
-latest-milestone: "v1.20"
+latest-milestone: "v1.21"
 milestone:
-  alpha: "v1.20"
+  alpha: "v1.21"
 ---
