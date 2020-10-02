@@ -17,8 +17,8 @@ reviewers:
 approvers:
 - TBD
 - "@dashpole"
-prr-approvers:
-- TBD
+#prr-approvers:
+#- TBD
 see-also:
 - /keps/sig-instrumentation/1753-logs-sanitization
 - /keps/sig-instrumentation/1602-structured-logging
