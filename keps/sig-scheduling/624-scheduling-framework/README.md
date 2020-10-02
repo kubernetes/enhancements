@@ -1,46 +1,27 @@
----
-title: Scheduling Framework
-authors:
-  - "@bsalamat"
-  - "@misterikkit"
-owning-sig: sig-scheduling
-participating-sigs:
-reviewers:
-  - "@huang-wei"
-  - "@k82cn"
-  - "@ravisantoshgudimetla"
-approvers:
-  - "@k82cn"
-editor: TBD
-creation-date: 2018-04-09
-last-updated: 2019-04-30
-status: implementable
-see-also:
-replaces:
-  - "https://github.com/kubernetes/community/blob/master/contributors/design-proposals/scheduling/scheduling-framework.md"
-superseded-by:
----
 # Scheduling Framework
 
+## Table of Contents
+
 <!-- toc -->
-- [SUMMARY](#summary)
-- [MOTIVATION](#motivation)
+- [Release Signoff Checklist](#release-signoff-checklist)
+- [Summary](#summary)
+- [Motivation](#motivation)
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
-- [PROPOSAL](#proposal)
+- [Proposal](#proposal)
   - [Scheduling Cycle &amp; Binding Cycle](#scheduling-cycle--binding-cycle)
   - [Extension points](#extension-points)
     - [Queue sort](#queue-sort)
-    - [Pre-filter](#pre-filter)
+    - [PreFilter](#prefilter)
     - [Filter](#filter)
-    - [Pre-Score](#pre-score)
+    - [PostFilter](#postfilter)
+    - [PreScore](#prescore)
     - [Scoring](#scoring)
     - [Reserve](#reserve)
     - [Permit](#permit)
-    - [Pre-bind](#pre-bind)
+    - [PreBind](#prebind)
     - [Bind](#bind)
-    - [Post-bind](#post-bind)
-    - [Un-reserve](#un-reserve)
+    - [PostBind](#postbind)
   - [Plugin API](#plugin-api)
     - [CycleState](#cyclestate)
     - [FrameworkHandle](#frameworkhandle)
@@ -52,18 +33,30 @@ superseded-by:
     - [Enable/Disable](#enabledisable)
     - [Change Evaluation Order](#change-evaluation-order)
     - [Optional Args](#optional-args)
-    - [Backward compatibility](#backward-compatibility)
+    - [Backward Compatibility](#backward-compatibility)
   - [Interactions with Cluster Autoscaler](#interactions-with-cluster-autoscaler)
-- [USE CASES](#use-cases)
+- [Use Cases](#use-cases)
   - [Coscheduling](#coscheduling)
   - [Dynamic Resource Binding](#dynamic-resource-binding)
   - [Custom Scheduler Plugins (out of tree)](#custom-scheduler-plugins-out-of-tree)
-- [TEST PLANS](#test-plans)
-- [GRADUATION CRITERIA](#graduation-criteria)
-- [IMPLEMENTATION HISTORY](#implementation-history)
+- [Test Plans](#test-plans)
+- [Graduation Criteria](#graduation-criteria)
 <!-- /toc -->
 
-# SUMMARY
+## Release Signoff Checklist
+
+- [x] (R) kubernetes/enhancements issue in release milestone, which links to KEP (this should be a link to the KEP location in kubernetes/enhancements, not the initial KEP PR)
+- [x] (R) KEP approvers have set the KEP status to `implementable`
+- [x] (R) Design details are appropriately documented
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [x] (R) Graduation criteria is in place
+- [x] (R) Production readiness review completed
+- [x] "Implementation History" section is up-to-date for milestone
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+
+
+## Summary
 
 This document describes the Kubernetes Scheduling Framework. The scheduling
 framework is a new set of "plugin" APIs being added to the existing Kubernetes
@@ -74,7 +67,7 @@ scheduling features to be implemented as plugins, while keeping the scheduling
 *Note: Previous versions of this document proposed replacing the existing
 scheduler with a new implementation.*
 
-# MOTIVATION
+## Motivation
 
 Many features are being added to the Kubernetes Scheduler. They keep making the
 code larger and the logic more complex. A more complex scheduler is harder to
@@ -114,7 +107,7 @@ predicate and priority functions. Such plugins will be compiled into the
 scheduler binary. Additionally, authors of custom schedulers can compile a
 custom scheduler using (unmodified) scheduler code and their own plugins.
 
-## Goals
+### Goals
 
 -   Make scheduler more extendable.
 -   Make scheduler core simpler by moving some of its features to plugins.
@@ -123,14 +116,14 @@ custom scheduler using (unmodified) scheduler code and their own plugins.
     the received results.
 -   Propose a mechanism to handle errors and communicate them with plugins.
 
-## Non-Goals
+### Non-Goals
 
 -   Solve all scheduler limitations, although we would like to ensure that the
     new framework allows us to address known limitations in the future.
 -   Provide implementation details of plugins and call-back functions, such as
     all of their arguments and return values.
 
-# PROPOSAL
+## Proposal
 
 The Scheduling Framework defines new extension points and Go APIs in the
 Kubernetes Scheduler for use by "plugins". Plugins add scheduling behaviors to
@@ -139,7 +132,7 @@ will allow plugins to be enabled, disabled, and reordered. Custom schedulers can
 write their plugins "[out-of-tree](#custom-scheduler-plugins-out-of-tree)" and
 compile a scheduler binary with their own plugins included.
 
-## Scheduling Cycle & Binding Cycle
+### Scheduling Cycle & Binding Cycle
 
 Each attempt to schedule one pod is split into two phases, the **scheduling
 cycle** and the **binding cycle**. The scheduling cycle selects a node for the
@@ -150,10 +143,10 @@ Scheduling cycles are run serially, while binding cycles may run concurrently.
 
 A scheduling cycle or binding cycle can be aborted if the pod is determined to
 be unschedulable or if there is an internal error. The pod will be returned to
-the queue and retried. If a binding cycle is aborted, it will trigger
-[Un-reserve](#un-reserve) plugins.
+the queue and retried. If a binding cycle is aborted, it will trigger the
+[Unreserve](#reserve) method in the Reserve plugin.
 
-## Extension points
+### Extension points
 
 The following picture shows the scheduling context of a pod and the extension
 points that the scheduling framework exposes. In this picture "Filter" is
@@ -165,15 +158,15 @@ are called.
 One plugin may register at multiple extension points to perform more complex or
 stateful tasks.
 
-![image](20200125-scheduling-framework-extensions.png)
+![image](scheduling-framework-extensions.png)
 
-### Queue sort
+#### Queue sort
 
 These plugins are used to sort pods in the scheduling queue. A queue sort plugin
 essentially will provide a "less(pod1, pod2)" function. Only one queue sort
 plugin may be enabled at a time.
 
-### Pre-filter
+#### PreFilter
 
 These plugins are used to pre-process info about the pod, or to check certain
 conditions that the cluster or the pod must meet. A pre-filter plugin should implement
@@ -187,7 +180,7 @@ on a cloned CycleState, and may call those functions more than once before calli
 a specific node.
 
 
-### Filter
+#### Filter
 
 These plugins are used to filter out nodes that cannot run the Pod. For each
 node, the scheduler will call filter plugins in their configured order. If any
@@ -195,14 +188,21 @@ filter plugin marks the node as infeasible, the remaining plugins will not be
 called for that node. Nodes may be evaluated concurrently, and Filter may be called
 more than once in the same scheduling cycle.
 
-### Pre-Score
 
-**Notice: `Pre-Score` is available since v1alpha2, and it's known as `Post-Filter` before this version.**
+#### PostFilter
+
+These plugins are called after Filter phase, but only when no feasible nodes were found
+for the pod. Plugins are called in their configured order. If any PostFilter plugin marks
+the node as Schedulable, the remaining plugins will not be called. A typical PostFilter 
+implementation is preemption, which tries to make the pod schedulable by preempting other Pods.
+
+
+#### PreScore
 
 This is an informational extension point for performing pre-scoring work. Plugins will be called with a list of
 nodes that passed the filtering phase. A plugin may use this data to update internal state or to generate logs/metrics.
 
-### Scoring
+#### Scoring
 
 These plugins have two phases:
 
@@ -250,21 +250,31 @@ func (*BlinkingLightScorer) NormalizeScore(state *CycleState, _ *v1.Pod, nodeSco
 
 If either `Score` or `NormalizeScore` returns an error, the scheduling cycle is aborted.
 
-### Reserve
+#### Reserve
 
-This is an informational extension point. Plugins which maintain runtime state
-(aka "stateful plugins") should use this extension point to be notified by the
-scheduler when resources on a node are being reserved for a given Pod. This
-happens before the scheduler actually binds the pod to the Node, and it exists
-to prevent race conditions while the scheduler waits for the bind to succeed.
+A plugin that implements the Reserve extension has two methods, namely 
+Reserve and Unreserve, that back two informational scheduling phases called
+Reserve and Unreserve, respectively. Plugins which maintain runtime state 
+(aka "stateful plugins") should use these phases to be notified by the scheduler 
+when resources on a node are being reserved and unreserved for a given Pod.
 
-This is the last step in a scheduling cycle. Once a pod is in the reserved
-state, it will either trigger [Un-reserve](#un-reserve) plugins (on failure) or
-[Post-bind](#post-bind) plugins (on success) at the end of the binding cycle.
+The Reserve phase happens before the scheduler actually binds a Pod to its designated
+node. It exists to prevent race conditions while the scheduler waits for the bind to
+succeed. The Reserve method of each Reserve plugin may succeed or fail; if one Reserve 
+method call fails, subsequent plugins are not executed and the Reserve phase is
+considered to have failed. If the Reserve method of all plugins succeed, the Reserve 
+phase is considered to be successful and the rest of the scheduling cycle and the
+binding cycle are executed.
 
-*Note: This concept used to be referred to as "assume".*
+The Unreserve phase is triggered if the Reserve phase or a later phase fails. When 
+this happens, the Unreserve method of all Reserve plugins will be executed in the
+reverse order of Reserve method calls. This phase exists to clean up the state
+associated with the reserved Pod.
 
-### Permit
+*Caution: The implementation of the Unreserve method in Reserve 
+plugins must be idempotent and may not fail.*
+
+#### Permit
 
 These plugins are used to prevent or delay the binding of a Pod. A permit plugin
 can do one of three things.
@@ -274,13 +284,17 @@ can do one of three things.
 
 1.  **deny** \
     If any permit plugin denies a pod, it is returned to the scheduling queue.
-    This will trigger [Un-reserve](#un-reserve) plugins.
+    This will trigger [Unreserve](#reserve) method in Reserve plugin.
 
 1.  **wait** (with a timeout) \
     If a permit plugin returns "wait", then the pod is kept in the permit phase
     until a [plugin approves it](#frameworkhandle). If a timeout occurs, **wait**
     becomes **deny** and the pod is returned to the scheduling queue, triggering
-    [un-reserve](#un-reserve) plugins.
+    [unreserve](#reserve) method in Reserve phase.
+
+Permit plugins are executed as the last step of a scheduling cycle, however 
+waiting in the permit phase happens at the beginning of a binding cycle, before PreBind
+plugins are executed. 
 
 **Approving a pod binding**
 
@@ -289,39 +303,30 @@ approve them (see [`FrameworkHandle`](#frameworkhandle)) we expect only the perm
 plugins to approve binding of reserved Pods that are in "waiting" state. Once a
 pod is approved, it is sent to the pre-bind phase.
 
-### Pre-bind
+#### PreBind
 
 These plugins are used to perform any work required before a pod is bound. For
 example, a pre-bind plugin may provision a network volume and mount it on the
 target node before allowing the pod to run there.
 
-If any pre-bind plugin returns an error, the pod is [rejected](#un-reserve) and
+If any PreBind plugin returns an error, the pod is rejected and
 returned to the scheduling queue.
 
-### Bind
+#### Bind
 
 These plugins are used to bind a pod to a Node. Bind plugins will not be called
-until all pre-bind plugins have completed. Each bind plugin is called in the
+until all PreBind plugins have completed. Each bind plugin is called in the
 configured order. A bind plugin may choose whether or not to handle the given
 Pod. If a bind plugin chooses to handle a Pod, **the remaining bind plugins are
 skipped**.
 
-### Post-bind
+#### PostBind
 
-This is an informational extension point. Post-bind plugins are called after a
+This is an informational extension point. PostBind plugins are called after a
 pod is successfully bound. This is the end of a binding cycle, and can be used
 to clean up associated resources.
 
-### Un-reserve
-
-This is an informational extension point. If a pod was reserved and then
-rejected in a later phase, then un-reserve plugins will be notified. Un-reserve
-plugins should clean up state associated with the reserved Pod.
-
-Plugins that use this extension point usually should also use
-[Reserve](#reserve).
-
-## Plugin API
+### Plugin API
 
 There are two steps to the plugin API. First, plugins must register and get
 configured, then they use the extension point interfaces. Extension point
@@ -346,7 +351,7 @@ type PreFilterPlugin interface {
 // ...
 ```
 
-### CycleState
+#### CycleState
 
 Most* plugin functions will be called with a `CycleState` argument. A
 `CycleState` represents the current scheduling context.
@@ -370,7 +375,7 @@ modifying another plugin's state.
 scheduling context ends, and plugins should not hold references to that data
 longer than necessary.
 
-### FrameworkHandle
+#### FrameworkHandle
 
 While the `CycleState` provides APIs relevant to a single scheduling context,
 the `FrameworkHandle` provides APIs relevant to the lifetime of a plugin. This
@@ -389,7 +394,7 @@ features, especially when those features consume object types that the scheduler
 does not normally consider. Providing a `SharedInformerFactory` allows plugins
 to share caches safely.
 
-### Plugin Registration
+#### Plugin Registration
 
 Each plugin must define a constructor and add it to the hard-coded registry. For
 more information about constructor args, see [Optional Args](#optional-args).
@@ -413,9 +418,9 @@ func NewRegistry() Registry {
 It is also possible to add plugins to a `Registry` object and inject that into a
 scheduler. See [Custom Scheduler Plugins](#custom-scheduler-plugins-out-of-tree)
 
-## Plugin Lifecycle
+### Plugin Lifecycle
 
-### Initialization
+#### Initialization
 
 There are two steps to plugin initialization. First,
 [plugins are registered](#plugin-registration). Second, the scheduler uses its
@@ -425,33 +430,32 @@ multiple extension points, *it is instantiated only once*.
 When a plugin is instantiated, it is passed [config args](#optional-args) and a
 [`FrameworkHandle`](#frameworkhandle).
 
-### Concurrency
+#### Concurrency
 
 There are two types of concurrency that plugin writers should consider. A plugin
 might be invoked several times concurrently when evaluating multiple nodes, and
 a plugin may be called concurrently from *different
 [scheduling contexts](#scheduling-cycle--binding-cycle)*.
 
-*Note: Within one scheduling context, each extension point is evaluated
-serially.*
+*Note: Within one scheduling context, each extension point is evaluated serially.*
 
 In the main thread of the scheduler, only one scheduling cycle is processed at a
-time. Any extension point up to and including [reserve](#reserve) will be
-finished before the next scheduling cycle begins*. After the reserve phase, the
+time. Any extension point up to and including [permit](#permit) will be
+finished before the next scheduling cycle begins*. After the permit extension point, the
 binding cycle is executed asynchronously. This means that a plugin could be
 called concurrently from two different scheduling contexts, provided that at
-least one of the calls is to an extension point after reserve. Stateful plugins
+least one of the calls is to an extension point after permit. Stateful plugins
 should take care to handle these situations.
 
-Finally, [un-reserve](#un-reserve) plugins may be called from either the Permit
-thread or the Bind thread, depending on how the pod was rejected.
+Finally, [Unreserve](#reserve) method in Reserve plugins may be called from either
+the main thread or the bind thread, depending on how the pod was rejected.
 
 \* *The queue sort extension point is a special case. It is not part of a
 scheduling context and may be called concurrently for many pod pairs.*
 
-![image](20180409-scheduling-framework-threads.png)
+![image](scheduling-framework-threads.png)
 
-## Configuring Plugins
+### Configuring Plugins
 
 The scheduler's component configuration will allow for plugins to be enabled,
 disabled, or otherwise configured. Plugin configuration is separated into two
@@ -477,6 +481,7 @@ type Plugins struct {
     QueueSort      []Plugin
     PreFilter      []Plugin
     Filter         []Plugin
+    PostFilter     []Plugin
     PreScore       []Plugin
     Score          []Plugin
     Reserve        []Plugin
@@ -484,7 +489,6 @@ type Plugins struct {
     PreBind        []Plugin
     Bind           []Plugin
     PostBind       []Plugin
-    UnReserve      []Plugin
 }
 
 type Plugin struct {
@@ -542,19 +546,19 @@ Example:
 }
 ```
 
-### Enable/Disable
+#### Enable/Disable
 
 When specified, the list of plugins for a particular extension point are the
 only ones enabled. If an extension point is omitted from the config, then the
 default set of plugins is used for that extension point.
 
-### Change Evaluation Order
+#### Change Evaluation Order
 
 When relevant, plugin evaluation order is specified by the order the plugins
 appear in the configuration. A plugin that registers for multiple extension
 points can have different ordering at each extension point.
 
-### Optional Args
+#### Optional Args
 
 Plugins may receive arguments from their config with arbitrary structure.
 Because one plugin may appear in multiple extension points, the config is in a
@@ -590,7 +594,7 @@ func NewServiceAffinity(args *runtime.Unknown, h FrameworkHandle) (Plugin, error
 }
 ```
 
-### Backward compatibility
+#### Backward Compatibility
 
 The current `KubeSchedulerConfiguration` kind has `apiVersion:
 kubescheduler.config.k8s.io/v1alpha1`. This new config format will be either
@@ -603,16 +607,16 @@ design, but see also
 https://github.com/kubernetes/enhancements/blob/master/keps/sig-cluster-lifecycle/wgs/0032-create-a-k8s-io-component-repo.md
 and https://github.com/kubernetes/community/pull/3008*
 
-## Interactions with Cluster Autoscaler
+### Interactions with Cluster Autoscaler
 
 The Cluster Autoscaler will have to be changed to run Filter plugins instead of predicates. 
 This can be done by creating a Framework instance and invoke `RunFilterPlugins`.
 
-# USE CASES
+## Use Cases
 
 These are just a few examples of how the scheduling framework can be used.
 
-## Coscheduling
+### Coscheduling
 
 Functionality similar to
 [kube-batch](https://github.com/kubernetes-sigs/kube-batch) (sometimes called
@@ -623,16 +627,16 @@ subsequent pods will be scheduled as if the waiting pod is using those
 resources. Once enough pods from the batch are waiting, they can all be
 approved.
 
-## Dynamic Resource Binding
+### Dynamic Resource Binding
 
 [Topology-Aware Volume Provisioning](https://kubernetes.io/blog/2018/10/11/topology-aware-volume-provisioning-in-kubernetes/)
 can be (re)implemented as a plugin that registers for [filter](#filter) and
 [pre-bind](#pre-bind) extension points. At the filtering phase, the plugin can
 ensure that the pod will be scheduled in a zone which is capable of provisioning
-the desired volume. Then at the pre-bind phase, the plugin can provision the
+the desired volume. Then at the PreBind phase, the plugin can provision the
 volume before letting scheduler bind the pod.
 
-## Custom Scheduler Plugins (out of tree)
+### Custom Scheduler Plugins (out of tree)
 
 The scheduling framework allows people to write custom, performant scheduler
 features without forking the scheduler's code. To accomplish this, developers
@@ -660,7 +664,7 @@ func main() {
 
 The custom plugins would be enabled as normal plugins in the scheduler config, see [Configuring Plugins](#configuring-plugins).
 
-# TEST PLANS
+## Test Plans
 
 The scheduling framework is expected to be backward compatible with the existing
 Kubernetes scheduler. As a result, we expect all the existing tests of the
@@ -683,24 +687,21 @@ interact with external components of Kubernetes. For example, if a plugin needs
 to interact with the API server and Kubelets, end-to-end tests may be needed.
 End-to-end tests are not needed when integration tests can provided adequate coverage.  
 
-# GRADUATION CRITERIA
+## Graduation Criteria
 
-* Alpha
-  * Extension points for `Reserve`, `Unreserve`, and `Prebind` are built.
+* Alpha (1.16)
+  * Extension points for `Reserve`, and `Prebind` are built.
   * Integration tests for these extension points are added.
 
-* Beta
+* Beta (1.17)
   * All the extension points listed in this KEP and their corresponding tests
   are added.
   * Persistent dynamic volume binding logic is converted to a plugin.
 
-* Stable
+* Stable (1.19)
   * Existing 'Predicate' and 'Priority' functions and preemption logic are
   converted to plugins.
   * No major bug in the implementation of the framework is reported in the past
   three months.
 
-# IMPLEMENTATION HISTORY
 
-TODO: write down milestones and target releases, and a plan for how we will
-gracefully move to the new system
