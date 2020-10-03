@@ -1,0 +1,15 @@
+title: Rename the kubeadm "master" label and taint
+kep-number: 2067
+authors:
+  - "@neolit123"
+owning-sig: sig-cluster-lifecycle
+participating-sigs:
+  - sig-cluster-lifecycle
+status: implementable
+creation-date: 2020-10-03
+reviewers:
+  - "@fabriziopandini"
+approvers:
+  - "@fabriziopandini"
+
+latest-milestone: "v1.20"
