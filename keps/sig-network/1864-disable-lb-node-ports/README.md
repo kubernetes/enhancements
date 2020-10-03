@@ -12,6 +12,7 @@
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
   - [Alpha](#alpha)
+  - [Beta](#beta)
   - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
@@ -115,12 +116,19 @@ E2E tests:
 
 ### Alpha
 
-Adds new field `allocateLoadBalancerNodePorts` to Service but not implemented, this allows for rollback.
+* Adds new field `allocateLoadBalancerNodePorts` to Service, but the field is dropped unless an existing Service has the field set already.
+* Only allow the field `allocateLoadBalancerNodePorts` to be set when the feature gate is on.
+* There are sufficient unit tests exercising API strategy  with the feature gate enabled / disabled.
+
+### Beta
+
+* E2E tests checking that node ports do not get allocated when `service.spec.allocateLoadBalancerNodePorts=false`.
+* Feature gate is on by default.
 
 ### GA
 
-Feature is enabled when field is set.
-
+* Feature gate is on by default and locked.
+* To safely handle rollback, there has been at least 1 release prior where apiserver understands the new field (covered in alpha).
 
 ### Upgrade / Downgrade Strategy
 
