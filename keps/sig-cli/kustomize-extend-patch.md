@@ -119,7 +119,7 @@ type PatchTarget struct {
 	Group string `json:"group,omitempty"`
 
 	// Version of the target
-	Version string `json:"version,omitemtpy"`
+	Version string `json:"version,omitempty"`
 
 	// Kind of the target
 	Kind string `json:"kind,omitempty"`
