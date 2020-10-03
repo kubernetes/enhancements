@@ -28,11 +28,11 @@ import (
 //nolint:govet
 type proposal struct {
 	Title             string   `yaml:"title"`
-	Authors           []string `yaml:,flow`
+	Authors           []string `yaml:",flow"`
 	OwningSIG         string   `yaml:"owning-sig"`
-	ParticipatingSIGs []string `yaml:"participating-sigs",flow`
-	Reviewers         []string `yaml:,flow`
-	Approvers         []string `yaml:,flow`
+	ParticipatingSIGs []string `yaml:"participating-sigs,flow"`
+	Reviewers         []string `yaml:",flow"`
+	Approvers         []string `yaml:",flow"`
 	Editor            string   `yaml:"editor"`
 	CreationDate      string   `yaml:"creation-date"`
 	LastUpdated       string   `yaml:"last-updated"`
