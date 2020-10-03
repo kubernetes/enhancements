@@ -14,6 +14,7 @@
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Implementation History](#implementation-history)
@@ -129,8 +130,11 @@ endpoints is correct.
 
 ### Graduation Criteria
 
-Since this is an addition to the EndpointSlice API, graduation will follow the graduation
-timeline for the [EndpointSlice API work](/keps/sig-network/20190603-endpointslices/README.md).
+#### Alpha
+
+* EndpointSlice API includes `Terminating` condition.
+* `Terminating` condition can only be set if feature gate `EndpointSliceTerminatingCondition` is enabled.
+* Unit tests in endpointslice controller and API validation/strategy.
 
 ### Upgrade / Downgrade Strategy
 
