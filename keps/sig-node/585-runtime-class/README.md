@@ -1,22 +1,3 @@
----
-title: Runtime Class
-authors:
-  - "@tallclair"
-owning-sig: sig-node
-participating-sigs:
-  - sig-architecture
-reviewers:
-  - dchen1107
-  - derekwaynecarr
-  - yujuhong
-approvers:
-  - dchen1107
-  - derekwaynecarr
-creation-date: 2018-06-19
-last-updated: 2019-01-24
-status: implementable
----
-
 # Runtime Class
 
 ## Table of Contents
@@ -367,7 +348,7 @@ Beta:
   - [x] [dockershim](https://github.com/kubernetes/kubernetes/pull/67909)
 - [ ] Comprehensive test coverage
   - [ ] [CRI validation tests][cri-validation]
-  - [ ] RuntimeClasses are configured in the E2E environment with test coverage of a non-default
+  - [x] RuntimeClasses are configured in the E2E environment with test coverage of a non-default
     RuntimeClass
 - [x] Comprehensive coverage of RuntimeClass metrics. [#73058](http://issue.k8s.io/73058)
 - [x] The update & upgrade story is revisited, and a longer-term approach is implemented as necessary.
@@ -376,6 +357,8 @@ Beta:
 
 ## Implementation History
 
+- 2020-10-17: RuntimeClass approved to be promoted as stable
+- 2019-03-25: RuntimeClass released as beta with Kubernetes v1.14
 - 2018-09-27: RuntimeClass released as alpha with Kubernetes v1.12
 - 2018-06-11: SIG-Node decision to move forward with proposal
 - 2018-06-19: Initial KEP published.
