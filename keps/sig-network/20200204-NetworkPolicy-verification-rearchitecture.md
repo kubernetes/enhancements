@@ -8,17 +8,18 @@ authors:
   - "@mattfenwick"
 owning-sig: sig-network
 reviewers:
-  - "bowei@"
-  - TBD
+  - "@bowei"
+  - "@aojea"
 approvers:
-  - TBD
+   - "@bowei"
+   - "@caseydavenport"
 editor: TBD
 creation-date: 2020-02-04
-last-updated: 2020-5-01
+last-updated: 2020-10-04
 status: implementable
 ---
 
-Note that this approach of higher level DSLs for testing may be moved into sig-testing for a broader set of tests over time.
+Note that originally, we envisioned this approach of higher level DSLs for testing may be moved into sig-testing for a broader set of tests over time, however, since there are other efforts underway to that effect currently, this tooling will remain specific to the way we do network policy validation.
 
 # Architecting NetworkPolicy tests with a DSL for better upstream test coverage of all CNIs
 
@@ -128,6 +129,7 @@ use this work to make the e2e suite more declarative in the future, but these co
 
 As an overall improvement, this KEP will help to address the solutions for several existing issues in upstream Kubernetes.  Some of these issues have been duct-taped upstream, but our overarching goal is to reduce the amount of work required to verify that any such issues have been properly addressed and accounted for in the documentation, testing, and semantic aspects of how the API for NetworkPolicy itself is defined.
 
+- https://youtu.be/OP7abIttXWw (original demo to sig-network, comments on value of reducing boilerplate and KEP introduction concepts)
 - https://github.com/kubernetes/kubernetes/issues/87857 (docs and understandability)
 - https://github.com/kubernetes/kubernetes/issues/87893 (holes in our test coverage matrix)
 - https://github.com/kubernetes/kubernetes/issues/85908 (failing tests, unclear semantics)
