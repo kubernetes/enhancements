@@ -15,7 +15,8 @@ approvers:
   - "@dchen1107"
   - "@derekwaynecarr"
 prr-approvers: []
-see-also: []
+see-also:
+  - "runtime-class-scheduling.md"
 replaces: []
 
 # The target maturity stage in the current dev cycle for this KEP.

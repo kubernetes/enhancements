@@ -1,26 +1,3 @@
----
-title: RuntimeClass Scheduling
-authors:
-  - "@tallclair"
-owning-sig: sig-node
-participating-sigs:
-  - sig-scheduling
-reviewers:
-  - yastij
-  - egernst
-approvers:
-  - bsalamat
-  - dchen1107
-  - derekwaynecarr
-creation-date: 2019-03-14
-last-updated: 2019-10-22
-status: implemented
-see-also:
-  - "/keps/sig-node/runtime-class.md"
-replaces:
-  - "[RuntimeClass Scheduling Brainstorm](https://docs.google.com/document/d/1W51yBNTvp0taeEss56GTk8jczqFJ2d6jBeN6sCSlYZU/edit#)"
----
-
 # RuntimeClass Scheduling
 
 ## Table of Contents
@@ -118,7 +95,7 @@ Windows.
 - As a **developer** I want to ensure my Linux workloads are not accidentally
   scheduled to windows nodes.
 
-[Windows nodes]: ../sig-windows/20190103-windows-node-support.md
+[Windows nodes]: ../../sig-windows/20190103-windows-node-support.md
 
 #### Sandboxed Nodes
 
@@ -246,12 +223,6 @@ the alpha phase. This means the feature is expected to be beta quality at launch
 - Thoroughly documented (as an extension to the [RuntimeClass documentation][]).
 
 [RuntimeClass documentation]: https://kubernetes.io/docs/concepts/containers/runtime-class/
-
-## Implementation History
-
-- 2019-09-05: Implement RuntimeClass Scheduling as a beta stage feature. [Umbrella issue](https://github.com/kubernetes/kubernetes/issues/81016)
-- 2019-03-14: Initial KEP published.
-- 2018-10-05: [RuntimeClass Scheduling Brainstorm](https://docs.google.com/document/d/1W51yBNTvp0taeEss56GTk8jczqFJ2d6jBeN6sCSlYZU/edit#) published.
 
 ## Alternatives
 

@@ -29,6 +29,8 @@
 control plane. RuntimeClasses are assigned to pods through a `runtimeClass` field on the
 `PodSpec`. This provides a new mechanism for supporting multiple runtimes in a cluster and/or node.
 
+See also [RuntimeClass Scheduling](runtime-class-scheduling.md) for the latest updates on scheduling.
+
 ## Motivation
 
 There is growing interest in using different runtimes within a cluster. [Sandboxes][] are the
@@ -358,7 +360,10 @@ Beta:
 ## Implementation History
 
 - 2020-10-17: RuntimeClass approved to be promoted as stable
+- 2019-09-05: Implement RuntimeClass Scheduling as a beta stage feature. [Umbrella issue](https://github.com/kubernetes/kubernetes/issues/81016)
 - 2019-03-25: RuntimeClass released as beta with Kubernetes v1.14
+- 2019-03-14: Initial KEP for RuntimeClass Scheduling published.
+- 2018-10-05: [RuntimeClass Scheduling Brainstorm](https://docs.google.com/document/d/1W51yBNTvp0taeEss56GTk8jczqFJ2d6jBeN6sCSlYZU/edit#) published
 - 2018-09-27: RuntimeClass released as alpha with Kubernetes v1.12
 - 2018-06-11: SIG-Node decision to move forward with proposal
 - 2018-06-19: Initial KEP published.
