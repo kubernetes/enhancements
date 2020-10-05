@@ -6,12 +6,15 @@ owning-sig: sig-node
 participating-sigs:
   - sig-api-machinery
   - sig-auth
-status: provisional
+status: implementable
 creation-date: 2020-07-08
 reviewers:
-  - TBD
+  - derekwaynecarr
+  - liggitt
+  - sftim
 approvers:
-  - TBD
+  - derekwaynecarr
+  - liggitt
 prr-approvers:
   - deads2k
 see-also:
@@ -36,10 +39,10 @@ milestone:
 feature-gates:
   - name: HardenedExecRequests
     components:
-      - kubelet
       - kube-apiserver
-      - client-go
-      - kubectl
+  - name: DeprecatedKubeletStreamingAPI
+    components:
+      - kubelet
 disable-supported: true
 
 # The following PRR answers are required at beta release
