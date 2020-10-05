@@ -184,7 +184,14 @@ Implement a new inittrace handler to propagate the initialtraceid.
 
 **1. Extract SpanContext and initialtraceid from annotation of object to golang ctx**
 
-**2. Propagate golang ctx through objects**
+**2. Propagate golang ctx from objects to API Calls**
+
+When controllers create/update/delete an object A based on another B, we propagate context from B to A. E.g.:
+```
+    ctx = traceutil.WithObject(ctx, objB)
+    err = r.KubeClient.CoreV1().Create(ctx, objA...)
+```
+We do propagation across objects without adding traces to that components.
 
 When controllers create/update/delete an object A based on another B, we propagate context from B to A. E.g.:
 ```
