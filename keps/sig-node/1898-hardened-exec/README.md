@@ -111,7 +111,7 @@ policy](https://kubernetes.io/docs/setup/release/version-skew-policy/#kubelet) r
 Kubelet not be newer than the kube-apiserver, so backwards compatibility with older apiservers is
 not required.
 
-Incase there are non-apiserver clients, all the backwards-incompatible Kubelet changes described
+In case there are non-apiserver clients, all the backwards-incompatible Kubelet changes described
 below will be guarded by the feature gate `DeprecatedKubeletStreamingAPI`. This feature gate will
 start in the default-disabled state and `Deprecated` prerelease channel, and serves to provide a
 temporary escape hatch for these API changes.
@@ -338,6 +338,11 @@ _This section must be completed when targeting alpha to a release._
 
 * **Does enabling the feature change any default behavior?**
   Yes, enabling `HardenedExecRequests` alters the pod exec API by adding additional constraints.
+  Disabling `DeprecatedKubeletStreamingAPI` (default) also removes several request paths from the
+  Kubelet API in addition to further constraining several remaining APIs. These APIs are only
+  intended for use by the kube-apiserver, and are only required to be forwards-compatible by the
+  [Kubernetes version skew
+  policy](https://kubernetes.io/docs/setup/release/version-skew-policy/#kubelet).
 
 * **Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?**
   Yes, both features are stateless and can be enabled or disabled without any consequence outside of
@@ -373,9 +378,25 @@ fields of API types, flags, etc.?**
 _This section must be completed when targeting beta graduation to a release._
 
 * **How can an operator determine if the feature is in use by workloads?**
-  Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
-  checking if there are objects with field X set) may be a last resort. Avoid
-  logs or events for this purpose.
+
+Any request counts for the following metrics indicate that the deprecated Kubelet APIs are in use,
+and clients may be broken by disabling `DeprecatedKubeletStreamingAPIs` (`*` indicates any value):
+
+- `kubelet_http_requests_total{long_running=*,method="GET",path="exec",server_type="*"}`
+- `kubelet_http_requests_total{long_running=*,method="GET",path="attach",server_type="*"}`
+- `kubelet_http_requests_total{long_running=*,method="GET",path="portforward",server_type="*"}`
+- `kubelet_http_requests_total{long_running=*,method=*,path="run",server_type="*"}` _Note the method wildcard_
+
+There are no metrics identifying requests missing body parameters, or metrics that break out the UID
+sub-paths. These requests, along with reject requests can be identified in the Kubelet's logs.
+
+Unfortunately there are no metrics recording Kubelet response status, so requests that are broken by
+disabling `DeprecatedKubeletStreamingAPIs` will need to be detected client-side. See
+https://github.com/kubernetes/kubernetes/issues/95307.
+
+On the API server side, GET exec requests can be identified from the audit logs, which can also be
+used to identify the client. An increase in 400 Bad Request codes to exec may indicate a breakage by
+`HardenedExecRequests`.
 
 * **What are the SLIs (Service Level Indicators) an operator can use to determine 
 the health of the service?**
