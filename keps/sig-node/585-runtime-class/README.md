@@ -2,49 +2,47 @@
 
 ## Table of Contents
 
-<!-- TOC -->
-
+<!-- toc -->
 - [Summary](#summary)
 - [Motivation](#motivation)
-    - [Goals](#goals)
-    - [Non-Goals](#non-goals)
-    - [User Stories](#user-stories)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+  - [User Stories](#user-stories)
 - [Proposal](#proposal)
-    - [API](#api)
-        - [Examples](#examples)
-        - [Runtime Handler](#runtime-handler)
-    - [Versioning, Updates, and Rollouts](#versioning-updates-and-rollouts)
-    - [Implementation Details](#implementation-details)
-        - [Monitoring](#monitoring)
-    - [Risks and Mitigations](#risks-and-mitigations)
+  - [API](#api)
+    - [Examples](#examples)
+    - [Runtime Handler](#runtime-handler)
+  - [Versioning, Updates, and Rollouts](#versioning-updates-and-rollouts)
+  - [Implementation Details](#implementation-details)
+    - [Monitoring](#monitoring)
+  - [Risks and Mitigations](#risks-and-mitigations)
 - [RuntimeClass Scheduling](#runtimeclass-scheduling)
-    - [RuntimeClass Scheduling Motivation](#runtimeclass-scheduling-motivation)
-        - [RuntimeClass Scheduling Goals](#runtimeclass-scheduling-goals)
-        - [RuntimeClass Scheduling Non-Goals](#runtimeclass-scheduling-non-goals)
-    - [RuntimeClass Scheduling Proposal](#runtimeclass-scheduling-proposal)
-        - [RuntimeClass Scheduling User Stories](#runtimeclass-scheduling-user-stories)
-            - [Windows](#windows)
-            - [Sandboxed Nodes](#sandboxed-nodes)
-    - [Design Details](#design-details)
-        - [RuntimeClass Scheduling API](#runtimeclass-scheduling-api)
-        - [RuntimeClass Admission Controller](#runtimeclass-admission-controller)
-        - [Labeling Nodes](#labeling-nodes)
-        - [RuntimeClass Scheduling Graduation Criteria](#runtimeclass-scheduling-graduation-criteria)
-    - [RuntimeClass Scheduling Alternatives](#runtimeclass-scheduling-alternatives)
-        - [Scheduler](#scheduler)
-        - [RuntimeController Mix-in](#runtimecontroller-mix-in)
-            - [RuntimeController](#runtimecontroller)
-            - [Mix-in](#mix-in)
-        - [NodeSelector](#nodeselector)
-        - [Native RuntimeClass Reporting](#native-runtimeclass-reporting)
-        - [Scheduling Policy](#scheduling-policy)
+  - [RuntimeClass Scheduling Motivation](#runtimeclass-scheduling-motivation)
+    - [RuntimeClass Scheduling Goals](#runtimeclass-scheduling-goals)
+    - [RuntimeClass Scheduling Non-Goals](#runtimeclass-scheduling-non-goals)
+  - [RuntimeClass Scheduling Proposal](#runtimeclass-scheduling-proposal)
+    - [RuntimeClass Scheduling User Stories](#runtimeclass-scheduling-user-stories)
+      - [Windows](#windows)
+      - [Sandboxed Nodes](#sandboxed-nodes)
+  - [Design Details](#design-details)
+    - [RuntimeClass Scheduling API](#runtimeclass-scheduling-api)
+    - [RuntimeClass Admission Controller](#runtimeclass-admission-controller)
+    - [Labeling Nodes](#labeling-nodes)
+    - [RuntimeClass Scheduling Graduation Criteria](#runtimeclass-scheduling-graduation-criteria)
+  - [RuntimeClass Scheduling Alternatives](#runtimeclass-scheduling-alternatives)
+    - [Scheduler](#scheduler)
+    - [RuntimeController Mix-in](#runtimecontroller-mix-in)
+      - [RuntimeController](#runtimecontroller)
+      - [Mix-in](#mix-in)
+    - [NodeSelector](#nodeselector)
+    - [Native RuntimeClass Reporting](#native-runtimeclass-reporting)
+    - [Scheduling Policy](#scheduling-policy)
 - [Graduation Criteria](#graduation-criteria)
 - [Implementation History](#implementation-history)
 - [Appendix](#appendix)
-    - [Proposed Future Enhancements](#proposed-future-enhancements)
-    - [Examples of runtime variation](#examples-of-runtime-variation)
-
-<!-- /TOC -->
+  - [Proposed Future Enhancements](#proposed-future-enhancements)
+  - [Examples of runtime variation](#examples-of-runtime-variation)
+<!-- /toc -->
 
 ## Summary
 
@@ -343,7 +341,7 @@ or "conformant" RuntimeClasses.
 **Non-portability.** We are already in a world of non-portability for many features (see [examples
 of runtime variation](#examples-of-runtime-variation). Future improvements to RuntimeClass can help
 address this issue by formally declaring supported features, or matching the runtime that supports a
-given workload 
+given workload
 mitaclly. Another issue is that pods need to refer to a RuntimeClass by name,
 which may not be defined in every cluster. This is something that can be addressed through
 pre-defined runtime classes (see previous risk), and/or by "fitting" pod requirements to compatible
