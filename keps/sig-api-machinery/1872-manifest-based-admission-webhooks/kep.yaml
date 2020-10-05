@@ -13,6 +13,7 @@ approvers:
 - "@liggitt"
 - "@deads2k"
 editor: TBD
+latest-milestone: "v1.20"
 creation-date: 2020-04-21
 last-updated: 2020-07-23
-status: provisional
+status: implementable

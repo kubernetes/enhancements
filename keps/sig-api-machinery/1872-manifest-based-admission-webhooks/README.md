@@ -9,9 +9,10 @@
   - [Goals](#goals)
 - [Proposal](#proposal)
   - [Naming](#naming)
-  - [Metrics and audit annotations](#metrics-and-audit-annotations)
   - [New AdmissionConfig schema](#new-admissionconfig-schema)
   - [Reconfiguring manifest file](#reconfiguring-manifest-file)
+    - [Behavioral details of reconfiguration](#behavioral-details-of-reconfiguration)
+  - [Metrics and audit annotations](#metrics-and-audit-annotations)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
@@ -113,25 +114,7 @@ All webhooks in the manifest file need to have unique names. If a new webhook
 configuration API object with a same name as a webhook in the manifest is added,
 both webhook would be invoked. Essentially, webhooks in the manifest file will
 be treated as belonging to a different domain from the webhooks registered
-through the API.
-
-### Metrics and audit annotations
-Metrics and audit annotations for webhooks registered through the manifest file
-will be surfaced differently. This allows the administrator to unique monitor
-activity of these webhooks as they would be the only party able to take action
-against issues with these webhooks. 
-
-All admission metrics for webhooks will have an additional label `manifest_based`
-with a value `true` for webhooks registered via manifest.
-
-Audit annotations for mutation webhooks will include another field `manifestBased`
-with a value `true` for webhooks registered via manifest.
-
-```
-<<[UNRESOLVED sig-instrumentation ]>>
-get feedback on how to indicate this in metrics
-<<[/UNRESOLVED]>>
-```
+through the API. 
 
 ### New AdmissionConfig schema
 
@@ -155,21 +138,65 @@ plugins:
 ### Reconfiguring manifest file
 
 The manifest file is watched so that the webhook configuration can be
-dynamically changed by editing the contents of the file.
+dynamically changed by editing the contents of the file. In addition to watching
+the file for changes, we would also read the file periodically checking for
+changes.
 
-```
-<<[UNRESOLVED]>>
-need to define behavior in the following cases:
-1. file goes missing
-2. file cannot be read
-3. parse error reading file contents
-4. some webhook configurations listed in the file do not pass validation
-<<[/UNRESOLVED]>>
-```
+#### Behavioral details of reconfiguration
+This section details the behavior of the mechanism when encountering non-optimal
+situations.
+
+In cases where:
+* the given manifest file can no longer be found or
+* attempts at reading the manifest file result in an error or
+* the contents of the manifest file can no longer be parsed or
+* validation errors are encountered when parsing the webhook configuration of
+the manifest file,
+
+the previously successfully loaded set of webhooks will continue to be invoked
+when necessary. An error would be surfaced through a metric (See the metrics
+section). If the file or a valid version of it re-appears, the new file will to
+loaded and if valid, the webhooks in this file would be used for future
+invocations. Also, the error metric would be unset.
+
+### Metrics and audit annotations
+For the administrator to uniquely monitor manifest based webhooks, two
+additional metrics would be added at [stability level `ALPHA`](https://github.com/kubernetes/enhancements/blob/master/keps/sig-instrumentation/20190404-kubernetes-control-plane-metrics-stability.md#stability-classes)
+to the existing set of metrics.
+
+a. Webhook metadata: This metric would contain metadata of each webhook invoked,
+both API based and manifest based. The metadata includes the webhook type
+(mutating/validating) and if it is manifest based.
+
+b. Manifest errors: Since the manifest file can be reconfigured post API server
+startup, we would add a metric informing users if there were errors
+loading/parsing the current manifest file.
+
+Audit annotations for mutating webhooks would also carry an additional field
+`manifestBased` indicating the invocation of a manifest based webhook. 
 
 ## Design Details
 
 ### Test Plan
+
+Unit tests for:
+
+- Loading, parsing, defaulting, and validation of manifest based webhoooks for
+  both Mutating and Validating webhooks.
+- Reconfiguration of the manifest for both Mutating and Validating webhooks.
+- Additional metrics being set.
+
+Integration tests added to test/integration/apiserver/admissionwebhook
+covering the following scenarios:
+
+- Standard expected behavior for both Mutating and Validating webhooks including
+  API server not starting on an invalid version of the manifest file.
+- Standard expected behavior with client auth for both Mutating and Validating
+  webhooks.
+- Successful reconfiguration of the manifest for both Mutating and Validating
+  webhooks including metric checks.
+- Failed reconfiguration of the manifest for both Mutating and Validating
+  webhooks including metric checks.
 
 ### Graduation Criteria
 
@@ -297,45 +324,26 @@ _For GA, this section is required: approvers should be able to confirm the
 previous answers based on experience in the field._
 
 * **Will enabling / using this feature result in any new API calls?**
-  Describe them, providing:
-  - API call type (e.g. PATCH pods)
-  - estimated throughput
-  - originating component(s) (e.g. Kubelet, Feature-X-controller)
-  focusing mostly on:
-  - components listing and/or watching resources they didn't before
-  - API calls that may be triggered by changes of some Kubernetes resources
-    (e.g. update of object X triggers new updates of object Y)
-  - periodic API calls to reconcile state (e.g. periodic fetching state,
-    heartbeats, leader election, etc.)
+  No.
 
 * **Will enabling / using this feature result in introducing new API types?**
-  Describe them, providing:
-  - API type
-  - Supported number of objects per cluster
-  - Supported number of objects per namespace (for namespace-scoped objects)
+  No.
 
 * **Will enabling / using this feature result in any new calls to the cloud 
 provider?**
+  No.
 
 * **Will enabling / using this feature result in increasing size or count of 
 the existing API objects?**
-  Describe them, providing:
-  - API type(s):
-  - Estimated increase in size: (e.g., new annotation of size 32B)
-  - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
+  No.
 
 * **Will enabling / using this feature result in increasing time taken by any 
 operations covered by [existing SLIs/SLOs]?**
-  Think about adding additional work or introducing new steps in between
-  (e.g. need to do X to start a container), etc. Please describe the details.
+  No.
 
 * **Will enabling / using this feature result in non-negligible increase of 
 resource usage (CPU, RAM, disk, IO, ...) in any components?**
-  Things to keep in mind include: additional in-memory state, additional
-  non-trivial computations, excessive access to disks (including increased log
-  volume), significant amount of data sent and/or received over network, etc.
-  This through this both in small and large cases, again with respect to the
-  [supported limits].
+  No.
 
 ### Troubleshooting
 
@@ -367,6 +375,8 @@ _This section must be completed when targeting beta graduation to a release._
 ## Implementation History
 
 - 2020-04-21: KEP introduced
+- 2020-10-05: Unresolved issues addressed. Testing plan, Scalability section,
+updated.
 
 ## Drawbacks
 
