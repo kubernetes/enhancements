@@ -50,8 +50,6 @@
 control plane. RuntimeClasses are assigned to pods through a `runtimeClass` field on the
 `PodSpec`. This provides a new mechanism for supporting multiple runtimes in a cluster and/or node.
 
-See also [RuntimeClass Scheduling](runtime-class-scheduling.md) for the latest updates on scheduling.
-
 ## Motivation
 
 There is growing interest in using different runtimes within a cluster. [Sandboxes][] are the
@@ -63,8 +61,7 @@ configured in the cluster and surface their properties (both to the cluster & th
 In addition to selecting the runtime to use, supporting multiple runtimes raises other problems to
 the control plane level, including: accounting for runtime overhead, scheduling to nodes that
 support the runtime, and surfacing which optional features are supported by different
-runtimes. Although these problems are not tackled by this initial proposal, RuntimeClass provides a
-cluster-scoped resource tied to the runtime that can help solve these problems in a future update.
+runtimes. See [RuntimeClass Scheduling](#runtimeclass-scheduling) for information about scheduling.
 
 [Sandboxes]: https://docs.google.com/document/d/1QQ5u1RBDLXWvC8K3pscTtTRThsOeBSts_imYEoRyw8A/edit
 
@@ -305,17 +302,6 @@ following two areas and is finished (tracked in
   is added to track the duration of RunPodSandbox operations, broken down by
   RuntimeClass.
 
-The following monitoring areas will be skipped for now, but may be considered
-after the RuntimeClass scheduling is implemented:
-
-- how many runtimes does a cluster support?
-- how many scheduling failures were caused by unsupported runtimes or insufficient
-  resources of a certain runtime?
-
-Currently, we assume that all the nodes in a cluster are homogeneous. After
-heterogeneous clusters are implemented, we may need to monitor how many runtimes
-a node supports.
-
 ### Risks and Mitigations
 
 **Scope creep.** RuntimeClass has a fairly broad charter, but it should not become a default
@@ -362,9 +348,9 @@ possible to run a heterogeneous cluster, but pod authors would need to set
 appropriate [NodeSelector][] rules and [tolerations][taint-and-toleration] to
 ensure the pods landed on supporting nodes.
 
-As [use cases](#user-stories) have appeared and solidified, it has become clear
-that heterogeneous clusters will not be uncommmon, and supporting a smoother
-user experience will be valuable.
+As [use cases](#runtimeclass-scheduling -user-stories) have appeared and solidified,
+it has become clear that heterogeneous clusters will not be uncommmon, and supporting
+a smoother user experience will be valuable.
 
 [NodeSelector]: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/
 [taint-and-toleration]: https://kubernetes.io/docs/concepts/configuration/taint-and-toleration/
@@ -712,6 +698,16 @@ Beta:
 
 [cri-validation]: https://github.com/kubernetes-sigs/cri-tools/blob/master/docs/validation.md
 
+Stable:
+
+- [x] Wide adoption of the feature
+  - [x] Google relies on RuntimeClass in [gVisor](https://gvisor.dev/).
+  - [x] RedHat uses RuntimeClass to install [kata](https://github.com/openshift/kata-operator) on OpenShift with CRI-O. Another use case is around using a custom runtime class for enabling user namespaces for certain workloads. We would like to rely on RuntimeClass to distinguish between Windows and Linux pods and have the security policies defaulted differently for Linux pods. We also want to use RuntimeClasses to differentiate between different flavors of Windows OSes as there is a tight coupling between a Windows Containers and the Windows host.
+  - [x] Microsoft has plans to use RuntimeClass to control runtime to enable [Hyper-V isolated containers](https://docs.microsoft.com/en-us/virtualization/windowscontainers/manage-containers/hyperv-container) (which allow running containers targeting multiple Windows Server versions on the same agent node)
+    - [Difficulties in mixed OS & arch clusters](https://docs.google.com/document/d/12uZt-KSG8v4CSyUDr0EC6btmzpVOZAWzqYDif3EoeBU/edit#heading=h.uno03u1f2t9i) (Discussions around usage in this document)
+    - Example runtime class used in some Windows PROW jobs - [2004-hyperv-runtimeclass.yaml](https://github.com/kubernetes-sigs/windows-testing/blob/master/helpers/hyper-v-mutating-webhook/2004-hyperv-runtimeclass.yaml)
+- [x] No release blocking feedback for API and functionality
+
 ## Implementation History
 
 - 2020-10-17: RuntimeClass approved to be promoted as stable
@@ -729,6 +725,11 @@ Beta:
 
 The following ideas may be explored in a future iteration:
 
+- The following monitoring areas will be skipped for now, but may be considered for future:
+  - how many runtimes does a cluster support?
+  - how many scheduling failures were caused by unsupported runtimes or insufficient
+  resources of a certain runtime?
+  - how many runtimes node supports?
 - Surfacing support for optional features by runtimes, and surfacing errors caused by
   incompatible features & runtimes earlier.
 - Automatic runtime or feature discovery - initially RuntimeClasses are manually defined (by the
