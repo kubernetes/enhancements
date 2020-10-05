@@ -41,7 +41,6 @@ feature-gates:
   - name: "KubeletPodResources"
     components:
       - kubelet
-      - kube-controller-manager
 disable-supported: false
 
 # The following PRR answers are required at beta release

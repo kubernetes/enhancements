@@ -246,7 +246,7 @@ Given that the API allows observing what device has been associated to what cont
 
 We have identified two main ways of testing this API:
 - Unit Tests which won't rely on gRPC. They will test different configurations of pods and devices.
-- Node E2E tests which will allow us to test the service itself.
+- Node E2E tests which will allow us to test the service itself. The Tests will cover the both a list-only client and a list-and-watch client.
 
 E2E tests are explicitly not written because they would require us to generate and deploy a custom container.
 The infrastructure required is expensive and it is not clear what additional testing (and hence risk reduction) this would provide compare to node e2e tests.
