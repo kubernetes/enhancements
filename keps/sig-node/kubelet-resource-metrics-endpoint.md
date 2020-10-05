@@ -38,6 +38,7 @@ status: implementable
     - [Results](#results-1)
 - [Alternatives Considered](#alternatives-considered)
   - [gRPC API](#grpc-api)
+  - [Test Plan](#test-plan)
 - [Graduation Criteria](#graduation-criteria)
 - [Implementation History](#implementation-history)
 <!-- /toc -->
@@ -204,17 +205,23 @@ service ResourceMetrics {
 }
 ```
 
+### Test Plan
+
+Test the new endpoint with a node-e2e test similar to the current summary API test.
+Testgrid: https://k8s-testgrid.appspot.com/sig-node-kubelet#node-kubelet-features-master&include-filter-by-regex=ResourceMetricsAPI
+
 ## Graduation Criteria
 
 Alpha:
 
-- [ ] Implement the kubelet resource metrics endpoint as described above
-- [ ] Test the new endpoint with a node-e2e test similar to the current summary API test
+- [X] Implement the kubelet resource metrics endpoint as described above
+
+Beta:
+
 - [ ] Modify the metrics server to consume the kubelet resource metrics endpoint 3 releases after it is added to the kubelet
 
-Beta/GA:
+GA:
 
-- [ ] Determine whether a transition to OpenMetrics format is required, and make those changes if necessary
 - [ ] Add node-e2e test to the node conformance tests
 
 ## Implementation History
