@@ -704,8 +704,7 @@ Beta:
   - [x] [containerd](https://github.com/containerd/cri/pull/891)
   - [x] [CRI-O](https://github.com/kubernetes-sigs/cri-o/pull/1847)
   - [x] [dockershim](https://github.com/kubernetes/kubernetes/pull/67909)
-- [ ] Comprehensive test coverage
-  - [ ] [CRI validation tests][cri-validation]
+- [x] Comprehensive test coverage
   - [x] RuntimeClasses are configured in the E2E environment with test coverage of a non-default
     RuntimeClass
 - [x] Comprehensive coverage of RuntimeClass metrics. [#73058](http://issue.k8s.io/73058)
