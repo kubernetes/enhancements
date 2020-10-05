@@ -27,18 +27,25 @@
       - [Theoretical](#theoretical)
       - [Practical](#practical)
     - [Strengths and Weaknesses of Static and Dynamic Analyses ([3])](#strengths-and-weaknesses-of-static-and-dynamic-analyses-3)
+- [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
+  - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
+  - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+  - [Monitoring Requirements](#monitoring-requirements)
+  - [Dependencies](#dependencies)
+  - [Scalability](#scalability)
+  - [Troubleshooting](#troubleshooting)
 <!-- /toc -->
 
 ## Release Signoff Checklist
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
-- [ ] (R) Graduation criteria is in place
-- [ ] (R) Production readiness review completed
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Design details are appropriately documented
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [x] (R) Graduation criteria is in place
+- [x] (R) Production readiness review completed
 - [ ] Production readiness review approved
 - [ ] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
@@ -114,8 +121,7 @@ This risk can be mitigated by:
   }
   ```
 
-- implementations of this interface could be auto generated using a dedicated code generator similar to deep-copy generator or manually implemented when needed,
-caching negative inspection results for parameter types which does not have any references to types which may contain sensitive data.
+- implementations of this interface could be auto generated using a dedicated code generator similar to deep-copy generator or manually implemented when needed, caching negative inspection results for parameter types which does not have any references to types which may contain sensitive data.
 
 Which of those methods will be used and to what extent will be decided after running performance tests.
 
@@ -198,6 +204,16 @@ To allow configuring if logs should be sanitized we will introduce a new logging
 
 ### Test Plan
 
+Tests should cover two things:
+* Test feature log sanitization works e2e
+* Test Kubernetes components don't leak sensitive data
+
+To address them we propose:
+* Add e2e tests that enabling log sanitization on test component (simple binary using `k8s.io/components-base`)
+  prevents leaking sensitive data
+* Add periodic running standard k8s e2e tests with log sanitization enabled and analyse logs to ensure no log message
+  was redacted.
+
 ### Graduation Criteria
 
 #### Alpha (1.20)
@@ -212,6 +228,9 @@ To allow configuring if logs should be sanitized we will introduce a new logging
 - Logs sanitization is enabled by default.
 
 ## Implementation History
+
+* 2020-05-08 - Original Proposal
+* 2020-08-07 - Merged as provisional
 
 ## Drawbacks
 
@@ -246,3 +265,147 @@ Static analysis, with its whitebox visibility, is certainly the more thorough ap
 Therefore static and dynamic analysis should not be considered as disjoint alternatives but rather as a complementary solutions and in the end we should have both implemented in Kubernetes.
 
 [3] "Static Testing vs. Dynamic Testing - Veracode." 3 Dec. 2013, https://www.veracode.com/blog/2013/12/static-testing-vs-dynamic-testing. Accessed 15 May. 2020.
+
+## Production Readiness Review Questionnaire
+
+### Feature Enablement and Rollback
+
+_This section must be completed when targeting alpha to a release._
+
+* **How can this feature be enabled / disabled in a live cluster?**
+  - [ ] Feature gate (also fill in values in `kep.yaml`)
+    - Feature gate name:
+    - Components depending on the feature gate:
+  - [x] Other
+    - Describe the mechanism:
+
+      New flag `--logging-sanitization` will be used to enable sanitization of for components.
+      This flag will become standard flag for all k8s components and will be added to
+      `k8s.io/component-base`. For alpha we are planning to add it to: `kube-apiserver`,
+      `kube-scheduler`, `kubelet`, `kube-controller-manager`
+
+    - Will enabling / disabling the feature require downtime of the control
+      plane?
+
+      Enabling log sanitization will require restarting control plane.
+
+    - Will enabling / disabling the feature require downtime or reprovisioning
+      of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
+
+      Enabling / disabling sanitization will require restarting system components.
+
+* **Does enabling the feature change any default behavior?**
+  Any change of default behavior may be surprising to users or break existing
+  automations, so be extremely careful here.
+
+  Enabling sanitization should not change logs in normally functioning cluster. Only changes
+  could be caused if bug in kubernetes code caused possibility of leaking sensitive data. In
+  that case that log lines will be obfuscated. This should not be surprising to users as they
+  should not depend on those buggy log lines.
+
+* **Can the feature be disabled once it has been enabled (i.e. can we roll back
+  the enablement)?**
+  Also set `disable-supported` to `true` or `false` in `kep.yaml`.
+  Describe the consequences on existing workloads (e.g., if this is a runtime
+  feature, can it break the existing applications?).
+
+  Yes.
+
+* **What happens if we reenable the feature if it was previously rolled back?**
+
+  Feature will start working again.
+
+* **Are there any tests for feature enablement/disablement?**
+  The e2e framework does not currently support enabling or disabling feature
+  gates. However, unit tests in each component dealing with managing data, created
+  with and without the feature, are necessary. At the very least, think about
+  conversion tests if API types are being modified.
+
+  We will run manual tests before enabling the feature by default
+
+### Rollout, Upgrade and Rollback Planning
+
+_This section must be completed when targeting beta graduation to a release._
+
+### Monitoring Requirements
+
+_This section must be completed when targeting beta graduation to a release._
+
+### Dependencies
+
+_This section must be completed when targeting beta graduation to a release._
+
+### Scalability
+
+_For alpha, this section is encouraged: reviewers should consider these questions
+and attempt to answer them._
+
+_For beta, this section is required: reviewers must answer these questions._
+
+_For GA, this section is required: approvers should be able to confirm the
+previous answers based on experience in the field._
+
+* **Will enabling / using this feature result in any new API calls?**
+  Describe them, providing:
+  - API call type (e.g. PATCH pods)
+  - estimated throughput
+  - originating component(s) (e.g. Kubelet, Feature-X-controller)
+  focusing mostly on:
+  - components listing and/or watching resources they didn't before
+  - API calls that may be triggered by changes of some Kubernetes resources
+    (e.g. update of object X triggers new updates of object Y)
+  - periodic API calls to reconcile state (e.g. periodic fetching state,
+    heartbeats, leader election, etc.)
+
+    No
+
+* **Will enabling / using this feature result in introducing new API types?**
+  Describe them, providing:
+  - API type
+  - Supported number of objects per cluster
+  - Supported number of objects per namespace (for namespace-scoped objects)
+
+  No
+
+* **Will enabling / using this feature result in any new calls to the cloud
+provider?**
+
+  No
+
+* **Will enabling / using this feature result in increasing size or count of
+the existing API objects?**
+  Describe them, providing:
+  - API type(s):
+  - Estimated increase in size: (e.g., new annotation of size 32B)
+  - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
+
+  No
+
+* **Will enabling / using this feature result in increasing time taken by any
+operations covered by [existing SLIs/SLOs]?**
+  Think about adding additional work or introducing new steps in between
+  (e.g. need to do X to start a container), etc. Please describe the details.
+
+  For log calls that are synchronous there is a low risk of increasing time taken by operations covered by SLIs/SLOs.
+  Feature will be disabled by default until we are able to address performance overhead in Beta.
+  More detail in [#Performance overhead] section of KEP.
+
+* **Will enabling / using this feature result in non-negligible increase of
+resource usage (CPU, RAM, disk, IO, ...) in any components?**
+  Things to keep in mind include: additional in-memory state, additional
+  non-trivial computations, excessive access to disks (including increased log
+  volume), significant amount of data sent and/or received over network, etc.
+  This through this both in small and large cases, again with respect to the
+  [supported limits].
+
+  Sanitizing logs will require additional computation for performance sensitive logging calls. Feature will be disabled
+  by default until we are able to address performance overhead in Beta. 
+  More detail in [#Performance overhead] section of KEP.
+
+### Troubleshooting
+
+The Troubleshooting section currently serves the `Playbook` role. We may consider
+splitting it into a dedicated `Playbook` document (potentially with some monitoring
+details). For now, we leave it here.
+
+_This section must be completed when targeting beta graduation to a release._
