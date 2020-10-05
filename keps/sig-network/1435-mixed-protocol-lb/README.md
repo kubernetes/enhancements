@@ -1,4 +1,4 @@
-# KEP-NNNN: different protocols in the same service definition with type=loadbalancer
+# KEP-1435: different protocols in the same service definition with type=loadbalancer
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
@@ -487,6 +487,10 @@ From CPI implementation perspective thet feature can be graduated to beta, as th
 
 Graduating to GA means, that the feature flag checking is removed from the code. It means, that all CPI implementations must be ready to deal with Services with mixed protocol configuration - either rejecting such Services properly or managing the cloud load balancers according to the Service definition.
 
+#### Alpha Graduation
+
+- Feature is implemented and controller with a feature flag. The feature flag is disabled by default.
+
 #### Alpha -> Beta Graduation
 
 - Gather feedback from developers and surveys
@@ -540,15 +544,9 @@ Once this feature is implemented in the API server there is a chance that the CP
 _This section must be completed when targeting alpha to a release._
 
 * **How can this feature be enabled / disabled in a live cluster?**
-  - [ ] Feature gate (also fill in values in `kep.yaml`)
-    - Feature gate name:
-    - Components depending on the feature gate:
-  - [ ] Other
-    - Describe the mechanism:
-    - Will enabling / disabling the feature require downtime of the control
-      plane?
-    - Will enabling / disabling the feature require downtime or reprovisioning
-      of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
+  - [x] Feature gate (also fill in values in `kep.yaml`)
+    - Feature gate name: MixedProtocolLBSVC
+    - Components depending on the feature gate: Kubernetes API Server
 
 * **Does enabling the feature change any default behavior?**
   Any change of default behavior may be surprising to users or break existing

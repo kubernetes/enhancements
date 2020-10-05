@@ -1,5 +1,5 @@
-title: KEP Template
-kep-number: NNNN
+title: Different protocols in the same service definition with type=loadbalancer
+kep-number: 1435
 authors:
   - "@laszlo.janosi1@gmail.com"
 owning-sig: sig-network
