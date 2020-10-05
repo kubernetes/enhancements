@@ -22,6 +22,7 @@
   - [API](#api)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha Criteria](#alpha-criteria)
     - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
     - [Beta -&gt; GA Graduation](#beta---ga-graduation)
   - [Version Skew Strategy](#version-skew-strategy)
@@ -290,6 +291,20 @@ expecting success or failure depending on the status of the `HardenedExecRequest
 The tests should be implemented under `test/e2e/common` for inclusion in the `e2e_node` test suites.
 
 ### Graduation Criteria
+
+#### Alpha Criteria
+
+- Update `PodExecOptions` with pod reference
+- Update Kubelet API (guarded by `DeprecatedKubeletStreamingAPI`)
+  - Remove the kubelet's `/run` and UID-specific endpoints
+  - Require POST request for kubelet streaming endpoints
+  - Require options in request body
+- Update kube-apiserver:
+  - Always use POST for streaming requests to Kubelet
+  - Send options in request body (but also query params)
+  - Require POST with request body for non-websocket `exec` requests, guarded by **alpha** `HardenedExecRequests`
+- Update go-client to send exec POST requests with options in the body (and also in query params)
+- Expand E2E test coverage - https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/1898-hardened-exec#test-plan
 
 #### Alpha -> Beta Graduation
 
