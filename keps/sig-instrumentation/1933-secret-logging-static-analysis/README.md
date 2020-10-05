@@ -462,19 +462,21 @@ you need any help or guidance.
 
 ### Feature Enablement and Rollback
 
-This KEP does not change cluster behavior.
+As an addition to Kubernetes testing, enablement and rollback are managed
+by configuration changes in `kubernetes/test-infra`.
 
 ### Rollout, Upgrade and Rollback Planning
 
-This KEP does not change cluster behavior.
+As a third-party dependency, analyzer upgrading is handled by upgrading
+the version targeted by `kubernetes/kubernetes/hack/tools/`. 
 
 ### Monitoring Requirements
 
-This KEP does not change cluster behavior.
+As a Prow job, visibility is provided by existing Prow monitoring via dashboards and alerts.
 
 ### Dependencies
 
-This KEP does not change cluster behavior.
+This KEP introduces a third-party dependency on `github.com/google/go-flow-levee`.
 
 ### Scalability
 
@@ -488,18 +490,28 @@ previous answers based on experience in the field._
 
 * **Will enabling / using this feature result in any new API calls?**
 
+The Prow dashboard will serve an additional test dashboard.
+
 * **Will enabling / using this feature result in introducing new API types?**
+
+No.
 
 * **Will enabling / using this feature result in any new calls to the cloud 
 provider?**
 
+No.
+
 * **Will enabling / using this feature result in increasing size or count of 
 the existing API objects?**
+
+With the additional dashboard page, there may be a marginal increase in traffic served.
 
 * **Will enabling / using this feature result in increasing time taken by any 
 operations covered by [existing SLIs/SLOs]?**
 
-This KEP does not change cluster behavior.
+While adding a new test will increase cycle-time taken to perform taken,
+parallelization of test tasks will prevent increase in wall-time.
+At time of writing, analysis of Kubernetes takes ~5 minutes.
 
 * **Will enabling / using this feature result in non-negligible increase of 
 resource usage (CPU, RAM, disk, IO, ...) in any components?**
@@ -509,9 +521,9 @@ resource usage (CPU, RAM, disk, IO, ...) in any components?**
   This through this both in small and large cases, again with respect to the
   [supported limits].
 
-As testing-only changes, Kubernetes components are not impacted.
 There may be non-negligible increase in testing resource usage.
-Implementation should benchmark to estimate.
+While analysis is much simpler than tests that require a cluster for testing,
+implementation should benchmark to estimate actual computational costs of analysis.
 
 ### Troubleshooting
 
@@ -519,6 +531,8 @@ While this KEP does not change cluster behavior, any reported finding should be
 communicated clearly such that developer correction can proceed as smoothly as possible.
 During non-blocking release stages, this should include instructions for reporting false-positives if the PR author believes the findings are incorrect.
 During blocking release stages, this should include instructions for escalating possible false-positives to avoid blocking other PRs and how to contact contributors with `/override` permissions to approve bypass of analysis.
+
+Analyzer failures should be reported to [`go-flow-levee` Issues](http://github.com/google/go-flow-levee/issues).
 
 ## Implementation History
 
