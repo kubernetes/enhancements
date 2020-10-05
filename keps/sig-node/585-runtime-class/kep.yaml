@@ -5,7 +5,7 @@ authors:
 owning-sig: sig-node
 participating-sigs: 
     - sig-architecture
-status: implementable
+status: implemented
 creation-date: "2018-06-19"
 reviewers:
   - "@dchen1107"
@@ -15,8 +15,7 @@ approvers:
   - "@dchen1107"
   - "@derekwaynecarr"
 prr-approvers: []
-see-also:
-  - "runtime-class-scheduling.md"
+see-also: []
 replaces: []
 
 # The target maturity stage in the current dev cycle for this KEP.
@@ -43,4 +42,5 @@ disable-supported: false
 
 # The following PRR answers are required at beta release
 metrics:
-  - TODO
+  - RunPodSandboxErrors
+  - RunPodSandboxDuration
