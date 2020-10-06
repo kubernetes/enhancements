@@ -14,6 +14,7 @@
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Implementation History](#implementation-history)
@@ -119,18 +120,23 @@ Updates to endpointslice controller:
 
 ### Test Plan
 
-endpointslice controller unit tests:
-* Unit tests will validate pods with a deletion timestamp are included with condition.teriminating = true
-* Unit tests will validate that the ready condition can change for terminating endpoints
+Unit tests:
+* endpointslice controller unit tests will validate pods with a deletion timestamp are included with condition.teriminating=true
+* endpointslice controller unit tests will validate that the ready condition can change for terminating endpoints
+* endpointslice controller unit tests will validate that terminating condition is not set when feature gate is disabled.
+* API strategy unit tests to validate that terminating condition field cannot be set when feature gate is disabled.
+* API strategy unit tests to validate terminating condition is preserved if existing EndpointSlice has it set.
 
-There will be no e2e tests since consumption of this new API is out-of-scope for this KEP.
-Any future KEP that consumes this API should have e2e tests to ensure behavior for terminating
-endpoints is correct.
+E2E tests:
+* e2e test checking that terminating pods (deletionTimestamp != nil) result in terminating=true condition in EndpointSlice
 
 ### Graduation Criteria
 
-Since this is an addition to the EndpointSlice API, graduation will follow the graduation
-timeline for the [EndpointSlice API work](/keps/sig-network/20190603-endpointslices/README.md).
+#### Alpha
+
+* EndpointSlice API includes `Terminating` condition.
+* `Terminating` condition can only be set if feature gate `EndpointSliceTerminatingCondition` is enabled.
+* Unit tests in endpointslice controller and API validation/strategy.
 
 ### Upgrade / Downgrade Strategy
 
