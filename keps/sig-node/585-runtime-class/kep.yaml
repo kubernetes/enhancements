@@ -1,0 +1,46 @@
+title: Runtime Class
+kep-number: 585
+authors:
+  - "@tallclair"
+owning-sig: sig-node
+participating-sigs: 
+    - sig-architecture
+status: implemented
+creation-date: "2018-06-19"
+reviewers:
+  - "@dchen1107"
+  - "@derekwaynecarr"
+  - "@yujuhong"
+approvers:
+  - "@dchen1107"
+  - "@derekwaynecarr"
+prr-approvers: []
+see-also: []
+replaces: []
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: stable
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.20"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.12"
+  beta: "v1.14"
+  stable: "v1.20"
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+  - name: "RuntimeClass"
+    components:
+      - kubelet
+disable-supported: false
+
+# The following PRR answers are required at beta release
+metrics:
+  - RunPodSandboxErrors
+  - RunPodSandboxDuration
