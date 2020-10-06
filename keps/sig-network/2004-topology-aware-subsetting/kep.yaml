@@ -1,0 +1,50 @@
+title: Topology Aware Subsetting
+kep-number: 2004
+authors:
+  - "@ckyiricky"
+  - "@robscott"
+owning-sig: sig-network
+status: implementable
+creation-date: 2020-09-21
+reviewers:
+  - "@andrewsykim"
+  - "@bowei"
+  - "@freehan"
+  - "@thockin"
+approvers:
+  - "@thockin"
+  - "@wojtek-t"
+prr-approvers:
+  - "@wojtek-t"
+
+see-also:
+replaces:
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: alpha
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.20"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.20"
+  beta: "v1.21"
+  stable: "v1.24"
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+  - name: TopologyAwareSubsetting
+    components:
+      - kube-controller-manager
+disable-supported: true
+
+# The following PRR answers are required at beta release
+metrics:
+  - endpoint_slice_controller/endpointslices_changes_per_sync
+  - endpoint_slice_controller/reallocated_endpoints_per_sync
+  - endpoint_slice_controller/total_endpoints
+
