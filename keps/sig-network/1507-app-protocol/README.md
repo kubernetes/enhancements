@@ -1,37 +1,20 @@
----
-title: Adding AppProtocol to Services and Endpoints
-authors:
-  - "@robscott"
-owning-sig: sig-network
-reviewers:
-  - "@thockin"
-  - "@dcbw"
-approvers:
-  - "@thockin"
-  - "@dcbw"
-creation-date: "2019-12-27"
-last-updated: "2019-12-27"
-status: implementable
-see-also:
-  - "/keps/sig-network/20190603-EndpointSlice-API.md"
-  - "https://github.com/kubernetes/kubernetes/issues/40244"
----
-
 # Adding AppProtocol to Services and Endpoints
 
 ## Table of Contents
 
 <!-- toc -->
-- [Summary](#summary)
-- [Motivation](#motivation)
-  - [Goals](#goals)
-- [Proposal](#proposal)
-    - [Services:](#services)
-    - [Endpoints:](#endpoints)
-  - [Risks and Mitigations](#risks-and-mitigations)
-  - [Proposed Roadmap](#proposed-roadmap)
-  - [Graduation Criteria](#graduation-criteria)
-  - [Test plan](#test-plan)
+  - [Summary](#summary)
+  - [Motivation](#motivation)
+    - [Goals](#goals)
+  - [Proposal](#proposal)
+      - [Services:](#services)
+      - [Endpoints:](#endpoints)
+    - [Risks and Mitigations](#risks-and-mitigations)
+    - [Proposed Roadmap](#proposed-roadmap)
+    - [Graduation Criteria](#graduation-criteria)
+- [Alpha -&gt; Beta](#alpha---beta)
+- [Beta -&gt; GA](#beta---ga)
+    - [Test plan](#test-plan)
 <!-- /toc -->
 
 ## Summary
@@ -113,6 +96,13 @@ enabled by default.
 This adds a new optional attribute to 2 existing stable APIs. This will follow
 the traditional approach for adding new fields initially guarded by a feature
 gate.
+
+# Alpha -> Beta
+- `ServiceAppProtocol` has been supported for at least 1 minor release.
+- `ServiceAppProtocol` feature gate is enabled by default.
+
+# Beta -> GA
+- `ServiceAppProtocol` has been enabled by default for at least 1 minor release.
 
 ### Test plan
 
