@@ -1,4 +1,4 @@
-# KEP: Topology Aware Routing
+# KEP: Topology Aware Subsetting
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
@@ -8,19 +8,17 @@
 - [Proposal](#proposal)
   - [Terminology](#terminology)
   - [Configuration](#configuration)
+    - [Interoperability](#interoperability)
+    - [Feature Gate](#feature-gate)
     - [Controller Configuration](#controller-configuration)
   - [Notes/Constraints/Caveats](#notesconstraintscaveats)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Assumptions](#assumptions)
   - [Kube-Proxy](#kube-proxy)
-  - [Random](#random)
-    - [Scheme Logic:](#scheme-logic)
-  - [Require](#require)
-    - [Scheme Logic:](#scheme-logic-1)
-  - [Prefer](#prefer)
+  - [Auto Approach](#auto-approach)
     - [Terminology](#terminology-1)
-    - [Scheme Logic](#scheme-logic-2)
+    - [Scheme Logic](#scheme-logic)
     - [Evaluation Tool](#evaluation-tool)
     - [Test Results](#test-results)
   - [Recommended Algorithm: Local](#recommended-algorithm-local)
@@ -38,6 +36,7 @@
     - [Local-Opt](#local-opt)
       - [Rationale](#rationale-3)
       - [Potential Issues](#potential-issues-3)
+  - [Future Expansion](#future-expansion)
   - [Test Plan](#test-plan)
   - [Observability](#observability)
   - [Graduation Criteria](#graduation-criteria)
@@ -71,9 +70,10 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 Kubernetes clusters are increasingly deployed in multi-zone environments but
 unfortunately network routing has not caught up with that. This KEP proposes an
-automatic topology aware routing mechanism with a new Service annotation. This
-new annotation will provide three options of different routing options.
-Currently our proposal will only focus on topology aware routing at zone level.
+automatic topology aware subsetting mechanism with a new Service annotation.
+This new annotation will enable users to opt-in to EndpointSlice subsetting
+functionality that will enable topology aware routing. Currently our proposal
+will only focus on topology aware routing at zone level.
 
 ## Motivation
 
@@ -87,26 +87,16 @@ costs.
 constraints, having a better performance than traffic leaving the zone.
 
 In this KEP we are going to focus on avoiding cross-zone traffic when in-zone
-endpoints would suffice. We're attempting to provide a simple and more
-automatic approach to topology aware routing. This API will still allow users
-to require traffic to stay within a zone, or simply to indicate that they
-prefer to keep traffic in the same zone if there's sufficient capacity. With
-this approach users won't have to configure anything by default for most use
-cases.
+endpoints would suffice. We're attempting to provide a simple and more automatic
+approach to topology aware routing. This API will still allow users to indicate
+that they prefer to keep traffic in the same zone if there's sufficient
+capacity. With this approach users won't have to configure anything by default
+for most use cases.
 
 
 ### Goals
 - Provide a simple way for users to indicate their preference for keeping
   traffic in zone.
-- Provide different approaches to users who have a strong desire over the
-  routing policy:
-  - Random: Use the original approach to ensure traffic is distributed across
-    endpoints for a Service. This may result in distribution across a subset of
-    endpoints.
-  - RequireZone: Only route to endpoints within the same zone.
-  - PreferZone: Prefer routing to endpoints within the same zone when they are
-    available and it makes sense. If there is an insufficient number of
-    endpoints in a zone, traffic may be routed to endpoints in other zones.
 - Use the standardized topology label `topology.kubernetes.io/zone` to derive
   the zones of nodes and endpoints.
 - Use EndpointSlice subsetting as the primary mechanism for topology aware
@@ -127,7 +117,7 @@ cases.
 - Multi-cluster topology aware routing (this same pattern may be useful there
   though).
 - Region based topology aware routing (this may come later).
-- Ensuring that endpoints are distributed evenly across zones.
+- Ensuring that Pods are distributed evenly across zones.
 
 ## Proposal
 
@@ -142,58 +132,54 @@ cases.
 
 This proposal builds off of the [EndpointSlice API](https://kubernetes.io/docs/concepts/services-networking/endpoint-slices/).
 
-We propose a new Service annotation: `service.kubernetes.io/same-zone`
-with three options:
-- `Random`: This represents the existing approach that is already used, no
-  special mechanism will be added. Traffic will be evenly distributed among
-  endpoints behind a Service.
-- `Require`: EndpointSlice controller will conduct a simple but aggressive
-  routing mechanism. It will group endpoints in a zone to an EndpointSlice Group
-  that only receives traffic from that zone. `Require` requires users to ensure
-  that a sufficient number of endpoints for a Service exist in each zone.
-  Services using this approach will only be reachable from zones that contain
-  endpoints for the Service.
-- `Prefer`: EndpointSlice controller will conduct a more conservative routing
-  mechanism. It will keep traffic in zone as long as each zone has a sufficient
-  number of endpoints. If a zone does not have a sufficient number of endpoints,
-  traffic will be routed to other zones. This will be explained in more detail
-  below.
+We propose a new Service annotation that would act as a hint for the
+EndpointSlice controller: `endpointslice.kubernetes.io/subsetting`. If set to
+`Auto` the EndpointSlice controller will conduct a more conservative routing
+mechanism. It will keep traffic in zone as long as each zone has a sufficient
+number of endpoints. If a zone does not have a sufficient number of endpoints,
+traffic will be routed to other zones. This will be explained in more detail
+below.
 
-This same pattern could be used for topology aware routing at node and region
-level. We could add new annotations `service.kubernetes.io/same-node` and
-`service.kubernetes.io/same-region` for node and region respectively with
-the same values `Require` and `Prefer`. With all these three levels combined
-together, their individual value could be influenced by values of others, i.e.
-`Require` node would also `Require` zone and region.
+If this annotation is unspecified or empty, the EndpointSlice controller will
+continue to behave as it already does with no form of subsetting.
+
+#### Interoperability
+
+If both this annotation and `topologyKeys` are set on a Service, `topologyKeys`
+will be given precedence and this annotation will be ignored.
+
+#### Feature Gate
+
+This functionality will be guarded by the `TopologyAwareSubsetting` feature
+gate. This gate should not be enabled if the `ServiceTopology` gate is enabled.
 
 #### Controller Configuration
 
 In addition to the Service-level annotation, a global default can be configured
 on the EndpointSlice controller. This will define the behavior of the controller
-for Services without an annotation specified. For backwards compatibility this
-will initially default to the `Random` approach.
+for Services without an annotation specified.
 
 ### Notes/Constraints/Caveats
 
 In the future, if there is sufficient need, we may introduce another parameter
-for the `Prefer` approach that would allow users to specify a starting
-threshold. Starting threshold defines the starting point for `Prefer` (more
-detailed description below). We currently set the starting threshold to 3x the
-number of zones based on results from our test dataset for safer distribution
-results.
+for the `Auto` approach that would allow users to specify a starting threshold.
+Starting threshold defines the starting point for `Auto` (more detailed
+description below). We currently set the starting threshold to 3x the number of
+zones based on results from our test dataset for safer distribution results.
+
+Pods may exist without topology information. In that case, they will be
+distributed to zones that have the highest need (determined by the difference
+between expected endpoints and actual endpoints in the zone).
 
 ### Risks and Mitigations
 
-- Extra complexity to EndpointSlice Controller introduced by `Require` and
-  `Prefer` could result in slower EndpointSlices update and potentially end up
-  limiting scalability.
-- When users opt-in to the `Require` routing scheme, it is their responsibility
-  to make sure the workloads are balanced. If a Service using this approach does
-  not have any endpoints in a zone, it will be unreachable from that zone.
-- In a scenario where all traffic originates from a single zone, with `Require`
-  and `Prefer` options, there is a chance that endpoints in that zone will be
-  overloaded while endpoints in other zones receive little to no traffic.
-  Without some sort of feedback (out of scope) this will not self-rectify.
+- Extra complexity to EndpointSlice Controller introduced by the `Auto` approach
+  could result in slower EndpointSlices update and potentially end up limiting
+  scalability.
+- In a scenario where all traffic originates from a single zone, with the `Auto`
+  approach, there is a chance that endpoints in that zone will be overloaded
+  while endpoints in other zones receive little to no traffic. Without some sort
+  of feedback (out of scope) this will not self-rectify.
 - Autoscaling will not behave well if only a single zone is receiving large
   amounts of traffic. This could potentially be mitigated by separating
   deployments and HPAs per zone.
@@ -220,28 +206,7 @@ That KEP proposes updating kube-proxy to support EndpointSlice subsetting. Each
 instance will watch for EndpointSlices that have a label indicating they should
 be consumed by a zone or region.
 
-### Random
-
-As for the random approach, we do not need to change anything in the current
-system. When requests come in, they will be evenly distributed among all the
-endpoints of a service.
-
-#### Scheme Logic:
-1. Group all endpoints in a single global EndpointSlice Group.
-
-### Require
-`Require` groups endpoints in a zone to an EndpointSlice Group that only
-receives traffic from that zone, users have to ensure the distribution of
-endpoints is balanced.
-Users specify `RequireZone` approach by adding
-`service.kubernetes.io/same-zone`: `Require` in annotations of a Service
-
-#### Scheme Logic:
-1. Group all endpoints in a zone in a local EndpointSlice Group.
-
-<img src="require.png" alt="Require Algorithm" width="600">
-
-### Prefer
+### Auto Approach
 Within this model, there are potentially several algorithms. As this feature
 moves toward GA, we will fine-tune the algorithm and the coefficients to it.
 While we aspire to a single "good for everyone" solution, it may be desirable to
@@ -269,7 +234,7 @@ single algorithm here, but leave room for other options later.
    will be elaborated below.
 
 #### Evaluation Tool
-We evaluated different `Prefer` algorithms with a [topology simulation
+We evaluated different `Auto` algorithms with a [topology simulation
 tool](https://github.com/googleinterns/k8s-topology-simulator). This tool
 abstracts concepts like endpoints, nodes, zones to simpler data structures and
 simulates the EndpointSlice grouping and traffic distribution.
@@ -343,8 +308,8 @@ _Starting Threshold -- default 3x of zone number:_
    churn caused by rolling updates.
 
 Example: starting threshold = 9, padding = 3
-1. Remain `Random` approach until # of endpoints hits 12
-2. Remain `Prefer` approach until # of endpoints hits 6
+1. Don't subset until # of endpoints hits 12
+2. Remain with `Auto` subsetting approach until # of endpoints hits 6
 
 **Scores on small dataset with different starting thresholds for local algorithm**
 |Algorithm/Starting threshold| Score |
@@ -505,6 +470,15 @@ overload.
 2. Higher number of EndpointSlices
 3. Lower in-zone traffic than `recommended`
 
+
+### Future Expansion
+
+In the future we may expand this functionality if needed. This could include:
+
+- A new `RequireZone` algorithm that would keep endpoints in EndpointSlices for
+  the same zone they are in.
+- A new option to specify a minimum threshold for the `Auto` approach.
+- Support for region based subsetting.
 
 ### Test Plan
 | Test Name | Test Type | Test Details | Expected Output | Comments |

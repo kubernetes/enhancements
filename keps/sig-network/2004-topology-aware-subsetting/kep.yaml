@@ -1,4 +1,4 @@
-title: Topology Aware Routing
+title: Topology Aware Subsetting
 kep-number: 2004
 authors:
   - "@ckyiricky"
@@ -37,7 +37,7 @@ milestone:
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
 feature-gates:
-  - name: TopologyAwareRouting
+  - name: TopologyAwareSubsetting
     components:
       - kube-controller-manager
 disable-supported: true
