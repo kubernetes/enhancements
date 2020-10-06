@@ -91,9 +91,9 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha (1.20)](#alpha-120)
     - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
-    - [Beta (1.21)](#beta-121)
+    - [Beta](#beta)
     - [Beta -&gt; GA Graduation](#beta---ga-graduation)
-    - [GA (1.22)](#ga-122)
+    - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -334,21 +334,22 @@ As part of testing of our testing process, these tests should belong to `kuberne
 ### Graduation Criteria
 
 #### Alpha (1.20)
-- Analysis runs as a non-blocking presubmit check, warning developers of any findings in their changes.
+- Analysis is manually triggered to run in Prow against a sampling of PRs.
 
 #### Alpha -> Beta Graduation
-- Gather feedback from developers regarding any false-positive findings or other pain points.
+- Test is validated as running soundly.
+- Analysis configuration consumes fields tags introduced by [KEP-1753](https://github.com/kubernetes/enhancements/blob/master/keps/sig-instrumentation/1753-logs-sanitization/README.md) for identification of material that should not be logged.
+  Configuration should also identify other sensitive data not bound to fields, if any are identified during KEP-1753's investigation.
 
-#### Beta (1.21)
-- Analysis consumes fields tags introduced by [KEP-1753](https://github.com/kubernetes/enhancements/blob/master/keps/sig-instrumentation/1753-logs-sanitization/README.md) for identification of material that should not be logged.
-- Continue to gather developer feedback.  Respond to feedback gathered during alpha.
+#### Beta
+- Analysis runs as a non-blocking presubmit check, warning developers of any findings in their changes.
 
 #### Beta -> GA Graduation
-- No false-positives are produced by analysis for <N> weeks.
-- Respond to any remaining issues from developer feedback.
+- Test is validated as running soundly at scale.
+- No false positives, test failures, or other concerning issues are raised for 1-2 weeks.
 
-#### GA (1.22)
-- Presubmit analysis becomes blocking.
+#### GA
+- Analysis runs as a blocking presubmit test.
 
 <!--
 **Note:** *Not required until targeted at a release.*
