@@ -29,8 +29,8 @@ latest-milestone: "v1.20"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
-  alpha: "v1.15"
-  beta: "v1.13"
+  alpha: "v1.13"
+  beta: "v1.15"
   stable: "v1.20"
 
 # The following PRR answers are required at alpha release
