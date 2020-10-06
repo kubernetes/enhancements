@@ -1,0 +1,39 @@
+title: Defend against accidental credential logging via static analysis interation into Prow.
+kep-number: "1933"
+authors:
+- "@PurelyApplied"
+owning-sig: sig-instrumentation
+participating-sigs:
+- sig-instrumentation
+- sig-testing
+status: implementable
+creation-date: "2020-08-12"
+reviewers:
+- "@BenTheElder"
+- "@dashpole"
+- "@ehashman"
+- "@logicalhan"
+- "@mikejoh"
+approvers:
+- "@dashpole"
+- "@ehashman"
+#prr-approvers:
+#- TBD
+see-also:
+- /keps/sig-instrumentation/1753-logs-sanitization
+- /keps/sig-instrumentation/1602-structured-logging
+replaces: []
+
+stage: alpha
+
+latest-milestone: "v1.20"
+
+milestone:
+  alpha: "v1.20"
+  beta: "v1.21"
+  stable: "v1.22"
+
+# This KEP enhances Kubernetes testing.  It does not directly impact any component.
+feature-gates: []
+disable-supported: true
+metrics: []
