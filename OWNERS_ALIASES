@@ -73,10 +73,8 @@ aliases:
     - Huang-Wei
     - ahg-g
   sig-security-leads:
-    - aasmall
-    - cji
-    - jaybeale
-    - joelsmith
+    - iancoldwater
+    - tabbysable
   sig-service-catalog-leads:
     - jberkhahn
     - mszostok
@@ -134,11 +132,10 @@ aliases:
   wg-policy-leads:
     - ericavonb
     - hannibalhuang
-  wg-security-audit-leads:
-    - aasmall
-    - cji
-    - jaybeale
-    - joelsmith
+  wg-reliability-leads:
+    - deads2k
+    - stevekuznetsov
+    - wojtek-t
   ug-big-data-leads:
     - erikerlandson
     - foxish
@@ -175,11 +172,13 @@ aliases:
     - jeremyrickard
     - johnbelamaric
     - justaugustus
+    - LappleApple
     - mrbobbytables
   enhancements-reviewers:
     - jeremyrickard
     - johnbelamaric
     - justaugustus
+    - LappleApple
     - mrbobbytables
   prod-readiness-approvers:
     - johnbelamaric
