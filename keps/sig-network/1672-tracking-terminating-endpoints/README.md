@@ -120,13 +120,15 @@ Updates to endpointslice controller:
 
 ### Test Plan
 
-endpointslice controller unit tests:
-* Unit tests will validate pods with a deletion timestamp are included with condition.teriminating = true
-* Unit tests will validate that the ready condition can change for terminating endpoints
+Unit tests:
+* endpointslice controller unit tests will validate pods with a deletion timestamp are included with condition.teriminating=true
+* endpointslice controller unit tests will validate that the ready condition can change for terminating endpoints
+* endpointslice controller unit tests will validate that terminating condition is not set when feature gate is disabled.
+* API strategy unit tests to validate that terminating condition field cannot be set when feature gate is disabled.
+* API strategy unit tests to validate terminating condition is preserved if existing EndpointSlice has it set.
 
-There will be no e2e tests since consumption of this new API is out-of-scope for this KEP.
-Any future KEP that consumes this API should have e2e tests to ensure behavior for terminating
-endpoints is correct.
+E2E tests:
+* e2e test checking that terminating pods (deletionTimestamp != nil) result in terminating=true condition in EndpointSlice
 
 ### Graduation Criteria
 
