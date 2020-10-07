@@ -533,17 +533,21 @@ _This section must be completed when targeting alpha to a release._
     - Components depending on the feature gate: Kubernetes API Server
 
 * **Does enabling the feature change any default behavior?**
+
   When the feature is enabled the Services with mixed protocols are not rejected anymore by the Kuber API server, and it is up to the CPI to handle those.
   Please see the analysis at `API change and upgrade/downgrade situations`
 
 * **Can the feature be disabled once it has been enabled (i.e. can we roll back
   the enablement)?**
+
   Yes. 
 
 * **What happens if we reenable the feature if it was previously rolled back?**
+
   Nothing serious, as this feature removes a restriction in the API Server. I.e. this direction does not introduce problems.
 
 * **Are there any tests for feature enablement/disablement?**
+
   TBD
 
 ### Rollout, Upgrade and Rollback Planning
@@ -551,12 +555,15 @@ _This section must be completed when targeting alpha to a release._
 _This section must be completed when targeting beta graduation to a release._
 
 * **How can a rollout fail? Can it impact already running workloads?**
+
   TBD
 
 * **What specific metrics should inform a rollback?**
+
   TBD
 
 * **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
+
   TBD
 
 ### Monitoring Requirements
@@ -564,6 +571,7 @@ _This section must be completed when targeting beta graduation to a release._
 _This section must be completed when targeting beta graduation to a release._
 
 * **How can an operator determine if the feature is in use by workloads?**
+
   TBD
 
 * **What are the SLIs (Service Level Indicators) an operator can use to determine 
@@ -576,10 +584,12 @@ the health of the service?**
     - Details:
 
 * **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
+
   TBD
 
 * **Are there any missing metrics that would be useful to have to improve observability 
 of this feature?**
+
   TBD
 
 ### Dependencies
@@ -593,25 +603,31 @@ _This section must be completed when targeting beta graduation to a release._
 ### Scalability
 
 * **Will enabling / using this feature result in any new API calls?**
+
   If a CPI supports the management of the new Conditions and PortStatus in the LoadBalancer Service the managemenof of those fileds will mean additional traffic on the API
 
 * **Will enabling / using this feature result in introducing new API types?**
+
  No
 
 * **Will enabling / using this feature result in any new calls to the cloud 
 provider?**
+
   If the cloud provider requires more calls to add ports/listeners with different protocols to a load balancer then this feature introduces additional calls
 
 * **Will enabling / using this feature result in increasing size or count of 
 the existing API objects?**
+
   Yes. As detailed above, the Status of the Service is planned to be extended with new Conditions and PortStatus
 
 * **Will enabling / using this feature result in increasing time taken by any 
 operations covered by [existing SLIs/SLOs]?**
+
   The setup of more ports/listeners with different protocols may take more time, depending on how the CPI and the cloud provider API is implemented
 
 * **Will enabling / using this feature result in non-negligible increase of 
 resource usage (CPU, RAM, disk, IO, ...) in any components?**
+
   Not expected.
 
 ### Troubleshooting
@@ -619,9 +635,11 @@ resource usage (CPU, RAM, disk, IO, ...) in any components?**
 * **How does this feature react if the API server and/or etcd is unavailable?**
 
 * **What are other known failure modes?**
+
   TBD
 
 * **What steps should be taken if SLOs are not being met to determine the problem?**
+
   TBD
 
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
@@ -632,11 +650,14 @@ resource usage (CPU, RAM, disk, IO, ...) in any components?**
 - the `Proposal` section being merged, signaling agreement on a proposed design: 14th July 2020
 
 ## Drawbacks
+
  TBD
 
 ## Alternatives
+
  No known alternatives, beside those analysed above.
 
 ## Infrastructure Needed (Optional)
+
  The Cloud Load Balancer shall support the setup of different protocols on the same IP address in order to utilize the benefits of this feature.
  The CPI implementation shall either indicate problems with the Service in the new status fields, or the CPI shall be able to setup the cloud load balancer with the different protocols.
