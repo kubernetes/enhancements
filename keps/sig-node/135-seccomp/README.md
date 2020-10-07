@@ -220,7 +220,7 @@ The current behavior lacks features to facilitate the maintenance of seccomp pro
 Two examples being: 1) the lack of profile synchronization across nodes and 2) how difficult it can be to
 identify that profiles have been changed on disk, after pods started using it.
 However, given its current "pseudo-GA" state, we don't want to change it with this KEP. We will explore 
-improvements to the behavior through the seccomp-operator and/or a new feature-gated improvement.
+improvements to the behavior through the security-profiles-operator and/or a new feature-gated improvement.
 
 ###### Profile files managed by the cluster admins 
 The current support relies on profiles being saved as files in all cluster nodes where the pods using 
@@ -231,7 +231,7 @@ Cluster admins can build their own solutions to keep profiles in sync across nod
 [using daemonsets](https://gardener.cloud/050-tutorials/content/howto/secure-seccomp/)). Or use 
 community driven projects (e.g. [seccomp config](https://github.com/UKHomeOffice/seccomp-config), 
 [openshift's machine config operator](https://github.com/openshift/machine-config-operator), 
-[seccomp operator](https://github.com/saschagrunert/seccomp-operator)) that focuses on solving similar 
+[security-profiles-operator](https://github.com/kubernetes-sigs/security-profiles-operator)) that focuses on solving similar 
 problems.
 
 
