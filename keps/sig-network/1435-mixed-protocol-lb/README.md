@@ -31,6 +31,7 @@
   - [Kube-proxy](#kube-proxy)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha Graduation](#alpha-graduation)
     - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
     - [Beta -&gt; GA Graduation](#beta---ga-graduation)
     - [Removing a Deprecated Flag](#removing-a-deprecated-flag)
