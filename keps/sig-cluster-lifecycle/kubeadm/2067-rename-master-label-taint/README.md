@@ -144,31 +144,35 @@ of the change.
 ## Design Details
 
 The process will be broken into multiple stages:
-- Primary - 1.20
-- Secondary - Minimum deprecation period for GA features is 1 year.
+- First - 1.20
+- Second - Minimum deprecation period for GA features is 1 year.
 Estimated 1.24, but may depend on user feedback.
-- Third - one release after Secondary
+- Third - one release after Second
 - Fourth - one release after Third
 
 ### Renaming the "node-role.kubernetes.io/master" Node label
 
-Primary stage:
+First stage:
 - Introduce the "node-role.kubernetes.io/control-plane" label in parallel to
 the "master" label.
 - Announce to users that they should adapt to use the new label.
-Secondary stage:
+
+Second stage:
 - Remove the "master" label and announce it to the users.
 
 ### Renaming the "node-role.kubernetes.io/master" Node taint
 
-Primary stage:
+First stage:
 - Introduce the "node-role.kubernetes.io/control-plane:NoSchedule" toleration
 in the CoreDNS Deployment of kubeadm.
 - Announce to users that they should do that same for their workloads.
-Secondary stage:
+
+Second stage:
 - Add the "node-role.kubernetes.io/control-plane:NoSchedule" taint to Nodes.
+
 Third stage:
 - Remove the "node-role.kubernetes.io/master:NoSchedule" taint from Nodes.
+
 Fourth stage:
 - Remove the "node-role.kubernetes.io/master:NoSchedule" toleration in the CoreDNS
 Deployment of kubeadm
@@ -193,13 +197,13 @@ Not applicable.
 Downgrades are not supported by kubeadm.
 
 For upgrades:
-- During the primary stage new Nodes in the cluster will be added with
+- During the first stage new Nodes in the cluster will be added with
 the "node-role.kubernetes.io/control-plane" label in parallel to the
 "node-role.kubernetes.io/master" label.
 The "node-role.kubernetes.io/control-plane:NoSchedule" toleration will
 be added to the kubeadm CoreDNS Deployment of kubeadm so that it
 tolerates both old and new nodes.
-- During the secondary stage the "master" label will be removed from new
+- During the second stage the "master" label will be removed from new
 Nodes. User infrastructure must only manage the "control-plane" label
 at that point. New nodes will also have the
 "node-role.kubernetes.io/control-plane:NoSchedule" taint.
