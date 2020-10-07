@@ -6,6 +6,7 @@ owning-sig: sig-node
 participating-sigs:
 reviewers:
 - "@thockin"
+- "@odinuge"
 approvers:
 - sig-node
 creation-date: 2020-03-03
@@ -155,7 +156,8 @@ A pod is considered `Guaranteed` if either of the following two conditions apply
 1. All of the containers included in the pod define memory and CPU resource requests equal to resource limits
 1. The pod includes a pod-level memory and CPU resource request which is equal to the resource limit, even if one or more of the included containers doesn't define either a CPU or a memory request or limit.
 
-A pod is considered `Burstable` if at least one container has a resource request, or the pod itself has a resource request.
+A pod is considered `Burstable` if at least one container has a resource request, or the pod itself has a resource request. As before this proposal, setting
+a limit without a request causes Kubernetes to use the limit as a request.
 
 A pod is considered `BestEffort` if there are not resource request or limits settings on any container or on the pod level itself.
 
@@ -163,10 +165,22 @@ If a developer included a request and limit definition at the pod level, the dev
 as a whole, for all the containers included in the pod. This should apply even if the developer is unable to preemptively split the resources correctly
 between all the containers contained in the pod. 
 
-Note that if a pod belongs to the `Guaranteed` QoS level as per the current definition, then defining a pod-level limit is redundant. If the pod level limit
-request is smaller than the sum of limit for all the containers, then the limit requested by the containers is unreachable. Conversely if the pod level 
-limit request is larger than the sum of the limit for all the containers then the excess is not relevant since the individual containers can never use more 
-than their requested share, and even if all of the containers use the maximum allowed by their defined limit, it can never amount to the pod-level limit.
+Not all resource limits are treated in the same way by the underlying Linux cgroup controllers.  For example, if a memory pod level limit request is smaller 
+than the sum of limit for all the containers, then the limit requested by the containers is unreachable. It becomes impossible for all of the containers to 
+reach their requested limit, since the sum of available memory becomes the pod-level limit. Note that even though setting `pod.limit[memory] < sum(pod.containers[*].limit[memory])`
+would not allow all of the containers to allocate memory up to their limit, this is not considered an error by this proposal (though a warning should be emitted).
+If it were considered an error, then any admission controller that injects containers to pods with defined container-level limits might cause the pod to fail in unexpected ways. 
+
+Conversely if `pod.limit[memory] > sum(pod.containers[*].limit[memory])` then the excess is not relevant since the individual containers 
+can never use more than their defined limit, and even if all of the containers use the maximum allowed by their defined memory limit, it can never amount
+to the pod-level limit. Setting such a limit on the pod level does not _reserve_ any memory to the pod and will not negatively affect the rest of the 
+workloads running on the node. Therefore this is not considered an error. 
+
+Compare this to the CPU resource, where the underlying Linux cgroup treats the limit as a ratio relative to the cgroup one level up in the hierarchy. In this
+case setting the pod-level CPU limit will limit that pod to shares equal to the requested amount of CPU shares. Once the pod limit is set, then the limit on
+specific containers becomes relative to the pod limit, and not to the entire host. Therefore it doesn't matter if `pod.limit[cpu] > sum(pod.containers[*].limit[cpu])` 
+since the container limits are all used as relative weights to carve up the pod level limit. If the pod level CPU limit is not defined, then the current
+behavior is kept by default - the limit is relative to the amount of quota allocated to the QoS cgroup.
 
 If a there are resource request definition on the pod level, even without any definition on any of the included containers, then it should be considered
 `Burstable` since there is at least some knowledge as to the amount of resources the pod should receive. 
@@ -207,19 +221,19 @@ spec:
 The cgroup hierarchy for each of these resources (memory and cpu) would be this:
 
 <pre>
-  QoS CGroup (one of guaranteed, burstable, or besteffort)
+  QoS Burstable CGroup ( there is a pod level limit defined for the pod )
    |
    \ pod (memory: 384M limit, CPU: 2 core)
       |
-      +-- container0 (pause container, memory: unlimited, cpu: unlimited quota)
+      +-- container0 (pause container, memory: unlimited, cpu: unlimited quota relative to the pod limit)
       |
-      +-- container1 (proxy container, memory: unlimited, CPU: unlimited quota)
+      +-- container1 (proxy container, memory: unlimited, CPU: unlimited quota relative to the pod limit)
       |
-      +-- container2 (nginx container, memory: 256M limit, CPU: 1 core)
+      +-- container2 (nginx container, memory: 256M limit, CPU: at most 1/2 of the pod CPU quota)
 </pre>
 
 This has the following effect:
-1. The nginx container will continue to be constrained to at most 256M of memory and 1 CPU core.
+1. The nginx container will continue to be constrained to at most 256M of memory and 1/2 of the pod's CPU quota.
 1. The Proxy container will be limited to the amount of resources specified on the Pod cgroup level - no more than 384M memory and 2 CPU core.
 1. The pause container will not be affected since it doesn't use any resources anyways.
 
@@ -320,6 +334,8 @@ The behavior suggested by this KEP then becomes:
     1. for each container in the pod, 
          1. if container-level limits are set, use the values as provided
          1. if container-level limits are NOT set, then set the container-level cgroup to unlimited.
+
+As on the container level, the pod level request must be equal to the pod level limit to be considered valid.
 
 ### PID, and other cgroups
 
@@ -430,3 +446,4 @@ The Dev-Space load time, measured as the amount of time between Kubernetes launc
 - 2020-03-18 - More updates, after the sig-node meeting on March 17th.
 - 2020-06-04 - Updating the KEP after a trial-run on some real-world workloads
 - 2020-09-22 - Updating the KEP to allow pod-level resource requests
+- 2020-10-07 - Clarified how container-level memory and cpu limits are expected to relate to defined pod limits
