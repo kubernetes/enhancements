@@ -1,4 +1,4 @@
-# KEP-0034: APIServer Tracing
+# KEP-647: APIServer Tracing
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
@@ -143,7 +143,6 @@ Beta
 - [] OpenTelemetry reaches GA
 - [] Publish examples of how to use the OT Collector with kubernetes
 - [] Allow time for feedback
-- [] Collect feedback from users
 
 ## Production Readiness Survey
 
