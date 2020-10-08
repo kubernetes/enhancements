@@ -71,7 +71,24 @@ Along with metrics and logs, traces are a useful form of telemetry to aid with d
 
 We will wrap the API Server's http server and http clients with [otelhttp](https://github.com/open-telemetry/opentelemetry-go-contrib/tree/master/instrumentation/net/http/otelhttp) to get spans for incoming and outgoing http requests.  This generates spans for all sampled incoming requests and propagates context with all client requests.  For incoming requests, this would go below [WithRequestInfo](https://github.com/kubernetes/kubernetes/blob/9eb097c4b07ea59c674a69e19c1519f0d10f2fa8/staging/src/k8s.io/apiserver/pkg/server/config.go#L676) in the filter stack, as it must be after authentication and authorization, before the panic filter, and is closest in function to the WithRequestInfo filter.
 
-Note that some clients of the API Server, such as webhooks, may make reentrant calls to the API Server.  To gain the full benefit of tracing, such clients should propagate context with requests back to the API Server.
+Note that some clients of the API Server, such as webhooks, may make reentrant calls to the API Server.  To gain the full benefit of tracing, such clients should propagate context with requests back to the API Server.  One way to do this is to use the wrap the webhook's http server using otelhttp, and use the request's context when making requests to the API Server.
+
+**Webhook Example**
+
+Wrapping the http server, which ensures context is propagated from http headers to the requests context:
+```golang
+mux := http.NewServeMux()
+handler := otelhttp.NewHandler(mux, "HandleAdmissionRequest")
+```
+Use the context from the request in reentrant requests:
+```golang
+ctx := req.Context()
+client.CoreV1().Pods("").List(ctx, metav1.ListOptions{})
+```
+
+Note: Even though the admission controller uses the otelhttp handler wrapper, that does _not_ mean it will emit spans.  OpenTelemetry has a concept of an SDK, which manages the exporting of telemetry.  If no SDK is registered, the NoOp SDK is used, which only propagates context, and does not export spans.  In the webhook case in which no SDK is registered, the reentrant API call would appear to be a direct child of the original API call.  If the webhook registers an SDK and exports spans, there would be an additional span from the webhook between the original and reentrant API Server call.
+
+Note: OpenTelemetry has a concept of ["Baggage"](https://github.com/open-telemetry/opentelemetry-specification/blob/master/specification/baggage/api.md#baggage-api), which is akin to annotations for propagated context.  If there is any additional metadata we would like to attach, and propagate along with a request, we can do that using Baggage.
 
 ### Exporting Spans
 
@@ -81,7 +98,7 @@ The API Server will use the [OpenTelemetry exporter format](https://github.com/o
 
 ### Running the OpenTelemetry Collector
 
-The [OpenTelemetry Collector](https://github.com/open-telemetry/opentelemetry-collector) can be run as a sidecar, a daemonset, a deployment , or a combination in which the daemonset buffers telemetry and forwards to the deployment for aggregation (e.g. tail-base sampling) and routing to a telemetry backend.  To support these various setups, the API Server should be able to send traffic either to a local (on the master) collector, or to a cluster service (in the cluster).
+The [OpenTelemetry Collector](https://github.com/open-telemetry/opentelemetry-collector) can be run as a sidecar, a daemonset, a deployment , or a combination in which the daemonset buffers telemetry and forwards to the deployment for aggregation (e.g. tail-base sampling) and routing to a telemetry backend.  To support these various setups, the API Server should be able to send traffic either to a local (on the control plane network) collector, or to a cluster service (on the cluster network).
 
 ### APIServer Configuration and EgressSelectors
 
@@ -96,12 +113,12 @@ type OpenTelemetryClientConfiguration struct {
 
   // +optional
   // URL of the collector that's running on the master.
-  // if URL is specified, APIServer uses the egressType Master when sending tracing data to the collector.
+  // if URL is specified, APIServer uses the egressType Master when sending data to the collector.
   URL *string `json:"url,omitempty" protobuf:"bytes,3,opt,name=url"`
 
   // +optional
   // Service that's the frontend of the collector deployment running in the cluster.
-  // If Service is specified, APIServer uses the egressType Cluster when sending tracing data to the collector.
+  // If Service is specified, APIServer uses the egressType Cluster when sending data to the collector.
   Service *ServiceReference `json:"service,omitempty" protobuf:"bytes,1,opt,name=service"`
 }
 
@@ -121,6 +138,8 @@ type ServiceReference struct {
   Port *int32 `json:"port,omitempty" protobuf:"varint,3,opt,name=port"`
 }
 ```
+
+If `--opentelemetry-config-file` is not specified, the API Server will not send any telemetry.
 
 ### Controlling use of the OpenTelemetry library
 
@@ -143,6 +162,11 @@ Beta
 - [] OpenTelemetry reaches GA
 - [] Publish examples of how to use the OT Collector with kubernetes
 - [] Allow time for feedback
+- [] Revisit the format used to export spans.
+
+GA
+
+- [] Tracing e2e tests are promoted to conformance tests
 
 ## Production Readiness Survey
 
@@ -199,7 +223,7 @@ Beta
   - What are the known failure modes?  **The API Server is misconfigured, and cannot talk to the collector.  The collector is misconfigured, and can't send traces to the backend.**
   - How can those be detected via metrics or logs?  Logs from the component or agent based on the failure mode.
   - What are the mitigations for each of those failure modes?  **None.  You must correctly configure the collector for tracing to work.**
-  - What are the most useful log messages and what logging levels do they require? **All errors are useful, and are logged as errors (no logging levels required). Failure to initialize exporters (in both controller and collector), failures exporting metrics are the most useful.**
+  - What are the most useful log messages and what logging levels do they require? **All errors are useful, and are logged as errors (no logging levels required). Failure to initialize exporters (in both controller and collector), failures exporting metrics are the most useful.  Errors are logged for each failed attempt to establish a connection to the collector.**
   - What steps should be taken if SLOs are not being met to determine the
     problem?  **Look at API Server  and collector logs.**
 
