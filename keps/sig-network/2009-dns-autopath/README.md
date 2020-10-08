@@ -77,7 +77,7 @@ These search paths are set to make sure:
 These searchpaths are included in pods' /etc/resolv.conf by kubelet and are enforced by setting ndots to 5. This means any hostname lookups with fewer than 5 dots will be expanded using all the search paths listed.
 
 When pod issues a query to lookup hostname "service123", it is expanded to 6 queries - one for the original hostname and one with each of the searchpaths appended. Some resolvers issue both A and AAAA queries, so this can be a total of 12 or more queries for every single DNS lookup. When these queries are issued in parallel, they end up at the node with the same source tuple and need to be DNAT'ed increasing the chance of a [netfilter race condition](https://www.weave.works/blog/racy-conntrack-and-dns-lookup-timeouts).
-If one of the several queries fails, the DNS lookup on the client side will fail after a 5s timeout. This issue is most-applicable to A/AAAA lookups which form the bulk of DNS lookups. PTR Records are not subject to searchpath expansion(since they always have >5 dots).
+If a response is not received for one of the queries, the DNS lookup on the client side will fail after a 5s timeout. This issue is most-applicable to A/AAAA lookups which form the bulk of DNS lookups. PTR Records are not subject to searchpath expansion(since they always have >5 dots).
 
 ### Goals
 
