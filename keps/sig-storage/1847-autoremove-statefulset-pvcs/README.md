@@ -15,7 +15,7 @@
   - [Notes/Constraints/Caveats (optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
-  - [Volume reclaim policy for the StatefulSet created PVCs](#volume-reclaim-policy-for-the-statefulset-created-pvcs)
+  - [Volume delete policy for the StatefulSet created PVCs](#volume-delete-policy-for-the-statefulset-created-pvcs)
 - [Cluster role change for statefulset controller](#cluster-role-change-for-statefulset-controller)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
@@ -88,7 +88,7 @@ delete the PVCs created by the StatefulSet controller.
 
 The following changes are required:
 
-1. Add `PersistentVolumeClaimReclaimPolicy` entry into StatefulSet spec inorder to make this feature an opt-in.
+1. Add `PersistentVolumeClaimDeletePolicy` entry into StatefulSet spec inorder to make this feature an opt-in.
 2. Provide the following PersistentVolumeClaimPolicies:
    * `Retain` - this is the default policy and is considered in cases where no policy is specified. This would be the existing behaviour - when a StatefulSet is deleted, no action is taken with
        respect to the PVCs created by the StatefulSet.
@@ -108,7 +108,7 @@ up/down occurs in a fast manner, and leverages any previously existing auto crea
 life time of the StatefulSet. An option needs to be provided for the user to auto-delete the PVCs 
 once the StatefulSet is deleted. 
 
-User would set the `PersistentVolumeClaimReclaimPolicy` as `RemoveOnStatefulSetDelete` which would ensure that 
+User would set the `PersistentVolumeClaimDeletePolicy` as `RemoveOnStatefulSetDelete` which would ensure that 
 the PVCs created automatically during the StatefulSet activation is removed once the StatefulSet 
 is deleted.
 
@@ -118,7 +118,7 @@ a provision where the PVC created for a pod(which is part of the StatefulSet) is
 is deleted as part of a scale down. Since the subsequent scale up needs to create fresh PVCs, it will 
 be slower than scale ups relying on existing PVCs(from earlier scale ups). 
 
-User would set the `PersistentVolumeClaimReclaimPolicy` as 'RemoveOnScaledown' ensuring PVCs are deleted when corresponding
+User would set the `PersistentVolumeClaimDeletePolicy` as 'RemoveOnScaledown' ensuring PVCs are deleted when corresponding
 Pods are deleted. New Pods created during scale  up followed by a scaledown will wait for freshly created PVCs.
 
 ### Notes/Constraints/Caveats (optional)
@@ -139,15 +139,15 @@ like being rescheduled to a new node, even with the new retain policies.
 
 ## Design Details
 
-### Volume reclaim policy for the StatefulSet created PVCs
+### Volume delete policy for the StatefulSet created PVCs
 
 When a statefulset spec has a `VolumeClaimTemplate`, PVCs are dynamically created 
-using a static naming scheme. A new field named `PersistentVolumeClaimReclaimPolicy` of the 
-type `StatefulSetPersistentVolumeClaimReclaimPolicy` will be added to the StatefulSet. This 
+using a static naming scheme. A new field named `PersistentVolumeClaimDeletePolicy` of the 
+type `StatefulSetPersistentVolumeClaimDeletePolicy` will be added to the StatefulSet. This 
 field will represent the user indication on whether the associated PVCs can be automatically 
 deleted or not. The default policy would be `Retain`. 
 
-If `PersistentVolumeClaimReclaimPolicy` is set to `RemoveOnScaledown`, Pod is set as the owner of the PVCs created
+If `PersistentVolumeClaimDeletePolicy` is set to `RemoveOnScaledown`, Pod is set as the owner of the PVCs created
 from the `VolumeClaimTemplates` just before the scale down is performed by the statefulset controller. 
 When a Pod is deleted, the PVC owned by the Pod is also deleted. When `RemoveOnScaledown` 
 policy is set and the Statefulset gets deleted the PVCs also will get deleted 
@@ -163,7 +163,7 @@ potentially indicates that the PVC is referred by the deleted Pod and is in the 
 getting deleted. Controller will exit the current reconcile loop and attempt to reconcile in the 
 next iteration. This avoids a race with PVC deletion.
 
-When `PersistentVolumeClaimReclaimPolicy` is set to `RemoveOnStatefulSetDeletion` the owner reference in 
+When `PersistentVolumeClaimDeletePolicy` is set to `RemoveOnStatefulSetDeletion` the owner reference in 
 PVC points to the StatefulSet. When a scale up or down occurs, the PVC would remain the same. 
 PVCs previously in use before scale down will be used again when the scale up occurs. The PVC deletion 
 should happen only after the Pod gets deleted. Since the Pod ownership has `blockOwnerDeletion` set to 
@@ -171,10 +171,10 @@ should happen only after the Pod gets deleted. Since the Pod ownership has `bloc
 be set to `false` which ensures that PVC deletion happens only after the StatefulSet is deleted. This 
 chain of ownership ensures that Pod deletion occurs before the PVCs are deleted.
 
-`Retain` `PersistentVolumeClaimReclaimPolicy` will ensure the current behaviour - no PVC deletion is performed as part
+`Retain` `PersistentVolumeClaimDeletePolicy` will ensure the current behaviour - no PVC deletion is performed as part
 of StatefulSet controller.
 
-In alpha release we intend to keep the `PersistentVolumeClaimReclaimPolicy` immutable after creation. 
+In alpha release we intend to keep the `PersistentVolumeClaimDeletePolicy` immutable after creation. 
 Based on user feedback we will consider making this field mutable in future releases.
 
 ## Cluster role change for statefulset controller
@@ -229,7 +229,7 @@ change the previously expected behaviour of existing Statefulset.
 
 If the statefulset had been set with the RemoveOnStatefulSetDeletion 
 and RemoveOnScaleDown and the version of the kube-controller downgraded,
-even though the `PersistentVolumeClaimReclaimPolicy` field will go away, the references
+even though the `PersistentVolumeClaimDeletePolicy` field will go away, the references
 would still be acted upon by the garbage collector and cleaned up 
 based on the settings before downgrade. 
 
@@ -247,12 +247,12 @@ version skew involving other components.
     - Components depending on the feature gate: kube-controller-manager
   
 * **Does enabling the feature change any default behavior?**
-  The default behaviour is only changed when user explicitly specifies the `PersistentVolumeClaimReclaimPolicy`. 
+  The default behaviour is only changed when user explicitly specifies the `PersistentVolumeClaimDeletePolicy`. 
   Hence no change in any user visible behaviour change by default.
 
 * **Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?**
   Yes, but with side effects for users who already started using the feature by means of 
-  specifying non-retain `PersistentVolumeClaimReclaimPolicy`. We will an annotation to the
+  specifying non-retain `PersistentVolumeClaimDeletePolicy`. We will an annotation to the
   PVC indicating that the references have been set from previous enablement. Hence a reconcile
   loop which goes through the required PVCs and removes the references will be added. 
   The side effect is that if there was pod deletion before the references were removed after the
