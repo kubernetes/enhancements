@@ -17,6 +17,7 @@
     - [Unit Tests](#unit-tests)
     - [E2E Tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Implementation History](#implementation-history)
@@ -122,8 +123,11 @@ All existing E2E tests for Services should continue to pass.
 
 ### Graduation Criteria
 
-The graduation criteria of this KEP will largely depend on the graduation status of the EndpointSlice API. Once the `terminating` field is added to EndpointSlice API,
-this change in behavior will kick-in as soon as kube-proxy consumes EndpointSlice.
+#### Alpha
+
+* kube-proxy internally tracks the terminating condition of an endpoint.
+* feature is only enabled if the feature gate `EndpointSliceTerminatingCondition` is on.
+* unit tests in kube-proxy.
 
 ### Upgrade / Downgrade Strategy
 

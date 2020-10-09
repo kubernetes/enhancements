@@ -1,0 +1,39 @@
+title: Adding AppProtocol to Services and Endpoints
+kep-number: 1507
+authors:
+  - "@robscott"
+owning-sig: sig-network
+reviewers:
+  - "@thockin"
+  - "@dcbw"
+approvers:
+  - "@thockin"
+  - "@dcbw"
+creation-date: "2019-12-27"
+last-updated: "2020-09-29"
+status: implementable
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: stable
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.20"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.18"
+  beta: "v1.19"
+  stable: "v1.20"
+
+feature-gates:
+- name: ServiceAppProtocol
+  components:
+    - kube-apiserver
+    - kube-controller-manager
+disable-supported: true
+
+see-also:
+  - "/keps/sig-network/20190603-EndpointSlice-API.md"
+  - "https://github.com/kubernetes/kubernetes/issues/40244"

@@ -3,7 +3,6 @@
 ## Table of Contents
 
 <!-- toc -->
-
 - [Summary](#summary)
 - [Motivation](#motivation)
   - [User stories](#user-stories)
@@ -15,6 +14,7 @@
   - [Notes/Constraints/Caveats](#notesconstraintscaveats)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
     - [Alpha-&gt;Beta](#alpha-beta)
     - [Beta-&gt;GA](#beta-ga)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -173,15 +173,22 @@ Option 1 is adopted. See discussion
 
 ### Graduation Criteria
 
-#### Alpha->Beta
+#### Alpha
 
 - Implemented the feature.
 - Wrote all the unit and E2E tests.
 
+#### Alpha->Beta
+
+- Deployed the feature in production and went through at least minor k8s.
+- Fixed any bugs.
+
 #### Beta->GA
 
-- Deployed the feature in production and went through at least minor k8s
+- Deployed the feature in production and went through at least minor k8s.
   version.
+- Wrote stress/scale tests to make sure the feature is still working where
+  large number of pods are running.
 
 ## Production Readiness Review Questionnaire
 
@@ -189,7 +196,7 @@ Option 1 is adopted. See discussion
 
 - **How can this feature be enabled / disabled in a live cluster?**
 
-  - Feature gate name: CSIDriverServiceAccountToken
+  - Feature gate name: CSIServiceAccountToken
   - Components depending on the feature gate: kubelet, kube-apiserver
   - Will enabling / disabling the feature require downtime of the control
     plane? no.

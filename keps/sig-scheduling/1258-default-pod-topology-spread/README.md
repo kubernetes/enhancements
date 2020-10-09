@@ -24,6 +24,14 @@
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha (v1.19):](#alpha-v119)
+    - [Beta (v1.20):](#beta-v120)
+- [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
+  - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
+  - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+  - [Monitoring Requirements](#monitoring-requirements)
+  - [Dependencies](#dependencies)
+  - [Scalability](#scalability)
+  - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
 - [Alternatives](#alternatives)
 <!-- /toc -->
@@ -33,9 +41,9 @@
 - [x] kubernetes/enhancements issue in release milestone, which links to KEP (this should be a link to the KEP location in kubernetes/enhancements, not the initial KEP PR)
 - [x] KEP approvers have set the KEP status to `implementable`
 - [x] Design details are appropriately documented
-- [ ] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
-- [ ] Graduation criteria is in place
-- [ ] "Implementation History" section is up-to-date for milestone
+- [x] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [x] Graduation criteria is in place
+- [x] "Implementation History" section is up-to-date for milestone
 - [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [x] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
@@ -95,10 +103,9 @@ As a workload author, I want to spread the workload in the cluster, but:
 
 ### Implementation Details/Notes/Constraints
 
-
 #### Feature gate
 
-Setting a default for `PodTopologySpread` will be guarded with the feature gate
+Setting a default for `PodTopologySpread` is guarded with the feature gate
 `DefaultPodTopologySpread`.
 
 #### Relationship with "SelectorSpread" plugin
@@ -138,14 +145,16 @@ Values are decoded from the `pluginConfig` slice in the kube-scheduler Component
 ```go
 // pkg/scheduler/apis/config/types_pluginargs.go
 type PodTopologySpreadArgs struct {
-	// DefaultConstraints defines topology spread constraints to be applied to pods
-	// that don't define any in `pod.spec.topologySpreadConstraints`. Pod selectors must
-	// be empty, as they are deduced from the resources that the pod belongs to
-	// (includes services, replication controllers, replica sets and stateful sets). 
-	// If not specified, the scheduler applies the following default constraints:
-	// <default rules go here. See next section>
-	// +optional
-	DefaultConstraints []corev1.TopologySpreadConstraint
+  // DefaultConstraints defines topology spread constraints to be applied to pods
+  // that don't define any in `pod.spec.topologySpreadConstraints`. Pod selectors must
+  // be empty, as they are deduced from pod's membership
+  // to Services, ReplicationControllers, ReplicaSets or StatefulSets.
+  // If empty, the default constraints prefer to spread Pods across Nodes and Zones.
+  DefaultConstraints []corev1.TopologySpreadConstraint
+  // DisableDefaultConstraints allows to disable DefaultConstraints. Defaults to false.
+  // When set to true, DefaultConstraints must be empty or nil.
+  // +optional
+  DisableDefaultConstraints bool
 }
 ```
 
@@ -249,6 +258,10 @@ To ensure this feature to be rolled out in high quality. Following tests are man
 - **Integration Tests**: One integration test for the default rules and one for custom rules.
 - **Benchmark Tests**: A benchmark test that compare the default rules against `SelectorSpreadingPriority`.
   The performance should be as close as possible.
+  [Beta] There should not be any significant degradation in scheduler performance in clusterloader benchmarks
+  for vanilla workloads.
+- **E2E/Conformance Tests**: Test "Multi-AZ Clusters should spread the pods of a {replication controller, service} across zones" should pass.
+  This test is currently broken in 5k nodes.
 
 ### Graduation Criteria
 
@@ -259,13 +272,205 @@ To ensure this feature to be rolled out in high quality. Following tests are man
 - [x] Score extension point implementation. Add support for `maxSkew`.
 - [x] Filter extension point implementation.
 - [x] Disabling `SelectorSpread` when the feature is enabled.
-- [x] Unit, Integration and benchmark test cases mentioned in the [Test Plan](#test-plan).
+- [x] Unit and benchmark test cases mentioned in the [Test Plan](#test-plan).
+
+#### Beta (v1.20):
+
+- [ ] Finalize implementation:
+  - [ ] Map `SelectorSpreadingPriority` to `PodTopologySpread` when using Policy API.
+  - [ ] Provide knob for disabling the k8s default constraints.
+- [ ] Integration tests.
+- [ ] Verify conformance tests passing.
+
+## Production Readiness Review Questionnaire
+
+### Feature Enablement and Rollback
+
+* **How can this feature be enabled / disabled in a live cluster?**
+  - [x] Feature gate (also fill in values in `kep.yaml`)
+    - Feature gate name: `DefaultPodTopologySpread`
+    - Components depending on the feature gate: `kube-scheduler`
+  - [x] Other
+    - Describe the mechanism:
+
+      Explicitly disable default spreading constraints for the `PodTopologySpread` plugin in the kube-scheduler config (passed via `--config` command line flag):
+
+      ```yaml
+      apiVersion: kubescheduler.config.k8s.io/v1beta1
+      kind: KubeSchedulerConfiguration
+      profiles:
+        - pluginConfig:
+          - name: PodTopologySpread
+            args:
+              disableDefaultConstraints: true
+      ```
+
+    - Will enabling / disabling the feature require downtime of the control
+      plane?
+
+      Only kube-scheduler needs to be restarted.
+
+    - Will enabling / disabling the feature require downtime or reprovisioning
+      of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
+
+      No
+
+* **Does enabling the feature change any default behavior?**
+
+  Yes. Users might experience more spreading of Pods among Nodes and Zones in certain topology distributions.
+  In particular, this will be more noticeable in clusters with more than 100 nodes.
+
+  The [default configuration](#default-constraints) was chosen to produce a behavior that closely resembles
+  the `SelectorSpread` plugin.
+  See [this PR description](https://github.com/kubernetes/kubernetes/pull/91793) for simulation data.
+
+* **Can the feature be disabled once it has been enabled (i.e. can we roll back
+  the enablement)?**
+
+  Yes. Once disabled, only scheduling of new Pods will be affected.
+
+* **What happens if we reenable the feature if it was previously rolled back?**
+
+  Only scheduling of new Pods is affected.
+
+* **Are there any tests for feature enablement/disablement?**
+
+  There are unit tests in `pkg/scheduler/algorithmprovider/registry_test.go` that validate the list of default plugins
+  of `kube-scheduler` that correspond to the Feature Gate enabled and disabled.
+
+### Rollout, Upgrade and Rollback Planning
+
+* **How can a rollout fail? Can it impact already running workloads?**
+
+  Running workloads are not affected by `kube-scheduler`.
+
+* **What specific metrics should inform a rollback?**
+
+  Primarily scheduling latency metrics, such as `framework_extension_point_duration_seconds`, `scheduling_algorithm_duration_seconds`
+  and `e2e_scheduling_duration_seconds`, when they have increased significantly.
+
+  Since spreading is affected, node utilization might change.
+  Utilization metrics can be queried in the `/metrics/resource` endpoint exposed by kubelet.
+
+* **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
+
+  N/A.
+
+* **Is the rollout accompanied by any deprecations and/or removals of features, APIs, 
+  fields of API types, flags, etc.?**
+
+  TBD for GA.
+
+### Monitoring Requirements
+
+* **How can an operator determine if the feature is in use by workloads?**
+
+  All Pods are affected, unless they have explicit spreading constraints (.spec.topologySpreadConstraints).
+
+* **What are the SLIs (Service Level Indicators) an operator can use to determine 
+  the health of the service?**
+
+  - [x] Metrics
+    - Metric name: `framework_extension_point_duration_seconds` with label `extension_point` values `PreScore` and/or `Score`.
+    - [Optional] Aggregation method:
+    - Components exposing the metric: `kube_scheduler`.
+  - [ ] Other (treat as last resort)
+    - Details:
+
+* **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
+
+  For 100 nodes, with a 4-core master:
+
+  - Latency for PreScore+Score less than 60ms for 99% percentile.
+  - Latency for PreScore+Score less than 15ms for 95% percentile.
+
+* **Are there any missing metrics that would be useful to have to improve observability 
+of this feature?**
+
+  N/A.
+
+### Dependencies
+
+* **Does this feature depend on any specific services running in the cluster?**
+
+  N/A.
+
+
+### Scalability
+
+* **Will enabling / using this feature result in any new API calls?**
+
+  No.
+
+* **Will enabling / using this feature result in introducing new API types?**
+
+  No.
+
+* **Will enabling / using this feature result in any new calls to the cloud 
+provider?**
+
+  No.
+
+* **Will enabling / using this feature result in increasing size or count of 
+the existing API objects?**
+
+  No.
+
+* **Will enabling / using this feature result in increasing time taken by any 
+operations covered by [existing SLIs/SLOs]?**
+
+  Scheduling time on clusters with more than 100 nodes might increase. Smaller clusters are unaffected.
+  This is because `SelectorSpreading` doesn't take into account all the Nodes in big clusters when calculating skew,
+  resulting in partial spreading at this scale.
+  On the contrary, `PodTopologySpreading` considers all nodes when using topologies bigger than a Node, like a Zone.
+
+  Before graduation, we will ensure that the latency increase is acceptable with Scalability SIG.
+
+* **Will enabling / using this feature result in non-negligible increase of 
+resource usage (CPU, RAM, disk, IO, ...) in any components?**
+
+  kube-scheduler might use more CPU to calculate Zone spreading in certain configurations.
+  In synthetic benchmarks, the new spreading spends 1.5ms to do PreScore/Score when there are 10k Pods in a 1k Nodes cluster,
+  using 16 threads. This is comparable to SelectorSpread.
+
+### Troubleshooting
+
+* **How does this feature react if the API server and/or etcd is unavailable?**
+
+  kube-scheduler won't receive Pods
+  The effect is no more than it be without the feature.
+
+* **What are other known failure modes?**
+
+  - Pod scheduling is slow
+    - Detection: Pod startup time is too high.
+    - Diagnostics: Use the `framework_extension_point_duration_seconds` scheduler metric with label `extension_point` values `PreScore` and/or `Score`.
+    - Mitigations: Disable the Feature Gate DefaultPodTopologySpreading in kube-scheduler.
+    - Testing: There are performance dashboards.
+  - Pods of a Service/ReplicaSet/ReplicationController/StatefulSet are not properly spread: spread is either too weak or too strong.
+    - Detection: Too many pods belonging to the same Service/ReplicaSet/ReplicationController/StatefulSet are scheduled in a few nodes or
+      are spread in too many nodes.
+    - Mitigations: Use [Pod Topology spreading](https://kubernetes.io/docs/concepts/workloads/pods/pod-topology-spread-constraints)
+      in your PodSpecs. Or modify the [default constraints](https://kubernetes.io/docs/concepts/workloads/pods/pod-topology-spread-constraints/#cluster-level-default-constraints)
+      for the `PodTopologySpread` plugin to your preference.
+    - Diagnostics: N/A
+    - Testing: E2E tests ensure that Pods are evenly spread in a clusters with only one Service.
+* **What steps should be taken if SLOs are not being met to determine the problem?**
+
+If startup latency is in violation, there is the possibility that it's due to this feature.
+
+1. Determine if the scheduler is the culprit: Check for significant latency in `e2e_scheduling_duration_seconds`.
+1. The feature only affects scheduling algorithms, thus you can check for significant latency in `scheduling_algorithm_duration_seconds`.
+1. To check if this feature is the culprit, look for significant latency in `framework_extension_point_duration_seconds`,
+  using label `extension_point` with values `PreScore` and `Score`.
+1. Try disabling the Feature Gate `DefaultPodTopologySpreading`.
 
 ## Implementation History
 
 - 2019-09-26: Initial KEP sent out for review.
 - 2020-01-20: KEP updated to make use of framework's PluginConfig.
 - 2020-05-04: Update completed tasks and target alpha for 1.19.
+- 2020-09-21: Add Beta graduation criteria and PRR.
 
 ## Alternatives
 

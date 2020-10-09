@@ -249,11 +249,11 @@ details). For now we leave it here though.
 * Alpha in 1.18 provided all tests are passing and gated by the feature Gate
    `ConfigurableFSGroupPermissions` and set to a default of `False`
 
-* Beta in 1.19 with design validated by at least two customer deployments
+* Beta in 1.20 with design validated by at least two customer deployments
   (non-production), with discussions in SIG-Storage regarding success of
   deployments.  A metric will be added to report time taken to perform a
   volume ownership change. Also e2e tests that verify volume permissions with various `FSGroupChangePolicy`.
-* GA in 1.20, with Node E2E tests in place tagged with feature Storage
+* GA in 1.21, with Node E2E tests in place tagged with feature Storage
 
 
 [umbrella issues]: https://github.com/kubernetes/kubernetes/issues/69699
