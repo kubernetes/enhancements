@@ -10,7 +10,7 @@ approvers:
   - TBD
 editor: TBD
 creation-date: 2019-11-11
-last-updated: 2019-12-04
+last-updated: 2020-10-09
 status: provisional
 see-also:
   - "/keps/sig-autoscaling/20190307-configurable-scale-velocity-for-hpa.md"
@@ -29,12 +29,14 @@ superseded-by:
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [User Stories](#user-stories-optional)
-    - [Canonical use case of the bounds to control the primary scaling condition.](#Canonical-use-case-of-the-bounds-to-control-the-primary-scaling-condition)
-    - [Restriction of the scaling events.](#Restriction-of-the-scaling-events)
+    - [Canonical use case of the tolerance to control the scaling condition](#Canonical-use-case-of-the-bounds-to-control-the-primary-scaling-condition)
   - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
     - [The Pseudo Code](#the-pseudo-code)
+    - [API Changes](#api-changes)
+    - [HPA Controller Changes](#hpa-controller-changes)
 - [Design Details](#design-details)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+- [Graduation Criteria](#graduation-criteria)
 - [Alternative](#alternative)
 - [Out of scope](#out-of-scope)
 
@@ -44,11 +46,10 @@ superseded-by:
 
 This is a proposal to extend the Horizontal Pod Autoscaler (or HPA) Controller to allow for a better configurability of the scaling behavior.
 Namely, avoiding the sawtooth pattern by migrating the tolerance option, formerly available at the controller level, to the spec of each HPA.
+
 We (Datadog) have been using a Custom Resource internally, the Watermark Pod Autoscaler or WPA, and we believe the community could benefit from this feature. 
 Feel free to check out [the official repository](https://github.com/DataDog/watermarkpodautoscaler) and give us your feedback.
-Worth mentioning, we are using some of the features introduced by @gliush
-and @arjunrn in in the [Configurable Scale Velocity KEP](https://github.com/kubernetes/enhancements/blob/master/keps/sig-autoscaling/20190307-configurable-scale-velocity-for-hpa.md) in our controller as we believe those features are must-haves for the next verison of the HPA Controller.
-Given the status of their proposal, we chose to write our proposal based off of it.
+Note: This controller implements the solution described in the [alternative](#alternative) proposal, relying on multiple thresholds. For the sake of illustration, I updated it to reflect the behavior we aim to have in the horizontal-pod-autoscaler controller (using tolerance in the `spec.metrics`).
 
 ## Motivation
 
@@ -61,11 +62,12 @@ The goal is to customize the tolerance parameter (`--horizontal-pod-autoscaler-t
 ### Non-Goals
 
 - This does not aim at replacing the HPA Controller.
+- You will see no mention of the `spec.behavior` in this KEP, the intent is to be agnostic to this feature, and solely alter the process of comparing the value retrieved from the metrics server to a "buffer" instead of a threshold.
 
 ## Proposal
 
 As suggested in the past [#39090](https://github.com/kubernetes/kubernetes/issues/39090#issuecomment-466398426) and requested [in 62013](https://github.com/kubernetes/kubernetes/issues/62013), we would like to suggest migrating the `tolerance` option to the spec of the HPA, at the same level as the `target/targetAverage`.
-This will let users who want to leverage multiple metrics have the option to configure a different tolerance for each, to yield relevant recommendations when computing how many replicas should be [suggested](https://github.com/kubernetes/kubernetes/blob/v1.16.3/pkg/controller/podautoscaler/replica_calculator.go#L224).
+This will let users who want to leverage multiple metrics have the option to configure a different tolerance for each, to yield relevant recommendations when computing how many replicas should be [suggested](https://github.com/kubernetes/kubernetes/blob/v1.19.2/pkg/controller/podautoscaler/replica_calculator.go#L232).
 
 ### User Stories
 
@@ -90,7 +92,7 @@ In this example we are using the following Spec configuration:
 ```
 
 In the following graph, we can see that the value of our metric oscillates between the two bounds, defined by our threshold set at 9T +/- the tolerance, set at 11%.
-So we will not be considering autoscaling events if the metric is between 9 + 9 * 11% = 10 and 9 - 9 * 11% = 8.
+With this configuration, we will not be considering autoscaling events if the metric is between 9T + 9T * 11% = 9.99T and 9T - 9T * 11% = 8.01T.
 
 The "forbidden windows" are highlighted in light red.
 ![image info](./img/autoscaling_with_details.png)
@@ -99,7 +101,7 @@ The "forbidden windows" are highlighted in light red.
 
 #### The Pseudo Code
 
-The changes would go in the `autoscaling` package.
+The changes would go in the `podautoscaler` package.
 It would be similar for all metric types, the changes would be in removing the tolerange parameter in the ReplicaCalculator object.
 
 ```go
@@ -159,7 +161,8 @@ type MetricTarget struct {
 
 #### HPA Controller Changes
 
-- This change could help deprecating of the controller level flag `--horizontal-pod-autoscaler-tolerance`, although it could make sense to keep it and use it as a default when the tolerance is not specified in the HPAs. This would allow backward compatibility for use cases when the flag is already configured.
+- tolerance would still be a `float64`, to keep the same UX.
+- In terms of precedence, I believe it makes sense to keep [the current](https://github.com/kubernetes/kubernetes/blob/v1.19.2/pkg/controller/podautoscaler/replica_calculator.go#L37) global `defaultTestingTolerance` of `0.1`, which would only be altered if the controller level flag `--horizontal-pod-autoscaler-tolerance` is configured. Then, only for HPAs where the tolerance is specified then it would take precedence. The parameter would be a `omitempty` to make sure we do not introduce a breaking change.
 
 ## Design Details
 ### Upgrade / Downgrade Strategy
@@ -172,8 +175,8 @@ For downgrade behaviors, if the tolerance option is specified the HPA would fail
 The new configuration will be added to the autoscaling/v2beta2 API which has not yet graduated to GA. So these changes do not need a separate Graduation Criteria and will be part of the existing beta API.
 
 ## Alternative
-
-The alternative of the aforementioned would be to use two different thresholds (refered to as `watermarks`) in the spec of the HPAs. A strong argument is that HPA users know the boundaries of their applications, and they should not have to calculate an average an a half tolerance to configure them.
+<a name="alternative"></a>
+The alternative of the aforementioned would be to use two different thresholds (refered to as `watermarks`) in the spec of the HPAs, as mentioned earlier, it is what we decided to implement for our custom controller as we deemed it more "user friendly" and we did not have to worry about breaking the current HPA. A strong argument is that HPA users know the boundaries of their applications, and they should not have to calculate an average an a half tolerance to configure them.
 The cons of this solution is the amount of changes it would require both on the API and in the controller. It would be a breaking change as well.
 
 ### Exemple usage of the multiple bounds.
