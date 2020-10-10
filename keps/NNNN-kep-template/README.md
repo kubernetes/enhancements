@@ -361,9 +361,8 @@ production environments, and can be disabled or rolled back in the event they
 cause increased failures in production. See more in the PRR KEP at
 https://git.k8s.io/enhancements/keps/sig-architecture/20190731-production-readiness-review-process.md.
 
-The production readiness review questionnaire must be completed for features in
-v1.19 or later, but is non-blocking at this time. That is, approval is not
-required in order to be in the release.
+The production readiness review questionnaire must be completed and approved
+for the KEP to move to `implementable` status and be included in the release.
 
 In some cases, the questions below should also have answers in `kep.yaml`. This
 is to enable automation to verify the presence of the review, and to reduce review
