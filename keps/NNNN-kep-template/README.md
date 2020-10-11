@@ -359,7 +359,7 @@ Production readiness reviews are intended to ensure that features merging into
 Kubernetes are observable, scalable and supportable; can be safely operated in
 production environments, and can be disabled or rolled back in the event they
 cause increased failures in production. See more in the PRR KEP at
-https://git.k8s.io/enhancements/keps/sig-architecture/1194-prod-readiness/README.md
+https://git.k8s.io/enhancements/keps/sig-architecture/1194-prod-readiness/README.md.
 
 The production readiness review questionnaire must be completed for features in
 v1.19 or later, but is non-blocking at this time. That is, approval is not
