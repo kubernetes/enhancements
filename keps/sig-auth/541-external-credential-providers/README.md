@@ -629,10 +629,9 @@ The downsides of this approach compared to exec model are:
     settings again, just as it would if it was enabled for the first time.
 
 * **Are there any tests for feature enablement/disablement?**
-  - Sorta.
   - There are unit tests in `k8s.io/client-go/plugin/pkg/auth/exec` that
     verify what happens when various parts of this feature set are enabled (e.g.,
-    `providerClusterInfo`)
+    `provideClusterInfo`)
   - There are unit tests in `k8s.io/client-go/tools/clientcmd/...` that validate
     `kubeconfig`'s are handled correctly when they do not contain exec plugin
     configuration.
@@ -656,19 +655,22 @@ The downsides of this approach compared to exec model are:
     is very unlikely that a client would see an impact on existing behavior.
   - If a client did indeed enable the corresponding settings in its `kubeconfig` after
     rolling out this feature and it continually got 401's (or 403's, even) back from the
-    API, then it may be worth rolling the authentication configuration back to the
+    API, then it may be worth reverting the authentication configuration back to the
     previous state to see if the failure persists.
   - If the client is failing because it cannot use the exec plugin to get a credential,
     then there may be messages in the logs that look like this:
       `Unable to connect to the server: getting credentials: exec`
 
 * **Were upgrade and rollback tested? Was upgrade->downgrade->upgrade path tested?**
-  - No.
+  - N/A.
 
 * **Is the rollout accompanied by any deprecations and/or removals of features,
   APIs, fields of API types, flags, etc.?**
-  - This feature set contains the usual alpha, beta, and GA stages, and will follow the
-    same canonical deprecation pattern for its alpha and beta API versions.
+  - Deprecation of `gcp` and `azure` authentication options. These authentication options
+    can be used going forward via this exec plugin feature set.
+  - Otherwise, this feature set contains the usual alpha, beta, and GA
+    stages, and will follow the same canonical deprecation pattern for
+    its API versions.
 
 ### Monitoring requirements
 
