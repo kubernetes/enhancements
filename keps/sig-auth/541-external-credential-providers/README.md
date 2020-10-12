@@ -25,6 +25,7 @@
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
   - [RPC vs exec](#rpc-vs-exec)
+- [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
 - [Implementation History](#implementation-history)
 <!-- /toc -->
 
@@ -592,6 +593,113 @@ The downsides of this approach compared to exec model are:
   required (aka "chicken-and-egg problem")
 - credential provider must constantly run, consuming resources; clients refresh
   their credentials infrequently
+
+## Production Readiness Review Questionnaire
+
+### Feature enablement and rollback
+
+* **How can this feature be enabled / disabled in a live cluster?**
+  - [ ] Feature gate (also fill in values in `kep.yaml`)
+    - Feature gate name:
+    - Components depending on the feature gate:
+  - [x] Other
+    - Describe the mechanism:
+      - This feature is explicitly opt-in since it requires the presence of
+        kubeconfig settings.
+    - Will enabling / disabling the feature require downtime of the control
+      plane?
+        - No. Disabling the feature would result in the client needing to choose
+          a different authentication method.
+    - Will enabling / disabling the feature require downtime or reprovisioning
+      of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
+        - No. Disabling the feature would result in the client needing to choose
+          a different authentication method.
+
+* **Does enabling the feature change any default behavior?**
+  - No. The feature is explicitly opt-in, so default behavior will be preserved
+    unless the client's `kubeconfig` has been updated.
+
+* **Can the feature be disabled once it has been enabled (i.e. can we rollback
+  the enablement)?**
+  - Yes. Since the feature is explicitly opt-in, disabling the feature can be
+    done simply by changing `kubeconfig` settings.
+
+* **What happens if we reenable the feature if it was previously rolled back?**
+  - Nothing. The feature will start respecting the explicit opt-in `kubeconfig`
+    settings again, just as it would if it was enabled for the first time.
+
+* **Are there any tests for feature enablement/disablement?**
+  - Sorta.
+  - There are unit tests in `k8s.io/client-go/plugin/pkg/auth/exec` that
+    verify what happens when various parts of this feature set are enabled (e.g.,
+    `providerClusterInfo`)
+  - There are unit tests in `k8s.io/client-go/tools/clientcmd/...` that validate
+    `kubeconfig`'s are handled correctly when they do not contain exec plugin
+    configuration.
+  - There are unit tests in `k8s.io/client-go/rest` that validate what happens when
+    a REST client does not have an exec plugin configuration.
+
+### Rollout, Upgrade and Rollback Planning
+
+* **How can a rollout fail? Can it impact already running workloads?**
+  - It is very unlikely that a rollout would fail. If you upgrade your client to
+    a version that contains this exec plugin feature set, then your client would still
+    continue to function as it did before, since the new behavior that this KEP provides
+    is opt-in via a `kubeconfig`.
+  - If a client did indeed enable the corresponding settings in its `kubeconfig` after
+    rolling out this feature, then it may cause a client-side authentication failure if
+    the client's exec plugin fails to return a credential properly. However, this would be
+    an issue on the client side with a third-party exec plugin.
+
+* **What specific metrics should inform a rollback?**
+  - As stated above, since this feature set is opt-in on the client-side, then it
+    is very unlikely that a client would see an impact on existing behavior.
+  - If a client did indeed enable the corresponding settings in its `kubeconfig` after
+    rolling out this feature and it continually got 401's (or 403's, even) back from the
+    API, then it may be worth rolling the authentication configuration back to the
+    previous state to see if the failure persists.
+  - If the client is failing because it cannot use the exec plugin to get a credential,
+    then there may be messages in the logs that look like this:
+      `Unable to connect to the server: getting credentials: exec`
+
+* **Were upgrade and rollback tested? Was upgrade->downgrade->upgrade path tested?**
+  - No.
+
+* **Is the rollout accompanied by any deprecations and/or removals of features,
+  APIs, fields of API types, flags, etc.?**
+  - This feature set contains the usual alpha, beta, and GA stages, and will follow the
+    same canonical deprecation pattern for its alpha and beta API versions.
+
+### Monitoring requirements
+
+_This section must be completed when targeting beta graduation to a release._
+
+* **How can an operator determine if the feature is in use by workloads?**
+  - Clients provide metrics for usage today.
+  - One could also look in the `kubeconfig` in use by the client to see if an exec
+    credential provider is being used.
+
+* **What are the SLIs (Service Level Indicators) an operator can use to
+  determine the health of the service?**
+  - [ ] Metrics
+    - Metric name:
+    - [Optional] Aggregation method:
+    - Components exposing the metric:
+  - [x] Other (treat as last resort)
+    - Details:
+      - This feature set operates on the client-side.
+
+* **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
+  - This feature set operates on the client-side.
+
+* **Are there any missing metrics that would be useful to have to improve
+  observability if this feature?**
+  - No.
+
+### Dependencies
+
+* **Does this feature depend on any specific services running in the cluster?**
+  - No.
 
 ## Implementation History
 
