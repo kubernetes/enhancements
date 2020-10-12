@@ -92,8 +92,6 @@ When a workload (app pod, deployment, configs) is moved to another cluster, as l
 - As a developer, I can define a manifest containing my workload and object storage configuration once, so that my app may be ported between clusters as long as the storage provided supports my designated data path protocol.
 - As a developer, I want to create a workload controller which is bucket API aware, so that it can dynamically connect workloads to underlying object storage.
 
-> Note: this proposal does not include a standardized protocol or abstraction of storage vendor APIs.
-
 ## Goals
 
 + Specify object storage Kubernetes APIs for the purpose of orchestrating/managing object store operations.
@@ -104,7 +102,7 @@ When a workload (app pod, deployment, configs) is moved to another cluster, as l
 
 ## Non-Goals
 
-+ Defining the _data-plane_ object store interface to replace or supplement existing vendor protcols/APIs is not within scope.
++ Defining the _data-plane_ object store protocol to replace or supplement existing vendor protcols/APIs is not within scope.
 + Object store deployment/management is left up to individual vendors.
 + Bucket access lifecycle management is not within the scope of this KEP.  ACLs, access policies, and credentialing need to be handled out-of-band.
 
@@ -167,7 +165,7 @@ status:
 1. `protocol.version`: (optional) specifies the desired version of the `protocol`. For "s3", a value of "v2" or "v4" could be used. 
 1. `bucketPrefix`: (optional) prefix prepended to a generated new bucket name, eg. “yosemite-photos-". If `bucketInstanceName` is supplied then `bucketPrefix` is ignored because the request is for access to an existing bucket. If `bucketPrexix` is specified then it is added to the `Bucket` instance as a label.
 1. `bucketClassName`: (optional for greenfield, omitted for brownfield) name of the `BucketClass` used to provision this request. If omitted for a greenfield bucket request, a default bucket class matching the protocol, if available, is used. If the greenfield bucket class is missing or does not support the requested protocol, an error is logged and the request is retried (with exponential backoff). A `BucketClass` is necessary for greenfield requests since BCs support a list of allowed namespaces. A `BucketClass` is not needed for brownfield requests since the `Bucket` instance, created by the admin, also contains `allowedNamespaces`.
-1. `bucketInstanceName`: (optional) name of the cluster-wide `Bucket` instance. If blank, then COSI assumes this is a greenfield request and will fill in the name during the binding step. If defined by the user, then this names the `Bucket` instance created by the admin. There is no automation available to make this name known to the user.
+1. `bucketInstanceName`: (optional) name of the cluster-wide `Bucket` instance. If blank, then COSI assumes this is a greenfield request and will fill in the name during the binding step. If set by the user, then this names the `Bucket` instance created by the admin.
 1. `bucketAvailable`: if true the bucket has been provisioned. If false then the bucket has not been provisioned and is unable to be accessed.
 
 #### Bucket
@@ -217,39 +215,34 @@ status:
   bucketAvailable: [12]
 ```
 
-1. `name`: When created by COSI, the `Bucket` name is generated in this format: _"<BR.namespace*>-<BR.name*>-<uuid>"_. If an admin creates a `Bucket`, as is necessary for brownfield access, they can use any name. The uuid is unique within a cluster. `*` the first 100 characters of the namespace and the name are used.
-    cosi.io/provisioner:
-    cosi.io/bucket-prefix:
-2. `labels`: added by COSI. The "cosi.io/provisioner" key's value is the provisioner name. The "cosi.io/bucket-prefix" key's value is the `BucketRequest.bucketPrefix` value when specified. Characters that do not adhere to [Kubernetes label conventions](https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set) will be converted to ‘-’.
-3. `finalizers`: added by COSI to defer `Bucket` deletion until backend deletion ops succeed. Implementation may add one finalizer for the BR and one for the BA.
-4. `provisioner`: (optional) The provisioner field as defined in the `BucketClass`. If empty then there is no driver/sidecar, thus the admin had to create the `Bucket` and `BucketAccess` instances.
-5. `retentionPolicy`: Prescribes the outcome when the `BucketRequest` is deleted.
+1. `name`: when created by COSI, the `Bucket` name is generated in this format: _"br-"+uuid_. If an admin creates a `Bucket`, as is necessary for brownfield access, they can use any name. The uuid is unique within a cluster.
+1. `labels`: added by COSI. The "cosi.io/provisioner" key's value is the provisioner name. The "cosi.io/bucket-prefix" key's value is the `BucketRequest.bucketPrefix` value when specified. Characters that do not adhere to [Kubernetes label conventions](https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set) will be converted to ‘-’.
+1. `finalizers`: added by COSI to defer `Bucket` deletion until backend deletion ops succeed. Implementation may add one finalizer for the BR and one for the BA.
+1. `provisioner`: (optional) The provisioner field as defined in the `BucketClass`. If empty then there is no driver/sidecar, thus the admin had to create the `Bucket` and `BucketAccess` instances.
+1. `retentionPolicy`: Prescribes the outcome when the `BucketRequest` is deleted.
    - _Retain_: (default) the `Bucket` and its data are preserved. The `Bucket` can potentially be reused.
-   - _Delete_: the bucket and its contents are destroyed.
-> Note: the `Bucket`'s retention policy is set to "Retain" as a default. Exercise caution when using the "Delete" retention policy as the bucket content will be deleted.
-> Note: a `Bucket` is not deleted if it is bound to a `BucketRequest` or `BucketAccess`.
-6. `anonymousAccessMode`: a string specifying *uncredentialed* access to the Bucket.  This is applicable to cases where the bucket objects are intended to be publicly readable and/or writable. One of:
+   - _Delete_: the bucket and its contents are expected to be deleted by the backend store.
+A `Bucket` is not deleted if it is bound to a `BucketRequest`.
+1. `anonymousAccessMode`: a string specifying *uncredentialed* access to the Bucket.  This is applicable to cases where the bucket objects are intended to be publicly readable and/or writable. One of:
    - "private": Default, disallow uncredentialed access to the backend storage.
    - "publicReadOnly": Read only, uncredentialed users can call ListBucket and GetObject.
    - "publicWriteOnly": Write only, uncredentialed users can only call PutObject.
    - "publicReadWrite": Read/Write, same as `ro` with the addition of PutObject being allowed.
-7. `bucketClassName`: (optional for greenfield, omitted for brownfield) name of the associated bucket class. 
-8. `bucketRequest`: an `objectReference` containing the name, namespace and UID of the associated `BucketRequest`.
-9. `allowedNamespaces`: a list of namespaces that are permitted to either create new buckets or to access existing buckets.
-10. `protocol`: protocol-specific field the application will use to access the backend storage.
+1. `bucketClassName`: Name of the associated bucket class.
+1. `bucketRequest`: an `objectReference` containing the name, namespace and UID of the associated `BucketRequest`.
+1. `allowedNamespaces`: a list of namespaces that are permitted to either create new buckets or to access existing buckets.
+1. `protocol`: protocol-specific field the application will use to access the backend storage.
      - `name`: supported protocols are: "s3", "gs", and "azureBlob".
      - `version`: version being used by the backend storage.
      - `azureBlob`: data required to target a provisioned azure container.
      - `gs`: data required to target a provisioned GS bucket.
      - `s3`: data required to target a provisioned S3 bucket.
-11. `parameters`: a copy of the BucketClass parameters.
-12. `bucketAvailable`: if true the bucket has been provisioned. If false then the bucket has not been provisioned and is unable to be accessed.
+1. `parameters`: a copy of the BucketClass parameters.
+1. `bucketAvailable`: if true the bucket has been provisioned. If false then the bucket has not been provisioned and is unable to be accessed.
 
 #### BucketClass
 
-A cluster-scoped custom resource to provide admins control over the handling of bucket provisioning.  The `BucketClass` (BC) defines a retention policy, driver specific parameters, and the provisioner name. A list of allowed namespaces can be specified to restrict new bucket creation and access to existing buckets. A default bucket class can be defined for each supported protocol. This allows the bucket class to be omitted from a `BucketRequest`. All of the `BucketClass` fields are copied to the `Bucket` instance.
-
-> Note: like storage classes, a `BucketClass` is immutable, but a `Bucket` is mutable and contains all of the BC fields.
+An immutable, cluster-scoped, custom resource to provide admins control over the handling of bucket provisioning.  The `BucketClass` (BC) defines a retention policy, driver specific parameters, and the provisioner name. A list of allowed namespaces can be specified to restrict new bucket creation and access to existing buckets. A default bucket class can be defined for each supported protocol. This allows the bucket class to be omitted from a `BucketRequest`. All of the `BucketClass` fields are copied to the `Bucket` instance.  If an object store supports more than one protocol then the admin should create a `BucketClass` per protocol.
 
 ```yaml
 apiVersion: cosi.io/v1alpha1
@@ -267,21 +260,18 @@ parameters: [7]
 ```
 
 1. `provisioner`: (required) the name of the vendor-specific driver supporting the `protocol`.
-2. `isDefaultBucketClass`: (optional) boolean, default is false. If set to true then a `BucketRequest` may not need to specify a `BucketClass`. If the greenfield `BucketRequest` omits the `BucketClass` and a default `BucketClass`'s protocol matches the `BucketRequest`'s protocol then the default bucket class is used; otherwise an error is logged.
-3. `protocol`: (required) protocol supported by the associated object store. This field validates that the `BucketRequest`'s desired protocol is supported.
-> Note: if an object store supports more than one protocol then the admin should create a `BucketClass` per protocol.
-4. `anonymousAccessMode`: (optional) a string specifying *uncredentialed* access to the backend bucket.  This is applicable for cases where the backend storage is intended to be publicly readable and/or writable. One of:
+1. `isDefaultBucketClass`: (optional) boolean, default is false. If set to true then a `BucketRequest` may omit the `BucketClass` reference. If the greenfield `BucketRequest` skips the `BucketClass` and a default `BucketClass`'s protocol matches the `BucketRequest`'s protocol then the default bucket class is used; otherwise an error is logged. It is possible that more than one `BucketClass` of the same protocol is set as the default class. In this case, it is non-deterministic which `BucketClass` is used as the default.
+1. `protocol`: (required) protocol supported by the associated object store. This field validates that the `BucketRequest`'s desired protocol is supported.
+1. `anonymousAccessMode`: (optional) a string specifying *uncredentialed* access to the backend bucket.  This is applicable for cases where the backend storage is intended to be publicly readable and/or writable. One of:
    - "private": Default, disallow uncredentialed access to the backend storage.
    - "publicReadOnly": Read only, uncredentialed users can call ListBucket and GetObject.
    - "publicWriteOnly": Write only, uncredentialed users can only call PutObject.
    - "publicReadWrite": Read/Write, same as `ro` with the addition of PutObject being allowed.
-5. `retentionPolicy`: defines bucket retention for greenfield `BucketRequest`.
+1. `retentionPolicy`: defines bucket retention for greenfield `BucketRequest`.
    - _Retain_: (default) the `Bucket` instance and the backend bucket are preserved. The `Bucket` may potentially be reused.
    - _Delete_: the backend bucket and the `Bucket` instance are deleted.
-> Note: the `Bucket`'s retention policy is set to "Retain" as a default. Exercise caution when using the "Delete" retention policy as the bucket content will be deleted.
-> Note: a `Bucket` is not deleted if it is bound to a `BucketRequest` or `BucketAccess`.
-6. `allowedNamespaces`: a list of namespaces that are permitted to either create new buckets or to access existing buckets. This list is static for the life of the `BucketClass`, but the `Bucket` instance's list of allowed namespaces can be mutated by the admin.
-7. `parameters`: (optional) a map of string:string key values.  Allows admins to set provisioner key-values.
+1. `allowedNamespaces`: a list of namespaces that are permitted to either create new buckets or to access existing buckets. This list is static for the life of the `BucketClass`, but the `Bucket` instance's list of allowed namespaces can be mutated by the admin.
+1. `parameters`: (optional) a map of string:string key values.  Allows admins to set provisioner key-values.
 
 ### Access APIs
 
@@ -289,7 +279,7 @@ The Access APIs abstract the backend policy system.  Access policy and user iden
 
 #### BucketAccessRequest
 
-A user namespaced custom resource representing an object store user and an access policy defining the user’s relation to that storage.  A user creates a `BucketAccessRequest` (BAR) in the app's namespace (which is the same namespace as the `BucketRequest`) A 'BucketAccessRequest' specifies *either* a ServiceAccount or a secret name which contains access policy.  Specifying a ServiceAccount enables provisioners to support cloud provider identity integration with their respective Kubernetes offerings.
+A user namespaced custom resource representing an object store user and an access policy defining the user’s relation to that storage.  A user creates a `BucketAccessRequest` (BAR) in the app's namespace (which is the same namespace as the `BucketRequest`) A 'BucketAccessRequest' optionally specifies a ServiceAccount, and a config map which contains access policy.  Specifying a ServiceAccount supports provisioners that implement cloud provider identity integration with their respective Kubernetes offerings.
 
 ```yaml
 apiVersion: cosi.io/v1alpha1
@@ -312,7 +302,7 @@ status:
 
 1. `labels`: added by COSI.  Key’s value should be the provisioner name. Characters that do not adhere to [Kubernetes label conventions](https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set) will be converted to ‘-’.
 1. `finalizers`: added by COSI to defer `BucketAccessRequest` deletion until backend deletion ops succeed.
-1. `serviceAccountName`: (optional) the name of a Kubernetes ServiceAccount in the same namespace.  This field is included to support cloud provider identity integration. When supplied, COSI will call the driver to mint new credentials for this ServiceAccount. 
+1. `serviceAccountName`: (optional) the name of a Kubernetes ServiceAccount, in the same namespace, which is expected to be linked to an identity in the cloud provider, such that a pod using the ServiceAccount is authenticated as the linked identity. In this case, COSI applies the policy defined in the `BAC.policyActionsConfigMap` to the identity. If `serviceAccountName` is omitted, a "minted" user is generated by the driver and stored as `BucketAccess.principal`.
 1. `bucketRequestName`: (required) the name of the `BucketRequest` associated with this access request. From the bucket request, COSI knows the `Bucket` instance and thus the backend bucket and its properties.
 1. `bucketAccessClassName`: (required) name of the `BucketAccessClass` specifying the desired set of policy actions to be set for a user identity or ServiceAccount.
 1. `bucketAccessName`: name of the bound cluster-scoped `BucketAccess` instance. Set by COSI.
@@ -344,22 +334,27 @@ metadata:
    accessGranted: [12]
 ```
 
-1. `name`: the BA name is generated by COSI in this format: _"<BAR.namespace*>-<BAR.name*>-<uuid>"_. The uuid is unique within a cluster. `*` the first 100 characters of the namespace and the name are used.
+1. `name`: when created by COSI, the `BucketAccess` name is generated in this format: _"ba-"+uuid_. If an admin creates a `BucketAccess`, as is necessary for driverless access, they can use any name. The uuid is unique within a cluster.
 1. `labels`: added COSI.  Key’s value should be the provisioner name. Characters that do not adhere to [Kubernetes label conventions](https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set) will be converted to ‘-’.
 1. `finalizers`: added by COSI to defer `BucketAccess` deletion until the pod that uses this access terminates, and the related `BucketAccessRequest` is deleted.
 1. `provisioner`: (optional) The provisioner field as defined in the `BucketAccessClass`. If empty then there is no driver/sidecar, thus the admin had to create the `Bucket` and `BucketAccess` instances.
 1. `bucketInstanceName`:  name of the `Bucket` instance bound to this BA.
 1. `bucketAccessRequest`: an `objectReference` containing the name, namespace and UID of the associated `BucketAccessRequest`.
-1. `serviceAccount`: an `objectReference` containing the name, namespace and UID of the associated `ServiceAccount`. Empty when the `BucketAccessRequest.mintedSecretName` is specified.
-1. `mintedSecretName`: name of the admin created or provisioner-generated Secret containing access credentials. This Secret exists in the provisioner’s namespace and must be copied to the app namespace by the COSI controller. **Note:** the provisioner's namespace is contained in the registered driver name.
-1. `policyActionsConfigMapData`: encoded data that contains a set of provisioner/platform defined policy actions to a given user identity. Contents of the ConfigMap that the *policyActionsConfigMap* field in the `BucketAccessClass` refers to.
-1. `principal`: username/access-key for the object storage provider to uniquely identify the user who has access to this bucket  
+1. `serviceAccount`: an `ObjectReference` containing the name, namespace and UID of the associated `BAR.serviceAccountName`. If empty then integrated Kubernetes -> cloud identity is not being used, in which case, `BucketAccess.principal` contains the user identity, which is minted by the provisioner.
+1. `mintedSecretName`: name of the provisioner-generated Secret containing access credentials. This Secret exists in the provisioner’s namespace and is copied to the app namespace by the COSI controller.
+1. `policyActionsConfigMapData`: encoded data, known to the driver, and defined by the admin when creating a `BucketAccessClass`. Contains a set of provisioner/platform defined policy actions to a given user identity. Contents of the ConfigMap that the *policyActionsConfigMap* field in the `BucketAccessClass` refers to. A sample value of this field could look like:
+```
+   {“Effect”:“Allow”,“Action”:“s3:PutObject”,“Resource”:“arn:aws:s3:::profilepics/*“},
+   {“Effect”:“Allow”,“Action”:“s3:GetObject”,“Resource”:“arn:aws:s3:::profilepics/*“},
+   {“Effect”:“Deny”,“Action”:“s3:*“,”NotResource”:“arn:aws:s3:::profilepics/*“}
+```
+1. `principal`: username/access-key for the object storage provider to uniquely identify the user who has access to this bucket. This value is minted by the provisioner (and set in the BA) when the `BucketAccessRequest` omits a ServiceAccount. There several use cases involving `principal`: 1) static/driverless brownfield where the admin creates the BA and fills in principal, so here principal is minted by the admin. 2) brownfield where COSI creates the `BucketAccess` and fills in `principal` based on the driver's minted principal. 3) the `BucketAccessRequest` specifies a ServiceAccount which is linked by the backend to a user id, and `principal` is empty.
 1. `parameters`:  A map of string:string key values.  Allows admins to control user and access provisioning by setting provisioner key-values. Copied from `BucketAccessClass`. 
 1. `accessGranted`: if true access has been granted to the bucket. If false then access to the bucket has not been granted.
 
 #### BucketAccessClass
 
-A cluster-scoped custom resource providing a way for admins to specify policies that may be used to access buckets. A `BucketAccessClass` (BAC) is required for both greenfield and brownfield use cases. Besides naming the provisioner, a BAC references a config map which is expected to define the access policy for a given provider. It is typical for these config maps to reside in each provisioner's namespace, though this is not required.  Unlike BucketClasses, there is no default BAC.
+An immutable, cluster-scoped, custom resource providing a way for admins to specify policies that may be used to access buckets. A `BucketAccessClass` (BAC) is required for both greenfield and brownfield use cases. Besides naming the provisioner, a BAC references a config map which is expected to define the access policy for a given provider. It is typical for these config maps to reside in each provisioner's namespace, though this is not required.  Unlike BucketClasses, there is no default BAC.
 
 ```yaml
 apiVersion: cosi.io/v1alpha1
@@ -374,7 +369,7 @@ parameters: [3]
 ```
 
 1. `provisioner`: (optional) the name of the driver that `BucketAccess` instances should be managed by. If empty then there is no driver/sidecar, thus the admin had to create the `Bucket` and `BucketAccess` instances.
-1. `policyActionsConfigMap`: (required) a reference to a ConfigMap that contains a set of provisioner/platform defined policy actions for a given user identity.
+1. `policyActionsConfigMap`: (required) a reference to a ConfigMap that contains a set of provisioner/platform-defined policy actions for bucket access. It is seen as typical that this config map's namespace is the same as for the provisioner. In othe words, a namespace that has locked down RBAC rules or prevent modification of this config map.
 1. `parameters`: (Optional)  A map of string:string key values.  Allows admins to control user and access provisioning by setting provisioner key-values. Optional reserved keys cosi.io/configMap and cosi.io/secrets are used to reference user created resources with provider specific access policies.
 ---
 
@@ -410,8 +405,6 @@ spec:
 1. the name of the cosi-node-adapter.
 1. information needed by the cosi-node-adapter to verify that the bucket has been provisioned.
 
-> Note: `VolumeLifeCycleModes` needs to be set to "ephemeral" for inline COSI node adapter.
-
 ### Topology
 
 ![Architecture Diagram](images/arch.png)
@@ -425,7 +418,9 @@ The diagram below describes the relationships between various resources in the C
 # Workflows
 Here we describe the workflows used to automate provisioning of new and existing buckets, and the de-provisioning of these buckets.
 
-> Note: when the app pod is started, the kubelet will gRPC call _NodeStageVolume_ which is received by the cosi-node-adapter. The pod waits until the adapter responds to the gRPC request. The adapter ensures that the target bucket has been provisioned and is ready to be accessed.  When the app pod terminates, the kubelet gRPC calls _NodeUnpublishVolume_ which the cosi-node-adapter also receives. The adapter orchestrates tear-down of bucket access resources, but does not delete the `BucketRequest` nor `Bucket` instances.
+When the app pod is started, the kubelet will gRPC call _NodeStageVolume_ and _NodePublishVolume_, which are received by the cosi-node-adapter. The pod waits until the adapter responds to the gRPC requests. The adapter ensures that the target bucket has been provisioned and is ready to be accessed.
+
+When the app pod terminates, the kubelet gRPC calls _NodeUnstageVolume_ and _NodeUnpublishVolume_, which the cosi-node-adapter also receives. The adapter orchestrates tear-down of bucket access resources, but does not delete the `BucketRequest` nor `Bucket` instances.
 
 General prep:
 + admin creates the needed bucket classes and bucket access classes.
@@ -437,9 +432,7 @@ Prep for brownfield:
 
 ![CreateBucket Workflow](images/create-bucket.png)
 
-This workflow describes the automation supporting creating a new (greenfield) backend bucket. Accessing this bucket is covered in [Sharing COSI Created Buckets](#sharing-cosi-created-buckets).
-
-> Note: COSI determines that a request is for an existing bucket when `BucketRequest.bucketInstanceName` is specified. How the user knows the `Bucket` instance name is not defined by COSI.
+This workflow describes the automation supporting creating a new (greenfield) backend bucket. Accessing this bucket is covered in [Sharing COSI Created Buckets](#sharing-cosi-created-buckets). COSI determines that a request is for an existing bucket when `BucketRequest.bucketInstanceName` is specified.
 
 Here is the workflow:
 
@@ -459,7 +452,7 @@ This is the greenfield -> brownfield access use case, where COSI has created the
 
 ![ShareBucket Workflow](images/share-bucket.png)
 
-> Note: if the bucket sharing is all within the same namespace then each `BucketAccessRequest` (also in that namespace) only needs to reference the existing BR.
+If the bucket sharing is all within the same namespace then each `BucketAccessRequest` (in the namespace) only needs to reference the existing BR.
 
 Here is the workflow:
 
@@ -473,12 +466,13 @@ Here is the workflow:
 
 This workflow describes the automation designed for deleting a `Bucket` instance and optionally the related backend bucket. Revoking access to this bucket is covered in [Revoke Bucket Access](#revoke-bucket-access).
 
-> Note: it is important to understand that when a `BucketRequest` deletion triggers the delete of the associated `Bucket` instance, the `Bucket` instance is deleted regardless of access. This means that even if a `BucketAccess` references a `Bucket`, the `Bucket is still deleted and the BA is orphaned. Additionally, even if multiple `Bucket` instances point to the same backend bucket, if the retention policy is "Delete" then the bucket is deleted and workloads may fail. Potentially, this may only apply to MVP.
-A `BucketAccess` instance is deleted only once the underlying Pod stop using the access credentials. `BucketAccess` instance is deleted by deleting the corresponding BAR or admin can delete the BA directly. If a Pod is using the BA then the BA deletion will wait until Pod is deleted. If a Pod using the BA is terminated, then the BA can be deleted by deleting the BAR. 
+It is important to understand that when a `BucketRequest` deletion triggers the delete of the associated `Bucket` instance, the `Bucket` instance is deleted regardless of access. This means that even if a `BucketAccess` references a `Bucket`, the `Bucket is still deleted and the BA is orphaned. Additionally, even if multiple `Bucket` instances point to the same backend bucket, if the retention policy is "Delete" then the bucket is deleted and workloads may fail. Potentially, this may only apply to MVP.
 
-> Note: it's up to each provisioner whether or not to physically delete bucket content. But, for idempotency, the expectation is that the backend bucket will at least be made unavailable, pending out-of-band bucket lifecycle policies.
+A `BucketAccess` instance is deleted once the app pod terminates. In this case, the associated BAR ismodified to reflect a delete condition, but this resource is not deleted. Deleting the BAR is deferred until the app terminates, in which case the BA is deleted, finalizers removed, and the BAR is garbage collected. The admin can delete the BA directly but this is an anti-pattern and may not be supported in MVP. If a pod is using the BA, direct BA deletion waits until pod is deleted. Once the pod using the BA terminates, the BA can be deleted by deleting the BAR. 
 
-> Note: delete is described below as a synchronous workflow but it will likely need to be implemented asynchronously to accommodate potentially long delete times when buckets contain many objects. The steps should still mostly follow what's outlined below.
+It is up to each provisioner whether or not to physically delete bucket content. But, for idempotency, the expectation is that the backend bucket will at least be made unavailable, pending out-of-band bucket lifecycle policies.
+
+The delete workflow is described as a synchronous, but it will likely be asynchronous to accommodate potentially long delete times when buckets contain many objects. The steps should still mostly follow what's outlined below.
 
 Here is the workflow:
 
@@ -643,7 +637,7 @@ message ProvisionerDeleteBucketResponse {
 
 ## ProvisionerGrantBucketAccess
 
-This call grants access to a particular principal. Note that the principal is the account for which this access should be granted. 
+This call grants access to a particular principal. The principal is the account for which this access should be granted. 
 
 If the principal is set, then it should be used as the username of the created credentials or in some way should be deterministically used to generate a new credential for this request. This principal will be used as the unique identifier for deleting this access by calling ProvisionerRevokeBucketAccess
 
