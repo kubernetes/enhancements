@@ -559,7 +559,8 @@ Feature is already in Beta.
 - Docs are up-to-date with latest version of APIs
 - Docs describe set of best practices (i.e. do not mutate `kubeconfig`)
 
-Question: does this need conformance tests?  What would such a test look like?
+Note: this feature set does not need conformance tests because it is inherently
+opt-in on the client-side and it relies on an extra binary to be present.
 
 ### Upgrade / Downgrade Strategy
 
