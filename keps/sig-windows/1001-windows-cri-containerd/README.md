@@ -100,13 +100,13 @@ Additionally, users could choose to run with only CRI-ContainerD instead of Dock
 ### Non-Goals
 
 - Running Linux containers on Windows nodes. This would be addressed as a separate KEP since the use cases are different.
-- Deprecating `dockershim`. This is out of scope for this KEP. The effort to migrate that code out of tree is in [KEP PR 866](https://github.com/kubernetes/enhancements/pull/866) and deprecation discussions will happen later.
+- Deprecating `dockershim`. This is out of scope for this KEP. The effort to migrate that code out of tree is in [KEP PR 866](https://github.com/kubernetes/enhancements/pull/866) and [deprecation](https://github.com/kubernetes/kubernetes/pull/94624) discussions are in flight.
 
 ## Proposal
 
 ### User Stories
 
-#### Improving Kubernetes integration for Windows Server containers
+#### Increasing the parity between Kubernetes on Linux and Windows Server containers
 
 Moving to the new Windows HCSv2 platform and ContainerD would allow Kubernetes to add support for:
 
@@ -114,26 +114,35 @@ Moving to the new Windows HCSv2 platform and ContainerD would allow Kubernetes t
 - Termination messages (depends on single file mounts)
 - /etc/hosts (c:\windows\system32\drivers\etc\hosts) file mapping
 
-#### Improved isolation and compatibility between Windows pods using Hyper-V 
+#### Increasing the forward-compatibility and security of Windows pods by leveraging Hyper-V
 
-Hyper-V enables each pod to run within it’s own hypervisor partition, with a separate kernel. This means that we can build forward-compatibility for containers across Windows OS versions - for example a container built using Windows Server 1809, could be run on a node running Windows Server 1903. This pod would use the Windows Server 1809 kernel to preserve full compatibility, and other pods could run using either a shared kernel with the node, or their own isolated Windows Server 1903 kernels. Containers requiring 1809 and 1903 (or later) cannot be mixed in the same pod, they must be deployed in separate pods so the matching kernel may be used. Running Windows Server version 1903 containers on a Windows Server 2019/1809 host will not work.
+Currently, the only way to run Hyper-V isolation in Kubernetes is to use the deprecated `experimental` isolation type, which was added in v1.10.
+
+Hyper-V is capable of running a pod within it’s own hypervisor partition, with a separate kernel.  This means that we can build forward-compatibility for containers across Windows OS versions - for example a container built using Windows Server 1809, could be run on a node running Windows Server 1903. This pod would use the Windows Server 1809 kernel to preserve full compatibility, and other pods could run using either a shared kernel with the node, or their own isolated Windows Server 1903 kernels. Containers requiring 1809 and 1903 (or later) cannot be mixed in the same pod, they must be deployed in separate pods so the matching kernel may be used. Running Windows Server version 1903 containers on a Windows Server 2019/1809 host will not work.
 
 In addition, some customers may desire hypervisor-based isolation as an additional line of defense against a container break-out attack.
 
-Adding Hyper-V support would use [RuntimeClass](https://kubernetes.io/docs/concepts/containers/runtime-class/#runtime-class).
+We propose adding scheduling support directly into Kubernetes by leveraging the [RuntimeClass](https://kubernetes.io/docs/concepts/containers/runtime-class/#runtime-class) feature.
+
 3 typical RuntimeClass names would be configured in CRI-ContainerD to support common deployments:
 
 - runhcs-wcow-process [default] - process isolation is used, container & node OS version must match
 - runhcs-wcow-hypervisor - Hyper-V isolation is used, Pod will be compatible with containers built with Windows Server 2019 / 1809. Physical memory overcommit is allowed with overages filled from pagefile.
 - runhcs-wcow-hypervisor-1903 - Hyper-V isolation is used, Pod will be compatible with containers built with Windows Server 1903. Physical memory overcommit is allowed with overages filled from pagefile.
 
-Using Hyper-V isolation does require some extra memory for the isolated kernel & system processes. This could be accounted for by implementing the [PodOverhead](https://kubernetes.io/docs/concepts/containers/runtime-class/#runtime-class) proposal for those runtime classes. We would include a recommended PodOverhead in the default CRDs, likely between 100-200M.
-
 #### Improve Control over Memory & CPU Resources with Hyper-V
 
-The Windows kernel itself cannot provide reserved memory for pods, containers or processes. They are always fulfilled using virtual allocations which could be paged out later. However, using a Hyper-V partition improves control over memory and CPU cores. Hyper-V can either allocate memory on-demand (while still enforcing a hard limit), or it can be reserved as a physical allocation up front. Physical allocations may be able to enable large page allocations within that range (to be confirmed) and improve cache coherency. CPU core counts may also be limited so a pod only has certain cores available, rather than shares spread across all cores, and applications can tune thread counts to the actually available cores.
+The Windows kernel itself cannot provide reserved memory for pods, containers or processes. Instead, it uses "virtual allocations" which may be paged out later.
 
-Operators could deploy additional RuntimeClasses with more granular control for performance critical workloads:
+However, using a Hyper-V partition improves control over memory and CPU cores, because of the fact that Hyper-V can either:
+- allocate memory on-demand (while still enforcing a hard limit)
+- reserve memory up gront, as a physical allocation
+
+Physical allocations can enable large page allocations within that range (to be confirmed), improve cache coherency, and limit CPU core counts (so a pod only has certain cores available, rather than shares spread across all cores).
+
+This allows applications to tune thread counts directly against the number of available cores.
+
+Operators could deploy additional RuntimeClasses with more granular control for performance critical workloads, for example:
 
 - 2019-Hyper-V-Reserve: Hyper-V isolation is used, Pod will be compatible with containers built with Windows Server 2019 / 1809. Memory reserve == limit, and is guaranteed to not page out.
   - 2019-Hyper-V-Reserve-<N>Core: Same as above, except all but <N> CPU cores are masked out.
@@ -148,27 +157,36 @@ Attaching a "physical disk" (such as a local SSD, iSCSI target, Azure Disk or Go
 
 Creating [Persistent Local Volumes](https://kubernetes.io/docs/concepts/storage/volumes/#local) using a local virtual disk attached directly to a pod. This would create local, non-resilient storage that could be formatted from the pod without being mounted on the host. This could be used to build out more resource controls such as fixed disk sizes and QoS based on IOPs or throughput and take advantage of high speed local storage such as temporary SSDs offered by cloud providers.
 
-#### Enable runtime resizing of container resources
+#### Enable Vertical Pod Autoscaling and other dynamic resource allocation paradigms on Windows
 
 With virtual-based allocations and Hyper-V, it should be possible to increase the limit for a running pod. This won’t give it a guaranteed allocation, but will allow it to grow without terminating and scheduling a new pod. This could be a path to vertical pod autoscaling. This still needs more investigation and is mentioned as a future possibility.
 
 ### Implementation Details/Notes/Constraints
 
-The work needed will span multiple repos, SIG-Windows will be maintaining a [Windows CRI-Containerd Project Board] to track everything in one place.
+There are a few implementation details we need to take into account, specifically:
+
+- The work needed will span multiple repos, SIG-Windows will be maintaining a Windows CRI-Containerd Project Board to track everything in one place.
+
+- A note on performance: Using Hyper-V isolation does require some extra memory for the isolated kernel & system processes. This could be accounted for by implementing the [PodOverhead](https://kubernetes.io/docs/concepts/containers/runtime-class/#runtime-class) proposal for those runtime classes. We would include a recommended PodOverhead in the default CRDs, likely between 100-200M.
 
 #### Proposal: Use Runtimeclass Scheduler to simplify deployments based on OS version requirements
 
-As of version 1.14, RuntimeClass is not considered by the Kubernetes scheduler. There’s no guarantee that a node can start a pod, and it could fail until it’s scheduled on an appropriate node. Additional node labels and nodeSelectors are required to avoid this problem. [RuntimeClass Scheduling](https://github.com/kubernetes/enhancements/blob/master/keps/sig-node/runtime-class-scheduling.md) proposes being able to add nodeSelectors automatically when using a RuntimeClass, simplifying the deployment.
+Currently it is not possible to schedule a 
 
-Windows forward compatibility will bring a new challenge as well because there are two ways a container could be run:
+As of version 1.14, RuntimeClass was not used by the Kubernetes scheduler, and thus there was no guarantee that a node can start a pod, and it could fail until it’s scheduled on an appropriate node.  However, in 1.16 RuntimeClasses and [RuntimeClass Scheduling](https://github.com/kubernetes/enhancements/blob/master/keps/sig-node/runtime-class-scheduling.md) are in beta, and give us the ability to add nodeSelectors automatically when using a RuntimeClass, simplifying the deployment.
 
-- Constrained to the OS version it was designed for, using process-based isolation
-- Running on a newer OS version using Hyper-V.
-This second case could be enabled with a RuntimeClass. If a separate RuntimeClass was used based on OS version, this means the scheduler could find a node with matching class.
+A running windows container can be scheduled in two possible ways:
 
-#### Proposal: Standardize hypervisor annotations
+- Constrained to the **exact** OS version it was designed for, using process-based Hyper-V isolation
+- Running on **any** newer OS version using Hyper-V
 
-There are large number of [Windows annotations](https://github.com/Microsoft/hcsshim/blob/master/internal/oci/uvm.go#L15) defined that can control how Hyper-V will configure its hypervisor partition for the pod. Today, these could be set in the runtimeclasses defined in the CRI-ContainerD configuration file on the node, but it would be easier to maintain them if key settings around resources (cpu+memory+storage) could be aligned across multiple hypervisors and exposed in CRI.
+This latter case can be solved by a RuntimeClass, and has the benefit of . If a separate RuntimeClass was used based on OS version, this means the scheduler could find a node with matching class.  The addition of such a [Windows RuntimeClass](https://github.com/kubernetes/enhancements/blob/master/keps/sig-windows/windows-runtimeclass-support.md) is in progress at this time.
+
+#### Proposal: Standardize hypervisor annotations to the CRI
+
+There are large number of [Windows annotations](https://github.com/Microsoft/hcsshim/blob/master/internal/oci/uvm.go#L15) defined that can control how Hyper-V will configure the hypervisor partition it makes for an individual pod.
+
+Today, these could be set in the runtimeclasses defined in the CRI-ContainerD configuration file on the node, but it would be easier to maintain them if key settings around resources (cpu+memory+storage) could be integrated from multiple hypervisors and exposed as CRI.
 
 Doing this would make pod definitions more portable between different isolation types. It would also avoid the need for a "t-shirt size" list of RuntimeClass instances to choose from:
 
