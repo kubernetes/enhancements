@@ -651,15 +651,30 @@ The downsides of this approach compared to exec model are:
     an issue on the client side with a third-party exec plugin.
 
 * **What specific metrics should inform a rollback?**
-  - As stated above, since this feature set is opt-in on the client-side, then it
-    is very unlikely that a client would see an impact on existing behavior.
-  - If a client did indeed enable the corresponding settings in its `kubeconfig` after
-    rolling out this feature and it continually got 401's (or 403's, even) back from the
-    API, then it may be worth reverting the authentication configuration back to the
-    previous state to see if the failure persists.
-  - If the client is failing because it cannot use the exec plugin to get a credential,
-    then there may be messages in the logs that look like this:
-      `Unable to connect to the server: getting credentials: exec`
+  - Note that `kubectl` isn't the only consumer of client-go that can make use of these
+    exec plugins. Some client-go consumers are long-running and publish metrics that could
+    give visibility to the health of the exec plugin and surrounding machinery.
+  - When a certificate credential is refreshed (i.e., upon the first invocation of an exec
+    plugin within a client's runtime, when the credential has expired, or when we get a
+    401 HTTP status from the API), the certificate's expiration time will be emitted as a
+    metric. The certificate expiration should remain constant until the expiration time
+    when it should get increased. If this is not the case, then the exec plugin
+    authenticator could be behaving incorrectly. For example, if the certificate
+    expiration time is constantly increasing upon every authentication to the API, then
+    perhaps the exec plugin authenticator is refreshing the certificate credential too
+    often.
+  - The total number of calls to the exec plugin would also be helpful to obtain.  This
+    metric should increase each time a credential is refreshed (see previous bullet point
+    for when this happens). If this number increases rapidly, then the exec plugin
+    authenticator could be behaving incorrectly. For example, the exec plugin could be
+    receiving 401 HTTP statuses from the API, or the calculation of the expiration time
+    could be incorrect, or the credential could have been incorrectly evicted from the
+    exec plugin authenticator's cache.
+  - The number of errors encountered when calling the exec plugin would also be helpful to
+    obtain. This metric should ideally remain very low. If this number increases very
+    quickly, then then one may want to inspect why the client is not able to run the exec
+    plugin by viewing the client's logs or running the exec plugin manually in the target
+    environment.
 
 * **Were upgrade and rollback tested? Was upgrade->downgrade->upgrade path tested?**
   - N/A.
@@ -696,7 +711,9 @@ _This section must be completed when targeting beta graduation to a release._
 
 * **Are there any missing metrics that would be useful to have to improve
   observability if this feature?**
-  - No.
+  - As discussed [above](#rollout-upgrade-and-rollback-planning), the total number of
+    calls and number of errors encountered when calling the exec plugin would make the
+    behavior of this feature set more observable.
 
 ### Dependencies
 
