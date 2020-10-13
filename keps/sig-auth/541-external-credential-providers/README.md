@@ -26,6 +26,10 @@
 - [Alternatives](#alternatives)
   - [RPC vs exec](#rpc-vs-exec)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
+  - [Feature enablement and rollback](#feature-enablement-and-rollback)
+  - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+  - [Monitoring requirements](#monitoring-requirements)
+  - [Dependencies](#dependencies)
 - [Implementation History](#implementation-history)
 <!-- /toc -->
 
