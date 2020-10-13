@@ -15,3 +15,11 @@ reviewers:
 approvers:
   - "@liggitt"
   - "@mikedanese"
+prr-approvers:
+  - "@deads2k"
+stage: beta
+latest-milestone: "v1.20"
+milestone:
+  alpha: "v1.10"
+  beta: "v1.11"
+  stable: "v1.21"

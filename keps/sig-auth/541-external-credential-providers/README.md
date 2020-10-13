@@ -25,6 +25,11 @@
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
   - [RPC vs exec](#rpc-vs-exec)
+- [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
+  - [Feature enablement and rollback](#feature-enablement-and-rollback)
+  - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+  - [Monitoring requirements](#monitoring-requirements)
+  - [Dependencies](#dependencies)
 - [Implementation History](#implementation-history)
 <!-- /toc -->
 
@@ -554,7 +559,8 @@ Feature is already in Beta.
 - Docs are up-to-date with latest version of APIs
 - Docs describe set of best practices (i.e. do not mutate `kubeconfig`)
 
-Question: does this need conformance tests?  What would such a test look like?
+Note: this feature set does not need conformance tests because it is inherently
+opt-in on the client-side and it relies on an extra binary to be present.
 
 ### Upgrade / Downgrade Strategy
 
@@ -592,6 +598,132 @@ The downsides of this approach compared to exec model are:
   required (aka "chicken-and-egg problem")
 - credential provider must constantly run, consuming resources; clients refresh
   their credentials infrequently
+
+## Production Readiness Review Questionnaire
+
+### Feature enablement and rollback
+
+* **How can this feature be enabled / disabled in a live cluster?**
+  - [ ] Feature gate (also fill in values in `kep.yaml`)
+    - Feature gate name:
+    - Components depending on the feature gate:
+  - [x] Other
+    - Describe the mechanism:
+      - This feature is explicitly opt-in since it requires the presence of
+        kubeconfig settings.
+    - Will enabling / disabling the feature require downtime of the control
+      plane?
+        - No. Disabling the feature would result in the client needing to choose
+          a different authentication method.
+    - Will enabling / disabling the feature require downtime or reprovisioning
+      of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
+        - No. Disabling the feature would result in the client needing to choose
+          a different authentication method.
+
+* **Does enabling the feature change any default behavior?**
+  - No. The feature is explicitly opt-in, so default behavior will be preserved
+    unless the client's `kubeconfig` has been updated.
+
+* **Can the feature be disabled once it has been enabled (i.e. can we rollback
+  the enablement)?**
+  - Yes. Since the feature is explicitly opt-in, disabling the feature can be
+    done simply by changing `kubeconfig` settings.
+
+* **What happens if we reenable the feature if it was previously rolled back?**
+  - Nothing. The feature will start respecting the explicit opt-in `kubeconfig`
+    settings again, just as it would if it was enabled for the first time.
+
+* **Are there any tests for feature enablement/disablement?**
+  - There are unit tests in `k8s.io/client-go/plugin/pkg/auth/exec` that
+    verify what happens when various parts of this feature set are enabled (e.g.,
+    `provideClusterInfo`)
+  - There are unit tests in `k8s.io/client-go/tools/clientcmd/...` that validate
+    `kubeconfig`'s are handled correctly when they do not contain exec plugin
+    configuration.
+  - There are unit tests in `k8s.io/client-go/rest` that validate what happens when
+    a REST client does not have an exec plugin configuration.
+
+### Rollout, Upgrade and Rollback Planning
+
+* **How can a rollout fail? Can it impact already running workloads?**
+  - It is very unlikely that a rollout would fail. If you upgrade your client to
+    a version that contains this exec plugin feature set, then your client would still
+    continue to function as it did before, since the new behavior that this KEP provides
+    is opt-in via a `kubeconfig`.
+  - If a client did indeed enable the corresponding settings in its `kubeconfig` after
+    rolling out this feature, then it may cause a client-side authentication failure if
+    the client's exec plugin fails to return a credential properly. However, this would be
+    an issue on the client side with a third-party exec plugin.
+
+* **What specific metrics should inform a rollback?**
+  - Note that `kubectl` isn't the only consumer of client-go that can make use of these
+    exec plugins. Some client-go consumers are long-running and publish metrics that could
+    give visibility to the health of the exec plugin and surrounding machinery.
+  - When a certificate credential is refreshed (i.e., upon the first invocation of an exec
+    plugin within a client's runtime, when the credential has expired, or when we get a
+    401 HTTP status from the API), the certificate's expiration time will be emitted as a
+    metric. The certificate expiration should remain constant until the expiration time
+    when it should get increased. If this is not the case, then the exec plugin
+    authenticator could be behaving incorrectly. For example, if the certificate
+    expiration time is constantly increasing upon every authentication to the API, then
+    perhaps the exec plugin authenticator is refreshing the certificate credential too
+    often.
+  - The total number of calls to the exec plugin would also be helpful to obtain.  This
+    metric should increase each time a credential is refreshed (see previous bullet point
+    for when this happens). If this number increases rapidly, then the exec plugin
+    authenticator could be behaving incorrectly. For example, the exec plugin could be
+    receiving 401 HTTP statuses from the API, or the calculation of the expiration time
+    could be incorrect, or the credential could have been incorrectly evicted from the
+    exec plugin authenticator's cache.
+  - The number of errors encountered when calling the exec plugin would also be helpful to
+    obtain. This metric should ideally remain very low. If this number increases very
+    quickly, then then one may want to inspect why the client is not able to run the exec
+    plugin by viewing the client's logs or running the exec plugin manually in the target
+    environment.
+
+* **Were upgrade and rollback tested? Was upgrade->downgrade->upgrade path tested?**
+  - N/A.
+
+* **Is the rollout accompanied by any deprecations and/or removals of features,
+  APIs, fields of API types, flags, etc.?**
+  - Deprecation of `gcp` and `azure` authentication options. These authentication options
+    can be used going forward via this exec plugin feature set.
+  - Otherwise, this feature set contains the usual alpha, beta, and GA
+    stages, and will follow the same canonical deprecation pattern for
+    its API versions.
+
+### Monitoring requirements
+
+_This section must be completed when targeting beta graduation to a release._
+
+* **How can an operator determine if the feature is in use by workloads?**
+  - Clients provide metrics for usage today.
+  - One could also look in the `kubeconfig` in use by the client to see if an exec
+    credential provider is being used.
+
+* **What are the SLIs (Service Level Indicators) an operator can use to
+  determine the health of the service?**
+  - [ ] Metrics
+    - Metric name:
+    - [Optional] Aggregation method:
+    - Components exposing the metric:
+  - [x] Other (treat as last resort)
+    - Details:
+      - This feature set operates on the client-side.
+
+* **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
+  - This feature set operates on the client-side.
+
+* **Are there any missing metrics that would be useful to have to improve
+  observability if this feature?**
+  - As discussed [above](#rollout-upgrade-and-rollback-planning), the total number of
+    calls and number of errors encountered when calling the exec plugin would make the
+    behavior of this feature set more observable.
+
+### Dependencies
+
+* **Does this feature depend on any specific services running in the cluster?**
+  - No.
 
 ## Implementation History
 
