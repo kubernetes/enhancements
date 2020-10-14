@@ -18,6 +18,7 @@
   - [Prerequisite](#prerequisite)
   - [Design of ID propagation in apiserver](#design-of-id-propagation-in-apiserver)
   - [Design of ID propagation (controller)](#design-of-id-propagation-controller)
+  - [Design of ID propagation in <a href="https://github.com/kubernetes/client-go">client-go</a>](#design-of-id-propagation-in-client-go)
   - [Design of Mutating webhook(Out of tree)](#design-of-mutating-webhookout-of-tree)
   - [Risks and Mitigations](#risks-and-mitigations)
   - [Test Plan](#test-plan)
@@ -123,13 +124,13 @@ This log tracking feature is useful to identify the logs related to specific use
 ### Logging metadata
 
 We use three logging meta-data, and propagate them each K8s component by using OpenTelemetry.
-OpenTelemetry has SpanContext which is used for propagation of K8s component.
+OpenTelemetry has SpanContext and [Baggage](https://github.com/open-telemetry/opentelemetry-specification/blob/master/specification/baggage/api.md) which is used for propagation of K8s component.
 
 | meta-data name | feature |
 | ------ | ------ |
 | traceid | We use SpanContext.TraceID as traceid<br>traceid spans an user request.<br>traceid is unique for user's request |
 | spanid | We use SpanContext.SpanID as spanid<br>spanid spans a controller action.<br>spanid is unique for controller action |
-| initialtraceid | We implement new id(InitialTraceID) to SpanContext<br>We use SpanContext.InitialTraceID as initialtraceid<br>initialtraceid spans the entire object lifecycle. <br> initialtraceid is unique for related objects |
+| initialtraceid | We implement new id(InitialTraceID) to SpanContext<br>We use [Baggage](https://github.com/open-telemetry/opentelemetry-specification/blob/master/specification/baggage/api.md) to propagate initialtraceid<br/>We use UID of root object as initialtraceid<br>initialtraceid spans the entire object lifecycle. <br>initialtraceid is unique for related objects |
 
 All of three id's inception is from object creation and it dies with object deletion
 
@@ -152,33 +153,16 @@ we don't have any modifications in kubectl in this design.
 
 ### Design of ID propagation in apiserver
 
-**1. Preprocessing handler (othttp handler)**
-
-1.1 Do othttp's original [Extract](https://pkg.go.dev/go.opentelemetry.io/otel/api/propagators#TraceContext.Extract)() to get [SpanContext](https://pkg.go.dev/go.opentelemetry.io/otel/api/trace#SpanContext)
+**1. Do othttp's original [Extract](https://pkg.go.dev/go.opentelemetry.io/otel/api/propagators#TraceContext.Extract)() to get [SpanContext](https://pkg.go.dev/go.opentelemetry.io/otel/api/trace#SpanContext)**
 
 - For request from kubectl, SpanContext is null,  do [Start](https://github.com/open-telemetry/opentelemetry-go/blob/3a9f5fe15f50a35ad8da5c5396a9ed3bbb82360c/sdk/trace/tracer.go#L38)() to start new SpanContext (new traceid and spanid)
 - For request from controller we can get a valid SpanContext(including traceid and spanid), do [Start](https://github.com/open-telemetry/opentelemetry-go/blob/3a9f5fe15f50a35ad8da5c5396a9ed3bbb82360c/sdk/trace/tracer.go#L38)() to update the SpanContext (new spanid)
 
-1.2 Chain SpanContext and initialtraceid to "r.ctx"
+**2. Chain SpanContext and initialtraceid to "r.ctx"**
 
 - we use r.ctx to propagate those IDs to next handler
 
-**2. inittrace handler**
-
-Implement a new inittrace handler to propagate the initialtraceid.
-
-2.1 do our new Extract() to get initialtraceid from request header
-
-- For request from kubectl we can't get initialtraceid,  chain a empty initialtraceid to a golang ctx
-- For request from controller we can get initialtraceid, chain the initialtraceid to a golang ctx
-
-2.2 chain above golang cxt to r.ctx(updated in above 1.2)
--  we use r.ctx to propagate those IDs to next handler
-
-**3. Inject SpanContext and initial-trace to request header sent to webhook**
-
-- call othttp's original [Inject](https://pkg.go.dev/go.opentelemetry.io/otel/api/propagators#TraceContext.Inject)() to inject the SpanContext from r.ctx to header
-- call our new Inject() to inject the initialtraceid from r.ctx to header
+**3. Make up a new outgoing [request](#design-of-id-progagation-in-client-go)**
 
 ### Design of ID propagation (controller)
 
@@ -188,38 +172,41 @@ Implement a new inittrace handler to propagate the initialtraceid.
 
 When controllers create/update/delete an object A based on another B, we propagate context from B to A. E.g.:
 ```
-    ctx = traceutil.WithObject(ctx, objB)
+    ctx = httptrace.SpanContextFromAnnotations(objB.GetAnnotations())
     err = r.KubeClient.CoreV1().Create(ctx, objA...)
 ```
 We do propagation across objects without adding traces to that components.
 
-When controllers create/update/delete an object A based on another B, we propagate context from B to A. E.g.:
-```
-    ctx = traceutil.WithObject(ctx, objB)
-    err = r.KubeClient.CoreV1().Create(ctx, objA...)
-```
-We do propagation across objects without adding traces to that components.
+**3. Make up a new outgoing [request](#design-of-id-progagation-in-client-go)**
 
-**3. Inject SpanContext and initial-trace to request header sent to apiserver**
+### Design of ID propagation in [client-go](https://github.com/kubernetes/client-go)
+client-go  helps to inject [TraceContext](https://pkg.go.dev/go.opentelemetry.io/otel/propagators#example-TraceContext) and [Baggage](https://github.com/open-telemetry/opentelemetry-specification/blob/master/specification/baggage/api.md) to the outgoing http request header, something changes are like below:
+```diff
+@@ -868,6 +871,7 @@ func (r *Request) request(ctx context.Context, fn func(*http.Request, *http.Resp
+                }
+                req = req.WithContext(ctx)
+                req.Header = r.headers
++               propagator := otel.NewCompositeTextMapPropagator(propagators.TraceContext{}, propagators.Baggage{})
++               propagator.Inject(ctx, req.Header)
 
-- extract SpanContext and initialtraceid from golang ctx,
-- inject them the header
+                r.backoff.Sleep(r.backoff.CalculateBackoff(r.URL()))
+                if retries > 0 {
+```
+apiserver and controller use the API to make up a new outgoing request.
 
 ### Design of Mutating webhook(Out of tree)
 
-**1. Extract SpanContext and initialtraceid from request's header**
+**1.Extract SpanContext and initialtraceid from request's header **
 
-**2. Update SpanContext and initialtraceid to object**
+**2.Update SpanContext and initialtraceid to object**
 
-- For traceid and spanid
+- For traceid and spanid and traceflags(sampled/not sampled)
 
 Always set the trace context annotation based on the incoming request.
 
-
 - For initialtraceid
 
-if initialtraceid is nil, set initialtraceid to traceid
-else, leave initialtraceid as it is.
+if initialtraceid is nil,  Use the UID of object as initialtraceid, else, leave initialtraceid as it is.
 
 
 ### Risks and Mitigations
@@ -381,3 +368,5 @@ _This section must be completed when targeting beta graduation to a release._
 
 * 2020-09-01: KEP proposed
 * 2020-09-28: PRR questionnaire updated
+* [Mutating admission webhook which injects trace context for demo](https://github.com/Hellcatlk/mutating-trace-admission-controller/tree/trace-ot)
+* [Instrumentation of Kubernetes components for demo](https://github.com/Hellcatlk/kubernetes/tree/trace-ot)
