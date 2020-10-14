@@ -12,8 +12,9 @@ approvers:
   - "@brancz"
 editor: "@brancz"
 creation-date: 2019-10-28
-last-updated: 2019-10-28
-status: implementable
+last-updated: 2020-10-14
+status: implemented
+stage: beta
 see-also:
   - 20181106-kubernetes-metrics-overhaul
   - 20190404-kubernetes-control-plane-metrics-stability
