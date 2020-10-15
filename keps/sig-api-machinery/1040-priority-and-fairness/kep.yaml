@@ -1,0 +1,54 @@
+title: Priority and Fairness for API Server Requests
+kep-number: 1040
+authors:
+- "@MikeSpreitzer"
+- "@yue9944882"
+owning-sig: sig-api-machinery
+participating-sigs:
+- wg-multitenancy
+- sig-scheduling
+status: implementable
+reviewers:
+- "@deads2k"
+- "@lavalamp"
+- "@ahg-g"
+- "@wojtek-t"
+approvers:
+- "@deads2k"
+- "@lavalamp"
+prr-approvers:
+- "@wojtek-t"
+creation-date: 2019-02-28
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: beta
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.20"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.18"
+  beta: "v1.20"
+  stable: "v1.22"
+
+# The following PRR answers are required at alpha release.
+# List the feature gate name and the components for which it must be enabled.
+feature-gates:
+- name: APIPriorityAndFairness
+  components:
+  - kube-apiserver
+disable-supported: true
+
+# The following PRR answers are required at beta release.
+metrics:
+- apiserver_flowcontrol_rejected_requests_total
+- apiserver_flowcontrol_dispatched_requests_total
+- apiserver_flowcontrol_current_inqueue_requests
+- apiserver_flowcontrol_request_queue_length_after_enqueue
+- apiserver_flowcontrol_request_concurrency_limit
+- apiserver_flowcontrol_current_executing_requests
+- apiserver_flowcontrol_request_wait_duration_seconds
+- apiserver_flowcontrol_request_execution_seconds

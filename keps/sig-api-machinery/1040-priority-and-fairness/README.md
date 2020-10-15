@@ -1,27 +1,4 @@
----
-title: Priority and Fairness for API Server Requests
-authors:
-  - "@MikeSpreitzer"
-  - "@yue9944882"
-owning-sig: sig-api-machinery
-participating-sigs:
-  - wg-multitenancy
-reviewers:
-  - "@deads2k"
-  - "@lavalamp"
-approvers:
-  - "@deads2k"
-  - "@lavalamp"
-editor: TBD
-creation-date: 2019-02-28
-last-updated: 2019-02-28
-status: implementable
-see-also:
-replaces:
-superseded-by:
----
-
-# Priority and Fairness for API Server Requests
+# KEP-1040: Priority and Fairness for API Server Requests
 
 ## Table of Contents
 
@@ -76,6 +53,13 @@ superseded-by:
   - [Design Considerations](#design-considerations)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
+- [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
+  - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
+  - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+  - [Monitoring Requirements](#monitoring-requirements)
+  - [Dependencies](#dependencies)
+  - [Scalability](#scalability)
+  - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
@@ -91,8 +75,8 @@ For enhancements that make changes to code or processes/procedures in core Kuber
 
 Check these off as they are completed for the Release Team to track. These checklist items _must_ be updated for the enhancement to be released.
 
-- [ ] kubernetes/enhancements issue in release milestone, which links to KEP (this should be a link to the KEP location in kubernetes/enhancements, not the initial KEP PR)
-- [ ] KEP approvers have set the KEP status to `implementable`
+- [x] kubernetes/enhancements issue in release milestone, which links to KEP (this should be a link to the KEP location in kubernetes/enhancements, not the initial KEP PR)
+- [x] KEP approvers have set the KEP status to `implementable`
 - [ ] Design details are appropriately documented
 - [ ] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
 - [ ] Graduation criteria is in place
@@ -119,7 +103,7 @@ https://speakerdeck.com/sttts/kubernetes-api-codebase-tour?slide=18 .
 
 ## Motivation
 
-Today the apiserver has a simple mechanism for protectimg itself
+Today the apiserver has a simple mechanism for protecting itself
 against CPU and memory overloads: max-in-flight limits for mutating
 and for readonly requests.  Apart from the distinction between
 mutating and readonly, no other distinctions are made among requests;
@@ -268,7 +252,6 @@ yet but we think may be interesting to consider in the future.
 - Thread additional information along the paths needed to enable more
   precisely targeted avoidance of priority inversions.
 
-
 ## Proposal
 
 In short, this proposal is about generalizing the existing
@@ -405,7 +388,6 @@ FlowSchema's flows are based on usernames and bad behavior correlates
 with namespace then the bad behavior will be spread among all the
 queues of that schema's priority.  Administrators need to make a good
 choice for how flows are distinguished.
-
 
 #### Queue Assignment Proof of Concept
 
@@ -550,7 +532,6 @@ func main() {
 	}
 }
 ```
-
 
 ### Resource Limits
 
@@ -2025,6 +2006,132 @@ Beta:
   - Automatically manages versions of mandatory/suggested configuration
   - Discrimates paginated LIST requests
 
+## Production Readiness Review Questionnaire
+
+### Feature Enablement and Rollback
+
+* **How can this feature be enabled / disabled in a live cluster?** To enable
+  priority and fairness, all of the following must be enabled:
+  - [x] Feature gate
+    - Feature gate name: APIPriorityAndFairness
+    - Components depending on the feature gate:
+      - kube-apiserver
+  - [x] Command-line flags
+    - `--enable-priority-and-fairness`, and
+    - `--runtime-config=flowcontrol.apiserver.k8s.io/v1alpha1=true`
+
+* **Does enabling the feature change any default behavior?** Yes, requests that
+  weren't rejected before could get rejected while requests that were rejected
+  previously may be allowed. Performance of kube-apiserver under heavy load
+  will likely be different too.
+
+* **Can the feature be disabled once it has been enabled (i.e. can we roll back
+  the enablement)?** Yes.
+
+* **What happens if we reenable the feature if it was previously rolled back?**
+  The feature will be restored.
+
+* **Are there any tests for feature enablement/disablement?** No. Manual tests
+  will be run before switching feature gate to beta.
+
+### Rollout, Upgrade and Rollback Planning
+
+* **How can a rollout fail? Can it impact already running workloads?** A
+  misconfiguration could cause apiserver requests to be rejected, which could
+  have widespread impact such as: (1) rejecting controller requests, thereby
+  bringing a lot of things to a halt, (2) dropping node heartbeats, which may
+  result in overloading other nodes, (3) rejecting kube-proxy requests to
+  apiserver, thereby breaking existing workloads, (4) dropping leader election
+  requests, resulting in HA failure, or any combination of the above.
+
+* **What specific metrics should inform a rollback?** An abnormal spike in the
+  `apiserver_flowcontrol_rejected_requests_total` metric should potentially be
+  viewed as a sign that kube-apiserver is rejecting requests, potentially
+  incorrectly. The `apiserver_flowcontrol_request_queue_length_after_enqueue`
+  metric getting too close to the configured queue length could be a sign of
+  insufficient queue size (or a system overload), which can be precursor to
+  rejected requests.
+
+* **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
+  No. Manual tests will be run before switching feature gate to beta.
+
+* **Is the rollout accompanied by any deprecations and/or removals of features, APIs, 
+  fields of API types, flags, etc.?** Yes, `--max-requests-inflights` will be
+  deprecated in favor of APF.
+
+### Monitoring Requirements
+
+* **How can an operator determine if the feature is in use by workloads?**
+  If the `apiserver_flowcontrol_dispatched_requests_total` metric is non-zero,
+  this feature is in use. Note that this isn't a workload feature, but a
+  control plane one.
+
+* **What are the SLIs (Service Level Indicators) an operator can use to determine 
+the health of the service?**
+  - [x] Metrics
+    - Metric name: `apiserver_flowcontrol_request_queue_length_after_enqueue`
+    - Components exposing the metric: kube-apiserver
+
+* **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
+  No SLOs are proposed for the above SLI.
+
+* **Are there any missing metrics that would be useful to have to improve observability 
+of this feature?** No.
+
+### Dependencies
+
+* **Does this feature depend on any specific services running in the cluster?**
+  No.
+
+### Scalability
+
+* **Will enabling / using this feature result in any new API calls?** Yes.
+  Self-requests for new API objects will be introduced. In addition, the
+  request execution order may change, which could occasionally increase the
+  number of retries.
+
+* **Will enabling / using this feature result in introducing new API types?**
+  Yes, a new flowcontrol API group, configuration types, and status types are
+  introduced. See `k8s.io/api/flowcontrol/v1alpha1/types.go` for a full list.
+
+* **Will enabling / using this feature result in any new calls to the cloud
+  provider?** No.
+
+* **Will enabling / using this feature result in increasing size or count of
+  the existing API objects?** No.
+
+* **Will enabling / using this feature result in increasing time taken by any
+  operations covered by [existing SLIs/SLOs]?** Yes, a non-negligible latency
+  is added to API calls to kube-apiserver. While [preliminary tests](https://github.com/tkashem/graceful/blob/master/priority-fairness/filter-latency/readme.md)
+  shows that the API server latency is still well within the existing SLOs,
+  more thorough testing needs to be performed.
+
+* **Will enabling / using this feature result in non-negligible increase of
+  resource usage (CPU, RAM, disk, IO, ...) in any components?** The proposed
+  flowcontrol logic in request handling in kube-apiserver will increase the CPU
+  and memory overheads involved in serving each request. Note that the resource
+  usage will be configurable and may require the operator to fine-tune some
+  parameters.
+
+### Troubleshooting
+
+* **How does this feature react if the API server and/or etcd is unavailable?**
+  The feature is itself within the API server. Etcd being unavailable would
+  likely cause kube-apiserver to fail at processing incoming requests.
+
+* **What are other known failure modes?** A misconfiguration could reject
+  requests incorrectly. See the rollout and monitoring sections for details on
+  which metrics to watch to detect such failures (see the `kep.yaml` file for
+  the full list of metrics). The following kube-apiserver log messages could
+  also indicate potential issues:
+  - "Unable to list PriorityLevelConfiguration objects"
+  - "Unable to list FlowSchema objects"
+
+* **What steps should be taken if SLOs are not being met to determine the
+  problem?** No SLOs are proposed.
+
+[supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
+[existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 
 ## Implementation History
 
