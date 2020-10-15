@@ -170,7 +170,7 @@ status:
 
 #### Bucket
 
-A cluster-scoped custom resource representing the abstraction of a single backend bucket. A `Bucket` instance stores enough identifying information so that drivers can accurately target the backend object store (e.g. needed during a deletion process).  The relevant bucket class fields are copied to the `Bucket`. Additionally, data returned by the driver is copied to the `Bucket` by the sidecar.
+A cluster-scoped custom resource representing the abstraction of a single backend bucket. A `Bucket` instance stores enough identifying information so that drivers can accurately target the backend object store (e.g. needed during a deletion process).  The relevant bucket class fields are copied to the `Bucket`. This is done so that the `Bucket` instance reflects the `BucketClass` at the time of `Bucket` creation. This is needed to handle cases where the BC is either deleted or re-created. Additionally, data returned by the driver is copied to the `Bucket` by the sidecar.
 
 For greenfield, COSI creates the `Bucket` based on values in the `BucketRequest` and `BucketClass`. For brownfield, an admin manually creates the `Bucket`, filling in BucketClass fields, such as `allowedNamespaces`. COSI populates fields returned by the provisioner, and binds the `Bucket` to the `BucketAccess`.
 
@@ -242,7 +242,7 @@ A `Bucket` is not deleted if it is bound to a `BucketRequest`.
 
 #### BucketClass
 
-An immutable, cluster-scoped, custom resource to provide admins control over the handling of bucket provisioning.  The `BucketClass` (BC) defines a retention policy, driver specific parameters, and the provisioner name. A list of allowed namespaces can be specified to restrict new bucket creation and access to existing buckets. A default bucket class can be defined for each supported protocol. This allows the bucket class to be omitted from a `BucketRequest`. All of the `BucketClass` fields are copied to the `Bucket` instance.  If an object store supports more than one protocol then the admin should create a `BucketClass` per protocol.
+An immutable, cluster-scoped, custom resource to provide admins control over the handling of bucket provisioning.  The `BucketClass` (BC) defines a retention policy, driver specific parameters, and the provisioner name. A list of allowed namespaces can be specified to restrict new bucket creation and access to existing buckets. A default bucket class can be defined for each supported protocol. This allows the bucket class to be omitted from a `BucketRequest`. Relevant `BucketClass` fields are copied to the `Bucket` instance to handle the case of the BC being deleted or re-created.  If an object store supports more than one protocol then the admin should create a `BucketClass` per protocol.
 
 ```yaml
 apiVersion: cosi.io/v1alpha1
@@ -251,17 +251,20 @@ metadata:
   name: 
 provisioner: [1]
 isDefaultBucketClass: [2]
-protocol: {"azureblob", "gs", "s3", ... } [3]
-anonymousAccessMode: [4]
-retentionPolicy: {"Delete", "Retain"} [5]
-allowedNamespaces: [6]
+protocol:
+  name: [3]
+  version: [4]
+anonymousAccessMode: [5]
+retentionPolicy: {"Delete", "Retain"} [6]
+allowedNamespaces: [7]
   - name:
-parameters: [7]
+parameters: [8]
 ```
 
 1. `provisioner`: (required) the name of the vendor-specific driver supporting the `protocol`.
-1. `isDefaultBucketClass`: (optional) boolean, default is false. If set to true then a `BucketRequest` may omit the `BucketClass` reference. If the greenfield `BucketRequest` skips the `BucketClass` and a default `BucketClass`'s protocol matches the `BucketRequest`'s protocol then the default bucket class is used; otherwise an error is logged. It is possible that more than one `BucketClass` of the same protocol is set as the default class. In this case, it is non-deterministic which `BucketClass` is used as the default.
-1. `protocol`: (required) protocol supported by the associated object store. This field validates that the `BucketRequest`'s desired protocol is supported.
+1. `isDefaultBucketClass`: (optional) boolean, default is false. If set to true then a `BucketRequest` may omit the `BucketClass` reference. If a greenfield `BucketRequest` omits the `BucketClass` and a default `BucketClass`'s protocol matches the `BucketRequest`'s protocol then the default bucket class is used; otherwise an error is logged. It is not possible for more than one default `BucketClass` of the same protocol to exist due to an admission controller which enforces the default rule.
+1. `protocol.name`: (required) specifies the desired protocol.  One of {“s3”, “gs”, or “azureBlob”}.
+1. `protocol.version`: (optional) specifies the desired version of the `protocol`. For "s3", a value of "v2" or "v4" could be used. 
 1. `anonymousAccessMode`: (optional) a string specifying *uncredentialed* access to the backend bucket.  This is applicable for cases where the backend storage is intended to be publicly readable and/or writable. One of:
    - "private": Default, disallow uncredentialed access to the backend storage.
    - "publicReadOnly": Read only, uncredentialed users can call ListBucket and GetObject.
@@ -341,7 +344,7 @@ metadata:
 1. `bucketInstanceName`:  name of the `Bucket` instance bound to this BA.
 1. `bucketAccessRequest`: an `objectReference` containing the name, namespace and UID of the associated `BucketAccessRequest`.
 1. `serviceAccount`: an `ObjectReference` containing the name, namespace and UID of the associated `BAR.serviceAccountName`. If empty then integrated Kubernetes -> cloud identity is not being used, in which case, `BucketAccess.principal` contains the user identity, which is minted by the provisioner.
-1. `mintedSecretName`: name of the provisioner-generated Secret containing access credentials. This Secret exists in the provisioner’s namespace and is copied to the app namespace by the COSI controller.
+1. `mintedSecretName`: name of the provisioner-generated Secret containing access credentials. This Secret exists in the provisioner’s namespace, is read by the cosi-node-adapter, and written to the secret mount defined in the app pod's csi-driver spec.
 1. `policyActionsConfigMapData`: encoded data, known to the driver, and defined by the admin when creating a `BucketAccessClass`. Contains a set of provisioner/platform defined policy actions to a given user identity. Contents of the ConfigMap that the *policyActionsConfigMap* field in the `BucketAccessClass` refers to. A sample value of this field could look like:
 ```
    {“Effect”:“Allow”,“Action”:“s3:PutObject”,“Resource”:“arn:aws:s3:::profilepics/*“},
