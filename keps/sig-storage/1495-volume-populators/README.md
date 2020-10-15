@@ -107,7 +107,8 @@ valid for data sources.
 ## Proposal
 
 Validation for the `DataSource` field should be moved from the core to a validation
-webhook. Because the existing validation only allow snapshots and volumes as data sources,
+webhook. Because the existing validation only allow VolumeSnapshot and PVC API objects
+as data sources,
 a feature gate is added to relax that validation, allowing the existing object types plus
 any `Kind` of CR. Each volume populator should be able to register one of more kinds of
 objects that it understands.
@@ -246,14 +247,14 @@ the uses and implications of any populators they chose to install.
 ### Test Plan
 
 The test for this feature gate is to create a PVC with a data source
-that's not a PVC or snapshot, and verify that the data source reference
+that's not a PVC or VolumeSnapshot, and verify that the data source reference
 becomes part of the PVC API object. Any very simple CRD would be okay
 for this purpose. We would expect such a PVC to be ignored by existing
 dynamic provisioners.
 
 To test the validation webhook, we need to check the following cases:
 - Creation of a PVC with no datasource is allowed
-- Creation of a PVC with a Snapshot or PVC datasource is allowed
+- Creation of a PVC with a VolumeSnapshot or PVC datasource is allowed
 - Creation of a PVC with a CRD datasource that's not registered by any
   volume populator is disallowed.
 - Creation of a PVC with a CRD datasource that's registered by a
