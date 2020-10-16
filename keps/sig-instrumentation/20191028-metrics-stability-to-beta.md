@@ -13,7 +13,7 @@ approvers:
 editor: "@brancz"
 creation-date: 2019-10-28
 last-updated: 2020-10-14
-status: implemented
+status: implementable
 stage: beta
 see-also:
   - 20181106-kubernetes-metrics-overhaul
