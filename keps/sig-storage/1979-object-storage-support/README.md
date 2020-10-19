@@ -163,9 +163,9 @@ status:
 1. `finalizers`: added by COSI to defer `BucketRequest` deletion until backend deletion succeeds.
 1. `protocol.name`: (required) specifies the desired protocol.  One of {“s3”, “gs”, or “azureBlob”}.
 1. `protocol.version`: (optional) specifies the desired version of the `protocol`. For "s3", a value of "v2" or "v4" could be used. 
-1. `bucketPrefix`: (optional) prefix prepended to a generated new bucket name, eg. “yosemite-photos-". If `bucketInstanceName` is supplied then `bucketPrefix` is ignored because the request is for access to an existing bucket. If `bucketPrexix` is specified then it is added to the `Bucket` instance as a label.
-1. `bucketClassName`: (optional for greenfield, omitted for brownfield) name of the `BucketClass` used to provision this request. If omitted for a greenfield bucket request, a default bucket class matching the protocol, if available, is used. If the greenfield bucket class is missing or does not support the requested protocol, an error is logged and the request is retried (with exponential backoff). A `BucketClass` is necessary for greenfield requests since BCs support a list of allowed namespaces. A `BucketClass` is not needed for brownfield requests since the `Bucket` instance, created by the admin, also contains `allowedNamespaces`.
-1. `bucketInstanceName`: (optional) name of the cluster-wide `Bucket` instance. If blank, then COSI assumes this is a greenfield request and will fill in the name during the binding step. If set by the user, then this names the `Bucket` instance created by the admin.
+1. `bucketPrefix`: (optional for greenfield, ignored for brownfield) prefix prepended to a generated new bucket name, eg. “yosemite-photos-". If `bucketInstanceName` is supplied then `bucketPrefix` is ignored because the request is for access to an existing bucket.
+1. `bucketClassName`: (optional for greenfield, ignored for brownfield) name of the `BucketClass` used to provision this request. If omitted for a greenfield bucket request, a default bucket class matching the protocol, if available, is used. If the greenfield bucket class is missing or does not support the requested protocol, an error is logged and the request is retried (with exponential backoff). A `BucketClass` is necessary for greenfield requests since BCs support a list of allowed namespaces. A `BucketClass` is not needed for brownfield requests since the `Bucket` instance, created by the admin, also contains `allowedNamespaces`.
+1. `bucketInstanceName`: (required for brownfield, omitted for greenfield) name of the cluster-wide `Bucket` instance. If blank, then COSI assumes this is a greenfield request and will fill in the name during the binding step. If set by the user, then this names the `Bucket` instance created by the admin.
 1. `bucketAvailable`: if true the bucket has been provisioned. If false then the bucket has not been provisioned and is unable to be accessed.
 
 #### Bucket
@@ -228,8 +228,9 @@ A `Bucket` is not deleted if it is bound to a `BucketRequest`.
    - "publicReadOnly": Read only, uncredentialed users can call ListBucket and GetObject.
    - "publicWriteOnly": Write only, uncredentialed users can only call PutObject.
    - "publicReadWrite": Read/Write, same as `ro` with the addition of PutObject being allowed.
-1. `bucketClassName`: Name of the associated bucket class.
-1. `bucketRequest`: an `objectReference` containing the name, namespace and UID of the associated `BucketRequest`.
+   > Note: `anonymousAccessMode` is intended for workloads to consume the bucket out of band, i.e. COSI does not provide a automated mechanism for a k8s workload to consume the bucket anonymously
+1. `bucketClassName`: (set by COSI for greenfield, and ignored for brownfield) Name of the associated bucket class.
+1. `bucketRequest`: (set by COSI for greenfield, and ignored for brownfield) an `objectReference` containing the name, namespace and UID of the associated `BucketRequest`.
 1. `allowedNamespaces`: a list of namespaces that are permitted to either create new buckets or to access existing buckets.
 1. `protocol`: protocol-specific field the application will use to access the backend storage.
      - `name`: supported protocols are: "s3", "gs", and "azureBlob".
@@ -243,6 +244,8 @@ A `Bucket` is not deleted if it is bound to a `BucketRequest`.
 #### BucketClass
 
 An immutable, cluster-scoped, custom resource to provide admins control over the handling of bucket provisioning.  The `BucketClass` (BC) defines a retention policy, driver specific parameters, and the provisioner name. A list of allowed namespaces can be specified to restrict new bucket creation and access to existing buckets. A default bucket class can be defined for each supported protocol. This allows the bucket class to be omitted from a `BucketRequest`. Relevant `BucketClass` fields are copied to the `Bucket` instance to handle the case of the BC being deleted or re-created.  If an object store supports more than one protocol then the admin should create a `BucketClass` per protocol.
+
+NOTE: the `BucketClass` object is immutable except for the field `isDefaultBucketClass`
 
 ```yaml
 apiVersion: cosi.io/v1alpha1
@@ -344,14 +347,17 @@ metadata:
 1. `bucketInstanceName`:  name of the `Bucket` instance bound to this BA.
 1. `bucketAccessRequest`: an `objectReference` containing the name, namespace and UID of the associated `BucketAccessRequest`.
 1. `serviceAccount`: an `ObjectReference` containing the name, namespace and UID of the associated `BAR.serviceAccountName`. If empty then integrated Kubernetes -> cloud identity is not being used, in which case, `BucketAccess.principal` contains the user identity, which is minted by the provisioner.
-1. `mintedSecretName`: name of the provisioner-generated Secret containing access credentials. This Secret exists in the provisioner’s namespace, is read by the cosi-node-adapter, and written to the secret mount defined in the app pod's csi-driver spec.
+1. `mintedSecretName`: (omitted if serviceAccount is specified) name of the provisioner-generated Secret containing access credentials. This Secret exists in the provisioner’s namespace, is read by the cosi-node-adapter, and written to the secret mount defined in the app pod's csi-driver spec.
 1. `policyActionsConfigMapData`: encoded data, known to the driver, and defined by the admin when creating a `BucketAccessClass`. Contains a set of provisioner/platform defined policy actions to a given user identity. Contents of the ConfigMap that the *policyActionsConfigMap* field in the `BucketAccessClass` refers to. A sample value of this field could look like:
 ```
    {“Effect”:“Allow”,“Action”:“s3:PutObject”,“Resource”:“arn:aws:s3:::profilepics/*“},
    {“Effect”:“Allow”,“Action”:“s3:GetObject”,“Resource”:“arn:aws:s3:::profilepics/*“},
    {“Effect”:“Deny”,“Action”:“s3:*“,”NotResource”:“arn:aws:s3:::profilepics/*“}
 ```
-1. `principal`: username/access-key for the object storage provider to uniquely identify the user who has access to this bucket. This value is minted by the provisioner (and set in the BA) when the `BucketAccessRequest` omits a ServiceAccount. There several use cases involving `principal`: 1) static/driverless brownfield where the admin creates the BA and fills in principal, so here principal is minted by the admin. 2) brownfield where COSI creates the `BucketAccess` and fills in `principal` based on the driver's minted principal. 3) the `BucketAccessRequest` specifies a ServiceAccount which is linked by the backend to a user id, and `principal` is empty.
+1. `principal`: username/access-key for the object storage provider to uniquely identify the user who has access to this bucket. This value is minted by the provisioner (and set in the BA) when the `BucketAccessRequest` omits a ServiceAccount. There are several use cases involving `principal`: 
+   - Not relevant if serviceAccount is supplied.
+   - For brownfield cases when there is already a storage-side principal that you want to use for access, the admin can supply this, the driver will (possibly) enable access for that principal to the bucket in question and will return credentials.
+   - For greenfield cases, this could be populated by the driver. Maybe so that the driver can request deletion of this principal during deprovisioning
 1. `parameters`:  A map of string:string key values.  Allows admins to control user and access provisioning by setting provisioner key-values. Copied from `BucketAccessClass`. 
 1. `accessGranted`: if true access has been granted to the bucket. If false then access to the bucket has not been granted.
 
@@ -408,6 +414,12 @@ spec:
 1. the name of the cosi-node-adapter.
 1. information needed by the cosi-node-adapter to verify that the bucket has been provisioned.
 
+The contents of the secret generated by the provisioner is expected to have the following fields in the provider specific format:
+
+- Endpoint for the bucket. The Endpoint should encode the URL for the provider
+- Access Key: Only set when serviceAccount is empty 
+- Secret Key: Only set when serviceAccount is empty
+
 ### Topology
 
 ![Architecture Diagram](images/arch.png)
@@ -423,7 +435,7 @@ Here we describe the workflows used to automate provisioning of new and existing
 
 When the app pod is started, the kubelet will gRPC call _NodeStageVolume_ and _NodePublishVolume_, which are received by the cosi-node-adapter. The pod waits until the adapter responds to the gRPC requests. The adapter ensures that the target bucket has been provisioned and is ready to be accessed.
 
-When the app pod terminates, the kubelet gRPC calls _NodeUnstageVolume_ and _NodeUnpublishVolume_, which the cosi-node-adapter also receives. The adapter orchestrates tear-down of bucket access resources, but does not delete the `BucketRequest` nor `Bucket` instances.
+When the app pod terminates, the kubelet gRPC calls _NodeUnstageVolume_ and _NodeUnpublishVolume_, which the cosi-node-adapter also receives. The adapter orchestrates tear-down of the ephemeral volume provisioned for this bucket.
 
 General prep:
 + admin creates the needed bucket classes and bucket access classes.
