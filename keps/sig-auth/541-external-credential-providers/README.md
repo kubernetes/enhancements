@@ -158,7 +158,7 @@ users:
 
       # Whether or not to provide cluster information, which could potentially contain
       # very large CA data, to this exec plugin as a part of the KUBERNETES_EXEC_INFO
-      # environment variable.
+      # environment variable. Optional.
       provideClusterInfo: true
 clusters:
 - name: my-cluster
@@ -209,7 +209,8 @@ type ExecConfig struct {
   // ProvideClusterInfo determines whether or not to provide cluster information,
   // which could potentially contain very large CA data, to this exec plugin as a
   // part of the KUBERNETES_EXEC_INFO environment variable. By default, it is set
-  // to false.
+  // to false. Package k8s.io/client-go/tools/auth/exec provides helper methods for
+  // reading this environment variable.
   ProvideClusterInfo bool `json:"provideClusterInfo"`
 }
 ```
@@ -243,8 +244,8 @@ In JSON:
   "spec": {
     "cluster": {
       "server": "https://1.2.3.4:8080",
-      "serverName": "bar",
-      "caData": " ... ",
+      "tls-server-name": "bar",
+      "certificate-authority-data": " ... ",
       "config": { ... }
     }
   }
@@ -310,7 +311,8 @@ type Cluster struct {
   // Config holds additional config data that is specific to the exec
   // plugin with regards to the cluster being authenticated to.
   //
-  // This data is sourced from the clientcmd Cluster object's extensions[exec] field:
+  // This data is sourced from the clientcmd Cluster object's
+  // extensions[client.authentication.k8s.io/exec] field:
   //
   // clusters:
   // - name: my-cluster
@@ -426,6 +428,9 @@ func LoadExecCredentialFromEnv() (runtime.Object, *rest.Config, error)
 //
 // If the provided data is successfully unmarshalled, but it does not contain cluster information
 // (i.e., ExecCredential.Spec.Cluster == nil), then the returned rest.Config and error will be nil.
+//
+// Note that the returned rest.Config will use anonymous authentication, since the exec plugin has
+// not returned credentials for this cluster yet.
 func LoadExecCredential(data []byte) (runtime.Object, *rest.Config, error)
 ```
 
@@ -524,7 +529,7 @@ Unit tests to confirm:
   `CertificateAuthority` for reasons stated in design) so
   that structs are kept up to date
 - Helper methods properly create `"k8s.io/client-go/rest".Config` from
-  `"k8s.io/client-go/pkg/apis/clientauthentication".Cluster`
+  `"k8s.io/client-go/pkg/apis/clientauthentication".Cluster` and vice versa
 
 Integration (or e2e CLI) tests to confirm:
 
