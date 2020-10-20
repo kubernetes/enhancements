@@ -491,7 +491,7 @@ Additionally, we propose an extension to the device plugin interface as a
 "last-level" filter to help influence overall allocation decisions made by the
 `devicemanager`. The diff below shows the proposed changes:
 
-```
+```diff
 diff --git a/pkg/kubelet/apis/deviceplugin/v1beta1/api.proto b/pkg/kubelet/apis/deviceplugin/v1beta1/api.proto
 index 758da317fe..1e55d9c541 100644
 --- a/pkg/kubelet/apis/deviceplugin/v1beta1/api.proto
