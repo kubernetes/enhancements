@@ -273,7 +273,7 @@ Some of these cases will involve the machine receiving an ACPI event to change
 the power state. The machine can go from G0 (working state) to G2 (Soft Off)
 and finally to G3 (Off) [more info on ACPI
 states](https://en.wikipedia.org/wiki/Advanced_Configuration_and_Power_Interface).
-On Linux, prior to shutdown usually a system demon will listen to these events
+On Linux, prior to shutdown usually a system daemon will listen to these events
 and perform some series of actions prior to userspace calling the
 [reboot(2)](https://man7.org/linux/man-pages/man2/reboot.2.html) systemcall
 with `LINUX_REBOOT_CMD_POWER_OFF` or `LINUX_REBOOT_CMD_HALT` to actually
