@@ -39,55 +39,21 @@ status: provisional
 - [Goals](#goals)
 - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
-    - [API Changes:](#api-changes)
-    - [Kubelet Changes:](#kubelet-changes)
-      - [Shutdown triggering](#shutdown-triggering)
-      - [Sidecars terminated last](#sidecars-terminated-last)
-      - [Sidecars started first](#sidecars-started-first)
-      - [PreStop hooks sent to Sidecars first](#prestop-hooks-sent-to-sidecars-first)
-  - [Proposal decisions to discuss](#proposal-decisions-to-discuss)
-    - [preStop hooks delivery guarantees are changed](#prestop-hooks-delivery-guarantees-are-changed)
-      - [Alternative 1: add a TerminationHook](#alternative-1-add-a-terminationhook)
-      - [Alternative 2: Do nothing](#alternative-2-do-nothing)
-      - [Suggestion](#suggestion)
-    - [Killing pods take 3x the time](#killing-pods-take-3x-the-time)
-      - [Why is it important to discuss this?](#why-is-it-important-to-discuss-this)
-      - [Alternatives to kill the pod in the expected time](#alternatives-to-kill-the-pod-in-the-expected-time)
-    - [How to split the shutdown time to kill different types of containers?](#how-to-split-the-shutdown-time-to-kill-different-types-of-containers)
-      - [Alternative 1: Allow any step to consume all and be over <code>GraceTime</code> by 8s](#alternative-1-allow-any-step-to-consume-all-and-be-over--by-8s)
-      - [Alternative 2: Allow any step to consume all and skip preStop hooks](#alternative-2-allow-any-step-to-consume-all-and-skip-prestop-hooks)
-      - [Alternative 3: Allow any step to consume all and be over <code>GraceTime</code> by 0s](#alternative-3-allow-any-step-to-consume-all-and-be-over--by-0s)
-      - [Alternative 4: Allow any step to consume all and use 6s as minimum <code>GraceTime</code>](#alternative-4-allow-any-step-to-consume-all-and-use-6s-as-minimum-)
-      - [Alternative 5: Use <em>per container</em> terminations](#alternative-5-use-per-container-terminations)
-      - [Suggestion](#suggestion-1)
-    - [Currently not handling the case of pod=nil](#currently-not-handling-the-case-of-podnil)
+  - [Notes/Constraints/Caveats](#notesconstraintscaveats)
     - [Pods with RestartPolicy Never](#pods-with-restartpolicy-never)
-      - [Alternative 1: Add a per container fatalToPod field](#alternative-1-add-a-per-container-fataltopod-field)
-      - [Alternative 2: Do nothing](#alternative-2-do-nothing-1)
-      - [Alternative 2: Always restart sidecar containers](#alternative-2-always-restart-sidecar-containers)
-      - [Suggestion](#suggestion-2)
+    - [Modify killContainer() to enforece gracePeriodOverride on preStop hooks](#modify-killcontainer-to-enforece-graceperiodoverride-on-prestop-hooks)
+    - [Time to kill a pod increased by 4 seconds in the worst case](#time-to-kill-a-pod-increased-by-4-seconds-in-the-worst-case)
     - [Enforce the startup/shutdown behavior only on startup/shutdown](#enforce-the-startupshutdown-behavior-only-on-startupshutdown)
-    - [Sidecar containers won't be available during initContainers phase](#sidecar-containers-wont-be-available-during-initcontainers-phase)
-      - [Suggestion](#suggestion-3)
-    - [Revisit if we want to modify the podPhase](#revisit-if-we-want-to-modify-the-podphase)
-      - [Alternative 1: don't change the pod phase](#alternative-1-dont-change-the-pod-phase)
-      - [Alternative 2: change the pod phase](#alternative-2-change-the-pod-phase)
-      - [Suggestion](#suggestion-4)
-    - [No container type standard](#no-container-type-standard)
-    - [Is this change really worth doing?](#is-this-change-really-worth-doing)
-      - [Kubernetes jobs with sidecars](#kubernetes-jobs-with-sidecars)
-      - [Service mesh](#service-mesh-1)
-      - [Kubernetes pods that run indefinitely with sidecars](#kubernetes-pods-that-run-indefinitely-with-sidecars)
-      - [Summary](#summary-1)
-    - [Why this design seems extensible?](#why-this-design-seems-extensible)
-      - [What if we add pre-defined phases for container startup/shutdown?](#what-if-we-add-pre-defined-phases-for-container-startupshutdown)
-      - [What if we add &quot;Depends On&quot; semantics to containers?](#what-if-we-add-depends-on-semantics-to-containers)
+  - [Risks and Mitigations](#risks-and-mitigations)
+- [Design Details](#design-details)
+  - [API Changes:](#api-changes)
+  - [Kubelet Changes:](#kubelet-changes)
+    - [Shutdown triggering](#shutdown-triggering)
+    - [Sidecars terminated last](#sidecars-terminated-last)
+    - [Sidecars started first](#sidecars-started-first)
   - [Proof of concept implementations](#proof-of-concept-implementations)
     - [KEP implementation and Demo](#kep-implementation-and-demo)
     - [Another implementation using pod annotations](#another-implementation-using-pod-annotations)
-  - [Risks and Mitigations](#risks-and-mitigations)
-- [Design Details](#design-details)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
@@ -144,9 +110,10 @@ to add a `lifecycle.type` field to the `container` object in the `pod.spec` to
 define if a container is a sidecar container. The only valid value for now is
 `sidecar`, but other values can be added in the future if needed.
 
-Pods with sidecar containers only change the behaviour of the startup and
-shutdown sequence of a pod: sidecar containers are started before non-sidecars
-and stopped after non-sidecars.
+Pods with sidecar containers change the behaviour of the startup and shutdown
+sequence of a pod: sidecar containers are started before non-sidecars and
+stopped after non-sidecars. Sidecar containers are also terminated when all
+non-sidecar containers finished.
 
 A pod that has sidecar containers guarantees that non-sidecar containers are
 started only after all sidecar containers are started and are in a ready state.
@@ -274,23 +241,18 @@ Linkerd and Istio), need to do several hacks to have the basic
 functionality. These are explained in detail in the
 [alternatives](#alternatives) section. Nonetheless, here is a  quick highlight
 of some of the things some service mesh currently need to do:
-
  * Recommend users to delay starting their apps by using a script to wait for
    the service mesh to be ready. The goal of a service mesh to augment the app
    functionality without modifying it, that goal is lost in this case.
- * To guarantee that traffic goes via the services mesh, an initContainer is
-   added to blackhole traffic until the service mesh containers are up. This way,
-   other containers that might be started before the service mesh container can't
-   use the network until the service mesh container is started and ready. A side
-   effect is that traffic is blackholed until the service mesh is up and in a
-   ready state.
+ * If they don't delay starting their application, the network connection they
+   try to establish are blacklisted until the service mesh container is up.
  * Use preStop hooks with a "sleep infinity" to make sure the service mesh
    doesn't terminate before other containers that might be serving requests.
 
-The auto-inject of initContainer [has caused bugs][linkerd-bug-init-last], as it
-competes with other tools auto-injecting a container to be run last too.
-
-[linkerd-bug-init-last]: https://github.com/linkerd/linkerd2/issues/4758#issuecomment-658457737
+This KEP adds guarantees to startup/shutdown behavior, so _those_ problems will
+be solved for service mesh. However, service mesh do have other problems that
+are out of scope for this KEP, e.g. enable service mesh before initContainers
+are started.
 
 ### Problems: Coupling infrastructure with applications
 
@@ -306,9 +268,6 @@ blackhole all traffic until the Istio container is up. The CNI plugin can be
 used to completely remove the need for such an initContainer. But this
 alternative requires that nodes have the CNI plugin installed, effectively
 coupling the service mesh app with the infrastructure.
-
-This KEP removes the need for a service mesh to use either an initContainer or a
-CNI plugin: just guarantee that the sidecar container can be started first.
 
 While in this specific example the CNI plugin has some benefits too (removes the
 need for some capabilities in the pod) and might be worth pursuing, it is used
@@ -347,11 +306,9 @@ This proposal doesn't aim to:
    startup/shutdown
  * Allow sidecar containers to run concurrently with initContainers
 
-Allowing multiple containers to run at once during the init phase - this could be solved using the same principal but can be implemented separately. //TODO write up how we could solve the init problem with this proposal
-
 ## Proposal
 
-Create a way to define containers as sidecars, this will be an additional field to the `container.lifecycle` spec: `Type` which can be either `Standard` (default) or `Sidecar`.
+Create a way to define containers as sidecars, this will be an additional field to the `container.lifecycle` spec: `Type` can be either nil (default behavior is used) or `Sidecar`. IOW, if the field is not present default behavior is used and the container is not a sidecar container.
 
 e.g:
 ```yaml
@@ -378,594 +335,88 @@ Sidecars will be started before normal containers but after init, so that they a
 This will change the Pod startup to look like this:
 * Init containers start
 * Init containers finish
-* Sidecars start
+* Sidecars start (all in parallel)
 * Sidecars become ready
-* Containers start
+* Non-sidecar containers start (all in parallel)
 
 During pod termination sidecars will be terminated last:
-* Containers sent SIGTERM
-* Once all Containers have exited: Sidecars sent SIGTERM
+* Non-sidecar containers sent SIGTERM
+* Once all non-sidecar containers have exited: Sidecar container are sent a SIGTERM
 
-Containers and Sidecar will share the TerminationGracePeriod. If Containers don't exit before the end of the TerminationGracePeriod then they will be sent a SIGKIll as normal, Sidecars will then be sent a SIGTERM with a short grace period of 2 Seconds to give them a chance to cleanly exit.
-
-PreStop Hooks will be sent to sidecars before containers are terminated.
-This will be useful in scenarios such as when your sidecar is a proxy so that it knows to no longer accept inbound requests but can continue to allow outbound ones until the the primary containers have shut down.
+Containers and Sidecar will share the TerminationGracePeriod. If Containers don't exit before the end of the TerminationGracePeriod then they will be sent a SIGKIll as normal, Sidecars will then be sent a SIGTERM with a short grace period of 2 Seconds to give them a chance to cleanly exit. Prestop hooks will also have a 2 seconds grace period to execute in that case.
 
 To solve the problem of Jobs that don't complete: When RestartPolicy!=Always if all normal containers have reached a terminal state (Succeeded for restartPolicy=OnFailure, or Succeeded/Failed for restartPolicy=Never), then all sidecar containers will be sent a SIGTERM.
 
-PodPhase will be modified to not include Sidecars in its calculations, this is so that if a sidecar exits in failure it does not mark the pod as `Failed`. It also avoids the scenario in which a Pod has RestartPolicy `OnFailure`, if the containers all successfully complete, when the sidecar gets sent the shut down signal if it exits with a non-zero code the Pod phase would be calculated as `Running` despite all containers having exited permanently.
+Sidecars are just normal containers in almost all respects, they have all the same attributes, they are included in pod state, obey pod restart policy, don't change pod phase in any way etc. The only differences are in the shutdown and startup of the pod.
 
-Sidecars are just normal containers in almost all respects, they have all the same attributes, they are included in pod state, obey pod restart policy etc. The only differences are lifecycle related.
-
-### Implementation Details/Notes/Constraints
-
-The proposal can broken down into four key pieces of implementation that all relatively separate from one another:
-
-* Shutdown triggering for sidecars when RestartPolicy!=Always
-* Pre-stop hooks sent to sidecars before non sidecar containers
-* Sidecars are terminated after normal containers
-* Sidecars start before normal containers
-
-#### API Changes:
-As this is a change to the Container spec we will be using feature gating, you will be required to explicitly enable this feature on the api server as recommended [here](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api_changes.md#adding-unstable-features-to-stable-versions).
-
-New field `Type` will be added to the lifecycle struct:
-
-```go
-type Lifecycle struct {
-  // Type
-  // One of Standard, Sidecar.
-  // Defaults to Standard
-  // +optional
-  Type LifecycleType `json:"type,omitempty" protobuf:"bytes,3,opt,name=type,casttype=LifecycleType"`
-}
-```
-New type `LifecycleType` will be added with two constants:
-```go
-// LifecycleType describes the lifecycle behaviour of the container
-type LifecycleType string
-
-const (
-  // LifecycleTypeStandard is the default container lifecycle behaviour
-  LifecycleTypeStandard LifecycleType = "Standard"
-  // LifecycleTypeSidecar means that the container will start up before standard containers and be terminated after
-  LifecycleTypeSidecar LifecycleType = "Sidecar"
-)
-```
-Note that currently the `lifecycle` struct is only used for `preStop` and `postStop` so we will need to change its description to reflect the expansion of its uses.
-
-#### Kubelet Changes:
-Broad outline of what places could be modified to implement desired behaviour:
-
-##### Shutdown triggering
-Package `kuberuntime`
-
-Modify `kuberuntime_manager.go`, function `computePodActions`. Have a check in this function that will see if all the non-sidecars had permanently exited, if true: return all the running sidecars in `ContainersToKill`. These containers will then be killed via the `killContainer` function which sends preStop hooks, sig-terms and obeys grace period, thus giving the sidecars a chance to gracefully terminate.
-
-##### Sidecars terminated last
-Package `kuberuntime`
-
-Modify `kuberuntime_container.go`, function `killContainersWithSyncResult`. Break up the looping over containers so that it goes through killing the non-sidecars before terminating the sidecars.
-Note that the containers in this function are `kubecontainer.Container` instead of `v1.Container` so we would need to cross reference with the `v1.Pod` to check if they are sidecars or not. This Pod can be `nil` but only if it's not running, in which case we're not worried about ordering.
-
-##### Sidecars started first
-Package `kuberuntime`
-
-Modify `kuberuntime_manager.go`, function `computePodActions`. If pods has sidecars it will return these first in `ContainersToStart`, until they are all ready it will not return the non-sidecars. Readiness changes do not normally trigger a pod sync, so to avoid waiting for the Kubelet's `SyncFrequency` (default 1 minute) we can modify `HandlePodReconcile` in the `kubelet.go` to trigger a sync when the sidecars first become ready (ie only during startup).
-
-##### PreStop hooks sent to Sidecars first
-Package `kuberuntime`
-
-Modify `kuberuntime_container.go`, function `killContainersWithSyncResult`. Loop over sidecars and execute `executePreStopHook` on them before moving on to terminating the containers. This approach would assume that PreStop Hooks are idempotent as the sidecars would get sent the PreStop hook again when they are terminated.
-
-### Proposal decisions to discuss
-
-This section expands on some decisions or side effects of this proposal that
-were identified by Rodrigo Campos (@rata) and discussed during the SIG-node
-meeting on June 23. The conclusion was to open a PR with those things, so this
-section is about them, with some alternatives and suggestions to open up the
-discussion.
-
-This doesn't mean in any way that discussion about other things is not welcome.
-They are indeed very much welcome.
-
-Bear in mind that these edge cases discussed here are either present in the KEP
-design or the KEP design was not clear enough and they are present in the
-[current open PR](https://github.com/kubernetes/kubernetes/pull/80744).
-
-#### preStop hooks delivery guarantees are changed
-
-Kubernetes currently [tries to deliver preStop hooks only once][hook-delivery],
-although in some cases they can be called more than once. [The current
-proposal](#prestop-hooks-sent-to-sidecars-first), however, guarantees that when
-sidecar containers are used preStop hooks will be delivered _at least twice_ for
-sidecar containers.
-
-As explained [here](#proposal) the reason this is done is because (the following
-is just c&p from the relevant paragraphs in the proposal):
-
-> PreStop Hooks will be sent to sidecars before containers are terminated. This will be useful in scenarios such as when your sidecar is a proxy so that it knows to no longer accept inbound requests but can continue to allow outbound ones until the the primary containers have shut down.
-
-In other words, the shutdown sequence proposed is:
-
-1. Run preStop hooks for sidecars
-1. Run preStop hooks for non-sidecars
-1. Send SIGTERM for non-sidecars
-1. Run preStop hooks for sidecars
-1. Send SIGTERM for sidecars
-
-For brevity, what happens when some step timeouts and needs to send a SIGKILL is
-omitted in the above sequence, as it is not relevant for this point.
-
-The concerns we see with this are that this changes the [current delivery
-guarantees][hook-delivery] from _at least once_ to _at least twice_ for _some_
-containers (for sidecar containers). Furthermore, before this patch preStop
-hooks were delivered only once most of the time. After this patch is delivered
-twice for most cases (using sidecars). The problem is not if this is idempotent
-or not (as it should be in any case), but chainging the most common case from
-delivering preStop hook once to twice.
-
-Another concern is that in the future a different container type might be added,
-and these semantics seems difficult to extend. For example, let's say a
-container type "OrderedPhases" with the semantics of the [explained
-alternative][phase-startup] is added in the future. When would the preStop hooks
-be executed now that there are several phases? At the beginning? If there are 5
-phases: 0, 1, 2, 3 and 4, how should the shutdown behaviour be? Run preStop
-hooks for containers marked in phase 0, then kill containers in phase 4, then
-preStop hooks for containers in phase 1, then kill containers in phase 3, etc.?
-Or only the preStop hooks for container 0 are called? Why?
-
-It seems confusing, there doesn't seem to be a clear answer on those cases nor
-what the use case would be for such semantics.
-
-[hook-delivery]: https://kubernetes.io/docs/concepts/containers/container-lifecycle-hooks/#hook-delivery-guarantees
-[phase-startup]: #pre-defined-phases-for-container-startupshutdown-or-arbitrary-numbers-for-ordering
-
-##### Alternative 1: add a TerminationHook
-
-Add to containers a `TerminationHook` field. It will accept the same values as
-preStop hooks and will be called for any container that defines it when the pod
-is switching to a terminating state. These clear semantics seem easy to extend in
-the future.
-
-Then, instead of running preStop hooks twice for sidecar containers as it is now
-proposed, preStop hooks are run only once: just before stopping the
-corresponding containers.
-
-The shutdown sequence steps in this case would be:
-1. Run TerminationHook for _any_ container that defines it (sidecar or not)
-1. Run preStop hooks for non-sidecars
-1. Send SIGTERM for non-sidecars
-1. Run preStop hooks for sidecars
-1. Send SIGTERM for sidecars
-
-If containers want to take action when a pod is switching to terminating state,
-they should use the TerminationHook.
-
-The motivation for running the preStop hooks two times, then, can be implemented
-by adding the TerminationHook field to the service mesh container to drain
-connections.
-
-Furthermore, if a container type "OrderedPhases" with the semantics of the [explained
-alternative][phase-startup] is added in the future, the semantics are still
-clear: the TerminationHook will be called for _any_ container (irrespective of
-their phase) when the pod switches to a terminating state.
-
-##### Alternative 2: Do nothing
-
-Do not call preStop hooks for sidecars twice, just remove the first call this
-section discusses.
-
-Then, suggest users that need to know when the pod changes to a terminating state to
-integrate with the Kubernetes API and add a watcher for that.
-
-This might be inconvenient for several users and further conversation is needed
-to see if this is feasible. We are aware of some users that this will cause
-issues and will probably need to patch Kubernetes because of this. This could
-also result in a large increase in calls to the Kubernetes API server causing
-scalability issues.
-
-##### Suggestion
-
-Aim to use alternative 1, while in parallel we collect more feedback from the
-community.
-
-It will be nice to do nothing (alternative 2), but probably the first step
-calling preStop hooks was added for a reason that couldn't be solved by
-integrating with the Kubernetes API. Therefore, while we double check this,
-seems safe to go with alternative 1.
-
-#### Killing pods take 3x the time
-
-In the design, sidecars and non-sidecars containers are supposed to share the
-termination grace period. However, in [the implementation
-PR](https://github.com/kubernetes/kubernetes/pull/80744) it takes up to ~3x the
-length. We think it is nice to discuss it here as the solution might need some
-agreements on how to improve this.
-
-Let's see why this happens first, and then discuss the possible fixes.
-
-The KEP currently proposes the following shutdown sequence steps (same as explained
-before, with a little more detail on what is blocking or not now):
-
-1. All sidecar containers preStop hook are executed (blocking) until they finish
-1. All non-sidecar containers preStop hook are executed (blocking) until they finish
-1. All non-sidecar containers are sent SIGTERM. If they don’t finish during the
-   time remaining for this step (more information below), SIGKILL is sent
-   (Idem step 1).
-1. All sidecar containers preStop hook are executed (blocking) until
-   they finished or are interrupted if exceed pod.TerminationGracePeriodSeconds
-1. All sidecar containers are sent SIGTERM. If they don’t finish during the time
-   remaining for this step (more information below), SIGKILL is sent
-
-In the current implementation PR, steps 1, 2 and 4 should complete within
-`pod.TerminationGracePeriodSeconds` each.  If they don't, the shutdown sequence
-continues with the next step. Please note that each of the mentioned steps has
-this maximum time to execute the hooks: `pod.TerminationGracePeriodSeconds`. In
-other words, elapsed time is ignored during preStop hook execution.
-
-Steps 3 and 5, on the other hand, do take into account the elapsed time and
-should complete within:
-* The remaining time: `pod.TerminationGracePeriodSeconds - <elapsed time in all
-previous steps>` seconds if this value is >= 2
-([`minimumGracePeriodInSeconds`][min-gracePeriodInSeconds])
-* 2 seconds if the previous value is < 2
-
-A side effect of this behaviour is that killing a pod with sidecar containers
-can take in the worst case, approximately: `pod.TerminationGracePeriodSeconds *
-3 + 2 * 2` seconds, compared to `pod.TerminationGracePeriodSeconds + 2` seconds
-without sidecar containers.
-
-This behaviour is because in the PR implementation the `gracePeriodOverride` is
-being used when [calling `killContainer()`][kill-container-param] to specify the
-time left to kill the containers. However, in `KillContainer()` the preStop
-hooks are run [here][kill-container-preStop] using the `gracePeriod` variable
-defined [here][kill-container-gracePeriod], which ignores the
-`gracePeriodOverride` param for the `killContainer()` function.  That parameter
-is used later, as the time to wait since SIGTERM is sent until a SIGKILL will be
-sent.
-
-##### Why is it important to discuss this?
-
-The most important reason is that this KEP needs to interoperate well with the
-kubelet shutdown KEP (KEP not yet created). We have been working together with
-the team working on that KEP and one of the scenarios to handle is shutting down
-a node in time constrained environments (preempt VMs in GCE, spot instances in
-AWS, etc.).
-
-As far as we coordinated, the Kubelet will kill the pods and the field
-`pod.DeletionGracePeriodSeconds` will be set for the time each pod has to
-be properly killed. If we add sidecars and we can't kill pods in a way that respect
-that time, this feature will not work on node shutdown. The whole point of this
-KEP having a [prerequisite](#prerequisites) on that KEP is to avoid that from
-happening.
-
-##### Alternatives to kill the pod in the expected time
-
-The behaviour of `killContainer()` ignoring `gracePeriodOverride` for preStop
-hooks was discussed in [this issue][issue-gracePeriodOverride].
-
-There, [we posted some observations][issue-gracePeriodOverride-comment] in the
-issue:
-
-1. `gracePeriodOverride` variable is not set when running command like `kubectl delete --grace-period 1 pod <pod-name>`.
-   Intuitively, we thought that was the case when the variable was set.
-   However, when running such a command, `pod.DeletionGracePeriodSeconds` is set instead.
-   More details in the link to the issue with this.
-
-1. Changing `killContainer()` to respect `gracePeriodOverride` parameter, as the
-   issue suggest, might be backwards incompatible. At least, if there are still
-   users that call the function with that param set (is a pointer, but it seems to be nil
-   in most cases).
-
-1. If we can't change `killContainer()` to respect `gracePeriodOverride` for
-   preStop hooks too, we should consider another way. One option is to update
-   `pod.DeletionGracePeriodSeconds` with the elapsed time, as that is used by
-   `killContainer()` for the preStop hooks.
-
-The documentation for
-[`pod.DeletionGracePeriodSeconds`][doc-DeletionGracePeriodSeconds] says this
-field can only be shortened. So, while I'm not really sure if this is okay to
-change that field, one option is to use that field for the elapsed time instead
-of the `gracePeriodOverride` parameter. As mentioned, this field is already
-taken into account within `killContainer()` to run preStop hooks, etc.
-
-But even if using `pod.DeletionGracePeriodSeconds` is possible, the current code
-assumes that it is possible that this field is not always set on deletion (for example
-[here][DeletionGracePeriodNotSet]). So, if indeed is not always set, we would need
-to set it (in conjunction to `pod.DeletionTimestamp` as the doc says) and I'd
-like some confirmation from the community to see if this makes sense.
-
-I'd also like to open the discussion about other options that might be better to
-handle this. Please let us know what you think :)
-
-[kill-container-param]: https://github.com/kubernetes/kubernetes/pull/80744/files#diff-44f60dd6d99cb695e5f333647ebd0703R727
-[kill-container-preStop]: https://github.com/kubernetes/kubernetes/blob/75b555241578ac60cbdef21e01604f2bba8d040d/pkg/kubelet/kuberuntime/kuberuntime_container.go#L624
-[kill-container-gracePeriod]: https://github.com/kubernetes/kubernetes/blob/75b555241578ac60cbdef21e01604f2bba8d040d/pkg/kubelet/kuberuntime/kuberuntime_container.go#L604-L610
-[min-gracePeriodInSeconds]: https://github.com/kubernetes/kubernetes/blob/e2d8f6c278011b2eabf5754c3274bc406731933c/pkg/kubelet/kuberuntime/kuberuntime_manager.go#L61-L62
-[issue-gracePeriodOverride]: https://github.com/kubernetes/kubernetes/issues/92432
-[issue-gracePeriodOverride-comment]: https://github.com/kubernetes/kubernetes/issues/92432#issuecomment-648259349
-[doc-DeletionGracePeriodSeconds]: https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.18/#objectmeta-v1-meta
-[DeletionGracePeriodNotSet]: https://github.com/kubernetes/kubernetes/blob/e63fb9a597bfbf6f3d454489e4fb49b40ad8c48f/pkg/kubelet/kuberuntime/kuberuntime_container.go#L604-L610
-
-#### How to split the shutdown time to kill different types of containers?
-
-The previous section is about how to, at the implementation level, respect a
-given time when killing a pod. This section, in contrast, is about how to split
-the available time between the different steps in the shutdown sequence.
-
-Something worth mentioning is that the time to terminate a pod is defined _per
-pod_ and not _per container_. Therefore, any termination sequence will have to
-deal with how to split that time in the different steps, now that all containers
-are not stopped in parallel.
-
-To avoid confusion, the steps of the shutdown sequence are:
-1. Run TerminationHook for _any_ container that defines it (sidecar or not)
-1. Run preStop hooks for non-sidecars
-1. Send SIGTERM for non-sidecars
-1. Run preStop hooks for sidecars
-1. Send SIGTERM for sidecars
-
-It's important to note that:
- * Pods without sidecar containers terminate in about
-   `TerminationGracePeriodSeconds + 2` seconds in the worst case
-
-This is because if the preStop hooks use all the time available, 2 seconds is
-used as a [minimum grace period][min-gracePeriodInSeconds] to kill the container
-by default (to avoid SIGKILLs).
-
-If the node is running on a preempt VM or spot instance, the time to terminate
-a pod might be shorter than `TerminationGracePeriodSeconds`. In that case, when
-the kubelet graceful shutdown (not yet submitted) KEP is implemented, the
-kubelet will set that time as pod.DeletionGracePeriodSeconds and that will be
-used here. For simplicity, instead of naming the two options, we will only use
-`GraceTime` from now on to mean: if pod.DeletionGracePeriodSeconds is set, then
-`GraceTime` is that and if not set it is `TerminationGracePeriodSeconds`. This
-logic is what is [already used in Kubernetes today][k8s-grace-time-precedence].
-
-We can see the following alternatives to handles this, while trying to respect
-the time to kill a pod: `GraceTime + c` (c being a constant, sometimes 0). As
-pods without sidecars use `GraceTime + 2`, aiming to something close to that (or
-lower) seems good.
-
-Bear in mind that to interoperate correctly with the kubelet graceful shutdown
-(not yet submitted) KEP we should respect the time given to kill the pod.
-
-Also, take into account that this deadline currently takes into account only the
-time the kubelet will wait from sending SIGTERM till it needs to send a SIGKILL,
-or the time it will wait for prestop hooks execution. But it completely ignores
-the time spent in go code that needs to be executed before/after each step.
-
-[k8s-grace-time-precedence]: https://github.com/kubernetes/kubernetes/blob/5a50c5c95fa2e16e9655ab3db2a3e4255aa87e25/pkg/kubelet/kuberuntime/kuberuntime_container.go#L604-L610
-
-##### Alternative 1: Allow any step to consume all and be over `GraceTime` by 8s
-
-This alternative allows any step in the shutdown sequence to consume all the
-`GraceTime`. In general, any step will have to execute within:
- * Remaining time: `GraceTime - <elapsed time in the previous steps>` if this
-   value is >= 2.
- * Minimum time: 2 seconds if the previous value is <2.
-
-This option can will take, in the worst case, `GraceTime + 8` seconds. The
-reason is simple: there are 5 steps, the first can consume `GraceTime` and the
-rest can consume 2 seconds each (`2*4`).
-
-##### Alternative 2: Allow any step to consume all and skip preStop hooks
-
-This alternative allows any step in the shutdown sequence to consume all the
-`GraceTime`, but preStop hooks are skipped if we run out of time. In general,
-any step will have to execute within:
- * Remaining time: `GraceTime - <elapsed time in the previous steps>` if this
-   value is >= 2.
- * preStop hooks will be skipped if the remaining time is <2
- * 2 seconds for containers (SIGTERM) if the remaining time <2
-
-This option can will take, in the worst case, `GraceTime + 4` seconds. The
-explanation is similar to the previous case: there are 5 steps, the first can
-consume `GraceTime`, preStop hooks are skipped and 2 seconds is used in each
-step that sends SIGTERM (`2*2`).
-
-Skipping the preStop hooks is weird, but this option is listed as this is what
-[currently happens][k8s-prestop-skipped] if you use something like `kubectl delete pod --grace-time 0
-<pod>`. In other words, today when running that command the preStop hooks are
-ignored and 2s is used to wait for the container to finish when sending SIGTERM.
-
-[k8s-prestop-skipped]: https://github.com/kubernetes/kubernetes/blob/5a50c5c95fa2e16e9655ab3db2a3e4255aa87e25/pkg/kubelet/kuberuntime/kuberuntime_container.go#L622-L623
-
-##### Alternative 3: Allow any step to consume all and be over `GraceTime` by 0s
-
-This alternative allows any step in the shutdown sequence to consume all the
-`GraceTime`, but if we run out of time, the next steps have 0s to execute. In
-general, any step will have to execute within:
- * Remaining time: `GraceTime - <elapsed time in the previous steps>`
- * 0s if the remaining time is 0.
-
-Running a step with 0s means: preStop hooks will be skipped and containers will
-be just sent SIGKILL. Therefore, this alternative will take, in the worst case,
-`GraceTime` to execute.
-
-Skipping the preStop hooks when the gracePeriod is 0, as mentioned in the
-previous alternative, is what is currently done.
-
-This alternative is also weird in the following way: a non-sidecar container can
-make sidecars never execute. The goal of using sidecar containers to have some
-time to execute after other containers are killed is not achieved, in the end.
-
-##### Alternative 4: Allow any step to consume all and use 6s as minimum `GraceTime`
-
-A different alternative is to force `GraceTime` to be more than 6s to allow all
-steps to have a 2s minimum and still not take more than `GraceTime + 2` overall.
-This is the same time that can take to kill a pod without sidecar containers.
-
-Each step in the shutdown sequence has to execute within:
- * Remaining time: `GraceTime - 6 - <elapsed time in previous steps>` if this
-   value is >2.
- * 2 seconds if the remaining time is <2.
-
-This alternative can take `GraceTime + 2` in the worst case to kill a pod. This
-is because the first step can take `GraceTime - 6` and the following 4 steps can
-take 2s each.
-
-In this case, it can be validated that TerminationGracePeriodSeconds is >=6 for
-pods with sidecar containers and be properly documented.
-
-The minimum of 6s can be used when the pod is killed, but handling correctly
-when the user wants to override this (being documented that might cause SIGKILL,
-etc.) on commands like: `kubectl delete pod --grace-period 0`.
-
-We will need to gather feedback from users, though, to know if this restriction
-is enough for all use cases.
-
-##### Alternative 5: Use _per container_ terminations
-
-Adding _per container_ terminations _can_ create tricky semantics when combined
-with the _per pod_ termination.
-
-The first thing to note is that any defined _per container_ termination time will
-not be guaranteed in case of spot/preempt VMs, as the time to kill the pod might
-be shorter than the one configured. In that case, what is the correct way to
-handle it is unclear. One option is to calculate the weight or proportional time
-each container has and use that for each.
-
-The second thing to note about creating _per container_ termination time is that
-it can be redundant with the _per pod_ setting. For example, if a _per
-container_ TerminationGracePeriod is set for _all_ containers in a pod, the
-pod.TerminationGracePeriod setting doesn't add any information: it can be
-calculated by those _per container_ settings.
-
-Alternatives to combine a _per container_ termination with _per pod_ are not
-very nice either. Some options to combine them are: allow only the _per pod_ or
-_per container_ setting to be set but never both at the same time; allow
-pod.TerminationGracePeriod to be set if some container doesn't have the
-equivalent _per container_ and calculate how much time is left to run those.
-
-In the latter case, it can be very confusing as some combinations of
-`pod.TerminationGracePeriod` and the _per container_ settings are not compatible
-as will create negative timeouts for some steps in the shutdown sequences.
-This needs to be validated at the admission time and calculations are not that
-obvious for users to be doing (I wouldn't like to do that, at least).
-
-If a _per container_ setting is needed, we consider the first option the
-simplest way forward.
-
-##### Suggestion
-
-Use alternative 4. Guarantees to terminate in the same time that pods without
-sidecar containers terminates and adds a simple validation on pod admission for
-pods with sidecar containers.
-
-The rest of the alternatives either take more time, require SIGKILL (that
-defeats the purpose of sidecar containers finishing after) or are way more
-complicated (like alternative 5).
-
-Having a minimum time of 6s for pods with sidecar containers, as alternative 4
-proposes, is a guarantee that might be difficult to change in the future (after
-GA). However, it seems the cleanest and simplest way to move forward now.
-
-Alternative 4 seems fine for the Alpha stage and we can gather feedback from
-users. Ideas and opinions are _very_ welcome, though.
-
-#### Currently not handling the case of pod=nil
-
-This issue is not a design issue only, but the design doesn't mention what to
-modify for this and [the implementation
-PR](https://github.com/kubernetes/kubernetes/pull/80744) doesn't handle this
-case.
-
-The kubelet tries hard to handle the case where the pod being deleted is nil.
-This can happen in some race scenarios (and it seems now is less likely to
-happen, maybe with static pod) where the kubelet is restarted while the pod is
-being terminated and when the kubelet starts again, the pod is deleted from the
-API server. In that case the kubelet can't get the pod from the API server (so
-pod is nil) but it needs to kill the running containers.
-
-The current open PR doesn't handle this case. This means the sidecar shutdown
-behaviour is not used when the pod is nil in the current implementation PR.
-However, there is another PoC implementation using pod annotations, linked in
-this doc, that handles this case by just adding the labels to the container
-runtime.
-
-From Rodrigo's experience (@rata) writing the PoC implementation, this seems
-easy to fix, so we would suggest to fix it for alpha stage. This will be added
-in detail to the proposal if agreed.
+### Notes/Constraints/Caveats
 
 #### Pods with RestartPolicy Never
 
-This case also derives from a _per pod_ setting that for some use cases having
-it _per container_ can be desired.
-
-The case is simple: pods with RestartPolicy Never will never even start
-non-sidecar containers if sidecar containers crash. That is because the sidecar
-is not restarted due to the pod RestartPolicy and non-sidecar containers will
-only start once sidecar are up and in a ready state. As sidecars are not ready,
-non-sidecars are not started.
+Pods with RestartPolicy Never will never even start non-sidecar containers if
+sidecar containers crash. That is because the sidecar is not restarted due to
+the pod RestartPolicy Never and non-sidecar containers will only start once
+sidecar are up and in a ready state. As sidecars are not ready, non-sidecars are
+not started.
 
 The most common use case is for jobs. If the sidecar crashes and the policy is
 to never restart, the pod will be "stalled" with no way to move forward.
 
-Furthermore, if the podPhase is not modified to have a special behavior for
-sidecar containers, the [phase will be pending][pod-phase-pending] (as some
-containers were not started).
+This is quite similar to what happens today if a job (or a pod with
+RestartPolicy Never) has more than one container and some crashes: those are not
+restarted. Therefore is considered a known caveat.
 
-[pod-phase-pending]: https://github.com/kubernetes/kubernetes/blob/8398bc3b53cb51b341e14ae2a2cea01cedbf7904/pkg/kubelet/kubelet_pods.go#L1447-L1453
+#### Modify killContainer() to enforece gracePeriodOverride on preStop hooks
 
-##### Alternative 1: Add a per container fatalToPod field
+The behaviour of `killContainer()` ignoring `gracePeriodOverride` for preStop
+hooks was discussed in [this issue][issue-gracePeriodOverride]. After more
+investigation it seems that gracePeriodOverride is unused, so modifications to
+enforce the time on preStop hooks too seems safe.
 
-One option is to add a `fatalToPod` bool field _per container_. This will mean
-that if the given container crashes, that is fatal to the pod so the pod is
-killed.
+The modification can live under the feature gate and if concerns arise a new
+parameter can be added to `killContainer()` to take note of the time left to
+kill the containers and leave gracePeriodOverride untouched.
 
-This will give a clear way to have jobs with restartPolicy never and not leaving
-stalled pods: a sidecar container can define this field and if it crash, it will
-kill the pod.
+The param seems unused, as mentioned in the [issue
+comment][issue-gracePeriodOverride-comment], because I can't find any call to
+`killContainer()` that set it to a non-nil value (sometimes it is set to the
+same value another parameter has, but that parameter ends up always being nil).
+Additionally, looking at the [tests for the function][tests-for-func] those were
+created in commit 25bc76dae4cf and always set DeletionGracePeriodSeconds and
+TerminationGracePeriodSeconds to the same value used as gracePeriodOverride.
+Therefore, it seems like a using smaller gracePeriodOverride than those values
+(DeletionGracePeriodSeconds/TerminationGracePeriodSeconds) was overlooked rather
+than an intended change.
 
-For different (unclear) reasons, this functionality [was requested on the
-mailing list][ml-kill-pod] in the past.
+Furthermore, changing `killContainer()` to enforce the gracePeriodOverride on
+preStop hooks doesn't break the unit tests either.
 
-Another use of this functionality is that in some specific use cases, if a
-container crashes, you just want to kill the entire pod and start again. This
-was requested by some clients, at least.
+[issue-gracePeriodOverride]: https://github.com/kubernetes/kubernetes/issues/92432
+[issue-gracePeriodOverride-comment]: https://github.com/kubernetes/kubernetes/issues/92432#issuecomment-648259349
+[tests-for-func]: https://github.com/kubernetes/kubernetes/blob/47c450776f2731955ee7a4e8cc7ec1b4b6f14851/pkg/kubelet/kuberuntime/kuberuntime_container_test.go#L310-L322
 
-I'd like to know what the rest think about this.
+#### Time to kill a pod increased by 4 seconds in the worst case
 
-[ml-kill-pod]: https://discuss.kubernetes.io/t/how-can-i-have-a-pod-delete-itself-on-failure/8699
+Currently the shutdown sequence of a pod looks like this **if preStop hooks never
+finish**:
+ 1. Execute prestop hooks until pod.TerminationGracePeriodSeconds
+ 1. Send SIGTERM, wait for 2 seconds. Send SIGKILL to containers that didn't
+    exit.
 
-##### Alternative 2: Do nothing
+When sidecar containers are used, the shutdown sequence looks like **if preStop
+hooks never finish**:
 
-Another option is to leave the pod stalled. A pod with containers that crash and
-are not restarted, will have a similar behaviour. The main and non-trivial
-difference, though, is that in this case some container will not be even
-started (non-sidecar containers won't be started if sidecars crash).
+1. non-sidecars containers: execute preStop hooks until pod.TerminationGracePeriodSeconds
+1. non-sidecar containers: Send SIGTERM, wait for 2 seconds. Send SIGKILL to containers that didn't
+    exit.
+1. Sidecar containers: execute preStop hooks with 2 seconds grace period
+1. sidecar containers: Send SIGTERM, wait for 2 seconds. Send SIGKILL to containers that didn't
+    exit.
 
-
-##### Alternative 2: Always restart sidecar containers
-
-Another option is to always restart sidecar containers, under the assumptions
-that they are always needed.
-
-This seems confusing, as doing this when the pod restartPolicy is Never doesn't
-seem right. In other words, having a container not respect the pod restartPolicy
-with no explicit mentions seems asking for trouble.
-
-However, this is what the fork of at least one company is doing. Their use case
-is using Jobs to run some workloads where the main (non-sidecar) container has TB
-of memory in RAM, with no way to persist calculated data and may take weeks to run.
-In those cases losing all of that because a sidecar crashes is a too expensive
-price to pay and they resorted to always restart them.
-
-We think that in those cases using an OnFailure RestartPolicy for the job might
-seem more appropriate and, in any case, not having any kind of persistence for
-graceful shutdown doesn't seem like a good reason to have this behaviour in
-Kubernetes.
-
-In any case, it seems like a real problem and worth exploring ways to handle
-this. As always, ideas are very welcome :).
-
-##### Suggestion
-
-Go for Alternative 1. Seems simple and leaves the cluster in a clean state.
-However, I really would like to know what others think.
-
+This means that in some cases where one step in the shutdown sequence is
+stalled, the following steps are given 2 seconds to execute.  As there are 2
+more steps in the shutdown sequence when using sidecars, it can take 4 more
+seconds to finish.
 
 #### Enforce the startup/shutdown behavior only on startup/shutdown
 
@@ -973,18 +424,12 @@ One of the goals of this KEP is to **only modify the startup/shutdown
 sequence**. This makes the semantics clear and helps to have clean code, as only
 those places will be changed.
 
-Therefore, once non-sidecar containers have been started, kubernetes treats
-containers in the pod indistinguishable from containers in a pod without
-sidecar containers. That is, once sidecars and non-sidecars containers have
-been started once, the regular kubernetes reconciliation loop is used for all
-the containers in the pod during the pod lifecycle until the shutdown sequence
-is fired. This guarantees that only the startup and shutdown behaviour of
-sidecar containers is affected and not the rest of the pod lifecycle.
-
-However, one side effect is that if, for example, all containers happen to
-crash at the same time, all _can_ be restarted at the same time (if the restart
-policy allows). This might be surprising, as instances of all the containers
-being started at the same time can be seen by the users.
+However, one side effect is that, for example, after pod startup has been
+completed and sidecar and non-sidecar started, if all containers happen to crash
+at the same time, all _can_ be restarted at the same time (if the restart policy
+allows), as it is not done during startup of the pod. This might be surprising,
+as instances of all the containers being started at the same time can be seen by
+the users.
 
 We believe this is fine, though, as the goal is to not change the behaviour
 other than startup/shutdown and this edge case should be handled by users, as
@@ -993,264 +438,72 @@ any other container crashes.
 If this behaviour is not welcome, however, code probably can be adapted to
 handle the case when all containers crashed differently.
 
-#### Sidecar containers won't be available during initContainers phase
+### Risks and Mitigations
 
-The current proposal adds sidecar containers that will be started after all
-initContainer executed. In other words, it just gives an order to containers on
-the `containers` array.
+You could set all containers to have `lifecycle.type: Sidecar`, this would cause strange behaviour in regards to shutting down the sidecars when all the non-sidecars have exited. To solve this the api could do a validation check that at least one container is not a sidecar.
 
-For most users we talked about (some big companies and linkerd, will try to
-contact istio soon) this doesn't seem like a problem. But wanted to make this
-visible, just in case.
+Init containers would be able to have `lifecycle.type: Sidecar` applied to them as it's an additional field to the container spec, this doesn't currently make sense as init containers are ran sequentially. We could get around this by having the api throw a validation error if you try to use this field on an init container or just ignore the field.
 
-Furthermore, service meshes don't provide easy ways to use them with
-initContainers (probably due to Kubernetes limitations). This KEP won't change
-that.
+Older Kubelets that don't implement the sidecar logic could have a pod scheduled on them that has the sidecar field. As this field is just an addition to the Container Spec the Kubelet would still be able to schedule the pod, treating the sidecars as if they were just a normal container. This could potentially cause confusion to a user as their pod would not behave in the way they expect, but would avoid pods being unable to schedule.
 
-Another thing to take into account is that Istio has an alternative to the
-initContainer approach. Istio [has an option][istio-cni-opt] to integrate with
-CNI and inject the blackhole from there instead of using the initContainer. In
-that case, it will do (just c&p from the link, in case it breaks in the
-future):
+Shutdown ordering of Containers in a Pod can not be guaranteed when a node is being shutdown, this is due to the fact that the Kubelet is not responsible for stopping containers when the node shuts down, it is instead handed off to systemd (when on Linux) which would not be aware of the ordering requirements. Daemonset and static Pods would be the most effected as they are typically not drained from a node before it is shutdown. This could be seen as a larger issue with node shutdown (also effects things like termination grace period) and does not necessarily need to be addressed in this KEP , however it should be clear in the documentation what guarantees we can provide in regards to the ordering.
 
-> By default Istio injects an initContainer, istio-init, in pods deployed in the mesh. The istio-init container sets up the pod network traffic redirection to/from the Istio sidecar proxy. This requires the user or service-account deploying pods to the mesh to have sufficient Kubernetes RBAC permissions to deploy containers with the NET_ADMIN and NET_RAW capabilities. Requiring Istio users to have elevated Kubernetes RBAC permissions is problematic for some organizations’ security compliance
-> ...
-> The Istio CNI plugin performs the Istio mesh pod traffic redirection in the Kubernetes pod lifecycle’s network setup phase, thereby removing the requirement for the NET_ADMIN and NET_RAW capabilities for users deploying pods into the Istio mesh. The Istio CNI plugin replaces the functionality provided by the istio-init container.
+## Design Details
 
-In other words, when using the CNI plugin it seems that InitContainer don't use
-the service mesh either. Rodrigo will double check this, just in case.
+The proposal can broken down into four key pieces of implementation that all relatively separate from one another:
 
-[linkerd-last-container]: https://github.com/linkerd/linkerd2/issues/4758#issuecomment-658457737
-[istio-cni-opt]: https://istio.io/latest/docs/setup/additional-setup/cni/
+* Shutdown triggering for sidecars when RestartPolicy!=Always
+* Sidecars are terminated after normal containers
+* Sidecars start before normal containers
 
-##### Suggestion
+### API Changes:
+As this is a change to the Container spec we will be using feature gating, you will be required to explicitly enable this feature on the api server as recommended [here](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api_changes.md#adding-unstable-features-to-stable-versions).
 
-Confirm with users that is okay to not have sidecars during the initContainers
-phase and they don't foresee any reason to add them in the near future.
+New field `Type` will be added to the lifecycle struct:
 
-It seems likely that is not a problem and this is a win for them, as they can
-remove most of the hacks. However, it seems worth investigating if the CNI
-plugin is a viable alternative for most service mesh and, in that case, how much
-they will benefit from this sidecar KEP.
+```go
+type Lifecycle struct {
+  // Type specifies the container type.
+  // It can be sidecar or, if not present, default behavior is used
+  // +optional
+  Type LifecycleType `json:"type,omitempty" protobuf:"bytes,3,opt,name=type,casttype=LifecycleType"`
+}
+```
+New type `LifecycleType` will be added with one constant:
+```go
+// LifecycleType describes the lifecycle behaviour of the container
+type LifecycleType string
 
-It seems likely that they will benefit for two reason: (a) this might
-be simpler or model better what service mesh need during startup, (b) they still
-need to solve the problem on shutdown, where the service mesh needs to drain
-connections first and be running until others terminate. These are needed for
-graceful shutdown and allowing other containers to use the network on shutdown,
-respectively.
+const (
+  // LifecycleTypeSidecar means that the container will start up before non-sidecar containers and be terminated after
+  LifecycleTypeSidecar LifecycleType = "Sidecar"
+)
+```
+Note that currently the `lifecycle` struct is only used for `preStop` and `postStop` so we will need to change its description to reflect the expansion of its uses.
 
-Rodrigo will reach out to users to verify, though.
+### Kubelet Changes:
+Broad outline of what places could be modified to implement desired behaviour:
 
-#### Revisit if we want to modify the podPhase
+#### Shutdown triggering
+Package `kuberuntime`
 
-The current proposal modifies the `podPhase`. The reasoning is this (c&p from
-the proposal):
+Modify `kuberuntime_manager.go`, function `computePodActions`. Have a check in this function that will see if all the non-sidecars had permanently exited, if true: return all the running sidecars in `ContainersToKill`. These containers will then be killed via the `killContainer` function which sends preStop hooks, sig-terms and obeys grace period, thus giving the sidecars a chance to gracefully terminate.
 
-> PodPhase will be modified to not include Sidecars in its calculations, this is so that if a sidecar exits in failure it does not mark the pod as `Failed`. It also avoids the scenario in which a Pod has RestartPolicy `OnFailure`, if the containers all successfully complete, when the sidecar gets sent the shut down signal if it exits with a non-zero code the Pod phase would be calculated as `Running` despite all containers having exited permanently.
+#### Sidecars terminated last
+Package `kuberuntime`
 
-As noted by @zhan849 in [this review comment][pod-phase-review-comment], those
-changes to the pod phase is a behavioural change regarding [current
-documentation about the pod phase][pod-phase-doc].
+Modify `kuberuntime_container.go`, function `killContainersWithSyncResult`. Break up the looping over containers so that it goes through killing the non-sidecars before terminating the sidecars.
+Note that the containers in this function are `kubecontainer.Container` instead of `v1.Container` so we would need to cross reference with the `v1.Pod` to check if they are sidecars or not. This Pod can be `nil`, so labels will be added to recover the sidecar information in those cases (just like it is done for the preStop hook and other fields, in `labels.go` of `kuberuntime` package).
 
-[pod-phase-review-comment]: https://github.com/kubernetes/kubernetes/pull/80744/files?file-filters%5B%5D=.go#r379928630
-[pod-phase-doc]: https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#pod-phase
+To make sure `killContainersWithSyncResult()` finishes in time,
+`killContainer()` will be adapted to enforce the `gracePeriodOverride` parameter
+on preStop hooks too. See the [caveats](#notesconstraintscaveats) section for more details on why this
+is needed.
 
-##### Alternative 1: don't change the pod phase
+#### Sidecars started first
+Package `kuberuntime`
 
-We propose to not change the pod phase due to sidecar containers status. This
-simplifies the code (no special behaviour is needed besides the startup or
-shutdown sequences) and properly reflect the current documented phases.
-
-Documentation says that during pending phase, not all containers have been
-started. This is true for pods with sidecar containers as well, even when
-sidecars are running and non-sidecar not yet.
-
-The running state will also have the same meaning as currently documented: all
-containers in the pod are running.
-
-Furthermore, it seems correct to mark the pod as failed if a sidecar container
-failed. For example, if a job has all containers exited successfully except for
-a sidecar container that failed, marking it as failed seems the right call. That
-sidecar container can be a container uploading files when the main container
-finished. Just making sure it finishes to run seems the right thing to do.
-
-##### Alternative 2: change the pod phase
-
-Keep the current proposal to modify it, making sure everyone on the community is
-on board with this modification.
-
-##### Suggestion
-
-Go for alternative 1, seems to lead to simpler code, pod phase seems to be
-correct and no behavioural changes are done regarding the current documentation
-that might need to have a special case when sidecars are running.
-
-#### No container type standard
-
-This proposal adds a field `type` to the pod spec containers array, but the only
-value is `sidecar`. This seems weird as there would be containers with type
-`sidecar` and containers with no type that will have different behavior.
-
-This was already discussed [in the past][pr-kep-type-standard], with several
-issues that bitten us when default values were added to pod spec (see the link
-for examples). It was decided to not have a `standard` container type back then,
-to avoid such issues.
-
-We consider this weird but, as we can't do anything about it and we were okay in
-the past, we propose to keep this as it is. It seems we were okay, judging from [that same
-review comment][pr-kep-type-standard] and [this][pr-kep-api-ok].
-
-[pr-kep-type-standard]: https://github.com/kubernetes/kubernetes/pull/79649#discussion_r362658887
-[pr-kep-api-ok]: https://github.com/kubernetes/kubernetes/pull/79649#issuecomment-589861200
-
-#### Is this change really worth doing?
-
-We think this is a very important question to make and discuss. We think there is
-probably agreement on this already, but we prefer to discuss it now and raise
-any concerns (if any) to minimize chances of a last minute show stopper again.
-
-This KEP has a clear motivation and explains the pain some users currently
-experience. However, it is worth discussing openly if we want to fix this or if
-this way is the right path to pursue. To avoid this discussion to happen on tons
-of different places across the doc, we think adding a section just for this can
-help concentrate the discussion about it. Hopefully this section will mention
-most of the concerns reviewers might have.
-
-This KEP proposes basically to fix two different problems:
- * Allow Kubernetes Jobs to have sidecar containers that run continuously
-   without coupling with other containers in the pod.
- * Allow pods to start a subset of containers first and, only when those are
-   ready, start the remaining containers. And similar guarantees during
-   shutdown.
-
-Let's analyse both.
-
-##### Kubernetes jobs with sidecars
-
-As explained in the motivation section, this is a problem today. Also, the
-workaround needed from users to do this today seem horrible: coupling between
-containers to signal termination are invasive and require modifications to all
-containers in the pod. Additionally, they usually are prone and gets in the way
-of auto-injecting containers for jobs.
-
-In addition, Kubernetes seems the best layer to do a fix: it can have all the
-needed information to know which containers should be killed when some others
-are finished and avoid any kind of coupling in other layers.
-
-##### Service mesh
-
-For Istio service mesh, part of the problem were solved by Istio using a CNI
-plugin: the CNI plugin created the iptables redirect it is needed to proxy the
-traffic. This removed the need for an initContainer. However, some problems
-persist:
-1. If the service mesh is not started before other containers, containers will
-   start without network connectivity
-1. If the service mesh is killed before other containers, those won't be able to
-   use the network during shutdown (and possible finish processing inflight
-   requests)
-
-It is worth noting, however, that the first problem is something that *should*
-be handled in any case: if the service mesh container crashes, others container
-won't be able to use the network. And if they happen to crash and be restarted
-while the service mesh container is down, it is the same situation that can
-happen today at startup. So, this _really_ should be handled at the application
-layer. However, as mentioned in the motivation section, there are some
-apps/middleware that have this problem on startup only.
-
-The other problem seems to be very directed to the way Kubernetes starts and
-stops containers: if that isn't changed in Kubernetes, it seems difficult to
-solve by any other piece in the stack other than Kubernetes.
-
-##### Kubernetes pods that run indefinitely with sidecars
-
-One concern might be that this KEP helps to hide some errors from users. For
-example: let's say a we have a pod with two container: A and B. And let's say
-container B doesn't handle correctly the case when container A crashes.
-
-If a user is unaware of B not handling correctly when A crashes and makes
-container A a sidecar, this may indeed hide most occurrences of B not handling
-the cases where A crashes. Because B will be started only when A is up and in a
-ready state.
-
-This is a valid concern. We think this can be mitigated by good documentation,
-clarifying that this is only at startup and container crashes need to still be
-handled correctly. I'd love to hear other opinions, though.
-
-Furthermore, adding the sidecar functionality can improve the experience of
-several users (properly drain connections, reduce errors on shutdown or even not
-lose events during shutdown as shown in the motivation section) and other nice
-side effects. Those are mentioned in detail in the motivation section.
-
-Another side effect _can_ be reduced startup time (it might not be the case for
-all users, though). Even when using applications that use a backoff to retry
-when things fails, if containers are started in a "random" order it can increase
-the startup time considerably. If some containers are started only after some
-others are ready, the startup time can be reduced, especially as the number of
-sidecar containers increases (imagine a pod with 6 sidecar containers). The
-startup time can have an interesting effect when it is combined with
-autoscaling, for example.
-
-##### Summary
-
-We think both cases are worth solving and this way seems like a good way to
-solve them: start/stop containers is something kubernetes does and therefore
-seems the right layer to control that.
-
-We also think that there is some risk of users using `type: sidecar` to any
-sidecar container that doesn't need any startup/shutdown special handling. But
-this is something we can gather feedback during alpha stage and properly
-document. We think that will be enough to alleviate that concern (if anyone
-actually has it) while at the same time achieve the goals this KEP tries to
-achieve.
-
-All opinions are very welcome on this. Please comment.
-
-#### Why this design seems extensible?
-
-This is a difficult section to add, as different people probably have different
-concerns. So, I'd list the ones that we can think of to open this discussion, and
-encourage everyone to review this critically and see if there is something
-missing to take into account.
-
-Let's try to look into the extensibility of this under different scenarios, to
-have a better understanding, but is of course impossible to give guarantees.
-
-##### What if we add pre-defined phases for container startup/shutdown?
-
-This is an invented example. Let's suppose we add a `type: OrderedPhase` in the
-future, that also includes another `Order` field that is an int, starting from
-0.
-
-In this case, containers are started from lower to higher. And stopped from
-higher to lower. For example, first containers with `Order: 0` will be started,
-then container with `Order: 1`, etc. And in the reverse order for shutdown.
-
-Let's call standard container type to containers without the `type` field set.
-
-It seems the current containers type `standard` and `sidecar` can be easily
-extended for this: standard is mapped to one particular int (let's say 1) and
-sidecar is mapped into the previous one (0 in this example).
-
-Then, all container type can coexist just fine and the startup and shutdown
-sequence is clearly defined.
-
-If the "NotificationHook" suggested is also implemented, then the shutdown
-sequence will run that first, no matter the container _type_, as the first step in the
-shutdown sequence.
-
-##### What if we add "Depends On" semantics to containers?
-
-Let's call standard container type to containers without the `type` field set.
-
-This is very similar to the previous:
- * TerminationHook doesn't need any adaptation
- * Containers type standard will be treated as having a "Depends On" on all
-   sidecar type containers
- * Type sidecar containers won't depend on other
-
-This semantic will just be a 1-1 translation from the proposed KEP to this
-"Depends On" semantic, so it is easy for them to coexist.
+Modify `kuberuntime_manager.go`, function `computePodActions`. If pods has sidecars it will return these first in `ContainersToStart`, until they are all ready it will not return the non-sidecars. Readiness changes do not normally trigger a pod sync, so to avoid waiting for the Kubelet's `SyncFrequency` (default 1 minute) we can modify `HandlePodReconcile` in the `kubelet.go` to trigger a sync when the sidecars first become ready (ie only during startup).
 
 ### Proof of concept implementations
 
@@ -1273,10 +526,7 @@ them][kinvolk-poc-sidecar-test-commit] for instruction on how to run it.
 Some other things worth noting about the implementation:
  * It is done using pod annotations so it is easy to test for users (doesn't
    modify pod spec)
- * It implements the KEP proposal and not the suggested modifications, with one
-   exception: the podPhase is not modified.
- * [This line][kinvolk-poc-sidecar-prestop] should be modified to use the
-   `TerminationHook` instead, if such alternative is chosen
+ * Wasn't updated to call preStop hooks one time only, as this KEP now proposes
  * There is some c&p code to avoid doing refactors and just have a patch that is
    simpler to cherry-pick on different Kubernetes versions.
 
@@ -1285,17 +535,6 @@ Some other things worth noting about the implementation:
 [kinvolk-poc-sidecar-test]: https://github.com/kinvolk/kubernetes/tree/52a96112b3e7878740a0945ad3fc4c6d0a6c5227/sidecar-tests
 [kinvolk-poc-sidecar-test-commit]: https://github.com/kinvolk/kubernetes/commit/385a89d83df9c076963d2943507d1527ffa606f7
 
-### Risks and Mitigations
-
-You could set all containers to have `lifecycle.type: Sidecar`, this would cause strange behaviour in regards to shutting down the sidecars when all the non-sidecars have exited. To solve this the api could do a validation check that at least one container is not a sidecar.
-
-Init containers would be able to have `lifecycle.type: Sidecar` applied to them as it's an additional field to the container spec, this doesn't currently make sense as init containers are ran sequentially. We could get around this by having the api throw a validation error if you try to use this field on an init container or just ignore the field.
-
-Older Kubelets that don't implement the sidecar logic could have a pod scheduled on them that has the sidecar field. As this field is just an addition to the Container Spec the Kubelet would still be able to schedule the pod, treating the sidecars as if they were just a normal container. This could potentially cause confusion to a user as their pod would not behave in the way they expect, but would avoid pods being unable to schedule.
-
-Shutdown ordering of Containers in a Pod can not be guaranteed when a node is being shutdown, this is due to the fact that the Kubelet is not responsible for stopping containers when the node shuts down, it is instead handed off to systemd (when on Linux) which would not be aware of the ordering requirements. Daemonset and static Pods would be the most effected as they are typically not drained from a node before it is shutdown. This could be seen as a larger issue with node shutdown (also effects things like termination grace period) and does not necessarily need to be addressed in this KEP , however it should be clear in the documentation what guarantees we can provide in regards to the ordering.
-
-## Design Details
 
 ### Test Plan
 * Units test in kubelet package `kuberuntime` primarily in the same style as `TestComputePodActions` to test a variety of scenarios.
@@ -1493,11 +732,10 @@ startup, as explained in the next section.
 
 #### Service mesh or metrics sidecars
 
-Let app container be the main app that just has the service mesh extra container
-in the pod.
-
-Service mesh, today, have to do the following workarounds due to lack of startup
-ordering:
+Service mesh, today, have to do the following workarounds due to lack of
+startup/shutdown ordering:
+ * Recommend users to delay starting their apps by using a script to wait for
+   the service mesh to be ready.
  * Blackhole all the traffic until service mesh container is up (usually using
    an initContainer for this)
  * Some trickery (sleep preStop hooks or some alternative) to not be killed
@@ -1506,7 +744,9 @@ ordering:
 
 This means that if the app container is started before the service mesh is
 started and ready, all traffic will be blackholed and the app needs to retry.
-Once the service mesh container is ready, traffic will be allowed.
+Once the service mesh container is ready, traffic will be allowed. A similar
+problem happens for shutdown: if the service mesh container is killed first, the
+network is down for the rest of the containers in the pod.
 
 This has another major disadvantage: several apps crash if traffic is blackholed
 during startup (common in some rails middleware, for example) and have to resort
@@ -1514,20 +754,16 @@ to some kind of workaround, like [this one][linkerd-wait] to wait. This makes
 also service mesh miss their goal of augmenting containers functionality without
 modifying the main application.
 
-Istio has an alternative to the initContainer hack. Istio [has an
-option][istio-cni-opt] to integrate with CNI and inject the blackhole from there
-instead of using the initContainer. In that case, it will do (just c&p from the
-link, in case it breaks in the future):
+This KEP addresses these 3 problems just listed when initContainer are not used
+by the application. If initContainers are used, the first and the last problem
+are solved only. In other words, traffic might still be blackholed for
+initContainers that run after the service mesh iptables rules are inserted.
 
-> By default Istio injects an initContainer, istio-init, in pods deployed in the mesh. The istio-init container sets up the pod network traffic redirection to/from the Istio sidecar proxy. This requires the user or service-account deploying pods to the mesh to have sufficient Kubernetes RBAC permissions to deploy containers with the NET_ADMIN and NET_RAW capabilities. Requiring Istio users to have elevated Kubernetes RBAC permissions is problematic for some organizations’ security compliance
-> ...
-> The Istio CNI plugin performs the Istio mesh pod traffic redirection in the Kubernetes pod lifecycle’s network setup phase, thereby removing the requirement for the NET_ADMIN and NET_RAW capabilities for users deploying pods into the Istio mesh. The Istio CNI plugin replaces the functionality provided by the istio-init container.
+Such rules are usually inserted as an initContainer (trying to run last, to
+avoid blackholing traffic to other initContainers) or alternatively, in the case
+of Istio, using a [CNI plugin][istio-cni-opt]. When using the CNI plugin all
+traffic from initContainers will be blackholed.
 
-In other words, Istio has an alternative to configure the traffic blockhole
-without an initContainer. But the other problems and hacks mentioned remain,
-though.
-
-[linkerd-last-container]: https://github.com/linkerd/linkerd2/issues/4758#issuecomment-658457737
 [istio-cni-opt]: https://istio.io/latest/docs/setup/additional-setup/cni/
 [linkerd-wait]: https://github.com/olix0r/linkerd-await
 
@@ -1555,7 +791,9 @@ better or more elegant in Kubernetes.
 While some things might be possible to move to daemonset or others, it is not
 possible for all applications. For example some apps are not multi-tenant and
 this can not be an option security-wise. Or some apps would still like to have a
-sidecar that adds some metadata, for example.
+sidecar that adds some metadata, for example, or just uses a simple sidecar
+(like file uploading after containers finish in a Job, or create/update some
+files in shared emptyDir volumes, etc.).
 
 While this is an option, is not possible or extremely costly for several use
 cases.
