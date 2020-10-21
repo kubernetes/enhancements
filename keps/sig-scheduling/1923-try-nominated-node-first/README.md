@@ -10,7 +10,6 @@
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
 - [Design Details](#design-details)
   - [Implementation Details](#implementation-details)
-  - [Alternatives](#alternatives)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha (v1.21):](#alpha-v121)
@@ -47,7 +46,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 If the scheduler fails to fit an incoming pod on any node, the scheduler will try to preempt lower
 priority pods running on a selected node to make room for the pod. The name of this node will be set
-in the pods' `pod.Status.NominatedNodeName`.
+in the pod's `pod.Status.NominatedNodeName`.
 
 The Node is called *Nominated* to indicate the intent for the Pod to be scheduled on it once preemption
 of other Pods finish. However, the `Pod.status.nominatedNodeName` information is not directly used in
@@ -97,70 +96,21 @@ nominated node.
 1. In filtering phase, which is currently implemented in the method of `findNodesThatFitPod`, check the nominated node
    first if the incoming pod has the `pod.Status.NominatedNodeName` defined and the feature gate is enabled.
 
-2. In case the nominated node doesn't suit for the incoming pod anymore, return `ErrNominateNode`
-   instead of `core.FitError`, because this will give scheduler a chance to clean up the nominated
-   node from the pod and find a new node to schedule instead of preemption again (might already have
-   another node available for scheduling during the period). A fresh new scheduling cycle will be
-   started later.
+2. In case the nominated node doesn't suit for the incoming pod anymore, return `err` got from `findNodesThatPassFilters`,
+   the `err` will be padded with more information to tell that scheduler is evaluating the feasibility of `NominatedNode`
+   and failed on that node.
 
-   A new error `ErrNominateNode` should be defined to describe what's going wrong on the nominated node.
+   If no error is returned and cannot pass all the filtering, this is possibly caused by the resource that claims to be
+   removed but has not been fully released yet, scheduler will continue to evaluate the rest of nodes to check if there
+   is any node already available for the coming pod.
 
-   If the nominated node doesn't suit for the pod anymore, the scheduling failure will be recorded
-   and the `updatePod` will be called, here we change the logic to update the pod as long as the
-   parameter `nominatedNode` is different with what pod holds in `pod.Status.NominatedNodeName`.
-   In this case, parameter `nominatedNode` is an empty string so that the nominated node will be
-   cleaned from the pod and the pod will be moved to the active queue. It lets scheduler find another
-   place for the pod in the next scheduling cycle.
-
-### Alternatives
-
-- Should keep trying on the nominated node in case the failure of scheduling?
-
-  This is the case when the pod deletion is still on the fly, the deletion of preemptor pods has
-  been triggered and sent to apiserver but has not actually been deleted by `kubelet` or container runtime.
-
-  Here are several things we need to consider, and this is why this approach is not adopted,
-
-  1. Keep trying in this scheduling cycle until the deletion is done
-
-     This will block the scheduler and we never know when the deletion will be done, something might
-     block this for a long time, for example, docker service is down and cannot get recovered.
-
-  2. Reserve the `pod.Status.NominatedNodeName` for the preemptor pod, so that the nominated node will be
-     tried in the following scheduling cycle (not clean up the `nominatedNode` on failure)
-
-     This will not resolve the issue mentioned above either, this will generate an infinite looping on the
-     nominated node.
-
-  3. There are other cases should be considered beside the pod deletion, which cause the nominated node
-     not able to fit for the preemptor anymore, for example, nominated node becomes unschedulable, another
-     node in the cluster releases enough room for the coming pod, topology update due to pod deletion on another
-     node which makes the nominated node not fits for `PodTopologySpread` filter anymore.
-
-     All those cases require us to start a fresh new scheduling cycle and find a better one instead of the
-     selected nominated node in previous cycle.
-
-
-- Should go on the preemption evaluation and try the nominated node there? update the nominated node if necessary.
-
-  In order to continue the preemption on the failure on the nominated node, scheduler should return `core.FitError`
-  so that preemption will continue.
-
-  1. [Debatable]: For the issue #3 mentioned above, assume it will continue to go on the preemption evaluation,
-     if there is another candidate node which doesn't preempt any victim pods, this node should be chosen as the
-     new nominated node, it is also true if this is done in the new scheduling cycle, the same node will be chosen
-     for both approaches, there is nearly no major difference, but the case like this looks more like should be handled
-     by the normal scheduling process instead of pod preemption phase, this is sound like anti-pattern of what is the
-     preemption designed.
-
-  2. If the nominated node doesn't fit due to the victim pods deletion is still on the fly, and nothing else is
-     changed, the nominated node will be chosen again either it goes to preemption evaluation or after the normal
-     scheduling cycle following by a preemption evaluation.
-     We got more chance to finish the deletion for the latter case, and the nominated node will be chosen
-     in the normal scheduling cycle or as the selected node in the following preemption evaluation phase.
-     pod deletion might be triggered again on that victim pod/pods if finally go to the preemption, there is no harm
-     to do that.
-     But we need to note the shorter time might be needed for the former case.
+   If scheduler still cannot find any node for the pod, scheduling will retry until matching either of the following cases,
+   - `NominatedNode` eventually released all the resource and the preemptor pod can be scheduled on that node.
+   - Another node in the cluster released enough release and pod get scheduled on that node instead.
+     [Discuss] Should scheduler clear the `NominatedNode` in this case?
+   - Resource cannot be released on the `NominatedNode` and no other candidate node could be found in the cluster, this will
+     be covered by [issue 95752](https://github.com/kubernetes/kubernetes/issues/95752).
+     
 
 ### Test Plan
 
