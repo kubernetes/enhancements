@@ -172,7 +172,7 @@ we don't have any modifications in kubectl in this design.
 
 When controllers create/update/delete an object A based on another B, we propagate context from B to A. E.g.:
 ```
-    ctx = httptrace.SpanContextFromAnnotations(objB.GetAnnotations())
+    ctx = httptrace.SpanContextFromAnnotations(context.Background(), objB.GetAnnotations())
     err = r.KubeClient.CoreV1().Create(ctx, objA...)
 ```
 We do propagation across objects without adding traces to that components.
@@ -183,11 +183,11 @@ We do propagation across objects without adding traces to that components.
 client-go  helps to inject [TraceContext](https://pkg.go.dev/go.opentelemetry.io/otel/propagators#example-TraceContext) and [Baggage](https://github.com/open-telemetry/opentelemetry-specification/blob/master/specification/baggage/api.md) to the outgoing http request header, something changes are like below:
 ```diff
 @@ -868,6 +871,7 @@ func (r *Request) request(ctx context.Context, fn func(*http.Request, *http.Resp
-                }
                 req = req.WithContext(ctx)
                 req.Header = r.headers
-+               propagator := otel.NewCompositeTextMapPropagator(propagators.TraceContext{}, propagators.Baggage{})
-+               propagator.Inject(ctx, req.Header)
+
++               props := otelhttptrace.WithPropagators(otel.NewCompositeTextMapPropagator(propagators.TraceContext{}, propagators.Baggage{}))
++               otelhttptrace.Inject(req.Context(), req, props)
 
                 r.backoff.Sleep(r.backoff.CalculateBackoff(r.URL()))
                 if retries > 0 {
@@ -369,4 +369,4 @@ _This section must be completed when targeting beta graduation to a release._
 * 2020-09-01: KEP proposed
 * 2020-09-28: PRR questionnaire updated
 * [Mutating admission webhook which injects trace context for demo](https://github.com/Hellcatlk/mutating-trace-admission-controller/tree/trace-ot)
-* [Instrumentation of Kubernetes components for demo](https://github.com/Hellcatlk/kubernetes/tree/trace-ot)
+* [Instrumentation of Kubernetes components for demo](https://github.com/Hellcatlk/kubernetes/pull/1)
