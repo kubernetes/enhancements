@@ -96,15 +96,17 @@ nominated node.
 1. In filtering phase, which is currently implemented in the method of `findNodesThatFitPod`, check the nominated node
    first if the incoming pod has the `pod.Status.NominatedNodeName` defined and the feature gate is enabled.
 
-2. In case the nominated node doesn't suit for the incoming pod anymore, return `err` got from `findNodesThatPassFilters`,
-   the `err` will be padded with more information to tell that scheduler is evaluating the feasibility of `NominatedNode`
-   and failed on that node.
+2. In case the nominated node doesn't suit for the incoming pod anymore, get `err` from `findNodesThatPassFilters` where
+   `NominatedNode` is firstly evaluated, the `err` will be padded with more information to tell that scheduler is evaluating
+   the feasibility of `NominatedNode` and failed on that node.
 
-   If no error is returned and cannot pass all the filtering, this is possibly caused by the resource that claims to be
-   removed but has not been fully released yet, scheduler will continue to evaluate the rest of nodes to check if there
-   is any node already available for the coming pod.
+   If no error is returned but `NominatedNode` cannot pass all the filtering, this is possibly caused by the resource that
+   claims to be removed but has not been fully released yet.
 
-   If scheduler still cannot find any node for the pod, scheduling will retry until matching either of the following cases,
+   For both of above cases, scheduler will continue to evaluate the rest of nodes to check if there is any node already
+   available for the coming pod.
+
+   Scheduler will retry until matching either of the following cases,
    - `NominatedNode` eventually released all the resource and the preemptor pod can be scheduled on that node.
    - Another node in the cluster released enough release and pod get scheduled on that node instead.
      [Discuss] Should scheduler clear the `NominatedNode` in this case?
