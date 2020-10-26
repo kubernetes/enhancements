@@ -58,7 +58,7 @@ If none of those approvers are still appropriate, then changes to that list
 should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross-cutting KEPs).
 -->
-# KEP-2079: Add PortRange field to NetworkPolicy
+# KEP-xxxx: Add Namespace as Name field to NetworkPolicy
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
@@ -157,15 +157,25 @@ We thus conclude that, even though targetting an object using its name is not no
 
 ## Proposal
 
-In NetworkPolicy specification, inside ``NetworkPolicyPort`` object struct specify a new ``PortRange`` field:
+In NetworkPolicy specification, inside `namespaceSelector` specify a new `Name` field:
 
 ```
-    // NetworkPolicyPort describes a port to allow traffic on
-    type NetworkPolicyPort struct {
-        PortRange *string
-    }
+type NamespaceSelector struct {
+  names []string
+  labels *metav1.LabelSelector
+}
 ```
 
+which is referenced from the namespaceSelector:
+
+```
+NamespaceSelector *NamespaceSelector
+```
+
+Instead of the current:
+```
+NamespacesSelector *metav1.LabelSelector
+```
 ### User Stories (Optional)
 
 <!--
