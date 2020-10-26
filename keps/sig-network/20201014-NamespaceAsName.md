@@ -157,25 +157,22 @@ We thus conclude that, even though targetting an object using its name is not no
 
 ## Proposal
 
-In NetworkPolicy specification, inside `namespaceSelector` specify a new `Name` field:
+In NetworkPolicy specification, inside `namespaceSelector` specify a new `Name` field.  One possible implementation of this would be:
 
 ```
-type NamespaceSelector struct {
-  names []string
-  labels *metav1.LabelSelector
-}
+    type NamespaceSelector struct {
+      names []string
+      labels *metav1.LabelSelector
+    }
 ```
 
 which is referenced from the namespaceSelector:
 
 ```
-NamespaceSelector *NamespaceSelector
+    + NamespaceSelector *NamespaceSelector
+    - NamespacesSelector *metav1.LabelSelector
 ```
 
-Instead of the current:
-```
-NamespacesSelector *metav1.LabelSelector
-```
 ### User Stories (Optional)
 
 <!--
