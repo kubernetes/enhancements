@@ -60,7 +60,7 @@ _Reviewers:_
   - [Alpha (v1.16) [COMPLETED]](#alpha-v116-completed)
   - [Alpha (v1.17) [COMPLETED]](#alpha-v117-completed)
   - [Beta (v1.18) [COMPLETED]](#beta-v118-completed)
-  - [Beta (v1.19)](#beta-v119)
+  - [Beta (v1.20)](#beta-v120)
   - [GA (stable)](#ga-stable)
 - [Test Plan](#test-plan)
   - [Single NUMA Systems Tests](#single-numa-systems-tests)
@@ -595,7 +595,7 @@ perform a much better allocation, with minimal cost.
 * Guarantee aligned resources for multiple containers in a pod.
 * Refactor to easily support different merge strategies for different policies.
 
-## Beta (v1.19)
+## Beta (v1.20)
 
 * Support pod-level resource alignment.
 
