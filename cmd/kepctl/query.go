@@ -17,6 +17,8 @@ limitations under the License.
 package main
 
 import (
+	"fmt"
+
 	"github.com/spf13/cobra"
 
 	"k8s.io/enhancements/pkg/kepctl"
@@ -43,6 +45,7 @@ func buildQueryCommand(k *kepctl.Client) *cobra.Command {
 	f.StringSliceVar(&opts.Stage, "stage", nil, "Stage")
 	f.StringSliceVar(&opts.PRRApprover, "prr", nil, "Prod Readiness Approver")
 	f.BoolVar(&opts.IncludePRs, "include-prs", false, "Include PRs in the results")
+	f.StringVar(&opts.Output, "output", kepctl.DefaultOutputOpt, fmt.Sprintf("Output format. Can be %v", kepctl.SupportedOutputOpts))
 
 	addRepoPathFlag(f, &opts.CommonArgs)
 

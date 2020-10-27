@@ -26,6 +26,18 @@ import (
 	"k8s.io/enhancements/pkg/kepval/keps/validations"
 )
 
+var (
+	// SupportedOutputOpts stores all allowed query output formats
+	SupportedOutputOpts = []string{
+		"table",
+		"json",
+		"yaml",
+	}
+
+	// DefaultOutputOpt is the default output format for kepctl query
+	DefaultOutputOpt = "table"
+)
+
 type QueryOpts struct {
 	CommonArgs
 	SIG         []string
@@ -33,6 +45,7 @@ type QueryOpts struct {
 	Stage       []string
 	PRRApprover []string
 	IncludePRs  bool
+	Output      string
 }
 
 // Validate checks the args and cleans them up if needed
@@ -47,6 +60,12 @@ func (c *QueryOpts) Validate(args []string) error {
 		}
 		c.SIG = sigs
 	}
+
+	// check if the Output specified is one of "", "json" or "yaml"
+	if !sliceContains(SupportedOutputOpts, c.Output) {
+		return fmt.Errorf("unsupported output format: %s. Valid values: %v", c.Output, SupportedOutputOpts)
+	}
+
 	//TODO: check the valid values of stage, status, etc.
 	return nil
 }
@@ -109,6 +128,16 @@ func sliceToMap(s []string) map[string]bool {
 		m[v] = true
 	}
 	return m
+}
+
+func sliceContains(s []string, e string) bool {
+	for _, k := range s {
+		if k == e {
+			return true
+		}
+	}
+
+	return false
 }
 
 // returns all strings in vals that match at least one
