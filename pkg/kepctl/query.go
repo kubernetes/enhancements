@@ -36,6 +36,11 @@ var (
 
 	// DefaultOutputOpt is the default output format for kepctl query
 	DefaultOutputOpt = "table"
+
+	StructuredOutputFormats = []string{
+		"json",
+		"yaml",
+	}
 )
 
 type QueryOpts struct {
@@ -73,7 +78,20 @@ func (c *QueryOpts) Validate(args []string) error {
 // Query searches the local repo and possibly GitHub for KEPs
 // that match the search criteria.
 func (c *Client) Query(opts QueryOpts) error {
-	fmt.Fprintf(c.Out, "Searching for KEPs...\n")
+	// if output format is json/yaml, suppress other outputs
+	// json/yaml are structured formats, logging events which
+	// do not conform to the spec will create formatting issues
+	var suppressOutputs bool
+	if sliceContains(StructuredOutputFormats, opts.Output) {
+		suppressOutputs = true
+	} else {
+		suppressOutputs = false
+	}
+
+	if !suppressOutputs {
+		fmt.Fprintf(c.Out, "Searching for KEPs...\n")
+	}
+
 	repoPath, err := c.findEnhancementsRepo(opts.CommonArgs)
 	if err != nil {
 		return errors.Wrap(err, "unable to search KEPs")
