@@ -193,14 +193,6 @@ summary of the proposal (details follow in subsequent sections):
   kube-proxy iptables mode as described above. IPVS kube-router support for
   dual-stack, on the other hand, is considered outside of the scope of this
   proposal.
-<<[UNRESOLVED]>>
-Are we still intending to do this:
-- For health/liveness/readiness probe support, the default behavior will not
-  change and an additional optional field would be added to the pod
-  specification and is respected by kubelet. This will allow application
-  developers to select a preferred IP family to use for implementing probes on
-  dual-stack pods.
-<<[/UNRESOLVED]>>
 - The pod status API changes will leave room for per-IP metadata for future
   Kubernetes enhancements.  The metadata and enhancements themselves are out of
   scope.
@@ -227,7 +219,6 @@ Phase 1 (Kubernetes 1.16)
 Phase 2 (Kubernetes 1.16)
 - Multi-family services including kube-proxy
 - Working with a CNI provider to enable dual-stack support
-- Change kubelet prober to support multi-address
 - Update component flags to support multiple `--bind-address`
 
 Phase 3 (Planned Kubernetes 1.17)
@@ -281,6 +272,14 @@ Properties field - speced in this KEP - will be empty until CNI spec includes
 properties. Although in theory we can copy the interface name, gateway etc.
 into this Properties map.
 
+For health/liveness/readiness probe support, the default behavior will not
+change and [the default PodIP](#Default Pod IP Selection) will be used in case
+that no host will be passed as a parameter to the probe. This will simplify the
+logic in favor of avoiding false positives or negatives on the health checks,
+with the disadvantage that it will not be able to use secondary IPs.
+This means that applications must always listen in the Pod default IP in
+order to use healthchecks.
+
 ### Required changes to Container Runtime Interface (CRI)
 
 The PLEG loop + status manager of kubelet makes an extensive use of
@@ -297,6 +296,8 @@ CRI team to coordinate this change.
             Ips []string `protobuf:"bytes,1,opt,name=ip,proto3" json:"ip,omitempty"`
     }
 ```
+
+The Kubelet must respect the the order of the IPs returned by the runtime.
 
 #### Versioned API Change: PodStatus v1 core
 
@@ -546,7 +547,7 @@ In a dual-stack cluster, Services can be:
    resulting service will carry two `ClusterIPs`.
 
 The above is achieved using the following changes to Service api.
-1. Add a `spec.ipFamilyPolicy` optional field with `SingleStack`, `PreferDualStack`, 
+1. Add a `spec.ipFamilyPolicy` optional field with `SingleStack`, `PreferDualStack`,
    and `RequireDualStack` as possible values.
 2. Add a `spec.ipFamilies[]` optional field with possible values of
    `nil`, `["IPv4"]`, `["IPv6"]`, `["IPv4", "IPv6"]`, or `["IPv6", "IPv4"]`.
@@ -595,7 +596,6 @@ on all types of services except
 and `spec.IPFamilies[ 'IPv4', 'IPv6']`.
 2. `ExternalName` services: they will be defaulted to `nil` to all the new fields
 
- 
 ##### Creating a New Single-Stack Service
 
 Users who want to create a new single-stack Service can create it using one of
@@ -901,19 +901,19 @@ routed according to the families assigned for services.
    value is expected to match cluster configuration. i.e. creating  service with
    a family not configured on server will generate an error.
 2. For Headless without selector the values of `spec.ipFamilyPolicy` and
-   `spec.ipFamilies` are semantically validated for correctness but are not 
+   `spec.ipFamilies` are semantically validated for correctness but are not
    validated against cluster configuration. This means a headless service without
    selectors can have IP families that are not configured on server.
 
 > headless services with no selectors that are not providing values for `ipFamilies`
   and/or `ipfamilyPolicy` apiserver will default to `IPFamilyPolicy: PreferDualStack`
-  and `IPFamilies: ["IPv4", "IPv6"]`. If the service have `SingleStack` set to 
+  and `IPFamilies: ["IPv4", "IPv6"]`. If the service have `SingleStack` set to
   `IPFamilyPolicy` the following will be set `IPFamilies: [$cluster_default_family]`
 
 #### Type ExternalName
 
 For ExternalName service the value of `spec.ipFamilyPolicy` and
-`spec.ipFamilies` is expected to be `nil`. Any other value for these fields 
+`spec.ipFamilies` is expected to be `nil`. Any other value for these fields
 will cause validation errors. The previous rule does not apply on conversion. apiserver
 will automatically set `spec.ipFamilyPolicy` and `spec.ipFamilies` to nil when converting
 `ClusterIP` service to `ExternalName` service.
