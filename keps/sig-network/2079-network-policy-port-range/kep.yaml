@@ -6,7 +6,9 @@ owning-sig: sig-network
 status: provisional
 creation-date: "2020-10-08"
 reviewers:
-  - TBD
+  - "@andrewsykim"
+  - "@abhiraut"
+  - "@danwinship"
 approvers:
   - TBD
 

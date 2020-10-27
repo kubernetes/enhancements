@@ -114,14 +114,15 @@ other side, but don't want to create a rule for each of them.
 
 *  The technology used by the CNI provider might not support port range in a 
 trivial way. As an example, OpenFlow does not have a way to specify port range
-and this might be a problem for OVS based CNIs. The same way, eBPF based CNIs
-will need to populate their maps in a different way.
+and this might be a problem for OVS based CNIs as commented in 
+[kubernetes #67526](https://github.com/kubernetes/kubernetes/issues/67526#issuecomment-415170435).
+The same way, eBPF based CNIs will need to populate their maps in a different way.
 
 ### Risks and Mitigations
 
 CNIs will need to support the new field in their controllers. For this case 
 we'll try to make broader communication with the main CNIs so they can be aware
- of the new field.
+of the new field.
 
 ## Design Details
 
@@ -129,8 +130,8 @@ API changes to NetworkPolicy:
 * Add a new struct called ``NetworkPolicyPortRange`` as the following:
 ```
 type NetworkPolicyPortRange struct {
-    Max uint16
-    Min uint16
+    From uint16
+    To   uint16
 }
 ```
 * Add a new field ``spec.ingress|egress.ports.range`` that points to the
@@ -141,9 +142,10 @@ type NetworkPolicyPort struct {
     Range PortRange
 }
 ```
-As a suggestion, there's already a ``HostPortRange`` defined in 
-the [code](https://github.com/kubernetes/kubernetes/blob/a138be8722ebd0ce281029fa747315500a99ffd5/pkg/apis/policy/types.go#L262) so maybe this could be renamed and re-used in 
-other parts of the code.
+
+The range will need to be validated, with the following scenarios:
+* If there's a ``From`` or a ``To`` field defined, the other one must be defined.
+* ``From`` needs to be less than or equal to ``To``
 
 
 ### Test Plan
