@@ -118,7 +118,18 @@ func (c *Client) Query(opts QueryOpts) error {
 		keep = append(keep, k)
 	}
 
-	c.PrintTable(DefaultPrintConfigs("LastUpdated", "Stage", "Status", "SIG", "Authors", "Title", "Link"), keep)
+	switch opts.Output {
+	case "table":
+		c.PrintTable(DefaultPrintConfigs("LastUpdated", "Stage", "Status", "SIG", "Authors", "Title", "Link"), keep)
+	case "yaml":
+		c.PrintYAML(keep)
+	case "json":
+		c.PrintJSON(keep)
+	default:
+		// this check happens as a validation step in cobra as well
+		// added it for additional verbosity
+		return fmt.Errorf("unsupported output format: %s. Valid values: %s", opts.Output, SupportedOutputOpts)
+	}
 	return nil
 }
 
