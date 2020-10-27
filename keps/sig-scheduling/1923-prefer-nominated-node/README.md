@@ -1,4 +1,4 @@
-# KEP-1923: Try Nominated Node First
+# KEP-1923: Prefer Nominated Node
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
@@ -44,25 +44,25 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-If the scheduler fails to fit an incoming pod on any node, the scheduler will try to preempt lower
-priority pods running on a selected node to make room for the pod. The name of this node will be set
-in the pod's `pod.Status.NominatedNodeName`.
+This KEP proposes to change the scheduling cycle such that nominated node of a pod is evaluated first
+and schedule the pod on that node if it fits. If the nominated node doesn't fit the pod, only then the
+scheduling cycle continues with the standard logic of evaluating the rest of the nodes in the cluster.
+
+## Motivation
+
+If the scheduler fails to fit an incoming pod on any node, it will try to preempt lower priority pods
+running on a selected node to make room for the pod. The name of this node will be set in the
+pod's `.status.nominatedNodeName`.
 
 The Node is called *Nominated* to indicate the intent for the Pod to be scheduled on it once preemption
-of other Pods finish. However, the `Pod.status.nominatedNodeName` information is not directly used in
-the Pod's following scheduling attempts.
+of other Pods finishes. However, the Pod's `.status.nominatedNodeName` information is not fully utilized
+in the Pod's following scheduling attempts.
 
 Pod scheduling is split into two phases, the scheduling cycle and the binding cycle, the scheduling cycle
 primarily includes filtering and scoring.
 
 When preemption happens in a previous scheduling cycle, there is a high chance that the nominated node is
 the *only* node that satisfies the filters for the unscheduled Pod that triggered preemption.
-
-This KEP proposes to change the scheduling cycle such that nominated node of a pod is evaluated first
-and schedule the pod on that node if it fits. If the nominated node doesn't fit the pod, only then the
-scheduling cycle continues with the standard logic of evaluating the rest of the nodes in the cluster.
-
-## Motivation
 
 In real production environment, pods can have different priorites due to business needs, the preemption
 could happen to make sure higher priority pods could get scheduled.
@@ -71,9 +71,8 @@ In cluster with large number of computing nodes, evaluating all nodes when sched
 
 ### Goals
 
-In the case where `pod.Status.NominatedNodeName` is set for an incoming pod, the scheduler will evaluate the
-nominated node first; if the nominated node doesn't fit the pod, the scheduling cycle will continue to evaluate
-the rest of the nodes in the cluster just like we do today.
+Prefer scheduling a pod to its `.status.nominatedNodeName` if set, if the nominated node doesn't fit the pod,
+the scheduling cycle will continue to evaluate the rest of the nodes in the cluster just like we do today.
 
 
 ## Proposal
@@ -94,7 +93,7 @@ nominated node.
 ### Implementation Details
 
 1. In filtering phase, which is currently implemented in the method of `findNodesThatFitPod`, check the nominated node
-   first if the incoming pod has the `pod.Status.NominatedNodeName` defined and the feature gate is enabled.
+   first if the incoming pod has the `.status.nominatedNodeName` defined and the feature gate is enabled.
 
 2. In case the nominated node doesn't suit for the incoming pod anymore, get `err` from `findNodesThatPassFilters` where
    `NominatedNode` is firstly evaluated, the `err` will be padded with more information to tell that scheduler is evaluating
@@ -108,7 +107,7 @@ nominated node.
 
    Scheduler will retry until matching either of the following cases,
    - `NominatedNode` eventually released all the resource and the preemptor pod can be scheduled on that node.
-   - Another node in the cluster released enough release and pod get scheduled on that node instead.
+   - Another node in the cluster released enough resources and pod get scheduled on that node instead.
      [Discuss] Should scheduler clear the `NominatedNode` in this case?
    - Resource cannot be released on the `NominatedNode` and no other candidate node could be found in the cluster, this will
      be covered by [issue 95752](https://github.com/kubernetes/kubernetes/issues/95752).
@@ -144,7 +143,7 @@ _This section must be completed when targeting alpha to a release._
 
 * **How can this feature be enabled / disabled in a live cluster?**
   - [x] Feature gate (also fill in values in `kep.yaml`)
-    - Feature gate name: TryNominatedNodeFirst
+    - Feature gate name: PreferNominatedNode
     - Components depending on the feature gate: kube-scheduler
 
 * **Are there any tests for feature enablement/disablement?**

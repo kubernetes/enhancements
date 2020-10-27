@@ -1,4 +1,4 @@
-title: Try Nominated Node First
+title: Prefer Nominated Node
 kep-number: 1923
 authors:
   - "@chendave"
@@ -21,7 +21,7 @@ milestone:
   beta: "v1.22"
   stable: "v1.24"
 feature-gates:
-  - name: TryNominatedNodeFirst
+  - name: PreferNominatedNode
     components:
       - kube-scheduler
 disable-supported: true
