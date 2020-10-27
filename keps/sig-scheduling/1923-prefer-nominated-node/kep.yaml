@@ -1,0 +1,27 @@
+title: Prefer Nominated Node
+kep-number: 1923
+authors:
+  - "@chendave"
+owning-sig: sig-scheduling
+participating-sigs:
+  - sig-scheduling
+status: provisional
+creation-date: 2020-09-29
+reviewers:
+  - "@alculquicondor"
+  - "@Huang-Wei"
+  - "@ahg-g"
+approvers:
+  - "@Huang-Wei"
+  - "@ahg-g"
+stage: alpha
+latest-milestone: "v1.21"
+milestone:
+  alpha: "v1.21"
+  beta: "v1.22"
+  stable: "v1.24"
+feature-gates:
+  - name: PreferNominatedNode
+    components:
+      - kube-scheduler
+disable-supported: true
