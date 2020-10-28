@@ -9,7 +9,7 @@
   - [Topology format](#topology-format)
   - [CRD API](#crd-api)
   - [Plugin implementation details](#plugin-implementation-details)
-    - [Topology information in the TopologyMatch plugin](#topology-information-in-the-topologymatch-plugin)
+    - [Topology information in the NodeResourceTopologyMatch plugin](#topology-information-in-the-noderesourcetopologymatch-plugin)
     - [Description of the Algorithm](#description-of-the-algorithm)
   - [Accessing NodeResourceTopology CRD](#accessing-noderesourcetopology-crd)
 - [Use cases](#use-cases)
@@ -67,15 +67,15 @@ The daemon which runs outside of the kubelet will collect all necessary informat
 
 ## CRD API
 
-Code responsible for CRD API will be placed in [node feature discovery repository][2]. To use it in the kube-scheduler kubernetes should keep NFD in its staging directory. To reduce the size of dependency just [code for working with CRD][3] could be placed in staging directory.
+[Code][3] responsible for working with NodeResourceTopology CRD API will be placed in the staging directory at path staging/src/k8s.io/noderesourcetopology-api.
 
 ## Plugin implementation details
 
-Since topology of the node is stored in the CRD, kube-scheduler should be subscribed for updates of appropriate CRD type. Kube-scheduler will use informers which will be generated with the name NodeTopologyInformer. NodeTopologyInformer will run in TopologyMatch plugin.
+Since topology of the node is stored in the CRD, kube-scheduler should be subscribed for updates of appropriate CRD type. Kube-scheduler will use informers which will be generated with the name NodeTopologyInformer. NodeTopologyInformer will run in NodeResourceTopologyMatch plugin.
 
-### Topology information in the TopologyMatch plugin
+### Topology information in the NodeResourceTopologyMatch plugin
 
-Once NodeResourceTopology is received TopologyMatch plugin keeps it in its own state of type
+Once NodeResourceTopology is received NodeResourceTopologyMatch plugin keeps it in its own state of type
 NodeTopologyMap. This state will be used every time when scheduler needs to make a decidion based on node topology.
 
 ```go
@@ -213,12 +213,22 @@ It would be ensured that the components developed or modified for this feature c
 
 * Unit Tests
 
-Unit test for scheduler plugin (pkg/scheduler/framework/plugins/noderesources/topology_match.go)
-pkg/scheduler/framework/plugins/noderesources/topology_match_test.go which test the plugin.
+Unit test for scheduler plugin (pkg/scheduler/framework/plugins/noderesources/node_resource_topology_match.go)
+pkg/scheduler/framework/plugins/noderesources/node_resource_topology_match_test.go which test the plugin.
 
 Separate tests for CRD informer also should be implemented.
 
-* Integration Tests and End-to-end tests
+* Integration Tests
+   *  Default configuration (this plugin is disabled)
+     * no side effect on basic scheduling flow (and performance)
+     * no side effect no matter the CRD is installed or not
+
+   *  Enable this plugin
+     * basic workflow of this feature works (decision by scheduler is admitted by kubelet)
+     * basic negative path of this feature works (decision by scheduler is rejected by kubelet)
+     * verify the behavior when the CRD is and isn't installed
+
+* End-to-end tests
 
 Integration and End-to-end would Implementation of it does not constitute a difficulty, but requires appropriate multi-numa hardware for comprehensive testing of this feature. Comprehensive E2E testing of this would be done in order to graduate this feature from Alpha to Beta.
 
@@ -228,9 +238,9 @@ Integration and End-to-end would Implementation of it does not constitute a diff
 
 Following changes are required:
 - [ ] CRD informer used in kubernetes as staging project
-- [ ] New `kube scheduler plugin` TopologyMatch.
+- [ ] New `kube scheduler plugin` NodeResourceTopologyMatch.
     - [ ] Implementation of Filter
-- [ ] Tests from [Test plans](#test-plans).
+- [ ] Unit tests and integration tests from [Test plans](#test-plans).
 
 * Beta
 - [ ] Add node E2E tests.
@@ -248,4 +258,4 @@ Following changes are required:
 
 [1]: https://docs.google.com/document/d/12kj3fK8boNuPNqob6F_pPU9ZTaNEnPGaXEooW1Cilwg/edit
 [2]: https://github.com/kubernetes-sigs/node-feature-discovery
-[3]: https://github.com/AlexeyPerevalov/topologyapi
+[3]: https://github.com/kubernetes/noderesourcetopology-api
