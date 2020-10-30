@@ -43,6 +43,7 @@ To get started with this template:
 - [Design Details](#design-details)
   - [Reserve a label prefix](#reserve-a-label-prefix)
   - [Defining the meaning of existing labels](#defining-the-meaning-of-existing-labels)
+  - [Redefining kubernetes.io/hostname](#redefining-kubernetesiohostname)
   - [Defining a third key (or not)](#defining-a-third-key-or-not)
   - [Followup work (or optionally part of this)](#followup-work-or-optionally-part-of-this)
   - [Test Plan](#test-plan)
@@ -190,9 +191,11 @@ This will also define that, while labels are generally mutable, the topology
 labels should be assumed immutable and that any changes to them may be ignored
 by downstream consumers of topology.
 
-<<[UNRESOLVED]>>
-Should we also try to standardize "kubernetes.io/hostname" as "topology.kubernetes.io/node" ?
-<<[/UNRESOLVED]>>
+### Redefining kubernetes.io/hostname
+
+The widely-known label "kubernetes.io/hostname" might be better as
+"topology.kubernetes.io/node", but that change is considered out of scope for
+this KEP.  We may or may not choose to tackle it at a later time.
 
 ### Defining a third key (or not)
 
