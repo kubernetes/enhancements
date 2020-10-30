@@ -16,7 +16,7 @@
   - [Logging metadata](#logging-metadata)
 - [Design Details](#design-details)
   - [Prerequisite](#prerequisite)
-  - [Design of ID propagation in apiserver](#design-of-id-propagation-in-apiserver)
+  - [API Server Tracing](#api-server-tracing)
   - [Design of ID propagation (controller)](#design-of-id-propagation-controller)
   - [Design of ID propagation in <a href="https://github.com/kubernetes/client-go">client-go</a>](#design-of-id-propagation-in-client-go)
   - [Design of Mutating webhook(Out of tree)](#design-of-mutating-webhookout-of-tree)
@@ -151,24 +151,23 @@ The following picture show our design![design](./overview.png)
 
 we don't have any modifications in kubectl in this design.
 
-### Design of ID propagation in apiserver
+### API Server Tracing
 
-**1. Do othttp's original [Extract](https://pkg.go.dev/go.opentelemetry.io/otel/api/propagators#TraceContext.Extract)() to get [SpanContext](https://pkg.go.dev/go.opentelemetry.io/otel/api/trace#SpanContext)**
+**1. refer to [KEP647](https://github.com/kubernetes/enhancements/issues/647)**
 
-- For request from kubectl, SpanContext is null,  do [Start](https://github.com/open-telemetry/opentelemetry-go/blob/3a9f5fe15f50a35ad8da5c5396a9ed3bbb82360c/sdk/trace/tracer.go#L38)() to start new SpanContext (new traceid and spanid)
-- For request from controller we can get a valid SpanContext(including traceid and spanid), do [Start](https://github.com/open-telemetry/opentelemetry-go/blob/3a9f5fe15f50a35ad8da5c5396a9ed3bbb82360c/sdk/trace/tracer.go#L38)() to update the SpanContext (new spanid)
+KEP647 will help to
 
-**2. Chain SpanContext and initialtraceid to "r.ctx"**
+```
+Goals
+The API Server generates and exports spans for incoming and outgoing requests.
+The API Server propagates context from incoming requests to outgoing requests.
+```
 
-- we use r.ctx to propagate those IDs to next handler
-
-**3. Make up a new outgoing [request](#design-of-id-progagation-in-client-go)**
+**2. [Make up a new outgoing request](#design-of-id-progagation-in-client-go)**
 
 ### Design of ID propagation (controller)
 
-**1. Extract SpanContext and initialtraceid from annotation of object to golang ctx**
-
-**2. Propagate golang ctx from objects to API Calls**
+**1. Propagate golang ctx from objects to API Calls**
 
 When controllers create/update/delete an object A based on another B, we propagate context from B to A. E.g.:
 ```
@@ -177,10 +176,21 @@ When controllers create/update/delete an object A based on another B, we propaga
 ```
 We do propagation across objects without adding traces to that components.
 
-**3. Make up a new outgoing [request](#design-of-id-progagation-in-client-go)**
+SpanContextFromAnnotations will do something like below pseudo code
+```
+func SpanContextFromAnnotations(){
+	// 1. decode annotation to SpanContext
+	// 2. generate Span from SpanContext
+	// 3. chain Span to ctx which is required by propagators.Inject
+}
+```
+**2. [Make up a new outgoing request](#design-of-id-progagation-in-client-go)**
 
 ### Design of ID propagation in [client-go](https://github.com/kubernetes/client-go)
+
+ [KEP647](https://github.com/kubernetes/enhancements/issues/647) will do this work too, so we can refer to it directly in the future.
 client-go  helps to inject [TraceContext](https://pkg.go.dev/go.opentelemetry.io/otel/propagators#example-TraceContext) and [Baggage](https://github.com/open-telemetry/opentelemetry-specification/blob/master/specification/baggage/api.md) to the outgoing http request header, something changes are like below:
+
 ```diff
 @@ -868,6 +871,7 @@ func (r *Request) request(ctx context.Context, fn func(*http.Request, *http.Resp
                 req = req.WithContext(ctx)
@@ -192,11 +202,11 @@ client-go  helps to inject [TraceContext](https://pkg.go.dev/go.opentelemetry.io
                 r.backoff.Sleep(r.backoff.CalculateBackoff(r.URL()))
                 if retries > 0 {
 ```
-apiserver and controller use the API to make up a new outgoing request.
+apiserver and controller use this API to make up a new outgoing request.
 
 ### Design of Mutating webhook(Out of tree)
 
-**1.Extract SpanContext and initialtraceid from request's header **
+**1.Extract SpanContext and initialtraceid from request's header**
 
 **2.Update SpanContext and initialtraceid to object**
 
