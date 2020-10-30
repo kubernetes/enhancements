@@ -235,7 +235,7 @@ For later releases, we can work on a configurable heuristic to detect memory pre
 - Comprehensive documentation that includes but is not limited to the following sections. Documentation will reside at https://kubernetes.io/docs and will adequately cover end user and admin documentation that describes what the user does and how to use it. Not all of the documentation will be under the Getting Started Guide for Windows. Part of it will reside in its own sections (like the Group Managed Service Accounts) and part will be in the Contributor development guide (like the instructions on how to build your own source code)
 1. Outline of Windows Server containers on Kubernetes
 2. Getting Started Guide, including Prerequisites
-3. How to deploy Windows nodes in Kubernetes and where to find the proper binaries (Listed under the changelog for every release. For example https://github.com/kubernetes/kubernetes/blob/master/CHANGELOG-1.13.md#server-binaries)
+3. How to deploy Windows nodes in Kubernetes and where to find the proper binaries (Listed under the changelog for every release. For example https://github.com/kubernetes/kubernetes/blob/master/CHANGELOG/CHANGELOG-1.13.md#server-binaries)
 4. Overview of Networking on Windows
 5. Links to documentation on how to deploy and use CNI plugins for Windows (example for OVN - https://github.com/openvswitch/ovn-kubernetes/tree/master/contrib)
 6. Links to documentation on how to deploy Windows nodes for public cloud providers or other Kubernetes distributions (example for Rancher - https://rancher.com/docs//rancher/v2.x/en/cluster-provisioning/rke-clusters/windows-clusters/)
