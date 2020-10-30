@@ -214,7 +214,7 @@ left out of the scope of this proposal.
 
 The pod resource overhead must be defined prior to scheduling, and we shouldn't make the user
 do it. To that end, we propose a mutating admission controller: RuntimeClass. This admission controller
-is also proposed for the [native RuntimeClass scheduling KEP](https://github.com/kubernetes/enhancements/blob/master/keps/sig-node/runtime-class-scheduling.md).
+is also proposed for the [native RuntimeClass scheduling KEP](https://github.com/kubernetes/enhancements/blob/master/keps/sig-node/585-runtime-class/README.md).
 
 In the scope of this KEP, The RuntimeClass controller will have a single job: set the pod overhead field in the
 workload's PodSpec according to the runtimeClass specified.

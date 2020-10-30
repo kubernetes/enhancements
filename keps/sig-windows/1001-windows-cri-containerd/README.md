@@ -158,7 +158,7 @@ The work needed will span multiple repos, SIG-Windows will be maintaining a [Win
 
 #### Proposal: Use Runtimeclass Scheduler to simplify deployments based on OS version requirements
 
-As of version 1.14, RuntimeClass is not considered by the Kubernetes scheduler. There’s no guarantee that a node can start a pod, and it could fail until it’s scheduled on an appropriate node. Additional node labels and nodeSelectors are required to avoid this problem. [RuntimeClass Scheduling](https://github.com/kubernetes/enhancements/blob/master/keps/sig-node/runtime-class-scheduling.md) proposes being able to add nodeSelectors automatically when using a RuntimeClass, simplifying the deployment.
+As of version 1.14, RuntimeClass is not considered by the Kubernetes scheduler. There’s no guarantee that a node can start a pod, and it could fail until it’s scheduled on an appropriate node. Additional node labels and nodeSelectors are required to avoid this problem. [RuntimeClass Scheduling](https://github.com/kubernetes/enhancements/blob/master/keps/sig-node/585-runtime-class/README.md) proposes being able to add nodeSelectors automatically when using a RuntimeClass, simplifying the deployment.
 
 Windows forward compatibility will bring a new challenge as well because there are two ways a container could be run:
 
