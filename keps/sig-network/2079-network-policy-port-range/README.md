@@ -23,6 +23,7 @@
   - [Scalability](#scalability)
   - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
+- [Drawbacks](#drawbacks)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -79,7 +80,8 @@ spec:
 ```
 
 So for the user, actually:
-* To allow a range of ports, each of them must be declared as an item from ``ports`` array
+* To allow a range of ports, each of them must be declared as an item from 
+``ports`` array
 * To make an exception needs a declaration of all ports but the exception
 
 Adding a new ``PortRange`` field inside the ``ports`` will allow a simpler 
@@ -91,15 +93,18 @@ Add Range field to Ports in NetworkPolicy
 
 ### Non-Goals
 
-TBD
+Specify exceptions to the range. An exception can at this time be specified 
+as multiple ranges not contemplating the exception.
 
 ## Proposal
-
 
 In NetworkPolicy specification, inside ``NetworkPolicyPort`` object struct 
 specify a new ``Range`` field composed of the minimum and maximum ports 
 inside the range.
 
+If both ``Port`` and ``Range`` are specified, they are cumulative and no further
+validation might occur. It's up to the CNI to summarize both of the fields in a 
+single rule.
 
 ### User Stories (Optional)
 
@@ -113,10 +118,7 @@ other side, but don't want to create a rule for each of them.
 ### Notes/Constraints/Caveats
 
 *  The technology used by the CNI provider might not support port range in a 
-trivial way. As an example, OpenFlow does not have a way to specify port range
-and this might be a problem for OVS based CNIs as commented in 
-[kubernetes #67526](https://github.com/kubernetes/kubernetes/issues/67526#issuecomment-415170435).
-The same way, eBPF based CNIs will need to populate their maps in a different way.
+trivial way as described in [#drawbacks]
 
 ### Risks and Mitigations
 
@@ -139,7 +141,7 @@ new struct:
 ```
 // NetworkPolicyPort describes a port to allow traffic on
 type NetworkPolicyPort struct {
-    Range PortRange
+    Range NetworkPolicyPortRange
 }
 ```
 
@@ -284,3 +286,11 @@ _This section must be completed when targeting beta graduation to a release._
 
 ## Implementation History
 - 2020-10-08 Initial [KEP PR](https://github.com/kubernetes/enhancements/pull/2079)
+
+## Drawbacks
+
+*  The technology used by the CNI provider might not support port range in a 
+trivial way. As an example, OpenFlow does not have a way to specify port range
+and this might be a problem for OVS based CNIs as commented in 
+[kubernetes #67526](https://github.com/kubernetes/kubernetes/issues/67526#issuecomment-415170435).
+The same way, eBPF based CNIs will need to populate their maps in a different way.
