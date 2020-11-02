@@ -250,7 +250,6 @@ We will add tests for this new api semantic into the exting test/e2e/ network po
 Note that we may not have explicity feature gates for this KEP, because NetworkPolicies typically haven't been implemented with gates.  We keep this section for the time being in any case as it organizes our thinking around the general progression of the feature over time.
 
 #### Alpha 
-- Add a feature gated new field to NetworkPolicy
 - Communicate CNI providers about the new field
 - Add validation tests in API which confirm several positive / negative scenarios in the test matrix for when this field is present/absent
 
