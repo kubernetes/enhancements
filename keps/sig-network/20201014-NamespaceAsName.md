@@ -194,7 +194,7 @@ As an user I want to "just add" a namespace to my allow list without having to m
 
 ### Risks and Mitigations
 
-- CNIs may not choose, initially to support this construct, and dilligent communication with CNI providers will be needed to make sure its widely adopted.
+- CNIs may not choose, initially, to support this construct, and diligent communication with CNI providers will be needed to make sure it's widely adopted.
 - Fractionating the Kubernetes API idiom by introducing a separate way to select objects.  We accept this cost because security is a fundamentally important paradigm that justifies breaking other paradigms, at times. 
 
 ## Design Details
