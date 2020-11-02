@@ -115,7 +115,7 @@ NetworkPolicies are also used by administrators to make specific default policie
 
 Although service-mesh and other technologies have been slated to obviate the need for developer driven security boundaries, these technologies aren't available in most clusters, and aren't supported by the Kubernetes API.
 
-The ability to provide granular and intuitive network boundaries between apps is part of the braoder vision to make the NetworkPolicy API a universal security construct implemented in all production applications. 
+The ability to provide granular and intuitive network boundaries between apps is part of the braoder vision to make the NetworkPolicy API a universal security construct implemented in all production applications.  Many conversations have come up around this topic, with https://github.com/kubernetes/kubernetes/issues/88253 being one of the most recent ones.
 
 ### Generic motivation
 
