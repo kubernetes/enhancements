@@ -1,4 +1,4 @@
-# KEP-1959: Service Type=LoadBalancer Class Annotations
+# KEP-1959: Service Type=LoadBalancer Class Field
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
@@ -20,6 +20,7 @@
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
   - [ServiceClass Resource](#serviceclass-resource)
+  - [Generic Annotation](#generic-annotation)
   - [Provider-Specific Annotations](#provider-specific-annotations)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
@@ -49,14 +50,14 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 When Service Type=LoadBalancer is enabled by a Kubernetes cloud provider, it is a global
 configuration that applies for all Service Type=LoadBalancer resources in a given cluster.
 This becomes problematic if users want to leverage multiple Service Type=LoadBalancer
-implementations in a given cluster.
+implementations in a cluster.
 
 The new [Services APIs](https://github.com/kubernetes-sigs/service-apis) addresses this already
 with the GatewayClass resource. However, until Gateway/GatewayClass APIs become mature, we should
 support similar functionality for Services of Type=LoadBalancer. Introducing a new resource like
 `ServiceClass` is probably not worthwhile given that there are new APIs already in development.
 This KEP proposes a light-weight approach for Service Type=LoadBalancer by introducing a Service
-annotation `service.kubernetes.io/load-balancer-class`.
+field `service.spec.loadBalancerClassName`.
 
 ## Motivation
 
@@ -71,7 +72,8 @@ enable a lower-cost solution for workloads that are only internally accessible.
 ### Goals
 
 * allow users to opt-out of the Service Type=LoadBalancer implementation by the cloud provider.
-* allow multiple implementations of Service Type=LoadBalancer in a given cluster.
+* allow multiple implementations of Service Type=LoadBalancer in a cluster.
+* prevent every cloud provider from implementing a custom "opt-out" annotation for their load balancer.
 
 ### Non-Goals
 
@@ -81,8 +83,8 @@ to disabling it from the cloud provider.
 
 ## Proposal
 
-This KEP proposes to add a new Service annotation `service.kubernetes.io/load-balancer-class`
-that allows for multiple implementations of Service Type=LoadBalancer in a cluster.
+This KEP proposes to add a new field `spec.loadBalancerClassName` in Service which allows for
+multiple implementations of Service Type=LoadBalancer in a cluster.
 
 ### User Stories (Optional)
 
@@ -104,53 +106,76 @@ rely on protocols from hardware load balancers.
 
 ### Risks and Mitigations
 
-Many Service Type=LoadBalancer implementations today support a lot of knobs via annotations already.
-Introducing yet another annotation for Service Type=LoadBalancer is not ideal, but this is better than
-every cloud provider supporting their own "skip this Service" annotation.
+Many cloud providers today support an "opt-out" annotation for this behavior. The annotation is specific
+to the cloud provider. Introduction of the `loadBalancerClassName` field at this point would mean that
+cloud providers need to start accounting for both existing annotations and the new field.
 
 ## Design Details
 
-Introduce a new Service annotation `service.kubernetes.io/load-balancer-class`.
+Introduce a new field to Service `spec.loadBalancerClassName`.
 
-If the loadbalancer class annotation is not set, the existing cloud provider
-will assume ownership of the Service Type=LoadBalancer resource. This is required
-to not break existing clusters that assume Service Type=LoadBalancer is always
-managed by the cloud provider.
+If the field `spec.loadBalancerClassName` is not set, the existing cloud provider will assume
+ownership of the Service Type=LoadBalancer resource. This is required to not break existing clusters
+that assume Service Type=LoadBalancer is always managed by the cloud provider.
+
+Required API changes:
+```go
+// ServiceSpec describes the attributes that a user creates on a service.
+type ServiceSpec struct {
+	...
+	...
+
+	// loadBalancerClassName is the name of the load balancer implementation this Service belongs to.
+	// This field can only be set when the Service type is 'LoadBalancer'. If not set, the default load
+	// balancer implementation is used, today this is typically done through the cloud provider integration,
+	// but should apply for any default implementation. If set, it is assumed that a load balancer
+	// implementation is watching for Services with a matching class name. Any default load balancer
+	// implementation (e.g. cloud providers) should ignore Services that set this field.
+	// +optional
+	LoadBalancerClassName string `json:"loadBalancerClassName,omitempty"`
+}
+```
+
+* `loadBalancerClassName` will be immutable so that existing and future implementations do not have to worry
+about handling Services that change the class name.
+* `loadBalancerClassName` can carry arbitrary string values.
+* the `loadBalancerClassName` field will be feature gated. The field will be dropped during API strategy unless
+the feature gate is enabled.
 
 Required updates to service controller:
-* if the class annotation is NOT set for a Service, allow the cloud provider
-to reconcile the load balancer.
-* if the class annotation IS set for a Service, skip reconciliation of the Service
-by the cloud provider.
+* if the class field is NOT set for a Service, allow the cloud provider to reconcile the load balancer.
+* if the class annotation IS set for a Service, skip reconciliation of the Service from the cloud provider.
 
 ### Test Plan
 
 Unit tests:
-* test that service controller does not call the cloud provider if the class annotation is set.
-* the annotation `service.kubernetes.io/load-balancer-class` is not accepted when the feature gate `ServiceLoadBalancerClass` is disabled.
+* test that service controller does not call the cloud provider if the class field is set.
+* test API strategy to ensure the `loadBalancerClassName` field is dropped unless the feature gate is enabled
+or an existing Service has the field set.
+* test API validation for immutability.
 
 E2E tests:
-* test that creating a Service with an unknown class annotation results in no load balancer being created for a Service.
+* test that creating a Service with an unknown class name results in no load balancer being created for a Service.
 
 ### Graduation Criteria
 
-N/A since we can't apply alpha/beta/GA criteria for annotations.
+Alpha:
+* the `loadBalancerClassName` field is added to Service with an alpha feature gate.
+* when enabled, service controller will ignore Service LBs with a non-empty class name.
+* unit tests for service controller.
+* unit tests for API strategy (drop disabled fields).
 
 ### Upgrade / Downgrade Strategy
 
-On upgrade, use of this annotation will be allowed. On downgrade, service controller
-may ignore existing Services with the annotation, leading to multiple implementations
-trying to create load balancers. On downgrade, if the class annotation is used
-and there are multiple implementations of Service Type=LoadBalancer, a user must ensure
-there is only 1 implementation of Service Type=LoadBalancer in the cluster.
-
-Though the downgrade scenario isn't ideal, it is assumed if that a cluster was upgraded to v1.20,
-and already has multiple Service Type=LoadBalancer implementations enabled, it will likely not be
-downgrading to v1.19 anytime soon.
+* Usage of `loadBalancerClassName` will be off by default during the alpha stage but can handle existing Services that
+has the field set already. This ensures apiserver can handle the new field on downgrade.
+* On upgrade, if the feature gate is enabled, there should be no changes since the default behavior has not changed
+(service controller calls the cloud provider to reconcile load balancers).
 
 ### Version Skew Strategy
 
-N/A since this only impacts one component.
+Since this feature will be alpha for at least 1 release, an n-1 kube-controller-manager or cloud-controller-manager should
+handle enablement of this feature if a new apiserver enabled it.
 
 ## Implementation History
 
@@ -158,23 +183,26 @@ N/A since this only impacts one component.
 
 ## Drawbacks
 
-* Annotations are a clunky way to implement "Class" semantics to Service Type=LoadBalancer.
+* Added complexity to Service.
 * In **most** clusters, a single Service Type=LoadBalancer implementation from the cloud provider is sufficient.
-* The potential risks during downgrade can cause outages if Service Status is updated by the wrong load balancer implementation.
 
 ## Alternatives
 
 ### ServiceClass Resource
 
-Similar to GatewayClass and IngressClass, we could introduce a new resource so that multiple implementations of
-Service Type=LoadBalancer can exist, however, a new resource just for Service Type=LoadBalancer seems unnecessary,
-especially if GatewayClass will satisfy this use-case better in the near future.
+Instead of a field specifying the name of the implemmentation, the class name can reference the name of a class resource
+similar to GatewayClass and IngressClass. This would enable more expressive configuration per load balancer implementation.
+
+### Generic Annotation
+
+A generic annotation can be used to store the class name. This is avoided since there would be no way to introduce
+the annotation in a safe way and we can't enforce immutability for annotations.
 
 ### Provider-Specific Annotations
 
 Instead of a generic Kubernetes annotation read by service controller, each cloud provider could implement
 their own "skip this Service"-like logic with custom annotations. Given that many cloud providers have been
-asking for this feature, a generic well-known annotation used across all providers may be more beneficial.
+asking for this feature, a generic field used across all providers may be more beneficial.
 
 ## Infrastructure Needed (Optional)
 
