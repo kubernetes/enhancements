@@ -349,6 +349,7 @@ Feature only collects data when requests comes in, data is then garbage collecte
 - 2020-07-06: Add Topology and cpus into PodResources interface
 - 2020-09-02: Add the GetAllocatableResources endpoint
 - 2020-10-01: KEP extended with Watch API
+- 2020-11-02: Agreement in sig-node to implement Watch API in the 1.21 cycle
 
 ## Alternatives
 
