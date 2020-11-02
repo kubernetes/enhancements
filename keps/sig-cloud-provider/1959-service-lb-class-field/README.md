@@ -57,7 +57,7 @@ with the GatewayClass resource. However, until Gateway/GatewayClass APIs become 
 support similar functionality for Services of Type=LoadBalancer. Introducing a new resource like
 `ServiceClass` is probably not worthwhile given that there are new APIs already in development.
 This KEP proposes a light-weight approach for Service Type=LoadBalancer by introducing a Service
-field `service.spec.loadBalancerClassName`.
+field `service.spec.loadBalancerClass`.
 
 ## Motivation
 
@@ -83,7 +83,7 @@ to disabling it from the cloud provider.
 
 ## Proposal
 
-This KEP proposes to add a new field `spec.loadBalancerClassName` in Service which allows for
+This KEP proposes to add a new field `spec.loadBalancerClass` in Service which allows for
 multiple implementations of Service Type=LoadBalancer in a cluster.
 
 ### User Stories (Optional)
@@ -107,14 +107,14 @@ rely on protocols from hardware load balancers.
 ### Risks and Mitigations
 
 Many cloud providers today support an "opt-out" annotation for this behavior. The annotation is specific
-to the cloud provider. Introduction of the `loadBalancerClassName` field at this point would mean that
+to the cloud provider. Introduction of the `loadBalancerClass` field at this point would mean that
 cloud providers need to start accounting for both existing annotations and the new field.
 
 ## Design Details
 
-Introduce a new field to Service `spec.loadBalancerClassName`.
+Introduce a new field to Service `spec.loadBalancerClass`.
 
-If the field `spec.loadBalancerClassName` is not set, the existing cloud provider will assume
+If the field `spec.loadBalancerClass` is not set, the existing cloud provider will assume
 ownership of the Service Type=LoadBalancer resource. This is required to not break existing clusters
 that assume Service Type=LoadBalancer is always managed by the cloud provider.
 
@@ -125,21 +125,22 @@ type ServiceSpec struct {
 	...
 	...
 
-	// loadBalancerClassName is the name of the load balancer implementation this Service belongs to.
+	// loadBalancerClass is the name of the load balancer implementation this Service belongs to.
 	// This field can only be set when the Service type is 'LoadBalancer'. If not set, the default load
 	// balancer implementation is used, today this is typically done through the cloud provider integration,
 	// but should apply for any default implementation. If set, it is assumed that a load balancer
 	// implementation is watching for Services with a matching class name. Any default load balancer
 	// implementation (e.g. cloud providers) should ignore Services that set this field.
 	// +optional
-	LoadBalancerClassName string `json:"loadBalancerClassName,omitempty"`
+	LoadBalancerClassName string `json:"loadBalancerClass,omitempty"`
 }
 ```
 
-* `loadBalancerClassName` will be immutable so that existing and future implementations do not have to worry
-about handling Services that change the class name.
-* `loadBalancerClassName` can carry arbitrary string values.
-* the `loadBalancerClassName` field will be feature gated. The field will be dropped during API strategy unless
+* `loadBalancerClass` will be immutable only when the Service type is `LoadBalancer`, this way existing and future implementations
+do not have to worry about handling Services that change the class name. The class name is mutable and can be cleared when the
+type changes.
+* `loadBalancerClass` will be validated against label-style format.
+* the `loadBalancerClass` field will be feature gated. The field will be dropped during API strategy unless
 the feature gate is enabled.
 
 Required updates to service controller:
@@ -150,9 +151,12 @@ Required updates to service controller:
 
 Unit tests:
 * test that service controller does not call the cloud provider if the class field is set.
-* test API strategy to ensure the `loadBalancerClassName` field is dropped unless the feature gate is enabled
+* test API strategy to ensure the `loadBalancerClass` field is dropped unless the feature gate is enabled
 or an existing Service has the field set.
 * test API validation for immutability.
+
+Integration tests:
+* test that the class field is propoerly cleared/validated when the Service type changes to and from `LoadBalancer`.
 
 E2E tests:
 * test that creating a Service with an unknown class name results in no load balancer being created for a Service.
@@ -160,14 +164,14 @@ E2E tests:
 ### Graduation Criteria
 
 Alpha:
-* the `loadBalancerClassName` field is added to Service with an alpha feature gate.
+* the `loadBalancerClass` field is added to Service with an alpha feature gate.
 * when enabled, service controller will ignore Service LBs with a non-empty class name.
 * unit tests for service controller.
 * unit tests for API strategy (drop disabled fields).
 
 ### Upgrade / Downgrade Strategy
 
-* Usage of `loadBalancerClassName` will be off by default during the alpha stage but can handle existing Services that
+* Usage of `loadBalancerClass` will be off by default during the alpha stage but can handle existing Services that
 has the field set already. This ensures apiserver can handle the new field on downgrade.
 * On upgrade, if the feature gate is enabled, there should be no changes since the default behavior has not changed
 (service controller calls the cloud provider to reconcile load balancers).
