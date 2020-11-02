@@ -111,6 +111,8 @@ The ability to target namespaces using names, when building NetworkPolicy object
 
 NetworkPolicies are under utilized by developers when defining applications, and the most obvious tenancy boundary for a developer is that of **the Namespace**.  We thus aim to make this boundary **extremely** obvious and easy for users to target in a maximally secure manner.
 
+NetworkPolicies are also used by administrators to make specific default policies (for example, the common `kube-system` namespaces might be one which an administrator wants to protect from unwanted traffic).
+
 Although service-mesh and other technologies have been slated to obviate the need for developer driven security boundaries, these technologies aren't available in most clusters, and aren't supported by the Kubernetes API.
 
 The ability to provide granular and intuitive network boundaries between apps is part of the braoder vision to make the NetworkPolicy API a universal security construct implemented in all production applications. 
@@ -149,7 +151,7 @@ We thus conclude that, even though targetting an object using its name is not no
 ### Goals
 
 - Add a `matchName` option (which is additive to the current `matchLabels` selector).
-- Add an additional semantic mechanism to "allow all" namespaces while excluding a finite, specific, list of namespaces (canonically, this might be `kube-system`, as this is an obvious security boundary which most clusters would prefer).
+- Add an additional semantic mechanism to "allow all" namespaces while excluding a finite, specific, list of namespaces (concretely, this might involve blocking the `kube-system` namespace, as this is an obvious security boundary which most clusters would prefer).
 
 ### Non-Goals
 
@@ -184,7 +186,7 @@ bogged down.
 
 #### Story 1
 
-As an administrator I want to block all users from accessing the kube-system namespace as a fundamental default policy.
+As an administrator I want to block all users from accessing the kube-system namespace as a fundamental default policy, and I want to do this regardless of labels that might be added or removed from it over time.
 
 #### Story 2
 
@@ -195,7 +197,10 @@ As an user I want to "just add" a namespace to my allow list without having to m
 ### Risks and Mitigations
 
 - CNIs may not choose, initially, to support this construct, and diligent communication with CNI providers will be needed to make sure it's widely adopted.
-- Fractionating the Kubernetes API idiom by introducing a separate way to select objects.  We accept this cost because security is a fundamentally important paradigm that justifies breaking other paradigms, at times. 
+- CNIs may not choose, initially to support this construct, and dilligent communication with CNI providers will be needed to make sure its widely adopted.
+- We need to make sure that hidden defaults don't break the meaning of existing policys, for example:
+  - if a namespcee name is retrieved by an api client which doesn't yet support it, the client doesnt crash (and the plugin doesnt crash, either).
+  - if a namespace name policy doesn't exist (is null), then the policy should behave identically to any policy made before this field was added, that is, the `NetworkPolicyPeer` should be as obvious as possible to interpret in a way that is compatible with the semantics of the v1 policy API **before** this feature was added to it.  
 
 ## Design Details
 
@@ -242,27 +247,22 @@ We will add tests for this new api semantic into the exting test/e2e/ network po
 
 ### Graduation Criteria
 
+Note that we may not have explicity feature gates for this KEP, because NetworkPolicies typically haven't been implemented with gates.  We keep this section for the time being in any case as it organizes our thinking around the general progression of the feature over time.
+
 #### Alpha 
 - Add a feature gated new field to NetworkPolicy
 - Communicate CNI providers about the new field
-- Add validation tests in API
+- Add validation tests in API which confirm several positive / negative scenarios in the test matrix for when this field is present/absent
 
 #### Beta
 - The name selector has been supported for at least 1 minor release
-- At least one CNI provider implements the new field
+- Four commonly used CNI providers implement the new field, with generally positive feedback on its usage.
 - Feature Gate is enabled by Default
 
 #### GA Graduation
 
 - At least two CNIs support the The name selector field
 - The name selector has been enabled by default for at least 1 minor release
-
-#### Removing a Deprecated Flag
-
-- Announce deprecation and support policy of the existing flag
-- Two versions passed since introducing the functionality that deprecates the flag (to address version skew)
-- Address feedback on usage/changed behavior, provided on GitHub issues
-- Deprecate the flag
 
 ### Upgrade / Downgrade Strategy
 
