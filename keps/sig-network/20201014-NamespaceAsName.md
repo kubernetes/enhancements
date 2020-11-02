@@ -118,7 +118,7 @@ The ability to provide granular and intuitive network boundaries between apps is
 ### Generic motivation
 
 - Embrace the immutable nature of a namespace name as a fundamental security construct in the Kubernetes ecosystem.
-- Making network policies more secure by making it impossible to "impersponate" a bespoke namespace.
+- Making network policies more secure by making it impossible to "impersonate" a bespoke namespace.
 - Making network policy tenancy boundaries more declarative to use by *not* requiring developers to copy/duplicate namespace labels
 
 These two motivating factors are mostly self explanatory, but in the next section we outline concrete feedback in these areas.
