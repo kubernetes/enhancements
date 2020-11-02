@@ -1,0 +1,32 @@
+title: Service Type=LoadBalancer Class Annotation
+kep-number: 1959
+authors:
+  - "@andrewsykim"
+owning-sig: sig-cloud-provider
+participating-sigs:
+  - sig-network
+status: implementable
+creation-date: 2020-08-31
+reviewers:
+  - "@bowei"
+  - "@cheftako"
+  - "@thockin"
+approvers:
+  - "@bowei"
+  - "@cheftako"
+  - "@thockin"
+prr-approvers:
+  - "@johnbelamaric"
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: stable
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.20"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  stable: "v1.20"
+
