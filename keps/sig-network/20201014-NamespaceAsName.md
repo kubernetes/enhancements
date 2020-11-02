@@ -150,29 +150,34 @@ We thus conclude that, even though targetting an object using its name is not no
 
 ### Goals
 
-- Add a `matchName` option (which is additive to the current `matchLabels` selector).
-- Add an additional semantic mechanism to "allow all" namespaces while excluding a finite, specific, list of namespaces (concretely, this might involve blocking the `kube-system` namespace, as this is an obvious security boundary which most clusters would prefer).
+- Add a `namespace` option (which is additive to the current `matchLabels` selector).
+- Allow multiple `matchName` values, so that many namespaces can be allowed using the same field 
 
 ### Non-Goals
 
 - Support matching of wildcard namespaces
+- Changing the internal details of how namespaceSelector works with arbitrary syntax
+- Depending on more sophisticated features (like virtual labels) to accomplish this feature without changing the API (note that, if someone were
+to write a virtualLabels KEP, however, it might change the trajectory of this KEP, which is worth discussing)
 
 ## Proposal
 
-In NetworkPolicy specification, inside `namespaceSelector` specify a new `Name` field.  One possible implementation of this would be:
+In NetworkPolicy specification, inside `NetworkPolicyPeer` specify a new `namespaceNames` field.  
+
+1) One simple way to implement this feature is to modify the NetworkPolicyPeer object, like so.  Since this 
+doesn't involve modifying a go type (i.e. were not replacing a labelSelector with a different type, we expect it 
+to be a cleaner implementation:
 
 ```
-    type NamespaceSelector struct {
-      names []string
-      labels *metav1.LabelSelector
-    }
-```
+type NetworkPolicyPeer struct {
+  // new field
+  namespaceNames []string
 
-which is referenced from the namespaceSelector:
-
-```
-    + NamespaceSelector *NamespaceSelector
-    - NamespacesSelector *metav1.LabelSelector
+  // existing fields...
+	PodSelector *metav1.LabelSelector `json:"podSelector,omitempty" protobuf:"bytes,1,opt,name=podSelector"`
+	NamespaceSelector *metav1.LabelSelector `json:"namespaceSelector,omitempty" protobuf:"bytes,2,opt,name=namespaceSelector"`
+	IPBlock *IPBlock `json:"ipBlock,omitempty" protobuf:"bytes,3,rep,name=ipBlock"`
+}
 ```
 
 ### User Stories (Optional)
@@ -186,7 +191,7 @@ bogged down.
 
 #### Story 1
 
-As an administrator I want to block all users from accessing the kube-system namespace as a fundamental default policy, and I want to do this regardless of labels that might be added or removed from it over time.
+As an administrator i want to allow access from monitoring pods in kube-system namespace, into any pod in my cluster, as a fundamental policy. 
 
 #### Story 2
 
@@ -196,21 +201,19 @@ As an user I want to "just add" a namespace to my allow list without having to m
 
 ### Risks and Mitigations
 
-- CNIs may not choose, initially, to support this construct, and diligent communication with CNI providers will be needed to make sure it's widely adopted.
-- CNIs may not choose, initially to support this construct, and dilligent communication with CNI providers will be needed to make sure its widely adopted.
+- CNIs may **NOT** choose, initially to support this construct, and dilligent communication with CNI providers will be needed to make sure its widely adopted.
 - We need to make sure that hidden defaults don't break the meaning of existing policys, for example:
   - if a namespcee name is retrieved by an api client which doesn't yet support it, the client doesnt crash (and the plugin doesnt crash, either).
-  - if a namespace name policy doesn't exist (is null), then the policy should behave identically to any policy made before this field was added, that is, the `NetworkPolicyPeer` should be as obvious as possible to interpret in a way that is compatible with the semantics of the v1 policy API **before** this feature was added to it.  
+  - if a namespace name policy doesn't exist (is null), then the policy should behave identically to any policy made before this field was added, that is, 
+- Both "allow all" and "allow none" could be incorrectly interpretted incorrectly, so we need to make sure that plugins not implementing the feature don't get misled by the new data structure.
+
+the `NetworkPolicyPeer` should be as obvious as possible to interpret in a way that is compatible with the semantics of the v1 policy API **before** this feature was added to it.  
 
 ## Design Details
 
 - Add a new selector to the network policy peer data structure which can switch between allowing a "matchName" or "matchLabels" implementation, supporting a policy that is expressed like this:
 
-This selector has two, EXCLUSIVE, possible input types:
-
-- A list of conventional namespaces OR 
-- A `*` with an `exclude` rule as in input to this selector
-
+- A list of conventional namespaces
 The "conventional namespaces" will look like so:
 ```
 kind: NetworkPolicy
@@ -223,45 +226,36 @@ spec:
       app: mysql
   ingress:
   - from:
-    - namespaceSelector:
-         matchName:
-         -  my-frontend
+      matchName:
+      -  my-frontend
 ```
-
-Meanwhile, the "exclude" implementation, will look like this:
-
-```
-  ingress:
-  - from:
-    - namespaceSelector:
-         matchName:
-         -  *
-         exclude:
-         - kube-system
-```
-
 
 ### Test Plan
 
-We will add tests for this new api semantic into the exting test/e2e/ network policy test suites in upstream which cover both of these scenarios, using the validation framework outlined in https://github.com/kubernetes/enhancements/blob/master/keps/sig-network/20200204-NetworkPolicy-verification-rearchitecture.md#motivation 
+We will add tests for this new api semantic into the exting test/e2e/ network policy test suites in upstream which cover both of these scenarios, using the validation framework outlined in https://github.com/kubernetes/enhancements/blob/master/keps/sig-network/20200204-NetworkPolicy-verification-rearchitecture.md#motivation.
 
 ### Graduation Criteria
 
-Note that we may not have explicity feature gates for this KEP, because NetworkPolicies typically haven't been implemented with gates.  We keep this section for the time being in any case as it organizes our thinking around the general progression of the feature over time.
+All new field introductions need gates for at least one release, thus, we would add this feature gate in alpha, so we must use
+feature gates idiomatically to implement this change.  
+
+Gone are the days of changing the API with reckless abandon.
 
 #### Alpha 
-- Communicate CNI providers about the new field
+- Communicate CNI providers about the new field.
 - Add validation tests in API which confirm several positive / negative scenarios in the test matrix for when this field is present/absent
+- All new field introductions need gates for at least one release, thus, we would add this feature gate in alpha. 
+
 
 #### Beta
-- The name selector has been supported for at least 1 minor release
-- Four commonly used CNI providers implement the new field, with generally positive feedback on its usage.
-- Feature Gate is enabled by Default
+- The name selector has been supported for at least 1 minor release.
+- Four commonly used NetworkPolicy (or CNI providers) implement the new field, with generally positive feedback on its usage.
+- Feature Gate is enabled by Default.
 
 #### GA Graduation
 
-- At least two CNIs support the The name selector field
-- The name selector has been enabled by default for at least 1 minor release
+- At least **four** NetworkPolicy providers (or CNI providers) support the The name selector field.
+- The name selector has been enabled by default for at least 1 minor release.
 
 ### Upgrade / Downgrade Strategy
 
@@ -341,6 +335,27 @@ We dont want to have > 1 way to select namespaces.
 ## Alternatives
 
 A network policy operator could be created which translated a CRD into many networkpolicys on the fly, by watching namespaces and updating labels dynamically.  This would be a privileged container in a cluster and likely would not gain much adoption.
+
+### Alternative API implementation change
+
+Another (possibly more disruptive ) possible implementation of this would be.  We include this for completeness, but
+are proposing the 1st, simpler option for this KEP.  This is interesting because it "folds" into the existing API, thus 
+paving the way for symmetrical implementation for podSelectors, and so on.  However, its increased complexity due to the 
+fact that it breaks the existing type system by changing the `labels` implementation, makes it less attractive.
+
+```
+    type NamespaceSelector struct {
+      names []string
+      labels *metav1.LabelSelector
+    }
+```
+
+which is referenced from the namespaceSelector:
+
+```
+    + NamespaceSelector *NamespaceSelector
+    - NamespacesSelector *metav1.LabelSelector
+```
 
 ## Infrastructure Needed (Optional)
 
