@@ -158,7 +158,7 @@ users:
 
       # Whether or not to provide cluster information, which could potentially contain
       # very large CA data, to this exec plugin as a part of the KUBERNETES_EXEC_INFO
-      # environment variable. Optional.
+      # environment variable. Optional. Defaults to false.
       provideClusterInfo: true
 clusters:
 - name: my-cluster
@@ -245,7 +245,9 @@ In JSON:
     "cluster": {
       "server": "https://1.2.3.4:8080",
       "tls-server-name": "bar",
+      "insecure-skip-tls-verify": true,
       "certificate-authority-data": " ... ",
+      "proxy-url": "https://4.5.6.7:9090/proxy",
       "config": { ... }
     }
   }
