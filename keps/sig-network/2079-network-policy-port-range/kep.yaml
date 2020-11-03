@@ -3,7 +3,7 @@ kep-number: 2079
 authors:
   - "@rikatz"
 owning-sig: sig-network
-status: provisional
+status: implementable
 creation-date: "2020-10-08"
 reviewers:
   - "@andrewsykim"
