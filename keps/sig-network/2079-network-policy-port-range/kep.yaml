@@ -1,5 +1,5 @@
-title: KEP Template
-kep-number: NNNN
+title: Allow a Network Policy to contemplate a set of ports in a single rule
+kep-number: 2079
 authors:
   - "@rikatz"
 owning-sig: sig-network

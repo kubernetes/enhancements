@@ -10,6 +10,7 @@
   - [Notes/Constraints/Caveats](#notesconstraintscaveats)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
+  - [Validations](#validations)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
@@ -79,7 +80,7 @@ spec:
       port: 32768
 ```
 
-So for the user, actually:
+So for the user:
 * To allow a range of ports, each of them must be declared as an item from 
 ``ports`` array
 * To make an exception needs a declaration of all ports but the exception
@@ -93,8 +94,7 @@ Add Range field to Ports in NetworkPolicy
 
 ### Non-Goals
 
-Specify exceptions to the range. An exception can at this time be specified 
-as multiple ranges not contemplating the exception.
+N/A
 
 ## Proposal
 
@@ -132,8 +132,9 @@ API changes to NetworkPolicy:
 * Add a new struct called ``NetworkPolicyPortRange`` as the following:
 ```
 type NetworkPolicyPortRange struct {
-    From uint16
-    To   uint16
+    From         uint16
+    To           uint16
+    Exceptions:  []uint16
 }
 ```
 * Add a new field ``spec.ingress|egress.ports.range`` that points to the
@@ -145,10 +146,15 @@ type NetworkPolicyPort struct {
 }
 ```
 
+### Validations
 The range will need to be validated, with the following scenarios:
 * If there's a ``From`` or a ``To`` field defined, the other one must be defined.
 * ``From`` needs to be less than or equal to ``To``
-
+* All the ports in the ``Exceptions`` array must be inside the defined range.
+* ``Exception`` can only be defined if ``From`` and ``To`` are also defined.
+* Because ``ports`` is a superset of all ports specified in ``port`` and 
+``range``, if a port is specified in at least one of the fields it should be 
+allowed.
 
 ### Test Plan
 
@@ -258,7 +264,7 @@ the existing API objects?**
 
   - API type(s): NetworkPolicy / NetworkPolicyPorts
   - Estimated increase in size: New struct inside the object with two fields of 
-  16 bits each
+  16 bits each + 16 bits for each port in the ``Exceptions`` array
   - Estimated amount of new objects: N/A
 
 * **Will enabling / using this feature result in increasing time taken by any 
@@ -290,7 +296,11 @@ _This section must be completed when targeting beta graduation to a release._
 ## Drawbacks
 
 *  The technology used by the CNI provider might not support port range in a 
-trivial way. As an example, OpenFlow does not have a way to specify port range
-and this might be a problem for OVS based CNIs as commented in 
-[kubernetes #67526](https://github.com/kubernetes/kubernetes/issues/67526#issuecomment-415170435).
-The same way, eBPF based CNIs will need to populate their maps in a different way.
+trivial way. As an example, OpenFlow did not supported to specify port range
+for a while as commented in [kubernetes #67526](https://github.com/kubernetes/kubernetes/issues/67526#issuecomment-415170435). 
+While this has changed in Open vSwitch v1.6, this still might be a caveat
+for other CNIs, like eBPF based CNIs will need to populate their maps in a 
+different way.
+
+For this cases, CNIs will have to iteract through the Port Range and
+populate their packet filtering tables with each port.
