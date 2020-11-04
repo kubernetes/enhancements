@@ -21,9 +21,18 @@
   - [ServiceAccount Admission Controller Migration](#serviceaccount-admission-controller-migration)
     - [Prerequisites](#prerequisites)
     - [Safe rollout of time-bound token](#safe-rollout-of-time-bound-token)
+  - [Test Plan](#test-plan)
+    - [TokenRequest/TokenRequestProjection](#tokenrequesttokenrequestprojection)
+    - [RootCAConfigMap](#rootcaconfigmap)
+    - [BoundServiceAccountTokenVolume](#boundserviceaccounttokenvolume)
   - [Graduation Criteria](#graduation-criteria)
-    - [Alpha-&gt;Beta](#alpha-beta)
-    - [Beta -&gt; GA Graduation](#beta---ga-graduation)
+    - [TokenRequest/TokenRequestProjection](#tokenrequesttokenrequestprojection-1)
+      - [Beta-&gt;GA](#beta-ga)
+    - [RootCAConfigMap](#rootcaconfigmap-1)
+      - [Beta-&gt;GA](#beta-ga-1)
+    - [BoundServiceAccountTokenVolume](#boundserviceaccounttokenvolume-1)
+      - [Alpha-&gt;Beta](#alpha-beta)
+      - [Beta -&gt; GA Graduation](#beta---ga-graduation)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
   - [Scalability](#scalability)
@@ -291,11 +300,15 @@ operators should make sure:
 
     **Note**: If having trouble in finding places using in-cluster config
     completely, cluster operators can specify flag
-    `--service-account-extend-token-expiration` to kube apiserver to allow
+    `--service-account-extend-token-expiration=true` to kube apiserver to allow
     tokens have longer expiration temporarily during the migration. Any usage of
     legacy token will be recorded in both metrics and audit logs. After fixing
-    all the potentially broken workloads, don't forget to remove the flag so
-    that the original expiration settings are honored.
+    all the potentially broken workloads, turn off the flag so that the original
+    expiration settings are honored. Note the
+    `--service-account-extend-token-expiration` mitigation defaults to true, and
+    that cluster administrators can set it to
+    `--service-account-extend-token-expiration=false` to turn off the mitigation
+    if desired.
 
     - Metrics: `serviceaccount_stale_tokens_total`
     - Audit: looking for `authentication.k8s.io/stale-token` annotation
@@ -343,36 +356,101 @@ are properly reloading tokens by:
 1.  Add annotation to audit events for legacy and stale tokens including
     necessary information to locate problematic client.
 
+### Test Plan
+
+#### TokenRequest/TokenRequestProjection
+
+- Unit tests
+- E2E tests
+  - Projected jwt tokens are correctly mounted. (conformance test)
+  - The owner and mode of projected tokens are correctly set
+  - In-cluster clients work with Token rotation
+
+#### RootCAConfigMap
+
+- Unit tests
+- E2E tests
+  - Every namespace has configmap `kube-root-ca.crt`
+
+#### BoundServiceAccountTokenVolume
+
+- Unit tests
+- An upgrade test
+
+1.  Create pod A with feature disabled where pod A is working and a secret
+    volume is mounted
+2.  Enable feature where pod A continue working
+3.  Create pod B and it is working and projected volumes are mounted
+
 ### Graduation Criteria
 
-#### Alpha->Beta
+#### TokenRequest/TokenRequestProjection
 
-Estimated version: v1.20
+| Alpha | Beta | GA   |
+| ----- | ---- | ---- |
+| 1.10  | 1.12 | 1.20 |
 
-All known migration frictions have been fixed:
+##### Beta->GA
 
-- PodSecurityPolicies that allow secrets but not projected volumes will
-  prevent the use of token volumes.
-  - Fixed in https://github.com/kubernetes/kubernetes/pull/92006
-- In-cluster clients that don’t reload service account tokens will start
-  failing an hour after deployment.
-  - Mitigation added in https://github.com/kubernetes/kubernetes/issues/68164
-- Pods running as non root may not access the service account token.
-  - Fixed in https://github.com/kubernetes/kubernetes/pull/89193
+- [x] In use by multiple distributions
+- [x] Approved by PRR and scalability
+- [x] Any known bugs fixed
+- [x] Tests passing
+  - [x] E2E test [ServiceAccounts should mount projected service account
+        token when requested](https://k8s-testgrid.appspot.com/sig-auth-gce#gce)
+  - [x] E2E test [ServiceAccounts should set ownership and permission when
+        RunAsUser or FsGroup is
+        present](https://k8s-testgrid.appspot.com/sig-auth-gce#gce)
+  - [x] E2E test
+        [ServiceAccounts should support InClusterConfig with token rotation](https://k8s-testgrid.appspot.com/sig-auth-gce#gce-slow)
 
-An upgrade test is passing periodically:
+#### RootCAConfigMap
 
-1. Create pod A with feature disabled where pod A is working and a secret volume
-   is mounted.
-2. Enable feature where pod A continue working
-3. Create pod B and it is working and projected volumes are mounted.
+| Alpha | Beta | GA   |
+| ----- | ---- | ---- |
+| 1.13  | 1.20 | 1.21 |
 
-#### Beta -> GA Graduation
+##### Beta->GA
 
-Estimated version: v1.21+
+- [ ] In use by multiple distributions
+- [ ] Approved by PRR and scalability
+- [ ] Any known bugs fixed
 
-New `ServiceAccount` admission controller WAI in Beta for >= 1 minor without
-significant issues.
+#### BoundServiceAccountTokenVolume
+
+| Alpha | Beta | GA   |
+| ----- | ---- | ---- |
+| 1.13  | 1.21 | 1.22 |
+
+##### Alpha->Beta
+
+- [x] Any known bugs fixed
+
+  - [x] PodSecurityPolicies that allow secrets but not projected volumes
+        will prevent the use of token volumes.
+    - Fixed in https://github.com/kubernetes/kubernetes/pull/92006
+  - [x] In-cluster clients that don’t reload service account tokens will
+        start failing an hour after deployment.
+  - Mitigation added in
+    https://github.com/kubernetes/kubernetes/issues/68164
+  - [x] Pods running as non root may not access the service account token.
+    - Fixed in https://github.com/kubernetes/kubernetes/pull/89193
+
+- [x] Tests passing
+
+  - [x] Upgrade test
+        [sig-auth-serviceaccount-admission-controller-migration](https://k8s-testgrid.appspot.com/sig-auth-gce#upgrade-tests)
+
+- [x] TokenRequest/TokenRequestProjection GA
+
+- [ ] RootCAConfigMap GA
+
+##### Beta -> GA Graduation
+
+- [ ] Allow kube-apiserver to recognize multiple issuers to enable non
+      disruptive issuer change.
+- [ ] New `ServiceAccount` admission controller work as intended in Beta
+      for >= 1 minor release without significant issues.
 
 ## Production Readiness Review Questionnaire
 
@@ -389,19 +467,20 @@ significant issues.
     of a node? no.
 
 - **Does enabling the feature change any default behavior?** yes, pods'
-  service account tokens will not be long-lived and are not stored as Secrets
-  any more.
+  service account tokens will expire after 1 year by default and are not
+  stored as Secrets any more.
 
 - **Can the feature be disabled once it has been enabled (i.e. can we roll
-  back the enablement)?** yes. pods created while the feature was enabled will
-  reference a configmap that can grow stale with the feature disabled.
+  back the enablement)?** yes.
 
 - **What happens if we reenable the feature if it was previously rolled
   back?** the same as the first enablement.
 
 - **Are there any tests for feature enablement/disablement?**
+
   - unit test: plugin/pkg/admission/serviceaccount/admission_test.go
-  - upgrade test: test/e2e/upgrades/serviceaccount_admission_controller_migration.go
+  - upgrade test:
+    test/e2e/upgrades/serviceaccount_admission_controller_migration.go
 
 ### Scalability
 
@@ -423,7 +502,8 @@ significant issues.
   provider?** no.
 
 - **Will enabling / using this feature result in increasing size or count of
-  the existing API objects?** no.
+  the existing API objects?** controller creates one additional configmap per
+  namespace.
 
 - **Will enabling / using this feature result in increasing time taken by any
   operations covered by [existing SLIs/SLOs]?** no.

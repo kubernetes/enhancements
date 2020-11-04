@@ -17,7 +17,7 @@ stage: beta
 latest-milestone: "v1.20"
 milestone:
   alpha: "v1.13"
-  beta: "v1.20"
+  beta: "v1.21"
 feature-gates:
   - name: TokenRequest
     components:
@@ -27,10 +27,12 @@ feature-gates:
     components:
     - kube-apiserver
     - kubelet
+  - name: RootCAConfigMap
+    components:
+      - kube-controller-manager
   - name: BoundServiceAccountTokenVolume
     components:
       - kube-apiserver
-      - kube-controller-manager
 metrics:
   - serviceaccount_stale_tokens_total
 ---
