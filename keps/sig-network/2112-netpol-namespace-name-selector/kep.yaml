@@ -1,0 +1,33 @@
+title: Allow a namespace to be selected by name in a Network Policy
+kep-number: 2112
+authors:
+  - "@jayunit100"
+owning-sig: sig-network
+status: provisional
+creation-date: 2020-10-14
+reviewers:
+  - "@danwinship"
+  - "@thockin"
+approvers:
+  - TBD
+stage: alpha
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.21"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.21"
+  beta: "v1.22"
+  stable: "v1.23"
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+  - name: NetworkPolicyNamespaceAsName
+    components:
+      - kube-apiserver
+disable-supported: true
+
