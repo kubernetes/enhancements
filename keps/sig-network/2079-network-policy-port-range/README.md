@@ -131,20 +131,42 @@ of the new field.
 API changes to NetworkPolicy:
 * Add a new struct called ``NetworkPolicyPortRange`` as the following:
 ```
+// NetworkPolicyPortRange describes the range of ports to be used in a 
+// NetworkPolicyPort struct
 type NetworkPolicyPortRange struct {
+    // From defines the start of the port range
     From         uint16
+    
+    // To defines the end of the port range, being the end included within the
+    // range
     To           uint16
-    Exceptions:  []uint16
+
+    // Except defines all the exceptions in the port range
+    Except:      []uint16
 }
 ```
 * Add a new field ``spec.ingress|egress.ports.range`` that points to the
 new struct:
 ```
-// NetworkPolicyPort describes a port to allow traffic on
+// NetworkPolicyPort describes a port or a range of ports to allow traffic on
 type NetworkPolicyPort struct {
-    Range NetworkPolicyPortRange
+	// The protocol (TCP, UDP, or SCTP) which traffic must match. If not specified, this
+	// field defaults to TCP.
+	// +optional
+	Protocol *api.Protocol
+
+	// The port on the given protocol. This can either be a numerical or named 
+  // port on a pod. If this field is not provided but a Range is 
+  // provided, this field is ignored. Otherwise this matches all port names and
+  // numbers.
+	// +optional
+	Port *intstr.IntOrString
+
+  // A range of ports on a given protocol and the exceptions. If this field 
+  // is not provided, this doesn't matches anything
+  // +optional
+  Range *NetworkPolicyPortRange
 }
-```
 
 ### Validations
 The range will need to be validated, with the following scenarios:
@@ -155,10 +177,19 @@ The range will need to be validated, with the following scenarios:
 * Because ``ports`` is a superset of all ports specified in ``port`` and 
 ``range``, if a port is specified in at least one of the fields it should be 
 allowed.
+* If ``Range`` is defined but no ``Port`` is defined, the old behavior of matching
+all should be changed.
 
 ### Test Plan
 
-TBD
+Unit tests:
+* test API validation logic
+* test API strategy to ensure disabled fields
+
+E2E tests:
+* Add e2e tests exercising only the API operations for port ranges. Data-path 
+validation should be done by CNIs.
+
 
 ### Graduation Criteria
 
@@ -169,12 +200,13 @@ TBD
 
 #### Beta
 - ``PortRanges`` has been supported for at least 1 minor release
-- At least one CNI provider implements the new field
-- Feature Gate is enabled by Default
+- Four commonly used NetworkPolicy (or CNI providers) implement the new field, 
+with generally positive feedback on its usage.
+- Feature Gate is enabled by Default.
 
 #### GA Graduation
 
-- At least two CNIs support the ``PortRanges`` field
+- At least **four** NetworkPolicy providers (or CNI providers) support the ``PortRanges`` field
 - ``PortRanges`` has been enabled by default for at least 1 minor release
 
 ### Upgrade / Downgrade Strategy
