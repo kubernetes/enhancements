@@ -176,20 +176,15 @@ manage the labels which might get added/removed over time from said namespace.
 
 ### Risks and Mitigations
 
-- CNIs may **NOT** choose, initially to support this construct, and dilligent communication with CNI providers will be needed to make sure its widely adopted.
-- We need to make sure that hidden defaults don't break the meaning of existing policys, for example:
+- NetworkPolicy providers may **opt-out**, initially to support this construct, and dilligent communication with CNI providers will be needed to make sure its widely adopted, thus, this feature needs to be backwards compatible with the existing v1 api.
+- We thus need to make sure that hidden defaults don't break the meaning of existing policys, for example:
   - if `namespaceSelectorAllow` field is retrieved by an api client which doesn't yet support it, the client doesnt crash (and the plugin doesnt crash, either).
-  - if `namespaceSelectorAllow` is empty or nil, the policy should behave identically to any policy made before this field was added, in other words **it is a no-op**, not an **allow-all**.  **This is an important distinction** because empty lists can be thought of as "allow all" constructs, since when matching labels, the empty set automatically has a trivial match to any pod.
+  - if `namespaceSelectorAllow` is nil, the policy should behave identically to any policy made before this field was added.
+    - in other words, there is no "deny all" semantic that can be enforced by this namespace being missing.
+  - if `namespaceSelectorAllow` is empty, it has IDENTICAL semantics as if it were nil.
+    - in other words, there is no "allow all" namespaces semantic which corresponds to emptyness
 
-#### A note on empty vs. nil semantics
-
-Default values in the network policy API have historically been a little confusing.  For the `namespaceSelectorAllow` implementation we suggest that:
-
-- `namespaceSelectorAllow` can only be used to ALLOW traffic.  The complexity of the "nil vs empty" selectors is that they are leveraged to implement deny-all and allow-all semantics.
-- `namespaceSelectorAllow` is ADDITIVE with respect to the **existing** namespaceSelector. Thus, to implement deny-all rules, the `namespaceSelectorAllow` can be either nil, or empty.
-- `namespaceSelectorAllow`, in absence of a namespaceSelector, if non-empty, results in namespace semantics which are equivalent to namespaces selected BY the namespace selector.  To test this, we can expand existing network policy tests to confirm that there is equivalence between all namespaceSelector vs. namespaceSelectorAllow operations, when combined with other fields.
-
-The `NetworkPolicyPeer` should be as obvious as possible to interpret in a way that is compatible with the semantics of the v1 policy API **before** this feature was added to it.  
+Overall, the `NetworkPolicyPeer` modifications should be unobtrusive with regard to how other fields interplay, regardless of its absence or presence, notwithstanding the fact that it potentially broadens the selection of the `namespaceSelector` field.
 
 ## Design Details
 
