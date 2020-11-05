@@ -125,8 +125,8 @@ amending the API to support a "special" selector for namespace names that is
 
 ### Goals
 
-- Add a `namespaceNames` option (which is additive to the current `matchLabels` selector).
-- Allow multiple `namespaceNames` values, so that many namespaces can be 
+- Add a `namespaceSelectorAllow` option (which is additive to the current `matchLabels` selector).
+- Allow multiple `namespaceSelectorAllow` values, so that many namespaces can be 
 allowed using the same field 
 
 ### Non-Goals
@@ -140,7 +140,7 @@ KEP, which is worth discussing)
 
 ## Proposal
 
-In NetworkPolicy specification, inside `NetworkPolicyPeer` specify a new `namespaceNames` field.  
+In NetworkPolicy specification, inside `NetworkPolicyPeer` specify a new `namespaceSelectorAllow` field.  
 
 1) One simple way to implement this feature is to modify the NetworkPolicyPeer 
 object, like so.  Since this doesn't involve modifying a go type (i.e. were 
@@ -150,7 +150,7 @@ to be a cleaner implementation:
 ```
 type NetworkPolicyPeer struct {
   // new field
-  namespaceNames []string
+  namespaceSelectorAllow []string
 
   // existing fields...
 	PodSelector *metav1.LabelSelector `json:"podSelector,omitempty" protobuf:"bytes,1,opt,name=podSelector"`
@@ -173,31 +173,31 @@ manage the labels which might get added/removed over time from said namespace.
 
 ### Notes/Constraints/Caveats (Optional)
 
+
 ### Risks and Mitigations
 
-- CNIs may **NOT** choose, initially to support this construct, and dilligent 
-communication with CNI providers will be needed to make sure its widely 
-adopted.
-- We need to make sure that hidden defaults don't break the meaning of 
-existing policys, for example:
-  - if a namespaece name is retrieved by an api client which doesn't yet 
-  support it, the client doesnt crash (and the plugin doesnt crash, either).
-  - if a namespace name policy doesn't exist (is null), then the policy should 
-  behave identically to any policy made before this field was added, that is, 
-- Both "allow all" and "allow none" could be incorrectly interpreted 
-incorrectly, so we need to make sure that plugins not implementing the feature 
-don't get misled by the new data structure.
+- CNIs may **NOT** choose, initially to support this construct, and dilligent communication with CNI providers will be needed to make sure its widely adopted.
+- We need to make sure that hidden defaults don't break the meaning of existing policys, for example:
+  - if `namespaceSelectorAllow` field is retrieved by an api client which doesn't yet support it, the client doesnt crash (and the plugin doesnt crash, either).
+  - if `namespaceSelectorAllow` is empty or nil, the policy should behave identically to any policy made before this field was added, in other words **it is a no-op**, not an **allow-all**.  **This is an important distinction** because empty lists can be thought of as "allow all" constructs, since when matching labels, the empty set automatically has a trivial match to any pod.
+
+#### A note on empty vs. nil semantics
+
+Default values in the network policy API have historically been a little confusing.  For the `namespaceSelectorAllow` implementation we suggest that:
+
+- `namespaceSelectorAllow` can only be used to ALLOW traffic.  The complexity of the "nil vs empty" selectors is that they are leveraged to implement deny-all and allow-all semantics.
+- `namespaceSelectorAllow` is ADDITIVE with respect to the **existing** namespaceSelector. Thus, to implement deny-all rules, the `namespaceSelectorAllow` can be either nil, or empty.
+- `namespaceSelectorAllow`, in absence of a namespaceSelector, if non-empty, results in namespace semantics which are equivalent to namespaces selected BY the namespace selector.  To test this, we can expand existing network policy tests to confirm that there is equivalence between all namespaceSelector vs. namespaceSelectorAllow operations, when combined with other fields.
 
 The `NetworkPolicyPeer` should be as obvious as possible to interpret in a way that is compatible with the semantics of the v1 policy API **before** this feature was added to it.  
 
 ## Design Details
 
-- Add a new selector to the network policy peer data structure which can 
-switch between allowing a "namespaceNames" or "matchLabels" implementation, 
-supporting a policy that is expressed like this:
+- Add a new selector to the network policy peer data structure which can switch between allowing a `namespaceSelectorAllow`, supporting a policy that is expressed like this:
 
 - A list of conventional namespaces
-The "conventional namespaces" will look like so:
+
+The "conventional namespaces" allow directive would look like so:
 ```
 kind: NetworkPolicy
 apiVersion: networking.k8s.io/v1
@@ -209,9 +209,38 @@ spec:
       app: mysql
   ingress:
   - from:
-      namespaceNames:
+      namespaceSelectorAllow:
       -  my-frontend
+      -  my-frontend-2
 ```
+
+- As a more sophisticated example: The following would allow all traffic from `podName:xyz` living in `my-frontend` AND `my-frontend-2`, but NOT trafic from `my-frontend-3`.  This is because the presence of EITHER a namespaceSelectorAllow rule or a namespaceSelector, makes the podSelector subject to an **AND** filter operation.
+
+```
+kind: NetworkPolicy
+apiVersion: networking.k8s.io/v1
+metadata:
+  name: mysql-allow-app
+spec:
+  podSelector:
+    matchLabels:
+      app: mysql
+  ingress:
+  - from:
+    - namespaceSelectorAllow:
+      -  my-frontend
+      namespaceSelector:
+        matchLabels:
+          app: my-frontend-2
+      ipBlock:
+        cidr: 100.1.2.0/16
+        except:
+        - 100.1.2.3/24
+      podSelector:
+        matchLabels:
+          podName: xyz 
+```
+
 
 ### Test Plan
 
