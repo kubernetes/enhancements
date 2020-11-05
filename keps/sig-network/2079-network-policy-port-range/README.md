@@ -150,23 +150,24 @@ new struct:
 ```
 // NetworkPolicyPort describes a port or a range of ports to allow traffic on
 type NetworkPolicyPort struct {
-	// The protocol (TCP, UDP, or SCTP) which traffic must match. If not specified, this
-	// field defaults to TCP.
-	// +optional
-	Protocol *api.Protocol
-
-	// The port on the given protocol. This can either be a numerical or named 
+  // The protocol (TCP, UDP, or SCTP) which traffic must match. If not specified, this
+  // field defaults to TCP.
+  // +optional
+  Protocol *api.Protocol
+  
+  // The port on the given protocol. This can either be a numerical or named 
   // port on a pod. If this field is not provided but a Range is 
   // provided, this field is ignored. Otherwise this matches all port names and
   // numbers.
-	// +optional
-	Port *intstr.IntOrString
+  // +optional
+  Port *intstr.IntOrString
 
   // A range of ports on a given protocol and the exceptions. If this field 
   // is not provided, this doesn't matches anything
   // +optional
   Range *NetworkPolicyPortRange
 }
+```
 
 ### Validations
 The range will need to be validated, with the following scenarios:
