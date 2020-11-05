@@ -11,7 +11,7 @@ approvers:
   - "@josephburnett"
   - "@gjtempleton"
 creation-date: 2020-02-18
-last-updated: 2020-06-03
+last-updated: 2020-11-03
 status: implementable
 ---
 
@@ -77,7 +77,6 @@ a way to specify the target usage in a more fine grained manner.
 ### Goals
 
 - Make HPA scale based on individual container resources usage
-- Alias the resource metric source to pod resource metric source.
 
 ### Non-Goals
 - Configurable aggregation for containers resources in pods.
@@ -115,10 +114,8 @@ of the `application` container might be affected significantly. There is no way 
 in the HPA to keep the utilization of the first container below a certain threshold. This also
 affects `memory` resource based autocaling scaling.
 
-We propose that the following changes be made to the metric sources to address this problem:
-
-1. A new metric source called `ContainerResourceMetricSource` be introduced with the following
-structure:
+We propose that the a new metric source called `ContainerResourceMetricSource` be introduced
+with the following structure:
 
 ```go
 type ContainerResourceMetricSource struct {
@@ -130,11 +127,6 @@ type ContainerResourceMetricSource struct {
 
 The only new field is `Container` which is the name of the container for which the resource
 usage should be tracked.
-
-2. The `ResourceMetricSource` should be aliased to `PodResourceMetricSource`. It will work
-exactly as the original. The aliasing is done for the sake of consistency. Correspondingly,
-the `type` field for the metric source should be extended to support both `ContainerResource`
-and `PodResource` as values.
 
 ### User Stories
 
@@ -283,10 +275,14 @@ above the target.
 
 ### Risks and Mitigations
 
-In order to keep backward compatibility with the existing API both `ResourceMetricSource` and
-`PodResourceMetricSource` will be supported. Existing HPAs will continue functioning like before.
-There will be no deprecation warning or internal migrations from `ResourceMetricSource` to
-`PodResourceMetricSource`.
+Since the new field `container` in the container resource metric source is not validated against the target it is
+possible that the user could specify an invalid value, i.e. a container name which is not part of the pod. The HPA
+controller would treat this as invalid configuration and prevent scale down. However scale up would still be possible
+based on recommendations from other metric sources.
+
+A similar problem is possible when renaming container names in the HPA. To mitigate this the recommended procedure
+is to have both the old and new container names during the deployment. The old container name can be removed from
+the HPA when the migration is complete.
 
 
 ## Design Details
@@ -312,8 +308,9 @@ criteria required because it will graduate when the original API graduates to `s
 For cluster upgrades the HPAs from the previous version will continue working as before. There
 is no change in behavior or flags which have to be enabled or disabled.
 
-For clusters which have HPAs which use `ContainerResourceMetricSource` or `PodResourceMetricSource`
-a downgrade is possible after HPAs which use this new source have been modified to use
-`ResourceMetricSource` instead.
+A new feature gate `HPAContainerMetrics` is added in version 1.20 which is turned off by default.
+The new feature can only be used when this feature gate is enabled.
 
 ## Implementation History
+* 2020-04-03 Initial KEP merged
+* 2020-10-23 Implementation merged
