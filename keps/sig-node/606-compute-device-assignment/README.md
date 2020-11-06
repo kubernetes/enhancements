@@ -99,13 +99,13 @@ We propose to add a new gRPC service to the Kubelet. This gRPC service would be 
 
 This information is obtained from the internal state of the kubelet's Device Manager. The GRPC Service has a single function named `List`, you will find below the v1 API:
 ```protobuf
-// PodResources is a service provided by the kubelet that provides information about the
+// PodResourcesLister is a service provided by the kubelet that provides information about the
 // node resources consumed by pods and containers on the node
-service PodResources {
+service PodResourcesLister {
     rpc List(ListPodResourcesRequest) returns (ListPodResourcesResponse) {}
 }
 
-// ListPodResourcesRequest is the request made to the PodResources service
+// ListPodResourcesRequest is the request made to the PodResourcesLister service
 message ListPodResourcesRequest {}
 
 // ListPodResourcesResponse is the response returned by List function
