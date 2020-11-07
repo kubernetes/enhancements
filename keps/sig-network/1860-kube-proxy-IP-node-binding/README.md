@@ -19,6 +19,10 @@
 - [Design Details](#design-details)
 - [Test Plan](#test-plan)
 - [Graduation Criteria](#graduation-criteria)
+  - [Alpha](#alpha)
+  - [Beta/GA](#betaga)
+  - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+  - [Version Skew Strategy](#version-skew-strategy)
 <!-- /toc -->
 
 ## Release Signoff Checklist
