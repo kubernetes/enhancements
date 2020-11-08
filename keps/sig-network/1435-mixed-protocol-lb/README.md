@@ -496,7 +496,8 @@ Graduating to GA means, that the feature flag checking is removed from the code.
 
 #### Alpha -> Beta Graduation
 
-- We shall have test results or real life usage results from the affected clouds that prove that the enabling of this feature does not break their load balancer management and functionality.
+- All of the major clouds support this or indicate non-support properly
+- Kube-proxy does not proxy on ports that are in an error state
 
 #### Beta -> GA Graduation
 
