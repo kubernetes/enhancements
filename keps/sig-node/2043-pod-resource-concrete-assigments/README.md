@@ -113,8 +113,9 @@ This gRPC service returns information about
 - the devices which kubelet knows about from the device plugins.
 - the kubelet's assignment of devices and cpus with NUMA id to containers.
 The GRPC service obtains this information from the internal state of the kubelet's Device Manager and CPU Manager respectively.
-The GRPC Service exposes two endpoints:
+The GRPC Service exposes these endpoints:
 - `List`, which returns a single PodResourcesResponse, enabling monitor applications to poll for resources allocated to pods and containers on the node.
+- `GetAllocatableResources`, which returns AllocatableResourcesResponse, enabling monitor applications to learn about the the allocatable resources available on the node.
 - `Watch`, which returns a stream of PodResourcesResponse, enabling monitor applications to be notified of new resource allocation, release or resource allocation updates, using the `action` field in the response.
 
 This is shown in proto below:
@@ -235,6 +236,13 @@ will be consistent after each event received - not only at steady state.
 Consider the following scenario with 10 devices, all allocated: pod A with device D1 allocated gets deleted, then
 pod B starts and gets device D1 again. In this case `Watch` will guarantee that `DELETE` and `ADDED` events are delivered
 in the correct order.
+
+To properly evaluate the amount of allocatable compute resources on a node, client applications can use the `GetAlloctableResources` endpoint.
+Applications can use `List` and `Watch` to learn about the current allocation of these resources, and thus the current amount of free (unallocated)
+compute resources.
+Applications are expected to run `GetAlloctableResources` each time they expect a change in the resources
+availability (e.g. CPUs onlined/offlined, devices added/removed). We anticipate these changes to happen very rarely.
+Client applications should not expect any ordering in the return value.
 
 ### Test Plan
 
