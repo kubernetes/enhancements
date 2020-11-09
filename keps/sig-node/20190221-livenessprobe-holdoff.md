@@ -13,8 +13,8 @@ approvers:
   - "@thockin"
 editor: TBD
 creation-date: 2019-02-21
-last-updated: 2019-05-18
-status: implementable
+last-updated: 2020-09-16
+status: implemented
 see-also:
 replaces:
 superseded-by:
@@ -39,6 +39,11 @@ superseded-by:
   - [Feature Gate](#feature-gate)
   - [Graduation Criteria](#graduation-criteria)
 - [Implementation History](#implementation-history)
+  - [Version 1.16](#version-116)
+  - [Version 1.17](#version-117)
+  - [Version 1.18](#version-118)
+  - [Version 1.19](#version-119)
+  - [Version 1.20](#version-120)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -48,9 +53,9 @@ superseded-by:
 - [X] Design details are appropriately documented
 - [X] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
 - [X] Graduation criteria is in place
-- [ ] "Implementation History" section is up-to-date for milestone
+- [X] "Implementation History" section is up-to-date for milestone
 - [X] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [X] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 [kubernetes.io]: https://kubernetes.io/
 [kubernetes/website]: https://github.com/kubernetes/website
@@ -187,11 +192,40 @@ E2e tests will also cover the main use-case for this probe:
 - 2019-04-11: open issue in enhancements [#950]
 - 2019-05-01: redesign to additional probe after @thockin [proposal]
 - 2019-05-02: add test plan
-- 2019-05-13: redesign implemented in new PR [#77807]
-- 2019-05-13: related documentation added in PR [#14297]
+
+### Version 1.16
+
+- Implement `startupProbe` as Alpha [#77807]
+- Cherry pick of #82747 [#83607]
+
+### Version 1.17
+
+- Fix `startup_probe_test.go` failing test [#82747]
+- Add `startupProbe` result handling to kuberuntime [#84279]
+- Clarify startupProbe e2e tests [#84291]
+
+### Version 1.18
+
+- Graduate `startupProbe` to Beta [#83437]
+- Cherry pick of #92196 [#92477]
+
+### Version 1.19
+
+- Pods which have not "started" can not be "ready" [#92196]
+
+### Version 1.20
+
+- Graduate `startupProbe` to GA [#94160]
 
 [#71449]: https://github.com/kubernetes/kubernetes/pull/71449
 [#950]: https://github.com/kubernetes/enhancements/issues/950
 [proposal]: https://github.com/kubernetes/kubernetes/issues/27114#issuecomment-437208330
 [#77807]: https://github.com/kubernetes/kubernetes/pull/77807
-[#14297]: https://github.com/kubernetes/website/pull/14297
+[#82747]: https://github.com/kubernetes/kubernetes/issues/82747
+[#83437]: https://github.com/kubernetes/kubernetes/pull/83437
+[#83607]: https://github.com/kubernetes/kubernetes/pull/83607
+[#84279]: https://github.com/kubernetes/kubernetes/pull/84279
+[#84291]: https://github.com/kubernetes/kubernetes/pull/84291
+[#92196]: https://github.com/kubernetes/kubernetes/pull/92196
+[#92477]: https://github.com/kubernetes/kubernetes/pull/92477
+[#94160]: https://github.com/kubernetes/kubernetes/pull/94160
