@@ -87,7 +87,7 @@ requiring developers to copy/duplicate namespace labels
 These three motivating factors are mostly self explanatory, but in the next 
 section we outline concrete feedback in these areas.
 
-### Community feedback on the namespace.Name selector
+### Community motivationg factors
 
 - In 2016, the argument for namespace as name selectors was first made in
 the [mailing list](https://groups.google.com/g/kubernetes-sig-network/c/GzSGt-pxBYQ/m/Rbrxve-gGgAJ), based on the fact that labels can be 
@@ -125,8 +125,8 @@ amending the API to support a "special" selector for namespace names that is
 
 ### Goals
 
-- Add a `namespaceSelectorAllow` option (which is additive to the current `matchLabels` selector).
-- Allow multiple `namespaceSelectorAllow` values, so that many namespaces can be 
+- Add a `namespaceNames` option (which is additive to the current `matchLabels` selector).
+- Allow multiple `namespaceNames` values, so that many namespaces can be 
 allowed using the same field 
 
 ### Non-Goals
@@ -140,7 +140,7 @@ KEP, which is worth discussing)
 
 ## Proposal
 
-In NetworkPolicy specification, inside `NetworkPolicyPeer` specify a new `namespaceSelectorAllow` field.  
+In NetworkPolicy specification, inside `NetworkPolicyPeer` specify a new `namespaceNames` field.  
 
 1) One simple way to implement this feature is to modify the NetworkPolicyPeer 
 object, like so.  Since this doesn't involve modifying a go type (i.e. were 
@@ -150,7 +150,7 @@ to be a cleaner implementation:
 ```
 type NetworkPolicyPeer struct {
   // new field
-  namespaceSelectorAllow []string
+  namespaceNames []string
 
   // existing fields...
 	PodSelector *metav1.LabelSelector `json:"podSelector,omitempty" protobuf:"bytes,1,opt,name=podSelector"`
@@ -161,34 +161,25 @@ type NetworkPolicyPeer struct {
 
 ### User Stories (Optional)
 
-#### Story 1
-
-As an administrator i want to allow access from monitoring pods in kube-system 
-namespace, into any pod in my cluster, as a fundamental policy. 
-
-#### Story 2
-
-As an user I want to "just add" a namespace to my allow list without having to 
-manage the labels which might get added/removed over time from said namespace.
+See motivation section for user stories.  This KEP collects concrete data and opinions from several individuals over the past few years, hence we do not include generic user stories.
 
 ### Notes/Constraints/Caveats (Optional)
-
 
 ### Risks and Mitigations
 
 - NetworkPolicy providers may **opt-out**, initially to support this construct, and dilligent communication with CNI providers will be needed to make sure its widely adopted, thus, this feature needs to be backwards compatible with the existing v1 api.
 - We thus need to make sure that hidden defaults don't break the meaning of existing policys, for example:
-  - if `namespaceSelectorAllow` field is retrieved by an api client which doesn't yet support it, the client doesnt crash (and the plugin doesnt crash, either).
-  - if `namespaceSelectorAllow` is nil, the policy should behave identically to any policy made before this field was added.
+  - if `namespaceNames` field is retrieved by an api client which doesn't yet support it, the client doesnt crash (and the plugin doesnt crash, either).
+  - if `namespaceNames` is nil, the policy should behave identically to any policy made before this field was added.
     - in other words, there is no "deny all" semantic that can be enforced by this namespace being missing.
-  - if `namespaceSelectorAllow` is empty, it has IDENTICAL semantics as if it were nil.
+  - if `namespaceNames` is empty, it has IDENTICAL semantics as if it were nil.
     - in other words, there is no "allow all" namespaces semantic which corresponds to emptyness
 
 Overall, the `NetworkPolicyPeer` modifications should be unobtrusive with regard to how other fields interplay, regardless of its absence or presence, notwithstanding the fact that it potentially broadens the selection of the `namespaceSelector` field.
 
 ## Design Details
 
-- Add a new selector to the network policy peer data structure which can switch between allowing a `namespaceSelectorAllow`, supporting a policy that is expressed like this:
+- Add a new selector to the network policy peer data structure which can switch between allowing a `namespaceNames`, supporting a policy that is expressed like this:
 
 - A list of conventional namespaces
 
@@ -204,12 +195,12 @@ spec:
       app: mysql
   ingress:
   - from:
-      namespaceSelectorAllow:
+      namespaceNames:
       -  my-frontend
       -  my-frontend-2
 ```
 
-- As a more sophisticated example: The following would allow all traffic from `podName:xyz` living in `my-frontend` AND `my-frontend-2`, but NOT trafic from `my-frontend-3`.  This is because the presence of EITHER a namespaceSelectorAllow rule or a namespaceSelector, makes the podSelector subject to an **AND** filter operation.
+- As a more sophisticated example: The following would allow all traffic from `podName:xyz` living in `my-frontend` AND `my-frontend-2`, but NOT trafic from `my-frontend-3`.  This is because the presence of EITHER a namespaceNames rule or a namespaceSelector, makes the podSelector subject to an **AND** filter operation.
 
 ```
 kind: NetworkPolicy
@@ -222,7 +213,7 @@ spec:
       app: mysql
   ingress:
   - from:
-    - namespaceSelectorAllow:
+    - namespaceNames:
       -  my-frontend
       namespaceSelector:
         matchLabels:
