@@ -148,10 +148,13 @@ See motivation section for user stories.  This KEP collects concrete data and op
 
 - NetworkPolicy providers may **opt-out**, initially to support this construct, and dilligent communication with CNI providers will be needed to make sure its widely adopted, thus, this feature needs to be backwards compatible with the existing v1 api.
 - We thus need to make sure that hidden defaults don't break the meaning of existing policys, for example:
-  - if `namespaceNames` field is retrieved by an api client which doesn't yet support it, the client doesnt crash (and the plugin doesnt crash, either).
-  - if `namespaceNames` is nil, the policy should behave identically to any policy made before this field was added.
+  - if `namespaceNames` field is retrieved by an older client which **doesn't** yet support it:
+    - the client doesnt crash (and the plugin doesnt crash, either).
+  - if `namespaceNames` is nil:
+    - the policy should behave identically to any policy made before this field was added.
     - in other words, there is no "deny all" semantic that can be enforced by this namespace being missing.
-  - if `namespaceNames` is empty, it has IDENTICAL semantics as if it were nil.
+  - if `namespaceNames` is empty:
+    - it has IDENTICAL semantics as if it were nil.
     - in other words, there is no "allow all" namespaces semantic which corresponds to emptyness
 
 Overall, the `NetworkPolicyPeer` modifications should be unobtrusive with regard to how other fields interplay, regardless of its absence or presence, notwithstanding the fact that it potentially broadens the selection of the `namespaceSelector` field.
