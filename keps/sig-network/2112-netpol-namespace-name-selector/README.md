@@ -339,7 +339,30 @@ We dont want to have > 1 way to select namespaces.
 
 ## Alternatives
 
-A network policy operator could be created which translated a CRD into many networkpolicys on the fly, by watching namespaces and updating labels dynamically.  This would be a privileged container in a cluster and likely would not gain much adoption.
+One could envision a "network policy namespace-as-name operator" where:
+
+- Users could create a CRD:
+
+```
+apiVersion: "netpol-x/v1"
+kind: NamespaceAsName
+metadata:
+  name: default
+spec:
+  allow:
+    from: my-frontend
+    to: my-backend
+```
+
+Then this CRD could be perceived by an operator pod (which was privileged to view labels on namespaces), and the
+operator pod could **create** policies on the fly, by inspecting labels on the respective `from` and `to` fields.
+
+This would allow someone to, by indirection, create a networkpolicy against a namespace without necessarily knowing
+what labels were **in** that namespace.  Of course, there are obvious flaws with this:
+
+- some namespaces might not have unique labels, so generation of labels might be required
+- it would require running a privileged container that could inspect all namesapces in your cluster
+- it wouldn't be a part of the network policy API and thus wouldnt see heavy adoption as a standard security model
 
 ### Alternative API implementation change
 
