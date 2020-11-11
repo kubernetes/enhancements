@@ -5,7 +5,7 @@ authors:
 owning-sig: sig-network
 participating-sigs:
   - sig-cloud-provider
-status: implemented
+status: implementable
 reviewers:
   - "@thockin"
   - "@cheftako"
