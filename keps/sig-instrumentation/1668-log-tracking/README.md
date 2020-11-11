@@ -188,21 +188,10 @@ func SpanContextFromAnnotations(){
 
 ### Design of ID propagation in [client-go](https://github.com/kubernetes/client-go)
 
- [KEP647](https://github.com/kubernetes/enhancements/issues/647) will do this work too, so we can refer to it directly in the future.
-client-go  helps to inject [TraceContext](https://pkg.go.dev/go.opentelemetry.io/otel/propagators#example-TraceContext) and [Baggage](https://github.com/open-telemetry/opentelemetry-specification/blob/master/specification/baggage/api.md) to the outgoing http request header, something changes are like below:
+[KEP647](https://github.com/kubernetes/enhancements/issues/647) will do this work too, so we can refer to it directly in the future.
+client-go helps to inject [TraceContext](https://pkg.go.dev/go.opentelemetry.io/otel/propagators#example-TraceContext) and [Baggage](https://github.com/open-telemetry/opentelemetry-specification/blob/master/specification/baggage/api.md) to the outgoing http request header with API [RoundTrip](https://pkg.go.dev/go.opentelemetry.io/contrib/instrumentation/net/http#Transport.RoundTrip).
 
-```diff
-@@ -868,6 +871,7 @@ func (r *Request) request(ctx context.Context, fn func(*http.Request, *http.Resp
-                req = req.WithContext(ctx)
-                req.Header = r.headers
-
-+               props := otelhttptrace.WithPropagators(otel.NewCompositeTextMapPropagator(propagators.TraceContext{}, propagators.Baggage{}))
-+               otelhttptrace.Inject(req.Context(), req, props)
-
-                r.backoff.Sleep(r.backoff.CalculateBackoff(r.URL()))
-                if retries > 0 {
-```
-apiserver and controller use this API to make up a new outgoing request.
+apiserver and controllers use this API to make up a new outgoing request.
 
 ### Design of Mutating webhook(Out of tree)
 
@@ -380,3 +369,4 @@ _This section must be completed when targeting beta graduation to a release._
 * 2020-09-28: PRR questionnaire updated
 * [Mutating admission webhook which injects trace context for demo](https://github.com/Hellcatlk/mutating-trace-admission-controller/tree/trace-ot)
 * [Instrumentation of Kubernetes components for demo](https://github.com/Hellcatlk/kubernetes/pull/1)
+* [Instrumentation of Kubernetes components for demo based on KEP647](https://github.com/Hellcatlk/kubernetes/pull/3)
