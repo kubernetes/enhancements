@@ -138,27 +138,6 @@ this feature without changing the API (note that, if someone were
 to write a virtualLabels KEP, however, it might change the trajectory of this 
 KEP, which is worth discussing)
 
-## Proposal
-
-In NetworkPolicy specification, inside `NetworkPolicyPeer` specify a new `namespaceNames` field.  
-
-1) One simple way to implement this feature is to modify the NetworkPolicyPeer 
-object, like so.  Since this doesn't involve modifying a go type (i.e. were 
-not replacing a labelSelector with a different type, we expect it 
-to be a cleaner implementation:
-
-```
-type NetworkPolicyPeer struct {
-  // new field
-  namespaceNames []string
-
-  // existing fields...
-	PodSelector *metav1.LabelSelector `json:"podSelector,omitempty" protobuf:"bytes,1,opt,name=podSelector"`
-	NamespaceSelector *metav1.LabelSelector `json:"namespaceSelector,omitempty" protobuf:"bytes,2,opt,name=namespaceSelector"`
-	IPBlock *IPBlock `json:"ipBlock,omitempty" protobuf:"bytes,3,rep,name=ipBlock"`
-}
-```
-
 ### User Stories (Optional)
 
 See motivation section for user stories.  This KEP collects concrete data and opinions from several individuals over the past few years, hence we do not include generic user stories.
@@ -176,6 +155,27 @@ See motivation section for user stories.  This KEP collects concrete data and op
     - in other words, there is no "allow all" namespaces semantic which corresponds to emptyness
 
 Overall, the `NetworkPolicyPeer` modifications should be unobtrusive with regard to how other fields interplay, regardless of its absence or presence, notwithstanding the fact that it potentially broadens the selection of the `namespaceSelector` field.
+
+## Proposal
+
+In NetworkPolicy specification, inside `NetworkPolicyPeer` specify a new `namespaceNames` field.  
+
+1) One simple way to implement this feature is to modify the NetworkPolicyPeer 
+object, like so.  Since this doesn't involve modifying a go type (i.e. were 
+not replacing a labelSelector with a different type, we expect it 
+to be a cleaner implementation:
+
+```
+type NetworkPolicyPeer struct {
+  // new field
+  namespaceNames []string
+
+  // existing fields...
+  PodSelector *metav1.LabelSelector `json:"podSelector,omitempty" protobuf:"bytes,1,opt,name=podSelector"`
+  NamespaceSelector *metav1.LabelSelector `json:"namespaceSelector,omitempty" protobuf:"bytes,2,opt,name=namespaceSelector"`
+  IPBlock *IPBlock `json:"ipBlock,omitempty" protobuf:"bytes,3,rep,name=ipBlock"`
+}
+```
 
 ## Design Details
 
