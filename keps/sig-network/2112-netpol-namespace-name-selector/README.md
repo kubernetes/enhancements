@@ -181,9 +181,9 @@ type NetworkPolicyPeer struct {
 
 - Add a new selector to the network policy peer data structure which can switch between allowing a `namespaceNames`, supporting a policy that is expressed like this:
 
-- A list of conventional namespaces
+- A list of conventional namespace names (i.e. no regular expressions or any other fancy definining syntaxes)
 
-The "conventional namespaces" allow directive would look like so:
+The "namespaceNames" allow directive would look like so:
 ```
 kind: NetworkPolicy
 apiVersion: networking.k8s.io/v1
@@ -200,7 +200,12 @@ spec:
       -  my-frontend-2
 ```
 
-- As a more sophisticated example: The following would allow all traffic from `podName:xyz` living in `my-frontend` AND `my-frontend-2`, but NOT trafic from `my-frontend-3`.  This is because the presence of EITHER a namespaceNames rule or a namespaceSelector, makes the podSelector subject to an **AND** filter operation.
+- As a more sophisticated example: The following would:
+  - allow all traffic from `podName:xyz` living in `my-frontend` or `my-frontend-2`
+  - deny traffic from `podName:xyz` in `my-frontend-3`, since theres no selector for that namespace
+  - allow things in ipblock 100.1.2.0/16
+
+This is because the presence of EITHER a namespaceNames rule or a namespaceSelector, makes the podSelector subject to an **AND** filter operation alongside the pod selector.
 
 ```
 kind: NetworkPolicy
@@ -218,13 +223,13 @@ spec:
       namespaceSelector:
         matchLabels:
           app: my-frontend-2
-      ipBlock:
+      podSelector:
+        matchLabels:
+          podName: xyz
+    -  ipBlock:
         cidr: 100.1.2.0/16
         except:
         - 100.1.2.3/24
-      podSelector:
-        matchLabels:
-          podName: xyz 
 ```
 
 
