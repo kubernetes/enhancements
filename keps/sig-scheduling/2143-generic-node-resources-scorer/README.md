@@ -77,35 +77,34 @@ tags, and then generate with `hack/update-toc.sh`.
 -->
 
 <!-- toc -->
-- [KEP-2143: Generic node resource scheduler plugin](#kep-2143-generic-node-resource-scheduler-plugin)
-  - [Release Signoff Checklist](#release-signoff-checklist)
-  - [Summary](#summary)
-  - [Motivation](#motivation)
-    - [Goals](#goals)
-    - [Non-Goals](#non-goals)
-  - [Proposal](#proposal)
-    - [User Stories (Optional)](#user-stories-optional)
-      - [Story 1](#story-1)
-      - [Story 2](#story-2)
-    - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
-    - [Risks and Mitigations](#risks-and-mitigations)
-  - [Design Details](#design-details)
-    - [Configuration](#configuration)
-    - [Test Plan](#test-plan)
-    - [Graduation Criteria](#graduation-criteria)
-    - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
-    - [Version Skew Strategy](#version-skew-strategy)
-  - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
-    - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
-    - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
-    - [Monitoring Requirements](#monitoring-requirements)
-    - [Dependencies](#dependencies)
-    - [Scalability](#scalability)
-    - [Troubleshooting](#troubleshooting)
-  - [Implementation History](#implementation-history)
-  - [Drawbacks](#drawbacks)
-  - [Alternatives](#alternatives)
-  - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
+- [Release Signoff Checklist](#release-signoff-checklist)
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [User Stories (Optional)](#user-stories-optional)
+    - [Story 1](#story-1)
+    - [Story 2](#story-2)
+  - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
+  - [Risks and Mitigations](#risks-and-mitigations)
+- [Design Details](#design-details)
+  - [Configuration](#configuration)
+  - [Test Plan](#test-plan)
+  - [Graduation Criteria](#graduation-criteria)
+  - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+  - [Version Skew Strategy](#version-skew-strategy)
+- [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
+  - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
+  - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+  - [Monitoring Requirements](#monitoring-requirements)
+  - [Dependencies](#dependencies)
+  - [Scalability](#scalability)
+  - [Troubleshooting](#troubleshooting)
+- [Implementation History](#implementation-history)
+- [Drawbacks](#drawbacks)
+- [Alternatives](#alternatives)
+- [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -149,14 +148,13 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 ## Summary
 
 The generic node resource scheduler plugin combines several in-tree and out-of-tree
-scheduler plugins score based on node resource utilization when scoring,
-as well as other requested ones, together into a generic one.
-The generic plugin also take effects in the "Scoring" extension point of the scheduling framework,
-while it could be configured in a unified way in one place
+scheduler plugins scoring nodes based on resource utilization,
+as well as some requested ones, together into a generic one.
+The generic plugin takes effects in the "Scoring" extension point of the scheduling framework,
+while it could be configured in one place
 to care about different portions (allocatable, allocated or available) of the resources,
-count on different values (absolute values, or ratio to some other values),
-score in different flavours (prefer higher, or lower or whatever values),
-
+valued on different values (absolute values, or ratio to some other values),
+scored in different flavours (prefer higher, or lower or whatever values),
 
 <!--
 This section is incredibly important for producing high-quality, user-focused
@@ -182,24 +180,23 @@ updates.
 As this proposal is came up, following scheduler plugins are available when considering 
 scheduling pods base on node resource utilization:
 
-| plugin name                       | code location | cares about resources | counts on            | prefers values  | comments                                          |
-| --------------------------------- | ------------- | --------------------- | -------------------- | --------------- | ------------------------------------------------- |
-| "NodeResourcesLeastAllocated"     | in tree       | Left                  | ratio to allocatable | greater         |                                                   |
-| "NodeResourcesMostAllocated"      | in tree       | allocated             | ratio to allocatable | greater         |                                                   |
-| "RequestedToCapacityRatio"        | in tree       | Left                  | ratio to allocatable | greater         | scores are mapped by a custom non-linear function |
-| "NodeResourcesBalancedAllocation" | in tree       | requesting            | ratio to allocatable | balanced        |                                                   |
-| "NodeResourcesAllocatable"        | out of tree   | allocatable           | absolute value       | greater or less |                                                   |
+| plugin name                       | code location | cares about | values on            | prefers values  | comments                                                      |
+| --------------------------------- | ------------- | ----------- | -------------------- | --------------- | ------------------------------------------------------------- |
+| "NodeResourcesLeastAllocated"     | in tree       | left        | ratio to allocatable | greater         |                                                               |
+| "NodeResourcesMostAllocated"      | in tree       | allocated   | ratio to allocatable | greater         |                                                               |
+| "RequestedToCapacityRatio"        | in tree       | left        | ratio to allocatable | greater         | scores are mapped from values by a custom non-linear function |
+| "NodeResourcesBalancedAllocation" | in tree       | requesting  | ratio to allocatable | balanced        |                                                               |
+| "NodeResourcesAllocatable"        | out of tree   | allocatable | absolute value       | greater or less |                                                               |
 
-These plugins fit common use cases well, and have served a long time,
-while there are certainly missing cases.
-Some of them are something like:
+These plugins fit common use cases well, and have served a long time.
+While there are certainly missing cases, some of them are something like:
 - Put the pod on some node "just fits" the requests: "Least Left"
 - Put "small" pods on "small" nodes and put them together: "Least Allocatable" + "Least Left"
 
-These missing functionalities are some way similar with existing ones, or combination of them.
-Instead of adding more plugins and copying codes here and there, like "NodeResourcesAllocatable" did,
+These missing functionalities are some way similar with existing ones, or combinations of them.
+Instead of adding more plugins and copying code everywhere, like "NodeResourcesAllocatable" did,
 a generic node resource scheduler plugin is proposed.
-The generic plugin covers these resource considerations together
+The generic plugin covers these resource considerations together,
 and could be configured to enable or disable, or configure any of these functionalities
 in one place.
 
@@ -215,10 +212,10 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 ### Goals
 
 - Replace previously mentioned scheduler plugins with a generic one
-- Simplify understanding and configuration of node resources considerations when scheduling by being configured in one place
+- Easy to understand and configure these node resources scheduler plugins by being configured in one place
 - Cover more use cases in similar situations
-- Make combination of these plugins behavior as expected
-- Let uses to choose scoring styles they like
+- Easy to combine these considerations together
+- Let users to choose scoring styles they like
 
 <!--
 List the specific goals of the KEP. What is it trying to achieve? How will we
@@ -290,25 +287,25 @@ Node resources are defined as different portions:
   Requesting
 - Left: Allocatable - Allocated
 
-These resource values could be counted by:
+These resources could be valued by:
 - its absolute value
-- or the ratio to allocatable
-- or the ratio to allocated
+- or the ratio to allocatable resources
 
-And then be scored:
-- with higher sum,
+And then be scored with:
+- higher sum,
 - or lower sum,
 - or more balanced among resources
+- or less balanced among resources
 
-Operators could select one or more combinations of "resource portion" + "counted value" + "score flavour"
-with each assigned a map from resource names to weights to configure a desired behavior.
+Users could select one or more combinations of "resource portion" + "value method" + "score flavour"
+with each assigned a map from resource names to weights to configure a desired scheduling behavior.
 
 ### Configuration
 
-A plugin args type is defined for users to configure the plugin.
+A type is defined for users to configure the plugin.
 
 ```go
-// GenericNodeResourcesArgs tells how the generic node resource scheduler plugin behaviors
+// GenericNodeResourcesArgs configures how the generic node resource scheduler plugin behaviors
 type GenericNodeResourcesArgs struct {
 	metav1.TypeMeta
 
@@ -328,7 +325,7 @@ type GenericNodeResourcesArgs struct {
 
 type NodeResourcesPartArgs struct {
   // how to value the resources
-  QuantifyOn QuantifyResourceOn
+  ValueOn ValueResourceOn
   // how to map the values to a final score (to sort the values)
 	Prefer ScoreResourceBy
 
@@ -338,11 +335,11 @@ type NodeResourcesPartArgs struct {
 	Resources []ResourceSpec
 }
 
-type QuantifyResourceOn string
+type ValueResourceOn string
 
 const (
-	CountOnAbsoluteValue      QuantifyResourceOn = "AbsoluteValue"
-	CountOnRatioToAllocatable QuantifyResourceOn = "RatioToAllocatable"
+	CountOnAbsoluteValue      ValueResourceOn = "AbsoluteValue"
+	CountOnRatioToAllocatable ValueResourceOn = "RatioToAllocatable"
 )
 
 type ScoreResourceBy string
