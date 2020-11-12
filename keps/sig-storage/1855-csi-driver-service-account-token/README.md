@@ -79,29 +79,29 @@ uncharming traits:
 type CSIDriverSpec struct {
     ... // existing fields
 
-    RequiresRemount *bool
-    ServiceAccountTokens []ServiceAccountToken
+    RequiresRepublish *bool
+    TokenRequests []TokenRequest
 }
 
-// ServiceAccountToken contains parameters of a token.
-type ServiceAccountToken struct {
-    Audience *string
+// TokenRequest contains parameters of a token.
+type TokenRequest struct {
+    Audience string
     ExpirationSeconds *int64
 }
 ```
 
 These three fields are all optional:
 
-- **`ServiceAccountToken.Audience`**: will be set in `TokenRequestSpec`. This
+- **`TokenRequest.Audience`**: will be set in `TokenRequestSpec`. This
 - will default to `APIAudiences` of kube-apiserver if it is empty. The storage
   provider of the CSI driver is supposed to send a `TokenReview` with at least
   one of the audiences specified.
 
-- **`ServiceAccountToken.ExpirationSeconds`**: will be set in
+- **`TokenRequest.ExpirationSeconds`**: will be set in
   `TokenRequestSpec`. The issued token may have a different duration, so the
   `ExpirationTimestamp` in `TokenRequestStatus` will be passed to CSI driver.
 
-- **`RequiresRemount`**: should be only set when the mounted volumes by the
+- **`RequiresRepublish`**: should be only set when the mounted volumes by the
   CSI driver have TTL and require re-validation on the token.
 
   - **Note**: Remount means re-execution of `NodePublishVolume` in scope of
@@ -129,8 +129,8 @@ and will be set in `VolumeContext`:
 
 Take the Vault provider for secret store CSI driver as an example:
 
-1.  Create `CSIDriver` object with `ServiceAccountToken[0].Audience=['vault']`
-    and `RequiresRemount=true`.
+1.  Create `CSIDriver` object with `TokenRequests[0].Audience=['vault']`
+    and `RequiresRepublish=true`.
 2.  When the volume manager of kubelet sees a new volume, the pod object in
     `mountedPods` will have `requiresRemound=true` after `MarkRemountRequired`
     is called. `MarkRemountRequired` will call into `RequiresRemount` of the
@@ -143,7 +143,7 @@ Take the Vault provider for secret store CSI driver as an example:
 
 ### Notes/Constraints/Caveats
 
-The `RequiresRemount` is useful when the mounted volumes can expire and the
+The `RequiresRepublish` is useful when the mounted volumes can expire and the
 availability and validity of volumes are continuously required. Those volumes
 are most likely credentials which rotates for the best security practice. There
 are two options when the remount failed:
@@ -220,8 +220,8 @@ Option 1 is adopted. See discussion
 - **Will enabling / using this feature result in any new API calls?**
 
   - API call type: `TokenRequest`
-  - estimated throughput: 1(`RequiresRemount=false`) or
-    1/ExpirationSeconds/s(`RequiresRemount=true`) for each CSI driver using
+  - estimated throughput: 1(`RequiresRepublish=false`) or
+    1/ExpirationSeconds/s(`RequiresRepublish=true`) for each CSI driver using
     this feature.
   - originating component: kubelet
   - components listing and/or watching resources they didn't before: n/a.
