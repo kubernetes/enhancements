@@ -229,8 +229,8 @@ A `Bucket` is not deleted if it is bound to a `BucketRequest`.
      - `version`: protocol version being used by the backend storage.
      - `bucketName`: the name of the bucket created by the backend storage.
      - `endpoint`: the url to the bucket endpoint.
-     - `parameters`: a map of string:string copied from the BucketClass parameters.
-1. `parameters`: a map of string:string copy of the BucketRequest fields related to bucket naming.
+     - `parameters`: a map of string:string copied from the BucketClass protocol parameters.
+1. `parameters`: a copy of the BucketClass parameters.
 1. `bucketAvailable`: if true the bucket has been provisioned. If false then the bucket has not been provisioned and is unable to be accessed.
 
 #### BucketClass
@@ -249,17 +249,19 @@ isDefaultBucketClass: [2]
 protocol:
   name: [3]
   version: [4]
-anonymousAccessMode: [5]
-retentionPolicy: {"Delete", "Retain"} [6]
-allowedNamespaces: [7]
+  parameters: [5]
+anonymousAccessMode: [6]
+retentionPolicy: {"Delete", "Retain"} [7]
+allowedNamespaces: [8]
   - name:
-parameters: [8]
+parameters: [9]
 ```
 
 1. `provisioner`: (required) the name of the vendor-specific driver supporting the `protocol`.
 1. `isDefaultBucketClass`: (optional) boolean, default is false. If set to true then a `BucketRequest` may omit the `BucketClass` reference. If a greenfield `BucketRequest` omits the `BucketClass` and a default `BucketClass`'s protocol matches the `BucketRequest`'s protocol then the default bucket class is used; otherwise an error is logged. It is not possible for more than one default `BucketClass` of the same protocol to exist due to an admission controller which enforces the default rule.
 1. `protocol.name`: (required) specifies the desired protocol.  One of {“s3”, “gs”, or “azureBlob”}.
 1. `protocol.version`: (optional) specifies the desired version of the `protocol`. For "s3", a value of "v2" or "v4" could be used. 
+1. `protocol.parameters`: (optional) a map of string:string of protocol specific values.
 1. `anonymousAccessMode`: (optional) a string specifying *uncredentialed* access to the backend bucket.  This is applicable for cases where the backend storage is intended to be publicly readable and/or writable. One of:
    - "private": Default, disallow uncredentialed access to the backend storage.
    - "publicReadOnly": Read only, uncredentialed users can call ListBucket and GetObject.
@@ -606,7 +608,10 @@ This call is made to create the bucket in the backend. If a bucket that matches 
 
 ```
 message ProvisionerCreateBucketRequest {
-    map<string,string> bucket_context = 1;
+    // This field is REQUIRED
+    string name = 1;
+
+    map<string,string> bucket_context = 2;
 
     enum AnonymousBucketAccessMode {
 	PRIVATE = 0;
@@ -615,7 +620,7 @@ message ProvisionerCreateBucketRequest {
 	PUBLIC_READ_WRITE = 3;
     }
 
-    AnonymousBucketAccessMode anonymous_bucket_access_mode = 2;
+    AnonymousBucketAccessMode anonymous_bucket_access_mode = 3;
 }
 
 message ProvisionerCreateBucketResponse {
