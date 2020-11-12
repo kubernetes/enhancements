@@ -242,7 +242,7 @@ _This section must be completed when targeting alpha to a release._
 * **How can this feature be enabled / disabled in a live cluster?**
   - [x] Feature gate (also fill in values in `kep.yaml`)
     - Feature gate name: ObjectTraceIDs
-    - Components depending on the feature gate: kube-apiserver, kube-controller-manager
+    - Components depending on the feature gate: kube-controller-manager
   - [ ] Other
     - Describe the mechanism:
     - Will enabling / disabling the feature require downtime of the control
