@@ -83,7 +83,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [User Stories (Optional)](#user-stories-optional)
+  - [User Stories](#user-stories)
     - [Story 1](#story-1)
     - [Story 2](#story-2)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
@@ -240,7 +240,7 @@ The "Design Details" section below is for the real
 nitty-gritty.
 -->
 
-### User Stories (Optional)
+### User Stories
 
 <!--
 Detail the things that people will be able to do if this KEP is implemented.
@@ -251,7 +251,38 @@ bogged down.
 
 #### Story 1
 
+I want my pods being scheduled to nodes with fewer gpus left, to make sure there will be
+enough "empty" nodes for upcoming pods requesting all gpus in a node.
+I could configure the generic node resource plugin as follow:
+
+```yaml
+left:
+  values: AbsoluteValue
+  prefer: Least
+  resources:
+    nvidia.com/gpu: 1
+```
+
 #### Story 2
+
+I want "small" nodes be full earlier.
+I could use following configuration:
+
+```yaml
+allocatable:
+  values: AbsoluteValue
+  prefer: Least
+  resources:
+    cpu: 10000000000000
+    memory: 10
+
+left:
+  values: RatioToAllocatable
+  prefer: Least
+  resources:
+    cpu: 1000000000000
+    memory: 1
+```
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -325,7 +356,7 @@ type GenericNodeResourcesArgs struct {
 
 type NodeResourcesPartArgs struct {
   // how to value the resources
-  ValueOn ValueResourceOn
+  Values ValueResourceOn
   // how to map the values to a final score (to sort the values)
 	Prefer ScoreResourceBy
 
@@ -338,15 +369,15 @@ type NodeResourcesPartArgs struct {
 type ValueResourceOn string
 
 const (
-	CountOnAbsoluteValue      ValueResourceOn = "AbsoluteValue"
-	CountOnRatioToAllocatable ValueResourceOn = "RatioToAllocatable"
+	ValuesOnAbsoluteValue      ValueResourceOn = "AbsoluteValue"
+	ValuesOnRatioToAllocatable ValueResourceOn = "RatioToAllocatable"
 )
 
 type ScoreResourceBy string
 
 const (
-	PreferMostInSum     ScoreResourceBy = "MostInSum"
-  PreferLeastInSum    ScoreResourceBy = "LeastInSum"
+	PreferMostInSum     ScoreResourceBy = "Most"
+  PreferLeastInSum    ScoreResourceBy = "Least"
   PreferMostBalanced  ScoreResourceBy = "MostBalanced"
   PreferLeastBalanced ScoreResourceBy = "LeastBalanced"
 )
