@@ -1,3 +1,5 @@
+# KEP-2079: Network Policy to support Port Ranges
+
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
@@ -5,8 +7,10 @@
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [User Stories (Optional)](#user-stories-optional)
-    - [Story 1](#story-1)
+  - [User Stories](#user-stories)
+    - [Story 1 - Opening communication to NodePorts of other cluster](#story-1---opening-communication-to-nodeports-of-other-cluster)
+    - [Story 2 - Blocking the egress for not allowed insecure ports](#story-2---blocking-the-egress-for-not-allowed-insecure-ports)
+    - [Story 3 - Containerized Passive FTP Server](#story-3---containerized-passive-ftp-server)
   - [Notes/Constraints/Caveats](#notesconstraintscaveats)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
@@ -25,6 +29,7 @@
   - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
+- [Alternatives](#alternatives)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -90,7 +95,7 @@ creation of NetworkPolicy to the user.
 
 ### Goals
 
-Add Range field to Ports in NetworkPolicy
+Add Port Range field in a NetworkPolicy
 
 ### Non-Goals
 
@@ -98,22 +103,42 @@ N/A
 
 ## Proposal
 
-In NetworkPolicy specification, inside ``NetworkPolicyPort`` object struct 
-specify a new ``Range`` field composed of the minimum and maximum ports 
-inside the range.
+In NetworkPolicy specification, inside ``NetworkPolicyIngressRule`` and 
+``NetworkPolicyEgressRule`` object struct specify a new ``PortRanges`` field 
+composed of the minimum and maximum ports inside the range, and the exceptions
+within this range.
 
 If both ``Port`` and ``Range`` are specified, they are cumulative and no further
 validation might occur. It's up to the CNI to summarize both of the fields in a 
 single rule.
 
-### User Stories (Optional)
+### User Stories
 
-#### Story 1
+#### Story 1 - Opening communication to NodePorts of other cluster
 
 I have an application that communicates with NodePorts of a different cluster 
 and I want to allow the egress of the traffic only the NodePort range 
 (eg. 30000-32767) as I don't know which port is going to be allocated on the 
 other side, but don't want to create a rule for each of them.
+
+#### Story 2 - Blocking the egress for not allowed insecure ports
+As a developer, I need to create an application that scrapes informations from 
+multiple sources, being those sources databases running in random ports, web 
+applications and other sources. But the security policy of my company asks me 
+to block communication with well known ports, like 111 and 445, so I need to create
+a network policy that allows me to communicate with any port except those two and so
+I can be compliant with the company's policy.
+
+#### Story 3 - Containerized Passive FTP Server
+As a Kubernetes User, I've received a demand from my boss to run our FTP server in an 
+existing Kubernetes cluster, to support some of my legacy applications. 
+his FTP Server must be acessible from inside the cluster and outside the cluster, 
+but I still need to keep the basic security policies from my company, that demands 
+the existence of a default deny rule for all workloads and allowing only specific ports.
+
+Because this FTP Server runs in PASV mode, I need to open the Network Policy to ports 21 
+and also to the range 49152-65535 without allowing any other ports.
+
 
 ### Notes/Constraints/Caveats
 
@@ -142,44 +167,82 @@ type NetworkPolicyPortRange struct {
     To           uint16
 
     // Except defines all the exceptions in the port range
-    Except:      []uint16
+    +optional
+    Except       []uint16
 }
 ```
-* Add a new field ``spec.ingress|egress.ports.range`` that points to the
-new struct:
-```
-// NetworkPolicyPort describes a port or a range of ports to allow traffic on
-type NetworkPolicyPort struct {
-  // The protocol (TCP, UDP, or SCTP) which traffic must match. If not specified, this
-  // field defaults to TCP.
-  // +optional
-  Protocol *api.Protocol
-  
-  // The port on the given protocol. This can either be a numerical or named 
-  // port on a pod. If this field is not provided but a Range is 
-  // provided, this field is ignored. Otherwise this matches all port names and
-  // numbers.
-  // +optional
-  Port *intstr.IntOrString
+* Add a new field ``PortRanges`` that defines an array of 
+``NetworkPolicyPortRange`` in both ``NetworkPolicyIngressRule`` and 
+``NetworkPolicyEgressRule``
 
-  // A range of ports on a given protocol and the exceptions. If this field 
-  // is not provided, this doesn't matches anything
-  // +optional
-  Range *NetworkPolicyPortRange
+```
+// NetworkPolicyIngressRule describes a particular set of traffic that is allowed to the pods
+// matched by a NetworkPolicySpec's podSelector. The traffic must match both ports and from.
+type NetworkPolicyIngressRule struct {
+	// List of ports which should be made accessible on the pods selected for this
+	// rule. Each item in this list is combined using a logical OR. If this field is
+	// empty or missing, this rule matches all ports (traffic not restricted by port).
+	// If this field is present and contains at least one item, then this rule allows
+	// traffic only if the traffic matches at least one port in the list.
+	// +optional
+	Ports []NetworkPolicyPort
+
+	// List of sources which should be able to access the pods selected for this rule.
+	// Items in this list are combined using a logical OR operation. If this field is
+	// empty or missing, this rule matches all sources (traffic not restricted by
+	// source). If this field is present and contains at least one item, this rule
+	// allows traffic only if the traffic matches at least one item in the from list.
+	// +optional
+	From []NetworkPolicyPeer
+
+	// List of port ranges which should be made accessible on the pods selected for this
+	// rule. Each item in this list is combined using a logical OR. If this field is
+	// empty or missing, AND the Ports field is also empty or missing, 
+  // this rule matches all ports (traffic not restricted by port).
+	// If this field is present and contains at least one item, then this rule allows
+	// traffic only if the traffic matches at least one port in the list.
+	// +optional
+  PortRanges []NetworkPolicyPortRange
+}
+
+// NetworkPolicyEgressRule describes a particular set of traffic that is allowed out of pods
+// matched by a NetworkPolicySpec's podSelector. The traffic must match both ports and to.
+// This type is beta-level in 1.8
+type NetworkPolicyEgressRule struct {
+	// List of destination ports for outgoing traffic.
+	// Each item in this list is combined using a logical OR. If this field is
+	// empty or missing, this rule matches all ports (traffic not restricted by port).
+	// If this field is present and contains at least one item, then this rule allows
+	// traffic only if the traffic matches at least one port in the list.
+	// +optional
+	Ports []NetworkPolicyPort
+
+	// List of destinations for outgoing traffic of pods selected for this rule.
+	// Items in this list are combined using a logical OR operation. If this field is
+	// empty or missing, this rule matches all destinations (traffic not restricted by
+	// destination). If this field is present and contains at least one item, this rule
+	// allows traffic only if the traffic matches at least one item in the to list.
+	// +optional
+	To []NetworkPolicyPeer
+
+  // List of destination port ranges for outgoing traffic.
+	// Each item in this list is combined using a logical OR. If this field is
+	// empty or missing AND the Ports field is also empty or missing, 
+  // this rule matches all ports (traffic not restricted by port).
+	// If this field is present and contains at least one item, then this rule allows
+	// traffic only if the traffic matches at least one port inside this range.
+	// +optional
+  PortRanges []NetworkPolicyPortRange
+
 }
 ```
 
 ### Validations
 The range will need to be validated, with the following scenarios:
-* If there's a ``From`` or a ``To`` field defined, the other one must be defined.
 * ``From`` needs to be less than or equal to ``To``
-* All the ports in the ``Exceptions`` array must be inside the defined range.
-* ``Exception`` can only be defined if ``From`` and ``To`` are also defined.
-* Because ``ports`` is a superset of all ports specified in ``port`` and 
-``range``, if a port is specified in at least one of the fields it should be 
-allowed.
-* If ``Range`` is defined but no ``Port`` is defined, the old behavior of matching
-all should be changed.
+* All the ports in the ``Except`` array must be inside the defined range.
+* If ``PortRange`` is defined but no ``Ports`` is defined, the old behavior of 
+matching all Ports should be changed to match only PortRange ports.
 
 ### Test Plan
 
@@ -215,7 +278,8 @@ with generally positive feedback on its usage.
 If upgraded no impact should happen as this is a new field.
 
 If downgraded the CNI wont be able to look into the new field, as this does not 
-exists and network policies using this field will stop working.
+exists and network policies using this field will stop working correctly and
+start working incorrectly.
 
 ## Production Readiness Review Questionnaire
 
@@ -297,7 +361,7 @@ the existing API objects?**
 
   - API type(s): NetworkPolicy / NetworkPolicyPorts
   - Estimated increase in size: New struct inside the object with two fields of 
-  16 bits each + 16 bits for each port in the ``Exceptions`` array
+  16 bits each + 16 bits for each port in the ``Except`` array
   - Estimated amount of new objects: N/A
 
 * **Will enabling / using this feature result in increasing time taken by any 
@@ -337,3 +401,34 @@ different way.
 
 For this cases, CNIs will have to iteract through the Port Range and
 populate their packet filtering tables with each port.
+
+## Alternatives
+
+During the development of this KEP there was an alternative implementation 
+of the ``NetworkPolicyPortRange`` field inside the ``NetworkPolicyPort`` as the following:
+
+```
+// NetworkPolicyPort describes a port or a range of ports to allow traffic on
+type NetworkPolicyPort struct {
+  // The protocol (TCP, UDP, or SCTP) which traffic must match. If not specified, this
+  // field defaults to TCP.
+  // +optional
+  Protocol *api.Protocol
+  
+  // The port on the given protocol. This can either be a numerical or named 
+  // port on a pod. If this field is not provided but a Range is 
+  // provided, this field is ignored. Otherwise this matches all port names and
+  // numbers.
+  // +optional
+  Port *intstr.IntOrString
+
+  // A range of ports on a given protocol and the exceptions. If this field 
+  // is not provided, this doesn't matches anything
+  // +optional
+  Range *NetworkPolicyPortRange
+}
+```
+
+But the main design suggested in this Kep seems more clear, so this alternative
+has been discarded. 
+
