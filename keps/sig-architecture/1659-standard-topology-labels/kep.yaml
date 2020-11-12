@@ -7,7 +7,7 @@ participating-sigs:
   - sig-cloud-provider
   - sig-network
   - sig-scheduling
-status: provisional
+status: implemented
 creation-date: 2020-03-31
 reviewers:
   - "@andrewsykim"
@@ -19,11 +19,6 @@ replaces: []
 prr-approvers:
   - "@johnbelamaric"
 stage: stable
-latest-milestone: "v1.19"
-milestone:
-  alpha: "v1.19"
-  beta: "v1.19"
-  stable: "v1.19"
 feature-gates: []
 disable-supported: false
 metrics: []
