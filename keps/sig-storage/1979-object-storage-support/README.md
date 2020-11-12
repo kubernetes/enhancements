@@ -3,6 +3,8 @@
 ## Table of Contents
 
 <!-- toc -->
+- [Object Storage Support](#object-storage-support)
+  - [Table of Contents](#table-of-contents)
 - [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
 - [Motivation](#motivation)
@@ -197,19 +199,9 @@ spec:
   protocol: [10]
     name:
     version:
-    azureBlob:
-      containerName:
-      storageAccount:
-    s3:
-      endpoint:
-      bucketName:
-      region:
-      signatureVersion:
-    gs:
-      bucketName:
-      privateKeyName:
-      projectId:
-      serviceAccount:
+    bucketName:
+    endpoint:
+    parameters:
   parameters: [11]
 status:
   bucketAvailable: [12]
@@ -234,11 +226,11 @@ A `Bucket` is not deleted if it is bound to a `BucketRequest`.
 1. `allowedNamespaces`: a list of namespaces that are permitted to either create new buckets or to access existing buckets.
 1. `protocol`: protocol-specific field the application will use to access the backend storage.
      - `name`: supported protocols are: "s3", "gs", and "azureBlob".
-     - `version`: version being used by the backend storage.
-     - `azureBlob`: data required to target a provisioned azure container.
-     - `gs`: data required to target a provisioned GS bucket.
-     - `s3`: data required to target a provisioned S3 bucket.
-1. `parameters`: a copy of the BucketClass parameters.
+     - `version`: protocol version being used by the backend storage.
+     - `bucketName`: the name of the bucket created by the backend storage.
+     - `endpoint`: the url to the bucket endpoint.
+     - `parameters`: a map of string:string copied from the BucketClass parameters.
+1. `parameters`: a map of string:string copy of the BucketRequest fields related to bucket naming.
 1. `bucketAvailable`: if true the bucket has been provisioned. If false then the bucket has not been provisioned and is unable to be accessed.
 
 #### BucketClass
@@ -251,7 +243,7 @@ NOTE: the `BucketClass` object is immutable except for the field `isDefaultBucke
 apiVersion: cosi.io/v1alpha1
 kind: BucketClass
 metadata:
-  name: 
+  name:
 provisioner: [1]
 isDefaultBucketClass: [2]
 protocol:
@@ -358,7 +350,7 @@ metadata:
    - Not relevant if serviceAccount is supplied.
    - For brownfield cases when there is already a storage-side principal that you want to use for access, the admin can supply this, the driver will (possibly) enable access for that principal to the bucket in question and will return credentials.
    - For greenfield cases, this could be populated by the driver. Maybe so that the driver can request deletion of this principal during deprovisioning
-1. `parameters`:  A map of string:string key values.  Allows admins to control user and access provisioning by setting provisioner key-values. Copied from `BucketAccessClass`. 
+1. `parameters`:  A map of string:string key values.  Allows admins to control user and access provisioning by setting provisioner key-values. Copied from `BucketAccessClass`.
 1. `accessGranted`: if true access has been granted to the bucket. If false then access to the bucket has not been granted.
 
 #### BucketAccessClass
@@ -380,6 +372,7 @@ parameters: [3]
 1. `provisioner`: (optional) the name of the driver that `BucketAccess` instances should be managed by. If empty then there is no driver/sidecar, thus the admin had to create the `Bucket` and `BucketAccess` instances.
 1. `policyActionsConfigMap`: (required) a reference to a ConfigMap that contains a set of provisioner/platform-defined policy actions for bucket access. It is seen as typical that this config map's namespace is the same as for the provisioner. In othe words, a namespace that has locked down RBAC rules or prevent modification of this config map.
 1. `parameters`: (Optional)  A map of string:string key values.  Allows admins to control user and access provisioning by setting provisioner key-values. Optional reserved keys cosi.io/configMap and cosi.io/secrets are used to reference user created resources with provider specific access policies.
+
 ---
 
 ### App Pod
@@ -612,11 +605,8 @@ message ProvisionerGetInfoResponse {
 This call is made to create the bucket in the backend. If a bucket that matches both name and parameters already exists, then OK (success) must be returned. If a bucket by same name, but different parameters is provided, then the appropriate error code `ALREADY_EXISTS` must be returned by the provisioner. The call to *ProvisonerCreateBucket* MUST be idempotent.
 
 ```
-message ProvisionerCreateBucketRequest {    
-    // This field is REQUIRED
-    string bucket_name = 1;
-
-    map<string,string> bucket_context = 2;
+message ProvisionerCreateBucketRequest {
+    map<string,string> bucket_context = 1;
 
     enum AnonymousBucketAccessMode {
 	PRIVATE = 0;
@@ -624,12 +614,18 @@ message ProvisionerCreateBucketRequest {
 	PUBLIC_WRITE_ONLY = 2;
 	PUBLIC_READ_WRITE = 3;
     }
-    
-    AnonymousBucketAccessMode anonymous_bucket_access_mode = 3;
+
+    AnonymousBucketAccessMode anonymous_bucket_access_mode = 2;
 }
 
 message ProvisionerCreateBucketResponse {
-    // Intentionally left blank
+    // This field is REQUIRED
+    string bucket_name = 1;
+
+    // This field is OPTIONAL
+    string bucket_endpoint = 2;
+
+    map<string,string> protocol_parameters = 3;
 }
 ```
 
@@ -641,8 +637,8 @@ This call is made to delete the bucket in the backend. If the bucket has already
 message ProvisionerDeleteBucketRequest {
     // This field is REQUIRED
     string bucket_name = 1;
-    
-    map<string,string> bucket_context = 2;    
+
+    map<string,string> bucket_context = 2;
 }
 
 message ProvisionerDeleteBucketResponse {
@@ -662,24 +658,24 @@ If the `principal` is empty, then a new service account should be created in the
 message ProvisionerGrantBucketAccessRequest {
     // This field is REQUIRED
     string bucket_name = 1;
-    
+
     map<string,string> bucket_context = 2;  
 
+    // This field is OPTIONAL
     string principal = 3;
-    
+
     // This field is REQUIRED
     string access_policy = 4;
 }
 
 message ProvisionerGrantBucketAccessResponse {
     // This is the account that is being provided access. This will
-    // be required later to revoke access. 
+    // be required later to revoke access.
+    // This field is REQUIRED.
     string principal = 1;
-    
-    string credentials_file_contents = 2;
-    
-    string credentials_file_path = 3;
-} 
+
+    map<string,string> credentials = 2;
+}
 ```
 
 ## ProvisionerRevokeBucketAccess
@@ -690,7 +686,7 @@ This call revokes all access to a particular bucket from a principal.
 message ProvisionerRevokeBucketAccessRequest {
     // This field is REQUIRED
     string bucket_name = 1;
-    
+
     map<string,string> bucket_context = 2;  
 
     // This field is REQUIRED
