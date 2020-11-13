@@ -5,6 +5,7 @@ authors:
 owning-sig: sig-network
 participating-sigs:
   - sig-cloud-provider
+status: implementable
 reviewers:
   - "@thockin"
   - "@cheftako"
@@ -12,10 +13,19 @@ reviewers:
 approvers:
   - "@thockin"
   - "@andrewsykim"
-editor: "@Sh4d1"
-creation-date: 2019-12-05
-last-updated: 2020-06-18
-status: provisional
-replaces:
-superseded-by:
-see-also:
+
+stage: "alpha"
+
+latest-milestone: "v1.21"
+
+milestone:
+  alpha: "v1.21"
+  beta: "v1.22"
+  stable: "v1.22"
+
+feature-gates:
+  - name: LoadBalancerIPMode
+    components:
+      - kube-apiserver
+      - kube-proxy
+disable-supported: true
