@@ -20,4 +20,4 @@ approvers:
 editor: TBD
 creation-date: 2019-10-04
 last-updated: 2019-12-10
-status: implementable
+status: replaced # replaced by keps/sig-node/2133-kubelet-credential-providers
