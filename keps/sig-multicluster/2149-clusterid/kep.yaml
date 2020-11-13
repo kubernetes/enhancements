@@ -10,9 +10,9 @@ owning-sig: sig-multicluster
 status: provisional
 creation-date: 2020-11-13
 reviewers:
-  - TBD
+  - "@mikedanese"
 approvers:
-  - TBD
+  - "@pmorie"
 prr-approvers:
   - TBD
 see-also:
