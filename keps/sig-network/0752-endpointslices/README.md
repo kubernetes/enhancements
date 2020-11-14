@@ -488,9 +488,9 @@ The existing Endpoints controller will continue to run. After EndpointSlices
 become GA, the Endpoints controller may limit the number of endpoints it stores
 per resource.
 
-* Kubernetes 1.20: If the number of endpoints in one Endpoints object exceeds
+* Kubernetes 1.21: If the number of endpoints in one Endpoints object exceeds
   1000, set `endpoints.kubernetes.io/over-capacity` label to "warning".
-* Kubernetes 1.21: Limit the number of endpoints in one Endpoints object to 1000
+* Kubernetes 1.22: Limit the number of endpoints in one Endpoints object to 1000
   and set the `endpoints.kubernetes.io/over-capacity` label to "truncated" when
   truncation occurs.
 
@@ -633,14 +633,23 @@ The following will need to be covered as part of the testing plan:
   * Kube-Proxy on Linux will use EndpointSlices by default.
   * Kube-Proxy on Windows will support EndpointSlices in an alpha state.
 
-**Kubernetes 1.20: GA API, Kube-Proxy on Windows uses EndpointSlices by Default**
+**Kubernetes 1.20: Add NodeName, Deprecate Topology**
+* Given the updated plans for topology aware routing, the topology field is no
+  longer useful, it will be deprecated.
+* A new NodeName field will be added, guarded by the EndpointSliceNodeName
+  feature gate.
+
+**Kubernetes 1.21: GA API, Kube-Proxy on Windows uses EndpointSlices by
+Default**
 * The EndpointSlice API will graduate to v1.
-* `EndpointSliceProxying` feature gate will graduate to beta on Linux:
-  * Kube-Proxy on Linux will use EndpointSlices by default.
+* The topology field will be removed.
+* `EndpointSliceNodeName` feature gate will graduate to beta.
+* `EndpointSliceProxying` feature gate will graduate to beta on Windows:
+  * Kube-Proxy on Windows will use EndpointSlices by default.
 * A new `endpoints.kubernetes.io/over-capacity` label will be set to "warning"
   on Endpoints resources exceeding 1000 endpoints.
 
-**Kubernetes 1.21: Kube-Proxy GA**
+**Kubernetes 1.22: Kube-Proxy GA**
 * The `EndpointSliceProxying` feature gate guarding EndpointSlice integration
   with kube-proxy will graduate to GA on both Linux and Windows.
 * Endpoints resources will be limited to 1000 endpoints. The

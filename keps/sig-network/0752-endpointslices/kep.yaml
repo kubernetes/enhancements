@@ -28,7 +28,7 @@ latest-milestone: "v1.19"
 milestone:
   alpha: "v1.16"
   beta: "v1.17"
-  stable: "v1.20"
+  stable: "v1.21"
 
 feature-gates:
   - name: EndpointSlice
