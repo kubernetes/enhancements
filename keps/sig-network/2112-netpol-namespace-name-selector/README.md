@@ -1,4 +1,4 @@
-# KEP-2113: Add a namespaceNames option to the NetworkPolicy API which allows selection without Labels
+# KEP-2113: Add a NamespaceNames option to the NetworkPolicy API which allows selection without Labels
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
@@ -126,8 +126,7 @@ amending the API to support a "special" selector for namespace names that is
 ### Goals
 
 - Add a `namespaceNames` option (which is additive to the current `matchLabels` selector).
-- Allow multiple `namespaceNames` values, so that many namespaces can be 
-allowed using the same field 
+- Allow multiple `namespaceNames` values, so that many namespaces can be allowed using the same field 
 
 ### Non-Goals
 
@@ -171,7 +170,7 @@ to be a cleaner implementation:
 ```
 type NetworkPolicyPeer struct {
   // new field
-  namespaceNames []string
+  NamespaceNames []string
 
   // existing fields...
   PodSelector *metav1.LabelSelector `json:"podSelector,omitempty" protobuf:"bytes,1,opt,name=podSelector"`
@@ -186,7 +185,17 @@ type NetworkPolicyPeer struct {
 
 - A list of conventional namespace names (i.e. no regular expressions or any other fancy definining syntaxes)
 
-The "namespaceNames" allow directive would look like so:
+The `namespaceNames` allow directive, illustrated as a table, can be thought of like so:
+
+```
+|     Policy           | Allowed                                        |
+|----------------------|------------------------------------------------|
+| ingress 1            | my-frontend, my-frontend2                      |
+| ingress 2            | my-frontend3                                   |
+```
+
+Which would be addressed in YAML like so:
+
 ```
 kind: NetworkPolicy
 apiVersion: networking.k8s.io/v1
@@ -201,14 +210,28 @@ spec:
       namespaceNames:
       -  my-frontend
       -  my-frontend-2
+  - from:
+      namespacedNames:
+      - my-frontend-3
 ```
 
 - As a more sophisticated example: The following would:
-  - allow all traffic from `podName:xyz` living in `my-frontend` or `my-frontend-2`
+  - allow all traffic from `podName:xyz` living in `my-frontend` (by virtue of the first selector)
+  - allow all traffic from `podName:xyz`  `my-frontend-2`
   - deny traffic from `podName:xyz` in `my-frontend-3`, since theres no selector for that namespace
+  - deny traffic from `podName:abc` in `my-frontend-2`, since there is no matching pod selector on the 2nd ingress rule.
   - allow things in ipblock 100.1.2.0/16
 
-This is because the presence of EITHER a namespaceNames rule or a namespaceSelector, makes the podSelector subject to an **AND** filter operation alongside the pod selector.
+In this case, the namespace selector could be thought of in table form as:
+```
+|     Policy           | Allowed                                        |
+|----------------------|------------------------------------------------|
+| ingress 1            | my-frontend                                    |
+| ingress 2            | my-frontend-2 (podName=xyz)                    |
+| ingress 1+ ingress 2 | my-frontend (podName=xyz), my-frontend-2 (any) |
+```
+
+which would be expressed in YAML as so:
 
 ```
 kind: NetworkPolicy
@@ -222,11 +245,10 @@ spec:
   ingress:
   - from:
     - namespaceNames:
-      -  my-frontend
-      namespaceSelector:
+      -  my-frontend # ingress 1
+    - namespaceSelector:
         matchLabels:
-          app: my-frontend-2
-      podSelector:
+          app: my-frontend-2 # ingress 2
         matchLabels:
           podName: xyz
     -  ipBlock:
