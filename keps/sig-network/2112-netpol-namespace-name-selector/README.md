@@ -243,6 +243,7 @@ spec:
     matchLabels:
       app: mysql
   ingress:
+  # below we have 3 rules, which are all independent of one another.
   - from:
     - namespaceNames:
       -  my-frontend # ingress 1
