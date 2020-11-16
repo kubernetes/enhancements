@@ -3,7 +3,7 @@ kep-number: NNNN
 authors:
   - "@jane.doe"
 owning-sig: sig-xyz
-participating-sigs:
+participating-groups:
   - sig-aaa
   - sig-bbb
 status: provisional|implementable|implemented|deferred|rejected|withdrawn|replaced
@@ -49,3 +49,8 @@ disable-supported: true
 # The following PRR answers are required at beta release
 metrics:
   - my_feature_metric
+
+# The following open questions 
+open-questions:
+  - question: MyQuestion
+  - unresolved: true
