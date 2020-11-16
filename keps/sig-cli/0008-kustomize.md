@@ -4,7 +4,7 @@ authors:
   - "@pwittrock"
   - "@monopole"
 owning-sig: sig-cli
-participating-sigs:
+participating-groups:
   - sig-cli
 reviewers:
   - "@droot"

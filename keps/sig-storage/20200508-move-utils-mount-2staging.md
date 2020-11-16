@@ -3,7 +3,7 @@ title: Move utils/mount from vendor to staging
 authors:
   - "@brahmaroutu"
 owning-sig: sig-storage
-participating-sigs:
+participating-groups:
   - sig-architecture
   - sig-testing
 reviewers:

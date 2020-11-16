@@ -3,7 +3,7 @@ title: Recover from volume expansion failure
 authors:
   - "@gnuified"
 owning-sig: sig-storage
-participating-sigs:
+participating-groups:
   - sig-api-machinery
 reviewers:
   - "@msau42"

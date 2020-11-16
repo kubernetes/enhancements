@@ -3,7 +3,7 @@ title: future-of-kubectl-cp
 authors:
   - "@sallyom"
 owning-sig: sig-cli
-participating-sigs:
+participating-groups:
   - sig-usability
 reviewers:
   - "@liggitt"

@@ -3,7 +3,7 @@ title: kubernetes-csi release process
 authors:
   - "@pohly"
 owning-sig: sig-storage
-participating-sigs:
+participating-groups:
   - sig-testing
   - sig-release
 reviewers:

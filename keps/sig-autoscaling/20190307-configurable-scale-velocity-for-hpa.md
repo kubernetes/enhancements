@@ -4,7 +4,7 @@ authors:
   - "@gliush"
   - "@arjunrn"
 owning-sig: sig-autoscaling
-participating-sigs:
+participating-groups:
 reviewers:
   - "@mwielgus"
   - "@josephburnett"

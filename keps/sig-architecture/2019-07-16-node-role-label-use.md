@@ -3,7 +3,7 @@ title: Appropriate use of node-role labels
 authors:
   - "@smarterclayton"
 owning-sig: sig-architecture
-participating-sigs:
+participating-groups:
   - sig-api-machinery
   - sig-network
   - sig-node

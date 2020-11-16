@@ -5,7 +5,7 @@ authors:
   - "@calebamiles"
   - "@hogepodge"
 owning-sig: sig-api-machinery
-participating-sigs:
+participating-groups:
   - sig-cloud-provider
   - sig-storage
 reviewers:

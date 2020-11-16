@@ -5,7 +5,7 @@ authors:
   - "@44past4"
   - "@DirectXMan12"
 owning-sig: sig-instrumentation
-participating-sigs:
+participating-groups:
   - sig-architecture
 status: implementable
 creation-date: 2019-11-15

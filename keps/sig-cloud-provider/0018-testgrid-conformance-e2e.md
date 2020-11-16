@@ -3,7 +3,7 @@ title: Reporting Conformance Test Results to Testgrid
 authors:
   - "@andrewsykim"
 owning-sig: sig-cloud-provider
-participating-sigs:
+participating-groups:
   - sig-testing
   - sig-release
 reviewers:

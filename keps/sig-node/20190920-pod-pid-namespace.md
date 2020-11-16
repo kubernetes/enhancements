@@ -3,7 +3,7 @@ title: Shared PID Namespace
 authors:
 - "@verb"
 owning-sig: sig-node
-participating-sigs:
+participating-groups:
 - sig-node
 reviewers:
 - "@yujuhong"

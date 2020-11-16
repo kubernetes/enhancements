@@ -3,7 +3,7 @@ title: Extended NodeRestrictions for Pods
 authors:
   - "tallclair"
 owning-sig: sig-auth
-participating-sigs:
+participating-groups:
   - sig-node
   - sig-cluster-lifecycle
 reviewers:

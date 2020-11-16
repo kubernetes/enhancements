@@ -3,7 +3,7 @@ kep-number: 1710
 authors:
   - "@jsafrane"
 owning-sig: sig-storage
-participating-sigs:
+participating-groups:
   - sig-node
 status: implementable
 creation-date: 2020-02-18

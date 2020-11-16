@@ -6,7 +6,7 @@ authors:
   - "@mikedanese"
   - "@zshihang"
 owning-sig: sig-storage
-participating-sigs:
+participating-groups:
   - sig-auth
 reviewers:
   - "@jsafrane"

@@ -4,7 +4,7 @@ authors:
   - "@mikedanese"
   - "@liggitt"
 owning-sig: sig-auth
-participating-sigs:
+participating-groups:
   - sig-node
   - sig-storage
 reviewers:

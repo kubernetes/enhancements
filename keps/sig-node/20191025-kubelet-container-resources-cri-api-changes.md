@@ -4,7 +4,7 @@ authors:
   - "@vinaykul"
   - "@quinton-hoole"
 owning-sig: sig-node
-participating-sigs:
+participating-groups:
 reviewers:
   - "@Random-Liu"
   - "@yujuhong"

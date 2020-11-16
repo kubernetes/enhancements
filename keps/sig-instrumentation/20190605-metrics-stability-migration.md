@@ -4,7 +4,7 @@ authors:
   - "@logicalhan"
   - "@solodov"
 owning-sig: sig-instrumentation
-participating-sigs:
+participating-groups:
   - sig-scheduling
   - sig-node
   - sig-api-machinery

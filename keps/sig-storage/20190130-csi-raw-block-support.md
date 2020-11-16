@@ -3,7 +3,7 @@ title: CSI Raw Block Volumes
 authors:
   - "@bswartz"
 owning-sig: sig-storage
-participating-sigs:
+participating-groups:
   - sig-storage
 reviewers:
   - "@msau42"

@@ -5,7 +5,7 @@ authors:
   - "@hogepodge"
   - "@andrewsykim"
 owning-sig: sig-cloud-provider
-participating-sigs:
+participating-groups:
   - sig-docs
   - sig-cluster-lifecycle
 reviewers:

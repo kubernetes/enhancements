@@ -225,7 +225,7 @@ func ValidateStructure(parsed map[interface{}]interface{}) error {
 				return &ValueMustBeString{k, v}
 			}
 		// These are optional lists, so skip if there is no value
-		case "participating-sigs", "replaces", "superseded-by", "see-also":
+		case "participating-groups", "replaces", "superseded-by", "see-also":
 			if empty {
 				continue
 			}
@@ -245,7 +245,7 @@ func ValidateStructure(parsed map[interface{}]interface{}) error {
 				if len(values) == 0 {
 					return &MustHaveAtLeastOneValue{k}
 				}
-				if strings.ToLower(k) == "participating-sigs" {
+				if strings.ToLower(k) == "participating-groups" {
 					for _, value := range values {
 						v := value.(string)
 						index := sort.SearchStrings(listGroups, v)

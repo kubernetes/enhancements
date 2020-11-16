@@ -3,7 +3,7 @@ title: Enhance HPA Metrics Specificity
 authors:
   - "@directxman12"
 owning-sig: sig-autoscaling
-participating-sigs:
+participating-groups:
   - sig-instrumentation
 reviewers:
   - "@brancz"

@@ -3,7 +3,7 @@ kep-number: 277
 authors:
   - "@verb"
 owning-sig: sig-node
-participating-sigs:
+participating-groups:
   - sig-auth
   - sig-node
 status: implementable

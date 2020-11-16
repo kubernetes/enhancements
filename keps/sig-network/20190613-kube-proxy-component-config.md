@@ -3,7 +3,7 @@ title: Kube-Proxy ComponentConfig graduation
 authors:
   - "@rosti"
 owning-sig: sig-network
-participating-sigs:
+participating-groups:
   - sig-cluster-lifecycle
   - sig-api-machinery
   - wg-component-standard

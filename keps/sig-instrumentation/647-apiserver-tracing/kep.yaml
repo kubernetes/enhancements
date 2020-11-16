@@ -5,7 +5,7 @@ authors:
   - "@dashpole"
   - "@logicalhan"
 owning-sig: sig-instrumentation
-participating-sigs:
+participating-groups:
   - sig-architecture
   - sig-api-machinery
   - sig-scalability

@@ -4,7 +4,7 @@ authors:
   - "@andrewsykim"
   - "@cheftako"
 owning-sig: sig-cloud-provider
-participating-sigs:
+participating-groups:
   - sig-apps
   - sig-api-machinery
   - sig-network

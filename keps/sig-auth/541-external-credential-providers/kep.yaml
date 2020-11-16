@@ -4,7 +4,7 @@ authors:
   - "@awly"
   - "@enj"
 owning-sig: sig-auth
-participating-sigs:
+participating-groups:
   - sig-cli
   - sig-api-machinery
 status: implementable

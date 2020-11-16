@@ -3,7 +3,7 @@ kep-number: 1860
 authors:
   - "@Sh4d1"
 owning-sig: sig-network
-participating-sigs:
+participating-groups:
   - sig-cloud-provider
 status: implementable
 reviewers:

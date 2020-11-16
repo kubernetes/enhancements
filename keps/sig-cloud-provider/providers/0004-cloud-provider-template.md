@@ -4,7 +4,7 @@ title: Cloud Provider Template
 authors:
   - "@janedoe"
 owning-sig: sig-cloud-provider
-participating-sigs:
+participating-groups:
   - sig-aaa
   - sig-bbb
 reviewers:

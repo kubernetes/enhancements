@@ -4,7 +4,7 @@ authors:
   - "@barney-s"
   - "@soltysh"
 owning-sig: sig-apps
-participating-sigs:
+participating-groups:
   - sig-scalability
 status: implementable
 creation-date: 2019-04-18

@@ -3,7 +3,7 @@ kep-number: 895
 authors:
 - "@Huang-Wei"
 owning-sig: sig-scheduling
-participating-sigs:
+participating-groups:
 - sig-scheduling
 - sig-api-machinery
 status: implemented

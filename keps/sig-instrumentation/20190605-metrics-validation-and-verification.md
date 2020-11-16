@@ -5,7 +5,7 @@ authors:
   - "@solodov"
   - "@logicalhan"
 owning-sig: sig-instrumentation
-participating-sigs:
+participating-groups:
   - sig-instrumentation
   - sig-testing
 reviewers:

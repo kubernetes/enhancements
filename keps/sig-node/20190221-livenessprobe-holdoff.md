@@ -3,7 +3,7 @@ title: Add pod-startup liveness-probe holdoff for slow-starting pods
 authors:
   - "@matthyx"
 owning-sig: sig-node
-participating-sigs:
+participating-groups:
   - sig-apps
   - sig-architecture
 reviewers:

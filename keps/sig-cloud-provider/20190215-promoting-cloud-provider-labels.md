@@ -3,7 +3,7 @@ title: Promoting Cloud Provider Labels to GA
 authors:
   - "@andrewsykim"
 owning-sig: sig-cloud-provider
-participating-sigs:
+participating-groups:
   - sig-node
   - sig-storage
 reviewers:

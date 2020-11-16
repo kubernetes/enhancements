@@ -4,7 +4,7 @@ authors:
   - "@bradhoekstra"
   - "@kongslund"
 owning-sig: sig-apps
-participating-sigs:
+participating-groups:
 reviewers:
   - TBD
 approvers:

@@ -4,7 +4,7 @@ authors:
   - "@jpbetz"
   - "@wojtek-t"
 owning-sig: sig-api-machinery
-participating-sigs:
+participating-groups:
   - sig-scalability
 reviewers:
   - "@wojtek-t"

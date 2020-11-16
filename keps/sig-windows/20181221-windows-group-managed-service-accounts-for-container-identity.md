@@ -5,7 +5,7 @@ authors:
   - "@jeremywx"
   - "@patricklang"
 owning-sig: sig-windows
-participating-sigs:
+participating-groups:
   - sig-auth
   - sig-node
   - sig-architecture

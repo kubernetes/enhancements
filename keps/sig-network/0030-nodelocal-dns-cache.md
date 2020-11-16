@@ -3,7 +3,7 @@ title: NodeLocal DNS Cache
 authors:
   - "@prameshj"
 owning-sig: sig-network
-participating-sigs:
+participating-groups:
   - sig-network
 reviewers:
   - "@thockin"

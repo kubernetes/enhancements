@@ -2,7 +2,7 @@ title: Image Promoter
 authors:
   - "@javier-b-perez"
 owning-sig: sig-release
-participating-sigs:
+participating-groups:
   - wg-k8s-infra
 reviewers:
   - "@AishSundar"

@@ -3,7 +3,7 @@ title: graduate-pod-disruption-budget-to-stable
 authors:
   - "@bsalamat"
 owning-sig: sig-apps
-participating-sigs:
+participating-groups:
   - sig-scheduling
 reviewers:
   - "@liggitt"

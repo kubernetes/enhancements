@@ -3,7 +3,7 @@ title: Kubelet Resource Metrics Endpoint
 authors:
   - "@dashpole"
 owning-sig: sig-node
-participating-sigs:
+participating-groups:
   - sig-instrumentation
 reviewers:
   - DirectXMan12

@@ -3,7 +3,7 @@ kep-number: 1867
 authors:
   - "@RenaudWasTaken"
 owning-sig: sig-node
-participating-sigs: []
+participating-groups: []
 status: implementable
 creation-date: 2020-06-18
 reviewers:

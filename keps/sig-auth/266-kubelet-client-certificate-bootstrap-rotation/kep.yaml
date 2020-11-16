@@ -4,7 +4,7 @@ authors:
   - "@jcbsmpsn"
   - "@liggitt"
 owning-sig: sig-auth
-participating-sigs:
+participating-groups:
   - sig-auth
   - sig-node
 status: implemented

@@ -3,7 +3,7 @@ kep-number: "1933"
 authors:
 - "@PurelyApplied"
 owning-sig: sig-instrumentation
-participating-sigs:
+participating-groups:
 - sig-instrumentation
 - sig-testing
 status: implementable

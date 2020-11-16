@@ -3,7 +3,7 @@ title: Pod Ready++
 authors:
   - "freehan@"
 owning-sig: sig-network
-participating-sigs:
+participating-groups:
   - sig-node
   - sig-cli
 reviewers:

@@ -3,7 +3,7 @@ title: Watch support for metrics APIs
 authors:
   - "@x13n"
 owning-sig: sig-instrumentation
-participating-sigs:
+participating-groups:
   - sig-autoscaling
 reviewers:
   - TBD

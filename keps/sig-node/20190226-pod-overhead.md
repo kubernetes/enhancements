@@ -3,7 +3,7 @@ title: Pod Overhead
 authors:
   - "@egernst"
 owning-sig: sig-node
-participating-sigs:
+participating-groups:
   - sig-scheduling
   - sig-autoscaling
   - sig-windows

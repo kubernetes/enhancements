@@ -3,7 +3,7 @@ title: Kustomize File Processing Integration
 authors:
   - "@pwittrock"
 owning-sig: sig-cli
-participating-sigs:
+participating-groups:
   - sig-cli
 reviewers:
   - "@liggitt"

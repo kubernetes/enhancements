@@ -4,7 +4,7 @@ authors:
   - "@jingxu97"
   - "@xing-yang"
 owning-sig: sig-storage
-participating-sigs:
+participating-groups:
   - sig-storage
   - sig-node
   - sig-apps

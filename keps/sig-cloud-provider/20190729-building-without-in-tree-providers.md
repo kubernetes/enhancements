@@ -3,7 +3,7 @@ title: Building Kubernetes Without In-Tree Cloud Providers
 authors:
   - "@BenTheElder"
 owning-sig: sig-cloud-provider
-participating-sigs:
+participating-groups:
   - sig-release
   - sig-testing
 reviewers:

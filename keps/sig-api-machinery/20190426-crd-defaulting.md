@@ -3,7 +3,7 @@ title: Defaulting for Custom Resources
 authors:
   - "@sttts"
 owning-sig: sig-api-machinery
-participating-sigs:
+participating-groups:
   - sig-api-machinery
 reviewers:
   - "@deads2k"

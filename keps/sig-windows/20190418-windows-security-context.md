@@ -3,7 +3,7 @@ title: Windows security context API changes
 authors:
   - "@ddebroy"
 owning-sig: sig-windows
-participating-sigs:
+participating-groups:
 reviewers:
   - "@patricklang"
   - "@liggitt"

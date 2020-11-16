@@ -4,7 +4,7 @@ authors:
   - "@johnbelamaric"
   - "@rajansandeep"
 owning-sig: sig-network
-participating-sigs:
+participating-groups:
   - sig-cluster-lifecycle
 reviewers:
   - "@bowei"

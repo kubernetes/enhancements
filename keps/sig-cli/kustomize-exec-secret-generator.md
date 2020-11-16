@@ -3,7 +3,7 @@ title: Kustomize Exec Secret Generator
 authors:
   - "@pwittrock"
 owning-sig: sig-cli
-participating-sigs:
+participating-groups:
 reviewers:
   - "@anguslees"
   - "@Liujingfang1"

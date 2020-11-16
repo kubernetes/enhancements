@@ -3,7 +3,7 @@ kep-number: 1412
 authors:
   - "@wojtek-t"
 owning-sig: sig-storage
-participating-sigs:
+participating-groups:
   - sig-apps
   - sig-node
   - sig-scalability

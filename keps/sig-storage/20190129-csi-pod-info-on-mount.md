@@ -3,7 +3,7 @@ title: CSI Pod Info on Mount
 authors:
   - "@jsafrane"
 owning-sig: sig-storage
-participating-sigs:
+participating-groups:
   - sig-storage
 reviewers:
   - "@msau42"

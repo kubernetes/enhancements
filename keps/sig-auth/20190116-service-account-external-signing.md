@@ -3,7 +3,7 @@ title: Support external signing of service account keys
 authors:
   - "@micahhausler"
 owning-sig: sig-auth
-participating-sigs: []
+participating-groups: []
 reviewers:
   - "@mikedanese"
   - "@liggit"

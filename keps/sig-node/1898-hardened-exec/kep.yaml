@@ -3,7 +3,7 @@ kep-number: 1898
 authors:
   - "@tallclair"
 owning-sig: sig-node
-participating-sigs:
+participating-groups:
   - sig-api-machinery
   - sig-auth
 status: implementable

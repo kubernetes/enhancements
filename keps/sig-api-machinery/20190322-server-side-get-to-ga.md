@@ -3,7 +3,7 @@ title: Graduate Server-side Get and Partial Objects to GA
 authors:
   - "@smarterclayton"
 owning-sig: sig-api-machinery
-participating-sigs:
+participating-groups:
   - sig-cli
 reviewers:
   - "@lavalamp"

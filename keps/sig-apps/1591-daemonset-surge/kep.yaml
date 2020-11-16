@@ -3,7 +3,7 @@ kep-number: 1591
 authors:
   - "@smarterclayton"
 owning-sig: sig-apps
-participating-sigs:
+participating-groups:
   - sig-scheduling
   - sig-node
 reviewers:

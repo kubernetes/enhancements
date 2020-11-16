@@ -4,7 +4,7 @@ authors:
   - "@logicalhan"
   - "@lilic"
 owning-sig: sig-instrumentation
-participating-sigs:
+participating-groups:
   - sig-instrumentation
 reviewers:
   - "@dashpole"

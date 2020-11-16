@@ -3,7 +3,7 @@ title: Windows RuntimeClass Support
 authors:
   - "@patricklang"
 owning-sig: sig-windows
-participating-sigs:
+participating-groups:
   - sig-node
 reviewers:
   - "@tallclair"

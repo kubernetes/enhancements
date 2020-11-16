@@ -3,7 +3,7 @@ title: Graduate Ingress to GA
 authors:
   - "@bowei"
 owning-sig: sig-network
-participating-sigs:
+participating-groups:
 reviewers:
   - "@aledbf"
 approvers:

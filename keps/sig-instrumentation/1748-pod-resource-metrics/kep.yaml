@@ -3,7 +3,7 @@ kep-number: 1748
 authors:
   - "@smarterclayton"
 owning-sig: sig-instrumentation
-participating-sigs:
+participating-groups:
   - sig-node
   - sig-scheduling
 status: implementable

@@ -3,7 +3,7 @@ title: Cleaning up container streaming requests
 authors:
   - "@tallclair"
 owning-sig: sig-node
-participating-sigs:
+participating-groups:
   - sig-api-machinery
 reviewers:
   - "@Random-Liu"

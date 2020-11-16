@@ -7,7 +7,7 @@ authors:
   - "@neolit123"
   - "@patricklang"
 owning-sig: sig-windows
-participating-sigs:
+participating-groups:
   - sig-windows
   - sig-cluster-lifecycle
 reviewers:

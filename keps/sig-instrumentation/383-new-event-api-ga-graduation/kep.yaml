@@ -3,7 +3,7 @@ authors:
   - "@gmarek"
   - "@chelseychen"
 owning-sig: sig-instrumentation
-participating-sigs:
+participating-groups:
   - sig-instrumentation
   - sig-scalability
   - sig-architecture

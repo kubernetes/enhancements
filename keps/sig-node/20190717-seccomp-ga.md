@@ -4,7 +4,7 @@ authors:
   - "@tallclair"
   - "@pjbgf"
 owning-sig: sig-node
-participating-sigs:
+participating-groups:
   - sig-api-machinery
   - sig-auth
 reviewers:

@@ -2,7 +2,7 @@ title: Skip Volume Ownership Change
 authors:
   - "@gnuified"
 owning-sig: sig-storage
-participating-sigs:
+participating-groups:
   - sig-auth
 reviewers:
   - "@msau42"

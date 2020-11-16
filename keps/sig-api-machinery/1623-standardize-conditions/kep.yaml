@@ -3,7 +3,7 @@ kep-number: 1623
 authors:
   - "@deads2k"
 owning-sig: sig-api-machinery
-participating-sigs:
+participating-groups:
   - sig-api-machinery
   - sig-apps
   - sig-architecture

@@ -3,7 +3,7 @@ title: Volume Scale and Performance Testing Plan
 authors:
   - "@msau42"
 owning-sig: sig-storage
-participating-sigs:
+participating-groups:
   - sig-scalability
 reviewers:
   - "@pohly"

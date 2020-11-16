@@ -6,7 +6,7 @@ authors:
   - "@spiffxp"
   - "@jefftree"
 owning-sig: sig-architecture
-participating-sigs:
+participating-groups:
   - sig-testing
 reviewers:
   - "@timothysc"

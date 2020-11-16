@@ -3,7 +3,7 @@ title: Support Instance Metadata Service with Cloud Controller Manager
 authors:
   - "@feiskyer"
 owning-sig: sig-cloud-provider
-participating-sigs:
+participating-groups:
   - sig-node
 reviewers:
   - "@andrewsykim"

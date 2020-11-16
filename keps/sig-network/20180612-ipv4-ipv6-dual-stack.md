@@ -7,7 +7,7 @@ authors:
   - "@khenidak"
   - "@feiskyer"
 owning-sig: sig-network
-participating-sigs:
+participating-groups:
   - sig-cluster-lifecycle
 reviewers:
   - "@danwinship"

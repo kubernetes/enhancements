@@ -3,7 +3,7 @@ title: Support for CSI Plugins on Windows Nodes
 authors:
   - "@ddebroy"
 owning-sig: sig-windows
-participating-sigs:
+participating-groups:
   - sig-windows
   - sig-storage
 reviewers:

@@ -3,7 +3,7 @@ title: Graduate TaintNodeByCondition to GA
 authors:
   - "@draveness"
 owning-sig: sig-scheduling
-participating-sigs:
+participating-groups:
   - sig-node
 reviewers:
   - TBD

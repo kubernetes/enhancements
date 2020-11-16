@@ -3,7 +3,7 @@ title: Finalizer Protection for Service LoadBalancers
 authors:
   - "@MrHohn"
 owning-sig: sig-network
-participating-sigs:
+participating-groups:
   - sig-cloud-provider
 reviewers:
   - "@andrewsykim"

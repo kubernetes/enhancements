@@ -3,7 +3,7 @@ title: CSI Volume Topology
 authors:
   - "@verult"
 owning-sig: sig-storage
-participating-sigs:
+participating-groups:
   - sig-storage
 reviewers:
   - "@msau42"

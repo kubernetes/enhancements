@@ -3,7 +3,7 @@ title: Implement maxUnavailable for StatefulSets
 authors:
   - "@krmayankk"
 owning-sig: sig-apps
-participating-sigs:
+participating-groups:
   - sig-apps
 reviewers:
   - "@janetkuo"

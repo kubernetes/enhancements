@@ -6,7 +6,7 @@ authors:
   - "@jberkus"
   - "@youngnick"
 owning-sig: sig-release
-participating-sigs:
+participating-groups:
   - sig-architecture
   - sig-testing
   - sig-release

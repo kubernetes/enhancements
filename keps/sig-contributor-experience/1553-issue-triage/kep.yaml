@@ -1,7 +1,7 @@
 title: Issue Triage Workflow and Automation
 status: implementable
 owning-sig: sig-contributor-experience
-participating-sigs:
+participating-groups:
   - sig-release
 authors:
   - "@justaugustus"

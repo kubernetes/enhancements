@@ -3,7 +3,7 @@ kep-number: 585
 authors:
   - "@tallclair"
 owning-sig: sig-node
-participating-sigs: 
+participating-groups: 
     - sig-architecture
 status: implemented
 creation-date: "2018-06-19"

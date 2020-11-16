@@ -3,7 +3,7 @@ title: New label for trusted PR identification
 authors:
   - "@matthyx"
 owning-sig: sig-testing
-participating-sigs:
+participating-groups:
   - sig-contributor-experience
 reviewers:
   - "@fejta"

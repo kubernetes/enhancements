@@ -3,7 +3,7 @@ title: Promote Node Operating System & Architecture labels to GA
 authors:
   - "@yujuhong"
 owning-sig: sig-node
-participating-sigs:
+participating-groups:
   - sig-node
 reviewers:
   - "@liggitt"

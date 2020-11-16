@@ -3,7 +3,7 @@ title: Dynamic Audit Configuration
 authors:
   - "@pbarker"
 owning-sig: sig-auth
-participating-sigs:
+participating-groups:
   - sig-api-machinery
 reviewers:
   - "@tallclair"

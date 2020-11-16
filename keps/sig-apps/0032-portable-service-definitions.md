@@ -5,7 +5,7 @@ title: Portable Service Definitions
 authors:
   - "@mattfarina"
 owning-sig: sig-apps
-participating-sigs:
+participating-groups:
   - sig-service-catalog
 reviewers:
   - "@carolynvs"

@@ -3,7 +3,7 @@ title: Make kube-proxy service abstraction optional
 authors:
   - "@bradhoekstra"
 owning-sig: sig-network
-participating-sigs:
+participating-groups:
 reviewers:
   - "@freehan"
 approvers:

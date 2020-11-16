@@ -3,7 +3,7 @@ title: Graceful Termination for Local External Traffic Policy
 authors:
   - "@andrewsykim"
 owning-sig: sig-network
-participating-sigs:
+participating-groups:
   - sig-scalability
 reviewers:
   - "@thockin"

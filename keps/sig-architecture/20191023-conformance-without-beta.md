@@ -3,7 +3,7 @@ title: Ensure Conformance Tests Do Not Require Beta APIs or Features
 authors:
   - "@liggitt"
 owning-sig: sig-architecture
-participating-sigs:
+participating-groups:
   - sig-testing
   - sig-api-machinery
 reviewers:

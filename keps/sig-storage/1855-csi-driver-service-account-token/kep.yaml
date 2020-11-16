@@ -3,7 +3,7 @@ title: Service Account Token for CSI Driver
 authors:
   - "@zshihang"
 owning-sig: sig-storage
-participating-sigs:
+participating-groups:
   - sig-auth
   - sig-storage
 reviewers:

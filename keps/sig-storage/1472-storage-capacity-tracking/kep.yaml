@@ -4,7 +4,7 @@ authors:
   - "@pohly"
   - "@cofyc"
 owning-sig: sig-storage
-participating-sigs:
+participating-groups:
   - sig-scheduling
 status: implementable
 creation-date: 2019-09-19

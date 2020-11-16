@@ -3,7 +3,7 @@ kep-number: 1771
 authors:
   - "@andrewsykim"
 owning-sig: sig-cloud-provider
-participating-sigs:
+participating-groups:
   - sig-release
 status: implementable
 creation-date: 2020-04-29

@@ -28,7 +28,7 @@ type proposal struct {
 	Title             string   `yaml:"title"`
 	Authors           []string `yaml:,flow`
 	OwningSIG         string   `yaml:"owning-sig"`
-	ParticipatingSIGs []string `yaml:"participating-sigs",flow`
+	ParticipatingSIGs []string `yaml:"participating-groups",flow`
 	Reviewers         []string `yaml:,flow`
 	Approvers         []string `yaml:,flow`
 	Editor            string   `yaml:"editor"`
@@ -49,7 +49,7 @@ authors:
   {{- end }}
 owning-sig: {{ .OwningSIG }}
 {{- if .ParticipatingSIGs }}
-participating-sigs:
+participating-groups:
   {{- range .ParticipatingSIGs }}
   - "{{.}}"
   {{- end }}
@@ -126,7 +126,7 @@ func TestValidateStructureSuccess(t *testing.T) {
 		{
 			name: "Participating sigs is optional",
 			input: map[interface{}]interface{}{
-				"participating-sigs": "",
+				"participating-groups": "",
 			},
 		},
 		{

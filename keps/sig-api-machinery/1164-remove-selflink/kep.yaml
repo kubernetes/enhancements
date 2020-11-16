@@ -3,7 +3,7 @@ kep-number: 1164
 authors:
   - "@wojtek-t"
 owning-sig: sig-api-machinery
-participating-sigs:
+participating-groups:
   - sig-scalability
 reviewers:
   - "@liggitt"

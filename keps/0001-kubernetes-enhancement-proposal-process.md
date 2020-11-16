@@ -175,7 +175,7 @@ Metadata items:
     this SIG will take responsibility for the bulk of those artifacts.
   * Sigs are listed as `sig-abc-def`, where the name matches the
     directory entry in the `kubernetes/community` repo.
-* **participating-sigs** Optional
+* **participating-groups** Optional
   * A list of SIGs that are involved or impacted by this KEP.
   * A special value of `kubernetes-wide` will indicate that this KEP has impact
     across the entire project.

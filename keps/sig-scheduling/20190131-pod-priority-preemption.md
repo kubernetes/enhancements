@@ -3,7 +3,7 @@ title: Promote Pod Priority and Preemption to GA
 authors:
   - "@bsalamat"
 owning-sig: sig-scheduling
-participating-sigs:
+participating-groups:
   - sig-scheduling
 reviewers:
   - "@k82cn"

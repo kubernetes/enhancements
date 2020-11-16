@@ -3,7 +3,7 @@ title: Extend usage of Volume DataSource to allow PVCs for Cloning
 authors:
   - "@j-griffith"
 owning-sig: sig-storage
-participating-sigs:
+participating-groups:
   - sig-architecture
 reviewers:
   - TBD
