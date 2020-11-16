@@ -254,13 +254,18 @@ proposal will be implemented, this is the place to discuss them.
 Consider the following in developing a test plan for this enhancement:
 - Will there be e2e and integration tests, in addition to unit tests?
 - How will it be tested in isolation vs with other components?
+- What will be the feature keyword for planned e2e/integration tests? 
 
 No need to outline all of the test cases, just the general strategy. Anything
 that would count as tricky in the implementation, and anything particularly
 challenging to test, should be called out.
 
 All code is expected to have adequate tests (eventually with coverage
-expectations). Please adhere to the [Kubernetes testing guidelines][testing-guidelines]
+expectations). There should also be an easy way to filter tests for a
+specific component in your KEP. Links to testgrid, filtered on your
+feature component, is particular useful for KEP reviewers.
+
+Please adhere to the [Kubernetes testing guidelines][testing-guidelines] 
 when drafting this test plan.
 
 [testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
