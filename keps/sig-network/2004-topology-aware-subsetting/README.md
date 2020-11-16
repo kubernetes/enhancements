@@ -183,6 +183,11 @@ between expected endpoints and actual endpoints in the zone).
 - Autoscaling will not behave well if only a single zone is receiving large
   amounts of traffic. This could potentially be mitigated by separating
   deployments and HPAs per zone.
+- Services with ExternalTrafficPolicy=local will need special treatment here.
+  The `Auto` approach could result in a situation where an endpoint on a Node
+  is delivered to a separate underprovisioned zone. The simplest approach would
+  be to disable this subsetting functionality altogether. Alternatively, we
+  could subset strictly by zone without any kind of rebalancing mechanism.
 
 ## Design Details
 
@@ -535,8 +540,9 @@ EPEachZonePerSync = metrics.NewHistogramVec(
 ### Graduation Criteria
 - Alpha should provide basic functionality covered with tests described above.
 - This KEP will largely depend on the EndpointSlice Subsetting. Once the
-EndpointSlice Subsetting feature has been updated, our change can kick-in
-without any new fields being added.
+  EndpointSlice Subsetting feature has been updated, our change can kick-in
+  without any new fields being added.
+- Evaluate how this could apply to DNS.
 
 ### Version Skew Strategy
 Our KEP requires updates on both EndpointSlice Controller and kube-proxy. Thus
