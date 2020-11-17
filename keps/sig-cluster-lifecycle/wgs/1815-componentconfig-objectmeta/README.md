@@ -265,23 +265,23 @@ This will be consumed in each component API similar this (example snippet for ku
 // KubeProxyConfiguration contains everything necessary to configure the
 // Kubernetes proxy server.
 type KubeProxyConfiguration struct {
-	metav1.TypeMeta `json:",inline"`
+  metav1.TypeMeta `json:",inline"`
 
-    Metadata     componentbaseconfigv1alpha1.ObjectMeta  `json:"metadata,omitempty"`
+  Metadata     componentbaseconfigv1alpha1.ObjectMeta  `json:"metadata,omitempty"`
 
-	// featureGates is a map of feature names to bools that enable or disable alpha/experimental features.
-	FeatureGates map[string]bool `json:"featureGates,omitempty"`
+  // featureGates is a map of feature names to bools that enable or disable alpha/experimental features.
+  FeatureGates map[string]bool `json:"featureGates,omitempty"`
 
-	// bindAddress is the IP address for the proxy server to serve on (set to 0.0.0.0
-	// for all interfaces)
-	BindAddress string `json:"bindAddress"`
-	// healthzBindAddress is the IP address and port for the health check server to serve on,
-	// defaulting to 0.0.0.0:10256
-	HealthzBindAddress string `json:"healthzBindAddress"`
-	// metricsBindAddress is the IP address and port for the metrics server to serve on,
-	// defaulting to 127.0.0.1:10249 (set to 0.0.0.0 for all interfaces)
-	MetricsBindAddress string `json:"metricsBindAddress"`
-	// bindAddressHardFail, if true, kube-proxy will treat failure to bind to a port as fatal and exit
+  // bindAddress is the IP address for the proxy server to serve on (set to 0.0.0.0
+  // for all interfaces)
+  BindAddress string `json:"bindAddress"`
+  // healthzBindAddress is the IP address and port for the health check server to serve on,
+  // defaulting to 0.0.0.0:10256
+  HealthzBindAddress string `json:"healthzBindAddress"`
+  // metricsBindAddress is the IP address and port for the metrics server to serve on,
+  // defaulting to 127.0.0.1:10249 (set to 0.0.0.0 for all interfaces)
+  MetricsBindAddress string `json:"metricsBindAddress"`
+  // bindAddressHardFail, if true, kube-proxy will treat failure to bind to a port as fatal and exit
   BindAddressHardFail bool `json:"bindAddressHardFail"`
   ...
 ```
