@@ -214,7 +214,6 @@ nitty-gritty.
   - Add the following ObjectMeta fields
     - name
 
-
 ### Risks and Mitigations
 
 <!--
@@ -229,7 +228,7 @@ How will UX be reviewed and by whom?
 Consider including folks that also work outside the SIG or subproject.
 -->
 
-None. The ObjectMeta schema is standardized throughout the Kubernetes codebase and is already compatible with approaches codified by Kustomize.
+Minimal. The ObjectMeta schema is standardized throughout the Kubernetes codebase and is already compatible with approaches codified by Kustomize.
 
 ## Design Details
 
@@ -325,6 +324,9 @@ when drafting this test plan.
 -->
 
 - Existing ComponentConfig tests will be used and additional tests specific to this change will be implemented.
+
+- Additional Tests (working product, not exhaustive)
+  - Kustomize workflow to ensure compatibility
 
 ### Graduation Criteria
 
