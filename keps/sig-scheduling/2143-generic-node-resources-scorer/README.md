@@ -57,26 +57,25 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 ## Summary
 
 The generic node resource scheduler plugin combines several in-tree and out-of-tree
-scheduler plugins scoring nodes based on resource utilization,
-as well as some requested ones, together into a generic one.
-The generic plugin takes effects in the "Scoring" extension point of the scheduling framework,
-while it could be configured in one place
-to care about different portions (allocatable, allocated or available) of the resources,
-valued on different values (absolute values, or ratio to some other values),
-scored in different flavours (prefer higher, or lower or whatever values),
+scheduler plugins scoring nodes based on resource utilization together.
+It also solves some other feature requests about scoring nodes based on resoureces in different ways.
+The generic plugin takes effects in the "Scoring" extension point of the scheduling framework.
+It could be configured to score the nodes in any combinations of following ways:
+1. care about allocatable, allocated, or left resources on the node,
+2. count the absolute values, or their ratios to some other values of the resources,
+3. score the values from higher to lower, lower to higher, or in more complicated ways.
 
 ## Motivation
 
 As this proposal is came up, several scheduler plugins are available when considering 
-scheduling pods base on node resource utilization:
-
+scheduling pods base on node resource utilization.
 These plugins fit common use cases well, and have served a long time.
 While there are certainly missing cases.
 These missing functionalities are some way similar with existing ones, or combinations of them.
 Instead of adding more plugins and copying code everywhere, like "NodeResourcesAllocatable" did,
 a generic node resource scheduler plugin is proposed.
 The generic plugin covers these resource considerations together,
-and could be configured to enable or disable these functions individually, or configure each of them.
+and could be configured to enable or disable these functions individually.
 
 ### Goals
 
