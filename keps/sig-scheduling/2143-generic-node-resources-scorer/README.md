@@ -176,8 +176,8 @@ and assign them each a map from resource names to weights to configure a desired
 A type is defined for users to configure the plugin.
 
 ```go
-	// GenericNodeResourcesArgs configures how the generic node resource scheduler plugin behaviors
-	type GenericNodeResourcesArgs struct {
+// GenericNodeResourcesArgs configures how the generic node resource scheduler plugin behaviors
+type GenericNodeResourcesArgs struct {
 	metav1.TypeMeta
 
 	// score nodes based on their allocatable resources
