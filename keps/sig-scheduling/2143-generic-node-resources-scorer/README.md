@@ -176,11 +176,11 @@ and assign them each a map from resource names to weights to configure a desired
 A type is defined for users to configure the plugin.
 
 ```go
-// GenericNodeResourcesArgs configures how the generic node resource scheduler plugin behaviors
-type GenericNodeResourcesArgs struct {
+	// GenericNodeResourcesArgs configures how the generic node resource scheduler plugin behaviors
+	type GenericNodeResourcesArgs struct {
 	metav1.TypeMeta
 
-  // score nodes based on their allocatable resources
+	// score nodes based on their allocatable resources
 	// +optional
 	Allocatable *NodeResourcesPartArgs
 	// score nodes based on their resources already allocated
@@ -195,9 +195,9 @@ type GenericNodeResourcesArgs struct {
 }
 
 type NodeResourcesPartArgs struct {
-  // how to value the resources
-  Values ValueResourceOn
-  // how to map the values to a final score (to sort the values)
+	// how to value the resources
+	Values ValueResourceOn
+	// how to map the values to a final score (to sort the values)
 	Prefer ScoreResourceBy
 
 	// Resources to be considered when scoring.
@@ -217,9 +217,9 @@ type ScoreResourceBy string
 
 const (
 	PreferMostInSum     ScoreResourceBy = "Most"
-  PreferLeastInSum    ScoreResourceBy = "Least"
-  PreferMostBalanced  ScoreResourceBy = "MostBalanced"
-  PreferLeastBalanced ScoreResourceBy = "LeastBalanced"
+ 	PreferLeastInSum    ScoreResourceBy = "Least"
+	PreferMostBalanced  ScoreResourceBy = "MostBalanced"
+	PreferLeastBalanced ScoreResourceBy = "LeastBalanced"
 )
 ```
 
