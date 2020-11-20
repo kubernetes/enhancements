@@ -84,20 +84,20 @@ To customize the scaling behavior we should add a `behavior` object with the fol
 - `scaleUp` specifies the rules which are used to control scaling behavior while scaling up.
   - `stabilizationWindowSeconds` - this value indicates the amount of time the HPA controller should consider
       previous recommendations to prevent flapping of the number of replicas.
-  - `selectPolicy` can be `min` or `max` and specifies which value from the policies should be selected. The `max` value is used by default.
+  - `selectPolicy` can be `Min`, `Max` or `Disabled` and specifies which value from the policies should be selected. The `Max` value is used by default.
   - `policies` a list of policies which regulate the amount of scaling. Each item has the following fields
-    - `type` can have the value `pods` or `percent` which indicates the allowed changed in terms of absolute number of pods or percentage of current replicas.
+    - `type` can have the value `Pods` or `Percent` which indicates the allowed changed in terms of absolute number of pods or percentage of current replicas.
     - `periodSeconds` the amount of time in seconds for which the rule should hold true.
     - `value` the value for the policy
 - `scaleDown` similar to the `scaleUp` but specifies the rules for scaling down.
 
 A user will specify the parameters for the HPA, thus controlling the HPA logic.
 
-The `selectPolicy` field indicates which policy should be applied. By default the `max` policy is chosen or in other words while scaling up the highest
+The `selectPolicy` field indicates which policy should be applied. By default the `Max` policy is chosen or in other words while scaling up the highest
 possible number of replicas is used and while scaling down the lowest possible number of replicas is chosen. 
 
 If the user does not specify `policies` for either `scaleUp` or `scaleDown` then default value for that policy is used 
-(see the [Default Values] [] section below). Setting the `value` to `0` for `scaleUp` or `scaleDown` disables scaling in that direction.
+(see the [Default Values] [] section below).
 
 [Default Values]: #default-values
 [Stabilization Window]: #stabilization-window
@@ -114,7 +114,7 @@ Create an HPA with the following configuration:
 behavior:
   scaleUp:
     policies:
-    - type: percent
+    - type: Percent
       value: 900%
 ```
 
@@ -142,11 +142,11 @@ Create an HPA with the following behavior:
 behavior:
   scaleUp:
     policies:
-    - type: percent
+    - type: Percent
       value: 900%
   scaleDown:
     policies:
-    - type: pods
+    - type: Pods
       value: 1
       periodSeconds: 600 # (i.e., scale down one pod every 10 min)
 ```
@@ -165,7 +165,7 @@ Create an HPA with the following behavior:
 behavior:
   scaleUp:
     policies:
-    - type: pods
+    - type: Pods
       value: 1
 ```
 
@@ -186,9 +186,7 @@ Create an HPA with the following constraints:
 ```yaml
 behavior:
   scaleDown:
-    policies:
-    - type: pods
-      value: 0
+    selectPolicy: Disabled
 ```
 
 The cluster will scale up as usual (default values), but will never scale down.
@@ -359,16 +357,16 @@ For smooth transition it makes sense to set the following default values:
 - `behavior.scaleUp.stabilizationWindowSeconds = 0`, do not gather recommendations, instantly scale up to the calculated number of replicas
 - `behavior.scaleUp.policies` has the following policies
    - Percentage policy
-      - `policy = percent`
+      - `policy = Percent`
       - `periodSeconds = 60`, one minute period for scaleUp
       - `value = 100` which means the number of replicas can be doubled every minute.
    - Pod policy
-      - `policy = pods`
+      - `policy = Pods`
       - `periodSeconds = 60`, one minute period for scaleUp
       - `value = 4` which means the 4 replicas can be added every minute.
 - `behavior.scaleDown.policies` has the following policies
   - Percentage Policy
-    - `policy = percent`
+    - `policy = Percent`
     - `periodSeconds = 60` one minute period for scaleDown
     - `value = 100`  which means all the replicas can be scaled down in one minute.
 
