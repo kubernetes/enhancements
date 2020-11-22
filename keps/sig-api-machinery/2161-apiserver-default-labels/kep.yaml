@@ -1,0 +1,29 @@
+title: Immutable label selectors for all namespaces 
+kep-number: 2161
+authors:
+  - "@thockin"
+  - "@jayunit100"
+  - "@rikatz"
+owning-sig: sig-apimachinery
+participating-sigs:
+  - sig-network
+status: provisional
+creation-date: 11-22-2020
+reviewers:
+  - @liggitt
+  - @nikhita
+approvers:
+prr-approvers:
+see-also:
+replaces:
+stage: alpha
+latest-milestone: "v1.21"
+milestone:
+  alpha: "v1.21"
+  beta: "v1.21"
+  stable: "v1.21"
+feature-gates:
+  - none
+disable-supported: true
+metrics:
+  - my_feature_metric
