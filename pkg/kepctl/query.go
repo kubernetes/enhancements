@@ -26,6 +26,23 @@ import (
 	"k8s.io/enhancements/pkg/kepval/keps/validations"
 )
 
+var (
+	// SupportedOutputOpts stores all allowed query output formats
+	SupportedOutputOpts = []string{
+		"table",
+		"json",
+		"yaml",
+	}
+
+	// DefaultOutputOpt is the default output format for kepctl query
+	DefaultOutputOpt = "table"
+
+	StructuredOutputFormats = []string{
+		"json",
+		"yaml",
+	}
+)
+
 type QueryOpts struct {
 	CommonArgs
 	SIG         []string
@@ -33,6 +50,7 @@ type QueryOpts struct {
 	Stage       []string
 	PRRApprover []string
 	IncludePRs  bool
+	Output      string
 }
 
 // Validate checks the args and cleans them up if needed
@@ -47,6 +65,12 @@ func (c *QueryOpts) Validate(args []string) error {
 		}
 		c.SIG = sigs
 	}
+
+	// check if the Output specified is one of "", "json" or "yaml"
+	if !sliceContains(SupportedOutputOpts, c.Output) {
+		return fmt.Errorf("unsupported output format: %s. Valid values: %v", c.Output, SupportedOutputOpts)
+	}
+
 	//TODO: check the valid values of stage, status, etc.
 	return nil
 }
@@ -54,7 +78,20 @@ func (c *QueryOpts) Validate(args []string) error {
 // Query searches the local repo and possibly GitHub for KEPs
 // that match the search criteria.
 func (c *Client) Query(opts QueryOpts) error {
-	fmt.Fprintf(c.Out, "Searching for KEPs...\n")
+	// if output format is json/yaml, suppress other outputs
+	// json/yaml are structured formats, logging events which
+	// do not conform to the spec will create formatting issues
+	var suppressOutputs bool
+	if sliceContains(StructuredOutputFormats, opts.Output) {
+		suppressOutputs = true
+	} else {
+		suppressOutputs = false
+	}
+
+	if !suppressOutputs {
+		fmt.Fprintf(c.Out, "Searching for KEPs...\n")
+	}
+
 	repoPath, err := c.findEnhancementsRepo(opts.CommonArgs)
 	if err != nil {
 		return errors.Wrap(err, "unable to search KEPs")
@@ -99,7 +136,18 @@ func (c *Client) Query(opts QueryOpts) error {
 		keep = append(keep, k)
 	}
 
-	c.PrintTable(DefaultPrintConfigs("LastUpdated", "Stage", "Status", "SIG", "Authors", "Title", "Link"), keep)
+	switch opts.Output {
+	case "table":
+		c.PrintTable(DefaultPrintConfigs("LastUpdated", "Stage", "Status", "SIG", "Authors", "Title", "Link"), keep)
+	case "yaml":
+		c.PrintYAML(keep)
+	case "json":
+		c.PrintJSON(keep)
+	default:
+		// this check happens as a validation step in cobra as well
+		// added it for additional verbosity
+		return fmt.Errorf("unsupported output format: %s. Valid values: %s", opts.Output, SupportedOutputOpts)
+	}
 	return nil
 }
 
@@ -109,6 +157,16 @@ func sliceToMap(s []string) map[string]bool {
 		m[v] = true
 	}
 	return m
+}
+
+func sliceContains(s []string, e string) bool {
+	for _, k := range s {
+		if k == e {
+			return true
+		}
+	}
+
+	return false
 }
 
 // returns all strings in vals that match at least one

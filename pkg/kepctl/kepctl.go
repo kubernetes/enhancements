@@ -19,6 +19,7 @@ package kepctl
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -480,4 +481,26 @@ func (c *Client) PrintTable(configs []PrintConfig, proposals []*keps.Proposal) {
 		table.Append(s)
 	}
 	table.Render()
+}
+
+// PrintYAML outputs keps array as YAML to c.Out
+func (c *Client) PrintYAML(proposals []*keps.Proposal) {
+	data, err := yaml.Marshal(proposals)
+	if err != nil {
+		fmt.Fprintf(c.Err, "error printing keps as YAML: %s", err)
+		return
+	}
+
+	fmt.Fprintln(c.Out, string(data))
+}
+
+// PrintJSON outputs keps array as YAML to c.Out
+func (c *Client) PrintJSON(proposals []*keps.Proposal) {
+	data, err := json.Marshal(proposals)
+	if err != nil {
+		fmt.Fprintf(c.Err, "error printing keps as JSON: %s", err)
+		return
+	}
+
+	fmt.Fprintln(c.Out, string(data))
 }
