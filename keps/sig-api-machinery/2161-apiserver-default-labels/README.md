@@ -4,45 +4,30 @@
 - [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
 - [Motivation](#motivation)
-  * [Goals](#goals)
-  * [Non-Goals](#non-goals)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  * [User Stories (Optional)](#user-stories--optional-)
-  * [Notes/Constraints/Caveats (Optional)](#notes-constraints-caveats--optional-)
-  * [Risks and Mitigations](#risks-and-mitigations)
+  - [User Stories (Optional)](#user-stories-optional)
+  - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
+  - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
-  * [Test Plan](#test-plan)
-  * [Graduation Criteria](#graduation-criteria)
-  * [Upgrade / Downgrade Strategy](#upgrade---downgrade-strategy)
-  * [Version Skew Strategy](#version-skew-strategy)
+  - [Test Plan](#test-plan)
+  - [Graduation Criteria](#graduation-criteria)
+  - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+  - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
-  * [Feature Enablement and Rollback](#feature-enablement-and-rollback)
-  * [Rollout, Upgrade and Rollback Planning](#rollout--upgrade-and-rollback-planning)
-  * [Monitoring Requirements](#monitoring-requirements)
-  * [Dependencies](#dependencies)
-  * [Scalability](#scalability)
-  * [Troubleshooting](#troubleshooting)
+  - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
+  - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+  - [Monitoring Requirements](#monitoring-requirements)
+  - [Dependencies](#dependencies)
+  - [Scalability](#scalability)
+  - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
-- [Infrastructure Needed (Optional)](#infrastructure-needed--optional-)
 <!-- /toc -->
 
 ## Release Signoff Checklist
-
-<!--
-**ACTION REQUIRED:** In order to merge code into a release, there must be an
-issue in [kubernetes/enhancements] referencing this KEP and targeting a release
-milestone **before the [Enhancement Freeze](https://git.k8s.io/sig-release/releases)
-of the targeted release**.
-
-For enhancements that make changes to code or processes/procedures in core
-Kubernetes—i.e., [kubernetes/kubernetes], we require the following Release
-Signoff checklist to be completed.
-
-Check these off as they are completed for the Release Team to track. These
-checklist items _must_ be updated for the enhancement to be released.
--->
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
@@ -57,10 +42,6 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
-<!--
-**Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
--->
-
 [kubernetes.io]: https://kubernetes.io/
 [kubernetes/enhancements]: https://git.k8s.io/enhancements
 [kubernetes/kubernetes]: https://git.k8s.io/kubernetes
@@ -68,37 +49,41 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-<!--
-This section is incredibly important for producing high-quality, user-focused
-documentation such as release notes or a development roadmap. It should be
-possible to collect this information before implementation begins, in order to
-avoid requiring implementors to split their attention between writing release
-notes and implementing the feature itself. KEP editors and SIG Docs
-should help to ensure that the tone and content of the `Summary` section is
-useful for a wide audience.
+Today to select a Namespace by its name is not possible because the NamespaceSelector is only
+possible to deal with labels.
 
-A good summary is probably at least a paragraph in length.
-
-Both in this section and below, follow the guidelines of the [documentation
-style guide]. In particular, wrap lines to a reasonable length, to make it
-easier for reviewers to cite specific portions, and to minimize diff churn on
-updates.
-
-[documentation style guide]: https://github.com/kubernetes/community/blob/master/contributors/guide/style-guide.md
--->
+The idea of this KEP is to propose that namespaces have an immutable label when created, created
+by the APIServer that represents the metadata.name of the object and turn namespaces selectable 
+by the name.
 
 ## Motivation
 
-In https://github.com/kubernetes/enhancements/issues/2112 , we discussed several ways to implement network policies that select namespaces by name, rather than by relying on labels which may be unknown, or uneditable by people writing policies, or untrustworthy.
+In https://github.com/kubernetes/enhancements/issues/2112 , we discussed several 
+ways to implement network policies that select namespaces by name, rather than by 
+relying on labels which may be unknown, or uneditable by people writing policies, 
+or untrustworthy.
 
-This was inspired by a broad community ask to target namespaces in this manner, as evidenced by issues such as https://github.com/kubernetes/kubernetes/issues/88253, and the larger set of user feedback obtained in  https://github.com/jayunit100/network-policy-subproject/blob/master/p0_user_stories.md.
+This was inspired by a broad community ask to target namespaces in this manner, 
+as evidenced by issues such as [kubernetes #88253](https://github.com/kubernetes/kubernetes/issues/88253), 
+and the larger set of user feedback obtained in  [user stories](https://github.com/jayunit100/network-policy-subproject/blob/master/p0_user_stories.md).
 
 It turns out all solutions:
 Break the old API in fundamental ways that are questionably WRT cost/benefit OR
-Add nesting complexity to the network policy API, wherein certain “subsets” of the API were not usable together.  This is not “bad”, but it is suboptimal and introduces redundant semantics.  For example, you may need a way to declare namespaceAsName selectors, which is distinct from namespace label selectors.
-Example:  The obvious API, whe combined with a podSelector, decreases security of a pod - an old client would be more open than users would expect them to be.  This is thoroughly debated in the KEP.  Fail-closed is a requirement.
+Add nesting complexity to the network policy API, wherein certain “subsets” of 
+the API were not usable together.  This is not “bad”, but it is suboptimal and 
+introduces redundant semantics.  For example, you may need a way to declare 
+namespaceAsName selectors, which is distinct from namespace label selectors.
 
-If a podSelector is an enabled for a network policy peer, then currently, nil values for namespace selectors mean *any* namespace is allowed:
+It’s also worth noting that there are at least 2 other NamespaceSelector APIs in 
+k/k - Validating and Mutating webhooks.  They will inevitably need similar API 
+evolution, but we don't need to do that as part of this KEP.
+
+Example:  The obvious API, when combined with a podSelector, decreases security 
+of a pod - an old client would be more open than users would expect them to be. 
+This is thoroughly debated in the KEP.  Fail-closed is a requirement.
+
+If a podSelector is an enabled for a network policy peer, then currently, nil 
+values for namespace selectors mean *any* namespace is allowed:
 
 |                         | old api client   | new api client |
 |-------------------------|------------------|----------------|
@@ -106,32 +91,65 @@ If a podSelector is an enabled for a network policy peer, then currently, nil va
 | namespaceSelector       | AND              | AND            |
 | ipBlock                 | NOT ALLOWED      | NOT ALLOWED    |
 
-Thus, adding a *new* namespace selector field would result in  old api clients assuming
-that ANY namespace is allowed when namespaceAsNameSelectors are utilized instead of the namespaceSelector fields, due to the fact that *nil namespaceSelectors are promiscuous*.
+Thus, adding a *new* namespace selector field would result in  old api clients 
+assuming that ANY namespace is allowed when namespaceAsNameSelectors are utilized 
+instead of the namespaceSelector fields, due to the fact that *nil namespaceSelectors are promiscuous*.
 
 Possible solutions to this divergent interpretation of policy might be:
 - closed failures which break on old clients (making networkpolicy api evolution very hard)
-- open failures with lots of warnings and docs about how old clients might overinterpret the allowed connectivity for a policy
+- open failures with lots of warnings and docs about how old clients might 
+overinterpret the allowed connectivity for a policy
 
-Both of these are impractical due to the nature of security tools, which need to be robust and explicit.
+Both of these are impractical due to the nature of security tools, which need to 
+be robust and explicit.  Although failing in a closed manner is acceptable... it is obviously unfortunate,
+as it would obsolete all network policy providers *not* eagerly adopting such a new semantic, which is
+overly restrictive and against the spirit of community-friendly, safe API evolution which is so important
+to a large project like Kubernetes with many external functional plugins.
+
+Ideally, a fix here would “just work” for “back-rev” implementations of NetworkPolicy 
+(which are out-of-tree - generally implemented by cni plugins) and would not 
+introduce new surprises for users. But in practicality this is not the case 
+because, by adding a new selection data structure, the logical inclusion/exclusion 
+properties of namespace and pod selectors become drastically different, as shown in the table below:
 
 
-Ideally, a fix here would “just work” for “back-rev” implementations of NetworkPolicy (which are out-of-tree - generally implemented by cni plugins) and would not introduce new surprises for users… But in practicality this is not the case because, by adding a new selection data structure, the logical inclusion/exclusion properties of namespace and pod selectors become drastically different, as shown in the table below:
+In this table "policy-reader" might be something like the "calico-controller" or any other cni agent
+that reads the API Servers network policy portfolio and responds to it over time.
 
+|         input policy         | policy-reader (old)    | client (new)        |   |   |
+|------------------------------|------------------------|---------------------|---|---|
+| nsNameSelector + podSelector | ANY ns, pod restricted | ns + pod restricted |   |   |
+| nsNameSelector               | invalid (empty peer)   | ns restricted       |   |   |
+| podSelector                  | ANY namespace          | ANY namespace       |   |   |
 
+In an older client (one which predated the addition of a new, "nsNameSelector" field, we find
+that there is a scenario (`ANY ns, pod restricted`), wherein an old interpretation of the API
+assumes that the ONLY restricting field is a pod label.  Thus, although the user intended to
+restrict all traffic to a namespace/pod combination, the policy implementer does something **much**
+more promiscuous.
+
+This is all avoidable if we could assume, in all cases, that namespaces have a default label.
+
+There may also be many other usecases where the a security or permissions boundary might be conveniently defined in terms
+of a namepsace name, and that such a definition would be most easily referenced by a default label.
 
 ### Goals
 
-- Add an immutable default label to ALL namespaces, as the namespace name so this can be used as selector by arbitrary components.
+- Add an immutable default label to ALL namespaces, as the namespace name so this 
+can be used as selector by arbitrary components.
 
 ### Non-Goals
 
-It’s also worth noting that there are at least 2 other NamespaceSelector APIs in k/k - Validating and Mutating webhooks.  They will inevitably need similar API evolution, but we don't  need to do that as part of this KEP.
+* Publishing name labels on all resources
+* Exposing arbitrary fields as selectors
 
 ## Proposal
 
-We propose to label of all namespaces, by default, with a reserved label (i.e. “kubernetes.io/metadata.namespace” or some such), to allow easy selection.
+We propose to label of all namespaces, by default, with a reserved label 
+(i.e. “kubernetes.io/metadata.name” or some such), to allow easy selection.
+
 If this label is missing, it is added by the apiserver
+
 If the label is incorrect or changed, the apiserver fails to validate the object
 
 
@@ -144,107 +162,91 @@ See https://github.com/kubernetes/enhancements/pull/2113/files for relevant user
 
 ### Risks and Mitigations
 
-<!--
-What are the risks of this proposal, and how do we mitigate? Think broadly.
-For example, consider both security and how this will impact the larger
-Kubernetes ecosystem.
-
-How will security be reviewed, and by whom?
-
-How will UX be reviewed, and by whom?
-
-Consider including folks who also work outside the SIG or subproject.
--->
+* Every namespace gets bigger in size. We think this is inconsequential
+* Some user may already be using that label already. This is mitigated by the 
+fact that the whole "kubernetes.io" namespace is reserved. If this is a 
+sticking point, we can do one release where we log/event if we observe 
+usage of this key that is not compatible.
 
 ## Design Details
-
 
 This can be implemented by modifying the defaults.go and validation.go components for the namespace API, i.e., in the defaults.go file for api/core:
 
 ```
 func SetDefaults_Namespace(obj *v1.Namespace) {
-if obj.Labels == nil {
-   		obj.Labels = map[string]string{}
-}
-if _, found := obj.Labels[“kubernetes.io/metadata.name”]; !found {
-   		obj.Labels[“kubernetes.io/metadata.name”] = obj.Name
-}
+  if obj.Labels == nil {
+  	obj.Labels = map[string]string{}
+  }
+  
+  if _, found := obj.Labels[“kubernetes.io/metadata.name”]; !found {
+  	obj.Labels[“kubernetes.io/metadata.name”] = obj.Name
+  }
 }
 ```
-And in the validation.go, we implement the guarantee of this namespace’s value being constant WRT namespace name (which is immutable).
+And in the validation.go, we implement the guarantee of this namespace’s value 
+being constant WRT namespace name (which is immutable).
 
 ```
 func ValidateNamespace(namespace *core.Namespace) field.ErrorList {
-	// ...
-   	// Check if namespace.Labels[“kubernetes.io/metadata.name”] == namespace.Name
-// if not add an error
-   	// ...
-return allErrs
+	// Check if namespace.Labels[“kubernetes.io/metadata.name”] == namespace.Name
+  // if not add an error
+  // ...
+  return allErrs
 ```
 
-This solves not just NetworkPolicy, but all such namespace selector APIs without any disruption or version skew problems.
+This solves not just NetworkPolicy, but all such namespace selector APIs without 
+any disruption or version skew problems.
 
 ### Test Plan
+* Add unit tests that creates a namespace and checks if the namespace contains 
+the label
+* Add a test that tries to select this namespace by the label (this should 
+return also only that namespace)
+* Try to modify the reserved label and this should return an error
+* Check the WATCH operation against existing namespaces that do not have this 
+label still work properly.
 
 ### Graduation Criteria
-
+* This feature being enabled by default at least one release.
 
 ### Upgrade / Downgrade Strategy
-
+* Check the WATCH situation described in test plan, otherwise populate the label 
+of namespaces without it.
+* In case of downgrade, as this is just a label it will work fine. Network Policies 
+that relies on this label may fail-close, which might be acceptable.
 
 ### Version Skew Strategy
-
+N/A
 
 ## Production Readiness Review Questionnaire
 
-
 ### Feature Enablement and Rollback
 
-_This section must be completed when targeting alpha to a release._
+1.21:
+- gate disabled by default
+- if gate disabled, log or event incompatible uses of this
+- if gate enabled, enforce
+- release note
 
-* **How can this feature be enabled / disabled in a live cluster?**
-  - [ ] Feature gate (also fill in values in `kep.yaml`)
-    - Feature gate name:
-    - Components depending on the feature gate:
-  - [ ] Other
-    - Describe the mechanism:
-    - Will enabling / disabling the feature require downtime of the control
-      plane?
-    - Will enabling / disabling the feature require downtime or reprovisioning
-      of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
+1.22:
+- gate enabled by default
+- release note
 
-* **Does enabling the feature change any default behavior?**
-  Any change of default behavior may be surprising to users or break existing
-  automations, so be extremely careful here.
-
-* **Can the feature be disabled once it has been enabled (i.e. can we roll back
-  the enablement)?**
-  Also set `disable-supported` to `true` or `false` in `kep.yaml`.
-  Describe the consequences on existing workloads (e.g., if this is a runtime
-  feature, can it break the existing applications?).
-
-* **What happens if we reenable the feature if it was previously rolled back?**
-
-* **Are there any tests for feature enablement/disablement?**
-  The e2e framework does not currently support enabling or disabling feature
-  gates. However, unit tests in each component dealing with managing data, created
-  with and without the feature, are necessary. At the very least, think about
-  conversion tests if API types are being modified.
+1.23:
+- lock gate enabled
 
 ### Rollout, Upgrade and Rollback Planning
 
 _This section must be completed when targeting beta graduation to a release._
 
 * **How can a rollout fail? Can it impact already running workloads?**
-  Try to be as paranoid as possible - e.g., what if some components will restart
-   mid-rollout?
+  TBD
 
 * **What specific metrics should inform a rollback?**
+  TBD
 
 * **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
-  Describe manual testing that was done and the outcomes.
-  Longer term, we may want to require automated upgrade/rollback tests, but we
-  are missing a bunch of machinery and tooling and can't do that now.
+  TBD
 
 * **Is the rollout accompanied by any deprecations and/or removals of features, APIs, 
 fields of API types, flags, etc.?**
@@ -284,32 +286,10 @@ of this feature?**
 
 ### Dependencies
 
-_This section must be completed when targeting beta graduation to a release._
-
 * **Does this feature depend on any specific services running in the cluster?**
-  Think about both cluster-level services (e.g. metrics-server) as well
-  as node-level agents (e.g. specific version of CRI). Focus on external or
-  optional services that are needed. For example, if this feature depends on
-  a cloud provider API, or upon an external software-defined storage or network
-  control plane.
-
-  For each of these, fill in the following—thinking about running existing user workloads
-  and creating new ones, as well as about cluster-level services (e.g. DNS):
-  - [Dependency name]
-    - Usage description:
-      - Impact of its outage on the feature:
-      - Impact of its degraded performance or high-error rates on the feature:
-
+  None
 
 ### Scalability
-
-_For alpha, this section is encouraged: reviewers should consider these questions
-and attempt to answer them._
-
-_For beta, this section is required: reviewers must answer these questions._
-
-_For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field._
 
 * **Will enabling / using this feature result in any new API calls?**
   Describe them, providing:
@@ -324,20 +304,16 @@ previous answers based on experience in the field._
     heartbeats, leader election, etc.)
 
 * **Will enabling / using this feature result in introducing new API types?**
-  Describe them, providing:
-  - API type
-  - Supported number of objects per cluster
-  - Supported number of objects per namespace (for namespace-scoped objects)
-
+  
 * **Will enabling / using this feature result in any new calls to the cloud 
-provider?**
+provider?**: No
 
 * **Will enabling / using this feature result in increasing size or count of 
 the existing API objects?**
   Describe them, providing:
-  - API type(s):
-  - Estimated increase in size: (e.g., new annotation of size 32B)
-  - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
+  - API type(s): Namespace
+  - Estimated increase in size: New label with the same size of the namespace name
+  - Estimated amount of new objects: N/A
 
 * **Will enabling / using this feature result in increasing time taken by any 
 operations covered by [existing SLIs/SLOs]?**
@@ -380,29 +356,13 @@ _This section must be completed when targeting beta graduation to a release._
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 
 ## Implementation History
- 
+* 2020-11-22 - Creation of the issue and the KEP 
 
 ## Drawbacks
 
-<!--
-Why should this KEP _not_ be implemented?
--->
+* "It's kind of a special hack. The fact that it isn't generalized or generalizable 
+makes it feel special." - @thockin
 
 ## Alternatives
 
-
-
-We considered doing this for all resources, but some k8s resources allow object names that are not valid label values.  Given that we have a clear and concrete use-case in namespaces, it seemed proper to start here.  If other kinds need similar treatment (which seems unlikely) they can use the same label key if their name format allows.
-
-We considered telling users to DIY with Validating and Mutating admission controllers.  This is unpleasant at best and seems particularly egregious given that a) multiple APIs benefit from this; and b) the implementation is very simple.
-
-
-## Infrastructure Needed (Optional)
-
-<!--
-Use this section if you need things from the project/SIG. Examples include a
-new subproject, repos requested, or GitHub details. Listing these here allows a
-SIG to get the process for these resources started right away.
--->
-
-# https://github.com/kubernetes/enhancements/issues/2161
+* The original proposal was to create a new kind of selector for NetworkPolicies
