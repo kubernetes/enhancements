@@ -5,7 +5,7 @@ authors:
   - "@liorokman"
 owning-sig: sig-node
 participating-sigs:
-  - sig-api
+  - sig-api-machinery
 status: provisional|implementable|implemented|deferred|rejected|withdrawn|replaced
 creation-date: 2020-03-03
 reviewers:
