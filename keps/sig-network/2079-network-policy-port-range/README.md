@@ -164,10 +164,10 @@ type NetworkPolicyPort struct {
 	// +optional
 	Port       *intstr.IntOrString `json:"port,omitempty" protobuf:"bytes,2,opt,name=port"`
 
-  // To defines the end of the port range, being the end included within the
-  // range
-  // +optional
-  EndPort    uint16 `json:"port,omitempty" protobuf:"bytes,2,opt,name=endPort"`
+    // To defines the end of the port range, being the end included within the
+    // range
+    // +optional
+    EndPort    int32 `json:"port,omitempty" protobuf:"bytes,2,opt,name=endPort"`
 }
 ```
 
