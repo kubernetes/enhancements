@@ -4,6 +4,8 @@ authors:
   - "@thockin"
   - "@jayunit100"
   - "@rikatz"
+  - "@abhiraut"
+  - "@andrewsykim"
 owning-sig: sig-api-machinery
 participating-sigs:
   - sig-network
@@ -13,8 +15,10 @@ reviewers:
   - "@liggitt"
   - "@nikhita"
   - "@thockin"
+  - "@deads2k"
 approvers:
-  - "@thockin"
+  - "@liggitt"
+  - "@deads2k"
 replaces:
 stage: alpha
 latest-milestone: "v1.21"
