@@ -1,18 +1,3 @@
----
-title: pod-level-resource-limits
-authors:
-- "@liorokman"
-owning-sig: sig-node
-participating-sigs:
-reviewers:
-- "@thockin"
-- "@odinuge"
-approvers:
-- sig-node
-creation-date: 2020-03-03
-last-updated: 2020-09-22
----
-
 # Pod-Level Resource Limits
 
 ## Table of Contents
@@ -182,6 +167,8 @@ specific containers becomes relative to the pod limit, and not to the entire hos
 since the container limits are all used as relative weights to carve up the pod level limit. If the pod level CPU limit is not defined, then the current
 behavior is kept by default - the limit is relative to the amount of quota allocated to the QoS cgroup.
 
+If `pod.limit[resource] < sum(pod.containers[*].request[resource]`, then the pod itself is in conflict; the amount of resources allocated for the entire pod is smaller than the amount of resources defined by all the containers in the pod as minimal requirements. This must result in an error, and the pod will not be scheduled to run.
+
 If a there are resource request definition on the pod level, even without any definition on any of the included containers, then it should be considered
 `Burstable` since there is at least some knowledge as to the amount of resources the pod should receive. 
 
@@ -319,6 +306,8 @@ This proposal is compatible with both cgroup v1 and cgroup v2. Both versions of 
 
 Since the runtime shim is started in the pod-level cgroup, there should be no bad interactions between this proposed feature and the ResourceOverhead feature.
 
+The `ResourceOverhead` feature can be leveraged to allow cluster administrators to automatically increase the amount of resources allowed for a pod. This enables creating cluster-wide policies that inject sidecars to a pod without risking that the pod becomes starved for resources due to the pod-level resource limit.
+
 #### Memory-based Emptydir volumes
 
 This proposal doesn't change the current status quo in any way. Memory used for files in a `tmpfs` volume is accounted for as shared-memory. The Linux kernel charges the used memory to cgroup that first touched the shared page for the memory. Moving the charge for shared memory pages between cgroups is not currently supported by the Linux kernel. Defining a memory limit on the pod cgroup level would not change the underlying limitation that memory used by files in the volume are accounted to the cgroup that first touched the memory.
@@ -366,7 +355,7 @@ When users opt to use the feature, the workload must be able to run in a potenti
 
 
 The proposed implementation would be along these lines:
-1. Add a `Resources` section in the `PodSpec` structure.
+1. Add a `Resources` section in the `PodSpec` structure. 
 1. Update the scheduler to prefer the pod-level resources section to the aggregation of container level resource sections.
 1. Add a parameter to the pod cgroup setup procedure to distinguish between the lifecycle phase of the pod when `InitContainers` are being run and afterwards.
 1. In the initialization lifecycle phase setup the pod-level cgroup should not consider the pod-level definition.
@@ -447,3 +436,4 @@ The Dev-Space load time, measured as the amount of time between Kubernetes launc
 - 2020-06-04 - Updating the KEP after a trial-run on some real-world workloads
 - 2020-09-22 - Updating the KEP to allow pod-level resource requests
 - 2020-10-07 - Clarified how container-level memory and cpu limits are expected to relate to defined pod limits
+- 2020-11-23 - Updated the KEP to the new KEP format. 
