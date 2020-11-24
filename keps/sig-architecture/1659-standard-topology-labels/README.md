@@ -1,36 +1,4 @@
-<!--
-**Note:** When your KEP is complete, all of these comment blocks should be removed.
-
-To get started with this template:
-
-- [X] **Pick a hosting SIG.**
-  Make sure that the problem space is something the SIG is interested in taking
-  up.  KEPs should not be checked in without a sponsoring SIG.
-- [X] **Create an issue in kubernetes/enhancements**
-  When filing an enhancement tracking issue, please ensure to complete all
-  fields in that template.  One of the fields asks for a link to the KEP.  You
-  can leave that blank until this KEP is filed, and then go back to the
-  enhancement and add the link.
-- [X] **Make a copy of this template directory.**
-  Copy this template into the owning SIG's directory and name it
-  `NNNN-short-descriptive-title`, where `NNNN` is the issue number (with no
-  leading-zero padding) assigned to your enhancement above.
-- [X] **Fill out as much of the kep.yaml file as you can.**
-  At minimum, you should fill in the "title", "authors", "owning-sig",
-  "status", and date-related fields.
-- [X] **Fill out this file as best you can.**
-  At minimum, you should fill in the "Summary", and "Motivation" sections.
-  These should be easy if you've preflighted the idea of the KEP with the
-  appropriate SIG(s).
-- [X] **Create a PR for this KEP.**
-  Assign it to people in the SIG that are sponsoring this process.
-- [ ] **Merge early and iterate.**
-  Avoid getting hung up on specific details and instead aim to get the goals of
-  the KEP clarified and merged quickly.  The best way to do this is to just
-  start with the high-level sections and fill out details incrementally in
-  subsequent PRs.
--->
-# KEP-NNNN: Standard Topology Labels
+# KEP-1659: Standard Topology Labels
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
@@ -64,14 +32,14 @@ To get started with this template:
 
 ## Release Signoff Checklist
 
-- [ ] Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] KEP approvers have approved the KEP status as `implementable`
-- [ ] Design details are appropriately documented
-- [ ] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
-- [ ] Graduation criteria is in place
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [x] Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] KEP approvers have approved the KEP status as `implementable`
+- [x] Design details are appropriately documented
+- [x] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [x] Graduation criteria is in place
+- [x] "Implementation History" section is up-to-date for milestone
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 [kubernetes.io]: https://kubernetes.io/
 [kubernetes/enhancements]: https://git.k8s.io/enhancements
