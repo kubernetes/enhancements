@@ -81,8 +81,8 @@ subsetting per node.
 ## Proposal
 
 Introduce a new field in Service `spec.internalTrafficPolicy`. The field will have 3 codified values:
-1. Cluster (default): route to all cluster-wide endpoints (or use topology aware subsetting if enabled).
-2. PreferLocal: route to node-local endpoints if it exists, otherwise fallback to behavior from Cluster.
+1. All (default): route to all endpoints (or use topology aware subsetting if enabled).
+2. PreferLocal: route to node-local endpoints if it exists, otherwise fallback to behavior from All.
 3. Local: only route to node-local endpoints, drop otherwise.
 
 A feature gate `ServiceInternalTrafficPolicy` will also be introduced for the alpha stage of this feature.
@@ -115,7 +115,7 @@ Proposed addition to core v1 API:
 type ServiceInternalTrafficPolicyType string
 
 const (
-	ServiceInternalTrafficPolicyTypeCluster     ServiceInternalTrafficPolicyType = "Cluster"
+	ServiceInternalTrafficPolicyTypeAll         ServiceInternalTrafficPolicyType = "All"
 	ServiceInternalTrafficPolicyTypePreferLocal ServiceInternalTrafficPolicyType = "PreferLocal"
 	ServiceInternalTrafficPolicyTypeLocal       ServiceInternalTrafficPolicyType = "Local"
 )
@@ -136,9 +136,9 @@ type ServiceSpec struct {
 ```
 
 Proposed changes to kube-proxy:
-* when `internalTrafficPolicy=Cluster`, default to existing behavior today.
+* when `internalTrafficPolicy=All`, default to existing behavior today.
 * when `internalTrafficPolicy=PreferLocal`, route to endpoints in EndpointSlice that matches the local node's topology (topology defined by `kubernetes.io/hostname`),
-fall back to "Cluster" behavior if there are no local endpoints.
+fall back to "All" behavior if there are no local endpoints.
 * when `internalTrafficPolicy=Local`, route to endpoints in EndpointSlice that maches the local node's topology, drop traffic if none exist.
 
 ### Test Plan
@@ -148,7 +148,7 @@ Unit tests:
 * unit tests exercising kube-proxy behavior when `internalTrafficPolicy` is set to all possible values.
 
 E2E test:
-* e2e tests validating default behavior with kube-proxy did not change when `internalTrafficPolicy` defaults to `Cluster`. Existing tests should cover this.
+* e2e tests validating default behavior with kube-proxy did not change when `internalTrafficPolicy` defaults to `All`. Existing tests should cover this.
 * e2e tests validating that traffic is preferred to local endpoints when `internalTrafficPolicy` is set to `PreferLocal`.
 * e2e tests validating that traffic is only sent to node-local endpoints when `internalTrafficPolicy` is set to `Local`.
 
@@ -156,7 +156,7 @@ E2E test:
 
 Alpha:
 * feature gate `ServiceInternalTrafficPolicy` _must_ be enabled for apiserver to accept values for `spec.internalTrafficPolicy`. Otherwise field is dropped.
-* kube-proxy handles traffic routing for 3 initial internal traffic policies `Cluster`, `PreferLocal` and `Local`.
+* kube-proxy handles traffic routing for 3 initial internal traffic policies `All`, `PreferLocal` and `Local`.
 * Unit tests as defined in "Test Plan" section above. E2E tests are nice to have but not required for Alpha.
 
 
@@ -189,7 +189,7 @@ _This section must be completed when targeting alpha to a release._
 
 * **Does enabling the feature change any default behavior?**
 
-No, enabling the feature does not change any default behavior since the default value of `internalTrafficPolicy` is `Cluster`.
+No, enabling the feature does not change any default behavior since the default value of `internalTrafficPolicy` is `All`.
 
 * **Can the feature be disabled once it has been enabled (i.e. can we roll back
   the enablement)?**
