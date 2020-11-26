@@ -1,0 +1,21 @@
+title: Receipts process for tracking release enhancements
+kep-number: 2140
+authors:
+  - "@jeremyrickard"
+  - "@palnabarun"
+owning-sig: sig-architecture
+participating-sigs:
+  - sig-release
+status: provisional
+creation-date: 2020-11-24
+reviewers:
+  - "@justaugustus"
+approvers:
+  - "@justaugustus"
+see-also:
+  - "/keps/sig-architecture/617-improve-kep-implementation"
+  - "/keps/0001-kubernetes-enhancement-proposal-process.md"
+stage: alpha
+latest-milestone: "v1.21"
+milestone:
+  alpha: "v1.21"
