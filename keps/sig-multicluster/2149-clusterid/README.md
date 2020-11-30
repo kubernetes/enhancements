@@ -244,9 +244,6 @@ I have a headless multi-cluster service deployed across clusters in my ClusterSe
 
 Clusters within my ClusterSet send logs/metrics to a common monitoring solution and I need to be able to identify the cluster from which a given set of events originated.
 
-#### Verification
-
-I want to be able to verify, through a mechanism of my choosing, that a cluster is who I think it is.
 
 #### Joining or moving between ClusterSets
 
@@ -291,7 +288,6 @@ Contains a unique identifier for the containing cluster.
     *   Following the most restrictive standard naming constraint ensures maximum usefulness and portability.
     *   Can be used as a component in MCS DNS.
 *   The identifier **may** be a human readable description of its cluster.
-*   The identifier **may** be signed by an authority when created.
 
 
 ##### Consumers
@@ -316,7 +312,6 @@ Contains an identifier that relates the containing cluster to the ClusterSet in 
 
 *   The identifier **must** associate the cluster with a ClusterSet.
 *   The identifier **may** be either unique or shared by members of a ClusterSet.
-*   The identifier **may** be signed by an authority when joining a ClusterSet.
 
 
 ##### Consumers
