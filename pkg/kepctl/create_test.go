@@ -25,8 +25,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"k8s.io/enhancements/pkg/kepval/keps"
 	"sigs.k8s.io/yaml"
+
+	"k8s.io/enhancements/pkg/kepval/keps"
 )
 
 func TestWriteKep(t *testing.T) {
@@ -105,6 +106,7 @@ func TestWriteKep(t *testing.T) {
 				fileStat, err := os.Stat(p)
 				assert.NoError(t, err)
 				assert.NotNil(t, fileStat)
+				assert.Equal(t, os.FileMode(0644), fileStat.Mode().Perm())
 			}
 		})
 	}

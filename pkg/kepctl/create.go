@@ -20,7 +20,6 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -152,7 +151,7 @@ func (c *Client) createKEP(kep *keps.Proposal, opts CreateOpts) error {
 	}
 
 	newPath := filepath.Join(path, "keps", opts.SIG, opts.Name, "README.md")
-	ioutil.WriteFile(newPath, b, os.ModePerm)
+	ioutil.WriteFile(newPath, b, 0644)
 
 	return nil
 }

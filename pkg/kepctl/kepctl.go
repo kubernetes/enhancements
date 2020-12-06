@@ -403,7 +403,7 @@ func (c *Client) writeKEP(kep *keps.Proposal, opts CommonArgs) error {
 	)
 	newPath := filepath.Join(path, "keps", opts.SIG, opts.Name, "kep.yaml")
 	fmt.Fprintf(c.Out, "writing KEP to %s\n", newPath)
-	return ioutil.WriteFile(newPath, b, os.ModePerm)
+	return ioutil.WriteFile(newPath, b, 0644)
 }
 
 type PrintConfig interface {
