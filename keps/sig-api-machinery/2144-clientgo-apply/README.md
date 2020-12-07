@@ -201,10 +201,11 @@ fields are a good example of fields that would be applied incorrectly using go
 structs, e.g. `ContainerStatus.Ready` (required, not omitempty). Because of this
 we cannot use the existing go structs to represent apply configurations.
 
-<<[UNRESOLVED @jpbetz @jennybuckley ]>>
-We also considered quite a few alternate representations for how apply
-configurations will be represented in go. See the [Alternatives](#alternatives)
-for a complete list. We are currently evaluating two leading alternatives:
+<<[UNRESOLVED @jpbetz @jennybuckley ]>> 
+Finalize which alternative to use based on developer feedback. See the
+[Alternatives](#alternatives) for a complete list, but are currently focusing on
+the two below alternatives. We are working with the Kubebuilder community to
+gather feedback on what developers prefer.
 <<[/UNRESOLVED]>>
 
 #### Alternative 1: Genreated structs where all fields are pointers
@@ -261,6 +262,10 @@ Example usage:
 ```
 
 #### Comparison of alternatives
+
+See https://github.com/kubernetes/kubernetes/pull/95988 for a working implementation
+of alterative 1 and https://github.com/jpbetz/kubernetes/tree/apply-client-go-builders
+for a working implementation of alternative 2.
 
 Of the two leading alternatives--"builders" and "structs with pointers"--we implemented
 prototypes of both. They had roughly equivalent performance, and no differences
