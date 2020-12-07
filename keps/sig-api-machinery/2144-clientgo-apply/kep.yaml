@@ -3,7 +3,7 @@ kep-number: 2144
 authors:
   - "@jpbetz"
 owning-sig: sig-api-machinery
-status: implementable
+status: provisional
 creation-date: 2020-11-16
 reviewers:
   - "@apelisse"
@@ -12,8 +12,7 @@ approvers:
   - "@deads2k"
   - "@lavalamp"
 prr-approvers:
-  - TBD
-  - "@bob.doe"
+  - "@deads2k"
 see-also:
   - "/keps/sig-api-machinery/0006-apply.md"
 

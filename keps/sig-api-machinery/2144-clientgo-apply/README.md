@@ -1,16 +1,3 @@
-<!--
-- [ ] **Fill out this file as best you can.**
-  At minimum, you should fill in the "Summary" and "Motivation" sections.
-  These should be easy if you've preflighted the idea of the KEP with the
-  appropriate SIG(s).
-- [ ] **Create a PR for this KEP.**
-  Assign it to people in the SIG who are sponsoring this process.
-- [ ] **Merge early and iterate.**
-  Avoid getting hung up on specific details and instead aim to get the goals of
-  the KEP clarified and merged quickly. The best way to do this is to just
-  start with the high-level sections and fill out details incrementally in
-  subsequent PRs.
--->
 # KEP-2155: Apply for client-go's typed client
 
 <!-- toc -->
@@ -29,7 +16,9 @@
     - [Alternative 2: Generated &quot;builders&quot;](#alternative-2-generated-builders)
     - [Comparison of alternatives](#comparison-of-alternatives)
     - [DeepCopy support](#deepcopy-support)
-  - [client-gen changes](#client-gen-changes)
+    - [Code Generator Changes](#code-generator-changes)
+      - [Addition of applyconfiguration-gen](#addition-of-applyconfiguration-gen)
+      - [client-gen changes](#client-gen-changes)
   - [Interoperability with structured and unstructured types](#interoperability-with-structured-and-unstructured-types)
   - [Test Plan](#test-plan)
     - [Fuzz-based round-trip testing](#fuzz-based-round-trip-testing)
@@ -48,7 +37,9 @@
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
-- [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
+  - [Alternative: Use YAML directly](#alternative-use-yaml-directly)
+  - [Alternative: Combine go structs with fieldset mask](#alternative-combine-go-structs-with-fieldset-mask)
+  - [Alternative: Use varadic function based builders](#alternative-use-varadic-function-based-builders)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -91,10 +82,8 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-client-go's typed clients need a typesafe, programmatic way to construct apply
-configurations. `Apply` functions will be added to the typed clients in client-go
-and accept the declarative apply configuration via a strongly typed representation
-that is generated for this purpose.
+client-go's typed clients need a typesafe, programmatic way to make apply
+requests.
 
 ## Motivation
 
@@ -109,8 +98,8 @@ deficiencies:
   Use the existing go structs to construct an apply configuration, serialize
   it to JSON, and pass it to `Patch`. This can cause zero valued required
   fields being accientally included in the apply configuration resulting
-  in fields being accidently set to incorrect values and/or fields accidently
-  being accidently being clamed as owned.
+  in fields being accidentally set to incorrect values and/or fields accidentally
+  being accidentally being clamed as owned.
 
 Both sig-api-machinery and wg-api-expression agree that this enhancement is
 required before server side apply to be promoted to GA.
@@ -143,6 +132,10 @@ Protobuf support. Apply does not support protobuf, and it will not be added with
 this enhancement.
 
 ## Proposal
+
+`Apply` functions should be included in the typed clients generated for
+client-go and should accept the apply configuration using a strongly typed
+representation, which will need to be generated for this purpose.
 
 ### Risks and Mitigations
 
@@ -191,7 +184,7 @@ clientset. There are a couple reasons for this:
 - If a client has multiple code paths where it makes apply requests to the same
   object, but with different field sets, they must use different field manager
   names. If they use the same field manager name they will cause fields to be
-  accidently removed or disowned. This is a potential foot gun we would like to
+  accidentally removed or disowned. This is a potential foot gun we would like to
   avoid.
 
 - Apply requests always conflict with update requests, even if they were made by
@@ -303,7 +296,20 @@ If "structs with pointers" approach is used, the existing deepcopy-gen
 can be used to generate deep copy impelemntations for the generated apply
 configuration types.
 
-### client-gen changes
+#### Code Generator Changes
+
+hack/update-codegen.sh and hack/verify-codegen.sh will be updated to generate
+the apply functions and apply configuration types.
+
+##### Addition of applyconfiguration-gen
+
+- Add staging/src/k8s.io/code-generator/cmd/applyconfigurations-gen
+- Generates into staging/vendor/k8s.io/client-go/applyconfigurations/
+- Only generate builders for struct types reachable from the types that have the +clientgen annotation
+- Don't generate builders for MarshalJSON types (Quantity, IntOrString)
+- Don't generate builders for RawExtension or Unknown
+
+##### client-gen changes
 
 Since client-gen is available for use with 3rd party project, we must ensure all
 changes to it are backward compatible. The Apply functions will only be generated
@@ -346,7 +352,7 @@ it is correct using the existing e2e tests, expanding coverage as needed.
 ### Graduation Criteria
 
 This enhancement will graduate to GA as part of Server Side Apply. It does
-not make sense to graduate it independantly.
+not make sense to graduate it independently.
 
 ### Upgrade / Downgrade Strategy
 
@@ -456,4 +462,78 @@ Major milestones might include:
 
 ## Alternatives
 
-TODO(jpbetz): Fill this out
+### Alternative: Use YAML directly
+
+For fields that need to be set programmatically, use templating.
+
+Limitations:
+
+- Not typesafe, so arguably should be part of a dynamic client only (which can already do apply)
+- Templating doesn't work well for some cases. E.g. a variable number of containers
+
+
+### Alternative: Combine go structs with fieldset mask
+
+User directly provides the go structs as they exist today and also provides a fieldset "mask" that enumerates all the fields included in the apply configuration. A custom serializer would be required to combine the object and the mask together.
+
+```
+obj := &appsv1.Deployment{ …}
+mask := TODO
+tombstoned := TODO: is another fieldset required for tombstones?
+Apply(..., obj, mask, tombstoned, …)
+```
+
+Limitations:
+
+- Error prone. No way to ensure that the mask and the object have the same set of fields directly set by the caller (e.g. if the user directly sets a field to its zero value, there is no way to warn them that they forgot to add it to the mask)
+- Even if there was some typesafe way to define masks and tombstones, constructing them is going to add to the work required by client-go apply users.
+
+### Alternative: Use varadic function based builders
+
+```
+appsv1apply.Deployment(
+  metav1apply.ObjectMeta(
+    appsv1apply.Name("nginx-deployment"),
+  ),
+  appsv1apply.DeploymentSpec(
+    appsv1apply.Replicas(0),
+    appsv1apply.PodTemplate(
+      appsv1apply.PodSpec(
+        appsv1apply.TombStoned("hostname"),
+        appsv1apply.PodContainer(
+          appsv1apply.Name("nginx"),
+          appsv1apply.Image("nginx:1.14.2"),
+        ),
+        appsv1apply.TombStoned(
+          appsv1apply.PodContainer(
+            appsv1apply.Name("sidecar"),
+          ),
+        ),
+      ),
+    ),
+  ),
+)
+
+```
+
+This could be implemented by generating varadic functions, e.g.:
+
+```
+func Deployment(fields ...DeploymentField{}) {
+   var object map[string]interface{} // This is the underlying data structure
+   for field := range fields {
+     switch f := fields.(type) {
+     case NameField:
+       object["name"] = f.value
+     // other types
+     }
+   }
+}
+
+func Name(value string) DeploymentField { … }
+```
+
+Limitations:
+
+- Lots of identifier collision issues to deal with. For example, we can't have multiple "Name" functions in the same package. This can probably be mitigated by either generating more unique names or by allowing a common field like Name, which is typically a string, to be shared across multiple structs that have name fields.
+
