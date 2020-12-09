@@ -50,7 +50,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-Today the ``ports``field in ingress and egress network policies is an array 
+Today the `ports` field in ingress and egress network policies is an array 
 that needs a declaration of each single port to be contemplated. This KEP 
 proposes to add a new field that allows a declaration of a port range, 
 simplifying the creation of rules with multiple ports.
@@ -87,25 +87,25 @@ spec:
 
 So for the user:
 * To allow a range of ports, each of them must be declared as an item from 
-``ports`` array
+`ports` array
 * To make an exception needs a declaration of all ports but the exception
 
-Adding a new ``endPort`` field inside the ``ports`` will allow a simpler 
+Adding a new `endPort` field inside the `ports` will allow a simpler 
 creation of NetworkPolicy to the user.
 
 ### Goals
 
-Add an endPort field in ``NetworkPolicyPort``
+Add an endPort field in `NetworkPolicyPort`
 
 ### Non-Goals
 
-* Support specific ``Exception`` field.
-* Support ``endPort`` when the starting ``port`` is a named port.
+* Support specific `Exception` field.
+* Support `endPort` when the starting `port` is a named port.
 
 ## Proposal
 
-In NetworkPolicy specification, inside ``NetworkPolicyPort`` specify a new 
-``endPort`` field composed of a numbered port that defines if this is a range
+In NetworkPolicy specification, inside `NetworkPolicyPort` specify a new 
+`endPort` field composed of a numbered port that defines if this is a range
 and when it ends.
 
 ### User Stories
@@ -150,7 +150,7 @@ of the new field.
 ## Design Details
 
 API changes to NetworkPolicy:
-* Add a new field called ``EndPort`` inside ``NetworkPolicyPort`` as the following:
+* Add a new field called `EndPort` inside `NetworkPolicyPort` as the following:
 ```
 // NetworkPolicyPort describes a port to allow traffic on
 type NetworkPolicyPort struct {
@@ -159,22 +159,25 @@ type NetworkPolicyPort struct {
 	// +optional
 	Protocol   *v1.Protocol `json:"protocol,omitempty" protobuf:"bytes,1,opt,name=protocol,casttype=k8s.io/api/core/v1.Protocol"`
 
-	// The port on the given protocol. This can either be a numerical or named port on
-	// a pod. If this field is not provided, this matches all port names and numbers.
+	// The port on the given protocol. This can either be a numerical or named 
+  // port on a pod. If this field is not provided, this matches all port names and
+  // numbers, whether an endPort is defined or not.
 	// +optional
 	Port       *intstr.IntOrString `json:"port,omitempty" protobuf:"bytes,2,opt,name=port"`
 
-	// EndPort defines the end of the port range, being the end included within the
-	// range
+	// EndPort defines the last port included in the port range.
+	// Example:
+  //    endPort: 12345
 	// +optional
 	EndPort    int32 `json:"port,omitempty" protobuf:"bytes,2,opt,name=endPort"`
 }
 ```
 
 ### Validations
-The ``NetworkPolicyPort`` will need to be validated, with the following scenarios:
-* If an ``EndPort`` is specified a ``Port`` must also be specified
-* If ``Port`` is a string ``EndPort`` cannot be specified
+The `NetworkPolicyPort` will need to be validated, with the following scenarios:
+* If an `EndPort` is specified a `Port` must also be specified
+* If `Port` is a string (named port) `EndPort` cannot be specified
+* `EndPort` must be equal or bigger than `Port`
 
 ### Test Plan
 
@@ -195,15 +198,15 @@ validation should be done by CNIs.
 - Add validation tests in API
 
 #### Beta
-- ``EndPort`` has been supported for at least 1 minor release
+- `EndPort` has been supported for at least 1 minor release
 - Four commonly used NetworkPolicy (or CNI providers) implement the new field, 
 with generally positive feedback on its usage.
 - Feature Gate is enabled by Default.
 
 #### GA Graduation
 
-- At least **four** NetworkPolicy providers (or CNI providers) support the ``EndPort`` field
-- ``EndPort`` has been enabled by default for at least 1 minor release
+- At least **four** NetworkPolicy providers (or CNI providers) support the `EndPort` field
+- `EndPort` has been enabled by default for at least 1 minor release
 
 ### Upgrade / Downgrade Strategy
 
@@ -211,7 +214,7 @@ If upgraded no impact should happen as this is a new field.
 
 If downgraded the CNI wont be able to look into the new field, as this does not 
 exists and network policies using this field will stop working correctly and
-start working incorrectly.
+start working incorrectly. This is a fail-closed failure, so it is acceptable.
 
 ## Production Readiness Review Questionnaire
 
@@ -232,7 +235,7 @@ _This section must be completed when targeting alpha to a release._
   Yes, but CNIs relying on the new field wont recognize it anymore
 
 * **What happens if we reenable the feature if it was previously rolled back?**
-  Nothing. Just need to check if the data is persisted in ``etcd`` after the 
+  Nothing. Just need to check if the data is persisted in `etcd` after the 
   feature is disabled and reenabled or if the data is missed
 
 * **Are there any tests for feature enablement/disablement?**
@@ -282,7 +285,7 @@ previous answers based on experience in the field._
   TBD
 
 * **Will enabling / using this feature result in introducing new API types?**
-  No, unless the new ``EndPort`` is considered a new API type
+  No, unless the new `EndPort` is considered a new API type
 
 * **Will enabling / using this feature result in any new calls to the cloud 
 provider?**
@@ -292,7 +295,7 @@ provider?**
 the existing API objects?**
 
   - API type(s): NetworkPolicyPorts
-  - Estimated increase in size: 2 bytes for each new ``EndPort`` specified
+  - Estimated increase in size: 2 bytes for each new `EndPort` specified
   - Estimated amount of new objects: N/A
 
 * **Will enabling / using this feature result in increasing time taken by any 
@@ -336,7 +339,7 @@ populate their packet filtering tables with each port.
 ## Alternatives
 
 During the development of this KEP there was an alternative implementation 
-of the ``NetworkPolicyPortRange`` field inside the ``NetworkPolicyPort`` as the following:
+of the `NetworkPolicyPortRange` field inside the `NetworkPolicyPort` as the following:
 
 ```
 // NetworkPolicyPort describes a port or a range of ports to allow traffic on
@@ -363,7 +366,7 @@ type NetworkPolicyPort struct {
 But the main design suggested in this Kep seems more clear, so this alternative
 has been discarded. 
 
-Also it has been proposed that the implementation contains an ``Except``` array and a new 
+Also it has been proposed that the implementation contains an `Except` array and a new 
 struct to be used in Ingress/Egress rules, but because it would bring much more complexity 
 than desired the proposal has been dropped right now:
 
