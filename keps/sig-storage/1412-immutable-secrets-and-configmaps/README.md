@@ -37,14 +37,16 @@ For enhancements that make changes to code or processes/procedures in core Kuber
 
 Check these off as they are completed for the Release Team to track. These checklist items _must_ be updated for the enhancement to be released.
 
-- [ ] kubernetes/enhancements issue in release milestone, which links to KEP (this should be a link to the KEP location in kubernetes/enhancements, not the initial KEP PR)
-- [ ] KEP approvers have set the KEP status to `implementable`
-- [ ] Design details are appropriately documented
-- [ ] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
-- [ ] Graduation criteria is in place
-- [ ] "Implementation History" section is up-to-date for milestone
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Design details are appropriately documented
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [x] (R) Graduation criteria is in place
+- [x] (R) Production readiness review completed
+- [x] Production readiness review approved
+- [x] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 **Note:** Any PRs to move a KEP to `implementable` or significant changes once it is marked `implementable` should be approved by each of the KEP approvers. If any of those approvers is no longer appropriate than changes to that list should be approved by the remaining approvers and/or the owning SIG (or SIG-arch for cross cutting KEPs).
 
@@ -145,17 +147,21 @@ the new logic behind the feature gate.
 
 ### Test Plan
 
-For `Alpha`, we will add e2e tests verifying that contents of Secrets and
-ConfigMaps marked as immutable really can't be updated. Additionally, these
-will check if the metadata can be modified.
+For `Alpha`, e2e tests verifying that:
+- data of immutable Secrets and ConfigMaps can't be updated
+- metadata of immutable Secrets and ConfigMaps can be update
+has been added.
 
-Additionally, unit tests will be added in Kubelet codebase to ensure that
+Additionally, necessary unit tests were added in Kubelet codebase to ensure that
 the newly added logic to not watch immutable Secrets/ConfigMaps works as
 expected.
 
-For `Beta`, we will also extend scalability tests with a number of immutable
-`Secrets` and `ConfigMaps` to validate the performance impact (for `Alpha`
-only manual scalability tests will be performed).
+For `Beta`, scalability tests were extended to exercise this feature. Before this
+change 10% of pods were mounting some Secret and some ConfigMap. This change allowed
+us to mount some Secret and ConfigMap to every pod (however the remaining 90% of
+pods mount immutable ones).
+
+For `GA`, the introduced e2e tests will be promoted to conformance.
 
 ### Graduation Criteria
 
@@ -317,10 +323,16 @@ _This section must be completed when targeting beta graduation to a release._
 ## Implementation History
 
 2019-11-18: KEP opened
+
 2019-12-09: KEP marked implementable
+
 v1.18: Launched in `Alpha`
+
 2020-04-25: Submitted PR to promote to Beta and enable by default.
+
 2020-04-28: Scalability tests extended to validate this feature
+
+v1.19: Launched to `Beta`
 
 ## Alternatives
 
