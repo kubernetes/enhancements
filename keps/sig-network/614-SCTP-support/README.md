@@ -724,3 +724,4 @@ _This section must be completed when targeting beta graduation to a release._
 - 2018-09-27 Kubernetes 1.12.0 released with Alpha SCTP support
 - 2019-10-02 Test Plan and Graduation Criteria added
 - 2020-08-26 Kubernetes 1.19.0 released with Beta SCTP support
+- 2020-10-21 All code and docs merged for GA in 1.20. Marked as implemented.

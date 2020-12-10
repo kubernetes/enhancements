@@ -3,7 +3,7 @@ kep-number: 614
 authors:
   - "@janosi"
 owning-sig: sig-network
-status: implementable
+status: implemented
 creation-date: 2018-06-14
 reviewers:
   - "@danwinship"
