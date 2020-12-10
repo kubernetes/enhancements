@@ -551,7 +551,9 @@ Major milestones might include:
 - when the KEP was retired or superseded
 -->
 
-None.
+* 2020-08-13: Initial Proposal Merged (#1936)
+* 2020-09-10: Alpha state - Non-blocking, manually triggered test added to Prow (kubernetes/test-infra/pull/19181)
+* 2020-12-16: Beta state - Prow test converted to automatically trigger (kubernetes/test-infra/pull/20164)
 
 ## Drawbacks
 
