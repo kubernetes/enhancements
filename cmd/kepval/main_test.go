@@ -17,15 +17,18 @@ limitations under the License.
 package main
 
 import (
-	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"k8s.io/enhancements/pkg/kepval/keps"
+	"k8s.io/enhancements/pkg/kepval/prrs"
 )
 
 const (
 	kepsDir     = "keps"
+	prrsDir     = "keps/prod-readiness"
 	kepMetadata = "kep.yaml"
 )
 
@@ -70,14 +73,61 @@ func TestValidation(t *testing.T) {
 		t.Fatal("must find more than 0 keps")
 	}
 
-	// Overwrite the command line argument for the run() function
-	os.Args = []string{"", ""}
-	for _, file := range files {
-		t.Run(file, func(t *testing.T) {
-			os.Args[1] = file
-			var b bytes.Buffer
-			if exit := run(&b); exit != 0 {
-				t.Fatalf("exit code was %d and not 0. Output:\n%s", exit, b.String())
+	kepParser := &keps.Parser{}
+	prrParser := &prrs.Parser{}
+	prrsDir := filepath.Join("..", "..", prrsDir)
+
+	for _, filename := range files {
+		t.Run(filename, func(t *testing.T) {
+			kepFile, err := os.Open(filename)
+			if err != nil {
+				t.Fatalf("could not open file %s: %v\n", filename, err)
+			}
+			defer kepFile.Close()
+
+			kep := kepParser.Parse(kepFile)
+			if kep.Error != nil {
+				t.Errorf("%v has an error: %v", filename, kep.Error)
+			}
+
+			requiredPRRApproval := len(kep.Number) > 0 && kep.LatestMilestone >= "v1.21"
+			if !requiredPRRApproval {
+				return
+			}
+
+			prrFilename := filepath.Join(prrsDir, kep.OwningSIG, kep.Number)
+			prrFile, err := os.Open(prrFilename)
+			if os.IsNotExist(err) {
+				t.Errorf("missing PRR Approval file under: %s", prrFilename)
+				return
+			}
+			if err != nil {
+				t.Fatalf("could not open file %s: %v\n", prrFilename, err)
+			}
+			prr := prrParser.Parse(prrFile)
+			if prr.Error != nil {
+				t.Errorf("PRR approval file %v has an error: %v", prrFilename, prr.Error)
+				return
+			}
+
+			var stageMilestone string
+			var stagePRRApprover string
+			switch kep.Stage {
+			case "alpha":
+				stageMilestone = kep.Milestone.Alpha
+				stagePRRApprover = prr.Alpha.Approver
+			case "beta":
+				stageMilestone = kep.Milestone.Beta
+				stagePRRApprover = prr.Beta.Approver
+			case "stable":
+				stageMilestone = kep.Milestone.Stable
+				stagePRRApprover = prr.Stable.Approver
+			}
+			if len(stageMilestone) > 0 && stageMilestone >= "v1.21" {
+				// PRR approval is needed.
+				if len(stagePRRApprover) == 0 {
+					t.Errorf("PRR not approved for: %s", kep.Stage)
+				}
 			}
 		})
 	}

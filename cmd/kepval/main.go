@@ -24,6 +24,8 @@ import (
 	"k8s.io/enhancements/pkg/kepval/keps"
 )
 
+// TODO: Can we remove this file?
+
 func main() {
 	os.Exit(run(os.Stderr))
 }
@@ -38,13 +40,10 @@ func run(w io.Writer) int {
 		}
 		defer file.Close()
 		kep := parser.Parse(file)
-		// if error is nil we can move on
-		if kep.Error == nil {
-			continue
+		if kep.Error != nil {
+			fmt.Fprintf(w, "%v has an error: %q\n", filename, kep.Error.Error())
+			return 1
 		}
-
-		fmt.Fprintf(w, "%v has an error: %q\n", filename, kep.Error.Error())
-		return 1
 	}
 
 	fmt.Fprintf(w, "No validation errors: %v\n", os.Args[1:])
