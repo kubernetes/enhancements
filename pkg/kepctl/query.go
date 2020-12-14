@@ -23,7 +23,7 @@ import (
 	"github.com/pkg/errors"
 
 	"k8s.io/enhancements/pkg/kepval/keps"
-	"k8s.io/enhancements/pkg/kepval/keps/validations"
+	"k8s.io/enhancements/pkg/kepval/util"
 )
 
 var (
@@ -56,7 +56,7 @@ type QueryOpts struct {
 // Validate checks the args and cleans them up if needed
 func (c *QueryOpts) Validate(args []string) error {
 	if len(c.SIG) > 0 {
-		sigs, err := selectByRegexp(validations.Sigs(), c.SIG)
+		sigs, err := selectByRegexp(util.Groups(), c.SIG)
 		if err != nil {
 			return err
 		}
