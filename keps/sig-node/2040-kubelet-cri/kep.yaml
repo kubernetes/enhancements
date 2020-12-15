@@ -27,7 +27,6 @@ latest-milestone: "v1.20"
 milestone:
   alpha: "v1.5"
   beta: "v1.20"
-  stable: TBD
 
 # The following PRR answers are required at beta release
 metrics:

@@ -30,6 +30,7 @@ var (
 	reStatus      = regexp.MustCompile(strings.Join(statuses, "|"))
 	stages        = []string{"alpha", "beta", "stable"}
 	reStages      = regexp.MustCompile(strings.Join(stages, "|"))
+	reMilestone   = regexp.MustCompile("v1\\.[1-9][0-9]*")
 )
 
 func ValidateStructure(parsed map[interface{}]interface{}) error {
@@ -150,6 +151,47 @@ func ValidateStructure(parsed map[interface{}]interface{}) error {
 				}
 			case interface{}:
 				return util.NewValueMustBeListOfStrings(k, values)
+			}
+		case "latest-milestone":
+			switch v := value.(type) {
+			case []interface{}:
+				return util.NewValueMustBeString(k, v)
+			}
+			v, _ := value.(string)
+			if !reMilestone.Match([]byte(v)) {
+				return util.NewValueMustBeMilestone(k, v)
+			}
+		case "milestone":
+			switch v := value.(type) {
+			case map[interface{}]interface{}:
+				if err := validateMilestone(v); err != nil {
+					return err
+				}
+			case interface{}:
+				return util.NewValueMustBeStruct(k, v)
+			}
+		}
+	}
+	return nil
+}
+
+func validateMilestone(parsed map[interface{}]interface{}) error {
+	for key, value := range parsed {
+		// First off the key has to be a string. fact.
+		k, ok := key.(string)
+		if !ok {
+			return util.NewKeyMustBeString(k)
+		}
+
+		switch strings.ToLower(k) {
+		case "alpha", "beta", "stable":
+			switch v := value.(type) {
+			case []interface{}:
+				return util.NewValueMustBeString(k, v)
+			}
+			v, _ := value.(string)
+			if !reMilestone.Match([]byte(v)) {
+				return util.NewValueMustBeMilestone(k, v)
 			}
 		}
 	}

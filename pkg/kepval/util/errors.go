@@ -81,6 +81,38 @@ func NewValueMustBeString(key string, value interface{}) error {
 	}
 }
 
+type ValueMustBeStruct struct {
+	key   string
+	value interface{}
+}
+
+func (v *ValueMustBeStruct) Error() string {
+	return fmt.Sprintf("%q must be a struct but it is a %T: %v", v.key, v.value, v.value)
+}
+
+func NewValueMustBeStruct(key string, value interface{}) error {
+	return &ValueMustBeStruct{
+		key:   key,
+		value: value,
+	}
+}
+
+type ValueMustBeMilestone struct {
+	key   string
+	value interface{}
+}
+
+func (v *ValueMustBeMilestone) Error() string {
+	return fmt.Sprintf("%q must be a milestone but it is a %T: %v", v.key, v.value, v.value)
+}
+
+func NewValueMustBeMilestone(key string, value interface{}) error {
+	return &ValueMustBeMilestone{
+		key:   key,
+		value: value,
+	}
+}
+
 type ValueMustBeOneOf struct {
 	key    string
 	value  string

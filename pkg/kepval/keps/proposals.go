@@ -75,7 +75,6 @@ type Proposal struct {
 	DisableSupported bool          `json:"disableSupported" yaml:"disable-supported"`
 	Metrics          []string      `json:"metrics" yaml:"metrics"`
 
-	Filename string `json:"-" yaml:"-"`
 	Error    error  `json:"-" yaml:"-"`
 	Contents string `json:"markdown" yaml:"-"`
 }
