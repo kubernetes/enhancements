@@ -18,8 +18,6 @@ latest-milestone: "v1.20"
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
   alpha: "v1.20"
-  beta: "x.y"
-  stable: "x.y"
 
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled

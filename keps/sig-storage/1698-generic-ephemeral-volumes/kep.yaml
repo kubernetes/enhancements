@@ -15,8 +15,6 @@ stage: alpha
 latest-milestone: "v1.19"
 milestone:
   alpha: "v1.19"
-  beta: ""
-  stable: ""
 feature-gates:
   - name: GenericEphemeralVolumes
     components:
