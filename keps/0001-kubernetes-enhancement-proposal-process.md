@@ -19,22 +19,24 @@ status: implemented
 ## Table of Contents
 
 <!-- toc -->
-- [Summary](#summary)
-- [Motivation](#motivation)
-- [Stewardship](#stewardship)
-- [Reference-Level Explanation](#reference-level-explanation)
-  - [What Type of Work Should Be Tracked by a KEP](#what-type-of-work-should-be-tracked-by-a-kep)
-  - [KEP Template](#kep-template)
-  - [KEP Metadata](#kep-metadata)
-  - [KEP Workflow](#kep-workflow)
-  - [Git and GitHub Implementation](#git-and-github-implementation)
-  - [KEP Editor Role](#kep-editor-role)
-  - [Important Metrics](#important-metrics)
-  - [Prior Art](#prior-art)
-- [Drawbacks](#drawbacks)
-- [Alternatives](#alternatives)
-  - [GitHub Issues vs. KEPs](#github-issues-vs-keps)
-- [Unresolved Questions](#unresolved-questions)
+- [Kubernetes Enhancement Proposal Process](#kubernetes-enhancement-proposal-process)
+  - [Table of Contents](#table-of-contents)
+  - [Summary](#summary)
+  - [Motivation](#motivation)
+  - [Stewardship](#stewardship)
+  - [Reference-Level Explanation](#reference-level-explanation)
+    - [What Type of Work Should Be Tracked by a KEP](#what-type-of-work-should-be-tracked-by-a-kep)
+    - [KEP Template](#kep-template)
+    - [KEP Metadata](#kep-metadata)
+    - [KEP Workflow](#kep-workflow)
+    - [Git and GitHub Implementation](#git-and-github-implementation)
+    - [KEP Editor Role](#kep-editor-role)
+    - [Important Metrics](#important-metrics)
+    - [Prior Art](#prior-art)
+  - [Drawbacks](#drawbacks)
+  - [Alternatives](#alternatives)
+    - [GitHub Issues vs. KEPs](#github-issues-vs-keps)
+  - [Unresolved Questions](#unresolved-questions)
 <!-- /toc -->
 
 ## Summary
@@ -176,7 +178,7 @@ Metadata items:
   * Sigs are listed as `sig-abc-def`, where the name matches the
     directory entry in the `kubernetes/community` repo.
 * **participating-groups** Optional
-  * A list of SIGs that are involved or impacted by this KEP.
+  * A list of SIGs, WGs, Committees and other groups that are involved or impacted by this KEP.
   * A special value of `kubernetes-wide` will indicate that this KEP has impact
     across the entire project.
 * **reviewers** Required

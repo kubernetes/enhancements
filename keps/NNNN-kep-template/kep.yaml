@@ -3,7 +3,7 @@ kep-number: NNNN
 authors:
   - "@jane.doe"
 owning-sig: sig-xyz
-participating-groups:
+participating-sigs:
   - sig-aaa
   - sig-bbb
 status: provisional|implementable|implemented|deferred|rejected|withdrawn|replaced
