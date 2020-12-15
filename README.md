@@ -68,16 +68,16 @@ Please do not comment on the enhancement issue to:
 All the enhancements from this repo are visualized in the Enhancements Tracking Spreadsheets.
 
 Links:
-- [1.20 Milestone](https://bit.ly/k8s-1-20-enhancements)
-- [1.19 Milestone](https://bit.ly/k8s-1-19-enhancements)
-- [1.18 Milestone](https://bit.ly/k8s-1-18-enhancements)
-- [1.17 Milestone](https://bit.ly/k8s117-enhancement-tracking)
-- [1.16 Milestone](https://bit.ly/k8s116-enhancement-tracking)
-- [1.15 Milestone](https://bit.ly/115-enhancements)
-- [1.14 Milestone](https://bit.ly/k8s114-enhancements)
-- [1.13 Milestone](https://bit.ly/k8s113-features)
-- [1.12 Milestone](https://bit.ly/k8s112-features)
-- [1.11 Milestone](http://bit.ly/k8s-features-111)
+- [1.20 Milestone](https://docs.google.com/spreadsheets/d/1Ch7PIapJhwdl83HEnYvwFNz96z3vk_eHnf8heLxxgyw/edit#gid=936265414)
+- [1.19 Milestone](https://docs.google.com/spreadsheets/d/1E89GNZRwmnfVerOqWqrmzVII8TQlQ0iiI_FgYKxanGs/edit#gid=936265414)
+- [1.18 Milestone](https://docs.google.com/spreadsheets/d/1RtCvByYdcqWc6I_A1cKgeXT2tBS7SyHGvSt_DWXz270/edit#gid=936265414)
+- [1.17 Milestone](https://docs.google.com/spreadsheets/d/1ebKGsYB1TmMnkx86bR2ZDOibm5KWWCs_UjV3Ys71WIs/edit#gid=0)
+- [1.16 Milestone](https://docs.google.com/spreadsheets/d/1txj0SuCJGm_uDCcJJDx_IjrfhlSnW-thtfQY91oXRLo/edit#gid=0)
+- [1.15 Milestone](https://docs.google.com/spreadsheets/d/1Vc949C4iC2f8GTmjfJkX04VUNcbimhg8ujp1bUAjGK4/edit#gid=0)
+- [1.14 Milestone](https://docs.google.com/spreadsheets/d/116X6E-lmDJG5UZPlqDAFw8hN9vS6SNY4qRNZ9fKtsMU/edit#gid=0)
+- [1.13 Milestone](https://docs.google.com/spreadsheets/d/1_nPzArx7ptlrNfwQpLGUoTYLQ9XULnMAJbT8UBuPlYs/edit#gid=0)
+- [1.12 Milestone](https://docs.google.com/spreadsheets/d/177LIKnO3yUmE0ryIg9OBek54Y-abw8OE8pq-9QgnGM4/edit#gid=0)
+- [1.11 Milestone](https://docs.google.com/spreadsheets/d/16N9KSlxWwxUA2gV6jvuW9N8tPRHzNhu1-RYY4Y0RZLs/edit#gid=0)
 
 Procedure:
 *TBA*
