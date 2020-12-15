@@ -4,7 +4,7 @@ authors:
   - "@derekwaynecarr"
   - "@dims"
 owning-sig: sig-node
-participating-groups:
+participating-sigs:
 reviewers:
   - "@dashpole"
 approvers:

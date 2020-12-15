@@ -4,7 +4,7 @@ authors:
   - "@rjbez17"
   - "@adrianludwin"
 owning-sig: sig-auth
-participating-groups:
+participating-sigs:
   - sig-auth
 reviewers:
   - "TBD"

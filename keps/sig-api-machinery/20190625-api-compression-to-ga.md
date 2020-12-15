@@ -3,7 +3,7 @@ title: Graduate API gzip compression support to GA
 authors:
   - "@smarterclayton"
 owning-sig: sig-api-machinery
-participating-groups:
+participating-sigs:
   - sig-cli
 reviewers:
   - "@lavalamp"

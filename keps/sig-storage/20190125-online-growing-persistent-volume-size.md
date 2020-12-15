@@ -4,7 +4,7 @@ authors:
   - "@mlmhl"
   - "@wongma7"
 owning-sig: sig-storage
-participating-groups:
+participating-sigs:
   - sig-storage
 reviewers:
   - "@gnufied"

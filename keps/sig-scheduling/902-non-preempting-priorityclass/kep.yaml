@@ -4,7 +4,7 @@ authors:
   - "@vllry"
   - "@denkensk"
 owning-sig: sig-scheduling
-participating-groups:
+participating-sigs:
   - sig-scheduling
 status: implementable
 creation-date: 2019-03-17

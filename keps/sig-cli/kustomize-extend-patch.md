@@ -3,7 +3,7 @@ title: Extend Kustomize Patches to Multiple Targets
 authors:
  - "@Liujingfang1"
 owning-sig: sig-cli
-participating-groups:
+participating-sigs:
  - sig-apps
 reviewers:
  - "@pwittrock"

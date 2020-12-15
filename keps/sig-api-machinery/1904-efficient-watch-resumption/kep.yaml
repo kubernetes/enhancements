@@ -3,7 +3,7 @@ kep-number: 1904
 authors:
   - "@wojtek-t"
 owning-sig: sig-api-machinery
-participating-groups:
+participating-sigs:
   - sig-scalability
 status: implementable
 creation-date: 2020-07-23

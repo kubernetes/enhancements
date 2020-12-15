@@ -3,7 +3,7 @@ title: Contributor Site
 authors:
   - "@jbeda"
 owning-sig: sig-contributor-experience
-participating-groups:
+participating-sigs:
   - sig-architecture
   - sig-docs
 reviewers:

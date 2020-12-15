@@ -3,7 +3,7 @@ title: Kubectl Commands In Headers
 authors:
   - "@pwittrock"
 owning-sig: sig-cli
-participating-groups:
+participating-sigs:
   - sig-api-machinery
 reviewers:
   - "@deads2k"

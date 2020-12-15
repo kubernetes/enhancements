@@ -4,7 +4,7 @@ authors:
   - "@akutz"
   - "@bart0sh"
 owning-sig: sig-cluster-lifecycle
-participating-groups:
+participating-sigs:
 reviewers:
   - "@justinsb"
   - "@tstromberg"

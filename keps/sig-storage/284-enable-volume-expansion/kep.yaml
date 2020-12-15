@@ -2,7 +2,7 @@ title: Growing Persistent Volume size
 authors:
   - "@gnuified"
 owning-sig: sig-storage
-participating-groups:
+participating-sigs:
   - sig-auth
 reviewers:
   - "@msau42"

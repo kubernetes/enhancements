@@ -4,7 +4,7 @@ authors:
   - "@sttts"
   - "@mbohlool"
 owning-sig: sig-api-machinery
-participating-groups:
+participating-sigs:
   - sig-api-machinery
 reviewers:
   - "@liggitt"

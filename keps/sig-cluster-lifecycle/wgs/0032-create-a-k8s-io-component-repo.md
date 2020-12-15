@@ -4,7 +4,7 @@ authors:
   - "@luxas"
   - "@sttts"
 owning-sig: sig-cluster-lifecycle
-participating-groups:
+participating-sigs:
   - sig-api-machinery
   - sig-cloud-provider
 reviewers:

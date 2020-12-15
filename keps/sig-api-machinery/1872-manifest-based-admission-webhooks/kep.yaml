@@ -2,7 +2,7 @@ title: Manifest based registration of Admission webhooks
 authors:
 - "@vivekbagade"
 owning-sig: sig-api-machinery
-participating-groups:
+participating-sigs:
 - sig-instrumentation
 reviewers:
 - "@liggitt"

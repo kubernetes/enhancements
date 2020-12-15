@@ -3,7 +3,7 @@ kep-number: 1739
 authors:
   - "@neolit123"
 owning-sig: sig-cluster-lifecycle
-participating-groups:
+participating-sigs:
   - sig-cluster-lifecycle
 status: implementable
 creation-date: 2020-05-04

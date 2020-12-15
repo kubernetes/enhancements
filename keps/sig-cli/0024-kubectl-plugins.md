@@ -3,7 +3,7 @@ title: Kubectl Plugins
 authors:
   - "@juanvallejo"
 owning-sig: sig-cli
-participating-groups:
+participating-sigs:
   - sig-cli
 reviewers:
   - "@pwittrock"

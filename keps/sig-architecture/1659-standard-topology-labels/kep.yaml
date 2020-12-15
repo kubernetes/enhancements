@@ -3,7 +3,7 @@ kep-number: 1659
 authors:
   - "@thockin"
 owning-sig: sig-architecture
-participating-groups:
+participating-sigs:
   - sig-cloud-provider
   - sig-network
   - sig-scheduling

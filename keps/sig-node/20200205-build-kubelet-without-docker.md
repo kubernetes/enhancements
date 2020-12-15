@@ -3,7 +3,7 @@ title: Building a Dockerless Kubelet
 authors:
   - "@mattjmcnaughton"
 owning-sig: sig-node
-participating-groups:
+participating-sigs:
   - sig-testing
   - sig-release
   - sig-cluster-lifecycle

@@ -3,7 +3,7 @@ title: Configurable Pod DNS
 authors:
   - "@MrHohn"
 owning-sig: sig-network
-participating-groups:
+participating-sigs:
   - sig-network
 reviewers:
   - "@thockin"

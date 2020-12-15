@@ -3,7 +3,7 @@ kep-number: 1967
 authors:
   - "@derekwaynecarr"
 owning-sig: sig-node
-participating-groups:
+participating-sigs:
   - sig-storage
 status: implementable
 creation-date: 2020-09-03

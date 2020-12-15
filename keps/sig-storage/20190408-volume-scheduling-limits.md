@@ -4,7 +4,7 @@ authors:
   - "@jsafrane"
   - "@gnufied"
 owning-sig: sig-storage
-participating-groups:
+participating-sigs:
   - sig-scheduling
 reviewers:
   - "@bsalamat"

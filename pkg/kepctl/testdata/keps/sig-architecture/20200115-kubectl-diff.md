@@ -4,7 +4,7 @@ authors:
   - "@apelisse"
   - "@julianvmodesto"
 owning-sig: sig-cli
-participating-groups:
+participating-sigs:
   - sig-api-machinery
 reviewers:
   - TBD

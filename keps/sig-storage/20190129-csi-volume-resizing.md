@@ -3,7 +3,7 @@ title: Support for CSI volume resizing
 authors:
   - "@gnufied"
 owning-sig: sig-storage
-participating-groups:
+participating-sigs:
   - sig-storage
 reviewers:
   - "@saad-ali"

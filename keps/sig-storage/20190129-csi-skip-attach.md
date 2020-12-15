@@ -3,7 +3,7 @@ title: Skip attach for non-attachable CSI volumes
 authors:
   - "@jsafrane"
 owning-sig: sig-storage
-participating-groups:
+participating-sigs:
   - sig-storage
 reviewers:
   - "@msau42"

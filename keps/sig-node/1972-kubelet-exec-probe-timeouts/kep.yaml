@@ -4,7 +4,7 @@ authors:
   - "@andrewsykim"
   - "@SergeyKanzhelev"
 owning-sig: sig-node
-participating-groups:
+participating-sigs:
 status: implementable
 creation-date: 2020-09-08
 reviewers:

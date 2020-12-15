@@ -3,7 +3,7 @@ kep-number: 1435
 authors:
   - "@laszlo.janosi1@gmail.com"
 owning-sig: sig-network
-participating-groups:
+participating-sigs:
   - sig-cloud-provider
 status: implementable
 creation-date: 2020-01-03

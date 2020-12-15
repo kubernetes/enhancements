@@ -3,7 +3,7 @@ title: Kubernetes Control-Plane Metrics Stability
 authors:
   - "@logicalhan"
 owning-sig: sig-instrumentation
-participating-groups:
+participating-sigs:
   - sig-instrumentation
   - sig-api-machinery
   - sig-node

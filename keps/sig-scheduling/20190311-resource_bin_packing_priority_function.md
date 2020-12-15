@@ -1,7 +1,7 @@
 ---
 title: "Extending RequestedToCapacityRatio Priority Function to support Resource Bin Packing of Extended Resources - @sudeshsh"
 owning-sig: sig-scheduling
-participating-groups:
+participating-sigs:
   - sig-scheduling
 reviewers:
   - "@k82cn"

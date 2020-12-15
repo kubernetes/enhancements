@@ -4,7 +4,7 @@ authors:
   - "@johnbelamaric"
   - "@jefftree"
 owning-sig: sig-architecture
-participating-groups:
+participating-sigs:
 status: provisional
 creation-date: 2020-03-18
 reviewers:

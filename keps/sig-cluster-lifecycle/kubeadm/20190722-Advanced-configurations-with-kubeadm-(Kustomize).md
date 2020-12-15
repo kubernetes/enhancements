@@ -3,7 +3,7 @@ title: Advanced configurations with kubeadm (Kustomize)
 authors:
   - "@fabriziopandini"
 owning-sig: sig-cluster-lifecycle
-participating-groups:
+participating-sigs:
   - sig-cluster-lifecycle
 reviewers:
   - "@neolit123"

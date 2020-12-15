@@ -2,7 +2,7 @@ title: Publishing kubernetes packages
 authors:
   - "@hoegaarden"
 owning-sig: sig-release
-participating-groups:
+participating-sigs:
   - sig-cluster-lifecycle
 reviewers:
   - "@timothysc"

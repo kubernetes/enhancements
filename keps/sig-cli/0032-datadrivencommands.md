@@ -3,7 +3,7 @@ title: Data Driven Commands for Kubectl
 authors:
   - "@pwittrock"
 owning-sig: sig-cli
-participating-groups:
+participating-sigs:
 reviewers:
   - "@soltysh"
   - "@juanvallejo"

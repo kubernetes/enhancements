@@ -3,7 +3,7 @@ title: Presubmit config inside the tested repo
 authors:
   - "@alvaroaleman"
 owning-sig: sig-testing
-participating-groups:
+participating-sigs:
   - sig-testing
 reviewers:
   - "@stevekuznetsov"

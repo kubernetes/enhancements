@@ -3,7 +3,7 @@ kep-number: 1682
 authors:
   - "@huffmanca"
 owning-sig: sig-storage
-participating-groups:
+participating-sigs:
   - sig-storage
 status: implementable
 creation-date: 2020-04-27

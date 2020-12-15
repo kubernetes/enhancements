@@ -7,7 +7,7 @@ authors:
   - "@fromanirh"
   - "@alexeyperevalov"
 owning-sig: sig-node
-participating-groups: []
+participating-sigs: []
 status: implementable
 creation-date: "2018-07-19"
 reviewers:

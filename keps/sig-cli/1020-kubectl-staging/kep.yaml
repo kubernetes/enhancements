@@ -4,7 +4,7 @@ authors:
   - "@seans3"
   - "@soltysh"
 owning-sig: sig-cli
-participating-groups:
+participating-sigs:
 status: implementable
 creation-date: 2019-04-09
 reviewers:

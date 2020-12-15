@@ -3,7 +3,7 @@ title: Breaking apart the Kubernetes test tarball
 authors:
   - "@ixdy"
 owning-sig: sig-testing
-participating-groups:
+participating-sigs:
   - sig-release
 reviewers:
   - "@akutz"

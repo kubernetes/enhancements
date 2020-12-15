@@ -2,7 +2,7 @@ title: Kubernetes Community Artifact Serving
 authors:
   - "@brendandburns"
 owning-sig: sig-release
-participating-groups:
+participating-sigs:
   - sig-architecture
   - sig-contributor-experience
   - sig-testing

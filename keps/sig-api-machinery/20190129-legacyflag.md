@@ -3,7 +3,7 @@ title: legacyflags
 authors:
   - "@mtaufen"
 owning-sig: sig-api-machinery
-participating-groups:
+participating-sigs:
   - sig-architecture
   - sig-cluster-lifecycle
   - wg-component-standard

@@ -4,7 +4,7 @@ authors:
 - "@mikedanese"
 - "@maleck13"
 owning-sig: sig-api-machinery
-participating-groups:
+participating-sigs:
 - sig-api-machinery
 approvers:
 - "@deads2k"

@@ -5,7 +5,7 @@ authors:
   - "@cmluciano"
   - "@robscott"
 owning-sig: sig-network
-participating-groups:
+participating-sigs:
 status: implemented
 creation-date: yyyy-mm-dd
 reviewers:

@@ -3,7 +3,7 @@ title: Remove kube-proxy's automatic clean up logic
 authors:
   - "@vllry"
 owning-sig: sig-network
-participating-groups:
+participating-sigs:
 reviewers:
   - "@andrewsykim"
 approvers:

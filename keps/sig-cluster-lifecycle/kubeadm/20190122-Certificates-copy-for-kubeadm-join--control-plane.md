@@ -3,7 +3,7 @@ title: "Certificates copy for join --control-plane"
 authors:
   - "@fabriziopandini"
 owning-sig: sig-cluster-lifecycle
-participating-groups:
+participating-sigs:
 reviewers:
   - "@neolit123"
   - "@detiber"

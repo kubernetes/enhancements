@@ -3,7 +3,7 @@ title: A community forum for Kubernetes
 authors:
   - "@castrojo"
 owning-sig: sig-contributor-experience
-participating-groups:
+participating-sigs:
 reviewers:
   - "@jberkus"
   - "@joebeda"

@@ -3,7 +3,7 @@ title: Kubectl events
 authors:
   - "@hpandeycodeit"
 owning-sig: sig-cli
-participating-groups:
+participating-sigs:
   - sig-cli
 reviewers:
   - "@soltysh"

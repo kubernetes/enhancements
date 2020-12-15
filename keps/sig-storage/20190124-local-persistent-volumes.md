@@ -6,7 +6,7 @@ authors:
   - dhirajh
   - ianchakeres
 owning-sig: sig-storage
-participating-groups:
+participating-sigs:
   - sig-storage
 reviewers:
   - saad-ali

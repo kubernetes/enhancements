@@ -3,7 +3,7 @@ title: graduate-resourcequotascopeselectors-to-stable
 authors:
   - "@ravisantoshgudimetla"
 owning-sig: sig-api-machinery
-participating-groups:
+participating-sigs:
   - sig-scheduling
   - sig-api-machinery
 reviewers:

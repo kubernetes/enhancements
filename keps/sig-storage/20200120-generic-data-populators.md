@@ -3,7 +3,7 @@ title: Generic Data Populators
 authors:
   - "@bswartz"
 owning-sig: sig-storage
-participating-groups:
+participating-sigs:
   - sig-api-machinery
 reviewers:
   - "@thockin"

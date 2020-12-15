@@ -5,7 +5,7 @@ authors:
   - "@cceckman"
   - "@mtaufen"
 owning-sig: sig-auth
-participating-groups:
+participating-sigs:
   - sig-auth
 reviewers:
   - "@liggitt"

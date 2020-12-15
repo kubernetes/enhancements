@@ -3,7 +3,7 @@ title: Volume Subpath Env Expansion
 authors:
   - "@kevtaylor"
 owning-sig: sig-storage
-participating-groups:
+participating-sigs:
   - sig-storage
   - sig-architecture
 reviewers:

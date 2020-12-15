@@ -3,7 +3,7 @@ kep-number: 1672
 authors:
   - "@andrewsykim"
 owning-sig: sig-network
-participating-groups:
+participating-sigs:
   - sig-scalability
 status: implementable
 creation-date: 2020-04-07

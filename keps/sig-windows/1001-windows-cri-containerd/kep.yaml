@@ -4,7 +4,7 @@ authors:
   - "@patricklang"
   - "@marosset"
 owning-sig: sig-windows
-participating-groups:
+participating-sigs:
   - sig-windows
 status: implementable
 creation-date: 2019-04-24

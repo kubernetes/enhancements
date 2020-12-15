@@ -4,7 +4,7 @@ authors:
   - "@mcrute"
   - "@nckturner"
 owning-sig: sig-cloud-provider
-participating-groups:
+participating-sigs:
   - sig-node
   - sig-auth
 reviewers:

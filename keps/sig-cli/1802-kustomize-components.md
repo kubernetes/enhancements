@@ -5,7 +5,7 @@ authors:
   - "@ioandr"
   - "@pgpx"
 owning-sig: sig-cli
-participating-groups:
+participating-sigs:
   - sig-cli
 reviewers:
   - n/a

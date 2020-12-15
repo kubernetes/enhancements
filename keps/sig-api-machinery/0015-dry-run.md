@@ -3,7 +3,7 @@ title: Dry-run
 authors:
   - "@apelisse"
 owning-sig: sig-api-machinery
-participating-groups:
+participating-sigs:
   - sig-api-machinery
   - sig-cli
 reviewers:

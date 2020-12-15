@@ -5,7 +5,7 @@ authors:
   - "@sjenning"
   - "@PiotrProkop"
 owning-sig: sig-node
-participating-groups:
+participating-sigs:
   - sig-scheduling
 reviewers:
   - "@vishnu"

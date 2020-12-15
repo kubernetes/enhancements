@@ -3,7 +3,7 @@ kep-number: 2053
 authors:
   - "@derekwaynecarr"
 owning-sig: sig-node
-participating-groups: []
+participating-sigs: []
 status: implementable
 creation-date: 2020-06-18
 reviewers:

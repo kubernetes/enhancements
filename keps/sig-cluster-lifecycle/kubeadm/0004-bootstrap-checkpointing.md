@@ -3,7 +3,7 @@ title: Kubernetes Bootstrap Checkpointing Proposal
 authors:
   - "@timothysc"
 owning-sig: sig-cluster-lifecycle
-participating-groups:
+participating-sigs:
   - sig-node
 reviewers:
   - "@yujuhong"

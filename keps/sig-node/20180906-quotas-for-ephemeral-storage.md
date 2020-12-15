@@ -3,7 +3,7 @@ title: Quotas for Ephemeral Storage
 authors:
   - "@RobertKrawitz"
 owning-sig: sig-node
-participating-groups:
+participating-sigs:
   - sig-node
 reviewers:
   - "@dashpole"

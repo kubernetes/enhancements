@@ -3,7 +3,7 @@ kep-number: 1441
 authors:
   - "@verb"
 owning-sig: sig-cli
-participating-groups:
+participating-sigs:
   - sig-cli
   - sig-node
 status: implementable

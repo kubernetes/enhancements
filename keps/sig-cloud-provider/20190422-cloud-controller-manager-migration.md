@@ -3,7 +3,7 @@ title: Cloud Controller Manager Migration
 authors:
   - "@andrewsykim"
 owning-sig: sig-cloud-provider
-participating-groups:
+participating-sigs:
   - sig-api-machinery
 reviewers:
   - "@cheftako"

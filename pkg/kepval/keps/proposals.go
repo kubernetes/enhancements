@@ -55,7 +55,7 @@ type Proposal struct {
 	Number            string   `json:"kep-number" yaml:"kep-number"`
 	Authors           []string `json:"authors" yaml:",flow"`
 	OwningSIG         string   `json:"owningSig" yaml:"owning-sig"`
-	ParticipatingSIGs []string `json:"participatingSigs" yaml:"participating-groups,flow,omitempty"`
+	ParticipatingSIGs []string `json:"participatingSigs" yaml:"participating-sigs,flow,omitempty"`
 	Reviewers         []string `json:"reviewers" yaml:",flow"`
 	Approvers         []string `json:"approvers" yaml:",flow"`
 	PRRApprovers      []string `json:"prrApprovers" yaml:"prr-approvers,flow"`

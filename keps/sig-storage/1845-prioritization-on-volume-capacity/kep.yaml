@@ -3,7 +3,7 @@ kep-number: 1845
 authors:
   - "@cofyc"
 owning-sig: sig-storage
-participating-groups:
+participating-sigs:
   - sig-scheduling
 status: implementable
 creation-date: 2020-06-03

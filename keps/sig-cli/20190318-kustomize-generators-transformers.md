@@ -3,7 +3,7 @@ title: Kustomize Generators and Transformers
 authors:
   - "@pwittrock"
 owning-sig: sig-cli
-participating-groups:
+participating-sigs:
 reviewers:
   - "@droot"
   - "@sethpollack"

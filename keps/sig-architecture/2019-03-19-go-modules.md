@@ -3,7 +3,7 @@ title: go modules
 authors:
   - "@liggitt"
 owning-sig: sig-architecture
-participating-groups:
+participating-sigs:
   - sig-api-machinery
   - sig-release
   - sig-testing

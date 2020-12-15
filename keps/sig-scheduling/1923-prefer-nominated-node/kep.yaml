@@ -3,7 +3,7 @@ kep-number: 1923
 authors:
   - "@chendave"
 owning-sig: sig-scheduling
-participating-groups:
+participating-sigs:
   - sig-scheduling
 status: provisional
 creation-date: 2020-09-29

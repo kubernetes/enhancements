@@ -5,7 +5,7 @@ authors:
   - "@balajismaniam"
   - "@lmdaly"
 owning-sig: sig-node
-participating-groups:
+participating-sigs:
   - sig-node
 reviewers:
   - "@vikasc"

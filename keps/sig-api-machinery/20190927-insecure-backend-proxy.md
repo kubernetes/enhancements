@@ -3,7 +3,7 @@ title: Insecure Backend Proxy
 authors:
   - "@deads2k"
 owning-sig: sig-api-machinery
-participating-groups:
+participating-sigs:
   - sig-api-machinery
   - sig-auth
   - sig-cli

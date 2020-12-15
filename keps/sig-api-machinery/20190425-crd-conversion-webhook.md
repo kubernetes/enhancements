@@ -4,7 +4,7 @@ authors:
   - "@mbohlool"
   - "@erictune"
 owning-sig: sig-api-machinery
-participating-groups:
+participating-sigs:
 reviewers:
   - "@lavalamp"
   - "@deads2k"

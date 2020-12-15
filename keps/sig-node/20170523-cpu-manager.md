@@ -5,7 +5,7 @@ authors:
   - "@flyingcougar"
   - "@sjenning"
 owning-sig: sig-node
-participating-groups:
+participating-sigs:
   - sig-node
 reviewers:
   - "@derekwaynecarr"

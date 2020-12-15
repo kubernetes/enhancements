@@ -4,7 +4,7 @@ authors:
   - "@apelisse"
   - "@sttts"
 owning-sig: sig-api-machinery
-participating-groups:
+participating-sigs:
   - sig-api-machinery
 reviewers:
   - "@erictune"

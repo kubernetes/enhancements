@@ -3,7 +3,7 @@ kep-number: 1645
 authors:
   - "@jeremyot"
 owning-sig: sig-multicluster
-participating-groups:
+participating-sigs:
   - sig-network
 status: implementable
 creation-date: 2020-03-30

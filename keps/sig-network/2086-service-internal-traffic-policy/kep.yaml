@@ -3,7 +3,7 @@ kep-number: 2086
 authors:
   - "@andrewsykim"
 owning-sig: sig-network
-participating-groups:
+participating-sigs:
 status: implementable
 creation-date: 2020-10-07
 reviewers:

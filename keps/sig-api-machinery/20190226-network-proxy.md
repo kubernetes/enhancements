@@ -4,7 +4,7 @@ authors:
   - "@cheftako"
   - "@anfernee"
 owning-sig: sig-api-machinery
-participating-groups:
+participating-sigs:
   - sig-network
   - sig-cloud-provider
 reviewers:

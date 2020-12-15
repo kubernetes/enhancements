@@ -3,7 +3,7 @@ title: Kustomize Subcommand Integration
 authors:
   - "@Liujingfang1"
 owning-sig: sig-cli
-participating-groups:
+participating-sigs:
   - sig-cli
 reviewers:
   - "@liggitt"

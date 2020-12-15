@@ -3,7 +3,7 @@ title: Remove knowledge of pod cluster CIDR from iptables rules
 authors:
   - "@satyasm"
 owning-sig: sig-network
-participating-groups:
+participating-sigs:
 reviewers:
   - "@thockin"
   - "@caseydavenport"

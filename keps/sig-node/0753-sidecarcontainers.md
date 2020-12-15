@@ -4,7 +4,7 @@ authors:
   - "@joseph-irving"
   - "@rata"
 owning-sig: sig-apps
-participating-groups:
+participating-sigs:
   - sig-apps
   - sig-node
 reviewers:

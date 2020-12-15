@@ -7,7 +7,7 @@ authors:
   - "@michmike"
   - "@daschott"
 owning-sig: sig-windows
-participating-groups:
+participating-sigs:
   - sig-architecture
   - sig-node
 reviewers:

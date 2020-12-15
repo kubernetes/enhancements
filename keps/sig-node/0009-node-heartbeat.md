@@ -4,7 +4,7 @@ authors:
   - "@wojtek-t"
   - "with input from @bgrant0607, @dchen1107, @yujuhong, @lavalamp"
 owning-sig: sig-node
-participating-groups:
+participating-sigs:
   - sig-scalability
   - sig-api-machinery
   - sig-scheduling

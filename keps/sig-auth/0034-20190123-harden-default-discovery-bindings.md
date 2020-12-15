@@ -3,7 +3,7 @@ title: Harden Default RBAC Discovery ClusterRole(Binding)s
 authors:
   - "@dekkagaijin"
 owning-sig: sig-auth
-participating-groups:
+participating-sigs:
   - sig-auth
   - sig-api-machinery
 reviewers:

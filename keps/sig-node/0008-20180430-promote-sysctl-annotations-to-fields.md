@@ -3,7 +3,7 @@ title: Protomote sysctl annotations to fields
 authors:
   - "@ingvagabund"
 owning-sig: sig-node
-participating-groups:
+participating-sigs:
   - sig-auth
 reviewers:
   - "@sjenning"

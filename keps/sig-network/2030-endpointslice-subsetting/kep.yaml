@@ -4,7 +4,7 @@ authors:
   - "@robscott"
   - "@jeremyot"
 owning-sig: sig-network
-participating-groups:
+participating-sigs:
   - sig-multicluster
   - sig-scalability
 status: implementable

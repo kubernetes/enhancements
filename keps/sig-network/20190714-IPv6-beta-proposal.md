@@ -3,7 +3,7 @@ title: graduate-ipv6-to-beta
 authors:
   - "@aojea"
 owning-sig: sig-network
-participating-groups:
+participating-sigs:
 reviewers:
   - "@bentheelder"
   - "@andrewsykim"

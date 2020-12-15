@@ -3,7 +3,7 @@ title: k8s.io Group Protection
 authors:
   - "@deads2k"
 owning-sig: sig-api-machinery
-participating-groups:
+participating-sigs:
   - sig-api-machinery
   - sig-architecture
 reviewers:

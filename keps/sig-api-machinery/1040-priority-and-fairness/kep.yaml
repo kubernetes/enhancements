@@ -4,7 +4,7 @@ authors:
 - "@MikeSpreitzer"
 - "@yue9944882"
 owning-sig: sig-api-machinery
-participating-groups:
+participating-sigs:
 - wg-multitenancy
 - sig-scheduling
 status: implementable

@@ -4,7 +4,7 @@ authors:
   - "@davidz627"
   - "@jsafrane"
 owning-sig: sig-storage
-participating-groups:
+participating-sigs:
   - sig-architecture
   - sig-cluster-lifecycle
 reviewers:

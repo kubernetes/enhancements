@@ -3,7 +3,7 @@ kep-number: 1194
 authors:
   - "@johnbelamaric"
 owning-sig: sig-architecture
-participating-groups:
+participating-sigs:
   - sig-release
 reviewers:
   - "@derekwaynecarr"

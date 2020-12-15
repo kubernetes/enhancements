@@ -3,7 +3,7 @@ title: TTL After Finished
 authors:
   - "@janetkuo"
 owning-sig: sig-apps
-participating-groups:
+participating-sigs:
   - sig-api-machinery
 reviewers:
   - "@enisoc"

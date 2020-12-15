@@ -3,7 +3,7 @@ title: Kubeadm Config versioning
 authors:
   - "@liztio"
 owning-sig: sig-cluster-lifecycle
-participating-groups:
+participating-sigs:
 reviewers:
   - "@timothysc"
 approvers:

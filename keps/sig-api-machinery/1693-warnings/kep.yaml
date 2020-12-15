@@ -3,7 +3,7 @@ kep-number: 1693
 authors:
   - "@liggitt"
 owning-sig: sig-api-machinery
-participating-groups:
+participating-sigs:
   - sig-architecture
   - sig-cli
   - sig-instrumentation

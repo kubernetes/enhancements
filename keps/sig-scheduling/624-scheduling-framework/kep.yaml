@@ -4,7 +4,7 @@ authors:
 - "@bsalamat"
 - "@misterikkit"
 owning-sig: sig-scheduling
-participating-groups:
+participating-sigs:
 - sig-scheduling
 status: implemented
 creation-date: 2018-04-09

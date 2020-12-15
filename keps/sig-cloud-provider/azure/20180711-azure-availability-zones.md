@@ -3,7 +3,7 @@ title: Azure Availability Zones
 authors:
   - "@feiskyer"
 owning-sig: sig-cloud-provider
-participating-groups:
+participating-sigs:
   - sig-storage
 reviewers:
   - "@khenidak"

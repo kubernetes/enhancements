@@ -3,7 +3,7 @@ title: pdb-support-for-custom-resources-with-scale-subresource
 authors:
   - "@mortent"
 owning-sig: sig-apps
-participating-groups:
+participating-sigs:
   - sig-scheduling
   - sig-autoscaling
 reviewers:

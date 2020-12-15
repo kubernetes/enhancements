@@ -4,7 +4,7 @@ authors:
   - "@andili99"
   - "@yuxiangqian"
 owning-sig: sig-storage
-participating-groups:
+participating-sigs:
   - sig-storage
 status: implementable
 creation-date: 2020-07-22

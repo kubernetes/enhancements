@@ -4,7 +4,7 @@ authors:
   - "@klaven"
   - "@ncdc"
 owning-sig: sig-cluster-lifecycle
-participating-groups:
+participating-sigs:
   - sig-cluster-lifecycle
   - sig-release
 reviewers:

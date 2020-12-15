@@ -3,7 +3,7 @@ title: RunAsGroup support in PodSpec and PodSecurityPolicy
 authors:
   - "@krmayankk"
 owning-sig: sig-node
-participating-groups:
+participating-sigs:
   - sig-auth
 reviewers:
   - "@tallclair"

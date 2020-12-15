@@ -3,7 +3,7 @@ title: Pruning for Custom Resources
 authors:
   - "@sttts"
 owning-sig: sig-api-machinery
-participating-groups:
+participating-sigs:
   - sig-api-machinery
 reviewers:
   - "@deads2k"

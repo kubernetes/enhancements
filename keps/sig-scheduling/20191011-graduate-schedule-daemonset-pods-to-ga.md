@@ -3,7 +3,7 @@ title: Graduate ScheduleDaemonSetPods to GA
 authors:
   - "@draveness"
 owning-sig: sig-scheduling
-participating-groups:
+participating-sigs:
   - sig-apps
 reviewers:
   - "@k82cn"

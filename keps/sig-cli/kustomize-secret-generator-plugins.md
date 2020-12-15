@@ -3,7 +3,7 @@ title: Kustomize Secret Generator Plugins
 authors:
   - "@sethpollack"
 owning-sig: sig-cli
-participating-groups:
+participating-sigs:
   - sig-apps
   - sig-architecture
 reviewers:

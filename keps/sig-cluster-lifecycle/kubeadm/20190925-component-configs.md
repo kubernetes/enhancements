@@ -3,7 +3,7 @@ title: kubeadm component config management
 authors:
   - "@rosti"
 owning-sig: sig-cluster-lifecycle
-participating-groups:
+participating-sigs:
   - sig-cluster-lifecycle
 reviewers:
   - "@fabriziopandini"

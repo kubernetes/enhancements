@@ -3,7 +3,7 @@ title: Promote Taint Based Evictions to GA
 authors:
   - "@damemi"
 owning-sig: sig-node
-participating-groups:
+participating-sigs:
   - sig-scheduling
 reviewers:
   - "@Huang-Wei"

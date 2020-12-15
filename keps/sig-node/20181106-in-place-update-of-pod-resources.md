@@ -6,7 +6,7 @@ authors:
   - "@schylek"
   - "@vinaykul"
 owning-sig: sig-node
-participating-groups:
+participating-sigs:
   - sig-autoscaling
   - sig-scheduling
 reviewers:
