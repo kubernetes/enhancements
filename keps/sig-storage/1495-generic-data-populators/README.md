@@ -1,26 +1,3 @@
----
-title: Generic Data Populators
-authors:
-  - "@bswartz"
-owning-sig: sig-storage
-participating-sigs:
-  - sig-api-machinery
-reviewers:
-  - "@thockin"
-  - "@saad-ali"
-  - "@smarterclayton"
-  - "@j-griffith"
-approvers:
-  - "@thockin"
-  - "@saad-ali"
-creation-date: 2019-12-03
-last-updated: 2020-01-29
-status: implementable
-see-also:
-replaces:
-superseded-by:
----
-
 # Generic Data Populators
 
 ## Table of Contents

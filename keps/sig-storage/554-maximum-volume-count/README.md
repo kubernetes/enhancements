@@ -1,29 +1,3 @@
----
-title: KEP Template
-authors:
-  - "@jsafrane"
-  - "@gnufied"
-owning-sig: sig-storage
-participating-sigs:
-  - sig-scheduling
-reviewers:
-  - "@bsalamat"
-  - "@thockin"
-  - "@msau42"
-approvers:
-  - "@bsalamat"
-  - "@msau42"
-  - "@thockin"
-editor: TBD
-creation-date: 2019-04-08
-last-updated: 2019-04-08
-status: implemented
-see-also:
-  - "https://github.com/kubernetes/enhancements/blob/master/keps/sig-storage/20190129-csi-migration.md"
-replaces:
-superseded-by:
----
-
 # Volume Scheduling Limits
 
 ## Table of Contents

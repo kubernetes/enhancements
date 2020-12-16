@@ -1,24 +1,3 @@
----
-title: Extend usage of Volume DataSource to allow PVCs for Cloning
-authors:
-  - "@j-griffith"
-owning-sig: sig-storage
-participating-sigs:
-  - sig-architecture
-reviewers:
-  - TBD
-approvers:
-  - "@saad-ali"
-  - "@thockin"
-editor: "@j-griffith"
-creation-date: 2018-11-11
-last-updated: 2020-03-09
-status: implemented
-see-also:
-replaces:
-superseded-by:
----
-
 # Allow the use of the dataSource field for clones (existing PVCs)
 
 ## Table of Contents
