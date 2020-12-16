@@ -1,0 +1,18 @@
+title: Kube-Proxy ComponentConfig graduation
+kep-number: 784
+authors:
+  - "@rosti"
+owning-sig: sig-network
+participating-sigs:
+  - sig-cluster-lifecycle
+  - sig-api-machinery
+  - wg-component-standard
+reviewers:
+  - "@luxas"
+  - "@mtaufen"
+  - "@sttts"
+approvers:
+  - "@thockin"
+editor: "@rosti"
+creation-date: 2019-06-13
+status: implementable

@@ -1,25 +1,3 @@
----
-title: graduate-ipv6-to-beta
-authors:
-  - "@aojea"
-owning-sig: sig-network
-participating-sigs:
-reviewers:
-  - "@bentheelder"
-  - "@andrewsykim"
-  - "@khenidak"
-approvers:
-  - "@lachie83"
-  - "@thockin"
-editor: TBD
-creation-date: 2019-07-14
-last-updated: 2019-07-27
-status: implementable
-see-also:
-replaces:
-superseded-by:
----
-
 # Graduate IPv6 to beta
 
 ## Table of Contents

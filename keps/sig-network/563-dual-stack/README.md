@@ -1,24 +1,3 @@
----
-title: Kubernetes Dual-stack Support
-authors:
-  - "@leblancd"
-  - "@rpothier"
-  - "@lachie83"
-  - "@khenidak"
-  - "@feiskyer"
-owning-sig: sig-network
-participating-sigs:
-  - sig-cluster-lifecycle
-reviewers:
-  - "@danwinship"
-approvers:
-  - "@thockin"
-editor: TBD
-creation-date: 2018-05-21
-last-updated: 2020-06-19
-status: implementable
----
-
 # IPv4/IPv6 Dual-stack
 
 ## Table of Contents

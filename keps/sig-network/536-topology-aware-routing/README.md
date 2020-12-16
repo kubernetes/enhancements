@@ -1,19 +1,3 @@
----
-title: Topology-aware service routing
-authors:
-  - "@m1093782566"
-  - "@andrewsykim"
-owning-sig: sig-network
-reviewers:
-  - "@thockin"
-  - "@johnbelamaric"
-approvers:
-  - "@thockin"
-creation-date: 2018-10-24
-last-updated: 2019-10-17
-status: implementable
----
-
 # Topology-aware service routing
 
 ## Table of Contents

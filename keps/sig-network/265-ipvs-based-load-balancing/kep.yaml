@@ -1,0 +1,15 @@
+title: IPVS Load Balancing Mode in Kubernetes
+kep-number: 265
+authors:
+  - "@rramkumar1"
+owning-sig: sig-network
+reviewers:
+  - "@thockin"
+  - "@m1093782566"
+approvers:
+  - "@thockin"
+  - "@m1093782566"
+editor: "@thockin"
+creation-date: 2018-03-21
+last-updated: 2019-06-27
+status: implemented

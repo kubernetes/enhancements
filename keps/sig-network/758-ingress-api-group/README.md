@@ -1,23 +1,3 @@
----
-title: Graduate Ingress to GA
-authors:
-  - "@bowei"
-owning-sig: sig-network
-participating-sigs:
-reviewers:
-  - "@aledbf"
-approvers:
-  - "@thockin"
-  - "@caseydavenport"
-editor:
-creation-date: 2018-01-25
-last-updated: 2018-04-25
-status: implementable
-see-also:
-replaces:
-superseded-by:
----
-
 # Graduate Ingress to GA
 
 ## Table of contents

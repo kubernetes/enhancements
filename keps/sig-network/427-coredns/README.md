@@ -1,24 +1,3 @@
----
-title: Graduate CoreDNS to GA
-authors:
-  - "@johnbelamaric"
-  - "@rajansandeep"
-owning-sig: sig-network
-participating-sigs:
-  - sig-cluster-lifecycle
-reviewers:
-  - "@bowei"
-  - "@thockin"
-approvers:
-  - "@thockin"
-editor: "@rajansandeep"
-creation-date: 2018-03-21
-last-updated: 2018-05-18
-status: provisional
-see-also:
-  - "https://github.com/kubernetes/community/pull/2167"
----
-
 # Graduate CoreDNS to GA
 
 ## Table of Contents
