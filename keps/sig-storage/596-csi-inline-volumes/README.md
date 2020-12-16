@@ -1,23 +1,3 @@
----
-title: Ephemeral Inline CSI Volumes
-authors:
-  - "@vladimirvivien"
-  - "@pohly"
-owning-sig: sig-storage
-participating-sigs:
-  - sig-storage
-reviewers:
-  - "@msau42"
-  - "@jsafrane"
-  - "@liggitt"
-approvers:
-  - "@thockin"
-  - "@saad-ali"
-creation-date: 2019-01-22
-last-updated: 2019-08-30
-status: implementable
----
-
 # Ephemeral Inline CSI volumes
 
 ## Table of Contents

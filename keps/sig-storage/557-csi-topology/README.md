@@ -1,31 +1,4 @@
----
-title: CSI Volume Topology
-authors:
-  - "@verult"
-owning-sig: sig-storage
-participating-sigs:
-  - sig-storage
-reviewers:
-  - "@msau42"
-  - "@saad-ali"
-approvers:
-  - "@msau42"
-  - "@saad-ali"
-editor: TBD
-creation-date: 2019-01-24
-last-updated: 2020-04-16
-status: implemented
-see-also:
-  - n/a
-replaces:
-  - n/a
-superseded-by:
-  - n/a
----
-
-# Title
-
-CSI Volume Topology
+# CSI Volume Topology
 
 ## Table of Contents
 

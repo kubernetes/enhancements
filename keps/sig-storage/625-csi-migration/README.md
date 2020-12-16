@@ -1,25 +1,3 @@
----
-title: In-tree Storage Plugin to CSI Migration
-authors:
-  - "@davidz627"
-  - "@jsafrane"
-owning-sig: sig-storage
-participating-sigs:
-  - sig-architecture
-  - sig-cluster-lifecycle
-reviewers:
-  - "@saadali"
-  - "@msau42"
-approvers:
-  - "@saadali"
-editor: "@davidz627"
-creation-date: 2019-01-29
-last-updated: 2019-01-29
-status: implementable
-see-also:
-  - "https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/csi-migration.md"
----
-
 # In-tree Storage Plugin to CSI Migration Design Doc
 
 

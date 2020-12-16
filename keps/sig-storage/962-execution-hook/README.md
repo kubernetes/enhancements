@@ -1,37 +1,4 @@
----
-title: ExecutionHook
-authors:
-  - "@jingxu97"
-  - "@xing-yang"
-owning-sig: sig-storage
-participating-sigs:
-  - sig-storage
-  - sig-node
-  - sig-apps
-  - sig-architecture
-reviewers:
-  - "@saad-ali"
-  - "@thockin"
-  - "@liyinan926"
-approvers:
-  - "@thockin"
-  - "@saad-ali"
-  - "@liyinan926"
-editor: TBD
-creation-date: 2019-01-20
-last-updated: 2019-04-25
-status: implementable
-see-also:
-  - n/a
-replaces:
-  - n/a
-superseded-by:
-  - n/a
----
-
-# Title
-
-ExecutionHook API Design
+# ExecutionHook API Design
 
 ## Table of Contents
 

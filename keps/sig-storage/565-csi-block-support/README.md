@@ -1,24 +1,3 @@
----
-title: CSI Raw Block Volumes
-authors:
-  - "@bswartz"
-owning-sig: sig-storage
-participating-sigs:
-  - sig-storage
-reviewers:
-  - "@msau42"
-  - "@saad-ali"
-approvers:
-  - "@saad-ali"
-editor: TBD
-creation-date: 2019-01-30
-last-updated: 2020-03-09
-status: implemented
-see-also:
-  - "https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/raw-block-pv.md"
-  - "https://github.com/kubernetes/enhancements/pull/1288"
----
-
 # CSI Raw Block Volumes
 
 ## Table of Contents

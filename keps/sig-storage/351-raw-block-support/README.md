@@ -1,23 +1,3 @@
----
-title: Raw Block Volumes
-authors:
-  - "@jsafrane"
-owning-sig: sig-storage
-participating-sigs:
-  - sig-storage
-reviewers:
-  - "@msau42"
-  - "@saad-ali"
-approvers:
-  - "@saad-ali"
-editor: TBD
-creation-date: 2019-10-08
-last-updated: 2020-03-09
-status: implemented
-see-also:
-  - "https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/raw-block-pv.md"
----
-
 # Raw Block Volumes
 
 ## Table of Contents
