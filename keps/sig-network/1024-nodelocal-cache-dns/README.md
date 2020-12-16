@@ -1,22 +1,3 @@
----
-title: graduate-nodelocaldns-to-beta
-authors:
-  - "@prameshj"
-owning-sig: sig-network
-reviewers:
-  - "@bowei"
-  - "@thockin"
-  - "@johnbelamaric"
-approvers:
-  - "@bowei"
-  - "@thockin"
-creation-date: 2019-04-24
-last-updated: 2020-09-23
-status: implemented
-see-also:
-  - "/keps/sig-network/0030-nodelocal-dns-cache.md"
----
-
 # Graduate NodeLocal DNSCache to beta
 
 ## Table of Contents

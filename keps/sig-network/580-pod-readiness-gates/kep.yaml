@@ -1,0 +1,18 @@
+title: Pod Ready++
+kep-number: 580
+authors:
+  - "freehan@"
+owning-sig: sig-network
+participating-sigs:
+  - sig-node
+  - sig-cli
+reviewers:
+  - thockin@
+  - dchen1107@
+approvers:
+  - thockin@
+  - dchen1107@
+editor: "freehan@"
+creation-date: 2018-04-01
+last-updated: 2018-04-01
+status: provisional

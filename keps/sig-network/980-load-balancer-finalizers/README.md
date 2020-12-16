@@ -1,28 +1,3 @@
----
-title: Finalizer Protection for Service LoadBalancers
-authors:
-  - "@MrHohn"
-owning-sig: sig-network
-participating-sigs:
-  - sig-cloud-provider
-reviewers:
-  - "@andrewsykim"
-  - "@bowei"
-  - "@jhorwit2"
-  - "@jiatongw"
-approvers:
-  - "@andrewsykim"
-  - "@bowei"
-  - "@thockin"
-editor: TBD
-creation-date: 2019-04-23
-last-updated: 2020-01-06
-status: implemented
-see-also:
-replaces:
-superseded-by:
----
-
 # Finalizer Protection for Service LoadBalancers
 
 ## Table of Contents

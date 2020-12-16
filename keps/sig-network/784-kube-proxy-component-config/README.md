@@ -1,23 +1,3 @@
----
-title: Kube-Proxy ComponentConfig graduation
-authors:
-  - "@rosti"
-owning-sig: sig-network
-participating-sigs:
-  - sig-cluster-lifecycle
-  - sig-api-machinery
-  - wg-component-standard
-reviewers:
-  - "@luxas"
-  - "@mtaufen"
-  - "@sttts"
-approvers:
-  - "@thockin"
-editor: "@rosti"
-creation-date: 2019-06-13
-status: implementable
----
-
 # kube-proxy component config graduation proposal
 
 ## Table of Contents

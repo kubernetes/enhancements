@@ -1,22 +1,3 @@
----
-title: Configurable Pod DNS
-authors:
-  - "@MrHohn"
-owning-sig: sig-network
-participating-sigs:
-  - sig-network
-reviewers:
-  - "@thockin"
-  - "@bowei"
-approvers:
-  - "@thockin"
-  - "@bowei"
-editor: TBD
-creation-date: 2019-01-18
-last-updated: 2019-02-11
-status: implementable
----
-
 # Configurable Pod DNS
 
 ## Table of Contents

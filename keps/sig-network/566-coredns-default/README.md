@@ -1,22 +1,3 @@
----
-title: Switch CoreDNS to the default DNS
-authors:
-  - "@johnbelamaric"
-  - "@rajansandeep"
-owning-sig: sig-network
-participating-sigs:
-  - sig-cluster-lifecycle
-reviewers:
-  - "@bowei"
-  - "@thockin"
-approvers:
-  - "@thockin"
-editor: "@rajansandeep"
-creation-date: 2018-05-18
-last-updated: 2018-05-18
-status: provisional
----
-
 # Switch CoreDNS to the default DNS
 
 ## Table of Contents
