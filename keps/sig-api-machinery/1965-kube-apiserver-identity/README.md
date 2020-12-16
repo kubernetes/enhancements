@@ -96,7 +96,7 @@ will only delay the storage migration for the same period of time.
 ## Design Details
 
 The [kubelet heartbeat](https://github.com/kubernetes/enhancements/blob/master/keps/sig-node/0009-node-heartbeat.md)
-logic [already written](https://github.com/kubernetes/kubernetes/tree/master/pkg/kubelet/nodelease)
+logic [already written](https://github.com/kubernetes/kubernetes/blob/master/pkg/kubelet/util/nodelease.go)
 will be re-used. The heartbeat controller will be added to kube-apiserver in a
 post-start hook.
 
