@@ -1,23 +1,3 @@
----
-title: Promote Node Operating System & Architecture labels to GA
-authors:
-  - "@yujuhong"
-owning-sig: sig-node
-participating-sigs:
-  - sig-node
-reviewers:
-  - "@liggitt"
-approvers:
-  - "@dchen1107"
-editor: Yu-Ju Hong
-creation-date: 2019-01-30
-last-updated: 2019-01-30
-status: implementable
-see-also:
-replaces:
-superseded-by:
----
-
 # Promote Node Operating System & Architecture labels to GA
 
 ## Table of Contents

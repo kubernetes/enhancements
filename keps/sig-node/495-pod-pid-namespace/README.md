@@ -1,20 +1,3 @@
----
-title: Shared PID Namespace
-authors:
-- "@verb"
-owning-sig: sig-node
-participating-sigs:
-- sig-node
-reviewers:
-- "@yujuhong"
-approvers:
-- "@dchen1107"
-editor: N/A
-creation-date: 2016-12-21
-last-updated: 2019-09-30
-status: implemented
----
-
 # Pod Shared PID Namespace
 
 ## Table of Contents

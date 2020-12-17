@@ -1,32 +1,3 @@
----
-title: Efficient Node Heartbeat
-authors:
-  - "@wojtek-t"
-  - "with input from @bgrant0607, @dchen1107, @yujuhong, @lavalamp"
-owning-sig: sig-node
-participating-sigs:
-  - sig-scalability
-  - sig-api-machinery
-  - sig-scheduling
-reviewers:
-  - "@deads2k"
-  - "@lavalamp"
-approvers:
-  - "@dchen1107"
-  - "@derekwaynecarr"
-editor: TBD
-creation-date: 2018-04-27
-last-updated: 2018-04-27
-status: implemented
-see-also:
-  - "https://github.com/kubernetes/kubernetes/issues/14733"
-  - "https://github.com/kubernetes/kubernetes/pull/14735"
-replaces:
-  - n/a
-superseded-by:
-  - n/a
----
-
 # Efficient Node Heartbeats
 
 ## Table of Contents

@@ -1,25 +1,3 @@
----
-title: Protomote sysctl annotations to fields
-authors:
-  - "@ingvagabund"
-owning-sig: sig-node
-participating-sigs:
-  - sig-auth
-reviewers:
-  - "@sjenning"
-  - "@derekwaynecarr"
-approvers:
-  - "@sjenning "
-  - "@derekwaynecarr"
-editor:
-creation-date: 2018-04-30
-last-updated: 2018-05-02
-status: provisional
-see-also:
-replaces:
-superseded-by:
----
-
 # Promote sysctl annotations to fields
 
 ## Table of Contents

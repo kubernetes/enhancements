@@ -1,25 +1,3 @@
----
-title: Seccomp to GA
-authors:
-  - "@tallclair"
-  - "@pjbgf"
-owning-sig: sig-node
-participating-sigs:
-  - sig-api-machinery
-  - sig-auth
-reviewers:
-  - "@liggitt"
-  - "@derekwaynecarr"
-  - "@dchen1107"
-  - "@mrunalp"
-approvers:
-  - "@liggitt"
-  - "@derekwaynecarr"
-editor: "@saschagrunert"
-creation-date: 2019-07-17
-status: implemented
----
-
 # Seccomp to GA
 
 ## Table of Contents

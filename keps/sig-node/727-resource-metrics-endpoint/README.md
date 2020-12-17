@@ -1,21 +1,3 @@
----
-title: Kubelet Resource Metrics Endpoint
-authors:
-  - "@dashpole"
-owning-sig: sig-node
-participating-sigs:
-  - sig-instrumentation
-reviewers:
-  - DirectXMan12
-  - tallclair
-approvers:
-  - dchen1107
-  - brancz
-creation-date: 2019-01-24
-last-updated: 2019-02-21
-status: implementable
----
-
 # Kubelet Resource Metrics Endpoint
 
 ## Table of Contents

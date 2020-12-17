@@ -1,27 +1,3 @@
----
-title: Sidecar Containers
-authors:
-  - "@joseph-irving"
-  - "@rata"
-owning-sig: sig-apps
-participating-sigs:
-  - sig-apps
-  - sig-node
-reviewers:
-  - "@fejta"
-  - "@sjenning"
-  - "@SergeyKanzhelev"
-approvers:
-  - "@enisoc"
-  - "@kow3ns"
-  - "@derekwaynecarr"
-  - "@dchen1107"
-editor: TBD
-creation-date: 2018-05-14
-last-updated: 2020-06-24
-status: provisional
----
-
 # Sidecar Containers
 
 ## Table of Contents

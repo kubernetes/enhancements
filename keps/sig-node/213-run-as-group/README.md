@@ -1,22 +1,3 @@
----
-title: RunAsGroup support in PodSpec and PodSecurityPolicy
-authors:
-  - "@krmayankk"
-owning-sig: sig-node
-participating-sigs:
-  - sig-auth
-reviewers:
-  - "@tallclair"
-  - "@mrunalp"
-approvers:
-  - "@liggitt"
-  - "@derekwaynecarr"
-editor: TBD
-creation-date: 2017-06-21
-last-updated: 2019-02-14
-status: implementable
----
-
 # RunAsGroup support in PodSpec and PodSecurityPolicy
 
 ## Table of Contents

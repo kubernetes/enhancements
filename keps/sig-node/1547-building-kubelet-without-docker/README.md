@@ -1,27 +1,3 @@
----
-title: Building a Dockerless Kubelet
-authors:
-  - "@mattjmcnaughton"
-owning-sig: sig-node
-participating-sigs:
-  - sig-testing
-  - sig-release
-  - sig-cluster-lifecycle
-reviewers:
-  - "@dims"
-  - "@BenTheElder"
-  - TBD
-approvers:
-  - "@derekwaynecarr"
-  - "@dchen1107"
-editor: TBD
-creation-date: 2020-02-05
-last-updated: 2020-05-11
-status: implemented
-see-also:
-  - "/keps/sig-cloud-provider/20190729-building-without-in-tree-providers.md"
----
-
 # Building a Dockerless Kubelet
 
 ## Table of Contents

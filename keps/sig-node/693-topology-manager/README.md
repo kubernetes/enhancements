@@ -1,31 +1,3 @@
----
-title: Node Topology Manager
-authors:
-  - "@ConnorDoyle"
-  - "@balajismaniam"
-  - "@lmdaly"
-owning-sig: sig-node
-participating-sigs:
-  - sig-node
-reviewers:
-  - "@vikasc"
-  - "@derekwaynecarr"
-  - "@jeremyeder"
-  - "@RenaudWasTaken"
-  - "@klueska"
-  - "@nolancon"
-approvers:
-  - "@dawnchen"
-  - "@derekwaynecarr"
-editor: Louise Daly
-creation-date: 2019-01-30
-last-updated: 2019-01-30
-status: implementable
-see-also:
-replaces:
-superseded-by:
----
-
 # Node Topology Manager
 
 _Authors:_
