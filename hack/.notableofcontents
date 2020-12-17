@@ -1,9 +1,5 @@
 keps/README.md
-keps/sig-apps/README.md
-keps/sig-autoscaling/README.md
-keps/provider-aws/README.md
-keps/sig-cli/kep-faq.md
-keps/sig-cluster-lifecycle/clusterapi/README.md
-keps/sig-cluster-lifecycle/kubeadm/0023-documentation-for-images.md
-keps/sig-cluster-lifecycle/kubeadm/README.md
-keps/sig-network/README.md
+keps/sig-cli/FAQ.md
+keps/sig-cluster-lifecycle/clusterapi/FAQ.md
+keps/sig-cluster-lifecycle/kubeadm/970-kubeadm-config/documentation-for-images.md
+
