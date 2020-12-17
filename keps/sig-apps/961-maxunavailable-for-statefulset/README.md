@@ -1,28 +1,3 @@
----
-title: Implement maxUnavailable for StatefulSets
-authors:
-  - "@krmayankk"
-owning-sig: sig-apps
-participating-sigs:
-  - sig-apps
-reviewers:
-  - "@janetkuo"
-  - "@kow3ns"
-approvers:
-  - "@janetkuo"
-  - "@kow3ns"
-editor: TBD
-creation-date: 2018-12-29
-last-updated: 2019-08-10
-status: implementable
-see-also:
-  - n/a
-replaces:
-  - n/a
-superseded-by:
-  - n/a
----
-
 # Implement maxUnavailable in StatefulSet
 
 ## Table of Contents

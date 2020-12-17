@@ -1,27 +1,3 @@
----
-title: TTL After Finished
-authors:
-  - "@janetkuo"
-owning-sig: sig-apps
-participating-sigs:
-  - sig-api-machinery
-reviewers:
-  - "@enisoc"
-  - "@tnozicka"
-approvers:
-  - "@kow3ns"
-editor: TBD
-creation-date: 2018-08-16
-last-updated: 2018-08-16
-status: provisional
-see-also:
-  - n/a
-replaces:
-  - n/a
-superseded-by:
-  - n/a
----
-
 # TTL After Finished Controller
 
 ## Table of Contents
