@@ -1,0 +1,25 @@
+title: Portable Service Definitions
+kep-number: 706
+authors:
+  - "@mattfarina"
+owning-sig: sig-apps
+participating-sigs:
+  - sig-service-catalog
+reviewers:
+  - "@carolynvs"
+  - "@kibbles-n-bytes"
+  - "@duglin"
+  - "@jboyd01"
+  - "@prydonius"
+  - "@kow3ns"
+approvers:
+  - "@mattfarina"
+  - "@prydonius"
+  - "@kow3ns"
+editor: TBD
+creation-date: 2018-11-13
+last-updated: 2018-11-19
+status: provisional
+see-also:
+replaces:
+superseded-by:

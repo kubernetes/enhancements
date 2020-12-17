@@ -1,26 +1,3 @@
----
-title: pdb-support-for-custom-resources-with-scale-subresource
-authors:
-  - "@mortent"
-owning-sig: sig-apps
-participating-sigs:
-  - sig-scheduling
-  - sig-autoscaling
-reviewers:
-  - "@kow3ns"
-  - "@janetkuo"
-approvers:
-  - "@kow3ns"
-  - "@janetkuo"
-editor: TBD
-creation-date: 2019-04-12
-last-updated: 2019-04-12
-status: implementable
-see-also:
-replaces:
-superseded-by:
----
-
 # PDB support for custom resources with scale subresource
 
 ## Table of Contents
