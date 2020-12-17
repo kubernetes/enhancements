@@ -1,18 +1,3 @@
----
-title: Coscheduling
-authors:
-  - "@k82cn"
-owning-sig: sig-scheduling
-reviewers:
-  - "@bsalamat"
-  - "@vishh"
-approvers:
-  - "@bsalamat"
-creation-date: 2018-07-03
-last-updated: 2019-01-03
-status: provisional
----
-
 # Coscheduling
 
 ## Table of Contents <!-- omit in toc -->
