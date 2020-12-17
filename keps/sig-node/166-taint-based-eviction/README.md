@@ -1,24 +1,3 @@
----
-title: Promote Taint Based Evictions to GA
-authors:
-  - "@damemi"
-owning-sig: sig-node
-participating-sigs:
-  - sig-scheduling
-reviewers:
-  - "@Huang-Wei"
-approvers:
-  - sig-node
-  - sig-cloud-provider
-editor:
-creation-date: 2020-01-14
-last-updated: 2020-03-23
-status: implemented
-see-also:
-replaces:
-superseded-by:
----
-
 # Promote Taint Based Evictions to GA
 
 ## Table of Contents

@@ -1,36 +1,3 @@
----
-title: In-place Update of Pod Resources
-authors:
-  - "@kgolab"
-  - "@bskiba"
-  - "@schylek"
-  - "@vinaykul"
-owning-sig: sig-node
-participating-sigs:
-  - sig-autoscaling
-  - sig-scheduling
-reviewers:
-  - "@bsalamat"
-  - "@dashpole"
-  - "@derekwaynecarr"
-  - "@dchen1107"
-  - "@ahg-g"
-  - "@k82cn"
-approvers:
-  - "@dchen1107"
-  - "@derekwaynecarr"
-  - "@ahg-g"
-  - "@mwielgus"
-editor: TBD
-creation-date: 2018-11-06
-last-updated: 2020-01-14
-status: implementable
-see-also:
-  - "/keps/sig-node/20191025-kubelet-container-resources-cri-api-changes.md"
-replaces:
-superseded-by:
----
-
 # In-place Update of Pod Resources
 
 ## Table of Contents

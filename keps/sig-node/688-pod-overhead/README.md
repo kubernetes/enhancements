@@ -1,25 +1,3 @@
----
-title: Pod Overhead
-authors:
-  - "@egernst"
-owning-sig: sig-node
-participating-sigs:
-  - sig-scheduling
-  - sig-autoscaling
-  - sig-windows
-reviewers:
-  - "@tallclair"
-  - "@derekwaynecarr"
-  - "@dchen1107"
-approvers:
-  - "@dchen1107"
-  - "@derekwaynecarr"
-editor: Eric Ernst
-creation-date: 2019-02-26
-last-updated: 2020-01-29
-status: implemented (alpha)
----
-
 # Pod Overhead
 
 ## Table of Contents

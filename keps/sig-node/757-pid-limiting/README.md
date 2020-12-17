@@ -1,24 +1,3 @@
----
-title: Pid Limiting
-authors:
-  - "@derekwaynecarr"
-  - "@dims"
-owning-sig: sig-node
-participating-sigs:
-reviewers:
-  - "@dashpole"
-approvers:
-  - "@dashpole"
-  - "@dchen1107"
-editor: Derek Carr
-creation-date: 2019-01-29
-last-updated: 2019-03-05
-status: implemented
-see-also:
-replaces:
-superseded-by:
----
-
 # Pid Limiting
 
 ## Table of Contents

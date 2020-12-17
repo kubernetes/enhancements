@@ -1,24 +1,3 @@
----
-title: Cleaning up container streaming requests
-authors:
-  - "@tallclair"
-owning-sig: sig-node
-participating-sigs:
-  - sig-api-machinery
-reviewers:
-  - "@Random-Liu"
-  - "@yujuhong"
-  - "@mrunalp"
-  - "@derekwaynecarr"
-approvers:
-  - "@Random-Liu"
-  - "@derekwaynecarr"
-creation-date: 2019-12-05
-status: implementable
-replaces:
-  - "https://docs.google.com/document/d/1OE_QoInPlVCK9rMAx9aybRmgFiVjHpJCHI9LrfdNM_s/edit#heading=h.4yfjiw58o8d3"
----
-
 # Cleaning up container streaming requests
 
 ## Table of Contents

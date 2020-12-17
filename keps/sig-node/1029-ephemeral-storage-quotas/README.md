@@ -1,22 +1,3 @@
----
-title: Quotas for Ephemeral Storage
-authors:
-  - "@RobertKrawitz"
-owning-sig: sig-node
-participating-sigs:
-  - sig-node
-reviewers:
-  - "@dashpole"
-  - "@derekwaynecarr"
-approvers:
-  - "@dchen1107"
-  - "@derekwaynecarr"
-editor: TBD
-creation-date: 2018-09-06
-last-updated: 2019-06-04
-status: implementable
----
-
 # Quotas for Ephemeral Storage
 
 ## Table of Contents

@@ -1,25 +1,3 @@
----
-title: HugePages
-authors:
-  - "@derekwaynecarr"
-  - "@sjenning"
-  - "@PiotrProkop"
-owning-sig: sig-node
-participating-sigs:
-  - sig-scheduling
-reviewers:
-  - "@vishnu"
-approvers:
-  - "@dawnchen"
-editor: Derek Carr
-creation-date: 2019-01-29
-last-updated: 2019-03-05
-status: implemented
-see-also:
-replaces:
-superseded-by:
----
-
 # HugePages
 
 ## Table of Contents
