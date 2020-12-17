@@ -1,5 +1,5 @@
 title: Windows Privileged Container Support
-kep-number: NNNN
+kep-number: 1981
 authors:
   - "@ambguo"
 owning-sig: sig-windows
@@ -10,9 +10,7 @@ creation-date: 2020-10-09
 reviewers:
   - "@marosset"
 approvers:
-  - TBD 
-prr-approvers:
-  - TBD
+  - "@marosset"
 see-also:
 replaces:
 
