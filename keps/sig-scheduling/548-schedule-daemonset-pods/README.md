@@ -1,23 +1,3 @@
----
-title: Graduate ScheduleDaemonSetPods to GA
-authors:
-  - "@draveness"
-owning-sig: sig-scheduling
-participating-sigs:
-  - sig-apps
-reviewers:
-  - "@k82cn"
-  - "@janetkuo"
-approvers:
-  - "@k82cn"
-editor: TBD
-creation-date: 2019-10-11
-last-updated: 2019-10-11
-status: implemented
-see-also:
-  - "https://docs.google.com/document/d/10Ch3dhD88mnHYTq9q4jtX3e9e6gpndC78g5Ea6q4JY4/edit#heading=h.dtxm02f9bgaw"
----
-
 # Graduate ScheduleDaemonSetPods to GA
 
 ## Table of Contents

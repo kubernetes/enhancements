@@ -1,23 +1,3 @@
----
-title: Promote Pod Priority and Preemption to GA
-authors:
-  - "@bsalamat"
-owning-sig: sig-scheduling
-participating-sigs:
-  - sig-scheduling
-reviewers:
-  - "@k82cn"
-approvers:
-  - "@liggitt"
-editor: Babak Salamat
-creation-date: 2019-01-31
-last-updated: 2019-01-31
-status: implementable
-see-also:
-replaces:
-superseded-by:
----
-
 # Promote Pod Priority and Preemption to GA
 
 ## Table of Contents

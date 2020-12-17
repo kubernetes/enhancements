@@ -1,0 +1,24 @@
+title: Resource Quota Scope Selectors
+kep-number: 986
+authors:
+  - "@ravisantoshgudimetla"
+owning-sig: sig-api-machinery
+participating-sigs:
+  - sig-scheduling
+  - sig-api-machinery
+reviewers:
+  - "@bsalamat"
+  - "@k82cn"
+  - "@derekwaynecarr"
+  - “@sjenning”
+  - "@vikaschoudhary16"
+approvers:
+  - "@bsalamat"
+  - "@derekwaynecarr"
+editor: TBD
+creation-date: 2019-04-23
+last-updated: 2020-04-18
+status: implemented
+see-also:
+replaces:
+superseded-by:

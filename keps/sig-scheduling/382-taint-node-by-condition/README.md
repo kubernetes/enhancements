@@ -1,24 +1,3 @@
----
-title: Graduate TaintNodeByCondition to GA
-authors:
-  - "@draveness"
-owning-sig: sig-scheduling
-participating-sigs:
-  - sig-node
-reviewers:
-  - TBD
-  - "@k82cn"
-approvers:
-  - TBD
-  - "@k82cn"
-editor: TBD
-creation-date: 2019-10-12
-last-updated: 2019-10-12
-status: implemented
-see-also:
-  - "https://github.com/kubernetes/community/blob/master/contributors/design-proposals/scheduling/taint-node-by-condition.md"
----
-
 # Graduate TaintNodeByCondition to GA
 
 ## Table of Contents
