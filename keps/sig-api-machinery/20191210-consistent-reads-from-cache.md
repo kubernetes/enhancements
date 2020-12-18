@@ -324,7 +324,7 @@ are forwarded to etcd.
 
 Since falling back to etcd won't work, we should fail the requests and rely on
 rate limiting to prevent cascading failure.  I.e. `Retry-After` HTTP header (for
-well behaved clients) and [Priority and Fairness](https://github.com/kubernetes/enhancements/blob/master/keps/sig-api-machinery/20190228-priority-and-fairness.md).
+well behaved clients) and [Priority and Fairness](https://github.com/kubernetes/enhancements/blob/master/keps/sig-api-machinery/1040-priority-and-fairness/README.md).
 
 ### Ability to Opt-out
 
