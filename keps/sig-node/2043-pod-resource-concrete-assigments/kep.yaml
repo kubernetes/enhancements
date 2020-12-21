@@ -16,7 +16,8 @@ reviewers:
   - "@dashpole"
 approvers:
   - "@sig-node-leads"
-prr-approvers: []
+prr-approvers:
+  - "@johnbelamaric"
 see-also:
   - "keps/sig-node/606-compute-device-assignment/"
 replaces: []
@@ -27,14 +28,13 @@ stage: stable
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-# latest-milestone: "v1.21"
-latest-milestone: "0.0"
+latest-milestone: "v1.22"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
   alpha: "v1.13"
   beta: "v1.15"
-  stable: "v1.21"
+  stable: "v1.22"
 
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
