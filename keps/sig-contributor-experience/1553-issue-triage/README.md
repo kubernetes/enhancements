@@ -214,6 +214,9 @@ to stable.
 
 ## Implementation History
 
+- 2020-09-30 - [Issue Triage workflow enabled for kubernetes/kubernetes repo](https://github.com/kubernetes/test-infra/pull/19272)
+- 2020-09-28 - [Issue Triage workflow change announcement to Kubernetes-dev mailing list](https://groups.google.com/g/kubernetes-dev/c/YcaJpsjjLKw/m/i15cLLx5CAAJ)
+- 2020-08-31 - [Issue Triage KEP marked as `implementable`](https://github.com/kubernetes/enhancements/pull/1930)
 - 2020-02-15 - [Issue Triage KEP submitted as `provisional`](https://github.com/kubernetes/enhancements/pull/1554)
 - 2020-02-15 - [Issue Triage Enhancement issue](https://github.com/kubernetes/enhancements/issues/1553) opened
 - 2020-02-14 - [Carry PR opened](https://github.com/kubernetes/test-infra/pull/16298) for `needs-triage` and `triage/accepted` labels
