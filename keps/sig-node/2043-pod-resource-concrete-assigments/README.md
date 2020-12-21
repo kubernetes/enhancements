@@ -215,6 +215,8 @@ ContainerDevices could represent it as following:
     },
 ]
 ```
+The cpu_ids field of ContainerResources and AllocatableResourcesResponse contains only CPU of the pool for exclusive isolation, but not
+from the shared pool.
 
 Using the `Watch` endpoint, client applications can be notified of the pod resource allocation changes as soon as possible.
 However, the state of a pod will not be sent up until the first resource allocation change, which is the pod deletion in the worst case.
@@ -295,7 +297,7 @@ Kubelet will always be backwards compatible, so going forward existing plugins a
 * **How can this feature be enabled / disabled in a live cluster?**
   - [X] Feature gate (also fill in values in `kep.yaml`).
     - Feature gate name: `KubeletPodResources`.
-    - Components depending on the feature gate: N/A.
+    - Components depending on the feature gate: kubelet.
 
 * **Does enabling the feature change any default behavior?** No
 * **Can the feature be disabled once it has been enabled (i.e. can we rollback the enablement)?** Yes, through feature gates.
@@ -304,7 +306,7 @@ Kubelet will always be backwards compatible, so going forward existing plugins a
 
 ### Rollout, Upgrade and Rollback Planning
 
-* **How can a rollout fail? Can it impact already running workloads?** Kubelet would fail to start. Errors would be caught in the CI.
+* **How can a rollout fail? Can it impact already running workloads?** Kubelet may fail to start. The new API may report inconsistent data, or may cause the kubelet to crash.
 * **What specific metrics should inform a rollback?** Not Applicable, metrics wouldn't be available.
 * **Were upgrade and rollback tested? Was upgrade->downgrade->upgrade path tested?** Not Applicable.
 * **Is the rollout accompanied by any deprecations and/or removals of features,  APIs, fields of API types, flags, etc.?** No.
@@ -315,11 +317,11 @@ Kubelet will always be backwards compatible, so going forward existing plugins a
   - Look at hostPath mounts of privileged containers.
 * **What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?**
   - [X] Metrics
-    - Metric name: `pod_resources_endpoint_requests_total`
+    - Metric name: `pod_resources_endpoint_requests_total`, `pod_resources_endpoint_requests_list`, `pod_resources_endpoint_requests_get_allocatable`, `pod_resources_endpoint_watch`, `pod_resources_endpoint_errors_list`, `pod_resources_endpoint_errors_get_allocatable`, `pod_resources_endpoint_errors_watch`
     - Components exposing the metric: kubelet
 
 * **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?** N/A or refer to Kubelet SLIs.
-* **Are there any missing metrics that would be useful to have to improve observability if this feature?** No.
+* **Are there any missing metrics that would be useful to have to improve observability if this feature?** As part of this feature enhancement, per-API-endpoint resources metrics are being added; to observe features of the pod_resources interface metrics described in the [Monitoring requirements](#monitoring-requirements) section could be used.
 
 
 ### Dependencies
@@ -339,7 +341,7 @@ Feature only collects data when requests comes in, data is then garbage collecte
 ### Troubleshooting
 
 * **How does this feature react if the API server and/or etcd is unavailable?**: No effect.
-* **What are other known failure modes?** No known failure modes
+* **What are other known failure modes?** feature gate disabled: the API will always return a well-known error. In normal operation, the API is expected to never return error and always return a valid response, because it utilizes internal kubelet data which is always available. Bugs may lead to the API to return unexpected errors, or to return inconsistent data. Consumers of the API should treat unexpected errors as bugs of this API.
 * **What steps should be taken if SLOs are not being met to determine the problem?** N/A
 
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
@@ -358,6 +360,7 @@ Feature only collects data when requests comes in, data is then garbage collecte
 - 2020-09-02: Add the GetAllocatableResources endpoint
 - 2020-10-01: KEP extended with Watch API
 - 2020-11-02: Agreement in sig-node to implement Watch API in the 1.21 cycle
+- 2021-02-12: Per endpoint metrics were updated
 
 ## Alternatives
 
@@ -405,7 +408,7 @@ type Container struct {
 }
 ```
 * During Kubelet pod admission, if `ComputeDevices` is found non-empty, specified devices will be allocated otherwise behaviour will remain same as it is today.
-* Before starting the pod, the kubelet writes the assigned `ComputeDevices` back to the pod spec.  
+* Before starting the pod, the kubelet writes the assigned `ComputeDevices` back to the pod spec.
   * Note: Writing to the Api Server and waiting to observe the updated pod spec in the kubelet's pod watch may add significant latency to pod startup.
 * Allows devices to potentially be assigned by a custom scheduler.
 * Serves as a permanent record of device assignments for the kubelet, and eliminates the need for the kubelet to maintain this state locally.

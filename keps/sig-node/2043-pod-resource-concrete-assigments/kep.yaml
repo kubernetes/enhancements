@@ -1,5 +1,5 @@
 title: Kubelet endpoint for pod resource assignment
-kep-number: 1884
+kep-number: 2043
 authors:
   - "@dashpole"
   - "@vikaschoudhary16"
