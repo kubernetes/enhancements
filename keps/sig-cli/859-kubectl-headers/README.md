@@ -1,27 +1,4 @@
----
-title: Kubectl Commands In Headers
-authors:
-  - "@pwittrock"
-owning-sig: sig-cli
-participating-sigs:
-  - sig-api-machinery
-reviewers:
-  - "@deads2k"
-  - "@kow3ns"
-  - "@lavalamp"
-approvers:
-  - "@seans3"
-  - "@soltysh"
-editor: TBD
-creation-date: 2019-02-22
-last-updated: 2019-02-22
-status: implementable
-see-also:
-replaces:
-superseded-by:
----
-
-# kubectl-commands-in-headers
+# kubectl commands in headers
 
 
 ## Table of Contents
