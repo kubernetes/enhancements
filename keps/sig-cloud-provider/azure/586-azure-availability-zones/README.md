@@ -1,21 +1,3 @@
----
-title: Azure Availability Zones
-authors:
-  - "@feiskyer"
-owning-sig: sig-cloud-provider
-participating-sigs:
-  - sig-storage
-reviewers:
-  - "@khenidak"
-  - "@colemickens"
-approvers:
-  - "@brendanburns"
-editor: "@feiskyer"
-creation-date: 2018-07-11
-last-updated: 2018-09-29
-status: implementable
----
-
 # Azure Availability Zones
 
 ## Table of Contents

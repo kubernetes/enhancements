@@ -1,28 +1,3 @@
----
-title: Out-of-Tree Credential Providers
-authors:
-  - "@mcrute"
-  - "@nckturner"
-owning-sig: sig-cloud-provider
-participating-sigs:
-  - sig-node
-  - sig-auth
-reviewers:
-  - "@andrewsykim"
-  - "@cheftako"
-  - "@tallclair"
-  - "@mikedanese"
-approvers:
-  - "@andrewsykim"
-  - "@cheftako"
-  - "@tallclair"
-  - "@mikedanese"
-editor: TBD
-creation-date: 2019-10-04
-last-updated: 2019-12-10
-status: implementable
----
-
 # Out-of-Tree Credential Providers
 
 ## Table of Contents

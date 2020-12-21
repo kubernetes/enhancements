@@ -1,23 +1,3 @@
----
-title: Cloud Controller Manager Migration
-authors:
-  - "@andrewsykim"
-owning-sig: sig-cloud-provider
-participating-sigs:
-  - sig-api-machinery
-reviewers:
-  - "@cheftako"
-  - "@nckturner"
-approvers:
-  - "@lavalamp"
-editor: TBD
-creation-date: 2019-04-22
-last-updated: 2019-04-22
-status: implementable
-see-also:
-  - "/keps/sig-cloud-provider/20180530-cloud-controller-manager.md"
----
-
 # Cloud Controller Manager Migration
 
 ## Table of Contents
@@ -144,7 +124,7 @@ will prevent any of the v1.18 CCMs from claiming the lock. When the current hold
 <br/>
 <br/>
 
-![example network controllers migration v1.17](/keps/sig-cloud-provider/images/migrating-cloud-controllers-v1-17.png)
+![example network controllers migration v1.17](/keps/sig-cloud-provider/991-cloud-controller-migration/migrating-cloud-controllers-v1-17.png)
 <br/>
 **Figure 1**: Example of migrating cloud network controllers in v1.17
 
@@ -152,7 +132,7 @@ will prevent any of the v1.18 CCMs from claiming the lock. When the current hold
 <br/>
 <br/>
 
-![example network controllers migration v1.18](/keps/sig-cloud-provider/images/migrating-cloud-controllers-v1-18.png)
+![example network controllers migration v1.18](/keps/sig-cloud-provider/991-cloud-controller-migration/migrating-cloud-controllers-v1-18.png)
 <br/>
 **Figure 2**: Example of migrating cloud network controllers in v1.18
 

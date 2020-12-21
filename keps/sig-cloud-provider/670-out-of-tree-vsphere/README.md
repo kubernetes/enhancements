@@ -1,25 +1,3 @@
----
-title: Support Out-of-Tree vSphere Cloud Provider
-authors:
-  - "@frapposelli"
-  - "@andrewsykim"
-owning-sig: sig-cloud-provider
-reviewers:
-  - "@frapposelli"
-  - "@cantbewong"
-  - "@andrewsykim"
-  - "@dvonthenen"
-approvers:
-  - "@frapposelli"
-  - "@cantbewong"
-  - "@andrewsykim"
-  - "@dvonthenen"
-editor: TBD
-creation-date: 2019-01-25
-last-updated: 2020-04-09
-status: implemented
----
-
 # Supporting Out-of-Tree vSphere Cloud Provider
 
 ## Table of Contents
