@@ -1,5 +1,5 @@
 title: Issue Triage Workflow and Automation
-status: implementable
+status: implemented
 owning-sig: sig-contributor-experience
 participating-sigs:
   - sig-release
