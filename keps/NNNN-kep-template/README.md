@@ -130,7 +130,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
 - [ ] (R) Graduation criteria is in place
 - [ ] (R) Production readiness review completed
-- [ ] Production readiness review approved
+- [ ] (R) Production readiness review approved
 - [ ] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
@@ -360,7 +360,7 @@ Production readiness reviews are intended to ensure that features merging into
 Kubernetes are observable, scalable and supportable; can be safely operated in
 production environments, and can be disabled or rolled back in the event they
 cause increased failures in production. See more in the PRR KEP at
-https://git.k8s.io/enhancements/keps/sig-architecture/1194-prod-readiness/README.md.
+https://git.k8s.io/enhancements/keps/sig-architecture/1194-prod-readiness.
 
 The production readiness review questionnaire must be completed and approved
 for the KEP to move to `implementable` status and be included in the release.

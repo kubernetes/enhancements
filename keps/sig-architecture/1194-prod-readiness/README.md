@@ -149,14 +149,16 @@ Status update on Phase 1:
 The questionnaire was put into place in Phase 1, so what remains for Phase 2 is
 to document the review process and implement the tooling supporting it.
 
-The process will be enforced in the enhancements repository. When an enhancement
-is targeted at a release, a production readiness review will be necessary.
-Initially, the Enhancements Team will label the enhancement issue with a
-`prr-required` label; eventually tooling may do this automatically. The
-associated KEP must then be sure to add an approver from the
-`prod-readiness-review` team, which will be created in the `OWNERS_ALIASES` file
-of the enhancements repo. The enhancements verification CI must validate that a
-PRR approver is assigned to the KEP, and approves it prior to merging.
+The process will be enforced in the enhancements repository. A separate
+`prod-readiness` directory will be maintained, with an OWNERS file with
+PRR-specific reviewers and approvers. When targeting a release, the KEP author
+must:
+ * Update the `kep.yaml`, setting the `stage`, `latest-milestone`, and the
+   `milestone` struct (which captures per-stage release versions).
+ * Create a `prod-readiness/<sig>/<KEP number>.yaml` file, with the PRR
+   approver's GitHub handle for the specific stage.
+
+The `kepval` utility / enhancements CI will be updated to enforce this.
 
 ## Implementation History
 
@@ -164,3 +166,4 @@ PRR approver is assigned to the KEP, and approves it prior to merging.
 - 2019-10-17: Review feedback, phase 1 implementable
 - 2019-11-12: Add establishment of subproject
 - 2020-04-21: Update for phase 2
+- 2020-12-15: Mark implemented, update phase 2 details

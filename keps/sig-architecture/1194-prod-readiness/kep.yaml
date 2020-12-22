@@ -10,9 +10,11 @@ reviewers:
   - "@vishh"
   - "@justaugustus"
   - "@alejandrox1"
+  - "@wojtek-t"
+  - "@deads2k"
 approvers:
   - "@derekwaynecarr"
   - "@dims"
 creation-date: 2019-07-31
-last-updated: 2020-04-21
-status: implementable
+last-updated: 2020-12-15
+status: implemented
