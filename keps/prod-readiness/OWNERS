@@ -1,0 +1,8 @@
+# Disable inheritance as this is production-readiness directory.
+options:
+  no_parent_owners: true
+
+approvers:
+  - prod-readiness-approvers
+
+# TODO: Tag PRs with PRR-related label.

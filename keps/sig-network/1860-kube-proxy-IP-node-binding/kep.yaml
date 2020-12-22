@@ -16,12 +16,11 @@ approvers:
 
 stage: "alpha"
 
-latest-milestone: "v1.21"
+# latest-milestone: "v1.21"
 
 milestone:
   alpha: "v1.21"
   beta: "v1.22"
-  stable: "v1.22"
 
 feature-gates:
   - name: LoadBalancerIPMode
