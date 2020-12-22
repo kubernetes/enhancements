@@ -1,23 +1,3 @@
----
-title: graduate-aws-nlb-to-beta
-authors:
-  - "@M00nF1sh"
-owning-sig: sig-cloud-provider
-participating-sigs:
-reviewers:
-  - "@dnishi"
-approvers:
-  - "@justinsb"
-  - "@dnishi"
-editor: TBD
-creation-date: 2019-05-01
-last-updated: 2019-05-01
-status: implementable
-see-also:
-replaces:
-superseded-by:
----
-
 # Graduate AWS Network Load Balancer Support to beta
 
 ## Table of Contents
