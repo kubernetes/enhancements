@@ -1,32 +1,3 @@
----
-title: Support for CSI Plugins on Windows Nodes
-authors:
-  - "@ddebroy"
-owning-sig: sig-windows
-participating-sigs:
-  - sig-windows
-  - sig-storage
-reviewers:
-  - "@patricklang"
-  - "@michmike"
-  - "@jingxu97"
-  - "@yujuhong"
-  - "@msau42"
-approvers:
-  - "@patricklang"
-  - "@msau42"
-editor: TBD
-creation-date: 2019-07-14
-last-updated: 2019-07-29
-status: implementable
-see-also:
-  - "NA"
-replaces:
-  - "NA"
-superseded-by:
-  - "NA"
----
-
 # Support for CSI Plugins on Windows Nodes
 
 ## Table of Contents
