@@ -95,10 +95,23 @@ func TestValidation(t *testing.T) {
 				return
 			}
 
-			prrFilename := filepath.Join(prrsDir, kep.OwningSIG, kep.Number)
+			var stageMilestone string
+			switch kep.Stage {
+			case "alpha":
+				stageMilestone = kep.Milestone.Alpha
+			case "beta":
+				stageMilestone = kep.Milestone.Beta
+			case "stable":
+				stageMilestone = kep.Milestone.Stable
+			}
+
+			prrFilename := kep.Number + ".yaml"
+			prrFilename = filepath.Join(prrsDir, kep.OwningSIG, prrFilename)
 			prrFile, err := os.Open(prrFilename)
 			if os.IsNotExist(err) {
-				t.Errorf("missing PRR Approval file under: %s", prrFilename)
+				t.Errorf("PRR approval is required to target milestone %v (stage %v)", stageMilestone, kep.Stage)
+				t.Errorf("For more details about PRR approval see: https://github.com/kubernetes/community/blob/master/sig-architecture/production-readiness.md")
+				t.Errorf("To get PRR approval modify appropriately file %s and have this approved by PRR team", prrFilename)
 				return
 			}
 			if err != nil {
@@ -110,23 +123,21 @@ func TestValidation(t *testing.T) {
 				return
 			}
 
-			var stageMilestone string
 			var stagePRRApprover string
 			switch kep.Stage {
 			case "alpha":
-				stageMilestone = kep.Milestone.Alpha
 				stagePRRApprover = prr.Alpha.Approver
 			case "beta":
-				stageMilestone = kep.Milestone.Beta
 				stagePRRApprover = prr.Beta.Approver
 			case "stable":
-				stageMilestone = kep.Milestone.Stable
 				stagePRRApprover = prr.Stable.Approver
 			}
 			if len(stageMilestone) > 0 && stageMilestone >= "v1.21" {
 				// PRR approval is needed.
 				if len(stagePRRApprover) == 0 {
-					t.Errorf("PRR not approved for: %s", kep.Stage)
+					t.Errorf("PRR approval is required to target milestone %v (stage %v)", stageMilestone, kep.Stage)
+					t.Errorf("For more details about PRR approval see: https://github.com/kubernetes/community/blob/master/sig-architecture/production-readiness.md")
+					t.Errorf("To get PRR approval modify appropriately file %s and have this approved by PRR team", prrFilename)
 				}
 			}
 		})
