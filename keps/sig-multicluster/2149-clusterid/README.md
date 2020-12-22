@@ -168,7 +168,7 @@ The new multi-cluster services API (see [KEP-1645](https://github.com/kubernetes
 expanded the ways clusters can communicate with each other and organized them into `ClusterSet`s, but as of now there is no way for a cluster to be uniquely identified 
 in a Kubernetes-native way. This document by SIG-Multicluster proposes a standard 
 for how cluster IDs should be stored and managed, based on concrete use cases 
-discussed and observed in `ClusterSet` deployments. 
+discussed and observed in `ClusterSet` deployments. While existing implementations may not currently or plan to abide by this standard, future expansions to the Multi-Cluster API will be designed on top of this standard and existing MCS API implementations are encouraged to adopt it.
 
 ## Motivation
 
@@ -186,7 +186,9 @@ a broad sense previously ([see this doc](https://docs.google.com/document/d/1F__
 down in response to actual observed use cases in the latest community discussion on
 which this KEP is based ([doc](https://docs.google.com/document/d/1S0u6xzP2gcJKPipA6tBNDNuid76nVKeGhTk7PrCIuQY/edit?usp=sharing)). The motivation
 of this KEP is to provide a flexible but useful baseline for clusterID that can
-work with the known use cases.
+work with the known use cases (see the User Stories section). 
+
+Existing implementations of the MCS API may have addressed the need for a cluster ID in their own ways, inconsistent with this current standard. It is the perspective of SIG-Multicluster that future additions to the MCS API will depend when necessary on the proposal laid out here, and existing implementations are encouraged to migrate any existing cluster ID assignment and storage mechanism to fit within the specifications of this KEP.
 
 ### Goals
 
