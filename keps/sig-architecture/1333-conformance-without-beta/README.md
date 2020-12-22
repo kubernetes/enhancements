@@ -1,28 +1,3 @@
----
-title: Ensure Conformance Tests Do Not Require Beta APIs or Features
-authors:
-  - "@liggitt"
-owning-sig: sig-architecture
-participating-sigs:
-  - sig-testing
-  - sig-api-machinery
-reviewers:
-  - "@deads2k"
-  - "@bentheelder"
-  - "@timothysc"
-  - "@smarterclayton"
-  - "@johnbelamaric"
-approvers:
-  - "@timothysc"
-  - "@smarterclayton"
-  - "@johnbelamaric"
-creation-date: 2019-10-23
-last-updated: 2019-10-23
-status: implementable
-see-also:
-  - "/keps/sig-architecture/20190412-conformance-behaviors.md"
----
-
 # Ensure Conformance Tests Do Not Require Beta REST APIs or Features
 
 ## Table of Contents

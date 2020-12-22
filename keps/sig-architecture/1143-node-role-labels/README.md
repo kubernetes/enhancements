@@ -1,27 +1,3 @@
----
-title: Appropriate use of node-role labels
-authors:
-  - "@smarterclayton"
-owning-sig: sig-architecture
-participating-sigs:
-  - sig-api-machinery
-  - sig-network
-  - sig-node
-  - sig-testing
-reviewers:
-  - "@lavalamp"
-  - "@derekwaynecarr"
-  - "@liggitt"
-approvers:
-  - "@thockin"
-  - "@derekwaynecarr"
-prr-approvers:
-  - "@wojtek-t"
-creation-date: 2019-07-16
-last-updated: 2020-06-01
-status: implementable
----
-
 # Appropriate use of node-role labels
 
 ## Table of Contents

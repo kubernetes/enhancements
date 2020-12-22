@@ -1,23 +1,3 @@
----
-title: go modules
-authors:
-  - "@liggitt"
-owning-sig: sig-architecture
-participating-sigs:
-  - sig-api-machinery
-  - sig-release
-  - sig-testing
-reviewers:
-  - "@sttts"
-  - "@lavalamp"
-approvers:
-  - "@smarterclayton"
-  - "@thockin"
-creation-date: 2019-03-19
-last-updated: 2019-11-01
-status: implementable
----
-
 # go modules
 
 ## Table of Contents
