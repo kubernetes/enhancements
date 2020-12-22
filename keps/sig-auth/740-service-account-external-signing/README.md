@@ -1,26 +1,3 @@
----
-title: Support external signing of service account keys
-authors:
-  - "@micahhausler"
-owning-sig: sig-auth
-participating-sigs: []
-reviewers:
-  - "@mikedanese"
-  - "@liggit"
-  - "@tallclair"
-approvers:
-  - "@mikedanese"
-  - "@liggit"
-  - "@tallclair"
-editor: '@micahhausler'
-creation-date: 2019-01-16
-last-updated: 2019-05-17
-status: implementable
-see-also: []
-replaces: []
-superseded-by: []
----
-
 # Support external signing of service account keys
 
 ## Table of Contents

@@ -1,0 +1,20 @@
+title: Dynamic Audit Configuration
+kep-number: 600
+authors:
+  - "@pbarker"
+owning-sig: sig-auth
+participating-sigs:
+  - sig-api-machinery
+reviewers:
+  - "@tallclair"
+  - "@yliaog"
+  - "@caesarxuchao"
+  - "@liggitt"
+approvers:
+  - "@tallclair"
+  - "@liggitt"
+  - "@yliaog"
+editor: TBD
+creation-date: 2018-05-18
+last-updated: 2018-07-31
+status: implementable

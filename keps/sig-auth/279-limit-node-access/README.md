@@ -1,23 +1,3 @@
----
-title: Bounding Self-Labeling Kubelets
-authors:
-  - "@mikedanese"
-  - "@liggitt"
-owning-sig: sig-auth
-participating-sigs:
-  - sig-node
-  - sig-storage
-reviewers:
-  - "@saad-ali"
-  - "@tallclair"
-approvers:
-  - "@thockin"
-  - "@smarterclayton"
-creation-date: 2017-08-14
-last-updated: 2020-05-01
-status: implemented
----
-
 # Bounding Self-Labeling Kubelets
 
 ## Table of Contents

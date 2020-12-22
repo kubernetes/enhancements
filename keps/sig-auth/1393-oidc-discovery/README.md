@@ -1,30 +1,3 @@
----
-title: Service Account signing key retrieval
-authors:
-  - "@mikedanese"
-  - "@cceckman"
-  - "@mtaufen"
-owning-sig: sig-auth
-participating-sigs:
-  - sig-auth
-reviewers:
-  - "@liggitt"
-  - "@enj"
-  - "@micahhausler"
-  - "@ericchiang"
-approvers:
-  - "@liggitt"
-  - "@enj"
-  - "@micahhausler"
-  - "@ericchiang"
-editor: TBD
-creation-date: 2018-06-26
-last-updated: 2020-01-25
-status: implementable
-replaces:
-  - "https://github.com/kubernetes/community/pull/2314/"
----
-
 # Service Account signing key retrieval
 
 ## Table of Contents
