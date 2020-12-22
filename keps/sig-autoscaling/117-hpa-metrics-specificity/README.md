@@ -1,23 +1,3 @@
----
-title: Enhance HPA Metrics Specificity
-authors:
-  - "@directxman12"
-owning-sig: sig-autoscaling
-participating-sigs:
-  - sig-instrumentation
-reviewers:
-  - "@brancz"
-  - "@maciekpytel"
-approvers:
-  - "@brancz"
-  - "@maciekpytel"
-  - "@directxman12"
-editor: "@directxman12"
-creation-date: 2018-04-19
-last-updated: 2018-04-19
-status: implemented
----
-
 # Enhance HPA Metrics Specificity
 
 ## Table of Contents
