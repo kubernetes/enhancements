@@ -252,6 +252,11 @@ Clusters within my ClusterSet send logs/metrics to a common monitoring solution 
 I want the ability to add a previously-isolated cluster to a ClusterSet, or to move a cluster from one ClusterSet to another and be aware of this change.
 
 ### `ClusterClaim` CRD
+```
+<<[UNRESOLVED]>>
+The actual name of the CRD is not finalized and is provisionally titled `ClusterClaim` for the remainder of this document.
+<<[/UNRESOLVED]>>
+```
 
 The `ClusterClaim` resource provides a way to store identification related, cluster scoped information for multi-cluster tools while creating flexibility for implementations. A cluster may have multiple `ClusterClaim`s, each holding a different identification related value. Each claim contains the following information:
 
