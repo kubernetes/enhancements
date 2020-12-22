@@ -1,5 +1,5 @@
----
 title: Recover from volume expansion failure
+kep-number: 1790
 authors:
   - "@gnuified"
 owning-sig: sig-storage

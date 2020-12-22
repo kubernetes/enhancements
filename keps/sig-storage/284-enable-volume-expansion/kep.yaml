@@ -1,4 +1,5 @@
 title: Growing Persistent Volume size
+kep-number: 284
 authors:
   - "@gnuified"
 owning-sig: sig-storage

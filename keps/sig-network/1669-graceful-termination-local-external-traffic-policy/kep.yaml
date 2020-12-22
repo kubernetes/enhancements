@@ -1,5 +1,5 @@
----
 title: Graceful Termination for Local External Traffic Policy
+kep-number: 1669
 authors:
   - "@andrewsykim"
 owning-sig: sig-network
