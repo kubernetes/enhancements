@@ -174,7 +174,6 @@ to use as in-cluster services, and leaves room for multiple implementations.
 
 *Converted from this [original proposal doc](http://bit.ly/k8s-mc-svc-api-proposal).*
 
-
 ## Motivation
 
 <!--
@@ -190,7 +189,7 @@ reasons](http://bit.ly/k8s-multicluster-conversation-starter-doc) why a K8s user
 may want to split their deployments across multiple clusters, but still retain
 mutual dependencies between workloads running in those clusters. Today the
 cluster is a hard boundary, and a service is opaque to a remote K8s consumer
-that would otherwise be able to make use of metadata (e.g. endpoint toplogy) to
+that would otherwise be able to make use of metadata (e.g. endpoint topology) to
 better direct traffic. To support failover or temporarily during migration,
 users may want to consume services spread across clusters, but today that
 requires non-trivial bespoke solutions.
@@ -289,7 +288,6 @@ will be derived from a merger of component `Service` properties.
 Existing implementations of Kubernetes Service API (e.g. kube-proxy) can be
 extended to present `ServiceImports` alongside traditional `Services`.
 
-
 ### User Stories
 
 <!--
@@ -320,7 +318,6 @@ removal without action by or impact on the caller. Routing to my replicated
 service should optimize for cost metric (e.g.prioritize traffic local to zone,
 region).
 
-
 ### Constraints
 
 <!--
@@ -340,7 +337,6 @@ will follow dual stack Service design. Until then, dual stack will not be
 supported.
 
 [Service Topology API]: https://kubernetes.io/docs/concepts/services-networking/service-topology/
-
 
 ### Risks and Mitigations
 
@@ -478,7 +474,7 @@ continue to be stored in the `Service` objects, which are each name mapped to a
 
 Deleting a `ServiceExport` will stop exporting the name-mapped `Service`.
 
-#### Restricting Exports ####
+#### Restricting Exports
 
 Cluster administrators may use RBAC rules to prevent creation of
 `ServiceExports` in select namespaces. While there are no general restrictions
@@ -490,7 +486,7 @@ unless there is a clear use case.
 ### Importing Services
 
 To consume a clusterset service, the domain name associated with the
-mutli-cluster service should be used (see [DNS](#dns)). When the mcs-controller
+multi-cluster service should be used (see [DNS](#dns)). When the mcs-controller
 sees a `ServiceExport`, a `ServiceImport` will be introduced in each importing
 cluster to represent the imported service. Users are primarily expected to
 consume the service via domain name and clusterset VIP, but the
@@ -759,7 +755,7 @@ opt-in to multi-cluster behavior. There will be no change to existing behavior
 of the `cluster.local` zone.
 
 _It is expected that the `.clusterset.local` zone is standard and available in
-all implementations, but customization and/or alising can be explored if there's
+all implementations, but customization and/or aliasing can be explored if there's
 demand._
 
 #### EndpointSlice
@@ -827,7 +823,7 @@ determine which values are used by the derived service.
 #### Headlessness
 
 Headlessness affects a service as a whole for a given consumer. Whether or not
-aderived service is headless will be decided according to the conflict
+a derived service is headless will be decided according to the conflict
 resolution policy.
 
 #### Session Affinity
@@ -1037,7 +1033,7 @@ label applied and would still scope exports to a namespace, but shares other
 issues with the `ObjectReference` approach above:
 
 - Multiple `ServiceExports` may export a given `Service`, what would that mean?
-- Determining whether or not a service is exported means seaching
+- Determining whether or not a service is exported means searching
   `ServiceExports` for a matching selector.
 
 Though multiple services may match a single export, the act of exporting would
@@ -1064,7 +1060,6 @@ but requiring changes to `Service` makes this a much more invasive proposal to
 achieve the same result. As the use of a multi-cluster service implementation
 would be an optional addon, it doesn't warrant a change to such a fundamental
 resource.
-
 
 ## Infrastructure Needed
 <!--
