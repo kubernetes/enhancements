@@ -1,25 +1,3 @@
----
-title: Harden Default RBAC Discovery ClusterRole(Binding)s
-authors:
-  - "@dekkagaijin"
-owning-sig: sig-auth
-participating-sigs:
-  - sig-auth
-  - sig-api-machinery
-reviewers:
-  - "@liggitt"
-  - "@tallclair"
-  - "@deads2k"
-approvers:
-  - "@liggitt"
-  - "@tallclair"
-  - "@deads2k"
-editor: TBD
-creation-date: 2019-01-28
-last-updated: 2019-01-31
-status: implementable
----
-
 # Harden Default RBAC Discovery ClusterRole(Binding)s
 
 ## Table of Contents

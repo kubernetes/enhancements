@@ -1,0 +1,21 @@
+title: Support external signing of service account keys
+kep-number: 740
+authors:
+  - "@micahhausler"
+owning-sig: sig-auth
+participating-sigs: []
+reviewers:
+  - "@mikedanese"
+  - "@liggit"
+  - "@tallclair"
+approvers:
+  - "@mikedanese"
+  - "@liggit"
+  - "@tallclair"
+editor: '@micahhausler'
+creation-date: 2019-01-16
+last-updated: 2019-05-17
+status: implementable
+see-also: []
+replaces: []
+superseded-by: []

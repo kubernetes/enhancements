@@ -1,21 +1,3 @@
----
-title: Certificates API
-authors:
-  - "@mikedanese"
-  - "@deads2k"
-owning-sig: sig-auth
-reviewers:
-  - "@liggitt"
-  - "@smarterclayton"
-  - "@munnerz"
-approvers:
-  - "@liggitt"
-  - "@smarterclayton"
-creation-date: 2019-06-07
-last-updated: 2020-09-14
-status: implemented
----
-
 # Certificates API
 
 <!-- toc -->
@@ -130,7 +112,7 @@ This is typical of many PKI architectures.
 
 A typical successful issuance proceeds as follows:
 
-![CSR](/keps/sig-auth/csr.png)
+![CSR](/keps/sig-auth/1513-certificate-signing-request/csr.png)
 
 1. The requestor generates a private key, builds a certificate signing request,
    and submits the `CertificateSigningRequest` to the Kubernetes certificates

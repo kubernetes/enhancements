@@ -1,0 +1,16 @@
+title: Certificates API
+kep-number: 1513
+authors:
+  - "@mikedanese"
+  - "@deads2k"
+owning-sig: sig-auth
+reviewers:
+  - "@liggitt"
+  - "@smarterclayton"
+  - "@munnerz"
+approvers:
+  - "@liggitt"
+  - "@smarterclayton"
+creation-date: 2019-06-07
+last-updated: 2020-09-14
+status: implemented

@@ -1,25 +1,3 @@
----
-title: Extended NodeRestrictions for Pods
-authors:
-  - "tallclair"
-owning-sig: sig-auth
-participating-sigs:
-  - sig-node
-  - sig-cluster-lifecycle
-reviewers:
-  - derekwaynecarr
-  - neolit123
-  - deads2k
-approvers:
-  - liggitt
-  - derekwaynecarr
-  - neolit123
-  - deads2k
-editor: TBD
-creation-date: 2019-09-16
-status: implementable
----
-
 # Extended NodeRestrictions for Pods
 
 ## Table of Contents
