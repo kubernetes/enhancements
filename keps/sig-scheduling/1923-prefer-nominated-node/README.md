@@ -26,9 +26,9 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [ ] (R) KEP approvers have approved the KEP status as `implementable`
 - [x] (R) Design details are appropriately documented
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
-- [ ] (R) Graduation criteria is in place
+- [x] (R) Graduation criteria is in place
 - [ ] (R) Production readiness review completed
-- [ ] Production readiness review approved
+- [ ] (R) Production readiness review approved
 - [ ] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
@@ -145,6 +145,19 @@ _This section must be completed when targeting alpha to a release._
   - [x] Feature gate (also fill in values in `kep.yaml`)
     - Feature gate name: PreferNominatedNode
     - Components depending on the feature gate: kube-scheduler
+
+* **Does enabling the feature change any default behavior?**
+  Yes. The pod with the nominated node set will be evaluated first in any scheduling cycle,
+  this is only the default process logic that is handled by scheduler, end-user will not
+  and need not aware of any difference.
+
+* **Can the feature be disabled once it has been enabled (i.e. can we roll back
+  the enablement)?**
+  Yes. This could be opt-out by the feature gate, once switch off, it will fall back
+  to original behavior.
+
+* **What happens if we reenable the feature if it was previously rolled back?**
+  Nothing needs to be aware of for the end-user.
 
 * **Are there any tests for feature enablement/disablement?**
   unittest will cover this.
