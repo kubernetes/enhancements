@@ -1,28 +1,3 @@
----
-title: Promoting Cloud Provider Labels to GA
-authors:
-  - "@andrewsykim"
-owning-sig: sig-cloud-provider
-participating-sigs:
-  - sig-node
-  - sig-storage
-reviewers:
-  - "@dims"
-  - "@liggit"
-  - "@msau42"
-  - "@saad-ali"
-  - "@thockin"
-approvers:
-  - "@thockin"
-  - "@liggit"
-editor: TBD
-creation-date: 2019-02-15
-last-updated: 2019-02-15
-status: implementable
-see-also:
-  - "/keps/sig-node/20190130-node-os-arch-labels.md"
----
-
 # Promoting Cloud Provider Labels to GA
 
 ## Table of Contents

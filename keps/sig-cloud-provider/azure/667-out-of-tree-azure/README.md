@@ -1,26 +1,3 @@
----
-title: Support Out-of-Tree Azure Cloud Provider
-authors:
-  - "@andrewsykim"
-  - "@dstrebel"
-  - "@feiskyer"
-owning-sig: sig-cloud-provider
-reviewers:
-  - "@dstrebel"
-  - "@justaugustus"
-  - "@khenidak"
-  - "@feiskyer"
-approvers:
-  - "@feiskyer"
-  - "@khenidak"
-  - "@hogepodge"
-  - "@jagosan"
-editor: "@feiskyer"
-creation-date: 2019-01-29
-last-updated: 2020-09-29
-status: implementable
----
-
 # Supporting Out-of-Tree Azure Cloud Provider
 
 ## Table of Contents

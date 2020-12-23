@@ -1,30 +1,3 @@
----
-title: Building Kubernetes Without In-Tree Cloud Providers
-authors:
-  - "@BenTheElder"
-owning-sig: sig-cloud-provider
-participating-sigs:
-  - sig-release
-  - sig-testing
-reviewers:
-  - "@spiffxp"
-  - "@cheftako"
-  - "@andrewsykim"
-  - "@stephenaugustus"
-approvers:
-  - "@cheftako"
-  - "@andrewsykim"
-  - "@spiffxp"
-  - "@stephenaugustus"
-editor: TBD
-creation-date: 2019-07-29
-last-updated: 2020-05-08
-status: implemented
-see-also:
-  - "/keps/sig-cloud-provider/20190125-removing-in-tree-providers.md"
-  - "/keps/sig-cloud-provider/20180530-cloud-controller-manager.md"
----
-
 # Building Kubernetes Without In-Tree Cloud Providers
 
 ## Table of Contents

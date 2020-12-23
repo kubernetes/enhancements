@@ -1,22 +1,3 @@
----
-title: Support Out-of-Tree OpenStack Cloud Provider
-authors:
-  - "@andrewsykim"
-  - "@adisky"
-owning-sig: sig-cloud-provider
-reviewers:
-  - "@lingxiankong"
-  - "@chrigl"
-  - "@ramineni"
-  - "@kendallnelson"
-approvers:
-  - TBD
-editor: TBD
-creation-date: 2019-01-25
-last-updated: 2019-01-25
-status: implemented
----
-
 # Supporting Out-of-Tree OpenStack Cloud Provider
 
 ## Table of Contents

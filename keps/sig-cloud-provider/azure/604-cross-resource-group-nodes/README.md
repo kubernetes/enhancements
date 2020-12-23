@@ -1,19 +1,3 @@
----
-title: Cross resource group nodes
-authors:
-  - "@feiskyer"
-owning-sig: sig-cloud-provider
-reviewers:
-  - "@khenidak"
-  - "@justaugustus"
-approvers:
-  - "@brendanburns"
-editor: "@feiskyer"
-creation-date: 2018-08-09
-last-updated: 2018-09-29
-status: implementable
----
-
 # Cross resource group nodes
 
 ## Table of Contents
