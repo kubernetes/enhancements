@@ -12,7 +12,7 @@
 - [Design Details](#design-details)
   - [Apply functions](#apply-functions)
   - [Generated apply configuration types](#generated-apply-configuration-types)
-    - [Alternative 1: Genreated structs where all fields are pointers](#alternative-1-genreated-structs-where-all-fields-are-pointers)
+    - [Alternative 1: Generated structs where all fields are pointers](#alternative-1-generated-structs-where-all-fields-are-pointers)
     - [Alternative 2: Generated &quot;builders&quot;](#alternative-2-generated-builders)
     - [Comparison of alternatives](#comparison-of-alternatives)
     - [DeepCopy support](#deepcopy-support)
@@ -60,12 +60,12 @@ checklist items _must_ be updated for the enhancement to be released.
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
 - [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
+- [x] (R) Design details are appropriately documented
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
-- [ ] (R) Graduation criteria is in place
-- [ ] (R) Production readiness review completed
+- [x] (R) Graduation criteria is in place
+- [x] (R) Production readiness review completed
 - [ ] Production readiness review approved
 - [ ] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
