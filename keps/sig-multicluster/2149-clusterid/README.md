@@ -344,7 +344,7 @@ Contains an identifier that relates the containing cluster to the ClusterSet in 
 
 ### Additional Claims
 
-Implementers are free to add additional claims as they see fit, so long as they do not conflict with the well known claims. `k8s.io` and `sigs.k8s.io` claims are reserved for Kubernetes and related projects.
+Implementers are free to add additional claims as they see fit, so long as they do not conflict with the well known claims. `*.k8s.io`, `*.kubernetes.io`, and `sigs.k8s.io` claims are reserved for Kubernetes and related projects.
 
 
 ### Notes/Constraints/Caveats (Optional)
