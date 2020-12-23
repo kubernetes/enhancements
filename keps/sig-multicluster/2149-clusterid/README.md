@@ -394,6 +394,12 @@ The actual implementation to select and store the identifier of a given cluster 
 
 That being said, for less stringent identifiers, for example a user-specified and human-readable value, a given `id.k8s.io ClusterClaim` may need to change if an identical identifier is in use by another member of the ClusterSet it wants to join. It is likely this would need to happen outside the cluster-local boundary; for exmaple, whatever manages memberships would likely need to deny the incoming cluster, and potentially assign (or prompt the cluster to assign itself) a new ID.
 
+```
+<<[UNRESOLVED]>>
+Effect of different identifier styles (mainly UUID vs human readable) on DNS
+<<[/UNRESOLVED]>>
+```
+
 #### `clusterset.k8s.io ClusterClaim`
 
 ```
