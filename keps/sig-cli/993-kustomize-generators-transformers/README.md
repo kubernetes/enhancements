@@ -1,23 +1,4 @@
----
-title: Kustomize Generators and Transformers
-authors:
-  - "@pwittrock"
-owning-sig: sig-cli
-participating-sigs:
-reviewers:
-  - "@droot"
-  - "@sethpollack"
-approvers:
-  - "@monopole"
-editor: TBD
-creation-date: 2019-03-25
-last-updated: 2019-04-30
-status: implementable
----
-
 # Kustomize Generators and Transformers
-
-
 
 ## Table of Contents
 

@@ -1,27 +1,3 @@
----
-title: Kustomize Components
-authors:
-  - "@apyrgio"
-  - "@ioandr"
-  - "@pgpx"
-owning-sig: sig-cli
-participating-sigs:
-  - sig-cli
-reviewers:
-  - n/a
-approvers:
-  - n/a
-creation-date: 2020-05-20
-last-updated: 2020-05-20
-status: provisional
-see-also:
-  - n/a
-replaces:
-  - n/a
-superseded-by:
-  - n/a
----
-
 # Kustomize Components
 
 <!-- toc -->

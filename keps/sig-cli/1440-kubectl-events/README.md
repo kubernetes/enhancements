@@ -1,28 +1,3 @@
----
-title: Kubectl events
-authors:
-  - "@hpandeycodeit"
-owning-sig: sig-cli
-participating-sigs:
-  - sig-cli
-reviewers:
-  - "@soltysh"
-  - "@pwittrock"
-approvers:
-  - "@soltysh"
-  - "@pwittrock"
-editor: TBD
-creation-date: 2019-10-08
-last-updated: 2020-01-27
-status: implementable
-see-also:
-  - https://docs.google.com/document/d/1w-HRLtMncDAL_yQQJdHDasyCZRdJTOV1N6y22fGsKkY/edit#
-replaces:
-  -
-superseded-by:
-  -
----
-
 # kubectl events
 
 ## Table of Contents
