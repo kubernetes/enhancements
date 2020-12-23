@@ -207,6 +207,7 @@ and make progress.
 -->
 * Define any characteristics of the system that tracks cluster IDs within a cluster (i.e. a cluster registry)
 * Solve any problems without specific, tangible use cases (though we will leave room for extension).
+  * In particular, this KEP does not currently consider a cluster joining multiple ClusterSets
 
 
 ## Proposal
