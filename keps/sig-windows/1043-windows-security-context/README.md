@@ -1,24 +1,3 @@
----
-title: Windows security context API changes
-authors:
-  - "@ddebroy"
-owning-sig: sig-windows
-participating-sigs:
-reviewers:
-  - "@patricklang"
-  - "@liggitt"
-approvers:
-  - "@liggitt"
-editor: TBD
-creation-date: 2019-04-18
-last-updated: 2019-04-18
-status: implemented
-see-also:
-  - "keps/sig-windows/20181221-windows-group-managed-service-accounts-for-container-identity.md"
-replaces:
-superseded-by:
----
-
 # Windows specific options in Pod Security Context and Container Security Context
 
 ## Table of Contents

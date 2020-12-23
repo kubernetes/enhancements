@@ -1,25 +1,3 @@
----
-title: Windows RuntimeClass Support
-authors:
-  - "@patricklang"
-owning-sig: sig-windows
-participating-sigs:
-  - sig-node
-reviewers:
-  - "@tallclair"
-  - "@derekwaynecarr"
-  - "@benmoss"
-  - "@ddebroy"
-approvers:
-  - "@dchen1107"
-editor: "@patricklang"
-creation-date: 2019-10-08
-last-updated: 2019-10-15
-status: implementable
-see-also:
-  - "/keps/sig-windows/20190424-windows-cri-containerd.md"
----
-
 # RuntimeClass Support for Windows
 
 ## Table of Contents

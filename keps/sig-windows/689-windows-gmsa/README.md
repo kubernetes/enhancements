@@ -1,30 +1,3 @@
----
-title: Windows Group Managed Service Accounts for Container Identity
-authors:
-  - "@ddebroy"
-  - "@jeremywx"
-  - "@patricklang"
-owning-sig: sig-windows
-participating-sigs:
-  - sig-auth
-  - sig-node
-  - sig-architecture
-  - sig-docs
-reviewers:
-  - "@liggitt"
-  - "@mikedanese"
-  - "@yujuhong"
-  - "@patricklang"
-approvers:
-  - "@liggitt"
-  - "@yujuhong"
-  - "@patricklang"
-editor: TBD
-creation-date: 2018-11-29
-last-updated: 2020-03-20
-status: implemented
----
-
 # Windows Group Managed Service Accounts for Container Identity
 
 

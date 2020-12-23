@@ -1,31 +1,3 @@
----
-title: Windows node support
-authors:
-  - "@astrieanna"
-  - "@benmoss"
-  - "@patricklang"
-  - "@michmike"
-  - "@daschott"
-owning-sig: sig-windows
-participating-sigs:
-  - sig-architecture
-  - sig-node
-reviewers:
-  - sig-architecture
-  - sig-node
-  - sig-testing
-  - sig-release
-approvers:
-  - "@bgrant0607"
-  - "@michmike"
-  - "@patricklang"
-  - "@spiffxp"
-editor: TBD
-creation-date: 2018-11-29
-last-updated: 2019-03-06
-status: implemented
----
-
 # Windows node support
 
 
