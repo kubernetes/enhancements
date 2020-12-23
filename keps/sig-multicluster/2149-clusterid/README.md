@@ -244,6 +244,12 @@ I have some set of clusters working together and need a way to uniquely identify
 
 I have a headless multi-cluster service deployed across clusters in my ClusterSet with similarly named pods in each cluster. I need a way to disambiguate each backend pod via DNS.
 
+```
+<<[UNRESOLVED]>>
+Examples of DNS using cluster ID a la `<hostname>.<clusterID>.<svc>.<ns>.svc.clusterset.local`
+<<[/UNRESOLVED]>>
+```
+
 #### Diagnostics
 
 Clusters within my ClusterSet send logs/metrics to a common monitoring solution and I need to be able to identify the cluster from which a given set of events originated.
