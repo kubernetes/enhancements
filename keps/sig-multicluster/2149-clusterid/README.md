@@ -386,6 +386,22 @@ required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
 
+### Implementing the `ClusterClaim` CRD
+
+#### `id.k8s.io ClusterClaim`
+
+The actual implementation to select and store the identifier of a given cluster could occur local to the cluster. It does not necessarily ever need to be deleted, particularly if the identifier selection mechanism chooses an identifier that is compliant with this specification's most broad restrictions -- namely, being immutable for a cluster's lifetime and unique beyond just the scope of the cluster's membership. A recommended option that meets these broad restrictions is a cluster's kube-system.uuid. 
+
+That being said, for less stringent identifiers, for example a user-specified and human-readable value, a given `id.k8s.io ClusterClaim` may need to change if an identical identifier is in use by another member of the ClusterSet it wants to join. It is likely this would need to happen outside the cluster-local boundary; for exmaple, whatever manages memberships would likely need to deny the incoming cluster, and potentially assign (or prompt the cluster to assign itself) a new ID.
+
+#### `clusterset.k8s.io ClusterClaim`
+
+```
+<<[UNRESOLVED]>>
+How do we associate a cluster with a Clusterset?
+<<[/UNRESOLVED]>>
+```
+
 ### Test Plan
 
 <!--
