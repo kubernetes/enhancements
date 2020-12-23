@@ -102,7 +102,7 @@ deficiencies:
   being accidentally being clamed as owned.
 
 Both sig-api-machinery and wg-api-expression agree that this enhancement is
-required before server side apply to be promoted to GA.
+required for server side apply to be promoted to GA.
 
 ### Goals
 
@@ -110,8 +110,8 @@ Introduce a typesafe, programmatic way to call server side apply using the typed
 client in client-go.
 
 Express all apply configurations in Go that can be expressed in
-YAML. Specifically, an apply request must include only field that are set by
-applier and exclude those not set by applier.
+YAML. Specifically, an apply request must include only fields that are set by
+the applier and exclude those not set by the applier.
 
 Validate this enhancement meets the needs of developers:
 
@@ -141,14 +141,14 @@ representation, which will need to be generated for this purpose.
 
 #### Poor adoption
 
-Risk: Developers adoption is poor, either because the asthetics/ergonomics are
+Risk: Developers adoption is poor, either because the aesthetics/ergonomics are
 not to their liking or the functinality is insufficient to do what they need to
 do with it. This could lead to (a) poor server side apply adoption, and/or (b)
 developers building alternate solutions.
 
 Mitigation: We are working with the kubebuilder community to
 get hands on feedback from developers to guide our design decisions around
-asthetics/egronomics with a goal of having both client-go and kubebuilder
+aesthetics/ergonomics with a goal of having both client-go and kubebuilder
 take an aligned approach to adding apply to clients in a typesafe way.
 
 ## Design Details
@@ -178,7 +178,7 @@ Apply will combine the `fieldManager` argument with `ApplyOptions` to create the
 `PatchOptions`.
 
 Each apply call will be required to provide a fieldmanager name. We will not
-provide a a way for the fieldmanager name to be set for the entire
+provide a way for the fieldmanager name to be set for the entire
 clientset. There are a couple reasons for this:
 
 - If a client has multiple code paths where it makes apply requests to the same
@@ -208,7 +208,7 @@ the two below alternatives. We are working with the Kubebuilder community to
 gather feedback on what developers prefer.
 <<[/UNRESOLVED]>>
 
-#### Alternative 1: Genreated structs where all fields are pointers
+#### Alternative 1: Generated structs where all fields are pointers
 
 Example usage:
 
@@ -269,7 +269,7 @@ for a working implementation of alternative 2.
 
 Of the two leading alternatives--"builders" and "structs with pointers"--we implemented
 prototypes of both. They had roughly equivalent performance, and no differences
-in their capabilities. The choice between the two is primarily one of asthetics/ergonomics.
+in their capabilities. The choice between the two is primarily one of aesthetics/ergonomics.
 
 Some of the feedback we have heard from the community:
 
@@ -351,7 +351,7 @@ together in test/integration/client/client_test.go.
 
 ### e2e testing
 
-We will migrate the cluste rrole aggregation controller to use apply and verify
+We will migrate the cluster role aggregation controller to use apply and verify
 it is correct using the existing e2e tests, expanding coverage as needed.
 
 ### Graduation Criteria
