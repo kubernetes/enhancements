@@ -3,23 +3,24 @@
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
-  - [New three unique logging meta-data](#new-three-unique-logging-meta-data)
-  - [Note](#note)
+  - [New three unique logging metadata](#new-three-unique-logging-metadata)
+  - [Opt-in for Components](#opt-in-for-components)
 - [Motivation](#motivation)
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
+- [Background](#background)
 - [Proposal](#proposal)
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1](#story-1)
     - [Story 2](#story-2)
   - [Summary of Cases](#summary-of-cases)
-  - [Logging metadata](#logging-metadata)
 - [Design Details](#design-details)
   - [Prerequisite](#prerequisite)
-  - [API Server Tracing](#api-server-tracing)
   - [Design of ID propagation (controller)](#design-of-id-propagation-controller)
-  - [Design of ID propagation in <a href="https://github.com/kubernetes/client-go">client-go</a>](#design-of-id-propagation-in-client-go)
   - [Design of Mutating webhook(Out of tree)](#design-of-mutating-webhookout-of-tree)
+  - [Behaviors with and without Mutating webhook](#behaviors-with-and-without-mutating-webhook)
+    - [with Mutating webhook](#with-mutating-webhook)
+    - [without Mutating webhook](#without-mutating-webhook)
   - [Risks and Mitigations](#risks-and-mitigations)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
@@ -53,26 +54,24 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-This KEP proposes a method for adding new three unique logging meta-data into K8s component logs.
-It makes us more easy to identify specific logs related to an user request (such as `kubectl apply`) and object (such as Pod, Deployment).
-It is expected to reduce investigation cost greatly when trouble shoothing.
+This KEP proposes a method for adding new three unique logging metadata into annotation of objects and propagating them across components. Then the K8S components have ability to *track/filter* logs of all relevant object sets in need that makes us more easy to identify specific logs related to an user request (such as `kubectl apply`) and object (such as Pod, Deployment).
+It is expected to reduce investigation cost greatly when troubleshooting.
 
-### New three unique logging meta-data
+### New three unique logging metadata
 
-We use three meta-data. These meta-data have different features and are used for troubleshooting from different perspectives.
+We use three metadata. These metadata have different features and are used for troubleshooting from different perspectives.
 
-| meta-data name | feature |
+| metadata name | feature |
 | ------ | ------ |
 | traceid | spans an user request. unique for user's request |
-| spanid | spans a controller action. unique for controller action |
-| initialtraceid | spans the entire object lifecycle. unique for related objects |
+| spanid | spans a controller action. unique for controller actions |
+| objsetid | spans the entire object lifecycle. unique for a related object set |
 
-### Note
+### Opt-in for Components
 
-This KEP is **how** a component could add meta-data to logs. To actually add meta-data to K8s component logs, the following procedure is necessary in addition.
+Updating/changing the logs is outside the scope of this KEP.  To actually add metadata to K8s component logs, the following procedures are needed in addition.
 - Open issues for each component, and discuss them with the SIGs that own that component.
-- After get agreement, utilize this KEP's feature to change the source code that outputs log to add meta-data into these logs.
-Please note that this KEP alone does not change the log format(does not add meta-data to logs).
+- After get agreement, utilize this KEP's feature to change the source code that outputs log to add metadata into these logs.
 
 ## Motivation
 
@@ -82,15 +81,25 @@ If multiple users throw many API requests at the same time, it is very difficult
 
 ### Goals
 
- - Implement method which propagates new logging meta-data among each K8s component
- - Design and implement so as not to interfere with [Tracing KEP](https://github.com/kubernetes/enhancements/pull/1458)
-   - e.g. implement of initialtraceid, adding traceid to object annotation executed in mutating webhook, etc.
+ - Implement method which propagates new logging metadata among each K8s components
+ - Store and update logging metadata into object annotation through mutating admission controller(aka Webhook)
 
 ### Non-Goals
 
  - Add new logging metadata into actual K8s component logs
    - This task will be done by opening  issues after completing this KEP
- - To centrally manage the logs of each Kubernetes component with Request-ID (This can be realized with existing OSS such as Kibana, so no need to implement into Kubernetes components).
+ - To centrally manage the logs of each Kubernetes component with objsetid(This can be realized with existing OSS such as Kibana, so no need to implement into Kubernetes components).
+ - This proposal does not add additional telemetry to any components, just context-based metadata to existing logs. This KEP doesn't require running any additional OpenTelemetry components (such as the OpenTelemetry collector, which the  [API Server Tracing](https://github.com/kubernetes/enhancements/issues/647) KEP uses)
+
+## Background
+It's Known that all requests to K8s will reach API Server first, in order to propogate these metadata to mutating admission controller, we require API Server to support propogating these metadata as well. Fortunately there is already a KEP [API Server Tracing](https://github.com/kubernetes/enhancements/issues/647)  to do this.
+
+```
+Goals
+The API Server generates and exports spans for incoming and outgoing requests.
+The API Server propagates context from incoming requests to outgoing requests.
+```
+So this KEP relies on KEP [API Server Tracing](https://github.com/kubernetes/enhancements/issues/647)
 
 ## Proposal
 
@@ -121,18 +130,6 @@ This log tracking feature is useful to identify the logs related to specific use
  - Given a component log(such as error log), find the API request that caused this (error) log.
  - Given an API Request(such as suspicious API request), find the resulting component logs.
 
-### Logging metadata
-
-We use three logging meta-data, and propagate them each K8s component by using OpenTelemetry.
-OpenTelemetry has SpanContext and [Baggage](https://github.com/open-telemetry/opentelemetry-specification/blob/master/specification/baggage/api.md) which is used for propagation of K8s component.
-
-| meta-data name | feature |
-| ------ | ------ |
-| traceid | We use SpanContext.TraceID as traceid<br>traceid spans an user request.<br>traceid is unique for user's request |
-| spanid | We use SpanContext.SpanID as spanid<br>spanid spans a controller action.<br>spanid is unique for controller action |
-| initialtraceid | We implement new id(InitialTraceID) to SpanContext<br>We use [Baggage](https://github.com/open-telemetry/opentelemetry-specification/blob/master/specification/baggage/api.md) to propagate initialtraceid<br/>We use UID of root object as initialtraceid<br>initialtraceid spans the entire object lifecycle. <br>initialtraceid is unique for related objects |
-
-All of three id's inception is from object creation and it dies with object deletion
 
 ## Design Details
 
@@ -147,66 +144,140 @@ The design below is based on the above three cases
 
 The following picture show our design![design](./overview.png)
 
-
-
 we don't have any modifications in kubectl in this design.
 
-### API Server Tracing
+We use three logging metadata, and propagate them across each K8s component by using [SpanContext](https://pkg.go.dev/go.opentelemetry.io/otel@v0.15.0/trace#SpanContext) and [Baggage](https://github.com/open-telemetry/opentelemetry-specification/blob/master/specification/baggage/api.md)  of OpenTelemetry.
 
-**1. refer to [KEP647](https://github.com/kubernetes/enhancements/issues/647)**
-
-KEP647 will help to
-
-```
-Goals
-The API Server generates and exports spans for incoming and outgoing requests.
-The API Server propagates context from incoming requests to outgoing requests.
-```
-
-**2. [Make up a new outgoing request](#design-of-id-progagation-in-client-go)**
 
 ### Design of ID propagation (controller)
+In controller side, we don't update the object annotation any more, instead, we just focus on how to propagate the new logging metadata across objects. And with the help of KEP [API Server Tracing](https://github.com/kubernetes/enhancements/issues/647) , the new logging metadata can be propagated across K8s components.
 
-**1. Propagate golang ctx from objects to API Calls**
+**1. New context propagation library function**
 
-When controllers create/update/delete an object A based on another B, we propagate context from B to A. E.g.:
-```
-    ctx = httptrace.SpanContextFromAnnotations(context.Background(), objB.GetAnnotations())
-    err = r.KubeClient.CoreV1().Create(ctx, objA...)
-```
-We do propagation across objects without adding traces to that components.
+A new API `SpanContextWithObject` is introduced to return a `context.Context` which includes a Span and a Baggage according to the passed object.
 
-SpanContextFromAnnotations will do something like below pseudo code
 ```
-func SpanContextFromAnnotations(){
-	// 1. decode annotation to SpanContext
-	// 2. generate Span from SpanContext
-	// 3. chain Span to ctx which is required by propagators.Inject
+func SpanContextWithObject(ctx context.Context, meta metav1.Object) context.Context
+```
+it does something like below pseudo code:
+```
+// SpanContextWithObject returns a `context.Context` which includes a Span and a Baggage
+func SpanContextWithObject(ctx context.Context, meta metav1.Object) context.Context{
+	// 1. extract baggage from annotation and chain it to ctx
+	// 2. extract SpanContext from annotation
+	// 3. generate Span from SpanContext
+	// 4. chain Span to ctx which is required by propagators.Inject
 }
 ```
-**2. [Make up a new outgoing request](#design-of-id-progagation-in-client-go)**
+**2. Propagate Span and Baggage with context.Context across objects**
 
-### Design of ID propagation in [client-go](https://github.com/kubernetes/client-go)
+When controllers create/update/delete an object A based on another B, we propagate context from B to A. Below is an example to show how deployment propagate Span and Baggage to replicaset.
 
-[KEP647](https://github.com/kubernetes/enhancements/issues/647) will do this work too, so we can refer to it directly in the future.
-client-go helps to inject [TraceContext](https://pkg.go.dev/go.opentelemetry.io/otel/propagators#example-TraceContext) and [Baggage](https://github.com/open-telemetry/opentelemetry-specification/blob/master/specification/baggage/api.md) to the outgoing http request header with API [RoundTrip](https://pkg.go.dev/go.opentelemetry.io/contrib/instrumentation/net/http#Transport.RoundTrip).
+```diff
+ func (dc *DeploymentController) getNewReplicaSet(d *apps.Deployment, rsList, oldRSs []*apps.ReplicaSet, createIfNotExisted bool) (*apps.ReplicaSet, error) {
++       ctx := httptrace.SpanContextWithObject(context.Background(), d)
+        existingNewRS := deploymentutil.FindNewReplicaSet(d, rsList)
+@@ -220,7 +227,8 @@ func (dc *DeploymentController) getNewReplicaSet(d *apps.Deployment, rsList, old
+        // hash collisions. If there is any other error, we need to report it in the status of
+        // the Deployment.
+        alreadyExists := false
+-       createdRS, err := dc.client.AppsV1().ReplicaSets(d.Namespace).Create(context.TODO(), &newRS, metav1.CreateOptions{})
++       createdRS, err := dc.client.AppsV1().ReplicaSets(d.Namespace).Create(ctx, &newRS, metav1.CreateOptions{})
+```
+In order to propagate context across all objects we concerned , we also need to change some APIs by adding `ctx context.Context` to parameter list whose parameters doesn't contain context.Context yet. Below APIs will be impacted so far.
 
-apiserver and controllers use this API to make up a new outgoing request.
+| APIs                          | file name                                                    |
+| ----------------------------- | ------------------------------------------------------------ |
+| createPods()                  | pkg/controller/controller_utils.go                           |
+| CreatePodsWithControllerRef() | pkg/controller/controller_utils.go<br />pkg/controller/replication/conversion.go<br />pkg/controller/daemon/daemon_controller.go<br />pkg/controller/replication/conversion.go |
+
+**3. How to log the metadata from a context.Context**
+
+Please note that changing the log is *not* the scope of this KEP. In the feature, we can get the metadata and change the log like below accordingly.
+
+```
+spanctx := apitrace.SpanContextFromContext(ctx)
+objSetID := otel.BaggageValue(ctx, "objectSetID").AsString()
+klog.V(2).Infof("ObjectSetID: %s, TraceID: %s, SpanID: %s\n", objSetID, spanctx.TraceID, spactx.SpanID)
+```
 
 ### Design of Mutating webhook(Out of tree)
+We use mutating admission controller(aka webhook)  to change/update the object annotation. It takes advantages of:
 
-**1.Extract SpanContext and initialtraceid from request's header**
+- Ease of use. Using client-go with a context.Context is easier than adding an annotation. The webhook takes care of writing the annotation.
+- Object to object context propagation. Without the mutating admission controller, we can only associate actions from a single object. With the mutating admission controller, the logging metadata would be added for objects modified by controllers of the initial object (e.g. metadata added to a deployment annotation would appear in pod logs).
 
-**2.Update SpanContext and initialtraceid to object**
+**Logging metadata**
+
+below table show how these 3 logging metadata map to the SpanContext and Baggage of OpenTelemetry.
+| metadata name | feature |
+| ------ | ------ |
+| traceid | We use SpanContext.TraceID as traceid<br>traceid spans an user request.<br>traceid is unique for user's request |
+| spanid | We use SpanContext.SpanID as spanid<br>spanid spans a controller action.<br>spanid is unique for controller action |
+| objsetid | We implement new id(objsetid) to SpanContext<br>We use [Baggage](https://github.com/open-telemetry/opentelemetry-specification/blob/master/specification/baggage/api.md) to propagate objsetid<br/>We use UID of root object as objsetid<br>objsetid spans the entire object lifecycle. <br>objsetid is unique for related object set. |
+
+All of three id's inception is from object creation and it dies with object deletion
+
+
+These 3 logging metadata are stored  with 2 pairs of key/value in annotation.
+
+| key                          | example value                                           | description                                                  |
+| ---------------------------- | ------------------------------------------------------- | ------------------------------------------------------------ |
+| trace.kubernetes.io/span     | 00-ca057eae1a26b66314fe3e361eedc5ca-3696483da6bfdcea-00 | it consists of `<version>-<traceid>-<spanid>-<flag>`. <br />A corresponding http header field is like `traceparent: 00-ca057eae1a26b66314fe3e361eedc5ca-3696483da6bfdcea-00` which is a w3c specific [trace-context](https://w3c.github.io/trace-context/#traceparent-header ). <br />2 metadata(`traceid` and `spanid`) are stored here. |
+| trace.kubernetes.io/objsetid | 04bc5995-0147-4db8-9f06-fdbcb2e1a087                    | A corresponding http header field is like `baggage: objectSetID=04bc5995-0147-4db8-9f06-fdbcb2e1a087` which is a w3c specific [Baggage](https://w3c.github.io/baggage/#examples-of-http-headers).<br />It stores metadata `objsetid`. |
+
+Roughly this webhook do something like below:
+
+**1.Extract SpanContext and objsetid from request's header**
+
+**2.Update SpanContext and objsetid to object annotation**
 
 - For traceid and spanid and traceflags(sampled/not sampled)
 
-Always set the trace context annotation based on the incoming request.
+    Always update `trace.kubernetes.io/span` annotation based on the incoming request.
 
-- For initialtraceid
+- For objsetid
 
-if initialtraceid is nil,  Use the UID of object as initialtraceid, else, leave initialtraceid as it is.
+    if objsetid is nil,  Use the UID of object as objsetid, else, leave objsetid as it is. Update it to `trace.kubernetes.io/objsetid` in need.
 
+### Behaviors with and without Mutating webhook
+Since the mutating webhook is optional for users, we will explain the different behaviors between with and without mutating webhook.
+
+#### with Mutating webhook
+
+**kubectl request**:
+
+- APIServer uses otel to start a new Span
+- APIServer uses otel to propagate SpanContext to the other end(webhook)
+- Webhook generates an objsetid
+- Webhook persists SpanContext and objsetid to object
+
+**controllers request:**
+
+- Controller uses otel to start a related Span, which connected to the SpanContext in object
+- Controller uses otel to propagate Baggage(objsetid)  stored in object and SpanContext  to the other end(APIServer)
+- APIServer uses otel  to start a related Span, which connected to the SpancContext from the  incoming request
+- APIServer uses otel to propagate SpanContext and Baggage(objsetid) to the other end(webhook)
+- Webhook persists SpanContext and objsetid to object
+
+#### without Mutating webhook
+
+**kubectl request:**
+
+- APIServer uses otel to start a new Span
+- APIServer uses otel to propagate SpanContext to the other end
+- ~~Webhook generates an objsetid~~
+- ~~Webhook persists SpanContext and objsetid to object~~
+
+**controllers request:**
+
+- Controller start uses otel to start a new Span
+- Controller uses otel to propagate SpanContext  to the other end(APIServer)
+- APIServer uses otel  to start related Span, which connected to the SpancContext from the  incoming request
+- APIServer uses otel to propagate SpanContext to the other end
+- ~~Webhook persists SpanContext and objsetid to object~~
+
+In short, the webhook decides whether to add logging metadata to the object.
 
 ### Risks and Mitigations
 
