@@ -116,7 +116,7 @@ applier and exclude those not set by applier.
 Validate this enhancement meets the needs of developers:
 
 - An developer not directly involved in this enhancement successfully converts
-  a 1st party controller (one in github.com/kubernetes/kubernetes) to us this
+  a 1st party controller (one in github.com/kubernetes/kubernetes) to use this
   enhancement.
 - A representative group of the developer community is made aware of this
   proposed enhancement, is given early access to it via a fork of
@@ -541,4 +541,3 @@ func Name(value string) DeploymentField { … }
 Limitations:
 
 - Lots of identifier collision issues to deal with. For example, we can't have multiple "Name" functions in the same package. This can probably be mitigated by either generating more unique names or by allowing a common field like Name, which is typically a string, to be shared across multiple structs that have name fields.
-
