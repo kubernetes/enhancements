@@ -1,20 +1,3 @@
----
-title: Context support in k8s.io/client-go
-authors:
-- "@mikedanese"
-- "@maleck13"
-owning-sig: sig-api-machinery
-participating-sigs:
-- sig-api-machinery
-approvers:
-- "@deads2k"
-- "@liggitt"
-- "@lavalamp"
-creation-date: 2020-01-23
-last-updated: 2020-01-23
-status: implementable
----
-
 # Context support in k8s.io/client-go
 
 <!-- toc -->

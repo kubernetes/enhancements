@@ -1,37 +1,3 @@
----
-title: API Server Network Proxy
-authors:
-  - "@cheftako"
-  - "@anfernee"
-owning-sig: sig-api-machinery
-participating-sigs:
-  - sig-network
-  - sig-cloud-provider
-reviewers:
-  - TBD
-  - "@lavalamp"
-  - "@deads2k"
-  - "@bowei"
-  - "@andrewsykim"
-  - "@justinsb"
-  - "@krousey"
-  - "@khenidak"
-  - "@mikedanese"
-approvers:
-  - "@deads2k - For Kube API Server portion of KEP"
-  - "@bowei - For networking/proxy portion of KEP"
-editor: "@calebamiles"
-creation-date: 2019-02-25
-last-updated: 2020-01-15
-status: implementable
-see-also:
-  - "https://goo.gl/qiARUK - Network Proxy design proposal"
-  - "https://goo.gl/ipwDkX - Explicit API server to node communications"
-  - "https://github.com/kubernetes-sigs/apiserver-network-proxy - Reference implementations of API Server Network Proxy"
-replaces:
-superseded-by:
----
-
 # API Server Network Proxy
 
 ## Table of Contents

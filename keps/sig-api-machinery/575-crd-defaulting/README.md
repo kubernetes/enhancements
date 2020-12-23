@@ -1,28 +1,3 @@
----
-title: Defaulting for Custom Resources
-authors:
-  - "@sttts"
-owning-sig: sig-api-machinery
-participating-sigs:
-  - sig-api-machinery
-reviewers:
-  - "@deads2k"
-  - "@lavalamp"
-  - "@liggitt"
-  - "@mbohlool"
-  - "@apelisse"
-approvers:
-  - "@deads2k"
-  - "@lavalamp"
-editor: "@sttts"
-creation-date: 2019-04-26
-last-updated: 2019-07-29
-status: implemented
-see-also:
-  - "/keps/sig-api-machinery/20180731-crd-pruning.md"
-  - "/keps/sig-api-machinery/20190425-structural-openapi.md"
----
-
 # Defaulting for Custom Resources
 
 ## Table of Contents
@@ -115,7 +90,7 @@ Note: like for native resources, we do not default after webhook conversions. He
 
 Compare the yellow boxes in the following figure:
 
-![Decoding steps which must apply defaults](20190426-crd-defaulting-pipeline.png)
+![Decoding steps which must apply defaults](crd-defaulting-pipeline.png)
 
 We rely on the validation steps in the request pipeline to verify that the default value validates value validation. We will check the types in default values using the _structural schema_ during CRD creation and update though. We will also reject defaults which contain values which will be pruned.
 

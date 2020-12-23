@@ -1,28 +1,3 @@
----
-title: Immutable Fields
-authors:
-  - "@apelisse"
-  - "@sttts"
-owning-sig: sig-api-machinery
-participating-sigs:
-  - sig-api-machinery
-reviewers:
-  - "@erictune"
-  - "@jpbetz"
-  - "@liggitt"
-  - "@logicalhan"
-  - "@p0lyn0mial"
-approvers:
-  - "@liggitt"
-  - "@deads2k"
-editor: "@sttts"
-creation-date: 2019-06-03
-last-updated: 2019-10-01
-status: provisional
-see-also:
-  - "/keps/sig-api-machinery/0006-apply.md"
----
-
 # Immutable fields
 
 ## Table of Contents

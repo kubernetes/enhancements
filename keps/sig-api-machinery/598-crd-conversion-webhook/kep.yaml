@@ -1,0 +1,20 @@
+title: CustomResourceDefinition Conversion Webhook
+kep-number: 598
+authors:
+  - "@mbohlool"
+  - "@erictune"
+owning-sig: sig-api-machinery
+participating-sigs:
+reviewers:
+  - "@lavalamp"
+  - "@deads2k"
+  - "@sttts"
+  - "@liggitt"
+approvers:
+  - "@lavalamp"
+  - "@deads2k"
+creation-date: 2019-04-25
+last-updated: 2019-04-25
+status: implemented
+replaces:
+  - "(https://github.com/kubernetes/community/blob/master/contributors/design-proposals/api-machinery/customresource-conversion-webhook.md)"

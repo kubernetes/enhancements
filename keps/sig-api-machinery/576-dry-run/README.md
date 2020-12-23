@@ -1,22 +1,3 @@
----
-title: Dry-run
-authors:
-  - "@apelisse"
-owning-sig: sig-api-machinery
-participating-sigs:
-  - sig-api-machinery
-  - sig-cli
-reviewers:
-  - "@lavalamp"
-  - "@deads2k"
-approvers:
-  - "@erictune"
-editor: apelisse
-creation-date: 2018-06-21
-last-updated: 2020-03-23
-status: implemented
----
-
 # Kubernetes Dry-run
 
 Dry-run is a new feature that we intend to implement in the api-server. The goal

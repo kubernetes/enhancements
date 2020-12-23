@@ -1,36 +1,4 @@
----
-title: Graduate CustomResourceDefinitions to GA
-authors:
-  - "@jpbetz"
-  - "@roycaihw"
-  - "@sttts"
-owning-sig: sig-api-machinery
-participating-sigs:
-  - sig-api-machinery
-  - sig-architecture
-reviewers:
-  - "@deads2k"
-  - "@lavalamp"
-  - "@liggitt"
-  - "@mbohlool"
-  - "@sttts"
-approvers:
-  - "@deads2k"
-  - "@lavalamp"
-editor: TBD
-creation-date: 2018-04-15
-last-updated: 2018-04-24
-status: implementable
-see-also:
-  - "[Umbrella Issue](https://github.com/kubernetes/kubernetes/issues/58682)"
-  - "[Vanilla OpenAPI Subset Design](https://docs.google.com/document/d/1pcGlbmw-2Y0JJs9hsYnSBXamgG9TfWtHY6eh80zSTd8)"
-  - "[Pruning for CustomResources KEP](https://github.com/kubernetes/enhancements/pull/709)"
-  - "[Defaulting for Custom Resources KEP](https://github.com/kubernetes/enhancements/blob/master/keps/sig-api-machinery/20190426-crd-defaulting.md)"
----
-
-# Title
-
-Graduate CustomResourceDefinitions to GA
+# Graduate CustomResourceDefinitions to GA
 
 ## Table of Contents
 

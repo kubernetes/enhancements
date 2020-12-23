@@ -1,28 +1,3 @@
----
-title: Apply
-authors:
-  - "@lavalamp"
-owning-sig: sig-api-machinery
-participating-sigs:
-  - sig-api-machinery
-  - sig-cli
-reviewers:
-  - "@pwittrock"
-  - "@erictune"
-approvers:
-  - "@bgrant0607"
-editor: TBD
-creation-date: 2018-03-28
-last-updated: 2018-03-28
-status: implementable
-see-also:
-  - n/a
-replaces:
-  - n/a
-superseded-by:
-  - n/a
----
-
 # Apply
 
 ## Table of Contents
