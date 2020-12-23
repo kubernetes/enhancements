@@ -158,7 +158,7 @@ take an aligned approach to adding apply to clients in a typesafe way.
 The client-go typed clients will be extended to include Apply functions, e.g.:
 
 ```go
-func (c *deployments) Apply(ctx Context, deployment *appsv1apply.Deployment, fieldManager string, metav1.ApplyOptions) (*Deployment, error)
+func (c *deployments) Apply(ctx Context, fieldManager string, deployment *appsv1apply.Deployment, opts metav1.ApplyOptions, subresources ...string) (*Deployment, error)
 ```
 
 `ApplyOptions` will be added to metav1 even though `PatchOptions` will continue
@@ -174,32 +174,56 @@ type ApplyOptions struct {
 func (ApplyOptions) ToPatchOptions(fieldManager string) PatchOptions
 ```
 
+<<[UNRESOLVED @jpbetz ]>> 
+Should the Force field also be made a required field like fieldManager is?
+@lavalamp pointed out that user things typically want false but
+controller-things typically want true, so false isn't a great default.
+
+Also, can we structure this so that we don't have so many positional params?
+Moving two params from options to the top level positional params results in a
+longer function signature. Alternative proposed by @lavalamp was to do something
+more like this (ordering or parameters and function names TBD):
+
+```go
+client.Deployments().BeginApply("field-manager-name", options).Body(
+  appsv1apply.Deployment().
+    SetObjectMeta(&metav1apply.ObjectMeta()). ...
+).Apply(ctx)
+```
+
+<<[/UNRESOLVED]>>
+
 Apply will combine the `fieldManager` argument with `ApplyOptions` to create the
 `PatchOptions`.
 
 Each apply call will be required to provide a fieldmanager name. We will not
-provide a way for the fieldmanager name to be set for the entire
-clientset. There are a couple reasons for this:
-
-- If a client has multiple code paths where it makes apply requests to the same
-  object, but with different field sets, they must use different field manager
-  names. If they use the same field manager name they will cause fields to be
-  accidentally removed or disowned. This is a potential foot gun we would like to
-  avoid.
-
-- Apply requests always conflict with update requests, even if they were made by
-  the same client with the same field manager name. This is by design. So when a
-  controller migrates from update to apply, it will need to deal with conflicts
-  regardless of what field manager name is used.
+provide a a way for the fieldmanager name to be set for the entire
+clientset. The main reason for this is that if a client has multiple code paths
+where it makes apply requests to the same object, but with different field sets,
+they must use different field manager names. If they use the same field manager
+name they will cause fields to be accidentally removed or disowned. This is a
+potential foot gun we would like to avoid.
 
 ### Generated apply configuration types
 
 All fields present in an apply configuration become owned by the applier after
 when the apply request succeeds. Go structs contain zero valued fields which are
-included even if the user never explicitly sets the field. Required boolean
-fields are a good example of fields that would be applied incorrectly using go
-structs, e.g. `ContainerStatus.Ready` (required, not omitempty). Because of this
-we cannot use the existing go structs to represent apply configurations.
+included even if the user never explicitly sets the field. This means that all required 
+fields (must not be a pointer and must not be "omitempty") create fundamental soundness
+problem.
+
+In practice there are over 100 ints and bools that meet this criteria this in
+the Kubernetes API. Some examples:
+
+- [`ContainerPort.ContainerPort`](https://github.com/kubernetes/kubernetes/blob/6d76ece4d6e1ad01bad3e866279bc35065813ec7/staging/src/k8s.io/api/core/v1/types.go#L1836)
+- [`HorizontalPodAutoscalerSpec.MaxReplicas`](https://github.com/kubernetes/kubernetes/blob/6d76ece4d6e1ad01bad3e866279bc35065813ec7/staging/src/k8s.io/api/autoscaling/v1/types.go#L49)
+- [`ContainerStatus.Ready`](https://github.com/kubernetes/kubernetes/blob/6d76ece4d6e1ad01bad3e866279bc35065813ec7/staging/src/k8s.io/api/core/v1/types.go#L2470)
+
+While there are arguments to be made all of these fields are expected to cause
+problems in practice, there are some that clearly would, e.g. ContainerPort.
+
+Because of this we cannot use the existing go structs to represent apply
+configurations.
 
 <<[UNRESOLVED @jpbetz @jennybuckley ]>> 
 Finalize which alternative to use based on developer feedback. See the
@@ -213,16 +237,20 @@ gather feedback on what developers prefer.
 Example usage:
 
 ```go
+import (
+  ptr "k8s.io/utils/pointer"
+)
+
 &appsv1apply.Deployment{
-  Name: &pointer.StringPtr("nginx-deployment"),
+  Name: ptr.StringPtr("nginx-deployment"),
   Spec: &appsv1apply.DeploymentSpec{
-    Replicas: &pointer.Int32Ptr(0),
+    Replicas: ptr.Int32Ptr(0),
     Template: &v1apply.PodTemplate{
       Spec: &v1apply.PodSpec{
         Containers: []v1.Containers{
           {
-            Name: &pointer.StringPtr("nginx"),
-            Image: &pointer.StringPtr("nginx:latest"),
+            Name: ptr.StringPtr("nginx"),
+            Image: ptr.StringPtr("nginx:latest"),
           },
         }
       },
@@ -241,25 +269,31 @@ Example usage:
 
 ```go
 &appsv1apply.Deployment().
-  SetObjectMeta(&metav1apply.ObjectMeta().
-    SetName("nginx-deployment")).
-  SetSpec(&appsv1apply.DeploymentSpec().
-    SetReplicas(0).
-    SetTemplate(
+  ObjectMeta(&metav1apply.ObjectMeta().
+    Name("nginx-deployment")).
+  Spec(&appsv1apply.DeploymentSpec().
+    Replicas(0).
+    Template(
       &v1apply.PodTemplate().
-        SetSpec(&v1apply.SetPodSpec().
-          SetContainers(v1apply.ContainerList{
+        Spec(&v1apply.SetPodSpec().
+          Containers(v1apply.ContainerList{
             v1apply.Container().
-              SetName("nginx").
-              SetImage("nginx:1.14.2")
+              Name("nginx").
+              Image("nginx:1.14.2")
             v1apply.Container().
-              SetName("sidecar").
+              Name("sidecar").
           })
         )
       )
     )
   )
 ```
+
+<<[UNRESOLVED @jpbetz ]>> 
+Finalize how setter functions are named if we go with this alternative. Options we
+are considering are: (1) Just use the field name (2) prefix field name with "Set" (3)
+prefix field name with "With".
+<<[/UNRESOLVED]>>
 
 #### Comparison of alternatives
 
@@ -311,8 +345,8 @@ the apply functions and apply configuration types.
 - Add staging/src/k8s.io/code-generator/cmd/applyconfigurations-gen
 - Generates into staging/vendor/k8s.io/client-go/applyconfigurations/
 - Only generate builders for struct types reachable from the types that have the +clientgen annotation
-- Don't generate builders for MarshalJSON types (Quantity, IntOrString)
-- Don't generate builders for RawExtension or Unknown
+- Don't generate builders for MarshalJSON types (Time, Duration), juse reference them directly
+- Don't generate builders for RawExtension or Unknown (e.g. [AdmissionRequest.Object](https://github.com/kubernetes/kubernetes/blob/fec1a366c3b17b5d46b79ddac0b8bb04dfd212ee/staging/src/k8s.io/api/admission/v1/types.go#L98) - [example usage](https://github.com/kubernetes/kubernetes/blob/fec1a366c3b17b5d46b79ddac0b8bb04dfd212ee/staging/src/k8s.io/apiserver/pkg/admission/plugin/webhook/request/admissionreview_test.go#L536))
 
 ##### client-gen changes
 
@@ -332,8 +366,9 @@ error in this case, which is relatively trivial to resolve
 For "structs with pointers", json.Marshal, json.Unmarshal and conversions to and
 from unstructured work the same as with go structs.
 
-For "builders", each could implement `MarshalJSON`, `UnmarshalJSON`,
-`ToUnstructured` and `FromUnstructured`.
+For "builders", each would implement `MarshalJSON`, `UnmarshalJSON`,
+`ToUnstructured` and `FromUnstructured`. Builders would also provide getter functions
+to view what has been built.
 
 ### Test Plan
 
