@@ -221,9 +221,11 @@ nitty-gritty.
 -->
 
 ### Overview
-Each cluster in a ClusterSet will be assigned a unique identifier that lives at least as long as its membership in the set, and is immutable for its lifetime. This identifier will be stored in a new cluster-scoped `ClusterClaim` CR with the well known name `id.k8s.io` that may be referenced by workloads within the cluster. The identifier must be a valid [RFC-1123](https://tools.ietf.org/html/rfc1123) DNS label, and may be created by an implementation dependent mechanism.
+Each cluster in a ClusterSet will be assigned a unique identifier, that lives at least as long as that cluster is a member of the given ClusterSet, and is immutable for that same lifetime. This identifier will be stored in a new cluster-scoped `ClusterClaim` CR with the well known name `id.k8s.io` that may be referenced by workloads within the cluster. The identifier must be a valid [RFC-1123](https://tools.ietf.org/html/rfc1123) DNS label, and may be created by an implementation dependent mechanism.
 
-While a member of a ClusterSet, a cluster will also have an additional `clusterset.k8s.io ClusterClaim` which describes its current membership. This claim must be present exactly as long as the set membership lasts, and removed when the cluster is no longer a member.
+While a member of a ClusterSet, a cluster will also have an additional `clusterset.k8s.io ClusterClaim` which describes its current membership. This claim must be present exactly as long as the cluster's membership in a ClusterSet lasts, and removed when the cluster is no longer a member.
+
+More detail and examples of the uniqueness, lifespan, immutability, and content requirements for both the `id.k8s.io ClusterClaim` and `clusterset.k8s.io ClusterClaim` are described further below. The goal of these requirements are to provide to the MCS API a cluster ID of viable usefulness to address known user stories without being too restrictive or prescriptive.
 
 ### User Stories
 
@@ -284,7 +286,7 @@ Contains a unique identifier for the containing cluster.
 
 ##### Lifespan
 
-*   The identifier **must** exist and be immutable for the duration of a cluster’s membership in a ClusterSet, and as long as a `clusterset.k8s.io` claim exists.
+*   The identifier **must** exist and be immutable for the duration of a cluster’s membership in a ClusterSet, and as long as a `clusterset.k8s.io` claim referring to that cluster in that ClusterSet exists.
 *   The identifier **must** exist for the lifespan of a cluster.
 *   The identifier **may** be immutable for the lifespan of a cluster.
 
@@ -299,9 +301,22 @@ Contains a unique identifier for the containing cluster.
 
 ##### Consumers
 
-*   Can rely on the identifier existing, unmodified for the entire duration of its membership in a ClusterSet.
+*   **Must* be able to rely on the identifier existing, unmodified for the entire duration of its membership in a ClusterSet.
 *   **Should** watch the `id.k8s.io` claim to handle potential changes if they live beyond the ClusterSet membership.
 *   **May** rely on the existence of an identifier for clusters that do not belong to a ClusterSet so long as the implementation provides one.
+
+
+##### Notable scenarios
+
+**Renaming a cluster**: Since a `id.k8s.io ClusterClaim` must be immutable for the duration of its *membership* in a given ClusterSet, the claim contents can be "changed" by unregistering the cluster from the ClusterSet and reregistering it with the new name.
+
+**Reusing cluster names**: Since an `id.k8s.io ClusterClaim` has no restrictions on whether or not a ClusterClaim can be repeatable, if a cluster unregisters from a ClusterSet it is permitted under this standard to rejoin later with the same `id.k8s.io ClusterClaim` it had before. Similarly, a *different* cluster could join a ClusterSet with the same `id.k8s.io ClusterClaim` that had been used by another cluster previously, as long as both do not have membership in the same ClusterSet at the same time. Finally, two or more clusters may have the same `id.k8s.io ClusterClaim` concurrently (though they **should** not; see "Uniqueness" above) *as long as* they both do not have membership in the same ClusterSet.
+
+```
+<<[UNRESOLVED]>>
+We could probably use some example scenarios describing how some dependent tool should handle IDs changing or disappearing during various stages of the cluster/membership lifecycle - @jeremyot
+<<[/UNRESOLVED]>>
+```
 
 
 #### Claim: `clusterset.k8s.io`
@@ -323,7 +338,7 @@ Contains an identifier that relates the containing cluster to the ClusterSet in 
 
 ##### Consumers
 
-*   Can rely on the identifier existing, unmodified for the entire duration of its membership in a ClusterSet.
+*   **Must** be able to rely on the identifier existing, unmodified for the entire duration of its membership in a ClusterSet.
 *   **Should** watch the clusterset claim to detect the span of a cluster’s membership in a ClusterSet.
 
 
