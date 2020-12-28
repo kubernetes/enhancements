@@ -1,23 +1,3 @@
----
-title: Configurable scale up/down velocity for HPA
-authors:
-  - "@gliush"
-  - "@arjunrn"
-owning-sig: sig-autoscaling
-participating-sigs:
-reviewers:
-  - "@mwielgus"
-  - "@josephburnett"
-approvers:
-  - "@mwielgus"
-  - "@josephburnett"
-editor: TBD
-creation-date: 2019-03-07
-last-updated: 2020-01-29
-status: implemented
-superseded-by:
----
-
 # Configurable scale up/down velocity for HPA
 
 ## Table of Contents
