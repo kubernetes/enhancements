@@ -1,26 +1,3 @@
----
-title: Kubeadm config file graduation (v1beta2)
-authors:
-  - "@fabriziopandini"
-  - "@luxas"
-owning-sig: sig-cluster-lifecycle
-reviewers:
-  - "@chuckha"
-  - "@detiber"
-  - "@liztio"
-approvers:
-  - "@luxas"
-  - "@timothysc"
-  - "@fabriziopandini"
-  - "@neolit123"
-editor: "@fabriziopandini"
-creation-date: 2018-08-01
-last-updated: 2019-04-29
-status: implementable
-see-also:
-  - KEP 0008
----
-
 # kubeadm Config file graduation (v1beta2)
 
 ## Table of Contents
@@ -173,17 +150,17 @@ inside of the same kubeadm-config YAML file. More in detail:
 
 The new `kubeadm init` flow configuration-wise is summarized by the attached schema.
 
-![kubeadm-init](0023-kubeadm-init.png)
+![kubeadm-init](kubeadm-init.png)
 
-[link](0023-kubeadm-init.png)
+[link](kubeadm-init.png)
 
 As a consequence, also how the kubeadm configuration is consumed by kubeadm commands should
 be adapted as described by following schemas:
 
-- [kubeadm join and kubeadm join --master](0023-kubeadm-join.png)
-- [kubeadm upgrade apply](0023-kubeadm-upgrade-apply.png)
-- [kubeadm upgrade node](0023-kubeadm-upgrade-node.png)
-- [kubeadm reset](0023-kubeadm-reset.png)
+- [kubeadm join and kubeadm join --master](kubeadm-join.png)
+- [kubeadm upgrade apply](kubeadm-upgrade-apply.png)
+- [kubeadm upgrade node](kubeadm-upgrade-node.png)
+- [kubeadm reset](kubeadm-reset.png)
 
 #### Use substructures instead of the old "single flat object"
 

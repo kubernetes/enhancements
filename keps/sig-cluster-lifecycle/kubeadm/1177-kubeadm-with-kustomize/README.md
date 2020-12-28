@@ -1,26 +1,3 @@
----
-title: Advanced configurations with kubeadm (Kustomize)
-authors:
-  - "@fabriziopandini"
-owning-sig: sig-cluster-lifecycle
-participating-sigs:
-  - sig-cluster-lifecycle
-reviewers:
-  - "@neolit123"
-  - "@rosti"
-  - "@ereslibre"
-  - "@detiber"
-  - "@vincepri"
-  - "@chuckha"
-approvers:
-  - "@timothysc"
-  - "@luxas"
-editor: "@fabriziopandini"
-creation-date: 2019-07-22
-last-updated: 2020-09-18
-status: replaced
----
-
 # Advanced configurations with kubeadm (Kustomize)
 
 ## Table of Contents
