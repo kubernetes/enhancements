@@ -1,31 +1,3 @@
----
-title: Moving ComponentConfig API types to staging repos
-authors:
-  - "@luxas"
-  - "@sttts"
-owning-sig: sig-cluster-lifecycle
-participating-sigs:
-  - sig-api-machinery
-  - sig-node
-  - sig-network
-  - sig-scheduling
-  - sig-cloud-provider
-reviewers:
-  - "@thockin"
-  - "@liggitt"
-  - "@wojtek-t"
-  - "@stewart-yu"
-  - "@dixudx"
-approvers:
-  - "@thockin"
-  - "@jbeda"
-  - "@deads2k"
-editor: "@luxas"
-creation-date: 2018-07-07
-last-updated: 2018-08-10
-status: implementable
----
-
 # Moving ComponentConfig API types to staging repos
 
 **How we can start supporting reading versioned configuration for all our components after a code move for ComponentConfig to staging**

@@ -1,32 +1,3 @@
----
-title: Create a `k8s.io/component-base` repo
-authors:
-  - "@luxas"
-  - "@sttts"
-owning-sig: sig-cluster-lifecycle
-participating-sigs:
-  - sig-api-machinery
-  - sig-cloud-provider
-reviewers:
-  - "@thockin"
-  - "@jbeda"
-  - "@bgrant0607"
-  - "@smarterclayton"
-  - "@liggitt"
-  - "@lavalamp"
-  - "@andrewsykim"
-  - "@cblecker"
-approvers:
-  - "@thockin"
-  - "@jbeda"
-  - "@bgrant0607"
-  - "@smarterclayton"
-editor: "@luxas"
-creation-date: 2018-11-27
-last-updated: 2018-12-10
-status: implementable
----
-
 # Create a `k8s.io/component-base` repo
 
 **How we can consolidate the look and feel of core and non-core components with regards to ComponentConfiguration, flag handling, and common functionality with a new repository**

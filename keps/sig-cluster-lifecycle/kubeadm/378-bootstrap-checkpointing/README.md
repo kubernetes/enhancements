@@ -1,23 +1,3 @@
----
-title: Kubernetes Bootstrap Checkpointing Proposal
-authors:
-  - "@timothysc"
-owning-sig: sig-cluster-lifecycle
-participating-sigs:
-  - sig-node
-reviewers:
-  - "@yujuhong"
-  - "@luxas"
-  - "@roberthbailey"
-approvers:
-  - "@yujuhong"
-  - "@roberthbailey"
-editor: "@timothysc"
-creation-date: 2017-10-20
-last-updated: 2018-01-23
-status: implemented
----
-
 # Kubernetes Bootstrap Checkpointing Proposal
 
 ## Table of Contents

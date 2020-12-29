@@ -1,0 +1,27 @@
+title: Create a `k8s.io/component-base` repo
+kep-number: 783
+authors:
+  - "@luxas"
+  - "@sttts"
+owning-sig: sig-cluster-lifecycle
+participating-sigs:
+  - sig-api-machinery
+  - sig-cloud-provider
+reviewers:
+  - "@thockin"
+  - "@jbeda"
+  - "@bgrant0607"
+  - "@smarterclayton"
+  - "@liggitt"
+  - "@lavalamp"
+  - "@andrewsykim"
+  - "@cblecker"
+approvers:
+  - "@thockin"
+  - "@jbeda"
+  - "@bgrant0607"
+  - "@smarterclayton"
+editor: "@luxas"
+creation-date: 2018-11-27
+last-updated: 2018-12-10
+status: implementable

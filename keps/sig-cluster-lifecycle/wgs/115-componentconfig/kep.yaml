@@ -1,0 +1,26 @@
+title: Moving ComponentConfig API types to staging repos
+kep-number: 115
+authors:
+  - "@luxas"
+  - "@sttts"
+owning-sig: sig-cluster-lifecycle
+participating-sigs:
+  - sig-api-machinery
+  - sig-node
+  - sig-network
+  - sig-scheduling
+  - sig-cloud-provider
+reviewers:
+  - "@thockin"
+  - "@liggitt"
+  - "@wojtek-t"
+  - "@stewart-yu"
+  - "@dixudx"
+approvers:
+  - "@thockin"
+  - "@jbeda"
+  - "@deads2k"
+editor: "@luxas"
+creation-date: 2018-07-07
+last-updated: 2018-08-10
+status: implementable

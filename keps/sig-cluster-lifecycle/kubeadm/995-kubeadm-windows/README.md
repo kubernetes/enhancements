@@ -1,28 +1,3 @@
----
-title: kubeadm-for-windows
-authors:
-  - "@benmoss"
-  - "@gab-satchi"
-  - "@ksubrmnn"
-  - "@neolit123"
-  - "@patricklang"
-owning-sig: sig-windows
-participating-sigs:
-  - sig-windows
-  - sig-cluster-lifecycle
-reviewers:
-  - "@timothysc"
-  - "@michmike"
-  - "@fabriziopandini"
-  - "@rosti"
-approvers:
-  - "@timothysc"
-editor: "@ksubrmnn"
-creation-date: 2019-04-24
-last-updated: 2019-04-24
-status: implementable
----
-
 # Kubeadm for Windows
 
 ## Table of Contents

@@ -1,26 +1,3 @@
----
-title: kubeadm component config management
-authors:
-  - "@rosti"
-owning-sig: sig-cluster-lifecycle
-participating-sigs:
-  - sig-cluster-lifecycle
-reviewers:
-  - "@fabriziopandini"
-  - "@neolit123"
-  - "@ereslibre"
-  - "@yastij"
-approvers:
-  - "@timothysc"
-editor: "@rosti"
-creation-date: 2019-09-25
-last-updated: 2020-04-29
-status: implementable
-see-also:
-  - "/keps/sig-cluster-lifecycle/kubeadm/0023-kubeadm-config.md"
-  - "/keps/sig-cluster-lifecycle/kubeadm/20190722-Advanced-configurations-with-kubeadm-(Kustomize).md"
----
-
 # kubeadm component config management
 
 ## Table of Contents
