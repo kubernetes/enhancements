@@ -1,28 +1,3 @@
----
-title: Less object serializations
-authors:
-  - "@wojtek-t"
-owning-sig: sig-api-machinery
-participating-sigs:
-  - sig-scalability
-reviewers:
-  - "@jpbetz"
-  - "@justinsb"
-  - "@smarterclayton"
-approvers:
-  - "@deads2k"
-  - "@lavalamp"
-creation-date: 2019-03-27
-last-updated: 2019-10-10
-status: implemented
-see-also:
-  - TODO
-replaces:
-  - n/a
-superseded-by:
-  - n/a
----
-
 # Less object serializations
 
 ## Table of Contents

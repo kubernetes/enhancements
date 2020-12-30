@@ -1,22 +1,3 @@
----
-title: Graduate Admission Webhooks to GA
-authors:
-  - "@mbohlool"
-owning-sig: sig-api-machinery
-reviewers:
-  - "@liggitt"
-  - "@deads2k"
-approvers:
-  - "@liggitt"
-  - "@deads2k"
-editor: TBD
-creation-date: 2019-01-27
-last-updated: 2019-02-04
-status: implemented
-see-also:
-  - "[Admission Control Webhook Beta Design Doc](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/api-machinery/admission-control-webhooks.md)"
----
-
 # Admission Webhooks to GA
 
 ## Table of Contents

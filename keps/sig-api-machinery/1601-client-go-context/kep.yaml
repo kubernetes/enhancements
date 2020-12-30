@@ -1,0 +1,15 @@
+title: Context support in k8s.io/client-go
+kep-number: 1601
+authors:
+- "@mikedanese"
+- "@maleck13"
+owning-sig: sig-api-machinery
+participating-sigs:
+- sig-api-machinery
+approvers:
+- "@deads2k"
+- "@liggitt"
+- "@lavalamp"
+creation-date: 2020-01-23
+last-updated: 2020-01-23
+status: implementable

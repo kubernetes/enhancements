@@ -1,27 +1,3 @@
----
-title: Union types
-authors:
-  - "@apelisse"
-owning-sig: sig-api-machinery
-participating-sigs:
-reviewers:
-  - "@sttts"
-  - "@lavalamp"
-  - "@thockin"
-  - "@DirectXMan12"
-approvers:
-  - "@lavalamp"
-editor: TBD
-creation-date: 2019-03-25
-last-updated: 2019-03-25
-status: implementable
-see-also:
-  - "/keps/sig-api-machinery/0006-apply.md"
-replaces:
-  - "https://docs.google.com/document/d/1lrV-P25ZTWukixE9ZWyvchfFR0NE2eCHlObiCUgNQGQ"
-superseded-by:
----
-
 # Union types
 
 ## Table of Contents
