@@ -1,22 +1,3 @@
----
-title: Breaking apart the Kubernetes test tarball
-authors:
-  - "@ixdy"
-owning-sig: sig-testing
-participating-sigs:
-  - sig-release
-reviewers:
-  - "@akutz"
-  - "@amwat"
-approvers:
-  - "@spiffxp"
-  - "@tpepper"
-editor: TBD
-creation-date: 2019-01-18
-last-updated: 2019-03-06
-status: implemented
----
-
 # Breaking apart the kubernetes test tarball
 
 ## Table of Contents

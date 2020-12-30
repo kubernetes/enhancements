@@ -1,27 +1,3 @@
----
-title: CPU Manager
-authors:
-  - "@ConnorDoyle"
-  - "@flyingcougar"
-  - "@sjenning"
-owning-sig: sig-node
-participating-sigs:
-  - sig-node
-reviewers:
-  - "@derekwaynecarr"
-approvers:
-  - "@dawnchen"
-  - "@derekwaynecarr"
-editor: Connor Doyle
-creation-date: 2017-05-23
-last-updated: 2017-05-23
-status: implementable
-see-also:
-replaces:
-  - " kubernetes/community/contributors/design-proposals/node/cpu-manager.md"
-superseded-by:
----
-
 # CPU Manager
 
 _Authors:_
