@@ -1,21 +1,3 @@
----
-title: Contributor Site
-authors:
-  - "@jbeda"
-owning-sig: sig-contributor-experience
-participating-sigs:
-  - sig-architecture
-  - sig-docs
-reviewers:
-  - "@castrojo"
-approvers:
-  - "@parispittman"
-editor: TBD
-creation-date: "2018-02-19"
-last-updated: "2018-03-07"
-status: implementable
----
-
 # Contributor Site
 
 ## Table of Contents

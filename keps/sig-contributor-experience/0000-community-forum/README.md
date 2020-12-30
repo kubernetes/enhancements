@@ -1,22 +1,3 @@
----
-title: A community forum for Kubernetes
-authors:
-  - "@castrojo"
-owning-sig: sig-contributor-experience
-participating-sigs:
-reviewers:
-  - "@jberkus"
-  - "@joebeda"
-  - "@cblecker"
-approvers:
-  - "@parispittman"
-  - "@grodrigues3"
-editor: TBD
-creation-date: 2018-04-03
-last-updated: 2018-04-17
-status: implemented
----
-
 # A community forum for Kubernetes
 
 ## Table of Contents
