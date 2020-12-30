@@ -1,23 +1,3 @@
----
-title: Rearchitecting NetworkPolicy tests with a DSL for better upstream test coverage
-authors:
-  - "@jayunit100"
-  - "@abhiraut"
-  - "@sedefsavas"
-  - "@McCodeman"
-  - "@mattfenwick"
-owning-sig: sig-network
-reviewers:
-  - "bowei@"
-  - TBD
-approvers:
-  - TBD
-editor: TBD
-creation-date: 2020-02-04
-last-updated: 2020-5-01
-status: implementable
----
-
 Note that this approach of higher level DSLs for testing may be moved into sig-testing for a broader set of tests over time.
 
 # Architecting NetworkPolicy tests with a DSL for better upstream test coverage of all CNIs

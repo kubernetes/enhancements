@@ -1,25 +1,4 @@
----
-title: doc-policies-for-third-party-content
-authors:
-  - "@aimeeu"
-  - "@jimangel"
-  - "@sftim"
-  - "@zacharysarah"
-owning-sig: sig-docs
-reviewers:
-  - "@jaredbhatti"
-  - "@kbarnard10"
-approvers:
-  - "@cblecker"
-  - "@derekwaynecarr"
-  - "@dims"
-editor: "@zacharysarah"
-creation-date: 2019-10-20
-last-updated: 2019-10-20
-status: provisional
----
-
-# doc-policies-for-third-party-content
+# Doc policies for third party content
 
 ## Table of Contents
 
