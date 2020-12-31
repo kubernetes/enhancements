@@ -348,7 +348,7 @@ possible to run a heterogeneous cluster, but pod authors would need to set
 appropriate [NodeSelector][] rules and [tolerations][taint-and-toleration] to
 ensure the pods landed on supporting nodes.
 
-As [use cases](#runtimeclass-scheduling -user-stories) have appeared and solidified,
+As [use cases](#runtimeclass-scheduling-user-stories) have appeared and solidified,
 it has become clear that heterogeneous clusters will not be uncommmon, and supporting
 a smoother user experience will be valuable.
 
