@@ -1,0 +1,20 @@
+title: Kubectl drain should ignore daemonsets by default
+kep-number: draft
+authors:
+  - "@yuhaohaoyu"
+owning-sig: sig-cli
+participating-sigs:
+  - sig-cli
+status: implementable
+creation-date: 2021-01-04
+reviewers:
+  - TBD
+approvers:
+  - TBD
+prr-approvers:
+  - TBD
+see-also:
+  -
+replaces:
+  -
+
