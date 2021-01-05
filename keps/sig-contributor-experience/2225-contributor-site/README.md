@@ -40,7 +40,7 @@ Specifically, building a site that can take advantage of the KEP metadata will b
 ### Goals
 
 * A contributor community facing portal to collect information for those actively working on upstream Kubernetes.
-* An easy to remember URL. (`contrib.kubernetes.io`? `contributors.kubernetes.io`? `c.kubernetes.io`?)
+* An easy to remember URL - kubernetes.dev / k8s.dev
 * A streamlined process to update and share this information.
   Ownership should be delegated using the existing OWNERS mechanisms.
 * A site that will be indexed well on Google to collect markdown files from the smattering of repos that we currently have.
@@ -66,9 +66,7 @@ This site will be focused on communicating with and being a place to publish inf
 We will use Hugo and netlify to build and host the site, respectively. (Details TBD)
 
 The main parts of the site that will be built out first:
-* A main landing page describing the purpose of the site.
 * A guide on how to contribute/update the site.
-* A list and index of KEPs
 * A place to start publishing and building the contributor guide.
 
 ### Risks and Mitigations
@@ -91,6 +89,21 @@ This effort will have succeeded if:
 * Others in the contributor community actively look to expand the information on the contributor site and move information from islands to this site.
 
 ## Implementation History
+
+- 2020-08-24 - [Go live announcement](https://groups.google.com/g/kubernetes-dev/c/tZ3yHbb2EA8/m/l_VOKFomCQAJ)
+  - Launched with a minimal set of content: contributor guide, calendar, and
+    release information.
+- 2020-05-20 - [Migration to docsy theme](https://github.com/kubernetes-sigs/contributor-site/pull/122)
+  - The docsy theme required a complete rework, but made supporting the site
+    significantly easier as well as giving it a more professional look and feel.
+- 2019-04-19 - [Migration to custom theme](https://github.com/kubernetes-sigs/contributor-site/pull/41)
+  - The custom theme also removed content that was not possible to easily
+    edit/format automatically into a HUGO friendly format. This included KEPs,
+    and other content.
+- 2018-07-31 - [WIP Site published](https://github.com/kubernetes-sigs/contributor-site/pull/1)
+  - The site imported content from the community repo without additional
+    formatting or fixing of links.
+
 
 ## Drawbacks
 
