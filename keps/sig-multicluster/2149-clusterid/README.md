@@ -295,12 +295,12 @@ Contains a unique identifier for the containing cluster.
 
 *   The identifier **must** exist and be immutable for the duration of a cluster’s membership in a ClusterSet, and as long as a `clusterset.k8s.io` claim referring to that cluster in that ClusterSet exists.
 *   The identifier **must** exist for the lifespan of a cluster.
-*   The identifier **may** be immutable for the lifespan of a cluster.
+*   The identifier **should** be immutable for the lifespan of a cluster.
 
 
 ##### Contents
 
-*   The identifier **must** be a valid RFC-1123 DNS label.
+*   The identifier **must** be a valid RFC-1123 DNS label [as described for object names in the Kubernetes docs](https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#dns-label-names).
     *   Following the most restrictive standard naming constraint ensures maximum usefulness and portability.
     *   Can be used as a component in MCS DNS.
 *   The identifier **may** be a human readable description of its cluster.
@@ -308,7 +308,7 @@ Contains a unique identifier for the containing cluster.
 
 ##### Consumers
 
-*   **Must* be able to rely on the identifier existing, unmodified for the entire duration of its membership in a ClusterSet.
+*   **Must** be able to rely on the identifier existing, unmodified for the entire duration of its membership in a ClusterSet.
 *   **Should** watch the `id.k8s.io` claim to handle potential changes if they live beyond the ClusterSet membership.
 *   **May** rely on the existence of an identifier for clusters that do not belong to a ClusterSet so long as the implementation provides one.
 
