@@ -182,7 +182,7 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 -->
 That there must be some way to identify individual clusters in a multi-cluster 
 deployment has felt like a given to SIG-Multicluster; it has been discussed in
-a broad sense previously ([see this doc](https://docs.google.com/document/d/1F__vEKeI41P7PPUCMM9PVPYY34pyrvQI5rbTJVnS5c4/edit?usp=sharing), and was scoped 
+a broad sense previously ([see this doc](https://docs.google.com/document/d/1F__vEKeI41P7PPUCMM9PVPYY34pyrvQI5rbTJVnS5c4/edit?usp=sharing)), and was scoped 
 down in response to actual observed use cases in the latest community discussion on
 which this KEP is based ([doc](https://docs.google.com/document/d/1S0u6xzP2gcJKPipA6tBNDNuid76nVKeGhTk7PrCIuQY/edit?usp=sharing)). The motivation
 of this KEP is to provide a flexible but useful baseline for clusterID that can
@@ -274,6 +274,8 @@ The `ClusterClaim` resource provides a way to store identification related, clus
 
 
 ### Well known claims
+
+The `ClusterClaim` CRD will support two specific claims under the well known names `id.k8s.io` and `clusterset.k8s.io`. Being "well known" means that they must conform to the requirements described below, and therefore can be dependent on by multi-cluster implementations to achieve use cases dependent on knowlege of a cluster's ID or ClusterSet membership.
 
 The requirements below use the keywords **must, should,** and **may** purposefully in accordance with [RFC-2119](https://tools.ietf.org/html/rfc2119).
 
