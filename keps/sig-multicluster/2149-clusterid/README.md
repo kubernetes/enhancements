@@ -327,6 +327,12 @@ We could probably use some example scenarios describing how some dependent tool 
 <<[/UNRESOLVED]>>
 ```
 
+```
+<<[UNRESOLVED]>>
+How should uniqueness restrictions be handled to clusters who were originally isolated and only acquired/verified an id when joining a ClusterSet
+<<[/UNRESOLVED]>>
+```
+
 
 #### Claim: `clusterset.k8s.io`
 
