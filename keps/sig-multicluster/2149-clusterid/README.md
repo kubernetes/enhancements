@@ -270,7 +270,9 @@ The actual name of the CRD is not finalized and is provisionally titled `Cluster
 The `ClusterClaim` resource provides a way to store identification related, cluster scoped information for multi-cluster tools while creating flexibility for implementations. A cluster may have multiple `ClusterClaim`s, each holding a different identification related value. Each claim contains the following information:
 
 *   **Name** - a well known or custom name to identify the claim.
-*   **Value** - a claim-dependent string.
+*   **Value** - a claim-dependent string, up to 128 KB.
+
+The schema for `ClusterClaim` is intentionally loose to support multiple forms of information, including arbitrary additional identification related claims described by users (see "Additional Claims", below), but certain well-known claims will add additional schema constraints, such as those described in the next section.
 
 
 ### Well known claims
