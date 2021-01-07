@@ -185,6 +185,9 @@ extenders:
   ignorable: false
 ```
 
+Multiple extenders can be configured and will be called sequentially by the
+scheduler.
+
 ### Interface
 
 #### Filter
@@ -232,6 +235,15 @@ type ExtenderFilterResult struct {
 ```
 
 The "filter" call may prune the set of nodes based on its filter plugins.
+
+Nodes in both `FailedNodesMap` and `FailedAndUnresolvableNodes` are
+unschedulable, except the nodes in the latter will be skipped in preemption
+phase.
+
+When multiple extenders are configured, unschedulable nodes will not be passed
+to subsequent extenders. It's recommended to order the extenders that may
+report `UnschedulableAndUnresolvable` ahead of others. This can improve the
+preemption performance.
 
 #### Prioritize
 
