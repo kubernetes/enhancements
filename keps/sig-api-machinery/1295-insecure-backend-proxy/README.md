@@ -1,30 +1,4 @@
----
-title: Insecure Backend Proxy
-authors:
-  - "@deads2k"
-owning-sig: sig-api-machinery
-participating-sigs:
-  - sig-api-machinery
-  - sig-auth
-  - sig-cli
-reviewers:
-  - "@sttts"
-  - "@cheftako"
-  - "@liggitt"
-  - "@soltysh"
-approvers:
-  - "@lavalamp"
-  - "@mikedanese"
-editor: TBD
-creation-date: 2019-09-27
-last-updated: 2019-09-27
-status: implementable
-see-also:
-replaces:
-superseded-by:
----
-
-# Insecure Backend Proxy
+# KEP-1295: Insecure Backend Proxy
 
 When trying to get logs for a pod, it is possible for a kubelet to have an expired serving certificate.
 If a client chooses, it should be possible to bypass the default behavior of the kube-apiserver and allow the kube-apiserver
