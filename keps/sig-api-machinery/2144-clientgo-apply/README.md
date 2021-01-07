@@ -98,8 +98,8 @@ deficiencies:
   Use the existing go structs to construct an apply configuration, serialize
   it to JSON, and pass it to `Patch`. This can cause zero valued required
   fields being accientally included in the apply configuration resulting
-  in fields being accidentally set to incorrect values and/or fields accidentally
-  being accidentally being clamed as owned.
+  in fields being accidentally set to incorrect values and/or fields
+  accidentally being clamed as owned.
 
 Both sig-api-machinery and wg-api-expression agree that this enhancement is
 required for server side apply to be promoted to GA.
@@ -126,7 +126,8 @@ Validate this enhancement meets the needs of developers:
 ### Non-Goals
 
 Enhancements to client-go's dynamic client. The client-go dynamic client already
-supports Apply via Patch, which is adequate for the dynamic client.
+supports Apply via Patch, which is adequate for the dynamic client for GA. In
+the future, a nicer mechanism can be proposed separate from this KEP.
 
 Protobuf support. Apply does not support protobuf, and it will not be added with
 this enhancement.
@@ -142,7 +143,7 @@ representation, which will need to be generated for this purpose.
 #### Poor adoption
 
 Risk: Developers adoption is poor, either because the aesthetics/ergonomics are
-not to their liking or the functinality is insufficient to do what they need to
+not to their liking or the functionality is insufficient to do what they need to
 do with it. This could lead to (a) poor server side apply adoption, and/or (b)
 developers building alternate solutions.
 
@@ -158,7 +159,9 @@ take an aligned approach to adding apply to clients in a typesafe way.
 The client-go typed clients will be extended to include Apply functions, e.g.:
 
 ```go
-func (c *deployments) Apply(ctx Context, fieldManager string, deployment *appsv1apply.Deployment, opts metav1.ApplyOptions, subresources ...string) (*Deployment, error)
+func (c *deployments) Apply(ctx Context, fieldManager string, deployment *appsv1apply.Deployment, opts metav1.ApplyOptions) (*Deployment, error)
+func (c *deployments) ApplyStatus(ctx Context, fieldManager string, deployment *appsv1apply.Deployment, opts metav1.ApplyOptions) (*Deployment, error)
+func (c *deployments) ApplyScale(ctx Context, fieldManager string, deployment *appsv1apply.Deployment, opts metav1.ApplyOptions) (*Deployment, error)
 ```
 
 `ApplyOptions` will be added to metav1 even though `PatchOptions` will continue
@@ -173,6 +176,30 @@ type ApplyOptions struct {
 
 func (ApplyOptions) ToPatchOptions(fieldManager string) PatchOptions
 ```
+
+<<[UNRESOLVED @jpbetz ]>>
+
+Should fieldManager be a parameter of Apply or should it be optional?
+
+The main reason this KEP proposes fieldmanager be a required parameter
+for Apply is that some controllers have multiple code paths that
+update the same same object, but that update different field sets. If
+they used apply and the same field manager, fields could be
+accidentally removed or disowned.
+
+Create and Update methods default the fieldmanager to a user-agent
+based string. But unlike Apply, Updates succeed even if there are
+conflicts, so the fieldmanager name is almost entirely
+informational. For Apply, the fieldmanager name matters a lot more,
+and a user-agent string is almost certainly not a good default
+fieldmanager for Apply.
+
+If we require fieldManager, an alternative to making fieldManager a
+required parameter of `Apply` functions would be have a constructor
+for Apply options like `NewApplyOptions(fieldManager, force)` that
+makes the required field clear.
+
+<<[/UNRESOLVED]>>
 
 <<[UNRESOLVED @jpbetz ]>> 
 Should the Force field also be made a required field like fieldManager is?
@@ -195,14 +222,6 @@ client.Deployments().BeginApply("field-manager-name", options).Body(
 
 Apply will combine the `fieldManager` argument with `ApplyOptions` to create the
 `PatchOptions`.
-
-Each apply call will be required to provide a fieldmanager name. We will not
-provide a a way for the fieldmanager name to be set for the entire
-clientset. The main reason for this is that if a client has multiple code paths
-where it makes apply requests to the same object, but with different field sets,
-they must use different field manager names. If they use the same field manager
-name they will cause fields to be accidentally removed or disowned. This is a
-potential foot gun we would like to avoid.
 
 ### Generated apply configuration types
 
