@@ -90,7 +90,10 @@ func TestValidation(t *testing.T) {
 				t.Errorf("%v has an error: %v", filename, kep.Error)
 			}
 
-			requiredPRRApproval := len(kep.Number) > 0 && kep.LatestMilestone >= "v1.21"
+			// temporarily disable PRR enforcement per https://github.com/kubernetes/enhancements/issues/2239
+			// so setting this to something always false
+			requiredPRRApproval := len(kep.Number) < 0
+			//requiredPRRApproval := len(kep.Number) > 0 && kep.LatestMilestone >= "v1.21"
 			if !requiredPRRApproval {
 				return
 			}
