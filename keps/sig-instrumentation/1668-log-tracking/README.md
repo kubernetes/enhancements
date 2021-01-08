@@ -92,7 +92,7 @@ If multiple users throw many API requests at the same time, it is very difficult
  - This proposal does not add additional telemetry to any components, just context-based metadata to existing logs. This KEP doesn't require running any additional OpenTelemetry components (such as the OpenTelemetry collector, which the  [API Server Tracing](https://github.com/kubernetes/enhancements/issues/647) KEP uses)
 
 ## Background
-It's Known that all requests to K8s will reach API Server first, in order to propogate these metadata to mutating admission controller, we require API Server to support propogating these metadata as well. Fortunately there is already a KEP [API Server Tracing](https://github.com/kubernetes/enhancements/issues/647)  to do this.
+It's Known that all requests to K8s will reach API Server first, in order to propagate these metadata to mutating admission controller, we require API Server to support propogating these metadata as well. Fortunately there is already a KEP [API Server Tracing](https://github.com/kubernetes/enhancements/issues/647)  to do this.
 
 ```
 Goals
@@ -193,13 +193,40 @@ In order to propagate context across all objects we concerned , we also need to 
 
 **3. How to log the metadata from a context.Context**
 
-Please note that changing the log is *not* the scope of this KEP. In the feature, we can get the metadata and change the log like below accordingly.
+Please note that changing the log is *not* the scope of this KEP. In the future, we can get the metadata and change the log like below accordingly.
+- Example
+```go
+// package httptrace
+func WithObjectV2(ctx context.Context, meta metav1.Object) context.Context {
+    ctx = SpanContextWithObject(ctx, meta)
 
+    log := kontext.FromContext(ctx)
+    objsetID, traceID, spanID := ObjSetIDsFrom(ctx)
+    log.WithValues("objectsetid", objsetID, "traceid", traceID, "spanid", spanID)
+    return kontext.IntoContext(ctx, log)
+}
+
+// package deployment
+func cleanupDeployment(oldRSs []*apps.ReplicaSet, deployment *apps.Deployment) {
+    ctx := httptrace.WithObjectV2(context.TODO(), deployment)
+    [...]
+    logger := kontext.FromContext(ctx)
+    logger.Infof("Looking to cleanup old replica sets for deployment %q", deployment.Name)
+    cleanupFIXME(ctx, ...)
+ }
+
+func cleanupFIXME(ctx context.Context, ...){
+    logger := kontext.FromContext(ctx)
+    logger.Info("Looking to cleanup FIXME")
+}
 ```
-spanctx := apitrace.SpanContextFromContext(ctx)
-objSetID := otel.BaggageValue(ctx, "objectSetID").AsString()
-klog.V(2).Infof("ObjectSetID: %s, TraceID: %s, SpanID: %s\n", objSetID, spanctx.TraceID, spactx.SpanID)
+In this example, it's expected that the log looks like:
+
+```shell
+2019/12/01 14:49:12 [INFO] objectsetid="04bc5995-0147-4db8-9f06-fdbcb2e1a087" traceid="ca057eae1a26b66314fe3e361eedc5ca" spanid="3696483da6bfdcea" Looking to cleanup old replica sets for deployment hello-world
+2019/12/01 14:49:12 [INFO] objectsetid="04bc5995-0147-4db8-9f06-fdbcb2e1a087" traceid="ca057eae1a26b66314fe3e361eedc5ca" spanid="3696483da6bfdcea" Looking to cleanup FIXME
 ```
+the logger and specific logging metadata will be propagated across the call stack.
 
 ### Design of Mutating webhook(Out of tree)
 We use mutating admission controller(aka webhook)  to change/update the object annotation. It takes advantages of:
@@ -336,7 +363,7 @@ _This section must be completed when targeting alpha to a release._
   Yes.
 
 * **What happens if we reenable the feature if it was previously rolled back?**
-  Objects created during the rollback will have no initialtrace-id until they
+  Objects created during the rollback will have no objsetid until they
   are recreated.
 
 * **Are there any tests for feature enablement/disablement?**
