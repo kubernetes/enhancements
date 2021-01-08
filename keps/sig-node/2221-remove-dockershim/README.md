@@ -1,4 +1,4 @@
-# KEP-1985: Removing dockershim from kubelet
+# KEP-2221: Removing dockershim from kubelet
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
@@ -115,7 +115,7 @@ is a [KEP 2041](https://github.com/kubernetes/enhancements/pull/2041) for gradua
 
 Step 1: Deprecate in-tree dockershim and decouple dockershim from kubelet.
 
-Target releases: 1.20, 1.21
+Target releases: 1.20
 
 Actions:
 
