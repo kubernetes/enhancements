@@ -64,13 +64,13 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
 - [x] (R) KEP approvers have approved the KEP status as `implementable`
 - [x] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
-- [ ] (R) Graduation criteria is in place
-- [ ] (R) Production readiness review completed
-- [ ] Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [x] (R) Graduation criteria is in place
+- [x] (R) Production readiness review completed
+- [x] Production readiness review approved
+- [x] "Implementation History" section is up-to-date for milestone
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
 **Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
@@ -583,38 +583,27 @@ None of the tests for this feature are unusual or tricky.
 
 #### Alpha -> Beta Graduation
 
-- [ ] Ephemeral Containers API has been in alpha for at least 2 releases.
-- [ ] Ephemeral Containers support namespace targeting.
-- [ ] Tests are in Testgrid and linked in KEP.
+- [x] Ephemeral Containers API has been in alpha for at least 2 releases.
+- [x] Ephemeral Containers support namespace targeting.
 - [ ] Metrics for Ephemeral Containers are added to existing contain creation
   metrics.
-- [ ] CLI using Ephemeral Containers for debugging checked into a Kubernetes
+- [x] CLI using Ephemeral Containers for debugging checked into a Kubernetes
   project repository (e.g. in `kubectl` or a `kubectl` plugin).
-- [ ] A task on https://kubernetes.io/docs/tasks/ describes how to troubleshoot
+- [x] A task on https://kubernetes.io/docs/tasks/ describes how to troubleshoot
   a running pod using Ephemeral Containers.
-- [ ] A survey sent to early adopters doesn't reveal any major shortcomings.
+- [ ] Ephemeral Container creation is covered by e2e-node tests.
 
 #### Beta -> GA Graduation
 
 - [ ] Ephemeral Containers have been in beta for at least 2 releases.
 - [ ] Ephemeral Containers see use in 3 projects or articles.
-- [ ] Ephemeral Container creation is covered by conformance tests
+- [ ] Ephemeral Container creation is covered by [conformance tests].
 
 [conformance tests]: https://git.k8s.io/community/contributors/devel/sig-architecture/conformance-tests.md
 
 ### Upgrade / Downgrade Strategy
 
-<!--
-If applicable, how will the component be upgraded and downgraded? Make sure
-this is in the test plan.
-
-Consider the following in developing an upgrade/downgrade strategy for this
-enhancement:
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade, in order to maintain previous behavior?
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade, in order to make use of the enhancement?
--->
+No action is required when upgrading/downgrading between versions of this feature.
 
 ### Version Skew Strategy
 
@@ -631,7 +620,6 @@ CRI is still in alpha.) Runtimes will be expected to handle an unknown
 
 [Adding Unstable Features to Stable Versions]: https://git.k8s.io/community/contributors/devel/sig-architecture/api_changes.md#adding-unstable-features-to-stable-versions
 [CRI Optional Runtime Features]: https://issues.k8s.io/32803
-
 
 ## Production Readiness Review Questionnaire
 
@@ -664,9 +652,9 @@ you need any help or guidance.
 _This section must be completed when targeting alpha to a release._
 
 * **How can this feature be enabled / disabled in a live cluster?**
-  - [ ] Feature gate (also fill in values in `kep.yaml`)
-    - Feature gate name:
-    - Components depending on the feature gate:
+  - [x] Feature gate (also fill in values in `kep.yaml`)
+    - Feature gate name: EphemeralContainers
+    - Components depending on the feature gate: kube-apiserver, kubelet
   - [ ] Other
     - Describe the mechanism:
     - Will enabling / disabling the feature require downtime of the control
@@ -675,59 +663,130 @@ _This section must be completed when targeting alpha to a release._
       of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
 
 * **Does enabling the feature change any default behavior?**
-  Any change of default behavior may be surprising to users or break existing
-  automations, so be extremely careful here.
+
+  No, this feature does not change existing behavior.
 
 * **Can the feature be disabled once it has been enabled (i.e. can we roll back
   the enablement)?**
-  Also set `disable-supported` to `true` or `false` in `kep.yaml`.
-  Describe the consequences on existing workloads (e.g., if this is a runtime
-  feature, can it break the existing applications?).
+
+  Yes. Any running ephemeral containers will continue to run, but they will
+  become inaccessible and exit when the Pod is deleted.
 
 * **What happens if we reenable the feature if it was previously rolled back?**
 
+  This behaves as expected: the feature will begin working again.
+
 * **Are there any tests for feature enablement/disablement?**
-  The e2e framework does not currently support enabling or disabling feature
-  gates. However, unit tests in each component dealing with managing data, created
-  with and without the feature, are necessary. At the very least, think about
-  conversion tests if API types are being modified.
+
+  Some unit tests are exercised with the feature both enabled and disabled to
+  verify proper behavior in both cases. Integration test verify that the API
+  server accepts/rejects requests when the feature is enabled/disabled.
+
+  This feature is implemented in the apiserver and kubelet. The change to the
+  core API has had several releases to soak. For the apiserver, the main risk
+  is described by [Adding Unstable Features to Stable Versions]. Specifically:
+
+  > Ensuring existing data is preserved is needed so that when the feature is
+  > enabled by default in a future version n and data is unconditionally allowed
+  > to be persisted in the field, an n-1 API server (with the feature still
+  > disabled by default) will not drop the data on update.
+
+  We've followed the instructions in this doc for how to persist unstable fields
+  during an update. The case for this feature is slightly more complicated
+  because the field may not be set by the default update resource. This logic
+  has been in place for several releases. It has unit tests in
+  [TestDropEphemeralContainers](https://github.com/kubernetes/kubernetes/blob/v1.20.2/pkg/api/pod/util_test.go#L1450).
 
 ### Rollout, Upgrade and Rollback Planning
 
 _This section must be completed when targeting beta graduation to a release._
 
 * **How can a rollout fail? Can it impact already running workloads?**
-  Try to be as paranoid as possible - e.g., what if some components will restart
-   mid-rollout?
+
+  This feature allows setting a new field, `ephemeralContainers` in a Pod spec.
+  Enabling the feature won't affect existing workloads since they were not
+  previously allowed to set this field.
+
+  Component restarts won't affect this feature.
 
 * **What specific metrics should inform a rollback?**
+
+  A rollback is only indicated if there's a catastrophic failure that prevents
+  the cluster from functioning normally, for example if pod or container
+  creation begins to fail.
 
 * **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
   Describe manual testing that was done and the outcomes.
   Longer term, we may want to require automated upgrade/rollback tests, but we
   are missing a bunch of machinery and tooling and can't do that now.
 
+  Since this feature is not critical to production workloads, the main risk
+  is that enabling the feature by default will adversely affect other components.
+
+  I've tried to simulate this manually by running (using `local-cluster-up.sh`
+  with `PRESERVE_ETCD=true`):
+
+  1. (Cluster version 1.20.2, `FEATURE_GATES=EphemeralContainers=false`):
+     1. Create pod
+     1. Attempt to create ephemeral container (expect fail)
+
+  1. (Cluster version 1.21+, `FEATURE_GATES=EphemeralContainers=true`):
+     1. describe pod
+     1. exec in pod
+     1. Attempt to create ephemeral container (expect success)
+
+  1. (Cluster version 1.20.2, `FEATURE_GATES=EphemeralContainers=false`):
+     1. describe pod
+     1. exec in pod
+     1. Attempt to create ephemeral container (expect fail)
+
+  1. (Cluster version 1.21+, `FEATURE_GATES=EphemeralContainers=true`):
+     1. describe pod
+     1. exec in pod
+     1. Attempt to create ephemeral container (expect success)
+
+  The apiserver and kubelet have automated upgrade tests
+  (https://testgrid.k8s.io/google-gce-upgrade), but these likely don't exercise
+  ephemeral containers. We'll investigate whether it's possible to add ephemeral
+  containers to these existing tests.
+
 * **Is the rollout accompanied by any deprecations and/or removals of features, APIs, 
 fields of API types, flags, etc.?**
-  Even if applying deprecation policies, they may still surprise some users.
+
+  No.
 
 ### Monitoring Requirements
 
 _This section must be completed when targeting beta graduation to a release._
 
 * **How can an operator determine if the feature is in use by workloads?**
-  Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
-  checking if there are objects with field X set) may be a last resort. Avoid
-  logs or events for this purpose.
+
+  We will create a new gauge metric that's updated during kubelet's reconcile
+  of `v1.Pod` to track the number containers scheduled to this node in the API.
+  This will be slightly different than the existing
+  `kubelet_running_containers`, which describes the kubelet's representation of
+  containers, and will be able to label the metrics with fields that are only
+  available in the API object, such as type of container.
+
+  Note that these kubelet metrics are still in alpha.
+
+  This is tracked in [#97974](https://issues.k8s.io/97974).
 
 * **What are the SLIs (Service Level Indicators) an operator can use to determine 
 the health of the service?**
-  - [ ] Metrics
-    - Metric name:
-    - [Optional] Aggregation method:
-    - Components exposing the metric:
+  - [x] Metrics
+    - Metric name: `apiserver_request_total{component="apiserver",resource="pods",subresource="ephemeralcontainers"}` (apiserver), `kubelet_container_errors_total{type="Ephemeral"}` (kubelet, Proposed)
+    - [Optional] Aggregation method: Aggregate by container type
+    - Components exposing the metric: kubelet
   - [ ] Other (treat as last resort)
     - Details:
+
+  Note that the kubelet SLI for this feature is a counter that increments upon
+  failure to create an ephemeral container. Right now the kubelet only surfaces
+  runtime-level errors, so I'll propose adding a higher level counter to
+  encapsulate the entire container creation request, including container type.
+
+  This is tracked in [#97974](https://issues.k8s.io/97974).
 
 * **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
   At a high level, this usually will be in the form of "high percentile of SLI
@@ -738,29 +797,30 @@ the health of the service?**
     job creation time) for cron job <= 10%
   - 99,9% of /health requests per day finish with 200 code
 
+  Ephemeral containers are, by design, best effort. We are unable to offer an SLO
+  for ephemeral containers until the kubelet supports some sort of dynamic resource
+  reallocation.
+
 * **Are there any missing metrics that would be useful to have to improve observability 
 of this feature?**
-  Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
-  implementation difficulties, etc.).
+
+  No.
 
 ### Dependencies
 
 _This section must be completed when targeting beta graduation to a release._
 
 * **Does this feature depend on any specific services running in the cluster?**
-  Think about both cluster-level services (e.g. metrics-server) as well
-  as node-level agents (e.g. specific version of CRI). Focus on external or
-  optional services that are needed. For example, if this feature depends on
-  a cloud provider API, or upon an external software-defined storage or network
-  control plane.
 
-  For each of these, fill in the following—thinking about running existing user workloads
-  and creating new ones, as well as about cluster-level services (e.g. DNS):
-  - [Dependency name]
-    - Usage description:
-      - Impact of its outage on the feature:
-      - Impact of its degraded performance or high-error rates on the feature:
+  - Runtime support for [Namespace targeting].
+    - Usage description: One feature of Ephemeral containers, namespace
+      targeting, uses a feature of the CRI that is often overlooked by runtime
+      implementors.
+      - Impact of its outage on the feature: Degraded operation. Ephemeral
+        containers will work, but will receive an isolated namespace.
+      - Impact of its degraded performance or high-error rates on the feature: N/A
 
+[Namespace targeting]: https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/495-pod-pid-namespace#targeting-a-specific-containers-namespace
 
 ### Scalability
 
@@ -773,45 +833,45 @@ _For GA, this section is required: approvers should be able to confirm the
 previous answers based on experience in the field._
 
 * **Will enabling / using this feature result in any new API calls?**
-  Describe them, providing:
-  - API call type (e.g. PATCH pods)
-  - estimated throughput
-  - originating component(s) (e.g. Kubelet, Feature-X-controller)
-  focusing mostly on:
-  - components listing and/or watching resources they didn't before
-  - API calls that may be triggered by changes of some Kubernetes resources
-    (e.g. update of object X triggers new updates of object Y)
-  - periodic API calls to reconcile state (e.g. periodic fetching state,
-    heartbeats, leader election, etc.)
+
+  Not in a meaningful way. Any additional calls would fall within existing
+  usage patterns of humans interactive with Pods.
 
 * **Will enabling / using this feature result in introducing new API types?**
-  Describe them, providing:
-  - API type
-  - Supported number of objects per cluster
-  - Supported number of objects per namespace (for namespace-scoped objects)
+
+  There an no new Kinds for storage, but new types are used in API interactions
+  and in `v1.Pod`.
+
+  - API type: 
+    - v1.EphemeralContainers (used for `/ephemeralcontainers` subresource)
+  - Supported number of objects per cluster: same as Pods
+  - Supported number of objects per namespace: same as Pods
 
 * **Will enabling / using this feature result in any new calls to the cloud 
 provider?**
 
+  No.
+
 * **Will enabling / using this feature result in increasing size or count of 
 the existing API objects?**
-  Describe them, providing:
-  - API type(s):
-  - Estimated increase in size: (e.g., new annotation of size 32B)
-  - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
+
+  - API type(s): v1.Pod
+  - Estimated increase in size: Additional `Container` for each Ephemeral
+    container. This is expected to be negligible since these are created by
+    manually by humans.
+  - Estimated amount of new objects: N/A
 
 * **Will enabling / using this feature result in increasing time taken by any 
 operations covered by [existing SLIs/SLOs]?**
-  Think about adding additional work or introducing new steps in between
-  (e.g. need to do X to start a container), etc. Please describe the details.
+
+  When people add additional containers to a Pod, the pod will have additional
+  containers to shut down and garbage collect when the Pod exits.
 
 * **Will enabling / using this feature result in non-negligible increase of 
 resource usage (CPU, RAM, disk, IO, ...) in any components?**
-  Things to keep in mind include: additional in-memory state, additional
-  non-trivial computations, excessive access to disks (including increased log
-  volume), significant amount of data sent and/or received over network, etc.
-  This through this both in small and large cases, again with respect to the
-  [supported limits].
+
+  Not automatically. Use of this feature will result in additional containers
+  running on kubelets.
 
 ### Troubleshooting
 
@@ -823,19 +883,33 @@ _This section must be completed when targeting beta graduation to a release._
 
 * **How does this feature react if the API server and/or etcd is unavailable?**
 
+  Identical to other (non-ephemeral) containers.
+
 * **What are other known failure modes?**
-  For each of them, fill in the following information by copying the below template:
-  - [Failure mode brief description]
-    - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without logging into a master or worker node?
-    - Mitigations: What can be done to stop the bleeding, especially for already
-      running user workloads?
-    - Diagnostics: What are the useful log messages and their required logging
-      levels that could help debug the issue?
-      Not required until feature graduated to beta.
-    - Testing: Are there any tests for failure mode? If not, describe why.
+  - Addition of ephemeral container is prohibited by API server
+    - Detection: API server metric described in monitoring section
+    - Mitigations: None. This doesn't affect user workloads.
+    - Diagnostics: API error returned to user.
+    - Testing: Yes, integration tests.
+
+  - Ephemeral container is added to Pod, but not created by kubelet for unknown reason.
+    - Detection: kubelet metric described in monitoring section.
+    - Mitigations: None. This doesn't affect user workloads.
+    - Diagnostics: Error message added to Pod event log.
+    - Testing: No. There aren't any known failure reasons to test for.
+
+  - Feature flag is enabled on apiserver but not kubelet.
+    - Detection: This is not specific to this feature. I'm not sure of the
+      recommended way to detect out-of-sync feature flags between components.
+    - Mitigations: None. This doesn't affect user workloads.
+    - Diagnostics: This one is tough because the code to print error messages is
+      hidden behind the feature flag...
+    - Testing: No, testing for cluster misconfiguration at dev time doesn't
+      prevent cluster misconfiguration at run time.
 
 * **What steps should be taken if SLOs are not being met to determine the problem?**
+
+  Troubleshoot using apiserver and kubelet error logs.
 
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
@@ -851,6 +925,7 @@ _This section must be completed when targeting beta graduation to a release._
 - *2019-02-12*: Ported design proposal to KEP.
 - *2019-04-24*: Added notes on Windows feature compatibility
 - *2020-09-29*: Ported KEP to directory-based template.
+- *2021-01-07*: Updated KEP for beta release in 1.21 and completed PRR section.
 
 ## Drawbacks
 
