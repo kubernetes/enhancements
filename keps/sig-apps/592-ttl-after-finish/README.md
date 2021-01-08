@@ -16,10 +16,20 @@
   - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
     - [TTL Controller](#ttl-controller)
     - [Finished Jobs](#finished-jobs)
-    - [Finished Pods](#finished-pods)
     - [Owner References](#owner-references)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Graduation Criteria](#graduation-criteria)
+  - [Alpha](#alpha)
+  - [Alpha -&gt; Beta](#alpha---beta)
+  - [Beta -&gt; GA](#beta---ga)
+- [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
+  - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
+  - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+  - [Monitoring Requirements](#monitoring-requirements)
+  - [Dependencies](#dependencies)
+  - [Scalability](#scalability)
+  - [Troubleshooting](#troubleshooting)
+- [Future Work](#future-work)
 - [Implementation History](#implementation-history)
 <!-- /toc -->
 
@@ -106,24 +116,6 @@ This allows Jobs to be cleaned up after they finish and provides time for
 asynchronous clients to observe Jobs' final states before they are deleted.
 
 
-Similarly, we will add the following API fields to `PodSpec` (`Pod`'s `.spec`).
-
-```go
-type PodSpec struct {
- 	// ttlSecondsAfterFinished limits the lifetime of a Pod that has finished
-	// execution (either Succeeded or Failed). If this field is set, once the Pod
-	// finishes, it will be deleted after ttlSecondsAfterFinished expires. When
-	// the Pod is being deleted, its lifecycle guarantees (e.g. finalizers) will
-	// be honored. If this field is unset, ttlSecondsAfterFinished will not
-	// expire. If this field is set to zero, ttlSecondsAfterFinished expires
-	// immediately after the Pod finishes.
-	// This field is alpha-level and is only honored by servers that enable the
-	// TTLAfterFinished feature.
-	// +optional
-	TTLSecondsAfterFinished *int32
-}
-```
-
 ##### Validation
 
 Because Job controller depends on Pods to exist to work correctly. In Job
@@ -157,16 +149,16 @@ The steps are as easy as:
 ### Implementation Details/Notes/Constraints
 
 #### TTL Controller
-We will add a TTL controller for finished Jobs and finished Pods. We considered
+We will add a TTL controller for finished Jobs. We considered
 adding it in Job controller, but decided not to, for the following reasons:
 
 1. Job controller should focus on managing Pods based on the Job's spec and pod
    template, but not cleaning up Jobs.
-1. We also need the TTL controller to clean up finished Pods, and we consider
+1. We also need the TTL controller to clean up finished Pods in the future, and we consider
    generalizing TTL controller later for custom resources. 
 
-The TTL controller utilizes informer framework, watches all Jobs and Pods, and
-read Jobs and Pods from a local cache.
+The TTL controller utilizes informer framework, watches all Jobs, and
+read Jobs from a local cache.
 
 #### Finished Jobs
 
@@ -191,29 +183,6 @@ When a Job is created or updated:
    * If it hasn't expired, it is not safe to delete the Job. Delay re-enqueue
      the Job after a computed amount of time when it will expire.
 1. Delete the Job if passing the sanity checks. 
-
-#### Finished Pods
-
-When a Pod is created or updated:
-1. Check its `.status.phase` to see if it has finished (`Succeeded` or `Failed`).
-   If it hasn't finished, do nothing. 
-1. Otherwise, if the Pod has finished, check if Pod's
-   `.spec.ttlSecondsAfterFinished` field is set. Do nothing if the TTL field is
-   not set. 
-1. Otherwise, if the TTL field is set, check if the TTL has expired, i.e.
-   `.spec.ttlSecondsAfterFinished` + the time when the Pod finishes (max of all
-   of its containers termination time
-   `.containerStatuses.state.terminated.finishedAt`) > now. 
-1. If the TTL hasn't expired, delay re-enqueuing the Pod after a computed amount
-   of time when it will expire. The computed time period is:
-   (`.spec.ttlSecondsAfterFinished` + the time when the Pod finishes - now).
-1. If the TTL has expired, `GET` the Pod from API server to do final sanity
-   checks before deleting it.
-1. Check if the freshly got Pod's TTL has expired. This field may be updated
-   before TTL controller observes the new value in its local cache.
-   * If it hasn't expired, it is not safe to delete the Pod. Delay re-enqueue
-     the Pod after a computed amount of time when it will expire.
-1. Delete the Pod if passing the sanity checks. 
 
 #### Owner References
 
@@ -250,17 +219,205 @@ Mitigations:
 
 ## Graduation Criteria
 
-We want to implement this feature for Pods/Jobs first to gather feedback, and
-decide whether to generalize it to custom resources. This feature can be
-promoted to beta after we finalize the decision for whether to generalize it or
-not, and when it satisfies users' need for cleaning up finished resource
-objects, without regressions.
+### Alpha
 
-This will be promoted to GA once it's gone a sufficient amount of time as beta
-with no changes. 
+ - For alpha graduation, the feature implemented for Job, as future work it can be extended to Pods, but that should happen under a separate feature flag.
+ - Unit and e2e tests
+
+### Alpha -> Beta
+
+- Appropriate metrics are agreed on and implemented
+- upgrade/rollback manually tested 
+
+### Beta -> GA
+
+- Make a decision on wehther or not the feature should be extended to pods
+- Enabled in Beta for at least two releases without complaints
 
 [umbrella issues]: https://github.com/kubernetes/kubernetes/issues/42752
 
-## Implementation History
+## Production Readiness Review Questionnaire
 
+### Feature Enablement and Rollback
+
+* **How can this feature be enabled / disabled in a live cluster?**
+  - [x] Feature gate (also fill in values in `kep.yaml`)
+    - Feature gate name: TTLAfterFinished
+    - Components depending on the feature gate: kube-apiserver, kube-controller-manager
+  - [ ] Other
+    - Describe the mechanism:
+    - Will enabling / disabling the feature require downtime of the control
+      plane?
+    - Will enabling / disabling the feature require downtime or reprovisioning
+      of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
+
+* **Does enabling the feature change any default behavior?**
+  No.
+
+* **Can the feature be disabled once it has been enabled (i.e. can we roll back
+  the enablement)?**
+  Yes. One caveat here is that Jobs created with TTLSecondsAfterFinished set when 
+  the feature was enabled will continue to have that field set when the feature is disabled,
+  but will not have any effect.
+
+* **What happens if we reenable the feature if it was previously rolled back?**
+  It should work as expected.
+
+* **Are there any tests for feature enablement/disablement?**
+  No.
+
+### Rollout, Upgrade and Rollback Planning
+
+* **How can a rollout fail? Can it impact already running workloads?**
+  It shouldn't impact already running workloads. This is an opt-in feature since
+  users need to explicitly set the TTLSecondsAfterFinished parameter in the job spec,
+  if the feature is disabled the field is preserved if it was already set in the
+  presisted Job object, otherwise it is silently dropped.
+
+* **What specific metrics should inform a rollback?**
+- Unexpected restarts of kube-controller-manager
+- Extended 4xx/5xx on the Jobs endpoint from kube-apiserver 
+
+* **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
+  Manually tested. No issues were found.
+
+* **Is the rollout accompanied by any deprecations and/or removals of features, APIs, 
+fields of API types, flags, etc.?**
+  No
+
+### Monitoring Requirements
+
+_This section must be completed when targeting beta graduation to a release._
+
+* **How can an operator determine if the feature is in use by workloads?**
+  - The `workqueue_adds_total{name="ttl_jobs_to_delete"}` tracks the number of 
+    finished Jobs with ttlSecondsAfterFinished set.
+  - Listing jobs in the cluster and checking if any has ttlSecondsAfterFinished field set.
+
+* **What are the SLIs (Service Level Indicators) an operator can use to determine 
+the health of the service?**
+ - [x] Metrics
+   - Components exposing the metric: `kube-controller-manager`
+     - Metric name: `ttl_after_finished_controller_rate_limiter_use`
+     - Metric name: `workqueue_adds_total{name="ttl_jobs_to_delete"}`
+     - Metric name: `workqueue_depth{name="ttl_jobs_to_delete"}`
+     - Metric name: `workqueue_queue_duration_seconds{name="ttl_jobs_to_delete"}`
+     - Metric name: `workqueue_retries_total{name="ttl_jobs_to_delete"}`
+   - Components exposing the metric: `kube-apiserver`
+     - Metric name: `etcd_object_counts{resource="jobs.batch"}`
+
+
+We will also add the following new histogram metric exposed by kube-controller-manager:
+- `ttl_after_finished_controller_time_to_deletion_seconds` which tracks the time it took 
+  the delete the job since it became eligible (actual-delete-timestamp - (job-finished-timestamp + ttlAfterFinished)).
+
+* **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
+
+99% of the jobs that needs cleanup are deleted within X minutes.
+
+This can be implemented using the `ttl_after_finished_controller_time_to_deletion_seconds` 
+histogram.
+
+* **Are there any missing metrics that would be useful to have to improve observability 
+of this feature?**
+
+No
+
+### Dependencies
+
+_This section must be completed when targeting beta graduation to a release._
+
+* **Does this feature depend on any specific services running in the cluster?**
+  No.
+
+### Scalability
+
+* **Will enabling / using this feature result in any new API calls?**
+  - API call type: DELETE jobs
+  - Estimated throughput: the upper bound is equal to Job creation rate.
+  - originating component(s): kube-controller-manager
+
+* **Will enabling / using this feature result in introducing new API types?**
+  No.
+  
+* **Will enabling / using this feature result in any new calls to the cloud 
+provider?**
+ No.
+
+* **Will enabling / using this feature result in increasing size or count of 
+the existing API objects?**
+ Yes. An int field is added to the Job object.
+
+* **Will enabling / using this feature result in increasing time taken by any 
+operations covered by [existing SLIs/SLOs]?**
+  No.
+
+* **Will enabling / using this feature result in non-negligible increase of 
+resource usage (CPU, RAM, disk, IO, ...) in any components?**
+  kube-controller-manager may consume more CPU depending on the number of jobs that require deletion in the system.
+
+### Troubleshooting
+
+_This section must be completed when targeting beta graduation to a release._
+
+* **How does this feature react if the API server and/or etcd is unavailable?**
+ The controller will not be notified of job updates and it can't deleted existing ones. 
+
+* **What are other known failure modes?**
+None.
+
+* **What steps should be taken if SLOs are not being met to determine the problem?**
 TBD
+
+[supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
+[existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
+
+## Future Work
+
+As a future work, ttl-after-finished can be added to Pods. The API is similar to the Job's one:
+
+```go
+type PodSpec struct {
+ 	// ttlSecondsAfterFinished limits the lifetime of a Pod that has finished
+	// execution (either Succeeded or Failed). If this field is set, once the Pod
+	// finishes, it will be deleted after ttlSecondsAfterFinished expires. When
+	// the Pod is being deleted, its lifecycle guarantees (e.g. finalizers) will
+	// be honored. If this field is unset, ttlSecondsAfterFinished will not
+	// expire. If this field is set to zero, ttlSecondsAfterFinished expires
+	// immediately after the Pod finishes.
+	// This field is alpha-level and is only honored by servers that enable the
+	// TTLAfterFinished feature.
+	// +optional
+	TTLSecondsAfterFinished *int32
+}
+```
+
+The TTL controller can be changed to watch Pods in addition to Jobs.
+
+When a Pod is created or updated:
+1. Check its `.status.phase` to see if it has finished (`Succeeded` or `Failed`).
+   If it hasn't finished, do nothing. 
+1. Otherwise, if the Pod has finished, check if Pod's
+   `.spec.ttlSecondsAfterFinished` field is set. Do nothing if the TTL field is
+   not set. 
+1. Otherwise, if the TTL field is set, check if the TTL has expired, i.e.
+   `.spec.ttlSecondsAfterFinished` + the time when the Pod finishes (max of all
+   of its containers termination time
+   `.containerStatuses.state.terminated.finishedAt`) > now. 
+1. If the TTL hasn't expired, delay re-enqueuing the Pod after a computed amount
+   of time when it will expire. The computed time period is:
+   (`.spec.ttlSecondsAfterFinished` + the time when the Pod finishes - now).
+1. If the TTL has expired, `GET` the Pod from API server to do final sanity
+   checks before deleting it.
+1. Check if the freshly got Pod's TTL has expired. This field may be updated
+   before TTL controller observes the new value in its local cache.
+   * If it hasn't expired, it is not safe to delete the Pod. Delay re-enqueue
+     the Pod after a computed amount of time when it will expire.
+1. Delete the Pod if passing the sanity checks. 
+
+## Implementation History
+- 2018-08-16: Initial KEP
+- 2021-01-08: KEP updated to 
+  - indicate that the feature will be graduated for Jobs, and that Pods will be done as future work under a separate flag
+  - add production readiness questionnaire
+  - mark the feature for Beta graduation for jobs.

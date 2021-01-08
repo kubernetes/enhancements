@@ -2,21 +2,53 @@ title: TTL After Finished
 kep-number: 592
 authors:
   - "@janetkuo"
+  - "@ahg-g"
 owning-sig: sig-apps
 participating-sigs:
   - sig-api-machinery
+status: implementable
+creation-date: 2018-08-16
 reviewers:
   - "@enisoc"
   - "@tnozicka"
 approvers:
   - "@kow3ns"
-editor: TBD
-creation-date: 2018-08-16
-last-updated: 2018-08-16
-status: provisional
+prr-approvers:
+  - "@wojtek-t"
 see-also:
   - n/a
 replaces:
   - n/a
 superseded-by:
   - n/a
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: beta
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.21"
+  
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.12"
+  beta: "v1.21"
+  stable: "v1.23"
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+  - name: TTLAfterFinished
+    components:
+      - kube-apiserver
+      - kube-controller-manager
+disable-supported: true
+
+metrics:
+  - ttl_after_finished_controller_rate_limiter_use
+  - ttl_after_finished_controller_time_to_deletion_seconds
+  - workqueue_adds_total{name=ttl_jobs_to_delete}
+  - workqueue_depth{name=ttl_jobs_to_delete}
+  - workqueue_queue_duration_seconds{name=ttl_jobs_to_delete}
+  - workqueue_retries_total{name=ttl_jobs_to_delete}
