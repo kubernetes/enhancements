@@ -232,20 +232,48 @@ _This section must be completed when targeting alpha to a release._
 
 * **Can the feature be disabled once it has been enabled (i.e. can we roll back
   the enablement)?**
-  Yes, but CNIs relying on the new field wont recognize it anymore
+  
+  Yes. One caveat here is that NetworkPolicies created with EndPort field set 
+  when the feature was enabled will continue to have that field set when the 
+  feature is disabled unless user removes it from the object. 
+  
+  If the value is dropped with the FeatureGate disabled, the field can only 
+  be re-inserted if feature gate is enabled again.
+
+  Rolling back the Kubernetes API Server that does not have this field
+  will make the field not be returned anymore on GET operations,
+  so CNIs relying on the new field wont recognize it anymore.
+
+  If this happens, CNIs will recognize the policy as a single port instead of a 
+  port range, which may break users, which is inevitable but satisfies the 
+  fail-closed requirement.
 
 * **What happens if we reenable the feature if it was previously rolled back?**
-  Nothing. Just need to check if the data is persisted in `etcd` after the 
-  feature is disabled and reenabled or if the data is missed
+  Nothing. 
 
 * **Are there any tests for feature enablement/disablement?**
  
- TBD
+  No - unit tests will be added later.
+
+ ### Rollout, Upgrade and Rollback Planning
+
+_This section must be completed when targeting beta graduation to a release._
+* **How can a rollout fail? Can it impact already running workloads?**
+  Not probably, but still there's the risk of some bug that fails validation, 
+  or conversion function crashes.
+
+* **What specific metrics should inform a rollback?**
+  The increase of 5xx http error count on Network Policies Endpoint
+
+* **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
+  This will be done.
+
+* **Is the rollout accompanied by any deprecations and/or removals of features, APIs, 
+  None
 
 ### Monitoring Requirements
 
 _This section must be completed when targeting beta graduation to a release._
-
 * **How can an operator determine if the feature is in use by workloads?**
   
   Operators can determine if NetworkPolicies are making use of EndPort creating
@@ -282,10 +310,10 @@ _For GA, this section is required: approvers should be able to confirm the
 previous answers based on experience in the field._
 
 * **Will enabling / using this feature result in any new API calls?**
-  TBD
+  No
 
 * **Will enabling / using this feature result in introducing new API types?**
-  No, unless the new `EndPort` is considered a new API type
+  No
 
 * **Will enabling / using this feature result in any new calls to the cloud 
 provider?**
@@ -295,7 +323,7 @@ provider?**
 the existing API objects?**
 
   - API type(s): NetworkPolicyPorts
-  - Estimated increase in size: 2 bytes for each new `EndPort` specified
+  - Estimated increase in size: 2 bytes for each new `EndPort` value specified + the field name/number in its serialized format 
   - Estimated amount of new objects: N/A
 
 * **Will enabling / using this feature result in increasing time taken by any 
