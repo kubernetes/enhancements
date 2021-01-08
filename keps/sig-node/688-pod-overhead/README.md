@@ -28,6 +28,7 @@
   - [Leaving the PodSpec unchanged](#leaving-the-podspec-unchanged)
 - [Implementation History](#implementation-history)
   - [Version 1.16](#version-116)
+  - [Version 1.18](#version-118)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -316,3 +317,6 @@ Cons:
 
 ### Version 1.16
 - Implemented as Alpha.
+
+### Version 1.18
+- Promoted to Beta.
