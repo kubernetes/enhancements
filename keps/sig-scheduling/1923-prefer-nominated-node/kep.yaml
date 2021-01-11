@@ -5,7 +5,7 @@ authors:
 owning-sig: sig-scheduling
 participating-sigs:
   - sig-scheduling
-status: provisional
+status: implementable
 creation-date: 2020-09-29
 reviewers:
   - "@alculquicondor"
@@ -14,8 +14,11 @@ reviewers:
 approvers:
   - "@Huang-Wei"
   - "@ahg-g"
+prr-approvers:
+  - "@wojtek-t"
+
 stage: alpha
-# latest-milestone: "v1.21"
+latest-milestone: "v1.21"
 milestone:
   alpha: "v1.21"
   beta: "v1.22"
