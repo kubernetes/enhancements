@@ -201,3 +201,4 @@ contributors, moving to a different foundation is far more preferable.
 - KEP updated to include additional graduation criteria - April 28 2020
 - KEP updated with grammatical mistakes found in PR - May 5 2020
 - KEP updated with graduation criteria requested from reviewers - May 8 2020
+- KEP updated with status of `implementable` - Jan 6 2021

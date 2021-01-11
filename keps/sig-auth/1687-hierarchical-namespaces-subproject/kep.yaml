@@ -7,11 +7,12 @@ owning-sig: sig-auth
 participating-sigs:
   - sig-auth
 reviewers:
-  - "TBD"
+  - "@mikedanese"
+  - "@liggitt"
 approvers:
   - "@mikedanese"
   - "@deads2k"
   - "@liggitt"
 creation-date: 2020-04-14
-last-updated: 2020-04-15
-status: provisional
+last-updated: 2021-01-06
+status: implementable
