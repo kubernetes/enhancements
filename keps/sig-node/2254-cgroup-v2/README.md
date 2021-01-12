@@ -1,27 +1,3 @@
----
-title: cgroups v2
-authors:
-  - "@giuseppe"
-owning-sig: sig-node
-participating-sigs:
-      - sig-architecture
-reviewers:
-  - "@yujuhong"
-  - "@dchen1107"
-  - "@derekwaynecarr"
-approvers:
-  - "@yujuhong"
-  - "@dchen1107"
-  - "@derekwaynecarr"
-editor: Giuseppe Scrivano
-creation-date: 2019-11-18
-last-updated: 2019-11-18
-status: implementable
-see-also:
-replaces:
-superseded-by:
----
-
 # Cgroups v2
 
 ## Table of Contents
