@@ -207,7 +207,9 @@ and make progress.
 -->
 * Define any characteristics of the system that tracks cluster IDs within a cluster (i.e. a cluster registry)
 * Solve any problems without specific, tangible use cases (though we will leave room for extension).
-  * In particular, this KEP does not currently consider a cluster joining multiple ClusterSets
+* In particular, this KEP does not currently consider 
+   * a cluster joining multiple ClusterSets
+   * how or whether users should be able to specify aliases for cluster IDs and what they could be used for
 
 
 ## Proposal
@@ -439,6 +441,10 @@ when drafting this test plan.
 -->
 
 ### Graduation Criteria
+
+#### Alpha -> Beta Graduation
+
+- Determine if an `id.k8s.io ClusterClaim` be strictly a valid DNS label, or is allowed to be a subdomain.
 
 <!--
 **Note:** *Not required until targeted at a release.*
