@@ -59,15 +59,15 @@ approach:
   - [x] Replace the "Detailed Bug Fixes And Changes" section in the release notes with a new
         website that allows user to filter and search.
   - [x] Generate a consumable JSON file via `release-notes` as part of the Release Team duties
-  - [ ] Identify and stop tracking any "External Dependencies" that a vanilla Kubernetes install
+  - [x] Identify and stop tracking any "External Dependencies" that a vanilla Kubernetes install
         does not rely on. (eg. Things in `cluster/addons`)
 - Automation
   - [x] Build additional labels to classify:
     - [x] API Changes (done, since we now sort the release notes by `kind/`)
     - [x] Deprecations (see above)
     - [x] Urgent Upgrade Notes
-  - [ ] Put the generated release notes JSON in to a Google Cloud Bucket
-  - [ ] Use milestones to capture "Known Issues" at time of release notes generation
+  - [x] Put the generated release notes JSON in to a Google Cloud Bucket
+  - [x] Use milestones to capture "Known Issues" at time of release notes generation
 
 ### Non-Goals
 
