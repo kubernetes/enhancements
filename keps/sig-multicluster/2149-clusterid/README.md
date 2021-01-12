@@ -198,6 +198,10 @@ know that this has succeeded?
 -->
 * Propose a standard for how cluster identification metadata should be stored and 
 managed as Kubernetes resources
+* Define the standard to be strict enough to be useful in the following user stories:
+  * Establish reliable coordinates for determining clusterset membership and identity of a cluster within its cluster set
+  * Enable cluster-granularity DNS names for multicluster services
+  * Facilitate enrichment of log / event / metrics data with cluster id / set coordinates
 
 ### Non-Goals
 
@@ -207,7 +211,7 @@ and make progress.
 -->
 * Define any characteristics of the system that tracks cluster IDs within a cluster (i.e. a cluster registry)
 * Solve any problems without specific, tangible use cases (though we will leave room for extension).
-* In particular, this KEP does not currently consider 
+* In particular, this KEP explicitly does not consider 
    * a cluster joining multiple ClusterSets
    * how or whether users should be able to specify aliases for cluster IDs and what they could be used for
 
