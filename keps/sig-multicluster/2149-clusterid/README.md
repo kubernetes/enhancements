@@ -239,7 +239,11 @@ bogged down.
 
 #### ClusterSet membership
 
-I have some set of clusters working together and need a way to uniquely identify them within the system that I use to track membership.
+I have some set of clusters working together and need a way to uniquely identify them within the system that I use to track membership, or determine if a given cluster is in a ClusterSet.
+
+#### Joining or moving between ClusterSets
+
+I want the ability to add a previously-isolated cluster to a ClusterSet, or to move a cluster from one ClusterSet to another and be aware of this change.
 
 #### Multi-Cluster Services
 
@@ -255,10 +259,6 @@ Examples of DNS using cluster ID a la `<hostname>.<clusterID>.<svc>.<ns>.svc.clu
 
 Clusters within my ClusterSet send logs/metrics to a common monitoring solution and I need to be able to identify the cluster from which a given set of events originated.
 
-
-#### Joining or moving between ClusterSets
-
-I want the ability to add a previously-isolated cluster to a ClusterSet, or to move a cluster from one ClusterSet to another and be aware of this change.
 
 ### `ClusterClaim` CRD
 ```
