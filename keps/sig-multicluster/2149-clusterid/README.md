@@ -85,10 +85,10 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Proposal](#proposal)
   - [Overview](#overview)
   - [User Stories](#user-stories)
-    - [ClusterSet membership]
-    - [Joining or moving between ClusterSets]
-    - [Multi-Cluster Services]
-    - [Diagnostics]
+    - [ClusterSet membership](#clusterset-membership)
+    - [Joining or moving between ClusterSets](#joining-or-moving-between-clustersets)
+    - [Multi-Cluster Services](#multi-cluster-services)
+    - [Diagnostics](#diagnostics)
   - [`ClusterClaim` CRD](#clusterclaim-crd)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
