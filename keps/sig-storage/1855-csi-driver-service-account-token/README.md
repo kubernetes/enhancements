@@ -3,6 +3,7 @@
 ## Table of Contents
 
 <!-- toc -->
+
 - [Summary](#summary)
 - [Motivation](#motivation)
   - [User stories](#user-stories)
@@ -19,7 +20,11 @@
     - [Beta-&gt;GA](#beta-ga)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
+  - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+  - [Monitoring Requirements](#monitoring-requirements)
+  - [Dependencies](#dependencies)
   - [Scalability](#scalability)
+  - [Troubleshooting](#troubleshooting)
 - [Alternatives](#alternatives)
 - [Implementation History](#implementation-history)
 <!-- /toc -->
@@ -215,6 +220,53 @@ Option 1 is adopted. See discussion
 - **Are there any tests for feature enablement/disablement?** yes, unit tests
   will cover this.
 
+### Rollout, Upgrade and Rollback Planning
+
+- **How can a rollout fail? Can it impact already running workloads?**
+  Rollout will not fail because this change only exposes an extra field in CSIDriverSpec.
+
+* **What specific metrics should inform a rollback?**
+
+  - `storage_operation_duration_seconds`: if the corresponding csi plugin has
+    high error rates by aggregating on `status`.
+
+* **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
+  No. When downgrade happens where kube-apiserver doesn't have the added fields,
+  the existing volumes will continue to work as long as it doesn't rely on the
+  acquired token being valid.
+
+* **Is the rollout accompanied by any deprecations and/or removals of features, APIs,
+  fields of API types, flags, etc.?**
+  No.
+
+### Monitoring Requirements
+
+- **How can an operator determine if the feature is in use by workloads?**
+  run `kubectl get CSIDriver` to see whether `tokenRequests` or `requiresRepublish`
+  is specified.
+
+- **What are the SLIs (Service Level Indicators) an operator can use to determine
+  the health of the service?**
+
+  - [x] Metrics
+    - Metric name: `storage_operation_duration_seconds`
+    - Aggregation method: volume_plugin, operation_name, status
+    - Components exposing the metric: kubelet
+
+* **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
+  for the particular csi plugin, per-day percentage of failed storage operations
+  <= 1%
+
+- **Are there any missing metrics that would be useful to have to improve observability
+  of this feature?**
+  None
+
+### Dependencies
+
+- **Does this feature depend on any specific services running in the cluster?**
+
+  There are no new components required, but requires kubelets >= 1.12
+
 ### Scalability
 
 - **Will enabling / using this feature result in any new API calls?**
@@ -244,6 +296,25 @@ Option 1 is adopted. See discussion
 
 - **Will enabling / using this feature result in non-negligible increase of
   resource usage (CPU, RAM, disk, IO, ...) in any components?** no.
+
+### Troubleshooting
+
+- **How does this feature react if the API server and/or etcd is unavailable?**
+  `RequiresRepublish` will continue to function but `TokenRequests` will fail.
+
+- **What are other known failure modes?**
+
+  - Failed to fetch token
+
+    - Detection: Check mount failure in Pod events or kubelet log.
+    - Mitigations: Set `TokenRequests=[]`, subsequent `NodePublishVolume` will
+      not have tokens in volume attributes. Tokens retrieved before will
+      eventually expire.
+    - Diagnostics: Search "mounter.SetUpAt failed to get service accoount token attributes"
+    - Testing: E2E test
+
+- **What steps should be taken if SLOs are not being met to determine the problem?**
+  None.
 
 ## Alternatives
 

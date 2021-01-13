@@ -15,12 +15,13 @@ approvers:
   - "@msau42"
   - "@mikedanese"
 creation-date: 2020-06-09
-last-updated: 2020-11-12
+last-updated: 2021-02-04
 status: implementable
-stage: alpha
-latest-milestone: "v1.20"
+stage: beta
+latest-milestone: "v1.21"
 milestone:
   alpha: "v1.20"
+  beta: "v1.21"
 feature-gates:
   - name: CSIServiceAccountToken
     components:
