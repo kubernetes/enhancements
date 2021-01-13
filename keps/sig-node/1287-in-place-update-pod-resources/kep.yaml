@@ -26,6 +26,6 @@ creation-date: 2018-11-06
 last-updated: 2020-01-14
 status: implementable
 see-also:
-  - "/keps/sig-node/20191025-kubelet-container-resources-cri-api-changes.md"
+  - "/keps/sig-node/2273-kubelet-container-resources-cri-api-changes"
 replaces:
 superseded-by:
