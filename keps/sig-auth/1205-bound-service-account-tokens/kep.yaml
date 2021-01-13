@@ -11,10 +11,10 @@ reviewers:
 approvers:
   - "@liggitt"
 creation-date: 2019-08-06
-last-updated: 2020-09-23
-status: implementable
+last-updated: 2021-01-13
+status: implemented
 stage: beta
-latest-milestone: "v1.20"
+latest-milestone: "v1.21"
 milestone:
   alpha: "v1.13"
   beta: "v1.21"

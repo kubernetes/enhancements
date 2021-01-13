@@ -412,9 +412,9 @@ are properly reloading tokens by:
 
 ##### Beta->GA
 
-- [ ] In use by multiple distributions
-- [ ] Approved by PRR and scalability
-- [ ] Any known bugs fixed
+- [x] In use by multiple distributions
+- [x] Approved by PRR and scalability
+- [x] Any known bugs fixed
 
 #### BoundServiceAccountTokenVolume
 
@@ -443,7 +443,7 @@ are properly reloading tokens by:
 
 - [x] TokenRequest/TokenRequestProjection GA
 
-- [ ] RootCAConfigMap GA
+- [x] RootCAConfigMap GA
 
 ##### Beta -> GA Graduation
 
