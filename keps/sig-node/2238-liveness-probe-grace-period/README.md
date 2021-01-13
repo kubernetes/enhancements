@@ -69,7 +69,8 @@ decouple.
 
 [Other implementation options](#alternatives) might avoid an API change, but
 would end up breaking backwards compatibility which some users may have come to
-[expect/rely on](https://github.com/kubernetes/kubernetes/issues/64715#issuecomment-756100727).
+[expect/rely on](https://github.com/kubernetes/kubernetes/issues/64715#issuecomment-756100727),
+even if we take a phased approach to introduce them.
 
 An example of a scenario where this bug was apparent is a long outage reported
 by an ingress controller:
@@ -95,15 +96,21 @@ to address.
 
 ## Proposal
 
-We can add a `gracePeriodSeconds` integer field to the Probe API. This field
-would specify how long the kubelet should wait before forcibly terminating the
-container when a probe fails.
+We can add a `terminationGracePeriodSeconds` integer field to the Probe API.
+This field would specify how long the kubelet should wait before forcibly
+terminating the container when a probe fails, and override the pod-level
+`terminationGracePeriodSeconds` value.
+
+This change would apply to [liveness and startup probes][probes1], but not
+readiness probes, which [use a different code path][probes2].
 
 This change would be [API-compatible][compatible]. If the field is not
 specified, we will default to the current behaviour, which uses the
 `terminationGracePeriodSeconds`.
 
 [compatible]: https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api_changes.md#on-compatibility
+[probes1]: https://github.com/kubernetes/kubernetes/blob/e414d4e5c2ab85eada7eb8e80a363658e199968b/pkg/kubelet/kuberuntime/kuberuntime_manager.go#L631-L655
+[probes2]: https://github.com/kubernetes/kubernetes/blob/e414d4e5c2ab85eada7eb8e80a363658e199968b/pkg/kubelet/prober/prober_manager.go#L55
 
 ### Configuration example
 
@@ -142,6 +149,25 @@ field is not set, the current behaviour will be maintained.
 
 ## Design Details
 
+The `livenessProbe.terminationGracePeriodSeconds` (or `startupProbe.*`) shall
+not be greater than the pod-level `terminationGracePeriodSeconds`, and we will
+add validation to check this.
+
+`initialDelaySeconds` is not relevant to this value; it indicates how long we
+should wait before probing the container, but does not have any relation to how
+long a probe should take or how long it will take to shut down the container
+upon a failed probe.
+
+`periodSeconds` and `timeoutSeconds` indicate how long we think a probe should
+take, but not how long it will take to shut down the container; hence, they
+also are not relevant to this value. It is suggested but not required that
+`livenessProbe.terminationGracePeriodSeconds` be less than these values.
+
+Finally, `failureThreshold` and `successThreshold` are not relevant to this
+value; they indicate the number of failures required to mark a probe as
+succeeded or failed, but not how long to give a container to gracefully shut
+down upon failure.
+
 ### Test Plan
 
 This change will be unit tested for the API changes and
@@ -156,6 +182,10 @@ large value, a probe fails, and with `livenessProbe.gracePeriodSeconds` set,
 the container terminates quickly.
 
 ### Graduation Criteria
+
+Because this is a bugfix with a compatible API change, similar to
+[KEP-1972](/keps/sig-node/1972-kubelet-exec-probe-timeouts#graduation-criteria),
+it should go straight to Graduated.
 
 <!--
 **Note:** *Not required until targeted at a release.*
@@ -274,16 +304,20 @@ _This section must be completed when targeting alpha to a release._
   - [ ] Feature gate (also fill in values in `kep.yaml`)
     - Feature gate name:
     - Components depending on the feature gate:
-  - [ ] Other
-    - Describe the mechanism:
+  - [X] Other
+    - Describe the mechanism: Feature will only be enabled when field is
+      specified by the user.
     - Will enabling / disabling the feature require downtime of the control
-      plane?
+      plane? No. Feature can be disabled by unsetting the field.
     - Will enabling / disabling the feature require downtime or reprovisioning
       of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
+      No.
 
 * **Does enabling the feature change any default behavior?**
   Any change of default behavior may be surprising to users or break existing
   automations, so be extremely careful here.
+
+  No.
 
 * **Can the feature be disabled once it has been enabled (i.e. can we roll back
   the enablement)?**
@@ -291,13 +325,23 @@ _This section must be completed when targeting alpha to a release._
   Describe the consequences on existing workloads (e.g., if this is a runtime
   feature, can it break the existing applications?).
 
+  Yes: unset the field on the Probe specification, which will restore the
+  default behaviour.
+
 * **What happens if we reenable the feature if it was previously rolled back?**
+
+  Field will be used instead of the `terminationGracePeriodSeconds` for
+  shutting down a container upon failed liveness probe.
 
 * **Are there any tests for feature enablement/disablement?**
   The e2e framework does not currently support enabling or disabling feature
   gates. However, unit tests in each component dealing with managing data, created
   with and without the feature, are necessary. At the very least, think about
   conversion tests if API types are being modified.
+
+  Yes. We will add an e2e test to confirm the presence of the current bug.
+  Then, with the new API field added, we will add e2e tests to confirm that they
+  result in different behaviour.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -462,7 +506,7 @@ From [#64715](https://github.com/kubernetes/kubernetes/issues/64715#issuecomment
 
 Infer the maximum grace period for liveness from `num failures * probe period`,
 implying that a user with short liveness reaction wants a fast reaction from
-their pod
+their pod (@smarterclayton)
 
 - PRO: Any user unaware of the coupling reacts to liveness failures faster,
   normal pods (including reason 2 above) are less likely to be impacted
@@ -476,11 +520,20 @@ their pod
 
 Introduce a new toleration, similar to execute toleration for node not ready
 (how long the pod should be left on the node while unready before being
-evicted), that controls how long liveness tolerates
+evicted), that controls how long liveness tolerates (@smarterclayton)
 
 - PRO: avoids API change
 - CON: basically a hack to avoid an API change, tolerations for execution don't
   really make sense for conditional stuff
+
+Since liveness probe failures indicate that a container is unhealthy and should
+be terminated, update the behaviour of liveness probes to terminate the pod
+immediately, or with some default grace period (@sjenning)
+
+- PRO: avoids API change
+- CON: thresholds not user-configurable
+- CON: even if we use a feature flag for this, it will eventually become the
+  required behaviour
 
 ## Infrastructure Needed (Optional)
 
