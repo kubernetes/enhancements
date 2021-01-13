@@ -187,10 +187,6 @@ the container terminates quickly.
 
 ### Graduation Criteria
 
-Because this is a bugfix with a compatible API change, similar to
-[KEP-1972](/keps/sig-node/1972-kubelet-exec-probe-timeouts#graduation-criteria),
-it should go straight to Graduated.
-
 <!--
 **Note:** *Not required until targeted at a release.*
 
@@ -259,6 +255,11 @@ enhancement:
 - What changes (in invocations, configurations, API use, etc.) is an existing
   cluster required to make on upgrade, in order to make use of the enhancement?
 -->
+
+On upgrade: feature flag/new field will become available for use.
+
+On downgrade: no longer available. Any workloads with the Probe
+`terminationGracePeriodSeconds` set will need to unset.
 
 ### Version Skew Strategy
 
@@ -445,14 +446,20 @@ previous answers based on experience in the field._
   - periodic API calls to reconcile state (e.g. periodic fetching state,
     heartbeats, leader election, etc.)
 
+  No.
+
 * **Will enabling / using this feature result in introducing new API types?**
   Describe them, providing:
   - API type
   - Supported number of objects per cluster
   - Supported number of objects per namespace (for namespace-scoped objects)
 
+  No.
+
 * **Will enabling / using this feature result in any new calls to the cloud
 provider?**
+
+  No.
 
 * **Will enabling / using this feature result in increasing size or count of
 the existing API objects?**
@@ -461,10 +468,14 @@ the existing API objects?**
   - Estimated increase in size: (e.g., new annotation of size 32B)
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 
+  One new integer field on the Probe type.
+
 * **Will enabling / using this feature result in increasing time taken by any
 operations covered by [existing SLIs/SLOs]?**
   Think about adding additional work or introducing new steps in between
   (e.g. need to do X to start a container), etc. Please describe the details.
+
+  No, this should not affect that.
 
 * **Will enabling / using this feature result in non-negligible increase of
 resource usage (CPU, RAM, disk, IO, ...) in any components?**
@@ -473,6 +484,8 @@ resource usage (CPU, RAM, disk, IO, ...) in any components?**
   volume), significant amount of data sent and/or received over network, etc.
   This through this both in small and large cases, again with respect to the
   [supported limits].
+
+  No.
 
 ### Troubleshooting
 
