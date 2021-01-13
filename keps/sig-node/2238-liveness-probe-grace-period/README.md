@@ -101,7 +101,7 @@ This field would specify how long the kubelet should wait before forcibly
 terminating the container when a probe fails, and override the pod-level
 `terminationGracePeriodSeconds` value.
 
-This change would apply to [liveness and startup probes][probes1], but not
+This change would apply to [liveness and startup probes][probes1], but **not**
 readiness probes, which [use a different code path][probes2].
 
 This change would be [API-compatible][compatible]. If the field is not
@@ -133,7 +133,7 @@ spec:
       failureThreshold: 1
       periodSeconds: 60
       # New field #
-      gracePeriodSeconds: 60
+      terminationGracePeriodSeconds: 60
 ```
 
 ### User Stories (Optional)
@@ -149,9 +149,12 @@ field is not set, the current behaviour will be maintained.
 
 ## Design Details
 
-The `livenessProbe.terminationGracePeriodSeconds` (or `startupProbe.*`) shall
-not be greater than the pod-level `terminationGracePeriodSeconds`, and we will
-add validation to check this.
+This field is not valid for readiness probes. We will add validation to ensure
+`readinessProbe.terminationGracePeriodSeconds` remains unset.
+
+We expect that the `livenessProbe.terminationGracePeriodSeconds` (or
+`startupProbe.*`) will not be greater than the pod-level
+`terminationGracePeriodSeconds`, but we will not explicitly validate this.
 
 `initialDelaySeconds` is not relevant to this value; it indicates how long we
 should wait before probing the container, but does not have any relation to how
@@ -174,7 +177,8 @@ This change will be unit tested for the API changes and
 backwards-compatibility.
 
 If added to the Probe API, this will also need to be tested in the readiness
-and startup probe cases.
+and startup probe cases. Readiness probes will not support the field. Startup
+probes should be tested for correct behaviour.
 
 E2E integration tests will verify the correct behaviour for the current broken
 use case, where a `terminationGracePeriodSeconds` is set to a
@@ -271,6 +275,11 @@ enhancement:
   CRI or CNI may require updating that component before the kubelet.
 -->
 
+n-2 kubelet without this feature will default to the old behaviour, using the
+pod-level `terminationGracePeriodSeconds`.
+
+Only when feature gate is enabled for all components will we use the new field.
+
 ## Production Readiness Review Questionnaire
 
 <!--
@@ -301,17 +310,15 @@ you need any help or guidance.
 _This section must be completed when targeting alpha to a release._
 
 * **How can this feature be enabled / disabled in a live cluster?**
-  - [ ] Feature gate (also fill in values in `kep.yaml`)
-    - Feature gate name:
-    - Components depending on the feature gate:
-  - [X] Other
-    - Describe the mechanism: Feature will only be enabled when field is
-      specified by the user.
+  - [X] Feature gate (also fill in values in `kep.yaml`)
+    - Feature gate name: ProbeTerminationGracePeriod
+    - Components depending on the feature gate: Kubelet, API Server
+  - [ ] Other
+    - Describe the mechanism:
     - Will enabling / disabling the feature require downtime of the control
-      plane? No. Feature can be disabled by unsetting the field.
+      plane?
     - Will enabling / disabling the feature require downtime or reprovisioning
       of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
-      No.
 
 * **Does enabling the feature change any default behavior?**
   Any change of default behavior may be surprising to users or break existing
@@ -325,8 +332,11 @@ _This section must be completed when targeting alpha to a release._
   Describe the consequences on existing workloads (e.g., if this is a runtime
   feature, can it break the existing applications?).
 
-  Yes: unset the field on the Probe specification, which will restore the
-  default behaviour.
+  Yes: disable feature flag.
+
+  While feature flag is enabled, the feature can also be disabled by unsetting
+  the field on the Probe specification, which will restore the default
+  behaviour.
 
 * **What happens if we reenable the feature if it was previously rolled back?**
 
@@ -531,6 +541,8 @@ be terminated, update the behaviour of liveness probes to terminate the pod
 immediately, or with some default grace period (@sjenning)
 
 - PRO: avoids API change
+- CON: may break existing applications that rely on the grace period for crash
+  safety
 - CON: thresholds not user-configurable
 - CON: even if we use a feature flag for this, it will eventually become the
   required behaviour
