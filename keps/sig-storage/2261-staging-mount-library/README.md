@@ -1,25 +1,3 @@
----
-title: Move utils/mount from vendor to staging
-authors:
-  - "@brahmaroutu"
-owning-sig: sig-storage
-participating-sigs:
-  - sig-architecture
-  - sig-testing
-reviewers:
-  - "@msau42"
-  - "@dims"
-  - "@saad-ali"
-approvers:
-  - "@saad-ali"
-creation-date: 2020-05-08
-last-updated: 2020-05-08
-status: implementable
-see-also:
-replaces:
-superseded-by:
----
-
 ## Table of Contents
 
 <!-- toc -->
@@ -98,6 +76,7 @@ None
 
 2020-05-08: KEP opened
 2020-05-08: KEP marked implementable
+1.20: mount library moved to staging, all callers except cadvisor switched
 
 ## Alternatives
 
