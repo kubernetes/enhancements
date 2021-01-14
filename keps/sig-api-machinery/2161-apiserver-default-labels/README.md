@@ -86,7 +86,7 @@ cases, that namespaces have a default label, thereby leveraging existing
 functionalities offered by label selectors.
 
 There may also be many other usecases where the security or permissions boundary
-might be conveniently defined in terms of a namepsace name, and that such a
+might be conveniently defined in terms of a namepsace name, and that such a namespace
 definition would be most easily referenced by a default label.
 
 ### Goals
@@ -108,7 +108,7 @@ the namespace's name with traditional label selector mechanisms.
 
 - If this label is missing, it is added by the apiserver as a default.
 - If this label is deleted, it is added by the apiserver as a default.
-- defaults.go mutates namespaces on read, to always have the label `kubernetes.io/metadata.name=obj.Name`.
+- defaults.go mutates namespaces on read, to always have the label `kubernetes.io/metadata.name=obj.Name`, this effectively means a mutation would be an allowed no-op, since the apiserver would always overwrite the value of this field.
 - api clients always see this default label, because of this mutation.
 
 
@@ -118,10 +118,9 @@ the namespace's name with traditional label selector mechanisms.
 
 NetworkPolicies allow users to open up traffic to/from their namespaces with the help of `namespaceSelector` field.
 However, there is a concern that arbitrary labels may not be the most secure way to open up traffic when it comes
-to namespace resource. In case a namespace's labels are known by others, any user can add labels at any time to any
-namespace and thus send traffic to a pod belonging to this namespace. Matching a namespace by its name, on the other
-hand, is a more reliable way to whitelist namespaces as it's much easier to specifically allow only namespaces user
-control since user knows their own namespace names.
+to namespace resource. In case a namespace's labels are known by others, any user with wrote access to a namespace can add labels at any time to said namespace, and thus send traffic to a pod belonging to this namespace.
+
+Matching a namespace by its name, on the other hand, is a more reliable way to whitelist namespaces as it's much easier to specifically allow only namespaces user control since user knows their own namespace names.
 
 #### Lack of permissions
 
@@ -136,6 +135,7 @@ able to select a single namespace to enforce those controllers. Similarly, it is
 users to remember the names of the namespaces rather than labels associated with those namespaces while defining
 NetworkPolicies or writing admission controller configurations.
 
+Thus, regardless of wether such a user story is valid, it is clearly 'simpler' to implement (as are other similar stories) when a default mechanism for namespace selection is available.
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -381,7 +381,7 @@ need for new API semantics in the networkpolicy specification, which is already 
 
 For example, you may need a way to declare namespaceAsName selectors, which is distinct from namespace label selectors.
 Introducing a new field has its own drawbacks: The obvious API, when combined with a podSelector, decreases security
-of a pod - an old client would be more open than users would expect them to be.
+of a pod - an old client would be more open than users would expect them to be (in the most obvious implementations).  We note that there are workarounds involving special "always off" selectors, which can avoid this scenario, but they come with their own obvious inherent technical debt and costs.
 
 This is thoroughly debated in the [KEP](https://github.com/kubernetes/enhancements/issues/2112).  Fail-closed is a requirement.
 
