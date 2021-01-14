@@ -1,28 +1,3 @@
----
-title: Volume Scale and Performance Testing Plan
-authors:
-  - "@msau42"
-owning-sig: sig-storage
-participating-sigs:
-  - sig-scalability
-reviewers:
-  - "@pohly"
-  - "@saad-ali"
-  - "@wojtek-t"
-approvers:
-  - "@saad-ali"
-  - "@wojtek-t"
-editor: TBD
-creation-date: 2019-02-04
-last-updated: 2019-03-01
-status: implementable
-see-also:
-  - "https://github.com/kubernetes/community/blob/master/sig-scalability/slos/pod_startup_latency.md"
-  - "https://github.com/kubernetes/perf-tests/blob/master/clusterloader2/docs/design.md"
-replaces:
-superseded-by:
----
-
 # Volume Scale and Performance Testing Plan
 
 ## Table of Contents
@@ -244,4 +219,4 @@ For each volume type that supports deletion:
 
 ## Implementation History
 
-
+2019-07: PV and ephemeral volume tests added to clusterloader2

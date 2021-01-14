@@ -1,23 +1,3 @@
----
-title: kubernetes-csi release process
-authors:
-  - "@pohly"
-owning-sig: sig-storage
-participating-sigs:
-  - sig-testing
-  - sig-release
-reviewers:
-  - "@msau42"
-approvers:
-  - "@msau42"
-  - "sig-testing: TBD"
-  - "sig-release: TBD"
-editor: "@pohly"
-creation-date: 2019-02-04
-last-updated: 2019-02-04
-status: provisional
----
-
 # kubernetes-csi-release-process
 
 ## Table of Contents
@@ -274,6 +254,7 @@ driver.
 ## Implementation History
 
 - 2019-02-04: initial draft
+- 2019-06: implementation complete
 
 ## Drawbacks
 
