@@ -1,4 +1,4 @@
-title: Add pod-cost annotation for ReplicaSet
+title: ReplicaSet Pod Deletion Cost
 kep-number: 2255
 authors:
   - "@drbugfinder-work"
@@ -6,7 +6,7 @@ authors:
   - "@alculquicondor"
 owning-sig: sig-apps
 participating-sigs:
-status: provisional
+status: implementable
 creation-date: 2021-01-12
 reviewers:
   - "@ahg-g"
@@ -14,10 +14,12 @@ reviewers:
   - "@alculquicondor"
 approvers:
   - "@janetkuo"
+prr-approvers:
+  - "@wojtek-t"
 see-also:
   - https://github.com/kubernetes/kubernetes/issues/45509
-  - https://github.com/kubernetes/enhancements/issues/2255
-replaces:
+  - https://github.com/kubernetes/kubernetes/issues/4301
+
 
 # The target maturity stage in the current dev cycle for this KEP.
 stage: alpha
@@ -35,11 +37,10 @@ milestone:
 
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
-#feature-gates:
-#  - name: MyFeature
-#    components:
-#      - kube-apiserver
-#      - kube-controller-manager
+feature-gates:
+ - name: ReplicaSetPodDeletionCost
+   components:
+     - kube-controller-manager
 disable-supported: true
 
 # The following PRR answers are required at beta release
