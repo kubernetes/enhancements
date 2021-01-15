@@ -49,6 +49,8 @@ type QueryOpts struct {
 	Status      []string
 	Stage       []string
 	PRRApprover []string
+	Author      []string
+	Approver    []string
 	IncludePRs  bool
 	Output      string
 }
@@ -121,6 +123,8 @@ func (c *Client) Query(opts QueryOpts) error {
 	allowedStatus := sliceToMap(opts.Status)
 	allowedStage := sliceToMap(opts.Stage)
 	allowedPRR := sliceToMap(opts.PRRApprover)
+	allowedAuthor := sliceToMap(opts.Author)
+	allowedApprover := sliceToMap(opts.Approver)
 
 	var keep []*keps.Proposal
 	for _, k := range allKEPs {
@@ -131,6 +135,12 @@ func (c *Client) Query(opts QueryOpts) error {
 			continue
 		}
 		if len(opts.PRRApprover) > 0 && !atLeastOne(k.PRRApprovers, allowedPRR) {
+			continue
+		}
+		if len(opts.Author) > 0 && !atLeastOne(k.Authors, allowedAuthor) {
+			continue
+		}
+		if len(opts.Approver) > 0 && !atLeastOne(k.Approvers, allowedApprover) {
 			continue
 		}
 		keep = append(keep, k)

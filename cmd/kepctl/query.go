@@ -44,6 +44,8 @@ func buildQueryCommand(k *kepctl.Client) *cobra.Command {
 	f.StringSliceVar(&opts.Status, "status", nil, "Status")
 	f.StringSliceVar(&opts.Stage, "stage", nil, "Stage")
 	f.StringSliceVar(&opts.PRRApprover, "prr", nil, "Prod Readiness Approver")
+	f.StringSliceVar(&opts.Approver, "approver", nil, "Approver")
+	f.StringSliceVar(&opts.Author, "author", nil, "Author")
 	f.BoolVar(&opts.IncludePRs, "include-prs", false, "Include PRs in the results")
 	f.StringVar(&opts.Output, "output", kepctl.DefaultOutputOpt, fmt.Sprintf("Output format. Can be %v", kepctl.SupportedOutputOpts))
 
