@@ -23,7 +23,7 @@ stage: alpha
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.20"
+latest-milestone: "v1.21"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
@@ -40,5 +40,5 @@ feature-gates:
 disable-supported: true
 
 # The following PRR answers are required at beta release
-#metrics:
-#  - my_feature_metric
+metrics:
+  - etcd_bookmark_counts
