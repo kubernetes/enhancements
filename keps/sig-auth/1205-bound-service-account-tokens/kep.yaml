@@ -1,5 +1,5 @@
----
 title: Bound Service Account Tokens
+kep-number: 1205
 authors:
   - "@mikedanese"
   - "@zshihang"
@@ -35,4 +35,3 @@ feature-gates:
       - kube-apiserver
 metrics:
   - serviceaccount_stale_tokens_total
----

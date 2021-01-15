@@ -1,4 +1,5 @@
 title: Publishing kubernetes packages
+kep-number: 1731
 authors:
   - "@hoegaarden"
 owning-sig: sig-release

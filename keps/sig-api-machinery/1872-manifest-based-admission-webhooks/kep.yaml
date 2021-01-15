@@ -1,4 +1,5 @@
 title: Manifest based registration of Admission webhooks
+kep-number: 1872
 authors:
 - "@vivekbagade"
 owning-sig: sig-api-machinery

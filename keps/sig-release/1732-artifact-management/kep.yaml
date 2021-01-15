@@ -1,4 +1,5 @@
 title: Kubernetes Community Artifact Serving
+kep-number: 1732
 authors:
   - "@brendandburns"
 owning-sig: sig-release

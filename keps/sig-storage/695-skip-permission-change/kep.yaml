@@ -1,4 +1,5 @@
 title: Skip Volume Ownership Change
+kep-number: 695
 authors:
   - "@gnuified"
 owning-sig: sig-storage

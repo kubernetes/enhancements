@@ -1,4 +1,5 @@
 title: Rebase Kubernetes Main Master and Node Images to Distroless/static
+kep-number: 1729
 authors:
   - "@yuwenma"
 owning-sig: sig-release

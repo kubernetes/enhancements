@@ -1,4 +1,5 @@
-title: Object Storage Support #1979
+title: Object Storage Support
+kep-number: 1979
 authors:
   - "@jeffvance"
   - "@copejon"
