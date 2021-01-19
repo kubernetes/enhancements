@@ -12,7 +12,12 @@ participating-sigs:
   - sig-network
   - sig-node
   - sig-scheduling
-status: implementable
+status: implemented
+
+latest-milestone: "v1.19"
+milestone:
+  stable: "v1.19"
+
 creation-date: 2019-10-01
 reviewers:
   - "@bgrant0607"
