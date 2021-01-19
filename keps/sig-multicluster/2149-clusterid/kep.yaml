@@ -14,7 +14,7 @@ reviewers:
 approvers:
   - "@pmorie"
 prr-approvers:
-  - TBD
+  - "@deads2k"
 see-also:
   - "/keps/sig-multicluster/1645-multi-cluster-services-api"
 #replaces:
