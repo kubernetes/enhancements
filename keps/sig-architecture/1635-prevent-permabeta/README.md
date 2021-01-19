@@ -155,3 +155,10 @@ To avoid disruption to developers, there is a flow to handle removing these APIs
  5. You know you're done when the PR from step 2 passes.
 Following these steps will prevent any disruption to the kube development flow when expired APIs are automatically excluded
 from the the kube-apiserver.
+
+While the code is automatically enforcing, individual sigs can ease their transition by planning for the removal aspect
+in their upgrade/downgrade strategies.
+For instance, they could stop using the beta APIs in the second releases after the introduction of GA APIs.
+This would maintain the +/-1 aspect of skew, while preventing a failure to communicate.
+In addition, a sig can create issues targeted at the release removing the beta API to address any generation and verify
+script behavior that needs to change.
