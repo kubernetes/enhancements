@@ -16,6 +16,7 @@
   - [sig-node](#sig-node)
   - [sig-scheduling](#sig-scheduling)
 - [Drawbacks](#drawbacks)
+- [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -141,3 +142,16 @@ This is the same as the standard for new beta APIs introduced in 1.19.
 1. Consumers of beta APIs will be made aware of the status of the APIs and be given clear dates in documentation about
 when they will have to update.  If the maintainers of these beta APIs do not graduate their API, a new beta version will
 need to exist within 18-ish months and early adopters will have to update their manifests to the new version.  
+
+## Upgrade / Downgrade Strategy
+
+To ensure adherence, the kube-apiserver automatically stops serving expired beta APIs.
+To avoid disruption to developers, there is a flow to handle removing these APIs.
+ 1. For alpha levels of a release, the expired beta APIs are served.
+ 2. The grace for an alpha level can be removed in a PR by setting 
+    (strictRemovedHandlingInAlpha=true)[https://github.com/kubernetes/kubernetes/blob/73d4c245ef870390b052a070134f7c4751744037/pkg/controlplane/deleted_kinds.go#L72]
+ 3. The PR will highlight tests and code that need to be updated to react to the removed beta API.
+ 4. Updates to handle beta removal can be made before the first beta.0 is tagged.
+ 5. You know you're done when the PR from step 2 passes.
+Following these steps will prevent any disruption to the kube development flow when expired APIs are automatically excluded
+from the the kube-apiserver.
