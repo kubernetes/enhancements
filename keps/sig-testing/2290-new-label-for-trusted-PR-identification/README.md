@@ -1,23 +1,3 @@
----
-title: New label for trusted PR identification
-authors:
-  - "@matthyx"
-owning-sig: sig-testing
-participating-sigs:
-  - sig-contributor-experience
-reviewers:
-  - "@fejta"
-  - "@cjwagner"
-  - "@BenTheElder"
-  - "@cblecker"
-  - "@stevekuznetsov"
-approvers:
-  - TBD
-editor: TBD
-creation-date: 2018-06-25
-last-updated: 2019-01-30
-status: implemented
----
 
 # New label for trusted PR identification
 
