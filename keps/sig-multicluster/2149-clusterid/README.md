@@ -287,7 +287,7 @@ The schema for `ClusterClaim` is intentionally loose to support multiple forms o
 
 ### Well known claims
 
-The `ClusterClaim` CRD will support two specific claims under the well known names `id.k8s.io` and `clusterset.k8s.io`. Being "well known" means that they must conform to the requirements described below, and therefore can be depended on by multi-cluster implementations to achieve use cases dependent on knowlege of a cluster's ID or ClusterSet membership.
+The `ClusterClaim` CRD will support two specific claims under the well known names `id.k8s.io` and `clusterset.k8s.io`. Being "well known" means that they must conform to the requirements described below, and therefore can be depended on by multi-cluster implementations to achieve use cases dependent on knowledge of a cluster's ID or ClusterSet membership.
 
 The requirements below use the keywords **must, should,** and **may** purposefully in accordance with [RFC-2119](https://tools.ietf.org/html/rfc2119).
 
