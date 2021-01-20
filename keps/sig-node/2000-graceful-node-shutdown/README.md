@@ -849,10 +849,10 @@ Major milestones might include:
 - when the KEP was retired or superseded
 -->
 
-*   May 26 - [Original GH issue #91472
-    filed](https://github.com/kubernetes/kubernetes/issues/91472)
-*   October 2 - [Initial KEP
-    approved](https://github.com/kubernetes/enhancements/pull/2001)
+*   2020-05-26 - [Original GH issue #91472 filed](https://github.com/kubernetes/kubernetes/issues/91472)
+*   2020-10-02 - [Initial KEP approved](https://github.com/kubernetes/enhancements/pull/2001)
+*   2020-11-12 - [Initial Alpha implementation merged for k8s 1.20](https://github.com/kubernetes/kubernetes/pull/96129)
+*   2020-11-20 - [Docs merged](https://github.com/kubernetes/website/pull/24918)
 
 ## Drawbacks
 
