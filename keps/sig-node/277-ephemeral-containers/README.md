@@ -547,8 +547,8 @@ The CRI requires no changes for basic functionality, but it will need to be
 updated to support container namespace targeting, described fully in
 [Targeting a Namespace].
 
-[Process Namespace Sharing]: https://git.k8s.io/enhancements/keps/sig-node/20190920-pod-pid-namespace.md
-[Targeting a Namespace]: https://git.k8s.io/enhancements/keps/sig-node/20190920-pod-pid-namespace.md#targeting-a-specific-containers-namespace
+[Process Namespace Sharing]: https://git.k8s.io/enhancements/keps/sig-node/495-pod-pid-namespace
+[Targeting a Namespace]: https://git.k8s.io/enhancements/keps/sig-node/495-pod-pid-namespace#targeting-a-specific-containers-namespace
 
 ### Test Plan
 
