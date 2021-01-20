@@ -1,0 +1,21 @@
+title: OpenAPI Features in Kustomize
+kep-number: 2206
+authors:
+  - "@natasha41575"
+owning-sig: sig-cli
+participating-sigs:
+  - sig-cli
+reviewers:
+  - "@monopole"
+  - "@pwittrock"
+approvers:
+  - n/a
+creation-date: 2020-12-21
+last-updated: 2020-01-15
+status: provisional
+see-also:
+  - n/a
+replaces:
+  - n/a
+superseded-by:
+  - n/a
