@@ -231,16 +231,14 @@ fields of API types, flags, etc.?**
 ### Monitoring Requirements
 
 * **How can an operator determine if the feature is in use by workloads?**
-  TODO!!!!  Do we want a new metric measuring how often the flag is set?
-  Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
-  checking if there are objects with field X set) may be a last resort. Avoid
-  logs or events for this purpose.
+`pods_logs_insecure_backend_total` has a label `skip_tls_allowed` which will count how often this value is set by clients.
 
 * **What are the SLIs (Service Level Indicators) an operator can use to determine 
 the health of the service?**
   - [ ] Metrics
-    - Metric name: TODO!!!! find the metric that counts pods/logs errors
-    - [Optional] Aggregation method:
+    - Metric name: 
+      `pods_logs_insecure_backend_total` indicates usage.
+      `pods_logs_backend_tls_failure_total` indicates how often usage of the option may have allowed a connection to be established.
     - Components exposing the metric: kube-apiserver
 
 * **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
