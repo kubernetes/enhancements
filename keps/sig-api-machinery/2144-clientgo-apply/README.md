@@ -159,69 +159,48 @@ take an aligned approach to adding apply to clients in a typesafe way.
 The client-go typed clients will be extended to include Apply functions, e.g.:
 
 ```go
-func (c *deployments) Apply(ctx Context, fieldManager string, deployment *appsv1apply.Deployment, opts metav1.ApplyOptions) (*Deployment, error)
-func (c *deployments) ApplyStatus(ctx Context, fieldManager string, deployment *appsv1apply.Deployment, opts metav1.ApplyOptions) (*Deployment, error)
-func (c *deployments) ApplyScale(ctx Context, fieldManager string, deployment *appsv1apply.Deployment, opts metav1.ApplyOptions) (*Deployment, error)
+func (c *deployments) Apply(ctx Context, deployment *appsv1apply.Deployment, opts metav1.ApplyOptions) (*Deployment, error)
+func (c *deployments) ApplyStatus(ctx Context, deployment *appsv1apply.Deployment, opts metav1.ApplyOptions) (*Deployment, error)
+func (c *deployments) ApplyScale(ctx Context, deployment *appsv1apply.Deployment, opts metav1.ApplyOptions) (*Deployment, error)
 ```
 
 `ApplyOptions` will be added to metav1 even though `PatchOptions` will continue
-to be used over the wire. This will make it obvious in the Apply function
-signature that `fieldManager` is required.
+to be used over the wire:
 
 ```go
 type ApplyOptions struct {
   DryRun []string `json:"dryRun,omitempty" protobuf:"bytes,1,rep,name=dryRun"`
-  Force *bool `json:"force,omitempty" protobuf:"varint,2,opt,name=force"`
-}
 
-func (ApplyOptions) ToPatchOptions(fieldManager string) PatchOptions
+  // <apply specific Force godoc goes here>
+  // Note that this is different than PatchOptions, which has Force as an optional field (bool pointer).
+  Force bool `json:"force,omitempty" protobuf:"varint,2,opt,name=force"`
+
+  // <apply specific FieldManager godoc goes here>
+  FieldManager string `json:"fieldManager,omitempty" protobuf:"bytes,3,name=fieldManager"`
+}
 ```
 
-<<[UNRESOLVED @jpbetz ]>>
+`ApplyOptions` is introduced to allow us to:
 
-Should fieldManager be a parameter of Apply or should it be optional?
+- Customize the godoc for the fieldManager and force fields to explain
+  them better in the context of apply.
+- Switch `Force` from a `*bool` to a `bool`.
+- Future proof the API, by allowing apply specific fields to
+  be added in the future.
 
-The main reason this KEP proposes fieldmanager be a required parameter
-for Apply is that some controllers have multiple code paths that
-update the same same object, but that update different field sets. If
-they used apply and the same field manager, fields could be
-accidentally removed or disowned.
+We do not provide a default for fieldManager. This is the existing
+behavior of apply from the apiserver perspective. This makes sense
+since some controllers have multiple code paths that update the same
+same object, but that update different field sets. If they used apply
+and the same field manager, fields could be accidentally removed or
+disowned. We also make force a required field since it should
+typically be set to true for controllers but defaults to false.
 
 Create and Update methods default the fieldmanager to a user-agent
 based string. But unlike Apply, Updates succeed even if there are
 conflicts, so the fieldmanager name is almost entirely
 informational. For Apply, the fieldmanager name matters a lot more,
-and a user-agent string is almost certainly not a good default
-fieldmanager for Apply.
-
-If we require fieldManager, an alternative to making fieldManager a
-required parameter of `Apply` functions would be have a constructor
-for Apply options like `NewApplyOptions(fieldManager, force)` that
-makes the required field clear.
-
-<<[/UNRESOLVED]>>
-
-<<[UNRESOLVED @jpbetz ]>> 
-Should the Force field also be made a required field like fieldManager is?
-@lavalamp pointed out that user things typically want false but
-controller-things typically want true, so false isn't a great default.
-
-Also, can we structure this so that we don't have so many positional params?
-Moving two params from options to the top level positional params results in a
-longer function signature. Alternative proposed by @lavalamp was to do something
-more like this (ordering or parameters and function names TBD):
-
-```go
-client.Deployments().BeginApply("field-manager-name", options).Body(
-  appsv1apply.Deployment().
-    SetObjectMeta(&metav1apply.ObjectMeta()). ...
-).Apply(ctx)
-```
-
-<<[/UNRESOLVED]>>
-
-Apply will combine the `fieldManager` argument with `ApplyOptions` to create the
-`PatchOptions`.
+and a user-agent string is not a good default for many use cases.
 
 ### Generated apply configuration types
 
