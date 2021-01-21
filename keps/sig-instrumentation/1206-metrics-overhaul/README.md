@@ -1,21 +1,3 @@
----
-title: Kubernetes Metrics Overhaul
-authors:
-  - "@brancz"
-  - "@ehashman"
-owning-sig: sig-instrumentation
-reviewers:
-  - "@piosz"
-  - "@DirectXMan12"
-approvers:
-  - "@piosz"
-  - "@DirectXMan12"
-editor: "@DirectXMan12"
-creation-date: 2018-11-06
-last-updated: 2019-03-21
-status: implemented
----
-
 # Kubernetes Metrics Overhaul
 
 ## Table of Contents
