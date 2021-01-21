@@ -1,51 +1,45 @@
-title: KEP Template
-kep-number: NNNN
+title: trace information popagation
+kep-number: 1668
 authors:
-  - "@jane.doe"
-owning-sig: sig-xyz
+ - "@hase1128"
+ - "@KobayashiD27"
+ - "@fenggw-fnst"
+ - "@zhijianli88"
+ - "@Hellcatlk"
+owning-sig: sig-instrumentation
 participating-sigs:
-  - sig-aaa
-  - sig-bbb
-status: provisional|implementable|implemented|deferred|rejected|withdrawn|replaced
-creation-date: yyyy-mm-dd
+status: provisional
+creation-date: 2020-09-01
 reviewers:
-  - TBD
-  - "@alice.doe"
+ - "@dashpole"
+ - "@serathius"
 approvers:
-  - TBD
-  - "@oscar.doe"
+ - "@dashpole"
 prr-approvers:
-  - TBD
-  - "@bob.doe"
 see-also:
-  - "/keps/sig-aaa/1234-we-heard-you-like-keps"
-  - "/keps/sig-bbb/2345-everyone-gets-a-kep"
 replaces:
-  - "/keps/sig-ccc/3456-replaced-kep"
 
 # The target maturity stage in the current dev cycle for this KEP.
-stage: alpha|beta|stable
+stage: alpha
 
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.19"
+latest-milestone: "v1.21"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
-  alpha: "v1.19"
-  beta: "v1.20"
-  stable: "v1.22"
+  alpha: "v1.21"
+  beta: "v1.22"
+  stable: "v1.25"
 
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
 feature-gates:
-  - name: MyFeature
-    components:
-      - kube-apiserver
-      - kube-controller-manager
+   - name: TracePopagating
+     components:
+       - kube-controller-manager
 disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics:
-  - my_feature_metric
