@@ -24,6 +24,13 @@ misbehaving self-hosted clusters.
   - [Graduation Criteria](#graduation-criteria)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
+- [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
+  - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
+  - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+  - [Monitoring Requirements](#monitoring-requirements)
+  - [Dependencies](#dependencies)
+  - [Scalability](#scalability)
+  - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
 - [Drawbacks [optional]](#drawbacks-optional)
 - [Alternatives [optional]](#alternatives-optional)
@@ -155,6 +162,10 @@ The risk in doing that is greater than the additional benefit.
 ### Test Plan
 
 1. Positive and negative tests for this are fairly easy to write and the changes are narrow in scope.
+2. There will not be e2e tests written because the scenario under which this API is effective is only in a mis-configured
+   cluster where a kubelet has not refreshed its serving certs.  There is an existing positive and negative integration
+   [test](https://github.com/kubernetes/kubernetes/blob/release-1.20/test/integration/apiserver/podlogs/podlogs_test.go#L141-L164)
+   which the sig leads believe is sufficient.
 
 ### Graduation Criteria
 
@@ -169,17 +180,140 @@ Because the change is isolated to non-persisted API contracts with the kube-apis
 
 Because the change is isolated to non-persisted API contracts with the kube-apiserver, there are no skew or upgrade/downgrade considerations.
 
+## Production Readiness Review Questionnaire
+
+### Feature Enablement and Rollback
+
+_This section must be completed when targeting alpha to a release._
+
+* **How can this feature be enabled / disabled in a live cluster?**
+  - [x] Feature gate (also fill in values in `kep.yaml`)
+    - Feature gate name: AllowInsecureBackendProxy
+    - Components depending on the feature gate: kube-apiserver
+
+* **Does enabling the feature change any default behavior?**
+  No, all default behavior remains the same with the feature gate on or off.
+
+* **Can the feature be disabled once it has been enabled (i.e. can we roll back
+  the enablement)?**
+  Yes, the feature can be disabled after enablement.
+  Because no data is persisted via this API, there is no impact that lingers across kube-apiserver restarts.
+
+* **What happens if we reenable the feature if it was previously rolled back?**
+  Because no data is persisted via this API, there is no impact that lingers across kube-apiserver restarts.
+
+* **Are there any tests for feature enablement/disablement?**
+  Because no data is persisted via this API, there is no lingering memory in the system to check.
+
+### Rollout, Upgrade and Rollback Planning
+
+_This section must be completed when targeting beta graduation to a release._
+
+* **How can a rollout fail? Can it impact already running workloads?**
+  This is contained to a single binary, with no persisted data.
+  The worst failure mode is when an HA cluster has some members with the feature off and some members with the feature on.
+  In such a case, the user observed behavior going through a load balancer is inconsistent until the cluster settles.
+
+* **What specific metrics should inform a rollback?**
+  If there is a notable increase in failed pod/logs calls, it may be indicative of the new code causing a problem.
+
+* **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
+  Yes.  This was explicitly tested in the OpenShift distro when the feature went to beta.
+  During HA cluster upgrades, the client observed behavior was inconsistent (as expected), but once all members had
+  the feature gate consistent it was fine.
+  Skew also worked correctly, with new clients sending the additional option simply not connecting as they wish, failing
+  in the safe direction.
+
+* **Is the rollout accompanied by any deprecations and/or removals of features, APIs, 
+fields of API types, flags, etc.?**
+  No.
+
+### Monitoring Requirements
+
+* **How can an operator determine if the feature is in use by workloads?**
+`pods_logs_insecure_backend_total` has a label `skip_tls_allowed` which will count how often this value is set by clients.
+
+* **What are the SLIs (Service Level Indicators) an operator can use to determine 
+the health of the service?**
+  - [ ] Metrics
+    - Metric name: 
+      `pods_logs_insecure_backend_total` indicates usage.
+      `pods_logs_backend_tls_failure_total` indicates how often usage of the option may have allowed a connection to be established.
+    - Components exposing the metric: kube-apiserver
+
+* **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
+  pods/logs can suffer errors today based on user input because the kubelet cannot be verified.
+  Because this is driven based on clients, different clusters may have different "reasonable" starting values.
+  However, there should not be a marked increase the failure rate of pods/logs.
+
+* **Are there any missing metrics that would be useful to have to improve observability 
+of this feature?**
+  I don't think we need greater granularity here.
+
+### Dependencies
+
+* **Does this feature depend on any specific services running in the cluster?**
+  No.
+  This does not introduce any new calls from the kube-apiserver.
+
+### Scalability
+
+* **Will enabling / using this feature result in any new API calls?**
+  no.
+  It adds an option to an existing API call that would already have been called.
+
+* **Will enabling / using this feature result in introducing new API types?**
+  No.
+  It adds a field to `PodLogOptions`, which is not a persisted API.
+
+* **Will enabling / using this feature result in any new calls to the cloud 
+provider?**
+  No.
+
+* **Will enabling / using this feature result in increasing size or count of 
+the existing API objects?**
+  No
+
+* **Will enabling / using this feature result in increasing time taken by any 
+operations covered by [existing SLIs/SLOs]?**
+  No.
+
+* **Will enabling / using this feature result in non-negligible increase of 
+resource usage (CPU, RAM, disk, IO, ...) in any components?**
+  No.
+
+### Troubleshooting
+
+The Troubleshooting section currently serves the `Playbook` role. We may consider
+splitting it into a dedicated `Playbook` document (potentially with some monitoring
+details). For now, we leave it here.
+
+_This section must be completed when targeting beta graduation to a release._
+
+* **How does this feature react if the API server and/or etcd is unavailable?**
+  No impact because this feature only affects the kube-apiserver behavior.
+
+* **What are other known failure modes?**
+  There are no known failure modes.
+
+* **What steps should be taken if SLOs are not being met to determine the problem?**
+  The usual steps used to debug a pod/logs failure.
+  This varies somewhat, but generally you gather.
+    1. the kube-apiserver logs
+    2. the pods you cannot connect to
+    3. the node API running that pod
+    4. the kubelet log for that node
+    5. the crio log for that node
+  From there you can decide how far the request is getting and whether you need to investigate the network connections.
+  This is a fairly deep and rare thing to investigate today.
+
+[supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
+[existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
+
 ## Implementation History
 
-Major milestones in the life cycle of a KEP should be tracked in `Implementation History`.
-Major milestones might include
-
-- the `Summary` and `Motivation` sections being merged signaling SIG acceptance
-- the `Proposal` section being merged signaling agreement on a proposed design
-- the date implementation started
-- the first Kubernetes release where an initial version of the KEP was available
-- the version of Kubernetes where the KEP graduated to general availability
-- when the KEP was retired or superseded
+Introduced as beta in 1.17.
+Moving to stable in 1.21.
 
 ## Drawbacks [optional]
 
