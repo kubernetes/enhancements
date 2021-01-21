@@ -1,23 +1,3 @@
----
-title: Watch support for metrics APIs
-authors:
-  - "@x13n"
-owning-sig: sig-instrumentation
-participating-sigs:
-  - sig-autoscaling
-reviewers:
-  - TBD
-approvers:
-  - TBD
-editor: TBD
-creation-date: 2019-04-25
-last-updated: 2019-04-29
-status: provisional
-see-also:
-replaces:
-superseded-by:
----
-
 # Metrics API watch support
 
 ## Table of Contents

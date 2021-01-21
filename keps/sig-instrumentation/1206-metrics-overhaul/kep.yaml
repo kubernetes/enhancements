@@ -1,0 +1,16 @@
+title: Kubernetes Metrics Overhaul
+kep-number: 1206
+authors:
+  - "@brancz"
+  - "@ehashman"
+owning-sig: sig-instrumentation
+reviewers:
+  - "@piosz"
+  - "@DirectXMan12"
+approvers:
+  - "@piosz"
+  - "@DirectXMan12"
+editor: "@DirectXMan12"
+creation-date: 2018-11-06
+last-updated: 2019-03-21
+status: implemented

@@ -1,24 +1,3 @@
----
-title: Dynamic Cardinality Enforcement
-authors:
-  - "@logicalhan"
-  - "@lilic"
-owning-sig: sig-instrumentation
-participating-sigs:
-  - sig-instrumentation
-reviewers:
-  - "@dashpole"
-  - "@brancz"
-  - "@ehashman"
-  - "@x13n"
-approvers:
-  - sig-instrumentation
-creation-date: 2020-04-15
-last-updated: 2020-05-19
-stage: alpha
-status: implementable
----
-
 # Dynamic Cardinality Enforcement
 
 ## Table of Contents
