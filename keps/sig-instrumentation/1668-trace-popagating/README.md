@@ -98,7 +98,7 @@ Current logging for a series of related messages lacks common identifiers that c
 ### Goals
 
 - Trace context received by the API Server as part of [API Server Tracing](https://github.com/kubernetes/enhancements/issues/647) can be propagated to kubernetes components
-- A set of objects with relationship(OwnerRef/Non-ownerRef) can be linked by this trace information
+- A series of related objects originating from an user request can be associated by this trace information
 
 ### Non-Goals
 
