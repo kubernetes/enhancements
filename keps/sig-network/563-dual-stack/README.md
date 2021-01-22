@@ -1243,29 +1243,44 @@ complexity was not significantly less.
 
 ## Test Plan
 
-* Test-grid e2e tests - https://testgrid.k8s.io/sig-network-dualstack-azure-e2e
-* e2e tests
+* Test-grid e2e tests from https://testgrid.k8s.io/
+
+  * https://testgrid.k8s.io/sig-network-dualstack-azure-e2e#dualstack-azure-e2e-master-iptables
+  * https://testgrid.k8s.io/sig-network-dualstack-azure-e2e#dualstack-azure-e2e-master-ipvs
+  * https://testgrid.k8s.io/sig-network-kind#sig-network-kind,%20dual,%20master
+  * https://testgrid.k8s.io/sig-network-kind#sig-network-kind,%20ipvs,%20dual,%20master
+
+  * [sig-network] [Feature:IPv6DualStackAlphaFeature] [LinuxOnly] Granular
+    Checks: Services Secondary IP Family should function for client IP based
+    session affinity: http [LinuxOnly]
+  * [sig-network] [Feature:IPv6DualStackAlphaFeature] [LinuxOnly] Granular
+    Checks: Services Secondary IP Family should function for client IP based
+    session affinity: udp [LinuxOnly]
+  * [sig-network] [Feature:IPv6DualStackAlphaFeature] [LinuxOnly] Granular
+    Checks: Services Secondary IP Family should function for node-Service: udp
+  * [sig-network] [Feature:IPv6DualStackAlphaFeature] [LinuxOnly] Granular
+    Checks: Services Secondary IP Family should function for pod-Service: http
+  * [sig-network] [Feature:IPv6DualStackAlphaFeature] [LinuxOnly] Granular
+    Checks: Services Secondary IP Family should function for pod-Service: udp
+  * [sig-network] [Feature:IPv6DualStackAlphaFeature] [LinuxOnly] should be able
+    to reach pod on ipv4 and ipv6 ip [Feature:IPv6DualStackAlphaFeature:Phase2]
   * [sig-network] [Feature:IPv6DualStackAlphaFeature] [LinuxOnly] should create
-    pod, add IPv6 and IPv4 IP to pod IPs
-  * [sig-network] [Feature:IPv6DualStackAlphaFeature] [LinuxOnly] should have
-    IPv4 and IPv6 internal node IP
-  * [sig-network] [Feature:IPv6DualStackAlphaFeature] [LinuxOnly] should have
-    IPv4 and IPv6 node podCIDRs
-  * [sig-network] [Feature:IPv6DualStackAlphaFeature] [LinuxOnly] should be
-    able to reach pod on IPv4 and IPv6 IP
+    a single stack service with cluster ip from primary service range
     [Feature:IPv6DualStackAlphaFeature:Phase2]
   * [sig-network] [Feature:IPv6DualStackAlphaFeature] [LinuxOnly] should create
-    service with cluster IP from primary service range
-    [Feature:IPv6DualStackAlphaFeature:Phase2]
+    pod, add ipv6 and ipv4 ip to pod ips
   * [sig-network] [Feature:IPv6DualStackAlphaFeature] [LinuxOnly] should create
-    service with IPv4 cluster IP [Feature:IPv6DualStackAlphaFeature:Phase2]
+    service with ipv4 cluster ip [Feature:IPv6DualStackAlphaFeature:Phase2]
   * [sig-network] [Feature:IPv6DualStackAlphaFeature] [LinuxOnly] should create
-    service with IPv6 cluster IP [Feature:IPv6DualStackAlphaFeature:Phase2]
-* e2e tests should cover the following:
-  * multi-IP, same family
-  * multi-IP, dual-stack
-  * single IP, IPv4
-  * single IP, IPv6
+    service with ipv4,v6 cluster ip [Feature:IPv6DualStackAlphaFeature:Phase2]
+  * [sig-network] [Feature:IPv6DualStackAlphaFeature] [LinuxOnly] should create
+    service with ipv6 cluster ip [Feature:IPv6DualStackAlphaFeature:Phase2]
+  * [sig-network] [Feature:IPv6DualStackAlphaFeature] [LinuxOnly] should create
+    service with ipv6,v4 cluster ip [Feature:IPv6DualStackAlphaFeature:Phase2]
+  * [sig-network] [Feature:IPv6DualStackAlphaFeature] [LinuxOnly] should have
+    ipv4 and ipv6 internal node ip
+  * [sig-network] [Feature:IPv6DualStackAlphaFeature] [LinuxOnly] should have
+    ipv4 and ipv6 node podCIDRs
 
 ## Graduation Criteria
 
@@ -1283,3 +1298,4 @@ This capability will move to stable when the following criteria have been met.
 * Support of at least one CNI plugin to provide multi-IP
 * e2e test successfully running on two platforms
 * testing ingress controller infrastructure with updated dual-stack services
+* dualstack tests run as pre-submit blocking for PRs
