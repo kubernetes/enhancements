@@ -33,7 +33,8 @@ milestone:
 # List the feature gate name and the components for which it must be enabled
 feature-gates:
   - name: WindowsPrivilegedContainers
-    components: kubelet, kube-apiserver
+    components:
+    -  kube-apiserver
 
 disable-supported: true
 
