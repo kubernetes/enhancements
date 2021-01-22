@@ -1,24 +1,3 @@
----
-title: Custom endpoints support for AWS Cloud Provider
-authors:
-  - "@micahhausler"
-owning-sig: sig-cloud-provider
-participating-sigs:
-  - sig-cloud-provider
-reviewers:
-  - "@justinsb"
-  - "@mcrute"
-approvers:
-  - "@justinsb"
-editor: "@micahhausler"
-creation-date: 2019-01-28
-last-updated: 2019-01-28
-status: provisional
-see-also:
-replaces:
-superseded-by:
----
-
 # Custom endpoint support for AWS Cloud Provider
 
 ## Table of Contents

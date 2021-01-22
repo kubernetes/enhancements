@@ -1,20 +1,3 @@
----
-title: aws-k8s-tester
-authors:
-  - "@gyuho"
-owning-sig: sig-cloud-provider
-reviewers:
-  - "@d-nishi"
-  - "@shyamjvs"
-approvers:
-  - "@d-nishi"
-  - "@shyamjvs"
-editor: TBD
-creation-date: 2018-11-26
-last-updated: 2018-11-29
-status: provisional
----
-
 # aws-k8s-tester - kubetest plugin for AWS and EKS
 
 ## Table of Contents
@@ -97,6 +80,6 @@ We implement kubetest plugin, out-of-tree and provided as a single binary file. 
 
 ## Implementation History
 
-* Initial integration with upstream has been tracked 
+* Initial integration with upstream has been tracked
 * Initial proposal to SIG 2018-11-26
 * Initial KEP draft 2018-11-26
