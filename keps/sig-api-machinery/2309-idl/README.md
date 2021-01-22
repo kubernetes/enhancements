@@ -19,17 +19,14 @@
 - [Proposal](#proposal)
   - [Syntax](#syntax)
   - [Output Scope](#output-scope)
+  - [Concrete KubeBuilder &amp; k/k Changes](#concrete-kubebuilder--kk-changes)
   - [Architecture](#architecture)
   - [Risks and Mitigations](#risks-and-mitigations)
   - [Compatibility](#compatibility)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
-  - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
-  - [Version Skew Strategy](#version-skew-strategy)
-- [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
 - [Implementation History](#implementation-history)
-- [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
   - [OpenAPI](#openapi)
   - [Proto](#proto)
@@ -358,6 +355,36 @@ The intial scope of this proposal is to generate two concrete artifacts:
 The format is intended to be flexible enough that we can eventually port
 all of the generators in code-generator to make use of the IDL.  These are
 considered follow-up work after the MVP.
+
+### Concrete KubeBuilder & k/k Changes
+
+* **All types in k/k are rewritten to use KDL**.  All Go types in k/k are
+  generated.
+   
+  This guides core k/k towards KDL usage, and enables third-parties to
+  interact with k/k types well from KDL.
+
+* **The KubeBuilder project is updated to support KDL, and the pseudo-IDL
+  frontend for controller-tools is deprecated.**  This guides community
+  members towards using KDL and writing well-structured APIs.
+
+  The internal representation for controller-tools will be updated to be
+  CDKL.
+
+  To avoid breaking existing workflows, the pseudo-IDL frontend will
+  continue to be available-but-deprecated in controller-tools for an
+  extended period of time (at minimum the equivalent period of time to
+  deprecating and removing a stable feature from k/k).
+
+* **Go-to-KDL migration tooling is made available** to assist both k/k and
+  the community in migrating from pseudo-IDL to KDL.
+
+  For k/k, it's expected that this will take place in 2 phases -- an
+  automated migration that produces technically-correct-but-not-detailed
+  KDL, followed small-scale updates to bring in the richer declarative
+  features from KDL that currently exist only in imperative code (e.g.
+  converting unions to be identified as such, bringing in declarative
+  defaulting & validation).
 
 ### Architecture
 

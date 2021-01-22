@@ -6,6 +6,7 @@
 - [Design Notes](#design-notes)
   - [Uhhh, where are the proto tags?](#uhhh-where-are-the-proto-tags)
   - [What's up with markers?](#whats-up-with-markers)
+- [Unresolved/Open Issues](#unresolvedopen-issues)
 - [Formal(-ish) Grammar](#formal-ish-grammar)
 <!-- /toc -->
 
