@@ -101,8 +101,9 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Kubernetes API updates](#kubernetes-api-updates)
     - [Privileged Flag](#privileged-flag)
     - [Host Network Mode](#host-network-mode)
+    - [Example deployment spec](#example-deployment-spec)
   - [Kubelet Implementation Details](#kubelet-implementation-details)
-    - [ContainerD Support Only](#containerd-support-only)
+    - [CRI Support Only](#cri-support-only)
     - [Feature Gates](#feature-gates)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
@@ -534,28 +535,40 @@ message WindowsContainerSecurityContext {
 
 A new boolean field named `privileged` will be added to [WindowsSecurityContextOptions](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.20/#windowssecuritycontextoptions-v1-core).
 
-On Windows, all containers in a pod mush be privileged. Because of this behavior and because `WindowsSecurityContextOptions` already exists on both `PodSecurityContext` and `Container.SecurityContext` Windows containers will use this new field instead of re-using the existing `privileged` field which only exists on `SecurityContext`.
+On Windows, all containers in a pod must be privileged. Because of this behavior and because `WindowsSecurityContextOptions` already exists on both `PodSecurityContext` and `Container.SecurityContext` Windows containers will use this new field instead of solely relying on the existing `privileged` field which only exists on `SecurityContext`. Because many policy tools currently look for the existing `SecurityContext.privileged` field we will add validation to requrire this field also be set on all containers in a privileged pod.
 
-Having a new field will also help us better anticipate / validate user intention.
-
-API validation will ensure that if `privileged` is set in `Container.SecurityContext.WindowsSercurityContextOptions` then `privileged` is also set in `PodSecurityContext.WindowsSecurityContextOptions`. Current behavior applies pod `WindowsSecurityContextOptions` to all container level `WindowsSecurityContextOptions` if not specified.
-
-No additional validation will be performed against the existing `privileged` on `SecurityContext`.
+API validation will ensure that if `privileged` is set in `Container.SecurityContext.WindowsSecurityContextOptions` for any container then then `privileged` must also set in `PodSecurityContext.WindowsSecurityContextOptions`. Current behavior applies pod `WindowsSecurityContextOptions` to all container level `WindowsSecurityContextOptions` if not specified.
 
 #### Host Network Mode
 
 Host Network mode for privileged Windows containers will always be enabled, as the pod will automatically get the host IP.
 
-Privileged Windows containers will be unable to align to pod namespaces due to limitations in the Windows OS. This functionality may likely be enabled in the future through a new KEP.
+Privileged Windows containers will be unable to align to pod namespaces due to limitations in the Windows OS. This functionality will likely be enabled in the future through a new KEP.
 
-Because of this we do not plan on performing **any** validation around the existing `hostNetwork` PodSpec field. This will give us the flexibility to align privileged containers to host or pod namespaces in the future if/when that functionality is added. Instead we will rely on documentation to explain 
+Because of this we will require that `hostNetwork` is set to `true` when scheduling privileged pods. This will allow existing policy tools to detect and act on privileged Windows containers without any updates. In the future if/when functionality is added to support joining privileged containers to pod networks this validation will be revisited.
 
-The PodSpec has a hostNetwork boolean field:
+#### Example deployment spec
 
-In the case of windows this field would need to be addressed.  During the alpha stage the proposal for this field would be to add documentation that note the field is only applicable to Linux.  In addition the check for hostnetwork mode will need to be updated to check the privileged flag on windows PodSpec.  This will be implemented in the following way, with validation loosened in the future if required:
+Here is an example of a valid spec containing two privileged Windows containers:
 
-- this pod must run on a windows host, and kubelets must reject it if not on windows hosts
-- all pods marked privileged on windows must have host network enabled, if not the pod does not validate
+```yaml
+spec:
+  hostNetwork: true
+  securityContext:
+    windowsOptions:
+      privileged: true
+  containers:
+  - name: foo
+    image: image1:latest
+    securityContext:
+      privileged: true
+  - name: bar
+    image: image2:latest
+    securityContext:
+      privileged: true
+  nodeSelector:
+    "kubernetes.io/os": windows
+```
 
 ### Kubelet Implementation Details
 
@@ -568,9 +581,10 @@ Add functionality to Kuberuntime_sandbox to:
 - Split out the linux sandbox creation and add [windows sandbox creation](https://github.com/kubernetes/kubernetes/blob/a9f1d72e1de6450b890a0c0e451725468f54f515/pkg/kubelet/kuberuntime/kuberuntime_sandbox.go#L136)
 - Configure all privileged Windows pods to join the [host network](https://github.com/kubernetes/kubernetes/blob/a9f1d72e1de6450b890a0c0e451725468f54f515/pkg/kubelet/kuberuntime/kuberuntime_sandbox.go#L98)
 
-#### ContainerD Support Only
+#### CRI Support Only
 
-There are no plans to update Docker to have support for Privileged containers due to requirements on HCSv2.
+There are no plans to update Docker and/or dockershim to have support for privileged containers due to requirements on HCSv2.
+Currently containerd is the only container runtime with a Windows implementation so containerd will be required.
 If needed validation will be added in the kubelet to fail if node is configured to use dockershim and users schedule privileged Windows containers.
 
 #### Feature Gates
