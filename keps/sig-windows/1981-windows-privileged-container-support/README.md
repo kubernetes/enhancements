@@ -84,7 +84,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [Use case 1: Privileged Daemon Sets](#use-case-1-privileged-daemon-sets)
-  - [Use case 2: Administrtive tasks](#use-case-2-administrtive-tasks)
+  - [Use case 2: Administrative tasks](#use-case-2-administrative-tasks)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
   - [PSP support](#psp-support)
@@ -99,7 +99,7 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Container Image Build/Definition](#container-image-builddefinition)
   - [CRI Implementation Details](#cri-implementation-details)
   - [Kubernetes API updates](#kubernetes-api-updates)
-    - [Privilged Flag](#privilged-flag)
+    - [Privileged Flag](#privileged-flag)
     - [Host Network Mode](#host-network-mode)
   - [Kubelet Implementation Details](#kubelet-implementation-details)
     - [ContainerD Support Only](#containerd-support-only)
@@ -139,11 +139,11 @@ checklist items _must_ be updated for the enhancement to be released.
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [X] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
 - [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
-- [ ] (R) Graduation criteria is in place
+- [X] (R) Design details are appropriately documented
+- [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [X] (R) Graduation criteria is in place
 - [ ] (R) Production readiness review completed
 - [ ] Production readiness review approved
 - [ ] "Implementation History" section is up-to-date for milestone
@@ -216,7 +216,7 @@ and make progress.
 - To provide access to host network resources for **non-privileged** containers and pods.
 - To provide a privileged mode for Hyper-V containers, or a method to run privileged process containers within a Hyper-V isolation boundary. This is a non-goal as running a Hyper-V container in the root namespace from within the isolation boundary is not supported.
 - To enable privileged containers for Docker. This will only be for Containerd.
-- To align privileged containers with pod namespaces - this functionailty may be addressed in a future KEP.
+- To align privileged containers with pod namespaces - this functionality may be addressed in a future KEP.
 - Enabling the ability to mix privileged and non-privileged containers in the same Pod. (Multiple privileged containers running in the same Pod will be supported.)
 
 ## Proposal
@@ -231,7 +231,7 @@ nitty-gritty.
 
 ### Use case 1: Privileged Daemon Sets
 
-Privileged daemon sets are used to deploy networking (CNI), storage (CSI), device plugins, kube-proxy, and other components to Linux nodes. Currently, similar set-up and deployment operations utilize wins or dedicated proxies (i.e. CSI-proxy, HNS-Proxy) or these components are installed as services running on Windws nodes. With Windows privileged containers many of these components could run inside containers increasing consistency between how they are deployed and/or managed on Linux and Windows. For networking scenarios, host network mode will enable these privileged deployments to access and configure host network resources.
+Privileged daemon sets are used to deploy networking (CNI), storage (CSI), device plugins, kube-proxy, and other components to Linux nodes. Currently, similar set-up and deployment operations utilize wins or dedicated proxies (i.e. CSI-proxy, HNS-Proxy) or these components are installed as services running on Windows nodes. With Windows privileged containers many of these components could run inside containers increasing consistency between how they are deployed and/or managed on Linux and Windows. For networking scenarios, host network mode will enable these privileged deployments to access and configure host network resources.
 
 Some interesting scenario examples:
 
@@ -239,9 +239,9 @@ Some interesting scenario examples:
 - CSI Proxy
 - Logging Daemons
 
-### Use case 2: Administrtive tasks
+### Use case 2: Administrative tasks
 
-Windows privlieged containers would also enable a wide variety or administrative tasks without requiring cluster operations to log onto each Windows nodes. Tasks like installing security patches, collecting specific event logs, etc could all be down via deployments of privileged contaienrs.
+Windows privileged containers would also enable a wide variety or administrative tasks without requiring cluster operations to log onto each Windows nodes. Tasks like installing security patches, collecting specific event logs, etc could all be down via deployments of privileged containers.
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -251,10 +251,10 @@ What are some important details that didn't come across above?
 Go in to as much detail as necessary here.
 This might be a good place to talk about core concepts and how they relate.
 -->
+
 - Host network mode support is only targeted for privileged containers and pods.
 - Privileged pods can only consist of privileged containers. Standard Windows Server containers or other non-privileged containers will not be supported. This is because containers in a Kubernetes pod share an IP. For the privileged containers with host network mode, this container IP will be the host IP. As a result, a pod cannot consist of a privileged container with the host IP and an unprivileged Windows Server container(s) sharing a vNic on the host with a different IP, or vice versa.
 - We are currently investigating service mesh scenarios where privileged containers in a pod will need host networking access but run alongside non-privileged containers in a pod. This would require further investigation and is out of scope for this KEP.
-
 
 ### Risks and Mitigations
 
@@ -473,7 +473,7 @@ Windows privileged containers will be implemented with [Job Objects](https://doc
 #### Container users
 
 - The privileged container can run as any user that's available on the host or in the domain of the host machine. Password accounts are being investigated.
-Running privilged containers as non SYSTEM/admin accounts will be the primary way operators can restrict access to system resources (files, registry, named pipes, WMI, etc).
+Running privileged containers as non SYSTEM/admin accounts will be the primary way operators can restrict access to system resources (files, registry, named pipes, WMI, etc).
 More information on Windows resource access can be found at https://docs.microsoft.com/en-us/archive/msdn-magazine/2008/november/access-control-understanding-windows-file-and-registry-permissions.
 
 #### Container Mounts
@@ -483,11 +483,11 @@ More information on Windows resource access can be found at https://docs.microso
 
 - Privileged containers can be built on top of existing Windows base images (nanoserver, servercore, etc).
 - A slim base image may be introduced to act as a replacement for [scratch]. On windows graphdriver calls expect some files (mainly registry hives) and these would be included in the slim base image.
-- Privileged containers will not inherit the same [compatability requirements](https://docs.microsoft.com/en-us/virtualization/windowscontainers/deploy-containers/version-compatibility) as process isolated containers from an OS perspecitve. Container runtimes like containerd may need to skip OS version checks when pulling/starting these containers. This will continue to be investegated as the feature matures.
+- Privileged containers will not inherit the same [compatibility requirements](https://docs.microsoft.com/en-us/virtualization/windowscontainers/deploy-containers/version-compatibility) as process isolated containers from an OS perspective. Container runtimes like containerd may need to skip OS version checks when pulling/starting these containers. This will continue to be investigated as the feature matures.
 
 #### Container Image Build/Definition
 
-- This is another ongoing area of investigation and open to feedback. Currently only a subset of dockerfile operations are supported (ADD, COPY, PATH, ENTRYPOINT, etc). 
+- This is another ongoing area of investigation and open to feedback. Currently only a subset of dockerfile operations are supported (ADD, COPY, PATH, ENTRYPOINT, etc).
 
 ### CRI Implementation Details
 
@@ -516,7 +516,7 @@ message WindowsSandboxSecurityContext {
 }
 ```
 
-Update WindowsContainerSecurityContext by adding privilged field:
+Update WindowsContainerSecurityContext by adding privileged field:
 
 ```protobuf
 message WindowsContainerSecurityContext {
@@ -526,11 +526,11 @@ message WindowsContainerSecurityContext {
 }
 ```
 
-*Note:* For alpha annotaions on RunPodSandbox and CreateContainer CRI calls may be used untill a version of containerd with Windows privileged container support is released.
+*Note:* For alpha annotations on RunPodSandbox and CreateContainer CRI calls may be used until a version of containerd with Windows privileged container support is released.
 
 ### Kubernetes API updates
 
-#### Privilged Flag
+#### Privileged Flag
 
 A new boolean field named `privileged` will be added to [WindowsSecurityContextOptions](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.20/#windowssecuritycontextoptions-v1-core).
 
@@ -544,11 +544,11 @@ No additional validation will be performed against the existing `privileged` on 
 
 #### Host Network Mode
 
-Host Network mode for privleged Windows containers will always be enabled, as the pod will automatically get the host IP.
+Host Network mode for privileged Windows containers will always be enabled, as the pod will automatically get the host IP.
 
-Privileged Windows containers will be unable to align to pod namespaces due to limitiations in the Windows OS. This functionaility may likely be enabled in the future through a new KEP.
+Privileged Windows containers will be unable to align to pod namespaces due to limitations in the Windows OS. This functionality may likely be enabled in the future through a new KEP.
 
-Because of this we do not plan on performing **any** valiation around the existing `hostNetowrk` PodSpec field. This will give us the flexability to align privileged containers to host or pod namespaces in the future if/when that functionaility is added. Instead we will rely on documentation to explain 
+Because of this we do not plan on performing **any** validation around the existing `hostNetwork` PodSpec field. This will give us the flexibility to align privileged containers to host or pod namespaces in the future if/when that functionality is added. Instead we will rely on documentation to explain 
 
 The PodSpec has a hostNetwork boolean field:
 
@@ -559,9 +559,9 @@ In the case of windows this field would need to be addressed.  During the alpha 
 
 ### Kubelet Implementation Details
 
-Kubelet will pass privileged flag from `WindowsSecurityCOntextOptions` to the appropraite CRI layer calls.
+Kubelet will pass privileged flag from `WindowsSecurityContextOptions` to the appropriate CRI layer calls.
 
-*Note:* For alpha kubelet may add well-known annotaitons to CRI calls if privileged flags are set.
+*Note:* For alpha kubelet may add well-known annotations to CRI calls if privileged flags are set.
 
 Add functionality to Kuberuntime_sandbox to:
 
@@ -575,7 +575,7 @@ If needed validation will be added in the kubelet to fail if node is configured 
 
 #### Feature Gates
 
-Privileged container functionaly on windows will be gated behind a new `WindowsPrviligedContainer` feature gate.
+Privileged container functionally on windows will be gated behind a new `WindowsPrivilegedContainer` feature gate.
 
 https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/#feature-stages
 
@@ -601,8 +601,8 @@ when drafting this test plan.
 
 Alpha
 
-- Unit tests around valiation logic for new API fields.
-- Add e2e test validating basic privileged container functionalily (pod starts and run in a privileged context on the node)
+- Unit tests around validation logic for new API fields.
+- Add e2e test validating basic privileged container functionality (pod starts and run in a privileged context on the node)
 
 Beta
 
@@ -672,11 +672,11 @@ Alpha
 - Version of containerd: v1.5
 - Version of Kubernetes: Target  1.21
 - Version of OS support: 1809/Windows 2019 LTSC and 2004
-- Alpha Feature Gate for passing privileged flag **or** annotaions to CRI calls.
+- Alpha Feature Gate for passing privileged flag **or** annotations to CRI calls.
 
 Beta
 
-- Go through PSP Linux test (e2e: validation & conformance) and make them relevant for Windows (which apply, which dont and where we need to write new tests).
+- Go through PSP Linux test (e2e: validation & conformance) and make them relevant for Windows (which apply, which don't and where we need to write new tests).
 - Provide guidance similar to Pod Security Standards for Windows privileged containers
 - Containerd: v1.5
 - Kubernetes Target 1.22 or later
@@ -704,7 +704,7 @@ enhancement:
 
 - Windows: This implementation requires no backports for OS components.
 - Kubernetes: No changes required outside of ensuring feature gates are set while feature is in development.
-- Containerd: Must run a version of containerd with privileged contianer support (targeting v1.5+).
+- Containerd: Must run a version of containerd with privileged container support (targeting v1.5+).
 
 ### Version Skew Strategy
 
@@ -769,7 +769,7 @@ _This section must be completed when targeting alpha to a release._
 
 * **Can the feature be disabled once it has been enabled (i.e. can we roll back
   the enablement)?**
-  This feature can be disabled. If this feature is disabled then newly created privileged Windows containers run as non-privleged containers and will likely encounted errors.
+  This feature can be disabled. If this feature is disabled then newly created privileged Windows containers run as non-privileged containers and will likely encounter errors.
 
 * **What happens if we reenable the feature if it was previously rolled back?**
 Newly created privileged Windows containers will run as expected.
