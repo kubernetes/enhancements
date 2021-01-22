@@ -81,7 +81,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-This KEP proposes to propagate trace context across components and across a series of related objects originating from an user request. It lays the foundation for enhancing relevant but scattered logs with the trace information as common identifiers.
+This KEP proposes to propagate trace context across components and across a series of related objects originating from an user request. It lays the foundation for enhancing relevant but scattered logs with the trace ID as common an identifier.
 
 ## Motivation
 
@@ -98,7 +98,7 @@ Current logging for a series of related messages lacks common identifiers that c
 ### Goals
 
 - Trace context received by the API Server as part of [API Server Tracing](https://github.com/kubernetes/enhancements/issues/647) can be propagated to kubernetes components
-- A series of related objects originating from an user request can be associated by this trace information
+- A series of related objects originating from an user request can be associated by trace ID
 
 ### Non-Goals
 
