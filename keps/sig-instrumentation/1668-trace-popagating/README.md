@@ -139,6 +139,8 @@ Consider including folks who also work outside the SIG or subproject.
 
 ## Design Details
 
+This design is inspired by the earlier KEP [Leveraging Distributed Tracing to Understand Kubernetes Object Lifecycles](https://github.com/kubernetes/enhancements/pull/650)
+
 ### In-tree changes
 
 #### Trace Utility Package
