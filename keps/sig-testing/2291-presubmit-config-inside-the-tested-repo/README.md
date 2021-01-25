@@ -1,22 +1,3 @@
----
-title: Presubmit config inside the tested repo
-authors:
-  - "@alvaroaleman"
-owning-sig: sig-testing
-participating-sigs:
-  - sig-testing
-reviewers:
-  - "@stevekuznetsov"
-  - "@cjwagner"
-approvers:
-  - "@stevekuznetsov"
-  - "@cjwagner"
-editor: TBD
-creation-date: 2019-06-04
-last-updated: 2019-07-24
-status: implementable
----
-
 # Presubmit config inside the tested repo
 
 
