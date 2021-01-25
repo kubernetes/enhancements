@@ -55,10 +55,11 @@ type QueryOpts struct {
 	Output      string
 }
 
-
+// Validate checks the query options and cleans them up if needed
 func (c *QueryOpts) Validate() error {
+	groups := util.Groups()
 	if len(c.SIG) > 0 {
-		sigs, err := selectByRegexp(util.Groups(), c.SIG)
+		sigs, err := selectByRegexp(groups, c.SIG)
 		if err != nil {
 			return err
 		}
@@ -66,6 +67,9 @@ func (c *QueryOpts) Validate() error {
 			return fmt.Errorf("No SIG matches any of the passed regular expressions")
 		}
 		c.SIG = sigs
+	} else {
+		// if no SIGs are passed, list KEPs from all SIGs
+		c.SIG = groups
 	}
 
 	// check if the Output specified is one of "", "json" or "yaml"
