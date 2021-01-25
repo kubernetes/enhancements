@@ -1,0 +1,35 @@
+title: VolumeSnapshot Namespace Transfer
+kep-number: 2324
+authors:
+  - "@huffmanca"
+owning-sig: sig-storage
+participating-sigs:
+  - sig-storage
+status: provisional
+creation-date: 2021-01-25
+reviewers:
+  - "@gnuified"
+  - "@msau42"
+  - "@xing-yang"
+approvers:
+  - TBD
+see-also:
+  - "https://github.com/kubernetes/enhancements/pull/2110/"
+replaces:
+stage: alpha
+
+latest-milestone: "v1.21"
+
+milestone:
+  alpha: "v1.22"
+  beta: "v1.23"
+  stable: "v1.24"
+
+feature-gates:
+  - name: VolumeSnapshotNamespaceTransfer
+    components:
+      - kube-apiserver (assuming we introduce the StorageTransfer* resources)
+      - kubernetes-csi/external-snapshotter
+disable-supported: true
+
+metrics:
