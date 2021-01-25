@@ -24,7 +24,7 @@ latest-milestone: v1.21
 milestone:
   alpha: "v1.20"
   beta: "v1.21"
-  stable: ""
+  stable: "v1.22"
 feature-gates:
   - name: IPv6DualStack
     components:
