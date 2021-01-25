@@ -1,22 +1,3 @@
----
-title: AWS LoadBalancer Prefix
-authors:
-  - "@minherz"
-owning-sig: sig-cloud-provider
-participating-sigs:
-reviewers:
-  - TBD
-approvers:
-  - TBD
-editor: TBD
-creation-date: 2018-11-02
-last-updated: 2018-11-02
-status: provisional
-see-also:
-replaces:
-superseded-by:
----
-
 # AWS LoadBalancer Prefix Annotation Proposal
 
 ## Table of Contents

@@ -1,0 +1,15 @@
+title: aws-k8s-tester
+kep-number: 2313
+authors:
+  - "@gyuho"
+owning-sig: sig-cloud-provider
+reviewers:
+  - "@d-nishi"
+  - "@shyamjvs"
+approvers:
+  - "@d-nishi"
+  - "@shyamjvs"
+editor: TBD
+creation-date: 2018-11-26
+last-updated: 2018-11-29
+status: provisional
