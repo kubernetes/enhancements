@@ -1,0 +1,14 @@
+title: exposing hashed storage versions via the discovery API
+kep-number: 2342
+authors:
+  - "@xuchao"
+owning-sig: sig-api-machinery
+reviewers:
+  - "@deads2k"
+  - "@lavalamp"
+approvers:
+  - "@deads2k"
+  - "@lavalamp"
+creation-date: 2019-01-02
+last-updated: 2019-01-04
+status: provisional

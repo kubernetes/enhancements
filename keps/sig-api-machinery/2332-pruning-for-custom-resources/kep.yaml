@@ -1,0 +1,24 @@
+title: Pruning for Custom Resources
+kep-number: 2332
+authors:
+  - "@sttts"
+owning-sig: sig-api-machinery
+participating-sigs:
+  - sig-api-machinery
+reviewers:
+  - "@deads2k"
+  - "@lavalamp"
+  - "@liggitt"
+  - "@erictune"
+  - "@mbohlool"
+  - "@apelisse"
+approvers:
+  - "@deads2k"
+  - "@lavalamp"
+editor: "@sttts"
+creation-date: 2018-07-31
+last-updated: 2019-04-30
+status: implemented
+see-also:
+  - "https://github.com/kubernetes/enhancements/pull/1002"
+  - "/keps/sig-api-machinery/20180415-crds-to-ga.md"

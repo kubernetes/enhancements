@@ -1,0 +1,24 @@
+title: "Vanilla CRD OpenAPI Subset: Structural Schemas"
+kep-number: 2335
+authors:
+  - "@sttts"
+  - "@mbohlool"
+owning-sig: sig-api-machinery
+participating-sigs:
+  - sig-api-machinery
+reviewers:
+  - "@liggitt"
+  - "@apelisse"
+  - "@mbohlool"
+  - "@DirectXMan12"
+approvers:
+  - "@lavalamp"
+  - "@deads2k"
+editor: TBD
+creation-date: 2019-04-25
+last-updated: 2019-05-09
+status: implemented
+see-also:
+  - "/keps/sig-api-machinery/20180415-crds-to-ga.md"
+  - "https://github.com/kubernetes/enhancements/pull/926"
+  - "https://github.com/kubernetes/enhancements/pull/709"

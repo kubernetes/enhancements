@@ -1,20 +1,3 @@
----
-title: StorageVersion API for HA API servers 
-authors:
-  - "@xuchao"
-owning-sig: sig-api-machinery
-reviewers:
-  - "@deads2k"
-  - "@yliaog"
-  - "@lavalamp"
-approvers:
-  - "@deads2k"
-  - "@lavalamp"
-creation-date: 2019-08-22
-last-updated: 2019-08-22
-status: implementable
----
-
 # StorageVersion API for HA API servers
 
 ## Table of Contents
@@ -71,7 +54,7 @@ type StorageVersion struct {
   TypeMeta
   // The name is <group>.<resource>.
   ObjectMeta
-  
+
   // Spec is omitted because there is no spec field.
   // Spec StorageVersionSpec
 
@@ -94,13 +77,13 @@ type StorageVersionStatus struct {
   // The latest available observations of the storageVersion's state.
   // +optional
   Conditions []StorageVersionCondition
-  
+
 }
 
 // An API server instance reports the version it can decode and the version it
 // encodes objects to when persisting objects in the backend.
 type ServerStorageVersion struct {
-  // The ID of the reporting API server. 
+  // The ID of the reporting API server.
   // For a kube-apiserver, the ID is configured via a flag.
   APIServerID string
 
@@ -155,7 +138,7 @@ all participating API servers via some API.
 
 ### Updating StorageVersion
 
-During bootstrap, for each resource, the API server 
+During bootstrap, for each resource, the API server
 * gets the storageVersion object for this resource, or creates one if it does
   not exist yet,
 * gets the list of participating API servers,
@@ -229,7 +212,7 @@ performs the following actions for each storageVersion object:
   storageVersion.status.serverStorageVersions,
   * after the removal, if all participating API servers have the same
     encodingVersion, then sets storageVersion.status.AgreedEncodingVersion and
-    status.condtion. 
+    status.condtion.
 * checks if the storageVersion.status.serverStorageVersions is empty,
   * if empty, deletes the storageVersion object (2nd kind of garbage),
   * otherwise updates the storageVersion object,
@@ -345,7 +328,7 @@ accurately reflects the actual storage version used by the apiextension-apiserve
 Upon storage version changes in the CRD spec,
 * [one controller][] deletes the existing resource handler of the CRD, so that
   a new resource handler is created with the latest cached CRD spec is created
-  upon the next custom resource request. 
+  upon the next custom resource request.
 * [another controller][] enqueues the CRD, waiting for the worker to updates the
   discovery document.
 
