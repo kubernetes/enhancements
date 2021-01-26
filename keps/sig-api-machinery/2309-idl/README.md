@@ -617,6 +617,36 @@ the current syntax, see [the repository][repo-comparison].
 * **Site Hosting**: some place to put nicely-formatted tutorials and such,
   similar to the [KubeBuilder book][kb].
 
+## Addendum: Why do we need to do this in k/k
+
+While we could just do this as a self-contained part of the KubeBuilder
+project (it would certainly be easier -- we wouldn't need a KEP!), such an
+approach presents a significant downside:
+
+Historically, a major source of frustration in using our existing
+tooling has been the drift between k/k tooling and CRD tooling.  This
+has largely taken three forms:
+
+1. Differing ways of doing validation/defaulting/etc leading to validation
+   being entirely absent in subsections of CRDs (think PodSpec embedded in
+   a custom workload CRD).
+
+2. k/k adding details that lead to unusuable type definitions (e.g.
+   ["Default value not allowed for in
+   x-kubernetes-list-map-keys"][unusable-types])
+
+3. Type versioning being unwieldy to deal with due to Go versioning
+   restrictions
+
+While an IDL won't immediately solve issue 1 (although it can improve the
+situation over time -- some is better than none!), it can certainly help
+solve issues 2 and 3.
+
+Stopping such drift between k/k and CRDs, and even reducing it, would be
+a major win for the developer experience of writing CRDs for kubernetes.
+
+[unusable-types]: https://github.com/kubernetes/kubernetes/issues/91395
+
 ## Addendum: Footnotes
 
 ### 1. core/v1 Mistakes
