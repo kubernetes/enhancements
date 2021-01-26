@@ -1,27 +1,3 @@
----
-title: Container Resources CRI API Changes for Pod Vertical Scaling
-authors:
-  - "@vinaykul"
-  - "@quinton-hoole"
-owning-sig: sig-node
-participating-sigs:
-reviewers:
-  - "@Random-Liu"
-  - "@yujuhong"
-  - "@PatrickLang"
-approvers:
-  - "@dchen1107"
-  - "@derekwaynecarr"
-editor: TBD
-creation-date: 2019-10-25
-last-updated: 2020-01-14
-status: implementable
-see-also:
-  - "/keps/sig-node/20181106-in-place-update-of-pod-resources.md"
-replaces:
-superseded-by:
----
-
 # Container Resources CRI API Changes for Pod Vertical Scaling
 
 ## Table of Contents
