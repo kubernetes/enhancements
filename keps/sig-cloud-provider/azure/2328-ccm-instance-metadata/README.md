@@ -1,23 +1,3 @@
----
-title: Support Instance Metadata Service with Cloud Controller Manager
-authors:
-  - "@feiskyer"
-owning-sig: sig-cloud-provider
-participating-sigs:
-  - sig-node
-reviewers:
-  - "@andrewsykim"
-  - "@jagosan"
-approvers:
-  - "@andrewsykim"
-editor: "@feiskyer"
-creation-date: 2019-07-22
-last-updated: 2019-12-15
-status: implementable
-see-also:
-  - "/keps/sig-cloud-provider/20180530-cloud-controller-manager.md"
----
-
 # Support Instance Metadata Service with Cloud Controller Manager
 
 ## Table of Contents
