@@ -1,0 +1,14 @@
+title: Enabling clients to tell if resource endpoints serve the same set of objects
+kep-number: 2341
+authors:
+  - "@xuchao"
+owning-sig: sig-api-machinery
+reviewers:
+  - "@deads2k"
+  - "@lavalamp"
+approvers:
+  - "@deads2k"
+  - "@lavalamp"
+creation-date: 2018-10-12
+last-updated: 2018-12-17
+status: provisional

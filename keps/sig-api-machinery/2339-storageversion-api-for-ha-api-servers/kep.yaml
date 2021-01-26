@@ -1,0 +1,15 @@
+title: StorageVersion API for HA API servers
+kep-number: 2339
+authors:
+  - "@xuchao"
+owning-sig: sig-api-machinery
+reviewers:
+  - "@deads2k"
+  - "@yliaog"
+  - "@lavalamp"
+approvers:
+  - "@deads2k"
+  - "@lavalamp"
+creation-date: 2019-08-22
+last-updated: 2019-08-22
+status: implementable

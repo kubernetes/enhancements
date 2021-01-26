@@ -1,19 +1,3 @@
----
-title: exposing hashed storage versions via the discovery API
-authors:
-  - "@xuchao"
-owning-sig: sig-api-machinery
-reviewers:
-  - "@deads2k"
-  - "@lavalamp"
-approvers:
-  - "@deads2k"
-  - "@lavalamp"
-creation-date: 2019-01-02
-last-updated: 2019-01-04
-status: provisional
----
-
 # Exposing storage versions in opaque values via the discovery API
 
 ## Table of Contents
@@ -73,12 +57,12 @@ storage versions are different.
 ```golang
 type APIResource struct {
         // The hash value of the storage version, the version this resource is
-        // converted to when written to the data store. Value must be treated 
+        // converted to when written to the data store. Value must be treated
         // as opaque by clients. Only equality comparison on the value is valid.
 	// This is an alpha feature and may change or be removed in the future.
         // The field is populated by the apiserver only if the
         // StorageVersionHash feature gate is enabled.
-        // This field will remain optional even if it graduates. 
+        // This field will remain optional even if it graduates.
         // +optional
         StorageVersionHash string `json:"storageVersionHash,omitempty"`
         // These are the existing fields.

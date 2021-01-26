@@ -1,25 +1,3 @@
----
-title: legacyflags
-authors:
-  - "@mtaufen"
-owning-sig: sig-api-machinery
-participating-sigs:
-  - sig-architecture
-  - sig-cluster-lifecycle
-  - wg-component-standard
-reviewers:
-  - "@kubernetes/wg-component-standard"
-approvers:
-  - "@luxas"
-  - "@sttts"
-editor: TBD
-creation-date: 2019-01-29
-last-updated: 2019-04-02
-status: provisional
-see-also:
-  - KEP-32
----
-
 # kflag
 
 ## Table of Contents

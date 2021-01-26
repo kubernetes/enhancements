@@ -1,26 +1,3 @@
----
-title: Graduate API gzip compression support to GA
-authors:
-  - "@smarterclayton"
-owning-sig: sig-api-machinery
-participating-sigs:
-  - sig-cli
-reviewers:
-  - "@lavalamp"
-  - "@liggitt"
-approvers:
-  - "@liggitt"
-  - "@lavalamp"
-editor: TBD
-creation-date: 2019-03-22
-last-updated: 2019-03-22
-status: implementable
-see-also:
-  - "https://github.com/kubernetes/kubernetes/issues/44164"
-replaces:
-superseded-by:
----
-
 # Graduate API gzip compression to GA
 
 ## Table of Contents
