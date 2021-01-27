@@ -1,0 +1,42 @@
+title: Block ExternalIPs via Admission Control
+kep-number: 2200
+authors:
+  - "@thockin"
+owning-sig: sig-network
+participating-sigs:
+  - sig-auth
+  - sig-security
+  - sig-api-machinery
+status: implementable
+creation-date: 2020-12-07
+reviewers:
+  - "@IanColdwater"
+  - "@tabbysable"
+approvers:
+  - "@tallclair"
+  - "@lavalamp"
+prr-approvers:
+  - "@johnbelamaric"
+see-also:
+  - "https://github.com/kubernetes/kubernetes/issues/97110"
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: stable
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.21"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  stable: "v1.21"
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates: []
+disable-supported: true
+
+# The following PRR answers are required at beta release
+metrics:
+  - apiserver_admission_controller_admission_duration_seconds_bucket{name="DenyServiceExternalIPs", ...}
