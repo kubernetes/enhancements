@@ -5,7 +5,7 @@ authors:
 owning-sig: sig-node
 participating-sigs:
   - sig-node
-status: provisional
+status: implementable
 creation-date: 2021-01-07
 reviewers:
   - "@matthyx"
@@ -30,3 +30,12 @@ milestone:
   alpha: "v1.21"
   beta: "v1.22"
   stable: "v1.23"
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+  - name: ProbeTerminationGracePeriod
+    components:
+      - kube-apiserver
+      - kubelet
+disable-supported: true

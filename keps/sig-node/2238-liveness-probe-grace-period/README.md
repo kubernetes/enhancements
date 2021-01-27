@@ -56,10 +56,11 @@ normal shutdown and when probes fail. Hence, if a long termination period is
 set, and a liveness probe fails, a workload will not be promptly restarted
 because it will wait for the full termination period.
 
-I propose adding a new field to liveness probes, `gracePeriodSeconds`. When
-set, it will override the `terminationGracePeriodSeconds` for liveness
-termination. This maintains the current behaviour if desired while providing
-configuration to address this unintended behaviour.
+I propose adding a new field to probes, `probe.terminationGracePeriodSeconds`.
+When set, it will override the `terminationGracePeriodSeconds` for liveness or
+startup termination, and will be ignored for readiness probes. This maintains
+the current behaviour if desired while providing configuration to address this
+unintended behaviour.
 
 ## Motivation
 
@@ -182,8 +183,9 @@ probes should be tested for correct behaviour.
 
 E2E integration tests will verify the correct behaviour for the current broken
 use case, where a `terminationGracePeriodSeconds` is set to a
-large value, a probe fails, and with `livenessProbe.gracePeriodSeconds` set,
-the container terminates quickly.
+large value, a probe fails, and with
+`livenessProbe.terminationGracePeriodSeconds` set, the container terminates
+quickly.
 
 ### Graduation Criteria
 
@@ -312,7 +314,7 @@ _This section must be completed when targeting alpha to a release._
 
 * **How can this feature be enabled / disabled in a live cluster?**
   - [X] Feature gate (also fill in values in `kep.yaml`)
-    - Feature gate name: ProbeTerminationGracePeriod
+    - Feature gate name: `ProbeTerminationGracePeriod`
     - Components depending on the feature gate: Kubelet, API Server
   - [ ] Other
     - Describe the mechanism:
@@ -350,9 +352,10 @@ _This section must be completed when targeting alpha to a release._
   with and without the feature, are necessary. At the very least, think about
   conversion tests if API types are being modified.
 
-  Yes. We will add an e2e test to confirm the presence of the current bug.
-  Then, with the new API field added, we will add e2e tests to confirm that they
-  result in different behaviour.
+  We will manually test that if a resource is created with the new field, and
+  the feature flag is later disabled, that the field will no longer be used
+  even though it is already filled in. We will then confirm that, when the flag
+  is reenabled, the new value is used as expected.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -559,6 +562,12 @@ immediately, or with some default grace period (@sjenning)
 - CON: thresholds not user-configurable
 - CON: even if we use a feature flag for this, it will eventually become the
   required behaviour
+
+Introduce a similar field, but at the pod-level, next to the existing field.
+
+- PRO: similar values are grouped together
+- CON: logically, liveness probes operate on a per-container basis, and thus we
+  may need different thresholds for different containers
 
 ## Infrastructure Needed (Optional)
 
