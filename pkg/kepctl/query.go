@@ -55,8 +55,8 @@ type QueryOpts struct {
 	Output      string
 }
 
-// Validate checks the args and cleans them up if needed
-func (c *QueryOpts) Validate(args []string) error {
+
+func (c *QueryOpts) Validate() error {
 	if len(c.SIG) > 0 {
 		sigs, err := selectByRegexp(util.Groups(), c.SIG)
 		if err != nil {
