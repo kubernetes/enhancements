@@ -1251,17 +1251,38 @@ complexity was not significantly less.
   * https://testgrid.k8s.io/sig-network-kind#sig-network-kind,%20ipvs,%20dual,%20master
 
   * [sig-network] [Feature:IPv6DualStackAlphaFeature] [LinuxOnly] Granular
+    Checks: Services Secondary IP Family should be able to handle large
+    requests: http
+  * [sig-network] [Feature:IPv6DualStackAlphaFeature] [LinuxOnly] Granular
+    Checks: Services Secondary IP Family should be able to handle large
+    requests: udp
+  * [sig-network] [Feature:IPv6DualStackAlphaFeature] [LinuxOnly] Granular
     Checks: Services Secondary IP Family should function for client IP based
     session affinity: http [LinuxOnly]
   * [sig-network] [Feature:IPv6DualStackAlphaFeature] [LinuxOnly] Granular
     Checks: Services Secondary IP Family should function for client IP based
     session affinity: udp [LinuxOnly]
   * [sig-network] [Feature:IPv6DualStackAlphaFeature] [LinuxOnly] Granular
+    Checks: Services Secondary IP Family should function for endpoint-Service:
+    http
+  * [sig-network] [Feature:IPv6DualStackAlphaFeature] [LinuxOnly] Granular
+    Checks: Services Secondary IP Family should function for endpoint-Service:
+    udp
+  * [sig-network] [Feature:IPv6DualStackAlphaFeature] [LinuxOnly] Granular
+    Checks: Services Secondary IP Family should function for node-Service: http
+  * [sig-network] [Feature:IPv6DualStackAlphaFeature] [LinuxOnly] Granular
     Checks: Services Secondary IP Family should function for node-Service: udp
   * [sig-network] [Feature:IPv6DualStackAlphaFeature] [LinuxOnly] Granular
     Checks: Services Secondary IP Family should function for pod-Service: http
   * [sig-network] [Feature:IPv6DualStackAlphaFeature] [LinuxOnly] Granular
+    Checks: Services Secondary IP Family should function for pod-Service: sctp
+    [Feature:SCTPConnectivity][Disruptive]
+  * [sig-network] [Feature:IPv6DualStackAlphaFeature] [LinuxOnly] Granular
     Checks: Services Secondary IP Family should function for pod-Service: udp
+  * [sig-network] [Feature:IPv6DualStackAlphaFeature] [LinuxOnly] Granular
+    Checks: Services Secondary IP Family should update endpoints: http
+  * [sig-network] [Feature:IPv6DualStackAlphaFeature] [LinuxOnly] Granular
+    Checks: Services Secondary IP Family should update endpoints: udp
   * [sig-network] [Feature:IPv6DualStackAlphaFeature] [LinuxOnly] should be able
     to reach pod on ipv4 and ipv6 ip [Feature:IPv6DualStackAlphaFeature:Phase2]
   * [sig-network] [Feature:IPv6DualStackAlphaFeature] [LinuxOnly] should create
