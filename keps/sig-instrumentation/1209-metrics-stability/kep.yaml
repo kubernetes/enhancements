@@ -32,7 +32,7 @@ see-also:
   - "/keps/sig-instrumentation/1206-metrics-overhaul"
 
 # The target maturity stage in the current dev cycle for this KEP.
-stage: stable
+stage: beta
 
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
