@@ -25,7 +25,7 @@ import (
 	"strings"
 	"time"
 
-	"k8s.io/enhancements/pkg/kepval/keps"
+	"k8s.io/enhancements/api"
 )
 
 type CreateOpts struct {
@@ -82,7 +82,7 @@ func (c *Client) Create(opts CreateOpts) error {
 	return nil
 }
 
-func updateTemplate(t *keps.Proposal, opts CreateOpts) {
+func updateTemplate(t *api.Proposal, opts CreateOpts) {
 	if opts.State != "" {
 		t.Status = opts.State
 	}
@@ -134,7 +134,7 @@ func updatePersonReference(names []string) []string {
 	return persons
 }
 
-func (c *Client) createKEP(kep *keps.Proposal, opts CreateOpts) error {
+func (c *Client) createKEP(kep *api.Proposal, opts CreateOpts) error {
 
 	fmt.Fprintf(c.Out, "Generating new KEP %s in %s ===>\n", opts.Name, opts.SIG)
 

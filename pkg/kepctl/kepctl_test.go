@@ -24,7 +24,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v2"
-	"k8s.io/enhancements/pkg/kepval/keps"
+
+	"k8s.io/enhancements/api"
 )
 
 func TestValidate(t *testing.T) {
@@ -49,7 +50,7 @@ func TestValidate(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			b, err := ioutil.ReadFile(tc.file)
 			require.NoError(t, err)
-			var p keps.Proposal
+			var p api.Proposal
 			err = yaml.Unmarshal(b, &p)
 			require.NoError(t, err)
 			err = validateKEP(&p)

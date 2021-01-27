@@ -22,7 +22,7 @@ import (
 
 	"github.com/pkg/errors"
 
-	"k8s.io/enhancements/pkg/kepval/keps"
+	"k8s.io/enhancements/api"
 	"k8s.io/enhancements/pkg/kepval/util"
 )
 
@@ -101,7 +101,7 @@ func (c *Client) Query(opts QueryOpts) error {
 
 	c.SetGitHubToken(opts.CommonArgs)
 
-	var allKEPs []*keps.Proposal
+	var allKEPs []*api.Proposal
 	// load the KEPs for each listed SIG
 	for _, sig := range opts.SIG {
 		// KEPs in the local filesystem
@@ -126,7 +126,7 @@ func (c *Client) Query(opts QueryOpts) error {
 	allowedAuthor := sliceToMap(opts.Author)
 	allowedApprover := sliceToMap(opts.Approver)
 
-	var keep []*keps.Proposal
+	var keps []*api.Proposal
 	for _, k := range allKEPs {
 		if len(opts.Status) > 0 && !allowedStatus[k.Status] {
 			continue
@@ -143,16 +143,16 @@ func (c *Client) Query(opts QueryOpts) error {
 		if len(opts.Approver) > 0 && !atLeastOne(k.Approvers, allowedApprover) {
 			continue
 		}
-		keep = append(keep, k)
+		keps = append(keps, k)
 	}
 
 	switch opts.Output {
 	case "table":
-		c.PrintTable(DefaultPrintConfigs("LastUpdated", "Stage", "Status", "SIG", "Authors", "Title", "Link"), keep)
+		c.PrintTable(DefaultPrintConfigs("LastUpdated", "Stage", "Status", "SIG", "Authors", "Title", "Link"), keps)
 	case "yaml":
-		c.PrintYAML(keep)
+		c.PrintYAML(keps)
 	case "json":
-		c.PrintJSON(keep)
+		c.PrintJSON(keps)
 	default:
 		// this check happens as a validation step in cobra as well
 		// added it for additional verbosity

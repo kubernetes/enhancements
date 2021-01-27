@@ -25,7 +25,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"k8s.io/enhancements/pkg/kepval/keps"
+
+	"k8s.io/enhancements/api"
 	"sigs.k8s.io/yaml"
 )
 
@@ -87,7 +88,7 @@ func TestWriteKep(t *testing.T) {
 			c := newTestClient(t, repoPath)
 			b, err := ioutil.ReadFile(tc.kepFile)
 			require.NoError(t, err)
-			var p keps.Proposal
+			var p api.Proposal
 			err = yaml.Unmarshal(b, &p)
 			require.NoError(t, err)
 			tc.opts.CommonArgs.RepoPath = repoPath
