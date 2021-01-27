@@ -237,13 +237,22 @@ func (c *Client) loadKEPPullRequests(sig string) ([]*keps.Proposal, error) {
 	}
 
 	gh := github.NewClient(auth)
-	pulls, _, err := gh.PullRequests.List(ctx, "kubernetes", "enhancements", &github.PullRequestListOptions{})
-	if err != nil {
-		return nil, err
+	allPulls := []*github.PullRequest{}
+	opt := &github.PullRequestListOptions{ListOptions: github.ListOptions{PerPage: 100}}
+	for {
+		pulls, resp, err := gh.PullRequests.List(ctx, "kubernetes", "enhancements", opt)
+		if err != nil {
+			return nil, err
+		}
+		allPulls = append(allPulls, pulls...)
+		if resp.NextPage == 0 {
+			break
+		}
+		opt.Page = resp.NextPage
 	}
 
 	var kepPRs []*github.PullRequest
-	for _, pr := range pulls {
+	for _, pr := range allPulls {
 		foundKind, foundSIG := false, false
 		sigLabel := strings.Replace(sig, "-", "/", 1)
 		for _, l := range pr.Labels {
