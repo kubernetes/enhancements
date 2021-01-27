@@ -120,20 +120,6 @@ group-version(group:"core", version:"v1") {
     struct Volume {
         name: DNSLabel,
         source: Source,
-
-        // unions contain several variations, only one of which
-        // may be set at any given time.  By default, they have
-        // a tag of `type`.
-        // If a variant has no body, simply don't specify a tag.
-        union Source {
-            hostPath: HostPath,
-            struct HostPath {
-                path: string,
-            }
-            emptyDir: EmptyDir,
-            struct EmptyDir {}
-            // ...
-        }
     }
 
     // enums represent one choice of a series of constant string values
@@ -162,7 +148,7 @@ group-version(group:"core", version:"v1") {
         // inline fields have their fields embedded in their parent object
         // in systems where this is supported (e.g. JSON, Go).  In systems
         // where not supported, generally just use the type name as the field
-        // name.  Only structs and unions may be inlined.
+        // name.  Only structs may be inlined.
 
         // "raw identifiers" are surrounded with backticks, and take two purposes
         // the first is to allow fields and keys that have the same name as keywords
@@ -386,7 +372,7 @@ group_version_ident = @{ group_name ~ "/" ~ version_name }
 // The equivalent group-versions must still be specified elsewhere in the file
 // even if they are empty.  You can use the empty group-version declarations
 // to attach markers and documentation to the group-version.
-qualified_decl = { doc? ~ markers? ~ (qualified_kind_decl | qualified_struct_decl | qualified_union_decl | qualified_enum_decl | qualified_wrapper_decl) }
+qualified_decl = { doc? ~ markers? ~ (qualified_kind_decl | qualified_struct_decl | qualified_enum_decl | qualified_wrapper_decl) }
 
 // PARAMS(group: string, version: string)
 group_version = { doc? ~ markers? ~ "group-version" ~ named_param_list ~ "{" ~ decl+ ~ "}" }
@@ -454,13 +440,13 @@ field_path = @{ "." ~ field_identifier }
 // declarations are either "kinds" or some sub-type that may
 // be referenced in a kind.
 //
-// struct-like declarations (kinds, struct-subtypes, and
-// union-subtypes) may have nested declarations.  This
+// struct-like declarations (kinds, struct-subtypes)
+// may have nested declarations.  This
 // provides some automatic namespacing, and makes it
 // possible to place single-use types adjacent to their
 // usage (no more skipping back and forth between definition
 // and usage in a long file).
-decl = { doc? ~ markers? ~ (kind_decl | struct_decl | union_decl | enum_decl | wrapper_decl) }
+decl = { doc? ~ markers? ~ (kind_decl | struct_decl | enum_decl | wrapper_decl) }
 
 // Type identifiers are PascalCase (UpperCamelCase,
 // `LikeThis`) to distinguish them from field identifiers,
@@ -501,22 +487,6 @@ field = { doc? ~ markers? ~ (field_identifier | raw_field_identifier | "_inline"
 // (kubeconfig) API.
 raw_field_identifier = @{ "`" ~ LETTER ~ ( LETTER | DECIMAL_NUMBER | "-")+ ~ "`" }
 field_identifier = @{ LOWERCASE_LETTER ~ ( LETTER | DECIMAL_NUMBER )+ }
-
-// unions are effectively simple one-ofs (think
-// VolumeSource, HPA metric source, etc), with or without
-// a separate "tag" (a.k.a. discriminator) field.
-//
-// For instance, volume source (and many of the older APIs)
-// has no separate tag field, while HPA's metric source does.
-//
-// Union variants work like struct fields, except that they
-// cannot have the optional or inline keywords (since these
-// don't make sense for union variants).
-//
-// PARAMS(tag: string, untagged: bool)
-union_decl = { "union" ~ named_param_list? ~ type_identifier ~ "{" ~ union_body ~ "}" }
-qualified_union_decl = { "union" ~ named_param_list? ~ qualified_type_ref ~ "{" ~ union_body ~ "}" }
-union_body = { (field ~ ",") | decl)* }
 
 // enums are string-valued enumerations (think
 // ConditionStatus or ReclaimPolicy).  Each value is
@@ -631,5 +601,5 @@ dns_label = @{ ASCII_ALPHA_LOWER ~ (ASCII_ALPHA_LOWER|"-"|ASCII_DIGIT){1,62} }
 
 WHITESPACE = _{" " | "\t" | "\r" | "\n" }
 COMMENT = @{ line_comment | inline_comment }
-KEYWORDS = { "true" | "false" | "group-version" | "kind" | "struct" | "enum" | "union" | "wrapper" | "import" | "types" | "markers" }
+KEYWORDS = { "true" | "false" | "group-version" | "kind" | "struct" | "enum" | "wrapper" | "import" | "types" | "markers" }
 ```

@@ -213,7 +213,7 @@ causes, each of which can be seen in our own codebase
 
 * Go needs augmentation with comments to describe concepts that are
   fundamental to the type system (e.g. group-versions, kinds,
-  enumerations, unions, ordered maps)
+  enumerations, volumesource-esque things, ordered maps)
 
   * This makes it harder to teach because there's no direct representation
     for these concepts natively.
@@ -383,8 +383,8 @@ considered follow-up work after the MVP.
   automated migration that produces technically-correct-but-not-detailed
   KDL, followed small-scale updates to bring in the richer declarative
   features from KDL that currently exist only in imperative code (e.g.
-  converting unions to be identified as such, bringing in declarative
-  defaulting & validation).
+  converting volumesource-esque things to be identified as such, bringing
+  in declarative defaulting & validation).
 
 ### Architecture
 
@@ -498,10 +498,11 @@ when drafting this test plan.
 
 * **Hard to write by hand**: OpenAPI is a great output format for
   validation, but writing by hand is difficult.  For instance, in order to
-  describe a tagged union (a common construct in Kubernetes: consider
-  horizontal pod autoscalers, the update strategy in workload controllers,
-  etc) in Kubernetes-compatible OpenAPI, a complicated construct involving
-  oneof, single-value enums, and property-count validation is necessary. 
+  describe a volumesource-style constructs (a common construct in
+  Kubernetes: consider horizontal pod autoscalers, the update strategy in
+  workload controllers, etc) in Kubernetes-compatible OpenAPI,
+  a complicated construct involving oneof, single-value enums, and
+  property-count validation is necessary. 
 
 * **Doesn’t describe all of the Kubernetes type system**: we already have
   a bunch of custom extensions on top of OpenAPI (e.g. x-int-or-string),
@@ -521,7 +522,7 @@ when drafting this test plan.
 
   * Existing tooling is pretty good at generating “naive” types from
     OpenAPI, it’s hard to extract meaning on more complex types (e.g.
-    unions, enums).
+    volumesource-style things, enums).
 
   * It’s currently impossible to identify stringly-typed types more
     robustly in CRD OpenAPI due to type erasure.
@@ -550,13 +551,14 @@ when drafting this test plan.
   format, which could cause many of the same issues as we see today with
   the literal JSON representation being mirrored in Go code.
 
-  For instance, one might think to represent a union in proto as:
+  For instance, one might think to represent something like the HPA's
+  MetricType in proto as:
 
    ```protobuf
-   message HasAUnion {
+   message MetricType {
      oneof {
-       VariantA a = 1;
-       VariantB b = 2;
+       ExternalMetric external = 1;
+       PodMetric pod = 2;
      }
    }
    ```
