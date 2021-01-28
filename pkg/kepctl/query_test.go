@@ -23,48 +23,47 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-
-func TestValidate(t *testing.T) {
+func TestValidateQueryOpt(t *testing.T) {
 	testcases := []struct {
 		name      string
 		queryOpts QueryOpts
-		err 			error
+		err       error
 	}{
 		{
 			name: "Valid SIG",
 			queryOpts: QueryOpts{
-				CommonArgs: CommonArgs {
-					Name:     "1011-test",
+				CommonArgs: CommonArgs{
+					Name: "1011-test",
 				},
-				SIG:         []string{"sig-multicluster"},
-				IncludePRs:  true,
-				Output:      "json",
+				SIG:        []string{"sig-multicluster"},
+				IncludePRs: true,
+				Output:     "json",
 			},
-			err:  nil,
+			err: nil,
 		},
 		{
 			name: "Invalid SIG",
 			queryOpts: QueryOpts{
-				CommonArgs: CommonArgs {
-					Name:     "1011-test-xyz",
+				CommonArgs: CommonArgs{
+					Name: "1011-test-xyz",
 				},
-				SIG:         []string{"sig-xyz"},
-				IncludePRs:  true,
-				Output:      "json",
+				SIG:        []string{"sig-xyz"},
+				IncludePRs: true,
+				Output:     "json",
 			},
-			err:  fmt.Errorf("No SIG matches any of the passed regular expressions"),
+			err: fmt.Errorf("No SIG matches any of the passed regular expressions"),
 		},
 		{
 			name: "Unsupported Output format",
 			queryOpts: QueryOpts{
-				CommonArgs: CommonArgs {
-					Name:     "1011-test-testing",
+				CommonArgs: CommonArgs{
+					Name: "1011-test-testing",
 				},
-				SIG:         []string{"sig-testing"},
-				IncludePRs:  true,
-				Output:      "PDF",
+				SIG:        []string{"sig-testing"},
+				IncludePRs: true,
+				Output:     "PDF",
 			},
-			err:  fmt.Errorf("unsupported output format: PDF. Valid values: [table json yaml]"),
+			err: fmt.Errorf("unsupported output format: PDF. Valid values: [table json yaml]"),
 		},
 	}
 
