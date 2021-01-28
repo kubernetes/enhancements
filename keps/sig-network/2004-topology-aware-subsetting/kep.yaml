@@ -18,7 +18,9 @@ prr-approvers:
   - "@wojtek-t"
 
 see-also:
+  - "github.com/kubernetes/enhancements/blob/master/keps/sig-network/2030-topology-aware-proxying"
 replaces:
+  - "github.com/kubernetes/enhancements/tree/master/keps/sig-network/536-topology-aware-routing"
 
 # The target maturity stage in the current dev cycle for this KEP.
 stage: alpha
@@ -44,7 +46,8 @@ disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics:
-  - endpoint_slice_controller/endpointslices_changes_per_sync
+  - endpoint_slice_controller/endpointslices_changed_per_sync
   - endpoint_slice_controller/reallocated_endpoints_per_sync
+  - endpoint_slice_controller/syncs
   - endpoint_slice_controller/total_endpoints
 
