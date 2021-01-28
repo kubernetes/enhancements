@@ -8,6 +8,7 @@ authors:
  - "@Hellcatlk"
 owning-sig: sig-instrumentation
 participating-sigs:
+  - sig-api-machinery
 status: provisional
 creation-date: 2020-09-01
 last-updated: 2021-01-21
