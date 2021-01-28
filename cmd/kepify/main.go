@@ -25,6 +25,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"k8s.io/enhancements/api"
 	"k8s.io/enhancements/pkg/kepval/keps"
 )
 
@@ -104,8 +105,8 @@ func findMarkdownFiles(dirPath *string) ([]string, error) {
 	return files, err
 }
 
-func parseFiles(files []string) (keps.Proposals, error) {
-	var proposals keps.Proposals
+func parseFiles(files []string) (api.Proposals, error) {
+	var proposals api.Proposals
 	for _, filename := range files {
 		parser := &keps.Parser{}
 		file, err := os.Open(filename)
@@ -124,7 +125,7 @@ func parseFiles(files []string) (keps.Proposals, error) {
 	return proposals, nil
 }
 
-func printJSONOutput(filePath string, proposals keps.Proposals) error {
+func printJSONOutput(filePath string, proposals api.Proposals) error {
 	fmt.Printf("Output file: %s\n", filePath)
 	file, err := os.Create(filePath)
 	if err != nil {

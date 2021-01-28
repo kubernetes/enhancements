@@ -35,6 +35,7 @@ import (
 	"golang.org/x/oauth2"
 	"gopkg.in/yaml.v2"
 
+	"k8s.io/enhancements/api"
 	"k8s.io/enhancements/pkg/kepval/keps"
 	"k8s.io/test-infra/prow/git"
 )
@@ -127,8 +128,8 @@ func (c *Client) SetGitHubToken(opts CommonArgs) error {
 // getKepTemplate reads the kep.yaml template from the local
 // (per c.RepoPath) k/enhancements, but this could be replaced with a
 // template via packr or fetched from Github?
-func (c *Client) getKepTemplate(repoPath string) (*keps.Proposal, error) {
-	var p keps.Proposal
+func (c *Client) getKepTemplate(repoPath string) (*api.Proposal, error) {
+	var p api.Proposal
 	path := filepath.Join(repoPath, "keps", "NNNN-kep-template", "kep.yaml")
 	b, err := ioutil.ReadFile(path)
 	if err != nil {
@@ -148,7 +149,7 @@ func (c *Client) getReadmeTemplate(repoPath string) ([]byte, error) {
 	return ioutil.ReadFile(path)
 }
 
-func validateKEP(p *keps.Proposal) error {
+func validateKEP(p *api.Proposal) error {
 	b, err := yaml.Marshal(p)
 	if err != nil {
 		return err
@@ -200,14 +201,14 @@ func findLocalKEPMeta(repoPath, sig string) ([]string, error) {
 	return keps, err
 }
 
-func (c *Client) loadLocalKEPs(repoPath, sig string) ([]*keps.Proposal) {
+func (c *Client) loadLocalKEPs(repoPath, sig string) []*api.Proposal {
 	// KEPs in the local filesystem
 	files, err := findLocalKEPMeta(repoPath, sig)
 	if err != nil {
 		fmt.Fprintf(c.Err, "error searching for local KEPs from %s: %s\n", sig, err)
 	}
 
-	var allKEPs []*keps.Proposal
+	var allKEPs []*api.Proposal
 	for _, k := range files {
 		if filepath.Ext(k) == ".yaml" {
 			kep, err := c.loadKEPFromYaml(k)
@@ -228,7 +229,7 @@ func (c *Client) loadLocalKEPs(repoPath, sig string) ([]*keps.Proposal) {
 	return allKEPs
 }
 
-func (c *Client) loadKEPPullRequests(sig string) ([]*keps.Proposal, error) {
+func (c *Client) loadKEPPullRequests(sig string) ([]*api.Proposal, error) {
 	var auth *http.Client
 	ctx := context.Background()
 	if c.Token != "" {
@@ -289,7 +290,7 @@ func (c *Client) loadKEPPullRequests(sig string) ([]*keps.Proposal, error) {
 
 	// read out each PR, and create a Proposal for each KEP that is
 	// touched by a PR. This may result in multiple versions of the same KEP.
-	var allKEPs []*keps.Proposal
+	var allKEPs []*api.Proposal
 	for _, pr := range kepPRs {
 		files, _, err := gh.PullRequests.ListFiles(context.Background(), "kubernetes", "enhancements",
 			pr.GetNumber(), &github.ListOptions{})
@@ -338,7 +339,7 @@ func (c *Client) loadKEPPullRequests(sig string) ([]*keps.Proposal, error) {
 	return allKEPs, nil
 }
 
-func (c *Client) readKEP(repoPath string, sig, name string) (*keps.Proposal, error) {
+func (c *Client) readKEP(repoPath string, sig, name string) (*api.Proposal, error) {
 	kepPath := filepath.Join(
 		repoPath,
 		"keps",
@@ -361,12 +362,12 @@ func (c *Client) readKEP(repoPath string, sig, name string) (*keps.Proposal, err
 	return c.loadKEPFromOldStyle(kepPath)
 }
 
-func (c *Client) loadKEPFromYaml(kepPath string) (*keps.Proposal, error) {
+func (c *Client) loadKEPFromYaml(kepPath string) (*api.Proposal, error) {
 	b, err := ioutil.ReadFile(kepPath)
 	if err != nil {
 		return nil, fmt.Errorf("unable to read KEP metadata: %s", err)
 	}
-	var p keps.Proposal
+	var p api.Proposal
 	err = yaml.Unmarshal(b, &p)
 	if err != nil {
 		return nil, fmt.Errorf("unable to load KEP metadata: %s", err)
@@ -375,7 +376,7 @@ func (c *Client) loadKEPFromYaml(kepPath string) (*keps.Proposal, error) {
 	return &p, nil
 }
 
-func (c *Client) loadKEPFromOldStyle(kepPath string) (*keps.Proposal, error) {
+func (c *Client) loadKEPFromOldStyle(kepPath string) (*api.Proposal, error) {
 	b, err := ioutil.ReadFile(kepPath)
 	if err != nil {
 		return nil, fmt.Errorf("no kep.yaml, but failed to read as old-style KEP: %s", err)
@@ -391,7 +392,7 @@ func (c *Client) loadKEPFromOldStyle(kepPath string) (*keps.Proposal, error) {
 	return kep, nil
 }
 
-func (c *Client) writeKEP(kep *keps.Proposal, opts CommonArgs) error {
+func (c *Client) writeKEP(kep *api.Proposal, opts CommonArgs) error {
 	path, err := c.findEnhancementsRepo(opts)
 	if err != nil {
 		return fmt.Errorf("unable to write KEP: %s", err)
@@ -417,39 +418,39 @@ func (c *Client) writeKEP(kep *keps.Proposal, opts CommonArgs) error {
 
 type PrintConfig interface {
 	Title() string
-	Value(*keps.Proposal) string
+	Value(*api.Proposal) string
 }
 
 type printConfig struct {
 	title     string
-	valueFunc func(*keps.Proposal) string
+	valueFunc func(*api.Proposal) string
 }
 
 func (p *printConfig) Title() string { return p.title }
-func (p *printConfig) Value(k *keps.Proposal) string {
+func (p *printConfig) Value(k *api.Proposal) string {
 	return p.valueFunc(k)
 }
 
 var defaultConfig = map[string]printConfig{
-	"Authors":     {"Authors", func(k *keps.Proposal) string { return strings.Join(k.Authors, ", ") }},
-	"LastUpdated": {"Updated", func(k *keps.Proposal) string { return k.LastUpdated }},
-	"SIG": {"SIG", func(k *keps.Proposal) string {
+	"Authors":     {"Authors", func(k *api.Proposal) string { return strings.Join(k.Authors, ", ") }},
+	"LastUpdated": {"Updated", func(k *api.Proposal) string { return k.LastUpdated }},
+	"SIG": {"SIG", func(k *api.Proposal) string {
 		if strings.HasPrefix(k.OwningSIG, "sig-") {
 			return k.OwningSIG[4:]
 		} else {
 			return k.OwningSIG
 		}
 	}},
-	"Stage":  {"Stage", func(k *keps.Proposal) string { return k.Stage }},
-	"Status": {"Status", func(k *keps.Proposal) string { return k.Status }},
-	"Title": {"Title", func(k *keps.Proposal) string {
+	"Stage":  {"Stage", func(k *api.Proposal) string { return k.Stage }},
+	"Status": {"Status", func(k *api.Proposal) string { return k.Status }},
+	"Title": {"Title", func(k *api.Proposal) string {
 		if k.PRNumber == "" {
 			return k.Title
 		} else {
 			return "PR#" + k.PRNumber + " - " + k.Title
 		}
 	}},
-	"Link": {"Link", func(k *keps.Proposal) string {
+	"Link": {"Link", func(k *api.Proposal) string {
 		if k.PRNumber == "" {
 			return "https://git.k8s.io/enhancements/keps/" + k.OwningSIG + "/" + k.Name
 		} else {
@@ -468,7 +469,7 @@ func DefaultPrintConfigs(names ...string) []PrintConfig {
 	return configs
 }
 
-func (c *Client) PrintTable(configs []PrintConfig, proposals []*keps.Proposal) {
+func (c *Client) PrintTable(configs []PrintConfig, proposals []*api.Proposal) {
 	if len(configs) == 0 {
 		return
 	}
@@ -493,7 +494,7 @@ func (c *Client) PrintTable(configs []PrintConfig, proposals []*keps.Proposal) {
 }
 
 // PrintYAML outputs keps array as YAML to c.Out
-func (c *Client) PrintYAML(proposals []*keps.Proposal) {
+func (c *Client) PrintYAML(proposals []*api.Proposal) {
 	data, err := yaml.Marshal(proposals)
 	if err != nil {
 		fmt.Fprintf(c.Err, "error printing keps as YAML: %s", err)
@@ -504,7 +505,7 @@ func (c *Client) PrintYAML(proposals []*keps.Proposal) {
 }
 
 // PrintJSON outputs keps array as YAML to c.Out
-func (c *Client) PrintJSON(proposals []*keps.Proposal) {
+func (c *Client) PrintJSON(proposals []*api.Proposal) {
 	data, err := json.Marshal(proposals)
 	if err != nil {
 		fmt.Fprintf(c.Err, "error printing keps as JSON: %s", err)
