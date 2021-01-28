@@ -1,30 +1,4 @@
----
-title: Kui Graphical Terminal Enhancements
-authors:
-  - "@starpit"
-  - "@paulcastro"
-owning-sig: sig-cli
-participating-sigs:
-  - sig-cli
-reviewers:
-  - "@pwittrock"
-  - "@soltysh"
-approvers:
-  - "@pwittrock"
-  - "@soltysh"
-editor: TBD
-creation-date: 2019-11-14
-last-updated: 2020-01-30
-status: implemented
-see-also:
-
-replaces:
-
-superseded-by:
-
----
-
-# Kubectl Graphical Plugins
+# KEP-2257 Kui: Kubectl Graphical Plugins
 
 ## Table of Contents
 
@@ -38,12 +12,8 @@ superseded-by:
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
-    - [Examples](#examples)
-      - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
-      - [Beta -&gt; GA Graduation](#beta---ga-graduation)
-      - [Removing a deprecated flag](#removing-a-deprecated-flag)
-  - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
-  - [Version Skew Strategy](#version-skew-strategy)
+    - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
+    - [Beta -&gt; GA Graduation](#beta---ga-graduation)
 - [Implementation History](#implementation-history)
 <!-- /toc -->
 
@@ -141,31 +111,29 @@ required to cover their plugin with tests.
 
 ### Graduation Criteria
 
-TBD
+#### Alpha -> Beta Graduation
 
-#### Examples
+- [x] At least 2 release cycles pass to gather feedback and bug reports during
+  real-world usage
+- [x] End-user documentation is written
+- [x] The client-side dry-run used to calculate the diff is replaced with the
+  server-side dry-run feature to improve correctness and accuracy for this
+  feature
+- [x] The dependent API server-side dry-run feature is released to beta
 
-We also have a log plugin written using the kui-core framework: [logui](https://github.com/kui-shell/plugin-logui).
+#### Beta -> GA Graduation
 
-We also have a plugin for OpenWhisk: [oui](https://github.com/kui-shell/oui).
-
-##### Alpha -> Beta Graduation
-
-
-##### Beta -> GA Graduation
-
-
-##### Removing a deprecated flag
-
-
-### Upgrade / Downgrade Strategy
-
-
-### Version Skew Strategy
-
-
+- [ ] At least 2 release cycles pass to gather feedback and bug reports during
+  real-world usage
+- [ ] Integration tests are in Testgrid and linked in KEP
+- [ ] Documentation exists for user stories
+- [ ] The dependent API server-side dry-run feature is released to GA
 
 ## Implementation History
+
+- *2019-11*: Added KEP
+- *2020-03*: Promoted from alpha to beta (v 8.0.0)
+
 
 
 
