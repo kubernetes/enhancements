@@ -834,10 +834,13 @@ _This section must be completed when targeting beta graduation to a release._
       - This feature set operates on the client-side.
 
 * **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
-  - `rest_client_exec_plugin_ttl_seconds`: the expected lifetime of client-side certificates, in seconds
-  - `rest_client_exec_plugin_certificate_rotation_age`: the expected lifetime of client-side certificates, in seconds
-  - `rest_client_exec_plugin_calls`: 1 per the lifetime of the credential returned by the exec plugin
-  - `rest_client_exec_plugin_failed_calls`: 0, or a very low number compared to `rest_client_exec_plugin_calls`
+  - We target certificate rotations to happen within 1% of a certificate's
+    lifetime. This is measured by
+    `rest_client_exec_plugin_certificate_rotation_age` and
+    `rest_client_exec_plugin_ttl_seconds`.
+  - We target 0.01% unsuccessful calls to the exec plugin in a moving 24h
+    window. This is measured by
+    `rest_client_exec_plugin_calls` and `rest_client_exec_plugin_failed_calls`.
 
 * **Are there any missing metrics that would be useful to have to improve
   observability if this feature?**
