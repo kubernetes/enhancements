@@ -1,4 +1,4 @@
-# KEP-1668: Trace popagating
+# KEP-1668: Trace Context Propagation
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
@@ -309,7 +309,7 @@ _This section must be completed when targeting alpha to a release._
 
 * **How can this feature be enabled / disabled in a live cluster?**
   - [x] Feature gate (also fill in values in `kep.yaml`)
-    - Feature gate name: TracePopagating
+    - Feature gate name: PropagateContextTrace
     - Components depending on the feature gate: kube-controller-manager
   - [ ] Other
     - Describe the mechanism:
@@ -466,7 +466,7 @@ _This section must be completed when targeting beta graduation to a release._
 * [Mutating admission webhook which injects trace context for demo](https://github.com/Hellcatlk/mutating-trace-admission-controller/tree/trace-ot)
 * [Instrumentation of Kubernetes components for demo](https://github.com/Hellcatlk/kubernetes/pull/1)
 * [Instrumentation of Kubernetes components for demo based on KEP647](https://github.com/Hellcatlk/kubernetes/pull/3)
-* refactor [Log tracking](https://github.com/kubernetes/enhancements/pull/1961) KEP to Trace popagating
+* refactor [Log tracking](https://github.com/kubernetes/enhancements/pull/1961) KEP to Trace Context Propagation
 <!--
 Major milestones in the lifecycle of a KEP should be tracked in this section.
 Major milestones might include:
