@@ -92,7 +92,7 @@ User journeys supported by the initial release of `kubectl debug` are:
    Troubleshooting with Privileged Containers*](
    #node-troubleshooting-with-privileged-containers))
 
-[Ephemeral Containers]: https://git.k8s.io/enhancements/keps/sig-node/20190212-ephemeral-containers.md
+[Ephemeral Containers]: https://github.com/kubernetes/enhancements/blob/master/keps/sig-node/277-ephemeral-containers/README.md
 
 ## Motivation
 
@@ -722,4 +722,4 @@ resource usage (CPU, RAM, disk, IO, ...) in any components?**
 An exhaustive list of alternatives to ephemeral containers is included in the
 [Ephemeral Containers KEP].
 
-[Ephemeral Containers KEP]: https://git.k8s.io/enhancements/keps/sig-node/20190212-ephemeral-containers.md
+[Ephemeral Containers KEP]: https://github.com/kubernetes/enhancements/blob/master/keps/sig-node/277-ephemeral-containers/README.md
