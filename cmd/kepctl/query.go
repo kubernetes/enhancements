@@ -40,7 +40,7 @@ func buildQueryCommand(k *kepctl.Client) *cobra.Command {
 	}
 
 	f := cmd.Flags()
-	f.StringSliceVar(&opts.SIG, "sig", nil, "SIG")
+	f.StringSliceVar(&opts.SIG, "sig", nil, "SIG. If not specified, KEPs from all SIGs are shown.")
 	f.StringSliceVar(&opts.Status, "status", nil, "Status")
 	f.StringSliceVar(&opts.Stage, "stage", nil, "Stage")
 	f.StringSliceVar(&opts.PRRApprover, "prr", nil, "Prod Readiness Approver")
