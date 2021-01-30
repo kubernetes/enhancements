@@ -24,6 +24,7 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
+// TODO: Fix field keys and flow flags
 type proposal struct {
 	Title             string   `yaml:"title"`
 	Authors           []string `yaml:,flow`

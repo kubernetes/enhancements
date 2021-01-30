@@ -83,19 +83,25 @@ func TestWriteKep(t *testing.T) {
 			if repoPath == "" {
 				repoPath = tc.opts.RepoPath
 			}
+
 			repoPath = filepath.Join(tempDir, repoPath)
 			c := newTestClient(t, repoPath)
+
 			b, err := ioutil.ReadFile(tc.kepFile)
 			require.NoError(t, err)
+
 			var p api.Proposal
 			err = yaml.Unmarshal(b, &p)
 			require.NoError(t, err)
+
 			tc.opts.CommonArgs.RepoPath = repoPath
-			err = c.writeKEP(&p, tc.opts.CommonArgs)
+			err = c.writeKEP(&p, &tc.opts.CommonArgs)
+
 			if tc.expectError {
 				assert.Error(t, err)
 			} else {
 				assert.NoError(t, err)
+
 				computedPath := filepath.Join(tempDir, tc.expectedPath)
 				dirStat, err := os.Stat(computedPath)
 				assert.NoError(t, err)

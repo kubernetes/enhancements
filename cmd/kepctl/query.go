@@ -35,7 +35,7 @@ func buildQueryCommand(k *kepctl.Client) *cobra.Command {
 			return opts.Validate()
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return k.Query(opts)
+			return k.Query(&opts)
 		},
 	}
 

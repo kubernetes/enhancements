@@ -33,7 +33,7 @@ func buildCreateCommand(k *kepctl.Client) *cobra.Command {
 			return opts.Validate(args)
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return k.Create(opts)
+			return k.Create(&opts)
 		},
 	}
 

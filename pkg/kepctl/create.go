@@ -55,13 +55,15 @@ func (c *CreateOpts) Validate(args []string) error {
 
 // Create builds a new KEP based on the README.md and kep.yaml templates in the
 // path specified by the command args. CreateOpts is used to populate the template
-func (c *Client) Create(opts CreateOpts) error {
+func (c *Client) Create(opts *CreateOpts) error {
 	fmt.Fprintf(c.Out, "Creating KEP %s %s %s\n", opts.SIG, opts.Number, opts.Name)
-	repoPath, err := c.findEnhancementsRepo(opts.CommonArgs)
+
+	repoPath, err := c.findEnhancementsRepo(&opts.CommonArgs)
 	fmt.Fprintf(c.Out, "Looking for enhancements repo in %s\n", repoPath)
 	if err != nil {
 		return fmt.Errorf("unable to create KEP: %s", err)
 	}
+
 	t, err := c.getKepTemplate(repoPath)
 	if err != nil {
 		return err
@@ -73,6 +75,7 @@ func (c *Client) Create(opts CreateOpts) error {
 	if err != nil {
 		return err
 	}
+
 	err = c.createKEP(t, opts)
 	if err != nil {
 		return err
@@ -81,7 +84,7 @@ func (c *Client) Create(opts CreateOpts) error {
 	return nil
 }
 
-func updateTemplate(t *api.Proposal, opts CreateOpts) {
+func updateTemplate(t *api.Proposal, opts *CreateOpts) {
 	if opts.State != "" {
 		t.Status = opts.State
 	}
@@ -134,15 +137,16 @@ func updatePersonReference(names []string) []string {
 	return persons
 }
 
-func (c *Client) createKEP(kep *api.Proposal, opts CreateOpts) error {
+func (c *Client) createKEP(kep *api.Proposal, opts *CreateOpts) error {
 	fmt.Fprintf(c.Out, "Generating new KEP %s in %s ===>\n", opts.Name, opts.SIG)
 
-	err := c.writeKEP(kep, opts.CommonArgs)
+	args := &opts.CommonArgs
+	err := c.writeKEP(kep, args)
 	if err != nil {
 		return fmt.Errorf("unable to create KEP: %s", err)
 	}
 
-	path, err := c.findEnhancementsRepo(opts.CommonArgs)
+	path, err := c.findEnhancementsRepo(args)
 	if err != nil {
 		return err
 	}

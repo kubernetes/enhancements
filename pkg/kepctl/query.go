@@ -83,7 +83,7 @@ func (c *QueryOpts) Validate() error {
 
 // Query searches the local repo and possibly GitHub for KEPs
 // that match the search criteria.
-func (c *Client) Query(opts QueryOpts) error {
+func (c *Client) Query(opts *QueryOpts) error {
 	// if output format is json/yaml, suppress other outputs
 	// json/yaml are structured formats, logging events which
 	// do not conform to the spec will create formatting issues
@@ -98,12 +98,12 @@ func (c *Client) Query(opts QueryOpts) error {
 		fmt.Fprintf(c.Out, "Searching for KEPs...\n")
 	}
 
-	repoPath, err := c.findEnhancementsRepo(opts.CommonArgs)
+	repoPath, err := c.findEnhancementsRepo(&opts.CommonArgs)
 	if err != nil {
 		return errors.Wrap(err, "unable to search KEPs")
 	}
 
-	c.SetGitHubToken(opts.CommonArgs)
+	c.SetGitHubToken(&opts.CommonArgs)
 
 	var allKEPs []*api.Proposal
 	// load the KEPs for each listed SIG
@@ -147,6 +147,7 @@ func (c *Client) Query(opts QueryOpts) error {
 		if len(opts.Approver) > 0 && !atLeastOne(k.Approvers, allowedApprover) {
 			continue
 		}
+
 		keps = append(keps, k)
 	}
 

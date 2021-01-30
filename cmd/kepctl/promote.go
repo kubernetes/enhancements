@@ -18,6 +18,7 @@ package main
 
 import (
 	"github.com/spf13/cobra"
+
 	"k8s.io/enhancements/pkg/kepctl"
 )
 
@@ -32,7 +33,7 @@ func buildPromoteCommand(k *kepctl.Client) *cobra.Command {
 			return opts.Validate(args)
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return k.Promote(opts)
+			return k.Promote(&opts)
 		},
 	}
 

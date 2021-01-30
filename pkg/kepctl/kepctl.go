@@ -80,7 +80,7 @@ type Client struct {
 	Err      io.Writer
 }
 
-func (c *Client) findEnhancementsRepo(opts CommonArgs) (string, error) {
+func (c *Client) findEnhancementsRepo(opts *CommonArgs) (string, error) {
 	dir := c.RepoPath
 	if opts.RepoPath != "" {
 		dir = opts.RepoPath
@@ -116,7 +116,7 @@ func New(repo string) (*Client, error) {
 	}, nil
 }
 
-func (c *Client) SetGitHubToken(opts CommonArgs) error {
+func (c *Client) SetGitHubToken(opts *CommonArgs) error {
 	if opts.TokenPath != "" {
 		token, err := ioutil.ReadFile(opts.TokenPath)
 		if err != nil {
@@ -428,11 +428,12 @@ func (c *Client) loadKEPFromOldStyle(kepPath string) (*api.Proposal, error) {
 	return kep, nil
 }
 
-func (c *Client) writeKEP(kep *api.Proposal, opts CommonArgs) error {
+func (c *Client) writeKEP(kep *api.Proposal, opts *CommonArgs) error {
 	path, err := c.findEnhancementsRepo(opts)
 	if err != nil {
 		return fmt.Errorf("unable to write KEP: %s", err)
 	}
+
 	b, err := yaml.Marshal(kep)
 	if err != nil {
 		return fmt.Errorf("KEP is invalid: %s", err)
@@ -447,8 +448,10 @@ func (c *Client) writeKEP(kep *api.Proposal, opts CommonArgs) error {
 		),
 		os.ModePerm,
 	)
+
 	newPath := filepath.Join(path, "keps", opts.SIG, opts.Name, "kep.yaml")
 	fmt.Fprintf(c.Out, "writing KEP to %s\n", newPath)
+
 	return ioutil.WriteFile(newPath, b, os.ModePerm)
 }
 
