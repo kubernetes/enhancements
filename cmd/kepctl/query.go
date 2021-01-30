@@ -32,7 +32,7 @@ func buildQueryCommand(k *kepctl.Client) *cobra.Command {
 		Long:    "Query the local filesystem, and optionally GitHub PRs for KEPs",
 		Example: `  kepctl query --sig architecture --status provisional --include-prs`,
 		PreRunE: func(cmd *cobra.Command, args []string) error {
-			return opts.Validate(args)
+			return opts.Validate()
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return k.Query(opts)
