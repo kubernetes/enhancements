@@ -178,6 +178,8 @@ func findLocalKEPMeta(repoPath, sig string) ([]string, error) {
 		"keps",
 		sig)
 
+	// TODO(lint): importShadow: shadow of imported from 'k8s.io/enhancements/pkg/kepval/keps' package 'keps' (gocritic)
+	//nolint:gocritic
 	keps := []string{}
 
 	// if the sig doesn't have a dir, it has no KEPs

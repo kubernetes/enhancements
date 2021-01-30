@@ -69,8 +69,12 @@ func validateMilestone(parsed map[interface{}]interface{}) error {
 		}
 
 		// figure out the types
+		// TODO(lint): singleCaseSwitch: should rewrite switch statement to if statement (gocritic)
+		//nolint:gocritic
 		switch strings.ToLower(k) {
 		case "approver":
+			// TODO(lint): singleCaseSwitch: should rewrite switch statement to if statement (gocritic)
+			//nolint:gocritic
 			switch v := value.(type) {
 			case []interface{}:
 				return util.NewValueMustBeString(k, v)

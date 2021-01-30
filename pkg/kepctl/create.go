@@ -121,6 +121,9 @@ func updateTemplate(t *api.Proposal, opts *CreateOpts) {
 	}
 
 	t.OwningSIG = opts.SIG
+
+	// TODO(lint): appendAssign: append result not assigned to the same slice (gocritic)
+	//nolint:gocritic
 	t.ParticipatingSIGs = append(opts.SIGS, opts.SIG)
 	t.Filename = opts.Name
 	t.LastUpdated = "v1.19"

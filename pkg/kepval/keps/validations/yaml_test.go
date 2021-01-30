@@ -24,7 +24,8 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
-// TODO: Fix field keys and flow flags
+// TODO(lint): Fix field keys and flow flags
+//nolint:govet
 type proposal struct {
 	Title             string   `yaml:"title"`
 	Authors           []string `yaml:,flow`

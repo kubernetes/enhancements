@@ -33,6 +33,8 @@ var (
 	reMilestone   = regexp.MustCompile(`v1\\.[1-9][0-9]*`)
 )
 
+// TODO(lint): cyclomatic complexity 50 of func `ValidateStructure` is high (> 30) (gocyclo)
+//nolint:gocyclo
 func ValidateStructure(parsed map[interface{}]interface{}) error {
 	for _, key := range mandatoryKeys {
 		if _, found := parsed[key]; !found {
@@ -54,6 +56,8 @@ func ValidateStructure(parsed map[interface{}]interface{}) error {
 		// figure out the types
 		switch strings.ToLower(k) {
 		case "status":
+			// TODO(lint): singleCaseSwitch: should rewrite switch statement to if statement (gocritic)
+			//nolint:gocritic
 			switch v := value.(type) {
 			case []interface{}:
 				return util.NewValueMustBeString(k, v)
@@ -67,6 +71,8 @@ func ValidateStructure(parsed map[interface{}]interface{}) error {
 			}
 
 		case "stage":
+			// TODO(lint): singleCaseSwitch: should rewrite switch statement to if statement (gocritic)
+			//nolint:gocritic
 			switch v := value.(type) {
 			case []interface{}:
 				return util.NewValueMustBeString(k, v)
@@ -80,6 +86,8 @@ func ValidateStructure(parsed map[interface{}]interface{}) error {
 			}
 
 		case "owning-sig":
+			// TODO(lint): singleCaseSwitch: should rewrite switch statement to if statement (gocritic)
+			//nolint:gocritic
 			switch v := value.(type) {
 			case []interface{}:
 				return util.NewValueMustBeString(k, v)
@@ -102,6 +110,8 @@ func ValidateStructure(parsed map[interface{}]interface{}) error {
 			fallthrough
 
 		case "title", "creation-date", "last-updated":
+			// TODO(lint): singleCaseSwitch: should rewrite switch statement to if statement (gocritic)
+			//nolint:gocritic
 			switch v := value.(type) {
 			case []interface{}:
 				return util.NewValueMustBeString(k, v)
@@ -181,6 +191,8 @@ func ValidateStructure(parsed map[interface{}]interface{}) error {
 			}
 
 		case "latest-milestone":
+			// TODO(lint): singleCaseSwitch: should rewrite switch statement to if statement (gocritic)
+			//nolint:gocritic
 			switch v := value.(type) {
 			case []interface{}:
 				return util.NewValueMustBeString(k, v)
@@ -217,6 +229,8 @@ func validateMilestone(parsed map[interface{}]interface{}) error {
 			return util.NewKeyMustBeString(k)
 		}
 
+		// TODO(lint): singleCaseSwitch: should rewrite switch statement to if statement (gocritic)
+		//nolint:gocritic
 		switch strings.ToLower(k) {
 		case "alpha", "beta", "stable":
 			switch v := value.(type) {
