@@ -32,6 +32,7 @@ import (
 
 	"github.com/google/go-github/v32/github"
 	"github.com/olekukonko/tablewriter"
+	"github.com/pkg/errors"
 	"golang.org/x/oauth2"
 	"gopkg.in/yaml.v2"
 
@@ -122,8 +123,10 @@ func (c *Client) SetGitHubToken(opts *CommonArgs) error {
 		if err != nil {
 			return err
 		}
+
 		c.Token = strings.Trim(string(token), "\n\r")
 	}
+
 	return nil
 }
 
@@ -152,7 +155,6 @@ func (c *Client) getReadmeTemplate(repoPath string) ([]byte, error) {
 }
 
 // TODO: Unused?
-//golint:deadcode,unused
 func validateKEP(p *api.Proposal) error {
 	b, err := yaml.Marshal(p)
 	if err != nil {
@@ -446,7 +448,7 @@ func (c *Client) writeKEP(kep *api.Proposal, opts *CommonArgs) error {
 		return fmt.Errorf("KEP is invalid: %s", err)
 	}
 
-	os.MkdirAll(
+	if mkErr := os.MkdirAll(
 		filepath.Join(
 			path,
 			"keps",
@@ -454,7 +456,9 @@ func (c *Client) writeKEP(kep *api.Proposal, opts *CommonArgs) error {
 			opts.Name,
 		),
 		os.ModePerm,
-	)
+	); mkErr != nil {
+		return errors.Wrapf(mkErr, "creating KEP directory")
+	}
 
 	newPath := filepath.Join(path, "keps", opts.SIG, opts.Name, "kep.yaml")
 	fmt.Fprintf(c.Out, "writing KEP to %s\n", newPath)

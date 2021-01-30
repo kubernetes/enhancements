@@ -75,11 +75,15 @@ func validateMilestone(parsed map[interface{}]interface{}) error {
 			case []interface{}:
 				return util.NewValueMustBeString(k, v)
 			}
+
+			// TODO(lint): Error return value is not checked (errcheck)
+			//nolint:errcheck
 			v, _ := value.(string)
 			if len(v) > 0 && v[0] == '@' {
-				// If "@" is appeneded at the beginning, remove it.
+				// If "@" is appended at the beginning, remove it.
 				v = v[1:]
 			}
+
 			index := sort.SearchStrings(prrApprovers, v)
 			if index >= len(prrApprovers) || prrApprovers[index] != v {
 				return util.NewValueMustBeOneOf(k, v, prrApprovers)

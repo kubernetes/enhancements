@@ -17,13 +17,14 @@ limitations under the License.
 package kepctl
 
 import (
-	"errors"
 	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/pkg/errors"
 
 	"k8s.io/enhancements/api"
 )
@@ -47,9 +48,11 @@ func (c *CreateOpts) Validate(args []string) error {
 	if err != nil {
 		return err
 	}
+
 	if len(c.PRRApprovers) == 0 {
 		return errors.New("must provide at least one PRR Approver")
 	}
+
 	return nil
 }
 
@@ -157,7 +160,9 @@ func (c *Client) createKEP(kep *api.Proposal, opts *CreateOpts) error {
 	}
 
 	newPath := filepath.Join(path, "keps", opts.SIG, opts.Name, "README.md")
-	ioutil.WriteFile(newPath, b, os.ModePerm)
+	if writeErr := ioutil.WriteFile(newPath, b, os.ModePerm); writeErr != nil {
+		return errors.Wrapf(writeErr, "writing KEP data to file")
+	}
 
 	return nil
 }

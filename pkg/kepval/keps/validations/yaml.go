@@ -59,6 +59,8 @@ func ValidateStructure(parsed map[interface{}]interface{}) error {
 				return util.NewValueMustBeString(k, v)
 			}
 
+			// TODO(lint): Error return value is not checked (errcheck)
+			//nolint:errcheck
 			v, _ := value.(string)
 			if !reStatus.Match([]byte(v)) {
 				return util.NewValueMustBeOneOf(k, v, statuses)
@@ -70,6 +72,8 @@ func ValidateStructure(parsed map[interface{}]interface{}) error {
 				return util.NewValueMustBeString(k, v)
 			}
 
+			// TODO(lint): Error return value is not checked (errcheck)
+			//nolint:errcheck
 			v, _ := value.(string)
 			if !reStages.Match([]byte(v)) {
 				return util.NewValueMustBeOneOf(k, v, stages)
@@ -81,6 +85,8 @@ func ValidateStructure(parsed map[interface{}]interface{}) error {
 				return util.NewValueMustBeString(k, v)
 			}
 
+			// TODO(lint): Error return value is not checked (errcheck)
+			//nolint:errcheck
 			v, _ := value.(string)
 			index := sort.SearchStrings(listGroups, v)
 			if index >= len(listGroups) || listGroups[index] != v {
@@ -136,6 +142,8 @@ func ValidateStructure(parsed map[interface{}]interface{}) error {
 
 				if strings.EqualFold(k, "participating-sigs") {
 					for _, value := range values {
+						// TODO(lint): Error return value is not checked (errcheck)
+						//nolint:errcheck
 						v := value.(string)
 						index := sort.SearchStrings(listGroups, v)
 						if index >= len(listGroups) || listGroups[index] != v {
@@ -154,6 +162,8 @@ func ValidateStructure(parsed map[interface{}]interface{}) error {
 				// prrApprovers must be sorted to use SearchStrings down below...
 				sort.Strings(prrApprovers)
 				for _, value := range values {
+					// TODO(lint): Error return value is not checked (errcheck)
+					//nolint:errcheck
 					v := value.(string)
 					if len(v) > 0 && v[0] == '@' {
 						// If "@" is appeneded at the beginning, remove it.
@@ -175,6 +185,9 @@ func ValidateStructure(parsed map[interface{}]interface{}) error {
 			case []interface{}:
 				return util.NewValueMustBeString(k, v)
 			}
+
+			// TODO(lint): Error return value is not checked (errcheck)
+			//nolint:errcheck
 			v, _ := value.(string)
 			if !reMilestone.Match([]byte(v)) {
 				return util.NewValueMustBeMilestone(k, v)
@@ -192,6 +205,7 @@ func ValidateStructure(parsed map[interface{}]interface{}) error {
 			}
 		}
 	}
+
 	return nil
 }
 
@@ -210,6 +224,8 @@ func validateMilestone(parsed map[interface{}]interface{}) error {
 				return util.NewValueMustBeString(k, v)
 			}
 
+			// TODO(lint): Error return value is not checked (errcheck)
+			//nolint:errcheck
 			v, _ := value.(string)
 			if !reMilestone.Match([]byte(v)) {
 				return util.NewValueMustBeMilestone(k, v)

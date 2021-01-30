@@ -78,7 +78,9 @@ func TestFindLocalKEPs(t *testing.T) {
 		},
 	}
 
-	c, _ := New("testdata")
+	c, clientErr := New("testdata")
+	require.Nil(t, clientErr)
+
 	for i, tc := range testcases {
 		k := c.loadLocalKEPs("testdata", tc.sig)
 		if len(k) != len(tc.keps) {

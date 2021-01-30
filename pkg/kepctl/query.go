@@ -103,7 +103,9 @@ func (c *Client) Query(opts *QueryOpts) error {
 		return errors.Wrap(err, "unable to search KEPs")
 	}
 
-	c.SetGitHubToken(&opts.CommonArgs)
+	if tokenErr := c.SetGitHubToken(&opts.CommonArgs); tokenErr != nil {
+		return errors.Wrapf(tokenErr, "setting GitHub token")
+	}
 
 	allKEPs := make([]*api.Proposal, 10)
 	// load the KEPs for each listed SIG
