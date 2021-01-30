@@ -35,7 +35,11 @@
       - [Beta -&gt; GA Graduation](#beta---ga-graduation)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
+  - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+  - [Monitoring Requirements](#monitoring-requirements)
+  - [Dependencies](#dependencies)
   - [Scalability](#scalability)
+  - [Troubleshooting](#troubleshooting)
   <!-- /toc -->
 
 ## Summary
@@ -435,15 +439,16 @@ are properly reloading tokens by:
     https://github.com/kubernetes/kubernetes/issues/68164
   - [x] Pods running as non root may not access the service account token.
     - Fixed in https://github.com/kubernetes/kubernetes/pull/89193
+  - [ ] Dynamic clientbuilder does not invalidate token.
 
-- [x] Tests passing
+* [x] Tests passing
 
   - [x] Upgrade test
         [sig-auth-serviceaccount-admission-controller-migration](https://k8s-testgrid.appspot.com/sig-auth-gce#upgrade-tests)
 
-- [x] TokenRequest/TokenRequestProjection GA
+* [x] TokenRequest/TokenRequestProjection GA
 
-- [x] RootCAConfigMap GA
+* [x] RootCAConfigMap GA
 
 ##### Beta -> GA Graduation
 
@@ -482,6 +487,79 @@ are properly reloading tokens by:
   - upgrade test:
     test/e2e/upgrades/serviceaccount_admission_controller_migration.go
 
+### Rollout, Upgrade and Rollback Planning
+
+- **How can a rollout fail? Can it impact already running workloads?**
+
+  1.  creation of CA configmap can fail due to permission / quota / admission
+      errors.
+  2.  newly issued tokens could fail to be recognized by skewed API servers
+      not configured with the bound token signing key/issuer.
+
+- **What specific metrics should inform a rollback?**
+
+  1.  creation of CA configmap,
+      - `root_ca_cert_publisher_rate_limiter_use`
+  2.  authentication errors in (n-1) API servers,
+      - `authentication_attempts`
+      - `authentication_duration_seconds`
+
+* **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path
+  tested?**
+  for upgrade, we have set up e2e test running here:
+  https://k8s-testgrid.appspot.com/sig-auth-gce#upgrade-tests&width=5
+
+  for downgrade, we have manually tested where a workload continues to
+  authenticate successfully.
+
+- **Is the rollout accompanied by any deprecations and/or removals of
+  features, APIs, fields of API types, flags, etc.?** no
+
+### Monitoring Requirements
+
+- **How can an operator determine if the feature is in use by workloads?**
+
+  Check TokenRequest in use:
+
+  - `serviceaccount_valid_tokens_total`: cumulative valid projected service
+    account tokens used
+  - `serviceaccount_stale_tokens_total`: cumulative stale projected service
+    account tokens used
+  - `apiserver_request_total`: with labels `group="",version="v1",resource="serviceaccounts",subresource="token"`
+  - `apiserver_request_duration_seconds`: with labels `group="",version="v1",resource="serviceaccounts",subresource="token"`
+
+- **What are the SLIs (Service Level Indicators) an operator can use to
+  determine the health of the service?**
+
+  - [x] Metrics
+    - Metric name: apiserver_request_total
+    - Aggregation method: group="",version="v1",resource="serviceaccounts",subresource="token"
+    - Components exposing the metric: kube-apiserver
+
+- **What are the reasonable SLOs (Service Level Objectives) for the above
+  SLIs?**
+
+  - per-day percentage of API calls finishing with 5XX errors <= 1%
+
+- **Are there any missing metrics that would be useful to have to improve
+  observability of this feature?**
+
+  - add granularity to `storage_operation_duration_seconds` to distinguish
+    projected volumes: configmap, secret, token,..etc... or add new metrics
+    so that we can know the usage of projected tokens.
+
+### Dependencies
+
+- **Does this feature depend on any specific services running in the
+  cluster?** There are no new components required, but specific versions of
+  kubelet and kube-controller-manager are required
+
+  TokenRequest depends on kubelets >= 1.12
+
+  BoundServiceAccountTokenVolume depends on kubelets >= 1.12 with TokenRequest
+  enabled (default since 1.12) and kube-controller-manager >= 1.12 with
+  RootCAConfigMap feature enabled (default since 1.20)
+
 ### Scalability
 
 - **Will enabling / using this feature result in any new API calls?**
@@ -511,3 +589,62 @@ are properly reloading tokens by:
 - **Will enabling / using this feature result in non-negligible increase of
   resource usage (CPU, RAM, disk, IO, ...) in any components?** it adds a
   token minting operation in the API server every ~48 minutes for every pod.
+
+### Troubleshooting
+
+The Troubleshooting section currently serves the `Playbook` role. We may
+consider splitting it into a dedicated `Playbook` document (potentially with
+some monitoring details). For now, we leave it here.
+
+- **How does this feature react if the API server and/or etcd is
+  unavailable?**
+
+  - TokenRequest API is unavailable
+  - configmap containing API server CA bundle cannot be created or fetched
+
+* **What are other known failure modes?**
+
+  - failure to issue token via token subresource
+
+    - Detection: check `apiserver_request_total` with labels
+      `group="",version="v1",resource="serviceaccounts",subresource="token"`
+    - Mitigations: disable the BoundServiceAccountTokenVolume feature gate in
+      the kube-apiserver and recreate pods.
+    - Diagnostics: "failed to generate token" in kube-apiserver log.
+    - Testing: [e2e test](https://k8s-testgrid.appspot.com/sig-auth-gce#gce&width=5&include-filter-by-regex=ServiceAccounts%20should%20mount%20projected%20service%20account%20token)
+
+  - failure to create root CA config map
+
+    - Detection: check `root_ca_cert_publisher_sync_total` from
+      kube-controller-manager. (available in 1.21+)
+    - Mitigations: disable the BoundServiceAccountTokenVolume feature gate in
+      the kube-apiserver and recreate pods.
+    - Diagnostics: "syncing [namespace]/[configmap name] failed" in
+      kube-controller-manager log.
+    - Testing: [e2e test](https://k8s-testgrid.appspot.com/sig-auth-gce#gce&width=5&include-filter-by-regex=ServiceAccounts%20should%20guarantee%20kube-root-ca.crt%20exist%20in%20any%20namespace)
+
+  - kubelet fails to renew token
+
+    - Detection: check `apiserver_request_total` with labels
+      `group="",version="v1",resource="serviceaccounts",subresource="token"` to
+      see if failed in requesting a new token; check kubelet log.
+    - Mitigations: disable the BoundServiceAccountTokenVolume feature gate in
+      the kube-apiserver and recreate pods.
+    - Diagnostics: "token [namespace]/[token name] expired and refresh failed"
+      in kubelet log.
+    - Testing: [e2e test](https://k8s-testgrid.appspot.com/sig-auth-gce#gce-slow&width=5)
+
+  - workload fails to refresh token from disk
+
+    - Detection: `serviceaccount_stale_tokens_total` emitted by kube-apiserver
+    - Mitigations: update client library to newer version.
+    - Diagnostics: look for `authentication.k8s.io/stale-token` in audit log if
+      `--service-account-extend-token-expiration=true`, or check authentication
+      error in kube-apiserver log.
+    - Testing: covered in all client libraries' unittests.
+
+* **What steps should be taken if SLOs are not being met to determine the
+  problem?** Check kube-apiserver, kube-controller-managera and kubelet logs.
+
+[supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
+[existing slis/slos]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
