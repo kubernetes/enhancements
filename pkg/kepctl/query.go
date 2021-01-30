@@ -64,7 +64,7 @@ func (c *QueryOpts) Validate() error {
 			return err
 		}
 		if len(sigs) == 0 {
-			return fmt.Errorf("No SIG matches any of the passed regular expressions")
+			return fmt.Errorf("no SIG matches any of the passed regular expressions")
 		}
 		c.SIG = sigs
 	} else {
@@ -77,7 +77,7 @@ func (c *QueryOpts) Validate() error {
 		return fmt.Errorf("unsupported output format: %s. Valid values: %v", c.Output, SupportedOutputOpts)
 	}
 
-	//TODO: check the valid values of stage, status, etc.
+	// TODO: check the valid values of stage, status, etc.
 	return nil
 }
 

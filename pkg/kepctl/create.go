@@ -48,7 +48,7 @@ func (c *CreateOpts) Validate(args []string) error {
 		return err
 	}
 	if len(c.PRRApprovers) == 0 {
-		return errors.New("Must provide at least one PRR Approver")
+		return errors.New("must provide at least one PRR Approver")
 	}
 	return nil
 }
@@ -56,7 +56,6 @@ func (c *CreateOpts) Validate(args []string) error {
 // Create builds a new KEP based on the README.md and kep.yaml templates in the
 // path specified by the command args. CreateOpts is used to populate the template
 func (c *Client) Create(opts CreateOpts) error {
-
 	fmt.Fprintf(c.Out, "Creating KEP %s %s %s\n", opts.SIG, opts.Number, opts.Name)
 	repoPath, err := c.findEnhancementsRepo(opts.CommonArgs)
 	fmt.Fprintf(c.Out, "Looking for enhancements repo in %s\n", repoPath)
@@ -120,7 +119,6 @@ func updateTemplate(t *api.Proposal, opts CreateOpts) {
 	if len(opts.PRRApprovers) > 0 {
 		t.PRRApprovers = updatePersonReference(opts.PRRApprovers)
 	}
-
 }
 
 func updatePersonReference(names []string) []string {
@@ -135,7 +133,6 @@ func updatePersonReference(names []string) []string {
 }
 
 func (c *Client) createKEP(kep *api.Proposal, opts CreateOpts) error {
-
 	fmt.Fprintf(c.Out, "Generating new KEP %s in %s ===>\n", opts.Name, opts.SIG)
 
 	err := c.writeKEP(kep, opts.CommonArgs)

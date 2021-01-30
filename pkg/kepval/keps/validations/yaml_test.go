@@ -162,8 +162,7 @@ func TestValidateStructureSuccess(t *testing.T) {
 	}
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
-
-			// add required fields
+			// TODO: Add required fields
 			tc.input["title"] = "this is a title"
 			tc.input["owning-sig"] = "sig-architecture"
 

@@ -31,7 +31,6 @@ import (
 )
 
 func TestWriteKep(t *testing.T) {
-
 	testcases := []struct {
 		name         string
 		kepFile      string
@@ -109,7 +108,6 @@ func TestWriteKep(t *testing.T) {
 			}
 		})
 	}
-
 }
 
 type testClient struct {
@@ -129,6 +127,7 @@ func newTestClient(t *testing.T, repoPath string) testClient {
 		},
 	}
 
+	// TODO: Parameterize
 	tc.addTemplate("kep.yaml")
 	tc.addTemplate("README.md")
 	return tc

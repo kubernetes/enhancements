@@ -111,14 +111,16 @@ func parseFiles(files []string) (api.Proposals, error) {
 		parser := &keps.Parser{}
 		file, err := os.Open(filename)
 		if err != nil {
-			return nil, fmt.Errorf("could not open file: %v\n", err)
+			return nil, fmt.Errorf("could not open file: %v", err)
 		}
+
 		defer file.Close()
 		kep := parser.Parse(file)
 		// if error is nil we can move on
 		if kep.Error != nil {
-			return nil, fmt.Errorf("%v has an error: %q\n", filename, kep.Error.Error())
+			return nil, fmt.Errorf("%v has an error: %q", filename, kep.Error.Error())
 		}
+
 		fmt.Printf(">>>> parsed file successfully: %s\n", filename)
 		proposals.AddProposal(kep)
 	}

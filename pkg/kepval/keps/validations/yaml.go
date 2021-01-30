@@ -30,7 +30,7 @@ var (
 	reStatus      = regexp.MustCompile(strings.Join(statuses, "|"))
 	stages        = []string{"alpha", "beta", "stable"}
 	reStages      = regexp.MustCompile(strings.Join(stages, "|"))
-	reMilestone   = regexp.MustCompile("v1\\.[1-9][0-9]*")
+	reMilestone   = regexp.MustCompile(`v1\\.[1-9][0-9]*`)
 )
 
 func ValidateStructure(parsed map[interface{}]interface{}) error {

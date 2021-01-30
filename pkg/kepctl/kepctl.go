@@ -42,9 +42,9 @@ import (
 )
 
 type CommonArgs struct {
-	RepoPath  string //override the default settings
+	RepoPath  string // override the default settings
 	TokenPath string
-	KEP       string //KEP name sig-xxx/xxx-name
+	KEP       string // KEP name sig-xxx/xxx-name
 	Name      string
 	Number    string
 	SIG       string
@@ -56,11 +56,12 @@ func (c *CommonArgs) validateAndPopulateKEP(args []string) error {
 	}
 	if len(args) == 1 {
 		kep := args[0]
-		re := regexp.MustCompile("([a-z\\-]+)/((\\d+)-.+)")
+		re := regexp.MustCompile(`([a-z\\-]+)/((\\d+)-.+)`)
 		matches := re.FindStringSubmatch(kep)
 		if matches == nil || len(matches) != 4 {
 			return fmt.Errorf("invalid KEP name: %s", kep)
 		}
+
 		c.KEP = kep
 		c.SIG = matches[1]
 		c.Number = matches[3]
@@ -466,31 +467,32 @@ func (p *printConfig) Value(k *api.Proposal) string {
 	return p.valueFunc(k)
 }
 
+// TODO: Refactor out anonymous funcs
 var defaultConfig = map[string]printConfig{
 	"Authors":     {"Authors", func(k *api.Proposal) string { return strings.Join(k.Authors, ", ") }},
 	"LastUpdated": {"Updated", func(k *api.Proposal) string { return k.LastUpdated }},
 	"SIG": {"SIG", func(k *api.Proposal) string {
 		if strings.HasPrefix(k.OwningSIG, "sig-") {
 			return k.OwningSIG[4:]
-		} else {
-			return k.OwningSIG
 		}
+
+		return k.OwningSIG
 	}},
 	"Stage":  {"Stage", func(k *api.Proposal) string { return k.Stage }},
 	"Status": {"Status", func(k *api.Proposal) string { return k.Status }},
 	"Title": {"Title", func(k *api.Proposal) string {
 		if k.PRNumber == "" {
 			return k.Title
-		} else {
-			return "PR#" + k.PRNumber + " - " + k.Title
 		}
+
+		return "PR#" + k.PRNumber + " - " + k.Title
 	}},
 	"Link": {"Link", func(k *api.Proposal) string {
 		if k.PRNumber == "" {
 			return "https://git.k8s.io/enhancements/keps/" + k.OwningSIG + "/" + k.Name
-		} else {
-			return "https://github.com/kubernetes/enhancements/pull/" + k.PRNumber
 		}
+
+		return "https://github.com/kubernetes/enhancements/pull/" + k.PRNumber
 	}},
 }
 

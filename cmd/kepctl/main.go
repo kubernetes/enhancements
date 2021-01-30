@@ -21,6 +21,7 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+
 	"k8s.io/enhancements/pkg/kepctl"
 )
 
@@ -42,7 +43,8 @@ func buildMainCommand() (*cobra.Command, error) {
 	if err != nil {
 		return nil, err
 	}
-	var rootCmd = &cobra.Command{
+
+	rootCmd := &cobra.Command{
 		Use:   "kepctl",
 		Short: "kepctl helps you build keps",
 	}

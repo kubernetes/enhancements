@@ -24,9 +24,7 @@ import (
 	"k8s.io/enhancements/pkg/kepval/util"
 )
 
-var (
-	mandatoryKeys = []string{"kep-number"}
-)
+var mandatoryKeys = []string{"kep-number"}
 
 func ValidateStructure(parsed map[interface{}]interface{}) error {
 	for _, key := range mandatoryKeys {
