@@ -23,7 +23,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"k8s.io/enhancements/api"
@@ -98,19 +97,19 @@ func TestWriteKep(t *testing.T) {
 			err = c.writeKEP(&p, &tc.opts.CommonArgs)
 
 			if tc.expectError {
-				assert.Error(t, err)
+				require.Error(t, err)
 			} else {
-				assert.NoError(t, err)
+				require.NoError(t, err)
 
 				computedPath := filepath.Join(tempDir, tc.expectedPath)
 				dirStat, err := os.Stat(computedPath)
-				assert.NoError(t, err)
+				require.NoError(t, err)
 				require.NotNil(t, dirStat)
-				assert.True(t, dirStat.IsDir())
+				require.True(t, dirStat.IsDir())
 				p := filepath.Join(computedPath, "kep.yaml")
 				fileStat, err := os.Stat(p)
-				assert.NoError(t, err)
-				assert.NotNil(t, fileStat)
+				require.NoError(t, err)
+				require.NotNil(t, fileStat)
 			}
 		})
 	}

@@ -21,7 +21,6 @@ import (
 	"io/ioutil"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v2"
 
@@ -55,9 +54,9 @@ func TestValidate(t *testing.T) {
 			require.NoError(t, err)
 			err = validateKEP(&p)
 			if tc.err == nil {
-				assert.NoError(t, err)
+				require.NoError(t, err)
 			} else {
-				assert.EqualError(t, err, tc.err.Error())
+				require.EqualError(t, err, tc.err.Error())
 			}
 		})
 	}
