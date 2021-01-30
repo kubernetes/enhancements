@@ -1,24 +1,3 @@
----
-title: Optional Service Environment Variables
-authors:
-  - "@bradhoekstra"
-  - "@kongslund"
-owning-sig: sig-apps
-participating-sigs:
-reviewers:
-  - TBD
-approvers:
-  - TBD
-editor: TBD
-creation-date: 2018-09-25
-last-updated: 2018-09-25
-status: provisional
-see-also:
-  - "https://github.com/kubernetes/community/pull/1249"
-replaces:
-superseded-by:
----
-
 # Optional Service Environment Variables
 
 ## Table of Contents
