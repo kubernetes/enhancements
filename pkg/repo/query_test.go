@@ -19,8 +19,9 @@ package repo
 import (
 	"fmt"
 	"testing"
-
+	"reflect"
 	"github.com/stretchr/testify/require"
+	"sort"
 )
 
 func TestValidateQueryOpt(t *testing.T) {
@@ -71,6 +72,143 @@ func TestValidateQueryOpt(t *testing.T) {
 			} else {
 				require.NotNil(t, err, tc.err.Error())
 			}
+		})
+	}
+}
+
+func TestSliceToMap(t *testing.T) {
+	testcases := []struct {
+		name      	string
+		list 					[]string
+		returnValue map[string]bool
+	}{
+		{
+			name: "array to map bool values",
+			list: []string{"a","b","c","d"},
+			returnValue:  map[string]bool{
+				"a": true,
+				"b": true,
+				"c": true,
+				"d": true,
+			},
+		},
+		{
+			name: "Empty array to map bool values",
+			list: []string{ },
+			returnValue:  map[string]bool{ },
+		},
+	}
+
+	for _, tc := range testcases {
+		t.Run(tc.name, func(t *testing.T) {
+			var list = tc.list
+			actualReturnValue := sliceToMap(list)
+			isEqual := reflect.DeepEqual(actualReturnValue, tc.returnValue)
+			if !isEqual {
+				t.Errorf("Expected %v but got %v", tc.returnValue, actualReturnValue)
+			}
+
+		})
+	}
+}
+
+func TestSliceContains(t *testing.T) {
+	testcases := []struct {
+		name      	string
+		sourceList 			[]string
+		target 		  string
+		isPresent   bool
+	}{
+		{
+			name: "Target value is present in sourceList list",
+			sourceList: []string{"a","b","c","d"},
+			target: "a",
+			isPresent: true,
+		},
+		{
+			name: "Target value is not present in sourceList list",
+			sourceList: []string{"a","b","c","d"},
+			target: "A",
+			isPresent: false,
+		},
+		{
+			name: "Target value is not present in sourceList list",
+			sourceList: []string{},
+			target: "",
+			isPresent: false,
+		},
+		{
+			name: "Target value is not present in sourceList list",
+			sourceList: []string{"a", "z"},
+			target: "z ",
+			isPresent: false,
+		},
+	}
+
+	for _, tc := range testcases {
+		t.Run(tc.name, func(t *testing.T) {
+			isPresent := sliceContains(tc.sourceList, tc.target)
+			require.Equal(t, tc.isPresent, isPresent)
+
+		})
+	}
+}
+
+func TestSelectByRegexp(t *testing.T) {
+	testcases := []struct {
+		name      	string
+		sourceList 			[]string
+		targetList 		  []string
+		matches   []string
+		isError bool
+		error error
+	}{
+		{
+			name: "targetList is present in sourceList list",
+			sourceList: []string{"a","b","c","d"},
+			targetList: []string{"a"},
+			matches: []string{"a"},
+		},
+		{
+			name: "targetList with multiple values is present in sourceList list",
+			sourceList: []string{"a","b","c","d"},
+			targetList: []string{"c", "a"},
+			matches: []string{"c", "a"},
+		},
+		{
+			name: "some targetList element is present in sourceList list",
+			sourceList: []string{"a","b","c","d"},
+			targetList: []string{"c", "e"},
+			matches: []string{"c"},
+		},
+		{
+			name: "targetList is not present in sourceList list",
+			sourceList: []string{"a","b","c","d"},
+			targetList: []string{"A"},
+			matches: []string(nil),
+		},
+		{
+			name: "targetList is not present in sourceList list",
+			sourceList: []string{},
+			targetList: []string{""},
+			matches: []string(nil),
+		},
+		{
+			name: "targetList is not present in sourceList list",
+			sourceList: []string{"a", "z"},
+			targetList: []string{"z "},
+			matches: []string(nil),
+		},
+	}
+
+	for _, tc := range testcases {
+		t.Run(tc.name, func(t *testing.T) {
+			matches, error := selectByRegexp(tc.sourceList, tc.targetList)
+			require.NoError(t, error)
+			sort.Strings(tc.matches)
+			sort.Strings(matches)
+			require.Equal(t, tc.matches, matches)
+
 		})
 	}
 }
