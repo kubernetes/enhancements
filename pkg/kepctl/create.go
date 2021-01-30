@@ -99,8 +99,10 @@ func updateTemplate(t *api.Proposal, opts CreateOpts) {
 			if !strings.HasPrefix(author, "@") {
 				author = fmt.Sprintf("@%s", author)
 			}
+
 			authors = append(authors, author)
 		}
+
 		t.Authors = authors
 	}
 
@@ -139,10 +141,12 @@ func (c *Client) createKEP(kep *api.Proposal, opts CreateOpts) error {
 	if err != nil {
 		return fmt.Errorf("unable to create KEP: %s", err)
 	}
+
 	path, err := c.findEnhancementsRepo(opts.CommonArgs)
 	if err != nil {
 		return err
 	}
+
 	b, err := c.getReadmeTemplate(path)
 	if err != nil {
 		return fmt.Errorf("couldn't find README template: %s", err)

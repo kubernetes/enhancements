@@ -58,40 +58,49 @@ func ValidateStructure(parsed map[interface{}]interface{}) error {
 			case []interface{}:
 				return util.NewValueMustBeString(k, v)
 			}
+
 			v, _ := value.(string)
 			if !reStatus.Match([]byte(v)) {
 				return util.NewValueMustBeOneOf(k, v, statuses)
 			}
+
 		case "stage":
 			switch v := value.(type) {
 			case []interface{}:
 				return util.NewValueMustBeString(k, v)
 			}
+
 			v, _ := value.(string)
 			if !reStages.Match([]byte(v)) {
 				return util.NewValueMustBeOneOf(k, v, stages)
 			}
+
 		case "owning-sig":
 			switch v := value.(type) {
 			case []interface{}:
 				return util.NewValueMustBeString(k, v)
 			}
+
 			v, _ := value.(string)
 			index := sort.SearchStrings(listGroups, v)
 			if index >= len(listGroups) || listGroups[index] != v {
 				return util.NewValueMustBeOneOf(k, v, listGroups)
 			}
+
 		// optional strings
 		case "editor":
 			if empty {
 				continue
 			}
+
 			fallthrough
+
 		case "title", "creation-date", "last-updated":
 			switch v := value.(type) {
 			case []interface{}:
 				return util.NewValueMustBeString(k, v)
 			}
+
 			v, ok := value.(string)
 			if ok && v == "" {
 				return util.NewMustHaveOneValue(k)
@@ -99,6 +108,7 @@ func ValidateStructure(parsed map[interface{}]interface{}) error {
 			if !ok {
 				return util.NewValueMustBeString(k, v)
 			}
+
 		// These are optional lists, so skip if there is no value
 		case "participating-sigs", "replaces", "superseded-by", "see-also":
 			if empty {
@@ -109,18 +119,22 @@ func ValidateStructure(parsed map[interface{}]interface{}) error {
 				if len(v) == 0 {
 					continue
 				}
+
 			case interface{}:
 				// This indicates an empty item is valid
 				continue
 			}
+
 			fallthrough
+
 		case "authors", "reviewers", "approvers":
 			switch values := value.(type) {
 			case []interface{}:
 				if len(values) == 0 {
 					return util.NewMustHaveAtLeastOneValue(k)
 				}
-				if strings.ToLower(k) == "participating-sigs" {
+
+				if strings.EqualFold(k, "participating-sigs") {
 					for _, value := range values {
 						v := value.(string)
 						index := sort.SearchStrings(listGroups, v)
@@ -129,9 +143,11 @@ func ValidateStructure(parsed map[interface{}]interface{}) error {
 						}
 					}
 				}
+
 			case interface{}:
 				return util.NewValueMustBeListOfStrings(k, values)
 			}
+
 		case "prr-approvers":
 			switch values := value.(type) {
 			case []interface{}:
@@ -149,9 +165,11 @@ func ValidateStructure(parsed map[interface{}]interface{}) error {
 						return util.NewValueMustBeOneOf(k, v, prrApprovers)
 					}
 				}
+
 			case interface{}:
 				return util.NewValueMustBeListOfStrings(k, values)
 			}
+
 		case "latest-milestone":
 			switch v := value.(type) {
 			case []interface{}:
@@ -161,12 +179,14 @@ func ValidateStructure(parsed map[interface{}]interface{}) error {
 			if !reMilestone.Match([]byte(v)) {
 				return util.NewValueMustBeMilestone(k, v)
 			}
+
 		case "milestone":
 			switch v := value.(type) {
 			case map[interface{}]interface{}:
 				if err := validateMilestone(v); err != nil {
 					return err
 				}
+
 			case interface{}:
 				return util.NewValueMustBeStruct(k, v)
 			}
@@ -189,6 +209,7 @@ func validateMilestone(parsed map[interface{}]interface{}) error {
 			case []interface{}:
 				return util.NewValueMustBeString(k, v)
 			}
+
 			v, _ := value.(string)
 			if !reMilestone.Match([]byte(v)) {
 				return util.NewValueMustBeMilestone(k, v)

@@ -341,7 +341,7 @@ func (c *Client) loadKEPPullRequests(sig string) ([]*api.Proposal, error) {
 	return allKEPs, nil
 }
 
-func (c *Client) readKEP(repoPath string, sig, name string) (*api.Proposal, error) {
+func (c *Client) readKEP(repoPath, sig, name string) (*api.Proposal, error) {
 	kepPath := filepath.Join(
 		repoPath,
 		"keps",

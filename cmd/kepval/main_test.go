@@ -134,7 +134,7 @@ func TestValidation(t *testing.T) {
 			}
 			if len(stageMilestone) > 0 && stageMilestone >= "v1.21" {
 				// PRR approval is needed.
-				if len(stagePRRApprover) == 0 {
+				if stagePRRApprover == "" {
 					t.Errorf("PRR approval is required to target milestone %v (stage %v)", stageMilestone, kep.Stage)
 					t.Errorf("For more details about PRR approval see: https://github.com/kubernetes/community/blob/master/sig-architecture/production-readiness.md")
 					t.Errorf("To get PRR approval modify appropriately file %s and have this approved by PRR team", prrFilename)
@@ -144,6 +144,8 @@ func TestValidation(t *testing.T) {
 	}
 }
 
+// TODO: Consider replacing with a .kepignore file
+// TODO: Is this a duplicate of the package function?
 // ignore certain files in the keps/ subdirectory
 func ignore(dir, name string) bool {
 	if dir == "../../keps/NNNN-kep-template" {

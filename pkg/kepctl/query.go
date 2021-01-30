@@ -185,7 +185,7 @@ func sliceContains(s []string, e string) bool {
 
 // returns all strings in vals that match at least one
 // regexp in regexps
-func selectByRegexp(vals []string, regexps []string) ([]string, error) {
+func selectByRegexp(vals, regexps []string) ([]string, error) {
 	var matches []string
 	for _, s := range vals {
 		for _, r := range regexps {
