@@ -1,24 +1,3 @@
----
-title: Extend Kustomize Patches to Multiple Targets
-authors:
- - "@Liujingfang1"
-owning-sig: sig-cli
-participating-sigs:
- - sig-apps
-reviewers:
- - "@pwittrock"
- - "@mengqiy"
-approvers:
- - "@monopole"
-editor: "@Liujingfang1"
-creation-date: 2019-03-14
-last-updated: 2019-03-18
-status: implementable
-see-also:
-replaces:
-superseded-by:
- - n/a
----
 
 # Extend Kustomize Patches to Multiple Targets
 
@@ -65,7 +44,7 @@ Both types need group, version, kind and name(GVKN) of a Kubernetes resource to 
 the unique target to perform the patching. In strategic merge patch, GVKN is included
 in the patch itself. In JSON patch, the GVKN is specified in `kustomization.yaml`.
 
-There have been [requests](https://github.com/kubernetes-sigs/kustomize/issues/720) for patching multiple targets by one patch for different purposes: 
+There have been [requests](https://github.com/kubernetes-sigs/kustomize/issues/720) for patching multiple targets by one patch for different purposes:
 - override one field for all objects of one type
 - add or remove common command arguments for all containers
 - inject a [sidecar proxy](https://istio.io/docs/setup/kubernetes/sidecar-injection/) as in istio to all containers

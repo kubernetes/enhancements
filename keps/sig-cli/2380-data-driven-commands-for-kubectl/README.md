@@ -1,23 +1,4 @@
----
-title: Data Driven Commands for Kubectl
-authors:
-  - "@pwittrock"
-owning-sig: sig-cli
-participating-sigs:
-reviewers:
-  - "@soltysh"
-  - "@juanvallejo"
-  - "@seans3 "
-approvers:
-  - "@soltysh"
-editor: TBD
-creation-date: 2018-11-13
-last-updated: 2018-11-13
-status: provisional
-see-also:
-replaces:
-superseded-by:
----
+
 
 # data driven commands
 
@@ -313,7 +294,7 @@ type Command struct {
 	Deprecated string `json:"deprecated,omitempty"`
 
 	// Flags are the command line flags.
-	// 
+	//
 	// Flags are used by the client to expose command line flags to users and populate the Request go-templates
 	// with the user provided values.
 	//

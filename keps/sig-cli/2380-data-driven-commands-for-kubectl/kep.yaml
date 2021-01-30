@@ -1,0 +1,19 @@
+title: Data Driven Commands for Kubectl
+kep-number: 2380
+authors:
+  - "@pwittrock"
+owning-sig: sig-cli
+participating-sigs:
+reviewers:
+  - "@soltysh"
+  - "@juanvallejo"
+  - "@seans3 "
+approvers:
+  - "@soltysh"
+editor: TBD
+creation-date: 2018-11-13
+last-updated: 2018-11-13
+status: provisional
+see-also:
+replaces:
+superseded-by:

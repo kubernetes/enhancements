@@ -1,26 +1,3 @@
----
-title: Kustomize Secret Generator Plugins
-authors:
-  - "@sethpollack"
-owning-sig: sig-cli
-participating-sigs:
-  - sig-apps
-  - sig-architecture
-reviewers:
-  - "@monopole"
-  - "@Liujingfang1"
-approvers:
-  - "@monopole"
-  - "@Liujingfang1"
-  - "@pwittrock"
-editor: "@sethpollack"
-creation-date: 2019-02-04
-last-updated: 2019-02-04
-status: implementable
----
-
-[execRemoval]: https://github.com/kubernetes-sigs/kustomize/issues/692
-
 # Kustomize Secret K:V Generator Plugins
 
 ## Table of Contents
@@ -84,13 +61,13 @@ workarounds.
 
 - The specification will allow for any number of plugin
   types, and any number of instances of those types.
-  
+
 - The first type supported will be
   [goplugins](https://golang.org/pkg/plugin), to enable
   kustomize source code contributors to add custom KV
   generators without the need to maintain a kustomize
   source code fork.
-  
+
   Kustomize maintainers expect developers who use a
   goplugin to understand that a kustomize binary and
   any goplugins expected to work with it must be
@@ -417,7 +394,7 @@ convert to the new `builtin` form to access these KV sources.
 
 ## Graduation Criteria of plugin framework
 
-### Alpha status 
+### Alpha status
 
 The kustomization fields that support a general plugin
 framework (which could support many kinds of plugins in
@@ -437,7 +414,7 @@ in CONTRIBUTING.md.
   we'd like to see development of an exec-style plugin
   targeted to end users before deciding to graduate
   the framework to beta/GA.
-  
+
   For goplugins themselves to reach beta/GA, we'd
   like exec-style based plugin implemented and still
   see some preference for the Go based approach.
@@ -446,7 +423,7 @@ in CONTRIBUTING.md.
 
   * High level feature test
     (like those in [pkg/target](https://github.com/kubernetes-sigs/kustomize/tree/master/api/internal/target))
-  * Field documentarion in the 
+  * Field documentarion in the
     [canonical example file](https://github.com/kubernetes-sigs/kustomize/blob/master/examples/helloWorld/kustomization.yaml)
   * Usage [examples](https://github.com/kubernetes-sigs/kustomize/tree/master/examples).
 

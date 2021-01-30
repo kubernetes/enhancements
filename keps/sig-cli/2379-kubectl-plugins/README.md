@@ -1,30 +1,4 @@
----
-title: Kubectl Plugins
-authors:
-  - "@juanvallejo"
-owning-sig: sig-cli
-participating-sigs:
-  - sig-cli
-reviewers:
-  - "@pwittrock"
-  - "@deads2k"
-  - "@liggitt"
-  - "@soltysh"
-approvers:
-  - "@pwittrock"
-  - "@soltysh"
-editor: juanvallejo
-creation-date: 2018-07-24
-last-updated: 2010-02-26
-status: implemented
-see-also:
-  - n/a
-replaces:
-  - "https://github.com/kubernetes/community/blob/master/contributors/design-proposals/cli/kubectl-extension.md"
-  - "https://github.com/kubernetes/community/pull/481"
-superseded-by:
-  - n/a
----
+
 
 # Kubectl Plugins
 

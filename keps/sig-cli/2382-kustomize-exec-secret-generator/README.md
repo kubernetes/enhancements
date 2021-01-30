@@ -1,22 +1,3 @@
----
-title: Kustomize Exec Secret Generator
-authors:
-  - "@pwittrock"
-owning-sig: sig-cli
-participating-sigs:
-reviewers:
-  - "@anguslees"
-  - "@Liujingfang1"
-  - "@sethpollack"
-approvers:
-  - "@monopole"
-editor: "@pwittrock"
-creation-date: 2019-03-12
-last-updated: 2019-03-12
-status: implementable
-see-also:
-  - "https://github.com/kubernetes/enhancements/blob/master/keps/sig-cli/kustomize-secret-generator-plugins.md"
----
 
 
 # Kustomize Exec Secret Generator
@@ -95,7 +76,7 @@ expected to want to be able to invoke the tools they already use for addressing 
 ### Goals
 
 - Enable users to generate Secrets using the tools they already use to do so
-- Secure by default - Alice must configure her environment in an insecure manner and run the command in an 
+- Secure by default - Alice must configure her environment in an insecure manner and run the command in an
   insecure way for it to be exploitable
 - Support Linux / Mac / Windows OS's
 
