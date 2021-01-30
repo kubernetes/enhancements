@@ -151,11 +151,14 @@ func (c *Client) getReadmeTemplate(repoPath string) ([]byte, error) {
 	return ioutil.ReadFile(path)
 }
 
+// TODO: Unused?
+//golint:deadcode,unused
 func validateKEP(p *api.Proposal) error {
 	b, err := yaml.Marshal(p)
 	if err != nil {
 		return err
 	}
+
 	r := bytes.NewReader(b)
 	parser := &keps.Parser{}
 
@@ -163,6 +166,7 @@ func validateKEP(p *api.Proposal) error {
 	if kep.Error != nil {
 		return fmt.Errorf("kep is invalid: %s", kep.Error)
 	}
+
 	return nil
 }
 
@@ -254,18 +258,21 @@ func (c *Client) loadKEPPullRequests(sig string) ([]*api.Proposal, error) {
 		opt.Page = resp.NextPage
 	}
 
-	var kepPRs []*github.PullRequest
+	kepPRs := make([]*github.PullRequest, 10)
 	for _, pr := range allPulls {
 		foundKind, foundSIG := false, false
 		sigLabel := strings.Replace(sig, "-", "/", 1)
+
 		for _, l := range pr.Labels {
 			if *l.Name == "kind/kep" {
 				foundKind = true
 			}
+
 			if *l.Name == sigLabel {
 				foundSIG = true
 			}
 		}
+
 		if !foundKind || !foundSIG {
 			continue
 		}
@@ -500,12 +507,13 @@ var defaultConfig = map[string]printConfig{
 }
 
 func DefaultPrintConfigs(names ...string) []PrintConfig {
-	var configs []PrintConfig
+	configs := make([]PrintConfig, 10)
 	for _, n := range names {
 		// copy to allow it to be tweaked by the caller
 		c := defaultConfig[n]
 		configs = append(configs, &c)
 	}
+
 	return configs
 }
 
@@ -516,10 +524,11 @@ func (c *Client) PrintTable(configs []PrintConfig, proposals []*api.Proposal) {
 
 	table := tablewriter.NewWriter(c.Out)
 
-	var headers []string
+	headers := make([]string, 10)
 	for _, c := range configs {
 		headers = append(headers, c.Title())
 	}
+
 	table.SetHeader(headers)
 	table.SetAlignment(tablewriter.ALIGN_LEFT)
 
