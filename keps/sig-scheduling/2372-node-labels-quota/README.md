@@ -1,22 +1,3 @@
----
-title: Resource Quota based on Node Labels
-authors:
-  - "@vishh"
-  - "@bsalamat"
-owning-sig: sig-scheduling
-participating-sigs:
-  - sig-architecture
-reviewers:
-  - "@derekwaynecarr"
-  - "@davidopp"
-approvers:
-  - TBD
-editor: TBD
-creation-date: 2018-08-23
-last-updated: 2018-08-30
-status: provisional
----
-
 # Resource Quota based on Node Labels
 
 ## Table of Contents
