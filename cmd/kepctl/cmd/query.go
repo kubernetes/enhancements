@@ -19,37 +19,98 @@ package cmd
 import (
 	"fmt"
 
+	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 
 	"k8s.io/enhancements/pkg/kepctl"
 )
 
-func buildQueryCommand(k *kepctl.Client) *cobra.Command {
-	opts := kepctl.QueryOpts{}
-	cmd := &cobra.Command{
-		Use:     "query",
-		Short:   "Query KEPs",
-		Long:    "Query the local filesystem, and optionally GitHub PRs for KEPs",
-		Example: `  kepctl query --sig architecture --status provisional --include-prs`,
-		PreRunE: func(cmd *cobra.Command, args []string) error {
-			return opts.Validate()
-		},
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return k.Query(&opts)
-		},
+// TODO: Struct literal instead?
+var queryOpts = kepctl.QueryOpts{}
+
+var queryCmd = &cobra.Command{
+	Use:           "query",
+	Short:         "Query KEPs",
+	Long:          "Query the local filesystem, and optionally GitHub PRs for KEPs",
+	Example:       `  kepctl query --sig architecture --status provisional --include-prs`,
+	SilenceUsage:  true,
+	SilenceErrors: true,
+	PreRunE: func(*cobra.Command, []string) error {
+		return queryOpts.Validate()
+	},
+	RunE: func(*cobra.Command, []string) error {
+		return runQuery(queryOpts)
+	},
+}
+
+func init() {
+	// TODO: Should these all be global args?
+	queryCmd.PersistentFlags().StringSliceVar(
+		&queryOpts.SIG,
+		"sig",
+		nil,
+		"SIG. If not specified, KEPs from all SIGs are shown.",
+	)
+
+	queryCmd.PersistentFlags().StringSliceVar(
+		&queryOpts.Status,
+		"status",
+		nil,
+		"Status",
+	)
+
+	queryCmd.PersistentFlags().StringSliceVar(
+		&queryOpts.Stage,
+		"stage",
+		nil,
+		"Stage",
+	)
+
+	queryCmd.PersistentFlags().StringSliceVar(
+		&queryOpts.PRRApprover,
+		"prr",
+		nil,
+		"Prod Readiness Approver",
+	)
+
+	queryCmd.PersistentFlags().StringSliceVar(
+		&queryOpts.Approver,
+		"approver",
+		nil,
+		"Approver",
+	)
+
+	queryCmd.PersistentFlags().StringSliceVar(
+		&queryOpts.Author,
+		"author",
+		nil,
+		"Author",
+	)
+
+	queryCmd.PersistentFlags().BoolVar(
+		&queryOpts.IncludePRs,
+		"include-prs",
+		false,
+		"Include PRs in the results",
+	)
+
+	queryCmd.PersistentFlags().StringVar(
+		&queryOpts.Output,
+		"output",
+		kepctl.DefaultOutputOpt,
+		fmt.Sprintf(
+			"Output format. Can be %v", kepctl.SupportedOutputOpts,
+		),
+	)
+
+	rootCmd.AddCommand(queryCmd)
+}
+
+func runQuery(queryOpts kepctl.QueryOpts) error {
+	k, err := kepctl.New(queryOpts.RepoPath)
+	if err != nil {
+		return errors.Wrap(err, "creating kepctl client")
 	}
 
-	f := cmd.Flags()
-	f.StringSliceVar(&opts.SIG, "sig", nil, "SIG. If not specified, KEPs from all SIGs are shown.")
-	f.StringSliceVar(&opts.Status, "status", nil, "Status")
-	f.StringSliceVar(&opts.Stage, "stage", nil, "Stage")
-	f.StringSliceVar(&opts.PRRApprover, "prr", nil, "Prod Readiness Approver")
-	f.StringSliceVar(&opts.Approver, "approver", nil, "Approver")
-	f.StringSliceVar(&opts.Author, "author", nil, "Author")
-	f.BoolVar(&opts.IncludePRs, "include-prs", false, "Include PRs in the results")
-	f.StringVar(&opts.Output, "output", kepctl.DefaultOutputOpt, fmt.Sprintf("Output format. Can be %v", kepctl.SupportedOutputOpts))
-
-	addRepoPathFlag(f, &opts.CommonArgs)
-
-	return cmd
+	return k.Query(&queryOpts)
 }

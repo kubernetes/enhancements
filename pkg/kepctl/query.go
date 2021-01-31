@@ -63,9 +63,11 @@ func (c *QueryOpts) Validate() error {
 		if err != nil {
 			return err
 		}
+
 		if len(sigs) == 0 {
 			return fmt.Errorf("no SIG matches any of the passed regular expressions")
 		}
+
 		c.SIG = sigs
 	} else {
 		// if no SIGs are passed, list KEPs from all SIGs
