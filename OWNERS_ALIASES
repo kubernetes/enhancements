@@ -176,6 +176,16 @@ aliases:
     - justaugustus
     - LappleApple
     - mrbobbytables
+  kep-tools-approvers:
+    - jeremyrickard
+    - johnbelamaric
+    - justaugustus
+    - mrbobbytables
+  kep-tools-reviewers:
+    - jeremyrickard
+    - johnbelamaric
+    - justaugustus
+    - mrbobbytables
   prod-readiness-approvers:
     - johnbelamaric
     - deads2k
