@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package main
+package test
 
 import (
 	"os"
@@ -37,7 +37,7 @@ func TestValidation(t *testing.T) {
 	// Find all the keps
 	files := []string{}
 	err := filepath.Walk(
-		filepath.Join("..", "..", kepsDir),
+		filepath.Join("..", kepsDir),
 		func(path string, info os.FileInfo, err error) error {
 			if err != nil {
 				return err
@@ -148,7 +148,7 @@ func TestValidation(t *testing.T) {
 // TODO: Is this a duplicate of the package function?
 // ignore certain files in the keps/ subdirectory
 func ignore(dir, name string) bool {
-	if dir == "../../keps/NNNN-kep-template" {
+	if dir == "../keps/NNNN-kep-template" {
 		return true // ignore the template directory because its metadata file does not use a valid sig name
 	}
 
