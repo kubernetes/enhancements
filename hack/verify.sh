@@ -31,9 +31,9 @@ fi
 
 # Excluded check patterns are always skipped.
 EXCLUDED_PATTERNS=(
-  "verify-all.sh"                # this script calls the make rule and would cause a loop
-  "verify-*-dockerized.sh"       # Don't run any scripts that intended to be run dockerized
-  )
+  "verify.sh"                # this script calls the make rule and would cause a loop
+  "verify-*-dockerized.sh"   # Don't run any scripts that intended to be run dockerized
+)
 
 EXCLUDED_CHECKS=$(ls ${EXCLUDED_PATTERNS[@]/#/${KUBE_ROOT}\/hack\/} 2>/dev/null || true)
 
