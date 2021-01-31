@@ -43,12 +43,16 @@ import (
 )
 
 type CommonArgs struct {
+	// command options
+	LogLevel  string
 	RepoPath  string // override the default settings
 	TokenPath string
-	KEP       string // KEP name sig-xxx/xxx-name
-	Name      string
-	Number    string
-	SIG       string
+
+	// KEP options
+	KEP    string // KEP name sig-xxx/xxx-name
+	Name   string
+	Number string
+	SIG    string
 }
 
 func (c *CommonArgs) validateAndPopulateKEP(args []string) error {

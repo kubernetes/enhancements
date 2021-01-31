@@ -30,15 +30,11 @@ import (
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
 	Use:               "kepctl",
-	Short:             "kepctl helps you build keps",
+	Short:             "kepctl helps you build KEPs",
 	PersistentPreRunE: initLogging,
 }
 
-type rootOptions struct {
-	logLevel string
-}
-
-var rootOpts = &rootOptions{}
+var rootOpts = &kepctl.CommonArgs{}
 
 // Execute adds all child commands to the root command and sets flags appropriately.
 // This is called by main.main(). It only needs to happen once to the rootCmd.
@@ -50,45 +46,28 @@ func Execute() {
 
 func init() {
 	rootCmd.PersistentFlags().StringVar(
-		&rootOpts.logLevel,
+		&rootOpts.LogLevel,
 		"log-level",
 		"info",
 		fmt.Sprintf("the logging verbosity, either %s", log.LevelNames()),
 	)
+
+	// TODO: This should be defaulted in the package instead
+	rootCmd.PersistentFlags().StringVar(
+		&rootOpts.RepoPath,
+		"repo-path",
+		os.Getenv("ENHANCEMENTS_PATH"),
+		"path to kubernetes/enhancements",
+	)
+
+	rootCmd.PersistentFlags().StringVar(
+		&rootOpts.TokenPath,
+		"gh-token-path",
+		"",
+		"path to a file with a GitHub API token",
+	)
 }
 
 func initLogging(*cobra.Command, []string) error {
-	return log.SetupGlobalLogger(rootOpts.logLevel)
-}
-
-// TODO: Refactor/remove below
-
-func main() {
-	cmd, err := buildMainCommand()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
-	if err := cmd.Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
-}
-
-func buildMainCommand() (*cobra.Command, error) {
-	repoPath := os.Getenv("ENHANCEMENTS_PATH")
-	k, err := kepctl.New(repoPath)
-	if err != nil {
-		return nil, err
-	}
-
-	rootCmd := &cobra.Command{
-		Use:   "kepctl",
-		Short: "kepctl helps you build keps",
-	}
-
-	rootCmd.AddCommand(buildCreateCommand(k))
-	rootCmd.AddCommand(buildPromoteCommand(k))
-	rootCmd.AddCommand(buildQueryCommand(k))
-	return rootCmd, nil
+	return log.SetupGlobalLogger(rootOpts.LogLevel)
 }
