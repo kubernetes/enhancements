@@ -1,6 +1,6 @@
 module k8s.io/enhancements
 
-go 1.12
+go 1.15
 
 require (
 	github.com/google/go-github/v32 v32.1.0
