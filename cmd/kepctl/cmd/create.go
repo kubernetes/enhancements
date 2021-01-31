@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package main
+package cmd
 
 import (
 	"github.com/spf13/cobra"
@@ -22,26 +22,30 @@ import (
 	"k8s.io/enhancements/pkg/kepctl"
 )
 
-func buildPromoteCommand(k *kepctl.Client) *cobra.Command {
-	opts := kepctl.PromoteOpts{}
+func buildCreateCommand(k *kepctl.Client) *cobra.Command {
+	opts := kepctl.CreateOpts{}
 	cmd := &cobra.Command{
-		Use:     "promote [KEP]",
-		Short:   "Promote a KEP",
-		Long:    "Promote a KEP to a new stage for a target release",
-		Example: `  kepctl promote sig-architecture/000-mykep --stage beta --release v1.20`,
+		Use:     "create [KEP]",
+		Short:   "Create a new KEP",
+		Long:    "Create a new KEP using the current KEP template for the given type",
+		Example: `  kepctl create sig-architecture/000-mykep`,
 		PreRunE: func(cmd *cobra.Command, args []string) error {
 			return opts.Validate(args)
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return k.Promote(&opts)
+			return k.Create(&opts)
 		},
 	}
 
 	f := cmd.Flags()
-	f.StringVarP(&opts.Stage, "stage", "s", "", "KEP Stage")
-	f.StringVarP(&opts.Release, "release", "r", "", "Target Release")
+	f.StringVar(&opts.Title, "title", "", "KEP Title")
+	f.StringArrayVar(&opts.Authors, "authors", []string{}, "Authors")
+	f.StringArrayVar(&opts.Reviewers, "reviewers", []string{}, "Reviewers")
+	f.StringVar(&opts.Type, "type", "feature", "KEP Type")
+	f.StringVarP(&opts.State, "state", "s", "provisional", "KEP State")
+	f.StringArrayVar(&opts.SIGS, "sigs", []string{}, "Participating SIGs")
+	f.StringArrayVar(&opts.PRRApprovers, "prr-approver", []string{}, "PRR Approver")
 
 	addRepoPathFlag(f, &opts.CommonArgs)
-
 	return cmd
 }
