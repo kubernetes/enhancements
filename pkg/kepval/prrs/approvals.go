@@ -22,7 +22,7 @@ import (
 	"io"
 
 	"github.com/pkg/errors"
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 
 	"k8s.io/enhancements/pkg/kepval/prrs/validations"
 )
@@ -65,7 +65,7 @@ func (p *Parser) Parse(in io.Reader) *Approval {
 	// First do structural checks
 	test := map[interface{}]interface{}{}
 	if err := yaml.Unmarshal(body.Bytes(), test); err != nil {
-		approval.Error = errors.Wrap(err, "error unmarshaling YAML")
+		approval.Error = errors.Wrap(err, "error unmarshalling YAML")
 		return approval
 	}
 	if err := validations.ValidateStructure(test); err != nil {
@@ -73,7 +73,8 @@ func (p *Parser) Parse(in io.Reader) *Approval {
 		return approval
 	}
 
-	approval.Error = yaml.UnmarshalStrict(body.Bytes(), approval)
+	approval.Error = yaml.Unmarshal(body.Bytes(), approval)
+
 	return approval
 }
 

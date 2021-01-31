@@ -25,7 +25,7 @@ import (
 	"strings"
 
 	"github.com/pkg/errors"
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 
 	"k8s.io/enhancements/api"
 	"k8s.io/enhancements/pkg/kepval/keps/validations"
@@ -75,7 +75,7 @@ func (p *Parser) Parse(in io.Reader) *api.Proposal {
 		return proposal
 	}
 
-	proposal.Error = yaml.UnmarshalStrict(metadata, proposal)
+	proposal.Error = yaml.Unmarshal(metadata, proposal)
 	proposal.ID = hash(proposal.OwningSIG + ":" + proposal.Title)
 	return proposal
 }

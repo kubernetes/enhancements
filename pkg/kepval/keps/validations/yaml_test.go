@@ -21,7 +21,7 @@ import (
 	"html/template"
 	"testing"
 
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 )
 
 // TODO(lint): Fix field keys and flow flags

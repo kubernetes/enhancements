@@ -34,7 +34,7 @@ import (
 	"github.com/olekukonko/tablewriter"
 	"github.com/pkg/errors"
 	"golang.org/x/oauth2"
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 
 	"k8s.io/enhancements/api"
 	"k8s.io/enhancements/pkg/kepval/keps"

@@ -12,7 +12,7 @@ require (
 	github.com/spf13/pflag v1.0.5
 	github.com/stretchr/testify v1.7.0
 	golang.org/x/oauth2 v0.0.0-20210112200429-01de73cf58bd
-	gopkg.in/yaml.v2 v2.4.0
+	gopkg.in/yaml.v3 v3.0.0-20200313102051-9f266ea9e77c
 	k8s.io/release v0.7.0
 	k8s.io/test-infra v0.0.0-20200813194141-e9678d500461
 	sigs.k8s.io/yaml v1.2.0
