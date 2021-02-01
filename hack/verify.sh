@@ -18,13 +18,14 @@ set -o errexit
 set -o nounset
 set -o pipefail
 
-KUBE_ROOT=$(dirname "${BASH_SOURCE}")/..
+# cd to the repo root
+REPO_ROOT=$(git rev-parse --show-toplevel)
+cd "${REPO_ROOT}"
 
 # Some useful colors.
 if [[ -z "${color_start-}" ]]; then
   declare -r color_start="\033["
   declare -r color_red="${color_start}0;31m"
-  declare -r color_yellow="${color_start}0;33m"
   declare -r color_green="${color_start}0;32m"
   declare -r color_norm="${color_start}0m"
 fi
@@ -38,7 +39,7 @@ EXCLUDED_PATTERNS=(
   "verify-golangci-lint.sh"
 )
 
-EXCLUDED_CHECKS=$(ls ${EXCLUDED_PATTERNS[@]/#/${KUBE_ROOT}\/hack\/} 2>/dev/null || true)
+EXCLUDED_CHECKS=$(ls ${EXCLUDED_PATTERNS[@]/#/${REPO_ROOT}\/hack\/} 2>/dev/null || true)
 
 function is-excluded {
   for e in ${EXCLUDED_CHECKS[@]}; do
@@ -57,14 +58,14 @@ function run-cmd {
   fi
 }
 
-# Collect Failed tests in this Array , initialize it to nil
+# Collect failed tests in this array; initialize it to nil
 FAILED_TESTS=()
 
 function print-failed-tests {
   echo -e "========================"
   echo -e "${color_red}FAILED TESTS${color_norm}"
   echo -e "========================"
-  for t in ${FAILED_TESTS[@]}; do
+  for t in "${FAILED_TESTS[@]}"; do
       echo -e "${color_red}${t}${color_norm}"
   done
 }
@@ -74,23 +75,30 @@ function run-checks {
   local -r runner=$2
 
   local t
+  local check_name
+  local start
+
   for t in $(ls ${pattern})
   do
-    local check_name="$(basename "${t}")"
+    check_name="$(basename "${t}")"
     if is-excluded "${t}" ; then
       echo "Skipping ${check_name}"
       continue
     fi
+
     echo -e "Verifying ${check_name}"
-    local start=$(date +%s)
+
+    start=$(date +%s)
     run-cmd "${runner}" "${t}" && tr=$? || tr=$?
-    local elapsed=$(($(date +%s) - ${start}))
+    local elapsed=$(($(date +%s) - start))
+
     if [[ ${tr} -eq 0 ]]; then
       echo -e "${color_green}SUCCESS${color_norm}  ${check_name}\t${elapsed}s"
     else
       echo -e "${color_red}FAILED${color_norm}   ${check_name}\t${elapsed}s"
       ret=1
-      FAILED_TESTS+=(${t})
+
+      FAILED_TESTS+=("${t}")
     fi
   done
 }
@@ -114,11 +122,12 @@ if ${SILENT} ; then
 fi
 
 ret=0
-run-checks "${KUBE_ROOT}/hack/verify-*.sh" bash
+run-checks "${REPO_ROOT}/hack/verify-*.sh" bash
 
 if [[ ${ret} -eq 1 ]]; then
-    print-failed-tests
+  print-failed-tests
 fi
+
 exit ${ret}
 
 # ex: ts=2 sw=2 et filetype=sh
