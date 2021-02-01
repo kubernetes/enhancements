@@ -1,0 +1,18 @@
+title: Protect critical cluster requests from badly configured admission webhooks
+kep-number: "2398"
+authors: ['@jqmichael']
+owning-sig: sig-api-machinery
+participating-sigs: [sig-api-machinery]
+reviewers:
+  - '@lavalamp'
+  - '@deads2k'
+  - '@liggitt']
+approvers:
+  - '@deads2k'
+  - '@lavalamp'
+prr-approvers:
+  - TBD
+stage: alpha
+creation-date: "2021-02-01"
+last-updated: "2021-02-01"
+status: provisional
