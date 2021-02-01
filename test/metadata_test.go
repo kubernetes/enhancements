@@ -75,7 +75,7 @@ func TestValidation(t *testing.T) {
 
 	kepParser := &keps.Parser{}
 	prrParser := &prrs.Parser{}
-	prrsDir := filepath.Join("..", "..", prrsDir)
+	prrsDir := filepath.Join("..", prrsDir)
 
 	for _, filename := range files {
 		t.Run(filename, func(t *testing.T) {
