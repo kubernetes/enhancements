@@ -16,6 +16,26 @@ limitations under the License.
 
 package api
 
+import (
+	"io"
+)
+
 // TODO(api): Populate interface
 // TODO(api): Mock interface
-type Document interface{}
+type File interface {
+	Parse(io.Reader) (Document, error)
+}
+
+// TODO(api): Populate interface
+// TODO(api): Mock interface
+// Document is an interface satisfied by the following types:
+// - `Proposal` (KEP)
+// - `PRRApproval`
+// - `Receipt` (coming soon)
+type Document interface {
+	Validate() error
+}
+
+type Parser struct {
+	Errors []error
+}

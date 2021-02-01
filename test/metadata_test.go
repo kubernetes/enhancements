@@ -22,8 +22,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
+	"k8s.io/enhancements/api"
 	"k8s.io/enhancements/pkg/legacy/keps"
-	"k8s.io/enhancements/pkg/legacy/prrs"
 )
 
 const (
@@ -74,7 +76,7 @@ func TestValidation(t *testing.T) {
 	}
 
 	kepParser := &keps.Parser{}
-	prrParser := &prrs.Parser{}
+	prrHandler := &api.PRRHandler{}
 	prrsDir := filepath.Join("..", prrsDir)
 
 	for _, filename := range files {
@@ -83,6 +85,7 @@ func TestValidation(t *testing.T) {
 			if err != nil {
 				t.Fatalf("could not open file %s: %v\n", filename, err)
 			}
+
 			defer kepFile.Close()
 
 			kep := kepParser.Parse(kepFile)
@@ -114,10 +117,14 @@ func TestValidation(t *testing.T) {
 				t.Errorf("To get PRR approval modify appropriately file %s and have this approved by PRR team", prrFilename)
 				return
 			}
+
 			if err != nil {
 				t.Fatalf("could not open file %s: %v\n", prrFilename, err)
 			}
-			prr := prrParser.Parse(prrFile)
+
+			prr, prrParseErr := prrHandler.Parse(prrFile)
+			require.Nil(t, prrParseErr)
+
 			if prr.Error != nil {
 				t.Errorf("PRR approval file %v has an error: %v", prrFilename, prr.Error)
 				return
@@ -132,6 +139,7 @@ func TestValidation(t *testing.T) {
 			case "stable":
 				stagePRRApprover = prr.Stable.Approver
 			}
+
 			if len(stageMilestone) > 0 && stageMilestone >= "v1.21" {
 				// PRR approval is needed.
 				if stagePRRApprover == "" {

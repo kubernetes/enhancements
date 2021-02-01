@@ -16,6 +16,16 @@ limitations under the License.
 
 package api
 
+import (
+	"bufio"
+	"bytes"
+	"io"
+
+	"github.com/go-playground/validator/v10"
+	"github.com/pkg/errors"
+	"gopkg.in/yaml.v3"
+)
+
 type PRRApprovals []*PRRApproval
 
 func (p *PRRApprovals) AddPRRApproval(prrApproval *PRRApproval) {
@@ -28,17 +38,27 @@ type PRRApproval struct {
 	Beta   PRRMilestone `json:"beta" yaml:"beta,omitempty"`
 	Stable PRRMilestone `json:"stable" yaml:"stable,omitempty"`
 
+	// TODO(api): Move to separate struct for handling document parsing
 	Error error `json:"-" yaml:"-"`
 }
 
-func (p *PRRApproval) ApproverForStage(stage string) string {
+func (prr *PRRApproval) Validate() error {
+	v := validator.New()
+	if err := v.Struct(prr); err != nil {
+		return errors.Wrap(err, "running validation")
+	}
+
+	return nil
+}
+
+func (prr *PRRApproval) ApproverForStage(stage string) string {
 	switch stage {
 	case "alpha":
-		return p.Alpha.Approver
+		return prr.Alpha.Approver
 	case "beta":
-		return p.Beta.Approver
+		return prr.Beta.Approver
 	case "stable":
-		return p.Stable.Approver
+		return prr.Stable.Approver
 	}
 
 	return ""
@@ -46,5 +66,34 @@ func (p *PRRApproval) ApproverForStage(stage string) string {
 
 // TODO(api): Can we refactor the proposal `Milestone` to retrieve this?
 type PRRMilestone struct {
-	Approver string `json:"approver" yaml:"approver"`
+	Approver string `json:"approver" yaml:"approver" validate:"required"`
+}
+
+type PRRHandler Parser
+
+// TODO(api): Make this a generic parser for all `Document` types
+func (p *PRRHandler) Parse(in io.Reader) (*PRRApproval, error) {
+	scanner := bufio.NewScanner(in)
+	var body bytes.Buffer
+	for scanner.Scan() {
+		line := scanner.Text() + "\n"
+		body.WriteString(line)
+	}
+
+	approval := &PRRApproval{}
+	if err := scanner.Err(); err != nil {
+		return approval, errors.Wrap(err, "reading file")
+	}
+
+	if err := yaml.Unmarshal(body.Bytes(), &approval); err != nil {
+		p.Errors = append(p.Errors, errors.Wrap(err, "error unmarshalling YAML"))
+		return approval, errors.Wrap(err, "unmarshalling YAML")
+	}
+
+	if valErr := approval.Validate(); valErr != nil {
+		p.Errors = append(p.Errors, errors.Wrap(valErr, "validating PRR"))
+		return approval, errors.Wrap(valErr, "validating PRR")
+	}
+
+	return approval, nil
 }
