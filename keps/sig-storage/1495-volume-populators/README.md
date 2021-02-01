@@ -83,10 +83,10 @@ feature gates for each object type. This approach won't scale to generic populat
 will by their nature be too numerous and varied.
 
 This proposal recommends that we relax validation (in core Kubernetes) on the `DataSource`
-field to allow arbitrary object types to be data sources, and rely on a validating
-webhook to determine which data source kinds should be allowed or disallowed. The
-validating webhook will introduce a new CRD to register supported object types as
-valid for data sources. 
+field to allow arbitrary object types to be data sources, and rely on new controllers to
+perform the validation on those data sources and provide feedback to users. We will introduce
+a new CRD to register valid datasource kinds, and individual volume populators will
+create a CR for each kind of data source that it understands.
 
 ## Motivation
 
@@ -98,6 +98,9 @@ valid for data sources.
 - Ensure that users continue to get accurate error messages and feedback about volume
   creation progress, whether using existing methods of volume creation or specifying a
   data source associated with a volume populator.
+- Maintain existing pattern of allowing things to happen out of order. As long as there's
+  a chance things will succeed in the future, just provide a status update and retry
+  again later.
 
 ### Non-Goals
 
@@ -106,21 +109,20 @@ valid for data sources.
 
 ## Proposal
 
-Validation for the `DataSource` field should be moved from the core to a validation
-webhook. Because the existing validation only allow VolumeSnapshot and PVC API objects
-as data sources,
-a feature gate is added to relax that validation, allowing the existing object types plus
-any `Kind` of CR. Each volume populator should be able to register one of more kinds of
-objects that it understands.
+Validation for the `DataSource` field will be relaxed so that any API object (except
+core API objects other than PVCs) may be specified. For objects that are not valid data
+source, rather than relying the the API server to reject them or ignore them (the prior
+behavior was to ignore them by clearing the field) allow them and provide feedback to
+API users with events.
 
-In order to ensure that dead-on-arrival PVCs (ones that will never be bound) can't be
-created, the webhook needs to deny creation of PVCs with a `DataSource` `Kind` that it
-doesn't recognize. This ensures that PVCs which do get created will have some controller
-responsible for handling dynamic provisioning, which can either create the volume as
-requested, or provide useful error message events on the PVC to give the user feedback.
+A new controller will be introduced called `data-source-validator` which will watch PVCs
+objects and generate events on objects with data sources that are not considered valid. To
+determine which data sources are valid a new CRD will be introduced valled `VolumePopulator`
+which will allow actual data populator controllers to register the API `groups`/`kinds` that
+they understand with the `data-source-validator` controller. If a PVC has a data source that
+matches the `group`/`kind` of a registered `VolumePopulator` the controller will ignore it.
 
-To support the registration of valid kinds, we add a new CRD called VolumePopulator. For
-example:
+Instances of the VolumePopulator CRD will look like:
 
 ```
 kind: VolumePopulator
@@ -132,17 +134,30 @@ sourceKind:
   kind: Example
 ```
 
-Every new volume populator will create a CR for each `Kind` of object it supports for
-the `PVC` `DataSource` field. This is a signal to the validating webhook that something
-is responsible for handling a particular data source, and creation of PVCs with that
-data source should be allowed. Conversely, absence of any CR for a particular data
-source kind signals that either there is no populator for that object type (if it's
-some other kind of CR) or the populator is not installed on the cluster yet.
+In this model there will be 4 sources of feedback to the end user:
+1. The API server will reject core objects other than PVCs with it current behavior, which
+   is to accept the PVC but to blank out the data source. The is backwards compatible, and
+   appropriate becuse we don't expect any existing core object (other than a PVC) to be a
+   valid data source.
+1. For data sources that refer to a unknown group/kind, the data-source-validator will emit
+   an event on the PVC informing the user that the PVC is currently not being acted on, so
+   the user can fix any errors, and so the user doesn't wait forever wondering why the PVC
+   is not binding. Alternatively, the event might remind the user that they forgot to
+   install the actual populator, in which case they can do so, and the PVC will eventually
+   bind if all of the installation steps succeed.
+1. For every PVC under the responsibility of a CSI driver, the provisioner sidecar for that
+   PVR will emit an event explaining that the sidecar is not taking action on the PVC,
+   assuming the data source is something that a populator is responsible for and not a
+   PVC or VolumeSnapshot, which the sidecar is responsible for.
+1. For data source that refer to a known group/kind the populator controller itself should
+   provide feedback on the PVC, including error messages if the data source is not found,
+   is malformed, is inaccessible, or whatever. The populator controller may also provide
+   status updates on the PVC if the population operation is long-running.
 
-Populators will work by responding to PVC objects with a data source they understand,
-and producing a PV with the expected data, such that ordinary Kubernetes workflows are
-not disrupted. In particular the PVC should be attachable to the end user's pod the
-moment it is bound, similar to a PVC created from currently supported data sources.
+Populators themselves will work by responding to PVC objects with a data source they
+understand, and producing a PV with the expected data, such that ordinary Kubernetes
+workflows are not disrupted. In particular the PVC should be attachable to the end user's
+pod the moment it is bound, similar to a PVC created from currently supported data sources.
 
 ### User Stories
 
@@ -184,7 +199,7 @@ yet need a way to populate volumes with restored volumes.
 It's also likely that multiple backup/restore implementations will be developed,
 and it's not a good idea to pick a winner at the Kubernetes API layer. It makes
 more sense to enable developers to try different approaches by making the API allow
-restoring from various kinds of things. 
+restoring from various kinds of things.
 
 ### Implementation Details/Notes/Constraints
 
@@ -205,7 +220,7 @@ to them.
 I will leave the details of how data populators will work for another KEP. There
 are a few possible implementation that are worth considering, and this change
 is a necessary step to enable prototyping those ideas and deciding which is
-the best approach.  
+the best approach.
 
 ### Risks and Mitigations
 
@@ -252,13 +267,13 @@ becomes part of the PVC API object. Any very simple CRD would be okay
 for this purpose. We would expect such a PVC to be ignored by existing
 dynamic provisioners.
 
-To test the validation webhook, we need to check the following cases:
-- Creation of a PVC with no datasource is allowed
-- Creation of a PVC with a VolumeSnapshot or PVC datasource is allowed
+To test the data-source-validator, we need to check the following cases:
+- Creation of a PVC with no datasource is ignored
+- Creation of a PVC with a VolumeSnapshot or PVC datasource is ignored
 - Creation of a PVC with a CRD datasource that's not registered by any
-  volume populator is disallowed.
+  volume populator causes events.
 - Creation of a PVC with a CRD datasource that's registered by a
-  volume populator is allowed.
+  volume populator is ignored.
 
 ### Graduation Criteria
 
@@ -273,8 +288,8 @@ To test the validation webhook, we need to check the following cases:
   any other required functionality for data population is working.
 - We will need to see several implementations of working data populators that
   solve real world problems implemented in the community.
-- Validation webhook and associated VolumePopulator CRD should be promoted
-  to beta and usable.
+- Data-source-validator and associated VolumePopulator CRD should be released
+  with versions available.
 
 #### Beta -> GA Graduation
 
@@ -339,11 +354,7 @@ _This section must be completed when targeting alpha to a release._
 ### Rollout, Upgrade and Rollback Planning
 
 * **How can a rollout fail? Can it impact already running workloads?**
-  As long as the validating webhook and its associated CRD is installed before
-  enabling the feature gate, the desired result will be achieved. Enabling the
-  feature gate before installing the validation hook will allow some PVCs to
-  be created with invalid data sources, and those PVCs will never get dynamically
-  provisioned.
+  None.
 
 * **What specific metrics should inform a rollback?**
   None.
@@ -394,7 +405,7 @@ of this feature?**
 
 * **Does this feature depend on any specific services running in the cluster?**
   This feature depends on the VolumePopulator CRD being installed, and the
-  associated validating webhook for PVCs.
+  associated data-source-validator controller.
 
 ### Scalability
 
@@ -417,12 +428,13 @@ the existing API objects?**
 
 * **Will enabling / using this feature result in increasing time taken by any 
 operations covered by [existing SLIs/SLOs]?**
-  Creation of PVCs will have to go through an additional validation webhook.
+  No.
 
 * **Will enabling / using this feature result in non-negligible increase of 
 resource usage (CPU, RAM, disk, IO, ...) in any components?**
-  The new validation webhook will consist of a deployment with 1 or more
-  replicas.
+  The new data-source-validator controller will consist of a deployment with 1 or
+  more replicas. It will watch PVCs and VolumePopulators and emit events on
+  PVCs.
 
 ### Troubleshooting
 
@@ -459,3 +471,5 @@ resource usage (CPU, RAM, disk, IO, ...) in any components?**
 - No progress in v1.19
 - Validation webhook proposed September 2020
 - KEP updated to new format September 2020
+- Webhook replaced with controller in December 2020
+- KEP updated Feb 2021 for v1.21
