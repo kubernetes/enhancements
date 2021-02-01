@@ -1,18 +1,3 @@
----
-title: Support Out-of-Tree AWS Cloud Provider
-authors:
-  - "@andrewsykim"
-owning-sig: sig-cloud-provider
-reviewers:
-  - TBD
-approvers:
-  - TBD
-editor: TBD
-creation-date: 2019-01-25
-last-updated: 2019-01-25
-status: provisional
----
-
 # Supporting Out-of-Tree AWS Cloud Provider
 
 ## Table of Contents
@@ -46,12 +31,12 @@ status: provisional
 
 ## Summary
 
-Build support for the out-of-tree AWS cloud provider. This involves a well-tested version of the cloud-controller-manager 
-that has feature parity to the kube-controller-manager. 
+Build support for the out-of-tree AWS cloud provider. This involves a well-tested version of the cloud-controller-manager
+that has feature parity to the kube-controller-manager.
 
 ## Motivation
 
-Motivation for supporting out-of-tree providers can be found in the [Cloud Controller Manager KEP](/keps/sig-cloud-provider/20180530-cloud-controller-manager.md). 
+Motivation for supporting out-of-tree providers can be found in the [Cloud Controller Manager KEP](/keps/sig-cloud-provider/20180530-cloud-controller-manager.md).
 This KEP is specifically tracking progress for the AWS cloud provider.
 
 ### Goals
