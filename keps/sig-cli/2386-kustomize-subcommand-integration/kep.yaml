@@ -1,0 +1,26 @@
+title: Kustomize Subcommand Integration
+kep-number: 2386
+authors:
+  - "@Liujingfang1"
+owning-sig: sig-cli
+participating-sigs:
+  - sig-cli
+reviewers:
+  - "@liggitt"
+  - "@seans3"
+  - "@soltysh"
+approvers:
+  - "@liggitt"
+  - "@seans3"
+  - "@soltysh"
+editor: "@pwittrock"
+creation-date: 2018-11-07
+last-updated: 2019-02-15
+status: implemented
+see-also:
+  - "[kustomize](https://github.com/kubernetes-sigs/kustomize/blob/master/docs/workflows.md)"
+  - "/keps/sig-cli/2384-kustomize-file-processing-integration/"
+replaces:
+  - "0008-kustomize.md"
+superseded-by:
+  - n/a

@@ -1,30 +1,7 @@
----
-title: Kustomize File Processing Integration
-authors:
-  - "@pwittrock"
-owning-sig: sig-cli
-participating-sigs:
-  - sig-cli
-reviewers:
-  - "@liggitt"
-  - "@seans3"
-  - "@soltysh"
-  - "@monopole"
-approvers:
-  - "@liggitt"
-  - "@seans3"
-  - "@soltysh"
-  - "@monopole"
-editor: "@pwittrock"
-creation-date: 2019-01-17
-last-updated: 2019-03-18
-status: implemented
-see-also:
-  - "kustomize-subcommand-integration.md"
-replaces:
-superseded-by:
-  - n/a
----
+
+
+[execRemoval]: https://github.com/kubernetes-sigs/kustomize/issues/692
+
 
 # Kustomize File Processing Integration
 
@@ -50,9 +27,9 @@ superseded-by:
 
 ## Summary
 
-This is a follow up to [KEP Kustomize Subcommand Integration](kustomize-subcommand-integration.md)
+This is a follow up to [KEP Kustomize Subcommand Integration](/keps/sig-cli/2386-kustomize-subcommand-integration/)
 
-[Kustomize](https://github.com/kubernetes-sigs/kustomize) was introduced as 
+[Kustomize](https://github.com/kubernetes-sigs/kustomize) was introduced as
 subcommand of kubectl to allow users to build their kustomizations directly.
 However users need to pipe the kustomize output to other commands in order
 to use the kustomizations.
@@ -125,7 +102,7 @@ Graduation criteria for the `-k, --kustomize` flag
   - Specifying it along with `-f` (separately)?
 - If / when available, gather usage metrics of the `-k` flag in kubectl commands to evaluate adoption
 - Gather feedback on overall flag experience from users (issues, slack, outreach, etc)
-- Should we add in-kubectl documentation for kustomization format? - e.g. `kubectl kustomize --help` would 
+- Should we add in-kubectl documentation for kustomization format? - e.g. `kubectl kustomize --help` would
   give information about the kustomization.yaml format
 
 ### Implement
@@ -140,7 +117,7 @@ Graduation criteria for the `-k, --kustomize` flag
 - update kubectl docs on k8s.io that use `-n` to set namespace for apply to also show `kustomization.yaml`
 - update imperative kubectl docs on k8s.io that set namespaces, labels, annotations to also show the declarative
   approach using kustomize
-  
+
 - Update cobra (e.g. `--help`) examples for apply, delete, get, etc to include the `-k` flag.
 - Update cobra docs for `-n` flag with apply to suggest using a declarative kustomization.yaml instead
 - Update cobra examples for imperative set, create commands that can be generated to call out the declarative
