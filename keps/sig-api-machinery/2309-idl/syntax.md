@@ -105,6 +105,15 @@ group-version(group:"core", version:"v1") {
             struct Container {
                 name: string,
                 // ...
+
+                // list-maps can have compound keys (as per the underlying
+                // SSA mechanisms)
+                ports: list-map(value: Port, keys: [.containerPort, .protocol]),
+                struct Port {
+                    containerPort: int32 validates(min: 1),
+                    protocol: optional(default: TCP) Protocol,
+                    // ...
+                }
             }
         }
 
@@ -134,6 +143,10 @@ group-version(group:"core", version:"v1") {
         None,
     }
 
+    enum Protocol {
+        TCP, UDP, SCTP
+    }
+
     // markers are extensions that annotate fields or types with
     // additional data that can be picked up by tooling.
     // several markers are built-in (e.g. `deprecated`)
@@ -156,7 +169,7 @@ group-version(group:"core", version:"v1") {
         //
         // The second is as an emergency "break glass" to violate the "field name must
         // have an lowercase first letter" constraint.
-        @reference(group: "v1", version: "core", `kind`: "Secret")
+        @reference(group: "core", version: "v1", `kind`: "Secret")
         _inline: LocalObjectReference,
     }
 
@@ -176,12 +189,12 @@ group-version(group:"core", version:"v1") {
 import (
     types (
        // group-versions are imported explicitly from KDL or CKDL files
-       {core/v1} from "k8s.io/api/core/v1";
+       {core/v1} from "k8s.io/core/v1/types.kdl";
     )
     markers (
         // marker definitions are imported from special KDL or CKDL files
         // and given a prefix whereever they're used.
-        kgo from "kubernetes.mkdl";
+        kgo from "k8s.io/common.mkdl";
     )
 )
 
@@ -206,6 +219,13 @@ group-version(group: "examples", version: "v1") {
 
         @kgo::feature-gated(name: "VolumeScheduling")
         volumeBindingMode: optional VolumeBindingMode,
+
+        // Note that defining nested types like this may result in slightly
+        // different Go names normally.  For k/k purposes, we'll support
+        // a marker to override this and avoid mass changes:
+
+        @kgo::rename(name: "VolumeBindingMode")
+        struct VolumeBindingMode {}
     }
 }
 ```
@@ -285,6 +305,70 @@ marker deprecated {
     msg: string,
 }
 ```
+<<[/UNRESOLVED]>>
+
+<<[UNRESOLVED @sttts]>>
+
+We're missing atomic on structs and simple-maps.
+
+@directxman12: Should be a fairly straightfoward addition to the parameter
+list of both.  Don't think they need separate syntactic constructs --
+they're close enough as concepts.
+
+<<[/UNRESOLVED]>>
+
+<<[UNRESOLVED @sttts]>>
+
+Overlay syntax to add nested validation to existing types
+
+Maybe either
+
+```
+struct MySpec {
+  template: SpecialPodSpec,
+}
+overlay(base: Pod::Spec) SpecialPodSpec {
+  containers: SpecialContainer,
+
+  overlay(base: Pod::Spec::Container) SpecialContainer {
+    name: string validates(pattern: "foo-.+"),
+  }
+}
+```
+
+or 
+
+```
+struct MySpec {
+   template: core/v1::Pod::Spec sub-validates(path: .containers.name, pattern: "foo-.+"),
+}
+```
+
+<<[/UNRESOLVED]>>
+
+<<[UNRESOLVED @thockin]>>
+
+Call simple-map "dict" instead.
+
+@directxman12: the goal was to draw a parallel between maps of structs,
+for which Kubernetes uses `list-map` and maps of primitives and primitive
+slices, for which kubernetes uses a "normal" map.  The goal is that people
+who reach for "map" a explicitly presented with a choice.  Consider,
+instead, if we just called them `map` and `list-map` -- folks not familiar
+with k8s would reach for `map`, and then get frustrated/confused when it
+didn't work.
+
+<<[/UNRESOLVED]>>
+
+<<[UNRESOLVED @thockin]>>
+
+Elide the key in simple cases for parameter lists?
+
+@directxman12: this makes the language a bit less straightforward, but it
+should be possible to come up with a rule that's both ergonomic & doesn't
+have the pitfalls of normal positional arguments and backwards compat
+(e.g. maybe we say `value` may be elided when used as the first argument).
+
 <<[/UNRESOLVED]>>
 
 ## Formal(-ish) Grammar
@@ -514,21 +598,22 @@ type_mod = { (key ~ named_param_list?) | type_ref }
 // - References: bare type identifiers, local type references, qualified type references
 // - behavior modifiers: optional(default: value), create-only, validates(...), preserves-unknown-fields, embedded-kind
 
-// lists are ordered atomic collections of types:
+// lists are ordered atomic collections of types (SSA default lists):
 //
 // list(value: type_mod)
 
-// sets are sets of items
+// sets are sets of items (SSA list of type set)
 //
 // set(value: type_mod)
 
-// list-maps are ordered maps of items that serialize as lists
+// list-maps are ordered maps of items that serialize as lists (SSA list
+// of type map)
 //
 // list-map(value: type, key: list-of-field-paths)
 
 // simple-maps are unordered maps.  They're eventually restricted
 // to string-equivalent keys and largely primitive values, as per
-// the Kubernetes API conventions
+// the Kubernetes API conventions (SSA map, atomic or granular).
 //
 // They are largely used for label sets, selectors,
 // and resource-list.
