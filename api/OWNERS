@@ -1,5 +1,8 @@
 # See the OWNERS docs at https://go.k8s.io/owners
 
+options:
+  no_parent_owners: true
+
 approvers:
   - kep-tools-approvers
 reviewers:
@@ -7,3 +10,4 @@ reviewers:
 
 labels:
   - area/enhancements
+  - kind/api-change

@@ -63,9 +63,9 @@ aliases:
     - derekwaynecarr
   sig-release-leads:
     - alejandrox1
+    - hasheddan
     - justaugustus
     - saschagrunert
-    - tpepper
   sig-scalability-leads:
     - mm4tt
     - shyamjvs
@@ -74,11 +74,11 @@ aliases:
     - Huang-Wei
     - ahg-g
   sig-security-leads:
-    - iancoldwater
+    - IanColdwater
     - tabbysable
   sig-service-catalog-leads:
     - jberkhahn
-    - mszostok
+    - jhvhs
   sig-storage-leads:
     - jsafrane
     - msau42
@@ -117,11 +117,6 @@ aliases:
     - bartsmykla
     - dims
     - spiffxp
-  wg-lts-leads:
-    - imkin
-    - quinton-hoole
-    - tpepper
-    - youngnick
   wg-multitenancy-leads:
     - srampal
     - tashimi
@@ -164,10 +159,10 @@ aliases:
     - cblecker
     - derekwaynecarr
     - dims
-    - lachie83
+    - liggitt
+    - mrbobbytables
     - nikhita
     - parispittman
-    - spiffxp
 ## BEGIN CUSTOM CONTENT
   enhancements-approvers:
     - jeremyrickard
@@ -180,6 +175,16 @@ aliases:
     - johnbelamaric
     - justaugustus
     - LappleApple
+    - mrbobbytables
+  kep-tools-approvers:
+    - jeremyrickard
+    - johnbelamaric
+    - justaugustus
+    - mrbobbytables
+  kep-tools-reviewers:
+    - jeremyrickard
+    - johnbelamaric
+    - justaugustus
     - mrbobbytables
   prod-readiness-approvers:
     - johnbelamaric

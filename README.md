@@ -1,6 +1,9 @@
 # Enhancement Tracking and Backlog
 
-## Table of Contents
+[![PkgGoDev](https://pkg.go.dev/badge/k8s.io/enhancements)](https://pkg.go.dev/k8s.io/enhancements)
+[![Go Report Card](https://goreportcard.com/badge/k8s.io/enhancements)](https://goreportcard.com/report/k8s.io/enhancements)
+[![Slack](https://img.shields.io/badge/Slack-%23enhancements-blueviolet)](https://kubernetes.slack.com/archives/C1L57L91V)
+
 - [Is My Thing an Enhancement?](#is-my-thing-an-enhancement)
 - [When to Create a New Enhancement Issue](#when-to-create-a-new-enhancement-issue)
 - [Why Are Enhancements Tracked](#why-are-enhancements-tracked)
