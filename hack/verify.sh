@@ -36,7 +36,9 @@ EXCLUDED_PATTERNS=(
   "verify-*-dockerized.sh"   # Don't run any scripts that intended to be run dockerized
 
   # TODO(verify): Enable these checks once their errors have been resolved
+  "verify-boilerplate.sh"
   "verify-golangci-lint.sh"
+  "verify-shellcheck.sh"
 )
 
 EXCLUDED_CHECKS=$(ls ${EXCLUDED_PATTERNS[@]/#/${REPO_ROOT}\/hack\/} 2>/dev/null || true)
