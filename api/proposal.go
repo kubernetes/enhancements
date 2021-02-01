@@ -16,6 +16,19 @@ limitations under the License.
 
 package api
 
+import (
+	"bufio"
+	"bytes"
+	"crypto/md5"
+	"fmt"
+	"io"
+	"strings"
+
+	"github.com/go-playground/validator/v10"
+	"github.com/pkg/errors"
+	"gopkg.in/yaml.v3"
+)
+
 type Proposals []*Proposal
 
 func (p *Proposals) AddProposal(proposal *Proposal) {
@@ -56,6 +69,65 @@ type Proposal struct {
 	Contents string `json:"markdown" yaml:"-"`
 }
 
+func (p *Proposal) Validate() error {
+	v := validator.New()
+	if err := v.Struct(p); err != nil {
+		return errors.Wrap(err, "running validation")
+	}
+
+	return nil
+}
+
+type KEPHandler Parser
+
+// TODO(api): Make this a generic parser for all `Document` types
+func (k *KEPHandler) Parse(in io.Reader) (*Proposal, error) {
+	scanner := bufio.NewScanner(in)
+	count := 0
+	metadata := []byte{}
+	var body bytes.Buffer
+	for scanner.Scan() {
+		line := scanner.Text() + "\n"
+		if strings.Contains(line, "---") {
+			count++
+			continue
+		}
+		if count == 1 {
+			metadata = append(metadata, []byte(line)...)
+		} else {
+			body.WriteString(line)
+		}
+	}
+
+	kep := &Proposal{
+		Contents: body.String(),
+	}
+
+	if err := scanner.Err(); err != nil {
+		return kep, errors.Wrap(err, "reading file")
+	}
+
+	// this file is just the KEP metadata
+	if count == 0 {
+		metadata = body.Bytes()
+		kep.Contents = ""
+	}
+
+	if err := yaml.Unmarshal(metadata, &kep); err != nil {
+		k.Errors = append(k.Errors, errors.Wrap(err, "error unmarshalling YAML"))
+		return kep, errors.Wrap(err, "unmarshalling YAML")
+	}
+
+	if valErr := kep.Validate(); valErr != nil {
+		k.Errors = append(k.Errors, errors.Wrap(valErr, "validating KEP"))
+		return kep, errors.Wrap(valErr, "validating KEP")
+	}
+
+	kep.ID = hash(kep.OwningSIG + ":" + kep.Title)
+
+	return kep, nil
+}
+
 type Milestone struct {
 	Alpha  string `json:"alpha" yaml:"alpha"`
 	Beta   string `json:"beta" yaml:"beta"`
@@ -65,4 +137,8 @@ type Milestone struct {
 type FeatureGate struct {
 	Name       string   `json:"name" yaml:"name"`
 	Components []string `json:"components" yaml:"components"`
+}
+
+func hash(s string) string {
+	return fmt.Sprintf("%x", md5.Sum([]byte(s)))
 }

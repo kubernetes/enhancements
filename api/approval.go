@@ -66,7 +66,7 @@ func (prr *PRRApproval) ApproverForStage(stage string) string {
 
 // TODO(api): Can we refactor the proposal `Milestone` to retrieve this?
 type PRRMilestone struct {
-	Approver string `json:"approver" yaml:"approver" validate:"required"`
+	Approver string `json:"approver" yaml:"approver"`
 }
 
 type PRRHandler Parser

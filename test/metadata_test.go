@@ -25,7 +25,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"k8s.io/enhancements/api"
-	"k8s.io/enhancements/pkg/legacy/keps"
 )
 
 const (
@@ -34,37 +33,14 @@ const (
 	kepMetadata = "kep.yaml"
 )
 
-// This is the actual validation check of all keps in this repo
+var files = []string{}
+
+// This is the actual validation check of all KEPs in this repo
 func TestValidation(t *testing.T) {
 	// Find all the keps
-	files := []string{}
 	err := filepath.Walk(
 		filepath.Join("..", kepsDir),
-		func(path string, info os.FileInfo, err error) error {
-			if err != nil {
-				return err
-			}
-			if info.IsDir() {
-				return nil
-			}
-
-			dir := filepath.Dir(path)
-			// true if the file is a symlink
-			if info.Mode()&os.ModeSymlink != 0 {
-				// assume symlink from old KEP location to new
-				newLocation, err := os.Readlink(path)
-				if err != nil {
-					return err
-				}
-				files = append(files, filepath.Join(dir, filepath.Dir(newLocation), kepMetadata))
-				return nil
-			}
-			if ignore(dir, info.Name()) {
-				return nil
-			}
-			files = append(files, path)
-			return nil
-		},
+		walkFn,
 	)
 	// This indicates a problem walking the filepath, not a validation error.
 	if err != nil {
@@ -75,7 +51,7 @@ func TestValidation(t *testing.T) {
 		t.Fatal("must find more than 0 keps")
 	}
 
-	kepParser := &keps.Parser{}
+	kepHandler := &api.KEPHandler{}
 	prrHandler := &api.PRRHandler{}
 	prrsDir := filepath.Join("..", prrsDir)
 
@@ -88,7 +64,9 @@ func TestValidation(t *testing.T) {
 
 			defer kepFile.Close()
 
-			kep := kepParser.Parse(kepFile)
+			kep, kepParseErr := kepHandler.Parse(kepFile)
+			require.Nil(t, kepParseErr)
+
 			if kep.Error != nil {
 				t.Errorf("%v has an error: %v", filename, kep.Error)
 			}
@@ -150,6 +128,36 @@ func TestValidation(t *testing.T) {
 			}
 		})
 	}
+}
+
+var walkFn = func(path string, info os.FileInfo, err error) error {
+	if err != nil {
+		return err
+	}
+
+	if info.IsDir() {
+		return nil
+	}
+
+	dir := filepath.Dir(path)
+	// true if the file is a symlink
+	if info.Mode()&os.ModeSymlink != 0 {
+		// assume symlink from old KEP location to new
+		newLocation, err := os.Readlink(path)
+		if err != nil {
+			return err
+		}
+
+		files = append(files, filepath.Join(dir, filepath.Dir(newLocation), kepMetadata))
+		return nil
+	}
+
+	if ignore(dir, info.Name()) {
+		return nil
+	}
+
+	files = append(files, path)
+	return nil
 }
 
 // TODO: Consider replacing with a .kepignore file
