@@ -21,7 +21,7 @@ import (
 	"sort"
 	"strings"
 
-	"k8s.io/enhancements/pkg/kepval/util"
+	"k8s.io/enhancements/pkg/legacy/util"
 )
 
 var mandatoryKeys = []string{"kep-number"}

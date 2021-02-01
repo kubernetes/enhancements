@@ -23,7 +23,7 @@ import (
 	"github.com/pkg/errors"
 
 	"k8s.io/enhancements/api"
-	"k8s.io/enhancements/pkg/kepval/util"
+	"k8s.io/enhancements/pkg/legacy/util"
 )
 
 var (

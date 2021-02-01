@@ -25,7 +25,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"k8s.io/enhancements/api"
-	"k8s.io/enhancements/pkg/kepval/prrs/validations"
+	"k8s.io/enhancements/pkg/legacy/prrs/validations"
 )
 
 type Parser struct{}
@@ -58,16 +58,4 @@ func (p *Parser) Parse(in io.Reader) *api.PRRApproval {
 	approval.Error = yaml.Unmarshal(body.Bytes(), approval)
 
 	return approval
-}
-
-func (a *Approval) ApproverForStage(stage string) string {
-	switch stage {
-	case "alpha":
-		return a.Alpha.Approver
-	case "beta":
-		return a.Beta.Approver
-	case "stable":
-		return a.Stable.Approver
-	}
-	return ""
 }

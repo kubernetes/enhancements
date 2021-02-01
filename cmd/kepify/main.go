@@ -26,7 +26,7 @@ import (
 	"strings"
 
 	"k8s.io/enhancements/api"
-	"k8s.io/enhancements/pkg/kepval/keps"
+	"k8s.io/enhancements/pkg/legacy/keps"
 )
 
 func Usage() {

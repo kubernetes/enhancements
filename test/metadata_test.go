@@ -22,8 +22,8 @@ import (
 	"strings"
 	"testing"
 
-	"k8s.io/enhancements/pkg/kepval/keps"
-	"k8s.io/enhancements/pkg/kepval/prrs"
+	"k8s.io/enhancements/pkg/legacy/keps"
+	"k8s.io/enhancements/pkg/legacy/prrs"
 )
 
 const (

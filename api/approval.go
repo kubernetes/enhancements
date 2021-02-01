@@ -31,6 +31,19 @@ type PRRApproval struct {
 	Error error `json:"-" yaml:"-"`
 }
 
+func (p *PRRApproval) ApproverForStage(stage string) string {
+	switch stage {
+	case "alpha":
+		return p.Alpha.Approver
+	case "beta":
+		return p.Beta.Approver
+	case "stable":
+		return p.Stable.Approver
+	}
+
+	return ""
+}
+
 // TODO(api): Can we refactor the proposal `Milestone` to retrieve this?
 type PRRMilestone struct {
 	Approver string `json:"approver" yaml:"approver"`

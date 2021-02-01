@@ -37,8 +37,8 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"k8s.io/enhancements/api"
-	"k8s.io/enhancements/pkg/kepval/keps"
-	"k8s.io/enhancements/pkg/kepval/prrs"
+	"k8s.io/enhancements/pkg/legacy/keps"
+	"k8s.io/enhancements/pkg/legacy/prrs"
 	"k8s.io/test-infra/prow/git"
 )
 
@@ -182,7 +182,7 @@ func findLocalKEPMeta(repoPath, sig string) ([]string, error) {
 		"keps",
 		sig)
 
-	// TODO(lint): importShadow: shadow of imported from 'k8s.io/enhancements/pkg/kepval/keps' package 'keps' (gocritic)
+	// TODO(lint): importShadow: shadow of imported from 'k8s.io/enhancements/pkg/legacy/keps' package 'keps' (gocritic)
 	//nolint:gocritic
 	keps := []string{}
 
