@@ -216,7 +216,7 @@ and make progress.
 
 - To provide access to host network resources for **non-privileged** containers and pods.
 - To provide a privileged mode for Hyper-V containers, or a method to run privileged process containers within a Hyper-V isolation boundary. This is a non-goal as running a Hyper-V container in the root namespace from within the isolation boundary is not supported.
-- To enable privileged containers for Docker. This will only be for Containerd.
+- To enable privileged containers for Docker. This will only be for containerd.
 - To align privileged containers with pod namespaces - this functionality may be addressed in a future KEP.
 - Enabling the ability to mix privileged and non-privileged containers in the same Pod. (Multiple privileged containers running in the same Pod will be supported.)
 
@@ -242,7 +242,7 @@ Some interesting scenario examples:
 
 ### Use case 2: Administrative tasks
 
-Windows privileged containers would also enable a wide variety or administrative tasks without requiring cluster operations to log onto each Windows nodes. Tasks like installing security patches, collecting specific event logs, etc could all be down via deployments of privileged containers.
+Windows privileged containers would also enable a wide variety of administrative tasks without requiring cluster operations to log onto each Windows nodes. Tasks like installing security patches, collecting specific event logs, etc could all be done via deployments of privileged containers.
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -513,7 +513,8 @@ Add WindowsSandboxSecurityContext:
 ```protobuf
 message WindowsSandboxSecurityContext {
   string run_as_username = 1;
-  bool privileged = 2;
+  string credential_spec = 2;
+  bool privileged = 3;
 }
 ```
 
@@ -537,7 +538,7 @@ A new boolean field named `privileged` will be added to [WindowsSecurityContextO
 
 On Windows, all containers in a pod must be privileged. Because of this behavior and because `WindowsSecurityContextOptions` already exists on both `PodSecurityContext` and `Container.SecurityContext` Windows containers will use this new field instead of solely relying on the existing `privileged` field which only exists on `SecurityContext`. Because many policy tools currently look for the existing `SecurityContext.privileged` field we will add validation to requrire this field also be set on all containers in a privileged pod.
 
-API validation will ensure that if `privileged` is set in `Container.SecurityContext.WindowsSecurityContextOptions` for any container then then `privileged` must also set in `PodSecurityContext.WindowsSecurityContextOptions`. Current behavior applies pod `WindowsSecurityContextOptions` to all container level `WindowsSecurityContextOptions` if not specified.
+API validation will ensure that if `privileged` is set in `Container.SecurityContext.WindowsSecurityContextOptions` for any container then `privileged` must also set in `PodSecurityContext.WindowsSecurityContextOptions`. Current behavior applies pod `WindowsSecurityContextOptions` to all container level `WindowsSecurityContextOptions` if not specified.
 
 #### Host Network Mode
 
@@ -946,9 +947,9 @@ not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
 -->
 
-- Use Containerd Runtimehandlers and K8s RuntimeClasses - Runtimehandlers are using the prototype. Adding the ability to the CRI provides kubelet to have more control over the security context and and fields that it allows through giving additional checks (such as runasnonroot).
+- Use containerd Runtimehandlers and K8s RuntimeClasses - Runtimehandlers are using the prototype. Adding the ability to the CRI provides kubelet to have more control over the security context and and fields that it allows through giving additional checks (such as runasnonroot).
 
-- Use annotations on CRI to pass privileged flag to Containerd - Adding the field to the CRI spec allows for the existing CRI calls to work as is. The resulting code is cleaner and doesn’t rely on magic strings.  There is currently a PR for adding the SecurityFields to the CRI API adding Sandbox level security support for window containers.  The Runasusername will be required for privileged containers to make sure every container (including pause) runs as the correct user to limit access to the file system.
+- Use annotations on CRI to pass privileged flag to containerd - Adding the field to the CRI spec allows for the existing CRI calls to work as is. The resulting code is cleaner and doesn’t rely on magic strings.  There is currently a PR for adding the SecurityFields to the CRI API adding Sandbox level security support for window containers.  The Runasusername will be required for privileged containers to make sure every container (including pause) runs as the correct user to limit access to the file system.
 
 ## Open Questions
 - What’s the future of plug-ins that will be impacted 
