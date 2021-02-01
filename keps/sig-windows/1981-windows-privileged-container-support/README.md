@@ -311,7 +311,7 @@ Additionally, privileged containers may impact other pod security policies (PSPs
    </td>
    <td>Required.
    </td>
-   <td>Alpha 
+   <td>Alpha
    </td>
   </tr>
   <tr>
@@ -321,7 +321,7 @@ Additionally, privileged containers may impact other pod security policies (PSPs
    </td>
    <td>no
    </td>
-   <td>No support for pid and ipc since jobs don’t provide isolation at that level.
+   <td>HostPID and HostIPC will always be enabled because job objects do not support this level of isolation.
    </td>
    <td>N/A
    </td>
@@ -357,7 +357,7 @@ Additionally, privileged containers may impact other pod security policies (PSPs
    </td>
    <td>no
    </td>
-   <td>Job objects have full access to write to the root file system. Current design does not have a way to control access to read only.
+   <td>Job objects have full access to write to the root file system. Current design does not have a way to control access to read only. Instead privileged/job object containers can be ran as users with limited/scoped files system access via RunAsUsername
    </td>
    <td>N/A
    </td>
@@ -448,7 +448,6 @@ Additionally, privileged containers may impact other pod security policies (PSPs
   </tr>
 </table>
 
-
 ## Design Details
 
 <!--
@@ -457,7 +456,9 @@ change are understandable. This may include API specs (though not always
 required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
+
 ### Overview
+
 Windows privileged containers will be implemented with [Job Objects](https://docs.microsoft.com/en-us/windows/win32/procthread/job-objects), a break from the previous container model using server silos. Job objects provide the ability to manage a group of processes as a group, and assign resource constraints to the processes in the job. Job objects have no process or file system isolation, enabling the privileged payload to view and edit the host file system with the correct permissions, among other host resources. The init process, and any processes it launches or that are explicitly launched by the user, are all assigned to the job object of that container. When the init process exits or is signaled to exit, all the processes in the job will be signaled to exit, the job handle will be closed and the storage will be unmounted.
 
 ![Privileged Container Diagram](Privileged.png)
@@ -484,7 +485,7 @@ More information on Windows resource access can be found at https://docs.microso
 
 - Privileged containers can be built on top of existing Windows base images (nanoserver, servercore, etc).
 - A slim base image may be introduced to act as a replacement for [scratch]. On windows graphdriver calls expect some files (mainly registry hives) and these would be included in the slim base image.
-- Privileged containers will not inherit the same [compatibility requirements](https://docs.microsoft.com/en-us/virtualization/windowscontainers/deploy-containers/version-compatibility) as process isolated containers from an OS perspective. Container runtimes like containerd may need to skip OS version checks when pulling/starting these containers. This will continue to be investigated as the feature matures.
+- Privileged containers will not inherit the same [compatibility requirements](https://docs.microsoft.com/en-us/virtualization/windowscontainers/deploy-containers/version-compatibility) as process isolated containers from an OS perspective. Container runtimes like containerd may be able to use fields on `WindowsPodSandboxConfig` to skip OS version checks when pulling/starting these containers in the future. This will continue to be investigated as the feature matures.
 
 #### Container Image Build/Definition
 
@@ -536,7 +537,7 @@ message WindowsContainerSecurityContext {
 
 A new boolean field named `privileged` will be added to [WindowsSecurityContextOptions](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.20/#windowssecuritycontextoptions-v1-core).
 
-On Windows, all containers in a pod must be privileged. Because of this behavior and because `WindowsSecurityContextOptions` already exists on both `PodSecurityContext` and `Container.SecurityContext` Windows containers will use this new field instead of solely relying on the existing `privileged` field which only exists on `SecurityContext`. Because many policy tools currently look for the existing `SecurityContext.privileged` field we will add validation to requrire this field also be set on all containers in a privileged pod.
+On Windows, all containers in a pod must be privileged. Because of this behavior and because `WindowsSecurityContextOptions` already exists on both `PodSecurityContext` and `Container.SecurityContext` Windows containers will use this new field instead of solely relying on the existing `privileged` field which only exists on `SecurityContext`. Because many policy tools currently look for the existing `SecurityContext.privileged` field we will add validation to require this field also be set on all containers in a privileged pod.
 
 API validation will ensure that if `privileged` is set in `Container.SecurityContext.WindowsSecurityContextOptions` for any container then `privileged` must also set in `PodSecurityContext.WindowsSecurityContextOptions`. Current behavior applies pod `WindowsSecurityContextOptions` to all container level `WindowsSecurityContextOptions` if not specified.
 
