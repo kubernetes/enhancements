@@ -42,7 +42,7 @@ type Approval struct {
 	Beta   Milestone `json:"beta" yaml:"beta"`
 	Stable Milestone `json:"stable" yaml:"stable"`
 
-	Error    error  `json:"-" yaml:"-"`
+	Error error `json:"-" yaml:"-"`
 }
 
 type Parser struct{}
@@ -74,4 +74,16 @@ func (p *Parser) Parse(in io.Reader) *Approval {
 
 	approval.Error = yaml.UnmarshalStrict(body.Bytes(), approval)
 	return approval
+}
+
+func (a *Approval) ApproverForStage(stage string) string {
+	switch stage {
+	case "alpha":
+		return a.Alpha.Approver
+	case "beta":
+		return a.Beta.Approver
+	case "stable":
+		return a.Stable.Approver
+	}
+	return ""
 }
