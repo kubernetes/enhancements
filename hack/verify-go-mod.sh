@@ -19,4 +19,4 @@ set -o nounset
 set -o pipefail
 
 go mod tidy
-git diff --exit-code
+git diff --exit-code go.*
