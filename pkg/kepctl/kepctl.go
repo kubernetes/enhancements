@@ -77,6 +77,7 @@ type Client struct {
 	In       io.Reader
 	Out      io.Writer
 	Err      io.Writer
+	allPulls []*github.PullRequest
 }
 
 func (c *Client) findEnhancementsRepo(opts CommonArgs) (string, error) {
@@ -230,6 +231,25 @@ func (c *Client) loadLocalKEPs(repoPath, sig string) []*api.Proposal {
 	return allKEPs
 }
 
+func (c *Client) allKEPPullRequests(gh *github.Client) ([]*github.PullRequest, error) {
+	if c.allPulls != nil {
+		return c.allPulls, nil
+	}
+	opt := &github.PullRequestListOptions{ListOptions: github.ListOptions{PerPage: 100}}
+	for {
+		pulls, resp, err := gh.PullRequests.List(context.Background(), "kubernetes", "enhancements", opt)
+		if err != nil {
+			return nil, err
+		}
+		c.allPulls = append(c.allPulls, pulls...)
+		if resp.NextPage == 0 {
+			break
+		}
+		opt.Page = resp.NextPage
+	}
+	return c.allPulls, nil
+}
+
 func (c *Client) loadKEPPullRequests(sig string) ([]*api.Proposal, error) {
 	var auth *http.Client
 	ctx := context.Background()
@@ -239,18 +259,9 @@ func (c *Client) loadKEPPullRequests(sig string) ([]*api.Proposal, error) {
 	}
 
 	gh := github.NewClient(auth)
-	allPulls := []*github.PullRequest{}
-	opt := &github.PullRequestListOptions{ListOptions: github.ListOptions{PerPage: 100}}
-	for {
-		pulls, resp, err := gh.PullRequests.List(ctx, "kubernetes", "enhancements", opt)
-		if err != nil {
-			return nil, err
-		}
-		allPulls = append(allPulls, pulls...)
-		if resp.NextPage == 0 {
-			break
-		}
-		opt.Page = resp.NextPage
+	allPulls, err := c.allKEPPullRequests(gh)
+	if err != nil {
+		return nil, err
 	}
 
 	var kepPRs []*github.PullRequest
