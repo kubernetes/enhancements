@@ -12,8 +12,6 @@
   - [API](#api)
     - [Pod API](#pod-api)
       - [LocalhostProfile](#localhostprofile)
-        - [Updating seccomp profiles](#updating-seccomp-profiles)
-        - [Profile files managed by the cluster admins](#profile-files-managed-by-the-cluster-admins)
       - [RuntimeProfile](#runtimeprofile)
 - [Design Details](#design-details)
   - [Failure and Fallback Strategy](#failure-and-fallback-strategy)

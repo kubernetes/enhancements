@@ -43,7 +43,7 @@ read from etcd.
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [Consistent reads from cache](#consistent-reads-from-cache-1)
+  - [Consistent reads from cache](#consistent-reads-from-cache)
     - [Use WithProgressNotify to enable automatic watch updates](#use-withprogressnotify-to-enable-automatic-watch-updates)
     - [Determining if etcd is sending progress notify events](#determining-if-etcd-is-sending-progress-notify-events)
   - [Risks and Mitigations](#risks-and-mitigations)
