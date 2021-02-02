@@ -19,6 +19,13 @@
       - [Proposed Change](#proposed-change)
       - [Alternatives](#alternatives)
       - [Implementation History](#implementation-history)
+- [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
+  - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
+  - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+  - [Monitoring Requirements](#monitoring-requirements)
+  - [Dependencies](#dependencies)
+  - [Scalability](#scalability)
+  - [Troubleshooting](#troubleshooting)
   - [Risks and Mitigations](#risks-and-mitigations)
   - [Testing Plan](#testing-plan)
 - [Graduation Criteria](#graduation-criteria)
@@ -279,6 +286,158 @@ The conversion between the two and creating the diff was complex and would have 
 
 - 12/2019 [#86083](https://github.com/kubernetes/kubernetes/pull/86083) implementing a poc for the described approach
 
+## Production Readiness Review Questionnaire
+
+<!--
+
+Production readiness reviews are intended to ensure that features merging into
+Kubernetes are observable, scalable and supportable; can be safely operated in
+production environments, and can be disabled or rolled back in the event they
+cause increased failures in production. See more in the PRR KEP at
+https://git.k8s.io/enhancements/keps/sig-architecture/1194-prod-readiness.
+
+The production readiness review questionnaire must be completed and approved
+for the KEP to move to `implementable` status and be included in the release.
+
+In some cases, the questions below should also have answers in `kep.yaml`. This
+is to enable automation to verify the presence of the review, and to reduce review
+burden and latency.
+
+The KEP must have a approver from the
+[`prod-readiness-approvers`](http://git.k8s.io/enhancements/OWNERS_ALIASES)
+team. Please reach out on the
+[#prod-readiness](https://kubernetes.slack.com/archives/CPNHUMN74) channel if
+you need any help or guidance.
+
+-->
+
+### Feature Enablement and Rollback
+
+_This section must be completed when targeting alpha to a release._
+
+* **How can this feature be enabled / disabled in a live cluster?**
+  - [x] Feature gate (also fill in values in `kep.yaml`)
+    - Feature gate name: [ServerSideApply](https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/apiserver/pkg/features/kube_features.go#L100)
+    - Components depending on the feature gate: kube-apiserver
+
+* **Does enabling the feature change any default behavior?**
+
+ While this changes how objects are modified and then stored in the database, all the changes should be strictly backward compatible, and shouldn’t break existing automation or users. The increase in size can possibly have adverse, surprising consequences including increased memory usage for controllers, increased bandwidth usage when fetching objects, bigger objects when displaying for users (kubectl get -o yaml). We’re trying to mitigate all of these with the addition of a new header.
+
+* **Can the feature be disabled once it has been enabled (i.e. can we roll back
+  the enablement)?**
+  Also set `disable-supported` to `true` or `false` in `kep.yaml`.
+  Describe the consequences on existing workloads (e.g., if this is a runtime
+  feature, can it break the existing applications?).
+
+  Yes. Managed fields will be reset for server-side applied objects.
+
+* **What happens if we reenable the feature if it was previously rolled back?**
+
+The feature will be restored. Server-side applied objects will have lost their “set” which may cause some surprising behavior (fields might not be removed as expected).
+
+* **Are there any tests for feature enablement/disablement?**
+  The e2e framework does not currently support enabling or disabling feature
+  gates. However, unit tests in each component dealing with managing data, created
+  with and without the feature, are necessary. At the very least, think about
+  conversion tests if API types are being modified.
+
+  Tests are in place for upgrading from client side to server side apply and vice versa.
+
+### Rollout, Upgrade and Rollback Planning
+
+_This section must be completed when targeting beta graduation to a release._
+
+* **How can a rollout fail? Can it impact already running workloads?**
+  Try to be as paranoid as possible - e.g., what if some components will restart
+   mid-rollout?
+
+* **What specific metrics should inform a rollback?**
+
+
+
+* **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
+  Describe manual testing that was done and the outcomes.
+  Longer term, we may want to require automated upgrade/rollback tests, but we
+  are missing a bunch of machinery and tooling and can't do that now.
+
+* **Is the rollout accompanied by any deprecations and/or removals of features, APIs,
+fields of API types, flags, etc.?** No
+
+### Monitoring Requirements
+
+_This section must be completed when targeting beta graduation to a release._
+
+* **How can an operator determine if the feature is in use by workloads?**
+  Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
+  checking if there are objects with field X set) may be a last resort. Avoid
+  logs or events for this purpose.
+
+Any existing metric split by request verb will record the [APPLY](https://github.com/kubernetes/kubernetes/blob/8f6ffb24df989608b87451f89b8ac9fc338ed71c/staging/src/k8s.io/apiserver/pkg/endpoints/metrics/metrics.go#L507-L509) verb if the feature is in use.
+
+* **What are the SLIs (Service Level Indicators) an operator can use to determine
+the health of the service?**
+
+There is no specific metric attached to server side apply. All PATCH requests that utilize SSA will use the verb APPLY when logging metrics. API Server metrics that are split by verb automatically include this. They include `apiserver_request_total`, `apiserver_longrunning_gauge`, `apiserver_response_sizes`, `apiserver_request_terminations_total`, `apiserver_selfrequest_total`
+    - Components exposing the metric: kube-apiserver
+
+* **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?** n/a
+
+* **Are there any missing metrics that would be useful to have to improve observability
+of this feature?** n/a
+
+### Dependencies
+
+* **Does this feature depend on any specific services running in the cluster?** No
+
+### Scalability
+
+* **Will enabling / using this feature result in any new API calls?** No
+
+* **Will enabling / using this feature result in introducing new API types?**
+  Describe them, providing: No
+
+* **Will enabling / using this feature result in any new calls to the cloud
+provider?** No
+
+* **Will enabling / using this feature result in increasing size or count of
+the existing API objects?** Objects applied using server side apply will have their managed fields metadata populated.
+
+* **Will enabling / using this feature result in increasing time taken by any
+operations covered by [existing SLIs/SLOs]?** No
+
+* **Will enabling / using this feature result in non-negligible increase of
+resource usage (CPU, RAM, disk, IO, ...) in any components?** No
+
+### Troubleshooting
+
+The Troubleshooting section currently serves the `Playbook` role. We may consider
+splitting it into a dedicated `Playbook` document (potentially with some monitoring
+details). For now, we leave it here.
+
+_This section must be completed when targeting beta graduation to a release._
+
+* **How does this feature react if the API server and/or etcd is unavailable?**
+
+The feature is part of of the API server and will not function without it
+
+* **What are other known failure modes?**
+  For each of them, fill in the following information by copying the below template:
+  - [Failure mode brief description]
+    - Detection: How can it be detected via metrics? Stated another way:
+      how can an operator troubleshoot without logging into a master or worker node?
+    - Mitigations: What can be done to stop the bleeding, especially for already
+      running user workloads?
+    - Diagnostics: What are the useful log messages and their required logging
+      levels that could help debug the issue?
+      Not required until feature graduated to beta.
+    - Testing: Are there any tests for failure mode? If not, describe why.
+
+* **What steps should be taken if SLOs are not being met to determine the problem?** n/a
+
+[supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
+[existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
+
 ### Risks and Mitigations
 
 We used a feature branch to ensure that no partial state of this feature would
@@ -341,6 +500,8 @@ Integration tests for:
 - [x] Apply works with custom resources. [link](https://github.com/kubernetes/kubernetes/blob/b55417f429353e1109df8b3bfa2afc8dbd9f240b/staging/src/k8s.io/apiextensions-apiserver/test/integration/apply_test.go#L34-L117)
 - [x] Run kubectl apply tests with server-side flag enabled. [link](https://github.com/kubernetes/kubernetes/blob/81e6407393aa46f2695e71a015f93819f1df424c/test/cmd/apply.sh#L246-L314)
 
+E2E and Conformance tests will be added for GA.
+
 ## Graduation Criteria
 
 An alpha version of this is targeted for 1.14.
@@ -349,8 +510,11 @@ This can be promoted to beta when it is a drop-in replacement for the existing
 kubectl apply, and has no regressions (which aren't bug fixes). This KEP will be
 updated when we know the concrete things changing for beta.
 
-This will be promoted to GA once it's gone a sufficient amount of time as beta
-with no changes. A KEP update will precede this.
+A GA version of this is targeted for 1.21.
+
+- E2E tests are created and graduate to conformance
+- [Apply for client-go's typed client](https://github.com/kubernetes/enhancements/tree/master/keps/sig-api-machinery/2144-clientgo-apply) is implemented and has an in-tree controller using it
+- Outstanding bugs around status wiping and scale subresource are fixed
 
 ### Upgrade / Downgrade Strategy
 
@@ -423,6 +587,7 @@ annotation is preserved and up-to-date as described in the downgrade above.
 * Early 2018: @lavalamp begins thinking about apply and writing design docs
 * 2018Q3: Design shift from merge + diff to tracking field managers.
 * 2019Q1: Alpha.
+* 2019Q3: Beta.
 
 (For more details, one can view the apply-wg recordings, or join the mailing list
 and view the meeting notes. TODO: links)
