@@ -20,7 +20,7 @@ import (
 	"strings"
 	"testing"
 
-	"k8s.io/enhancements/pkg/kepval/keps"
+	"k8s.io/enhancements/pkg/legacy/keps"
 )
 
 func TestValidParsing(t *testing.T) {

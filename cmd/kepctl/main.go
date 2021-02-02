@@ -16,39 +16,8 @@ limitations under the License.
 
 package main
 
-import (
-	"fmt"
-	"os"
-
-	"github.com/spf13/cobra"
-	"k8s.io/enhancements/pkg/kepctl"
-)
+import "k8s.io/enhancements/cmd/kepctl/cmd"
 
 func main() {
-	cmd, err := buildMainCommand()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
-	if err := cmd.Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
-}
-
-func buildMainCommand() (*cobra.Command, error) {
-	repoPath := os.Getenv("ENHANCEMENTS_PATH")
-	k, err := kepctl.New(repoPath)
-	if err != nil {
-		return nil, err
-	}
-	var rootCmd = &cobra.Command{
-		Use:   "kepctl",
-		Short: "kepctl helps you build keps",
-	}
-
-	rootCmd.AddCommand(buildCreateCommand(k))
-	rootCmd.AddCommand(buildPromoteCommand(k))
-	rootCmd.AddCommand(buildQueryCommand(k))
-	return rootCmd, nil
+	cmd.Execute()
 }

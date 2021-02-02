@@ -17,13 +17,14 @@ limitations under the License.
 package kepctl
 
 import (
-	"errors"
 	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/pkg/errors"
 
 	"k8s.io/enhancements/api"
 )
@@ -47,22 +48,25 @@ func (c *CreateOpts) Validate(args []string) error {
 	if err != nil {
 		return err
 	}
+
 	if len(c.PRRApprovers) == 0 {
-		return errors.New("Must provide at least one PRR Approver")
+		return errors.New("must provide at least one PRR Approver")
 	}
+
 	return nil
 }
 
 // Create builds a new KEP based on the README.md and kep.yaml templates in the
 // path specified by the command args. CreateOpts is used to populate the template
-func (c *Client) Create(opts CreateOpts) error {
-
+func (c *Client) Create(opts *CreateOpts) error {
 	fmt.Fprintf(c.Out, "Creating KEP %s %s %s\n", opts.SIG, opts.Number, opts.Name)
-	repoPath, err := c.findEnhancementsRepo(opts.CommonArgs)
+
+	repoPath, err := c.findEnhancementsRepo(&opts.CommonArgs)
 	fmt.Fprintf(c.Out, "Looking for enhancements repo in %s\n", repoPath)
 	if err != nil {
 		return fmt.Errorf("unable to create KEP: %s", err)
 	}
+
 	t, err := c.getKepTemplate(repoPath)
 	if err != nil {
 		return err
@@ -74,6 +78,7 @@ func (c *Client) Create(opts CreateOpts) error {
 	if err != nil {
 		return err
 	}
+
 	err = c.createKEP(t, opts)
 	if err != nil {
 		return err
@@ -82,7 +87,7 @@ func (c *Client) Create(opts CreateOpts) error {
 	return nil
 }
 
-func updateTemplate(t *api.Proposal, opts CreateOpts) {
+func updateTemplate(t *api.Proposal, opts *CreateOpts) {
 	if opts.State != "" {
 		t.Status = opts.State
 	}
@@ -100,8 +105,10 @@ func updateTemplate(t *api.Proposal, opts CreateOpts) {
 			if !strings.HasPrefix(author, "@") {
 				author = fmt.Sprintf("@%s", author)
 			}
+
 			authors = append(authors, author)
 		}
+
 		t.Authors = authors
 	}
 
@@ -114,13 +121,15 @@ func updateTemplate(t *api.Proposal, opts CreateOpts) {
 	}
 
 	t.OwningSIG = opts.SIG
+
+	// TODO(lint): appendAssign: append result not assigned to the same slice (gocritic)
+	//nolint:gocritic
 	t.ParticipatingSIGs = append(opts.SIGS, opts.SIG)
 	t.Filename = opts.Name
 	t.LastUpdated = "v1.19"
 	if len(opts.PRRApprovers) > 0 {
 		t.PRRApprovers = updatePersonReference(opts.PRRApprovers)
 	}
-
 }
 
 func updatePersonReference(names []string) []string {
@@ -134,25 +143,29 @@ func updatePersonReference(names []string) []string {
 	return persons
 }
 
-func (c *Client) createKEP(kep *api.Proposal, opts CreateOpts) error {
-
+func (c *Client) createKEP(kep *api.Proposal, opts *CreateOpts) error {
 	fmt.Fprintf(c.Out, "Generating new KEP %s in %s ===>\n", opts.Name, opts.SIG)
 
-	err := c.writeKEP(kep, opts.CommonArgs)
+	args := &opts.CommonArgs
+	err := c.writeKEP(kep, args)
 	if err != nil {
 		return fmt.Errorf("unable to create KEP: %s", err)
 	}
-	path, err := c.findEnhancementsRepo(opts.CommonArgs)
+
+	path, err := c.findEnhancementsRepo(args)
 	if err != nil {
 		return err
 	}
+
 	b, err := c.getReadmeTemplate(path)
 	if err != nil {
 		return fmt.Errorf("couldn't find README template: %s", err)
 	}
 
 	newPath := filepath.Join(path, "keps", opts.SIG, opts.Name, "README.md")
-	ioutil.WriteFile(newPath, b, os.ModePerm)
+	if writeErr := ioutil.WriteFile(newPath, b, os.ModePerm); writeErr != nil {
+		return errors.Wrapf(writeErr, "writing KEP data to file")
+	}
 
 	return nil
 }

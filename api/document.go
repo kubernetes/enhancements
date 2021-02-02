@@ -1,5 +1,5 @@
 /*
-Copyright 2020 The Kubernetes Authors.
+Copyright 2021 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -14,18 +14,28 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package main
+package api
 
 import (
-	flag "github.com/spf13/pflag"
-
-	"k8s.io/enhancements/pkg/kepctl"
+	"io"
 )
 
-func addRepoPathFlag(
-	f *flag.FlagSet,
-	opts *kepctl.CommonArgs,
-) {
-	f.StringVar(&opts.RepoPath, "repo-path", "", "Path to kubernetes/enhancements")
-	f.StringVar(&opts.TokenPath, "gh-token-path", "", "Path to a file with a GitHub API token")
+// TODO(api): Populate interface
+// TODO(api): Mock interface
+type File interface {
+	Parse(io.Reader) (Document, error)
+}
+
+// TODO(api): Populate interface
+// TODO(api): Mock interface
+// Document is an interface satisfied by the following types:
+// - `Proposal` (KEP)
+// - `PRRApproval`
+// - `Receipt` (coming soon)
+type Document interface {
+	Validate() error
+}
+
+type Parser struct {
+	Errors []error
 }

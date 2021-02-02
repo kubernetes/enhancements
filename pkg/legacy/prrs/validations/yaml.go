@@ -21,12 +21,10 @@ import (
 	"sort"
 	"strings"
 
-	"k8s.io/enhancements/pkg/kepval/util"
+	"k8s.io/enhancements/pkg/legacy/util"
 )
 
-var (
-	mandatoryKeys = []string{"kep-number"}
-)
+var mandatoryKeys = []string{"kep-number"}
 
 func ValidateStructure(parsed map[interface{}]interface{}) error {
 	for _, key := range mandatoryKeys {
@@ -71,17 +69,25 @@ func validateMilestone(parsed map[interface{}]interface{}) error {
 		}
 
 		// figure out the types
+		// TODO(lint): singleCaseSwitch: should rewrite switch statement to if statement (gocritic)
+		//nolint:gocritic
 		switch strings.ToLower(k) {
 		case "approver":
+			// TODO(lint): singleCaseSwitch: should rewrite switch statement to if statement (gocritic)
+			//nolint:gocritic
 			switch v := value.(type) {
 			case []interface{}:
 				return util.NewValueMustBeString(k, v)
 			}
+
+			// TODO(lint): Error return value is not checked (errcheck)
+			//nolint:errcheck
 			v, _ := value.(string)
 			if len(v) > 0 && v[0] == '@' {
-				// If "@" is appeneded at the beginning, remove it.
+				// If "@" is appended at the beginning, remove it.
 				v = v[1:]
 			}
+
 			index := sort.SearchStrings(prrApprovers, v)
 			if index >= len(prrApprovers) || prrApprovers[index] != v {
 				return util.NewValueMustBeOneOf(k, v, prrApprovers)

@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package main
+package test
 
 import (
 	"os"
@@ -22,8 +22,9 @@ import (
 	"strings"
 	"testing"
 
-	"k8s.io/enhancements/pkg/kepval/keps"
-	"k8s.io/enhancements/pkg/kepval/prrs"
+	"github.com/stretchr/testify/require"
+
+	"k8s.io/enhancements/api"
 )
 
 const (
@@ -32,37 +33,14 @@ const (
 	kepMetadata = "kep.yaml"
 )
 
-// This is the actual validation check of all keps in this repo
+var files = []string{}
+
+// This is the actual validation check of all KEPs in this repo
 func TestValidation(t *testing.T) {
 	// Find all the keps
-	files := []string{}
 	err := filepath.Walk(
-		filepath.Join("..", "..", kepsDir),
-		func(path string, info os.FileInfo, err error) error {
-			if err != nil {
-				return err
-			}
-			if info.IsDir() {
-				return nil
-			}
-
-			dir := filepath.Dir(path)
-			// true if the file is a symlink
-			if info.Mode()&os.ModeSymlink != 0 {
-				// assume symlink from old KEP location to new
-				newLocation, err := os.Readlink(path)
-				if err != nil {
-					return err
-				}
-				files = append(files, filepath.Join(dir, filepath.Dir(newLocation), kepMetadata))
-				return nil
-			}
-			if ignore(dir, info.Name()) {
-				return nil
-			}
-			files = append(files, path)
-			return nil
-		},
+		filepath.Join("..", kepsDir),
+		walkFn,
 	)
 	// This indicates a problem walking the filepath, not a validation error.
 	if err != nil {
@@ -73,9 +51,9 @@ func TestValidation(t *testing.T) {
 		t.Fatal("must find more than 0 keps")
 	}
 
-	kepParser := &keps.Parser{}
-	prrParser := &prrs.Parser{}
-	prrsDir := filepath.Join("..", "..", prrsDir)
+	kepHandler := &api.KEPHandler{}
+	prrHandler := &api.PRRHandler{}
+	prrsDir := filepath.Join("..", prrsDir)
 
 	for _, filename := range files {
 		t.Run(filename, func(t *testing.T) {
@@ -83,9 +61,12 @@ func TestValidation(t *testing.T) {
 			if err != nil {
 				t.Fatalf("could not open file %s: %v\n", filename, err)
 			}
+
 			defer kepFile.Close()
 
-			kep := kepParser.Parse(kepFile)
+			kep, kepParseErr := kepHandler.Parse(kepFile)
+			require.Nil(t, kepParseErr)
+
 			if kep.Error != nil {
 				t.Errorf("%v has an error: %v", filename, kep.Error)
 			}
@@ -114,10 +95,14 @@ func TestValidation(t *testing.T) {
 				t.Errorf("To get PRR approval modify appropriately file %s and have this approved by PRR team", prrFilename)
 				return
 			}
+
 			if err != nil {
 				t.Fatalf("could not open file %s: %v\n", prrFilename, err)
 			}
-			prr := prrParser.Parse(prrFile)
+
+			prr, prrParseErr := prrHandler.Parse(prrFile)
+			require.Nil(t, prrParseErr)
+
 			if prr.Error != nil {
 				t.Errorf("PRR approval file %v has an error: %v", prrFilename, prr.Error)
 				return
@@ -132,9 +117,10 @@ func TestValidation(t *testing.T) {
 			case "stable":
 				stagePRRApprover = prr.Stable.Approver
 			}
+
 			if len(stageMilestone) > 0 && stageMilestone >= "v1.21" {
 				// PRR approval is needed.
-				if len(stagePRRApprover) == 0 {
+				if stagePRRApprover == "" {
 					t.Errorf("PRR approval is required to target milestone %v (stage %v)", stageMilestone, kep.Stage)
 					t.Errorf("For more details about PRR approval see: https://github.com/kubernetes/community/blob/master/sig-architecture/production-readiness.md")
 					t.Errorf("To get PRR approval modify appropriately file %s and have this approved by PRR team", prrFilename)
@@ -144,9 +130,41 @@ func TestValidation(t *testing.T) {
 	}
 }
 
+var walkFn = func(path string, info os.FileInfo, err error) error {
+	if err != nil {
+		return err
+	}
+
+	if info.IsDir() {
+		return nil
+	}
+
+	dir := filepath.Dir(path)
+	// true if the file is a symlink
+	if info.Mode()&os.ModeSymlink != 0 {
+		// assume symlink from old KEP location to new
+		newLocation, err := os.Readlink(path)
+		if err != nil {
+			return err
+		}
+
+		files = append(files, filepath.Join(dir, filepath.Dir(newLocation), kepMetadata))
+		return nil
+	}
+
+	if ignore(dir, info.Name()) {
+		return nil
+	}
+
+	files = append(files, path)
+	return nil
+}
+
+// TODO: Consider replacing with a .kepignore file
+// TODO: Is this a duplicate of the package function?
 // ignore certain files in the keps/ subdirectory
 func ignore(dir, name string) bool {
-	if dir == "../../keps/NNNN-kep-template" {
+	if dir == "../keps/NNNN-kep-template" {
 		return true // ignore the template directory because its metadata file does not use a valid sig name
 	}
 

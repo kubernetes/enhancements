@@ -69,14 +69,14 @@ func TestValidateQueryOpt(t *testing.T) {
 
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
-			var queryOpts = tc.queryOpts
-			var err = queryOpts.Validate()
+			queryOpts := tc.queryOpts
+			err := queryOpts.Validate()
+
 			if tc.err == nil {
 				require.Nil(t, err)
 			} else {
 				require.NotNil(t, err, tc.err.Error())
 			}
-
 		})
 	}
 }

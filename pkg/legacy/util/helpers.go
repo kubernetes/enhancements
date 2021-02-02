@@ -105,9 +105,8 @@ func fetchPRRApprovers() ([]string, error) {
 		return nil, fmt.Errorf("unable to read parse aliases content: %v", err)
 	}
 	var result []string
-	for _, approver := range config.Data["prod-readiness-approvers"] {
-		result = append(result, approver)
-	}
+	result = append(result, config.Data["prod-readiness-approvers"]...)
+
 	sort.Strings(result)
 	return result, nil
 }

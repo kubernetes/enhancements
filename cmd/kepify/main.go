@@ -26,7 +26,7 @@ import (
 	"strings"
 
 	"k8s.io/enhancements/api"
-	"k8s.io/enhancements/pkg/kepval/keps"
+	"k8s.io/enhancements/pkg/legacy/keps"
 )
 
 func Usage() {
@@ -44,7 +44,7 @@ func main() {
 	flag.Usage = Usage
 	flag.Parse()
 
-	if len(*dirPath) == 0 {
+	if *dirPath == "" {
 		fmt.Fprintf(os.Stderr, "please specify the root directory for KEPs using '--dir'\n")
 		os.Exit(1)
 	}
@@ -53,12 +53,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	if len(*filePath) == 0 {
+	if *filePath == "" {
 		fmt.Fprintf(os.Stderr, "please specify the file path for the output json using '--output'\n")
 		os.Exit(1)
 	}
 
-	// Find all the keps
+	// Find all of the KEPs
 	files, err := findMarkdownFiles(dirPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "unable to find markdown files: %v\n", err)
@@ -111,14 +111,16 @@ func parseFiles(files []string) (api.Proposals, error) {
 		parser := &keps.Parser{}
 		file, err := os.Open(filename)
 		if err != nil {
-			return nil, fmt.Errorf("could not open file: %v\n", err)
+			return nil, fmt.Errorf("could not open file: %v", err)
 		}
+
 		defer file.Close()
 		kep := parser.Parse(file)
 		// if error is nil we can move on
 		if kep.Error != nil {
-			return nil, fmt.Errorf("%v has an error: %q\n", filename, kep.Error.Error())
+			return nil, fmt.Errorf("%v has an error: %q", filename, kep.Error.Error())
 		}
+
 		fmt.Printf(">>>> parsed file successfully: %s\n", filename)
 		proposals.AddProposal(kep)
 	}
@@ -147,11 +149,13 @@ func printJSONOutput(filePath string, proposals api.Proposals) error {
 	return nil
 }
 
-/// ignore certain files in the keps/ subdirectory
+// TODO: Consider replacing with a .kepignore file
+// ignore certain files in the keps/ subdirectory
 func ignore(name string) bool {
 	if !strings.HasSuffix(name, "md") {
 		return true
 	}
+
 	if name == "0023-documentation-for-images.md" ||
 		name == "0004-cloud-provider-template.md" ||
 		name == "0001a-meta-kep-implementation.md" ||
@@ -161,5 +165,6 @@ func ignore(name string) bool {
 		name == "kep-faq.md" {
 		return true
 	}
+
 	return false
 }
