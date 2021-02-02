@@ -99,7 +99,8 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Container Image Build/Definition](#container-image-builddefinition)
   - [CRI Implementation Details](#cri-implementation-details)
   - [Kubernetes API updates](#kubernetes-api-updates)
-    - [Privileged Flag](#privileged-flag)
+    - [WindowsSecurityContextOptions.HostJob Flag](#windowssecuritycontextoptionshostjob-flag)
+      - [Alternatives](#alternatives)
     - [Host Network Mode](#host-network-mode)
     - [Example deployment spec](#example-deployment-spec)
   - [Kubelet Implementation Details](#kubelet-implementation-details)
@@ -118,7 +119,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
-- [Alternatives](#alternatives)
+- [Alternatives](#alternatives-1)
 - [Open Questions](#open-questions)
 <!-- /toc -->
 
