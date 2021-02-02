@@ -24,7 +24,7 @@ To get started with this template:
   appropriate SIG(s).
 - [x] **Create a PR for this KEP.**
   Assign it to people in the SIG who are sponsoring this process.
-- [ ] **Merge early and iterate.**
+- [x] **Merge early and iterate.**
   Avoid getting hung up on specific details and instead aim to get the goals of
   the KEP clarified and merged quickly. The best way to do this is to just
   start with the high-level sections and fill out details incrementally in
@@ -275,11 +275,11 @@ I want the ability to add a previously-isolated cluster to a ClusterSet, or to m
 
 I have a headless multi-cluster service deployed across clusters in my ClusterSet with similarly named pods in each cluster. I need a way to disambiguate each backend pod via DNS.
 
-```
-<<[UNRESOLVED]>>
-Examples of DNS using cluster ID a la `<hostname>.<clusterID>.<svc>.<ns>.svc.clusterset.local`
-<<[/UNRESOLVED]>>
-```
+  ```
+  <<[UNRESOLVED]>>
+  Examples of DNS using cluster ID a la `<hostname>.<clusterID>.<svc>.<ns>.svc.clusterset.local`
+  <<[/UNRESOLVED]>>
+  ```
 
 #### Diagnostics
 
@@ -287,11 +287,11 @@ Clusters within my ClusterSet send logs/metrics to a common monitoring solution 
 
 
 ### `ClusterClaim` CRD
-```
-<<[UNRESOLVED]>>
-The actual name of the CRD is not finalized and is provisionally titled `ClusterClaim` for the remainder of this document.
-<<[/UNRESOLVED]>>
-```
+  ```
+  <<[UNRESOLVED]>>
+  The actual name of the CRD is not finalized and is provisionally titled `ClusterClaim` for the remainder of this document.
+  <<[/UNRESOLVED]>>
+  ```
 
 The `ClusterClaim` resource provides a way to store identification related, cluster scoped information for multi-cluster tools while creating flexibility for implementations. A cluster may have multiple `ClusterClaim`s, each holding a different identification related value. Each claim contains the following information:
 
@@ -349,17 +349,17 @@ Contains a unique identifier for the containing cluster.
 
 **Reusing cluster names**: Since an `id.k8s.io ClusterClaim` has no restrictions on whether or not a ClusterClaim can be repeatable, if a cluster unregisters from a ClusterSet it is permitted under this standard to rejoin later with the same `id.k8s.io ClusterClaim` it had before. Similarly, a *different* cluster could join a ClusterSet with the same `id.k8s.io ClusterClaim` that had been used by another cluster previously, as long as both do not have membership in the same ClusterSet at the same time. Finally, two or more clusters may have the same `id.k8s.io ClusterClaim` concurrently (though they **should** not; see "Uniqueness" above) *as long as* they both do not have membership in the same ClusterSet.
 
-```
-<<[UNRESOLVED]>>
-We could probably use some example scenarios describing how some dependent tool should handle IDs changing or disappearing during various stages of the cluster/membership lifecycle - @jeremyot
-<<[/UNRESOLVED]>>
-```
+  ```
+  <<[UNRESOLVED]>>
+  We could probably use some example scenarios describing how some dependent tool should handle IDs changing or disappearing during various stages of the cluster/membership lifecycle - @jeremyot
+  <<[/UNRESOLVED]>>
+  ```
 
-```
-<<[UNRESOLVED]>>
-How should uniqueness restrictions be handled to clusters who were originally isolated and only acquired/verified an id when joining a ClusterSet
-<<[/UNRESOLVED]>>
-```
+  ```
+  <<[UNRESOLVED]>>
+  How should uniqueness restrictions be handled to clusters who were originally isolated and only acquired/verified an id when joining a ClusterSet
+  <<[/UNRESOLVED]>>
+  ```
 
 
 #### Claim: `clusterset.k8s.io`
@@ -430,19 +430,31 @@ The actual implementation to select and store the identifier of a given cluster 
 
 That being said, for less stringent identifiers, for example a user-specified and human-readable value, a given `id.k8s.io ClusterClaim` may need to change if an identical identifier is in use by another member of the ClusterSet it wants to join. It is likely this would need to happen outside the cluster-local boundary; for example, whatever manages memberships would likely need to deny the incoming cluster, and potentially assign (or prompt the cluster to assign itself) a new ID.
 
-```
-<<[UNRESOLVED]>>
-Effect of different identifier styles (mainly UUID vs human readable) on DNS
-<<[/UNRESOLVED]>>
-```
+  ```
+  <<[UNRESOLVED]>>
+  Effect of different identifier styles (mainly UUID vs human readable) on DNS
+  <<[/UNRESOLVED]>>
+  ```
+
+  ```
+  <<[UNRESOLVED]>>
+  Do we need examples/guidance on the recommended structure of the claim-dependent value? Can we/should we recommend (/enforce?) not dropping arbitrary JSON in there? For example, that the value of `id.k8s.io` would likely be a string, probably the kube-system uuid.
+  <<[/UNRESOLVED]>>
+  ```
 
 #### `clusterset.k8s.io ClusterClaim`
 
-```
-<<[UNRESOLVED]>>
-How do we associate a cluster with a Clusterset?
-<<[/UNRESOLVED]>>
-```
+  ```
+  <<[UNRESOLVED]>>
+  How do we associate a cluster with a Clusterset?
+  <<[/UNRESOLVED]>>
+  ```
+
+  ```
+  <<[UNRESOLVED]>>
+  Do we need examples/guidance on the recommended structure of the claim-dependent value? Can we/should we recommend (/enforce?) not dropping arbitrary JSON in there? For example, that the value of `clusterset.k8s.io` would likely be a string, probably the name of the membership used by the cluster registry that the given implementation is using.
+  <<[/UNRESOLVED]>>
+  ```
 
 ### Test Plan
 
