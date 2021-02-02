@@ -1,8 +1,4 @@
-<<<<<<< HEAD:keps/sig-storage/1495-generic-data-populators/README.md
-# Generic Data Populators
-=======
 # Volume Populators
->>>>>>> Reformat populators KEP:keps/sig-storage/1495-volume-populators/README.md
 
 ## Table of Contents
 
@@ -120,7 +116,8 @@ objects and generate events on objects with data sources that are not considered
 determine which data sources are valid a new CRD will be introduced valled `VolumePopulator`
 which will allow actual data populator controllers to register the API `groups`/`kinds` that
 they understand with the `data-source-validator` controller. If a PVC has a data source that
-matches the `group`/`kind` of a registered `VolumePopulator` the controller will ignore it.
+matches the `group`/`kind` of a registered `VolumePopulator` the controller will consider
+it valid and emit no events, relying on the actual populator to give feedback to the user.
 
 Instances of the VolumePopulator CRD will look like:
 
@@ -136,8 +133,8 @@ sourceKind:
 
 In this model there will be 4 sources of feedback to the end user:
 1. The API server will reject core objects other than PVCs with it current behavior, which
-   is to accept the PVC but to blank out the data source. The is backwards compatible, and
-   appropriate becuse we don't expect any existing core object (other than a PVC) to be a
+   is to accept the PVC but to blank out the data source. This is backwards compatible, and
+   appropriate because we don't expect any existing core object (other than a PVC) to be a
    valid data source.
 1. For data sources that refer to a unknown group/kind, the data-source-validator will emit
    an event on the PVC informing the user that the PVC is currently not being acted on, so
@@ -146,7 +143,7 @@ In this model there will be 4 sources of feedback to the end user:
    install the actual populator, in which case they can do so, and the PVC will eventually
    bind if all of the installation steps succeed.
 1. For every PVC under the responsibility of a CSI driver, the provisioner sidecar for that
-   PVR will emit an event explaining that the sidecar is not taking action on the PVC,
+   PVC will emit an event explaining that the sidecar is not taking action on the PVC,
    assuming the data source is something that a populator is responsible for and not a
    PVC or VolumeSnapshot, which the sidecar is responsible for.
 1. For data source that refer to a known group/kind the populator controller itself should
@@ -268,12 +265,12 @@ for this purpose. We would expect such a PVC to be ignored by existing
 dynamic provisioners.
 
 To test the data-source-validator, we need to check the following cases:
-- Creation of a PVC with no datasource is ignored
-- Creation of a PVC with a VolumeSnapshot or PVC datasource is ignored
+- Creation of a PVC with no datasource causes no events
+- Creation of a PVC with a VolumeSnapshot or PVC datasource causes no events
 - Creation of a PVC with a CRD datasource that's not registered by any
-  volume populator causes events.
+  volume populator causes UnrecognizedDataSourceKind events.
 - Creation of a PVC with a CRD datasource that's registered by a
-  volume populator is ignored.
+  volume populator causes no events.
 
 ### Graduation Criteria
 
@@ -335,9 +332,8 @@ _This section must be completed when targeting alpha to a release._
   Before this feature, kube API server would silently drop any PVC data source
   that it didn't recognize, as if the client never populated the field. After
   enabling this feature, the API server allows any object to be specified.
-  An external admission controller will take over validation of the field,
-  and its response to invalid data sources will be to fail the create operation,
-  rather than silently drop them.
+  The data-source-validator controller will emit events for PVCs if the data
+  source is not recognized as one which is be handled by another controller.
 
 * **Can the feature be disabled once it has been enabled (i.e. can we roll back
   the enablement)?**
