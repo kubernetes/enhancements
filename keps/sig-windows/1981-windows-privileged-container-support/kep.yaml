@@ -1,7 +1,8 @@
 title: Windows Privileged Container Support
 kep-number: 1981
 authors:
-  - "@ambguo", "@marosset"
+  - "@ambguo" 
+  - "@marosset"
 owning-sig: sig-windows
 participating-sigs:
   - sig-node 
