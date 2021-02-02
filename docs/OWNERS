@@ -1,0 +1,12 @@
+# See the OWNERS docs at https://go.k8s.io/owners
+
+approvers:
+  - enhancements-approvers
+  - kep-tools-approvers
+reviewers:
+  - enhancements-reviewers
+  - kep-tools-reviewers
+
+labels:
+  - area/enhancements
+  - kind/documentation

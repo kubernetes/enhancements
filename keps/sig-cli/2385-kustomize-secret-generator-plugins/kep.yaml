@@ -1,0 +1,19 @@
+title: Kustomize Secret Generator Plugins
+kep-number: 2385
+authors:
+  - "@sethpollack"
+owning-sig: sig-cli
+participating-sigs:
+  - sig-apps
+  - sig-architecture
+reviewers:
+  - "@monopole"
+  - "@Liujingfang1"
+approvers:
+  - "@monopole"
+  - "@Liujingfang1"
+  - "@pwittrock"
+editor: "@sethpollack"
+creation-date: 2019-02-04
+last-updated: 2019-02-04
+status: implementable

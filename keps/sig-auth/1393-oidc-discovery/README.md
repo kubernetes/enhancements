@@ -13,6 +13,13 @@
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
+- [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
+  - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
+  - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+  - [Monitoring Requirements](#monitoring-requirements)
+  - [Dependencies](#dependencies)
+  - [Scalability](#scalability)
+  - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
 <!-- /toc -->
 
@@ -296,6 +303,202 @@ of versioning. However, we can still treat graduation in terms of
 [maturity-levels]: https://git.k8s.io/community/contributors/devel/sig-architecture/api_changes.md#alpha-beta-and-stable-versions
 [deprecation-policy]: https://kubernetes.io/docs/reference/using-api/deprecation-policy/
 
+## Production Readiness Review Questionnaire
+
+<!--
+
+Production readiness reviews are intended to ensure that features merging into
+Kubernetes are observable, scalable and supportable; can be safely operated in
+production environments, and can be disabled or rolled back in the event they
+cause increased failures in production. See more in the PRR KEP at
+https://git.k8s.io/enhancements/keps/sig-architecture/1194-prod-readiness.
+
+The production readiness review questionnaire must be completed and approved
+for the KEP to move to `implementable` status and be included in the release.
+
+In some cases, the questions below should also have answers in `kep.yaml`. This
+is to enable automation to verify the presence of the review, and to reduce review
+burden and latency.
+
+The KEP must have a approver from the
+[`prod-readiness-approvers`](http://git.k8s.io/enhancements/OWNERS_ALIASES)
+team. Please reach out on the
+[#prod-readiness](https://kubernetes.slack.com/archives/CPNHUMN74) channel if
+you need any help or guidance.
+
+-->
+
+### Feature Enablement and Rollback
+
+_This section must be completed when targeting alpha to a release._
+
+* **How can this feature be enabled / disabled in a live cluster?**
+
+  No. This feature is always enabled (post-GA).
+  Pre-GA it was possible to disable with the feature gate.
+
+  - [x] Feature gate (also fill in values in `kep.yaml`)
+    - Feature gate name: ServiceAccountIssuerDiscovery
+    - Components depending on the feature gate: kube-apiserver
+    - Note: This feature is targeted to GA in 1.21, at which point feature gates
+      lock to enabled. This means it will not be possible to disable after the
+      current dev cycle.
+
+* **Does enabling the feature change any default behavior?**
+  No. It adds an entirely new non-resource-url that can be used to discover
+  metadata related to the cluster's service account issuer.
+
+* **Can the feature be disabled once it has been enabled (i.e. can we roll back
+  the enablement)?**
+
+  No. This feature is always enabled post-GA.
+  The only way to roll back is to return to an older K8s version.
+
+  **Describe the consequences on existing workloads (e.g., if this is a runtime
+  feature, can it break the existing applications?).**
+
+  Existing applications would have to take a dependency on this feature to
+  be broken by it. Thus, enabling the feature for the first time is not a risk
+  to existing applications, but disabling it later could be.
+
+* **What happens if we reenable the feature if it was previously rolled back?**
+
+  The feature should continue to work just fine.
+
+* **Are there any tests for feature enablement/disablement?**
+
+  No.
+
+### Rollout, Upgrade and Rollback Planning
+
+_This section must be completed when targeting beta graduation to a release._
+
+* **How can a rollout fail? Can it impact already running workloads?**
+  Enablement shouldn't affect any existing workloads. If we broke the feature in
+  the future, we would _possibly_ see failures of workloads to authenticate to
+  Relying Parties _outside_ the cluster, but in-cluster workload to
+  kube-apiserver authentication would still work, since it doesn't rely
+  on this path.
+
+* **What specific metrics should inform a rollback?**
+  N/A
+
+* **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
+  The standard upgrade tests would have covered this between alpha and beta,
+  when the feature was enabled by default.
+
+* **Is the rollout accompanied by any deprecations and/or removals of features, APIs,
+fields of API types, flags, etc.?**
+
+  No.
+
+### Monitoring Requirements
+
+_This section must be completed when targeting beta graduation to a release._
+
+* **How can an operator determine if the feature is in use by workloads?**
+  Ideally, there would just be usage metrics for all API server endpoints.
+  Since we don't currently have that, the next best option would be to examine
+  API server logs.
+
+* **What are the SLIs (Service Level Indicators) an operator can use to determine
+the health of the service?**
+  - [x] Other (treat as last resort)
+    - Details: API server logs, or ability of workloads to authenticate to
+      Relying Parties.
+
+* **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
+  We expect the endpoints to maintain high reliability, with reliability
+  matching that of kube-apiserver.
+
+* **Are there any missing metrics that would be useful to have to improve observability
+of this feature?**
+  It would be nice to have usage metrics for this endpoint. We haven't added
+  them so far because non-resource URLs don't have them by default. This could
+  be worth solving in general but a general solution is out of scope for this
+  KEP.
+
+### Dependencies
+
+_This section must be completed when targeting beta graduation to a release._
+
+* **Does this feature depend on any specific services running in the cluster?**
+  It only depends on kube-apiserver being up. If, for example, the issuer is
+  configured as https://kubernetes.default.svc, then the corresponding Service
+  needs to exist in the cluster as well.
+
+
+### Scalability
+
+_For alpha, this section is encouraged: reviewers should consider these questions
+and attempt to answer them._
+
+_For beta, this section is required: reviewers must answer these questions._
+
+_For GA, this section is required: approvers should be able to confirm the
+previous answers based on experience in the field._
+
+* **Will enabling / using this feature result in any new API calls?**
+  Yes.
+  - GET `${API_SERVER}/.well-known/openid-configuration`
+  - GET `${API_SERVER}/openid/v1/jwks`
+  - Note each endpoint serves a response that is pre-rendered when
+    kube-apiserver starts up.
+  - Originating components: Could be arbitrary. For example:
+    - A cluster installer reads these once when configuring identity federation
+      with a cloud provider (Low throughput).
+    - In-cluster components use this to perform an OIDC discovery flow to
+      validate tokens (Medium to High throughput). Note TokenReview is the
+      preferred approach in this case.
+    - A cluster admin adds additional RBAC to make these endpoints public, and
+      points Relying Parties directly at these endpoints (High throughput,
+      though RPs _should_ do some caching instead of making calls on every
+      token validation).
+
+* **Will enabling / using this feature result in introducing new API types?**
+  No new types, just two new non-resource URLs that implement this KEP, as
+  described above. There is no new state stored in etcd.
+
+* **Will enabling / using this feature result in any new calls to the cloud
+provider?**
+  No.
+
+* **Will enabling / using this feature result in increasing size or count of
+the existing API objects?**
+  No.
+
+* **Will enabling / using this feature result in increasing time taken by any
+operations covered by [existing SLIs/SLOs]?**
+  No.
+
+* **Will enabling / using this feature result in non-negligible increase of
+resource usage (CPU, RAM, disk, IO, ...) in any components?**
+  This isn't expected, given it's just copying a pre-rendered string into
+  the response.
+
+### Troubleshooting
+
+The Troubleshooting section currently serves the `Playbook` role. We may consider
+splitting it into a dedicated `Playbook` document (potentially with some monitoring
+details). For now, we leave it here.
+
+_This section must be completed when targeting beta graduation to a release._
+
+* **How does this feature react if the API server and/or etcd is unavailable?**
+  If kube-apiserver is unavailable, this feature is also unavailable. This
+  feature is not affected by etcd availability.
+
+* **What are other known failure modes?**
+  N/A
+
+* **What steps should be taken if SLOs are not being met to determine the problem?**
+- Examine the responses from the above endpoints.
+- Examine kube-apiserver logs.
+- Examine kube-apiserver configuration related to this KEP.
+
+[supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
+[existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
+
 ## Implementation History
 
 -   2018-06-26: Proposed in https://github.com/kubernetes/community/pull/2314
@@ -303,4 +506,5 @@ of versioning. However, we can still treat graduation in terms of
 -   2019-07-30: Moved to a KEP (with no edits from the original proposal)
 -   2019-08-05: Updated KEP with more details.
 -   2019-10-18: Updated KEP with more RBAC details.
--   2020-1-25: Updated KEP and marked as implementable.
+-   2020-01-25: Updated KEP and marked as implementable.
+-   2021-01-28: Added PRR questionaire.

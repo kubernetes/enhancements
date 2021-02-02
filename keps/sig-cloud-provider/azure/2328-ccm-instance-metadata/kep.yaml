@@ -1,0 +1,15 @@
+title: Support Instance Metadata Service with Cloud Controller Manager
+kep-number: 2328
+authors:
+  - "@feiskyer"
+owning-sig: sig-cloud-provider
+reviewers:
+  - "@andrewsykim"
+  - "@jagosan"
+approvers:
+  - "@andrewsykim"
+editor: "@feiskyer"
+creation-date: 2019-07-22
+last-updated: 2021-01-26
+status: implemented
+

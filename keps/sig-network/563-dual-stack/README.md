@@ -58,6 +58,13 @@
     - [Changes Required](#changes-required)
 - [Test Plan](#test-plan)
 - [Graduation Criteria](#graduation-criteria)
+- [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
+  - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
+  - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+  - [Monitoring Requirements](#monitoring-requirements)
+  - [Dependencies](#dependencies)
+  - [Scalability](#scalability)
+  - [Troubleshooting](#troubleshooting)
 <!-- /toc -->
 
 ## Summary
@@ -142,6 +149,8 @@ communication to, from and within a Kubernetes cluster.
   proposal. Communication about how to enable dual-stack functionality will be
   documented appropriately in-order so that aformentioned tools may choose to
   enable it for use.
+- Enable Kubernetes api-server dual-stack addresses listening and binding. Additionally
+  enable dualstack for Kubernetes default service.
 
 ## Proposal
 
@@ -247,7 +256,7 @@ Pod.IPs[0] == Pod.IP which will look like the following:
 ```
 
 CNI as of today does not provide additional metadata to the IP. So this
-Properties field - speced in this KEP - will be empty until CNI spec includes
+Properties field - speced in this KEP - will not be added until CNI spec includes
 properties. Although in theory we can copy the interface name, gateway etc.
 into this Properties map.
 
@@ -971,16 +980,21 @@ CoreDNS will need to make changes in order to support the plural form of
 endpoint addresses. Some other considerations of CoreDNS support for
 dual-stack:
 
-- Because service IPs will remain single-family, pods will continue to access
-  the CoreDNS server via a single service IP. In other words, the nameserver
-  entries in a pod's /etc/resolv.conf will typically be a single IPv4 or single
-  IPv6 address, depending upon the IP family of the cluster's service CIDR.
+- For dual-stack services, CoreDNS read the endpoint slices generated for each IPFamily
+  and create the corresponding A and AAAA records for the service.
+- For single-stack services, CoreDNS will operate as is. Service IPs will remain 
+  single-family, pods will continue to access the CoreDNS server via a single service 
+  IP. In other words, the nameserver entries in a pod's /etc/resolv.conf will typically
+  be a single IPv4 or single IPv6 address, depending upon the IP family of the cluster's 
+  service CIDR.
 - Non-headless Kubernetes services: CoreDNS will resolve these services to
   either an IPv4 entry (A record) or an IPv6 entry (AAAA record), depending
   upon the IP family of the cluster's service CIDR.
 - Headless Kubernetes services: CoreDNS will resolve these services to either
   an IPv4 entry (A record), an IPv6 entry (AAAA record), or both, depending on
   the service's `ipFamily`.
+- Once Kubernetes service (pointing to Cluster DNS) is converted to dualstack pods 
+  will automatically get two DNS servers (one for each IP family) in their resolv.conf.
 
 ### Ingress Controller Operation
 
@@ -1251,17 +1265,38 @@ complexity was not significantly less.
   * https://testgrid.k8s.io/sig-network-kind#sig-network-kind,%20ipvs,%20dual,%20master
 
   * [sig-network] [Feature:IPv6DualStackAlphaFeature] [LinuxOnly] Granular
+    Checks: Services Secondary IP Family should be able to handle large
+    requests: http
+  * [sig-network] [Feature:IPv6DualStackAlphaFeature] [LinuxOnly] Granular
+    Checks: Services Secondary IP Family should be able to handle large
+    requests: udp
+  * [sig-network] [Feature:IPv6DualStackAlphaFeature] [LinuxOnly] Granular
     Checks: Services Secondary IP Family should function for client IP based
     session affinity: http [LinuxOnly]
   * [sig-network] [Feature:IPv6DualStackAlphaFeature] [LinuxOnly] Granular
     Checks: Services Secondary IP Family should function for client IP based
     session affinity: udp [LinuxOnly]
   * [sig-network] [Feature:IPv6DualStackAlphaFeature] [LinuxOnly] Granular
+    Checks: Services Secondary IP Family should function for endpoint-Service:
+    http
+  * [sig-network] [Feature:IPv6DualStackAlphaFeature] [LinuxOnly] Granular
+    Checks: Services Secondary IP Family should function for endpoint-Service:
+    udp
+  * [sig-network] [Feature:IPv6DualStackAlphaFeature] [LinuxOnly] Granular
+    Checks: Services Secondary IP Family should function for node-Service: http
+  * [sig-network] [Feature:IPv6DualStackAlphaFeature] [LinuxOnly] Granular
     Checks: Services Secondary IP Family should function for node-Service: udp
   * [sig-network] [Feature:IPv6DualStackAlphaFeature] [LinuxOnly] Granular
     Checks: Services Secondary IP Family should function for pod-Service: http
   * [sig-network] [Feature:IPv6DualStackAlphaFeature] [LinuxOnly] Granular
+    Checks: Services Secondary IP Family should function for pod-Service: sctp
+    [Feature:SCTPConnectivity][Disruptive]
+  * [sig-network] [Feature:IPv6DualStackAlphaFeature] [LinuxOnly] Granular
     Checks: Services Secondary IP Family should function for pod-Service: udp
+  * [sig-network] [Feature:IPv6DualStackAlphaFeature] [LinuxOnly] Granular
+    Checks: Services Secondary IP Family should update endpoints: http
+  * [sig-network] [Feature:IPv6DualStackAlphaFeature] [LinuxOnly] Granular
+    Checks: Services Secondary IP Family should update endpoints: udp
   * [sig-network] [Feature:IPv6DualStackAlphaFeature] [LinuxOnly] should be able
     to reach pod on ipv4 and ipv6 ip [Feature:IPv6DualStackAlphaFeature:Phase2]
   * [sig-network] [Feature:IPv6DualStackAlphaFeature] [LinuxOnly] should create
@@ -1299,3 +1334,182 @@ This capability will move to stable when the following criteria have been met.
 * e2e test successfully running on two platforms
 * testing ingress controller infrastructure with updated dual-stack services
 * dualstack tests run as pre-submit blocking for PRs
+
+
+## Production Readiness Review Questionnaire
+
+### Feature Enablement and Rollback
+
+
+* **How can this feature be enabled / disabled in a live cluster?**
+  - [X] Feature gate (also fill in values in `kep.yaml`)
+    - Feature gate name: IPv6DualStack
+    - Components depending on the feature gate: kube-apiserver, kube-controller-manager, kube-proxy, and kubelet
+  - [ ] Other
+    - Describe the mechanism:
+    - Will enabling / disabling the feature require downtime of the control
+      plane?
+    - Will enabling / disabling the feature require downtime or reprovisioning
+      of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
+
+* **Does enabling the feature change any default behavior?**
+  No. Pods and Services will remain single stack until cli flags have been modified
+  as described in this KEP. Once modified, existing and new services will remain
+  single stack until user requests otherwise. Pods will become dual-stack however
+  it will maintain the same ipfamily used in before enabling feature flag.
+
+* **Can the feature be disabled once it has been enabled (i.e. can we roll back
+  the enablement)?**
+  Yes.
+
+* **What happens if we reenable the feature if it was previously rolled back?**
+  Similar to enable it the first time on a cluster.
+
+* **Are there any tests for feature enablement/disablement?**
+  The feature is being tested using integration tests with gate on/off. The
+  tests can be found here: https://github.com/kubernetes/kubernetes/tree/master/test/integration/dualstack
+
+  The feature is being tested on -some of - the cloud providers and kind.
+   1. https://testgrid.k8s.io/sig-network-dualstack-azure-e2e. This has all dualstack tests on azure.
+   2. kind dual-stack iptables: https://testgrid.k8s.io/sig-network-kind#sig-network-kind,%20dual,%20master
+   3. kind dual-stack ipvs: https://testgrid.k8s.io/sig-network-kind#sig-network-kind,%20ipvs,%20master
+
+### Rollout, Upgrade and Rollback Planning
+
+* **How can a rollout fail? Can it impact already running workloads?**
+  Try to be as paranoid as possible - e.g., what if some components will restart
+   mid-rollout?
+  Users **must** avoid changing existing cidrs. For both pods and services. Users
+  can only add to alternative ip family to existing cidrs. Changing existing cidrs
+  will result in nondeterministic failures depending on how the cluster networking 
+  was configured.
+
+  Existing workloads are not expected to be impacted during rollout. A component restart
+  during rollout might delay generating endpoint and endpoint slices for alternative IP families
+  if there are *new* workloads that depend on them they will fail.
+
+* **What specific metrics should inform a rollback?**
+  N/A
+
+* **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
+  Describe manual testing that was done and the outcomes.
+  Longer term, we may want to require automated upgrade/rollback tests, but we
+  are missing a bunch of machinery and tooling and can't do that now.
+
+* **Is the rollout accompanied by any deprecations and/or removals of features, APIs, 
+fields of API types, flags, etc.?**
+  Even if applying deprecation policies, they may still surprise some users.
+
+### Monitoring Requirements
+
+* **How can an operator determine if the feature is in use by workloads?**
+  Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
+  checking if there are objects with field X set) may be a last resort. Avoid
+  logs or events for this purpose.
+
+  Operators can determine if the feature is in use by listing services that 
+  employ dual-stack. This can be done via 
+
+  ```
+  kubectl get services --all-namespaces spec.ipFamilyPolicy!=SingleStack
+  ```
+
+* **What are the SLIs (Service Level Indicators) an operator can use to determine 
+the health of the service?**
+  - [ ] Metrics
+    - Metric name:
+    - [Optional] Aggregation method:
+    - Components exposing the metric:
+  - [ ] Other (treat as last resort)
+    - Details:
+
+* **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
+  At a high level, this usually will be in the form of "high percentile of SLI
+  per day <= X". It's impossible to provide comprehensive guidance, but at the very
+  high level (needs more precise definitions) those may be things like:
+  - per-day percentage of API calls finishing with 5XX errors <= 1%
+  - 99% percentile over day of absolute value from (job creation time minus expected
+    job creation time) for cron job <= 10%
+  - 99,9% of /health requests per day finish with 200 code
+
+* **Are there any missing metrics that would be useful to have to improve observability 
+of this feature?**
+  Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
+  implementation difficulties, etc.).
+
+### Dependencies
+
+* **Does this feature depend on any specific services running in the cluster?**
+  Think about both cluster-level services (e.g. metrics-server) as well
+  as node-level agents (e.g. specific version of CRI). Focus on external or
+  optional services that are needed. For example, if this feature depends on
+  a cloud provider API, or upon an external software-defined storage or network
+  control plane.
+
+  This feature does not have dependency beyond kube-apiserver and standard controllers
+  shipped with Kubernetes releases.
+
+### Scalability
+
+* **Will enabling / using this feature result in any new API calls?**
+  No
+
+* **Will enabling / using this feature result in introducing new API types?**
+  No
+
+* **Will enabling / using this feature result in any new calls to the cloud 
+provider?**
+  No
+
+* **Will enabling / using this feature result in increasing size or count of 
+the existing API objects?**
+  Enabling this feature increases the size of Service object. The service 
+  object has three new fields. The additional fields represent estimated 
+  less than 512B.
+
+* **Will enabling / using this feature result in increasing time taken by any 
+operations covered by [existing SLIs/SLOs]?**
+  No
+
+* **Will enabling / using this feature result in non-negligible increase of 
+resource usage (CPU, RAM, disk, IO, ...) in any components?**
+  No
+
+### Troubleshooting
+
+The Troubleshooting section currently serves the `Playbook` role. We may consider
+splitting it into a dedicated `Playbook` document (potentially with some monitoring
+details). For now, we leave it here.
+
+
+* **How does this feature react if the API server and/or etcd is unavailable?**
+  This feature will not be operable if either kube-apiserver or etcd is unavailable.
+
+* **What are other known failure modes?**
+  For each of them, fill in the following information by copying the below template:
+  
+  * Failure to create dual-stack services. Operator must perform the following steps:
+    1. Ensure that the cluster has `IPv6DualStack` feature enabled.
+    2. Ensure that api-server is correctly configured with multi (dual-stack) service
+       cidrs using `--services-cluster-ip-range` flag.
+
+  * Failure to route traffic to pod backing a dual-stack service. Operator must perform the 
+    following steps:
+    1. Ensure that nodes (where the pod is running) is configured for dual-stack 
+       a. Node is using dual-stack enabled CNI.
+       b. kubelet is configured with dual-stack feature flag.
+       c. kube-proxy is configured with dual-stack feature flag.
+    2. Ensure that api-server is configured for dual-stack
+       a. Feature flag is turned on.
+    3. Ensure that kube-controller-manager is configured for dual-stack
+       a. Feature flag is turned on.
+       b. `--cluster-cidr` cli flag is correctly configured with dual-stack 
+          where applicable.
+    4. Operator can ensure that `endpoints` and `endpointSlices` are correctly 
+       created for the service in question by using kubectl.
+    5. If the pod is using host network then operator must ensure that the node is correctly
+       reporting dual-stack addresses.
+
+* **What steps should be taken if SLOs are not being met to determine the problem?**
+  N/A
+

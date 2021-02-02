@@ -1,0 +1,17 @@
+title: AWS LoadBalancer Prefix
+kep-number: 2315
+authors:
+  - "@minherz"
+owning-sig: sig-cloud-provider
+participating-sigs:
+reviewers:
+  - TBD
+approvers:
+  - TBD
+editor: TBD
+creation-date: 2018-11-02
+last-updated: 2018-11-02
+status: provisional
+see-also:
+replaces:
+superseded-by:

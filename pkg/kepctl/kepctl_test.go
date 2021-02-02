@@ -21,10 +21,10 @@ import (
 	"io/ioutil"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v2"
-	"k8s.io/enhancements/pkg/kepval/keps"
+	"gopkg.in/yaml.v3"
+
+	"k8s.io/enhancements/api"
 )
 
 func TestValidate(t *testing.T) {
@@ -49,16 +49,15 @@ func TestValidate(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			b, err := ioutil.ReadFile(tc.file)
 			require.NoError(t, err)
-			var p keps.Proposal
+			var p api.Proposal
 			err = yaml.Unmarshal(b, &p)
 			require.NoError(t, err)
 			err = validateKEP(&p)
 			if tc.err == nil {
-				assert.NoError(t, err)
+				require.NoError(t, err)
 			} else {
-				assert.EqualError(t, err, tc.err.Error())
+				require.EqualError(t, err, tc.err.Error())
 			}
-
 		})
 	}
 }
@@ -78,7 +77,9 @@ func TestFindLocalKEPs(t *testing.T) {
 		},
 	}
 
-	c, _ := New("testdata")
+	c, clientErr := New("testdata")
+	require.Nil(t, clientErr)
+
 	for i, tc := range testcases {
 		k := c.loadLocalKEPs("testdata", tc.sig)
 		if len(k) != len(tc.keps) {

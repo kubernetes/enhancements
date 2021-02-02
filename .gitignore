@@ -1,3 +1,6 @@
+# Verify scripts may leave programs in this directory
+bin/
+
 # OSX leaves these everywhere on SMB shares
 ._*
 

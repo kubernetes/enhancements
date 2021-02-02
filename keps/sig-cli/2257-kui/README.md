@@ -1,0 +1,139 @@
+# KEP-2257 Kui: Kubectl Graphical Plugins
+
+## Table of Contents
+
+<!-- toc -->
+- [Summary](#summary)
+- [Motivation](#motivation)
+  - [Goals](#goals)
+  - [Non-Goals](#non-goals)
+- [Proposal](#proposal)
+  - [Risks and Mitigations](#risks-and-mitigations)
+- [Design Details](#design-details)
+  - [Test Plan](#test-plan)
+  - [Graduation Criteria](#graduation-criteria)
+    - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
+    - [Beta -&gt; GA Graduation](#beta---ga-graduation)
+- [Implementation History](#implementation-history)
+<!-- /toc -->
+
+## Summary
+
+This enhancement offers a kubectl plugin framework that allows
+`kubectl` and `kubectl` plugins the ability to have graphical popups
+in response to normal CLI commands. To provide a popup-from-terminal
+experience, this project leverages the Kui project.
+
+## Motivation
+
+CLIs are highly desired, for their speed, ease of sharing and
+scripting, and generally not getting in the way of development and
+operational tasks. However, visualizations, even simple ones, can go a
+long way with assisting in common kubernetes tasks.
+
+Today, the `kubectl` CLI and its plugins exist separately from the
+visual experience provided by browser-based consoles. You must chose
+to inhabit (using, and extending) one world or the other.
+
+We believe it is possible to bring the two closer together. So that,
+as a tool user, transitions from a terminal world into a graphical
+world are fast, and only at my choosing; and, as a tool developer, I
+can enhance the world of CLIs, in a way that can be reused, if needed,
+in a browser context: a framework for CLI-driven graphical tools.
+
+### Goals
+
+1) Deliver a `kui` plugin for kubectl that has graphical popups that enhance the user experience
+2) Deliver a `kui-core` framework with a well defined API to facilitate development of plugins such as `kui`.
+3) Deliver a `kui-template` repository that plugin developers can opt to use as a starting point for developing their own graphical plugins.
+4) That such graphical plugins can leverage `krew` for installation
+
+### Non-Goals
+
+- We limit the scope such that graphical plugins and the required
+  framework are installed and used with the discretion of our
+  users. In particular, there is no need to replace existing
+  non-graphical `kubectl` plugins that work well with purely textual
+  output.
+- We desire no mandates for radical updates or parallel constructs to
+  `krew` in order to support graphical plugins. We will base any
+  krew-focused work on the goal of minimal perturbation.
+
+## Proposal
+
+An implementation of the first deliverable is available at
+[https://github.com/kui-shell/plugin-kubeui](https://github.com/kui-shell/plugin-kubeui).
+
+An implementation of the second deliverable is available at
+[https://github.com/IBM/kui](https://github.com/IBM/kui).
+
+An implementation of the third deliverable is available at
+[https://github.com/kui-shell/plugin-kubectl-boilerplate](https://github.com/kui-shell/plugin-kubectl-boilerplate).
+
+The minimal krew integration should only depend upon support for
+symlinks in its tarball extraction logic. This is due to the way
+Electron executables are structured on macOS. In this scheme, which we
+refer to as producing and distributing "fat" plugins, each plugin will
+contain its own copy of kui-core, including all of Electron (and its
+attendant copy of Chromium).
+
+An alternate krew integration story, which we refer to as the "thin
+plugin" strategy, would require development of a chain loader. When
+installing a thin plugin, the plugin would install, if needed, the
+kui-loader plugin. This would:
+
+1) allow for very small plugin downloads;
+2) maintain the ability for plugins to pin themselves to a particular version of electron and kui-core;
+3) avoid having a separate copy of chromium in memory for every plugin window.
+
+A prototype of such a chain loader is here:
+[https://github.com/kui-shell/kask](https://github.com/kui-shell/kask).
+
+
+### Risks and Mitigations
+
+- Mac OS X utilizes symlinks to link to platform frameworks.  Symlinks
+  could be a security concern so we would need a way to ensure links
+  are contained in "safe" directories
+
+## Design Details
+
+We refer you to the repository links above. In addition, we have API
+documentation for kui-core available
+[here](https://github.com/IBM/kui/wiki).
+
+### Test Plan
+
+The kui-core and kui repositories have a Travis-based test story in
+place. As part of kui-core, there is a set of test APIs that plugin
+developers can use that substantially reduce the development effort
+required to cover their plugin with tests.
+
+### Graduation Criteria
+
+#### Alpha -> Beta Graduation
+
+- [x] At least 2 release cycles pass to gather feedback and bug reports during
+  real-world usage
+- [x] End-user documentation is written
+- [x] The client-side dry-run used to calculate the diff is replaced with the
+  server-side dry-run feature to improve correctness and accuracy for this
+  feature
+- [x] The dependent API server-side dry-run feature is released to beta
+
+#### Beta -> GA Graduation
+
+- [ ] At least 2 release cycles pass to gather feedback and bug reports during
+  real-world usage
+- [ ] Integration tests are in Testgrid and linked in KEP
+- [ ] Documentation exists for user stories
+- [ ] The dependent API server-side dry-run feature is released to GA
+
+## Implementation History
+
+- *2019-11*: Added KEP
+- *2020-03*: Promoted from alpha to beta (v 8.0.0)
+
+
+
+

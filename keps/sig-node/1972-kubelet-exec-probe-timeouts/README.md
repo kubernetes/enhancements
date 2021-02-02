@@ -42,7 +42,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 Kubelet today does not respect exec probe timeouts. This is considered a bug we should fix since
 the timeout value is supported in the Container Probe API. Because exec probe timeouts
-were never respected by kubelet, a new feature gate `ExecProbeTimeouts` will be introduced.
+were never respected by kubelet, a new feature gate `ExecProbeTimeout` will be introduced.
 With this feature, nodes can be configured to preserve the current behavior while the proper
 timeouts are enabled for exec probes.
 
@@ -69,8 +69,8 @@ Kubelet not respecting the probe timeout is a bug and should be fixed.
 
 Changes to kubelet:
 * Ensure kubelet handles timeout errors and registers them as failing probes.
-* Add feature gate `ExecProbeTimeouts` that is GA and on by default.
-* If the feature gate `ExecProbeTimeouts` is disabled and an exec probe timeout is reached, add warning logs to inform users that exec probes are timing out.
+* Add feature gate `ExecProbeTimeout` that is GA and on by default.
+* If the feature gate `ExecProbeTimeout` is disabled and an exec probe timeout is reached, add warning logs to inform users that exec probes are timing out.
 * Re-enable existing exec liveness probe e2e test.
 * Add new exec readiness probe e2e test.
 
@@ -79,10 +79,18 @@ Changes to kubelet:
 E2E tests:
 * re-enable [existing exec liveness probe e2e test](https://github.com/kubernetes/kubernetes/blob/ea1458550077bdf3b26ac34551a3591d280fe1f5/test/e2e/common/container_probe.go#L210-L227) that is currently being skipped
 * add new exec readiness probe e2e test.
+* exec probe tests are promotes to Conformance ([#97619](https://github.com/kubernetes/kubernetes/pull/97619)).
 
 ### Graduation Criteria
 
 This is a bug fix so the feature gate will be GA and on by default from the start.
+
+The feature flag should be kept available till we get a sufficient evidence of people not being
+affected by this bug fix - either directly (adjusting the timeouts in pod definition), or
+indirectly, when the timeout is not specified in some third party templates and products
+that cannot be easily fixed by end user.
+
+Tentative timeline is to lock the feature flag to `true` in 1.22.
 
 ### Upgrade / Downgrade Strategy
 
@@ -95,6 +103,9 @@ N/A
 ## Implementation History
 
 * 2020-09-08 - the KEP was merged as implementable for v1.20
+* 2020-12-08 - Timeout is respected in [Kubernetes 1.20: The Raddest Release](https://kubernetes.io/blog/2020/12/08/kubernetes-1-20-release-announcement/),
+  and can be disabled with the feature flag
+
 
 ## Drawbacks
 
@@ -104,6 +115,6 @@ the timeout now may result in unexpected behavior for some workloads.
 ## Alternatives
 
 Some alternatives that were considered:
+
 1. Increasing the default timeout for exec probes
 2. Continuing to ignore the exec probe timeout
-

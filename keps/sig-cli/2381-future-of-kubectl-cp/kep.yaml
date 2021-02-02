@@ -1,0 +1,17 @@
+title: future-of-kubectl-cp
+kep-number: 2381
+authors:
+  - "@sallyom"
+owning-sig: sig-cli
+participating-sigs:
+  - sig-usability
+reviewers:
+  - "@liggitt"
+  - "@brendandburns"
+approvers:
+  - "@pwittrock"
+  - "@soltysh"
+editor: TBD
+creation-date: 2019-09-20
+last-updated: 2019-09-20
+status: provisional

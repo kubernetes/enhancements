@@ -1,0 +1,16 @@
+title: Resource Quota based on Node Labels
+kep-number: 2372
+authors:
+  - "@vishh"
+  - "@bsalamat"
+owning-sig: sig-scheduling
+participating-sigs:
+  - sig-architecture
+status: provisional
+creation-date: 2019-10-11
+reviewers:
+  - "@derekwaynecarr"
+  - "@davidopp"
+approvers:
+  - TBD
+
