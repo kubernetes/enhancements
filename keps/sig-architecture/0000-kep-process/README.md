@@ -1,19 +1,3 @@
----
-title: Kubernetes Enhancement Proposal Process
-authors:
-  - "@calebamiles"
-  - "@jbeda"
-owning-sig: sig-architecture
-reviewers:
-  - "@timothysc"
-approvers:
-  - "@bgrant0607"
-editor: "@jbeda"
-creation-date: 2017-08-22
-last-updated: 2020-02-18
-status: implemented
----
-
 # Kubernetes Enhancement Proposal Process
 
 ## Table of Contents
