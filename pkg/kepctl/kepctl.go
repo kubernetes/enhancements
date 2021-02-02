@@ -37,6 +37,7 @@ import (
 
 	"k8s.io/enhancements/api"
 	"k8s.io/enhancements/pkg/kepval/keps"
+	"k8s.io/enhancements/pkg/kepval/prrs"
 	"k8s.io/test-infra/prow/git"
 )
 
@@ -373,6 +374,40 @@ func (c *Client) loadKEPFromYaml(kepPath string) (*api.Proposal, error) {
 		return nil, fmt.Errorf("unable to load KEP metadata: %s", err)
 	}
 	p.Name = filepath.Base(filepath.Dir(kepPath))
+
+	// Read the PRR approval file and add any listed PRR approvers in there
+	// to the PRR approvers list in the KEP. this is a hack while we transition
+	// away from PRR approvers listed in kep.yaml
+	prrPath := filepath.Dir(kepPath)
+	prrPath = filepath.Dir(prrPath)
+	sig := filepath.Base(prrPath)
+	prrPath = filepath.Join(filepath.Dir(prrPath),
+		"prod-readiness",
+		sig,
+		p.Number+".yaml")
+	prrFile, err := os.Open(prrPath)
+	if os.IsNotExist(err) {
+		return &p, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("could not open file %s: %v\n", prrPath, err)
+	}
+
+	parser := &prrs.Parser{}
+	approval := parser.Parse(prrFile)
+	if approval.Error != nil {
+		fmt.Fprintf(c.Err, "WARNING: could not parse prod readiness request for KEP %s: %s\n", p.Number, approval.Error)
+	}
+
+	approver := approval.ApproverForStage(p.Stage)
+	for _, a := range p.PRRApprovers {
+		if a == approver {
+			approver = ""
+		}
+	}
+	if approver != "" {
+		p.PRRApprovers = append(p.PRRApprovers, approver)
+	}
 	return &p, nil
 }
 
