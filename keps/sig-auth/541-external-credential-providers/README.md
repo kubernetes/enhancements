@@ -496,7 +496,7 @@ credentials are used for mTLS handshakes.
 
 ### Metrics
 
-As discussed [below](#rollout-upgrade-and-rollback-planning), there are 4
+As discussed [below](#rollout-upgrade-and-rollback-planning), there are 3
 primary metrics used by this feature set.
 
 ```golang
@@ -550,17 +550,9 @@ var (
   execPluginCalls = k8smetrics.NewCounterVec(
     &k8smetrics.CounterOpts{
       Name: "rest_client_exec_plugin_calls",
-      Help: "Number of calls to an exec plugin.",
-    },
-    []string{},
-  )
-
-  execPluginFailedCalls = k8smetrics.NewCounterVec(
-    &k8smetrics.CounterOpts{
-      Name: "rest_client_exec_plugin_failed_calls",
       Help: "Number of calls to an exec plugin, partitioned by exit code.",
     },
-    []string{"exitCode"},
+    []string{"code"},
   )
 )
 ```
@@ -580,9 +572,7 @@ type ExpiryMetric interface {
 
 // CallsMetric counts calls that take place for a specific exec plugin.
 type CallsMetric interface {
-  // Increment increments a counter. The provided exitCode is optional,
-  // so that this interface can be used for when a call takes place
-  // but the exit code does not matter.
+  // Increment increments a counter per exitCode.
   Increment(exitCode int)
 }
 
@@ -591,16 +581,14 @@ var (
   ClientCertExpiry ExpiryMetric = noopExpiry{}
   // ClientCertRotationAge is the age of a certificate that has just been rotated.
   ClientCertRotationAge DurationMetric = noopDuration{}
-  // ExecPluginCalls is the number of calls made to an exec plugin.
+  // ExecPluginCalls is the number of calls made to an exec plugin, partitioned by
+  // exit code.
   ExecPluginCalls CallsMetric = noopCalls{}
-  // ExecPluginFailedCalls is the number of calls made to an exec plugin that fail.
-  // I.e., when the binary returns a non-zero exit code.
-  ExecPluginFailedCalls CallsMetric = noopCalls{}
 )
 ```
 
-The `"exitCode"` label of these metrics is an attempt to elucidate the exec
-plugin failure mode to the user.
+The `"code"` label of these metrics is an attempt to elucidate the exec plugin
+failure mode to the user.
 
 ### Risks and Mitigations
 
@@ -827,7 +815,7 @@ _This section must be completed when targeting beta graduation to a release._
   determine the health of the service?**
   - [X] Metrics
     - Metric name: `rest_client_exec_plugin_ttl_seconds`, `rest_client_exec_plugin_certificate_rotation_age`,
-      `rest_client_exec_plugin_calls`, `rest_client_exec_plugin_failed_calls`
+      `rest_client_exec_plugin_calls`
     - Components exposing the metric: client-go
   - [ ] Other (treat as last resort)
     - Details:
@@ -840,7 +828,7 @@ _This section must be completed when targeting beta graduation to a release._
     `rest_client_exec_plugin_ttl_seconds`.
   - We target 0.01% unsuccessful calls to the exec plugin in a moving 24h
     window. This is measured by
-    `rest_client_exec_plugin_calls` and `rest_client_exec_plugin_failed_calls`.
+    `rest_client_exec_plugin_calls`.
 
 * **Are there any missing metrics that would be useful to have to improve
   observability if this feature?**
