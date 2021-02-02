@@ -99,7 +99,7 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Container Image Build/Definition](#container-image-builddefinition)
   - [CRI Implementation Details](#cri-implementation-details)
   - [Kubernetes API updates](#kubernetes-api-updates)
-    - [WindowsSecurityContextOptions.HostJob Flag](#windowssecuritycontextoptionshostjob-flag)
+    - [WindowsSecurityContextOptions.HostProcess Flag](#windowssecuritycontextoptionshostprocess-flag)
       - [Alternatives](#alternatives)
     - [Host Network Mode](#host-network-mode)
     - [Example deployment spec](#example-deployment-spec)
@@ -462,7 +462,7 @@ proposal will be implemented, this is the place to discuss them.
 
 Windows privileged containers will be implemented with [Job Objects](https://docs.microsoft.com/en-us/windows/win32/procthread/job-objects), a break from the previous container model using server silos. Job objects provide the ability to manage a group of processes as a group, and assign resource constraints to the processes in the job. Job objects have no process or file system isolation, enabling the privileged payload to view and edit the host file system with the correct permissions, among other host resources. The init process, and any processes it launches or that are explicitly launched by the user, are all assigned to the job object of that container. When the init process exits or is signaled to exit, all the processes in the job will be signaled to exit, the job handle will be closed and the storage will be unmounted.
 
-Because Windows privileged containers will work much differently than Linux privileged containers they will be referred to as **HostJob** containers in kubernetes specs and user-facing documentation. Hopefully this will encourage users to seek documentation to better understand the capabilities and behaviors of these privileged containers.
+Because Windows privileged containers will work much differently than Linux privileged containers they will be referred to as **HostProcess** containers in kubernetes specs and user-facing documentation. Hopefully this will encourage users to seek documentation to better understand the capabilities and behaviors of these privileged containers.
 
 ![Privileged Container Diagram](Privileged.png)
 
@@ -496,7 +496,7 @@ More information on Windows resource access can be found at https://docs.microso
 
 ### CRI Implementation Details
 
-We will need to add a `hostJob` field to the runtime spec. We can model this after the Linux pod security context and container security context that is a boolean that is set to `true` for privileged containers. References:
+We will need to add a `hostProcess` field to the runtime spec. We can model this after the Linux pod security context and container security context that is a boolean that is set to `true` for privileged containers. References:
 
 - [LinuxSandboxSecurityConfig](https://github.com/kubernetes/cri-api/blob/master/pkg/apis/runtime/v1alpha2/api.proto#L293)
 - [LinuxSandboxSecurityContext](https://github.com/kubernetes/cri-api/blob/master/pkg/apis/runtime/v1alpha2/api.proto#L28)
@@ -518,7 +518,7 @@ Add WindowsSandboxSecurityContext:
 message WindowsSandboxSecurityContext {
   string run_as_username = 1;
   string credential_spec = 2;
-  bool hostJob = 3;
+  bool hostProcess = 3;
 }
 ```
 
@@ -528,7 +528,7 @@ Update WindowsContainerSecurityContext by adding privileged field:
 message WindowsContainerSecurityContext {
   string run_as_username = 1;
   string credential_spec = 2;
-  bool hostJob = 3;
+  bool hostProcess = 3;
 }
 ```
 
@@ -536,18 +536,18 @@ message WindowsContainerSecurityContext {
 
 ### Kubernetes API updates
 
-#### WindowsSecurityContextOptions.HostJob Flag
+#### WindowsSecurityContextOptions.HostProcess Flag
 
-A new boolean field named `hostJob` will be added to [WindowsSecurityContextOptions](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.20/#windowssecuritycontextoptions-v1-core).
+A new boolean field named `hostProcess` will be added to [WindowsSecurityContextOptions](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.20/#windowssecuritycontextoptions-v1-core).
 
 On Windows, all containers in a pod must be privileged. Because of this behavior and because `WindowsSecurityContextOptions` already exists on both `PodSecurityContext` and `Container.SecurityContext` Windows containers will use this new field instead re-using the existing `privileged` field which only exists on `SecurityContext`.
 Additionally, the existing `privileged` field does not clearly describe what capabilities the container has (see https://github.com/kubernetes/kubernetes/issues/44503).
-Documentation will be added to clearly describe what capabilities these new "hostJob" containers have.
+Documentation will be added to clearly describe what capabilities these new "hostProcess" containers have.
 
 Current behavior applies `PodSecurityContext.WindowsSecurityContextOptions` settings to all `Container.SecurityContext.WindowsSecurityContextOptions` unless those settings are already specified on the container. To address this the following API validation will be added:
 
-- If `PodSecurityContext.WindowsSecurityContextOptions.HostJob = true` is set to true then no container in the pod sets `Container.SecurityContext.WindowsSecurityContextOptions.HostJob = false`
-- If `PodSecurityContext.WindowsSecurityContextOptions.HostJob` is not set then all containers in a pod must set `Container.SecurityContext.WindowsSecurityContextOptions.HostJob = true`
+- If `PodSecurityContext.WindowsSecurityContextOptions.HostProcess = true` is set to true then no container in the pod sets `Container.SecurityContext.WindowsSecurityContextOptions.HostProcess = false`
+- If `PodSecurityContext.WindowsSecurityContextOptions.HostProcess` is not set then all containers in a pod must set `Container.SecurityContext.WindowsSecurityContextOptions.HostProcess = true`
 
 ##### Alternatives
 
@@ -563,7 +563,7 @@ Cons
 
 - Privileged containers on Windows will operate very differently than privileged containers on Linux. Having a new field should help avoid confusion around the differences between the two.
 - The privileged field does not have clear meaning for Linux containers today (see comments above).
-- `WindowsSecurityContextOptions.RunAsUserName` will the the primary way of restricting access to host/node resources (See [Container users](#container-users)). It is desireable that `RunAsUserName` and `HostJob` fields live on the same property.
+- `WindowsSecurityContextOptions.RunAsUserName` will the the primary way of restricting access to host/node resources (See [Container users](#container-users)). It is desirable that `RunAsUserName` and `HostProcess` fields live on the same property.
 - API validation to ensure all containers are either privileged or not will be difficult because there is no way of definitively knowing that a pod is intended for a Windows node.
 
 #### Host Network Mode
@@ -583,7 +583,7 @@ spec:
   hostNetwork: true
   securityContext:
     windowsOptions:
-      privileged: true
+      hostProcess: true
   containers:
   - name: foo
     image: image1:latest
@@ -601,12 +601,12 @@ spec:
     image: image1:latest
     securityContext:
       windowsOptions:
-        privileged: true
+        hostProcess: true
   - name: bar
     image: image2:latest
     securityContext:
       windowsOptions:
-        privileged: true
+        hostProcess: true
   nodeSelector:
     "kubernetes.io/os": windows
 ```
