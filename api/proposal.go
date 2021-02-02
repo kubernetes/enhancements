@@ -35,15 +35,16 @@ func (p *Proposals) AddProposal(proposal *Proposal) {
 	*p = append(*p, proposal)
 }
 
+// TODO(api): json fields are not using consistent casing
 type Proposal struct {
 	ID       string `json:"id"`
 	PRNumber string `json:"prNumber,omitempty"`
 	Name     string `json:"name,omitempty"`
 
-	Title             string   `json:"title" yaml:"title"`
+	Title             string   `json:"title" yaml:"title" validate:"required"`
 	Number            string   `json:"kep-number" yaml:"kep-number"`
 	Authors           []string `json:"authors" yaml:",flow"`
-	OwningSIG         string   `json:"owningSig" yaml:"owning-sig"`
+	OwningSIG         string   `json:"owningSig" yaml:"owning-sig" validate:"required"`
 	ParticipatingSIGs []string `json:"participatingSigs" yaml:"participating-sigs,flow,omitempty"`
 	Reviewers         []string `json:"reviewers" yaml:",flow"`
 	Approvers         []string `json:"approvers" yaml:",flow"`
