@@ -23,6 +23,7 @@ import (
 	"strings"
 
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 
 	"k8s.io/enhancements/api"
 )
@@ -62,6 +63,7 @@ func ValidateRepository(kepsDir string) (warnings []string, err error) {
 
 		defer kepFile.Close()
 
+		logrus.Infof("parsing %s", filename)
 		kep, kepParseErr := kepHandler.Parse(kepFile)
 		if kepParseErr != nil {
 			return warnings, errors.Wrap(kepParseErr, "parsing KEP file")

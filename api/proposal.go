@@ -52,7 +52,7 @@ type Proposal struct {
 	Editor            string   `json:"editor" yaml:"editor,omitempty"`
 	CreationDate      string   `json:"creationDate" yaml:"creation-date"`
 	LastUpdated       string   `json:"lastUpdated" yaml:"last-updated"`
-	Status            string   `json:"status" yaml:"status"`
+	Status            string   `json:"status" yaml:"status" validate:"required"`
 	SeeAlso           []string `json:"seeAlso" yaml:"see-also,omitempty"`
 	Replaces          []string `json:"replaces" yaml:"replaces,omitempty"`
 	SupersededBy      []string `json:"supersededBy" yaml:"superseded-by,omitempty"`
