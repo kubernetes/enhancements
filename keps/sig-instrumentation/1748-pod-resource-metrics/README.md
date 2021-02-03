@@ -102,6 +102,13 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Beta -&gt; GA Graduation](#beta---ga-graduation)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
+- [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
+  - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
+  - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+  - [Monitoring Requirements](#monitoring-requirements)
+  - [Dependencies](#dependencies)
+  - [Scalability](#scalability)
+  - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
@@ -409,11 +416,204 @@ enhancement:
   CRI or CNI may require updating that component before the kubelet.
 -->
 
+
+## Production Readiness Review Questionnaire
+
+<!--
+
+Production readiness reviews are intended to ensure that features merging into
+Kubernetes are observable, scalable and supportable; can be safely operated in
+production environments, and can be disabled or rolled back in the event they
+cause increased failures in production. See more in the PRR KEP at
+https://git.k8s.io/enhancements/keps/sig-architecture/1194-prod-readiness.
+
+The production readiness review questionnaire must be completed and approved
+for the KEP to move to `implementable` status and be included in the release.
+
+In some cases, the questions below should also have answers in `kep.yaml`. This
+is to enable automation to verify the presence of the review, and to reduce review
+burden and latency.
+
+The KEP must have a approver from the
+[`prod-readiness-approvers`](http://git.k8s.io/enhancements/OWNERS_ALIASES)
+team. Please reach out on the
+[#prod-readiness](https://kubernetes.slack.com/archives/CPNHUMN74) channel if
+you need any help or guidance.
+
+-->
+
+### Feature Enablement and Rollback
+
+* **How can this feature be enabled / disabled in a live cluster?**
+  - [ ] Feature gate (also fill in values in `kep.yaml`)
+    - Feature gate name:
+    - Components depending on the feature gate:
+  - [x] Other
+    - Describe the mechanism: A metrics collector may scrape the `/metrics/resources` endpoint of all schedulers, as long as the scheduler exposes metrics of the required stability level.
+    - Will enabling / disabling the feature require downtime of the control
+      plane?
+    - Will enabling / disabling the feature require downtime or reprovisioning
+      of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
+
+* **Does enabling the feature change any default behavior?**
+
+Scraping these metrics does not change behavior of the system.
+
+* **Can the feature be disabled once it has been enabled (i.e. can we roll back
+  the enablement)?**
+
+Yes, in order of increasing effort or impact to other areas:
+
+* Administrators may stop scraping the endpoint, which will mean the metrics are not available and any impacted caused by scraping will stop.
+* The administrator may change the RBAC permissions on the delegated auth for the metrics endpoint to deny access to clients if a client is excessively targeting metrics and cannot be stopped.
+* The administrator may change the HTTP server arguments on the scheduler to disable information about the scheduler via the `--port` arguments, but doing so may require other changes to scheduler configuration as this will disable health checks and standard metrics.
+
+* **What happens if we reenable the feature if it was previously rolled back?**
+
+Metrics will start getting collected.
+
+* **Are there any tests for feature enablement/disablement?**
+
+As an opt-in metrics endpoint enablement is tested from our integration tests.
+
+### Rollout, Upgrade and Rollback Planning
+
+* **How can a rollout fail? Can it impact already running workloads?**
+
+This cannot impact running workloads unless an unlikely performance issue is triggered due to
+excessive scraping of the scheduler metrics endpoints (which is already possible today).
+
+Since the new metrics are proportionally less than the metrics an apiserver or node exposes,
+it is unlikely that scraping this endpoint would break a metrics collector.
+
+* **What specific metrics should inform a rollback?**
+
+Excessive CPU use from the Kube scheduler when metrics are scraped at a reasonable rate,
+although simply disabling optional scraping while waiting for the bug to be fixed would be
+a more reasonable path.
+
+* **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
+
+Does not apply.
+
+* **Is the rollout accompanied by any deprecations and/or removals of features, APIs,
+fields of API types, flags, etc.?**
+
+No.
+
+### Monitoring Requirements
+
+* **How can an operator determine if the feature is in use by workloads?**
+
+This would be up to the metrics collector component whose API is not under the
+scope of the Kubernetes project. Some third party software may use these metrics
+as part of a control loop or visualization, but that is entirely up to the metrics
+collector.
+
+Administrators and visualization tools are the primary target of these metrics and
+so polling and canvassing of Kube distributions is one source of feedback.
+
+* **What are the SLIs (Service Level Indicators) an operator can use to determine
+the health of the service?**
+  - [ ] Metrics
+    - Metric name:
+    - [Optional] Aggregation method:
+    - Components exposing the metric:
+  - [x] Other (treat as last resort)
+    - Details: Covered by existing scheduler SLIs (health check, CPU use, pod scheduling rate, http request counts).
+
+* **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
+
+The existing scheduler SLOs should be sufficient and this change should have no measurable impact on the existing SLO.
+
+The metrics endpoint should consume a tiny fraction of the CPU of the scheduler (less than 5% at idle) when scraped
+every 15s. The endpoint should return quickly (tens of milliseconds at a P99) when O(pods) is below 10,000. CPU and
+latency should be proportional to number of pods only, as the rest of the scheduler, and the metrics endpoint should
+scale linearly to that factor.
+
+* **Are there any missing metrics that would be useful to have to improve observability
+of this feature?**
+
+No
+
+### Dependencies
+
+_This section must be completed when targeting beta graduation to a release._
+
+* **Does this feature depend on any specific services running in the cluster?**
+
+  - Scheduler
+    - Hosts the metrics
+  - Metrics collector
+    - Scrapes the endpoint
+    - May run on or off clutser
+
+
+### Scalability
+
+* **Will enabling / using this feature result in any new API calls?**
+
+No, this pulls directly from the scheduler's informer cache.
+
+* **Will enabling / using this feature result in introducing new API types?**
+
+No.
+
+* **Will enabling / using this feature result in any new calls to the cloud
+provider?**
+
+No.
+
+* **Will enabling / using this feature result in increasing size or count of
+the existing API objects?**
+
+No.
+
+* **Will enabling / using this feature result in increasing time taken by any
+operations covered by [existing SLIs/SLOs]?**
+
+The CPU usage of this feature when activated should have a negligible effect on
+scheduler throughput and latency. No additional memory usage is expected.
+
+* **Will enabling / using this feature result in non-negligible increase of
+resource usage (CPU, RAM, disk, IO, ...) in any components?**
+
+Negligible CPU use is expected and some increase in network transmit when the scheduler
+is scraped.
+
+### Troubleshooting
+
+The Troubleshooting section currently serves the `Playbook` role. We may consider
+splitting it into a dedicated `Playbook` document (potentially with some monitoring
+details). For now, we leave it here.
+
+* **How does this feature react if the API server and/or etcd is unavailable?**
+
+It returns the metrics of the last set of data received by the scheduler, or no
+metrics if the scheduler has been restarted since partitioned from the API server.
+
+* **What are other known failure modes?**
+
+  - Panic due to unexpected code path or incomplete API objects returned in watch
+    - Detection: The scrape of the component should fail
+    - Mitigations: Stop scraping the endpoint
+    - Diagnostics: Panic messages in the scheduler logs
+    - Testing: We do not inject fake panics because the behavior of metrics endpoints are well known and there is no background processing.
+
+* **What steps should be taken if SLOs are not being met to determine the problem?**
+
+Perform a golang CPU profile of the scheduler and assess the percentage of CPU charged to the functions
+that generate the CPU metrics. If they exceed 5% of total usage, identify which methods are hotspots.
+Look for unexpected allocations via a heap profile (the metrics endpoint should not generate much if any
+allocations onto the heap).
+
+
 ## Implementation History
 
 * 2020/04/07 - [Prototyped](https://github.com/openshift/openshift-controller-manager/pull/90) in OpenShift after receiving feedback that resource metrics were opaque and difficult to alert on
 * 2020/04/21 - Discussed in sig-instrumentation and decided to move forward as KEP
 * 2020/07/30 - KEP draft
+* 2020/11/12 - Merged implementation https://github.com/kubernetes/kubernetes/pull/94866 for 1.20 Alpha
 
 <!--
 Major milestones in the life cycle of a KEP should be tracked in this section.
