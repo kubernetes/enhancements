@@ -351,19 +351,19 @@ _This section must be completed when targeting beta graduation to a release._
 * **How can a rollout fail? Can it impact already running workloads?**
   Try to be as paranoid as possible - e.g., what if some components will restart
    mid-rollout?
-
+There is no specific way that the rollout can fail. The rollout can't impact existing workload. 
 * **What specific metrics should inform a rollback?**
 
-
+The feature shouldn't affect any existing behavior. A surprisingly high number of modification rejections could be a sign that something is not working properly.
 
 * **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
-  Describe manual testing that was done and the outcomes.
-  Longer term, we may want to require automated upgrade/rollback tests, but we
-  are missing a bunch of machinery and tooling and can't do that now.
+Because the feature doesn't affect existing behavior, rollback and upgrades haven't be specifically tested.
+
+The new `managedFields` field is cleared when it is incorrect. That protects us from having invalid data inserted by a potential bad upgrade.
 
 * **Is the rollout accompanied by any deprecations and/or removals of features, APIs,
 fields of API types, flags, etc.?** No
-
+No.
 ### Monitoring Requirements
 
 _This section must be completed when targeting beta graduation to a release._
@@ -375,14 +375,30 @@ _This section must be completed when targeting beta graduation to a release._
 
 Any existing metric split by request verb will record the [APPLY](https://github.com/kubernetes/kubernetes/blob/8f6ffb24df989608b87451f89b8ac9fc338ed71c/staging/src/k8s.io/apiserver/pkg/endpoints/metrics/metrics.go#L507-L509) verb if the feature is in use.
 
+Additionally, the OpenAPI spec exposes the available media-type for each individual endpoint. The presence of the `apply` type for the PATCH verb of a endpoints indicates whether the feature is enabled for that specific resource, e.g.
+```json
+...
+"patch": {
+  "consumes": [
+     "application/json-patch+json",
+     "application/merge-patch+json",
+     "application/strategic-merge-patch+json",
+     "application/apply-patch+yaml"
+   ],
+    ...
+}
+...
+
 * **What are the SLIs (Service Level Indicators) an operator can use to determine
 the health of the service?**
 
 There is no specific metric attached to server side apply. All PATCH requests that utilize SSA will use the verb APPLY when logging metrics. API Server metrics that are split by verb automatically include this. They include `apiserver_request_total`, `apiserver_longrunning_gauge`, `apiserver_response_sizes`, `apiserver_request_terminations_total`, `apiserver_selfrequest_total`
     - Components exposing the metric: kube-apiserver
+    
+Apply requests (`PATCH` with `application/apply-patch+yaml` mime type) have the same level of SLIs as other types of requests.
 
 * **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?** n/a
-
+Apply requests (`PATCH` with `application/apply-patch+yaml` mime type) have the same level of SLOs as other types of requests.
 * **Are there any missing metrics that would be useful to have to improve observability
 of this feature?** n/a
 
@@ -401,13 +417,13 @@ of this feature?** n/a
 provider?** No
 
 * **Will enabling / using this feature result in increasing size or count of
-the existing API objects?** Objects applied using server side apply will have their managed fields metadata populated.
+the existing API objects?** Objects applied using server side apply will have their managed fields metadata populated. `managedFields` metadata fields can represent up to 60% of the total size of an object, increasing the size of objects.
 
 * **Will enabling / using this feature result in increasing time taken by any
 operations covered by [existing SLIs/SLOs]?** No
 
 * **Will enabling / using this feature result in non-negligible increase of
-resource usage (CPU, RAM, disk, IO, ...) in any components?** No
+resource usage (CPU, RAM, disk, IO, ...) in any components?** Since objects are larger with the new `managedFields`, caches as well as network bandwidth requirement will increase. 
 
 ### Troubleshooting
 
@@ -425,13 +441,13 @@ The feature is part of of the API server and will not function without it
   For each of them, fill in the following information by copying the below template:
   - [Failure mode brief description]
     - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without logging into a master or worker node?
+      how can an operator troubleshoot without logging into a master or worker node? Apply requests (`PATCH` with `application/apply-patch+yaml` mime type) have the same level of SLIs as other types of requests.
     - Mitigations: What can be done to stop the bleeding, especially for already
-      running user workloads?
+      running user workloads? This shouldn't affect running workloads, and this feature shouldn't alter the behavior of previously existing mechanisms like PATCH and PUT.
     - Diagnostics: What are the useful log messages and their required logging
-      levels that could help debug the issue?
+      levels that could help debug the issue? The feature uses very little logging, and errors should be returned directly to the user.
       Not required until feature graduated to beta.
-    - Testing: Are there any tests for failure mode? If not, describe why.
+    - Testing: Are there any tests for failure mode? Failure modes are tested exhaustively both as unit-tests and as integration tests.
 
 * **What steps should be taken if SLOs are not being met to determine the problem?** n/a
 
