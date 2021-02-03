@@ -3,6 +3,7 @@ module k8s.io/enhancements
 go 1.15
 
 require (
+	github.com/blang/semver/v4 v4.0.0
 	github.com/go-playground/validator/v10 v10.4.1
 	github.com/google/go-github/v32 v32.1.0
 	github.com/leodido/go-urn v1.2.1 // indirect

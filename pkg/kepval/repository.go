@@ -35,102 +35,60 @@ const (
 var files = []string{}
 
 // This is the actual validation check of all KEPs in this repo
-func ValidateRepository(kepsDir string) error {
+func ValidateRepository(kepsDir string) (warnings []string, err error) {
 	// Find all the keps
-	err := filepath.Walk(
+	err = filepath.Walk(
 		filepath.Join("..", kepsDir),
 		walkFn,
 	)
 
 	// This indicates a problem walking the filepath, not a validation error.
 	if err != nil {
-		return errors.Wrap(err, "walking repository")
+		return warnings, errors.Wrap(err, "walking repository")
 	}
 
 	if len(files) == 0 {
-		return errors.New("must find more than 0 keps")
+		return warnings, errors.New("must find more than 0 keps")
 	}
 
 	kepHandler := &api.KEPHandler{}
-	prrHandler := &api.PRRHandler{}
 	prrsDir := filepath.Join("..", prrsDir)
 
 	for _, filename := range files {
 		kepFile, err := os.Open(filename)
 		if err != nil {
-			return errors.Wrapf(err, "could not open file %s", filename)
+			return warnings, errors.Wrapf(err, "could not open file %s", filename)
 		}
 
 		defer kepFile.Close()
 
 		kep, kepParseErr := kepHandler.Parse(kepFile)
 		if kepParseErr != nil {
-			return errors.Wrap(kepParseErr, "parsing KEP file")
+			return warnings, errors.Wrap(kepParseErr, "parsing KEP file")
 		}
 
 		// TODO: This shouldn't be required once we push the errors into the
 		//       parser struct
 		if kep.Error != nil {
-			return errors.Wrapf(kep.Error, "%v has an error", filename)
+			return warnings, errors.Wrapf(kep.Error, "%v has an error", filename)
 		}
 
-		requiredPRRApproval := len(kep.Number) > 0 && kep.LatestMilestone >= "v1.21" && kep.Status == "implementable"
-		if !requiredPRRApproval {
-			return errors.New("needs PRR approval")
+		requiredPRRApproval, missingMilestone, err := isPRRRequired(kep)
+		if missingMilestone {
+			warnings = append(
+				warnings,
+				fmt.Sprintf("KEP %s is missing the latest milestone field",
+					kep.LatestMilestone,
+				),
+			)
 		}
 
-		var stageMilestone string
-		switch kep.Stage {
-		case "alpha":
-			stageMilestone = kep.Milestone.Alpha
-		case "beta":
-			stageMilestone = kep.Milestone.Beta
-		case "stable":
-			stageMilestone = kep.Milestone.Stable
-		}
-
-		prrFilename := kep.Number + ".yaml"
-		prrFilename = filepath.Join(prrsDir, kep.OwningSIG, prrFilename)
-		prrFile, err := os.Open(prrFilename)
-		if os.IsNotExist(err) {
-			// TODO: Is this actually the error we want to return here?
-			return needsPRRApproval(stageMilestone, kep.Stage, prrFilename)
-		}
-
-		if err != nil {
-			return errors.Wrapf(err, "could not open file %s", prrFilename)
-		}
-
-		prr, prrParseErr := prrHandler.Parse(prrFile)
-		if prrParseErr != nil {
-			return errors.Wrap(prrParseErr, "parsing PRR approval file")
-		}
-
-		// TODO: This shouldn't be required once we push the errors into the
-		//       parser struct
-		if prr.Error != nil {
-			return errors.Wrapf(prr.Error, "%v has an error", prrFilename)
-		}
-
-		var stagePRRApprover string
-		switch kep.Stage {
-		case "alpha":
-			stagePRRApprover = prr.Alpha.Approver
-		case "beta":
-			stagePRRApprover = prr.Beta.Approver
-		case "stable":
-			stagePRRApprover = prr.Stable.Approver
-		}
-
-		if len(stageMilestone) > 0 && stageMilestone >= "v1.21" {
-			// PRR approval is needed.
-			if stagePRRApprover == "" {
-				return needsPRRApproval(stageMilestone, kep.Stage, prrFilename)
-			}
+		if requiredPRRApproval {
+			return warnings, ValidatePRR(kep, prrsDir)
 		}
 	}
 
-	return nil
+	return warnings, nil
 }
 
 // TODO: Refactor and maybe move into a more suitable package

@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
 	"k8s.io/enhancements/pkg/kepval"
 )
 
@@ -28,6 +29,11 @@ const (
 )
 
 func TestValidation(t *testing.T) {
-	err := kepval.ValidateRepository(kepsDir)
+	warnings, err := kepval.ValidateRepository(kepsDir)
 	require.Nil(t, err)
+
+	t.Logf(
+		"KEP validation succeeded, but the following warnings occurred: %v",
+		warnings,
+	)
 }
