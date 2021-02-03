@@ -12,13 +12,11 @@
 - [Design Details](#design-details)
   - [Apply functions](#apply-functions)
   - [Generated apply configuration types](#generated-apply-configuration-types)
-    - [Alternative 1: Generated structs where all fields are pointers](#alternative-1-generated-structs-where-all-fields-are-pointers)
-    - [Alternative 2: Generated &quot;builders&quot;](#alternative-2-generated-builders)
-    - [Comparison of alternatives](#comparison-of-alternatives)
     - [DeepCopy support](#deepcopy-support)
     - [Code Generator Changes](#code-generator-changes)
       - [Addition of applyconfiguration-gen](#addition-of-applyconfiguration-gen)
       - [client-gen changes](#client-gen-changes)
+  - [read/modify/write loop support](#readmodifywrite-loop-support)
   - [Interoperability with structured and unstructured types](#interoperability-with-structured-and-unstructured-types)
   - [Test Plan](#test-plan)
     - [Fuzz-based round-trip testing](#fuzz-based-round-trip-testing)
@@ -37,6 +35,7 @@
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
+    - [Alternative: Generated structs where all fields are pointers](#alternative-generated-structs-where-all-fields-are-pointers)
   - [Alternative: Use YAML directly](#alternative-use-yaml-directly)
   - [Alternative: Combine go structs with fieldset mask](#alternative-combine-go-structs-with-fieldset-mask)
   - [Alternative: Use varadic function based builders](#alternative-use-varadic-function-based-builders)
@@ -221,59 +220,17 @@ While there are arguments to be made all of these fields are expected to cause
 problems in practice, there are some that clearly would, e.g. ContainerPort.
 
 Because of this we cannot use the existing go structs to represent apply
-configurations.
+configurations. Instead, we will generated "builders".
 
-<<[UNRESOLVED @jpbetz @jennybuckley ]>> 
-Finalize which alternative to use based on developer feedback. See the
-[Alternatives](#alternatives) for a complete list, but are currently focusing on
-the two below alternatives. We are working with the Kubebuilder community to
-gather feedback on what developers prefer.
-<<[/UNRESOLVED]>>
-
-#### Alternative 1: Generated structs where all fields are pointers
-
-Example usage:
+Example generated builder:
 
 ```go
-import (
-  ptr "k8s.io/utils/pointer"
-)
-
-&appsv1apply.Deployment{
-  Name: ptr.StringPtr("nginx-deployment"),
-  Spec: &appsv1apply.DeploymentSpec{
-    Replicas: ptr.Int32Ptr(0),
-    Template: &v1apply.PodTemplate{
-      Spec: &v1apply.PodSpec{
-        Containers: []v1.Containers{
-          {
-            Name: ptr.StringPtr("nginx"),
-            Image: ptr.StringPtr("nginx:latest"),
-          },
-        }
-      },
-    },
-  },
-}
-```
-
-For this approach, developers need to use a library like
-https://github.com/kubernetes/utils/blob/master/pointer/pointer.go
-to inline primitive literals.
-
-#### Alternative 2: Generated "builders"
-
-Example usage:
-
-```go
-&appsv1apply.Deployment().
-  ObjectMeta(&metav1apply.ObjectMeta().
-    Name("nginx-deployment")).
-  Spec(&appsv1apply.DeploymentSpec().
+&appsv1apply.Deployment("ns", "nginx-deployment").
+  Spec(appsv1apply.DeploymentSpec().
     Replicas(0).
     Template(
-      &v1apply.PodTemplate().
-        Spec(&v1apply.SetPodSpec().
+      v1apply.PodTemplate().
+        Spec(v1apply.PodSpec().
           Containers(v1apply.ContainerList{
             v1apply.Container().
               Name("nginx").
@@ -287,45 +244,14 @@ Example usage:
   )
 ```
 
-<<[UNRESOLVED @jpbetz ]>> 
-Finalize how setter functions are named if we go with this alternative. Options we
-are considering are: (1) Just use the field name (2) prefix field name with "Set" (3)
-prefix field name with "With".
-<<[/UNRESOLVED]>>
+See https://github.com/jpbetz/kubernetes/tree/apply-client-go-builders for a working
+implementation.
 
-#### Comparison of alternatives
+The namespace and name will immutable once set on the constructor. The constructor
+will be generated according to the scope of the object-- cluster scoped objects will
+not have a namespace argument.
 
-See https://github.com/kubernetes/kubernetes/pull/95988 for a working implementation
-of alterative 1 and https://github.com/jpbetz/kubernetes/tree/apply-client-go-builders
-for a working implementation of alternative 2.
-
-Of the two leading alternatives--"builders" and "structs with pointers"--we implemented
-prototypes of both. They had roughly equivalent performance, and no differences
-in their capabilities. The choice between the two is primarily one of aesthetics/ergonomics.
-
-Some of the feedback we have heard from the community:
-
-- "structs with pointers" feels more go idiomatic and more closely aligned with
-  the go structs used for Kubernetes types both for builtin types and by
-  Kubebuilder.
-- It's nice how "builders" are clearly visually distinct from the main go types.
-- Having to use a utility library to wrap literal values as pointers for the
-  "structs with pointers" is not a big deal. I'm already familiar
-  with having to do this in go and once I learn use a utility library for it
-  I'm all set.
-- The "builders" are awkward to use in an IDE. I felt like I was fighting with
-  my IDE to get chain function calls and organize them hierarchally as expected
-  by this approach.
-
-TODO: We are providing the developer community with a fork of controller-tools
-that will allow them to generate apply configuration types that have both the
-alternatives. Our goal is to get feedback from developers after they try out the
-generated apply configurations and use that to inform our decision.
-
-While it is possible to generate types that have both the pointer fields exposed
-and the builder functions, we would prefer to provide clear guidance to the
-community on how apply configurations should be represented in go and encourage
-consistent use of only one of these approaches.
+TypeMeta info (apiVersion and type) is autopopulated by the constructor.
 
 #### DeepCopy support
 
@@ -358,6 +284,61 @@ adding functions to interfaces is a change we have made in the past, and develop
 that have alternate implementations of the interface will usually get a compiler
 error in this case, which is relatively trivial to resolve
 
+### read/modify/write loop support
+
+While it is
+[recommended](https://kubernetes.io/docs/reference/using-api/server-side-apply/)
+that apply clients use "fully specified intent" rather than
+read/modify/write loops, there are many existing controllers that use
+a get/modify/update loop today, and are not easy to convert to the
+"fully specified intend" approach.
+
+For such controllers, providing a convenient way to do a
+"get-previously-applied/modify/apply" loop is pragmatic. It allows
+these controller to benefit from apply by sending a minimal apply
+patch (as opposed to sending the entire object for update) and to
+reduce the odds of conflict with other controllers.
+
+To support this, the builders will include "BuildApply" utility functions
+function. For example:
+
+```
+fieldManger := "my-field-manager"
+// 1. read
+deployment, err := client.AppsV1().Deployments(ns).Get("deployment-name", metav1.GetOptions{})
+if err != nil {
+  // handle err
+}
+applyConfig, err := appsv1apply.BuildDeploymentApply(deployment, fieldManager)
+if err != nil {
+  // handle err
+}
+
+// 2. modify
+applyConfig.GetSpec().Replicas(10)
+
+// 3. apply
+client.AppsV1().Deployments(ns).Apply(ctx, applyConfig, metav1.ApplyOptions{FieldManager: fieldManager, Force: true})
+```
+
+In the above example, `BuildDeploymentApply` constructs a populated
+apply configuration from a deployment object returned from a Get. It
+uses the provided field manager to get the matching field set
+(`FieldsV1` data) from object and then combines the field set with the
+object to produce the apply configuration.
+
+We will clearly document that on the "BuildApply" functions that we
+recommend using "fully specified intent" when using apply and also
+when it might be appropriate (and inappropriate) to use the "BuildApply"
+utility.
+
+Additionally, as a convenience, we may add a `GetForApply()` function
+to the generate client-go that returns an apply configuration directly
+(internally, it just calls Get and then BuildApply).
+
+If the version of the managed fields does not match the object (which is possible,
+but only if changing versions and using the same field manager) the "BuildApply"
+function will return an error.
 
 ### Interoperability with structured and unstructured types
 
@@ -367,6 +348,11 @@ from unstructured work the same as with go structs.
 For "builders", each would implement `MarshalJSON`, `UnmarshalJSON`,
 `ToUnstructured` and `FromUnstructured`. Builders would also provide getter functions
 to view what has been built.
+
+`FromUnstructured` will check for the presence managed fields in the unstructured data,
+if present, it will fail with an error indicating that objects retrieved via a Get
+cannot be converted using `FromUnstructured` and should instead be converted to an
+apply configuration using a "BuildApply" function.
 
 ### Test Plan
 
@@ -499,6 +485,64 @@ Major milestones might include:
 - Increases client-go API surface area.
 
 ## Alternatives
+
+#### Alternative: Generated structs where all fields are pointers
+
+Example usage:
+
+```go
+import (
+  ptr "k8s.io/utils/pointer"
+)
+
+&appsv1apply.Deployment{
+  Name: ptr.StringPtr("nginx-deployment"),
+  Spec: &appsv1apply.DeploymentSpec{
+    Replicas: ptr.Int32Ptr(0),
+    Template: &v1apply.PodTemplate{
+      Spec: &v1apply.PodSpec{
+        Containers: []v1.Containers{
+          {
+            Name: ptr.StringPtr("nginx"),
+            Image: ptr.StringPtr("nginx:latest"),
+          },
+        }
+      },
+    },
+  },
+}
+```
+
+There was mixed support for this approach in the community. Some feedback we have
+gotten when comparing the "builders" alternative with this "structs with pointers"
+alternative include:
+
+- "structs with pointers" feels more go idiomatic and more closely aligned with
+  the go structs used for Kubernetes types both for builtin types and by
+  Kubebuilder.
+- It's nice how "builders" are clearly visually distinct from the main go types.
+- Having to use a utility library to wrap literal values as pointers for the
+  "structs with pointers" is not a big deal. I'm already familiar
+  with having to do this in go and once I learn use a utility library for it
+  I'm all set.
+- The "builders" are awkward to use in an IDE. I felt like I was fighting with
+  my IDE to get chain function calls and organize them hierarchally as expected
+  by this approach.
+
+Limitations:
+
+- Even when using a library like
+  https://github.com/kubernetes/utils/blob/master/pointer/pointer.go to
+  inline primitive literals, some values, like enumeration values cannot
+  be inlined since ptr.StringPtr() does not work with them.
+- Direct access to struct allow developers to do conversions that are
+  unsafe, like directly converting from a type's go struct, retrieved
+  via a Get, to it apply configuration without using the managed
+  fields during the conversion.
+- No good way to future proof this against adding tombstone support in the future
+  like there is with the builders approach.
+- Code that reads the value of a deeply nested field because it must defererence
+  pointers at each level of nesting.
 
 ### Alternative: Use YAML directly
 

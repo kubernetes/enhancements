@@ -3,7 +3,7 @@ kep-number: 2144
 authors:
   - "@jpbetz"
 owning-sig: sig-api-machinery
-status: provisional
+status: implementable
 creation-date: 2020-11-16
 reviewers:
   - "@apelisse"
