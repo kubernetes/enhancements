@@ -96,6 +96,11 @@ DaemonSet pods are slightly more constrained than Deployments when it comes to s
 
 In order to reduce confusion for new users, we will start by rejecting HostPort use in daemonset when MaxSurge is non-zero. A user will not be able to update a daemonset to MaxSurge != 0 if HostPort is set, or update a HostPort if MaxSurge is set, without receiving a validation error. If the MaxSurge feature gate is off, the validation rule is bypassed, and a user who turns off the gate, sets both fields, and then enables the gate will have failing pods but will be able to update their daemonset to either remove surge or remove the host port safely.
 
+A user who uses HostNetwork but does not declare HostPorts and attempts to use MaxSurge with processes that listen on the host network should see errors from the network stack when their process attempts to bind a port (such as `cannot bind to address: port in use`) and the new pod will crash and go into a crashloop. Users should expect to see these failures as they would any other "my application does not start on Kubernetes" error via pod status, daemonset status conditions, and pod logs.
+
+Building a daemonset that hands off between two host level processes with any degree of coordination is an advanced topic and is up to the workload author. The simplest daemonsets may use pod network without any host level sharing and will benefit significantly from maxSurge during updates by reducing downtime at the cost of extra resources. As more complex sharing (host network, disk resources, unix domain sockets, configuration) is needed, the author is expected to leverage custom readiness probes, process start conditions, and process coordination mechanisms (like disks, networking, or shared memory) across pods. Debugging those interactions will be in the domain of the workload author.
+
+
 ### Workload Implications
 
 There are three main workload types that seek to minimize disruption:
@@ -170,8 +175,8 @@ you need any help or guidance.
 
 * **How can this feature be enabled / disabled in a live cluster?**
   - [x] Feature gate (also fill in values in `kep.yaml`)
-    - Feature gate name:
-    - Components depending on the feature gate:
+    - Feature gate name: `DaemonSetUpdateSurge`
+    - Components depending on the feature gate: `kube-apiserver`, `kube-controller-manager`
   - [ ] Other
     - Describe the mechanism:
     - Will enabling / disabling the feature require downtime of the control
@@ -186,15 +191,18 @@ you need any help or guidance.
 * **Can the feature be disabled once it has been enabled (i.e. can we roll back
   the enablement)?**
 
-	Yes, when the feature gate is disabled the field is ignored and can be cleared.
-	A workload using this alpha feature would no longer be able to surge and would
-	fall back to the default MaxUnavailable value (which is minimum 1).
+	Yes, when the feature gate is disabled the field is ignored and can be cleared by
+  an end user. A workload using this alpha feature would no longer be able to surge
+  and would fall back to the default MaxUnavailable value (which is minimum 1).
 
 * **What happens if we reenable the feature if it was previously rolled back?**
 
 	The field would become active and whatever new values were present would cause
-	the surge feature to become active. If the field were changed the user would have
-	to use the new alpha field.
+	the surge feature to become active. If the field name were changed old values
+  would be lost and the controller would default to using maxUnavailable 1.
+
+  To clear the field from etcd, disable the gate and perform a no-op PUT on every
+  daemonset.
 
 * **Are there any tests for feature enablement/disablement?**
 
