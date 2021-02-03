@@ -1,4 +1,4 @@
-# KEP-1668: Trace popagating
+# KEP-1668: Trace Context Propagation
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
@@ -81,7 +81,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-This KEP proposes to propagate trace context across components and across a series of related objects originating from an user request. It lays the foundation for enhancing relevant but scattered logs with the trace ID as common an identifier.
+This KEP proposes to propagate trace context across components and across a series of related objects originating from an user request. It lays the foundation for enhancing relevant but scattered logs with the trace ID as a common identifier.
 
 ## Motivation
 
@@ -113,15 +113,27 @@ Current logging for a series of related messages lacks common identifiers that c
 
 ### Trace context propagation
 
-To link work done across components as belonging to the same action(user request), we must pass trace context across process boundaries. In traditional distributed systems, this context can be passed down through RPC metadata or HTTP headers. Kubernetes, however, due to its watch-based nature, requires us to attach trace context directly to the target object.
+In the traditional RPC client-server tracing model, a trace context is attached to a single incoming request, and is propagated with all requests the server makes to other servers required to fulfill the initial single request.
+In order to link work done across components as belonging to the same action(user request). For example, if a user creates a ReplicaSet, the kube-controller-manager will create many Pod objects as a result, and will propagate the context used to create the ReplicaSet to Pod objects as well.
+The following should be true:
 
-In this proposal, we choose to propagate this trace context as object annotations called `trace.kubernetes.io/context`
+1. The apiserver propagate the http context from incoming requests to outgoing requests.
+2. Kubernetes client libraries([client-go](https://github.com/kubernetes/client-go)) allow propagating trace context with API requests.
+3. Attach trace context to objects.
+4. Propagate this context to objects modified as a result of the initial object modification.
+5. Propagate this context to Kubernetes client libraries (to propagate trace context to API Server).
+
+This ensures that all actions taken by kubernetes controllers as a result of the initial user action are linked by the same context.
+Fortunately, both above _1_ and _2_ are already in the scope of [API Server Tracing](https://github.com/kubernetes/enhancements/issues/647) KEP. In this proposal, we choose to propagate this [trace context](https://www.w3.org/TR/trace-context) as object annotations called `trace.kubernetes.io/context`.
 
 ###  Mutating admission webhook
 
-For trace context to be correlated as part of the same action, we must extract the trace context from the incomming request and embed it in target objects. To accomplish this, we have introduced an [out-of-tree mutating admission webhook](https://github.com/Hellcatlk/mutating-trace-admission-controller/tree/trace-ot).
+We proposal to propagate trace context through objects with the help of storing trace context to objects via mutating admission webhook. The mutating admission webhook is required for any object-based context propagation, even for a single object. Without it, the context annotation is never written.
+Additionally,  Webhook is ease of use and convenient, using client-go with a context.Context is easier than adding an annotation. The webhook takes care of writing the annotation.
 
-The proposed in-tree changes will utilize the span context annotation injected into objects with this webhook.
+Only write requests to objects will update the annotation. [The Admission Controllers are not able to hook read requests](https://kubernetes.io/docs/reference/access-authn-authz/admission-controllers/#what-are-they). Therefore Get or list requests will not reach the webhook nor overwrite the annotation.
+
+Once the trace context has been stored to object annotation(backing storage), it would be seen(propagated to) in other components. The proposed in-tree changes will utilize the trace context annotation injected into objects with this webhook.
 
 ### Risks and Mitigations
 
@@ -148,10 +160,11 @@ This design is inspired by the earlier KEP [Leveraging Distributed Tracing to Un
 This package will be able to retrieved span from the span context embedded in the `trace.kubernetes.io/context` object annotation. This package will facilitate propagating traces through kubernetes objects. The exported functions include:
 
 ```go
-// WithObject returns a context attached with a Span retrieved from object annotation, it doesn't start a new span
+// WithObject returns a context attached with a Span instance, this Span instance is not a full span, it just includes the Trace Context retrieved from object annotation.
+// It is a no-op if the annotation doesn't contain a trace context.
 func WithObject(ctx context.Context, obj meta.Object) (context.Context, error)
 ```
-
+Object to object propagation is accomplished through the changes in controllers. Using the `WithObject` function, we are extracting context from one object, and using it in the write for another object.
 When controllers create/update/delete an object A based on another B, we propagate context from B to A. Below is an example to show how deployment propagate trace context  to replicaset.
 
 ```diff
@@ -167,7 +180,7 @@ When controllers create/update/delete an object A based on another B, we propaga
 ```
 
 #### Add Go context to parameter list
-In OpenTelemetry's Go implementation,  span context is passed down through Go context. This will necessitate the threading of context across more of the Kubernetes codebase, which is a [desired outcome regardless](https://github.com/kubernetes/kubernetes/issues/815). In alpha stage,  we need to change some APIs by adding `ctx context.Context` to parameter list whose parameters doesn't contain context.Context yet. Below APIs will be impacted so far.
+In OpenTelemetry's Go implementation,  span context is passed down through Go context. This will necessitate the threading of context across more of the Kubernetes codebase, which is a [desired outcome regardless](https://github.com/kubernetes/kubernetes/issues/815). In alpha stage,  we need to change some APIs by adding `ctx context.Context` to parameter list whose parameters hasn't contained context.Context yet. Below APIs will be impacted so far.
 
 | APIs                          | file name                                                    |
 | ----------------------------- | ------------------------------------------------------------ |
@@ -178,14 +191,10 @@ In OpenTelemetry's Go implementation,  span context is passed down through Go co
 ### Out-of-tree changes
 
 #### Mutating webhook
-We use mutating admission controller(aka webhook)  to change/update the object annotation. It takes advantages of:
-
-- Ease of use. Using client-go with a context.Context is easier than adding an annotation. The webhook takes care of writing the annotation.
-- Object to object context propagation. Without the mutating admission controller, we can only associate actions from a single object. With the mutating admission controller, the logging metadata would be added for objects modified by controllers of the initial object (e.g. metadata added to a deployment annotation would appear in pod logs).
 
 This mutating admission webhook extracts  a `span context` from incoming request, and then stores it into object annotation`trace.kubernetes.io/context` with base64 encoded version of [this wire format](https://github.com/census-instrumentation/opencensus-specs/blob/master/encodings/BinaryEncoding.md#trace-context). The webhook can be configured to inject context into only target object types.
 
-below is a key/value pair example in object annotation :
+below is a key/value pair example in object annotation:
 
 | key               | value(encoded)                       | origin value(decoded)                                   | description                                                  |
 | ---------------------------- | ------------------------------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------ |
@@ -230,13 +239,14 @@ In short, the webhook decides whether to add `span context` to the object.
 
 ### Test Plan
 
-All added code will be covered by unit tests.
+- All added code will be covered by unit tests.
+- e2e tests and integration tests for the mutating admission controller.
 
 ### Graduation Criteria
 
 #### Alpha
 
-- Feature covers 3 important workload objects: Deployment, Statefulset, Daemonset
+- Feature covers 3 important workload objects: Pod, Replicaset, Deployment, Statefulset, Daemonset
 - Related unit tests described in this KEP are completed
 
 #### Beta
@@ -309,7 +319,7 @@ _This section must be completed when targeting alpha to a release._
 
 * **How can this feature be enabled / disabled in a live cluster?**
   - [x] Feature gate (also fill in values in `kep.yaml`)
-    - Feature gate name: TracePopagating
+    - Feature gate name: PropagateContextTrace
     - Components depending on the feature gate: kube-controller-manager
   - [ ] Other
     - Describe the mechanism:
@@ -430,7 +440,7 @@ provider?**
 
 * **Will enabling / using this feature result in increasing size or count of 
 the existing API objects?**
-  N/A
+Yes. It adds an annotation to "traced" objects. The value is a trace context, which is ~32 bytes. Traced objects will initially include pods, replicasets, and deployments, statefulsets, daemonsets, but may expand to include others over time. Notably, this annotation should not be added to Events.
 
 * **Will enabling / using this feature result in increasing time taken by any 
 operations covered by [existing SLIs/SLOs]?**
@@ -466,7 +476,7 @@ _This section must be completed when targeting beta graduation to a release._
 * [Mutating admission webhook which injects trace context for demo](https://github.com/Hellcatlk/mutating-trace-admission-controller/tree/trace-ot)
 * [Instrumentation of Kubernetes components for demo](https://github.com/Hellcatlk/kubernetes/pull/1)
 * [Instrumentation of Kubernetes components for demo based on KEP647](https://github.com/Hellcatlk/kubernetes/pull/3)
-* refactor [Log tracking](https://github.com/kubernetes/enhancements/pull/1961) KEP to Trace popagating
+* refactor [Log tracking](https://github.com/kubernetes/enhancements/pull/1961) KEP to Trace Context Propagation
 <!--
 Major milestones in the lifecycle of a KEP should be tracked in this section.
 Major milestones might include:

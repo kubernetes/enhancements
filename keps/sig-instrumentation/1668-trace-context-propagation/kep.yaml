@@ -1,4 +1,4 @@
-title: trace information popagation
+title: Trace Context Propagation
 kep-number: 1668
 authors:
  - "@hase1128"
@@ -38,7 +38,7 @@ milestone:
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
 feature-gates:
-   - name: TracePopagating
+   - name: PropagateContextTrace
      components:
        - kube-controller-manager
 disable-supported: true
