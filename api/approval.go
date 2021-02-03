@@ -33,10 +33,12 @@ func (p *PRRApprovals) AddPRRApproval(prrApproval *PRRApproval) {
 }
 
 type PRRApproval struct {
-	Number string       `json:"kep-number" yaml:"kep-number"`
-	Alpha  PRRMilestone `json:"alpha" yaml:"alpha,omitempty"`
-	Beta   PRRMilestone `json:"beta" yaml:"beta,omitempty"`
-	Stable PRRMilestone `json:"stable" yaml:"stable,omitempty"`
+	Number string `json:"kep-number" yaml:"kep-number" validate:"required"`
+
+	// TODO: Need to validate these milestone pointers are not nil
+	Alpha  *PRRMilestone `json:"alpha" yaml:"alpha,omitempty"`
+	Beta   *PRRMilestone `json:"beta" yaml:"beta,omitempty"`
+	Stable *PRRMilestone `json:"stable" yaml:"stable,omitempty"`
 
 	// TODO(api): Move to separate struct for handling document parsing
 	Error error `json:"-" yaml:"-"`
@@ -66,7 +68,7 @@ func (prr *PRRApproval) ApproverForStage(stage string) string {
 
 // TODO(api): Can we refactor the proposal `Milestone` to retrieve this?
 type PRRMilestone struct {
-	Approver string `json:"approver" yaml:"approver"`
+	Approver string `json:"approver" yaml:"approver" validate:"required"`
 }
 
 type PRRHandler Parser
