@@ -255,7 +255,7 @@ Cons:
 
 #### Alpha
 
-Target: v1.20
+Target: v1.21
 
 - [ ] Add `VolumeCapacityPriority` feature gate
 - [ ] Add priority extension point implementation for VolumeBinding plugin
@@ -266,11 +266,12 @@ Target: v1.20
 
 #### Beta
 
-Target: v1.21
+Target: v1.22
 
 - [ ] Add benchmarking tests
 - [ ] Turn algorithm based on feedback from developers and users
-- [ ] Able to configure the weight of storage class (implementation TBD)
+- [ ] Decide to support storage class weighting or not (if we should, implement
+  it)
 
 #### GA
 
