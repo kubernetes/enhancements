@@ -19,7 +19,7 @@ prr-approvers:
   - "@wojtek-t"
 see-also:
   - "https://docs.google.com/document/d/1WtX2lRJjZ03RBdzQIZY3IOvmoYiF5JxDX35-SsCIAfg"
-latest-milestone: "v1.19"
+latest-milestone: "v1.21"
 milestone:
   alpha: "v1.19"
   beta: "v1.21"
