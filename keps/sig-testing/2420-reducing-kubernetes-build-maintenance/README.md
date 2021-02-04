@@ -212,12 +212,16 @@ The "Design Details" section below is for the real
 nitty-gritty.
 -->
 
+For the development (main/master) branch only, **NOT** the existing release branches:
+
 1. Switch remaining CI usage (mostly a few presubmits) to use the make build.
   - Most of CI already uses the make builds, excluding some presubmits, we will need to switch these (generally a flag flip in the CI configuration).
   - Most of periodic testing consumes pre-uploaded binaries from the make builds, and does not build at all. These will require no changes.
   - In areas where the make build generates fewer artifacts or exercises fewer paths than bazel, we will err on the side of parity with artifacts that end up in a kubernetes/kubernetes release
 2. Remove the bazel build and associated tooling.
   - There are multiple scripts and LOTS of files related wholly to the bazel build in Kubernetes. Once we are confident that CI is no longer reliant on them we can remove these and relieving the maintenance toil.
+
+No changes should be made to the release branches or their CI.
 
 ### Risks and Mitigations
 
@@ -254,6 +258,7 @@ This is relevant for at least the following jobs:
  - `periodic-bazel-test-<branch>`
  - `post-kubernetes-bazel-build` (this can likely already be removed, it’s unclear what depends on this job)
 
+Again, this should not apply to existing release branches.
 
 <!--
 **Note:** *Not required until targeted at a release.*
@@ -331,8 +336,10 @@ in back-to-back releases.
 -->
 
 This will be declared stable/GA when:
-- All kubernetes/kubernetes CI jobs use the preexisting make build system
+- All kubernetes/kubernetes `master` branch CI jobs use the preexisting make build system
+<!-- TODO: as old jobs are rotated out each release anyhow, it may be acceptable to reduce the stable target to just the current development branch -->
 - Bazel-related source files and related tooling are removed from the kubernetes/kubernetes repository on currently supported release branches and the current development branch
+  - This will only happen for release branches as we phase out support for older releases, rotating in new supported releases that never contained the Bazel build
 - Bazel-related configuration/presets are removed from kubernetes/kubernetes CI jobs in kubernetes/test-infra
 
 
