@@ -21,7 +21,7 @@ import (
 	"sort"
 	"strings"
 
-	"k8s.io/enhancements/pkg/kepval/util"
+	"k8s.io/enhancements/pkg/legacy/util"
 )
 
 var (
@@ -30,9 +30,11 @@ var (
 	reStatus      = regexp.MustCompile(strings.Join(statuses, "|"))
 	stages        = []string{"alpha", "beta", "stable"}
 	reStages      = regexp.MustCompile(strings.Join(stages, "|"))
-	reMilestone   = regexp.MustCompile("v1\\.[1-9][0-9]*")
+	reMilestone   = regexp.MustCompile(`v1\\.[1-9][0-9]*`)
 )
 
+// TODO(lint): cyclomatic complexity 50 of func `ValidateStructure` is high (> 30) (gocyclo)
+//nolint:gocyclo
 func ValidateStructure(parsed map[interface{}]interface{}) error {
 	for _, key := range mandatoryKeys {
 		if _, found := parsed[key]; !found {
@@ -54,44 +56,67 @@ func ValidateStructure(parsed map[interface{}]interface{}) error {
 		// figure out the types
 		switch strings.ToLower(k) {
 		case "status":
+			// TODO(lint): singleCaseSwitch: should rewrite switch statement to if statement (gocritic)
+			//nolint:gocritic
 			switch v := value.(type) {
 			case []interface{}:
 				return util.NewValueMustBeString(k, v)
 			}
+
+			// TODO(lint): Error return value is not checked (errcheck)
+			//nolint:errcheck
 			v, _ := value.(string)
 			if !reStatus.Match([]byte(v)) {
 				return util.NewValueMustBeOneOf(k, v, statuses)
 			}
+
 		case "stage":
+			// TODO(lint): singleCaseSwitch: should rewrite switch statement to if statement (gocritic)
+			//nolint:gocritic
 			switch v := value.(type) {
 			case []interface{}:
 				return util.NewValueMustBeString(k, v)
 			}
+
+			// TODO(lint): Error return value is not checked (errcheck)
+			//nolint:errcheck
 			v, _ := value.(string)
 			if !reStages.Match([]byte(v)) {
 				return util.NewValueMustBeOneOf(k, v, stages)
 			}
+
 		case "owning-sig":
+			// TODO(lint): singleCaseSwitch: should rewrite switch statement to if statement (gocritic)
+			//nolint:gocritic
 			switch v := value.(type) {
 			case []interface{}:
 				return util.NewValueMustBeString(k, v)
 			}
+
+			// TODO(lint): Error return value is not checked (errcheck)
+			//nolint:errcheck
 			v, _ := value.(string)
 			index := sort.SearchStrings(listGroups, v)
 			if index >= len(listGroups) || listGroups[index] != v {
 				return util.NewValueMustBeOneOf(k, v, listGroups)
 			}
+
 		// optional strings
 		case "editor":
 			if empty {
 				continue
 			}
+
 			fallthrough
+
 		case "title", "creation-date", "last-updated":
+			// TODO(lint): singleCaseSwitch: should rewrite switch statement to if statement (gocritic)
+			//nolint:gocritic
 			switch v := value.(type) {
 			case []interface{}:
 				return util.NewValueMustBeString(k, v)
 			}
+
 			v, ok := value.(string)
 			if ok && v == "" {
 				return util.NewMustHaveOneValue(k)
@@ -99,6 +124,7 @@ func ValidateStructure(parsed map[interface{}]interface{}) error {
 			if !ok {
 				return util.NewValueMustBeString(k, v)
 			}
+
 		// These are optional lists, so skip if there is no value
 		case "participating-sigs", "replaces", "superseded-by", "see-also":
 			if empty {
@@ -109,19 +135,25 @@ func ValidateStructure(parsed map[interface{}]interface{}) error {
 				if len(v) == 0 {
 					continue
 				}
+
 			case interface{}:
 				// This indicates an empty item is valid
 				continue
 			}
+
 			fallthrough
+
 		case "authors", "reviewers", "approvers":
 			switch values := value.(type) {
 			case []interface{}:
 				if len(values) == 0 {
 					return util.NewMustHaveAtLeastOneValue(k)
 				}
-				if strings.ToLower(k) == "participating-sigs" {
+
+				if strings.EqualFold(k, "participating-sigs") {
 					for _, value := range values {
+						// TODO(lint): Error return value is not checked (errcheck)
+						//nolint:errcheck
 						v := value.(string)
 						index := sort.SearchStrings(listGroups, v)
 						if index >= len(listGroups) || listGroups[index] != v {
@@ -129,15 +161,19 @@ func ValidateStructure(parsed map[interface{}]interface{}) error {
 						}
 					}
 				}
+
 			case interface{}:
 				return util.NewValueMustBeListOfStrings(k, values)
 			}
+
 		case "prr-approvers":
 			switch values := value.(type) {
 			case []interface{}:
 				// prrApprovers must be sorted to use SearchStrings down below...
 				sort.Strings(prrApprovers)
 				for _, value := range values {
+					// TODO(lint): Error return value is not checked (errcheck)
+					//nolint:errcheck
 					v := value.(string)
 					if len(v) > 0 && v[0] == '@' {
 						// If "@" is appeneded at the beginning, remove it.
@@ -149,29 +185,39 @@ func ValidateStructure(parsed map[interface{}]interface{}) error {
 						return util.NewValueMustBeOneOf(k, v, prrApprovers)
 					}
 				}
+
 			case interface{}:
 				return util.NewValueMustBeListOfStrings(k, values)
 			}
+
 		case "latest-milestone":
+			// TODO(lint): singleCaseSwitch: should rewrite switch statement to if statement (gocritic)
+			//nolint:gocritic
 			switch v := value.(type) {
 			case []interface{}:
 				return util.NewValueMustBeString(k, v)
 			}
+
+			// TODO(lint): Error return value is not checked (errcheck)
+			//nolint:errcheck
 			v, _ := value.(string)
 			if !reMilestone.Match([]byte(v)) {
 				return util.NewValueMustBeMilestone(k, v)
 			}
+
 		case "milestone":
 			switch v := value.(type) {
 			case map[interface{}]interface{}:
 				if err := validateMilestone(v); err != nil {
 					return err
 				}
+
 			case interface{}:
 				return util.NewValueMustBeStruct(k, v)
 			}
 		}
 	}
+
 	return nil
 }
 
@@ -183,12 +229,17 @@ func validateMilestone(parsed map[interface{}]interface{}) error {
 			return util.NewKeyMustBeString(k)
 		}
 
+		// TODO(lint): singleCaseSwitch: should rewrite switch statement to if statement (gocritic)
+		//nolint:gocritic
 		switch strings.ToLower(k) {
 		case "alpha", "beta", "stable":
 			switch v := value.(type) {
 			case []interface{}:
 				return util.NewValueMustBeString(k, v)
 			}
+
+			// TODO(lint): Error return value is not checked (errcheck)
+			//nolint:errcheck
 			v, _ := value.(string)
 			if !reMilestone.Match([]byte(v)) {
 				return util.NewValueMustBeMilestone(k, v)
