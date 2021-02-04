@@ -11,13 +11,14 @@
 - [Proposal](#proposal)
   - [Implementation Details/Notes/Constraints [optional]](#implementation-detailsnotesconstraints-optional)
     - [Migration Configuration](#migration-configuration)
+    - [Default LeaderMigrationConfiguration](#default-leadermigrationconfiguration)
     - [Component Flags](#component-flags)
-    - [Example Walkthrough of Controller Migration](#example-walkthrough-of-controller-migration)
+    - [Example Walkthrough of Controller Migration with Default Configuration](#example-walkthrough-of-controller-migration-with-default-configuration)
       - [Enable Leader Migration on Components](#enable-leader-migration-on-components)
-      - [Deploy the CCM](#deploy-the-ccm)
-      - [Update Leader Migration Config on Upgrade](#update-leader-migration-config-on-upgrade)
+      - [Upgrade the Control Plane](#upgrade-the-control-plane)
       - [Disable Leader Migration](#disable-leader-migration)
   - [Risks and Mitigations](#risks-and-mitigations)
+  - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
       - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
       - [Beta -&gt; GA Graduation](#beta---ga-graduation)
@@ -35,12 +36,12 @@ For enhancements that make changes to code or processes/procedures in core Kuber
 
 Check these off as they are completed for the Release Team to track. These checklist items _must_ be updated for the enhancement to be released.
 
-- [ ] kubernetes/enhancements issue in release milestone, which links to KEP (this should be a link to the KEP location in kubernetes/enhancements, not the initial KEP PR)
-- [ ] KEP approvers have set the KEP status to `implementable`
-- [ ] Design details are appropriately documented
-- [ ] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
-- [ ] Graduation criteria is in place
-- [ ] "Implementation History" section is up-to-date for milestone
+- [X] kubernetes/enhancements issue in release milestone, which links to KEP (this should be a link to the KEP location in kubernetes/enhancements, not the initial KEP PR)
+- [X] KEP approvers have set the KEP status to `implementable`
+- [X] Design details are appropriately documented
+- [X] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [X] Graduation criteria is in place
+- [X] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
@@ -75,7 +76,7 @@ the respective out-of-tree cloud-controller-manager.
 
 ### Goals
 
-* Define migration process for large scale, highly available clusters to migrate from the in-tree cloud provider mechnaism, to their out-of-tree equivalents.
+* Define migration process for large scale, highly available clusters to migrate from the in-tree cloud provider mechanism, to their out-of-tree equivalents.
 
 ### Non-Goals
 
@@ -102,14 +103,14 @@ _primary_ and N configurable _secondary_ (a.k.a migration) leader election locks
 The primary lock represents the current leader election resource lock in the KCM and the CCM. The set of
 secondary locks are defined by the cloud provider and run in parallel to the primary locks. For a migration
 lock defined by the cloud provider, the cloud provider also determines the set of controllers run within the
-migration lock and the controller manager it should run in - either the CCM or the KCM.
+migration lock and the controller manager it will run in - either the CCM or the KCM.
 
 The properties of the migration lock are:
   * must have a unique name
   * the set of controllers in the lock is immutable.
   * no two migration locks should have overlapping controllers
   * the controller manager where the lock runs can change across releases.
-  * for a minor release it should run exclusively in one type of controller manager - KCM or CCM.
+  * for a minor release it must run exclusively in one type of controller manager - KCM or CCM.
 
 During migration, either the KCM or CCM may have multiple migration locks, though for performance reasons no more than 2 locks is recommended.
 
@@ -150,42 +151,84 @@ The migration lock will be configured by defining new API types that will then b
 type LeaderMigrationConfiguration struct {
 	metav1.TypeMeta `json:",inline"`
 
-	// LeaderName is the name of the resource under which the controllers should be run.
+	// LeaderName is the name of the resource under which the controllers will be run.
 	LeaderName string `json:"leaderName"`
 
-	// ControllerLeaders contains a list of migrating leader lock configurations
-	ControllerLeaders []ControllerLeaderConfiguration `json:"controllerLeaders"`
+	// ResourceLock indicates the resource object type that will be used to lock
+    // Must be either "leases" or "endpoints", defaults to 'leases'
+    // No other types (e.g. "endpointsleases" or "configmapsleases") are allowed
+    ResourceLock string
+
+// ControllerLeaders contains a list of migrating leader lock configurations
+ControllerLeaders []ControllerLeaderConfiguration `json:"controllerLeaders"`
 }
 
 // ControllerLeaderConfiguration provides the configuration for a migrating leader lock.
 type ControllerLeaderConfiguration struct {
-	// Name is the name of the controller being migrated
-	// E.g. service-controller, route-controller, cloud-node-controller, etc
-	Name string `json:"name"`
+// Name is the name of the controller being migrated
+// E.g. service-controller, route-controller, cloud-node-controller, etc
+Name string `json:"name"`
 
-	// Component is the name of the component in which the controller should be running.
-	// E.g. kube-controller-manager, cloud-controller-manager, etc
-	Component string `json:"component"`
+// Component is the name of the component in which the controller will be running.
+// E.g. kube-controller-manager, cloud-controller-manager, etc
+Component string `json:"component"`
 }
 ```
 
+#### Default LeaderMigrationConfiguration
+
+The `staging/controller-manager` package will provide `kube-controller-manager` and `cloud-controller-manager`
+each a default `LeaderMigrationConfiguration` that represents the situation where the controller manager is running with
+default assignments of controllers and lock type selection.
+
+Please refer to [an workthough](#example-walkthrough-of-controller-migration-with-default-configuration)
+of an example cloud controllers migration from KCM to CCM that use the default configuration.
+
+The default values must be only used when no configuration file is specified. If a custom configuration file is
+specified to either controller manager, the specified configuration will completely replace default value for the
+corresponding controller manager.
+
 #### Component Flags
 
-The LeaderMigrationConfiguration type will be read by the `kube-controller-manager` and the `cloud-controller-manager` via a new flag `--cloud-migration-config` which
-accepts a path to a file containing the LeaderMigrationConfiguration type in yaml.
+Both `kube-controller-manager` and `cloud-controller-manager` will get support for the following two flags for Leader
+Migration. First, `--enable-leader-migration` is a boolean flag which defaults to `false` that indicates whether Leader
+Migration is enabled. Second, `--leader-migration-config` is an optional flag that accepts a path to a file containing
+the `LeaderMigrationConfiguration` type serialized in yaml.
 
-#### Example Walkthrough of Controller Migration
+If `--enable-leader-migration` is `true` but `--leader-migration-config` flag is empty or not set, the
+default `LeaderMigrationConfiguration` for corresponding controller manager will be used.
 
-This is an example of how you would migrate all cloud controllers from the CCM to the KCM during a typical cluster version upgrade.
+If `--enable-leader-migration` is not set or set to `false`, but `--leader-migration-config` is set and not empty, the
+controller manager will print an error at `FATAL` level and exit immediately. Additionally,
+if `--leader-migration-config` is set but the configuration file cannot be read or parsed, the controller manager will
+log the failure at `FATAL` level and exit immediately.
+
+#### Example Walkthrough of Controller Migration with Default Configuration
+
+This is an example of migrating a KCM-only Kubernetes 1.21 control plane to KCM + CCM 1.22.
+
+After the upgrade, all cloud controllers will be moved from the KCM to the KCM. We assume KCM and CCM are running with
+default controller assignments, namely, in 1.21, KCM runs `route-controller`, `service-controller`
+, `cloud-node-controller`, and `cloud-nodelifecycle-controller`, and in 1.22, CCM instead will run all the 4
+controllers.
+
+If KCM and CCM are not running with the default controller assignments, a custom configuration file can be specified
+with `--leader-migration-config`. However, this example only covers the simple case of using default configuration.
+
+At the beginning, KCM should not have `--enable-leader-migration` or `--leader-migration-config` set, but it should
+have `--cloud-provider` already set to an existing cloud provider (e.g. `--cloud-provider=gce`). At this point, KCM
+runs `route-controller`, `service-controller`, `cloud-node-controller`, and `cloud-nodelifecycle-controller`. CCM is not
+yet deployed.
 
 ##### Enable Leader Migration on Components
 
-First, define a LeaderMigrationConfiguration resource in a yaml file containing all known cloud controllers. The component name for each controller should be set to
-the component where the controllers are currently running. Almost always this is the `kube-controller-manager`. The configuration file should look something like this:
+The provided default configuration will be equivalent to the following:
+
 ```yaml
 kind: LeaderMigrationConfiguration
 apiVersion: v1alpha1
-leaderName: cloud-controllers-migration
+leaderName: cloud-provider-extraction-migration
+resourceLock: leases
 controllerLeaders:
   - name: route-controller
     component: kube-controller-manager
@@ -197,23 +240,32 @@ controllerLeaders:
     component: kube-controller-manager
 ```
 
-Save the leader migration configuration file somewhere, for this example we'll use `/etc/kubernetes/cloud-controller-migration.yaml`.
-Now update the kube-controller-manager to set `--cloud-migration-config /etc/kubernetes/cloud-controller-migration.yaml`.
+First, within 1.21 control plane, update the `kube-controller-manager` to set `--enable-leader-migration` but
+not `--leader-migration-config`, this flag enables Leader Migration with default configuration, which prepares KCM to
+participate in the migration.
 
-##### Deploy the CCM
+##### Upgrade the Control Plane
 
-Now deploy the CCM on your cluster but ensure it also has the `--cloud-migration-config` flag set, using the same config file you used for the KCM above.
+Upgrade each node of the control plane to 1.22 with the following updates:
 
-How the CCM is deployed is out of scope for this KEP, refer to the cloud provider's documentation on how to do this.
+- KCM has neither `--enable-leader-migration` or `--leader-migration-config`
+- KCM has no cloud provider enabled with`--cloud-provider=`
+- CCM deployed with `--enable-leader-migration`
+- CCM has its `--cloud-provider` set to the correct cloud provider
 
-#####  Update Leader Migration Config on Upgrade
+After upgrade, CCM will run `route-controller`, `service-controller`, `cloud-node-controller`,
+and `cloud-nodelifecycle-controller`. The Leader Migration support will ensure CCM cleanly take out these controllers
+during the control plane upgrade.
 
-To migrate controllers from the KCM to the CCM, update the component field from `kube-controller-manager` to `cloud-controller-manager` on every control plane node prior to
-upgrading the node. If you are replacing nodes on upgrade, ensure new nodes set the `component` field to `cloud-controller-manager`. The new config file should look like this:
+As a reference, the provided default configuration in version 1.22 should have the `component` field of all affected
+controllers changed to `cloud-controller-manager`. The resulting default configuration should be equivalent to the
+following:
+
 ```yaml
 kind: LeaderMigrationConfiguration
 apiVersion: v1alpha1
-leaderName: cloud-controllers-migration
+leaderName: cloud-provider-extraction-migration
+resourceLock: leases
 controllerLeaders:
   - name: route-controller
     component: cloud-controller-manager
@@ -225,13 +277,12 @@ controllerLeaders:
     component: cloud-controller-manager
 ```
 
-NOTE: During upgrade, it is acceptable for control plane nodes to specify different component names for each controller as long as the `leaderName` field is the same across nodes.
+Please take note on how component names across both versions differs for each controller.
 
 ##### Disable Leader Migration
 
-Once all controllers are migrated to the desired component:
-* disable the cloud provider in the `kube-controller-manager` (set `--cloud-provider=external`)
-* disable leader migration on the `kube-controller-manager` and `cloud-controller-manager` by unsetting the `--cloud-migration-config` field.
+Once all nodes in the control plane are upgraded to 1.22, disable leader migration on the `cloud-controller-manager` by
+unsetting the `--enable-migration-config` flag.
 
 ### Risks and Mitigations
 
@@ -261,4 +312,7 @@ Version skew is handled as long as the leader name is consistent across all cont
 ## Implementation History
 
 - 07-25-2019 `Summary` and `Motivation` sections were merged signaling SIG acceptance
-- 01-21-2019  Implementation details are proposed to move KEP to `implementable` state.
+- 01-21-2019 Implementation details are proposed to move KEP to `implementable` state.
+- 09-30-2020 `LeaderMigrationConfiguration` and `ControllerLeaderConfiguration` schemas merged as #94205.
+- 11-04-2020 Registration of both types merged as #96133
+- 12-28-2020 Parsing and validation merged as #96226
