@@ -332,13 +332,18 @@ recommend using "fully specified intent" when using apply and also
 when it might be appropriate (and inappropriate) to use the "BuildApply"
 utility.
 
-Additionally, as a convenience, we may add a `GetForApply()` function
-to the generate client-go that returns an apply configuration directly
-(internally, it just calls Get and then BuildApply).
+An alternative we considered, but rejected, was to add `GetForApply()`
+style functions to the client. The benefit of this approach is that
+the caller doesn't have to deal with converting the response object
+into an apply configuration, and there is no possibility of the client
+modifying the object before converting it into an apply
+configuration. The problem with this approach is that it is tightly
+coupled, and there are many operations that return an object
+(get/create/update/patch/watch/list).
 
-If the version of the managed fields does not match the object (which is possible,
-but only if changing versions and using the same field manager) the "BuildApply"
-function will return an error.
+Corner case: If the version of the managed fields does not match the
+object (which is possible, but only if changing versions and using the
+same field manager) the "BuildApply" function will return an error.
 
 ### Interoperability with structured and unstructured types
 
