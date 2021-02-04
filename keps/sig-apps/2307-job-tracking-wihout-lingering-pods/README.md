@@ -76,6 +76,7 @@ SIG Architecture for cross-cutting KEPs).
   - [API changes](#api-changes)
   - [Algorithm](#algorithm)
   - [Deleted Pods](#deleted-pods)
+  - [Deleted Jobs](#deleted-jobs)
   - [Pod adoption](#pod-adoption)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
@@ -221,7 +222,7 @@ type JobStatus struct {
 type UncountedTerminatedPods struct {
     // Succeeded holds UIDs of succeeded Pods.
     Succeeded []types.UID
-    // Succeeded holds UIDs of failed Pods.
+    // Failed holds UIDs of failed Pods.
     Failed    []types.UID
 }
 ```
@@ -240,7 +241,9 @@ cycle.
 1. The Job controller calculates the number of succeeded Pods as the sum of:
    - `.status.succeeded`,
    - the size of `job.status.uncountedTerminatedPods.succeeded` and
-   - the number of finished Pods that are not in `job.status.uncountedTerminatedPods.succeeded`.
+   - the number of finished Pods that are not in `job.status.uncountedTerminatedPods.succeeded`
+     and have a finalizer.
+
    This number informs the creation of missing Pods to reach `.spec.completions`.
    The controller creates Pods for a Job with the finalizer
    `batch.kubernetes.io/job-completion`.
@@ -257,8 +260,8 @@ cycle.
    - have no finalizer, or
    - were removed from the system.
    The counts increment the `.status.failed` and `.status.succeeded` and clears
-   counted Pods from `.status.uncountedPodsUIDs` lists. The controller sends a
-   status update.
+   counted Pods from `.status.uncountedTerminatedPods` lists. The controller
+   sends a status update.
 
 Steps 2 to 4 might deal with a potentially big number of Pods. Thus, status
 updates can potentially stress the kube-apiserver. For this reason, the Job
@@ -291,6 +294,12 @@ solve.
 However, if the Job controller deletes the Pod (when parallelism is decreased,
 for example), the controller removes the finalizer before deleting it. Thus,
 these deletions don't count towards the failures.
+
+### Deleted Jobs
+
+When a user or another controller deletes a Job, the job controller scans
+associated Pods and removes finalizers from them without updating any Job
+status.
    
 ### Pod adoption
 
