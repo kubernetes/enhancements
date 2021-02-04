@@ -23,9 +23,9 @@ see-also:
 replaces:
 stage: alpha
 last-updated: 2020-10-14
-latest-milestone: "v1.20"
+latest-milestone: "v1.21"
 milestone:
-  alpha: "v1.20"
+  alpha: "v1.21"
 feature-gates:
   - name: APIServerTracing
 disable-supported: true
