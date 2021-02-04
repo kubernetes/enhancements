@@ -549,7 +549,7 @@ var (
 
   execPluginCalls = k8smetrics.NewCounterVec(
     &k8smetrics.CounterOpts{
-      Name: "rest_client_exec_plugin_calls",
+      Name: "rest_client_exec_plugin_call_total",
       Help: "Number of calls to an exec plugin, partitioned by exit code.",
     },
     []string{"code"},
@@ -815,7 +815,7 @@ _This section must be completed when targeting beta graduation to a release._
   determine the health of the service?**
   - [X] Metrics
     - Metric name: `rest_client_exec_plugin_ttl_seconds`, `rest_client_exec_plugin_certificate_rotation_age`,
-      `rest_client_exec_plugin_calls`
+      `rest_client_exec_plugin_call_total`
     - Components exposing the metric: client-go
   - [ ] Other (treat as last resort)
     - Details:
@@ -828,7 +828,7 @@ _This section must be completed when targeting beta graduation to a release._
     `rest_client_exec_plugin_ttl_seconds`.
   - We target 0.01% unsuccessful calls to the exec plugin in a moving 24h
     window. This is measured by
-    `rest_client_exec_plugin_calls`.
+    `rest_client_exec_plugin_call_total`.
 
 * **Are there any missing metrics that would be useful to have to improve
   observability if this feature?**
