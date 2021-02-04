@@ -17,34 +17,37 @@ limitations under the License.
 package kepval
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 
 	"github.com/blang/semver/v4"
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 
 	"k8s.io/enhancements/api"
 )
 
-func ValidatePRR(kep *api.Proposal, prrDir string) error {
-	handler := &api.PRRHandler{}
+func ValidatePRR(kep *api.Proposal, h *api.PRRHandler, prrDir string) error {
+	requiredPRRApproval, _, err := isPRRRequired(kep)
+	if err != nil {
+		return errors.Wrap(err, "checking if PRR is required")
+	}
 
-	var stageMilestone string
-	switch kep.Stage {
-	case "alpha":
-		stageMilestone = kep.Milestone.Alpha
-	case "beta":
-		stageMilestone = kep.Milestone.Beta
-	case "stable":
-		stageMilestone = kep.Milestone.Stable
+	if !requiredPRRApproval {
+		logrus.Debugf("PRR review is not required for %s", kep.Number)
+		return nil
 	}
 
 	prrFilename := kep.Number + ".yaml"
 	prrFilename = filepath.Join(prrsDir, kep.OwningSIG, prrFilename)
+
+	logrus.Infof("PRR file: %s", prrFilename)
+
 	prrFile, err := os.Open(prrFilename)
 	if os.IsNotExist(err) {
 		// TODO: Is this actually the error we want to return here?
-		return needsPRRApproval(stageMilestone, kep.Stage, prrFilename)
+		return err //needsPRRApproval(stageMilestone, kep.Stage, prrFilename)
 	}
 
 	if err != nil {
@@ -52,7 +55,7 @@ func ValidatePRR(kep *api.Proposal, prrDir string) error {
 	}
 
 	// TODO: Create a context to hold the parsers
-	prr, prrParseErr := handler.Parse(prrFile)
+	prr, prrParseErr := h.Parse(prrFile)
 	if prrParseErr != nil {
 		return errors.Wrap(prrParseErr, "parsing PRR approval file")
 	}
@@ -63,50 +66,64 @@ func ValidatePRR(kep *api.Proposal, prrDir string) error {
 		return errors.Wrapf(prr.Error, "%v has an error", prrFilename)
 	}
 
-	var stagePRRApprover string
+	// TODO: Check for edge cases
+	var stageMilestone string
 	switch kep.Stage {
 	case "alpha":
-		stagePRRApprover = prr.Alpha.Approver
+		stageMilestone = kep.Milestone.Alpha
 	case "beta":
-		stagePRRApprover = prr.Beta.Approver
+		stageMilestone = kep.Milestone.Beta
 	case "stable":
-		stagePRRApprover = prr.Stable.Approver
+		stageMilestone = kep.Milestone.Stable
 	}
 
-	if len(stageMilestone) > 0 && stageMilestone >= "v1.21" {
-		// PRR approval is needed.
-		if stagePRRApprover == "" {
-			return needsPRRApproval(stageMilestone, kep.Stage, prrFilename)
-		}
+	stagePRRApprover := prr.ApproverForStage(stageMilestone)
+	validApprover := api.IsOneOf(stagePRRApprover, h.PRRApprovers)
+	if !validApprover {
+		return errors.New(
+			fmt.Sprintf(
+				"this contributor (%s) is not a PRR approver (%v)",
+				stagePRRApprover,
+				h.PRRApprovers,
+			),
+		)
 	}
 
 	return nil
 }
 
 func isPRRRequired(kep *api.Proposal) (required, missingMilestone bool, err error) {
-	required = true
-	missingMilestone = false
+	logrus.Infof("checking if PRR is required")
 
-	if kep.LatestMilestone == "" {
+	required = true
+	missingMilestone = kep.IsMissingMilestone()
+
+	if kep.Status != "implementable" {
 		required = false
-		missingMilestone = true
+		return required, missingMilestone, nil
+	}
+
+	if missingMilestone {
+		required = false
+		logrus.Warnf("KEP %s is missing the latest milestone field. This will become a validation error in future releases.", kep.Number)
 
 		return required, missingMilestone, nil
-	} else {
-		// TODO: Consider making this a function
-		prrRequiredAtSemVer, err := semver.ParseTolerant("v1.21")
-		if err != nil {
-			return required, missingMilestone, errors.Wrap(err, "creating a SemVer object for PRRs")
-		}
+	}
 
-		latestSemVer, err := semver.ParseTolerant(kep.LatestMilestone)
-		if err != nil {
-			return required, missingMilestone, errors.Wrap(err, "creating a SemVer object for latest milestone")
-		}
+	// TODO: Consider making this a function
+	prrRequiredAtSemVer, err := semver.ParseTolerant("v1.21")
+	if err != nil {
+		return required, missingMilestone, errors.Wrap(err, "creating a SemVer object for PRRs")
+	}
 
-		if latestSemVer.LTE(prrRequiredAtSemVer) || kep.Status != "implementable" {
-			required = false
-		}
+	latestSemVer, err := semver.ParseTolerant(kep.LatestMilestone)
+	if err != nil {
+		return required, missingMilestone, errors.Wrap(err, "creating a SemVer object for latest milestone")
+	}
+
+	if latestSemVer.LT(prrRequiredAtSemVer) {
+		required = false
+		return required, missingMilestone, nil
 	}
 
 	return required, missingMilestone, nil

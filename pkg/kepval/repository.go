@@ -36,29 +36,41 @@ const (
 var files = []string{}
 
 // This is the actual validation check of all KEPs in this repo
-func ValidateRepository(kepsDir string) (warnings []string, err error) {
-	// Find all the keps
-	err = filepath.Walk(
-		filepath.Join("..", kepsDir),
-		walkFn,
-	)
+func ValidateRepository(kepsDir string) ([]string, []error, error) {
+	var warnings []string
+	var valErrors []error
+
+	currentDir, err := os.Getwd()
+	if err != nil {
+		return warnings, valErrors, err
+	}
+
+	kepsDir = filepath.Join(currentDir, kepsDir)
+
+	// Find all the KEPs
+	err = filepath.Walk(kepsDir, walkFn)
 
 	// This indicates a problem walking the filepath, not a validation error.
 	if err != nil {
-		return warnings, errors.Wrap(err, "walking repository")
+		return warnings, valErrors, errors.Wrap(err, "walking repository")
 	}
 
 	if len(files) == 0 {
-		return warnings, errors.New("must find more than 0 keps")
+		return warnings, valErrors, errors.New("must find more than zero keps")
 	}
 
 	kepHandler := &api.KEPHandler{}
-	prrsDir := filepath.Join("..", prrsDir)
+	prrHandler, err := api.NewPRRHandler()
+	if err != nil {
+		return warnings, valErrors, errors.Wrap(err, "creating PRR handler")
+	}
+
+	prrsDir := filepath.Join(kepsDir, prrsDir)
 
 	for _, filename := range files {
 		kepFile, err := os.Open(filename)
 		if err != nil {
-			return warnings, errors.Wrapf(err, "could not open file %s", filename)
+			return warnings, valErrors, errors.Wrapf(err, "could not open file %s", filename)
 		}
 
 		defer kepFile.Close()
@@ -66,31 +78,29 @@ func ValidateRepository(kepsDir string) (warnings []string, err error) {
 		logrus.Infof("parsing %s", filename)
 		kep, kepParseErr := kepHandler.Parse(kepFile)
 		if kepParseErr != nil {
-			return warnings, errors.Wrap(kepParseErr, "parsing KEP file")
+			return warnings, valErrors, errors.Wrap(kepParseErr, "parsing KEP file")
 		}
 
 		// TODO: This shouldn't be required once we push the errors into the
 		//       parser struct
 		if kep.Error != nil {
-			return warnings, errors.Wrapf(kep.Error, "%v has an error", filename)
+			return warnings, valErrors, errors.Wrapf(kep.Error, "%v has an error", filename)
 		}
 
-		requiredPRRApproval, missingMilestone, err := isPRRRequired(kep)
-		if missingMilestone {
-			warnings = append(
-				warnings,
-				fmt.Sprintf("KEP %s is missing the latest milestone field",
-					kep.LatestMilestone,
-				),
-			)
-		}
-
-		if requiredPRRApproval {
-			return warnings, ValidatePRR(kep, prrsDir)
+		err = ValidatePRR(kep, prrHandler, prrsDir)
+		if err != nil {
+			valErrors = append(valErrors, err)
 		}
 	}
 
-	return warnings, nil
+	if len(valErrors) > 0 {
+		logrus.Infof("the following PRR validation errors occured:")
+		for _, e := range valErrors {
+			logrus.Infof("%v\n", e)
+		}
+	}
+
+	return warnings, valErrors, nil
 }
 
 // TODO: Refactor and maybe move into a more suitable package

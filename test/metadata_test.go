@@ -25,12 +25,13 @@ import (
 )
 
 const (
-	kepsDir = "keps"
+	kepsDir = "../keps"
 )
 
 func TestValidation(t *testing.T) {
-	warnings, err := kepval.ValidateRepository(kepsDir)
+	warnings, valErrs, err := kepval.ValidateRepository(kepsDir)
 	require.Nil(t, err)
+	require.Len(t, valErrs, 0)
 
 	t.Logf(
 		"KEP validation succeeded, but the following warnings occurred: %v",

@@ -79,6 +79,14 @@ func (p *Proposal) Validate() error {
 	return nil
 }
 
+func (p *Proposal) IsMissingMilestone() bool {
+	if p.LatestMilestone == "" {
+		return true
+	}
+
+	return false
+}
+
 type KEPHandler Parser
 
 // TODO(api): Make this a generic parser for all `Document` types

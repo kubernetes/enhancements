@@ -37,5 +37,8 @@ type Document interface {
 }
 
 type Parser struct {
+	Groups       []string
+	PRRApprovers []string
+
 	Errors []error
 }

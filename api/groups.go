@@ -110,6 +110,10 @@ func FetchPRRApprovers() ([]string, error) {
 	var result []string
 	result = append(result, config.Data[prrApproversAlias]...)
 
+	if len(result) == 0 {
+		return nil, errors.New("retrieved zero PRR approvers, which is unexpected")
+	}
+
 	sort.Strings(result)
 
 	return result, nil
