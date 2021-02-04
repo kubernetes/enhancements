@@ -265,8 +265,8 @@ for this purpose. We would expect such a PVC to be ignored by existing
 dynamic provisioners.
 
 To test the data-source-validator, we need to check the following cases:
-- Creation of a PVC with no datasource causes no events
-- Creation of a PVC with a VolumeSnapshot or PVC datasource causes no events
+- Creation of a PVC with no datasource causes no events.
+- Creation of a PVC with a VolumeSnapshot or PVC datasource causes no events.
 - Creation of a PVC with a CRD datasource that's not registered by any
   volume populator causes UnrecognizedDataSourceKind events.
 - Creation of a PVC with a CRD datasource that's registered by a
@@ -321,12 +321,13 @@ _This section must be completed when targeting alpha to a release._
   - [X] Feature gate (also fill in values in `kep.yaml`)
     - Feature gate name: AnyVolumeDataSource
     - Components depending on the feature gate: kube-apiserver
-  - [ ] Other
-    - Describe the mechanism:
+  - [X] Other
+    - Describe the mechanism: Also install the data-source-validator controller
+      and its associated VolumePopulator CRD.
     - Will enabling / disabling the feature require downtime of the control
-      plane?
+      plane? no
     - Will enabling / disabling the feature require downtime or reprovisioning
-      of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
+      of a node? no
 
 * **Does enabling the feature change any default behavior?**
   Before this feature, kube API server would silently drop any PVC data source
@@ -337,8 +338,16 @@ _This section must be completed when targeting alpha to a release._
 
 * **Can the feature be disabled once it has been enabled (i.e. can we roll back
   the enablement)?**
-  Turning off the feature gate should drop all the data sources that were not
-  already valid and restore the old behavior.
+  Turning off the feature gate should causes the API server to go back to dropping
+  data sources for new PVCs. An admin would also want to remove any data populator
+  controllers, and the data-source-validator controller, and the VolumePopulator
+  CRD. Lastly, and unbound PVCs with data sources should be deleted, as they
+  will never bind.
+  
+  Alternatively, just disable the feature gate and remove the populator controllers,
+  but leave the data-source-validator controller and the VolumePopulator CRD,
+  and it will generate events on any PVCs which need to be deleted. Then it
+  could be left up to end users to delete their own PVCs which will never bind.
 
 * **What happens if we reenable the feature if it was previously rolled back?**
   PVC which previously had data sources that were invalided by the rollback
@@ -396,6 +405,9 @@ the health of the service?**
 of this feature?**
   Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
   implementation difficulties, etc.).
+  * Counter for number of PVCs with no data sources
+  * Counter for number of PVCs with valid data sources
+  * Counter for number of PVCs with invalid data sources
 
 ### Dependencies
 
