@@ -132,7 +132,7 @@ type ServiceReference struct {
   Name string `json:"name" protobuf:"bytes,2,opt,name=name"`
 
   // If specified, the port on the service.
-  // Defaults to 55680.
+  // Defaults to 4317, the IANA reserved port for OpenTelemetry.
   // `port` should be a valid port number (1-65535, inclusive).
   // +optional
   Port *int32 `json:"port,omitempty" protobuf:"varint,3,opt,name=port"`
