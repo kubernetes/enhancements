@@ -249,7 +249,7 @@ When the new jobs provide equivalent signal, they will be moved to blocking, and
 
 This is relevant for at least the following jobs:
  - `pull-kubernetes-bazel-test` (this can be converted to ~ `make test`)
- - `pull-kubernetes-bazel-test` (this largely overlaps with other presubmits, if not for testing ~`bazel build //...` and can  likely be removed)
+ - `pull-kubernetes-bazel-build` (this largely overlaps with other presubmits, if not for testing ~`bazel build //...` and can  likely be removed)
  - `periodic-bazel-build-<branch>` (this can likely already be removed in favor of `ci-kubernetes-build-<branch>`)
  - `periodic-bazel-test-<branch>`
  - `post-kubernetes-bazel-build` (this can likely already be removed, it’s unclear what depends on this job)
