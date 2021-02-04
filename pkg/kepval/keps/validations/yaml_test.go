@@ -21,11 +21,9 @@ import (
 	"html/template"
 	"testing"
 
-	"gopkg.in/yaml.v3"
+	"gopkg.in/yaml.v2"
 )
 
-// TODO(lint): Fix field keys and flow flags
-//nolint:govet
 type proposal struct {
 	Title             string   `yaml:"title"`
 	Authors           []string `yaml:,flow`
@@ -164,7 +162,8 @@ func TestValidateStructureSuccess(t *testing.T) {
 	}
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
-			// TODO: Add required fields
+
+			// add required fields
 			tc.input["title"] = "this is a title"
 			tc.input["owning-sig"] = "sig-architecture"
 

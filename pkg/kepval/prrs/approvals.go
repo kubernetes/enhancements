@@ -22,15 +22,32 @@ import (
 	"io"
 
 	"github.com/pkg/errors"
-	"gopkg.in/yaml.v3"
-
-	"k8s.io/enhancements/api"
-	"k8s.io/enhancements/pkg/legacy/prrs/validations"
+	"gopkg.in/yaml.v2"
+	"k8s.io/enhancements/pkg/kepval/prrs/validations"
 )
+
+type Approvals []*Approval
+
+func (a *Approvals) AddApproval(approval *Approval) {
+	*a = append(*a, approval)
+}
+
+type Milestone struct {
+	Approver string `json:"approver" yaml:"approver"`
+}
+
+type Approval struct {
+	Number string    `json:"kep-number" yaml:"kep-number"`
+	Alpha  Milestone `json:"alpha" yaml:"alpha"`
+	Beta   Milestone `json:"beta" yaml:"beta"`
+	Stable Milestone `json:"stable" yaml:"stable"`
+
+	Error error `json:"-" yaml:"-"`
+}
 
 type Parser struct{}
 
-func (p *Parser) Parse(in io.Reader) *api.PRRApproval {
+func (p *Parser) Parse(in io.Reader) *Approval {
 	scanner := bufio.NewScanner(in)
 	var body bytes.Buffer
 	for scanner.Scan() {
@@ -38,7 +55,7 @@ func (p *Parser) Parse(in io.Reader) *api.PRRApproval {
 		body.WriteString(line)
 	}
 
-	approval := &api.PRRApproval{}
+	approval := &Approval{}
 	if err := scanner.Err(); err != nil {
 		approval.Error = errors.Wrap(err, "error reading file")
 		return approval
@@ -47,7 +64,7 @@ func (p *Parser) Parse(in io.Reader) *api.PRRApproval {
 	// First do structural checks
 	test := map[interface{}]interface{}{}
 	if err := yaml.Unmarshal(body.Bytes(), test); err != nil {
-		approval.Error = errors.Wrap(err, "error unmarshalling YAML")
+		approval.Error = errors.Wrap(err, "error unmarshaling YAML")
 		return approval
 	}
 	if err := validations.ValidateStructure(test); err != nil {
@@ -55,7 +72,18 @@ func (p *Parser) Parse(in io.Reader) *api.PRRApproval {
 		return approval
 	}
 
-	approval.Error = yaml.Unmarshal(body.Bytes(), approval)
-
+	approval.Error = yaml.UnmarshalStrict(body.Bytes(), approval)
 	return approval
+}
+
+func (a *Approval) ApproverForStage(stage string) string {
+	switch stage {
+	case "alpha":
+		return a.Alpha.Approver
+	case "beta":
+		return a.Beta.Approver
+	case "stable":
+		return a.Stable.Approver
+	}
+	return ""
 }

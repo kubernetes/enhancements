@@ -23,6 +23,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"k8s.io/enhancements/api"
@@ -30,6 +31,7 @@ import (
 )
 
 func TestWriteKep(t *testing.T) {
+
 	testcases := []struct {
 		name         string
 		kepFile      string
@@ -82,37 +84,32 @@ func TestWriteKep(t *testing.T) {
 			if repoPath == "" {
 				repoPath = tc.opts.RepoPath
 			}
-
 			repoPath = filepath.Join(tempDir, repoPath)
 			c := newTestClient(t, repoPath)
-
 			b, err := ioutil.ReadFile(tc.kepFile)
 			require.NoError(t, err)
-
 			var p api.Proposal
 			err = yaml.Unmarshal(b, &p)
 			require.NoError(t, err)
-
 			tc.opts.CommonArgs.RepoPath = repoPath
-			err = c.writeKEP(&p, &tc.opts.CommonArgs)
-
+			err = c.writeKEP(&p, tc.opts.CommonArgs)
 			if tc.expectError {
-				require.Error(t, err)
+				assert.Error(t, err)
 			} else {
-				require.NoError(t, err)
-
+				assert.NoError(t, err)
 				computedPath := filepath.Join(tempDir, tc.expectedPath)
 				dirStat, err := os.Stat(computedPath)
-				require.NoError(t, err)
+				assert.NoError(t, err)
 				require.NotNil(t, dirStat)
-				require.True(t, dirStat.IsDir())
+				assert.True(t, dirStat.IsDir())
 				p := filepath.Join(computedPath, "kep.yaml")
 				fileStat, err := os.Stat(p)
-				require.NoError(t, err)
-				require.NotNil(t, fileStat)
+				assert.NoError(t, err)
+				assert.NotNil(t, fileStat)
 			}
 		})
 	}
+
 }
 
 type testClient struct {
@@ -132,7 +129,6 @@ func newTestClient(t *testing.T, repoPath string) testClient {
 		},
 	}
 
-	// TODO: Parameterize
 	tc.addTemplate("kep.yaml")
 	tc.addTemplate("README.md")
 	return tc
