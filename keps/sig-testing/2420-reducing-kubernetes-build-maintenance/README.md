@@ -647,7 +647,7 @@ In addition to the points made in 1.) above as to why this is not particularly v
   - CGO pkg-config directives do not work in `rules_go`, requiring brittle work-arounds
   - Cross compiling with CGO under bazel is tricky, and despite @ixdy getting close at one point, never shipped in Kubernetes, let alone portably, or capable of shipping a full release.
     - @ixdy suspects this would largely have to be reimplemented now
-- This is unlikely to be popular with contributors
+- This is less likely to grow the amount of potential contributor bandwidth available to improve the kubernetes/kubernetes build system. We have a larger pool of contributors today who have demonstrated experience updating our existing make build system vs. updating bazel's components and our usage of it. Traction with our contributor base is important to ongoing project health.
 - Large portions of Kubernetes are intended for dual use internally and as exported go libraries ("staging") to be consumed by other projects, where we'd still need to support use without bazel (i.e. checked-in generated code etc.).
 
 
