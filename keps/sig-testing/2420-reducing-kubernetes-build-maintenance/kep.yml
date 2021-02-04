@@ -2,6 +2,7 @@ title: KEP Template
 kep-number: 2420
 authors:
   - BenTheElder
+  - spiffxp
 owning-sig: sig-testing
 participating-sigs:
   - sig-release
