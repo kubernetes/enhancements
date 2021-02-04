@@ -225,19 +225,19 @@ configurations. Instead, we will generated "builders".
 Example generated builder:
 
 ```go
-&appsv1apply.Deployment("ns", "nginx-deployment").
+appsv1apply.Deployment("ns", "nginx-deployment").
   Spec(appsv1apply.DeploymentSpec().
     Replicas(0).
     Template(
       v1apply.PodTemplate().
         Spec(v1apply.PodSpec().
-          Containers(v1apply.ContainerList{
+          Containers(
             v1apply.Container().
               Name("nginx").
-              Image("nginx:1.14.2")
+              Image("nginx:1.14.2"),
             v1apply.Container().
               Name("sidecar").
-          })
+          )
         )
       )
     )
