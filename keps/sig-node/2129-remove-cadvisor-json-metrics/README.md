@@ -89,6 +89,11 @@ For machine metrics: Use the prometheus node exporter.
 * Pros: Community-supported and widely used machine-level monitoring tool.  Easy-to-use configuration to enable/disable metrics.
 * Cons: Metrics are in a different format, and may not have the same set of information
 
+For most metrics, run a prometheus server, and collect metrics from the /metrics/cadvisor endpoint.
+If you want to be able to access metrics in JSON format, you can use the [Prometheus server's HTTP API](https://prometheus.io/docs/prometheus/latest/querying/api/).
+* Pros: Similar metrics in JSON format
+* Cons: The JSON structure of metrics is different, and it requires running a prometheus server.
+
 ## Design Details
 
 Remove the `--enable-cadvisor-json-endpoints` flag and the kubelet stops serving on the paths listed in the Goals section.
