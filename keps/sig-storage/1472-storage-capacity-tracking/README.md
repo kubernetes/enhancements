@@ -857,10 +857,13 @@ enhancement:
   communication issues with the API server.
 
   The new flag in `CSIDriver` will be preserved when disabling the
-  feature gate or when rolling back to a release older than 1.19. kube-scheduler
-  will continue to do scheduling with capacity information until it also
+  feature gate in the apiserver. kube-scheduler
+  will continue to do scheduling with capacity information until it
   gets rolled back to a version without support for that or the feature
   is turned off for kube-scheduler.
+
+  The new flag is not preserved when rolling back to a release older
+  than 1.19 where the flag did not exist yet.
 
 * **What happens if we reenable the feature if it was previously rolled back?**
 
@@ -938,6 +941,8 @@ following metric data that will be provided by external-provisioner instances:
 
 The CSI driver name will be used as label. When using distributed
 provisioning, the node name will be used as additional label.
+
+TODO: mention the exact metrics names once they are implemented.
 
 * **What are the SLIs (Service Level Indicators) an operator can use to
   determine the health of the service?**
