@@ -130,15 +130,11 @@ See:
 
 #### Beta -> GA Graduation
 
-- Select stable metrics from control plane components
+- Promote (some) metrics to STABLE status
+    - [apiserver_storage_object_counts](https://github.com/kubernetes/kubernetes/issues/98270)
+    - `apiserver_request_total` will also be promoted (as discussed in biweekly SIG apimachinery meeting)
 - Implement the ability to turn off individual metrics (see [here](keps/sig-instrumentation/1209-metrics-stability/20191028-metrics-stability-to-beta.md#non-goals))
-
-**For non-optional features moving to GA, the graduation criteria must include 
-[conformance tests].**
-
-TODO(@logicalhan): ^
-
-[conformance tests]: https://git.k8s.io/community/contributors/devel/sig-architecture/conformance-tests.md
+    - [Unbounded valuesets for metric labels](https://github.com/kubernetes/kubernetes/issues/76302)
 
 ### Upgrade / Downgrade Strategy
 
