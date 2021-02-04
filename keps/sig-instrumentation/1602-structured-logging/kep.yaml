@@ -4,6 +4,7 @@ authors:
   - "@serathius"
   - "@44past4"
   - "@DirectXMan12"
+  - "@ehashman"
 owning-sig: sig-instrumentation
 participating-sigs:
   - sig-architecture
@@ -18,13 +19,14 @@ approvers:
   - "@thockin"
 prr-approvers:
   - "@wojtek-t"
+  - "@johnbelamaric"
 see-also:
 replaces:
-stage: alpha
-latest-milestone: "v1.19"
+stage: beta
+latest-milestone: "v1.21"
 milestone:
   alpha: "v1.19"
-  beta: "v1.20"
+  beta: "v1.21"
   stable: "v1.22"
 feature-gates:
 disable-supported: true

@@ -382,6 +382,11 @@ Adding guarding against regression and update user guideline:
 * Static analysis protects important log lines from reverting to string formating
 * [Kubernetes Logging convention](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-instrumentation/logging.md) document is updated
 
+Components in scope:
+* Kubelet
+
+All other component migrations will be best effort.
+
 #### GA
 
 Logging formats become an API:
@@ -389,6 +394,7 @@ Logging formats become an API:
 * Format string methods are deprecated
 * Static analysis protects against creating new string format calls
 * Logging output formats fall under [Kubernetes deprecation policy](https://kubernetes.io/docs/reference/using-api/deprecation-policy/)
+* All remaining components must be migrated
 
 ### Performance
 
@@ -734,3 +740,5 @@ _This section must be completed when targeting beta graduation to a release._
 * 2020-03-18 - Implementation started
 * 2020-05-18 - Updated PRR questionnaire added
 * 2020-05-28 - PRR review done
+* 2020-07-11 - Alpha in 1.19
+* 2021-01-04 - Begin best effort migration of logs to structured format
