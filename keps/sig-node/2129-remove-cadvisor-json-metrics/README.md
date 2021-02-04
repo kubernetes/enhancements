@@ -30,7 +30,7 @@
 
 - [X] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements](https://github.com/kubernetes/enhancements/issues/1867)
 - [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
+- [X] (R) Design details are appropriately documented
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
 - [X] (R) Graduation criteria is in place
 - [ ] (R) Production readiness review completed
@@ -96,12 +96,14 @@ Remove the `--enable-cadvisor-json-endpoints` flag and the kubelet stops serving
 ### Test Plan
 
 * This will not have any e2e testing.
+* There are no existing kubernetes e2e tests which check these endpoints.
 
 ### Graduation Criteria
 
 #### GA Graduation
 
 * The deprecated flag and relevant code have been removed.
+* We are moving directly to stable, as the endpoints have already been marked deprecated for at least 2 releases.
 
 ### Upgrade / Downgrade Strategy
 
@@ -165,6 +167,7 @@ Remove the `--enable-cadvisor-json-endpoints` flag and the kubelet stops serving
 ## Implementation History
 
 - 2020-10-04: Initial version of the KEP
+- 2021-02-04: Updates based on feedback
 
 ## Drawbacks
 
