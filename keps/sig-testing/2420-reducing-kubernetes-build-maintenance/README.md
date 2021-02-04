@@ -199,7 +199,7 @@ and make progress.
 - Removing Bazel from sub-projects other than the core repo
   - Bazel comes with tradeoffs, each subproject can make its own decision in this regard. This KEP **only** covers the main Kubernetes repository, and nothing else.
 - Improving the previously existing make build
-  - We should strongly consider improving the implementation and behavior of this build in the future, but this is largely orthogonal to whether we should consider maintaining two build systems.
+  - We should strongly consider improving the implementation and behavior of this build in the future, but this is largely orthogonal to whether we should consider maintaining two build systems. An anticipated outcome of this KEP is increased bandwidth available to improve our single build system.
 
 ## Proposal
 
@@ -251,7 +251,7 @@ proposal will be implemented, this is the place to discuss them.
 Non-blocking “make build” equivalents to kubernetes/kubernetes “bazel” CI jobs will be introduced (if they don’t already exist).
 When the new jobs provide equivalent signal, they will be moved to blocking, and the old jobs will be retired.
 
-This is relevant for at least the following jobs:
+This is relevant for at least the following jobs release-blocking and merge-blocking:
  - `pull-kubernetes-bazel-test` (this can be converted to ~ `make test`)
  - `pull-kubernetes-bazel-build` (this largely overlaps with other presubmits, if not for testing ~`bazel build //...` and can  likely be removed)
  - `periodic-bazel-build-<branch>` (this can likely already be removed in favor of `ci-kubernetes-build-<branch>`)
@@ -606,7 +606,7 @@ Major milestones might include:
 Why should this KEP _not_ be implemented?
 -->
 
-- The make system works best from x86 (though it can cross compile all platforms), largely due to a [bug in the kube-cross image build] and some other small oversights / lack of attention, which we should fix anyhow. 
+- The make system works best from x86 (though it can cross compile all platforms), largely due to a [bug in the kube-cross image build] and some other small oversights. Improving the existing make system is an explicit non-goal of this KEP, but we support addressing these oversights, and expect the outcome of this KEP will naturally increase available bandwidth to do so. 
   - A few other issues related to CGO / $CC on non-amd64 build hosts have already received pull requests / fixes.
   - Remaining issues largely appear trivial, and should be fixed regardless, especially with the proliferation of non-amd64 developer hardware, where contributors will want to build releases matching the official release (with make).
 
