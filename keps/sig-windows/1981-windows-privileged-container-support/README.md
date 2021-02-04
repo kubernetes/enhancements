@@ -482,7 +482,8 @@ Running privileged containers as non SYSTEM/admin accounts will be the primary w
 More information on Windows resource access can be found at https://docs.microsoft.com/en-us/archive/msdn-magazine/2008/november/access-control-understanding-windows-file-and-registry-permissions.
 
 #### Container Mounts
-- Directory mounts (i.e. directory C:\test mapped to C:\test in the privileged container) are still being investigated. Note that file system mapping in the current implementation would expose both the host filesystem and the container filesystem to the processes in the privileged container. We are still investigation how external mounts such as secrets or storage accounts would be added. The default visibility of all the host filesystem may present backwards compatibility challenges in the future if host path mounting is enabled in Windows. Currently the only method to restrict would be via the user in a way similar to [UID or GID](https://kubernetes.io/docs/tasks/configure-pod-container/security-context/) in the PSP. Currently however, this host path mounting is unlikely to be enabled in the future as a restriction of Job Objects.
+
+- Directory mounts (i.e. directory C:\test mapped to C:\test in the privileged container) are still being investigated and will be revisited between alpha and beta. Note that file system mapping in the current implementation would expose both the host filesystem and the container filesystem to the processes in the privileged container. We are still investigation how external mounts such as secrets or storage accounts would be added.
 
 #### Container Images
 
@@ -548,6 +549,8 @@ Current behavior applies `PodSecurityContext.WindowsSecurityContextOptions` sett
 
 - If `PodSecurityContext.WindowsSecurityContextOptions.HostProcess = true` is set to true then no container in the pod sets `Container.SecurityContext.WindowsSecurityContextOptions.HostProcess = false`
 - If `PodSecurityContext.WindowsSecurityContextOptions.HostProcess` is not set then all containers in a pod must set `Container.SecurityContext.WindowsSecurityContextOptions.HostProcess = true`
+- If `PodSecurityContext.WindowsSecurityContextOptions.HostProcess = false` no containers may set `Container.SecurityContext.WindowsSecurityContextOptions.HostProcess = true`
+- `hostNetwork = true` if the pods containers hostProcess containers
 
 ##### Alternatives
 
@@ -635,7 +638,7 @@ If needed validation will be added in the kubelet to fail if node is configured 
 
 #### Feature Gates
 
-Privileged container functionally on windows will be gated behind a new `WindowsPrivilegedContainer` feature gate.
+Privileged container functionally on windows will be gated behind a new `WindowsHostProcessContainers` feature gate.
 
 https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/#feature-stages
 
@@ -668,7 +671,7 @@ Beta
 
 - Validate running kubeproxy as a daemon set
 - Validate CSI-proxy running as a daemon set
-- TBD
+- Validate running a CNI implementation as a daemon set
 
 ### Graduation Criteria
 
@@ -745,7 +748,7 @@ Beta
 
 GA:
 
-- [need feedback]
+- Address any issues uncovered in alpha/beta
 - Remove feature gate for passing privileged flag
 
 ### Upgrade / Downgrade Strategy
