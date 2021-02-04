@@ -23,7 +23,7 @@ import (
 	"github.com/pkg/errors"
 
 	"k8s.io/enhancements/api"
-	"k8s.io/enhancements/pkg/legacy/util"
+	"k8s.io/enhancements/pkg/kepval/util"
 )
 
 var (
@@ -63,11 +63,9 @@ func (c *QueryOpts) Validate() error {
 		if err != nil {
 			return err
 		}
-
 		if len(sigs) == 0 {
-			return fmt.Errorf("no SIG matches any of the passed regular expressions")
+			return fmt.Errorf("No SIG matches any of the passed regular expressions")
 		}
-
 		c.SIG = sigs
 	} else {
 		// if no SIGs are passed, list KEPs from all SIGs
@@ -79,13 +77,13 @@ func (c *QueryOpts) Validate() error {
 		return fmt.Errorf("unsupported output format: %s. Valid values: %v", c.Output, SupportedOutputOpts)
 	}
 
-	// TODO: check the valid values of stage, status, etc.
+	//TODO: check the valid values of stage, status, etc.
 	return nil
 }
 
 // Query searches the local repo and possibly GitHub for KEPs
 // that match the search criteria.
-func (c *Client) Query(opts *QueryOpts) error {
+func (c *Client) Query(opts QueryOpts) error {
 	// if output format is json/yaml, suppress other outputs
 	// json/yaml are structured formats, logging events which
 	// do not conform to the spec will create formatting issues
@@ -100,16 +98,14 @@ func (c *Client) Query(opts *QueryOpts) error {
 		fmt.Fprintf(c.Out, "Searching for KEPs...\n")
 	}
 
-	repoPath, err := c.findEnhancementsRepo(&opts.CommonArgs)
+	repoPath, err := c.findEnhancementsRepo(opts.CommonArgs)
 	if err != nil {
 		return errors.Wrap(err, "unable to search KEPs")
 	}
 
-	if tokenErr := c.SetGitHubToken(&opts.CommonArgs); tokenErr != nil {
-		return errors.Wrapf(tokenErr, "setting GitHub token")
-	}
+	c.SetGitHubToken(opts.CommonArgs)
 
-	allKEPs := make([]*api.Proposal, 10)
+	var allKEPs []*api.Proposal
 	// load the KEPs for each listed SIG
 	for _, sig := range opts.SIG {
 		// KEPs in the local filesystem
@@ -134,7 +130,7 @@ func (c *Client) Query(opts *QueryOpts) error {
 	allowedAuthor := sliceToMap(opts.Author)
 	allowedApprover := sliceToMap(opts.Approver)
 
-	keps := make([]*api.Proposal, 10)
+	var keps []*api.Proposal
 	for _, k := range allKEPs {
 		if len(opts.Status) > 0 && !allowedStatus[k.Status] {
 			continue
@@ -151,7 +147,6 @@ func (c *Client) Query(opts *QueryOpts) error {
 		if len(opts.Approver) > 0 && !atLeastOne(k.Approvers, allowedApprover) {
 			continue
 		}
-
 		keps = append(keps, k)
 	}
 
@@ -190,7 +185,7 @@ func sliceContains(s []string, e string) bool {
 
 // returns all strings in vals that match at least one
 // regexp in regexps
-func selectByRegexp(vals, regexps []string) ([]string, error) {
+func selectByRegexp(vals []string, regexps []string) ([]string, error) {
 	var matches []string
 	for _, s := range vals {
 		for _, r := range regexps {

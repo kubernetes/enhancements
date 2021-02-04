@@ -20,13 +20,14 @@ import (
 	"testing"
 )
 
+
 func TestValidateStructureSuccess(t *testing.T) {
 	testcases := []struct {
 		name  string
 		input map[interface{}]interface{}
 	}{
 		{
-			name:  "all milestones optional",
+			name: "all milestones optional",
 			input: map[interface{}]interface{}{},
 		},
 		{
@@ -85,14 +86,14 @@ func TestValidateStructureFailures(t *testing.T) {
 			},
 		},
 		{
-			name: "invalid milestone",
+			name:  "invalid milestone",
 			input: map[interface{}]interface{}{
 				"kep-number": "12345",
-				"alpha":      "@wojtek-t",
+				"alpha": "@wojtek-t",
 			},
 		},
 		{
-			name: "invalid approver",
+			name:  "invalid approver",
 			input: map[interface{}]interface{}{
 				"kep-number": "12345",
 				"alpha": map[interface{}]interface{}{
