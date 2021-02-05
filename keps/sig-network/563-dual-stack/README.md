@@ -724,10 +724,10 @@ spec:
 
 ##### Creating a New Dual-Stack Service
 
-Users can create-dual stack services according to the following methods (in
+Users can create dual-stack services according to the following methods (in
 increasing specificity):
-- If the user *prefers* dual stack (if available, service creation will not fail if
-  the cluster is not configured for dual stack) then they can do one of the
+- If the user *prefers* dual-stack (if available, service creation will not fail if
+  the cluster is not configured for dual-stack) then they can do one of the
   following:
   1. Set `spec.ipFamilyPolicy` to `PreferDualStack` and do not set `spec.ipFamilies` or
      `spec.clusterIPs`. The apiserver will set `spec.ipFamilies` according to
@@ -1411,7 +1411,7 @@ fields of API types, flags, etc.?**
 
 * **What are the SLIs (Service Level Indicators) an operator can use to determine 
 the health of the service?**
-  Dual stack networking is a functional addition, not a service with SLIs.
+  Dual-stack networking is a functional addition, not a service with SLIs.
 
 * **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
   N/A
