@@ -25,10 +25,10 @@ reviewers:
   - "@sttts" # api-machinery
   - "@bsalamat" # scheduling
   - "@andrewsykim" # cloud-provider
-  - "@johnbelamaric" # PRR-reviewer
 approvers:
   - "@brancz"
 prr-approvers:
+  - "@johnbelamaric" # PRR-reviewer
 see-also:
   - "/keps/sig-instrumentation/1206-metrics-overhaul"
 
