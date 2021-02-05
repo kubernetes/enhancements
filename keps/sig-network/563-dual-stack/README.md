@@ -180,7 +180,7 @@ communication to, from and within a Kubernetes cluster.
   documented appropriately in-order so that aformentioned tools may choose to
   enable it for use.
 - Enable Kubernetes api-server dual-stack addresses listening and binding. Additionally
-  enable dualstack for Kubernetes default service.
+  enable dual-stack for Kubernetes default service.
 
 ## Proposal
 
@@ -754,10 +754,10 @@ spec:
 
 ##### Creating a New Dual-Stack Service
 
-Users can create-dual stack services according to the following methods (in
+Users can create dual-stack services according to the following methods (in
 increasing specificity):
-- If the user *prefers* dual stack (if available, service creation will not fail if
-  the cluster is not configured for dual stack) then they can do one of the
+- If the user *prefers* dual-stack (if available, service creation will not fail if
+  the cluster is not configured for dual-stack) then they can do one of the
   following:
   1. Set `spec.ipFamilyPolicy` to `PreferDualStack` and do not set `spec.ipFamilies` or
      `spec.clusterIPs`. The apiserver will set `spec.ipFamilies` according to
@@ -1023,7 +1023,7 @@ dual-stack:
 - Headless Kubernetes services: CoreDNS will resolve these services to either
   an IPv4 entry (A record), an IPv6 entry (AAAA record), or both, depending on
   the service's `ipFamily`.
-- Once Kubernetes service (pointing to Cluster DNS) is converted to dualstack pods 
+- Once Kubernetes service (pointing to Cluster DNS) is converted to dual-stack pods
   will automatically get two DNS servers (one for each IP family) in their resolv.conf.
 
 ### Ingress Controller Operation
@@ -1377,7 +1377,7 @@ This capability will move to stable when the following criteria have been met.
 * Support of at least one CNI plugin to provide multi-IP
 * e2e test successfully running on two platforms
 * testing ingress controller infrastructure with updated dual-stack services
-* dualstack tests run as pre-submit blocking for PRs
+* dual-stack tests run as pre-submit blocking for PRs
 
 
 ## Production Readiness Review Questionnaire
@@ -1389,12 +1389,6 @@ This capability will move to stable when the following criteria have been met.
   - [X] Feature gate (also fill in values in `kep.yaml`)
     - Feature gate name: IPv6DualStack
     - Components depending on the feature gate: kube-apiserver, kube-controller-manager, kube-proxy, and kubelet
-  - [ ] Other
-    - Describe the mechanism:
-    - Will enabling / disabling the feature require downtime of the control
-      plane?
-    - Will enabling / disabling the feature require downtime or reprovisioning
-      of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
 
 * **Does enabling the feature change any default behavior?**
   No. Pods and Services will remain single stack until cli flags have been modified
@@ -1404,25 +1398,28 @@ This capability will move to stable when the following criteria have been met.
 
 * **Can the feature be disabled once it has been enabled (i.e. can we roll back
   the enablement)?**
-  Yes.
+  Yes. If we disable the feature gate, we must remove the CLI parameters. An
+  older client won't see or be able to use the new fields.
 
 * **What happens if we reenable the feature if it was previously rolled back?**
-  Similar to enable it the first time on a cluster.
+  Similar to enabling it the first time on a cluster. We don't load balance
+  across IP families, and with no selectors we don't get endpoints. If you use
+  the feature flag to turn off dual-stack, we do not edit your service. If you
+  disable dual-stack from the controller manager, the service will be given
+  single-stack endpoints.
 
 * **Are there any tests for feature enablement/disablement?**
   The feature is being tested using integration tests with gate on/off. The
   tests can be found here: https://github.com/kubernetes/kubernetes/tree/master/test/integration/dualstack
 
-  The feature is being tested on -some of - the cloud providers and kind.
-   1. https://testgrid.k8s.io/sig-network-dualstack-azure-e2e. This has all dualstack tests on azure.
+  The feature is being tested on a cloud provider and kind.
+   1. azure dual-stack e2e: https://testgrid.k8s.io/sig-network-dualstack-azure-e2e
    2. kind dual-stack iptables: https://testgrid.k8s.io/sig-network-kind#sig-network-kind,%20dual,%20master
    3. kind dual-stack ipvs: https://testgrid.k8s.io/sig-network-kind#sig-network-kind,%20ipvs,%20master
 
 ### Rollout, Upgrade and Rollback Planning
 
 * **How can a rollout fail? Can it impact already running workloads?**
-  Try to be as paranoid as possible - e.g., what if some components will restart
-   mid-rollout?
   Users **must** avoid changing existing cidrs. For both pods and services. Users
   can only add to alternative ip family to existing cidrs. Changing existing cidrs
   will result in nondeterministic failures depending on how the cluster networking 
@@ -1436,60 +1433,57 @@ This capability will move to stable when the following criteria have been met.
   N/A
 
 * **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
-  Describe manual testing that was done and the outcomes.
-  Longer term, we may want to require automated upgrade/rollback tests, but we
-  are missing a bunch of machinery and tooling and can't do that now.
+  We did manual testing of a cluster turning it off and on to explore
+  disabled-with-data behavior. Testing details can be seen in [Dual-stack
+  testing](https://github.com/kubernetes/kubernetes/blob/master/test/integration/dualstack/dualstack_test.go).
 
 * **Is the rollout accompanied by any deprecations and/or removals of features, APIs, 
 fields of API types, flags, etc.?**
-  Even if applying deprecation policies, they may still surprise some users.
+  Enabling this without configuring the CLI options will not change any default
+  behavior.
 
 ### Monitoring Requirements
 
 * **How can an operator determine if the feature is in use by workloads?**
-  Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
-  checking if there are objects with field X set) may be a last resort. Avoid
-  logs or events for this purpose.
 
   Operators can determine if the feature is in use by listing services that 
-  employ dual-stack. This can be done via 
+  employ dual-stack. This can be done via:
 
   ```
-  kubectl get services --all-namespaces spec.ipFamilyPolicy!=SingleStack
+  kubectl get services --all-namespaces -ogo-template='{{range .items}}{{.spec.ipFamilyPolicy}}{{"\n"}}{{end}}' | grep -v SingleStack
   ```
 
 * **What are the SLIs (Service Level Indicators) an operator can use to determine 
 the health of the service?**
-  - [ ] Metrics
-    - Metric name:
-    - [Optional] Aggregation method:
-    - Components exposing the metric:
-  - [ ] Other (treat as last resort)
-    - Details:
+  Dual-stack networking is a functional addition, not a service with SLIs.
 
 * **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
-  At a high level, this usually will be in the form of "high percentile of SLI
-  per day <= X". It's impossible to provide comprehensive guidance, but at the very
-  high level (needs more precise definitions) those may be things like:
-  - per-day percentage of API calls finishing with 5XX errors <= 1%
-  - 99% percentile over day of absolute value from (job creation time minus expected
-    job creation time) for cron job <= 10%
-  - 99,9% of /health requests per day finish with 200 code
+  N/A
 
 * **Are there any missing metrics that would be useful to have to improve observability 
 of this feature?**
-  Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
-  implementation difficulties, etc.).
+
+  1. For services:
+
+       Services are not in the path of pod creation. Thus, any malfunction or
+       bugs in services will not affect pods.
+
+       Services/Endpoint selection is not in path of pod creation. It runs in
+       kube-controller-manager, thus this is N/A.
+
+  2. For pods:
+
+       Dual-stack components are not in path of pod creation. It is in the path
+       of reporting pod ips. So pod creation will not be affected; if it is
+       affected, then it is a CNI issue.
+
+       Dual-stack components are in the path of PodIPs reporting which affects
+       kubelet. If there is a problem (or if there are persistent problems)
+       then disabling the featuregate on api-server will mitigate.
 
 ### Dependencies
 
 * **Does this feature depend on any specific services running in the cluster?**
-  Think about both cluster-level services (e.g. metrics-server) as well
-  as node-level agents (e.g. specific version of CRI). Focus on external or
-  optional services that are needed. For example, if this feature depends on
-  a cloud provider API, or upon an external software-defined storage or network
-  control plane.
-
   This feature does not have dependency beyond kube-apiserver and standard controllers
   shipped with Kubernetes releases.
 
@@ -1503,7 +1497,8 @@ of this feature?**
 
 * **Will enabling / using this feature result in any new calls to the cloud 
 provider?**
-  No
+  No. Errors are surfaced when the user makes a call. We don't focus on
+  metrics-server at this point.
 
 * **Will enabling / using this feature result in increasing size or count of 
 the existing API objects?**
@@ -1521,16 +1516,10 @@ resource usage (CPU, RAM, disk, IO, ...) in any components?**
 
 ### Troubleshooting
 
-The Troubleshooting section currently serves the `Playbook` role. We may consider
-splitting it into a dedicated `Playbook` document (potentially with some monitoring
-details). For now, we leave it here.
-
-
 * **How does this feature react if the API server and/or etcd is unavailable?**
   This feature will not be operable if either kube-apiserver or etcd is unavailable.
 
 * **What are other known failure modes?**
-  For each of them, fill in the following information by copying the below template:
   
   * Failure to create dual-stack services. Operator must perform the following steps:
     1. Ensure that the cluster has `IPv6DualStack` feature enabled.
