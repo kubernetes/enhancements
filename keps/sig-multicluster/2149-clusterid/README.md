@@ -267,6 +267,8 @@ bogged down.
 
 I have some set of clusters working together and need a way to uniquely identify them within the system that I use to track membership, or determine if a given cluster is in a ClusterSet.
 
+_For example, SIG-Cluster-Lifecycle's Cluster API subproject uses a management cluster to deploy resources to member workload clusters, but today member workload clusters do not have a way to identify their own management cluster or any interesting metadata about it, such as what cloud provider it is hosted on._
+
 #### Joining or moving between ClusterSets
 
 I want the ability to add a previously-isolated cluster to a ClusterSet, or to move a cluster from one ClusterSet to another and be aware of this change.
@@ -275,15 +277,17 @@ I want the ability to add a previously-isolated cluster to a ClusterSet, or to m
 
 I have a headless multi-cluster service deployed across clusters in my ClusterSet with similarly named pods in each cluster. I need a way to disambiguate each backend pod via DNS.
 
-  ```
-  <<[UNRESOLVED]>>
-  Examples of DNS using cluster ID a la `<hostname>.<clusterID>.<svc>.<ns>.svc.clusterset.local`
-  <<[/UNRESOLVED]>>
-  ```
+_For example, an exported headless service of services name `myservice` in namespace `test`,  backed by pods in two clusters with clusterIDs `clusterA` and `clusterB`, could be disambiguated by different DNS names following the pattern `<clusterID>.<svc>.<ns>.svc.clusterset.local`: `clusterA.myservice.test.svc.clusterset.local.` and `clusterB.myservice.test.svc.clusterset.local.`. This way the user can implement whatever load balancing they want (as is usually the case with headless services) by targeting each cluster's available backends directly._
 
 #### Diagnostics
 
 Clusters within my ClusterSet send logs/metrics to a common monitoring solution and I need to be able to identify the cluster from which a given set of events originated.
+
+#### Multi-tenant controllers
+
+My controller interacts with multiple clusters and needs to disambiguate between them to process its business logic.
+
+_For example, [CAPN's virtualcluster project](https://github.com/kubernetes-sigs/cluster-api-provider-nested) is implementing a multi-tenant controller that recieves requests from tenant clusters to schedule namespaces only in certain parent superclusters, and needs to compare the name of the parent supercluster to determine whether the namespace should be synced. ([ref](https://github.com/kubernetes/enhancements/issues/2149#issuecomment-768486457))._
 
 
 ### `ClusterClaim` CRD
