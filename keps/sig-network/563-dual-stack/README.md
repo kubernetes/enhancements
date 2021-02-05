@@ -150,7 +150,7 @@ communication to, from and within a Kubernetes cluster.
   documented appropriately in-order so that aformentioned tools may choose to
   enable it for use.
 - Enable Kubernetes api-server dual-stack addresses listening and binding. Additionally
-  enable dualstack for Kubernetes default service.
+  enable dual-stack for Kubernetes default service.
 
 ## Proposal
 
@@ -993,7 +993,7 @@ dual-stack:
 - Headless Kubernetes services: CoreDNS will resolve these services to either
   an IPv4 entry (A record), an IPv6 entry (AAAA record), or both, depending on
   the service's `ipFamily`.
-- Once Kubernetes service (pointing to Cluster DNS) is converted to dualstack pods 
+- Once Kubernetes service (pointing to Cluster DNS) is converted to dual-stack pods
   will automatically get two DNS servers (one for each IP family) in their resolv.conf.
 
 ### Ingress Controller Operation
@@ -1333,7 +1333,7 @@ This capability will move to stable when the following criteria have been met.
 * Support of at least one CNI plugin to provide multi-IP
 * e2e test successfully running on two platforms
 * testing ingress controller infrastructure with updated dual-stack services
-* dualstack tests run as pre-submit blocking for PRs
+* dual-stack tests run as pre-submit blocking for PRs
 
 
 ## Production Readiness Review Questionnaire
