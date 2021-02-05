@@ -22,8 +22,8 @@ replaces:
 
 latest-milestone: "v1.21"
 milestone:
-  alpha: "v1.19"
-  beta: "v1.21"
+  alpha: "v1.21"
+  beta: "v1.22"
   stable: "v1.23"
 
 feature-gates:

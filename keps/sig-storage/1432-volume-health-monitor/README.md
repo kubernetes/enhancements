@@ -15,13 +15,15 @@
   - [External controller](#external-controller)
     - [CSI interface](#csi-interface)
     - [Node down event](#node-down-event)
-  - [External node agent](#external-node-agent)
+  - [Kubelet](#kubelet)
     - [CSI interface](#csi-interface-1)
   - [Alternatives](#alternatives)
     - [Alternative option 1](#alternative-option-1)
     - [Alternative option 2](#alternative-option-2)
     - [Alternative option 3](#alternative-option-3)
     - [Optional HTTP(RPC) service](#optional-httprpc-service)
+    - [External node agent](#external-node-agent)
+      - [CSI interface](#csi-interface-2)
 - [Graduation Criteria](#graduation-criteria)
   - [Alpha](#alpha)
   - [Alpha -&gt; Beta](#alpha---beta)
@@ -108,8 +110,8 @@ There could be conditions that cannot be reported by a CSI driver. One or more n
 
 The Kubernetes components that monitor the volumes and report events with volume health information include the following:
 
-* An external monitoring node agent on each kubernetes worker node.
-  * The node agent watches volume health of the PVCs on that node. If a PVC has an abnormal health condition, an event will to reported on the pod object that is using the PVC. If multiple pods are using the same PVC, events will be reported on multiple pods.
+* Extend Kubelet's existing volume monitoring capability to also monitor volume health on each kubernetes worker node.
+  * In addition to gathering existing volume stats, Kubelet also watches volume health of the PVCs on that node. If a PVC has an abnormal health condition, an event will to reported on the pod object that is using the PVC. If multiple pods are using the same PVC, events will be reported on multiple pods.
 * An external monitoring controller on the master node.
   * Monitoring controller reports events on the PVCs.
 
@@ -130,10 +132,12 @@ Two main parts are involved here in the architecture.
   - Trigger controller RPC to check the health condition of the CSI volumes.
   - The external controller sidecar will also watch for node failure events. This component can be enabled via a flag.
 
-- External Node Agent:
-  - The external node agent will be deployed as a sidecar together with the CSI node driver on every Kubernetes worker node.
-  - Trigger node RPC to check volume's mounting conditions.
+- Kubelet:
+  - Kubelet already collects volume stats from CSI node plugin by calling CSI function NodeGetVolumeStats.
+  - In addition to existing volume stats collected already, Kubelet will also check volume condition collected from the same CSI function and log events to Pods if volume condition is abnormal.
   - Note that currently we do not have CSI support for local storage. When the support is available, we will implement relavant CSI monitoring interfaces as well.
+
+The volume health monitoring by Kubelet will be controlled by a new feature gate called `VolumeHealth`.
 
 ## Implementation
 
@@ -447,14 +451,19 @@ The external monitoring controller reports events on the PVCs.
 * In the case that a node goes down, the controller will report an event for all PVCs on that node.
 * The external monitoring controller reports node down events on the PVCs. The node down monitoring component can be enabled via a flag.
 
-### External node agent
+### Kubelet
 
 #### CSI interface
-Call NodeGetVolumeStats() RPC to check the mounting and other health conditions. The frequency of the check should be tunable. A configure option will be available in the external node agent to adjust this value.
 
-The external node agent will go through all the pods on that node and find out all volumes used by those pods. It will watch all those volumes and call NodeGetVolumeStatus() to find out their health status.
+Kubelet already collects volume stats from CSI node plugin by calling CSI function NodeGetVolumeStats.
+https://github.com/kubernetes/kubernetes/blob/v1.21.0-alpha.2/pkg/volume/csi/csi_metrics.go#L71
 
-The external node agent reports events on the pod object. If multiple pods are using the same volume, report events on all pods.
+In addition to volume stats collected already, Kubelet will also check the mounting and other health conditions from NodeGetVolumeStats.
+
+If abnormal volume condition is detected from NodeGetVolumeStats, Kubelet will retrieve all the pods used by the particular volume and report events on the pod objects. If multiple pods are using the same volume, events will be reported on all pods. This can be done by adding logic in csi_client after the NodeGetVolumeStats call to send events to pods if volume condition is abnormal.
+https://github.com/kubernetes/kubernetes/blob/v1.21.0-alpha.2/pkg/volume/csi/csi_client.go#L608
+
+This new volume health monitoring by Kubelet will be gated by the `VolumeHealth` feature gate. If enabled, Kubelet will monitor volume health when calling NodeGetVolumeStats CSI function and report events on pods when abnormal volume condition is detected. If not enabled, Kubelet works the same as before and will not check volume health when calling NodeGetVolumeStats CSI function.
 
 ### Alternatives
 
@@ -610,11 +619,33 @@ This optional service is out of scope for this KEP but may be introduced in a fu
 
 This option is not in the main proposal because it is a push-based method while CSI uses pull-based method.
 
+#### External node agent
+
+In the initial proposal and first alpha implementation of this feature, there is an external node agent component.
+
+* An external monitoring node agent on each kubernetes worker node.
+  * The node agent watches volume health of the PVCs on that node. If a PVC has an abnormal health condition, an event will to reported on the pod object that is using the PVC. If multiple pods are using the same PVC, events will be reported on multiple pods.
+
+When moving this feature to beta, we decided to combine this with existing volume stats check in Kubelet as both are calling the same CSI function NodeGetVolumeStats.
+
+Here's the initial proposal:
+
+- The external node agent will be deployed as a sidecar together with the CSI node driver on every Kubernetes worker node.
+- The external node agent triggers node RPC to check volume's mounting conditions.
+- Note that currently we do not have CSI support for local storage. When the support is available, we will implement relavant CSI monitoring interfaces as well.
+
+##### CSI interface
+Call NodeGetVolumeStats() RPC to check the mounting and other health conditions. The frequency of the check should be tunable. A configure option will be available in the external node agent to adjust this value.
+
+The external node agent will go through all the pods on that node and find out all volumes used by those pods. It will watch all those volumes and call NodeGetVolumeStatus() to find out their health status.
+
+The external node agent reports events on the pod object. If multiple pods are using the same volume, report events on all pods.
+
 ## Graduation Criteria
 ### Alpha
 * Initial feature implementation, including:
   * External controller volume health monitoring.
-  * External node agent volume health monitoring.
+  * Kubelet volume health monitoring.
 * Implementation in the csi-mock driver.
 * Add basic unit tests.
 
@@ -627,14 +658,14 @@ This option is not in the main proposal because it is a push-based method while 
 
 ## Test Plan
 ### Unit tests
-* Unit tests for external controller and external node agent volume health monitoring. The following failure scenario will be simulated in the unit tests:
+* Unit tests for external controller and Kubelet volume health monitoring. The following failure scenario will be simulated in the unit tests:
   * VolumeNotFound
   * OutOfCapacity
   * VolumeUnmounted
   * NodeDown
 
 ### E2E tests
-* e2e tests for external controller and external node agent volume health monitoring. Hostpath CSI driver and GCE PD driver will be used for e2e tests. The following failure scenario will be tested in the e2e tests:
+* e2e tests for external controller and Kubelet volume health monitoring. Hostpath CSI driver and GCE PD driver will be used for e2e tests. The following failure scenario will be tested in the e2e tests:
   * VolumeNotFound
   * OutOfCapacity
   * VolumeUnmounted
@@ -649,35 +680,44 @@ _This section must be completed when targeting alpha to a release._
 * **How can this feature be enabled / disabled in a live cluster?**
   - [x] Other
     - Describe the mechanism:
-      This feature does not have a feature gate because it is out-of-tree.
-      It is enabled when the health monitoring controller and agent sidecars
-      are deployed with the CSI driver.
+      This feature has a feature gate called `VolumeHealth` for Kubelet.
+      It is enabled when the feature gate in turned on.
+      The health monitoring feature in external controller does not have a
+      feature gate because it is out of tree.
+      It is enabled when the health monitoring controller sidecar is deployed with the CSI driver.
     - Will enabling / disabling the feature require downtime of the control
       plane?
-      It only affects the health monitoring controller and agent sidecars.
+      Enabling the `VolumeHealth` feature gate will require downtime of Kubelet.
+      From the controller side, it only affects the health monitoring controller sidecar.
     - Will enabling / disabling the feature require downtime or reprovisioning
       of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
-      No.
+      Not for the controller side volume monitoring.
+      For Kubelet, enabling/disabling the feature requires downtime of a node.
 
 * **Does enabling the feature change any default behavior?**
-  Enabling the feature will allow events to be reported on PVCs or Pods when
+  Enabling the `VolumeHealth` feature gate will allow Kubelet to monitor volume health and
+  generate events on Pods so it will change the default behavior.
+  Enabling the feature from the controller side will allow events to be reported on PVCs when
   abnormal volume conditions are detected.
 
 * **Can the feature be disabled once it has been enabled (i.e. can we rollback
   the enablement)?**
-  Yes. Uninstalling the health monitoring controller and agent sidecars will
-  disable the feature. Existing events will not be removed but they will
-  disappear after a period of time. Disabling the feature should not break
-  an existing application as these events are for humans only, not for automation. 
+  Yes. Uninstalling the health monitoring controller sidecar will disable the feature from
+  the controller side.
+  Disabling the feature gate on Kubelet will prevent Kubelet from monitoring volume health.
+  Existing events will not be removed but they will disappear after a period of time.
+  Disabling the feature should not break an existing application as these events are for humans
+  only, not for automation.
 
 * **What happens if we reenable the feature if it was previously rolled back?**
   Events will be added to PVCs or Pods when abnormal volume conditions are
   detected again.
 
 * **Are there any tests for feature enablement/disablement?**
-  Since there is no feature gate for this feature and the only way to enable or
-  disable this feature is to install or unistall the sidecars, we cannot write
-  tests for feature enablement/disablement.
+  There will be unit tests for the feature `VolumeHealth` enablement/disablement.
+  Since there is no feature gate for this feature on the controller side and the only way to
+  enable or disable this feature is to install or unistall the sidecar, we cannot write
+  tests for feature enablement/disablement on the controller side.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -686,16 +726,25 @@ _This section must be completed when targeting beta graduation to a release._
 * **How can a rollout fail? Can it impact already running workloads?**
   Try to be as paranoid as possible - e.g., what if some components will restart
    mid-rollout?
-   This feature does not have a feature gate. It is enabled when the health
-   monitoring controller and agent sidecars are deployed with the CSI driver.
+   This feature does not have a feature gate on the controller side. It is enabled when
+   the health monitoring controller sidecar is deployed with the CSI driver.
    So the only way for a rollout to fail is that deploying the health
-   monitoring controller or agent sidecars with the CSI driver fails. If
+   monitoring controller sidecar with the CSI driver fails. If
    the health monitoring controller cannot be deployed, no events on volume
-   condition will be reported on PVCs. If the health monitoring agent cannot
-   be deployed, no event on volume condition will be reported on the pod.
+   condition will be reported on PVCs.
+
+   If enabling the `VolumeHealth` feature fails, no event on volume condition will be
+   reported on the pod.
 
 * **What specific metrics should inform a rollback?**
-  Currently an event will be recorded on pvc/pod when the controller/agent has successfully retrieved an abnormal volume condition from the storage system. However when other errors occur in the controller/agent, the errors will be logged but not recorded as events. Before moving to beta, the controller/agent should be modified to record an event when other errors occur.
+  An event will be recorded on the PVC when the controller has successfully retrieved an
+  abnormal volume condition from the storage system. When other errors occur in the controller,
+  the errors will also be recorded as events.
+
+  In Kubelet, an event will be recorded on the Pod when Kubelet has successfully retrieved an
+  abnormal volume condition. If the call to `NodeGetVolumeStats` fails for other reasons,
+  an error will be returned and whether this will be logged as an event on the Node is up to
+  the existing Kubelet logic and will not be changed.
 
 * **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
   Describe manual testing that was done and the outcomes.
@@ -716,26 +765,31 @@ _This section must be completed when targeting beta graduation to a release._
   Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
   checking if there are objects with field X set) may be a last resort. Avoid
   logs or events for this purpose.
+
   An operator can check the metric `csi_sidecar_operations_seconds`,
   Container Storage Interface operation duration with gRPC error code status
-  total. It is reported from CSI external-health-monitor-controller and
-  external-health-monitor-agent sidecars. For the health monitor controller
-  sidecar, `csi_sidecar_operations_seconds` will be measuring `ListVolumes` or
-  `GetVolume` RPC. For the health monitor agent sidecar,
-  `csi_sidecar_operations_seconds` will be measuring `NodeGetVolumeStats` RPC.
+  total. It is reported from CSI external-health-monitor-controller sidecar.
+  For the health monitor controller sidecar, `csi_sidecar_operations_seconds`
+  will be measuring `ListVolumes` or `GetVolume` RPC.
   The `csi_sidecar_operations_seconds` metric should be sliced by process after
   they are aggregated to show metrics for different sidecars.
+
+  In Kubelet, an operator can check whether the feature gate `VolumeHealth`
+  is enabled.
 
 * **What are the SLIs (Service Level Indicators) an operator can use to determine
 the health of the service?**
   - [ ] Metrics
     - Metric name: csi_sidecar_operations_seconds
     - [Optional] Aggregation method:
-    - Components exposing the metric: csi-external-health-monitor-controller and csi-external-health-monitor-agent sidecars
+    - Components exposing the metric:
+      csi-external-health-monitor-controller exposes the `csi_sidecar_operations_seconds` metric.
+      In Kubelet, a call to `NodeGetVolumeStats` is meant to collect volume stats metrics.
   - [ ] Other (treat as last resort)
     - Details:
 
 * **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
+  <!--
   At a high level, this usually will be in the form of "high percentile of SLI
   per day <= X". It's impossible to provide comprehensive guidance, but at the very
   high level (needs more precise definitions) those may be things like:
@@ -743,6 +797,7 @@ the health of the service?**
   - 99% percentile over day of absolute value from (job creation time minus expected
     job creation time) for cron job <= 10%
   - 99,9% of /health requests per day finish with 200 code
+  -->
 
   The metrics `csi_sidecar_operations_seconds` includes a gRPC status code. If the
   status code is `OK`, the call is successful; otherwise, it is not successful. We
@@ -751,8 +806,10 @@ the health of the service?**
 
 * **Are there any missing metrics that would be useful to have to improve observability
 of this feature?**
+  <!--
   Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
   implementation difficulties, etc.).
+  -->
 
 ### Dependencies
 
@@ -767,10 +824,11 @@ _This section must be completed when targeting beta graduation to a release._
 
   For each of these, fill in the following—thinking about running existing user workloads
   and creating new ones, as well as about cluster-level services (e.g. DNS):
-  - [Dependency name]: installation of csi-external-health-monitor-controller and csi-external-health-monitor-agent sidecars
+  - [Dependency name]: installation of csi-external-health-monitor-controller sidecar
     - Usage description:
-      - Impact of its outage on the feature: Installation of csi-external-health-monitor-controller and csi-external-health-monitor-agent sidecars are required for the feature to work. If csi-external-health-monitor-controller is not installed, abnormal volume conditions will not be reported as events on PVCs. Similarly, if csi-external-health-monitor-agent is not installed, abnormal volume conditions will not be reported as events on Pods.
+      - Impact of its outage on the feature: Installation of csi-external-health-monitor-controller sidecar is required for the feature to work from the controller side. If csi-external-health-monitor-controller is not installed, abnormal volume conditions will not be reported as events on PVCs.
         Note that CSI driver needs to be updated to implement volume health RPCs in controller/node plugins. The minimum kubernetes version should be 1.13: https://kubernetes-csi.github.io/docs/introduction.html#kubernetes-releases. K8s v1.13 is the minimum supported version for CSI driver to work, however, different CSI drivers have different requirements on supported k8s versions so users are supposed to check documentation of the CSI drivers. If the CSI node plugin on one node has been upgraded to support volume health while it is not upgraded on 3 other nodes, then we will only expect to see volume health events on pods running on that one upgraded node.
+        In addition, since Kubelet is doing volume health monitoring from the node side, the supported Kubernetes version will have to be the version that supports `VolumeHealth` feature. So the minimum Kubernetes version will be 1.21.
       - Impact of its degraded performance or high-error rates on the feature: If abnormal volume conditions are reported with degraded performance or high-error rates, that would affect how soon or how accurately users could manually react to these conditions.
 
 
@@ -791,13 +849,15 @@ previous answers based on experience in the field._
   - originating component(s) (e.g. Kubelet, Feature-X-controller)
   focusing mostly on:
   - components listing and/or watching resources they didn't before
-    csi-external-health-monitor-controller and csi-external-health-monitor-agent sidecars.
-    There is a monitor interval for the controller and one for the agent to control how often
-    to check the volume health. It is configurable with 1 minute as default. Will consider
-    changing it to 5 minutes by default to avoid overloading the K8s API server.
+    csi-external-health-monitor-controller sidecar.
+    There is a monitor interval for the controller to control how often to check the volume health.
+    It is configurable with 1 minute as default. Will consider changing it to 5 minutes by default
+    to avoid overloading the K8s API server.
     When scaled out across many nodes, low frequency checks can still produce high volumes of
     events. To control this, we should use options on the eventrecorder to control QPS per key.
     This way we can collapse keys and have a slow update cadence per key.
+    From the Kubelet side, since `NodeGetVolumeStats` has already been called by Kubelet, no additional
+    call is needed.
   - API calls that may be triggered by changes of some Kubernetes resources
     (e.g. update of object X triggers new updates of object Y)
   - periodic API calls to reconcile state (e.g. periodic fetching state,
@@ -820,7 +880,7 @@ the existing API objects?**
   - Estimated increase in size: (e.g., new annotation of size 32B):
     No
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
-    The controller reports events on PVC while the agent reports events on Pod. They work independently of each other. It is recommended that CSI driver should not report duplicate information through the controller and the agent. For example, if the controller detects a failure on one volume, it should record just one event on one PVC. If an agent detects a failure, it should record an event on every pod used by the affected PVC.
+    The controller reports events on PVC while Kubelet reports events on Pod. They work independently of each other. It is recommended that CSI driver should not report duplicate information through the controller and Kubelet. For example, if the controller detects a failure on one volume, it should record just one event on one PVC. If Kubelet detects a failure, it should record an event on every pod used by the affected PVC.
 
     Recovery event will be reported once if the volume condition changes from abnormal back to normal.
 
@@ -837,7 +897,8 @@ resource usage (CPU, RAM, disk, IO, ...) in any components?**
   volume), significant amount of data sent and/or received over network, etc.
   This through this both in small and large cases, again with respect to the
   [supported limits].
-  This will increase load on the storage systems as it periodically queries them.
+  From the controller side, this will increase load on the storage systems as it periodically queries them.
+  From the node side, there will be no change because NodeGetVolumeStats is already being called by Kubelet to retrieve volume stats.
 
 ### Troubleshooting
 
@@ -848,7 +909,7 @@ details). For now, we leave it here.
 _This section must be completed when targeting beta graduation to a release._
 
 * **How does this feature react if the API server and/or etcd is unavailable?**
-  If API server and/or etcd is unavailable, error messages will be logged and the controller/agent will not be able to report events on PVCs or Pods.
+  If API server and/or etcd is unavailable, error messages will be logged and the controller/Kubelet will not be able to report events on PVCs or Pods.
 
 * **What are other known failure modes?**
   For each of them, fill in the following information by copying the below template:
