@@ -451,6 +451,7 @@ This KEP entails a process change, and hence the tooling to enable the processes
 - 2020-11-26: Provisional enhancement filed
 - 2021-02-04: Enhancement made implementable
 - 2021-02-04: Implementation started
+  - Ref: https://github.com/kubernetes/enhancements/pull/2424
 - 2021-MM-DD: Alpha criteria fulfilled
 - 2021-MM-DD: Rolled out for a release
 

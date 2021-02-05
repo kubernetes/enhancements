@@ -6,7 +6,7 @@ authors:
 owning-sig: sig-architecture
 participating-sigs:
   - sig-release
-status: provisional
+status: implementable
 creation-date: 2020-11-24
 reviewers:
   - "@justaugustus"
