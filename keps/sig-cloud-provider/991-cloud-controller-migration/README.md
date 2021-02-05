@@ -289,6 +289,20 @@ unsetting the `--enable-migration-config` flag.
 * Increased apiserver load due to new leader election resource per migration configuration.
 * User error could result in cloud controllers not running in any component at all.
 
+### Test Plan
+
+- Unit Testing:
+  - test resource reading, parsing, validation
+  - test calculation of leader differences.
+  - test all helpers
+- Integration Testing
+  - test resource registration, parsing, and validation against the Schema APIs
+  - test interactions with the leader election APIs
+- E2E Testing
+  - In a single-node control plane with leader election setting, test control plane upgrade, assert controller managers
+    become health and ready after upgrade
+  - In a multi-node control plane setting, test control plane upgrade, assert availability throughout the upgrade
+
 ### Graduation Criteria
 
 ##### Alpha -> Beta Graduation
