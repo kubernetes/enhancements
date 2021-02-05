@@ -32,6 +32,7 @@
     - [Alpha (v1.21)](#alpha-v121)
     - [Alpha -&gt; Beta Graduation (v1.22) (Proposed)](#alpha---beta-graduation-v122-proposed)
     - [Future Graduations](#future-graduations)
+- [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
 - [Implementation History](#implementation-history)
 <!-- /toc -->
 
@@ -445,6 +446,10 @@ This KEP entails a process change, and hence the tooling to enable the processes
 
 - Solving woes of Docs team
 - Refining user experience based on feedback across release cycles
+
+## Production Readiness Review Questionnaire
+
+This KEP entails a policy change and does not modify any Kubernetes features.
 
 ## Implementation History
 
