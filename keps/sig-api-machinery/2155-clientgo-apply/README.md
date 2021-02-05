@@ -60,7 +60,7 @@ checklist items _must_ be updated for the enhancement to be released.
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
 - [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
 - [x] (R) Design details are appropriately documented
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
 - [x] (R) Graduation criteria is in place
@@ -337,9 +337,10 @@ style functions to the client. The benefit of this approach is that
 the caller doesn't have to deal with converting the response object
 into an apply configuration, and there is no possibility of the client
 modifying the object before converting it into an apply
-configuration. The problem with this approach is that it is tightly
-coupled, and there are many operations that return an object
-(get/create/update/patch/watch/list).
+configuration. The biggest problem with this approach is that there
+are many methods that return an object
+(get/create/update/patch/watch/list) that would all need to have a
+corresponding `<method>ForApply()`.
 
 Corner case: If the version of the managed fields does not match the
 object (which is possible, but only if changing versions and using the
@@ -380,8 +381,11 @@ it is correct using the existing e2e tests, expanding coverage as needed.
 
 ### Graduation Criteria
 
-This enhancement will graduate to GA as part of Server Side Apply. It does
-not make sense to graduate it independently.
+Because client-go has no feature gates, the gating of this
+functionality is determined by the Server Side Apply
+functionality. For this reason this enhancement is a considered a
+sub-KEP of Server Side Apply, and will graduate to GA as part of
+Server Side Apply, which is slated for 1.21.
 
 ### Upgrade / Downgrade Strategy
 
