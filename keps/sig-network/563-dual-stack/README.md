@@ -1429,11 +1429,11 @@ of this feature?**
 
   2. For pods:
 
-       Dualstack components are not in path of pod creation. It is in the path
+       Dual-stack components are not in path of pod creation. It is in the path
        of reporting pod ips. So pod creation will not be affected; if it is
        affected, then it is a CNI issue.
 
-       Dualstack components are in the path of PodIPs reporting which affects
+       Dual-stack components are in the path of PodIPs reporting which affects
        kubelet. If there is a problem (or if there are persistent problems)
        then disabling the featuregate on api-server will mitigate.
 
