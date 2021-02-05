@@ -14,7 +14,43 @@ approvers:
   - "@saadali"
 editor: "@davidz627"
 creation-date: 2019-01-29
-last-updated: 2019-01-29
+last-updated: 2021-02-03
+disable-supported: true
 status: implementable
 see-also:
   - "https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/csi-migration.md"
+prr-approvers:
+  - "@wojtek-t"
+replaces:
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: beta
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.21"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.14"
+  beta: "v1.17"
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+  - name: CSIMigration
+    components:
+    - kube-controller-manager
+    - kubelet
+    - kube-scheduler
+  - name: CSIMigration{cloud-provider}
+    components:
+    - kube-controller-manager
+    - kubelet
+    - kube-scheduler
+
+# The following PRR answers are required at beta release
+metrics:
+  - csi_sidecar_duration_operation
+  - storage_operation_duration_seconds
