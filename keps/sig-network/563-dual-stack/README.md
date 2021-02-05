@@ -1354,14 +1354,15 @@ This capability will move to stable when the following criteria have been met.
 
 * **Can the feature be disabled once it has been enabled (i.e. can we roll back
   the enablement)?**
-  Yes.
-
-  [TODO] If we disable the featuregate, do I also have to remove the CLI parameters or are those still accepted?
+  Yes. If we disable the feature gate, we must remove the CLI parameters. An
+  older client won't see or be able to use the new fields.
 
 * **What happens if we reenable the feature if it was previously rolled back?**
-  Similar to enable it the first time on a cluster.
-
-  [TODO] How to coordinate the enablement and re-enablement
+  Similar to enabling it the first time on a cluster. We don't load balance
+  across IP families, and with no selectors we don't get endpoints. If you use
+  the feature flag to turn off dual-stack, we do not edit your service. If you
+  disable dual-stack from the controller manager, the service will be given
+  single-stack endpoints.
 
 * **Are there any tests for feature enablement/disablement?**
   The feature is being tested using integration tests with gate on/off. The
@@ -1389,8 +1390,8 @@ This capability will move to stable when the following criteria have been met.
 
 * **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
   We did manual testing of a cluster turning it off and on to explore
-  disabled-with-data behavior.
-  [TODO] Describe outcome of testing
+  disabled-with-data behavior. Testing details can be seen in [Dual-stack
+  testing](https://github.com/kubernetes/kubernetes/blob/master/test/integration/dualstack/dualstack_test.go).
 
 * **Is the rollout accompanied by any deprecations and/or removals of features, APIs, 
 fields of API types, flags, etc.?**
@@ -1402,10 +1403,10 @@ fields of API types, flags, etc.?**
 * **How can an operator determine if the feature is in use by workloads?**
 
   Operators can determine if the feature is in use by listing services that 
-  employ dual-stack. This can be done via 
+  employ dual-stack. This can be done via:
 
   ```
-  kubectl get services --all-namespaces spec.ipFamilyPolicy!=SingleStack
+  kubectl get services --all-namespaces -ogo-template='{{range .items}}{{.spec.ipFamilyPolicy}}{{"\n"}}{{end}}' | grep -v SingleStack
   ```
 
 * **What are the SLIs (Service Level Indicators) an operator can use to determine 
@@ -1417,10 +1418,24 @@ the health of the service?**
 
 * **Are there any missing metrics that would be useful to have to improve observability 
 of this feature?**
-  N/A
 
-  [TODO] What about crashlooping containers?
-  Since this feature potential has an impact on the runtime environment of the workloads, plus on the IP family returned by DNS lookups (whichever comes back first in some cases), I could foresee some workloads having trouble. Operators should be prepared to monitor for that.
+  1. For services:
+
+       Services are not in the path of pod creation. Thus, any malfunction or
+       bugs in services will not affect pods.
+
+       Services/Endpoint selection is not in path of pod creation. It runs in
+       kube-controller-manager, thus this is N/A.
+
+  2. For pods:
+
+       Dualstack components are not in path of pod creation. It is in the path
+       of reporting pod ips. So pod creation will not be affected; if it is
+       affected, then it is a CNI issue.
+
+       Dualstack components are in the path of PodIPs reporting which affects
+       kubelet. If there is a problem (or if there are persistent problems)
+       then disabling the featuregate on api-server will mitigate.
 
 ### Dependencies
 
@@ -1438,8 +1453,8 @@ of this feature?**
 
 * **Will enabling / using this feature result in any new calls to the cloud 
 provider?**
-  No
-  [TODO] Do we have any metrics around success/failure of cluster IP allocation? Number of dual stack services? Pod IP allocation failures?
+  No. Errors are surfaced when the user makes a call. We don't focus on
+  metrics-server at this point.
 
 * **Will enabling / using this feature result in increasing size or count of 
 the existing API objects?**
@@ -1483,10 +1498,6 @@ resource usage (CPU, RAM, disk, IO, ...) in any components?**
        created for the service in question by using kubectl.
     5. If the pod is using host network then operator must ensure that the node is correctly
        reporting dual-stack addresses.
-
-  * Increased time for external IPAM
-    1. Dual stack adds extra IP allocation for clusterIP and for pod IP.
-       a. Depending on the IPAM used, the time could be increased.
 
 * **What steps should be taken if SLOs are not being met to determine the problem?**
   N/A
