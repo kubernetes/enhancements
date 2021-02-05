@@ -32,27 +32,22 @@ import (
 
 	"github.com/google/go-github/v32/github"
 	"github.com/olekukonko/tablewriter"
-	"github.com/pkg/errors"
 	"golang.org/x/oauth2"
-	"gopkg.in/yaml.v3"
+	"gopkg.in/yaml.v2"
 
 	"k8s.io/enhancements/api"
-	"k8s.io/enhancements/pkg/legacy/keps"
-	"k8s.io/enhancements/pkg/legacy/prrs"
+	"k8s.io/enhancements/pkg/kepval/keps"
+	"k8s.io/enhancements/pkg/kepval/prrs"
 	"k8s.io/test-infra/prow/git"
 )
 
 type CommonArgs struct {
-	// command options
-	LogLevel  string
-	RepoPath  string // override the default settings
+	RepoPath  string //override the default settings
 	TokenPath string
-
-	// KEP options
-	KEP    string // KEP name sig-xxx/xxx-name
-	Name   string
-	Number string
-	SIG    string
+	KEP       string //KEP name sig-xxx/xxx-name
+	Name      string
+	Number    string
+	SIG       string
 }
 
 func (c *CommonArgs) validateAndPopulateKEP(args []string) error {
@@ -61,12 +56,11 @@ func (c *CommonArgs) validateAndPopulateKEP(args []string) error {
 	}
 	if len(args) == 1 {
 		kep := args[0]
-		re := regexp.MustCompile(`([a-z\\-]+)/((\\d+)-.+)`)
+		re := regexp.MustCompile("([a-z\\-]+)/((\\d+)-.+)")
 		matches := re.FindStringSubmatch(kep)
 		if matches == nil || len(matches) != 4 {
 			return fmt.Errorf("invalid KEP name: %s", kep)
 		}
-
 		c.KEP = kep
 		c.SIG = matches[1]
 		c.Number = matches[3]
@@ -85,7 +79,7 @@ type Client struct {
 	Err      io.Writer
 }
 
-func (c *Client) findEnhancementsRepo(opts *CommonArgs) (string, error) {
+func (c *Client) findEnhancementsRepo(opts CommonArgs) (string, error) {
 	dir := c.RepoPath
 	if opts.RepoPath != "" {
 		dir = opts.RepoPath
@@ -121,16 +115,14 @@ func New(repo string) (*Client, error) {
 	}, nil
 }
 
-func (c *Client) SetGitHubToken(opts *CommonArgs) error {
+func (c *Client) SetGitHubToken(opts CommonArgs) error {
 	if opts.TokenPath != "" {
 		token, err := ioutil.ReadFile(opts.TokenPath)
 		if err != nil {
 			return err
 		}
-
 		c.Token = strings.Trim(string(token), "\n\r")
 	}
-
 	return nil
 }
 
@@ -158,13 +150,11 @@ func (c *Client) getReadmeTemplate(repoPath string) ([]byte, error) {
 	return ioutil.ReadFile(path)
 }
 
-// TODO: Unused?
 func validateKEP(p *api.Proposal) error {
 	b, err := yaml.Marshal(p)
 	if err != nil {
 		return err
 	}
-
 	r := bytes.NewReader(b)
 	parser := &keps.Parser{}
 
@@ -172,7 +162,6 @@ func validateKEP(p *api.Proposal) error {
 	if kep.Error != nil {
 		return fmt.Errorf("kep is invalid: %s", kep.Error)
 	}
-
 	return nil
 }
 
@@ -182,8 +171,6 @@ func findLocalKEPMeta(repoPath, sig string) ([]string, error) {
 		"keps",
 		sig)
 
-	// TODO(lint): importShadow: shadow of imported from 'k8s.io/enhancements/pkg/legacy/keps' package 'keps' (gocritic)
-	//nolint:gocritic
 	keps := []string{}
 
 	// if the sig doesn't have a dir, it has no KEPs
@@ -266,21 +253,18 @@ func (c *Client) loadKEPPullRequests(sig string) ([]*api.Proposal, error) {
 		opt.Page = resp.NextPage
 	}
 
-	kepPRs := make([]*github.PullRequest, 10)
+	var kepPRs []*github.PullRequest
 	for _, pr := range allPulls {
 		foundKind, foundSIG := false, false
 		sigLabel := strings.Replace(sig, "-", "/", 1)
-
 		for _, l := range pr.Labels {
 			if *l.Name == "kind/kep" {
 				foundKind = true
 			}
-
 			if *l.Name == sigLabel {
 				foundSIG = true
 			}
 		}
-
 		if !foundKind || !foundSIG {
 			continue
 		}
@@ -356,7 +340,7 @@ func (c *Client) loadKEPPullRequests(sig string) ([]*api.Proposal, error) {
 	return allKEPs, nil
 }
 
-func (c *Client) readKEP(repoPath, sig, name string) (*api.Proposal, error) {
+func (c *Client) readKEP(repoPath string, sig, name string) (*api.Proposal, error) {
 	kepPath := filepath.Join(
 		repoPath,
 		"keps",
@@ -443,18 +427,17 @@ func (c *Client) loadKEPFromOldStyle(kepPath string) (*api.Proposal, error) {
 	return kep, nil
 }
 
-func (c *Client) writeKEP(kep *api.Proposal, opts *CommonArgs) error {
+func (c *Client) writeKEP(kep *api.Proposal, opts CommonArgs) error {
 	path, err := c.findEnhancementsRepo(opts)
 	if err != nil {
 		return fmt.Errorf("unable to write KEP: %s", err)
 	}
-
 	b, err := yaml.Marshal(kep)
 	if err != nil {
 		return fmt.Errorf("KEP is invalid: %s", err)
 	}
 
-	if mkErr := os.MkdirAll(
+	os.MkdirAll(
 		filepath.Join(
 			path,
 			"keps",
@@ -462,13 +445,9 @@ func (c *Client) writeKEP(kep *api.Proposal, opts *CommonArgs) error {
 			opts.Name,
 		),
 		os.ModePerm,
-	); mkErr != nil {
-		return errors.Wrapf(mkErr, "creating KEP directory")
-	}
-
+	)
 	newPath := filepath.Join(path, "keps", opts.SIG, opts.Name, "kep.yaml")
 	fmt.Fprintf(c.Out, "writing KEP to %s\n", newPath)
-
 	return ioutil.WriteFile(newPath, b, os.ModePerm)
 }
 
@@ -487,43 +466,41 @@ func (p *printConfig) Value(k *api.Proposal) string {
 	return p.valueFunc(k)
 }
 
-// TODO: Refactor out anonymous funcs
 var defaultConfig = map[string]printConfig{
 	"Authors":     {"Authors", func(k *api.Proposal) string { return strings.Join(k.Authors, ", ") }},
 	"LastUpdated": {"Updated", func(k *api.Proposal) string { return k.LastUpdated }},
 	"SIG": {"SIG", func(k *api.Proposal) string {
 		if strings.HasPrefix(k.OwningSIG, "sig-") {
 			return k.OwningSIG[4:]
+		} else {
+			return k.OwningSIG
 		}
-
-		return k.OwningSIG
 	}},
 	"Stage":  {"Stage", func(k *api.Proposal) string { return k.Stage }},
 	"Status": {"Status", func(k *api.Proposal) string { return k.Status }},
 	"Title": {"Title", func(k *api.Proposal) string {
 		if k.PRNumber == "" {
 			return k.Title
+		} else {
+			return "PR#" + k.PRNumber + " - " + k.Title
 		}
-
-		return "PR#" + k.PRNumber + " - " + k.Title
 	}},
 	"Link": {"Link", func(k *api.Proposal) string {
 		if k.PRNumber == "" {
 			return "https://git.k8s.io/enhancements/keps/" + k.OwningSIG + "/" + k.Name
+		} else {
+			return "https://github.com/kubernetes/enhancements/pull/" + k.PRNumber
 		}
-
-		return "https://github.com/kubernetes/enhancements/pull/" + k.PRNumber
 	}},
 }
 
 func DefaultPrintConfigs(names ...string) []PrintConfig {
-	configs := make([]PrintConfig, 10)
+	var configs []PrintConfig
 	for _, n := range names {
 		// copy to allow it to be tweaked by the caller
 		c := defaultConfig[n]
 		configs = append(configs, &c)
 	}
-
 	return configs
 }
 
@@ -534,11 +511,10 @@ func (c *Client) PrintTable(configs []PrintConfig, proposals []*api.Proposal) {
 
 	table := tablewriter.NewWriter(c.Out)
 
-	headers := make([]string, 10)
+	var headers []string
 	for _, c := range configs {
 		headers = append(headers, c.Title())
 	}
-
 	table.SetHeader(headers)
 	table.SetAlignment(tablewriter.ALIGN_LEFT)
 

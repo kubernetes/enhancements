@@ -18,6 +18,7 @@
     - [Finished Jobs](#finished-jobs)
     - [Owner References](#owner-references)
   - [Risks and Mitigations](#risks-and-mitigations)
+  - [Test Plan](#test-plan)
 - [Graduation Criteria](#graduation-criteria)
   - [Alpha](#alpha)
   - [Alpha -&gt; Beta](#alpha---beta)
@@ -216,6 +217,11 @@ Mitigations:
   skew. We will also document this risk.
 
 [#6159]: https://github.com/kubernetes/kubernetes/issues/6159#issuecomment-93844058
+
+### Test Plan
+
+- Units test in kube-controller-manager package to test a variety of scenarios.
+- Integration and E2E Tests to validate that jobs get deleted as expected
 
 ## Graduation Criteria
 

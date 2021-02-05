@@ -21,8 +21,9 @@ import (
 	"io/ioutil"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
+	"gopkg.in/yaml.v2"
 
 	"k8s.io/enhancements/api"
 )
@@ -54,10 +55,11 @@ func TestValidate(t *testing.T) {
 			require.NoError(t, err)
 			err = validateKEP(&p)
 			if tc.err == nil {
-				require.NoError(t, err)
+				assert.NoError(t, err)
 			} else {
-				require.EqualError(t, err, tc.err.Error())
+				assert.EqualError(t, err, tc.err.Error())
 			}
+
 		})
 	}
 }
@@ -77,9 +79,7 @@ func TestFindLocalKEPs(t *testing.T) {
 		},
 	}
 
-	c, clientErr := New("testdata")
-	require.Nil(t, clientErr)
-
+	c, _ := New("testdata")
 	for i, tc := range testcases {
 		k := c.loadLocalKEPs("testdata", tc.sig)
 		if len(k) != len(tc.keps) {

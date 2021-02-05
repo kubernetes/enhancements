@@ -1,0 +1,40 @@
+title: Random Pod Selection on ReplicaSet Downscale
+kep-number: 2185
+authors:
+  - "@alculquicondor"
+  - "@damemi"
+owning-sig: sig-apps
+participating-sigs:
+  - sig-scheduling
+status: implementable
+creation-date: 2020-12-15
+reviewers:
+  - "@janetkuo"
+  - "@ahg-g"
+  - "@kow3ns"
+  - "@soltysh"
+approvers:
+  - "@janetkuo"
+  - "@kow3ns"
+prr-approvers:
+  - "wojtek-t"
+see-also:
+  - "/keps/sig-apps/1828-delete-priority-annotations"
+replaces:
+
+stage: alpha
+latest-milestone: "v1.21"
+milestone:
+  alpha: "v1.21"
+  beta: "v1.22"
+  stable: "v1.23"
+
+feature-gates:
+  - name: RandomReplicaSetDownscale
+    components:
+      - kube-controller-manager
+disable-supported: true
+
+# The following PRR answers are required at beta release
+metrics:
+  - TBD

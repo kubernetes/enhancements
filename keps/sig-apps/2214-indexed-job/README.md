@@ -15,6 +15,7 @@
   - [JobSpec API](#jobspec-api)
   - [Pod detail](#pod-detail)
   - [Job completion and restart policy](#job-completion-and-restart-policy)
+    - [Track completed indexes in Job status](#track-completed-indexes-in-job-status)
   - [Job parallelism](#job-parallelism)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
@@ -206,16 +207,28 @@ type JobSpec struct {
   // `NonIndexed`.
   CompletionMode CompletionMode
 }	
+
+type JobStatus struct {
+  ...
+
+  // CompletedIndexes holds the completed indexes when .spec.completionMode =
+  // "Indexed" in a text format. The indexes are represented as decimal integers
+  // separated by commas. The numbers are listed in increasing order. Two or
+  // more consecutive numbers are compressed and represented by the first and
+  // last element of the series, separated by a hyphen.
+  // For example, if the completed indexes are 1, 3, 4, 5 and 7, they are
+  // represented as "1,3-5,7".
+  CompletedIndexes string
+}
 ```
 
-As the comment describes, when `.spec.completionMode = "Indexed"`, the
-`.spec.completions` must be:
+As the comment describes, when `.spec.completionMode = "Indexed"`:
 
-- a non-zero positive value. This is to trigger Job management strategy for
-  *fixed completion count*. That is, `Indexed` mode cannot	be used for work
-  queue patterns.	
-- less than or equal to `10^6`. This is to guarantee that we can keep track of
-  completions per-index in the Job status in the future.
+- `.spec.completions` must be a non-zero positive value. This is to trigger Job
+  management strategy for *fixed completion count*. That is, `Indexed` mode
+  cannot be used for work queue patterns.	
+- `.spec.parallelism` must be less than or equal to `10^5`. This is to guarantee
+  that we can keep track of completions per-index in the Job status.
 
 ### Pod detail
 
@@ -271,9 +284,7 @@ them.
 The kubelet handles container restarts as usual, according to the
 `spec.template.spec.restartPolicy`.
 
-<<[UNRESOLVED TBD Beta: Track completed indexes in Job status]>>
-Once [kubernetes/kubernetes#28486](https://github.com/kubernetes/kubernetes/issues/28486)
-is resolved:
+#### Track completed indexes in Job status
 
 The Job controller keeps track of completed indexes in
 `.status.completedIndexes`, a string that represents a list of numbers in a
@@ -287,9 +298,8 @@ CompletedIndexes: "2-4,6-7"
 The `kubectl describe` command crops the list of indexes if it's too long:
 
 ```
-Completed Indexes: [1-25,28,30-32,...]
+Completed Indexes: 1-25,28,30-32,...
 ``` 
-<<[/UNRESOLVED]>>
 
 ### Job parallelism
 
@@ -326,7 +336,13 @@ gate enabled and disabled.
 #### Alpha -> Beta Graduation
 
 - Complete features:
-  - Tracking completions by index in Job status
+  - Indexed Jobs when tracking completion without lingering Pods
+    [kubernetes/enhancements#2307](https://github.com/kubernetes/enhancements/issues/2307).
+    
+    Keeping the size of .status.completedIndexes is desirable to reduce load
+    on watchers. We will evaluate holding of from counting completed Pods that
+    have an outlying index. That is, contiguous indexes would be counted first.
+    This allows to keep the size of the compressed list small.
 - Gather feedback from end users and operators' developers. Open questions:
   - Are stable Pod names necessary?
 - Tests are in Testgrid and linked in KEP
@@ -498,7 +514,12 @@ the existing API objects?**
   Yes.
   
   - API type(s): Job
-  - Estimated increase in size: new field of about 30 bytes.
+  - Estimated increase in size:
+    - New field in Spec about 30 bytes.
+    - New field in Status. In the worst case scenario, completed indexes are
+      non-consecutive. Since the API limits parallelism to 10^5, we could have
+      up to 5*10^4 non-consecutive numbers, which can be represented in less
+      than 1MB.
   
   - API type(s): Pod, only when created with the new completion mode.
   - Estimated increase in size: new annotation of about 50 bytes.

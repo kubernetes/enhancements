@@ -69,28 +69,14 @@
 
 ## Release Signoff Checklist
 
-<!--
-**ACTION REQUIRED:** In order to merge code into a release, there must be an
-issue in [kubernetes/enhancements] referencing this KEP and targeting a release
-milestone **before the [Enhancement Freeze](https://git.k8s.io/sig-release/releases)
-of the targeted release**.
-
-For enhancements that make changes to code or processes/procedures in core
-Kubernetes i.e., [kubernetes/kubernetes], we require the following Release
-Signoff checklist to be completed.
-
-Check these off as they are completed for the Release Team to track. These
-checklist items _must_ be updated for the enhancement to be released.
--->
-
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
 - [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [X] (R) KEP approvers have approved the KEP status as `implementable`
+- [X] (R) Design details are appropriately documented
+- [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
 - [X] (R) Graduation criteria is in place
-- [ ] (R) Production readiness review completed
+- [X] (R) Production readiness review completed
 - [ ] Production readiness review approved
 - [ ] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
@@ -287,23 +273,28 @@ so nothing changes for existing CSI driver deployments.
 
 ### API
 
+The API is a new builtin type. This approach was chosen instead of a
+CRD because kube-scheduler will depend on this API and ensuring that a
+CRD gets installed and updated together with the core Kubernetes is
+still an unsolved problem.
+
 #### CSIStorageCapacity
 
 ```
 // CSIStorageCapacity stores the result of one CSI GetCapacity call for one
 // driver, one topology segment, and the parameters of one storage class.
 type CSIStorageCapacity struct {
-	metav1.TypeMeta
-	// Standard object's metadata. The name has no particular meaning and just has to
-	// meet the usual requirements (length, characters, unique). To ensure that
-	// there are no conflicts with other CSI drivers on the cluster, the recommendation
-	// is to use csisc-<uuid>.
-	//
-	// Objects are not namespaced.
-	//
-	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
-	// +optional
-	metav1.ObjectMeta
+    metav1.TypeMeta
+    // Standard object's metadata. The name has no particular meaning and just has to
+    // meet the usual requirements (length, characters, unique). To ensure that
+    // there are no conflicts with other CSI drivers on the cluster, the recommendation
+    // is to use csisc-<uuid>.
+    //
+    // Objects are not namespaced.
+    //
+    // More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
+    // +optional
+    metav1.ObjectMeta
 
     // Spec contains the fixed properties of one capacity value.
     Spec CSIStorageCapacitySpec
@@ -315,31 +306,31 @@ type CSIStorageCapacity struct {
 // CSIStorageCapacitySpec contains the fixed properties of one capacity value.
 // one capacity value.
 type CSIStorageCapacitySpec struct {
-	// The CSI driver that provides the storage.
-	// This must be the string returned by the CSI GetPluginName() call.
-	DriverName string
+    // The CSI driver that provides the storage.
+    // This must be the string returned by the CSI GetPluginName() call.
+    DriverName string
 
     // NodeTopology defines which nodes have access to the storage for which
     // capacity was reported. If not set, the storage is accessible from all
     // nodes in the cluster.
-	// +optional
-	NodeTopology *v1.NodeSelector
+    // +optional
+    NodeTopology *v1.NodeSelector
 
-	// The storage class name of the StorageClass which provided the
+    // The storage class name of the StorageClass which provided the
     // additional parameters for the GetCapacity call.
-	StorageClassName string
+    StorageClassName string
 }
 
 // CSIStorageCapacityStatus contains the properties that can change over time.
 type CSIStorageCapacityStatus struct {
-	// AvailableCapacity is the value reported by the CSI driver in its GetCapacityResponse
-	// for a GetCapacityRequest with topology and parameters that match the
-	// CSIStorageCapacitySpec.
-	//
-	// The semantic is currently (CSI spec 1.2) defined as:
-	// The available capacity, in bytes, of the storage that can be used
-	// to provision volumes.
-	AvailableCapacity *resource.Quantity
+    // AvailableCapacity is the value reported by the CSI driver in its GetCapacityResponse
+    // for a GetCapacityRequest with topology and parameters that match the
+    // CSIStorageCapacitySpec.
+    //
+    // The semantic is currently (CSI spec 1.2) defined as:
+    // The available capacity, in bytes, of the storage that can be used
+    // to provision volumes.
+    AvailableCapacity *resource.Quantity
 }
 ```
 
@@ -515,7 +506,8 @@ size that the largest volume can have at the moment.
 
 #### Without central controller
 
-This mode of operation is expected to be used by CSI drivers that need
+[This mode of operation](https://github.com/kubernetes-csi/external-provisioner/blob/master/README.md#deployment-on-each-node), also called "distributed provisioning",
+is expected to be used by CSI drivers that need
 to track capacity per node and only support persistent volumes with
 delayed binding that get provisioned by an external-provisioner
 instance that runs on the node where the volume gets provisioned (see
@@ -585,23 +577,55 @@ instead. Obsolete objects need to be removed.
 
 To ensure that `CSIStorageCapacity` objects get removed when the driver
 deployment gets removed before it has a chance to clean up, each
-`CSIStorageCapacity` object needs an [owner
+`CSIStorageCapacity` object should have an [owner
 reference](https://godoc.org/k8s.io/apimachinery/pkg/apis/meta/v1#OwnerReference).
 
-For central provisioning, that has to be the Deployment or StatefulSet
-that defines the provisioner pods. That way, provisioning can
-continue seamlessly when there are multiple instances with leadership
-election.
+The owner should be the higher-level app object which defines the provisioner pods:
+- the Deployment or StatefulSet for central provisioning
+- the DaemonSet for distributed provisioning
 
-For deployment with a daemon set, making the individual pod the owner
-is better than the daemon set as owner because then other instances do
-not need to figure out when to remove `CSIStorageCapacity` objects
-created on another node. It is also better than the node as owner
-because a driver might no longer be needed on a node although the node
-continues to exist (for example, when deploying a driver to nodes is
-controlled via node labels).
+This way, provisioning and pod scheduling can continue seamlessly when
+there are multiple instances with leadership election or the driver
+gets upgraded.
 
-While external-provisioner runs, it needs to update and potentially
+This ownership reference is optional. It gets enabled with
+external-provisioner command line arguments when deploying the
+driver. It has to be optional because drivers that aren't deployed
+inside Kubernetes have nothing that can serve as owner. It's supported
+for those cases where it can be used because cluster administrators do
+not need to worry about manually deleting automatically created
+objects after uninstalling a CSI driver.
+
+Without it, administrators must manually delete
+`CSIStorageCapacity` objects after uninstalling a CSI driver. To
+simplify that and for efficient access to objects, external-provisioner
+sets some labels:
+- `csi.storage.k8s.io/drivername`: the CSI driver name
+- `csi.storage.k8s.io/managed-by`: `external-provisioner` for central provisioning,
+  `external-provisioner-<node name>` for distributed provisioning
+
+Using those labels, `kubectl delete csistoragecapacities -l
+csi.storage.k8s.io/drivername=my-csi.example.com` will delete just the
+objects of that driver.
+
+It is possible to create `CSIStorageCapacity` manually. This may become
+useful at some point to provide information which cannot be retrieved through
+a running CSI driver instance. external-provisioner must not delete those.
+In external-provisioner 2.0.0, this was achieved by checking the owner
+reference. Now that the owner reference is optional, it will get
+achieved by ignoring all objects that don't have the
+`csi.storage.k8s.io/managed-by` labels described above.
+
+If such objects are created manually, then it is the responsibility of
+the person creating them to ensure that the information does not
+conflict with objects that external-provisioner has created or will
+create, i.e. the topology and/or storage class must be
+different. kube-scheduler will schedule pods using whatever object if
+finds first without checking for consistency, because such consistency
+checks would affect performance. As explained below,
+external-provisioner cannot detect them either.
+
+While external-provisioner runs, it potentially needs to update or
 delete `CSIStorageCapacity` objects:
 - when nodes change (for central provisioning)
 - when storage classes change
@@ -609,9 +633,43 @@ delete `CSIStorageCapacity` objects:
 - when volumes are resized or snapshots are created or deleted (for persistent volumes)
 - periodically, to detect changes in the underlying backing store (all cases)
 
+In each of these cases, it needs to verify that all currently existing
+`CSIStorageCapacity` objects are still needed (i.e. match one of the
+current combinations of topology and parameters) and delete the
+obsolete ones. Missing objects need to be created. For existing ones,
+`GetCapacity` has to be called and if the result is different than
+before, the object needs to be updated.
+
 Because sidecars are currently separated, external-provisioner is
 unaware of resizing and snapshotting. The periodic polling will catch up
 with changes caused by those operations.
+
+For efficiency reasons, external-provisioner instances watch
+`CSIStorageCapacity` objects in their namespace and filter already in
+the apiserver by the `csi.storage.k8s.io/drivername` and
+`csi.storage.k8s.io/managed-by` labels. This is the reason why
+external-provisioner cannot detect when manually created objects
+conflict with the ones created automatically because it will never
+receive them.
+
+When using distributed provisioning, the effect is that objects become
+orphaned when the node that they were created for no longer has a
+running CSI driver or the node itself was removed: they are neither
+garbage collected because the DaemonSet still exists, nor do they get
+deleted by external-provisioner because all remaining
+external-provisioner instances ignore them.
+
+To solve this, external-provisioner can be deployed centrally with the
+purpose of cleaning up such orphaned objects. It does not need a
+running CSI driver for this, just the CSI driver name as a fixed
+parameter. It then watches `CSINode` objects and if the CSI driver has
+not been running on that node for a certain amount of time (again set
+via a parameter), it will remove all objects for that node. This
+approach is simpler than trying to determine whether the CSI driver
+should be running on a node and it also covers the case where a CSI
+driver for some reason fails to run on the node. By removing the
+`CSIStorageCapacity` objects for that node, kube-scheduler will stop
+choosing it for pods which have unbound volumes.
 
 ### Using capacity information
 
@@ -711,6 +769,11 @@ checks for events that describe the problem.
 - Gather feedback from developers and users
 - Evaluate and where necessary, address [drawbacks](#drawbacks)
 - Extra CSI API call for identifying storage topology, if needed
+- Revise ownership of `CSIStorageCapacity` objects:
+  - some drivers run outside the cluster and thus cannot own them
+  - with pods as owner of per-node objects, upgrading the driver
+    will cause all objects to be deleted and recreated by the
+    updated driver
 - Re-evaluate API choices, considering:
   - performance
   - extensions of the API that may or may not be needed (like
@@ -767,24 +830,40 @@ enhancement:
       - kube-scheduler
 
 * **Does enabling the feature change any default behavior?**
-  No changes for existing storage driver deployments.
+
+  Enabling it only in kube-scheduler and api-server and not any of the
+  running CSI drivers causes no changes. Everything continues as
+  before because no `CSIStorageCapacity` objects are created and
+  kube-scheduler does not wait for any.
+
+  That changes once the feature is enabled in a CSI driver. Then pod
+  scheduling becomes more likely to pick suitable nodes. This happens
+  automatically, without having to change application deployments.
 
 * **Can the feature be disabled once it has been enabled (i.e. can we rollback
   the enablement)?**
   Yes.
 
-  When disabling support in the API server, the new object type and
-  thus all objects will disappear together with the new flag in
-  `CSIDriver`, which will then cause kube-scheduler to revert to
-  provisioning without capacity information. However, the new objects
-  will still remain in the etcd database.
+  In Kubernetes 1.19 and 1.20, registration of the
+  `CSIStorageCapacity` type was controlled by the feature gate. In
+  1.21, the type will always be enabled in the v1beta1 API
+  group. Depending on the combination of Kubernetes release and
+  feature gate, the type will be disabled. However, any existing
+  objects will still remain in the etcd database, they just won't be
+  visible.
 
-  When disabling it in the scheduler, provisioning directly reverts
-  to the previous behavior.
+  When the type is disabled, external-provisioner will be unable to update
+  objects: this needs to be treated with exponential backoff just like other
+  communication issues with the API server.
 
-  External-provisioner will be unable to update objects: this needs to
-  be treated with exponential backoff just like other communication
-  issues with the API server.
+  The new flag in `CSIDriver` will be preserved when disabling the
+  feature gate in the apiserver. kube-scheduler
+  will continue to do scheduling with capacity information until it
+  gets rolled back to a version without support for that or the feature
+  is turned off for kube-scheduler.
+
+  The new flag is not preserved when rolling back to a release older
+  than 1.19 where the flag did not exist yet.
 
 * **What happens if we reenable the feature if it was previously rolled back?**
 
@@ -795,79 +874,211 @@ enhancement:
 * **Are there any tests for feature enablement/disablement?**
   The e2e framework does not currently support enabling and disabling feature
   gates. However, unit tests in each component dealing with managing data created
-  with and without the feature are necessary. At the very least, think about
-  conversion tests if API types are being modified.
+  with and without the feature are necessary and will be added before
+  before the transition to beta.
 
 ### Rollout, Upgrade and Rollback Planning
 
-Will be added before the transition to beta.
-
 * **How can a rollout fail? Can it impact already running workloads?**
+
+A rollout happens in at least two phases:
+1. Updating the cluster so that the `CSIStorageCapacity` API is enabled in the apiserver
+   and the kube-scheduler uses that information *for drivers which have opted into this*.
+2. CSI driver installations get updated such that they produce `CSIStorageCapacity` objects
+   and enable usage of those objects in their `CSIDriver` object.
+
+In the first phase, scheduling of pods should continue as before
+because no CSI driver has opted into the feature yet. If it doesn't
+continue, then the implementation is faulty and the feature needs to
+be disabled again until a fix is available. Then second phase gets
+skipped and the cluster operates as before.
+
+If the second phase fails because a driver malfunctions or overloads
+the apiserver, then it can be rolled back and scheduling again happens
+without using storage capacity information.
+
+In none of these cases are running workloads affected unless support
+for the new API is broken such that the apiserver is affected.
+Fundamental bugs may cause unexpected apiserver shutdowns or show up
+as 5xx error codes for operations involving `CSIStorageCapacity`
+objects.
 
 * **What specific metrics should inform a rollback?**
 
+One is an increased number of pods that are not getting scheduled with
+events that quote `node(s) did not have enough free storage` as reason
+when the cluster is not really running out of storage capacity.
+
+Another is a degradation in apiserver metrics (increased CPU or memory
+consumption, increased latency), specifically
+[`apiserver_request_duration_seconds`](https://github.com/kubernetes/kubernetes/blob/645c40fcf6f1fca133a00c8186674bcbcecc4b8e/staging/src/k8s.io/apiserver/pkg/endpoints/metrics/metrics.go#L98).
+
 * **Were upgrade and rollback tested? Was upgrade->downgrade->upgrade path tested?**
+
+Not yet, but will be done manually before transition to beta.
 
 * **Is the rollout accompanied by any deprecations and/or removals of features,
   APIs, fields of API types, flags, etc.?**
 
+No.
+
 ### Monitoring requirements
 
-Will be added before the transition to beta.
-
 * **How can an operator determine if the feature is in use by workloads?**
+
+The feature itself is not used by workloads. It is used when
+scheduling workloads onto nodes, but not while those run.
+
+That a CSI driver provides storage capacity information can seen in the
+following metric data that will be provided by external-provisioner instances:
+- total number of `CSIStorageCapacity` objects that the external-provisioner
+  is currently meant to manage for the driver
+- number of such objects that currently exist and can be kept because
+  they have a topology/storage class pair that is still valid
+- number of such objects that currently exist and need to be deleted
+  because they have an outdated topology/storage class pair
+- work queue length for creating, updating or deleting objects
+
+The CSI driver name will be used as label. When using distributed
+provisioning, the node name will be used as additional label.
+
+TODO: mention the exact metrics names once they are implemented.
 
 * **What are the SLIs (Service Level Indicators) an operator can use to
   determine the health of the service?**
 
+Pod status of the CSI driver deployment, existence of
+`CSIStorageCapacity` objects and metrics data for `GetCapacity` calls
+which are provided by the CSI sidecar as the
+`csi_sidecar_operations_seconds` histogram with labels
+`driver_name=<csi driver name>` and `method_name=GetCapacity`. This
+way, both duration and total count are available.
+
+Usually the `grpc_status_code` label will have `OK` as labels. Failed
+calls will be recorded with their non-OK status code as value.
+
 * **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
+
+The goal is to achieve the same provisioning rates with the feature
+enabled as those that currently can be achieved without it.
+
+This will need further discussion before going to GA.
 
 * **Are there any missing metrics that would be useful to have to improve
   observability if this feature?**
 
-### Dependencies
+No.
 
-Will be added before the transition to beta.
+### Dependencies
 
 * **Does this feature depend on any specific services running in the cluster?**
 
-### Scalability
+For core Kubernetes just the ones that will also run without it enabled (apiserver,
+kube-scheduler). Additional services are the CSI drivers.
 
-Will be added before the transition to beta.
+ * CSI driver
+   * Usage description:
+     * Impact of its outage on the feature: pods that use the CSI driver will not
+       be able to start
+     * Impact of its degraded performance or high-error rates on the
+       feature: When storage capacity information is not updated or
+       not updated often enough, then pods are either not getting
+       scheduled in cases where they could be scheduled (free capacity
+       not reported) or they get tentatively scheduled onto nodes
+       which do not have enough capacity (exhausted capacity not
+       reported). To recover from the first scenario, the driver eventually
+       needs to report capacity. To recover from the second scenario,
+       volume creation attempts will fail with "resource exhausted" and
+       other nodes have to be tried.
+
+### Scalability
 
 * **Will enabling / using this feature result in any new API calls?**
 
+Yes.
+
+Enabling it in apiserver and CSI drivers will cause
+`CSIStorageCapacity` objects to be created or updated. The
+number of those objects is proportional to the number of storage
+classes and number of distinct storage topology segments. For
+centralized provisioning, the number of segments is probably low. For
+distributed provisioning, the each node where the driver runs
+represents one segment, so the total number is total number of objects
+is equal to the product of "number of nodes" and "number of storage
+classes".
+
+The rate at which objects depends on how often topology and storage
+usage changes. It can estimated as:
+* creating objects for each new node and deleting them when removing a
+  node when using distributed provisioning
+* the same for adding or removing storage classes (both modes)
+* updates when volumes are created/resized/deleted (thus bounded by
+  some other API calls)
+* updates when capacity in the underlying storage system is changed
+  (usually by an administrator)
+
+Enabling it in kube-scheduler will cause it to cache all
+`CSIStorageCapacity` objects via an informer.
+
 * **Will enabling / using this feature result in introducing new API types?**
+
+Yes, `CSIStorageCapacity`.
 
 * **Will enabling / using this feature result in any new calls to cloud
   provider?**
 
+A CSI driver might have to query the storage backend more often to be
+kept informed about available storage capacity. This should only be
+necessary for drivers using central provisioning and is mitigated
+through rate limiting.
+
+Distributed provisioning is expected to be used for local storage in
+which case there is no cloud provider.
+
 * **Will enabling / using this feature result in increasing size or count
   of the existing API objects?**
+
+One new boolean field gets added to `CSIDriver`.
 
 * **Will enabling / using this feature result in increasing time taken by any
   operations covered by [existing SLIs/SLOs][]?**
 
+There is a SLI for [scheduling of pods without
+volumes](https://github.com/kubernetes/community/blob/master/sig-scalability/slos/pod_startup_latency.md)
+with a corresponding SLO. Those are not expected to be affected.
+
+A SLI for scheduling of pods with volumes is work in progress. The SLO
+for it will depend on the specific CSI driver.
+
 * **Will enabling / using this feature result in non-negligible increase of
   resource usage (CPU, RAM, disk, IO, ...) in any components?**
 
-### Troubleshooting
+Potentially in apiserver and kube-scheduler, but only if the feature
+is actually used. Enabling it should not change anything.
 
-Will be added before the transition to beta.
+### Troubleshooting
 
 * **How does this feature react if the API server and/or etcd is unavailable?**
 
+Pod scheduling stops (just as it does without the feature). Creation
+and updating of `CSIStorageCapacity` objects is paused and will resume
+when the API server becomes available again, with errors being logged
+with exponential backoff in the meantime.
+
 * **What are other known failure modes?**
+
+The API server might get overloaded by CSIStorageCapacity updates.
 
 * **What steps should be taken if SLOs are not being met to determine the problem?**
 
-[supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
-[existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
-
+If enabling the feature in a CSI driver deployment should overload the
+apiserver such that SLOs for the cluster are affected, then dashboards
+for the apiserver should show an unusual number of operations related
+to `CSIStorageCapacity` objects.
 
 ## Implementation History
 
-- Kubernetes 1.19: alpha (tentative)
+- Kubernetes 1.19: alpha
 
 
 ## Drawbacks
@@ -1017,36 +1228,36 @@ use cases, this approach has been rejected.
 type CSIDriver struct {
     ...
 
-	// Specification of the CSI Driver.
-	Spec CSIDriverSpec `json:"spec" protobuf:"bytes,2,opt,name=spec"`
+    // Specification of the CSI Driver.
+    Spec CSIDriverSpec `json:"spec" protobuf:"bytes,2,opt,name=spec"`
 
-	// Status of the CSI Driver.
-	// +optional
-	Status CSIDriverStatus `json:"status,omitempty" protobuf:"bytes,3,opt,name=status"`
+    // Status of the CSI Driver.
+    // +optional
+    Status CSIDriverStatus `json:"status,omitempty" protobuf:"bytes,3,opt,name=status"`
 }
 
 type CSIDriverSpec struct {
     ...
 
-	// CapacityTracking defines whether the driver deployment will provide
-	// capacity information as part of the driver status.
-	// +optional
-	CapacityTracking *bool `json:"capacityTracking,omitempty" protobuf:"bytes,4,opt,name=capacityTracking"`
+    // CapacityTracking defines whether the driver deployment will provide
+    // capacity information as part of the driver status.
+    // +optional
+    CapacityTracking *bool `json:"capacityTracking,omitempty" protobuf:"bytes,4,opt,name=capacityTracking"`
 }
 
 // CSIDriverStatus represents dynamic information about the driver and
 // the storage provided by it, like for example current capacity.
 type CSIDriverStatus struct {
-	// Each driver can provide access to different storage pools
-	// (= subsets of the overall storage with certain shared
-	// attributes).
-	//
-	// +patchMergeKey=name
-	// +patchStrategy=merge
-	// +listType=map
-	// +listMapKey=name
-	// +optional
-	Storage []CSIStoragePool `patchStrategy:"merge" patchMergeKey:"name" json:"storage,omitempty" protobuf:"bytes,1,opt,name=storage"`
+    // Each driver can provide access to different storage pools
+    // (= subsets of the overall storage with certain shared
+    // attributes).
+    //
+    // +patchMergeKey=name
+    // +patchStrategy=merge
+    // +listType=map
+    // +listMapKey=name
+    // +optional
+    Storage []CSIStoragePool `patchStrategy:"merge" patchMergeKey:"name" json:"storage,omitempty" protobuf:"bytes,1,opt,name=storage"`
 }
 
 // CSIStoragePool identifies one particular storage pool and
@@ -1057,54 +1268,54 @@ type CSIDriverStatus struct {
 // Nodes, but not both. If neither is set, the pool is assumed
 // to be available in the entire cluster.
 type CSIStoragePool struct {
-	// The name is some user-friendly identifier for this entry.
-	Name string `json:"name" protobuf:"bytes,1,name=name"`
+    // The name is some user-friendly identifier for this entry.
+    Name string `json:"name" protobuf:"bytes,1,name=name"`
 
-	// NodeTopology can be used to describe a storage pool that is available
-	// only for nodes matching certain criteria.
-	// +optional
-	NodeTopology *v1.NodeSelector `json:"nodeTopology,omitempty" protobuf:"bytes,2,opt,name=nodeTopology"`
+    // NodeTopology can be used to describe a storage pool that is available
+    // only for nodes matching certain criteria.
+    // +optional
+    NodeTopology *v1.NodeSelector `json:"nodeTopology,omitempty" protobuf:"bytes,2,opt,name=nodeTopology"`
 
-	// Nodes can be used to describe a storage pool that is available
-	// only for certain nodes in the cluster.
-	//
-	// +listType=set
-	// +optional
-	Nodes []string `json:"nodes,omitempty" protobuf:"bytes,3,opt,name=nodes"`
+    // Nodes can be used to describe a storage pool that is available
+    // only for certain nodes in the cluster.
+    //
+    // +listType=set
+    // +optional
+    Nodes []string `json:"nodes,omitempty" protobuf:"bytes,3,opt,name=nodes"`
 
-	// Some information, like the actual usable capacity, may
-	// depend on the storage class used for volumes.
-	//
-	// +patchMergeKey=storageClassName
-	// +patchStrategy=merge
-	// +listType=map
-	// +listMapKey=storageClassName
-	// +optional
-	Classes []CSIStorageByClass `patchStrategy:"merge" patchMergeKey:"storageClassName" json:"classes,omitempty" protobuf:"bytes,4,opt,name=classes"`
+    // Some information, like the actual usable capacity, may
+    // depend on the storage class used for volumes.
+    //
+    // +patchMergeKey=storageClassName
+    // +patchStrategy=merge
+    // +listType=map
+    // +listMapKey=storageClassName
+    // +optional
+    Classes []CSIStorageByClass `patchStrategy:"merge" patchMergeKey:"storageClassName" json:"classes,omitempty" protobuf:"bytes,4,opt,name=classes"`
 }
 
 // CSIStorageByClass contains information that applies to one storage
 // pool of a CSI driver when using a certain storage class.
 type CSIStorageByClass struct {
-	// The storage class name matches the name of some actual
-	// `StorageClass`, in which case the information applies when
-	// using that storage class for a volume. There is also one
-	// special name:
-	// - <ephemeral> for storage used by ephemeral inline volumes (which
-	//   don't use a storage class)
-	StorageClassName string `json:"storageClassName" protobuf:"bytes,1,name=storageClassName"`
+    // The storage class name matches the name of some actual
+    // `StorageClass`, in which case the information applies when
+    // using that storage class for a volume. There is also one
+    // special name:
+    // - <ephemeral> for storage used by ephemeral inline volumes (which
+    //   don't use a storage class)
+    StorageClassName string `json:"storageClassName" protobuf:"bytes,1,name=storageClassName"`
 
-	// Capacity is the size of the largest volume that currently can
-	// be created. This is a best-effort guess and even volumes
-	// of that size might not get created successfully.
-	// +optional
-	Capacity *resource.Quantity `json:"capacity,omitempty" protobuf:"bytes,2,opt,name=capacity"`
+    // Capacity is the size of the largest volume that currently can
+    // be created. This is a best-effort guess and even volumes
+    // of that size might not get created successfully.
+    // +optional
+    Capacity *resource.Quantity `json:"capacity,omitempty" protobuf:"bytes,2,opt,name=capacity"`
 }
 
 const (
-	// EphemeralStorageClassName is used for storage from which
-	// ephemeral volumes are allocated.
-	EphemeralStorageClassName = "<ephemeral>"
+    // EphemeralStorageClassName is used for storage from which
+    // ephemeral volumes are allocated.
+    EphemeralStorageClassName = "<ephemeral>"
 )
 ```
 
@@ -1238,27 +1449,27 @@ It was rejected during review because the API is more complex.
 // CSIStoragePool identifies one particular storage pool and
 // stores its attributes. The spec is read-only.
 type CSIStoragePool struct {
-	metav1.TypeMeta
-	// Standard object's metadata. The name has no particular meaning and just has to
-	// meet the usual requirements (length, characters, unique). To ensure that
-	// there are no conflicts with other CSI drivers on the cluster, the recommendation
-	// is to use sp-<uuid>.
-	//
-	// Objects are not namespaced.
-	//
-	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
-	// +optional
-	metav1.ObjectMeta
+    metav1.TypeMeta
+    // Standard object's metadata. The name has no particular meaning and just has to
+    // meet the usual requirements (length, characters, unique). To ensure that
+    // there are no conflicts with other CSI drivers on the cluster, the recommendation
+    // is to use sp-<uuid>.
+    //
+    // Objects are not namespaced.
+    //
+    // More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
+    // +optional
+    metav1.ObjectMeta
 
-	Spec   CSIStoragePoolSpec
-	Status CSIStoragePoolStatus
+    Spec   CSIStoragePoolSpec
+    Status CSIStoragePoolStatus
 }
 
 // CSIStoragePoolSpec contains the constant attributes of a CSIStoragePool.
 type CSIStoragePoolSpec struct {
-	// The CSI driver that provides access to the storage pool.
-	// This must be the string returned by the CSI GetPluginName() call.
-	DriverName string
+    // The CSI driver that provides access to the storage pool.
+    // This must be the string returned by the CSI GetPluginName() call.
+    DriverName string
 }
 
 // CSIStoragePoolStatus contains runtime information about a CSIStoragePool.
@@ -1272,37 +1483,37 @@ type CSIStoragePoolSpec struct {
 // the pool. Capacity may depend on the parameters in the storage class and
 // therefore is stored in a list of `CSIStorageByClass` instances.
 type CSIStoragePoolStatus struct {
-	// NodeTopology can be used to describe a storage pool that is available
-	// only for nodes matching certain criteria.
-	// +optional
-	NodeTopology *v1.NodeSelector
+    // NodeTopology can be used to describe a storage pool that is available
+    // only for nodes matching certain criteria.
+    // +optional
+    NodeTopology *v1.NodeSelector
 
-	// Some information, like the actual usable capacity, may
-	// depend on the storage class used for volumes.
-	//
-	// +patchMergeKey=storageClassName
-	// +patchStrategy=merge
-	// +listType=map
-	// +listMapKey=storageClassName
-	// +optional
-	Classes []CSIStorageByClass `patchStrategy:"merge" patchMergeKey:"storageClassName" json:"classes,omitempty" protobuf:"bytes,4,opt,name=classes"`
+    // Some information, like the actual usable capacity, may
+    // depend on the storage class used for volumes.
+    //
+    // +patchMergeKey=storageClassName
+    // +patchStrategy=merge
+    // +listType=map
+    // +listMapKey=storageClassName
+    // +optional
+    Classes []CSIStorageByClass `patchStrategy:"merge" patchMergeKey:"storageClassName" json:"classes,omitempty" protobuf:"bytes,4,opt,name=classes"`
 }
 
 // CSIStorageByClass contains information that applies to one storage
 // pool of a CSI driver when using a certain storage class.
 type CSIStorageByClass struct {
-	// The storage class name matches the name of some actual
-	// `StorageClass`, in which case the information applies when
-	// using that storage class for a volume.
-	StorageClassName string `json:"storageClassName" protobuf:"bytes,1,name=storageClassName"`
+    // The storage class name matches the name of some actual
+    // `StorageClass`, in which case the information applies when
+    // using that storage class for a volume.
+    StorageClassName string `json:"storageClassName" protobuf:"bytes,1,name=storageClassName"`
 
-	// Capacity is the value reported by the CSI driver in its GetCapacityResponse.
+    // Capacity is the value reported by the CSI driver in its GetCapacityResponse.
     // Depending on how the driver is implemented, this might be the total
     // size of the available storage which is only available when allocating
     // multiple smaller volumes ("total available capacity") or the
     // actual size that a volume may have ("maximum volume size").
-	// +optional
-	Capacity *resource.Quantity `json:"capacity,omitempty" protobuf:"bytes,2,opt,name=capacity"`
+    // +optional
+    Capacity *resource.Quantity `json:"capacity,omitempty" protobuf:"bytes,2,opt,name=capacity"`
 }
 ```
 
