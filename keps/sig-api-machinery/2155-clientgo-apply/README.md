@@ -247,8 +247,8 @@ appsv1apply.Deployment("ns", "nginx-deployment").
 See https://github.com/jpbetz/kubernetes/tree/apply-client-go-builders for a working
 implementation.
 
-The namespace and name will immutable once set on the constructor. The constructor
-will be generated according to the scope of the object-- cluster scoped objects will
+The namespace and name will be immutable once set on the constructor. The constructor
+will be generated according to the scope of the object - cluster scoped objects will
 not have a namespace argument.
 
 TypeMeta info (apiVersion and type) is autopopulated by the constructor.
