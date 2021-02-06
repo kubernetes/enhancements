@@ -142,6 +142,8 @@ type changes.
 * `loadBalancerClass` will be validated against label-style format.
 * the `loadBalancerClass` field will be feature gated. The field will be dropped during API strategy unless
 the feature gate is enabled.
+* all external implementations of Service LoadBalancer using a non-empty class name should use the finalizer `service.kubernetes.io/load-balancer-cleanup`
+to ensure proper garbage collection of external resources.
 
 Required updates to service controller:
 * if the class field is NOT set for a Service, allow the cloud provider to reconcile the load balancer.
