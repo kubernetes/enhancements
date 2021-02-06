@@ -132,12 +132,12 @@ type ServiceSpec struct {
 	// implementation is watching for Services with a matching class name. Any default load balancer
 	// implementation (e.g. cloud providers) should ignore Services that set this field.
 	// +optional
-	LoadBalancerClassName string `json:"loadBalancerClass,omitempty"`
+	LoadBalancerClass string `json:"loadBalancerClass,omitempty"`
 }
 ```
 
 * `loadBalancerClass` will be immutable only when the Service type is `LoadBalancer`, this way existing and future implementations
-do not have to worry about handling Services that change the class name. The class name is mutable and can be cleared when the
+do not have to worry about handling Services that change the class name. The class name is mutable and must be cleared when the
 type changes.
 * `loadBalancerClass` will be validated against label-style format.
 * the `loadBalancerClass` field will be feature gated. The field will be dropped during API strategy unless
