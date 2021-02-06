@@ -1,0 +1,41 @@
+title: Auto delete PVCs created by StatefulSet
+kep-number: 1847
+authors:  
+  - "@kk-src"
+  - "@dsu-igeek"
+  - "@mattcary"
+owning-sig: sig-apps
+participating-sigs:
+  - sig-storage
+status: implementable
+creation-date: 2020-06-04
+reviewers:
+  - "@kow3ns"  
+  - "@xing-yang"
+  - "@msau42"
+  - "@janetkuo"
+prr-approvers:
+  - "@wojtek-t"
+approvers:
+  - "@msau42"
+  - "@janetkuo"
+
+stage: alpha
+
+latest-milestone: "v1.21"
+
+milestone:
+  alpha: "v1.21"
+  beta: "v1.22"
+  stable: "v1.23"
+
+feature-gates:
+  - name: StatefulSetAutoDeletePVC
+    components:
+      - kube-controller-manager
+      - kube-apiserver
+disable-supported: true
+
+# The following PRR answers are required at beta release
+# metrics:
+# Currently no metrics is planned for alpha release.
