@@ -109,7 +109,7 @@ In Phase 4, two feature gates will be introduced to gradually disable and remove
 1. `DisableCloudProviders` - this feature gate will disable any functionality in kube-apiserver, kube-controller-manager and kubelet related to the `--cloud-provider` component flag.
 2. `DisableKubeletCloudCredentialProvider` - this feature gate will disable in-tree functionality in the kubelet to authenticate to the AWS, Azure and GCP container registries for image pull credentials.
 
-Both of these features gates does NOT include any functionality tied to the --cloud-provider flag, specifically in-tree volume plugins are not covered. Users should refer to CSI migration efforts for these.
+Both of these features gates only impacts functionality tied to the `--cloud-provider` flag, specifically in-tree volume plugins are not covered. Users should refer to CSI migration efforts for these.
 
 For alpha, the feature gates will be used for testing purposes. When enabled, tests will ensure that clusters with in-tree cloud providers disabled behaves as expected. This is targeted for v1.21 and will be
 disabled by default.
@@ -185,6 +185,154 @@ import (
   _ "k8s.io/legacy-cloud-providers/vsphere"
 )
 ```
+
+## Production Readiness Review Questionnaire
+
+### Feature Enablement and Rollback
+
+_This section must be completed when targeting alpha to a release._
+
+* **How can this feature be enabled / disabled in a live cluster?**
+  - [X] Feature gate (also fill in values in `kep.yaml`)
+    - Feature gate name: DisableCloudProviders
+    - Components depending on the feature gate: kubelet, kube-apiserver, kube-controller-manager
+  - [X] Feature gate (also fill in values in `kep.yaml`)
+    - Feature gate name: DisableKubeletCloudCredentialProvider
+    - Components depending on the feature gate: kubelet
+
+* **Does enabling the feature change any default behavior?**
+  Yes, enabling this feature will disable all capabilities enabled when `--cloud-provider` is set in core components.
+  Users need to ensure they have migrated to out-of-tree components prior to enabling this feature gate.
+  If appropriate extensions (CCM, credential provider, apiserver-network-proxy, etc) are in use, cloud provider capabilities
+  should remain the same at the very least.
+
+* **Can the feature be disabled once it has been enabled (i.e. can we roll back
+  the enablement)?**
+  Yes, the feature can be disabled once it is enabled. If disabled, users must ensure
+  that the CCM is no longer running in the cluster. Credential provider plugins and the
+  apiserver network proxy do not have to be stopped on rollback.
+
+* **What happens if we reenable the feature if it was previously rolled back?**
+
+  All capabilities from in-tree cloud providers will be re-disabled.
+
+* **Are there any tests for feature enablement/disablement?**
+  Adequate unit tests, component integration test and e2e tests will be added for this feature before
+  it is goes beta and on by default.
+
+### Rollout, Upgrade and Rollback Planning
+
+_This section must be completed when targeting beta graduation to a release._
+
+* **How can a rollout fail? Can it impact already running workloads?**
+
+  TBD for beta.
+
+* **What specific metrics should inform a rollback?**
+
+   TBD for beta.
+
+* **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
+
+  TBD for beta.
+
+* **Is the rollout accompanied by any deprecations and/or removals of features, APIs,
+fields of API types, flags, etc.?**
+
+  TBD for beta.
+
+### Monitoring Requirements
+
+_This section must be completed when targeting beta graduation to a release._
+
+* **How can an operator determine if the feature is in use by workloads?**
+
+  TBD for beta.
+
+* **What are the SLIs (Service Level Indicators) an operator can use to determine
+the health of the service?**
+
+  TBD for beta.
+
+* **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
+
+  TBD for beta.
+
+* **Are there any missing metrics that would be useful to have to improve observability
+of this feature?**
+
+  TBD for beta.
+
+### Dependencies
+
+_This section must be completed when targeting beta graduation to a release._
+
+* **Does this feature depend on any specific services running in the cluster?**
+
+  TBD for beta.
+
+
+### Scalability
+
+_For alpha, this section is encouraged: reviewers should consider these questions
+and attempt to answer them._
+
+_For beta, this section is required: reviewers must answer these questions._
+
+_For GA, this section is required: approvers should be able to confirm the
+previous answers based on experience in the field._
+
+* **Will enabling / using this feature result in any new API calls?**
+
+  No, if anything it will result in reduced API calls in core components.
+
+* **Will enabling / using this feature result in introducing new API types?**
+
+  No.
+
+* **Will enabling / using this feature result in any new calls to the cloud
+provider?**
+
+  No, it will actually remove calls to the cloud provider in all core components.
+
+* **Will enabling / using this feature result in increasing size or count of
+the existing API objects?**
+
+  No.
+
+* **Will enabling / using this feature result in increasing time taken by any
+operations covered by [existing SLIs/SLOs]?**
+
+  No.
+
+* **Will enabling / using this feature result in non-negligible increase of
+resource usage (CPU, RAM, disk, IO, ...) in any components?**
+
+  No. In fact, it should reduce resource usage.
+
+### Troubleshooting
+
+The Troubleshooting section currently serves the `Playbook` role. We may consider
+splitting it into a dedicated `Playbook` document (potentially with some monitoring
+details). For now, we leave it here.
+
+_This section must be completed when targeting beta graduation to a release._
+
+* **How does this feature react if the API server and/or etcd is unavailable?**
+
+TBD for beta.
+
+* **What are other known failure modes?**
+
+TBD for beta.
+
+* **What steps should be taken if SLOs are not being met to determine the problem?**
+
+TBD for beta.
+
+[supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
+[existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
+
 
 ## Alternatives
 
