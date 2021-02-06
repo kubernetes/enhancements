@@ -3,6 +3,7 @@ kep-number: 752
 authors:
   - "@freehan"
   - "@robscott"
+  - "@swetharepakula"
 owning-sig: sig-network
 reviewers:
   - "@bowei"
@@ -15,10 +16,10 @@ approvers:
 prr-approvers:
   - "@wojtek-t"
 creation-date: 2019-06-01
-last-updated: 2020-09-29
+last-updated: 2021-01-28
 status: implementable
 # The target maturity stage in the current dev cycle for this KEP.
-stage: beta
+stage: stable
 
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively

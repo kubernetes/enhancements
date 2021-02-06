@@ -13,6 +13,8 @@
   - [Mapping](#mapping)
   - [Endpoint Port](#endpoint-port)
   - [Topology (Per Endpoint)](#topology-per-endpoint)
+  - [Converting Topology in EndpointSlice GA](#converting-topology-in-endpointslice-ga)
+  - [Zone (Per Endpoint)](#zone-per-endpoint)
   - [EndpointSlice Naming](#endpointslice-naming)
 - [Estimation](#estimation)
 - [Sample Case 1: 20,000 endpoints, 5,000 nodes](#sample-case-1-20000-endpoints-5000-nodes)
@@ -209,21 +211,20 @@ type Endpoint struct {
     // endpoint.
     // +optional
     TargetRef *v1.ObjectReference `json:"targetRef,omitempty" protobuf:"bytes,4,opt,name=targetRef"`
-    // topology contains arbitrary topology information associated with the
-    // endpoint. These key/value pairs must conform with the label format.
-    // https://kubernetes.io/docs/concepts/overview/working-with-objects/labels
-    // Topology may include a maximum of 16 key/value pairs. For endpoints
-    // backed by Kubernetes Pods, This may include, but is not limited to the
-    // following well known keys:
-    // * kubernetes.io/hostname: the value indicates the hostname of the node
-    //   where the endpoint is located. This should match the corresponding
-    //   node label.
-    // * topology.kubernetes.io/zone: the value indicates the zone where the
-    //   endpoint is located. This should match the corresponding node label.
-    // * topology.kubernetes.io/region: the value indicates the region where the
-    //   endpoint is located. This should match the corresponding node label.
+
+    // topology was a beta feature for Endpoint to store arbitrary topology
+    // information. The values of this field are persisted as an anotation on
+    // on the EndpointSlice starting in v1.
+    // +k8s:deprecated=topology,protobuf=5
+
+    // nodeName represents the name of the Node hosting this endpoint. This can
+    // be used to determine endpoints local to a Node. This field can be enabled
+    // with the EndpointSliceNodeName feature gate.
     // +optional
-    Topology map[string]string `json:"topology,omitempty" protobuf:"bytes,5,opt,name=topology"`
+    NodeName *string `json:"nodeName,omitempty" protobuf:"bytes,6,opt,name=nodeName"`
+    // zone is the name of the Zone this endpoint exists in.
+    // +optional
+    Zone *string `json:"zone,omitempty" protobuf:"bytes,7,opt,name=zone"`
 }
 
 // EndpointConditions represents the current condition of an endpoint.
@@ -290,6 +291,10 @@ core/v1 Endpoints API is required. This allows the API to support services with
 no port remapping or all port services.
 
 ### Topology (Per Endpoint)
+**DEPRECATED** in v1.20 and will be removed in v1.21.
+This field will remain in v1beta1 and a conversion functionality will exist to
+convert to and from v1.
+
 A new topology field (string to string map) is added to each endpoint. It can
 contain arbitrary topology information associated with the endpoint. If the
 EndpointSlice instance is derived from K8s service, the topology may contain
@@ -303,6 +308,46 @@ following well known key:
 
 If the Kubernetes Service has topological keys specified, the corresponding node
 labels will be copied to endpoint topology.
+
+### Converting Topology in EndpointSlice GA
+
+For beta resources that have set the topology field, the string to string map
+will be converted into an annotation on the v1 resource with the key
+**endpointslice.kubernetes.io/v1beta1-topology**. The annotation encoding will
+allow the topology information to be roundtripped between v1beta1 and v1
+resources.
+
+The size limits of the topology field is 63B per key and per value, with a
+maximum of 126B per key-value pair. The maximum number of endpoints in an
+EndpointSlice is 1000.
+
+```
+{Max Key-Value Pairs} * ({Max Key Size} + {Max Value Size}) * {Max Endpoints}
+16 * (63 + 63) * 1000 = 2,016,000b
+```
+
+The maximum value of the combined maps in the endpoints is almost a factor of
+10 greater than the max annotation size (256kB). This is a worst case scenario,
+which is unlikely as the recommendation and default is 100 endpoints. In
+situations where the size is over the annotation limit, keys will be dropped from
+the topology maps starting with the non-standard ones. All of the endpoint
+topology maps will be encoded in an annotation and can be decoded back into the
+individual topology maps as needed. As there is no uniqueness guarantee on any
+of the endpoint fields, the index of the endpoint will be used when generating
+the annotation. Therefore any insertions, removals, and reordering of
+endpoints while using v1 clients will require the annotation to be
+regenerated.
+
+The only key in the topology field that will not be preserved in the annotation
+will be **topology.kubernetes.io/zone** and instead its value will be converted
+into the [zone field](#zone-per-endpoint) on the Endpoint.
+
+### Zone (Per Endpoint)
+A new `zone` field (string) is added to each endpoint that will indicate the
+zone where the endpoint is located. For resources before `v1` where the
+topology field is populated, if **topology.kubernetes.io/zone** exists, the
+value of that key will be converted to this new `zone` field. When converting
+back to a beta resource, the value will be added back to the endpoint's map.
 
 ### EndpointSlice Naming
 Use `generateName` with the Service name as prefix:
@@ -643,8 +688,9 @@ The following will need to be covered as part of the testing plan:
 Default**
 * The EndpointSlice API will graduate to v1.
 * The topology field will be removed.
+* A new Zone field will be added to provide per endpoint topology information.
 * `EndpointSliceNodeName` feature gate will graduate to beta.
-* `EndpointSliceProxying` feature gate will graduate to beta on Windows:
+* `WindowsEndpointSliceProxying` feature gate will graduate to beta on Windows:
   * Kube-Proxy on Windows will use EndpointSlices by default.
 * A new `endpoints.kubernetes.io/over-capacity` label will be set to "warning"
   on Endpoints resources exceeding 1000 endpoints.
