@@ -99,9 +99,26 @@ The kube-controller-manager will still import the cloud provider implementations
 
 #### Phase 3 - Migrating Provider Code to Provider Repos
 
-In Phase 3, all code in `k8s.io/kubernetes/staging/src/k8s.io/legacy-cloud-providers/<provider>` will be removed and development of each cloud provider should be done in their respective external repos. It's important that by this phase, both in-tree and out-of-tree cloud providers are tested and production ready. Ideally most Kubernetes clusters in production should be using the out-of-tree provider before in-tree support is removed. A plan to migrate existing clusters from using the `kube-controller-manager` to the `cloud-controller-manager` is currently being developed. More details soon.
+In Phase 3, feature development is no longer accepted in `k8s.io/kubernetes/staging/src/k8s.io/legacy-cloud-providers/<provider>` and development of each cloud provider should be done in their respective external repos. Only bug and security fixes are accepted in-tree during this phase. It's important that by this phase, both in-tree and out-of-tree cloud providers are tested and production ready. Ideally most Kubernetes clusters in production should be using the out-of-tree provider before in-tree support is removed. A plan to migrate existing clusters from using the `kube-controller-manager` to the `cloud-controller-manager` is currently being developed. More details soon.
 
 External cloud providers can optionally still import providers from `k8s.io/legacy-cloud-providers` but no core components in `k8s.io/kubernetes` will import the legacy provider and the respective staging directory will be removed along with all its dependencies.
+
+#### Phase 4 - Disabling In-Tree Providers
+
+In Phase 4, two feature gates will be introduced to gradually disable and remove in-tree cloud providers:
+1. `DisableCloudProviders` - this feature gate will disable any functionality in kube-apiserver, kube-controller-manager and kubelet related to the `--cloud-provider` component flag.
+2. `DisableKubeletCloudCredentialProvider` - this feature gate will disable in-tree functionality in the kubelet to authenticate to the AWS, Azure and GCP container registries for image pull credentials.
+
+Both of these features gates does NOT include any functionality tied to the --cloud-provider flag, specifically in-tree volume plugins are not covered. Users should refer to CSI migration efforts for these.
+
+For alpha, the feature gates will be used for testing purposes. When enabled, tests will ensure that clusters with in-tree cloud providers disabled behaves as expected. This is targeted for v1.21 and will be
+disabled by default.
+
+For beta, the feature gates will be on by default, meaning core components will disallow use of in-tree cloud providers. This will act as a warning for users to migrate to external components. Users may
+choose to continue using the in-tree provider by explicitly disabling the feature gates. Beta is targeted for v1.23 or v1.24.
+
+For GA, the feature gate will be enabled by default and locked. Users at this point MUST migrate to external components and use of the in-tree cloud providers will be disallowed. One release after GA,
+the in-tree cloud providers can be safely removed. GA is targeted for v1.25 or v1.26.
 
 ### Staging Directory
 
