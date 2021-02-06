@@ -16,6 +16,13 @@
   - [Graduation Criteria](#graduation-criteria)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
+- [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
+  - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
+  - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+  - [Monitoring Requirements](#monitoring-requirements)
+  - [Dependencies](#dependencies)
+  - [Scalability](#scalability)
+  - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
@@ -29,12 +36,12 @@
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
-- [ ] (R) Graduation criteria is in place
-- [ ] (R) Production readiness review completed
+- [X] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [X] (R) KEP approvers have approved the KEP status as `implementable`
+- [X] (R) Design details are appropriately documented
+- [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [X] (R) Graduation criteria is in place
+- [X] (R) Production readiness review completed
 - [ ] Production readiness review approved
 - [ ] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
@@ -136,9 +143,9 @@ type ServiceSpec struct {
 }
 ```
 
-* `loadBalancerClass` will be immutable only when the Service type is `LoadBalancer`, this way existing and future implementations
-do not have to worry about handling Services that change the class name. The class name is mutable and must be cleared when the
-type changes.
+* `loadBalancerClass` will be immutable when the Service type is `LoadBalancer`, this way existing and future implementations
+do not have to worry about handling Services that change the class name. The class name is mutable only when the type is not LoadBalancer and
+must be cleared when the type changes.
 * `loadBalancerClass` will be validated against label-style format.
 * the `loadBalancerClass` field will be feature gated. The field will be dropped during API strategy unless
 the feature gate is enabled.
@@ -147,7 +154,7 @@ to ensure proper garbage collection of external resources.
 
 Required updates to service controller:
 * if the class field is NOT set for a Service, allow the cloud provider to reconcile the load balancer.
-* if the class annotation IS set for a Service, skip reconciliation of the Service from the cloud provider.
+* if the class field IS set for a Service, skip reconciliation of the Service from the cloud provider.
 
 ### Test Plan
 
@@ -158,7 +165,7 @@ or an existing Service has the field set.
 * test API validation for immutability.
 
 Integration tests:
-* test that the class field is propoerly cleared/validated when the Service type changes to and from `LoadBalancer`.
+* test that the class field is properly cleared/validated when the Service type changes to and from `LoadBalancer`.
 
 E2E tests:
 * test that creating a Service with an unknown class name results in no load balancer being created for a Service.
@@ -182,6 +189,165 @@ has the field set already. This ensures apiserver can handle the new field on do
 
 Since this feature will be alpha for at least 1 release, an n-1 kube-controller-manager or cloud-controller-manager should
 handle enablement of this feature if a new apiserver enabled it.
+
+## Production Readiness Review Questionnaire
+
+### Feature Enablement and Rollback
+
+_This section must be completed when targeting alpha to a release._
+
+* **How can this feature be enabled / disabled in a live cluster?**
+  - [X] Feature gate (also fill in values in `kep.yaml`)
+    - Feature gate name: ServiceLoadBalancerClass
+    - Components depending on the feature gate: kube-apiserver, kube-controller-manager
+  - [ ] Other
+    - Describe the mechanism:
+    - Will enabling / disabling the feature require downtime of the control
+      plane?
+    - Will enabling / disabling the feature require downtime or reprovisioning
+      of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
+
+* **Does enabling the feature change any default behavior?**
+  No, the default service controller in Kubernetes will continue to watch and implement
+  any Services with an empty class name. Behavior is only changed when the class name is set.
+
+* **Can the feature be disabled once it has been enabled (i.e. can we roll back
+  the enablement)?**
+  Yes, the feature can be disabled, but any existing Services using the new field will
+  continue to have the field set. External controllers watching a specific class name
+  will continue to watch and reconcile those Services.
+
+* **What happens if we reenable the feature if it was previously rolled back?**
+  New Services can continue to use the field. Existing Services with the field always had
+  the field set so no behavior is changed when the feature is re-enabled.
+
+
+* **Are there any tests for feature enablement/disablement?**
+  Yes, there will be unit tests in Service strategy, validation and defaulting to ensure
+  the field cannot be used when the feature is disabled.
+
+### Rollout, Upgrade and Rollback Planning
+
+_This section must be completed when targeting beta graduation to a release._
+
+* **How can a rollout fail? Can it impact already running workloads?**
+
+   TBD for beta
+
+* **What specific metrics should inform a rollback?**
+
+   TBD for beta
+
+* **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
+
+   TBD for beta
+
+* **Is the rollout accompanied by any deprecations and/or removals of features, APIs,
+fields of API types, flags, etc.?**
+
+   TBD for beta
+
+### Monitoring Requirements
+
+_This section must be completed when targeting beta graduation to a release._
+
+* **How can an operator determine if the feature is in use by workloads?**
+
+  TBD for beta
+
+* **What are the SLIs (Service Level Indicators) an operator can use to determine
+the health of the service?**
+
+  TBD for beta
+
+  - [ ] Metrics
+    - Metric name:
+    - [Optional] Aggregation method:
+    - Components exposing the metric:
+  - [ ] Other (treat as last resort)
+    - Details:
+
+* **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
+
+   TBD for beta
+
+* **Are there any missing metrics that would be useful to have to improve observability
+of this feature?**
+
+   TBD for beta
+
+### Dependencies
+
+_This section must be completed when targeting beta graduation to a release._
+
+* **Does this feature depend on any specific services running in the cluster?**
+
+  TBD for beta
+
+
+### Scalability
+
+_For alpha, this section is encouraged: reviewers should consider these questions
+and attempt to answer them._
+
+_For beta, this section is required: reviewers must answer these questions._
+
+_For GA, this section is required: approvers should be able to confirm the
+previous answers based on experience in the field._
+
+* **Will enabling / using this feature result in any new API calls?**
+
+  Introduction of this feature enables multiple implementations of Service LoadBalancer
+  for a single cluster. New API calls will be introduced by new controllers operating against
+  Services with a non-empty class name. This feature does not introduce new API calls from
+  core Kubernetes components.
+
+* **Will enabling / using this feature result in introducing new API types?**
+
+  No
+
+* **Will enabling / using this feature result in any new calls to the cloud
+provider?**
+
+  Yes, introduction of new load balancer "classes" can introduce new calls to the cloud provider.
+
+* **Will enabling / using this feature result in increasing size or count of
+the existing API objects?**
+
+  Yes, Service will (negligibly) increase with the addition of 1 new field.
+
+* **Will enabling / using this feature result in increasing time taken by any
+operations covered by [existing SLIs/SLOs]?**
+
+  No
+
+* **Will enabling / using this feature result in non-negligible increase of
+resource usage (CPU, RAM, disk, IO, ...) in any components?**
+
+  This change should not impact any core Kubernetes components.
+
+### Troubleshooting
+
+The Troubleshooting section currently serves the `Playbook` role. We may consider
+splitting it into a dedicated `Playbook` document (potentially with some monitoring
+details). For now, we leave it here.
+
+_This section must be completed when targeting beta graduation to a release._
+
+* **How does this feature react if the API server and/or etcd is unavailable?**
+
+TBD for beta.
+
+* **What are other known failure modes?**
+
+TBD for beta.
+
+* **What steps should be taken if SLOs are not being met to determine the problem?**
+
+TBD for beta.
+
+[supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
+[existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 
 ## Implementation History
 
