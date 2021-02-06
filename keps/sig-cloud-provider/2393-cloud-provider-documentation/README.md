@@ -1,28 +1,3 @@
----
-title: Cloud Provider Documentation
-authors:
-  - "@d-nishi"
-  - "@hogepodge"
-  - "@andrewsykim"
-owning-sig: sig-cloud-provider
-participating-sigs:
-  - sig-docs
-  - sig-cluster-lifecycle
-reviewers:
-  - "@andrewsykim"
-  - "@calebamiles"
-  - "@hogepodge"
-  - "@jagosan"
-approvers:
-  - "@andrewsykim"
-  - "@hogepodge"
-  - "@jagosan"
-editor: TBD
-creation-date: 2018-07-31
-last-updated: 2019-02-12
-status: implementable
----
-
 ## Documentation Requirements for Kubernetes Cloud Providers
 
 ### Table of Contents

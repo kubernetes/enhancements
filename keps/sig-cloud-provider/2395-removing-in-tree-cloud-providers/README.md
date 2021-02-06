@@ -1,31 +1,3 @@
----
-title: Removing In-Tree Cloud Providers
-authors:
-  - "@andrewsykim"
-  - "@cheftako"
-owning-sig: sig-cloud-provider
-participating-sigs:
-  - sig-apps
-  - sig-api-machinery
-  - sig-network
-  - sig-storage
-reviewers:
-  - "@andrewsykim"
-  - "@cheftako"
-  - "@d-nishi"
-  - "@dims"
-  - "@hogepodge"
-  - "@mcrute"
-  - "@steward-yu"
-approvers:
-  - "@thockin"
-  - "@liggit"
-editor: TBD
-creation-date: 2018-12-18
-last-updated: 2019-04-11
-status: implementable
----
-
 # Removing In-Tree Cloud Provider Code
 
 ## Table of Contents

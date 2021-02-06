@@ -1,21 +1,3 @@
----
-title: Reporting Conformance Test Results to Testgrid
-authors:
-  - "@andrewsykim"
-owning-sig: sig-cloud-provider
-participating-sigs:
-  - sig-testing
-  - sig-release
-reviewers:
-  - TBD
-approvers:
-  - TBD
-editor: TBD
-creation-date: 2018-06-06
-last-updated: 2018-11-16
-status: implementable
----
-
 # Reporting Conformance Test Results to Testgrid
 
 ## Table of Contents

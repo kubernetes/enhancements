@@ -1,28 +1,3 @@
----
-title: Cloud Controller Manager
-authors:
-  - "@cheftako"
-  - "@calebamiles"
-  - "@hogepodge"
-owning-sig: sig-api-machinery
-participating-sigs:
-  - sig-cloud-provider
-  - sig-storage
-reviewers:
-  - "@andrewsykim"
-  - "@calebamiles"
-  - "@hogepodge"
-  - "@jagosan"
-approvers:
-  - "@thockin"
-editor: TBD
-creation-date: 2018-01-09
-last-updated: 2019-04-10
-status: provisional
-replaces:
-  - contributors/design-proposals/cloud-provider/cloud-provider-refactoring.md
----
-
 # Cloud Controller Manager
 
 ## Table of Contents
