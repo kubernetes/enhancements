@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/blang/semver/v4"
 	"github.com/pkg/errors"
@@ -71,6 +72,11 @@ func ValidatePRR(kep *api.Proposal, h *api.PRRHandler, prrDir string) error {
 	}
 
 	stagePRRApprover := prr.ApproverForStage(kep.Stage)
+
+	if strings.HasPrefix(stagePRRApprover, "@") {
+		stagePRRApprover = strings.TrimPrefix(stagePRRApprover, "@")
+	}
+
 	validApprover := api.IsOneOf(stagePRRApprover, h.PRRApprovers)
 	if !validApprover {
 		return errors.New(
