@@ -17,6 +17,7 @@ approvers:
   - "@msau42"
 prr-approvers:
   - "@wojtek-t"
+stage: beta
 see-also:
   - "https://docs.google.com/document/d/1WtX2lRJjZ03RBdzQIZY3IOvmoYiF5JxDX35-SsCIAfg"
 latest-milestone: "v1.21"
