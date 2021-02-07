@@ -70,18 +70,7 @@ func ValidatePRR(kep *api.Proposal, h *api.PRRHandler, prrDir string) error {
 		return errors.Wrapf(prr.Error, "%v has an error", prrFilepath)
 	}
 
-	// TODO: Check for edge cases
-	var stageMilestone string
-	switch kep.Stage {
-	case "alpha":
-		stageMilestone = kep.Milestone.Alpha
-	case "beta":
-		stageMilestone = kep.Milestone.Beta
-	case "stable":
-		stageMilestone = kep.Milestone.Stable
-	}
-
-	stagePRRApprover := prr.ApproverForStage(stageMilestone)
+	stagePRRApprover := prr.ApproverForStage(kep.Stage)
 	validApprover := api.IsOneOf(stagePRRApprover, h.PRRApprovers)
 	if !validApprover {
 		return errors.New(
@@ -97,7 +86,7 @@ func ValidatePRR(kep *api.Proposal, h *api.PRRHandler, prrDir string) error {
 }
 
 func isPRRRequired(kep *api.Proposal) (required, missingMilestone bool, err error) {
-	logrus.Infof("checking if PRR is required")
+	logrus.Debug("checking if PRR is required")
 
 	required = true
 	missingMilestone = kep.IsMissingMilestone()
