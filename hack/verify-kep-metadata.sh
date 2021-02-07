@@ -23,4 +23,4 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 cd "${ROOT}"
 
 # run the tests
-GO111MODULE=on go test ./test/metadata_test.go
+GO111MODULE=on go test -v ./test/metadata_test.go
