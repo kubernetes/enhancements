@@ -87,6 +87,14 @@ func (p *Proposal) IsMissingMilestone() bool {
 	return false
 }
 
+func (p *Proposal) IsMissingStage() bool {
+	if p.Stage == "" {
+		return true
+	}
+
+	return false
+}
+
 type KEPHandler Parser
 
 // TODO(api): Make this a generic parser for all `Document` types

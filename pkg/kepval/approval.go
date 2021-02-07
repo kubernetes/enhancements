@@ -30,7 +30,7 @@ import (
 )
 
 func ValidatePRR(kep *api.Proposal, h *api.PRRHandler, prrDir string) error {
-	requiredPRRApproval, _, err := isPRRRequired(kep)
+	requiredPRRApproval, _, _, err := isPRRRequired(kep)
 	if err != nil {
 		return errors.Wrap(err, "checking if PRR is required")
 	}
@@ -91,39 +91,49 @@ func ValidatePRR(kep *api.Proposal, h *api.PRRHandler, prrDir string) error {
 	return nil
 }
 
-func isPRRRequired(kep *api.Proposal) (required, missingMilestone bool, err error) {
+func isPRRRequired(kep *api.Proposal) (required, missingMilestone, missingStage bool, err error) {
 	logrus.Debug("checking if PRR is required")
 
 	required = true
 	missingMilestone = kep.IsMissingMilestone()
+	missingStage = kep.IsMissingStage()
 
 	if kep.Status != "implementable" {
 		required = false
-		return required, missingMilestone, nil
+		return required, missingMilestone, missingStage, nil
 	}
 
 	if missingMilestone {
 		required = false
+		// TODO: Make this a specialized error
 		logrus.Warnf("KEP %s is missing the latest milestone field. This will become a validation error in future releases.", kep.Number)
 
-		return required, missingMilestone, nil
+		return required, missingMilestone, missingStage, nil
+	}
+
+	if missingStage {
+		required = false
+		// TODO: Make this a specialized error
+		logrus.Warnf("KEP %s is missing the stage field. This will become a validation error in future releases.", kep.Number)
+
+		return required, missingMilestone, missingStage, nil
 	}
 
 	// TODO: Consider making this a function
 	prrRequiredAtSemVer, err := semver.ParseTolerant("v1.21")
 	if err != nil {
-		return required, missingMilestone, errors.Wrap(err, "creating a SemVer object for PRRs")
+		return required, missingMilestone, missingStage, errors.Wrap(err, "creating a SemVer object for PRRs")
 	}
 
 	latestSemVer, err := semver.ParseTolerant(kep.LatestMilestone)
 	if err != nil {
-		return required, missingMilestone, errors.Wrap(err, "creating a SemVer object for latest milestone")
+		return required, missingMilestone, missingStage, errors.Wrap(err, "creating a SemVer object for latest milestone")
 	}
 
 	if latestSemVer.LT(prrRequiredAtSemVer) {
 		required = false
-		return required, missingMilestone, nil
+		return required, missingMilestone, missingStage, nil
 	}
 
-	return required, missingMilestone, nil
+	return required, missingMilestone, missingStage, nil
 }
