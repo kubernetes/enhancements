@@ -37,9 +37,9 @@ func TestValidation(t *testing.T) {
 	rootDir := filepath.Dir(wd)
 	kepsDir := filepath.Join(rootDir, kepsDir)
 
-	warnings, valErrs, err := kepval.ValidateRepository(kepsDir)
+	warnings, valErrMap, err := kepval.ValidateRepository(kepsDir)
 	require.Nil(t, err)
-	require.Len(t, valErrs, 0)
+	require.Len(t, valErrMap, 0)
 
 	t.Logf(
 		"KEP validation succeeded, but the following warnings occurred: %v",
