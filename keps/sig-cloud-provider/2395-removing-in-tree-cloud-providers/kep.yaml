@@ -20,7 +20,29 @@ reviewers:
 approvers:
   - "@thockin"
   - "@liggit"
+prr-approvers:
+  - "@wojtek-t"
 editor: TBD
 creation-date: 2018-12-18
 last-updated: 2019-04-11
 status: implementable
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.21"
+
+stage: alpha
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+  - name: DisableCloudProviders
+    components:
+      - kubelet
+      - kube-apiserver
+      - kube-controller-manager
+  - name: DisableKubeletCloudCredentialProviders
+    components:
+      - kubelet
+disable-supported: true
