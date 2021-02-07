@@ -17,6 +17,8 @@ limitations under the License.
 package test
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -25,10 +27,16 @@ import (
 )
 
 const (
-	kepsDir = "../keps"
+	kepsDir = "keps"
 )
 
 func TestValidation(t *testing.T) {
+	wd, err := os.Getwd()
+	require.Nil(t, err)
+
+	rootDir := filepath.Dir(wd)
+	kepsDir := filepath.Join(rootDir, kepsDir)
+
 	warnings, valErrs, err := kepval.ValidateRepository(kepsDir)
 	require.Nil(t, err)
 	require.Len(t, valErrs, 0)

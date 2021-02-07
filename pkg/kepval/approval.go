@@ -40,18 +40,22 @@ func ValidatePRR(kep *api.Proposal, h *api.PRRHandler, prrDir string) error {
 	}
 
 	prrFilename := kep.Number + ".yaml"
-	prrFilename = filepath.Join(prrsDir, kep.OwningSIG, prrFilename)
+	prrFilepath := filepath.Join(
+		prrDir,
+		kep.OwningSIG,
+		prrFilename,
+	)
 
-	logrus.Infof("PRR file: %s", prrFilename)
+	logrus.Infof("PRR file: %s", prrFilepath)
 
-	prrFile, err := os.Open(prrFilename)
+	prrFile, err := os.Open(prrFilepath)
 	if os.IsNotExist(err) {
 		// TODO: Is this actually the error we want to return here?
-		return err //needsPRRApproval(stageMilestone, kep.Stage, prrFilename)
+		return err //needsPRRApproval(stageMilestone, kep.Stage, prrFilepath)
 	}
 
 	if err != nil {
-		return errors.Wrapf(err, "could not open file %s", prrFilename)
+		return errors.Wrapf(err, "could not open file %s", prrFilepath)
 	}
 
 	// TODO: Create a context to hold the parsers
@@ -63,7 +67,7 @@ func ValidatePRR(kep *api.Proposal, h *api.PRRHandler, prrDir string) error {
 	// TODO: This shouldn't be required once we push the errors into the
 	//       parser struct
 	if prr.Error != nil {
-		return errors.Wrapf(prr.Error, "%v has an error", prrFilename)
+		return errors.Wrapf(prr.Error, "%v has an error", prrFilepath)
 	}
 
 	// TODO: Check for edge cases

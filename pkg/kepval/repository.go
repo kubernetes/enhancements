@@ -29,26 +29,20 @@ import (
 )
 
 const (
-	prrsDir     = "keps/prod-readiness"
-	kepMetadata = "kep.yaml"
+	// TODO: Make this configurable and set in a client instead
+	DefaultPRRDir = "prod-readiness"
+	kepMetadata   = "kep.yaml"
 )
 
 var files = []string{}
 
 // This is the actual validation check of all KEPs in this repo
-func ValidateRepository(kepsDir string) ([]string, []error, error) {
+func ValidateRepository(kepDir string) ([]string, []error, error) {
 	var warnings []string
 	var valErrors []error
 
-	currentDir, err := os.Getwd()
-	if err != nil {
-		return warnings, valErrors, err
-	}
-
-	kepsDir = filepath.Join(currentDir, kepsDir)
-
 	// Find all the KEPs
-	err = filepath.Walk(kepsDir, walkFn)
+	err := filepath.Walk(kepDir, walkFn)
 
 	// This indicates a problem walking the filepath, not a validation error.
 	if err != nil {
@@ -65,7 +59,8 @@ func ValidateRepository(kepsDir string) ([]string, []error, error) {
 		return warnings, valErrors, errors.Wrap(err, "creating PRR handler")
 	}
 
-	prrsDir := filepath.Join(kepsDir, prrsDir)
+	prrDir := filepath.Join(kepDir, DefaultPRRDir)
+	logrus.Infof("PRR directory: %s", prrDir)
 
 	for _, filename := range files {
 		kepFile, err := os.Open(filename)
@@ -87,7 +82,7 @@ func ValidateRepository(kepsDir string) ([]string, []error, error) {
 			return warnings, valErrors, errors.Wrapf(kep.Error, "%v has an error", filename)
 		}
 
-		err = ValidatePRR(kep, prrHandler, prrsDir)
+		err = ValidatePRR(kep, prrHandler, prrDir)
 		if err != nil {
 			valErrors = append(valErrors, err)
 		}
