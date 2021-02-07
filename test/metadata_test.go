@@ -35,9 +35,18 @@ func TestValidation(t *testing.T) {
 	require.Nil(t, err)
 
 	rootDir := filepath.Dir(wd)
-	kepsDir := filepath.Join(rootDir, kepsDir)
+	kepDir := filepath.Join(rootDir, kepsDir)
+	prrDir := filepath.Join(kepDir, kepval.DefaultPRRDir)
 
-	warnings, valErrMap, err := kepval.ValidateRepository(kepsDir)
+	repo := kepval.NewRepoClient()
+	repo.SetOptions(
+		repo.WithKEPDir(kepDir),
+		repo.WithPRRDir(prrDir),
+	)
+
+	//require.NotNil(t, repo.)
+
+	warnings, valErrMap, err := repo.Validate()
 	require.Nil(t, err)
 	require.Len(t, valErrMap, 0)
 

@@ -60,7 +60,11 @@ type RepoClient struct {
 }
 
 func NewRepoClient() *RepoClient {
-	return &RepoClient{}
+	rc := &RepoClient{}
+	rc.WithKEPHandler()
+	rc.WithPRRHandler()
+
+	return rc
 }
 
 func (rc *RepoClient) SetOptions(opts ...OptFn) {
@@ -87,7 +91,7 @@ func (rc *RepoClient) WithKEPHandler() OptFn {
 	return func(Repo) error {
 		handler, err := api.NewKEPHandler()
 		if err != nil {
-			return err
+			return errors.Wrap(err, "creating KEP handler")
 		}
 
 		rc.kepHandler = handler
@@ -99,7 +103,7 @@ func (rc *RepoClient) WithPRRHandler() OptFn {
 	return func(Repo) error {
 		handler, err := api.NewPRRHandler()
 		if err != nil {
-			return err
+			return errors.Wrap(err, "creating PRR handler")
 		}
 
 		rc.prrHandler = handler
@@ -107,12 +111,27 @@ func (rc *RepoClient) WithPRRHandler() OptFn {
 	}
 }
 
-func (rc *RepoClient) Validate() ([]string, map[string][]error, error) { return nil, nil, nil }
-
 // This is the actual validation check of all KEPs in this repo
-func ValidateRepository(kepDir string) ([]string, map[string][]error, error) {
+func (rc *RepoClient) Validate() ([]string, map[string][]error, error) {
 	warnings := []string{}
 	valErrMap := make(map[string][]error)
+
+	kepDir := rc.kepDir
+	if kepDir == "" {
+		return warnings, valErrMap, errors.New("KEP directory must be set")
+	}
+
+	logrus.Infof("KEP directory: %s", kepDir)
+
+	prrDir := rc.prrDir
+	if prrDir == "" {
+		return warnings, valErrMap, errors.New("PRR directory must be set")
+	}
+
+	logrus.Infof("PRR directory: %s", prrDir)
+
+	kepHandler := rc.kepHandler
+	prrHandler := rc.prrHandler
 
 	// Find all the KEPs
 	err := filepath.Walk(kepDir, walkFn)
@@ -123,17 +142,8 @@ func ValidateRepository(kepDir string) ([]string, map[string][]error, error) {
 	}
 
 	if len(files) == 0 {
-		return warnings, valErrMap, errors.New("must find more than zero keps")
+		return warnings, valErrMap, errors.New("must find more than zero KEPs")
 	}
-
-	kepHandler := &api.KEPHandler{}
-	prrHandler, err := api.NewPRRHandler()
-	if err != nil {
-		return warnings, valErrMap, errors.Wrap(err, "creating PRR handler")
-	}
-
-	prrDir := filepath.Join(kepDir, DefaultPRRDir)
-	logrus.Infof("PRR directory: %s", prrDir)
 
 	for _, filename := range files {
 		kepFile, err := os.Open(filename)
