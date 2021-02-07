@@ -1,0 +1,25 @@
+title: Remove knowledge of pod cluster CIDR from iptables rules
+kep-number: 2450
+authors:
+  - "@satyasm"
+owning-sig: sig-network
+participating-sigs:
+reviewers:
+  - "@thockin"
+  - "@caseydavenport"
+  - "@mikespreitzer"
+  - "@aojea"
+  - "@fasaxc"
+  - "@squeed"
+  - "@bowei"
+  - "@dcbw"
+  - "@darwinship"
+approvers:
+  - "@thockin"
+editor: TBD
+creation-date: 2019-11-04
+last-updated: 2019-11-27
+status: implemented
+see-also:
+replaces:
+superseded-by:

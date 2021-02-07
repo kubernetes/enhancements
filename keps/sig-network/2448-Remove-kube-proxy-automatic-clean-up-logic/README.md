@@ -1,23 +1,3 @@
----
-title: Remove kube-proxy's automatic clean up logic
-authors:
-  - "@vllry"
-owning-sig: sig-network
-participating-sigs:
-reviewers:
-  - "@andrewsykim"
-approvers:
-  - "@bowei"
-  - "@thockin"
-editor: TBD
-creation-date: 2018-03-24
-last-updated: 2018-04-02
-status: implementable
-see-also:
-replaces:
-superseded-by:
----
-
 # Remove kube-proxy's automatic clean up logic
 
 ## Table of Contents

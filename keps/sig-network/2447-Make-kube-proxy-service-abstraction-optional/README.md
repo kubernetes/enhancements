@@ -1,22 +1,3 @@
----
-title: Make kube-proxy service abstraction optional
-authors:
-  - "@bradhoekstra"
-owning-sig: sig-network
-participating-sigs:
-reviewers:
-  - "@freehan"
-approvers:
-  - "@thockin"
-editor: "@bradhoekstra"
-creation-date: 2018-10-17
-last-updated: 2018-11-12
-status: provisional
-see-also:
-replaces:
-superseded-by:
----
-
 # Make kube-proxy service abstraction optional
 
 ## Table of Contents
