@@ -28,6 +28,8 @@ import (
 	"k8s.io/enhancements/api"
 )
 
+//go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 -generate
+
 const (
 	// TODO: Make this configurable and set in a client instead
 	DefaultPRRDir = "prod-readiness"
@@ -35,6 +37,77 @@ const (
 )
 
 var files = []string{}
+
+//counterfeiter:generate . Repo
+type Repo interface {
+	// Configure options
+	SetOptions(opts ...OptFn)
+
+	// Validation operations
+	Validate() ([]string, map[string][]error, error)
+}
+
+type OptFn func(Repo) error
+
+type RepoClient struct {
+	// Paths
+	kepDir string
+	prrDir string
+
+	// Parsers
+	kepHandler *api.KEPHandler
+	prrHandler *api.PRRHandler
+}
+
+func NewRepoClient() *RepoClient {
+	return &RepoClient{}
+}
+
+func (rc *RepoClient) SetOptions(opts ...OptFn) {
+	for _, f := range opts {
+		f(rc)
+	}
+}
+
+func (rc *RepoClient) WithKEPDir(dir string) OptFn {
+	return func(Repo) error {
+		rc.kepDir = dir
+		return nil
+	}
+}
+
+func (rc *RepoClient) WithPRRDir(dir string) OptFn {
+	return func(Repo) error {
+		rc.prrDir = dir
+		return nil
+	}
+}
+
+func (rc *RepoClient) WithKEPHandler() OptFn {
+	return func(Repo) error {
+		handler, err := api.NewKEPHandler()
+		if err != nil {
+			return err
+		}
+
+		rc.kepHandler = handler
+		return nil
+	}
+}
+
+func (rc *RepoClient) WithPRRHandler() OptFn {
+	return func(Repo) error {
+		handler, err := api.NewPRRHandler()
+		if err != nil {
+			return err
+		}
+
+		rc.prrHandler = handler
+		return nil
+	}
+}
+
+func (rc *RepoClient) Validate() ([]string, map[string][]error, error) { return nil, nil, nil }
 
 // This is the actual validation check of all KEPs in this repo
 func ValidateRepository(kepDir string) ([]string, map[string][]error, error) {
