@@ -127,7 +127,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Graduation criteria is in place
 - [x] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
+- [x] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
@@ -550,6 +550,9 @@ Major milestones might include:
 - the version of Kubernetes where the KEP graduated to general availability
 - when the KEP was retired or superseded
 -->
+
+- 2020-02-04 - Initial KEP draft / provisional [#2421](https://github.com/kubernetes/enhancements/pull/2421)
+- 2020-02-08 - KEP implementable [#2469](https://github.com/kubernetes/enhancements/pull/2469)
 
 ## Drawbacks
 
