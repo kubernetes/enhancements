@@ -646,7 +646,7 @@ you need any help or guidance.
 _This section must be completed when targeting alpha to a release._
 
 * **How can this feature be enabled / disabled in a live cluster?**
-  - [ ] Feature gate (also fill in values in `kep.yaml`)
+  - [X] Feature gate (also fill in values in `kep.yaml`)
     - Feature gate name: `GracefulNodeShutdown`
     - Components depending on the feature gate:
       - `kubelet`
@@ -696,16 +696,25 @@ _This section must be completed when targeting beta graduation to a release._
   Try to be as paranoid as possible - e.g., what if some components will restart
    mid-rollout?
 
+This feature should not impact rollouts.
+
 * **What specific metrics should inform a rollback?**
+
+N/A.
 
 * **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
   Describe manual testing that was done and the outcomes.
   Longer term, we may want to require automated upgrade/rollback tests, but we
   are missing a bunch of machinery and tooling and can't do that now.
 
+The feature is part of kubelet config so updating kubelet config should
+enable/disable the feature; upgrade/downgrade is N/A.
+
 * **Is the rollout accompanied by any deprecations and/or removals of features, APIs,
 fields of API types, flags, etc.?**
   Even if applying deprecation policies, they may still surprise some users.
+
+No.
 
 ### Monitoring Requirements
 
@@ -716,6 +725,8 @@ _This section must be completed when targeting beta graduation to a release._
   checking if there are objects with field X set) may be a last resort. Avoid
   logs or events for this purpose.
 
+Check if the feature gate and kubelet config settings are enabled on a node.
+
 * **What are the SLIs (Service Level Indicators) an operator can use to determine
 the health of the service?**
   - [ ] Metrics
@@ -724,6 +735,8 @@ the health of the service?**
     - Components exposing the metric:
   - [ ] Other (treat as last resort)
     - Details:
+
+N/A
 
 * **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
   At a high level, this usually will be in the form of "high percentile of SLI
@@ -734,10 +747,14 @@ the health of the service?**
     job creation time) for cron job <= 10%
   - 99,9% of /health requests per day finish with 200 code
 
+N/A.
+
 * **Are there any missing metrics that would be useful to have to improve observability
 of this feature?**
   Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
   implementation difficulties, etc.).
+
+N/A.
 
 ### Dependencies
 
@@ -757,6 +774,8 @@ _This section must be completed when targeting beta graduation to a release._
       - Impact of its outage on the feature:
       - Impact of its degraded performance or high-error rates on the feature:
 
+No, this feature doesn't depend on any specific services running the cluster.
+It only depends on systemd running on the node itself.
 
 ### Scalability
 
@@ -780,14 +799,20 @@ previous answers based on experience in the field._
   - periodic API calls to reconcile state (e.g. periodic fetching state,
     heartbeats, leader election, etc.)
 
+No.
+
 * **Will enabling / using this feature result in introducing new API types?**
   Describe them, providing:
   - API type
   - Supported number of objects per cluster
   - Supported number of objects per namespace (for namespace-scoped objects)
 
+No.
+
 * **Will enabling / using this feature result in any new calls to the cloud
 provider?**
+
+No.
 
 * **Will enabling / using this feature result in increasing size or count of
 the existing API objects?**
@@ -796,10 +821,14 @@ the existing API objects?**
   - Estimated increase in size: (e.g., new annotation of size 32B)
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 
+No.
+
 * **Will enabling / using this feature result in increasing time taken by any
 operations covered by [existing SLIs/SLOs]?**
   Think about adding additional work or introducing new steps in between
   (e.g. need to do X to start a container), etc. Please describe the details.
+
+No.
 
 * **Will enabling / using this feature result in non-negligible increase of
 resource usage (CPU, RAM, disk, IO, ...) in any components?**
@@ -808,6 +837,8 @@ resource usage (CPU, RAM, disk, IO, ...) in any components?**
   volume), significant amount of data sent and/or received over network, etc.
   This through this both in small and large cases, again with respect to the
   [supported limits].
+
+No.
 
 ### Troubleshooting
 
@@ -818,6 +849,8 @@ details). For now, we leave it here.
 _This section must be completed when targeting beta graduation to a release._
 
 * **How does this feature react if the API server and/or etcd is unavailable?**
+
+The feature does not depend on the API server / etcd.
 
 * **What are other known failure modes?**
   For each of them, fill in the following information by copying the below template:
@@ -835,6 +868,8 @@ _This section must be completed when targeting beta graduation to a release._
 
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
+
+N/A.
 
 ## Implementation History
 
