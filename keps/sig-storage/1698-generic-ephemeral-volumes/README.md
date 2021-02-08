@@ -232,11 +232,21 @@ directly. Cluster administrators must be made aware of this. If this
 does not fit their security model, they can disable the feature
 through the feature gate that will be added for the feature.
 
-In addition, with a new
+In addition, with a new `ephemeral` value for
 [`FSType`](https://github.com/kubernetes/kubernetes/blob/1fb0dd4ec5134014e466509163152112626d52c3/pkg/apis/policy/types.go#L278-L309)
 it will be possible to limit the usage of this volume source via the
 [PodSecurityPolicy
 (PSP)](https://kubernetes.io/docs/concepts/policy/pod-security-policy/#volumes-and-file-systems).
+If a PSP exists, `FSType` either has to include `all` or `ephemeral`
+for this feature to be allowed. If no PSP exists, the feature is
+allowed.
+
+Adding that new value is an API change for PSP because it changes
+validation. When the feature is disabled, validation must tolerate
+this new value in updates of existing PSP objects that already contain
+the value, but must not allow it when creating a new PSP or updating a
+PSP that does not already contain the value. When the feature is
+enabled, validation must allow this value on any create or update.
 
 The normal namespace quota for PVCs in a namespace still applies, so
 even if users are allowed to use this new mechanism, they cannot use
