@@ -1,63 +1,3 @@
-<!--
-**Note:** When your KEP is complete, all of these comment blocks should be removed.
-
-To get started with this template:
-
-- [ ] **Pick a hosting SIG.**
-  Make sure that the problem space is something the SIG is interested in taking
-  up.  KEPs should not be checked in without a sponsoring SIG.
-- [ ] **Create an issue in kubernetes/enhancements**
-  When filing an enhancement tracking issue, please ensure to complete all
-  fields in that template.  One of the fields asks for a link to the KEP.  You
-  can leave that blank until this KEP is filed, and then go back to the
-  enhancement and add the link.
-- [ ] **Make a copy of this template directory.**
-  Copy this template into the owning SIG's directory and name it
-  `NNNN-short-descriptive-title`, where `NNNN` is the issue number (with no
-  leading-zero padding) assigned to your enhancement above.
-- [ ] **Fill out as much of the kep.yaml file as you can.**
-  At minimum, you should fill in the "title", "authors", "owning-sig",
-  "status", and date-related fields.
-- [ ] **Fill out this file as best you can.**
-  At minimum, you should fill in the "Summary", and "Motivation" sections.
-  These should be easy if you've preflighted the idea of the KEP with the
-  appropriate SIG(s).
-- [ ] **Create a PR for this KEP.**
-  Assign it to people in the SIG that are sponsoring this process.
-- [ ] **Merge early and iterate.**
-  Avoid getting hung up on specific details and instead aim to get the goals of
-  the KEP clarified and merged quickly.  The best way to do this is to just
-  start with the high-level sections and fill out details incrementally in
-  subsequent PRs.
-
-Just because a KEP is merged does not mean it is complete or approved.  Any KEP
-marked as a `provisional` is a working document and subject to change.  You can
-denote sections that are under active debate as follows:
-
-```
-<<[UNRESOLVED optional short context or usernames ]>>
-Stuff that is being argued.
-<<[/UNRESOLVED]>>
-```
-
-When editing KEPS, aim for tightly-scoped, single-topic PRs to keep discussions
-focused.  If you disagree with what is already in a document, open a new PR
-with suggested changes.
-
-One KEP corresponds to one "feature" or "enhancement", for its whole lifecycle.
-You do not need a new KEP to move from beta to GA, for example.  If there are
-new details that belong in the KEP, edit the KEP.  Once a feature has become
-"implemented", major changes should get new KEPs.
-
-The canonical place for the latest set of instructions (and the likely source
-of this file) is [here](/keps/NNNN-kep-template/README.md).
-
-**Note:** Any PRs to move a KEP to `implementable` or significant changes once
-it is marked `implementable` must be approved by each of the KEP approvers.
-If any of those approvers is no longer appropriate than changes to that list
-should be approved by the remaining approvers and/or the owning SIG (or
-SIG Architecture for cross cutting KEPs).
--->
 # KEP-1698: generic ephemeral inline volumes
 
 <!-- toc -->
@@ -103,28 +43,14 @@ SIG Architecture for cross cutting KEPs).
 
 ## Release Signoff Checklist
 
-<!--
-**ACTION REQUIRED:** In order to merge code into a release, there must be an
-issue in [kubernetes/enhancements] referencing this KEP and targeting a release
-milestone **before the [Enhancement Freeze](https://git.k8s.io/sig-release/releases)
-of the targeted release**.
-
-For enhancements that make changes to code or processes/procedures in core
-Kubernetes i.e., [kubernetes/kubernetes], we require the following Release
-Signoff checklist to be completed.
-
-Check these off as they are completed for the Release Team to track. These
-checklist items _must_ be updated for the enhancement to be released.
--->
-
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
 - [X] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [X] (R) KEP approvers have approved the KEP status as `implementable`
+- [X] (R) Design details are appropriately documented
+- [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
 - [X] (R) Graduation criteria is in place
-- [ ] (R) Production readiness review completed
+- [X] (R) Production readiness review completed
 - [ ] Production readiness review approved
 - [ ] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
@@ -306,11 +232,21 @@ directly. Cluster administrators must be made aware of this. If this
 does not fit their security model, they can disable the feature
 through the feature gate that will be added for the feature.
 
-In addition, with a new
+In addition, with a new `ephemeral` value for
 [`FSType`](https://github.com/kubernetes/kubernetes/blob/1fb0dd4ec5134014e466509163152112626d52c3/pkg/apis/policy/types.go#L278-L309)
 it will be possible to limit the usage of this volume source via the
 [PodSecurityPolicy
 (PSP)](https://kubernetes.io/docs/concepts/policy/pod-security-policy/#volumes-and-file-systems).
+If a PSP exists, `FSType` either has to include `all` or `ephemeral`
+for this feature to be allowed. If no PSP exists, the feature is
+allowed.
+
+Adding that new value is an API change for PSP because it changes
+validation. When the feature is disabled, validation must tolerate
+this new value in updates of existing PSP objects that already contain
+the value, but must not allow it when creating a new PSP or updating a
+PSP that does not already contain the value. When the feature is
+enabled, validation must allow this value on any create or update.
 
 The normal namespace quota for PVCs in a namespace still applies, so
 even if users are allowed to use this new mechanism, they cannot use
@@ -445,10 +381,12 @@ automatically enable late binding for PVCs which are owned by a pod.
 - Gather feedback from developers and surveys
 - Errors emitted as pod events
 - Decide whether `CSIVolumeSource` (in beta at the moment) should be
-  merged with `EphemeralVolumeSource`
+  merged with `EphemeralVolumeSource`: no, instead the goal is
+  to [rename `CSIVolumeSource`](https://github.com/kubernetes/enhancements/issues/596#issuecomment-726185967)
 - Decide whether in-tree ephemeral volume sources, like EmptyDir (GA
   already), should also be added EphemeralVolumeSource for sake of API
-  consistency
+  consistency: [no](https://docs.google.com/document/d/1yAe3SPPosgC_QgmnY7oJTmZYWrqLrii1oA4de67DEcw/edit),
+  this just causes API churn without tangible benefits
 - Tests are in Testgrid and linked in KEP
 
 #### Beta -> GA Graduation
@@ -497,77 +435,173 @@ version will prevent pods from starting.
   Pods that got stuck will work again.
 
 * **Are there any tests for feature enablement/disablement?**
-  Yes, unit tests for the apiserver and kubelet.
+
+  Yes, unit tests for the apiserver, kube-controller-manager and kubelet cover scenarios
+  where the feature is disabled or enabled. Tests for transitions
+  between these states will be added before beta.
 
 ### Rollout, Upgrade and Rollback Planning
 
-Will be added before the transition to beta.
-
 * **How can a rollout fail? Can it impact already running workloads?**
+
+A rollout could fail because the implementation turns out to be
+faulty. Such bugs may cause unexpected shutdowns of kube-scheduler,
+kube-apiserver, kube-controller-manager and kubelet. For the API
+server, broken support for the new volume type may also show up as 5xx
+error codes for any object that embeds a `VolumeSource` (Pod,
+StatefulSet, DaemonSet, etc.).
+
+Already running workloads should not be affected unless they depend on
+these components at runtime and bugs cause unexpected shutdowns.
 
 * **What specific metrics should inform a rollback?**
 
+One indicator are unexpected restarts of the cluster control plane
+components. Another are an increase in the number of pods that fail to
+start. In both cases further analysis of logs and pod events is needed
+to determine whether errors are related to this feature.
+
 * **Were upgrade and rollback tested? Was upgrade->downgrade->upgrade path tested?**
+
+Not yet, but will be done manually before transition to beta.
 
 * **Is the rollout accompanied by any deprecations and/or removals of features,
   APIs, fields of API types, flags, etc.?**
 
+No.
+
 ### Monitoring requirements
 
-Will be added before the transition to beta.
-
 * **How can an operator determine if the feature is in use by workloads?**
+
+There will be pods which have a non-nil
+`VolumeSource.Ephemeral.VolumeClaimTemplate`.
+
 
 * **What are the SLIs (Service Level Indicators) an operator can use to
   determine the health of the service?**
 
+The service here is the Kubernetes control plane. Overall health and
+performance can be observed by measuring the the pod creation rate for
+pods using generic ephemeral inline volumes. Such [a
+SLI](https://github.com/kubernetes/community/blob/master/sig-scalability/slos/pod_startup_latency.md)
+is defined for pods without volumes and work in progress for pods with
+volumes.
+
+For kube-controller-manager, a metric that exposes the usual work
+queue metrics data (like queue length) will be made available.
+Furthermore, a count of PVC creation attempts will be added, labeled
+with the result (successful vs. error code). A non-zero count of attempts
+with "already exists" will indicate that there were conflicts with
+manually created PVCs.
+
+TODO: list metrics names here and in kep.yaml
+
 * **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
 
+The goal is to achieve the same pod creation rate for pods using
+generic ephemeral inline volumes as for pods that use PVCs which get
+created separately. To make this comparable, the storage class should
+use late binding.
+
+This will need further discussion before going to GA.
+
 * **Are there any missing metrics that would be useful to have to improve
-  observability if this feature?**
+  observability of this feature?**
+
+No.
 
 ### Dependencies
 
-Will be added before the transition to beta.
-
 * **Does this feature depend on any specific services running in the cluster?**
+
+A dynamic provisioner from some kind of storage system is needed:
+
+ * Volume provisioner
+   * Usage description:
+     * Impact of its outage on the feature: pods that use generic inline volumes
+       provided by the storage system will not be able to start
+     * Impact of its degraded performance or high-error rates on the
+       feature: slower pod startup
 
 ### Scalability
 
-Will be added before the transition to beta.
-
 * **Will enabling / using this feature result in any new API calls?**
 
+Enabling will not change anything.
+
+Using the feature in a pod will lead to one PVC creation per inline
+volume, followed by garbage collection of those PVCs when the pod
+terminates.
+
 * **Will enabling / using this feature result in introducing new API types?**
+
+No.
 
 * **Will enabling / using this feature result in any new calls to cloud
   provider?**
 
+Enabling the feature doesn't. Using it will cause new calls to cloud
+providers, but the amount is exactly the same as without this feature:
+for each per-pod volume, a PVC has to be created (either manually or
+using this feature) and a volume needs to be provisioned in a storage
+backend. When a pod terminates, that volume needs to be deleted again.
+
 * **Will enabling / using this feature result in increasing size or count
   of the existing API objects?**
+
+Enabling it will not change existing objects. Using it in a pod spec
+will increase the size by one `PersistentVolumeClaimTemplate` per
+inline volume and cause one PVC to be created for each inline volume.
 
 * **Will enabling / using this feature result in increasing time taken by any
   operations covered by [existing SLIs/SLOs][]?**
 
+There is a SLI for [scheduling of pods without
+volumes](https://github.com/kubernetes/community/blob/master/sig-scalability/slos/pod_startup_latency.md)
+with a corresponding SLO. Those are not expected to be affected.
+
+A SLI for scheduling of pods with volumes is work in progress. The SLO
+for it will depend on the specific storage driver.
+
 * **Will enabling / using this feature result in non-negligible increase of
   resource usage (CPU, RAM, disk, IO, ...) in any components?**
 
-### Troubleshooting
+Potentially in kube-scheduler and kube-controller-manager, but mostly only if
+the feature is actually used. Merely enabling it will cause the new controller
+in kube-controller-manager to check new pods for the new volume type, which
+should be fast. In kube-scheduler the feature adds an additional case to
+switch statements that check for persistent volume sources.
 
-Will be added before the transition to beta.
+### Troubleshooting
 
 * **How does this feature react if the API server and/or etcd is unavailable?**
 
+Pods will not start and volumes for them will not get provisioned.
+
 * **What are other known failure modes?**
+
+As [explained
+above](#preventing-accidental-collision-with-existing-pvcs), the PVC
+that needs to be created for a pod may conflict with an already
+existing PVC that was created independently of the pod. In such a
+case, the pod will not be able to start until that independent PVC is
+deleted. This scenario will be exposed as events for the pod by
+kube-controller-manager.
+
+If the storage system fails to provision volumes, then this will be
+exposed as events for the PVC and (depending on the storage system)
+may also show up in metrics data.
 
 * **What steps should be taken if SLOs are not being met to determine the problem?**
 
-[supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
-[existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
+SLOs only exist for pods which don't use the new feature. If those are
+somehow affected, then error messages in the kube-scheduler and kube-controller-manager
+output may provide additional information.
 
 ## Implementation History
 
-- Kubernetes 1.19: alpha (tentative)
+- Kubernetes 1.19: alpha
 
 ## Drawbacks
 

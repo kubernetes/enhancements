@@ -11,10 +11,14 @@ reviewers:
   - "@jsafrane"
 approvers:
   - "@saad-ali"
-stage: alpha
-latest-milestone: "v1.19"
+prr-approvers:
+  - "@wojtek-t"
+stage: beta
+latest-milestone: "v1.21"
 milestone:
   alpha: "v1.19"
+  beta: "v1.21"
+  stable: "v1.23"
 feature-gates:
   - name: GenericEphemeralVolumes
     components:
