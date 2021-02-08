@@ -365,9 +365,8 @@ _This section must be completed when targeting alpha to a release._
   None.
 
 * **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
-  Describe manual testing that was done and the outcomes.
-  Longer term, we may want to require automated upgrade/rollback tests, but we
-  are missing a bunch of machinery and tooling and can't do that now.
+  Yes, we are testing the upgrade and rollback paths on the prototype implementation
+  as we go, and will manually test the finished version.
 
 * **Is the rollout accompanied by any deprecations and/or removals of features, APIs, 
 fields of API types, flags, etc.?**
@@ -382,6 +381,11 @@ _This section must be completed when targeting beta graduation to a release._
   a Kind other than snapshot and PVC indicate this feature is in use. Also the
   existence of any VolumePopulator.populator.storage.k8s.io CRs would indicate
   that a populator is installed and could be used.
+
+  As the controller itself is out of tree, the administrator or distro must
+  install it (similar to the volume snapshot controller) and we will use the
+  same mechanisms as the volume snapshot controller for installation and
+  health monitoring.
 
 * **What are the SLIs (Service Level Indicators) an operator can use to determine 
 the health of the service?**
@@ -436,7 +440,12 @@ the existing API objects?**
 
 * **Will enabling / using this feature result in increasing time taken by any 
 operations covered by [existing SLIs/SLOs]?**
-  No.
+  No. PVC creation already takes an unbounded amount of time. It is valid to
+  create a PVC with a data source that does not yet exist, and to create that
+  data source later. This feature maintains that status quo ante, and in all
+  cases, ensures that some controller is responsible for generating feedback
+  on the progress of the PVC creation so users can understand why operations
+  are not yet finished.
 
 * **Will enabling / using this feature result in non-negligible increase of 
 resource usage (CPU, RAM, disk, IO, ...) in any components?**
