@@ -373,28 +373,25 @@ Klog interface was selected as it is already supported by klog.v2 with `SetLogge
 
 Introduce structured logging and JSON format:
 * Most important logs are migrated to structured methods.
-* Flag for selecting logging format is implemented
-* JSON format is implemented
+* Flag for selecting logging format is implemented.
+* JSON format is implemented.
 
 #### Beta
 
-Adding guarding against regression and update user guideline:
-* Static analysis protects important log lines from reverting to string formating
-* [Kubernetes Logging convention](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-instrumentation/logging.md) document is updated
-
-Components in scope:
-* Kubelet
-
-All other component migrations will be best effort.
+Bring feature quality up to and prevent regression during ongoing migration:
+* Directories can be marked as migrated, preventing regression via verify script in `hack`.
+* [Kubernetes Logging documentation](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-instrumentation/logging.md) is updated for structured logging.
+* Json format should support same set of feature flags as text format, minus those we will decide to deprecte.
+* Structured logging interface design is verify by migrating one whole component (Kubelet) to structured logging. All other component migrations will be best effort.
 
 #### GA
 
 Logging formats become an API:
-* Feedback about logging methods and log formats is collected and addressed
-* Format string methods are deprecated
-* Static analysis protects against creating new string format calls
-* Logging output formats fall under [Kubernetes deprecation policy](https://kubernetes.io/docs/reference/using-api/deprecation-policy/)
-* All remaining components must be migrated
+* Feedback about logging methods and log formats is collected and addressed.
+* Format string methods are deprecated.
+* Static analysis protects against creating new string format calls.
+* Logging output formats fall under [Kubernetes deprecation policy](https://kubernetes.io/docs/reference/using-api/deprecation-policy/).
+* All remaining components must be migrated.
 
 ### Performance
 
