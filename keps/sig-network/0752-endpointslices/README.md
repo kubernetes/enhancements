@@ -291,9 +291,9 @@ core/v1 Endpoints API is required. This allows the API to support services with
 no port remapping or all port services.
 
 ### Topology (Per Endpoint)
-**DEPRECATED** in v1.20 and will be removed in v1.21.
-This field will remain in v1beta1 and a conversion functionality will exist to
-convert to and from v1.
+**DEPRECATED** in v1.20 and will not be part of the will not be part of the
+discovery/v1 API in v1.21. This field will remain in v1beta1 and a conversion
+functionality will exist to convert to and from v1.
 
 A new topology field (string to string map) is added to each endpoint. It can
 contain arbitrary topology information associated with the endpoint. If the
