@@ -3,6 +3,7 @@ kep-number: 2305
 authors:
   - "@logicalhan"
   - "@lilic"
+  - "@yoyinzyc"
 owning-sig: sig-instrumentation
 participating-sigs:
   - sig-instrumentation
@@ -12,8 +13,13 @@ reviewers:
   - "@ehashman"
   - "@x13n"
 approvers:
-  - sig-instrumentation
+  - "@ehashman"
+prr-approvers:
+  - "@johnbelamaric"
 creation-date: 2020-04-15
-last-updated: 2020-05-19
+last-updated: 2021-02-08
 stage: alpha
 status: implementable
+latest-milestone: "v1.21"
+milestone:
+  alpha: "v1.21"
