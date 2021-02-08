@@ -13,7 +13,7 @@ approvers:
 editor: "@brancz"
 creation-date: 2019-10-28
 last-updated: 2020-10-14
-status: implementable
+status: implemented
 stage: beta
 see-also:
   - 20181106-kubernetes-metrics-overhaul
@@ -144,7 +144,7 @@ These are related Post-GA tasks:
   - [x] for controller manager: https://github.com/kubernetes/kubernetes/pull/81624 (by @logicalhan)
   - [x] for kube-proxy: https://github.com/kubernetes/kubernetes/pull/81626 (by @logicalhan)
   - [x] for etcd version monitor: https://github.com/kubernetes/kubernetes/pull/83283 (by @RainbowMango)
-  - [ ] for metrics validation framework: https://github.com/kubernetes/kubernetes/pull/84500 (by @RainbowMango)
+  - [x] for metrics validation framework: https://github.com/kubernetes/kubernetes/pull/84500 (by @RainbowMango)
 - Migrate bucket functionality
   - [x] https://github.com/kubernetes/kubernetes/pull/82626 (by @RainbowMango)
   - [x] https://github.com/kubernetes/kubernetes/pull/82630 (by @RainbowMango)
@@ -163,26 +163,26 @@ These are related Post-GA tasks:
   - [x] https://github.com/kubernetes/kubernetes/pull/83611 (by @RainbowMango)
   - [x] https://github.com/kubernetes/kubernetes/pull/83678 (by @RainbowMango)
   - [x] https://github.com/kubernetes/kubernetes/pull/83713 (by @RainbowMango)
-  - [ ] https://github.com/kubernetes/kubernetes/pull/83664 (by @RainbowMango)
+  - [x] https://github.com/kubernetes/kubernetes/pull/83664 (by @RainbowMango)
   - [x] https://github.com/kubernetes/kubernetes/pull/84283 (by @serathius)
 - Migrate promhttp
-  - [ ] https://github.com/kubernetes/kubernetes/pull/84393 (by @wuyafang)
+  - [x] https://github.com/kubernetes/kubernetes/pull/84393 (by @wuyafang)
   - [x] https://github.com/kubernetes/kubernetes/pull/84221 (by @wuyafang)
 
 ### Metrics Validation And Restriction
 - [x] https://github.com/kubernetes/kubernetes/pull/80803 (by @serathius)
 - [x] https://github.com/kubernetes/kubernetes/pull/80906 (by @serathius)
 - [x] https://github.com/kubernetes/kubernetes/pull/81510 (by @serathius)
-- [ ] https://github.com/kubernetes/kubernetes/pull/84302 (by @serathius)
-- [ ] https://github.com/kubernetes/kubernetes/pull/84373 (by @serathius)
-- [ ] https://github.com/kubernetes/kubernetes/pull/84378 (by @serathius)
+- [x] https://github.com/kubernetes/kubernetes/pull/84302 (by @serathius)
+- [x] https://github.com/kubernetes/kubernetes/pull/84373 (by @serathius)
+- [x] https://github.com/kubernetes/kubernetes/pull/84378 (by @serathius)
 
 ### Deprecate Metrics
-- [ ] https://github.com/kubernetes/kubernetes/pull/83836 (by @RainbowMango)
-- [ ] https://github.com/kubernetes/kubernetes/pull/83837 (by @RainbowMango)
-- [ ] https://github.com/kubernetes/kubernetes/pull/83838 (by @RainbowMango)
-- [ ] https://github.com/kubernetes/kubernetes/pull/83839 (by @RainbowMango)
-- [ ] https://github.com/kubernetes/kubernetes/pull/83841 (by @RainbowMango)
+- [x] https://github.com/kubernetes/kubernetes/pull/83836 (by @RainbowMango)
+- [x] https://github.com/kubernetes/kubernetes/pull/83837 (by @RainbowMango)
+- [x] https://github.com/kubernetes/kubernetes/pull/83838 (by @RainbowMango)
+- [x] https://github.com/kubernetes/kubernetes/pull/83839 (by @RainbowMango)
+- [x] https://github.com/kubernetes/kubernetes/pull/83841 (by @RainbowMango)
 
 ### Escape Flag
-- [ ] https://github.com/kubernetes/kubernetes/pull/84292 (by @RainbowMango)
+- [x] https://github.com/kubernetes/kubernetes/pull/84292 (by @RainbowMango)
