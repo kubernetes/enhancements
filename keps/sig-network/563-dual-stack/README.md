@@ -1358,8 +1358,8 @@ This capability will move to stable when the following criteria have been met.
   services are converted to single-stack first (switch ipfamily to single-stack
   on all services) and then disable the feature. Remove the CLI parameters, as
   an older client won't see or be able to use the new fields. When the user
-  disables dual-stack from the controller manager, endpoints will no longer
-  carry two sets.
+  disables dual-stack from the controller manager, new endpoints will no longer
+  carry two sets, while existing endpoints may not be updated.
 
 * **What happens if we reenable the feature if it was previously rolled back?**
   Whatever the user has defined will not change without intervention. If you
@@ -1381,9 +1381,9 @@ This capability will move to stable when the following criteria have been met.
 ### Rollout, Upgrade and Rollback Planning
 
 * **How can a rollout fail? Can it impact already running workloads?**
-  Users **must** avoid changing existing cidrs for both pods and services.
-  Users can only add an alternative ip family to existing cidrs. Changing
-  existing cidrs will result in nondeterministic failures depending on how the
+  Users **must** avoid changing existing CIDRs for both pods and services.
+  Users can only add an alternative ip family to existing CIDRs. Changing
+  existing CIDRs will result in nondeterministic failures depending on how the
   cluster networking was configured.
 
   Existing workloads are not expected to be impacted during rollout. When you
@@ -1500,7 +1500,7 @@ resource usage (CPU, RAM, disk, IO, ...) in any components?**
   * Failure to create dual-stack services. Operator must perform the following steps:
     1. Ensure that the cluster has `IPv6DualStack` feature enabled.
     2. Ensure that api-server is correctly configured with multi (dual-stack) service
-       cidrs using `--services-cluster-ip-range` flag.
+       CIDRs using `--services-cluster-ip-range` flag.
 
   * Failure to route traffic to pod backing a dual-stack service. Operator must perform the 
     following steps:
@@ -1529,11 +1529,12 @@ resource usage (CPU, RAM, disk, IO, ...) in any components?**
   it will resolve on the next loop.
 
   If allocation fails, that would translate to the pod not running if there is
-  no pod allocated from the cidr. If the pod is created but routing is not
+  no IP allocated from the CIDR. If the pod is created but routing is not
   working correctly, there will be an error in the kube-proxy logs, so
-  debugging would take place by looking at iptables.  The cluster IP allocation
-  is allocated in a syncronous process; if this fails you'll see an error in
-  creating the service.
+  debugging would take place by looking at iptables, similar to how it is
+  already done today. The cluster IP allocation is allocated in a syncronous
+  process; if this fails the service creation will fail and the service object
+  will not be persisted.
 
 * **What steps should be taken if SLOs are not being met to determine the problem?**
   N/A
