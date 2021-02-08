@@ -255,7 +255,7 @@ container.
 ```
 Examples:
   # Create a debug container as a copy of the original Pod and attach to it
-  kubectl debug mypod -it -container=debug --image=busybox --copy-to=my-debugger
+  kubectl debug mypod -it --container=debug --image=busybox --copy-to=my-debugger
 ```
 
 #### Modify Application Image by Copy
