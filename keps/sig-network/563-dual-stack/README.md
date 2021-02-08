@@ -1423,6 +1423,9 @@ fields of API types, flags, etc.?**
   kubectl get services --all-namespaces -ogo-template='{{range .items}}{{.spec.ipFamilyPolicy}}{{"\n"}}{{end}}' | grep -v SingleStack
   ```
 
+  Using this check, one can determine how many services have been created with
+  dual-stack preferred or required.
+
 * **What are the SLIs (Service Level Indicators) an operator can use to determine 
 the health of the service?**
   Dual-stack networking is a functional addition, not a service with SLIs. Use
@@ -1431,6 +1434,9 @@ the health of the service?**
   IPv4/IPv6 dual-stack](https://kubernetes.io/docs/tasks/network/validate-dual-stack/)
   to ensure that node addressing, pod addressing, and services are configured
   correctly. If dual-stack services are created, they have passed validation.
+  Metrics to could include pods stuck in pending; look in the event logs to
+  determine if it's a CNI issue which may cause a delay of IP address
+  allocation.
 
 * **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
   Existing kubelet pod creation and service creation SLOs are what is needed.
@@ -1442,7 +1448,7 @@ of this feature?**
 
        Whether a cluster is converted to dual-stack or converted back to
        single-stack, services will remain the same because the dual-stack
-       conversation does not change user data.
+       conversion does not change user data.
 
        Services/Endpoint selection is not in path of pod creation. It runs in
        kube-controller-manager, so any malfunction will not affect pods.
@@ -1496,15 +1502,22 @@ resource usage (CPU, RAM, disk, IO, ...) in any components?**
   This feature will not be operable if either kube-apiserver or etcd is unavailable.
 
 * **What are other known failure modes?**
-  
+
+  * Missing prerequisites. Operator must verify the following conditions:
+    1. Ensure correct support in the node infrastructure provider.
+      a. supports routing both IPv4 and IPv6 interfaces.
+      b. makes both IPv4 and IPv6 interfaces available to Kubernetes.
+    2. CNI needs to be correctly configured for dual-stack service.
+      a. Pods need to be able to use dual-stack service.
+    3. Service cidrblock for controller manager must be available.
+
   * Failure to create dual-stack services. Operator must perform the following steps:
     1. Ensure that the cluster has `IPv6DualStack` feature enabled.
     2. Ensure that api-server is correctly configured with multi (dual-stack) service
        CIDRs using `--services-cluster-ip-range` flag.
 
-  * Failure to route traffic to pod backing a dual-stack service. Operator must perform the 
-    following steps:
-    1. Ensure that nodes (where the pod is running) is configured for dual-stack 
+  * Failure to route traffic to pod backing a dual-stack service. Operator must     perform the following steps:
+    1. Ensure that nodes (where the pod is running) is configured for dual-stack
        a. Node is using dual-stack enabled CNI.
        b. kubelet is configured with dual-stack feature flag.
        c. kube-proxy is configured with dual-stack feature flag.
@@ -1516,25 +1529,34 @@ resource usage (CPU, RAM, disk, IO, ...) in any components?**
           where applicable.
     4. Operator can ensure that `endpoints` and `endpointSlices` are correctly 
        created for the service in question by using kubectl.
-    5. If the pod is using host network then operator must ensure that the node is correctly
-       reporting dual-stack addresses.
+    5. If the pod is using host network then operator must ensure that the node
+       is correctly reporting dual-stack addresses.
+    6. Due to the amount of time needed for control loops to function, when
+       scaling with dual-stack it may take time to attach all ready endpoints.
 
-  *  Possible workload imbalances
+  * CNI changes may affect legacy workloads.
+    1. When dual-stack is configured and enabled, services will start returning
+       IPv4(A) and IPv6(AAAA).
+    2. If a workload doesn't account for being offered both IP families, it
+       may fail in unexpected ways. For example, firewall rules may need to be
+       updated to allow IPv6 addresses.
+    3. Recommended to independently verify legacy workloads to ensure fidelity.
 
-  Once a service is saved (with the appropriate feature flag and one or more
-  cidrs), the controller manager scans the number of pods (seeing dual or
-  single) and creates endpoint objects pointing to these pods.Each node has
-  a proxy that watches for services, endpoints, endpoint slices, per family.
-  If the existing rules are removed but new ones don't resolve correctly, then
-  it will resolve on the next loop.
+  *  IP-related error conditions to consider.
+    1.  pod IP allocation fails
+      a. Will result in the pod not running if there is no IP allocated from
+         the CIDR.
+    2. routing fails
+      a. kube proxy can't configure IP tables
+      b. if the pod is created but routing is not working correctly, there
+         will be an error in the kube-proxy event logs
+      c. debugging by looking at iptables, similar to with single-stack.
+    3. cluster IP allocation fails
+      a. cluster IPs are allocated on save in a synchronous process
+      b. if this fails, the service creation will fail and the service object
+         will not be persisted.
 
-  If allocation fails, that would translate to the pod not running if there is
-  no IP allocated from the CIDR. If the pod is created but routing is not
-  working correctly, there will be an error in the kube-proxy logs, so
-  debugging would take place by looking at iptables, similar to how it is
-  already done today. The cluster IP allocation is allocated in a synchronous
-  process; if this fails the service creation will fail and the service object
-  will not be persisted.
+
 
 * **What steps should be taken if SLOs are not being met to determine the problem?**
   N/A
