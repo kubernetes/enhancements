@@ -18,8 +18,8 @@ approvers:
 prr-approvers:
   - "@deads2k"
 stage: beta
-latest-milestone: "v1.20"
+latest-milestone: "v1.21"
 milestone:
   alpha: "v1.10"
   beta: "v1.11"
-  stable: "v1.21"
+  stable: "v1.22"

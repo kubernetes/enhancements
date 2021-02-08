@@ -13,6 +13,7 @@
   - [Provider configuration](#provider-configuration)
   - [Provider input format](#provider-input-format)
   - [Provider output format](#provider-output-format)
+  - [Metrics](#metrics)
   - [Risks and Mitigations](#risks-and-mitigations)
     - [Client authentication to the binary](#client-authentication-to-the-binary)
     - [Invalid credentials before cache expiry](#invalid-credentials-before-cache-expiry)
@@ -493,6 +494,102 @@ credentials).
 PEM format. The certificate must be valid at the time of execution. These
 credentials are used for mTLS handshakes.
 
+### Metrics
+
+As discussed [below](#rollout-upgrade-and-rollback-planning), there are 3
+primary metrics used by this feature set.
+
+```golang
+var (
+  execPluginCertTTL = k8smetrics.NewGaugeFunc(
+    k8smetrics.GaugeOpts{
+      Name: "rest_client_exec_plugin_ttl_seconds",
+      Help: "Gauge of the shortest TTL (time-to-live) of the client " +
+        "certificate(s) managed by the auth exec plugin. The value " +
+        "is in seconds until certificate expiry (negative if " +
+        "already expired). If auth exec plugins are unused or manage no " +
+        "TLS certificates, the value will be +INF.",
+    },
+    func() float64 {
+      if execPluginCertTTLAdapter.e == nil {
+        return math.Inf(1)
+      }
+      return execPluginCertTTLAdapter.e.Sub(time.Now()).Seconds()
+    },
+  )
+
+  execPluginCertRotation = k8smetrics.NewHistogram(
+    &k8smetrics.HistogramOpts{
+      Name: "rest_client_exec_plugin_certificate_rotation_age",
+      Help: "Histogram of the number of seconds the last auth exec " +
+        "plugin client certificate lived before being rotated. " +
+        "If auth exec plugin client certificates are unused, " +
+        "histogram will contain no data.",
+      // There are three sets of ranges these buckets intend to capture:
+      //   - 10-60 minutes: captures a rotation cadence which is
+      //     happening too quickly.
+      //   - 4 hours - 1 month: captures an ideal rotation cadence.
+      //   - 3 months - 4 years: captures a rotation cadence which is
+      //     is probably too slow or much too slow.
+      Buckets: []float64{
+        600,     // 10 minutes
+        1800,    // 30 minutes
+        3600,    // 1  hour
+        14400,   // 4  hours
+        86400,   // 1  day
+        604800,  // 1  week
+        2592000,   // 1  month
+        7776000,   // 3  months
+        15552000,  // 6  months
+        31104000,  // 1  year
+        124416000, // 4  years
+      },
+    },
+  )
+
+  execPluginCalls = k8smetrics.NewCounterVec(
+    &k8smetrics.CounterOpts{
+      Name: "rest_client_exec_plugin_call_total",
+      Help: "Number of calls to an exec plugin, partitioned by exit code.",
+    },
+    []string{"code"},
+  )
+)
+```
+
+As is common practice, these labels will be hidden behind abstract global
+variables that will be called by the exec plugin code.
+```golang
+// DurationMetric is a measurement of some amount of time.
+type DurationMetric interface {
+  Observe(duration time.Duration)
+}
+
+// ExpiryMetric sets some time of expiry. If nil, assume not relevant.
+type ExpiryMetric interface {
+  Set(expiry *time.Time)
+}
+
+// CallsMetric counts calls that take place for a specific exec plugin.
+type CallsMetric interface {
+  // Increment increments a counter per exitCode.
+  Increment(exitCode int)
+}
+
+var (
+  // ClientCertExpiry is the expiry time of a client certificate
+  ClientCertExpiry ExpiryMetric = noopExpiry{}
+  // ClientCertRotationAge is the age of a certificate that has just been rotated.
+  ClientCertRotationAge DurationMetric = noopDuration{}
+  // ExecPluginCalls is the number of calls made to an exec plugin, partitioned by
+  // exit code.
+  ExecPluginCalls CallsMetric = noopCalls{}
+)
+```
+
+The `"code"` label of these metrics is an attempt to elucidate the exec plugin
+failure mode to the user.
+
 ### Risks and Mitigations
 
 #### Client authentication to the binary
@@ -532,6 +629,7 @@ Unit tests to confirm:
   that structs are kept up to date
 - Helper methods properly create `"k8s.io/client-go/rest".Config` from
   `"k8s.io/client-go/pkg/apis/clientauthentication".Cluster` and vice versa
+- Metrics are reported as they should
 
 Integration (or e2e CLI) tests to confirm:
 
@@ -546,6 +644,7 @@ Integration (or e2e CLI) tests to confirm:
   + Cert based auth
 - Interactive login flows work
   + TTY forwarding between client and executable works
+- Metrics are reported as they should
 
 ### Graduation Criteria
 
@@ -565,6 +664,7 @@ Feature is already in Beta.
 - Address known bugs and add tests to prevent regressions
 - Docs are up-to-date with latest version of APIs
 - Docs describe set of best practices (i.e. do not mutate `kubeconfig`)
+- Sufficient metrics
 
 Note: this feature set does not need conformance tests because it is inherently
 opt-in on the client-side and it relies on an extra binary to be present.
@@ -674,7 +774,10 @@ The downsides of this approach compared to exec model are:
     authenticator could be behaving incorrectly. For example, if the certificate
     expiration time is constantly increasing upon every authentication to the API, then
     perhaps the exec plugin authenticator is refreshing the certificate credential too
-    often.
+    often. Furthermore, the certificate's age (i.e., the time since the certificate's
+    `NotBefore` field) will be emitted as a metric. If this value is frequently much smaller
+    than the certificate's expected lifetime, then the exec plugin authenticator may be
+    rotating credentials too quickly which may point to a bug.
   - The total number of calls to the exec plugin would also be helpful to obtain.  This
     metric should increase each time a credential is refreshed (see previous bullet point
     for when this happens). If this number increases rapidly, then the exec plugin
@@ -710,16 +813,22 @@ _This section must be completed when targeting beta graduation to a release._
 
 * **What are the SLIs (Service Level Indicators) an operator can use to
   determine the health of the service?**
-  - [ ] Metrics
-    - Metric name:
-    - [Optional] Aggregation method:
-    - Components exposing the metric:
-  - [x] Other (treat as last resort)
+  - [X] Metrics
+    - Metric name: `rest_client_exec_plugin_ttl_seconds`, `rest_client_exec_plugin_certificate_rotation_age`,
+      `rest_client_exec_plugin_call_total`
+    - Components exposing the metric: client-go
+  - [ ] Other (treat as last resort)
     - Details:
       - This feature set operates on the client-side.
 
 * **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
-  - This feature set operates on the client-side.
+  - We target certificate rotations to happen within 1% of a certificate's
+    lifetime. This is measured by
+    `rest_client_exec_plugin_certificate_rotation_age` and
+    `rest_client_exec_plugin_ttl_seconds`.
+  - We target 0.01% unsuccessful calls to the exec plugin in a moving 24h
+    window. This is measured by
+    `rest_client_exec_plugin_call_total`.
 
 * **Are there any missing metrics that would be useful to have to improve
   observability if this feature?**
