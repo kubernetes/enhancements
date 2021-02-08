@@ -519,17 +519,17 @@ Add WindowsSandboxSecurityContext:
 message WindowsSandboxSecurityContext {
   string run_as_username = 1;
   string credential_spec = 2;
-  bool hostProcess = 3;
+  bool host_process = 3;
 }
 ```
 
-Update WindowsContainerSecurityContext by adding privileged field:
+Update WindowsContainerSecurityContext by adding host_process field:
 
 ```protobuf
 message WindowsContainerSecurityContext {
   string run_as_username = 1;
   string credential_spec = 2;
-  bool hostProcess = 3;
+  bool host_process = 3;
 }
 ```
 
@@ -539,7 +539,7 @@ message WindowsContainerSecurityContext {
 
 #### WindowsSecurityContextOptions.HostProcess Flag
 
-A new boolean field named `hostProcess` will be added to [WindowsSecurityContextOptions](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.20/#windowssecuritycontextoptions-v1-core).
+A new `*bool` field named `hostProcess` will be added to [WindowsSecurityContextOptions](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.20/#windowssecuritycontextoptions-v1-core).
 
 On Windows, all containers in a pod must be privileged. Because of this behavior and because `WindowsSecurityContextOptions` already exists on both `PodSecurityContext` and `Container.SecurityContext` Windows containers will use this new field instead re-using the existing `privileged` field which only exists on `SecurityContext`.
 Additionally, the existing `privileged` field does not clearly describe what capabilities the container has (see https://github.com/kubernetes/kubernetes/issues/44503).
@@ -732,9 +732,9 @@ in back-to-back releases.
 
 Alpha
 
-- Version of containerd: v1.5
-- Version of Kubernetes: Target  1.21
-- Version of OS support: 1809/Windows 2019 LTSC and 2004
+- Version of containerd: Target v1.5
+- Version of Kubernetes: Target 1.21
+- OS support: 1809/Windows 2019 LTSC and all future versions of Windows Server
 - Alpha Feature Gate for passing privileged flag **or** annotations to CRI calls.
 
 Beta
@@ -743,7 +743,7 @@ Beta
 - Provide guidance similar to Pod Security Standards for Windows privileged containers
 - Containerd: v1.5
 - Kubernetes Target 1.22 or later
-- OS support: 1809/Windows 2019 LTSC and 2004
+- OS support: 1809/Windows 2019 LTSC and all future versions of Windows Server
 - Beta Feature Gate for passing privilege flag to CRI
 
 GA:
@@ -832,7 +832,9 @@ _This section must be completed when targeting alpha to a release._
 
 * **Can the feature be disabled once it has been enabled (i.e. can we roll back
   the enablement)?**
-  This feature can be disabled. If this feature is disabled then newly created privileged Windows containers run as non-privileged containers and will likely encounter errors.
+  This feature can be disabled.
+  If this feature flag is disabled in kube-apiserver than new pods which try to schedule `hostProcess` containers will be rejected by kube-apiserver.
+  If this flag is disabled in the kubelet then new `hostProcess` containers are will not be started and an appropriate event will be emitted.
 
 * **What happens if we reenable the feature if it was previously rolled back?**
 Newly created privileged Windows containers will run as expected.
