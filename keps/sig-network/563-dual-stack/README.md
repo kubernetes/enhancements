@@ -3,6 +3,7 @@
 ## Table of Contents
 
 <!-- toc -->
+- [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
 - [Motivation](#motivation)
   - [Goals](#goals)
@@ -66,6 +67,35 @@
   - [Scalability](#scalability)
   - [Troubleshooting](#troubleshooting)
 <!-- /toc -->
+
+## Release Signoff Checklist
+
+**ACTION REQUIRED:** In order to merge code into a release, there must be an issue in [kubernetes/enhancements] referencing this KEP and targeting a release milestone **before [Enhancement Freeze](https://github.com/kubernetes/sig-release/tree/master/releases)
+of the targeted release**.
+
+For enhancements that make changes to code or processes/procedures in core Kubernetes i.e., [kubernetes/kubernetes], we require the following Release Signoff checklist to be completed.
+
+Check these off as they are completed for the Release Team to track. These checklist items _must_ be updated for the enhancement to be released.
+
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Design details are appropriately documented
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [x] (R) Graduation criteria is in place
+- [x] (R) Production readiness review completed
+- [x] Production readiness review approved
+- [x] "Implementation History" section is up-to-date for milestone
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+
+**Note:** Any PRs to move a KEP to `implementable` or significant changes once it is marked `implementable` should be approved by each of the KEP approvers. If any of those approvers is no longer appropriate than changes to that list should be approved by the remaining approvers and/or the owning SIG (or SIG-arch for cross cutting KEPs).
+
+**Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
+
+[kubernetes.io]: https://kubernetes.io/
+[kubernetes/enhancements]: https://github.com/kubernetes/enhancements/issues
+[kubernetes/kubernetes]: https://github.com/kubernetes/kubernetes
+[kubernetes/website]: https://github.com/kubernetes/website
 
 ## Summary
 
@@ -1194,7 +1224,21 @@ be run individually, with the same initial configurations.
 
 
 ## Implementation History
-Refer to the [Implementation Plan](#implementation-plan)
+
+2018-06-21: KEP opened
+
+2019-05-03: KEP marked implementable
+
+v1.16: Implemented phase 1 & 2 defined in the [implementation plan](#implementation-plan)
+and launched in `Alpha`
+
+v1.17: Implemented phase 3 defined [iplementation plan](#implementation-plan)
+
+v1.18: Took user feedback on potentiall issues caused in feature enablement/disablement. Which lead us to redesign dual stack Services
+
+v1.19: Implemented redesigned duals stack Services see [PR 91824](https://github.com/kubernetes/kubernetes/pull/91824)
+
+v1.20: Relaunched to `Alpha`
 
 ## Alternatives
 
@@ -1555,7 +1599,6 @@ resource usage (CPU, RAM, disk, IO, ...) in any components?**
       a. cluster IPs are allocated on save in a synchronous process
       b. if this fails, the service creation will fail and the service object
          will not be persisted.
-
 
 
 * **What steps should be taken if SLOs are not being met to determine the problem?**
