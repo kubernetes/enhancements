@@ -10,7 +10,7 @@
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [API Design](#api-design)
-    - [Pod overhead](#pod-overhead-1)
+    - [Pod overhead](#pod-overhead)
     - [Container Runtime Interface (CRI)](#container-runtime-interface-cri)
   - [ResourceQuota changes](#resourcequota-changes)
   - [RuntimeClass changes](#runtimeclass-changes)
