@@ -1576,7 +1576,7 @@ resource usage (CPU, RAM, disk, IO, ...) in any components?**
   no IP allocated from the CIDR. If the pod is created but routing is not
   working correctly, there will be an error in the kube-proxy logs, so
   debugging would take place by looking at iptables, similar to how it is
-  already done today. The cluster IP allocation is allocated in a syncronous
+  already done today. The cluster IP allocation is allocated in a synchronous
   process; if this fails the service creation will fail and the service object
   will not be persisted.
 
