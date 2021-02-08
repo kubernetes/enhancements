@@ -24,22 +24,30 @@
   - [Graduation Criteria](#graduation-criteria)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
+- [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
+  - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
+  - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+  - [Monitoring Requirements](#monitoring-requirements)
+  - [Dependencies](#dependencies)
+  - [Scalability](#scalability)
 - [Implementation History](#implementation-history)
 <!-- /toc -->
 
 ## Release Signoff Checklist
 
-- [x] kubernetes/enhancements issue in release milestone, which links to KEP (this should be a link to the KEP location in kubernetes/enhancements, not the initial KEP PR)
-  - [#859](https://github.com/kubernetes/enhancements/issues/859)
-- [x] KEP approvers have set the KEP status to `implementable`
-- [x] Design details are appropriately documented
-- [x] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
-  - Standard Unit and Integration testing should be sufficient
-- [x] Graduation criteria is in place
-  - This is not a user facing API change
+Items marked with (R) are required *prior to targeting to a milestone / release*.
+
+- [X] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [X] (R) KEP approvers have approved the KEP status as `implementable`
+- [X] (R) Design details are appropriately documented
+- [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [X] (R) Graduation criteria is in place
+- [X] (R) Production readiness review completed
+- [X] (R) Production readiness review approved
 - [ ] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+
 
 [kubernetes.io]: https://kubernetes.io/
 [kubernetes/enhancements]: https://github.com/kubernetes/enhancements/issues
@@ -257,11 +265,175 @@ included.
 
 ### Upgrade / Downgrade Strategy
 
-NA
+Not applicable. There are no cluster components affected by this feature.
+
 
 ### Version Skew Strategy
 
-NA
+Not applicable. There is nothing required of the API Server, so there
+can be no version skew.
+
+## Production Readiness Review Questionnaire
+
+### Feature Enablement and Rollback
+
+* **How can this feature be enabled / disabled in a live cluster?**
+
+  This feature is enabled with the KUBECTL_COMMANDS_HEADER environment
+  variable set on the client command line. Since it only affects the client
+  kubectl, it does not affect any cluster components.
+
+  - [X] Feature gate (also fill in values in `kep.yaml`)
+    - Feature gate name: KUBECTL_COMMANDS_HEADERS
+    - Components depending on the feature gate: kubectl
+  - [X] Other
+    - Describe the mechanism: setting an client-side environment variable for kubectl.
+    - Will enabling / disabling the feature require downtime of the control
+      plane? No
+    - Will enabling / disabling the feature require downtime or reprovisioning
+      of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
+      No.
+
+* **Does enabling the feature change any default behavior?**
+
+  No. This feature is not user facing, so it does not change behavior.
+
+* **Can the feature be disabled once it has been enabled (i.e. can we roll back
+  the enablement)?**
+
+  Yes. This feature can be disabled by simply removing an environment variable
+  on the client command line.
+
+* **What happens if we reenable the feature if it was previously rolled back?**
+
+  Re-enabling this feature is simply accomplished by setting the feature
+  environment variable on the client command line. There is no state, and there
+  is no consequence for re-enabling the feature.
+
+* **Are there any tests for feature enablement/disablement?**
+
+  There will be unit tests and integration tests which test this
+  feature enablement and disablement by setting the environment
+  variable.
+
+### Rollout, Upgrade and Rollback Planning
+
+* **How can a rollout fail? Can it impact already running workloads?**
+
+  A danger in the rollout of this feature is adding too much data (too many
+  headers) to each of the API Server calls. We intend to mitigate this risk
+  by defining a MAX_HEADERS concept to ensure the headers to not grow above a
+  certain size. MAX_HEADERS will provide a mechanism to ensure the headers data
+  does not grow without bound. As far as cluster workloads, this feature only
+  affects kubectl; not any cluster components. So it would not be possible to
+  impact running workloads.
+
+* **What specific metrics should inform a rollback?**
+
+  We will measure the **headers-added-round-trip-time** and compare it to the round-trip
+  time for the same API Server call without headers. This ratio will give us the
+  performance penalty for adding these headers. If this performance penalty exceedes
+  a specific threshold, users can opt-out by removing the client-side command line
+  feature environment variable to disable the headers.
+
+* **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
+
+  Enabling and disabling the client-side command line environment variable will
+  be tested.
+
+* **Is the rollout accompanied by any deprecations and/or removals of features, APIs,
+fields of API types, flags, etc.?**
+
+  No
+
+### Monitoring Requirements
+
+_This section must be completed when targeting beta graduation to a release._
+
+* **How can an operator determine if the feature is in use by workloads?**
+  Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
+  checking if there are objects with field X set) may be a last resort. Avoid
+  logs or events for this purpose.
+
+  Operators will see this feature in use when the **X-Kubectl-Command** header
+  arrives with REST calls to the API Server.
+
+* **What are the SLIs (Service Level Indicators) an operator can use to determine
+the health of the service?**
+
+  Since the cardinality is low, we will initially support the kubectl subcommand
+  header (X-Kubectl-Command) in this feature. This simple metric will provide valuable
+  insight into kubectl usage, and allow users to see if the feature is being used.
+
+  - [X] Metrics
+    - Metric name: X-Kubectl-Command header
+    - [Optional] Aggregation method:
+    - Components exposing the metric: kubectl
+  - [ ] Other (treat as last resort)
+    - Details:
+
+* **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
+
+  TBD
+
+* **Are there any missing metrics that would be useful to have to improve observability
+of this feature?**
+
+  We believe all the other specified **X-Header** will be useful, but we are starting
+  out simply in alpha to prove the value and feasibility of the feature. We will add
+  others as we approach beta.
+
+### Dependencies
+
+_This section must be completed when targeting beta graduation to a release._
+
+* **Does this feature depend on any specific services running in the cluster?**
+  Think about both cluster-level services (e.g. metrics-server) as well
+  as node-level agents (e.g. specific version of CRI). Focus on external or
+  optional services that are needed. For example, if this feature depends on
+  a cloud provider API, or upon an external software-defined storage or network
+  control plane.
+
+  For each of these, fill in the following—thinking about running existing user workloads
+  and creating new ones, as well as about cluster-level services (e.g. DNS):
+  - [Dependency name]
+    - Usage description:
+      - Impact of its outage on the feature:
+      - Impact of its degraded performance or high-error rates on the feature:
+
+### Scalability
+
+* **Will enabling / using this feature result in any new API calls?**
+
+  No
+
+* **Will enabling / using this feature result in introducing new API types?**
+
+  No
+
+* **Will enabling / using this feature result in any new calls to the cloud
+provider?**
+
+  No
+
+* **Will enabling / using this feature result in increasing size or count of
+the existing API objects?**
+
+  No
+
+* **Will enabling / using this feature result in increasing time taken by any
+operations covered by [existing SLIs/SLOs]?**
+
+  Possibly. This feature increases the size of the REST call from kubectl
+  to the API Server by adding more headers to the calls. We will monitor
+  this request size increase to ensure there is no deleterious effect.
+
+* **Will enabling / using this feature result in non-negligible increase of
+resource usage (CPU, RAM, disk, IO, ...) in any components?**
+
+  Possibly. This feature increases the size of the REST call from kubectl
+  to the API Server by adding more headers to the calls. We will monitor
+  this request size increase to ensure there is no deleterious effect.
 
 ## Implementation History
 
