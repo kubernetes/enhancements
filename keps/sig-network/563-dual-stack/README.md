@@ -1347,22 +1347,27 @@ This capability will move to stable when the following criteria have been met.
     - Components depending on the feature gate: kube-apiserver, kube-controller-manager, kube-proxy, and kubelet
 
 * **Does enabling the feature change any default behavior?**
-  No. Pods and Services will remain single stack until cli flags have been modified
+  Pods and Services will remain single-stack until cli flags have been modified
   as described in this KEP. Once modified, existing and new services will remain
-  single stack until user requests otherwise. Pods will become dual-stack however
-  it will maintain the same ipfamily used in before enabling feature flag.
+  single-stack until user requests otherwise. Pods will become dual-stack
+  however will maintain the same ipfamily used before enabling feature flag.
 
 * **Can the feature be disabled once it has been enabled (i.e. can we roll back
   the enablement)?**
-  Yes. If we disable the feature gate, we must remove the CLI parameters. An
-  older client won't see or be able to use the new fields.
+  Yes. If you decide to turn off dual-stack after turning on, ensure all
+  services are converted to single-stack first (switch ipfamily to single-stack
+  on all services) and then disable the feature. Remove the CLI parameters, as
+  an older client won't see or be able to use the new fields. When the user
+  disables dual-stack from the controller manager, endpoints will no longer
+  carry two sets.
 
 * **What happens if we reenable the feature if it was previously rolled back?**
-  Similar to enabling it the first time on a cluster. We don't load balance
-  across IP families, and with no selectors we don't get endpoints. If you use
-  the feature flag to turn off dual-stack, we do not edit your service. If you
+  Whatever the user has defined will not change without intervention. If you
   disable dual-stack from the controller manager, the service will be given
-  single-stack endpoints.
+  single-stack endpoints. If you enable dual-stack again, it's as if you're
+  enabling it for the first time on a cluster. We don't load balance across IP
+  families, and with no selectors we don't get endpoints. If you use the
+  feature flag to turn off dual-stack, we do not edit user input.
 
 * **Are there any tests for feature enablement/disablement?**
   The feature is being tested using integration tests with gate on/off. The
@@ -1376,14 +1381,23 @@ This capability will move to stable when the following criteria have been met.
 ### Rollout, Upgrade and Rollback Planning
 
 * **How can a rollout fail? Can it impact already running workloads?**
-  Users **must** avoid changing existing cidrs. For both pods and services. Users
-  can only add to alternative ip family to existing cidrs. Changing existing cidrs
-  will result in nondeterministic failures depending on how the cluster networking 
-  was configured.
+  Users **must** avoid changing existing cidrs for both pods and services.
+  Users can only add an alternative ip family to existing cidrs. Changing
+  existing cidrs will result in nondeterministic failures depending on how the
+  cluster networking was configured.
 
-  Existing workloads are not expected to be impacted during rollout. A component restart
-  during rollout might delay generating endpoint and endpoint slices for alternative IP families
-  if there are *new* workloads that depend on them they will fail.
+  Existing workloads are not expected to be impacted during rollout. When you
+  disable dual-stack, existing routes aren't deleted. A component restart
+  during rollout might delay generating endpoint and endpoint slices for
+  alternative IP families. If there are *new* workloads that depend on them,
+  they will fail.
+
+  Imbalance is possible if a replica set scales up or ipv6 gets turned off and
+  the endpoint controller has not yet updated, but iptables and the service
+  controller manager won't look at endpoints that are flagged off. (Endpoints
+  can exist and not be used.) For services, the user will get an error
+  immediately. If the existing rules are removed but new ones don't resolve
+  correctly yet, then it has a chance to resolve on the next loop.
 
 * **What specific metrics should inform a rollback?**
   N/A
@@ -1411,31 +1425,38 @@ fields of API types, flags, etc.?**
 
 * **What are the SLIs (Service Level Indicators) an operator can use to determine 
 the health of the service?**
-  Dual-stack networking is a functional addition, not a service with SLIs.
+  Dual-stack networking is a functional addition, not a service with SLIs. Use
+  existing metrics for kubelet pod creation and service creation to determine
+  service health. [Validate
+  IPv4/IPv6 dual-stack](https://kubernetes.io/docs/tasks/network/validate-dual-stack/)
+  to ensure that node addressing, pod addressing, and services are configured
+  correctly. If dual-stack services are created, they have passed validation.
 
 * **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
-  N/A
+  Existing kubelet pod creation and service creation SLOs are what is needed.
 
 * **Are there any missing metrics that would be useful to have to improve observability 
 of this feature?**
 
   1. For services:
 
-       Services are not in the path of pod creation. Thus, any malfunction or
-       bugs in services will not affect pods.
+       Whether a cluster is converted to dual-stack or converted back to
+       single-stack, services will remain the same because the dual-stack
+       conversation does not change user data.
 
        Services/Endpoint selection is not in path of pod creation. It runs in
-       kube-controller-manager, thus this is N/A.
+       kube-controller-manager, so any malfunction will not affect pods.
 
   2. For pods:
 
        Dual-stack components are not in path of pod creation. It is in the path
        of reporting pod ips. So pod creation will not be affected; if it is
-       affected, then it is a CNI issue.
+       affected, then it is a CNI issue (entirely separate from dual-stack).
 
        Dual-stack components are in the path of PodIPs reporting which affects
        kubelet. If there is a problem (or if there are persistent problems)
-       then disabling the featuregate on api-server will mitigate.
+       then it is migitated by disabling the feature gate, which turns it off
+       for kube-apiserver, kube-controller-manager, kube-proxy, and kubelet.
 
 ### Dependencies
 
@@ -1453,8 +1474,7 @@ of this feature?**
 
 * **Will enabling / using this feature result in any new calls to the cloud 
 provider?**
-  No. Errors are surfaced when the user makes a call. We don't focus on
-  metrics-server at this point.
+  No. IP allocation for services only involves the API server.
 
 * **Will enabling / using this feature result in increasing size or count of 
 the existing API objects?**
@@ -1499,6 +1519,21 @@ resource usage (CPU, RAM, disk, IO, ...) in any components?**
     5. If the pod is using host network then operator must ensure that the node is correctly
        reporting dual-stack addresses.
 
+  *  Possible workload imbalances
+
+  Once a service is saved (with the appropriate feature flag and one or more
+  cidrs), the controller manager scans the number of pods (seeing dual or
+  single) and creates endpoint objects pointing to these pods.Each node has
+  a proxy that watches for services, endpoints, endpoint slices, per family.
+  If the existing rules are removed but new ones don't resolve correctly, then
+  it will resolve on the next loop.
+
+  If allocation fails, that would translate to the pod not running if there is
+  no pod allocated from the cidr. If the pod is created but routing is not
+  working correctly, there will be an error in the kube-proxy logs, so
+  debugging would take place by looking at iptables.  The cluster IP allocation
+  is allocated in a syncronous process; if this fails you'll see an error in
+  creating the service.
+
 * **What steps should be taken if SLOs are not being met to determine the problem?**
   N/A
-
