@@ -13,6 +13,7 @@
   - [Credential Provider Request API](#credential-provider-request-api)
   - [Credential Provider Response API](#credential-provider-response-api)
     - [Caching Credentials](#caching-credentials)
+  - [Metrics](#metrics)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
   - [Alpha](#alpha)
@@ -312,6 +313,12 @@ The plugin can signal to the kubelet how it should cache a given response. There
 2. Registry: the kubelet should cache and use this response only for future images with the same registry hostname (and port if included).
 3. Image: the kubelet should cache and use this response only for future images that match the image exactly.
 
+### Metrics
+
+Two kubelet metrics will be added:
+* `kubelet_credential_provider_plugin_errors`: this will track the number errors that occurred from invoking an exec plugin
+* `kubelet_credential_provider_plugin_duration`: this will track the duration of execution by plugins.
+
 ### Test Plan
 
 Alpha:
@@ -330,6 +337,7 @@ can be achieved using the exec plugin.
 
 * integration or e2e tests.
 * at least one working plugin implementation.
+* kubelet metrics for failed calls to exec plugins.
 * improvements to concurrency and caching:
    - use `singleflight.Group` to ensure only a single call per image. Today the kubelet holds a single lock for every call to `Provide`.
      See [this](https://github.com/kubernetes/kubernetes/pull/94196#discussion_r517805701) and [this](https://github.com/kubernetes/kubernetes/pull/94196#discussion_r518487386) discussion.
@@ -381,7 +389,7 @@ _This section must be completed when targeting beta graduation to a release._
 
 * **What specific metrics should inform a rollback?**
 
-  This feature does not have metrics.
+  High error rates from `kubelet_credential_provider_plugin_error` and long durations from `kubelet_credential_provider_plugin_duration`.
 
 * **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
 
@@ -403,10 +411,9 @@ _This section must be completed when targeting beta graduation to a release._
 
 * **What are the SLIs (Service Level Indicators) an operator can use to determine
 the health of the service?**
-  - [ ] Metrics
-    - Metric name:
-    - [Optional] Aggregation method:
-    - Components exposing the metric:
+  - [X] Metrics
+    - Metric name: `kubelet_credential_provider_plugin_error`, `kubelet_credential_provider_plugin_duration`
+    - Components exposing the metric: kubelet
   - [X] Other (treat as last resort)
     - Details: the kubelet has several error-level logs for when exec plugins time out or return a non-zero exit code.
 
@@ -420,8 +427,7 @@ the health of the service?**
 * **Are there any missing metrics that would be useful to have to improve observability
 of this feature?**
 
-  Possibly. We could add a metric for failed calls to exec plugins.
-
+  No.
 
 ### Dependencies
 
