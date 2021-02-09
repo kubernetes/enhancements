@@ -228,7 +228,7 @@ nitty-gritty.
 
 For the development (main/master) branch only, **NOT** the existing release branches:
 
-- Create shadow canary jobs for each [presubmit-kubernetes-blocking](https://testgrid.k8s.io/presubmits-kubernetes-blocking), (release-blocking)[https://testgrid.k8s.io/sig-release-master-blocking] to use kubetest2 as optional, non-blocking
+- Create shadow canary jobs for each [presubmit-kubernetes-blocking](https://testgrid.k8s.io/presubmits-kubernetes-blocking), [release-blocking](https://testgrid.k8s.io/sig-release-master-blocking) to use kubetest2 as optional, non-blocking
 - Monitor these canary jobs till they are stable
 - Make kubetest2 jobs non-optional, non-blocking
 - Make kubetest2 jobs non-optional, blocking
