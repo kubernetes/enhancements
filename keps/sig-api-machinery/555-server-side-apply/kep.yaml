@@ -11,9 +11,11 @@ reviewers:
   - "@erictune"
 approvers:
   - "@bgrant0607"
+prr-approvers:
+  - "@deads2k"
 editor: TBD
 creation-date: 2018-03-28
-last-updated: 2018-03-28
+last-updated: 2021-02-21
 status: implementable
 see-also:
   - n/a
@@ -21,3 +23,17 @@ replaces:
   - n/a
 superseded-by:
   - n/a
+
+stage: stable
+latest-milestone: "v1.21"
+
+milestone:
+  alpha: "v1.14"
+  beta: "v1.16"
+  stable: "v1.21"
+
+feature-gates:
+  - name: ServerSideApply
+    components:
+      - kube-apiserver
+disable-supported: true
