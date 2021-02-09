@@ -16,7 +16,7 @@ approvers:
   - justaugustus
 # NOTE: there's no production change in this KEP
 prr-approvers:
-  - TBD
+  - johnbelamaric
 see-also: []
 replaces: []
 
