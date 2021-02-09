@@ -133,7 +133,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
 - [x] (R) Graduation criteria is in place
 - [x] (R) Production readiness review completed
-- [ ] Production readiness review approved
+- [x] Production readiness review approved
 - [ ] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
@@ -463,13 +463,16 @@ you need any help or guidance.
 
 ### Feature Enablement and Rollback
 
-As an addition to Kubernetes testing, enablement and rollback are managed
-by configuration changes in `kubernetes/test-infra`.
+As part of Prow, enablement is managed by configuration in `kubernetes/test-infra`.
+As the test target and tool version are fixed in `kubernetes/kubernetes/hack/tools`,
+rollback can be handled by reverting any offending commit to `hack/tools`.
 
 ### Rollout, Upgrade and Rollback Planning
 
 As a third-party dependency, analyzer upgrading is handled by upgrading
-the version targeted by `kubernetes/kubernetes/hack/tools/`. 
+the version targeted by `kubernetes/kubernetes/hack/tools/`.
+Tool configuration at `kubernetes/kubernetes/hack/testdata/levee` can be updated
+independently, though may be required during tool upgrading.
 
 ### Monitoring Requirements
 
