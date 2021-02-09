@@ -1600,7 +1600,7 @@ resource usage (CPU, RAM, disk, IO, ...) in any components?**
     1.  pod IP allocation fails (this is due to CNI)
       a. Will result in the pod not running if there is no IP allocated from
          the CIDR.
-    2. routing fails
+    2. Service to pod routing fails
       a. kube proxy can't configure IP tables
       b. if the pod is created but routing is not working correctly, there
          will be an error in the kube-proxy event logs
