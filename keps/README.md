@@ -1,7 +1,7 @@
 # Kubernetes Enhancement Proposals (KEPs)
 
 A Kubernetes Enhancement Proposal (KEP) is a way to propose, communicate and coordinate on new efforts for the Kubernetes project.
-You can read the full details of the project in [KEP-1](0001-kubernetes-enhancement-proposal-process.md).
+You can read the full details of the project in [KEP-0000](sig-architecture/0000-kep-process/README.md).
 
 This process is still in a _beta_ state and is mandatory for all enhancements beginning release 1.14.
 
@@ -43,7 +43,7 @@ Benefits to KEP users (in the limit):
   This will lead to more structured decisions that stick as there is a discoverable record around the decisions.
 
 We are inspired by IETF RFCs, Pyton PEPs and Rust RFCs.
-See [KEP-1](0001-kubernetes-enhancement-proposal-process.md) for more details.
+See [KEP-0000](sig-architecture/0000-kep-process/README.md) for more details.
 
 ### Do I put my KEP in the root KEP directory or a SIG subdirectory?
 
@@ -71,4 +71,4 @@ find the issue where the current state of the KEP is being updated.
 
 The KEP process is still evolving!
 If something is missing or not answered here feel free to reach out to [SIG Architecture](https://git.k8s.io/community/sig-architecture/README.md).
-If you want to propose a change to the KEP process you can open a PR on [KEP-1](0001-kubernetes-enhancement-proposal-process.md) with your proposal.
+If you want to propose a change to the KEP process you can open a PR on [KEP-0000](sig-architecture/0000-kep-process/README.md) with your proposal.
