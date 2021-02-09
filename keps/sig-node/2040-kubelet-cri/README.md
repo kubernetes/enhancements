@@ -111,6 +111,8 @@ list of commits to file.
 - Passes all existing CRI tests on at least two container runtimes (sig-node(e2e-node) and cri-tools(critest)).
 - Is in production on numerous clouds. (Note: this reflects the urgency of the signal to move off non CRI solutions.)
 - Documentation is updated to reflect beta status. 
+- Update the CI with containerd and CRI-O versions that support the v1 proto.
+- Ensure that the required CRI stats changes are included. See https://github.com/kubernetes/enhancements/issues/2371.
 
 #### Beta -> GA Graduation
 - TBD
@@ -268,3 +270,4 @@ over the beta to GA period.
 
 - First version with v1alpha1 was released in k8s 1.5.  See https://github.com/kubernetes/community/blob/ee783a18a34ef16da07f8d16d42782a6f78a9253/contributors/devel/sig-node/container-runtime-interface.md
 - v1alpha was released with k8s 1.10. See https://github.com/kubernetes/kubernetes/pull/58973
+- v1 proto was introduced in k8s 1.20. See https://github.com/kubernetes/kubernetes/pull/96387
