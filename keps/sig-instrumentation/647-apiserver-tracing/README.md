@@ -15,7 +15,13 @@
   - [Controlling use of the OpenTelemetry library](#controlling-use-of-the-opentelemetry-library)
   - [Test Plan](#test-plan)
 - [Graduation requirements](#graduation-requirements)
-- [Production Readiness Survey](#production-readiness-survey)
+- [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
+  - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
+  - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+  - [Monitoring Requirements](#monitoring-requirements)
+  - [Dependencies](#dependencies)
+  - [Scalability](#scalability)
+  - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
 - [Alternatives considered](#alternatives-considered)
   - [Introducing a new EgressSelector type](#introducing-a-new-egressselector-type)
@@ -168,64 +174,167 @@ GA
 
 - [] Tracing e2e tests are promoted to conformance tests
 
-## Production Readiness Survey
+## Production Readiness Review Questionnaire
 
-* Feature enablement and rollback
-  - How can this feature be enabled / disabled in a live cluster?  **Feature-gate: APIServerTracing.  The API Server must be restarted to enable/disable exporting spans.**
-  - Can the feature be disabled once it has been enabled (i.e., can we roll
-    back the enablement)?  **Yes, the feature gate can be disabled in the API Server**
-  - Will enabling / disabling the feature require downtime for the control
-    plane?  **Yes, the API Server must be restarted with the feature-gate disabled.**
-  - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node?  **No.**
-  - What happens if a cluster with this feature enabled is rolled back? What happens if it is subsequently upgraded again?  **Rolling back this feature would break the added tracing telemetry, but would not affect the cluster.**
-  - Are there tests for this?  **No.  The feature hasn't been developed yet.**
-* Scalability
-  - Will enabling / using the feature result in any new API calls? **No.**
-    Describe them with their impact keeping in mind the [supported limits][]
-    (e.g. 5000 nodes per cluster, 100 pods/s churn) focusing mostly on:
-     - components listing and/or watching resources they didn't before
-     - API calls that may be triggered by changes of some Kubernetes
-       resources (e.g. update object X based on changes of object Y)
-     - periodic API calls to reconcile state (e.g. periodic fetching state,
-       heartbeats, leader election, etc.)
-  - Will enabling / using the feature result in supporting new API types? **No**
-    How many objects of that type will be supported (and how that translates
-    to limitations for users)?
-  - Will enabling / using the feature result in increasing size or count
-    of the existing API objects?  **No.**
-  - Will enabling / using the feature result in increasing time taken
-    by any operations covered by [existing SLIs/SLOs][] (e.g. by adding
-    additional work, introducing new steps in between, etc.)? **Yes.  It will increase API Server request latency by a negligible amount (<1 microsecond) for encoding and decoding the trace contex from headers, and recording spans in memory.  Exporting spans is not in the critical path.**
-    Please describe the details if so.
-  - Will enabling / using the feature result in non-negligible increase
-    of resource usage (CPU, RAM, disk IO, ...) in any components?
-    Things to keep in mind include: additional in-memory state, additional
-    non-trivial computations, excessive access to disks (including increased
-    log volume), significant amount of data sent and/or received over
-    network, etc. Think through this in both small and large cases, again
-    with respect to the [supported limits][].  **The tracing client library has a small, in-memory cache for outgoing spans.**
-* Rollout, Upgrade, and Rollback Planning
-* Dependencies
-  - Does this feature depend on any specific services running in the cluster
-    (e.g., a metrics service)? **Yes.  In the current version of the proposal, users can run the [OpenTelemetry Collector](https://github.com/open-telemetry/opentelemetry-collector) to configure which backend (e.g. jager, zipkin, etc.) they want telemetry sent to.**
-  - How does this feature respond to complete failures of the services on
-    which it depends?  **Traces will stop being exported, and components will store spans in memory until the buffer is full.  After the buffer fills up, spans will be dropped.**
-  - How does this feature respond to degraded performance or high error rates
-    from services on which it depends? **If the bi-directional grpc streaming connection to the collector cannot be established or is broken, the controller retries the connection every 5 minutes (by default).**
-* Monitoring requirements
-  - How can an operator determine if the feature is in use by workloads?  **Operators are generally expected to have access to the trace backend.**
-  - How can an operator determine if the feature is functioning properly?
-  - What are the service level indicators an operator can use to determine the
-    health of the service?  **Error rate of sending traces in the API Server and OpenTelemetry collector.**
-  - What are reasonable service level objectives for the feature?  **Not entirely sure, but I would expect at least 99% of spans to be sent successfully, if not more.**
-* Troubleshooting
-  - What are the known failure modes?  **The API Server is misconfigured, and cannot talk to the collector.  The collector is misconfigured, and can't send traces to the backend.**
-  - How can those be detected via metrics or logs?  Logs from the component or agent based on the failure mode.
-  - What are the mitigations for each of those failure modes?  **None.  You must correctly configure the collector for tracing to work.**
-  - What are the most useful log messages and what logging levels do they require? **All errors are useful, and are logged as errors (no logging levels required). Failure to initialize exporters (in both controller and collector), failures exporting metrics are the most useful.  Errors are logged for each failed attempt to establish a connection to the collector.**
-  - What steps should be taken if SLOs are not being met to determine the
-    problem?  **Look at API Server  and collector logs.**
+### Feature Enablement and Rollback
+
+* **How can this feature be enabled / disabled in a live cluster?**
+  - [X] Feature gate (also fill in values in `kep.yaml`)
+    - Feature gate name: APIServerTracing
+    - Components depending on the feature gate: kube-apiserver
+  - [X] Other
+    - Describe the mechanism: Use specify a file using the `--opentelemetry-config-file` API Server flag.
+    - Will enabling / disabling the feature require downtime of the control
+      plane?  Yes, it will require restarting the API Server.
+    - Will enabling / disabling the feature require downtime or reprovisioning
+      of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled). No.
+
+* **Does enabling the feature change any default behavior?**
+  No. The feature is disabled unlesss both the feature gate and `--opentelemetry-config-file` flag are set.  When the feature is enabled, it doesn't change behavior from the users' perspective; it only adds tracing telemetry based on API Server requests.
+
+* **Can the feature be disabled once it has been enabled (i.e. can we roll back
+  the enablement)?**
+  Yes.
+
+* **What happens if we reenable the feature if it was previously rolled back?**
+  It will start sending traces again.  This will happen regardless of whether it was disabled by removing the `--opentelemetry-config-file` flag, or by disabling via feature gate.
+
+* **Are there any tests for feature enablement/disablement?**
+  Unit tests switching feature gates will be added.
+
+### Rollout, Upgrade and Rollback Planning
+
+_This section must be completed when targeting beta graduation to a release._
+
+* **How can a rollout fail? Can it impact already running workloads?**
+  Try to be as paranoid as possible - e.g., what if some components will restart
+   mid-rollout?
+
+* **What specific metrics should inform a rollback?**
+
+* **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
+  Describe manual testing that was done and the outcomes.
+  Longer term, we may want to require automated upgrade/rollback tests, but we
+  are missing a bunch of machinery and tooling and can't do that now.
+
+* **Is the rollout accompanied by any deprecations and/or removals of features, APIs, 
+fields of API types, flags, etc.?**
+  Even if applying deprecation policies, they may still surprise some users.
+
+### Monitoring Requirements
+
+_This section must be completed when targeting beta graduation to a release._
+
+* **How can an operator determine if the feature is in use by workloads?**
+  Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
+  checking if there are objects with field X set) may be a last resort. Avoid
+  logs or events for this purpose.
+
+* **What are the SLIs (Service Level Indicators) an operator can use to determine 
+the health of the service?**
+  - [ ] Metrics
+    - Metric name:
+    - [Optional] Aggregation method:
+    - Components exposing the metric:
+  - [ ] Other (treat as last resort)
+    - Details:
+
+* **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
+  At a high level, this usually will be in the form of "high percentile of SLI
+  per day <= X". It's impossible to provide comprehensive guidance, but at the very
+  high level (needs more precise definitions) those may be things like:
+  - per-day percentage of API calls finishing with 5XX errors <= 1%
+  - 99% percentile over day of absolute value from (job creation time minus expected
+    job creation time) for cron job <= 10%
+  - 99,9% of /health requests per day finish with 200 code
+
+* **Are there any missing metrics that would be useful to have to improve observability 
+of this feature?**
+  Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
+  implementation difficulties, etc.).
+
+### Dependencies
+
+_This section must be completed when targeting beta graduation to a release._
+
+* **Does this feature depend on any specific services running in the cluster?**
+  Think about both cluster-level services (e.g. metrics-server) as well
+  as node-level agents (e.g. specific version of CRI). Focus on external or
+  optional services that are needed. For example, if this feature depends on
+  a cloud provider API, or upon an external software-defined storage or network
+  control plane.
+
+  For each of these, fill in the following—thinking about running existing user workloads
+  and creating new ones, as well as about cluster-level services (e.g. DNS):
+  - [Dependency name]
+    - Usage description:
+      - Impact of its outage on the feature:
+      - Impact of its degraded performance or high-error rates on the feature:
+
+
+### Scalability
+
+_For alpha, this section is encouraged: reviewers should consider these questions
+and attempt to answer them._
+
+_For beta, this section is required: reviewers must answer these questions._
+
+_For GA, this section is required: approvers should be able to confirm the
+previous answers based on experience in the field._
+
+* **Will enabling / using this feature result in any new API calls?**
+  This will not add any additional API calls.
+
+* **Will enabling / using this feature result in introducing new API types?**
+  This will introduce an API type for the configuration.  This is only for
+  loading configuration, users cannot create these objects.
+
+* **Will enabling / using this feature result in any new calls to the cloud 
+provider?**
+  Not directly.  Cloud providers could choose to send traces to their managed
+  trace backends, but this requires them to set up a telemetry pipeline as
+  described above.
+
+* **Will enabling / using this feature result in increasing size or count of 
+the existing API objects?**
+  No.
+
+* **Will enabling / using this feature result in increasing time taken by any 
+operations covered by [existing SLIs/SLOs]?**
+  It will increase API Server request latency by a negligible amount (<1 microsecond)
+  for encoding and decoding the trace contex from headers, and recording spans
+  in memory. Exporting spans is not in the critical path.
+
+* **Will enabling / using this feature result in non-negligible increase of 
+resource usage (CPU, RAM, disk, IO, ...) in any components?**
+  The tracing client library has a small, in-memory cache for outgoing spans.
+
+### Troubleshooting
+
+The Troubleshooting section currently serves the `Playbook` role. We may consider
+splitting it into a dedicated `Playbook` document (potentially with some monitoring
+details). For now, we leave it here.
+
+_This section must be completed when targeting beta graduation to a release._
+
+* **How does this feature react if the API server and/or etcd is unavailable?**
+
+* **What are other known failure modes?**
+  For each of them, fill in the following information by copying the below template:
+  - [Failure mode brief description]
+    - Detection: How can it be detected via metrics? Stated another way:
+      how can an operator troubleshoot without logging into a master or worker node?
+    - Mitigations: What can be done to stop the bleeding, especially for already
+      running user workloads?
+    - Diagnostics: What are the useful log messages and their required logging
+      levels that could help debug the issue?
+      Not required until feature graduated to beta.
+    - Testing: Are there any tests for failure mode? If not, describe why.
+
+* **What steps should be taken if SLOs are not being met to determine the problem?**
+
+[supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
+[existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 
 ## Implementation History
 
@@ -234,6 +343,7 @@ GA
 * [Instrumentation of Kubernetes components for 1/24/2019 community demo](https://github.com/kubernetes/kubernetes/compare/master...dashpole:tracing)
 * KEP merged as provisional on 1/8/2020, including controller tracing
 * KEP scoped down to only API Server traces on 5/1/2020
+* Updated PRR section 2/8/2021
 
 ## Alternatives considered
 
