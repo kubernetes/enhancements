@@ -1,4 +1,4 @@
-# Cloud Controller Manager Migration
+# Controller Manager Leader Migration
 
 ## Table of Contents
 
@@ -9,7 +9,7 @@
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [Implementation Details/Notes/Constraints [optional]](#implementation-detailsnotesconstraints-optional)
+  - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
     - [Migration Configuration](#migration-configuration)
     - [Default LeaderMigrationConfiguration](#default-leadermigrationconfiguration)
     - [Component Flags](#component-flags)
@@ -18,41 +18,43 @@
       - [Upgrade the Control Plane](#upgrade-the-control-plane)
       - [Disable Leader Migration](#disable-leader-migration)
   - [Risks and Mitigations](#risks-and-mitigations)
+- [Design Details](#design-details)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
       - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
       - [Beta -&gt; GA Graduation](#beta---ga-graduation)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
+- [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
+  - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
 - [Implementation History](#implementation-history)
+- [Drawbacks](#drawbacks)
+- [Alternatives](#alternatives)
 <!-- /toc -->
 
 ## Release Signoff Checklist
 
-**ACTION REQUIRED:** In order to merge code into a release, there must be an issue in [kubernetes/enhancements] referencing this KEP and targeting a release milestone **before [Enhancement Freeze](https://github.com/kubernetes/sig-release/tree/master/releases)
-of the targeted release**.
+Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-For enhancements that make changes to code or processes/procedures in core Kubernetes i.e., [kubernetes/kubernetes], we require the following Release Signoff checklist to be completed.
-
-Check these off as they are completed for the Release Team to track. These checklist items _must_ be updated for the enhancement to be released.
-
-- [X] kubernetes/enhancements issue in release milestone, which links to KEP (this should be a link to the KEP location in kubernetes/enhancements, not the initial KEP PR)
-- [X] KEP approvers have set the KEP status to `implementable`
-- [X] Design details are appropriately documented
-- [X] Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
-- [X] Graduation criteria is in place
-- [X] "Implementation History" section is up-to-date for milestone
+- [X] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [X] (R) KEP approvers have approved the KEP status as `implementable`
+- [X] (R) Design details are appropriately documented
+- [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [X] (R) Graduation criteria is in place
+- [X] (R) Production readiness review completed
+- [X] (R) Production readiness review approved
+- [ ] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [X] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
-**Note:** Any PRs to move a KEP to `implementable` or significant changes once it is marked `implementable` should be approved by each of the KEP approvers. If any of those approvers is no longer appropriate than changes to that list should be approved by the remaining approvers and/or the owning SIG (or SIG-arch for cross cutting KEPs).
-
+<!--
 **Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
+-->
 
 [kubernetes.io]: https://kubernetes.io/
-[kubernetes/enhancements]: https://github.com/kubernetes/enhancements/issues
-[kubernetes/kubernetes]: https://github.com/kubernetes/kubernetes
-[kubernetes/website]: https://github.com/kubernetes/website
+[kubernetes/enhancements]: https://git.k8s.io/enhancements
+[kubernetes/kubernetes]: https://git.k8s.io/kubernetes
+[kubernetes/website]: https://git.k8s.io/website
 
 ## Summary
 
@@ -139,7 +141,7 @@ will prevent any of the v1.18 CCMs from claiming the lock. When the current hold
 
 
 
-### Implementation Details/Notes/Constraints [optional]
+### Notes/Constraints/Caveats (Optional)
 
 #### Migration Configuration
 
@@ -289,6 +291,8 @@ unsetting the `--enable-migration-config` flag.
 * Increased apiserver load due to new leader election resource per migration configuration.
 * User error could result in cloud controllers not running in any component at all.
 
+## Design Details
+
 ### Test Plan
 
 - Unit Testing:
@@ -323,6 +327,31 @@ does not change incompatibly across those versions.
 
 Version skew is handled as long as the leader name is consistent across all control plane nodes during upgrade.
 
+## Production Readiness Review Questionnaire
+
+### Feature Enablement and Rollback
+
+###### How can this feature be enabled / disabled in a live cluster?
+
+- [X] Other
+  - Describe the mechanism: this feature must be explicitly enabled by `--enable-leader-migration` flag
+  - Will enabling / disabling the feature require downtime of the control plane? No
+  - Will enabling / disabling the feature require downtime or re-provisioning of a node? No
+
+###### Does enabling the feature change any default behavior?
+
+No. The user must explicitly add `--enable-leader-migration` flag to enable this feature. If the user enables this
+feature without providing a configuration, the default configuration will reflect default situation and "just works".
+
+###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
+
+No. The feature is enabled and disabled solely with a flag
+
+###### Are there any tests for feature enablement/disablement?
+
+Yes. Unit & integration tests include flag/configuration parsing. E2E test will have cases with the feature enabled and
+disabled.
+
 ## Implementation History
 
 - 07-25-2019 `Summary` and `Motivation` sections were merged signaling SIG acceptance
@@ -330,3 +359,15 @@ Version skew is handled as long as the leader name is consistent across all cont
 - 09-30-2020 `LeaderMigrationConfiguration` and `ControllerLeaderConfiguration` schemas merged as #94205.
 - 11-04-2020 Registration of both types merged as #96133
 - 12-28-2020 Parsing and validation merged as #96226
+
+## Drawbacks
+
+A single-node control plane does not need this feature. If downtime is allowed during control plane upgrade, KCM and CCM
+can have no migration mechanism at all.
+
+## Alternatives
+
+Change all controllers so that they can handle a situation where two instances of the same controller are running in
+both KCM and CCM. This requires a massive change to all controllers and potentially require other kinds of
+synchronization. It would be better that the controller manager provides migration mechanism instead of relying on each
+controller.
