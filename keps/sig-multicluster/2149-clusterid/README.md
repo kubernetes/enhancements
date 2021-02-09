@@ -426,6 +426,13 @@ required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
 
+### Rationale behind the `ClusterClaim` CRD
+
+This proposal suggests a CRD composed of objects all of the same `Kind` `ClusterClaim`, and that are distinguished using certain well known values in their `metadata.name` fields. This design avoids cluster-wide singleton `Kind`s for each claim, reduces access competition for the same metadata by making each claim its own resource (instead of all in one), allows for RBAC to be applied in a targeted way to individual claims, and supports the user prerogative to store other simple metadata in one centralized CRD by creating CRs of the same `Kind` `ClusterClaim` but with their own names.
+
+Storing arbitrary facts about a cluster can be implemented in other ways. For example, Cluster API subproject stopgapped their need for cluster name metadata by leveraging the existing `Node` `Kind` and storing metadata there via annotations, such as `cluster.x-k8s.io/cluster-name` ([ref](https://github.com/kubernetes-sigs/cluster-api/pull/4048)). While practical for their case, this KEP avoids adding cluster-level info as annotations on child resources so as not to be dependent on a child resource's existence, to avoid issues maintaining parity across multiple resources of the same `Kind` for identical metadata, and maintain RBAC separation between the cluster-level metadata and the child resources. Even within the realm of implementing as a CRD, the API design could focus on distinguishing each fact by utilizing different `spec.Type`s (as `Service` objects do e.g. `spec.type=ClusterIP` or `spec.type=ExternalName`), or even more strictly, each as a different `Kind`.  The former provides no specific advantages since multiple differently named claims for the same fact are unnecessary, and is less expressive to query (it is easier to query by name directly like `kubectl get clusterclaims id.k8s.io`). The latter would result in the proliferation of cluster-wide singleton `Kind` resources, and be burdensome for users to create their own custom claims.
+
+
 ### Implementing the `ClusterClaim` CRD
 
 #### `id.k8s.io ClusterClaim`
@@ -434,31 +441,40 @@ The actual implementation to select and store the identifier of a given cluster 
 
 That being said, for less stringent identifiers, for example a user-specified and human-readable value, a given `id.k8s.io ClusterClaim` may need to change if an identical identifier is in use by another member of the ClusterSet it wants to join. It is likely this would need to happen outside the cluster-local boundary; for example, whatever manages memberships would likely need to deny the incoming cluster, and potentially assign (or prompt the cluster to assign itself) a new ID.
 
-  ```
-  <<[UNRESOLVED]>>
-  Effect of different identifier styles (mainly UUID vs human readable) on DNS
-  <<[/UNRESOLVED]>>
-  ```
+The most common discussion point within the SIG regarding these two options is when it comes to DNS. Since DNS names are originally intended to be the a human readable technique of address, clunky DNS names composed from long UUIDs seems like an anti-pattern, or at least unfinished. `<<[UNRESOLVED]>>So what are we gonna do about it?<<[/UNRESOLVED]>>`
 
   ```
   <<[UNRESOLVED]>>
   Do we need examples/guidance on the recommended structure of the claim-dependent value? Can we/should we recommend (/enforce?) not dropping arbitrary JSON in there? For example, that the value of `id.k8s.io` would likely be a string, probably the kube-system uuid.
   <<[/UNRESOLVED]>>
   ```
+An example object of `id.k8s.io ClusterClaim`:
+```
+apiVersion: multicluster.k8s.io/v1
+kind: ClusterClaim
+name: id.k8s.io
+spec:
+  value: 721ab723-13bc-11e5-aec2-42010af0021e
+```
 
 #### `clusterset.k8s.io ClusterClaim`
 
-  ```
-  <<[UNRESOLVED]>>
-  How do we associate a cluster with a Clusterset?
-  <<[/UNRESOLVED]>>
-  ```
+A cluster is expected to be authoritatively associated with a ClusterSet by an external cluster registry. Mirroring this information in the cluster-local `ClusterClaim` CRD will necessarily need to be managed above the level of the cluster itself, since the properties of `clusterset.k8s.io` extend beyond the boundaries of a single cluster, and likely by something that has access to the cluster registry. It is expected that the mcs-controller ([as described in the MCS API KEP](https://github.com/kubernetes/enhancements/tree/master/keps/sig-multicluster/1645-multi-cluster-services-api#proposal)), will act as an admission controller to verify individual objects of this claim.
 
   ```
   <<[UNRESOLVED]>>
   Do we need examples/guidance on the recommended structure of the claim-dependent value? Can we/should we recommend (/enforce?) not dropping arbitrary JSON in there? For example, that the value of `clusterset.k8s.io` would likely be a string, probably the name of the membership used by the cluster registry that the given implementation is using.
   <<[/UNRESOLVED]>>
   ```
+
+An example object of `clusterset.k8s.io ClusterClaim`:
+```
+apiVersion: multicluster.k8s.io/v1
+kind: ClusterClaim
+name: clusterset.k8s.io
+spec:
+  value: environ-1
+```
 
 ### Test Plan
 
