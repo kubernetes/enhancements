@@ -270,6 +270,7 @@ This would then be interpreted by our machinery as this:
 For `Alpha`, unit test to verify that the metric label will be set to "unexpected" if the metric encounters label values outside our explicit allowlist of values.
 ### Graduation Criteria
 For `Alpha`, the allowlist of metrics can be configured via the exposed flag and the unit test is passed.
+For `Beta`, the allowlist can be configured from a input file(e.g. yaml file).
 ### Upgrade / Downgrade strategy
 N/A
 ### Version Skew Strategy
@@ -281,37 +282,28 @@ N/A
 _This section must be completed when targeting alpha to a release._
 
 * **How can this feature be enabled / disabled in a live cluster?**
-  - [ ] Feature gate (also fill in values in `kep.yaml`)
-    - Feature gate name:
-    - Components depending on the feature gate:
-  - [x] Other
-    - Describe the mechanism: 
-      New flag will be used to config the allowlist of label values for a metric.
-      This flag will become standard flag for all k8s components and will be added to
-      `k8s.io/component-base`.
-    - Will enabling / disabling the feature require downtime of the control
-      plane? Yes, the components need to restart with flag enabled.
-    - Will enabling / disabling the feature require downtime or reprovisioning
-      of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled). 
-      Yes, the components need to restart with flag enabled.
+  - [x] Feature gate (also fill in values in `kep.yaml`)
+    - Feature gate name: MetricCardinalityEnforcement
+    - Components depending on the feature gate: All components that emit metrics
 
 * **Does enabling the feature change any default behavior?**
   Any change of default behavior may be surprising to users or break existing
   automations, so be extremely careful here.
-  Using this feature requires restarting the component with the flag enabled. Once enabled, the metric label will be set to "unexpected" if the metric encounters label values outside our explicit allowlist of values. 
+  Using this feature requires restarting the component with the allowlist flag enabled. Once enabled, the metric label will be set to "unexpected" if the metric encounters label values outside our explicit allowlist of values. 
 
 * **Can the feature be disabled once it has been enabled (i.e. can we roll back
   the enablement)?**
   Also set `disable-supported` to `true` or `false` in `kep.yaml`.
   Describe the consequences on existing workloads (e.g., if this is a runtime
   feature, can it break the existing applications?).
-  Yes, restarting the component without the allowlist flag will basically disable this feature.
+  Yes, disabling the feature gate can revert it back to existing behavior
   
 * **What happens if we reenable the feature if it was previously rolled back?**
   The enable-disable-enable process will not cause problem. But it may be problematic during the rolled back period with the unbounded metrics value.
   
 * **Are there any tests for feature enablement/disablement?**
-  No.  
+  Using unit tests to cover the combination cases w/wo feature and w/wo allowlist.
+  
 ### Rollout, Upgrade and Rollback Planning
 
 _This section must be completed when targeting beta graduation to a release._
@@ -319,14 +311,14 @@ _This section must be completed when targeting beta graduation to a release._
 * **How can a rollout fail? Can it impact already running workloads?**
   Try to be as paranoid as possible - e.g., what if some components will restart
    mid-rollout?
-  Using this feature requires restarting the component with the flag enabled.
+  Using this feature requires restarting the component with the allowlist flag enabled.
 * **What specific metrics should inform a rollback?**
   None.
 * **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
   Describe manual testing that was done and the outcomes.
   Longer term, we may want to require automated upgrade/rollback tests, but we
   are missing a bunch of machinery and tooling and can't do that now.
-  No.
+  In alpha, we can do some manual tests on enable/disable allowlist flag and enable/disable feature gate.
 * **Is the rollout accompanied by any deprecations and/or removals of features, APIs, 
 fields of API types, flags, etc.?**
   A component metric flag for ingesting allowlist to be added.
