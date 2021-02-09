@@ -1,27 +1,3 @@
----
-title: Consistent Reads from Cache
-authors:
-  - "@jpbetz"
-  - "@wojtek-t"
-owning-sig: sig-api-machinery
-participating-sigs:
-  - sig-scalability
-reviewers:
-  - "@wojtek-t"
-  - "@jingyih"
-approvers:
-  - "@lavalamp"
-  - "@deads2k"
-  - "@wojtek-t"
-editor: TBD
-creation-date: 2019-12-10
-last-updated: 2020-02-19
-status: provisional
-see-also:
-replaces:
-superseded-by:
----
-
 # Consistent Reads from Cache
 
 Kubernetes Get and List requests are guaranteed to be "consistent reads" if the
@@ -156,9 +132,9 @@ When an consistent LIST request is received and the watch cache is enabled:
 - Use the existing `waitUntilFreshAndBlock` function in the watch cache to wait briefly for the watch to catch up to the current revision.
 - If the block times out, the request will result in rejection. (see "What if the watch cache is stale?" section for details)
 
-To get the revsion we have some options: 
+To get the revsion we have some options:
 
-- Use an etcd range request with `WithCount` enabled so etcd return only a count and revision 
+- Use an etcd range request with `WithCount` enabled so etcd return only a count and revision
 - Use an etcd range request against a known empty range with limit=1 as an additional guard (since etcd does not allow for limit=0)
 
 Consistent GET requests will continue to be served directly from etcd. We will
@@ -275,7 +251,7 @@ To supporting watch cache pagination:
   default etcd compaction history of 5 minutes.
 - The watch cache would need to be resturctured so that is can serve LIST for
   the resource versions it has returned continuation tokens to clients for.
-  
+
 Both of these are major changes, and would require scalability validation.
 
 Potential approach:
@@ -296,7 +272,7 @@ clients must be able to tolerate unpaginated responses for paginated LIST reques
 
 The kube-apiserver already switches between serving paginated responses and
 serving unpaginated responses depending on if the watch cache is enabled for the
-types requested. 
+types requested.
 
 User cases that have disabled the watch cache will still receive paginated responses.
 

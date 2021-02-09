@@ -1,0 +1,14 @@
+title: Automated Storage Version Migration with Storage Version Hash
+kep-number: 2343
+authors:
+  - "@xuchao"
+owning-sig: sig-api-machinery
+reviewers:
+  - "@deads2k"
+  - "@yliaog"
+approvers:
+  - "@deads2k"
+  - "@lavalamp"
+creation-date: 2019-01-23
+last-updated: 2019-01-23
+status: provisional

@@ -1,0 +1,15 @@
+title: Migrating API objects to latest storage version
+kep-number: 2330
+authors:
+  - "@xuchao"
+owning-sig: sig-api-machinery
+reviewers:
+  - "@deads2k"
+  - "@yliaog"
+  - "@lavalamp"
+approvers:
+  - "@deads2k"
+  - "@lavalamp"
+creation-date: 2018-08-06
+last-updated: 2019-03-19
+status: implementable

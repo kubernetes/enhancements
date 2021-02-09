@@ -1,19 +1,3 @@
----
-title: Enabling clients to tell if resource endpoints serve the same set of objects
-authors:
-  - "@xuchao"
-owning-sig: sig-api-machinery
-reviewers:
-  - "@deads2k"
-  - "@lavalamp"
-approvers:
-  - "@deads2k"
-  - "@lavalamp"
-creation-date: 2018-10-12
-last-updated: 2018-12-17
-status: provisional
----
-
 # Enabling clients to tell if resource endpoints serve the same set of objects
 
 ## Table of Contents
@@ -155,7 +139,7 @@ though the objects are not persisted, the [forward compatibility][] motivation
 still applies, e.g., admins might configure the admission webhooks to intercept
 requests sent to all endpoints. Thus, the `resourceID` cannot be left empty, it
 will be set to `SHA256(<the would-be etcd key prefix>)`, e.g., for
-`tokenReviews`, it's `SHA256(/registry/tokenreviews)`. 
+`tokenReviews`, it's `SHA256(/registry/tokenreviews)`.
 
 [forward compatibility]:#broken-forwards-compatibility
 
@@ -196,7 +180,7 @@ because the discovery API is read-only.
 
 2. Serving a list of all sets of aliasing resources via a new API. Aggregated
    apiservers make such a design complex. For example, we will need to design how
-   the aggregated apiserver registers its resource aliases. 
+   the aggregated apiserver registers its resource aliases.
 
 3. Hard coding UUIDs for built-in resources, instead of hashes. This doesn't
    work for CRDs.

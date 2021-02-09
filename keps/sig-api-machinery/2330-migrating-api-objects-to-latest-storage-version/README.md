@@ -1,20 +1,3 @@
----
-title: Migrating API objects to latest storage version
-authors:
-  - "@xuchao"
-owning-sig: sig-api-machinery
-reviewers:
-  - "@deads2k"
-  - "@yliaog"
-  - "@lavalamp"
-approvers:
-  - "@deads2k"
-  - "@lavalamp"
-creation-date: 2018-08-06
-last-updated: 2019-03-19
-status: implementable
----
-
 # Migrating API objects to latest storage version
 
 ## Table of Contents
@@ -248,7 +231,7 @@ Before upgrading or downgrading the cluster, the cluster administrator must run
 migrations have completed. Otherwise the apiserver can crash, because it cannot
 interpret the serialized data in etcd. To mitigate, the cluster administrator
 can rollback the apiserver to the old version, and wait for the migration to
-complete. 
+complete.
 
 With the newly introduced [storageStates API][], the cluster administrator can
 fast upgrade/downgrade as long as the new apiserver binaries understand all
