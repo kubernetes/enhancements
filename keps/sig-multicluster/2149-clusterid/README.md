@@ -446,16 +446,17 @@ The most common discussion point within the SIG regarding these two options is w
   ```
   <<[UNRESOLVED]>>
   Do we need examples/guidance on the recommended structure of the claim-dependent value? Can we/should we recommend (/enforce?) not dropping arbitrary JSON in there? For example, that the value of `id.k8s.io` would likely be a string, probably the kube-system uuid.
+  
+  An example object of `id.k8s.io ClusterClaim`:
+
+  apiVersion: multicluster.k8s.io/v1
+  kind: ClusterClaim
+  name: id.k8s.io
+  spec:
+    value: 721ab723-13bc-11e5-aec2-42010af0021e
+
   <<[/UNRESOLVED]>>
   ```
-An example object of `id.k8s.io ClusterClaim`:
-```
-apiVersion: multicluster.k8s.io/v1
-kind: ClusterClaim
-name: id.k8s.io
-spec:
-  value: 721ab723-13bc-11e5-aec2-42010af0021e
-```
 
 #### `clusterset.k8s.io ClusterClaim`
 
@@ -464,16 +465,16 @@ A cluster is expected to be authoritatively associated with a ClusterSet by an e
   ```
   <<[UNRESOLVED]>>
   Do we need examples/guidance on the recommended structure of the claim-dependent value? Can we/should we recommend (/enforce?) not dropping arbitrary JSON in there? For example, that the value of `clusterset.k8s.io` would likely be a string, probably the name of the membership used by the cluster registry that the given implementation is using.
-  <<[/UNRESOLVED]>>
-  ```
 
-An example object of `clusterset.k8s.io ClusterClaim`:
-```
-apiVersion: multicluster.k8s.io/v1
-kind: ClusterClaim
-name: clusterset.k8s.io
-spec:
-  value: environ-1
+  An example object of `clusterset.k8s.io ClusterClaim`:
+
+  apiVersion: multicluster.k8s.io/v1
+  kind: ClusterClaim
+  name: clusterset.k8s.io
+  spec:
+    value: environ-1
+  
+  <<[/UNRESOLVED]>>
 ```
 
 ### Test Plan
