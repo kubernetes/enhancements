@@ -36,8 +36,8 @@
     - [Single-NUMA Systems Tests](#single-numa-systems-tests)
     - [Multi-NUMA System Tests](#multi-numa-system-tests)
   - [Graduation Criteria](#graduation-criteria)
-    - [Phase 1: Alpha (target v1.20)](#phase-1-alpha-target-v120)
-    - [Phase 2: Beta (target v1.21)](#phase-2-beta-target-v121)
+    - [Phase 1: Alpha (target v1.21)](#phase-1-alpha-target-v121)
+    - [Phase 2: Beta (target v1.22)](#phase-2-beta-target-v122)
     - [GA (stable)](#ga-stable)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
@@ -64,16 +64,16 @@
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
-- [ ] (R) Graduation criteria is in place
-- [ ] (R) Production readiness review completed
-- [ ] Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Design details are appropriately documented
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [x] (R) Graduation criteria is in place
+- [x] (R) Production readiness review completed
+- [x] Production readiness review approved
+- [x] "Implementation History" section is up-to-date for milestone
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 ## Summary
 
@@ -418,7 +418,7 @@ Memory pinning will be validated for Topology Manager `single-numa-node` and `re
 
 ### Graduation Criteria
 
-#### Phase 1: Alpha (target v1.20)
+#### Phase 1: Alpha (target v1.21)
 - Feature gate is disabled by default.
 - Memory Manager supports multi-NUMA guaranteed memory allocation for pods in Guaranteed/QoS class.
 - Unit test coverage.
@@ -427,7 +427,7 @@ Memory pinning will be validated for Topology Manager `single-numa-node` and `re
 - All flags are supported, i.e.: `--memory-manager-policy`, `--reserved-memory`.
 - Add E2E tests.
 
-#### Phase 2: Beta (target v1.21)
+#### Phase 2: Beta (target v1.22)
 - Extend E2E test coverage.
 - Feature gate is enabled by default.
 - Provide beta-level documentation.
@@ -686,7 +686,8 @@ _This section must be completed when targeting beta graduation to a release._
 
 ## Implementation History
 
-Memory Manager has been developed under the branch `feature-memory-manager` in https://github.com/mgjeong/kubernetes/.
+Memory Manager has been developed within this PR: 
+https://github.com/kubernetes/kubernetes/pull/95479
 
 ## Drawbacks
 
