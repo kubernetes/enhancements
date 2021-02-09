@@ -129,7 +129,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Design details are appropriately documented
 - [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
 - [x] (R) Graduation criteria is in place
-- [ ] (R) Production readiness review completed
+- [x] (R) Production readiness review completed
 - [ ] (R) Production readiness review approved
 - [ ] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
@@ -167,7 +167,7 @@ updates.
 
 Kubernetes currently uses [Kubetest](https://github.com/kubernetes/test-infra/tree/master/kubetest) as the interface for launching and running e2e tests. 
 It also uses a set of scripts called [“scenarios”](https://github.com/kubernetes/test-infra/tree/master/scenarios) for running common use cases such as setting up end-to-end tests or pushing CI builds.  
-Kubetest and scenarios have since both moved to [maintenance mode](https://github.com/kubernetes/test-infra/tree/master/kubetest#deprecation-notice), [(2)](https://github.com/kubernetes/test-infra/tree/master/scenarios#deprecation-notice)  due to lack of maintainability and has been planned to be replaced by [Kubetest2](https://github.com/kubernetes-sigs/kubetest2). 
+Kubetest and scenarios have both been [deprecated](https://github.com/kubernetes/test-infra/tree/master/kubetest#deprecation-notice), [(2)](https://github.com/kubernetes/test-infra/tree/master/scenarios#deprecation-notice) for a while, with a recommendation to move jobs to [kubetest2](https://github.com/kubernetes-sigs/kubetest2). 
 
 This KEP proposes a plan for migration/deprecation of CI jobs that are in the critical path of a release.
 
@@ -186,7 +186,7 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 
 - Converge towards a single community-supported e2e launcher tool for kubernetes
 - Ensure all kubernetes/kubernetes release-blocking and merge-blocking jobs use the same e2e test tool, to reduce community maintenance burden, increase community troubleshooting awareness
-- Document guides for migrating jobs away from kubetest to kubetest2 to enable self-service (which will help for migrating away all the jobs)
+- Document guides for migrating jobs away from kubetest to kubetest2 to enable self-service migration of non-blocking jobs
 - Accelerate the [migration from bootstrap.py to pod-utilities](https://github.com/kubernetes/test-infra/issues/20760) since Kubetest2 does not depend on bootstrap
 - Enable SIG Release to deprecate legacy [push-build.sh](https://github.com/kubernetes/release#legacy)
 
@@ -389,10 +389,13 @@ when drafting this test plan.
 
 
 - This will be declared **beta** when:
+    - A guide for migration from kubetest to kubetest2 exists
     - GCE jobs are monitored to be stable, and have moved over to kubetest2
     - Node, Scale jobs have corresponding shadow jobs on k/k master
 
 - This will be declared **GA** when:
+    - Jobs use pre-installed tagged versions of kubetest2 binaries
+    - Tracking issues exist for each SIG to migrate their jobs from kubetest to kubetest2 
     - All kubernetes/kubernetes master presubmit-kubernetes-blocking, release-blocking jobs are using kubetest2
 
 
