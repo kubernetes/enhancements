@@ -493,7 +493,8 @@ More information on Windows resource access can be found at https://docs.microso
 Note: there will be no `chroot` equivalent.
 - An environment variable `$CONTAINER_SANDBOX_MOUNT_POINT` will be set to the absolute path where the container volume is mounted.
 - Volume mounts (including service account tokens) will be supported for privileged containers and will be mounted under the container volume. Programs running inside the container can either access volume mounts be using a relative path or by prefixing `$CONTAINER_SANDBOX_MOUNT_POINT` to their paths (example: use either `.\var\run\secrets\kubernetes.io\serviceaccount\` or `$CONTAINER_SANDBOX_MOUNT_POINT\var\run\secrets\kubernetes.io\serviceaccount\` to access service account tokens). These relative paths will be based on `Pod.containers.volumeMounts.mountPath`.
-- Client libraries such as https://pkg.go.dev/k8s.io/client-go/rest#InClusterConfig will be updated to prefix paths with `$CONTAINER_SANDBOX_MOUNT_POINT` if the environment variable is set for Windows so these libraries will work in `hostProcess`containers.
+- Client libraries such as https://pkg.go.dev/k8s.io/client-go/rest#InClusterConfig may be updated to prefix paths with `$CONTAINER_SANDBOX_MOUNT_POINT` if the environment variable is set for Windows so these libraries will work in `hostProcess`containers. This will be re-evaluated when transistioning from `alpha` to `beta` as we get more feedback.
+Note: it is not possible to feature-gate this behavior in client libraries and because of this the functionality should not be added to client libraries after privileged containers while this feature is in `alpha`.
 - Named Pipe mounts will **not** be supported. Instead named pipes should access via their path on the host (\\\\.\\pipe\\*). Unix domain sockets mounts **will** be supported.
 - All other volume types supported for normal containers on Windows will work with privileged containers.
 
@@ -762,6 +763,8 @@ Beta
 - Kubernetes Target 1.22 or later
 - OS support: 1809/Windows 2019 LTSC and all future versions of Windows Server
 - Beta Feature Gate for passing privilege flag to CRI
+- Extensive documentation around `HostProcess` containers on https://kubernetes.io/
+  - Includes clarification around disk limits mentioned in [Resource Limits](#resource-limits)
 
 GA:
 
