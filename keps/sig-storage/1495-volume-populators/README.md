@@ -29,6 +29,8 @@
   - [Scalability](#scalability)
   - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
+- [Alternatives](#alternatives)
+  - [Validating webhook](#validating-webhook)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -100,8 +102,11 @@ create a CR for each kind of data source that it understands.
 
 ### Non-Goals
 
-- This proposal DOES NOT recommend any specific approach for data populators. The specific
-  design of how a data populator should work will be handled in a separate KEP.
+- This proposal recommends an implementation for volume populator but it DOES NOT
+  require any specific approach for the actual volume populators. Alternative
+  approaches that result in PVCs getting bound to volumes containing correct data
+  are fine as long as they integrate with the data source validator by providing
+  an instance of `VolumePopulator`.
 
 ## Proposal
 
@@ -214,10 +219,20 @@ developers to add new types of data sources that the dynamic provisioners will
 simply ignore, enabling a different controller to see these objects and respond
 to them.
 
-I will leave the details of how data populators will work for another KEP. There
-are a few possible implementation that are worth considering, and this change
-is a necessary step to enable prototyping those ideas and deciding which is
-the best approach.
+The recommended approach for implementing a volume populator is make a controller
+that responds to new PVCs with data sources that it understands by creating
+a second PVC (PVC') in a different namespace that has all of the same specs as
+the original, minus the data source, and to attach a pod to that newly created
+empty volume and to fill it with data. After PVC' has the correct data, the
+associated pod can be removed, and the PV that PVC' was bound to can be rebound
+to the original PVC.
+
+A library is being developed to handle the common parts of the volume population
+workflow, so that individual implementations of volume populators need only
+include code to write data into the volume, and everything else can be handled
+by this shared library. Ultimately the library may evolve into a sidecar
+container for ease of bug fixing, but the important thing is that all of the
+common controller logic should be reusable.
 
 ### Risks and Mitigations
 
@@ -490,3 +505,25 @@ resource usage (CPU, RAM, disk, IO, ...) in any components?**
 - KEP updated to new format September 2020
 - Webhook replaced with controller in December 2020
 - KEP updated Feb 2021 for v1.21
+
+## Alternatives
+
+### Validating webhook
+
+One alternative that was considered was to use a validating webhook instead of
+an async controller. This was prototyped first, and solved the problem of
+preventing PVC with invalid data sources, but it solved that problem too well,
+because it rejected PVCs which would be valid at some point in the future, if
+they were created before the necessary VolumePopulator object was created.
+
+The user experience of PVCs being rejected was too different from the existing
+behavior, where, if a user creates a PVC referring to a volume snapshot data
+source, the PVC is accepted even if none of the required controllers are
+installed yet. Later, after the required controllers are installed, that PVC
+can be bound as the user expected.
+
+We wanted to preserve the general property of Kubernetes where it's okay to
+specify your intent, and then satisfy the dependencies thereof out of order,
+and still obtain the desired result. Programatic workflows that are dumb and
+don't understand order of operations benefit from being able to create a
+bunch of objects and wait for the desired result.
