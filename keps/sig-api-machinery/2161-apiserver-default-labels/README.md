@@ -14,6 +14,7 @@
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
+  - [Why we are directly enabling this feature in beta](#why-we-are-directly-enabling-this-feature-in-beta)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
@@ -39,10 +40,10 @@
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
 - [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
-- [ ] (R) Graduation criteria is in place
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Design details are appropriately documented
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [x] (R) Graduation criteria is in place
 - [ ] (R) Production readiness review completed
 - [ ] Production readiness review approved
 - [ ] "Implementation History" section is up-to-date for milestone
@@ -154,37 +155,27 @@ For this reason, we can do one alpha release where we log/event if we observe us
 
 ## Design Details
 
-This can be implemented by modifying the defaults.go and validation.go components for the namespace API, i.e., in the defaults.go file for api/core:
-
-<<[UNRESOLVED See https://github.com/kubernetes/kubernetes/pull/96968 where this evolves, but this example is functionally valid, modulo warnings ]>>
-
-This will change if **warnings** are to be a core requirement of this KEP.  As that is not yet one of the goals of this KEP, however, we have a first implementation of this feature using defaults.go.
-
+This can be implemented by modifying the defaults.go and validation.go components for the namespace API, i.e., in the defaults.go file for api/core.  Note that we will support DISABLING this via a feature gate (named `NamespaceDefaultLabelName`), per the versioning specification in this KEP.
 
 ```
-func SetDefaults_Namespace(obj *v1.Namespace) {
-  if obj.Labels == nil {
-  	obj.Labels = map[string]string{}
-  }
-  
-  if _, found := obj.Labels[“kubernetes.io/metadata.name”]; !found {
-  	obj.Labels[“kubernetes.io/metadata.name”] = obj.Name
-  }
-}
+		obj.Labels["kubernetes.io/metadata.name"] = obj.Name
 ```
-In validation.go, we'll go on to validate this namespace, like so:
 
+In validation.go, we'll go on to validate this namespace, like so, again, allowing disablement of the feature per the versioning specification in this KEP.
 ```
-func ValidateNamespace(namespace *core.Namespace) field.ErrorList {
-	// Check if namespace.Labels[“kubernetes.io/metadata.name”] == namespace.Name
-  // if not add an error
-  // ...
-  return allErrs
+		if namespace.Labels[v1.LabelNamespaceName] != namespace.Name {
+			allErrs = append(allErrs, field.Invalid(field.NewPath("metadata", "labels").Key(v1.LabelNamespaceName), namespace.Labels[v1.LabelNamespaceName], fmt.Sprintf("must be %s", namespace.Name)))
+		}
 ```
-<<[/UNRESOLVED]>>
 
-This solves not just NetworkPolicy, but all such namespace selector APIs without 
-any disruption or version skew problems.
+
+This solves not just NetworkPolicy, but all such namespace selector APIs without  any disruption or version skew problems.  Note that this feature will be defaulted to on in its Beta phase, since it is expected to be benign in all practical scenarios.  
+
+### Why we are directly enabling this feature in beta
+
+This feature is generally thought of us non-disruptive, but reliance on it will likely be taken up quickly due to its simplicity and its ability to solve a common user story for network security.  Thus, if we have a complex process around disabling it initially, we could confuse applications which rely on this feature - which have no API driven manner of determining the status of the automatic labelling which we are doing.  
+
+Consider the scenario where one uses a `not in` selector to exclude namespaces with specific names.  In this scenario, such a selector would not be able to locate such namespaces, and would thus fail.  There is no clear way a user would be able to reconcile this failure, due to the fact that its an apiserver default.  Thus, its simpler to default to this feature being 'on' for any release after its introduction.
 
 ### Test Plan
 
@@ -253,18 +244,30 @@ Since this has been reserved since 2017 (if not earlier), no backwards guarantee
 
 1.22:
 - gate enabled by default
-- remove gate
 - release note
+
+1.23:
+- remove the gate
 
 ### Rollout, Upgrade and Rollback Planning
 
 _This section must be completed when targeting beta graduation to a release._
 
 * **How can a rollout fail? Can it impact already running workloads?**
-  Yes, network policies which are already using this label, may break, although such policies would be in violation of the standard that k8s.io labels are reserved.
+  Yes, namespaces which are already targeted via this label may break, although such policies would be in violation of the standard that k8s.io labels are reserved.
 
 * **What specific metrics should inform a rollback?**
-  No e2e tests or metrics exist to inform this, but if a net loss of healthy pods occurred and a user is actively using networkpolicies that impersonate on the k8s.io label, that would be a hint. 
+  No e2e tests or metrics exist to inform this specific action, but if a net loss of healthy pods occurred and a user is actively using networkpolicies that impersonate on the k8s.io label, that would be a hint.
+ 
+  Indirectly, this could be discovered by inspection of APIServer rejection events associated with the namespace API resource.
+
+For example, the apisesrver_request_total metric can be inspected for "non 201" events.  In rejection scenarios, the change in metrics is evident as follows...
+```
+apiserver_request_total{code="201",component="apiserver",contentType="application/json",dry_run="",group="",resource="namespaces",scope="resource",subresource="",verb="POST",version="v1"} 9
+apiserver_request_total{code="422",component="apiserver",contentType="application/json",dry_run="",group="",resource="namespaces",scope="resource",subresource="",verb="POST",version="v1"} 3
+```
+
+Thus, one can monitor for `code != 201` increases, and thereby infer a potential issue around namespace admission to the APIServer, and investigate/rollback as needed.
 
 * **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
   Not yet. TBD.
@@ -340,16 +343,14 @@ _This section must be completed when targeting beta graduation to a release._
 * **How does this feature react if the API server and/or etcd is unavailable?**
 
 * **What are other known failure modes?**
-  For each of them, fill in the following information by copying the below template:
-  - [Failure mode brief description]
-    - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without logging into a master or worker node?
-    - Mitigations: What can be done to stop the bleeding, especially for already
-      running user workloads?
-    - Diagnostics: What are the useful log messages and their required logging
-      levels that could help debug the issue?
-      Not required until feature graduated to beta.
-    - Testing: Are there any tests for failure mode? If not, describe why.
+There are no catastrophic failure scenarios of note, but there might be some user facing scenarios which are theoretically worth mentioning here.
+- If this label already existed, a user will get unforeseen consequences from it.
+- If administrators don't allow any labels on namespaces, or have special policies about labels that are allowed, this introduction could violate said poliices.
+
+* **What steps should be taken if SLOs are not being met to determine the
+  problem?** 
+
+No SLOs are proposed.
 
 * **What steps should be taken if SLOs are not being met to determine the problem?**
 

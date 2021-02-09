@@ -8,8 +8,9 @@ authors:
   - "@andrewsykim"
 owning-sig: sig-api-machinery
 participating-sigs:
+  - sig-api-machinery
   - sig-network
-status: provisional
+status: implementable
 creation-date: 2020-11-22
 reviewers:
   - "@liggitt"
@@ -23,9 +24,8 @@ replaces:
 stage: alpha
 latest-milestone: "v1.21"
 milestone:
-  alpha: "v1.21"
-  beta: "v1.22"
-  stable: "v1.23"
+  beta: "v1.21"
+  stable: "v1.22"
 feature-gates:
   - name: NamespaceDefaultLabelName
     components:
