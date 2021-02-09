@@ -12,6 +12,8 @@ reviewers:
 approvers:
   - "@kow3ns"
   - "@janetkuo"
+prr-approvers:
+  - "@deads2k"
 editor: TBD
 creation-date: 2020-03-02
 last-updated: 2020-03-02
@@ -24,8 +26,8 @@ feature-gates:
       - kube-apiserver
       - kube-controller-manager
 disable-supported: true
-latest-milestone: "v1.20"
+latest-milestone: "v1.21"
 milestone:
-  alpha: "v1.20"
-  beta: "v1.21"
-  stable: "v1.23"
+  alpha: "v1.21"
+  beta: "v1.22"
+  stable: "v1.24"
