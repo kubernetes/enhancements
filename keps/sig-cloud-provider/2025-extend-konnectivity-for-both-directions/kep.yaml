@@ -1,0 +1,50 @@
+title: Extending Apiserver Network Proxy to handle traffic originated from Node network
+kep-number: 2025
+authors:
+  - "@irozzo-1A"
+  - "@youssefazrak"
+owning-sig: sig-cloud-provider
+participating-sigs:
+  - sig-network
+status: implementable
+creation-date: 2020-09-28
+reviewers:
+  - "@cheftako"
+  - "@anfernee"
+  - "@caesarxuchao"
+  - "@Jefftree"
+  - "@andrewsykim"
+approvers:
+  - TBD
+prr-approvers:
+  - deads2k
+see-also:
+  - "keps/sig-api-machinery/20190226-network-proxy.md"
+replaces:
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: alpha
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.21"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.21"
+  beta: "v1.22"
+  stable: "v1.24"
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+  - name: EnableClusterToMasterTraffic
+    components:
+      - konnectivity-server
+      - konnectivity-agent
+disable-supported: true
+
+# The following PRR answers are required at beta release
+metrics:
+  - TBD
