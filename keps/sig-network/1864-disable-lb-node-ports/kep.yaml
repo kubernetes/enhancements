@@ -30,3 +30,8 @@ milestone:
   beta: "v1.21"
   stable: "v1.22"
 
+feature-gates:
+  - name: ServiceLBNodePortControl
+    components:
+      - kube-apiserver
+disable-supported: true
