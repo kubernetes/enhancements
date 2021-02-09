@@ -325,6 +325,10 @@ Alpha:
 * unit tests for the exec plugin provider
 * unit tests for API validation
 
+Beta:
+* integration or e2e tests with at least one working plugin implementation
+* unit tests for new concurrency/caching improvements.
+
 ### Graduation Criteria
 
 ### Alpha
