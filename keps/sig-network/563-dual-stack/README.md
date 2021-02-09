@@ -1478,8 +1478,8 @@ the health of the service?**
   IPv4/IPv6 dual-stack](https://kubernetes.io/docs/tasks/network/validate-dual-stack/)
   to ensure that node addressing, pod addressing, and services are configured
   correctly. If dual-stack services are created, they have passed validation.
-  Metrics to could include pods stuck in pending; look in the event logs to
-  determine if it's a CNI issue which may cause a delay of IP address
+  Metrics to check could include pods stuck in pending; look in the event logs
+  to determine if it's a CNI issue which may cause a delay of IP address
   allocation.
 
 * **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
