@@ -1392,9 +1392,10 @@ This capability will move to stable when the following criteria have been met.
 
 * **Does enabling the feature change any default behavior?**
   Pods and Services will remain single-stack until cli flags have been modified
-  as described in this KEP. Existing and new services will remain single-stack
-  until user requests otherwise. Pods will become dual-stack once CNI is
-  configured for dual-stack.
+  as described in this KEP. Existing and new Services will remain single-stack
+  until the ipFamilyPolicy field is modified in a Service to be either
+  PreferDualStack or RequireDualStack. Once CNI is configured for dual-stack,
+  new Pod runtime environments will be provisioned with dual-stack.
 
 * **Can the feature be disabled once it has been enabled (i.e. can we roll back
   the enablement)?**
@@ -1421,6 +1422,12 @@ This capability will move to stable when the following criteria have been met.
   to match the service IP families. When the feature is reenabled, kube-proxy
   will automatically start updating iptables/ipvs rules for the alternative
   ipfamily, for existing and new dual-stack services.
+
+  DNS will immediately begin returning the secondary IP family, while
+  endpoints, endpointSlices, and iptables programming may take some time. This
+  can lead to large or very busy services receiving excessive traffic on
+  the secondary family address, until the endpoints, endpointSlices, and
+  iptables rules are fully propagated.
 
 * **Are there any tests for feature enablement/disablement?**
   The feature is being tested using integration tests with gate on/off. The
