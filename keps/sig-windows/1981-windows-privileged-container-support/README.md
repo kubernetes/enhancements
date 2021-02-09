@@ -483,7 +483,9 @@ More information on Windows resource access can be found at https://docs.microso
 
 #### Container Mounts
 
-- Directory mounts (i.e. directory C:\test mapped to C:\test in the privileged container) are still being investigated and will be revisited between alpha and beta. Note that file system mapping in the current implementation would expose both the host filesystem and the container filesystem to the processes in the privileged container. We are still investigation how external mounts such as secrets or storage accounts would be added.
+- When privileged containers are started a new volume will be created on the host which will contain the contains of the container image. Containers will have a default working directory that points to this container volume. Containers will also have full access to the host file-system (unless restricted by filed-based ACLs and the run_as_username used to start the container.) Processes should use absolute paths when accessing files on the host and relative paths when accessing files brought in via the container image.
+Note: there will be no `chroot` equivalent
+- Volume mounts (including service account tokens) are expected to work for privileged containers but may not be supported in alpha. The current plan is to mount these volumes under the volume created for the container. This will be re-visited for beta and extensively documented.
 
 #### Container Images
 
@@ -550,7 +552,7 @@ Current behavior applies `PodSecurityContext.WindowsSecurityContextOptions` sett
 - If `PodSecurityContext.WindowsSecurityContextOptions.HostProcess = true` is set to true then no container in the pod sets `Container.SecurityContext.WindowsSecurityContextOptions.HostProcess = false`
 - If `PodSecurityContext.WindowsSecurityContextOptions.HostProcess` is not set then all containers in a pod must set `Container.SecurityContext.WindowsSecurityContextOptions.HostProcess = true`
 - If `PodSecurityContext.WindowsSecurityContextOptions.HostProcess = false` no containers may set `Container.SecurityContext.WindowsSecurityContextOptions.HostProcess = true`
-- `hostNetwork = true` if the pods containers hostProcess containers
+- `hostNetwork = true` must be set explicits if the pods contains hostProcess containers (this value will not be inferred and/or defaulted)
 
 ##### Alternatives
 
