@@ -13,6 +13,7 @@
   - [Credential Provider Request API](#credential-provider-request-api)
   - [Credential Provider Response API](#credential-provider-response-api)
     - [Caching Credentials](#caching-credentials)
+  - [Metrics](#metrics)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
   - [Alpha](#alpha)
@@ -40,9 +41,9 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [X] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
 - [X] (R) KEP approvers have approved the KEP status as `implementable`
 - [X] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
 - [X] (R) Graduation criteria is in place
-- [ ] (R) Production readiness review completed
+- [X] (R) Production readiness review completed
 - [ ] Production readiness review approved
 - [ ] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
@@ -312,11 +313,21 @@ The plugin can signal to the kubelet how it should cache a given response. There
 2. Registry: the kubelet should cache and use this response only for future images with the same registry hostname (and port if included).
 3. Image: the kubelet should cache and use this response only for future images that match the image exactly.
 
+### Metrics
+
+Two kubelet metrics will be added:
+* `kubelet_credential_provider_plugin_errors`: this will track the number errors that occurred from invoking an exec plugin
+* `kubelet_credential_provider_plugin_duration`: this will track the duration of execution by plugins.
+
 ### Test Plan
 
 Alpha:
 * unit tests for the exec plugin provider
 * unit tests for API validation
+
+Beta:
+* integration or e2e tests with at least one working plugin implementation
+* unit tests for new concurrency/caching improvements.
 
 ### Graduation Criteria
 
@@ -330,6 +341,7 @@ can be achieved using the exec plugin.
 
 * integration or e2e tests.
 * at least one working plugin implementation.
+* kubelet metrics for failed calls to exec plugins.
 * improvements to concurrency and caching:
    - use `singleflight.Group` to ensure only a single call per image. Today the kubelet holds a single lock for every call to `Provide`.
      See [this](https://github.com/kubernetes/kubernetes/pull/94196#discussion_r517805701) and [this](https://github.com/kubernetes/kubernetes/pull/94196#discussion_r518487386) discussion.
@@ -376,20 +388,21 @@ _This section must be completed when targeting beta graduation to a release._
 
 * **How can a rollout fail? Can it impact already running workloads?**
 
-TBD for beta.
+  Feature is enabled but exec plugin does not properly fetch and return credentials to the kubelet.
+  Impact is that kubelet cannot authenticate and pull credentials from those registries.
 
 * **What specific metrics should inform a rollback?**
 
-TBD for beta.
+  High error rates from `kubelet_credential_provider_plugin_error` and long durations from `kubelet_credential_provider_plugin_duration`.
 
 * **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
 
-TBD for beta.
+  No, upgrade->downgrade->upgrade were not tested. Manual validation will be done prior to promoting this feature to beta in v1.21.
 
 * **Is the rollout accompanied by any deprecations and/or removals of features, APIs,
 fields of API types, flags, etc.?**
 
-TBD for beta.
+  Yes, this feature was added to remove the in-tree kubelet credential providers for AWS, Azure and GCP.
 
 ### Monitoring Requirements
 
@@ -397,26 +410,28 @@ _This section must be completed when targeting beta graduation to a release._
 
 * **How can an operator determine if the feature is in use by workloads?**
 
-TBD for beta.
+  Operators can check for a kubelet config file passed into the `--image-credential-provider-config`.
+  The config has a field called `imageMatches` which indicates the images a plugin will be invoked for.
 
 * **What are the SLIs (Service Level Indicators) an operator can use to determine
 the health of the service?**
-  - [ ] Metrics
-    - Metric name:
-    - [Optional] Aggregation method:
-    - Components exposing the metric:
-  - [ ] Other (treat as last resort)
-    - Details:
+  - [X] Metrics
+    - Metric name: `kubelet_credential_provider_plugin_error`, `kubelet_credential_provider_plugin_duration`
+    - Components exposing the metric: kubelet
+  - [X] Other (treat as last resort)
+    - Details: the kubelet has several error-level logs for when exec plugins time out or return a non-zero exit code.
 
 * **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
 
-TBD for beta.
+  On failure to fetch credentials from an exec plugin, the kubelet will retry after some period and invoke the plugin again.
+  The kubelet will retry whenever it attempts to pull an image, but until then, kubelet will not be able to authenticate to
+  the registry and pull images. The SLO for successfully invoking exec plugins should be based on the SLO for successfully
+  pulling images for the container registry in question.
 
 * **Are there any missing metrics that would be useful to have to improve observability
 of this feature?**
 
-TBD for beta.
-
+  No.
 
 ### Dependencies
 
@@ -424,7 +439,8 @@ _This section must be completed when targeting beta graduation to a release._
 
 * **Does this feature depend on any specific services running in the cluster?**
 
-TBD for beta.
+  This feature depends on the existence of a credential provider plugin binary on the host and a configuration file
+  for the plugin to be read by the kubelet.
 
 ### Scalability
 
@@ -480,18 +496,28 @@ _This section must be completed when targeting beta graduation to a release._
 No.
 
 * **What are other known failure modes?**
-  For each of them, fill in the following information by copying the below template:
-  - [Failure mode brief description]
-    - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without logging into a master or worker node?
-    - Mitigations: What can be done to stop the bleeding, especially for already
-      running user workloads?
-    - Diagnostics: What are the useful log messages and their required logging
-      levels that could help debug the issue?
-      Not required until feature graduated to beta.
-    - Testing: Are there any tests for failure mode? If not, describe why.
+
+  - kubelet is invoking an exec plugin that does not work, therefore kubelet cannot pull images handled by the plugin
+    - Detection: Images fail to pull
+    - Mitigations: Use imagePullSecrets as a workaround
+    - Diagnostics: Check kubelet logs for errors.
+    - Testing: No, it is expected that images will fail to pull if an exec plugin is faulty.
+  - a credential provider plugin invoked by the kubelet returns credentials but they are not valid and kubelet cannot
+    use them to authenicate to the container registry
+    - Detection: Images fail to pull
+    - Mitigations: Use imagePullSecrets as a workaround
+    - Diagnostics: Check kubelet logs for errors.
+    - Testing: No, it is expected that images will fail to pull if an exec plugin is faulty.
+  - kubelet is invoking an exec plugin but the exec plugin takes longer than the default 1m timeout.
+    - Detection: Images fail to pull
+    - Mitigations: Check cloud provider quotas. The plugin might be taking a long time due to API quota limits.
+    - Diagnostics: Check kubelet logs for errors.
+    - Testing: No, it is expected that images will fail to pull if an exec plugin takes longer than 1m.
 
 * **What steps should be taken if SLOs are not being met to determine the problem?**
+
+  - check logs of kubelet
+  - check service availability of container registries used by the cluster
 
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
