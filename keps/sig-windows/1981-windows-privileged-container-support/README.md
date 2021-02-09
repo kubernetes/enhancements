@@ -476,6 +476,7 @@ Because Windows privileged containers will work much differently than Linux priv
 
 #### Resource Limits
 - Resource limits (disk, memory, cpu count) will be applied to the job and will be job wide. For example, with a limit of 10 MB is set for the job, if every process in the jobs memory allocations added up exceeds 10 MB this limit would be reached. This is the same behavior as other Windows container types. These limits would be specified the same way they are currently for whatever orchestrator/runtime is being used.
+- Disk resource tracking may work slightly differently for privileged Windows containers due to how these containers are bootstrapped. The extent of these differences are still being investigated but will be fully documented when understood. Resource usage will be trackable the differences would be in how resource usage is calculated.
 
 #### Container Lifecycle 
 - The container's lifecycle will be managed by the container runtime just like other Windows container types.
@@ -493,6 +494,8 @@ Note: there will be no `chroot` equivalent.
 - An environment variable `$CONTAINER_SANDBOX_MOUNT_POINT` will be set to the absolute path where the container volume is mounted.
 - Volume mounts (including service account tokens) will be supported for privileged containers and will be mounted under the container volume. Programs running inside the container can either access volume mounts be using a relative path or by prefixing `$CONTAINER_SANDBOX_MOUNT_POINT` to their paths (example: use either `.\var\run\secrets\kubernetes.io\serviceaccount\` or `$CONTAINER_SANDBOX_MOUNT_POINT\var\run\secrets\kubernetes.io\serviceaccount\` to access service account tokens.)
 - Client libraries such as https://pkg.go.dev/k8s.io/client-go/rest#InClusterConfig will be updated to prefix paths with `$CONTAINER_SANDBOX_MOUNT_POINT` if the environment variable is set for Windows so these libraries will work in `hostProcess`containers.
+- Named Pipe mounts will **not** be supported. Instead named pipes should access via their path on the host (\\\\.\\pipe\\*). Unix domain sockets mounts **will** be supported.
+- All other volume types supported for normal containers on Windows will work with privileged containers.
 
 #### Container Images
 
