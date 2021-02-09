@@ -5,15 +5,16 @@ authors:
 owning-sig: sig-testing
 participating-sigs:
 - sig-release
+- sig-scalability
 status: provisional
-creation-date: 2021-02-05
+creation-date: 2021-02-08
 reviewers:
 - BenTheElder
 approvers:
 - spiffxp
 - saschagrunert
 prr-approvers:
-- TBD
+- johnbelamaric 
 see-also: []
 replaces: []
 
