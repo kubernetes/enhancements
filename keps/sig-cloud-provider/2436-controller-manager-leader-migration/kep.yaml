@@ -35,8 +35,12 @@ milestone:
 
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
-feature-gates: []
-disable-supported: false
+feature-gates:
+  - name: ControllerManagerLeaderMigration
+    components:
+      - cloud-controller-manager
+      - kube-controller-manager
+disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics: []

@@ -242,7 +242,8 @@ controllerLeaders:
     component: kube-controller-manager
 ```
 
-First, within 1.21 control plane, update the `kube-controller-manager` to set `--enable-leader-migration` but
+First, within 1.21 control plane, update the `kube-controller-manager` to set `--enable-leader-migration`
+and `--feature-gate=ControllerManagerLeaderMigration` (this enables `ControllerManagerLeaderMigration` feature gate) but
 not `--leader-migration-config`, this flag enables Leader Migration with default configuration, which prepares KCM to
 participate in the migration.
 
@@ -333,10 +334,9 @@ Version skew is handled as long as the leader name is consistent across all cont
 
 ###### How can this feature be enabled / disabled in a live cluster?
 
-- [X] Other
-  - Describe the mechanism: this feature must be explicitly enabled by `--enable-leader-migration` flag
-  - Will enabling / disabling the feature require downtime of the control plane? No
-  - Will enabling / disabling the feature require downtime or re-provisioning of a node? No
+- [X] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name: `ControllerManagerLeaderMigration`
+  - Components depending on the feature gate: `cloud-controller-manager` and `kube-controller-manager`
 
 ###### Does enabling the feature change any default behavior?
 
@@ -345,7 +345,8 @@ feature without providing a configuration, the default configuration will reflec
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-No. The feature is enabled and disabled solely with a flag
+Yes. Once the feature is enabled via feature gate, it can be disabled by unsetting `--enable-leader-migration` on KCM
+and CCM.
 
 ###### Are there any tests for feature enablement/disablement?
 
