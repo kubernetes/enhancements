@@ -3,6 +3,7 @@
 ## Table of Contents
 
 <!-- toc -->
+- [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
 - [Motivation](#motivation)
   - [Goals](#goals)
@@ -66,6 +67,35 @@
   - [Scalability](#scalability)
   - [Troubleshooting](#troubleshooting)
 <!-- /toc -->
+
+## Release Signoff Checklist
+
+**ACTION REQUIRED:** In order to merge code into a release, there must be an issue in [kubernetes/enhancements] referencing this KEP and targeting a release milestone **before [Enhancement Freeze](https://github.com/kubernetes/sig-release/tree/master/releases)
+of the targeted release**.
+
+For enhancements that make changes to code or processes/procedures in core Kubernetes i.e., [kubernetes/kubernetes], we require the following Release Signoff checklist to be completed.
+
+Check these off as they are completed for the Release Team to track. These checklist items _must_ be updated for the enhancement to be released.
+
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Design details are appropriately documented
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [x] (R) Graduation criteria is in place
+- [x] (R) Production readiness review completed
+- [x] Production readiness review approved
+- [x] "Implementation History" section is up-to-date for milestone
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+
+**Note:** Any PRs to move a KEP to `implementable` or significant changes once it is marked `implementable` should be approved by each of the KEP approvers. If any of those approvers is no longer appropriate than changes to that list should be approved by the remaining approvers and/or the owning SIG (or SIG-arch for cross cutting KEPs).
+
+**Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
+
+[kubernetes.io]: https://kubernetes.io/
+[kubernetes/enhancements]: https://github.com/kubernetes/enhancements/issues
+[kubernetes/kubernetes]: https://github.com/kubernetes/kubernetes
+[kubernetes/website]: https://github.com/kubernetes/website
 
 ## Summary
 
@@ -150,7 +180,7 @@ communication to, from and within a Kubernetes cluster.
   documented appropriately in-order so that aformentioned tools may choose to
   enable it for use.
 - Enable Kubernetes api-server dual-stack addresses listening and binding. Additionally
-  enable dualstack for Kubernetes default service.
+  enable dual-stack for Kubernetes default service.
 
 ## Proposal
 
@@ -724,10 +754,10 @@ spec:
 
 ##### Creating a New Dual-Stack Service
 
-Users can create-dual stack services according to the following methods (in
+Users can create dual-stack services according to the following methods (in
 increasing specificity):
-- If the user *prefers* dual stack (if available, service creation will not fail if
-  the cluster is not configured for dual stack) then they can do one of the
+- If the user *prefers* dual-stack (if available, service creation will not fail if
+  the cluster is not configured for dual-stack) then they can do one of the
   following:
   1. Set `spec.ipFamilyPolicy` to `PreferDualStack` and do not set `spec.ipFamilies` or
      `spec.clusterIPs`. The apiserver will set `spec.ipFamilies` according to
@@ -993,7 +1023,7 @@ dual-stack:
 - Headless Kubernetes services: CoreDNS will resolve these services to either
   an IPv4 entry (A record), an IPv6 entry (AAAA record), or both, depending on
   the service's `ipFamily`.
-- Once Kubernetes service (pointing to Cluster DNS) is converted to dualstack pods 
+- Once Kubernetes service (pointing to Cluster DNS) is converted to dual-stack pods
   will automatically get two DNS servers (one for each IP family) in their resolv.conf.
 
 ### Ingress Controller Operation
@@ -1194,7 +1224,21 @@ be run individually, with the same initial configurations.
 
 
 ## Implementation History
-Refer to the [Implementation Plan](#implementation-plan)
+
+2018-06-21: KEP opened
+
+2019-05-03: KEP marked implementable
+
+v1.16: Implemented phase 1 & 2 defined in the [implementation plan](#implementation-plan)
+and launched in `Alpha`
+
+v1.17: Implemented phase 3 defined [iplementation plan](#implementation-plan)
+
+v1.18: Took user feedback on potentiall issues caused in feature enablement/disablement. Which lead us to redesign dual stack Services
+
+v1.19: Implemented redesigned duals stack Services see [PR 91824](https://github.com/kubernetes/kubernetes/pull/91824)
+
+v1.20: Relaunched to `Alpha`
 
 ## Alternatives
 
@@ -1333,7 +1377,7 @@ This capability will move to stable when the following criteria have been met.
 * Support of at least one CNI plugin to provide multi-IP
 * e2e test successfully running on two platforms
 * testing ingress controller infrastructure with updated dual-stack services
-* dualstack tests run as pre-submit blocking for PRs
+* dual-stack tests run as pre-submit blocking for PRs
 
 
 ## Production Readiness Review Questionnaire
@@ -1345,109 +1389,142 @@ This capability will move to stable when the following criteria have been met.
   - [X] Feature gate (also fill in values in `kep.yaml`)
     - Feature gate name: IPv6DualStack
     - Components depending on the feature gate: kube-apiserver, kube-controller-manager, kube-proxy, and kubelet
-  - [ ] Other
-    - Describe the mechanism:
-    - Will enabling / disabling the feature require downtime of the control
-      plane?
-    - Will enabling / disabling the feature require downtime or reprovisioning
-      of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
 
 * **Does enabling the feature change any default behavior?**
-  No. Pods and Services will remain single stack until cli flags have been modified
-  as described in this KEP. Once modified, existing and new services will remain
-  single stack until user requests otherwise. Pods will become dual-stack however
-  it will maintain the same ipfamily used in before enabling feature flag.
+  Pods and Services will remain single-stack until cli flags have been modified
+  as described in this KEP. Existing and new Services will remain single-stack
+  until the ipFamilyPolicy field is modified in a Service to be either
+  PreferDualStack or RequireDualStack. Once CNI is configured for dual-stack,
+  new Pod runtime environments will be provisioned with dual-stack.
 
 * **Can the feature be disabled once it has been enabled (i.e. can we roll back
   the enablement)?**
-  Yes.
+  Yes. If you decide to turn off dual-stack after turning on:
+    1. Ensure all services are converted to single-stack first (downgraded to
+       single-stack as described in this KEP)
+    2. Remove the CLI parameters.
+    3. Disable the feature.
+
+ Notes:
+    1. When the user disables dual-stack from the controller manager,
+       endpointSlices will no longer be created for the alternative IP family.
+    2. Existing endpointSlices for the alternative family will not be
+       automatically removed; this is left to the operator.
+    3. Existing dual-stack service configurations will remain in place when
+       the feature is disabled, but no routing will happen and no
+       endpointSlices will be created while the feature is disabled.
 
 * **What happens if we reenable the feature if it was previously rolled back?**
-  Similar to enable it the first time on a cluster.
+
+  If the system has no existing dual-stack services, then it will be treated
+  as a new enablement. However, if dual-stack services exist in the cluster,
+  the controller manager will automatically update endpoints and endpointSlices
+  to match the service IP families. When the feature is reenabled, kube-proxy
+  will automatically start updating iptables/ipvs rules for the alternative
+  ipfamily, for existing and new dual-stack services.
+
+  DNS will immediately begin returning the secondary IP family, while
+  endpoints, endpointSlices, and iptables programming may take some time. This
+  can lead to large or very busy services receiving excessive traffic on
+  the secondary family address, until the endpoints, endpointSlices, and
+  iptables rules are fully propagated.
 
 * **Are there any tests for feature enablement/disablement?**
   The feature is being tested using integration tests with gate on/off. The
   tests can be found here: https://github.com/kubernetes/kubernetes/tree/master/test/integration/dualstack
 
-  The feature is being tested on -some of - the cloud providers and kind.
-   1. https://testgrid.k8s.io/sig-network-dualstack-azure-e2e. This has all dualstack tests on azure.
+  The feature is being tested on a cloud provider and kind.
+   1. azure dual-stack e2e: https://testgrid.k8s.io/sig-network-dualstack-azure-e2e
    2. kind dual-stack iptables: https://testgrid.k8s.io/sig-network-kind#sig-network-kind,%20dual,%20master
    3. kind dual-stack ipvs: https://testgrid.k8s.io/sig-network-kind#sig-network-kind,%20ipvs,%20master
 
 ### Rollout, Upgrade and Rollback Planning
 
 * **How can a rollout fail? Can it impact already running workloads?**
-  Try to be as paranoid as possible - e.g., what if some components will restart
-   mid-rollout?
-  Users **must** avoid changing existing cidrs. For both pods and services. Users
-  can only add to alternative ip family to existing cidrs. Changing existing cidrs
-  will result in nondeterministic failures depending on how the cluster networking 
-  was configured.
+  Users **must** avoid changing existing CIDRs for both pods and services.
+  Users can only add an alternative ip family to existing CIDRs. Changing
+  existing CIDRs will result in nondeterministic failures depending on how the
+  cluster networking was configured.
 
-  Existing workloads are not expected to be impacted during rollout. A component restart
-  during rollout might delay generating endpoint and endpoint slices for alternative IP families
-  if there are *new* workloads that depend on them they will fail.
+  Existing workloads are not expected to be impacted during rollout. When you
+  disable dual-stack, existing services aren't deleted, but routes for
+  alternative families are disabled. A component restart during rollout might
+  delay generating endpoints and endpointSlices for alternative IP families.
+  If there are *new* workloads that depend on the endpointSlices, these
+  workloads will fail until the endpoint slices are created.
+
+  Because of the nature of the gradual rollout (node by node) of the dual-stack
+  feature, endpoints for the alternative IP family will not be created for
+  nodes where the feature is not yet enabled. That will cause unequal
+  distribution of alternative IP traffic. To prevent that, we advise the
+  following steps:
+
+  1. (preferred) Do not create dual-stack services until the rollout of the
+     dual-stack feature across the cluster is complete.
+  or
+  2. Cordon and drain the node(s) where the feature is not enabled
 
 * **What specific metrics should inform a rollback?**
-  N/A
+
+  Failures that could exist include an imbalance or a failure in the
+  deployment. For imbalance, operators are advised to count the number of
+  alternative endpoint inside the endpoint slices, and ensure that count
+  equals the number of pods. (If the number is not equal, take steps to
+  correct as described above.)
+
+  Failure in the deployment usually indicates misconfiguration and is
+  characterized by components being unavailable (such as kube-apiserver).
+
 
 * **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
-  Describe manual testing that was done and the outcomes.
-  Longer term, we may want to require automated upgrade/rollback tests, but we
-  are missing a bunch of machinery and tooling and can't do that now.
+  We did manual testing of a cluster turning it off and on to explore
+  disabled-with-data behavior. Testing details can be seen in [Dual-stack
+  testing](https://github.com/kubernetes/kubernetes/blob/master/test/integration/dualstack/dualstack_test.go).
 
 * **Is the rollout accompanied by any deprecations and/or removals of features, APIs, 
 fields of API types, flags, etc.?**
-  Even if applying deprecation policies, they may still surprise some users.
+  No; we're not deprecating or removing any fields.
 
 ### Monitoring Requirements
 
 * **How can an operator determine if the feature is in use by workloads?**
-  Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
-  checking if there are objects with field X set) may be a last resort. Avoid
-  logs or events for this purpose.
 
   Operators can determine if the feature is in use by listing services that 
-  employ dual-stack. This can be done via 
+  employ dual-stack. This can be done via:
 
   ```
-  kubectl get services --all-namespaces spec.ipFamilyPolicy!=SingleStack
+  kubectl get services --all-namespaces -ogo-template='{{range .items}}{{.spec.ipFamilyPolicy}}{{"\n"}}{{end}}' | grep -v SingleStack
   ```
+
+  Using this check, one can determine how many services have been created with
+  dual-stack preferred or required.
 
 * **What are the SLIs (Service Level Indicators) an operator can use to determine 
 the health of the service?**
-  - [ ] Metrics
-    - Metric name:
-    - [Optional] Aggregation method:
-    - Components exposing the metric:
-  - [ ] Other (treat as last resort)
-    - Details:
+  Dual-stack networking is a functional addition, not a service with SLIs. Use
+  existing metrics for kubelet pod creation and service creation to determine
+  service health. [Validate
+  IPv4/IPv6 dual-stack](https://kubernetes.io/docs/tasks/network/validate-dual-stack/)
+  to ensure that node addressing, pod addressing, and services are configured
+  correctly. If dual-stack services are created, they have passed validation.
+  Metrics to check could include pods stuck in pending; look in the event logs
+  to determine if it's a CNI issue which may cause a delay of IP address
+  allocation.
 
 * **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
-  At a high level, this usually will be in the form of "high percentile of SLI
-  per day <= X". It's impossible to provide comprehensive guidance, but at the very
-  high level (needs more precise definitions) those may be things like:
-  - per-day percentage of API calls finishing with 5XX errors <= 1%
-  - 99% percentile over day of absolute value from (job creation time minus expected
-    job creation time) for cron job <= 10%
-  - 99,9% of /health requests per day finish with 200 code
+  Existing kubelet pod creation and service creation SLOs are what is needed.
 
 * **Are there any missing metrics that would be useful to have to improve observability 
 of this feature?**
-  Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
-  implementation difficulties, etc.).
+
+  Useful metrics include those that report on pods using multiple IP addresses
+  and likewise services that are using multiple IP addresses.
 
 ### Dependencies
 
 * **Does this feature depend on any specific services running in the cluster?**
-  Think about both cluster-level services (e.g. metrics-server) as well
-  as node-level agents (e.g. specific version of CRI). Focus on external or
-  optional services that are needed. For example, if this feature depends on
-  a cloud provider API, or upon an external software-defined storage or network
-  control plane.
-
-  This feature does not have dependency beyond kube-apiserver and standard controllers
-  shipped with Kubernetes releases.
+  This feature does not have dependency beyond kube-apiserver and standard
+  controllers shipped with Kubernetes releases.
 
 ### Scalability
 
@@ -1459,7 +1536,9 @@ of this feature?**
 
 * **Will enabling / using this feature result in any new calls to the cloud 
 provider?**
-  No
+  No. Because of the backwards-compatibility of the modified services API, the
+  cloud provider will work as-is with the primary service cluster IP. The cloud
+  providers can optionally work with alternative ipfamily.
 
 * **Will enabling / using this feature result in increasing size or count of 
 the existing API objects?**
@@ -1477,25 +1556,29 @@ resource usage (CPU, RAM, disk, IO, ...) in any components?**
 
 ### Troubleshooting
 
-The Troubleshooting section currently serves the `Playbook` role. We may consider
-splitting it into a dedicated `Playbook` document (potentially with some monitoring
-details). For now, we leave it here.
-
-
 * **How does this feature react if the API server and/or etcd is unavailable?**
   This feature will not be operable if either kube-apiserver or etcd is unavailable.
 
 * **What are other known failure modes?**
-  For each of them, fill in the following information by copying the below template:
-  
+
+  * Missing prerequisites. Operator must verify the following conditions:
+    1. Ensure correct support in the node infrastructure provider.
+      a. supports routing both IPv4 and IPv6 interfaces.
+      b. makes both IPv4 and IPv6 interfaces available to Kubernetes.
+    2. CNI needs to be correctly configured for dual-stack service.
+      a. Kubernetes must be able to assign IPv4 and IPv6 addresses from the
+       CNI provider.
+    3. Service CIDRs need to be sufficiently large to allow for creation of
+       new services.
+    4. Dual-stack CLI flags must be configured on the cluster as defined in the [dual-stack docs](https://kubernetes.io/docs/concepts/services-networking/dual-stack/#enable-ipv4-ipv6-dual-stack)
+
   * Failure to create dual-stack services. Operator must perform the following steps:
     1. Ensure that the cluster has `IPv6DualStack` feature enabled.
     2. Ensure that api-server is correctly configured with multi (dual-stack) service
-       cidrs using `--services-cluster-ip-range` flag.
+       CIDRs using `--services-cluster-ip-range` flag.
 
-  * Failure to route traffic to pod backing a dual-stack service. Operator must perform the 
-    following steps:
-    1. Ensure that nodes (where the pod is running) is configured for dual-stack 
+  * Failure to route traffic to pod backing a dual-stack service. Operator must     perform the following steps:
+    1. Ensure that nodes (where the pod is running) are configured for dual-stack
        a. Node is using dual-stack enabled CNI.
        b. kubelet is configured with dual-stack feature flag.
        c. kube-proxy is configured with dual-stack feature flag.
@@ -1507,9 +1590,33 @@ details). For now, we leave it here.
           where applicable.
     4. Operator can ensure that `endpoints` and `endpointSlices` are correctly 
        created for the service in question by using kubectl.
-    5. If the pod is using host network then operator must ensure that the node is correctly
-       reporting dual-stack addresses.
+    5. If the pod is using host network then operator must ensure that the node
+       is correctly reporting dual-stack addresses.
+    6. Due to the amount of time needed for control loops to function, when
+       scaling with dual-stack it may take time to attach all ready endpoints.
+
+  * CNI changes may affect legacy workloads.
+    1. When dual-stack is configured and enabled, DNS queries will start returning
+       IPv4(A) and IPv6(AAAA).
+    2. If a workload doesn't account for being offered both IP families, it
+       may fail in unexpected ways. For example, firewall rules may need to be
+       updated to allow IPv6 addresses.
+    3. Recommended to independently verify legacy workloads to ensure fidelity.
+
+  *  IP-related error conditions to consider.
+    1.  pod IP allocation fails (this is due to CNI)
+      a. Will result in the pod not running if there is no IP allocated from
+         the CIDR.
+    2. Service to pod routing fails
+      a. kube proxy can't configure IP tables
+      b. if the pod is created but routing is not working correctly, there
+         will be an error in the kube-proxy event logs
+      c. debugging by looking at iptables, similar to with single-stack.
+    3. cluster IP allocation fails
+      a. cluster IPs are allocated on save in a synchronous process
+      b. if this fails, the service creation will fail and the service object
+         will not be persisted.
+
 
 * **What steps should be taken if SLOs are not being met to determine the problem?**
   N/A
-
