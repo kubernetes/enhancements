@@ -5,13 +5,16 @@ authors:
   - "@marosset"
 owning-sig: sig-windows
 participating-sigs:
-  - sig-node 
+  - sig-auth
+  - sig-node
+  - sig-storage
 status: implementable
 creation-date: 2020-10-09
 reviewers:
   - "@jsturtevant"
   - "@Random-Liu"
 approvers:
+  - "@liggitt"
   - "@yujuhong"
 prr-approvers:
   - "@deads2k"

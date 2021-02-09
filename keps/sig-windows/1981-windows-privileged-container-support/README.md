@@ -274,25 +274,30 @@ Consider including folks who also work outside the SIG or subproject.
 Most of the fundamental changes to enable this feature for Windows containers is dependent on changes within [hcsshim](https://github.com/microsoft/hcsshim), which serves as the runtime (container creation and management) coordinator and shim layer for containerd on Windows.
 
 However:
-- Several upstream changes are required to support this feature in Kubernetes, including changes to containerd, OCI, CRI, and kubelet. The identified changes include (see CRI and Kubelet Implementation Details below for more details on changes):
-    - Containerd: enabling host network mode for privileged containers and pods ([working prototype demo](https://drive.google.com/file/d/1WQO2NDX34Z1FPbW7jEymhcPMY4AZWQSE/view)). Prototype is done using containerd runtimehandler but this proposal is to use cri-api.
-    - OCI spec: https://github.com/opencontainers/runtime-spec
-        - [TBD]
-    - CRI-api:
-        - Adding a privileged field to the runtime spec and pass through to containers
-        - Pass security context and flag of runtime spec to podsandbox spec (not currently supported, open issue: https://github.com/kubernetes/kubernetes/issues/92963) 
-    - Kubelet: Pass privileged flag and windows security context to runtime spec and other PSP changes (see below).
-- There are risks that changes at each of these levels may not be supported. 
-    - If containerd changes are not supported, host network mode will not be enabled.This would restrict the scenarios that privileged containers would enable, as CNI plugins, network policy, etc. rely on host network mode to enable access to host network resources.
-    - If CRI changes to enable a privileged flag are not supported, there would be a less-ideal workaround via annotations in the pod container spec. 
-    - The CRI changes may make an annotation in the OCI spec until the OCI updates are included.
 
-### PSP support 
-Additionally, privileged containers may impact other pod security policies (PSPs) outside of allowPrivilegedEscalation. We will provide guidance similar to [Pod Security Standards](https://v1-18.docs.kubernetes.io/docs/concepts/security/pod-security-standards/) for Windows privileged containers.  There is an [analysis for non-privileged containers](https://github.com/kubernetes/kubernetes/issues/64801#issuecomment-668897952) which can be augmented with the details below.  There is an open question if PSP should be updated or the recommendation is to use an out of tree enforcement tool such as GateKeeper.  The anticipated impacted PSPs include:
+- Several upstream changes are required to support this feature in Kubernetes, including changes to containerd, OCI, CRI, and kubelet. The identified changes include (see CRI and Kubelet Implementation Details below for more details on changes):
+  - Containerd: enabling host network mode for privileged containers and pods ([working prototype demo](https://drive.google.com/file/d/1WQO2NDX34Z1FPbW7jEymhcPMY4AZWQSE/view)). Prototype is done using containerd runtimehandler but this proposal is to use cri-api.
+    - OCI spec: https://github.com/opencontainers/runtime-spec
+      - Updates pending decisions made in this KEP regarding namings.
+    - CRI-api:
+      - Adding `WindowsPodSandboxConfig` and `WindowsSandboxSecurityContext` message
+      - Adding `host_process` flag to `WindowsContainerSecurityContext`
+      - Pass security context and flag of runtime spec to podsandbox spec (not currently supported, open issue: https://github.com/kubernetes/kubernetes/issues/92963)
+  - Kubelet: Pass host_process flag and windows security context options to runtime spec.
+- There are risks that changes at each of these levels may not be supported.
+  - If containerd changes are not supported, host network mode will not be enabled.This would restrict the scenarios that privileged containers would enable, as CNI plugins, network policy, etc. rely on host network mode to enable access to host network resources.
+  - If CRI changes to enable a privileged flag are not supported, there would be a less-ideal workaround via annotations in the pod container spec.
+  - The CRI changes may make an annotation in the OCI spec until the OCI updates are included.
+
+### PSP support
+
+For alpha we will update [Pod Security Standards](https://kubernetes.io/docs/concepts/security/pod-security-standards/) with information on the new `hostProcess` flag.
+
+Additionally, privileged containers may impact other pod security policies (PSPs) outside of allowPrivilegedEscalation. We will provide guidance similar to [Pod Security Standards](https://kubernetes.io/docs/concepts/security/pod-security-standards/) for Windows privileged containers when graduating this feature out of alpha. There is an [analysis for non-privileged containers](https://github.com/kubernetes/kubernetes/issues/64801#issuecomment-668897952) which can be augmented with the details below.The anticipated impacted PSPs include:
 
 <table>
   <tr>
-   <td>Use case 
+   <td>Use case
    </td>
    <td>Field name
    </td>
@@ -484,8 +489,10 @@ More information on Windows resource access can be found at https://docs.microso
 #### Container Mounts
 
 - When privileged containers are started a new volume will be created on the host which will contain the contains of the container image. Containers will have a default working directory that points to this container volume. Containers will also have full access to the host file-system (unless restricted by filed-based ACLs and the run_as_username used to start the container.) Processes should use absolute paths when accessing files on the host and relative paths when accessing files brought in via the container image.
-Note: there will be no `chroot` equivalent
-- Volume mounts (including service account tokens) are expected to work for privileged containers but may not be supported in alpha. The current plan is to mount these volumes under the volume created for the container. This will be re-visited for beta and extensively documented.
+Note: there will be no `chroot` equivalent.
+- An environment variable `$CONTAINER_SANDBOX_MOUNT_POINT` will be set to the absolute path where the container volume is mounted.
+- Volume mounts (including service account tokens) will be supported for privileged containers and will be mounted under the container volume. Programs running inside the container can either access volume mounts be using a relative path or by prefixing `$CONTAINER_SANDBOX_MOUNT_POINT` to their paths (example: use either `.\var\run\secrets\kubernetes.io\serviceaccount\` or `$CONTAINER_SANDBOX_MOUNT_POINT\var\run\secrets\kubernetes.io\serviceaccount\` to access service account tokens.)
+- Client libraries such as https://pkg.go.dev/k8s.io/client-go/rest#InClusterConfig will be updated to prefix paths with `$CONTAINER_SANDBOX_MOUNT_POINT` if the environment variable is set for Windows so these libraries will work in `hostProcess`containers.
 
 #### Container Images
 
@@ -552,7 +559,10 @@ Current behavior applies `PodSecurityContext.WindowsSecurityContextOptions` sett
 - If `PodSecurityContext.WindowsSecurityContextOptions.HostProcess = true` is set to true then no container in the pod sets `Container.SecurityContext.WindowsSecurityContextOptions.HostProcess = false`
 - If `PodSecurityContext.WindowsSecurityContextOptions.HostProcess` is not set then all containers in a pod must set `Container.SecurityContext.WindowsSecurityContextOptions.HostProcess = true`
 - If `PodSecurityContext.WindowsSecurityContextOptions.HostProcess = false` no containers may set `Container.SecurityContext.WindowsSecurityContextOptions.HostProcess = true`
-- `hostNetwork = true` must be set explicits if the pods contains hostProcess containers (this value will not be inferred and/or defaulted)
+- `hostNetwork = true` must be set explicits if the pod contains all hostProcess containers (this value will not be inferred and/or defaulted)
+
+Additionally kube-apiserver will disallow `hostProcess` containers to be scheduled if `--allow-privileged=false` is passed as an argument.
+https://github.com/kubernetes/kubernetes/blob/release-1.20/pkg/apis/core/validation/validation.go#L5767-L5771 for reference.
 
 ##### Alternatives
 
@@ -636,7 +646,8 @@ The following extra validation will be added to the kubelet for Windows. These c
 
 There are no plans to update Docker and/or dockershim to have support for privileged containers due to requirements on HCSv2.
 Currently containerd is the only container runtime with a Windows implementation so containerd will be required.
-If needed validation will be added in the kubelet to fail if node is configured to use dockershim and users schedule privileged Windows containers.
+
+Validation will be added in the kubelet to fail to schedule a pod if the node is configured to use dockershim and the pod contains privileged Windows containers.
 
 #### Feature Gates
 
@@ -668,6 +679,7 @@ Alpha
 
 - Unit tests around validation logic for new API fields.
 - Add e2e test validating basic privileged container functionality (pod starts and run in a privileged context on the node)
+- Update Pod Security Standards doc to dissallow `hostProcess` containers in the baseline/default and restricted policies.
 
 Beta
 
