@@ -17,16 +17,16 @@ reviewers:
 approvers:
 - "@dashpole"
 - "@ehashman"
-#prr-approvers:
-#- TBD
+prr-approvers:
+- "@deads2k"
 see-also:
 - /keps/sig-instrumentation/1753-logs-sanitization
 - /keps/sig-instrumentation/1602-structured-logging
 replaces: []
 
-stage: alpha
+stage: beta
 
-latest-milestone: "v1.20"
+latest-milestone: "v1.21"
 
 milestone:
   alpha: "v1.20"
