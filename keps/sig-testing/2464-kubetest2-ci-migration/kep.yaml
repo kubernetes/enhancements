@@ -6,13 +6,15 @@ owning-sig: sig-testing
 participating-sigs:
 - sig-release
 - sig-scalability
-status: provisional
+status: implementable
 creation-date: 2021-02-08
 reviewers:
 - BenTheElder
 approvers:
 - spiffxp
 - saschagrunert
+
+# NOTE: there's no production change in this KEP
 prr-approvers:
 - johnbelamaric 
 see-also: []
@@ -33,6 +35,7 @@ milestone:
   beta: "v1.22"
   stable: "v1.23"
 
+# N/A
 # The following PRR answers are required at alpha release
 # List the feature gate name and the components for which it must be enabled
 feature-gates: []
