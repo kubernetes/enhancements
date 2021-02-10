@@ -29,6 +29,12 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+var ValidStages = []string{
+	"alpha",
+	"beta",
+	"stable",
+}
+
 type Proposals []*Proposal
 
 func (p *Proposals) AddProposal(proposal *Proposal) {

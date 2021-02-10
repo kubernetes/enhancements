@@ -53,17 +53,38 @@ func (prr *PRRApproval) Validate() error {
 	return nil
 }
 
-func (prr *PRRApproval) ApproverForStage(stage string) string {
-	switch stage {
-	case "alpha":
-		return prr.Alpha.Approver
-	case "beta":
-		return prr.Beta.Approver
-	case "stable":
-		return prr.Stable.Approver
+func (prr *PRRApproval) ApproverForStage(stage string) (string, error) {
+	isValidStage := IsOneOf(stage, ValidStages)
+	if !isValidStage {
+		return "", ErrKEPStageIsInvalid(stage)
 	}
 
-	return ""
+	if prr.Alpha == nil && prr.Beta == nil && prr.Stable == nil {
+		return "", ErrPRRMilestonesAllEmpty
+	}
+
+	switch stage {
+	case "alpha":
+		if prr.Alpha == nil {
+			return "", ErrPRRMilestoneIsNil
+		}
+
+		return prr.Alpha.Approver, nil
+	case "beta":
+		if prr.Beta == nil {
+			return "", ErrPRRMilestoneIsNil
+		}
+
+		return prr.Beta.Approver, nil
+	case "stable":
+		if prr.Stable == nil {
+			return "", ErrPRRMilestoneIsNil
+		}
+
+		return prr.Stable.Approver, nil
+	}
+
+	return "", ErrPRRApproverUnknown
 }
 
 // TODO(api): Can we refactor the proposal `Milestone` to retrieve this?
@@ -111,14 +132,4 @@ func (p *PRRHandler) Parse(in io.Reader) (*PRRApproval, error) {
 	}
 
 	return approval, nil
-}
-
-func IsOneOf(check string, slice []string) bool {
-	for _, v := range slice {
-		if v == check {
-			return true
-		}
-	}
-
-	return false
 }

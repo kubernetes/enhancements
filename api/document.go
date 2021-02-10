@@ -46,3 +46,14 @@ type Parser struct {
 
 	Errors []error
 }
+
+// TODO: Can we come up with a better name/location for this?
+func IsOneOf(check string, slice []string) bool {
+	for _, v := range slice {
+		if v == check {
+			return true
+		}
+	}
+
+	return false
+}

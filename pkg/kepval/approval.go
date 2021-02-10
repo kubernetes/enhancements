@@ -71,7 +71,14 @@ func ValidatePRR(kep *api.Proposal, h *api.PRRHandler, prrDir string) error {
 		return errors.Wrapf(prr.Error, "%v has an error", prrFilepath)
 	}
 
-	stagePRRApprover := prr.ApproverForStage(kep.Stage)
+	stagePRRApprover, err := prr.ApproverForStage(kep.Stage)
+	if err != nil {
+		return errors.Wrapf(err, "getting PRR approver for %s stage", kep.Stage)
+	}
+
+	if stagePRRApprover == "" {
+		return errors.New("PRR approver cannot be empty")
+	}
 
 	if strings.HasPrefix(stagePRRApprover, "@") {
 		stagePRRApprover = strings.TrimPrefix(stagePRRApprover, "@")

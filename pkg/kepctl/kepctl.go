@@ -415,15 +415,21 @@ func (c *Client) loadKEPFromYaml(kepPath string) (*api.Proposal, error) {
 		fmt.Fprintf(c.Err, "WARNING: could not parse prod readiness request for KEP %s: %s\n", p.Number, approval.Error)
 	}
 
-	approver := approval.ApproverForStage(p.Stage)
+	approver, err := approval.ApproverForStage(p.Stage)
+	if err != nil {
+		return nil, errors.Wrapf(err, "getting PRR approver for %s stage", p.Stage)
+	}
+
 	for _, a := range p.PRRApprovers {
 		if a == approver {
 			approver = ""
 		}
 	}
+
 	if approver != "" {
 		p.PRRApprovers = append(p.PRRApprovers, approver)
 	}
+
 	return &p, nil
 }
 
