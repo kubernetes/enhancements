@@ -1,0 +1,21 @@
+title: Service Account Token Volumes
+kep-number: 2451
+authors:
+  - "@smarterclayton"
+  - "@liggitt"
+  - "@mikedanese"
+  - "@zshihang"
+owning-sig: sig-storage
+participating-sigs:
+  - sig-auth
+reviewers:
+  - "@jsafrane"
+  - "@tallclair"
+approvers:
+  - "@saad-ali"
+editor: "@zshihang"
+creation-date: 2018-05-15
+last-updated: 2020-03-27
+status: implemented
+see-also:
+  - "https://github.com/kubernetes/community/blob/e3a6b8172fec9506b15520549e52be683e30cbfb/contributors/design-proposals/storage/svcacct-token-volume-source.md"
