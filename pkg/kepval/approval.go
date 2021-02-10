@@ -105,6 +105,14 @@ func isPRRRequired(kep *api.Proposal) (required, missingMilestone, missingStage 
 	missingMilestone = kep.IsMissingMilestone()
 	missingStage = kep.IsMissingStage()
 
+	// TODO: These checks are currently gameable
+	//       i.e., if we elide some of these fields, a contributor can circumvent
+	//       PRR review
+	if kep.Scope != "in-tree" {
+		required = false
+		return required, missingMilestone, missingStage, nil
+	}
+
 	if kep.Status != "implementable" {
 		required = false
 		return required, missingMilestone, missingStage, nil
