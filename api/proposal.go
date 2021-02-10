@@ -46,6 +46,7 @@ type Proposal struct {
 	ID       string `json:"id"`
 	PRNumber string `json:"prNumber,omitempty"`
 	Name     string `json:"name,omitempty"`
+	Scope    string `json:"scope" yaml:"scope"`
 
 	Title             string   `json:"title" yaml:"title" validate:"required"`
 	Number            string   `json:"kep-number" yaml:"kep-number"`
