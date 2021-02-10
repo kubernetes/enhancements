@@ -20,18 +20,22 @@ import (
 	"io"
 )
 
-// TODO(api): Populate interface
-// TODO(api): Mock interface
+//go:generate go run github.com/maxbrunsfeld/counterfeiter/v6 -generate
+
+//counterfeiter:generate . File
+
+// TODO(api): Populate interface and regenerate mocks
 type File interface {
 	Parse(io.Reader) (Document, error)
 }
 
-// TODO(api): Populate interface
-// TODO(api): Mock interface
+//counterfeiter:generate . Document
+
 // Document is an interface satisfied by the following types:
 // - `Proposal` (KEP)
 // - `PRRApproval`
 // - `Receipt` (coming soon)
+// TODO(api): Populate interface and regenerate mocks
 type Document interface {
 	Validate() error
 }
