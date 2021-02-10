@@ -34,12 +34,12 @@
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
-- [ ] (R) Graduation criteria is in place
-- [ ] (R) Production readiness review completed
+- [X] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [X] (R) KEP approvers have approved the KEP status as `implementable`
+- [X] (R) Design details are appropriately documented
+- [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [X] (R) Graduation criteria is in place
+- [X] (R) Production readiness review completed
 - [ ] Production readiness review approved
 - [ ] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
@@ -47,7 +47,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Terms
 
-- **CRI:** Container Runtime Interface – a plugin interface which enables kubelet to use a wide variety of container 
+- **CRI:** Container Runtime Interface – a plugin interface which enables kubelet to use a wide variety of container
 runtimes, without the need to recompile.
 
 ## Summary
@@ -66,7 +66,8 @@ only developers in sig-node, but also cluster administrators when critical issue
 runtimes. The pros of removing dockershim is straightforward:
 
 ### Pros
-- Docker is not special and should be just a CRI implementation just like every other CRI implementation in our ecosystem. 
+
+- Docker is not special and should be just a CRI implementation just like every other CRI implementation in our ecosystem.
 - Currently, dockershim "enjoys" some inconsistent integrations for various reasons (see [legacyLogProvider](https://cs.k8s.io/?q=legacyLogProvider&i=nope&files=&repos=kubernetes/kubernetes) for example) . Removing these "features" should eliminate maintenance burden of kubelet.
 - A cri-dockerd can be maintained independently by folks who are interested in keeping this functionality
 - Over time we can remove vendored docker dependencies in kubelet.
@@ -78,6 +79,7 @@ runtimes. The pros of removing dockershim is straightforward:
 Having said that, cons of removal built-in dockershim requires lots of attention:
 
 ### Cons
+
 - Deployment pain with a new binary in addition to kubelet.
   - An additional component may aggravate the complexity currently. It may be relieved with docker version evolutions.
 - The number of affected users may be large.
@@ -136,18 +138,22 @@ Actions:
 
 Step 2: Release kubelet without dockershim
 
-Target releases: 1.22
+Target releases: 1.24 (assuming 3 release a year or after April 2021)
 
 Actions:
+
 - Document and announce migration guide.
-- Release harness would build kubelet with `dockerless` tag on. So the default build will not support docker out of 
-the box. 
+- Release harness would build kubelet with `dockerless` tag on. So the default build will not support docker out of
+the box.
 - If folks need this support, they would have to build kubelet by themselves as the code is still present in the
 source tree.
 
-Step 3: Completely remove in-tree dockershim from kubelet.
+Step 3: Completely remove in-tree dockershim from kubelet
 
-Target releases: Deprecation should be for at least a year. So the earliest possible release after that time period.
+Deprecation should be for at least a year. Deprecation was announced in December 2020
+so dockershim might be deleted the same release it is not built.
+
+Target releases: same as Step 2.
 
 Actions:
 
@@ -158,11 +164,11 @@ Actions:
 The easier we make it for folks to switch to CRI implementations the lesser the risk. Another option would be for
 folks for a brand new CRI implementation that targets docker. Though even this option means that folks will have to
 run an extra process outside of kubelet. The worst case scenario is for us to carry on the dockershim for a couple
-of more releases. 
+of more releases.
 
 ### Test Plan
 
-Node e2e testing will be augmented to test kubelet built with `dockerless` tag 
+Node e2e testing will be augmented to test kubelet built with `dockerless` tag.
 
 ### Graduation Criteria
 
@@ -170,11 +176,12 @@ Node e2e testing will be augmented to test kubelet built with `dockerless` tag
 - Adequate test signal quality for node e2e
 - Tests are in Testgrid and linked in KEP
 - Allowing time for additional user feedback and bug reports
+- Kubelet switched to use CRI API v1
 
 ### Upgrade / Downgrade Strategy
 
-Upgrade: Users should follow the migration guide before upgrading to a version of the kubelet that no longer 
-includes dockershim.
+Upgrade: Users should follow the [migration guide](https://kubernetes.io/docs/tasks/administer-cluster/migrating-from-dockershim/)
+before upgrading to a version of the kubelet that no longer includes dockershim.
 
 Downgrade: Not applicable.
 
@@ -189,28 +196,19 @@ Not applicable.
 _This section must be completed when targeting alpha to a release._
 
 * **How can this feature be enabled / disabled in a live cluster?**
-  - [ ] Feature gate (also fill in values in `kep.yaml`)
-    - Feature gate name: NONE
-    - Components depending on the feature gate: kubelet
-    - Will enabling / disabling the feature require downtime or reprovisioning
-      of a node? No
+Not applicable for this feature.
 
 * **Does enabling the feature change any default behavior?**
-Yes, the kubelet will size the empty dir volume to match the precise
-amount of memory the pod is able to write rather than over or undersizing.
-Prior behavior is node dependent, and so pod authors had no mechanism
-to control this behavior properly.
+There are slight differences in behavior. Differences in behavior are [listed here](https://kubernetes.io/docs/tasks/administer-cluster/migrating-from-dockershim/check-if-dockershim-deprecation-affects-you/).
 
-* **Can the feature be disabled once it has been enabled (i.e. can we roll back
-  the enablement)?** Yes
+* **Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?**
+No.
 
 * **What happens if we reenable the feature if it was previously rolled back?**
-Pods that run on that node will have memory backed volumes sized based on Linux
-host default.  The sizing may not align with actual available memory for an app.
+Not applicable. Roll back is not supported.
 
 * **Are there any tests for feature enablement/disablement?**
-No, testing behavior with the feature disabled is dependent on node operating
-system configuration.  The point of this KEP is to address that coupling.
+Not applicable. Enablement/disablement are not supported.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -223,9 +221,9 @@ None.
 * **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
 I do not believe this is applicable.
 
-* **Is the rollout accompanied by any deprecations and/or removals of features, APIs, 
+* **Is the rollout accompanied by any deprecations and/or removals of features, APIs,
 fields of API types, flags, etc.?**
-  Even if applying deprecation policies, they may still surprise some users.
+Even if applying deprecation policies, they may still surprise some users.
 No.
 
 ### Monitoring Requirements
@@ -233,7 +231,7 @@ No.
 * **How can an operator determine if the feature is in use by workloads?**
 Not applicable (no feature gate).
 
-* **What are the SLIs (Service Level Indicators) an operator can use to determine 
+* **What are the SLIs (Service Level Indicators) an operator can use to determine
 the health of the service?**
 This does not seem relevant to this feature.
 
@@ -285,6 +283,9 @@ Not applicable.
 Not applicable
 
 ## Implementation History
+
+- 12/02/2020 (v1.20): [Dockershim Deprecation FAQ](https://kubernetes.io/blog/2020/12/02/dockershim-faq/) published.
+- 12/08/2020 (v1.20): dockershim deprecation [warning added to kubelet](https://kubernetes.io/blog/2020/12/08/kubernetes-1-20-release-announcement/#dockershim-deprecation).
 
 ## Drawbacks
 
