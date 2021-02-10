@@ -316,28 +316,6 @@ if the namespace where they are created have a resource quota object with
 `CrossNamespaceAffinity` scope and a hard limit equal to the number of pods that are
 allowed to.
 
-Moreover, to prevent accidentally selecting a large number of namespaces, we will reject empty
-selectors. For example, users can do the following:
-
-```yaml
-podAntiAffinity:
-  requiredDuringSchedulingIgnoredDuringExecution:
-  - namespaceSelector:
-      matchExpressions:
-        - key: workload
-          operator: In
-          values:
-          - HPC
-```
-
-but can't do the following:
-
-```yaml
-podAntiAffinity:
-  requiredDuringSchedulingIgnoredDuringExecution:
-  - namespaceSelector: {}
-```
-
 For more protection, admission webhooks like gatekeeper can be used to further
 restrict the use of this field.
 
@@ -700,7 +678,8 @@ information to express the idea and why it was not acceptable.
 
 ## Implementation History
  - 2021-01-11: Initial KEP sent for review
-
+ - 2021-02-10: Remove the restriction on empty namespace selector
+ 
 <!--
 Major milestones in the lifecycle of a KEP should be tracked in this section.
 Major milestones might include:
