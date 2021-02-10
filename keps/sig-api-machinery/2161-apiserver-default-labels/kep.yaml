@@ -21,7 +21,7 @@ approvers:
   - "@liggitt"
   - "@deads2k"
 replaces:
-stage: alpha
+stage: beta
 latest-milestone: "v1.21"
 milestone:
   beta: "v1.21"
