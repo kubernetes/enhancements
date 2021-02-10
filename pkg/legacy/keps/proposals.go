@@ -25,10 +25,9 @@ import (
 	"strings"
 
 	"github.com/pkg/errors"
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 
 	"k8s.io/enhancements/api"
-	"k8s.io/enhancements/pkg/kepval/keps/validations"
 )
 
 type Parser struct{}
@@ -70,12 +69,15 @@ func (p *Parser) Parse(in io.Reader) *api.Proposal {
 		proposal.Error = errors.Wrap(err, "error unmarshaling YAML")
 		return proposal
 	}
-	if err := validations.ValidateStructure(test); err != nil {
-		proposal.Error = errors.Wrap(err, "error validating KEP metadata")
-		return proposal
-	}
 
-	proposal.Error = yaml.UnmarshalStrict(metadata, proposal)
+	/*
+		if err := validations.ValidateStructure(test); err != nil {
+			proposal.Error = errors.Wrap(err, "error validating KEP metadata")
+			return proposal
+		}
+	*/
+
+	proposal.Error = yaml.Unmarshal(metadata, proposal)
 	proposal.ID = hash(proposal.OwningSIG + ":" + proposal.Title)
 	return proposal
 }

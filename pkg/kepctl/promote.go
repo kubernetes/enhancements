@@ -33,26 +33,30 @@ func (c *PromoteOpts) Validate(args []string) error {
 
 // Promote changes the stage and target release for a specified KEP based on the
 // values specified in PromoteOpts is used to populate the template
-func (c *Client) Promote(opts PromoteOpts) error {
+func (c *Client) Promote(opts *PromoteOpts) error {
 	fmt.Fprintf(c.Out, "Updating KEP %s/%s\n", opts.SIG, opts.Name)
-	repoPath, err := c.findEnhancementsRepo(opts.CommonArgs)
+
+	repoPath, err := c.findEnhancementsRepo(&opts.CommonArgs)
 	if err != nil {
 		return fmt.Errorf("unable to promote KEP: %s", err)
 	}
+
 	p, err := c.readKEP(repoPath, opts.SIG, opts.Name)
 	if err != nil {
 		return fmt.Errorf("unable to load KEP for promotion: %s", err)
 	}
+
 	p.Stage = opts.Stage
 	p.LatestMilestone = opts.Release
 	p.LastUpdated = opts.Release
 
-	err = c.writeKEP(p, opts.CommonArgs)
+	err = c.writeKEP(p, &opts.CommonArgs)
 	if err != nil {
 		return fmt.Errorf("unable to write updated KEP: %s", err)
 	}
 
 	// TODO: Implement ticketing workflow artifact generation
 	fmt.Fprintf(c.Out, "KEP %s/%s updated\n", opts.SIG, opts.Name)
+
 	return nil
 }
