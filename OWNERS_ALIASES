@@ -190,6 +190,7 @@ aliases:
     - johnbelamaric
     - deads2k
     - wojtek-t
+    - ehashman
   provider-aws:
     - d-nishi
     - justinsb
