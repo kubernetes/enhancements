@@ -18,7 +18,15 @@
 - [Behavior](#behavior)
   - [Note About RunAsNonRoot field](#note-about-runasnonroot-field)
 - [Summary of Changes needed](#summary-of-changes-needed)
+- [Test Plan](#test-plan)
 - [Graduation Criteria](#graduation-criteria)
+- [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
+  - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
+  - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+  - [Monitoring Requirements](#monitoring-requirements)
+  - [Dependencies](#dependencies)
+  - [Scalability](#scalability)
+  - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
 <!-- /toc -->
 
@@ -223,12 +231,133 @@ There are other potentially unresolved discussions in that PR which need a follo
 - https://github.com/kubernetes/website/pull/12297
 - https://github.com/kubernetes/kubernetes/pull/73007
 
+## Test Plan
+For `Alpha`, unit tests and e2e tests were added to test functionality at both
+container and pod level for dockershim.
+
+For `Beta`, tests were added to other CRI's like cri-o, containerd and Docker.
+
+For `GA`, the introduced e2e tests will be promoted to conformance. It was also
+verified that all e2e coverage was proper and CRI's had tests in their respective
+repos testing this feature.
 
 ## Graduation Criteria
 
-- Publish Test Results from Master Branch of Cri-o To http://prow.k8s.io [#72253](https://github.com/kubernetes/kubernetes/issues/72253)
-- Containerd and CRI-O tests included in k/k CI [#72287](https://github.com/kubernetes/kubernetes/issues/72287)
-- Make CRI tests failures as release informing
+Beta
+- RunAsGroup is tested for containerd and CRI-O in cri-tools repo using critest
+  --  [Tests](https://github.com/kubernetes-sigs/cri-tools/blob/16911795a3c33833fa0ec83dac1ade3172f6989e/pkg/validate/security_context_linux.go#L357)
+- critests are executed in cri-tools for all merges as GitHub Action
+  --  [CRI-O](https://github.com/kubernetes-sigs/cri-tools/actions?query=workflow%3A%22critest+CRI-O%22)
+  --  [containerd](https://github.com/kubernetes-sigs/cri-tools/actions?query=workflow%3A%22critest+containerd%22) 
+
+GA
+- assuming no negative user feedback, promote after 1 release at beta.
+- verify test coverage for CRI's
+
+## Production Readiness Review Questionnaire
+
+### Feature Enablement and Rollback
+This feature is enabled in alpha releases using the feature flag `RunAsGroup`.
+
+
+### Rollout, Upgrade and Rollback Planning
+
+
+* **How can a rollout fail? Can it impact already running workloads?**
+Its possible in an incorrect configuration. For e.g. lets say the init container writes some 
+data using runAsGroup of 234, but the main container comes up as 436 and tries to read the 
+data written by the initcontainer. If that fails, the pod will not be ready and the deployment
+wont proceed. This should not impact already running workloads. One way, this can affect 
+already running workloads is when data is shared between all pods and the access of the files
+is changed by the initContainer due to misconfigured runAsGroup.
+
+
+* **What specific metrics should inform a rollback?**
+Metrics will be specific to application. Generic metrics like pod not being healthy and running
+should generally inform rollback in this case. More specific checks will involve intrusive testing
+like exec into a pod to determine the gid.
+
+
+* **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested? **
+Yes, manually
+
+* **Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.? **
+Moving from Beta to GA, is accompanied by the removal of the feature flag `RunAsGroup`. No other deprecations or removals 
+are in scope or part of this process.
+
+### Monitoring Requirements
+
+* **How can an operator determine if the feature is in use by workloads?**
+By inspecting the pod spec of any workload using kubectl or client-go libraries. If the pod spec
+has RunAsGroup present either at the container or pod level, then the feature is in use.
+```
+kubectl get pods --all-namespaces  -o json | jq -r '.items[] | select(.spec.securityContext.runAsGroup != null or .spec.containers[].securityContext.runAsGroup != null)|[.metadata.name, .metadata.namespace]'
+```
+
+* **What are the SLIs (Service Level Indicators) an operator can use to determine 
+the health of the service?**
+If a pod with this feature is enabled, and the pod is running , it's healthy.
+If the pod doesn't have the expected runAsGroup id as determined by the below command,
+the feature is not supported in that container runtime. Dont know if this caught earlier
+somewhere.
+
+```
+id -g
+```
+
+* **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
+N/A
+
+* **Are there any missing metrics that would be useful to have to improve observability 
+of this feature?**
+N/A
+
+
+### Dependencies
+
+* **Does this feature depend on any specific services running in the cluster?**
+This feature only depends on the container runtime(CRI) supporting this feature.
+
+### Scalability
+
+* **Will enabling / using this feature result in any new API calls?**
+  No
+* **Will enabling / using this feature result in introducing new API types?**
+  No
+
+* **Will enabling / using this feature result in any new calls to the cloud 
+provider?**
+  No
+
+* **Will enabling / using this feature result in increasing size or count of 
+the existing API objects?**
+This feature adds two new fields on at the pod level and one in each and every container this field is used in.
+
+
+* **Will enabling / using this feature result in increasing time taken by any 
+operations covered by [existing SLIs/SLOs]?**
+  No
+
+* **Will enabling / using this feature result in non-negligible increase of 
+resource usage (CPU, RAM, disk, IO, ...) in any components?**
+  No
+
+
+### Troubleshooting
+
+* **How does this feature react if the API server and/or etcd is unavailable?**
+After a pod is deployed, this feature will continue to work even if etcd or api server is unavailable.
+The functions not available when apiserver or etcd is unavailable is not specific to this feature.
+
+
+* **What are other known failure modes?**
+N/A
+
+* **What steps should be taken if SLOs are not being met to determine the problem?**
+  N/A
+
+
+
 
 ## Implementation History
 - Proposal merged on 9-18-2017
@@ -236,4 +365,5 @@ There are other potentially unresolved discussions in that PR which need a follo
 - Implementation for Containerd merged on 3-30-2018 
 - Implementation for CRI-O merged on 6-8-2018
 - Implemented RunAsGroup PodSecurityPolicy Strategy on 10-12-2018
-- Planned Beta in v1.14
+- Beta in 1.14
+- GA in 1.21
