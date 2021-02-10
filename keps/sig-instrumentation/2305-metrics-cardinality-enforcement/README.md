@@ -3,16 +3,49 @@
 ## Table of Contents
 
 <!-- toc -->
+- [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
 - [Motivation](#motivation)
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-- [Open-Question](#open-question)
-- [Graduation Criteria](#graduation-criteria)
-- [Post-Beta tasks](#post-beta-tasks)
+- [Design Details](#design-details)
+  - [Test Plan](#test-plan)
+  - [Graduation Criteria](#graduation-criteria)
+  - [Upgrade / Downgrade strategy](#upgrade--downgrade-strategy)
+  - [Version Skew Strategy](#version-skew-strategy)
+- [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
+  - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
+  - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+  - [Monitoring Requirements](#monitoring-requirements)
+  - [Dependencies](#dependencies)
+  - [Scalability](#scalability)
+  - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
 <!-- /toc -->
+## Release Signoff Checklist
+
+Items marked with (R) are required *prior to targeting to a milestone / release*.
+
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Design details are appropriately documented
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [x] (R) Graduation criteria is in place
+- [x] (R) Production readiness review completed
+- [x] (R) Production readiness review approved
+- [x] "Implementation History" section is up-to-date for milestone
+- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+
+<!--
+**Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
+-->
+
+[kubernetes.io]: https://kubernetes.io/
+[kubernetes/enhancements]: https://git.k8s.io/enhancements
+[kubernetes/kubernetes]: https://git.k8s.io/kubernetes
+[kubernetes/website]: https://git.k8s.io/website
 
 ## Summary
 
@@ -38,11 +71,9 @@ This KEP proposes a possible solution for this, with the primary goal being to e
 
 ### Non-Goals
 
-We will expose the machinery and tools to bind a metric's labels to a discrete set of values.
+We will expose the machinery and tools to bind a metric's labels to a discrete set of values. The allowlist will be ingested via a new-added component metric flag.
 
-It is *not a goal* to implement and plumb this solution for each Kubernetes component (there are many SIGs and a number of verticals, which may have their own preferred way of doing things). As such it will be up to component owners to leverage this functionality that we provide, by feeding configuration data through whatever mechanism deemed appropriate (i.e. command line flags or reading from a file).
-
-These flags are really only meant to be used as escape hatches, and should not be used to have extremely customized kubernetes setups where our existing dashboards and alerting rule definitions are just not going to apply generally anymore.
+It is *not a goal* to define the allowlist for each Kubernetes component metrics.
 
 ## Proposal
 
@@ -53,9 +84,7 @@ The simple solution to this problem would be for each metric added to keep the u
 
 Instead, the proposed solution is we will be able to *dynamically configure* an allowlist of label values for a metric. By *dynamically configure*, we mean configure an allowlist *at runtime* rather than during the build/compile step. And by *at runtime*, we mean, more specifically, during the boot sequence for a Kubernetes component (and we mean daemons here, not CLI tools like kubectl).
 
-Brief aside: a Kubernetes component (which is a daemon) is an executable, which can be launched from the command line manually if desired. Components take a number of start-up configuration flags, which are passed into the component to modify execution paths (if curious, check out the [large amount of flags we have on the kubelet](https://kubernetes.io/docs/reference/command-line-tools-reference/kubelet/)). It is also possible to read configuration data from files (like yaml format) during the component boot sequence. This KEP does not have an opinion on the specific mechanism used to load config data into a Kubernetes binary during the boot sequence. What we *actually* care about, is just the fact that it is possible.
-
-Our design is thus config-ingestion agnostic.
+Brief aside: a Kubernetes component (which is a daemon) is an executable, which can be launched from the command line manually if desired. Components take a number of start-up configuration flags, which are passed into the component to modify execution paths (if curious, check out the [large amount of flags we have on the kubelet](https://kubernetes.io/docs/reference/command-line-tools-reference/kubelet/)). Our design is going to add a flag that applies to all components to ingest the allowlist.
 
 Our design is also based on the premise that metrics can be uniquely identified (i.e. by their metric descriptor). Fortunately for us, this is actually a built in constraint of prometheus clients (which is how we instrument the Kubernetes components). This metric ID is resolvable to a unique string (this is pretty evident when looking at a raw prometheus client endpoint).
 
@@ -236,19 +265,138 @@ This would then be interpreted by our machinery as this:
 
 ```
 
-## Open-Question
+## Design Details
+### Test Plan
+For `Alpha`, unit test to verify that the metric label will be set to "unexpected" if the metric encounters label values outside our explicit allowlist of values.
+### Graduation Criteria
+For `Alpha`, the allowlist of metrics can be configured via the exposed flag and the unit test is passed.
+For `Beta`, the allowlist can be configured from a input file(e.g. yaml file).
+### Upgrade / Downgrade strategy
+N/A
+### Version Skew Strategy
+N/A
+
+## Production Readiness Review Questionnaire
+### Feature Enablement and Rollback
+
+_This section must be completed when targeting alpha to a release._
+
+* **How can this feature be enabled / disabled in a live cluster?**
+  - [x] Feature gate (also fill in values in `kep.yaml`)
+    - Feature gate name: MetricCardinalityEnforcement
+    - Components depending on the feature gate: All components that emit metrics
+
+* **Does enabling the feature change any default behavior?**
+  Any change of default behavior may be surprising to users or break existing
+  automations, so be extremely careful here.
+  Using this feature requires restarting the component with the allowlist flag enabled. Once enabled, the metric label will be set to "unexpected" if the metric encounters label values outside our explicit allowlist of values. 
+
+* **Can the feature be disabled once it has been enabled (i.e. can we roll back
+  the enablement)?**
+  Also set `disable-supported` to `true` or `false` in `kep.yaml`.
+  Describe the consequences on existing workloads (e.g., if this is a runtime
+  feature, can it break the existing applications?).
+  Yes, disabling the feature gate can revert it back to existing behavior
+  
+* **What happens if we reenable the feature if it was previously rolled back?**
+  The enable-disable-enable process will not cause problem. But it may be problematic during the rolled back period with the unbounded metrics value.
+  
+* **Are there any tests for feature enablement/disablement?**
+  Using unit tests to cover the combination cases w/wo feature and w/wo allowlist.
+  
+### Rollout, Upgrade and Rollback Planning
+
+_This section must be completed when targeting beta graduation to a release._
+
+* **How can a rollout fail? Can it impact already running workloads?**
+  Try to be as paranoid as possible - e.g., what if some components will restart
+   mid-rollout?
+  Using this feature requires restarting the component with the allowlist flag enabled.
+* **What specific metrics should inform a rollback?**
+  None.
+* **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
+  Describe manual testing that was done and the outcomes.
+  Longer term, we may want to require automated upgrade/rollback tests, but we
+  are missing a bunch of machinery and tooling and can't do that now.
+  In alpha, we can do some manual tests on enable/disable allowlist flag and enable/disable feature gate.
+* **Is the rollout accompanied by any deprecations and/or removals of features, APIs, 
+fields of API types, flags, etc.?**
+  A component metric flag for ingesting allowlist to be added.
+### Monitoring Requirements
+
+_This section must be completed when targeting beta graduation to a release._
+
+* **How can an operator determine if the feature is in use by workloads?**
+  The out-of-bound data will be recorded with label "unexpected" rather than the specific value.
+* **What are the SLIs (Service Level Indicators) an operator can use to determine 
+the health of the service?**
+  None.
+
+* **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
+  None.
+
+* **Are there any missing metrics that would be useful to have to improve observability 
+of this feature?**
+  None.
+
+### Dependencies
+
+_This section must be completed when targeting beta graduation to a release._
+
+* **Does this feature depend on any specific services running in the cluster?**
+  No.
 
 
-## Graduation Criteria
+### Scalability
 
-todo
+_For alpha, this section is encouraged: reviewers should consider these questions
+and attempt to answer them._
 
+_For beta, this section is required: reviewers must answer these questions._
 
-## Post-Beta tasks
+_For GA, this section is required: approvers should be able to confirm the
+previous answers based on experience in the field._
 
-todo
+* **Will enabling / using this feature result in any new API calls?**
+  No.
+
+* **Will enabling / using this feature result in introducing new API types?**
+  Describe them, providing:
+  No.
+
+* **Will enabling / using this feature result in any new calls to the cloud 
+provider?**
+  No.
+* **Will enabling / using this feature result in increasing size or count of 
+the existing API objects?**
+  No.
+
+* **Will enabling / using this feature result in increasing time taken by any 
+operations covered by [existing SLIs/SLOs]?**
+  Checking metrics label against allowlist may increase the metric recording time.
+
+* **Will enabling / using this feature result in non-negligible increase of 
+resource usage (CPU, RAM, disk, IO, ...) in any components?**
+  No.
+
+### Troubleshooting
+
+The Troubleshooting section currently serves the `Playbook` role. We may consider
+splitting it into a dedicated `Playbook` document (potentially with some monitoring
+details). For now, we leave it here.
+
+_This section must be completed when targeting beta graduation to a release._
+
+* **How does this feature react if the API server and/or etcd is unavailable?**
+  No additional impact comparing to what already exists.
+* **What are other known failure modes?**
+  None.
+
+* **What steps should be taken if SLOs are not being met to determine the problem?**
+  None.
 
 ## Implementation History
 
-todo
+2020-04-15: KEP opened
 
+2020-05-19: KEP marked implementable
