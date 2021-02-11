@@ -1,4 +1,4 @@
-title: graduate-nodelocaldns-to-beta
+title: NodeLocal DNS Cache
 kep-number: 1024
 authors:
   - "@prameshj"
@@ -7,6 +7,7 @@ reviewers:
   - "@bowei"
   - "@thockin"
   - "@johnbelamaric"
+  - "@sdodson"
 approvers:
   - "@bowei"
   - "@thockin"
