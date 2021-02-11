@@ -127,7 +127,7 @@ will prevent any of the v1.18 CCMs from claiming the lock. When the current hold
 <br/>
 <br/>
 
-![example network controllers migration v1.17](/keps/sig-cloud-provider/991-cloud-controller-migration/migrating-cloud-controllers-v1-17.png)
+![example network controllers migration v1.17](/keps/sig-cloud-provider/2436-controller-manager-leader-migration/migrating-cloud-controllers-v1-17.png)
 <br/>
 **Figure 1**: Example of migrating cloud network controllers in v1.17
 
@@ -135,7 +135,7 @@ will prevent any of the v1.18 CCMs from claiming the lock. When the current hold
 <br/>
 <br/>
 
-![example network controllers migration v1.18](/keps/sig-cloud-provider/991-cloud-controller-migration/migrating-cloud-controllers-v1-18.png)
+![example network controllers migration v1.18](/keps/sig-cloud-provider/2436-controller-manager-leader-migration/migrating-cloud-controllers-v1-18.png)
 <br/>
 **Figure 2**: Example of migrating cloud network controllers in v1.18
 
