@@ -138,7 +138,7 @@ Actions:
 
 Step 2: Release kubelet without dockershim
 
-Target releases: 1.24 (assuming 3 release a year or after April 2021)
+Target releases: 1.24 (assuming 3 release a year or after April 2022)
 
 Actions:
 
