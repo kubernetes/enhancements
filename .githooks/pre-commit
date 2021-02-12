@@ -1,4 +1,4 @@
-# !/usr/bin/env bash
+#!/usr/bin/env bash
 
 # Copyright 2020 The Kubernetes Authors.
 #
@@ -20,4 +20,6 @@ set -o pipefail
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 
-exec "${REPO_ROOT}/hack/verify.sh"
+exec "${REPO_ROOT}/hack/verify-kep-metadata.sh"
+exec "${REPO_ROOT}/hack/verify-toc.sh"
+exec "${REPO_ROOT}/hack/verify-spelling.sh"
