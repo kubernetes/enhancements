@@ -1,24 +1,3 @@
----
-title: etcdadm
-authors:
-  - "@justinsb"
-owning-sig: sig-cluster-lifecycle
-participating-sigs:
-reviewers:
-  - "@roberthbailey"
-  - "@timothysc"
-approvers:
-  - "@roberthbailey"
-  - "@timothysc"
-editor: TBD
-creation-date: 2018-10-22
-last-updated: 2018-10-22
-status: provisional
-see-also:
-replaces:
-superseded-by:
----
-
 # etcdadm - automation for etcd clusters
 
 ## Table of Contents
@@ -198,7 +177,7 @@ cluster installations.
 
 * Much SIG discussion
 * Initial proposal to SIG 2018-10-09
-* Initial KEP draft 2018-10-22 
+* Initial KEP draft 2018-10-22
 * Added clarification of cloud interaction 2018-10-23
 
 ## Infrastructure Needed

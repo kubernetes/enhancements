@@ -1,20 +1,3 @@
----
-title: Addons via Operators
-authors:
-  - "@justinsb"
-owning-sig: sig-cluster-lifecycle
-reviewers:
-  - "@luxas"
-  - "@roberthbailey"
-  - "@timothysc"
-approvers:
-  - "@timothysc"
-editor: TBD
-creation-date: 2019-01-28
-last-updated: 2019-03-11
-status: provisional
----
-
 # Addons via Operators
 
 ## Table of Contents

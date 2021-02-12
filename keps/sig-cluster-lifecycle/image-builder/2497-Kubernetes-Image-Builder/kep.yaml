@@ -1,0 +1,18 @@
+title: Kubernetes Image Builder
+kep-number: 2497
+authors:
+  - "@timothysc"
+  - "@moshloop"
+owning-sig: sig-cluster-lifecycle
+reviewers:
+  - "@justinsb"
+  - "@luxas"
+  - "@astrieanna"
+approvers:
+  - "@justinsb"
+  - "@timothysc"
+  - "@luxas"
+editor: "@timothysc"
+creation-date: 2019-06-11
+last-updated: 2019-07-05
+status: provisional

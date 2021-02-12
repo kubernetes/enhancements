@@ -1,0 +1,16 @@
+title: Kubernetes Cluster Management API
+kep-number: 2495
+authors:
+  - "@roberthbailey"
+  - "@pipejakob"
+owning-sig: sig-cluster-lifecycle
+reviewers:
+  - "@justinsb"
+  - "@timothysc"
+approvers:
+  - "@justinsb"
+  - "@timothysc"
+editor: "@justinsb"
+creation-date: 2018-01-19
+last-updated: 2019-04-04
+status: provisional
