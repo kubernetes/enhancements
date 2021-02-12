@@ -277,11 +277,9 @@ index.
 
 * **From `Retain` to a deletion policy**
 
-The StatefulSet PVCs are updated with an ownerRef to the StatefulSet. If a
-scale-down is in process, remaining PVCs are given an ownerRef to their Pod (by
-index, as above).
-
-When mutating from the `Retain` policy to a deletion policy, 
+When mutating from the `Retain` policy to a deletion policy, the StatefulSet
+PVCs are updated with an ownerRef to the StatefulSet. If a scale-down is in
+process, remaining PVCs are given an ownerRef to their Pod (by index, as above).
 
 ### Cluster role change for statefulset controller
 
@@ -359,7 +357,7 @@ are not involved so there is no version skew between nodes and the control plane
     - Components depending on the feature gate
       - kube-controller-manager, which orchestrates the volume deletion.
       - kube-apiserver, to manage the new policy field in the StatefulSet
-        resource (eg [dropDisabledFields](https://github.com/kubernetes/kubernetes/blob/97d40890d00acf721ecabb8c9a6fec3b3234b74b/pkg/api/pod/util.go#L433)).
+        resource (eg dropDisabledFields).
   
 * **Does enabling the feature change any default behavior?**
   No. What happens during StatefulSet deletion differs from current behaviour
