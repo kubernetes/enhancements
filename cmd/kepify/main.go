@@ -25,8 +25,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/pkg/errors"
+
 	"k8s.io/enhancements/api"
-	"k8s.io/enhancements/pkg/legacy/keps"
 )
 
 func Usage() {
@@ -48,6 +49,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "please specify the root directory for KEPs using '--dir'\n")
 		os.Exit(1)
 	}
+
 	if _, err := os.Stat(*dirPath); os.IsNotExist(err) {
 		fmt.Printf("directory does not exist : %s", *dirPath)
 		os.Exit(1)
@@ -64,6 +66,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "unable to find markdown files: %v\n", err)
 		os.Exit(1)
 	}
+
 	if len(files) == 0 {
 		fmt.Fprintf(os.Stderr, "did not find any KEPs\n")
 		os.Exit(1)
@@ -92,47 +95,59 @@ func findMarkdownFiles(dirPath *string) ([]string, error) {
 			if err != nil {
 				return err
 			}
+
 			if info.IsDir() {
 				return nil
 			}
+
 			if ignore(info.Name()) {
 				return nil
 			}
+
 			files = append(files, path)
 			return nil
 		},
 	)
+
 	return files, err
 }
 
 func parseFiles(files []string) (api.Proposals, error) {
 	var proposals api.Proposals
 	for _, filename := range files {
-		parser := &keps.Parser{}
+		parser, err := api.NewKEPHandler()
+		if err != nil {
+			return nil, errors.Wrap(err, "creating new KEP handler")
+		}
+
 		file, err := os.Open(filename)
 		if err != nil {
 			return nil, fmt.Errorf("could not open file: %v", err)
 		}
 
 		defer file.Close()
-		kep := parser.Parse(file)
+
+		kep, err := parser.Parse(file)
 		// if error is nil we can move on
-		if kep.Error != nil {
+		if err != nil {
 			return nil, fmt.Errorf("%v has an error: %q", filename, kep.Error.Error())
 		}
 
 		fmt.Printf(">>>> parsed file successfully: %s\n", filename)
 		proposals.AddProposal(kep)
 	}
+
 	return proposals, nil
 }
 
 func printJSONOutput(filePath string, proposals api.Proposals) error {
 	fmt.Printf("Output file: %s\n", filePath)
+
 	file, err := os.Create(filePath)
 	if err != nil {
 		return err
 	}
+
 	defer file.Close()
 
 	total := len(proposals)
@@ -142,6 +157,7 @@ func printJSONOutput(filePath string, proposals api.Proposals) error {
 	if err != nil {
 		return err
 	}
+
 	if err := ioutil.WriteFile(filePath, data, 0755); err != nil {
 		return err
 	}

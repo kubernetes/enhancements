@@ -37,8 +37,6 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"k8s.io/enhancements/api"
-	"k8s.io/enhancements/pkg/legacy/keps"
-	"k8s.io/enhancements/pkg/legacy/prrs"
 	"k8s.io/test-infra/prow/git"
 )
 
@@ -166,10 +164,13 @@ func validateKEP(p *api.Proposal) error {
 	}
 
 	r := bytes.NewReader(b)
-	parser := &keps.Parser{}
+	parser, err := api.NewKEPHandler()
+	if err != nil {
+		return errors.Wrap(err, "creating KEP handler")
+	}
 
-	kep := parser.Parse(r)
-	if kep.Error != nil {
+	kep, err := parser.Parse(r)
+	if err != nil {
 		return fmt.Errorf("kep is invalid: %s", kep.Error)
 	}
 
@@ -180,13 +181,12 @@ func findLocalKEPMeta(repoPath, sig string) ([]string, error) {
 	rootPath := filepath.Join(
 		repoPath,
 		"keps",
-		sig)
+		sig,
+	)
 
-	// TODO(lint): importShadow: shadow of imported from 'k8s.io/enhancements/pkg/legacy/keps' package 'keps' (gocritic)
-	//nolint:gocritic
 	keps := []string{}
 
-	// if the sig doesn't have a dir, it has no KEPs
+	// if the SIG doesn't have a dir, it has no KEPs
 	if _, err := os.Stat(rootPath); os.IsNotExist(err) {
 		return keps, nil
 	}
@@ -397,20 +397,32 @@ func (c *Client) loadKEPFromYaml(kepPath string) (*api.Proposal, error) {
 	prrPath := filepath.Dir(kepPath)
 	prrPath = filepath.Dir(prrPath)
 	sig := filepath.Base(prrPath)
-	prrPath = filepath.Join(filepath.Dir(prrPath),
+	prrPath = filepath.Join(
+		filepath.Dir(prrPath),
 		"prod-readiness",
 		sig,
-		p.Number+".yaml")
+		p.Number+".yaml",
+	)
+
 	prrFile, err := os.Open(prrPath)
 	if os.IsNotExist(err) {
 		return &p, nil
 	}
+
 	if err != nil {
 		return nil, fmt.Errorf("could not open file %s: %v\n", prrPath, err)
 	}
 
-	parser := &prrs.Parser{}
-	approval := parser.Parse(prrFile)
+	parser, err := api.NewPRRHandler()
+	if err != nil {
+		return nil, errors.Wrap(err, "creating new PRR handler")
+	}
+
+	approval, err := parser.Parse(prrFile)
+	if err != nil {
+		return nil, errors.Wrapf(err, "parsing PRR")
+	}
+
 	if approval.Error != nil {
 		fmt.Fprintf(c.Err, "WARNING: could not parse prod readiness request for KEP %s: %s\n", p.Number, approval.Error)
 	}
@@ -438,13 +450,19 @@ func (c *Client) loadKEPFromOldStyle(kepPath string) (*api.Proposal, error) {
 	if err != nil {
 		return nil, fmt.Errorf("no kep.yaml, but failed to read as old-style KEP: %s", err)
 	}
-	r := bytes.NewReader(b)
-	parser := &keps.Parser{}
 
-	kep := parser.Parse(r)
-	if kep.Error != nil {
+	r := bytes.NewReader(b)
+
+	parser, err := api.NewKEPHandler()
+	if err != nil {
+		return nil, errors.Wrap(err, "creating new KEP handler")
+	}
+
+	kep, err := parser.Parse(r)
+	if err != nil {
 		return nil, fmt.Errorf("kep is invalid: %s", kep.Error)
 	}
+
 	kep.Name = filepath.Base(kepPath)
 	return kep, nil
 }

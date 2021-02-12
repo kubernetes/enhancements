@@ -51,10 +51,14 @@ func ValidateRepository(kepDir string) ([]string, map[string][]error, error) {
 	}
 
 	if len(files) == 0 {
-		return warnings, valErrMap, errors.New("must find more than zero keps")
+		return warnings, valErrMap, errors.New("must find more than zero KEPs")
 	}
 
-	kepHandler := &api.KEPHandler{}
+	kepHandler, err := api.NewKEPHandler()
+	if err != nil {
+		return warnings, valErrMap, errors.Wrap(err, "creating KEP handler")
+	}
+
 	prrHandler, err := api.NewPRRHandler()
 	if err != nil {
 		return warnings, valErrMap, errors.Wrap(err, "creating PRR handler")

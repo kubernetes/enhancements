@@ -23,7 +23,6 @@ import (
 	"github.com/pkg/errors"
 
 	"k8s.io/enhancements/api"
-	"k8s.io/enhancements/pkg/legacy/util"
 )
 
 var (
@@ -57,7 +56,11 @@ type QueryOpts struct {
 
 // Validate checks the query options and cleans them up if needed
 func (c *QueryOpts) Validate() error {
-	groups := util.Groups()
+	groups, err := api.FetchGroups()
+	if err != nil {
+		return errors.Wrap(err, "fetching groups")
+	}
+
 	if len(c.SIG) > 0 {
 		sigs, err := selectByRegexp(groups, c.SIG)
 		if err != nil {
