@@ -1,29 +1,3 @@
----
-title: kubeadm-machine-output
-authors:
-  - "@akutz"
-  - "@bart0sh"
-owning-sig: sig-cluster-lifecycle
-participating-sigs:
-reviewers:
-  - "@justinsb"
-  - "@tstromberg"
-  - "@timothysc"
-  - "@mtaufen"
-  - "@rosti"
-  - "@randomvariable"
-  - "@fabriziopandini"
-  - "@neolit123"
-approvers:
-  - "@timothysc"
-  - "@neolit123"
-  - "@fabriziopandini"
-editor:
-creation-date: 2019-05-06
-last-updated: 2019-05-29
-status: implementable
----
-
 # Kubeadm machine output
 
 ## Table of Contents
@@ -317,7 +291,7 @@ The following JSON output is an example of running `kubeadm init -o json`:
 
 *Mitigation*: The [Alpha -> Beta](#alpha---beta-graduation) graduation criteria requires a thorough discussion about versioned output.
 
-**Risk**: At first glance it may appear this KEP breaks compatibility with the existing output format for `kubeadm token list`, but that's not the case. 
+**Risk**: At first glance it may appear this KEP breaks compatibility with the existing output format for `kubeadm token list`, but that's not the case.
 
 *Mitigation*: Because the proposed printer design accepts an `io.Writer`, there is nothing to prevent the writer from being:
 
@@ -374,8 +348,8 @@ NA
 
 ## Implementation History
 
-* May 2019 (1.14) KEP was created. 
+* May 2019 (1.14) KEP was created.
 
-## Drawbacks 
+## Drawbacks
 
 NA

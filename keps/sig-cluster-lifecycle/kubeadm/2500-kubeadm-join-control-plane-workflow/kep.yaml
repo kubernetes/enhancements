@@ -1,0 +1,18 @@
+title: "kubeadm join --control-plane workflow"
+kep-number: 2500
+authors:
+  - "@fabriziopandini"
+owning-sig: sig-cluster-lifecycle
+reviewers:
+  - "@chuckha"
+  - "@detiber"
+  - "@luxas"
+approvers:
+  - "@luxas"
+  - "@timothysc"
+editor: "@fabriziopandini"
+creation-date: 2018-01-28
+last-updated: 2019-04-18
+status: provisional
+see-also:
+  - KEP 0004

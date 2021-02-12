@@ -1,5 +1,3 @@
-
-
 # Documentation for images
 
 Open https://www.websequencediagrams.com/ and paste the spec for the desired image:
@@ -15,28 +13,28 @@ Open https://www.websequencediagrams.com/ and paste the spec for the desired ima
 ```
 title kubeadm init (interactions with the v1beta1 configuration)
 
-participant "user" as u 
+participant "user" as u
 participant "kubeadm" as k
 participant "kubelet" as kk
 participant "node\n(api object)" as n
 participant "kubeadm-config\nConfigMap" as cm
-participant "kubeproxy-config\nConfigMap" as kpcm 
+participant "kubeproxy-config\nConfigMap" as kpcm
 participant "kubelet-config\nConfigMap-1.*" as kcm
 
-u->k:provide\nInitConfiguration (with NodeRegistrationOptions, ControlPlaneConfiguration)\nClusterConfiguration\nkube-proxy component configuration\nkubelet component configuration 
+u->k:provide\nInitConfiguration (with NodeRegistrationOptions, ControlPlaneConfiguration)\nClusterConfiguration\nkube-proxy component configuration\nkubelet component configuration
 
 k->kk:write kubelet component configuration\nto /var/lib/kubelet/config.yaml
 k->kk:write NodeRegistrationOptions\nto /var/lib/kubelet/kubeadm-flags.env
 kk->n:start node
-k->n:save NodeRegistrationOptions.CRISocket\nto kubeadm.alpha.kubernetes.io/cri-socket annotation 
+k->n:save NodeRegistrationOptions.CRISocket\nto kubeadm.alpha.kubernetes.io/cri-socket annotation
 
 k->k:use InitConfiguration\n(e.g. tokens)
 
 k->cm:save ClusterConfiguration
 k->cm:add Current ControlPlaneConfiguration to ClusterConfiguration.Status
 
-k->kpcm:save kube-proxy component configuration 
-k->kcm:save kubelet component configuration 
+k->kpcm:save kube-proxy component configuration
+k->kcm:save kubelet component configuration
 ```
 
 ## kubeadm join (and join --control-plane)
@@ -44,14 +42,14 @@ k->kcm:save kubelet component configuration
 ```
 title kubeadm join and join --control-plane (interactions with the v1beta1 configuration)
 
-participant "user" as u 
+participant "user" as u
 participant "kubeadm" as k
 participant "kubeadm-config\nConfigMap" as cm
 participant "kubelet-config\nConfigMap-1.*" as kcm
 participant "kubelet" as kk
 participant "node\n(api object)" as n
 
-u->k:provide\nJoinConfiguration\n(with NodeRegistrationOptions) 
+u->k:provide\nJoinConfiguration\n(with NodeRegistrationOptions)
 
 k->cm:read ClusterConfiguration
 cm->k:
@@ -62,29 +60,29 @@ kcm->k:
 k->kk:write kubelet component configuration\nto /var/lib/kubelet/config.yaml
 k->kk:write NodeRegistrationOptions\nto /var/lib/kubelet/kubeadm-flags.env
 kk->n:start node
-k->n:save NodeRegistrationOptions.CRISocket\nto kubeadm.alpha.kubernetes.io/cri-socket annotation 
+k->n:save NodeRegistrationOptions.CRISocket\nto kubeadm.alpha.kubernetes.io/cri-socket annotation
 
 k->cm:add new ControlPlaneConfiguration\nto ClusterConfiguration.Status\n(only for join --control-plane)
 ```
 
-## kubeadm reset 
+## kubeadm reset
 
 ```
 title kubeadm reset (interactions with the v1beta1 configuration)
 
-participant "user" as u 
+participant "user" as u
 participant "kubeadm" as k
 participant "kubeadm-config\nConfigMap" as cm
 participant "node\n(api object)" as n
 
 
-u->k: 
+u->k:
 
 k->cm:read ClusterConfiguration
 cm->k:
 k->cm:remove ControlPlaneConfiguration\nfrom ClusterConfiguration.Status\n(only if the node hosts a control plane instance)
 
-k->n:read kubeadm.alpha.kubernetes.io/cri-socket annotation 
+k->n:read kubeadm.alpha.kubernetes.io/cri-socket annotation
 n->k:
 k->k:use CRIsocket\nto delete containers
 ```
@@ -94,10 +92,10 @@ k->k:use CRIsocket\nto delete containers
 ```
 title kubeadm upgrade apply (interactions with the v1beta1 configuration)
 
-participant "user" as u 
+participant "user" as u
 participant "kubeadm" as k
 participant "kubeadm-config\nConfigMap" as cm
-participant "kubeproxy-config\nConfigMap" as kpcm 
+participant "kubeproxy-config\nConfigMap" as kpcm
 participant "kubelet-config\nConfigMap-1.*+1" as kcm
 participant "kubelet" as kk
 participant "node\n(api object)" as n
@@ -115,17 +113,17 @@ k->kpcm:read kube-proxy component configuration
 kpcm->k:
 k->k:update kube-proxy\ncomponent configuration\nusing api machinery
 k->kpcm:save updated kube-proxy component configuration
-note over kpcm, n:the updated kube-proxy component configuration will\nbe used by the updated kube-proxy DaemonSet 
+note over kpcm, n:the updated kube-proxy component configuration will\nbe used by the updated kube-proxy DaemonSet
 
 k->kcm:read kubelet component configuration
 kcm->k:
 k->k:update kubelet\ncomponent configuration\nusing api machinery
-k->kcm:save updated kubelet component configuration 
+k->kcm:save updated kubelet component configuration
 k->kk:write kubelet component configuration\nto /var/lib/kubelet/config.yaml
 k->kk:write NodeRegistrationOptions\nto /var/lib/kubelet/kubeadm-flags.env
 kk->n:start node
 
-note over kcm, n:the updated kubelet component configuration\nwill be used by other nodes\nwhen running\nkubeadm upgrade nodes locally 
+note over kcm, n:the updated kubelet component configuration\nwill be used by other nodes\nwhen running\nkubeadm upgrade nodes locally
 
 ```
 
@@ -134,15 +132,14 @@ note over kcm, n:the updated kubelet component configuration\nwill be used by ot
 ```
 title kubeadm upgrade node (interactions with the v1beta1 configuration)
 
-participant "user" as u 
+participant "user" as u
 participant "kubeadm" as k
 participant "kubelet-config\nConfigMap-1.*" as kcm
 participant "kubelet" as kk
 
-u->k: 
+u->k:
 
 k->kcm:read kubelet\ncomponent configuration
 kcm->k:
 k->kk:write kubelet component configuration\nto /var/lib/kubelet/config.yaml
 ```
-

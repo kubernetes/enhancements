@@ -1,0 +1,17 @@
+title: Kubeadm Config versioning
+kep-number: 2498
+authors:
+  - "@liztio"
+owning-sig: sig-cluster-lifecycle
+participating-sigs:
+reviewers:
+  - "@timothysc"
+approvers:
+  - TBD
+editor: TBD
+creation-date: 2018-04-12
+last-updated: 2018-04-12
+status: provisional
+see-also:
+replaces:
+superseded-by:

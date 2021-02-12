@@ -1,0 +1,18 @@
+title: Remove ClusterStatus from kubeadm-config
+kep-number: 2506
+authors:
+  - "@fabriziopandini"
+owning-sig: sig-cluster-lifecycle
+participating-sigs:
+  - sig-cluster-lifecycle
+reviewers:
+  - "@neolit123"
+  - "@rosti"
+  - "@ereslibre"
+  - "@ncdc"
+approvers:
+  - "@timothysc"
+editor: "@fabriziopandini"
+creation-date: 2019-11-25
+last-updated: 2019-11-25
+status: implementable
