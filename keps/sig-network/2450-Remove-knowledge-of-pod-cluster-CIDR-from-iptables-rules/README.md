@@ -1,30 +1,3 @@
----
-title: Remove knowledge of pod cluster CIDR from iptables rules
-authors:
-  - "@satyasm"
-owning-sig: sig-network
-participating-sigs:
-reviewers:
-  - "@thockin"
-  - "@caseydavenport"
-  - "@mikespreitzer"
-  - "@aojea"
-  - "@fasaxc"
-  - "@squeed"
-  - "@bowei"
-  - "@dcbw"
-  - "@darwinship"
-approvers:
-  - "@thockin"
-editor: TBD
-creation-date: 2019-11-04
-last-updated: 2019-11-27
-status: implementable
-see-also:
-replaces:
-superseded-by:
----
-
 # Removing Knowledge of pod cluster CIDR from iptables rules
 
 ## Table of Contents
@@ -67,9 +40,9 @@ This enhancement proposes ways to achieve similar goals without tracking the pod
 
 ## Motivation
 
-The idea that makes kubernetes networking model unique and powerful is the concept of each pod having its own IP, 
-with all the pod IPs being natively routable within the cluster. The service chains in iptable rules depend on this 
-capability by assuming that they can treat all the endpoints of a cluster as being equivalent and load balance service 
+The idea that makes kubernetes networking model unique and powerful is the concept of each pod having its own IP,
+with all the pod IPs being natively routable within the cluster. The service chains in iptable rules depend on this
+capability by assuming that they can treat all the endpoints of a cluster as being equivalent and load balance service
 traffic across all the endpoints, by just translating destination to the pod IP address.
 
 While this is powerful, it also means pod IP addresses are in many cases the constraining resource for cluster creation
@@ -82,7 +55,7 @@ Some examples of use cases:
    * Expanding a cluster with more disjoint ranges after initial creation.
 
 Not having to depend on the cluster pod CIDR for routing service traffic would effectively de-couple pod IP management
-and allocation strategies from service management and routing. Which in turn would mean that it would be far cheaper 
+and allocation strategies from service management and routing. Which in turn would mean that it would be far cheaper
 to evolve the IP allocation schemes while sharing the same service implementation, thus significantly lowering the bar
 for adoption of alternate schemes.
 
@@ -102,14 +75,14 @@ CIDR for routing cluster traffic.
 
 ## Proposal
 
-As stated above, the goal is to re-implement the functionality called out in the summary, but in a 
-way that does not depend on a pod cluster CIDR. The essence of the proposal is that for the 
-first two cases in iptables implementation and first case in ipvs, we can replace the `-s proxier.clusterCIDR` with 
+As stated above, the goal is to re-implement the functionality called out in the summary, but in a
+way that does not depend on a pod cluster CIDR. The essence of the proposal is that for the
+first two cases in iptables implementation and first case in ipvs, we can replace the `-s proxier.clusterCIDR` with
 some notion of node local pod traffic.
 
-The core logic in these cases is “how to determine” cluster originated traffic from non-cluster originated ones. 
-The proposal is that tracking pod traffic generated from within the node is sufficient to determine cluster originated 
-traffic. For the first two use cases in iptables and first use case in ipvs, we provide alternatives to using 
+The core logic in these cases is “how to determine” cluster originated traffic from non-cluster originated ones.
+The proposal is that tracking pod traffic generated from within the node is sufficient to determine cluster originated
+traffic. For the first two use cases in iptables and first use case in ipvs, we provide alternatives to using
 proxier.clusterCIDR in one of the following ways to determine cluster originated traffic
 
    1. `-s node.podCIDR` (where node podCIDR is used for allocating pod IPs within the node)
@@ -119,7 +92,7 @@ proxier.clusterCIDR in one of the following ways to determine cluster originated
 
 Note the above are equivalent definitions, when considering only pod traffic originating from within the node.
 
-Given that this kep only addresses usage of the cluster CIDR (for pods), and that pods with hostNetwork are not 
+Given that this kep only addresses usage of the cluster CIDR (for pods), and that pods with hostNetwork are not
 impacted by this, the assumption is that hostNetwork pod behavior will continue to work as is.
 
 For the last use case, note above, in iptables and ipvs, the proposal is to drop the reference to the cluster CIDR.
@@ -147,14 +120,14 @@ the node IP so that we can send traffic to any pod within the cluster.
 
 One key insight when thinking about this data path though is the fact that the iptable rules run
 at _every_ node boundary. So when a pod sends a traffic to a service IP, it gets translated to
-one of the pod IPs _before_ it leaves the node at the node boundary. So it's highly unlikely to 
+one of the pod IPs _before_ it leaves the node at the node boundary. So it's highly unlikely to
 receive traffic at a node, whose destination is the service cluster IP, that is initiated by pods
 within the cluster, but not scheduled within that node.
 
-Going by the above reasoning, if we receive traffic destined to a service whose source is not within the node 
-generated pod traffic, we can say with very high confidence that the traffic originated from outside the cluster. 
+Going by the above reasoning, if we receive traffic destined to a service whose source is not within the node
+generated pod traffic, we can say with very high confidence that the traffic originated from outside the cluster.
 So we can rewrite the rule in terms of just the pod identity within the node (node CIDR, interface prefix or bridge).
-This would be the simplest change with respect to re-writing the rule without any assumptions on how pod 
+This would be the simplest change with respect to re-writing the rule without any assumptions on how pod
 networking is setup.
 
 ### iptables - redirecting pod traffic to external loadbalancer VIP to cluster IP
@@ -219,7 +192,7 @@ if len(proxier.clusterCIDR) != 0 {
 }
 ```
 
-The interesting part of this rule that it already matches conntrack state to "RELATED,ESTABLISHED", 
+The interesting part of this rule that it already matches conntrack state to "RELATED,ESTABLISHED",
 which means that it does not apply to the initial packet, but after the connection has been setup and accepted.
 
 In this case, dropping the `-d proxier.clusterCIDR` rule should have minimal impact on it behavior.
@@ -358,15 +331,15 @@ on _every_ and _all_ nodes that makes up the kubernetes cluster. This would not 
 ## Alternatives [optional]
 
 ### Multiple cluster CIDR rules
-One alternative to consider is to explicitly track a list of cluster CIDRs in the ip table rules. If we 
+One alternative to consider is to explicitly track a list of cluster CIDRs in the ip table rules. If we
 want to do this, we might want to consider making the cluster CIDR a first class resource, which we want to avoid.
 
 Instead in most cases, where the interface prefix is mostly fixed or we are using the `node.spec.podCIDR` attribute,
-changes to the cluster CIDR does not need any change to the kube-proxy arguments or a restart, which we believe 
+changes to the cluster CIDR does not need any change to the kube-proxy arguments or a restart, which we believe
 is of benefit when managing clusters.
 
 ### ip-masq-agent like behavior
-The other alternative is to have kube-proxy never track it and instead use something like 
+The other alternative is to have kube-proxy never track it and instead use something like
 [ip-masq-agent](https://kubernetes.io/docs/tasks/administer-cluster/ip-masq-agent/) to track what we masquerade
 or not. In this case, it assumes more knowledge from the users, but it does provide for a single place to update
 these cidrs using existing tooling.

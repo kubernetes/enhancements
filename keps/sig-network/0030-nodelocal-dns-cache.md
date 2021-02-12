@@ -48,8 +48,8 @@ This proposal aims to improve DNS performance by running a dns caching agent on 
 
 ## Motivation
 
-* With the current DNS architecture, it is possible that pods with the highest DNS QPS have to reach out to a different node, if there is no local kube-dns instance.  
-Having a local cache will help improve the latency in such scenarios. 
+* With the current DNS architecture, it is possible that pods with the highest DNS QPS have to reach out to a different node, if there is no local kube-dns instance.
+Having a local cache will help improve the latency in such scenarios.
 
 * Skipping iptables DNAT and connection tracking will help reduce [conntrack races](https://github.com/kubernetes/kubernetes/issues/56903) and avoid UDP DNS entries filling up conntrack table.
 
@@ -69,7 +69,7 @@ Having a local cache will help improve the latency in such scenarios.
 	* [https://github.com/kubernetes/kubernetes/issues/45363](https://github.com/kubernetes/kubernetes/issues/45363)
 
 
-This shows that there is interest in the wider Kubernetes community for a solution similar to the proposal here. 
+This shows that there is interest in the wider Kubernetes community for a solution similar to the proposal here.
 
 
 ### Goals
@@ -83,7 +83,7 @@ Being able to run a dns caching agent as a Daemonset and get pods to use the loc
 
 ## Proposal
 
-A nodeLocal dns cache runs on all cluster nodes. This is managed as an add-on, runs as a Daemonset. All pods using clusterDNS will now talk to the nodeLocal cache, which will query kube-dns in case of cache misses in cluster's configured DNS suffix and for all reverse lookups(in-addr.arpa and ip6.arpa). User-configured stubDomains will be passed on to this local agent.  
+A nodeLocal dns cache runs on all cluster nodes. This is managed as an add-on, runs as a Daemonset. All pods using clusterDNS will now talk to the nodeLocal cache, which will query kube-dns in case of cache misses in cluster's configured DNS suffix and for all reverse lookups(in-addr.arpa and ip6.arpa). User-configured stubDomains will be passed on to this local agent.
 The node's resolv.conf will be used by this local agent for all other cache misses. One benefit of doing the non-cluster lookups on the nodes from which they are happening, rather than the kube-dns instances, is better use of per-node DNS resources in cloud. For instance, in a 10-node cluster with 3 kube-dns instances, the 3 nodes running kube-dns will end up resolving all external hostnames and can exhaust QPS quota. Spreading the queries across the 10 nodes will help alleviate this.
 
 #### Daemonset and Listen Interface for caching agent
@@ -169,9 +169,9 @@ CoreDNS will be the local cache agent in the first release, after considering th
 
  It is possible to run any program as caching agent by modifying the daemonset and configmap spec. Publishing an image with Unbound DNS can be added as a follow up.
 
-Based on the prototype/test results, these are the recommended defaults: 
+Based on the prototype/test results, these are the recommended defaults:
 CPU request: 50m
-Memory Limit : 25m  
+Memory Limit : 25m
 
 CPU request can be dropped to a smaller value if QPS needs are lower.
 
@@ -216,7 +216,7 @@ This feature will be launched with Alpha support in the first release. Master ve
 
 ## Drawbacks [optional]
 
-Additional resource consumption for the Daemonset might not be necessary for clusters with low DNS QPS needs. 
+Additional resource consumption for the Daemonset might not be necessary for clusters with low DNS QPS needs.
 
 
 ## Alternatives [optional]
