@@ -1,21 +1,3 @@
----
-title: Kubernetes Cluster Management API
-authors:
-  - "@roberthbailey"
-  - "@pipejakob"
-owning-sig: sig-cluster-lifecycle
-reviewers:
-  - "@justinsb"
-  - "@timothysc"
-approvers:
-  - "@justinsb"
-  - "@timothysc"
-editor: "@justinsb"
-creation-date: 2018-01-19
-last-updated: 2019-04-04
-status: provisional
----
-
 # Kubernetes Cluster Management API
 
 ## Table of Contents

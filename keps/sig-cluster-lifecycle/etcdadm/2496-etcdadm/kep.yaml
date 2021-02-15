@@ -1,0 +1,19 @@
+title: etcdadm
+kep-number: 2496
+authors:
+  - "@justinsb"
+owning-sig: sig-cluster-lifecycle
+participating-sigs:
+reviewers:
+  - "@roberthbailey"
+  - "@timothysc"
+approvers:
+  - "@roberthbailey"
+  - "@timothysc"
+editor: TBD
+creation-date: 2018-10-22
+last-updated: 2018-10-22
+status: provisional
+see-also:
+replaces:
+superseded-by:

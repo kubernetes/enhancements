@@ -1,17 +1,3 @@
----
-title: Manifest Bundle
-authors: ["@ecordell"]
-owning-sig: sig-cluster-lifecycle
-participating-sigs: ["sig-cluster-lifecycle", "sig-api-machinery"]
-reviewers: ["TBD"]
-approvers: ["TBD"]
-editor: TBD
-creation-date: 2020-01-21
-last-updated: 2020-02-06
-status: provisional
-see-also: ["/keps/sig-cluster-lifecycle/addons/0035-20190128-addons-via-operators.md"]
----
-
 # Manifest Bundle
 
 ## Table of Contents
@@ -71,7 +57,7 @@ By standardizing on a container format for this data, we get many other features
 We would like to make a distinction between:
 
 * **Manifests** * data which can be applied to a cluster, either with or without pre-processing. Examples: json or yaml manifests, helm charts, kustomize bundles.
-* **Metadata** * information which will not be directly applied to a cluster, but which will otherwise affect the processing or application of a bundle. 
+* **Metadata** * information which will not be directly applied to a cluster, but which will otherwise affect the processing or application of a bundle.
 
 ## User Stories
 
@@ -85,14 +71,14 @@ Constraints:
 
 ## Implementation Details/Notes/Constraints
 
-The initial implementation target will be Docker v2-2 manifests, manifest-lists, and client support, for maximum compatibility with existing tooling. OCI is a future target, but avoided for now due to lack of tooling support. 
+The initial implementation target will be Docker v2-2 manifests, manifest-lists, and client support, for maximum compatibility with existing tooling. OCI is a future target, but avoided for now due to lack of tooling support.
 
 Labels are used to identify the contents. The approach is similar to OCI mediatypes, but is supported by existing tooling.
 
 The following label convention is used to annotate the bundle image:
 
 * `<namespace>.mediatype.<version>=<identifier>` is used to identify the top-level format of the bundle. For example, this may indicate that the bundle contains a kustomization file and kustomize manifests.
-* `<namespace>.bundle.manifests.<version>=<path>` reflects the path in the image to a directory that contains manifests. 
+* `<namespace>.bundle.manifests.<version>=<path>` reflects the path in the image to a directory that contains manifests.
 * `<namespace>.bundle.metadata.<version>=<path>` reflects the path in the image to a directory that contains metadata.
 * Any additional `<namespace>.bundle.<identifier>=<value>` may be used to indicate additional properties of the manifest bundle. It may be useful to denormalize information that would otherwise be stored in the metadata directory, so that tooling can read it without unpacking a full image.
 These labels should also be replicated in a well-known location within the image, metadata/annotations.yaml:
