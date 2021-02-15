@@ -381,8 +381,8 @@ Introduce structured logging and JSON format:
 Bring feature quality up to and prevent regression during ongoing migration:
 * Directories can be marked as migrated, preventing regression via verify script in `hack`.
 * [Kubernetes Logging documentation](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-instrumentation/logging.md) is updated for structured logging.
-* Json format should support same set of feature flags as text format, minus those we will decide to deprecte.
-* Structured logging interface design is verify by migrating one whole component (Kubelet) to structured logging. All other component migrations will be best effort.
+* JSON format should support same set of feature flags as text format, minus those we will decide to deprecate.
+* Structured logging interface design is verified by migrating one whole component (Kubelet) to structured logging. All other component migrations will be best effort.
 
 #### GA
 
@@ -417,7 +417,7 @@ For json format we used [zap](https://github.com/uber-go/zap).
 
 Changes in format presented in this KEP will result in adding additional metadata to logs, potentially largely increasing log volume.
 Unexpected log volume increase can lead to performance problems due exhausting disk IO or halting whole process when logs cannot be written on full disk.
-To avoid breaking existing poduction clusters we would like to target of around 10% of log volume increase between kubernetes versions (proposed by @wojtekt).
+To avoid breaking existing production clusters we would like to target of around 10% of log volume increase between kubernetes versions (proposed by @wojtekt).
 
 During log volume analysis we would like to mainly focus on Kubernetes apiserver HTTP access logs. Those logs will have biggest impact
 * They are responsible for 85% of log volume generated in cluster
@@ -443,7 +443,7 @@ Resulting log line is 248 characters long. Additional 42 characters has resulted
 I0129 03:30:57.673664       1 httplog.go:90] verb="GET" URI="/api/v1/namespaces/kube-system/pods/metrics-server-v0.3.1-57c75779f-9p8wg" latency=1.512ms resp=200 UserAgent="kubelet/v1.18.0 (linux/amd64) kubernetes/15c3f1b" srcIP="10.56.1.19:51756":
 ```
 
-For migration to structured api we would like to propose to remove `statusStack` and `addedInfo` arguments. Our reasons:
+For migration to structured API we would like to propose to remove `statusStack` and `addedInfo` arguments. Our reasons:
 * Log format already neglects to put metadata for them, breaking the convention.
 * We didn't find any case of those fields being non empty in [gce-master-scale-performance](https://k8s-testgrid.appspot.com/sig-scalability-gce#gce-master-scale-performance)
 
@@ -707,7 +707,7 @@ previous answers based on experience in the field._
   Log volume increase analysis discussed in [Log volume increase analysis] section.
   Expected increase on level of 4% which is considered acceptable by sig scalability.
 
-  Peformance was discussed in [Logger implementation performance] section.
+  Performance was discussed in [Logger implementation performance] section.
   InfoS implementation for text is 9% slower than Infof.
   This increase should not have a big impact on overall Kubernetes performance
   as logging takes less than 2% of overall CPU usage
