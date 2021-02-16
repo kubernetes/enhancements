@@ -489,13 +489,42 @@ is defined for pods without volumes and work in progress for pods with
 volumes.
 
 For kube-controller-manager, a metric that exposes the usual work
-queue metrics data (like queue length) will be made available.
-Furthermore, a count of PVC creation attempts will be added, labeled
-with the result (successful vs. error code). A non-zero count of attempts
-with "already exists" will indicate that there were conflicts with
-manually created PVCs.
+queue metrics data (like queue length) will be made available with
+"ephemeral_volume" as name. Here is one example after processing a
+single pod with a generic ephemeral volume:
 
-TODO: list metrics names here and in kep.yaml
+```
+workqueue_adds_total{name="ephemeral_volume"} 1
+workqueue_depth{name="ephemeral_volume"} 0
+workqueue_longest_running_processor_seconds{name="ephemeral_volume"} 0
+workqueue_queue_duration_seconds_bucket{name="ephemeral_volume",le="1e-08"} 0
+...
+workqueue_queue_duration_seconds_bucket{name="ephemeral_volume",le="9.999999999999999e-05"} 1
+workqueue_queue_duration_seconds_bucket{name="ephemeral_volume",le="0.001"} 1
+...
+workqueue_queue_duration_seconds_bucket{name="ephemeral_volume",le="+Inf"} 1
+workqueue_queue_duration_seconds_sum{name="ephemeral_volume"} 4.8201e-05
+workqueue_queue_duration_seconds_count{name="ephemeral_volume"} 1
+workqueue_retries_total{name="ephemeral_volume"} 0
+workqueue_unfinished_work_seconds{name="ephemeral_volume"} 0
+workqueue_work_duration_seconds_bucket{name="ephemeral_volume",le="1e-08"} 0
+...
+workqueue_work_duration_seconds_bucket{name="ephemeral_volume",le="0.1"} 1
+...
+workqueue_work_duration_seconds_bucket{name="ephemeral_volume",le="+Inf"} 1
+workqueue_work_duration_seconds_sum{name="ephemeral_volume"} 0.035308659
+workqueue_work_duration_seconds_count{name="ephemeral_volume"} 1
+```
+
+Furthermore, counters of PVC creation attempts and failed attempts
+will be added. There should be no failures. If there are any, analyzing
+the logs of kube-controller manager will provide further insights into
+the reason why they occurred.
+
+```
+ephemeral_volume_controller_create_total 1
+ephemeral_volume_controller_create_failures_total 0
+```
 
 * **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
 
