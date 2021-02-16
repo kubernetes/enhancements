@@ -87,7 +87,7 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Use case 2: Administrative tasks](#use-case-2-administrative-tasks)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
-  - [PSP support](#psp-support)
+  - [Pod Security Implications](#pod-security-implications)
 - [Design Details](#design-details)
   - [Overview](#overview)
     - [Networking](#networking)
@@ -146,7 +146,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [X] (R) Design details are appropriately documented
 - [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
 - [X] (R) Graduation criteria is in place
-- [ ] (R) Production readiness review completed
+- [X] (R) Production readiness review completed
 - [ ] Production readiness review approved
 - [ ] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
@@ -289,7 +289,7 @@ However:
   - If CRI changes to enable a privileged flag are not supported, there would be a less-ideal workaround via annotations in the pod container spec.
   - The CRI changes may make an annotation in the OCI spec until the OCI updates are included.
 
-### PSP support
+### Pod Security Implications
 
 For alpha we will update [Pod Security Standards](https://kubernetes.io/docs/concepts/security/pod-security-standards/) with information on the new `hostProcess` flag.
 
@@ -313,9 +313,9 @@ Additionally, privileged containers may impact other pod security policies (PSPs
    </td>
    <td>privileged
    </td>
-   <td>yes
+   <td>no
    </td>
-   <td>Required.
+   <td>Not applicable. Windows privileged containers will be controlled with a new `WindowsSecurityContextOptions.HostProcess` instead of the existing `privileged` field due to fundamental differences in their implementation on Windows.
    </td>
    <td>Alpha
    </td>
@@ -327,7 +327,7 @@ Additionally, privileged containers may impact other pod security policies (PSPs
    </td>
    <td>no
    </td>
-   <td>HostPID and HostIPC will always be enabled because job objects do not support this level of isolation.
+   <td>Windows does not have configurable PID/IPC namespaces (unlike Linux). Job objects run in the host 'silo' and will have access to other other host processes. Because on Windows this setting is per-container instead of being Pod-wide and also because future plans include the improvements to schedule pods container both normal and 'privileged'/HostProcess containers in the same Pod we will not enforce setting this pod security flag for HostProcess containers.
    </td>
    <td>N/A
    </td>
