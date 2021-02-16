@@ -127,13 +127,17 @@ var walkFn = func(path string, info os.FileInfo, err error) error {
 	dir := filepath.Dir(path)
 	// true if the file is a symlink
 	if info.Mode()&os.ModeSymlink != 0 {
-		// assume symlink from old KEP location to new
-		newLocation, err := os.Readlink(path)
-		if err != nil {
-			return err
-		}
+		// Assume symlink from old KEP location to new. The new location
+		// will be processed separately, so no need to process it here.
+		return nil
+	}
 
-		files = append(files, filepath.Join(dir, filepath.Dir(newLocation), kepMetadata))
+	metadataFile := filepath.Join(dir, kepMetadata)
+	if _, err := os.Stat(metadataFile); err == nil {
+		// There is kep metadata file in this directory, only that one should be processed.
+		if info.Name() == kepMetadata {
+			files = append(files, metadataFile)
+		}
 		return nil
 	}
 
@@ -141,6 +145,8 @@ var walkFn = func(path string, info os.FileInfo, err error) error {
 		return nil
 	}
 
+	// TODO(#2220): Return an error as soon as all KEPs are migrated to directory-based
+	//   KEP format.
 	files = append(files, path)
 	return nil
 }
@@ -149,21 +155,12 @@ var walkFn = func(path string, info os.FileInfo, err error) error {
 // TODO: Is this a duplicate of the package function?
 // ignore certain files in the keps/ subdirectory
 func ignore(dir, name string) bool {
-	if dir == "../keps/NNNN-kep-template" {
-		return true // ignore the template directory because its metadata file does not use a valid sig name
-	}
-
-	if name == kepMetadata {
-		return false // always check metadata files
-	}
-
 	if !strings.HasSuffix(name, "md") {
 		return true
 	}
 
 	if name == "0023-documentation-for-images.md" ||
 		name == "0004-cloud-provider-template.md" ||
-		name == "YYYYMMDD-kep-template.md" ||
 		name == "README.md" ||
 		name == "kep-faq.md" {
 		return true
