@@ -327,7 +327,7 @@ Additionally, privileged containers may impact other pod security policies (PSPs
    </td>
    <td>no
    </td>
-   <td>Windows does not have configurable PID/IPC namespaces (unlike Linux). Job objects run in the host 'silo' and will have access to other other host processes. Because on Windows this setting is per-container instead of being Pod-wide and also because future plans include the improvements to schedule pods container both normal and 'privileged'/HostProcess containers in the same Pod we will not enforce setting this pod security flag for HostProcess containers.
+   <td>Windows does not have configurable PID/IPC namespaces (unlike Linux). Windows containers are always assigned their own process namespace. Job objects always run in the host's process namespace. These behaviors are not configurable. Future plans in this area include improvements to enable scheduling pods that can contain both normal and HostProcess/Job Object containers. These fields would not makes in this scenario because Windows cannot configure PID/IPC namespaces like in Linux.
    </td>
    <td>N/A
    </td>
