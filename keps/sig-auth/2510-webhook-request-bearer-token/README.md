@@ -1,70 +1,4 @@
-<!--
-**Note:** When your KEP is complete, all of these comment blocks should be removed.
-
-To get started with this template:
-
-- [x] **Pick a hosting SIG.**
-  Make sure that the problem space is something the SIG is interested in taking
-  up. KEPs should not be checked in without a sponsoring SIG.
-- [x] **Create an issue in kubernetes/enhancements**
-  When filing an enhancement tracking issue, please make sure to complete all
-  fields in that template. One of the fields asks for a link to the KEP. You
-  can leave that blank until this KEP is filed, and then go back to the
-  enhancement and add the link.
-- [x] **Make a copy of this template directory.**
-  Copy this template into the owning SIG's directory and name it
-  `NNNN-short-descriptive-title`, where `NNNN` is the issue number (with no
-  leading-zero padding) assigned to your enhancement above.
-- [x] **Fill out as much of the kep.yaml file as you can.**
-  At minimum, you should fill in the "Title", "Authors", "Owning-sig",
-  "Status", and date-related fields.
-- [ ] **Fill out this file as best you can.**
-  At minimum, you should fill in the "Summary" and "Motivation" sections.
-  These should be easy if you've preflighted the idea of the KEP with the
-  appropriate SIG(s).
-- [ ] **Create a PR for this KEP.**
-  Assign it to people in the SIG who are sponsoring this process.
-- [ ] **Merge early and iterate.**
-  Avoid getting hung up on specific details and instead aim to get the goals of
-  the KEP clarified and merged quickly. The best way to do this is to just
-  start with the high-level sections and fill out details incrementally in
-  subsequent PRs.
-
-Just because a KEP is merged does not mean it is complete or approved. Any KEP
-marked as `provisional` is a working document and subject to change. You can
-denote sections that are under active debate as follows:
-
-```
-<<[UNRESOLVED optional short context or usernames ]>>
-Stuff that is being argued.
-<<[/UNRESOLVED]>>
-```
-
-When editing KEPS, aim for tightly-scoped, single-topic PRs to keep discussions
-focused. If you disagree with what is already in a document, open a new PR
-with suggested changes.
-
-One KEP corresponds to one "feature" or "enhancement" for its whole lifecycle.
-You do not need a new KEP to move from beta to GA, for example. If
-new details emerge that belong in the KEP, edit the KEP. Once a feature has become
-"implemented", major changes should get new KEPs.
-
-The canonical place for the latest set of instructions (and the likely source
-of this file) is [here](/keps/NNNN-kep-template/README.md).
-
-**Note:** Any PRs to move a KEP to `implementable`, or significant changes once
-it is marked `implementable`, must be approved by each of the KEP approvers.
-If none of those approvers are still appropriate, then changes to that list
-should be approved by the remaining approvers and/or the owning SIG (or
-SIG Architecture for cross-cutting KEPs).
--->
 # KEP-2510: Request Bearer Token for Outgoing Webhook Requests
-
-<!--
-This is the title of your KEP. Keep it short, simple, and descriptive. A good
-title can help communicate what the KEP is and should be considered as part of
-any review.
--->
 
 <!--
 A table of contents is helpful for quickly jumping to sections of a KEP and for
@@ -146,25 +80,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-To add an option in WebhookClientConfig, so an apiserver's webhook client automatically requests a bearer token, and uses this token to authenticate to webhook servers.
-<!--
-This section is incredibly important for producing high-quality, user-focused
-documentation such as release notes or a development roadmap. It should be
-possible to collect this information before implementation begins, in order to
-avoid requiring implementors to split their attention between writing release
-notes and implementing the feature itself. KEP editors and SIG Docs
-should help to ensure that the tone and content of the `Summary` section is
-useful for a wide audience.
-
-A good summary is probably at least a paragraph in length.
-
-Both in this section and below, follow the guidelines of the [documentation
-style guide]. In particular, wrap lines to a reasonable length, to make it
-easier for reviewers to cite specific portions, and to minimize diff churn on
-updates.
-
-[documentation style guide]: https://github.com/kubernetes/community/blob/master/contributors/guide/style-guide.md
--->
+To add an option in WebhookClientConfig, so an apiserver's webhook client automatically requests a bearer token, and uses this token to authenticate to webhook servers. This improves developer experience by providing an out-of-box alternative to a complicated setup process.
 
 ## Motivation
 
@@ -200,15 +116,6 @@ This is a cumbersome and error-prone process to developers. This KEP intends to 
 * Allow users to easily configure apiservers to authenticate to [audit webhook backends](AuditWebhookOptions) with bearer token. Audit backend does not have an API like WebhookClientConfig that allows more detailed config.
 
 ## Proposal
-
-<!--
-This is where we get down to the specifics of what the proposal actually is.
-This should have enough detail that reviewers can understand exactly what
-you're proposing, but should not include things like API designs or
-implementation. What is the desired outcome and how do we measure success?.
-The "Design Details" section below is for the real
-nitty-gritty.
--->
 
 ### User Stories (Optional)
 
@@ -249,94 +156,15 @@ proposal will be implemented, this is the place to discuss them.
 
 ### Test Plan
 
-<!--
-**Note:** *Not required until targeted at a release.*
-
-Consider the following in developing a test plan for this enhancement:
-- Will there be e2e and integration tests, in addition to unit tests?
-- How will it be tested in isolation vs with other components?
-
-No need to outline all of the test cases, just the general strategy. Anything
-that would count as tricky in the implementation, and anything particularly
-challenging to test, should be called out.
-
-All code is expected to have adequate tests (eventually with coverage
-expectations). Please adhere to the [Kubernetes testing guidelines][testing-guidelines]
-when drafting this test plan.
-
-[testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
--->
+TBC
 
 ### Graduation Criteria
 
-<!--
-**Note:** *Not required until targeted at a release.*
-
-Define graduation milestones.
-
-These may be defined in terms of API maturity, or as something else. The KEP
-should keep this high-level with a focus on what signals will be looked at to
-determine graduation.
-
-Consider the following in developing the graduation criteria for this enhancement:
-- [Maturity levels (`alpha`, `beta`, `stable`)][maturity-levels]
-- [Deprecation policy][deprecation-policy]
-
-Clearly define what graduation means by either linking to the [API doc
-definition](https://kubernetes.io/docs/concepts/overview/kubernetes-api/#api-versioning)
-or by redefining what graduation means.
-
-In general we try to use the same stages (alpha, beta, GA), regardless of how the
-functionality is accessed.
-
-[maturity-levels]: https://git.k8s.io/community/contributors/devel/sig-architecture/api_changes.md#alpha-beta-and-stable-versions
-[deprecation-policy]: https://kubernetes.io/docs/reference/using-api/deprecation-policy/
-
-Below are some examples to consider, in addition to the aforementioned [maturity levels][maturity-levels].
-
-#### Alpha -> Beta Graduation
-
-- Gather feedback from developers and surveys
-- Complete features A, B, C
-- Tests are in Testgrid and linked in KEP
-
-#### Beta -> GA Graduation
-
-- N examples of real-world usage
-- N installs
-- More rigorous forms of testing—e.g., downgrade tests and scalability tests
-- Allowing time for feedback
-
-**Note:** Generally we also wait at least two releases between beta and
-GA/stable, because there's no opportunity for user feedback, or even bug reports,
-in back-to-back releases.
-
-#### Removing a Deprecated Flag
-
-- Announce deprecation and support policy of the existing flag
-- Two versions passed since introducing the functionality that deprecates the flag (to address version skew)
-- Address feedback on usage/changed behavior, provided on GitHub issues
-- Deprecate the flag
-
-**For non-optional features moving to GA, the graduation criteria must include 
-[conformance tests].**
-
-[conformance tests]: https://git.k8s.io/community/contributors/devel/sig-architecture/conformance-tests.md
--->
+TBC
 
 ### Upgrade / Downgrade Strategy
 
-<!--
-If applicable, how will the component be upgraded and downgraded? Make sure
-this is in the test plan.
-
-Consider the following in developing an upgrade/downgrade strategy for this
-enhancement:
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade, in order to maintain previous behavior?
-- What changes (in invocations, configurations, API use, etc.) is an existing
-  cluster required to make on upgrade, in order to make use of the enhancement?
--->
+TBC
 
 ### Version Skew Strategy
 
@@ -355,33 +183,11 @@ enhancement:
 
 ## Production Readiness Review Questionnaire
 
-<!--
-
-Production readiness reviews are intended to ensure that features merging into
-Kubernetes are observable, scalable and supportable; can be safely operated in
-production environments, and can be disabled or rolled back in the event they
-cause increased failures in production. See more in the PRR KEP at
-https://git.k8s.io/enhancements/keps/sig-architecture/1194-prod-readiness.
-
-The production readiness review questionnaire must be completed and approved
-for the KEP to move to `implementable` status and be included in the release.
-
-In some cases, the questions below should also have answers in `kep.yaml`. This
-is to enable automation to verify the presence of the review, and to reduce review
-burden and latency.
-
-The KEP must have a approver from the
-[`prod-readiness-approvers`](http://git.k8s.io/enhancements/OWNERS_ALIASES)
-team. Please reach out on the
-[#prod-readiness](https://kubernetes.slack.com/archives/CPNHUMN74) channel if
-you need any help or guidance.
--->
+TBC
 
 ### Feature Enablement and Rollback
 
-<!--
-This section must be completed when targeting alpha to a release.
--->
+TBC
 
 ###### How can this feature be enabled / disabled in a live cluster?
 
@@ -401,10 +207,7 @@ Pick one of these and delete the rest.
 
 ###### Does enabling the feature change any default behavior?
 
-<!--
-Any change of default behavior may be surprising to users or break existing
-automations, so be extremely careful here.
--->
+TBC
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -531,15 +334,7 @@ and creating new ones, as well as about cluster-level services (e.g. DNS):
 
 ### Scalability
 
-<!--
-For alpha, this section is encouraged: reviewers should consider these questions
-and attempt to answer them.
-
-For beta, this section is required: reviewers must answer these questions.
-
-For GA, this section is required: approvers should be able to confirm the
-previous answers based on experience in the field.
--->
+Consideration: latency in admission.
 
 ###### Will enabling / using this feature result in any new API calls?
 
@@ -555,32 +350,19 @@ Focusing mostly on:
   - periodic API calls to reconcile state (e.g. periodic fetching state,
     heartbeats, leader election, etc.)
 -->
+TokenRequest API call.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
-<!--
-Describe them, providing:
-  - API type
-  - Supported number of objects per cluster
-  - Supported number of objects per namespace (for namespace-scoped objects)
--->
+No
 
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
-<!--
-Describe them, providing:
-  - Which API(s):
-  - Estimated increase:
--->
+No
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
-<!--
-Describe them, providing:
-  - API type(s):
-  - Estimated increase in size: (e.g., new annotation of size 32B)
-  - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
--->
+No, this feauture changes existing API objects.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
