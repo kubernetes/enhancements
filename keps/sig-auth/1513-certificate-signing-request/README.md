@@ -11,6 +11,7 @@
   - [Signers](#signers)
     - [Limiting approval and signer powers for certain signers.](#limiting-approval-and-signer-powers-for-certain-signers)
   - [API changes between v1beta1 and v1](#api-changes-between-v1beta1-and-v1)
+    - [Importance of .spec.signerName](#importance-of-specsignername)
   - [CertificateSigningRequest API Definition](#certificatesigningrequest-api-definition)
   - [Manual CSR Approval With Kubectl](#manual-csr-approval-with-kubectl)
   - [Automatic CSR Approval Implementations](#automatic-csr-approval-implementations)
@@ -271,6 +272,27 @@ Cluster admins can either:
   (`Approved`/`Denied` conditions are still limited to the `/approval` subresource
   to ensure version-independent authorization policy grants consistent permissions
   across v1beta1 and v1 versions)
+
+#### Importance of .spec.signerName
+
+The CSR v1 API uses the `.spec.signerName` to clarify the usage of all well-known signers provided by Kubernetes.
+Each signer has a specific purpose and limitations in our [public docs](https://kubernetes.io/docs/reference/access-authn-authz/certificate-signing-requests/#kubernetes-signers).
+The most noteworthy clarifications are around certificates signed for purposes other than client certificates valid
+against the `kube-apiserver`, `kubelet` certificates, and trust distribution.
+
+1. Client certificates were signed and became valid kube-apiserver credentials.
+   If a different actor wanted to terminate client credentials for itself, using the CSR API created
+   additional client certificates valid against the `kube-apiserver` which probably wasn't intended.
+2. Serving certificates were signed and they were valid to impersonate the `kubelet` in  `kube-apiserver` to `kubelet` traffic.
+   This creates the potential for those certificates to impersonate a `kubelet` when the `kube-apiserver` tries to access one.
+3. Using the service account token’s `ca.crt` to verify signed CSRs has never been a design intent.
+   It has worked on some Kubernetes distributions, but as the trust-distribution indicates any CSR user trying to be
+   compatible across Kubernetes distributions should not rely on `ca.crt` to verify signed certificates.
+
+By adding and requiring a `.spec.signerName`, the intended usage and trust distribution is clear.
+As part of the changes in 1.19, those CSRs which do not fall into an out-of-the-box signer for Kubernetes can create an
+approver and signer using the same API constructs.
+The individual authorization requirements are in the [docs](https://kubernetes.io/docs/reference/access-authn-authz/certificate-signing-requests/#authorization).
 
 ### CertificateSigningRequest API Definition
 
