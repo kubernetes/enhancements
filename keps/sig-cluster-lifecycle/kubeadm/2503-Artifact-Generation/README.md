@@ -1,27 +1,3 @@
----
-title: Artifact Generation
-authors:
-  - "@klaven"
-  - "@ncdc"
-owning-sig: sig-cluster-lifecycle
-participating-sigs:
-  - sig-cluster-lifecycle
-  - sig-release
-reviewers:
-  - "@ncdc"
-  - "@hoegaarden"
-  - “@neolit123”
-  - “@ixdy”
-approvers:
-  - "@timothysc"
-editor: "@Klaven"
-creation-date: 2019-02-15
-last-updated: 2019-02-27
-status: implementable
-see-also:
-  - "https://github.com/kubernetes/enhancements/pull/843"
----
-
 # package-generation
 
 ## Table of Contents
@@ -75,32 +51,32 @@ Implementation of a standard, community supported and maintained process of gene
 
 ## Motivation
 
-Today, the tooling used to build kubernetes packages is separate from kubernetes itself. This can cause downstream divergence, and cannot be easily maintained by the kubernetes community as a whole. 
+Today, the tooling used to build kubernetes packages is separate from kubernetes itself. This can cause downstream divergence, and cannot be easily maintained by the kubernetes community as a whole.
 
-The primary goal of this proposal is to simplify the lifecycle management of packaging by co-locating the sources and tooling for generating packages into the kubernetes/kubernetes repository. 
+The primary goal of this proposal is to simplify the lifecycle management of packaging by co-locating the sources and tooling for generating packages into the kubernetes/kubernetes repository.
 
 ### Goals
 
 To create a maintainable and configurable method of building kubernetes artifacts supported and maintained by the community.
 
 - Move packaging tools out of kubernetes/release and into kubernetes/kubernetes repository
-- Enable customization for downstream packaging 
-    - Including the ability to bring their own source code/binaries and changelogs 
+- Enable customization for downstream packaging
+    - Including the ability to bring their own source code/binaries and changelogs
     - Stop hard-coding the binary download URL to dl.k8s.io
 - Enable community governance over packaging of the project.
     - Will be governed by sig-release
 - Tightly couple the versioning of packing and the kubernetes/kubernetes release.
 - Ensure that the same packages that are run in CI are the ones that are released.
-- Dedupe the generation of packages (THERE CAN BE ONLY ONE!) 
+- Dedupe the generation of packages (THERE CAN BE ONLY ONE!)
 - Have one config file that is the source of truth for packaging details for both .rpm and .deb packages.
-- Artifact generation is independent of source code compilation. 
+- Artifact generation is independent of source code compilation.
 
 ### Non-Goals
 
 - A change in the release process. See this [KEP](https://github.com/kubernetes/enhancements/pull/843).
     - For example, package signing and distribution are not covered in this document and are covered in the above KEP.
 
-- To fundamentally change the packages and their dependencies. All packages should remain consistent with what we build today. 
+- To fundamentally change the packages and their dependencies. All packages should remain consistent with what we build today.
 
 ## Proposal
 
@@ -114,7 +90,7 @@ Move all packaging into the kubernetes/kubernetes repo and create the following 
 
 #### Story 1
 
-As a developer I would like to be able to install the entire set of alpha or beta (.deb/.rpm) packages to stand up a development cluster.  These packages should be equivalent to the future release artifacts.  
+As a developer I would like to be able to install the entire set of alpha or beta (.deb/.rpm) packages to stand up a development cluster.  These packages should be equivalent to the future release artifacts.
 
 #### Story 2
 
@@ -122,7 +98,7 @@ As a third party vendor, I would like to be able to package kubernetes deliverab
 
 #### Story 3
 
-As a release manager I would like to enable simple and easy package generation that the community can manage. 
+As a release manager I would like to enable simple and easy package generation that the community can manage.
 
 ### Implementation Details/Notes/Constraints [optional]
 
@@ -133,7 +109,7 @@ As a release manager I would like to enable simple and easy package generation t
 
 ### Risks and Mitigations
 
-Risk: Confusion as to what to use when. Mitigation: Coordination across groups to ensure that the changes made in k/k are consumed by the release team. 
+Risk: Confusion as to what to use when. Mitigation: Coordination across groups to ensure that the changes made in k/k are consumed by the release team.
 
 ## Design Details
 
@@ -158,7 +134,7 @@ Bazel will be able to update the configuration yaml to dynamically update the co
 
 ##### Removing a deprecated flag
 
-N/A 
+N/A
 
 [conformance tests]: https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/conformance-tests.md
 

@@ -1,23 +1,3 @@
----
-title: Remove ClusterStatus from kubeadm-config
-authors:
-  - "@fabriziopandini"
-owning-sig: sig-cluster-lifecycle
-participating-sigs:
-  - sig-cluster-lifecycle
-reviewers:
-  - "@neolit123"
-  - "@rosti"
-  - "@ereslibre"
-  - "@ncdc"
-approvers:
-  - "@timothysc"
-editor: "@fabriziopandini"
-creation-date: 2019-11-25
-last-updated: 2019-11-25
-status: implementable
----
-
 # Remove ClusterStatus from kubeadm-config
 
 ## Table of Contents

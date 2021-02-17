@@ -1,0 +1,22 @@
+title: Artifact Generation
+kep-number: 2503
+authors:
+  - "@klaven"
+  - "@ncdc"
+owning-sig: sig-cluster-lifecycle
+participating-sigs:
+  - sig-cluster-lifecycle
+  - sig-release
+reviewers:
+  - "@ncdc"
+  - "@hoegaarden"
+  - “@neolit123”
+  - “@ixdy”
+approvers:
+  - "@timothysc"
+editor: "@Klaven"
+creation-date: 2019-02-15
+last-updated: 2019-02-27
+status: implementable
+see-also:
+  - "https://github.com/kubernetes/enhancements/pull/843"
