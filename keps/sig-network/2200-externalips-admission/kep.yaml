@@ -7,7 +7,7 @@ participating-sigs:
   - sig-auth
   - sig-security
   - sig-api-machinery
-status: implementable
+status: implemented
 creation-date: 2020-12-07
 reviewers:
   - "@IanColdwater"
