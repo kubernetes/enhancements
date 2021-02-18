@@ -76,10 +76,10 @@ Historically, the implementation was split into four documents:
 
 This document is not net new and ties the four together in order to document the lifecycle of this feature.
 
-[Metrics Stability Framework]: 20190404-kubernetes-control-plane-metrics-stability.md
-[Metrics Stability Migration]: 20190605-metrics-stability-migration.md
-[Metrics Validation and Verification]: 20190605-metrics-validation-and-verification.md
-[Metrics Stability to Beta]: 20191028-metrics-stability-to-beta.md
+[Metrics Stability Framework]: kubernetes-control-plane-metrics-stability.md
+[Metrics Stability Migration]: metrics-stability-migration.md
+[Metrics Validation and Verification]: metrics-validation-and-verification.md
+[Metrics Stability to Beta]: metrics-stability-to-beta.md
 
 ## Motivation
 
@@ -90,10 +90,10 @@ See:
 1. [Metrics Validation and Verification#Motivation]
 1. [Metrics Stability to Beta#Motivation]
 
-[Metrics Stability Framework#Motivation]: 20190404-kubernetes-control-plane-metrics-stability.md#motivation
-[Metrics Stability Migration#Motivation]: 20190605-metrics-stability-migration.md#motivation
-[Metrics Validation and Verification#Motivation]: 20190605-metrics-validation-and-verification.md#motivation
-[Metrics Stability to Beta#Motivation]: 20191028-metrics-stability-to-beta.md#motivation
+[Metrics Stability Framework#Motivation]: kubernetes-control-plane-metrics-stability.md#motivation
+[Metrics Stability Migration#Motivation]: metrics-stability-migration.md#motivation
+[Metrics Validation and Verification#Motivation]: metrics-validation-and-verification.md#motivation
+[Metrics Stability to Beta#Motivation]: metrics-stability-to-beta.md#motivation
 
 ## Proposal
 
@@ -106,10 +106,10 @@ See:
 
 https://github.com/kubernetes/enhancements/blob/77a84d2d55b5802a615f3fe98e7e7c9bd26c9efc/keps/sig-instrumentation/1209-metrics-stability/keps/sig-instrumentation/1209-metrics-stability/20190404-kubernetes-control-plane-metrics-stability.md#implementation-history
 
-[Metrics Stability Framework#Proposal]: 20190404-kubernetes-control-plane-metrics-stability.md#proposal
-[Metrics Stability Migration#General Migration Strategy]: 20190605-metrics-stability-migration.md#general-migration-strategy
-[Metrics Validation and Verification#Proposal]: 20190605-metrics-validation-and-verification.md#proposal
-[Metrics Stability to Beta#Proposal]: 20191028-metrics-stability-to-beta.md#proposal
+[Metrics Stability Framework#Proposal]: kubernetes-control-plane-metrics-stability.md#proposal
+[Metrics Stability Migration#General Migration Strategy]: metrics-stability-migration.md#general-migration-strategy
+[Metrics Validation and Verification#Proposal]: metrics-validation-and-verification.md#proposal
+[Metrics Stability to Beta#Proposal]: metrics-stability-to-beta.md#proposal
 
 ## Design Details
 
@@ -118,8 +118,8 @@ See:
 1. [Metrics Stability Framework#Design Details]
 1. [Metrics Validation and Verification#Design Details]
 
-[Metrics Stability Framework#Design Details]: 20190404-kubernetes-control-plane-metrics-stability.md#design-details
-[Metrics Validation and Verification#Design Details]: 20190605-metrics-validation-and-verification.md#design-details
+[Metrics Stability Framework#Design Details]: kubernetes-control-plane-metrics-stability.md#design-details
+[Metrics Validation and Verification#Design Details]: metrics-validation-and-verification.md#design-details
 
 ### Graduation Criteria
 
@@ -130,8 +130,8 @@ See:
 1. [Metrics Stability Framework#Graduation Criteria]
 1. [Metrics Stability Migration#Graduation Criteria]
 
-[Metrics Stability Framework#Graduation Criteria]: 20190404-kubernetes-control-plane-metrics-stability.md#graduation-criteria
-[Metrics Stability Migration#Graduation Criteria]: 20190605-metrics-stability-migration.md#graduation-criteria
+[Metrics Stability Framework#Graduation Criteria]: kubernetes-control-plane-metrics-stability.md#graduation-criteria
+[Metrics Stability Migration#Graduation Criteria]: metrics-stability-migration.md#graduation-criteria
 
 #### Alpha -> Beta Graduation
 
@@ -140,24 +140,24 @@ See:
 1. [Metrics Validation and Verification#Graduation Criteria]
 1. [Metrics Stability to Beta#Graduation Criteria]
 
-[Metrics Validation and Verification#Graduation Criteria]: 20190605-metrics-validation-and-verification.md#graduation-criteria
-[Metrics Stability to Beta#Graduation Criteria]: 20191028-metrics-stability-to-beta.md#graduation-criteria
+[Metrics Validation and Verification#Graduation Criteria]: metrics-validation-and-verification.md#graduation-criteria
+[Metrics Stability to Beta#Graduation Criteria]: metrics-stability-to-beta.md#graduation-criteria
 
 #### Beta -> GA Graduation
 
 - Metrics are now eligible to be promoted to STABLE status (we have some candidates in kube-apiserver).
     - [apiserver_storage_object_counts](https://github.com/kubernetes/kubernetes/issues/98270)
     - `apiserver_request_total` will also be promoted (as discussed in biweekly SIG apimachinery meeting)
-- Implement the ability to turn off individual metrics (see [here](20191028-metrics-stability-to-beta.md#non-goals))
+- Implement the ability to turn off individual metrics (see [here](metrics-stability-to-beta.md#non-goals))
     - We need this because of stuff like this: [Unbounded valuesets for metric labels](https://github.com/kubernetes/kubernetes/issues/76302)
 
 ### Upgrade / Downgrade Strategy
 
 See:
 
-- [Deprecation Lifecycle](20190404-kubernetes-control-plane-metrics-stability.md#deprecation-lifecycle)
-- [Deprecation of modified metrics from metrics overhaul KEP](20190605-metrics-stability-migration.md#deprecation-of-modified-metrics-from-metrics-overhaul-kep)
-- [Escape Hatch](20191028-metrics-stability-to-beta.md#escape-hatch)
+- [Deprecation Lifecycle](kubernetes-control-plane-metrics-stability.md#deprecation-lifecycle)
+- [Deprecation of modified metrics from metrics overhaul KEP](metrics-stability-migration.md#deprecation-of-modified-metrics-from-metrics-overhaul-kep)
+- [Escape Hatch](metrics-stability-to-beta.md#escape-hatch)
 
 https://github.com/kubernetes/enhancements/blob/0f5bb1138a6dfd7f3d52fa901c2fba7abb7fb731/keps/sig-instrumentation/1209-metrics-stability/keps/sig-instrumentation/1209-metrics-stability/20190404-kubernetes-control-plane-metrics-stability.md#implementation-history
 
@@ -229,7 +229,7 @@ See:
 1. [Metrics Validation and Verification#Implementation History]
 1. [Metrics Stability to Beta#Implementation History]
 
-[Metrics Stability Framework#Implementation History]: 20190404-kubernetes-control-plane-metrics-stability.md#implementation-history
-[Metrics Stability Migration#Implementation History]: 20190605-metrics-stability-migration.md#implementation-history
-[Metrics Validation and Verification#Implementation History]: 20190605-metrics-validation-and-verification.md#implementation-history
-[Metrics Stability to Beta#Implementation History]: 20191028-metrics-stability-to-beta.md#implementation-history
+[Metrics Stability Framework#Implementation History]: kubernetes-control-plane-metrics-stability.md#implementation-history
+[Metrics Stability Migration#Implementation History]: metrics-stability-migration.md#implementation-history
+[Metrics Validation and Verification#Implementation History]: metrics-validation-and-verification.md#implementation-history
+[Metrics Stability to Beta#Implementation History]: metrics-stability-to-beta.md#implementation-history

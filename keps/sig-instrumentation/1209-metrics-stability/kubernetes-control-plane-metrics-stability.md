@@ -1,32 +1,3 @@
----
-title: Kubernetes Control-Plane Metrics Stability
-authors:
-  - "@logicalhan"
-owning-sig: sig-instrumentation
-participating-sigs:
-  - sig-instrumentation
-  - sig-api-machinery
-  - sig-node
-reviewers:
-  - "@brancz"
-  - "@x13n"
-  - "@DirectXMan12"
-  - "@lavalamp"
-  - "@dashpole"
-  - "@ehashman"
-  - "@mml"
-approvers:
-  - "@brancz"
-  - "@x13n"
-editor: "@brancz"
-creation-date: 2019-04-04
-last-updated: 2020-10-14
-stage: beta
-status: implementable
-see-also:
-  - 20181106-kubernetes-metrics-overhaul
----
-
 # Kubernetes Control-Plane Metrics Stability
 
 ## Table of Contents
@@ -331,11 +302,11 @@ Alternatively, one lightweight solution which was previously suggested was docum
 
 ### Static Analysis for Validation
 
-[_resolved_](https://github.com/kubernetes/enhancements/blob/master/keps/sig-instrumentation/20190605-metrics-validation-and-verification.md)
+[_resolved_](./metrics-validation-and-verification.md)
 
 ### Beta Stability Level
 
-_discussed during [stability-to-beta](https://github.com/kubernetes/enhancements/blob/master/keps/sig-instrumentation/20191028-metrics-stability-to-beta.md), and decided it wasn't necessary_
+_discussed during [stability-to-beta](./metrics-stability-to-beta.md), and decided it wasn't necessary_
 
 ### Prometheus Labels vs OpenCensus-type Tags
 

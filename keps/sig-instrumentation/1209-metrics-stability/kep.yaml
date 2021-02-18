@@ -12,6 +12,7 @@ participating-sigs:
   - sig-scheduling
   - sig-cluster-lifecycle
   - sig-cloud-provider
+  - sig-testing
 status: implementable
 creation-date: 2019-04-04
 reviewers:

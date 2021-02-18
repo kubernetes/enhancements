@@ -1,26 +1,3 @@
----
-title: Metrics Validation and Verification
-authors:
-  - "@serathius"
-  - "@solodov"
-  - "@logicalhan"
-owning-sig: sig-instrumentation
-participating-sigs:
-  - sig-instrumentation
-  - sig-testing
-reviewers:
-  - "@brancz"
-approvers:
-  - "@brancz"
-editor: TBD
-creation-date: 2019-06-05
-last-updated: 2020-10-14
-status: implemented
-see-also:
-  - 20190404-kubernetes-control-plane-metrics-stability
-  - 20190605-metrics-stability-migration
----
-
  # Metrics Validation and Verification
 
  ## Table of Contents
@@ -49,13 +26,13 @@ see-also:
 ## Summary
 
 This Kubernetes Enhancement Proposal (KEP) builds off of the framework proposed
-in the [Kubernetes Control-Plane Metrics Stability KEP](https://github.com/kubernetes/enhancements/blob/master/keps/sig-instrumentation/20190404-kubernetes-control-plane-metrics-stability.md)
+in the [Kubernetes Control-Plane Metrics Stability KEP](./kubernetes-control-plane-metrics-stability.md)
 and proposes a strategy for ensuring conformance of metrics with official
 stability guarantees.
 
 ## Motivation
 
-While the [Kubernetes Control Plane metrics stability KEP](https://github.com/kubernetes/enhancements/blob/master/keps/sig-instrumentation/20190404-kubernetes-control-plane-metrics-stability.md)
+While the [Kubernetes Control Plane metrics stability KEP](./kubernetes-control-plane-metrics-stability.md)
 provides a framework to define stability levels for control-plane metrics,
 it does not provide a strategy for verifying and validating conformance to stated guarantees.
 This KEP intends to propose a framework for validating and verifying metric guarantees.
@@ -74,7 +51,7 @@ This KEP intends to propose a framework for validating and verifying metric guar
 
 ## Proposal
 
-We will provide validation for metrics under the [new framework](https://github.com/kubernetes/enhancements/blob/master/keps/sig-instrumentation/20190404-kubernetes-control-plane-metrics-stability.md) with static analysis.
+We will provide validation for metrics under the [new framework](./kubernetes-control-plane-metrics-stability.md) with static analysis.
 
 ## Design Details
 
