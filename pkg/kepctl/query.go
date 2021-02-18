@@ -109,7 +109,7 @@ func (c *Client) Query(opts *QueryOpts) error {
 		return errors.Wrapf(tokenErr, "setting GitHub token")
 	}
 
-	allKEPs := make([]*api.Proposal, 10)
+	allKEPs := make([]*api.Proposal, 0)
 	// load the KEPs for each listed SIG
 	for _, sig := range opts.SIG {
 		// KEPs in the local filesystem
@@ -134,7 +134,7 @@ func (c *Client) Query(opts *QueryOpts) error {
 	allowedAuthor := sliceToMap(opts.Author)
 	allowedApprover := sliceToMap(opts.Approver)
 
-	keps := make([]*api.Proposal, 10)
+	keps := make([]*api.Proposal, 0)
 	for _, k := range allKEPs {
 		if len(opts.Status) > 0 && !allowedStatus[k.Status] {
 			continue

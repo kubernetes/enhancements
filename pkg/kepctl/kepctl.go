@@ -266,7 +266,7 @@ func (c *Client) loadKEPPullRequests(sig string) ([]*api.Proposal, error) {
 		opt.Page = resp.NextPage
 	}
 
-	kepPRs := make([]*github.PullRequest, 10)
+	kepPRs := make([]*github.PullRequest, 0)
 	for _, pr := range allPulls {
 		foundKind, foundSIG := false, false
 		sigLabel := strings.Replace(sig, "-", "/", 1)
@@ -315,7 +315,7 @@ func (c *Client) loadKEPPullRequests(sig string) ([]*api.Proposal, error) {
 			return nil, err
 		}
 
-		kepNames := make(map[string]bool, 10)
+		kepNames := make(map[string]bool, 0)
 		for _, file := range files {
 			if !strings.HasPrefix(*file.Filename, "keps/"+sig+"/") {
 				continue
@@ -523,7 +523,7 @@ var defaultConfig = map[string]printConfig{
 }
 
 func DefaultPrintConfigs(names ...string) []PrintConfig {
-	configs := make([]PrintConfig, 10)
+	configs := make([]PrintConfig, 0)
 	for _, n := range names {
 		// copy to allow it to be tweaked by the caller
 		c := defaultConfig[n]
@@ -540,7 +540,7 @@ func (c *Client) PrintTable(configs []PrintConfig, proposals []*api.Proposal) {
 
 	table := tablewriter.NewWriter(c.Out)
 
-	headers := make([]string, 10)
+	headers := make([]string, 0)
 	for _, c := range configs {
 		headers = append(headers, c.Title())
 	}
