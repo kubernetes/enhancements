@@ -276,7 +276,7 @@ disable the server sending warnings during the beta period.
 * Implement in-process deprecated API warnings, metrics, audit annotations
 * Complete test plan for implemented items
 * API server output of `Warning` headers for deprecated API use is feature-gated and enabled by default
-* The metric for deprecated API use is registered at [stability level `ALPHA`](https://github.com/kubernetes/enhancements/blob/master/keps/sig-instrumentation/20190404-kubernetes-control-plane-metrics-stability.md#stability-classes)
+* The metric for deprecated API use is registered at [stability level `ALPHA`](https://github.com/kubernetes/enhancements/blob/master/keps/sig-instrumentation/1290-metrics-stability/kubernetes-control-plane-metrics-stability.md#stability-classes)
 * Implement admission webhook warning contributions
 * Implement custom resource version deprecation
 * client-go logs warnings with code `299` by default
@@ -290,7 +290,7 @@ disable the server sending warnings during the beta period.
 * Implement in-process helpers for field-level validation warnings and admission warnings
 * Complete test plan for implemented items
 * API server output of `Warning` headers for deprecated API use is unconditionally enabled
-* Server metric for deprecated API use is registered at [stability level `STABLE`](https://github.com/kubernetes/enhancements/blob/master/keps/sig-instrumentation/20190404-kubernetes-control-plane-metrics-stability.md#stability-classes)
+* Server metric for deprecated API use is registered at [stability level `STABLE`](https://github.com/kubernetes/enhancements/blob/master/keps/sig-instrumentation/1209-metrics-stability/kubernetes-control-plane-metrics-stability.md#stability-classes)
 
 ### Upgrade / Downgrade Strategy
 

@@ -1,32 +1,3 @@
----
-title: Metrics Stability Migration
-authors:
-  - "@logicalhan"
-  - "@solodov"
-owning-sig: sig-instrumentation
-participating-sigs:
-  - sig-scheduling
-  - sig-node
-  - sig-api-machinery
-  - sig-cluster-lifecycle
-  - sig-cloud-provider
-reviewers:
-  - "@brancz from sig-instrumentation"
-  - "@dashpole from sig-node"
-  - "@sttts from sig-api-machinery"
-  - "@DirectXMan12 from sig-cluster-lifecycle"
-  - "@bsalamat from sig-scheduling"
-  - "@andrewsykim from sig-cloud-provider"
-approvers:
-  - "@brancz"
-creation-date: 2019-06-05
-last-updated: 2019-06-27
-status: implemented
-see-also:
-  - 20181106-kubernetes-metrics-overhaul
-  - 20190404-kubernetes-control-plane-metrics-stability
----
-
 # Metrics Stability Migration
 
 ## Table of Contents
@@ -47,11 +18,11 @@ see-also:
 
 ## Summary
 
-This KEP intends to document and communicate the general strategy for migrating the control-plane metrics stability framework across the Kubernetes codebase. Most of the framework design decisions have been determined and outlined in [an earlier KEP](https://github.com/kubernetes/enhancements/blob/master/keps/sig-instrumentation/20190404-kubernetes-control-plane-metrics-stability.md).
+This KEP intends to document and communicate the general strategy for migrating the control-plane metrics stability framework across the Kubernetes codebase. Most of the framework design decisions have been determined and outlined in [an earlier KEP](./kubernetes-control-plane-metrics-stability.md).
 
 ## Motivation
 
-We want to start using the metrics stability framework built based off the [Kubernetes Control-Plane Metrics Stability KEP](https://github.com/kubernetes/enhancements/blob/master/keps/sig-instrumentation/20190404-kubernetes-control-plane-metrics-stability.md), so that we can define stability levels for metrics in the Kubernetes codebase. These stability levels would provide API compatibility guarantees across version bumps.
+We want to start using the metrics stability framework built based off the [Kubernetes Control-Plane Metrics Stability KEP](./kubernetes-control-plane-metrics-stability.md), so that we can define stability levels for metrics in the Kubernetes codebase. These stability levels would provide API compatibility guarantees across version bumps.
 
 ### Goals
 
@@ -119,7 +90,7 @@ TBD (since this is not yet implemented)
 
 ## Graduation Criteria
 
-- [x] Prior to migrating a [component, automated static analysis testing](https://github.com/kubernetes/enhancements/blob/master/keps/sig-instrumentation/20190605-metrics-validation-and-verification.md) is in place to validate and verify API guarantees.
+- [x] Prior to migrating a [component, automated static analysis testing](./metrics-validation-and-verification.md) is in place to validate and verify API guarantees.
 - [x] Adequate [documentation exists for new flags on components](https://kubernetes.io/docs/reference/command-line-tools-reference/kube-apiserver/)
 - [x] Update [instrumentation documents to reflect changes](https://github.com/kubernetes/website/pull/17578)
 
