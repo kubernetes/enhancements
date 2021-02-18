@@ -61,7 +61,7 @@ func (c *CommonArgs) validateAndPopulateKEP(args []string) error {
 	}
 	if len(args) == 1 {
 		kep := args[0]
-		re := regexp.MustCompile(`([a-z\\-]+)/((\\d+)-.+)`)
+		re := regexp.MustCompile(`([a-z\\-]+)/((\d+)-.+)`)
 		matches := re.FindStringSubmatch(kep)
 		if matches == nil || len(matches) != 4 {
 			return fmt.Errorf("invalid KEP name: %s", kep)
