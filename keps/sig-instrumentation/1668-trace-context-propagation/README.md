@@ -192,6 +192,63 @@ In OpenTelemetry's Go implementation,  span context is passed down through Go co
 
 #### Mutating webhook
 
+This webhook will be configured to allow the requests writing the object resource only. For example, the end user create a deployment including 2 replisects, some requests reaching APIServer in order may include:
+Deployment example:
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sleep
+  namespace: sleeping
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: sleep
+  template:
+    metadata:
+      labels:
+        app: sleep
+    spec:
+      containers:
+      - name: sleep
+        image: busybox
+        command: ["/bin/sleep","infinity"]
+        imagePullPolicy: IfNotPresent
+```
+Webhook configuration example(read [webhook configuration](https://kubernetes.io/docs/reference/access-authn-authz/extensible-admission-controllers/#webhook-configuration) for more details):
+```yaml
+apiVersion: admissionregistration.k8s.io/v1beta1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: trace-context-injector-webhook-cfg
+webhooks:
+  - name: trace-context-injector.k8s.io
+    clientConfig:
+      service:
+        name: trace-context-injector-webhook-svc
+        namespace: default
+        path: "/mutate"
+      caBundle: ${CA_BUNDLE}
+    rules:
+      - operations: ["CREATE","UPDATE"]
+        apiGroups: ["*"]
+        apiVersions: ["*"]
+        resources: ["deployments","deamonsets","replicasets","statefulsets","pods"]
+```
+Requests reaching APIServer:
+
+1. Create deployment: sleep
+2. Create replicaset: sleep-replica
+3. Create 1st pod: sleep-pod-1st
+4. Update 1st pod's subresource: sleep-pod-1st/status
+5. Create 2nd pod: sleep-pod-2nd
+6. Update 2nd pod's subresource: sleep-pod-2nd/status
+7. Update replicaset's subresource: sleep-replica/status
+8. Update deployment's subresource: sleep/status
+
+With above webhook configuration, requests 1, 2, 3, 5 above will reach the webhook and annotations of these object will be updated accordingly. The rest requests will be filtered out in APIServer.
+
 This mutating admission webhook extracts  a `span context` from incoming request, and then stores it into object annotation`trace.kubernetes.io/context` with base64 encoded version of [this wire format](https://github.com/census-instrumentation/opencensus-specs/blob/master/encodings/BinaryEncoding.md#trace-context). The webhook can be configured to inject context into only target object types.
 
 below is a key/value pair example in object annotation:
@@ -247,7 +304,7 @@ In short, the webhook decides whether to add `span context` to the object.
 #### Alpha
 
 - Feature covers 3 important workload objects: Pod, Replicaset, Deployment, Statefulset, Daemonset
-- Related unit tests described in this KEP are completed
+- e2e tests and related unit tests described in this KEP are completed
 
 #### Beta
 
