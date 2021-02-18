@@ -40,7 +40,7 @@ If you are not sure, ask someone in the SIG where you initially circulated the i
 
 ## When to Create a New Enhancement Issue
 
-Create an issue here once you:
+Create an [issue](https://github.com/kubernetes/enhancements/issues/new) in this repository once you:
 - have circulated your idea to see if there is interest
    - through Community Meetings, SIG meetings, SIG mailing lists, or an issue in github.com/kubernetes/kubernetes
 - (optionally) have done a prototype in your own fork
@@ -71,6 +71,7 @@ Please do not comment on the enhancement issue to:
 All the enhancements from this repo are visualized in the Enhancements Tracking Spreadsheets.
 
 Links:
+- [1.21 Milestone](https://bit.ly/k8s121-enhancements)
 - [1.20 Milestone](https://bit.ly/k8s-1-20-enhancements)
 - [1.19 Milestone](https://bit.ly/k8s-1-19-enhancements)
 - [1.18 Milestone](https://bit.ly/k8s-1-18-enhancements)
