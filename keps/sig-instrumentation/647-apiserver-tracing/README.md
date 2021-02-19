@@ -113,13 +113,14 @@ The API Server controls where traffic is sent using an [EgressSelector](https://
 ```golang
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
-// OpenTelemetryClientConfiguration provides versioned configuration for opentelemetry clients.
-type OpenTelemetryClientConfiguration struct {
+// TracingConfiguration provides versioned configuration for tracing clients.
+type TracingConfiguration struct {
   metav1.TypeMeta `json:",inline"`
 
   // +optional
   // URL of the collector that's running on the control-plane node.
-  // if URL is specified, APIServer uses the egressType ControlPlane when sending data to the collector.
+  // the APIServer uses the egressType ControlPlane when sending data to the collector.
+  // The default is localhost:4317
   URL *string `json:"url,omitempty" protobuf:"bytes,3,opt,name=url"`
 }
 ```
