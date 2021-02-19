@@ -108,7 +108,7 @@ The [OpenTelemetry Collector](https://github.com/open-telemetry/opentelemetry-co
 
 ### APIServer Configuration and EgressSelectors
 
-The API Server controls where traffic is sent using an [EgressSelector](https://github.com/kubernetes/enhancements/blob/master/keps/sig-api-machinery/20190226-network-proxy.md), and has separate controls for `Master`, `Cluster`, and `Etcd` traffic.  As described above, we would like to support either sending telemetry to a url using the `Master` egress, or a service using the `Cluster` egress.  To accomplish this, we will introduce a flag, `--opentelemetry-config-file`, that will point to the file that defines the opentelemetry exporter configuration.  That file will have the following format:
+The API Server controls where traffic is sent using an [EgressSelector](https://github.com/kubernetes/enhancements/blob/master/keps/sig-api-machinery/20190226-network-proxy.md), and has separate controls for `ControlPlane`, `Cluster`, and `Etcd` traffic.  As described above, we would like to support either sending telemetry to a url using the `ControlPlane` egress, or a service using the `Cluster` egress.  To accomplish this, we will introduce a flag, `--opentelemetry-config-file`, that will point to the file that defines the opentelemetry exporter configuration.  That file will have the following format:
 
 ```golang
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -118,8 +118,8 @@ type OpenTelemetryClientConfiguration struct {
   metav1.TypeMeta `json:",inline"`
 
   // +optional
-  // URL of the collector that's running on the master.
-  // if URL is specified, APIServer uses the egressType Master when sending data to the collector.
+  // URL of the collector that's running on the control-plane node.
+  // if URL is specified, APIServer uses the egressType ControlPlane when sending data to the collector.
   URL *string `json:"url,omitempty" protobuf:"bytes,3,opt,name=url"`
 }
 ```
@@ -132,7 +132,7 @@ As the community found in the [Metrics Stability Framework KEP](https://github.c
 
 ### Test Plan
 
-We will e2e test this feature by deploying an OpenTelemetry Collector on the master, and configure it to export traces using the [stdout exporter](https://github.com/open-telemetry/opentelemetry-go/tree/master/exporters/stdout), which logs the spans in json format.  We can then verify that the logs contain our expected traces when making calls to the API Server.
+We will e2e test this feature by deploying an OpenTelemetry Collector on the control-plane node, and configure it to export traces using the [stdout exporter](https://github.com/open-telemetry/opentelemetry-go/tree/master/exporters/stdout), which logs the spans in json format.  We can then verify that the logs contain our expected traces when making calls to the API Server.
 
 ## Graduation requirements
 
@@ -328,7 +328,7 @@ _This section must be completed when targeting beta graduation to a release._
 
 ### Introducing a new EgressSelector type
 
-Instead of a configuration file to choose between a url on the `Master` network, or a service on the `Cluster` network, we considered introducing a new `OpenTelemetry` egress type, which could be configured separately.  However, we aren't actually introducing a new destination for traffic, so it is more conventional to make use of existing egress types.  We will also likely want to add additional configuration for the OpenTelemetry client in the future.
+Instead of a configuration file to choose between a url on the `ControlPlane` network, or a service on the `Cluster` network, we considered introducing a new `OpenTelemetry` egress type, which could be configured separately.  However, we aren't actually introducing a new destination for traffic, so it is more conventional to make use of existing egress types.  We will also likely want to add additional configuration for the OpenTelemetry client in the future.
 
 ### Other OpenTelemetry Exporters
 
