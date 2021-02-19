@@ -8,6 +8,9 @@
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
+  - [User Stories](#user-stories)
+    - [Steady-State trace collection](#steady-state-trace-collection)
+    - [On-Demand trace collection](#on-demand-trace-collection)
   - [Tracing API Requests](#tracing-api-requests)
   - [Exporting Spans](#exporting-spans)
   - [Running the OpenTelemetry Collector](#running-the-opentelemetry-collector)
@@ -72,6 +75,27 @@ Along with metrics and logs, traces are a useful form of telemetry to aid with d
 * Add tracing to components outside kubernetes (e.g. etcd client library).
 
 ## Proposal
+
+### User Stories
+
+Since this feature is for diagnosing problems with the Kube-API Server, it is targeted at Cluster Operators and Cloud Vendors that manage kubernetes control-planes.
+
+For the following use-cases, I can deploy an OpenTelemetry collector as a sidecar to the API Server.  I can use the API Server's `--opentelemetry-config-file` flag with the default URL to make the API Server send its spans to the sidecar collector.  Alternatively, I can point the API Server at an OpenTelemetry collector listening on a different port or URL if I need to.
+
+#### Steady-State trace collection
+
+As a cluster operator or cloud provider, I would like to collect traces for API requests to the API Server to help debug a variety of control-plane problems.  I can set the `SamplingRatePerMillion` in the configuration file to a non-zero number to have spans collected for a small fraction of requests.  Depending on the symptoms I need to debug, I can search span metadata to find a trace which displays the symptoms I am looking to debug.  Even for issues which occur non-deterministically, a low sampling rate is generally still enough to surface a representative trace over time.
+
+#### On-Demand trace collection
+
+As a cluster operator or cloud provider, I would like to collect a trace for a specific request to the API Server.  This will often happen when debugging a live problem.  In such cases, I don't want to change the `SamplingRatePerMillion` to collecting a high percentage of requests, which would be expensive and collect many things I don't care about.  I also don't want to restart the API Server, which may fix the problem I am trying to debug.  Instead, I can make sure the incoming request to the API Server is sampled.  The tooling to do this easily doesn't exist today, but could be added in the future.
+
+For example, to trace a request to list nodes, with traceid=4bf92f3577b34da6a3ce929d0e0e4737, no parent span, and sampled=true:
+
+```bash
+kubectl proxy --port=8080 &
+curl http://localhost:8080/api/v1/nodes -H "traceparent: 00-4bf92f3577b34da6a3ce929d0e0e4737-0000000000000000-01"
+```
 
 ### Tracing API Requests
 
