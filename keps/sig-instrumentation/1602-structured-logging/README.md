@@ -383,6 +383,7 @@ Bring feature quality up to and prevent regression during ongoing migration:
 * [Kubernetes Logging documentation](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-instrumentation/logging.md) is updated for structured logging.
 * JSON format should support same set of feature flags as text format, minus those we will decide to deprecate.
 * Structured logging interface design is verified by migrating one whole component (Kubelet) to structured logging. All other component migrations will be best effort.
+* Log volume (i.e. size of output) will be benchmarked and documented for kubelet in non-JSON and JSON format.
 
 #### GA
 
