@@ -121,27 +121,6 @@ type OpenTelemetryClientConfiguration struct {
   // URL of the collector that's running on the master.
   // if URL is specified, APIServer uses the egressType Master when sending data to the collector.
   URL *string `json:"url,omitempty" protobuf:"bytes,3,opt,name=url"`
-
-  // +optional
-  // Service that's the frontend of the collector deployment running in the cluster.
-  // If Service is specified, APIServer uses the egressType Cluster when sending data to the collector.
-  Service *ServiceReference `json:"service,omitempty" protobuf:"bytes,1,opt,name=service"`
-}
-
-// ServiceReference holds a reference to Service.legacy.k8s.io
-type ServiceReference struct {
-  // `namespace` is the namespace of the service.
-  // Required
-  Namespace string `json:"namespace" protobuf:"bytes,1,opt,name=namespace"`
-  // `name` is the name of the service.
-  // Required
-  Name string `json:"name" protobuf:"bytes,2,opt,name=name"`
-
-  // If specified, the port on the service.
-  // Defaults to 4317, the IANA reserved port for OpenTelemetry.
-  // `port` should be a valid port number (1-65535, inclusive).
-  // +optional
-  Port *int32 `json:"port,omitempty" protobuf:"varint,3,opt,name=port"`
 }
 ```
 
