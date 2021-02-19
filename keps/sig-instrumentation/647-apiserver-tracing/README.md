@@ -120,8 +120,13 @@ type TracingConfiguration struct {
   // +optional
   // URL of the collector that's running on the control-plane node.
   // the APIServer uses the egressType ControlPlane when sending data to the collector.
-  // The default is localhost:4317
-  URL *string `json:"url,omitempty" protobuf:"bytes,3,opt,name=url"`
+  // Defaults to localhost:4317
+  URL *string `json:"url,omitempty" protobuf:"bytes,1,opt,name=url"`
+
+  // +optional
+  // SamplingRatePerMillion is the number of samples to collect per million spans.
+  // Defaults to 0.
+  SamplingRatePerMillion *int32 `json:"samplingRatePerMillion,omitempty" protobuf:"varint,2,opt,name=samplingRatePerMillion"`
 }
 ```
 
