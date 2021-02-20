@@ -17,7 +17,6 @@ limitations under the License.
 package kepval
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -38,13 +37,13 @@ const (
 var files = []string{}
 
 // This is the actual validation check of all KEPs in this repo
-func ValidateRepository(kepDir string) ([]string, map[string][]error, error) {
-	warnings := []string{}
-	valErrMap := make(map[string][]error)
-
+func ValidateRepository(kepDir string) (
+	warnings []string,
+	valErrMap map[string][]error,
+	err error,
+) {
 	// Find all the KEPs
-	err := filepath.Walk(kepDir, walkFn)
-
+	err = filepath.Walk(kepDir, walkFn)
 	// This indicates a problem walking the filepath, not a validation error.
 	if err != nil {
 		return warnings, valErrMap, errors.Wrap(err, "walking repository")
@@ -106,20 +105,6 @@ func ValidateRepository(kepDir string) ([]string, map[string][]error, error) {
 	return warnings, valErrMap, nil
 }
 
-// TODO: Refactor and maybe move into a more suitable package
-func needsPRRApproval(milestone, stage, filename string) error {
-	return errors.New(
-		fmt.Sprintf(
-			`PRR approval is required to target milestone %s (stage %s).
-For more details about PRR approval see: https://git.k8s.io/kubernetes/community/sig-architecture/production-readiness.md
-To get PRR approval modify appropriately file %s and have this approved by PRR team`,
-			milestone,
-			stage,
-			filename,
-		),
-	)
-}
-
 var walkFn = func(path string, info os.FileInfo, err error) error {
 	if err != nil {
 		return err
@@ -146,7 +131,7 @@ var walkFn = func(path string, info os.FileInfo, err error) error {
 		return nil
 	}
 
-	if ignore(dir, info.Name()) {
+	if ignore(info.Name()) {
 		return nil
 	}
 
@@ -156,7 +141,7 @@ var walkFn = func(path string, info os.FileInfo, err error) error {
 // TODO: Consider replacing with a .kepignore file
 // TODO: Is this a duplicate of the package function?
 // ignore certain files in the keps/ subdirectory
-func ignore(dir, name string) bool {
+func ignore(name string) bool {
 	if !strings.HasSuffix(name, "md") {
 		return true
 	}

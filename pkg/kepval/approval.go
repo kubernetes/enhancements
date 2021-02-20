@@ -51,8 +51,7 @@ func ValidatePRR(kep *api.Proposal, h *api.PRRHandler, prrDir string) error {
 
 	prrFile, err := os.Open(prrFilepath)
 	if os.IsNotExist(err) {
-		// TODO: Is this actually the error we want to return here?
-		return err //needsPRRApproval(stageMilestone, kep.Stage, prrFilepath)
+		return err
 	}
 
 	if err != nil {

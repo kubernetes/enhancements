@@ -37,7 +37,7 @@ var createCmd = &cobra.Command{
 		return createOpts.Validate(args)
 	},
 	RunE: func(*cobra.Command, []string) error {
-		return runCreate(createOpts)
+		return runCreate(&createOpts)
 	},
 }
 
@@ -96,11 +96,11 @@ func init() {
 	rootCmd.AddCommand(createCmd)
 }
 
-func runCreate(createOpts kepctl.CreateOpts) error {
+func runCreate(createOpts *kepctl.CreateOpts) error {
 	k, err := kepctl.New(createOpts.RepoPath)
 	if err != nil {
 		return errors.Wrap(err, "creating kepctl client")
 	}
 
-	return k.Create(&createOpts)
+	return k.Create(createOpts)
 }

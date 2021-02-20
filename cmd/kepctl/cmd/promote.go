@@ -37,7 +37,7 @@ var promoteCmd = &cobra.Command{
 		return promoteOpts.Validate(args)
 	},
 	RunE: func(*cobra.Command, []string) error {
-		return runPromote(promoteOpts)
+		return runPromote(&promoteOpts)
 	},
 }
 
@@ -62,11 +62,11 @@ func init() {
 	rootCmd.AddCommand(promoteCmd)
 }
 
-func runPromote(opts kepctl.PromoteOpts) error {
+func runPromote(opts *kepctl.PromoteOpts) error {
 	k, err := kepctl.New(opts.RepoPath)
 	if err != nil {
 		return errors.Wrap(err, "creating kepctl client")
 	}
 
-	return k.Promote(&opts)
+	return k.Promote(opts)
 }

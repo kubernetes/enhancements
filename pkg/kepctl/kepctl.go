@@ -410,7 +410,7 @@ func (c *Client) loadKEPFromYaml(kepPath string) (*api.Proposal, error) {
 	}
 
 	if err != nil {
-		return nil, fmt.Errorf("could not open file %s: %v\n", prrPath, err)
+		return nil, errors.Wrapf(err, "opening PRR approval %s", prrPath)
 	}
 
 	parser, err := api.NewPRRHandler()

@@ -39,7 +39,7 @@ var queryCmd = &cobra.Command{
 		return queryOpts.Validate()
 	},
 	RunE: func(*cobra.Command, []string) error {
-		return runQuery(queryOpts)
+		return runQuery(&queryOpts)
 	},
 }
 
@@ -106,11 +106,11 @@ func init() {
 	rootCmd.AddCommand(queryCmd)
 }
 
-func runQuery(queryOpts kepctl.QueryOpts) error {
+func runQuery(queryOpts *kepctl.QueryOpts) error {
 	k, err := kepctl.New(queryOpts.RepoPath)
 	if err != nil {
 		return errors.Wrap(err, "creating kepctl client")
 	}
 
-	return k.Query(&queryOpts)
+	return k.Query(queryOpts)
 }

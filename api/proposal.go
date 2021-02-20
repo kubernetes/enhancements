@@ -86,19 +86,11 @@ func (p *Proposal) Validate() error {
 }
 
 func (p *Proposal) IsMissingMilestone() bool {
-	if p.LatestMilestone == "" {
-		return true
-	}
-
-	return false
+	return p.LatestMilestone == ""
 }
 
 func (p *Proposal) IsMissingStage() bool {
-	if p.Stage == "" {
-		return true
-	}
-
-	return false
+	return p.Stage == ""
 }
 
 type KEPHandler Parser
