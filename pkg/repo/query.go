@@ -104,11 +104,6 @@ func (r *Repo) Query(opts *QueryOpts) error {
 		fmt.Fprintf(r.Out, "Searching for KEPs...\n")
 	}
 
-	repoPath, err := r.FindEnhancementsRepo()
-	if err != nil {
-		return errors.Wrap(err, "unable to search KEPs")
-	}
-
 	if tokenErr := r.SetGitHubToken(r.TokenPath); tokenErr != nil {
 		return errors.Wrapf(tokenErr, "setting GitHub token")
 	}
@@ -117,7 +112,7 @@ func (r *Repo) Query(opts *QueryOpts) error {
 	// load the KEPs for each listed SIG
 	for _, sig := range opts.SIG {
 		// KEPs in the local filesystem
-		allKEPs = append(allKEPs, r.loadLocalKEPs(repoPath, sig)...)
+		allKEPs = append(allKEPs, r.loadLocalKEPs(sig)...)
 
 		// Open PRs; existing KEPs with open PRs will be shown twice
 		if opts.IncludePRs {

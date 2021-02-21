@@ -66,41 +66,74 @@ type Repo struct {
 	In  io.Reader
 	Out io.Writer
 	Err io.Writer
+
+	// Templates
+	ProposalTemplate []byte
 }
 
 // New returns a new repo client configured to use the the normal os.Stdxxx and Filesystem
-func New(repo string) (*Repo, error) {
+func New(repoPath string) (*Repo, error) {
 	var err error
-	if repo == "" {
-		repo, err = os.Getwd()
+	if repoPath == "" {
+		repoPath, err = os.Getwd()
 		if err != nil {
 			return nil, fmt.Errorf("unable to determine enhancements repo path: %s", err)
 		}
 	}
 
-	// build a default client with normal os.Stdxx and Filesystem access. Tests can build their own
-	// with appropriate test objects
-	return &Repo{
-		BasePath: repo,
-		In:       os.Stdin,
-		Out:      os.Stdout,
-		Err:      os.Stderr,
-	}, nil
-}
-
-func (r *Repo) FindEnhancementsRepo() (string, error) {
-	dir := r.BasePath
-
-	fi, err := os.Stat(dir)
+	proposalPath := filepath.Join(repoPath, ProposalPathStub)
+	fi, err := os.Stat(proposalPath)
 	if err != nil {
-		return "", fmt.Errorf("unable to find enhancements repo: %s", err)
+		return nil, errors.Wrapf(
+			err,
+			"getting file info for proposal path %s",
+			proposalPath,
+		)
 	}
 
 	if !fi.IsDir() {
-		return "", fmt.Errorf("invalid enhancements repo path: %s", dir)
+		return nil, errors.Wrap(
+			err,
+			"checking if proposal path is a directory",
+		)
 	}
 
-	return dir, nil
+	prrApprovalPath := filepath.Join(proposalPath, PRRApprovalPathStub)
+	fi, err = os.Stat(prrApprovalPath)
+	if err != nil {
+		return nil, errors.Wrapf(
+			err,
+			"getting file info for PRR approval path %s",
+			prrApprovalPath,
+		)
+	}
+
+	if !fi.IsDir() {
+		return nil, errors.Wrap(
+			err,
+			"checking if PRR approval path is a directory",
+		)
+	}
+
+	repo := &Repo{
+		BasePath:        repoPath,
+		ProposalPath:    proposalPath,
+		PRRApprovalPath: prrApprovalPath,
+		In:              os.Stdin,
+		Out:             os.Stdout,
+		Err:             os.Stderr,
+	}
+
+	proposalTemplate, err := repo.getProposalTemplate()
+	if err != nil {
+		return nil, errors.Wrap(err, "getting proposal template")
+	}
+
+	repo.ProposalTemplate = proposalTemplate
+
+	// build a default client with normal os.Stdxx and Filesystem access. Tests can build their own
+	// with appropriate test objects
+	return repo, nil
 }
 
 func (r *Repo) SetGitHubToken(tokenFile string) error {
@@ -116,37 +149,11 @@ func (r *Repo) SetGitHubToken(tokenFile string) error {
 	return nil
 }
 
-// GetKepTemplate reads the kep.yaml template from the local
-// (per c.BasePath) k/enhancements, but this could be replaced with a
-// template via packr or fetched from Github?
-func (r *Repo) GetKepTemplate(repoPath string) (*api.Proposal, error) {
-	var p api.Proposal
+// getProposalTemplate reads the KEP template from the local clone of
+// kubernetes/enhancements.
+func (r *Repo) getProposalTemplate() ([]byte, error) {
 	path := filepath.Join(
-		repoPath,
-		ProposalPathStub,
-		ProposalTemplatePathStub,
-		ProposalMetadataFilename,
-	)
-
-	b, err := ioutil.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("couldn't find KEP template: %s", err)
-	}
-
-	err = yaml.Unmarshal(b, &p)
-	if err != nil {
-		return nil, fmt.Errorf("invalid KEP template: %s", err)
-	}
-
-	return &p, nil
-}
-
-// getReadmeTemplate reads from the local (per c.BasePath) k/enhancements, but this
-// could be replaced with a template via packr or fetched from Github?
-func (r *Repo) GetReadmeTemplate(repoPath string) ([]byte, error) {
-	path := filepath.Join(
-		repoPath,
-		ProposalPathStub,
+		r.ProposalPath,
 		ProposalTemplatePathStub,
 		ProposalFilename,
 	)
@@ -154,22 +161,21 @@ func (r *Repo) GetReadmeTemplate(repoPath string) ([]byte, error) {
 	return ioutil.ReadFile(path)
 }
 
-func findLocalKEPMeta(repoPath, sig string) ([]string, error) {
-	rootPath := filepath.Join(
-		repoPath,
-		ProposalPathStub,
+func (r *Repo) findLocalKEPMeta(sig string) ([]string, error) {
+	sigPath := filepath.Join(
+		r.ProposalPath,
 		sig,
 	)
 
 	keps := []string{}
 
 	// if the SIG doesn't have a dir, it has no KEPs
-	if _, err := os.Stat(rootPath); os.IsNotExist(err) {
+	if _, err := os.Stat(sigPath); os.IsNotExist(err) {
 		return keps, nil
 	}
 
 	err := filepath.Walk(
-		rootPath,
+		sigPath,
 		func(path string, info os.FileInfo, err error) error {
 			if err != nil {
 				return err
@@ -200,9 +206,9 @@ func findLocalKEPMeta(repoPath, sig string) ([]string, error) {
 	return keps, err
 }
 
-func (r *Repo) loadLocalKEPs(repoPath, sig string) []*api.Proposal {
+func (r *Repo) loadLocalKEPs(sig string) []*api.Proposal {
 	// KEPs in the local filesystem
-	files, err := findLocalKEPMeta(repoPath, sig)
+	files, err := r.findLocalKEPMeta(sig)
 	if err != nil {
 		fmt.Fprintf(r.Err, "error searching for local KEPs from %s: %s\n", sig, err)
 	}
@@ -348,7 +354,7 @@ func (r *Repo) loadKEPPullRequests(sig string) ([]*api.Proposal, error) {
 
 		// read all these KEPs
 		for k := range kepNames {
-			kep, err := r.ReadKEP(repo.Directory(), sig, k)
+			kep, err := r.ReadKEP(sig, k)
 			if err != nil {
 				fmt.Fprintf(r.Err, "ERROR READING KEP %s: %s\n", k, err)
 			} else {
@@ -361,10 +367,9 @@ func (r *Repo) loadKEPPullRequests(sig string) ([]*api.Proposal, error) {
 	return allKEPs, nil
 }
 
-func (r *Repo) ReadKEP(repoPath, sig, name string) (*api.Proposal, error) {
+func (r *Repo) ReadKEP(sig, name string) (*api.Proposal, error) {
 	kepPath := filepath.Join(
-		repoPath,
-		ProposalPathStub,
+		r.ProposalPath,
 		sig,
 		name,
 		ProposalMetadataFilename,
@@ -377,8 +382,7 @@ func (r *Repo) ReadKEP(repoPath, sig, name string) (*api.Proposal, error) {
 
 	// No kep.yaml, treat as old-style KEP
 	kepPath = filepath.Join(
-		repoPath,
-		ProposalPathStub,
+		r.ProposalPath,
 		sig,
 		name,
 	) + ".md"
@@ -408,7 +412,7 @@ func (r *Repo) loadKEPFromYaml(kepPath string) (*api.Proposal, error) {
 	sig := filepath.Base(prrPath)
 	prrPath = filepath.Join(
 		filepath.Dir(prrPath),
-		"prod-readiness",
+		PRRApprovalPathStub,
 		sig,
 		p.Number+".yaml",
 	)
@@ -482,11 +486,6 @@ func (r *Repo) loadKEPFromOldStyle(kepPath string) (*api.Proposal, error) {
 }
 
 func (r *Repo) WriteKEP(kep *api.Proposal) error {
-	path, err := r.FindEnhancementsRepo()
-	if err != nil {
-		return fmt.Errorf("unable to write KEP: %s", err)
-	}
-
 	b, err := yaml.Marshal(kep)
 	if err != nil {
 		return fmt.Errorf("KEP is invalid: %s", err)
@@ -494,8 +493,7 @@ func (r *Repo) WriteKEP(kep *api.Proposal) error {
 
 	if mkErr := os.MkdirAll(
 		filepath.Join(
-			path,
-			ProposalPathStub,
+			r.ProposalPath,
 			kep.OwningSIG,
 			kep.Name,
 		),
@@ -505,8 +503,7 @@ func (r *Repo) WriteKEP(kep *api.Proposal) error {
 	}
 
 	newPath := filepath.Join(
-		path,
-		ProposalPathStub,
+		r.ProposalPath,
 		kep.OwningSIG,
 		kep.Name,
 		ProposalMetadataFilename,
