@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package proposal
+package repo
 
 import (
 	"fmt"
@@ -43,7 +43,7 @@ var (
 )
 
 type QueryOpts struct {
-	CommonArgs
+	RepoOpts    *Options
 	SIG         []string
 	Status      []string
 	Stage       []string
@@ -55,14 +55,14 @@ type QueryOpts struct {
 }
 
 // Validate checks the query options and cleans them up if needed
-func (c *QueryOpts) Validate() error {
+func (o *QueryOpts) Validate() error {
 	groups, err := api.FetchGroups()
 	if err != nil {
 		return errors.Wrap(err, "fetching groups")
 	}
 
-	if len(c.SIG) > 0 {
-		sigs, err := selectByRegexp(groups, c.SIG)
+	if len(o.SIG) > 0 {
+		sigs, err := selectByRegexp(groups, o.SIG)
 		if err != nil {
 			return err
 		}
@@ -71,15 +71,15 @@ func (c *QueryOpts) Validate() error {
 			return fmt.Errorf("no SIG matches any of the passed regular expressions")
 		}
 
-		c.SIG = sigs
+		o.SIG = sigs
 	} else {
 		// if no SIGs are passed, list KEPs from all SIGs
-		c.SIG = groups
+		o.SIG = groups
 	}
 
 	// check if the Output specified is one of "", "json" or "yaml"
-	if !sliceContains(SupportedOutputOpts, c.Output) {
-		return fmt.Errorf("unsupported output format: %s. Valid values: %v", c.Output, SupportedOutputOpts)
+	if !sliceContains(SupportedOutputOpts, o.Output) {
+		return fmt.Errorf("unsupported output format: %s. Valid values: %v", o.Output, SupportedOutputOpts)
 	}
 
 	// TODO: check the valid values of stage, status, etc.
@@ -89,6 +89,8 @@ func (c *QueryOpts) Validate() error {
 // Query searches the local repo and possibly GitHub for KEPs
 // that match the search criteria.
 func (c *Client) Query(opts *QueryOpts) error {
+	repoOpts := opts.RepoOpts
+
 	// if output format is json/yaml, suppress other outputs
 	// json/yaml are structured formats, logging events which
 	// do not conform to the spec will create formatting issues
@@ -103,12 +105,12 @@ func (c *Client) Query(opts *QueryOpts) error {
 		fmt.Fprintf(c.Out, "Searching for KEPs...\n")
 	}
 
-	repoPath, err := c.findEnhancementsRepo(&opts.CommonArgs)
+	repoPath, err := c.FindEnhancementsRepo(repoOpts)
 	if err != nil {
 		return errors.Wrap(err, "unable to search KEPs")
 	}
 
-	if tokenErr := c.SetGitHubToken(&opts.CommonArgs); tokenErr != nil {
+	if tokenErr := c.SetGitHubToken(repoOpts); tokenErr != nil {
 		return errors.Wrapf(tokenErr, "setting GitHub token")
 	}
 
@@ -160,7 +162,10 @@ func (c *Client) Query(opts *QueryOpts) error {
 
 	switch opts.Output {
 	case "table":
-		c.PrintTable(DefaultPrintConfigs("LastUpdated", "Stage", "Status", "SIG", "Authors", "Title", "Link"), keps)
+		c.PrintTable(
+			DefaultPrintConfigs("LastUpdated", "Stage", "Status", "SIG", "Authors", "Title", "Link"),
+			keps,
+		)
 	case "yaml":
 		c.PrintYAML(keps)
 	case "json":
@@ -168,8 +173,15 @@ func (c *Client) Query(opts *QueryOpts) error {
 	default:
 		// this check happens as a validation step in cobra as well
 		// added it for additional verbosity
-		return fmt.Errorf("unsupported output format: %s. Valid values: %s", opts.Output, SupportedOutputOpts)
+		return errors.New(
+			fmt.Sprintf(
+				"unsupported output format: %s. Valid values: %s",
+				opts.Output,
+				SupportedOutputOpts,
+			),
+		)
 	}
+
 	return nil
 }
 
@@ -207,6 +219,7 @@ func selectByRegexp(vals, regexps []string) ([]string, error) {
 			}
 		}
 	}
+
 	return matches, nil
 }
 

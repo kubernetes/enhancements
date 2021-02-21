@@ -18,30 +18,34 @@ package proposal
 
 import (
 	"fmt"
+
+	"k8s.io/enhancements/pkg/repo"
 )
 
 type PromoteOpts struct {
-	CommonArgs
-	Release string
-	Stage   string
+	RepoOpts *repo.Options
+	Release  string
+	Stage    string
 }
 
 // Validate checks the args provided to the promote command populates the promote opts
 func (c *PromoteOpts) Validate(args []string) error {
-	return c.validateAndPopulateKEP(args)
+	return c.RepoOpts.ValidateAndPopulateKEP(args)
 }
 
 // Promote changes the stage and target release for a specified KEP based on the
 // values specified in PromoteOpts is used to populate the template
-func (c *Client) Promote(opts *PromoteOpts) error {
-	fmt.Fprintf(c.Out, "Updating KEP %s/%s\n", opts.SIG, opts.Name)
+func Promote(rc *repo.Client, opts *PromoteOpts) error {
+	repoOpts := opts.RepoOpts
 
-	repoPath, err := c.findEnhancementsRepo(&opts.CommonArgs)
+	fmt.Fprintf(rc.Out, "Updating KEP %s/%s\n", repoOpts.SIG, repoOpts.Name)
+
+	repoPath, err := rc.FindEnhancementsRepo(repoOpts)
 	if err != nil {
 		return fmt.Errorf("unable to promote KEP: %s", err)
 	}
 
-	p, err := c.readKEP(repoPath, opts.SIG, opts.Name)
+	p, err := rc.ReadKEP(repoPath, repoOpts.SIG, repoOpts.Name)
 	if err != nil {
 		return fmt.Errorf("unable to load KEP for promotion: %s", err)
 	}
@@ -50,13 +54,13 @@ func (c *Client) Promote(opts *PromoteOpts) error {
 	p.LatestMilestone = opts.Release
 	p.LastUpdated = opts.Release
 
-	err = c.writeKEP(p, &opts.CommonArgs)
+	err = rc.WriteKEP(p, repoOpts)
 	if err != nil {
 		return fmt.Errorf("unable to write updated KEP: %s", err)
 	}
 
 	// TODO: Implement ticketing workflow artifact generation
-	fmt.Fprintf(c.Out, "KEP %s/%s updated\n", opts.SIG, opts.Name)
+	fmt.Fprintf(rc.Out, "KEP %s/%s updated\n", repoOpts.SIG, repoOpts.Name)
 
 	return nil
 }
