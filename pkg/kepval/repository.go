@@ -17,6 +17,7 @@ limitations under the License.
 package kepval
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -25,12 +26,10 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"k8s.io/enhancements/api"
+	"k8s.io/enhancements/pkg/repo"
 )
 
 const (
-	// TODO: Make this configurable and set in a client instead
-	DefaultPRRDir  = "prod-readiness"
-	kepMetadata    = "kep.yaml"
 	kepsReadmePath = "enhancements/keps/README.md"
 )
 
@@ -63,7 +62,7 @@ func ValidateRepository(kepDir string) (
 		return warnings, valErrMap, errors.Wrap(err, "creating PRR handler")
 	}
 
-	prrDir := filepath.Join(kepDir, DefaultPRRDir)
+	prrDir := filepath.Join(kepDir, repo.PRRApprovalPathStub)
 	logrus.Infof("PRR directory: %s", prrDir)
 
 	for _, filename := range files {
@@ -122,12 +121,14 @@ var walkFn = func(path string, info os.FileInfo, err error) error {
 		return nil
 	}
 
-	metadataFile := filepath.Join(dir, kepMetadata)
-	if _, err := os.Stat(metadataFile); err == nil {
+	metadataFilename := repo.ProposalMetadataFilename
+	metadataFilepath := filepath.Join(dir, metadataFilename)
+	if _, err := os.Stat(metadataFilepath); err == nil {
 		// There is kep metadata file in this directory, only that one should be processed.
-		if info.Name() == kepMetadata {
-			files = append(files, metadataFile)
+		if info.Name() == metadataFilename {
+			files = append(files, metadataFilepath)
 		}
+
 		return nil
 	}
 
@@ -141,10 +142,10 @@ var walkFn = func(path string, info os.FileInfo, err error) error {
 // TODO: Consider replacing with a .kepignore file
 // TODO: Is this a duplicate of the package function?
 // ignore certain files in the keps/ subdirectory
-func ignore(name string) bool {
+func ignore(dir, name string) bool {
 	if !strings.HasSuffix(name, "md") {
 		return true
 	}
 
-	return strings.HasSuffix(filepath.Join(dir, name), kepsReadmePath) ||	name == "FAQ.md"
+	return strings.HasSuffix(filepath.Join(dir, name), kepsReadmePath) || name == "FAQ.md"
 }

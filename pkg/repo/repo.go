@@ -35,7 +35,22 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"k8s.io/enhancements/api"
+	krgh "k8s.io/release/pkg/github"
 	"k8s.io/test-infra/prow/git"
+)
+
+const (
+	ProposalPathStub         = "keps"
+	ProposalTemplatePathStub = "NNNN-kep-template"
+	ProposalFilename         = "README.md"
+	ProposalMetadataFilename = "kep.yaml"
+
+	PRRApprovalPathStub = "prod-readiness"
+
+	remoteOrg  = "kubernetes"
+	remoteRepo = "enhancements"
+
+	proposalLabel = "kind/kep"
 )
 
 type Options struct {
@@ -72,8 +87,13 @@ func (o *Options) ValidateAndPopulateKEP(args []string) error {
 		o.Number = matches[3]
 		o.Name = matches[2]
 	} else if len(args) > 1 {
-		return fmt.Errorf("only one positional argument may be specified, the KEP name, but multiple were received: %s", args)
+		return errors.New(
+			fmt.Sprintf(
+				"only one positional argument may be specified, the KEP name, but multiple were received: %s", args,
+			),
+		)
 	}
+
 	return nil
 }
 
@@ -103,7 +123,7 @@ func (c *Client) FindEnhancementsRepo(opts *Options) (string, error) {
 	return dir, nil
 }
 
-// New returns a new kepctl client configured to use the the normal os.Stdxxx and Filesystem
+// New returns a new repo client configured to use the the normal os.Stdxxx and Filesystem
 func New(repo string) (*Client, error) {
 	var err error
 	if repo == "" {
@@ -141,29 +161,43 @@ func (c *Client) SetGitHubToken(opts *Options) error {
 // template via packr or fetched from Github?
 func (c *Client) GetKepTemplate(repoPath string) (*api.Proposal, error) {
 	var p api.Proposal
-	path := filepath.Join(repoPath, "keps", "NNNN-kep-template", "kep.yaml")
+	path := filepath.Join(
+		repoPath,
+		ProposalPathStub,
+		ProposalTemplatePathStub,
+		ProposalMetadataFilename,
+	)
+
 	b, err := ioutil.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("couldn't find KEP template: %s", err)
 	}
+
 	err = yaml.Unmarshal(b, &p)
 	if err != nil {
 		return nil, fmt.Errorf("invalid KEP template: %s", err)
 	}
+
 	return &p, nil
 }
 
 // getReadmeTemplate reads from the local (per c.RepoPath) k/enhancements, but this
 // could be replaced with a template via packr or fetched from Github?
 func (c *Client) GetReadmeTemplate(repoPath string) ([]byte, error) {
-	path := filepath.Join(repoPath, "keps", "NNNN-kep-template", "README.md")
+	path := filepath.Join(
+		repoPath,
+		ProposalPathStub,
+		ProposalTemplatePathStub,
+		ProposalFilename,
+	)
+
 	return ioutil.ReadFile(path)
 }
 
 func findLocalKEPMeta(repoPath, sig string) ([]string, error) {
 	rootPath := filepath.Join(
 		repoPath,
-		"keps",
+		ProposalPathStub,
 		sig,
 	)
 
@@ -174,26 +208,34 @@ func findLocalKEPMeta(repoPath, sig string) ([]string, error) {
 		return keps, nil
 	}
 
-	err := filepath.Walk(rootPath, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if !info.Mode().IsRegular() {
-			return nil
-		}
-		if info.Name() == "kep.yaml" {
+	err := filepath.Walk(
+		rootPath,
+		func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
+
+			if !info.Mode().IsRegular() {
+				return nil
+			}
+
+			if info.Name() == ProposalMetadataFilename {
+				keps = append(keps, path)
+				return filepath.SkipDir
+			}
+
+			if filepath.Ext(path) != ".md" {
+				return nil
+			}
+
+			if info.Name() == ProposalFilename {
+				return nil
+			}
+
 			keps = append(keps, path)
-			return filepath.SkipDir
-		}
-		if filepath.Ext(path) != ".md" {
 			return nil
-		}
-		if info.Name() == "README.md" {
-			return nil
-		}
-		keps = append(keps, path)
-		return nil
-	})
+		},
+	)
 
 	return keps, err
 }
@@ -237,16 +279,28 @@ func (c *Client) loadKEPPullRequests(sig string) ([]*api.Proposal, error) {
 
 	gh := github.NewClient(auth)
 	allPulls := []*github.PullRequest{}
-	opt := &github.PullRequestListOptions{ListOptions: github.ListOptions{PerPage: 100}}
+	opt := &github.PullRequestListOptions{
+		ListOptions: github.ListOptions{
+			PerPage: 100,
+		},
+	}
+
 	for {
-		pulls, resp, err := gh.PullRequests.List(ctx, "kubernetes", "enhancements", opt)
+		pulls, resp, err := gh.PullRequests.List(
+			ctx,
+			remoteOrg,
+			remoteRepo,
+			opt,
+		)
 		if err != nil {
 			return nil, err
 		}
+
 		allPulls = append(allPulls, pulls...)
 		if resp.NextPage == 0 {
 			break
 		}
+
 		opt.Page = resp.NextPage
 	}
 
@@ -256,7 +310,7 @@ func (c *Client) loadKEPPullRequests(sig string) ([]*api.Proposal, error) {
 		sigLabel := strings.Replace(sig, "-", "/", 1)
 
 		for _, l := range pr.Labels {
-			if *l.Name == "kind/kep" {
+			if *l.Name == proposalLabel {
 				foundKind = true
 			}
 
@@ -283,8 +337,9 @@ func (c *Client) loadKEPPullRequests(sig string) ([]*api.Proposal, error) {
 	}
 
 	g.SetCredentials("", func() []byte { return []byte{} })
-	g.SetRemote("https://github.com")
-	repo, err := g.Clone("kubernetes", "enhancements")
+	g.SetRemote(krgh.GitHubURL)
+
+	repo, err := g.Clone(remoteOrg, remoteRepo)
 	if err != nil {
 		return nil, err
 	}
@@ -293,8 +348,13 @@ func (c *Client) loadKEPPullRequests(sig string) ([]*api.Proposal, error) {
 	// touched by a PR. This may result in multiple versions of the same KEP.
 	var allKEPs []*api.Proposal
 	for _, pr := range kepPRs {
-		files, _, err := gh.PullRequests.ListFiles(context.Background(), "kubernetes", "enhancements",
-			pr.GetNumber(), &github.ListOptions{})
+		files, _, err := gh.PullRequests.ListFiles(
+			context.Background(),
+			remoteOrg,
+			remoteRepo,
+			pr.GetNumber(),
+			&github.ListOptions{},
+		)
 		if err != nil {
 			return nil, err
 		}
@@ -325,6 +385,7 @@ func (c *Client) loadKEPPullRequests(sig string) ([]*api.Proposal, error) {
 		if err != nil {
 			return nil, err
 		}
+
 		// read all these KEPs
 		for k := range kepNames {
 			kep, err := c.ReadKEP(repo.Directory(), sig, k)
@@ -343,10 +404,11 @@ func (c *Client) loadKEPPullRequests(sig string) ([]*api.Proposal, error) {
 func (c *Client) ReadKEP(repoPath, sig, name string) (*api.Proposal, error) {
 	kepPath := filepath.Join(
 		repoPath,
-		"keps",
+		ProposalPathStub,
 		sig,
 		name,
-		"kep.yaml")
+		ProposalMetadataFilename,
+	)
 
 	_, err := os.Stat(kepPath)
 	if err == nil {
@@ -356,9 +418,10 @@ func (c *Client) ReadKEP(repoPath, sig, name string) (*api.Proposal, error) {
 	// No kep.yaml, treat as old-style KEP
 	kepPath = filepath.Join(
 		repoPath,
-		"keps",
+		ProposalPathStub,
 		sig,
-		name) + ".md"
+		name,
+	) + ".md"
 
 	return c.loadKEPFromOldStyle(kepPath)
 }
@@ -368,11 +431,13 @@ func (c *Client) loadKEPFromYaml(kepPath string) (*api.Proposal, error) {
 	if err != nil {
 		return nil, fmt.Errorf("unable to read KEP metadata: %s", err)
 	}
+
 	var p api.Proposal
 	err = yaml.Unmarshal(b, &p)
 	if err != nil {
 		return nil, fmt.Errorf("unable to load KEP metadata: %s", err)
 	}
+
 	p.Name = filepath.Base(filepath.Dir(kepPath))
 
 	// Read the PRR approval file and add any listed PRR approvers in there
@@ -465,7 +530,7 @@ func (c *Client) WriteKEP(kep *api.Proposal, opts *Options) error {
 	if mkErr := os.MkdirAll(
 		filepath.Join(
 			path,
-			"keps",
+			ProposalPathStub,
 			opts.SIG,
 			opts.Name,
 		),
@@ -474,7 +539,14 @@ func (c *Client) WriteKEP(kep *api.Proposal, opts *Options) error {
 		return errors.Wrapf(mkErr, "creating KEP directory")
 	}
 
-	newPath := filepath.Join(path, "keps", opts.SIG, opts.Name, "kep.yaml")
+	newPath := filepath.Join(
+		path,
+		ProposalPathStub,
+		opts.SIG,
+		opts.Name,
+		ProposalMetadataFilename,
+	)
+
 	fmt.Fprintf(c.Out, "writing KEP to %s\n", newPath)
 
 	return ioutil.WriteFile(newPath, b, os.ModePerm)
