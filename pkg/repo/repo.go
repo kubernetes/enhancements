@@ -67,6 +67,10 @@ type Repo struct {
 	Out io.Writer
 	Err io.Writer
 
+	// Document handlers
+	KEPHandler *api.KEPHandler
+	PRRHandler *api.PRRHandler
+
 	// Templates
 	ProposalTemplate []byte
 }
@@ -130,6 +134,20 @@ func New(repoPath string) (*Repo, error) {
 	}
 
 	repo.ProposalTemplate = proposalTemplate
+
+	kepHandler, err := api.NewKEPHandler()
+	if err != nil {
+		return nil, errors.Wrap(err, "creating KEP handler")
+	}
+
+	repo.KEPHandler = kepHandler
+
+	prrHandler, err := api.NewPRRHandler()
+	if err != nil {
+		return nil, errors.Wrap(err, "creating PRR handler")
+	}
+
+	repo.PRRHandler = prrHandler
 
 	// build a default client with normal os.Stdxx and Filesystem access. Tests can build their own
 	// with appropriate test objects

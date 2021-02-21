@@ -24,7 +24,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 
-	"k8s.io/enhancements/api"
 	"k8s.io/enhancements/pkg/kepval"
 )
 
@@ -92,16 +91,7 @@ func (r *Repo) Validate() (
 		return warnings, valErrMap, errors.New("must find more than zero KEPs")
 	}
 
-	kepHandler, err := api.NewKEPHandler()
-	if err != nil {
-		return warnings, valErrMap, errors.Wrap(err, "creating KEP handler")
-	}
-
-	prrHandler, err := api.NewPRRHandler()
-	if err != nil {
-		return warnings, valErrMap, errors.Wrap(err, "creating PRR handler")
-	}
-
+	kepHandler, prrHandler := r.KEPHandler, r.PRRHandler
 	prrDir := r.PRRApprovalPath
 	logrus.Infof("PRR directory: %s", prrDir)
 
