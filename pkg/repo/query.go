@@ -43,7 +43,14 @@ var (
 )
 
 type QueryOpts struct {
-	SIG         []string
+	// Proposal options
+	KEP    string // KEP name sig-xxx/xxx-name
+	Name   string
+	Number string
+	SIG    string
+
+	// Queries
+	Groups      []string
 	Status      []string
 	Stage       []string
 	PRRApprover []string
@@ -51,8 +58,6 @@ type QueryOpts struct {
 	Approver    []string
 	IncludePRs  bool
 	Output      string
-
-	Repo *Repo
 }
 
 // Validate checks the query options and cleans them up if needed
@@ -62,8 +67,8 @@ func (o *QueryOpts) Validate() error {
 		return errors.Wrap(err, "fetching groups")
 	}
 
-	if len(o.SIG) > 0 {
-		sigs, err := selectByRegexp(groups, o.SIG)
+	if len(o.Groups) > 0 {
+		sigs, err := selectByRegexp(groups, o.Groups)
 		if err != nil {
 			return err
 		}
@@ -72,10 +77,10 @@ func (o *QueryOpts) Validate() error {
 			return fmt.Errorf("no SIG matches any of the passed regular expressions")
 		}
 
-		o.SIG = sigs
+		o.Groups = sigs
 	} else {
 		// if no SIGs are passed, list KEPs from all SIGs
-		o.SIG = groups
+		o.Groups = groups
 	}
 
 	// check if the Output specified is one of "", "json" or "yaml"
@@ -110,7 +115,7 @@ func (r *Repo) Query(opts *QueryOpts) error {
 
 	allKEPs := make([]*api.Proposal, 10)
 	// load the KEPs for each listed SIG
-	for _, sig := range opts.SIG {
+	for _, sig := range opts.Groups {
 		// KEPs in the local filesystem
 		allKEPs = append(allKEPs, r.loadLocalKEPs(sig)...)
 
