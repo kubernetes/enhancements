@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package cmd
+package commands
 
 import (
 	"github.com/pkg/errors"
@@ -98,7 +98,7 @@ func init() {
 }
 
 func runCreate(opts *proposal.CreateOpts) error {
-	rc, err := repo.New(opts.RepoOpts.RepoPath)
+	rc, err := repo.New(opts.Repo.BasePath)
 	if err != nil {
 		return errors.Wrap(err, "creating repo client")
 	}
