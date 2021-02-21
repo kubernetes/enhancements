@@ -20,11 +20,12 @@ import (
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 
-	"k8s.io/enhancements/pkg/kepctl"
+	"k8s.io/enhancements/pkg/proposal"
+	"k8s.io/enhancements/pkg/repo"
 )
 
 // TODO: Struct literal instead?
-var promoteOpts = kepctl.PromoteOpts{}
+var promoteOpts = proposal.PromoteOpts{}
 
 var promoteCmd = &cobra.Command{
 	Use:           "promote [KEP]",
@@ -62,11 +63,11 @@ func init() {
 	rootCmd.AddCommand(promoteCmd)
 }
 
-func runPromote(opts *kepctl.PromoteOpts) error {
-	k, err := kepctl.New(opts.RepoPath)
+func runPromote(opts *proposal.PromoteOpts) error {
+	rc, err := repo.New(opts.RepoOpts.RepoPath)
 	if err != nil {
-		return errors.Wrap(err, "creating kepctl client")
+		return errors.Wrap(err, "creating repo client")
 	}
 
-	return k.Promote(opts)
+	return proposal.Promote(rc, opts)
 }

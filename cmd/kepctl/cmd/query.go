@@ -22,11 +22,11 @@ import (
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 
-	"k8s.io/enhancements/pkg/kepctl"
+	"k8s.io/enhancements/pkg/repo"
 )
 
 // TODO: Struct literal instead?
-var queryOpts = kepctl.QueryOpts{}
+var queryOpts = repo.QueryOpts{}
 
 var queryCmd = &cobra.Command{
 	Use:           "query",
@@ -97,20 +97,20 @@ func init() {
 	queryCmd.PersistentFlags().StringVar(
 		&queryOpts.Output,
 		"output",
-		kepctl.DefaultOutputOpt,
+		repo.DefaultOutputOpt,
 		fmt.Sprintf(
-			"Output format. Can be %v", kepctl.SupportedOutputOpts,
+			"Output format. Can be %v", repo.SupportedOutputOpts,
 		),
 	)
 
 	rootCmd.AddCommand(queryCmd)
 }
 
-func runQuery(queryOpts *kepctl.QueryOpts) error {
-	k, err := kepctl.New(queryOpts.RepoPath)
+func runQuery(opts *repo.QueryOpts) error {
+	rc, err := repo.New(opts.RepoOpts.RepoPath)
 	if err != nil {
-		return errors.Wrap(err, "creating kepctl client")
+		return errors.Wrap(err, "creating repo client")
 	}
 
-	return k.Query(queryOpts)
+	return rc.Query(opts)
 }

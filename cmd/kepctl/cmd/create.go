@@ -20,11 +20,12 @@ import (
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 
-	"k8s.io/enhancements/pkg/kepctl"
+	"k8s.io/enhancements/pkg/proposal"
+	"k8s.io/enhancements/pkg/repo"
 )
 
 // TODO: Struct literal instead?
-var createOpts = kepctl.CreateOpts{}
+var createOpts = proposal.CreateOpts{}
 
 var createCmd = &cobra.Command{
 	Use:           "create [KEP]",
@@ -96,11 +97,11 @@ func init() {
 	rootCmd.AddCommand(createCmd)
 }
 
-func runCreate(createOpts *kepctl.CreateOpts) error {
-	k, err := kepctl.New(createOpts.RepoPath)
+func runCreate(opts *proposal.CreateOpts) error {
+	rc, err := repo.New(opts.RepoOpts.RepoPath)
 	if err != nil {
-		return errors.Wrap(err, "creating kepctl client")
+		return errors.Wrap(err, "creating repo client")
 	}
 
-	return k.Create(createOpts)
+	return proposal.Create(rc, opts)
 }

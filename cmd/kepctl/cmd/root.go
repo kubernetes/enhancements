@@ -23,7 +23,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
-	"k8s.io/enhancements/pkg/kepctl"
+	"k8s.io/enhancements/pkg/repo"
 	"k8s.io/release/pkg/log"
 )
 
@@ -34,7 +34,7 @@ var rootCmd = &cobra.Command{
 	PersistentPreRunE: initLogging,
 }
 
-var rootOpts = &kepctl.CommonArgs{}
+var rootOpts = &repo.Options{}
 
 // Execute adds all child commands to the root command and sets flags appropriately.
 // This is called by main.main(). It only needs to happen once to the rootCmd.
