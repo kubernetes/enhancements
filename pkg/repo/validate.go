@@ -14,10 +14,9 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package kepval
+package repo
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -26,23 +25,64 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"k8s.io/enhancements/api"
-	"k8s.io/enhancements/pkg/repo"
+	"k8s.io/enhancements/pkg/kepval"
 )
 
 const (
 	kepsReadmePath = "enhancements/keps/README.md"
 )
 
-var files = []string{}
-
 // This is the actual validation check of all KEPs in this repo
-func ValidateRepository(kepDir string) (
+func (r *Repo) Validate() (
 	warnings []string,
 	valErrMap map[string][]error,
 	err error,
 ) {
+	kepDir := r.ProposalPath
+	var files = []string{}
+
 	// Find all the KEPs
-	err = filepath.Walk(kepDir, walkFn)
+	err = filepath.Walk(
+		kepDir,
+		func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
+
+			if info.IsDir() {
+				return nil
+			}
+
+			dir := filepath.Dir(path)
+			// true if the file is a symlink
+			if info.Mode()&os.ModeSymlink != 0 {
+				// Assume symlink from old KEP location to new. The new location
+				// will be processed separately, so no need to process it here.
+				return nil
+			}
+
+			metadataFilename := ProposalMetadataFilename
+			metadataFilepath := filepath.Join(dir, metadataFilename)
+			if _, err := os.Stat(metadataFilepath); err == nil {
+				// There is kep metadata file in this directory, only that one should be processed.
+				if info.Name() == metadataFilename {
+					files = append(files, metadataFilepath)
+				}
+
+				return nil
+			}
+
+			if ignore(info.Name()) {
+				return nil
+			}
+
+			// TODO(#2220): Return an error as soon as all KEPs are migrated to directory-based
+			//   KEP format.
+			files = append(files, path)
+			return nil
+		},
+	)
+
 	// This indicates a problem walking the filepath, not a validation error.
 	if err != nil {
 		return warnings, valErrMap, errors.Wrap(err, "walking repository")
@@ -62,7 +102,7 @@ func ValidateRepository(kepDir string) (
 		return warnings, valErrMap, errors.Wrap(err, "creating PRR handler")
 	}
 
-	prrDir := filepath.Join(kepDir, repo.PRRApprovalPathStub)
+	prrDir := r.PRRApprovalPath
 	logrus.Infof("PRR directory: %s", prrDir)
 
 	for _, filename := range files {
@@ -85,7 +125,7 @@ func ValidateRepository(kepDir string) (
 			return warnings, valErrMap, errors.Wrapf(kep.Error, "%v has an error", filename)
 		}
 
-		err = ValidatePRR(kep, prrHandler, prrDir)
+		err = kepval.ValidatePRR(kep, prrHandler, prrDir)
 		if err != nil {
 			valErrMap[filename] = append(valErrMap[filename], err)
 		}
@@ -102,41 +142,6 @@ func ValidateRepository(kepDir string) (
 	}
 
 	return warnings, valErrMap, nil
-}
-
-var walkFn = func(path string, info os.FileInfo, err error) error {
-	if err != nil {
-		return err
-	}
-
-	if info.IsDir() {
-		return nil
-	}
-
-	dir := filepath.Dir(path)
-	// true if the file is a symlink
-	if info.Mode()&os.ModeSymlink != 0 {
-		// Assume symlink from old KEP location to new. The new location
-		// will be processed separately, so no need to process it here.
-		return nil
-	}
-
-	metadataFilename := repo.ProposalMetadataFilename
-	metadataFilepath := filepath.Join(dir, metadataFilename)
-	if _, err := os.Stat(metadataFilepath); err == nil {
-		// There is kep metadata file in this directory, only that one should be processed.
-		if info.Name() == metadataFilename {
-			files = append(files, metadataFilepath)
-		}
-
-		return nil
-	}
-
-	if ignore(info.Name()) {
-		return nil
-	}
-
-	return fmt.Errorf("incorrect KEP format: %s", path)
 }
 
 // TODO: Consider replacing with a .kepignore file
