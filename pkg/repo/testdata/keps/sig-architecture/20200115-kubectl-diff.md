@@ -20,4 +20,3 @@ see-also:
 ---
 
 # kubectl-diff
-

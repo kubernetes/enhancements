@@ -3,7 +3,7 @@ kep-number: 1687
 authors:
   - "@rjbez17"
   - "@adrianludwin"
-owning-sig: sig-auth
+owning-sig: sig-awesome
 participating-sigs:
   - sig-auth
 reviewers:

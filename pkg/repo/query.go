@@ -117,7 +117,7 @@ func (r *Repo) Query(opts *QueryOpts) error {
 	// load the KEPs for each listed SIG
 	for _, sig := range opts.Groups {
 		// KEPs in the local filesystem
-		allKEPs = append(allKEPs, r.loadLocalKEPs(sig)...)
+		allKEPs = append(allKEPs, r.LoadLocalKEPs(sig)...)
 
 		// Open PRs; existing KEPs with open PRs will be shown twice
 		if opts.IncludePRs {

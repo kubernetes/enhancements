@@ -224,7 +224,7 @@ func (r *Repo) findLocalKEPMeta(sig string) ([]string, error) {
 	return keps, err
 }
 
-func (r *Repo) loadLocalKEPs(sig string) []*api.Proposal {
+func (r *Repo) LoadLocalKEPs(sig string) []*api.Proposal {
 	// KEPs in the local filesystem
 	files, err := r.findLocalKEPMeta(sig)
 	if err != nil {
