@@ -28,7 +28,7 @@ import (
 	"k8s.io/enhancements/pkg/repo"
 )
 
-func TestValidate(t *testing.T) {
+func TestProposalValidate(t *testing.T) {
 	testcases := []struct {
 		name string
 		file string
