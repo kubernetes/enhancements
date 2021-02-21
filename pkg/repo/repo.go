@@ -444,12 +444,9 @@ func (r *Repo) loadKEPFromYaml(kepPath string) (*api.Proposal, error) {
 		return nil, errors.Wrapf(err, "opening PRR approval %s", prrPath)
 	}
 
-	parser, err := api.NewPRRHandler()
-	if err != nil {
-		return nil, errors.Wrap(err, "creating new PRR handler")
-	}
+	handler := r.PRRHandler
 
-	approval, err := parser.Parse(prrFile)
+	approval, err := handler.Parse(prrFile)
 	if err != nil {
 		return nil, errors.Wrapf(err, "parsing PRR")
 	}
@@ -489,12 +486,9 @@ func (r *Repo) loadKEPFromOldStyle(kepPath string) (*api.Proposal, error) {
 
 	reader := bytes.NewReader(b)
 
-	parser, err := api.NewKEPHandler()
-	if err != nil {
-		return nil, errors.Wrap(err, "creating new KEP handler")
-	}
+	handler := r.KEPHandler
 
-	kep, err := parser.Parse(reader)
+	kep, err := handler.Parse(reader)
 	if err != nil {
 		return nil, fmt.Errorf("kep is invalid: %s", kep.Error)
 	}
