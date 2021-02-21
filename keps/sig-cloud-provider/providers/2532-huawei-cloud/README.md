@@ -1,23 +1,3 @@
----
-title: Cloud Provider For HUAWEI CLOUD
-authors:
-  - "@RainbowMango"
-owning-sig: sig-cloud-provider
-reviewers:
-  - "@andrewsykim"
-  - "@cheftako"
-approvers:
-  - "@andrewsykim"
-  - "@cheftako"
-editor: TBD
-creation-date: 2019-12-06
-last-updated: 2020-02-26
-status: implementable
-see-also:
-replaces:
-superseded-by:
----
-
 # Cloud Provider For HUAWEI CLOUD
 
 This is a KEP for adding `Cloud Provider For HUAWEI CLOUD` into the Kubernetes ecosystem.

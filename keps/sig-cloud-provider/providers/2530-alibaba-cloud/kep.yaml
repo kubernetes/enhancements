@@ -1,0 +1,15 @@
+title: Cloud Provider for Alibaba Cloud
+kep-number: 2530
+authors:
+  - "@aoxn"
+owning-sig: sig-cloud-provider
+reviewers:
+  - "@andrewsykim"
+approvers:
+  - "@andrewsykim"
+  - "@hogepodge"
+  - "@jagosan"
+editor: TBD
+creation-date: 2018-06-20
+last-updated: 2018-06-20
+status: provisional

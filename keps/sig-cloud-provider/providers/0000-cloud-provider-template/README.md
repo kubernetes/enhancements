@@ -1,32 +1,3 @@
----
-kep-number: 4
-title: Cloud Provider Template
-authors:
-  - "@janedoe"
-owning-sig: sig-cloud-provider
-participating-sigs:
-  - sig-aaa
-  - sig-bbb
-reviewers:
-  - TBD
-  - "@alicedoe"
-approvers:
-  - "@andrewsykim"
-  - "@hogepodge"
-  - "@jagosan"
-editor: TBD
-creation-date: yyyy-mm-dd
-last-updated: yyyy-mm-dd
-status: provisional
-see-also:
-  - KEP-1
-  - KEP-2
-replaces:
-  - KEP-3
-superseded-by:
-  - KEP-100
----
-
 # Cloud Provider FooBar
 
 This is a KEP template, outlining how to propose a new cloud provider into the Kubernetes ecosystem.

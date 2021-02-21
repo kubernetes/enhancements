@@ -1,0 +1,14 @@
+title: Cloud Provider For HUAWEI CLOUD
+kep-number: 2532
+authors:
+  - "@RainbowMango"
+owning-sig: sig-cloud-provider
+reviewers:
+  - "@andrewsykim"
+  - "@cheftako"
+approvers:
+  - "@andrewsykim"
+  - "@cheftako"
+creation-date: 2019-12-06
+last-updated: 2020-02-26
+status: implementable

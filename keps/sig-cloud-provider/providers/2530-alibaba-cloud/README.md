@@ -1,20 +1,3 @@
----
-title: Cloud Provider for Alibaba Cloud
-authors:
-  - "@aoxn"
-owning-sig: sig-cloud-provider
-reviewers:
-  - "@andrewsykim"
-approvers:
-  - "@andrewsykim"
-  - "@hogepodge"
-  - "@jagosan"
-editor: TBD
-creation-date: 2018-06-20
-last-updated: 2018-06-20
-status: provisional
----
-
 # Cloud Provider for Alibaba Cloud
 
 This is a KEP for adding ```Cloud Provider for Alibaba Cloud``` into the Kubernetes ecosystem.
