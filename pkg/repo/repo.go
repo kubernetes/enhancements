@@ -25,7 +25,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 
@@ -53,63 +52,44 @@ const (
 	proposalLabel = "kind/kep"
 )
 
-type Options struct {
-	// repo options
-	LogLevel  string
-	RepoPath  string // override the default settings
-	TokenPath string
+type Repo struct {
+	// Paths
+	BasePath        string
+	ProposalPath    string
+	PRRApprovalPath string
+	TokenPath       string
 
-	// KEP options
-	KEP    string // KEP name sig-xxx/xxx-name
-	Name   string
-	Number string
-	SIG    string
+	// Auth
+	Token string
+
+	// I/O
+	In  io.Reader
+	Out io.Writer
+	Err io.Writer
 }
 
-func (o *Options) ValidateAndPopulateKEP(args []string) error {
-	if len(args) == 0 {
-		return errors.New("must provide a path for the new KEP like sig-architecture/0000-new-kep")
-	}
-
-	if len(args) == 1 {
-		kep := args[0]
-		re := regexp.MustCompile(`([a-z\\-]+)/((\\d+)-.+)`)
-		matches := re.FindStringSubmatch(kep)
-
-		if matches == nil || len(matches) != 4 {
-			return errors.New(
-				fmt.Sprintf("invalid KEP name: %s", kep),
-			)
+// New returns a new repo client configured to use the the normal os.Stdxxx and Filesystem
+func New(repo string) (*Repo, error) {
+	var err error
+	if repo == "" {
+		repo, err = os.Getwd()
+		if err != nil {
+			return nil, fmt.Errorf("unable to determine enhancements repo path: %s", err)
 		}
-
-		o.KEP = kep
-		o.SIG = matches[1]
-		o.Number = matches[3]
-		o.Name = matches[2]
-	} else if len(args) > 1 {
-		return errors.New(
-			fmt.Sprintf(
-				"only one positional argument may be specified, the KEP name, but multiple were received: %s", args,
-			),
-		)
 	}
 
-	return nil
+	// build a default client with normal os.Stdxx and Filesystem access. Tests can build their own
+	// with appropriate test objects
+	return &Repo{
+		BasePath: repo,
+		In:       os.Stdin,
+		Out:      os.Stdout,
+		Err:      os.Stderr,
+	}, nil
 }
 
-type Client struct {
-	RepoPath string
-	Token    string
-	In       io.Reader
-	Out      io.Writer
-	Err      io.Writer
-}
-
-func (c *Client) FindEnhancementsRepo(opts *Options) (string, error) {
-	dir := c.RepoPath
-	if opts.RepoPath != "" {
-		dir = opts.RepoPath
-	}
+func (r *Repo) FindEnhancementsRepo() (string, error) {
+	dir := r.BasePath
 
 	fi, err := os.Stat(dir)
 	if err != nil {
@@ -123,43 +103,23 @@ func (c *Client) FindEnhancementsRepo(opts *Options) (string, error) {
 	return dir, nil
 }
 
-// New returns a new repo client configured to use the the normal os.Stdxxx and Filesystem
-func New(repo string) (*Client, error) {
-	var err error
-	if repo == "" {
-		repo, err = os.Getwd()
-		if err != nil {
-			return nil, fmt.Errorf("unable to determine enhancements repo path: %s", err)
-		}
-	}
-
-	// build a default client with normal os.Stdxx and Filesystem access. Tests can build their own
-	// with appropriate test objects
-	return &Client{
-		RepoPath: repo,
-		In:       os.Stdin,
-		Out:      os.Stdout,
-		Err:      os.Stderr,
-	}, nil
-}
-
-func (c *Client) SetGitHubToken(opts *Options) error {
-	if opts.TokenPath != "" {
-		token, err := ioutil.ReadFile(opts.TokenPath)
+func (r *Repo) SetGitHubToken(tokenFile string) error {
+	if tokenFile != "" {
+		token, err := ioutil.ReadFile(tokenFile)
 		if err != nil {
 			return err
 		}
 
-		c.Token = strings.Trim(string(token), "\n\r")
+		r.Token = strings.Trim(string(token), "\n\r")
 	}
 
 	return nil
 }
 
 // GetKepTemplate reads the kep.yaml template from the local
-// (per c.RepoPath) k/enhancements, but this could be replaced with a
+// (per c.BasePath) k/enhancements, but this could be replaced with a
 // template via packr or fetched from Github?
-func (c *Client) GetKepTemplate(repoPath string) (*api.Proposal, error) {
+func (r *Repo) GetKepTemplate(repoPath string) (*api.Proposal, error) {
 	var p api.Proposal
 	path := filepath.Join(
 		repoPath,
@@ -181,9 +141,9 @@ func (c *Client) GetKepTemplate(repoPath string) (*api.Proposal, error) {
 	return &p, nil
 }
 
-// getReadmeTemplate reads from the local (per c.RepoPath) k/enhancements, but this
+// getReadmeTemplate reads from the local (per c.BasePath) k/enhancements, but this
 // could be replaced with a template via packr or fetched from Github?
-func (c *Client) GetReadmeTemplate(repoPath string) ([]byte, error) {
+func (r *Repo) GetReadmeTemplate(repoPath string) ([]byte, error) {
 	path := filepath.Join(
 		repoPath,
 		ProposalPathStub,
@@ -240,26 +200,26 @@ func findLocalKEPMeta(repoPath, sig string) ([]string, error) {
 	return keps, err
 }
 
-func (c *Client) loadLocalKEPs(repoPath, sig string) []*api.Proposal {
+func (r *Repo) loadLocalKEPs(repoPath, sig string) []*api.Proposal {
 	// KEPs in the local filesystem
 	files, err := findLocalKEPMeta(repoPath, sig)
 	if err != nil {
-		fmt.Fprintf(c.Err, "error searching for local KEPs from %s: %s\n", sig, err)
+		fmt.Fprintf(r.Err, "error searching for local KEPs from %s: %s\n", sig, err)
 	}
 
 	var allKEPs []*api.Proposal
 	for _, k := range files {
 		if filepath.Ext(k) == ".yaml" {
-			kep, err := c.loadKEPFromYaml(k)
+			kep, err := r.loadKEPFromYaml(k)
 			if err != nil {
-				fmt.Fprintf(c.Err, "error reading KEP %s: %s\n", k, err)
+				fmt.Fprintf(r.Err, "error reading KEP %s: %s\n", k, err)
 			} else {
 				allKEPs = append(allKEPs, kep)
 			}
 		} else {
-			kep, err := c.loadKEPFromOldStyle(k)
+			kep, err := r.loadKEPFromOldStyle(k)
 			if err != nil {
-				fmt.Fprintf(c.Err, "error reading KEP %s: %s\n", k, err)
+				fmt.Fprintf(r.Err, "error reading KEP %s: %s\n", k, err)
 			} else {
 				allKEPs = append(allKEPs, kep)
 			}
@@ -269,11 +229,11 @@ func (c *Client) loadLocalKEPs(repoPath, sig string) []*api.Proposal {
 	return allKEPs
 }
 
-func (c *Client) loadKEPPullRequests(sig string) ([]*api.Proposal, error) {
+func (r *Repo) loadKEPPullRequests(sig string) ([]*api.Proposal, error) {
 	var auth *http.Client
 	ctx := context.Background()
-	if c.Token != "" {
-		ts := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: c.Token})
+	if r.Token != "" {
+		ts := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: r.Token})
 		auth = oauth2.NewClient(ctx, ts)
 	}
 
@@ -388,9 +348,9 @@ func (c *Client) loadKEPPullRequests(sig string) ([]*api.Proposal, error) {
 
 		// read all these KEPs
 		for k := range kepNames {
-			kep, err := c.ReadKEP(repo.Directory(), sig, k)
+			kep, err := r.ReadKEP(repo.Directory(), sig, k)
 			if err != nil {
-				fmt.Fprintf(c.Err, "ERROR READING KEP %s: %s\n", k, err)
+				fmt.Fprintf(r.Err, "ERROR READING KEP %s: %s\n", k, err)
 			} else {
 				kep.PRNumber = strconv.Itoa(pr.GetNumber())
 				allKEPs = append(allKEPs, kep)
@@ -401,7 +361,7 @@ func (c *Client) loadKEPPullRequests(sig string) ([]*api.Proposal, error) {
 	return allKEPs, nil
 }
 
-func (c *Client) ReadKEP(repoPath, sig, name string) (*api.Proposal, error) {
+func (r *Repo) ReadKEP(repoPath, sig, name string) (*api.Proposal, error) {
 	kepPath := filepath.Join(
 		repoPath,
 		ProposalPathStub,
@@ -412,7 +372,7 @@ func (c *Client) ReadKEP(repoPath, sig, name string) (*api.Proposal, error) {
 
 	_, err := os.Stat(kepPath)
 	if err == nil {
-		return c.loadKEPFromYaml(kepPath)
+		return r.loadKEPFromYaml(kepPath)
 	}
 
 	// No kep.yaml, treat as old-style KEP
@@ -423,10 +383,10 @@ func (c *Client) ReadKEP(repoPath, sig, name string) (*api.Proposal, error) {
 		name,
 	) + ".md"
 
-	return c.loadKEPFromOldStyle(kepPath)
+	return r.loadKEPFromOldStyle(kepPath)
 }
 
-func (c *Client) loadKEPFromYaml(kepPath string) (*api.Proposal, error) {
+func (r *Repo) loadKEPFromYaml(kepPath string) (*api.Proposal, error) {
 	b, err := ioutil.ReadFile(kepPath)
 	if err != nil {
 		return nil, fmt.Errorf("unable to read KEP metadata: %s", err)
@@ -473,7 +433,12 @@ func (c *Client) loadKEPFromYaml(kepPath string) (*api.Proposal, error) {
 	}
 
 	if approval.Error != nil {
-		fmt.Fprintf(c.Err, "WARNING: could not parse prod readiness request for KEP %s: %s\n", p.Number, approval.Error)
+		fmt.Fprintf(
+			r.Err,
+			"WARNING: could not parse prod readiness request for KEP %s: %s\n",
+			p.Number,
+			approval.Error,
+		)
 	}
 
 	approver, err := approval.ApproverForStage(p.Stage)
@@ -494,20 +459,20 @@ func (c *Client) loadKEPFromYaml(kepPath string) (*api.Proposal, error) {
 	return &p, nil
 }
 
-func (c *Client) loadKEPFromOldStyle(kepPath string) (*api.Proposal, error) {
+func (r *Repo) loadKEPFromOldStyle(kepPath string) (*api.Proposal, error) {
 	b, err := ioutil.ReadFile(kepPath)
 	if err != nil {
 		return nil, fmt.Errorf("no kep.yaml, but failed to read as old-style KEP: %s", err)
 	}
 
-	r := bytes.NewReader(b)
+	reader := bytes.NewReader(b)
 
 	parser, err := api.NewKEPHandler()
 	if err != nil {
 		return nil, errors.Wrap(err, "creating new KEP handler")
 	}
 
-	kep, err := parser.Parse(r)
+	kep, err := parser.Parse(reader)
 	if err != nil {
 		return nil, fmt.Errorf("kep is invalid: %s", kep.Error)
 	}
@@ -516,8 +481,8 @@ func (c *Client) loadKEPFromOldStyle(kepPath string) (*api.Proposal, error) {
 	return kep, nil
 }
 
-func (c *Client) WriteKEP(kep *api.Proposal, opts *Options) error {
-	path, err := c.FindEnhancementsRepo(opts)
+func (r *Repo) WriteKEP(kep *api.Proposal) error {
+	path, err := r.FindEnhancementsRepo()
 	if err != nil {
 		return fmt.Errorf("unable to write KEP: %s", err)
 	}
@@ -531,8 +496,8 @@ func (c *Client) WriteKEP(kep *api.Proposal, opts *Options) error {
 		filepath.Join(
 			path,
 			ProposalPathStub,
-			opts.SIG,
-			opts.Name,
+			kep.OwningSIG,
+			kep.Name,
 		),
 		os.ModePerm,
 	); mkErr != nil {
@@ -542,12 +507,12 @@ func (c *Client) WriteKEP(kep *api.Proposal, opts *Options) error {
 	newPath := filepath.Join(
 		path,
 		ProposalPathStub,
-		opts.SIG,
-		opts.Name,
+		kep.OwningSIG,
+		kep.Name,
 		ProposalMetadataFilename,
 	)
 
-	fmt.Fprintf(c.Out, "writing KEP to %s\n", newPath)
+	fmt.Fprintf(r.Out, "writing KEP to %s\n", newPath)
 
 	return ioutil.WriteFile(newPath, b, os.ModePerm)
 }

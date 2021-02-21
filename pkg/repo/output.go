@@ -83,12 +83,12 @@ func DefaultPrintConfigs(names ...string) []PrintConfig {
 }
 
 // PrintTable outputs KEPs array as a table
-func (c *Client) PrintTable(configs []PrintConfig, proposals []*api.Proposal) {
+func (r *Repo) PrintTable(configs []PrintConfig, proposals []*api.Proposal) {
 	if len(configs) == 0 {
 		return
 	}
 
-	table := tablewriter.NewWriter(c.Out)
+	table := tablewriter.NewWriter(r.Out)
 
 	headers := make([]string, 10)
 	for _, c := range configs {
@@ -110,23 +110,23 @@ func (c *Client) PrintTable(configs []PrintConfig, proposals []*api.Proposal) {
 }
 
 // PrintYAML outputs KEPs array as YAML
-func (c *Client) PrintYAML(proposals []*api.Proposal) {
+func (r *Repo) PrintYAML(proposals []*api.Proposal) {
 	data, err := yaml.Marshal(proposals)
 	if err != nil {
-		fmt.Fprintf(c.Err, "error printing KEPs as YAML: %s", err)
+		fmt.Fprintf(r.Err, "error printing KEPs as YAML: %s", err)
 		return
 	}
 
-	fmt.Fprintln(c.Out, string(data))
+	fmt.Fprintln(r.Out, string(data))
 }
 
 // PrintJSON outputs KEPs array as JSON
-func (c *Client) PrintJSON(proposals []*api.Proposal) {
+func (r *Repo) PrintJSON(proposals []*api.Proposal) {
 	data, err := json.Marshal(proposals)
 	if err != nil {
-		fmt.Fprintf(c.Err, "error printing KEPs as JSON: %s", err)
+		fmt.Fprintf(r.Err, "error printing KEPs as JSON: %s", err)
 		return
 	}
 
-	fmt.Fprintln(c.Out, string(data))
+	fmt.Fprintln(r.Out, string(data))
 }

@@ -43,7 +43,6 @@ var (
 )
 
 type QueryOpts struct {
-	RepoOpts    *Options
 	SIG         []string
 	Status      []string
 	Stage       []string
@@ -52,6 +51,8 @@ type QueryOpts struct {
 	Approver    []string
 	IncludePRs  bool
 	Output      string
+
+	Repo *Repo
 }
 
 // Validate checks the query options and cleans them up if needed
@@ -88,9 +89,7 @@ func (o *QueryOpts) Validate() error {
 
 // Query searches the local repo and possibly GitHub for KEPs
 // that match the search criteria.
-func (c *Client) Query(opts *QueryOpts) error {
-	repoOpts := opts.RepoOpts
-
+func (r *Repo) Query(opts *QueryOpts) error {
 	// if output format is json/yaml, suppress other outputs
 	// json/yaml are structured formats, logging events which
 	// do not conform to the spec will create formatting issues
@@ -102,15 +101,15 @@ func (c *Client) Query(opts *QueryOpts) error {
 	}
 
 	if !suppressOutputs {
-		fmt.Fprintf(c.Out, "Searching for KEPs...\n")
+		fmt.Fprintf(r.Out, "Searching for KEPs...\n")
 	}
 
-	repoPath, err := c.FindEnhancementsRepo(repoOpts)
+	repoPath, err := r.FindEnhancementsRepo()
 	if err != nil {
 		return errors.Wrap(err, "unable to search KEPs")
 	}
 
-	if tokenErr := c.SetGitHubToken(repoOpts); tokenErr != nil {
+	if tokenErr := r.SetGitHubToken(r.TokenPath); tokenErr != nil {
 		return errors.Wrapf(tokenErr, "setting GitHub token")
 	}
 
@@ -118,13 +117,13 @@ func (c *Client) Query(opts *QueryOpts) error {
 	// load the KEPs for each listed SIG
 	for _, sig := range opts.SIG {
 		// KEPs in the local filesystem
-		allKEPs = append(allKEPs, c.loadLocalKEPs(repoPath, sig)...)
+		allKEPs = append(allKEPs, r.loadLocalKEPs(repoPath, sig)...)
 
 		// Open PRs; existing KEPs with open PRs will be shown twice
 		if opts.IncludePRs {
-			prKeps, err := c.loadKEPPullRequests(sig)
+			prKeps, err := r.loadKEPPullRequests(sig)
 			if err != nil {
-				fmt.Fprintf(c.Err, "error searching for KEP PRs from %s: %s\n", sig, err)
+				fmt.Fprintf(r.Err, "error searching for KEP PRs from %s: %s\n", sig, err)
 			}
 			if prKeps != nil {
 				allKEPs = append(allKEPs, prKeps...)
@@ -162,14 +161,22 @@ func (c *Client) Query(opts *QueryOpts) error {
 
 	switch opts.Output {
 	case "table":
-		c.PrintTable(
-			DefaultPrintConfigs("LastUpdated", "Stage", "Status", "SIG", "Authors", "Title", "Link"),
+		r.PrintTable(
+			DefaultPrintConfigs(
+				"LastUpdated",
+				"Stage",
+				"Status",
+				"SIG",
+				"Authors",
+				"Title",
+				"Link",
+			),
 			keps,
 		)
 	case "yaml":
-		c.PrintYAML(keps)
+		r.PrintYAML(keps)
 	case "json":
-		c.PrintJSON(keps)
+		r.PrintJSON(keps)
 	default:
 		// this check happens as a validation step in cobra as well
 		// added it for additional verbosity
