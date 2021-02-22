@@ -24,84 +24,85 @@ import (
 	"k8s.io/enhancements/pkg/repo"
 )
 
-// TODO: Struct literal instead?
-var createOpts = proposal.CreateOpts{}
+func addCreate(topLevel *cobra.Command) {
+	co := proposal.CreateOpts{}
 
-var createCmd = &cobra.Command{
-	Use:           "create [KEP]",
-	Short:         "Create a new KEP",
-	Long:          "Create a new KEP using the current KEP template for the given type",
-	Example:       `  kepctl create sig-architecture/000-mykep`,
-	SilenceUsage:  true,
-	SilenceErrors: true,
-	PreRunE: func(cmd *cobra.Command, args []string) error {
-		return createOpts.Validate(args)
-	},
-	RunE: func(*cobra.Command, []string) error {
-		return runCreate(&createOpts)
-	},
-}
+	cmd := &cobra.Command{
+		Use:           "create [KEP]",
+		Short:         "Create a new KEP",
+		Long:          "Create a new KEP using the current KEP template for the given type",
+		Example:       `  kepctl create sig-architecture/000-mykep`,
+		SilenceUsage:  true,
+		SilenceErrors: true,
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			return co.Validate(args)
+		},
+		RunE: func(*cobra.Command, []string) error {
+			return runCreate(&co)
+		},
+	}
 
-func init() {
 	// TODO: Should these all be global args?
-	createCmd.PersistentFlags().StringVar(
-		&createOpts.Title,
+	cmd.PersistentFlags().StringVar(
+		&co.Title,
 		"title",
 		"",
 		"KEP Title",
 	)
 
-	createCmd.PersistentFlags().StringArrayVar(
-		&createOpts.Authors,
+	cmd.PersistentFlags().StringArrayVar(
+		&co.Authors,
 		"authors",
 		[]string{},
 		"Authors",
 	)
 
-	createCmd.PersistentFlags().StringArrayVar(
-		&createOpts.Reviewers,
+	cmd.PersistentFlags().StringArrayVar(
+		&co.Reviewers,
 		"reviewers",
 		[]string{},
 		"Reviewers",
 	)
 
-	createCmd.PersistentFlags().StringVar(
-		&createOpts.Type,
+	cmd.PersistentFlags().StringVar(
+		&co.Type,
 		"type",
 		"feature",
 		"KEP Type",
 	)
 
-	createCmd.PersistentFlags().StringVarP(
-		&createOpts.State,
+	cmd.PersistentFlags().StringVarP(
+		&co.State,
 		"state",
 		"s",
 		"provisional",
 		"KEP State",
 	)
 
-	createCmd.PersistentFlags().StringArrayVar(
-		&createOpts.SIGS,
+	cmd.PersistentFlags().StringArrayVar(
+		&co.SIGS,
 		"sigs",
 		[]string{},
 		"Participating SIGs",
 	)
 
-	createCmd.PersistentFlags().StringArrayVar(
-		&createOpts.PRRApprovers,
+	cmd.PersistentFlags().StringArrayVar(
+		&co.PRRApprovers,
 		"prr-approver",
 		[]string{},
 		"PRR Approver",
 	)
 
-	rootCmd.AddCommand(createCmd)
+	topLevel.AddCommand(cmd)
 }
 
 func runCreate(opts *proposal.CreateOpts) error {
-	rc, err := repo.New(opts.Repo.BasePath)
+	rc, err := repo.New(rootOpts.RepoPath)
 	if err != nil {
 		return errors.Wrap(err, "creating repo client")
 	}
 
-	return proposal.Create(rc, opts)
+	opts.Repo = rc
+
+	return proposal.Create(opts)
 }

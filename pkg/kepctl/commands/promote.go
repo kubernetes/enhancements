@@ -24,50 +24,51 @@ import (
 	"k8s.io/enhancements/pkg/repo"
 )
 
-// TODO: Struct literal instead?
-var promoteOpts = proposal.PromoteOpts{}
+func addPromote(topLevel *cobra.Command) {
+	po := proposal.PromoteOpts{}
 
-var promoteCmd = &cobra.Command{
-	Use:           "promote [KEP]",
-	Short:         "Promote a KEP",
-	Long:          "Promote a KEP to a new stage for a target release",
-	Example:       `  kepctl promote sig-architecture/000-mykep --stage beta --release v1.20`,
-	SilenceUsage:  true,
-	SilenceErrors: true,
-	PreRunE: func(cmd *cobra.Command, args []string) error {
-		return promoteOpts.Validate(args)
-	},
-	RunE: func(*cobra.Command, []string) error {
-		return runPromote(&promoteOpts)
-	},
-}
+	cmd := &cobra.Command{
+		Use:           "promote [KEP]",
+		Short:         "Promote a KEP",
+		Long:          "Promote a KEP to a new stage for a target release",
+		Example:       `  kepctl promote sig-architecture/000-mykep --stage beta --release v1.20`,
+		SilenceUsage:  true,
+		SilenceErrors: true,
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			return po.Validate(args)
+		},
+		RunE: func(*cobra.Command, []string) error {
+			return runPromote(&po)
+		},
+	}
 
-func init() {
 	// TODO: Should these all be global args?
-	promoteCmd.PersistentFlags().StringVarP(
-		&promoteOpts.Stage,
+	cmd.PersistentFlags().StringVarP(
+		&po.Stage,
 		"stage",
 		"s",
 		"",
 		"KEP Stage",
 	)
 
-	promoteCmd.PersistentFlags().StringVarP(
-		&promoteOpts.Release,
+	cmd.PersistentFlags().StringVarP(
+		&po.Release,
 		"release",
 		"r",
 		"",
 		"Target Release",
 	)
 
-	rootCmd.AddCommand(promoteCmd)
+	topLevel.AddCommand(cmd)
 }
 
 func runPromote(opts *proposal.PromoteOpts) error {
-	rc, err := repo.New(opts.RepoOpts.RepoPath)
+	rc, err := repo.New(rootOpts.RepoPath)
 	if err != nil {
 		return errors.Wrap(err, "creating repo client")
 	}
 
-	return proposal.Promote(rc, opts)
+	opts.Repo = rc
+
+	return proposal.Promote(opts)
 }

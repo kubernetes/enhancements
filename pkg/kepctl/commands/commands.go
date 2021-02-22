@@ -20,32 +20,22 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
-	"k8s.io/enhancements/pkg/repo"
+	"k8s.io/enhancements/pkg/kepctl"
 	"k8s.io/release/pkg/log"
 )
 
-// rootCmd represents the base command when called without any subcommands
-var rootCmd = &cobra.Command{
-	Use:               "kepctl",
-	Short:             "kepctl helps you build KEPs",
-	PersistentPreRunE: initLogging,
-}
+var rootOpts = &kepctl.Options{}
 
-var rootOpts = &repo.Options{}
-
-// Execute adds all child commands to the root command and sets flags appropriately.
-// This is called by main.main(). It only needs to happen once to the rootCmd.
-func Execute() {
-	if err := rootCmd.Execute(); err != nil {
-		logrus.Fatal(err)
+func New() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:               "kepctl",
+		Short:             "kepctl helps you build KEPs",
+		PersistentPreRunE: initLogging,
 	}
-}
 
-func init() {
-	rootCmd.PersistentFlags().StringVar(
+	cmd.PersistentFlags().StringVar(
 		&rootOpts.LogLevel,
 		"log-level",
 		"info",
@@ -53,19 +43,28 @@ func init() {
 	)
 
 	// TODO: This should be defaulted in the package instead
-	rootCmd.PersistentFlags().StringVar(
+	cmd.PersistentFlags().StringVar(
 		&rootOpts.RepoPath,
 		"repo-path",
 		os.Getenv("ENHANCEMENTS_PATH"),
 		"path to kubernetes/enhancements",
 	)
 
-	rootCmd.PersistentFlags().StringVar(
+	cmd.PersistentFlags().StringVar(
 		&rootOpts.TokenPath,
 		"gh-token-path",
 		"",
 		"path to a file with a GitHub API token",
 	)
+
+	AddCommands(cmd)
+	return cmd
+}
+
+func AddCommands(topLevel *cobra.Command) {
+	addCreate(topLevel)
+	addPromote(topLevel)
+	addQuery(topLevel)
 }
 
 func initLogging(*cobra.Command, []string) error {

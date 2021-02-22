@@ -16,8 +16,8 @@ limitations under the License.
 
 package main
 
-import "k8s.io/enhancements/cmd/kepctl/cmd"
+import "k8s.io/enhancements/pkg/kepctl/commands"
 
 func main() {
-	cmd.Execute()
+	commands.New().Execute()
 }

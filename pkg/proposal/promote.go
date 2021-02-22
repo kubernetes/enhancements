@@ -23,29 +23,33 @@ import (
 )
 
 type PromoteOpts struct {
-	RepoOpts *repo.Options
-	Release  string
-	Stage    string
+	Repo *repo.Repo
+
+	// Proposal options
+	KEP    string // KEP name sig-xxx/xxx-name
+	Name   string
+	Number string
+	SIG    string
+
+	// Promotion options
+	Release string
+	Stage   string
 }
 
 // Validate checks the args provided to the promote command populates the promote opts
-func (c *PromoteOpts) Validate(args []string) error {
-	return c.RepoOpts.ValidateAndPopulateKEP(args)
+func (o *PromoteOpts) Validate(args []string) error {
+	// TODO: Populate logic
+	return nil //o.Repo.ValidateAndPopulateKEP(args)
 }
 
 // Promote changes the stage and target release for a specified KEP based on the
 // values specified in PromoteOpts is used to populate the template
-func Promote(rc *repo.Client, opts *PromoteOpts) error {
-	repoOpts := opts.RepoOpts
+func Promote(opts *PromoteOpts) error {
+	r := opts.Repo
 
-	fmt.Fprintf(rc.Out, "Updating KEP %s/%s\n", repoOpts.SIG, repoOpts.Name)
+	fmt.Fprintf(r.Out, "Updating KEP %s/%s\n", opts.SIG, opts.Name)
 
-	repoPath, err := rc.FindEnhancementsRepo(repoOpts)
-	if err != nil {
-		return fmt.Errorf("unable to promote KEP: %s", err)
-	}
-
-	p, err := rc.ReadKEP(repoPath, repoOpts.SIG, repoOpts.Name)
+	p, err := r.ReadKEP(opts.SIG, opts.Name)
 	if err != nil {
 		return fmt.Errorf("unable to load KEP for promotion: %s", err)
 	}
@@ -54,13 +58,13 @@ func Promote(rc *repo.Client, opts *PromoteOpts) error {
 	p.LatestMilestone = opts.Release
 	p.LastUpdated = opts.Release
 
-	err = rc.WriteKEP(p, repoOpts)
+	err = r.WriteKEP(p)
 	if err != nil {
 		return fmt.Errorf("unable to write updated KEP: %s", err)
 	}
 
 	// TODO: Implement ticketing workflow artifact generation
-	fmt.Fprintf(rc.Out, "KEP %s/%s updated\n", repoOpts.SIG, repoOpts.Name)
+	fmt.Fprintf(r.Out, "KEP %s/%s updated\n", opts.SIG, opts.Name)
 
 	return nil
 }

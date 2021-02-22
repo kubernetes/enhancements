@@ -25,77 +25,76 @@ import (
 	"k8s.io/enhancements/pkg/repo"
 )
 
-// TODO: Struct literal instead?
-var queryOpts = repo.QueryOpts{}
+func addQuery(topLevel *cobra.Command) {
+	qo := repo.QueryOpts{}
 
-var queryCmd = &cobra.Command{
-	Use:           "query",
-	Short:         "Query KEPs",
-	Long:          "Query the local filesystem, and optionally GitHub PRs for KEPs",
-	Example:       `  kepctl query --sig architecture --status provisional --include-prs`,
-	SilenceUsage:  true,
-	SilenceErrors: true,
-	PreRunE: func(*cobra.Command, []string) error {
-		return queryOpts.Validate()
-	},
-	RunE: func(*cobra.Command, []string) error {
-		return runQuery(&queryOpts)
-	},
-}
+	cmd := &cobra.Command{
+		Use:           "query",
+		Short:         "Query KEPs",
+		Long:          "Query the local filesystem, and optionally GitHub PRs for KEPs",
+		Example:       `  kepctl query --sig architecture --status provisional --include-prs`,
+		SilenceUsage:  true,
+		SilenceErrors: true,
+		PreRunE: func(*cobra.Command, []string) error {
+			return qo.Validate()
+		},
+		RunE: func(*cobra.Command, []string) error {
+			return runQuery(&qo)
+		},
+	}
 
-func init() {
 	// TODO: Should these all be global args?
-	queryCmd.PersistentFlags().StringSliceVar(
-		&queryOpts.SIG,
+	cmd.PersistentFlags().StringSliceVar(
+		&qo.Groups,
 		"sig",
 		nil,
 		"SIG. If not specified, KEPs from all SIGs are shown.",
 	)
 
-	queryCmd.PersistentFlags().StringSliceVar(
-		&queryOpts.Status,
+	cmd.PersistentFlags().StringSliceVar(
+		&qo.Status,
 		"status",
 		nil,
 		"Status",
 	)
 
-	queryCmd.PersistentFlags().StringSliceVar(
-		&queryOpts.Stage,
+	cmd.PersistentFlags().StringSliceVar(
+		&qo.Stage,
 		"stage",
 		nil,
 		"Stage",
 	)
 
-	queryCmd.PersistentFlags().StringSliceVar(
-		&queryOpts.PRRApprover,
+	cmd.PersistentFlags().StringSliceVar(
+		&qo.PRRApprover,
 		"prr",
 		nil,
 		"Prod Readiness Approver",
 	)
 
-	queryCmd.PersistentFlags().StringSliceVar(
-		&queryOpts.Approver,
+	cmd.PersistentFlags().StringSliceVar(
+		&qo.Approver,
 		"approver",
 		nil,
 		"Approver",
 	)
 
-	queryCmd.PersistentFlags().StringSliceVar(
-		&queryOpts.Author,
+	cmd.PersistentFlags().StringSliceVar(
+		&qo.Author,
 		"author",
 		nil,
 		"Author",
 	)
 
-	queryCmd.PersistentFlags().BoolVar(
-		&queryOpts.IncludePRs,
+	cmd.PersistentFlags().BoolVar(
+		&qo.IncludePRs,
 		"include-prs",
 		false,
 		"Include PRs in the results",
 	)
 
-	queryCmd.PersistentFlags().StringVar(
-		&queryOpts.Output,
+	cmd.PersistentFlags().StringVar(
+		&qo.Output,
 		"output",
 		repo.DefaultOutputOpt,
 		fmt.Sprintf(
@@ -103,11 +102,11 @@ func init() {
 		),
 	)
 
-	rootCmd.AddCommand(queryCmd)
+	topLevel.AddCommand(cmd)
 }
 
 func runQuery(opts *repo.QueryOpts) error {
-	rc, err := repo.New(opts.RepoOpts.RepoPath)
+	rc, err := repo.New(rootOpts.RepoPath)
 	if err != nil {
 		return errors.Wrap(err, "creating repo client")
 	}
