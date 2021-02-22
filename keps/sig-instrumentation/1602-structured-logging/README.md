@@ -384,6 +384,7 @@ Bring feature quality up to and prevent regression during ongoing migration:
 * JSON format should support same set of feature flags as text format, minus those we will decide to deprecate.
 * Structured logging interface design is verified by migrating one whole component (Kubelet) to structured logging. All other component migrations will be best effort.
 * Log volume (i.e. size of output) will be benchmarked and documented for kubelet in non-JSON and JSON format.
+* Dedicated periodic e2e test scenario with JSON enabled
 
 #### GA
 
