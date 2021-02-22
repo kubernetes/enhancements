@@ -17,7 +17,6 @@ limitations under the License.
 package repo_test
 
 import (
-	"fmt"
 	"io/ioutil"
 	"testing"
 
@@ -30,19 +29,19 @@ import (
 
 func TestProposalValidate(t *testing.T) {
 	testcases := []struct {
-		name string
-		file string
-		err  error
+		name        string
+		file        string
+		expectError bool
 	}{
 		{
-			name: "valid KEP passes validate",
-			file: "testdata/valid-kep.yaml",
-			err:  nil,
+			name:        "valid KEP passes validate",
+			file:        "testdata/valid-kep.yaml",
+			expectError: false,
 		},
 		{
-			name: "invalid KEP fails validate for owning-sig",
-			file: "testdata/invalid-kep.yaml",
-			err:  fmt.Errorf(`kep is invalid: error validating KEP metadata: "owning-sig" must be one of (committee-code-of-conduct,committee-product-security,committee-steering,sig-api-machinery,sig-apps,sig-architecture,sig-auth,sig-autoscaling,sig-cli,sig-cloud-provider,sig-cluster-lifecycle,sig-contributor-experience,sig-docs,sig-instrumentation,sig-multicluster,sig-network,sig-node,sig-release,sig-scalability,sig-scheduling,sig-security,sig-service-catalog,sig-storage,sig-testing,sig-ui,sig-usability,sig-windows,ug-big-data,ug-vmware-users,wg-api-expression,wg-component-standard,wg-data-protection,wg-iot-edge,wg-k8s-infra,wg-lts,wg-multitenancy,wg-naming,wg-policy,wg-security-audit) but it is a string: sig-awesome`),
+			name:        "invalid KEP fails validate for owning-sig",
+			file:        "testdata/invalid-kep.yaml",
+			expectError: true,
 		},
 	}
 
@@ -56,11 +55,11 @@ func TestProposalValidate(t *testing.T) {
 			require.NoError(t, err)
 
 			err = p.Validate()
-			if tc.err == nil {
-				require.NoError(t, err)
-			} else {
-				require.EqualError(t, err, tc.err.Error())
+			if tc.expectError {
+				require.Error(t, err)
 			}
+
+			require.NoError(t, err)
 		})
 	}
 }
