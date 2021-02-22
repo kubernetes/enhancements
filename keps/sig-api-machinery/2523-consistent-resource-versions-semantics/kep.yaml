@@ -1,4 +1,5 @@
 title: consistent-resource-version-semantics
+kep-number: 2523
 authors:
   - "@jpbetz"
 owning-sig: sig-api-machinery
