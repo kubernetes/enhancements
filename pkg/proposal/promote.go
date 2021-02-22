@@ -39,7 +39,8 @@ type PromoteOpts struct {
 // Validate checks the args provided to the promote command populates the promote opts
 func (o *PromoteOpts) Validate(args []string) error {
 	// TODO: Populate logic
-	return nil //o.Repo.ValidateAndPopulateKEP(args)
+	// nolint:gocritic
+	return nil // o.Repo.ValidateAndPopulateKEP(args)
 }
 
 // Promote changes the stage and target release for a specified KEP based on the

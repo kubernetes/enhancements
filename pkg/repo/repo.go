@@ -35,6 +35,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"k8s.io/enhancements/api"
+	"k8s.io/enhancements/pkg/kepval"
 	krgh "k8s.io/release/pkg/github"
 	"k8s.io/test-infra/prow/git"
 )
@@ -264,9 +265,9 @@ func (r *Repo) LoadLocalKEPs(sig string) ([]*api.Proposal, error) {
 					"reading KEP %s from yaml",
 					k,
 				)
-			} else {
-				allKEPs = append(allKEPs, kep)
 			}
+
+			allKEPs = append(allKEPs, kep)
 		} else {
 			kep, err := r.loadKEPFromOldStyle(k)
 			if err != nil {
@@ -275,9 +276,9 @@ func (r *Repo) LoadLocalKEPs(sig string) ([]*api.Proposal, error) {
 					"reading KEP %s from markdown",
 					k,
 				)
-			} else {
-				allKEPs = append(allKEPs, kep)
 			}
+
+			allKEPs = append(allKEPs, kep)
 		}
 	}
 
@@ -458,54 +459,55 @@ func (r *Repo) loadKEPFromYaml(kepPath string) (*api.Proposal, error) {
 	// Read the PRR approval file and add any listed PRR approvers in there
 	// to the PRR approvers list in the KEP. this is a hack while we transition
 	// away from PRR approvers listed in kep.yaml
-	prrPath := filepath.Dir(kepPath)
-	prrPath = filepath.Dir(prrPath)
-	sig := filepath.Base(prrPath)
-	prrPath = filepath.Join(
-		filepath.Dir(prrPath),
-		PRRApprovalPathStub,
-		sig,
-		p.Number+".yaml",
-	)
-
-	prrFile, err := os.Open(prrPath)
-	if os.IsNotExist(err) {
-		return &p, nil
-	}
-
-	if err != nil {
-		return nil, errors.Wrapf(err, "opening PRR approval %s", prrPath)
-	}
-
 	handler := r.PRRHandler
-
-	approval, err := handler.Parse(prrFile)
+	err = kepval.ValidatePRR(&p, handler, r.PRRApprovalPath)
 	if err != nil {
-		return nil, errors.Wrapf(err, "parsing PRR")
-	}
-
-	if approval.Error != nil {
-		fmt.Fprintf(
-			r.Err,
-			"WARNING: could not parse prod readiness request for KEP %s: %s\n",
-			p.Number,
-			approval.Error,
+		logrus.Errorf(
+			"%v",
+			errors.Wrapf(err, "validating PRR for %s", p.Name),
 		)
-	}
+	} else {
+		prrPath := filepath.Dir(kepPath)
+		prrPath = filepath.Dir(prrPath)
+		sig := filepath.Base(prrPath)
+		prrPath = filepath.Join(
+			filepath.Dir(prrPath),
+			PRRApprovalPathStub,
+			sig,
+			p.Number+".yaml",
+		)
 
-	approver, err := approval.ApproverForStage(p.Stage)
-	if err != nil {
-		return nil, errors.Wrapf(err, "getting PRR approver for %s stage", p.Stage)
-	}
-
-	for _, a := range p.PRRApprovers {
-		if a == approver {
-			approver = ""
+		prrFile, err := os.Open(prrPath)
+		if os.IsNotExist(err) {
+			return &p, nil
 		}
-	}
 
-	if approver != "" {
-		p.PRRApprovers = append(p.PRRApprovers, approver)
+		if err != nil {
+			return nil, errors.Wrapf(err, "opening PRR approval %s", prrPath)
+		}
+
+		approval, err := handler.Parse(prrFile)
+		if err != nil {
+			return nil, errors.Wrapf(err, "parsing PRR")
+		}
+
+		approver, err := approval.ApproverForStage(p.Stage)
+		if err != nil {
+			logrus.Errorf(
+				"%v",
+				errors.Wrapf(err, "getting PRR approver for %s stage", p.Stage),
+			)
+		}
+
+		for _, a := range p.PRRApprovers {
+			if a == approver {
+				approver = ""
+			}
+		}
+
+		if approver != "" {
+			p.PRRApprovers = append(p.PRRApprovers, approver)
+		}
 	}
 
 	return &p, nil

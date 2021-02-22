@@ -38,7 +38,7 @@ func (r *Repo) Validate() (
 	err error,
 ) {
 	kepDir := r.ProposalPath
-	var files = []string{}
+	files := []string{}
 
 	// Find all the KEPs
 	err = filepath.Walk(

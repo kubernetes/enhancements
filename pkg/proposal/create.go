@@ -54,6 +54,7 @@ type CreateOpts struct {
 // kep # and name to populate the create opts
 func (c *CreateOpts) Validate(args []string) error {
 	// TODO: Populate logic
+	// nolint:gocritic
 	/*
 		err := repoOpts.ValidateAndPopulateKEP(args)
 		if err != nil {
