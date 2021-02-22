@@ -30,6 +30,7 @@ import (
 
 	"github.com/google/go-github/v33/github"
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 	"golang.org/x/oauth2"
 	"gopkg.in/yaml.v3"
 
@@ -195,8 +196,22 @@ func (r *Repo) findLocalKEPMeta(sig string) ([]string, error) {
 	err := filepath.Walk(
 		sigPath,
 		func(path string, info os.FileInfo, err error) error {
+			logrus.Debugf("processing filename %s", info.Name())
+
 			if err != nil {
 				return err
+			}
+
+			if ignore(info.Name(), "yaml", "md") {
+				return nil
+			}
+
+			// true if the file is a symlink
+			if info.Mode()&os.ModeSymlink != 0 {
+				// Assume symlink from old KEP location to new. The new location
+				// will be processed separately, so no need to process it here.
+				logrus.Debugf("%s is a symlink", info.Name())
+				return nil
 			}
 
 			if !info.Mode().IsRegular() {
@@ -204,6 +219,7 @@ func (r *Repo) findLocalKEPMeta(sig string) ([]string, error) {
 			}
 
 			if info.Name() == ProposalMetadataFilename {
+				logrus.Debugf("adding %s as KEP metadata", info.Name())
 				keps = append(keps, path)
 				return filepath.SkipDir
 			}
@@ -216,6 +232,7 @@ func (r *Repo) findLocalKEPMeta(sig string) ([]string, error) {
 				return nil
 			}
 
+			logrus.Debugf("adding %s as KEP metadata", info.Name())
 			keps = append(keps, path)
 			return nil
 		},
@@ -224,33 +241,49 @@ func (r *Repo) findLocalKEPMeta(sig string) ([]string, error) {
 	return keps, err
 }
 
-func (r *Repo) LoadLocalKEPs(sig string) []*api.Proposal {
+func (r *Repo) LoadLocalKEPs(sig string) ([]*api.Proposal, error) {
 	// KEPs in the local filesystem
 	files, err := r.findLocalKEPMeta(sig)
 	if err != nil {
-		fmt.Fprintf(r.Err, "error searching for local KEPs from %s: %s\n", sig, err)
+		return nil, errors.Wrapf(
+			err,
+			"searching for local KEPs from %s",
+			sig,
+		)
 	}
+
+	logrus.Debugf("loading the following local KEPs: %v", files)
 
 	var allKEPs []*api.Proposal
 	for _, k := range files {
 		if filepath.Ext(k) == ".yaml" {
 			kep, err := r.loadKEPFromYaml(k)
 			if err != nil {
-				fmt.Fprintf(r.Err, "error reading KEP %s: %s\n", k, err)
+				return nil, errors.Wrapf(
+					err,
+					"reading KEP %s from yaml",
+					k,
+				)
 			} else {
 				allKEPs = append(allKEPs, kep)
 			}
 		} else {
 			kep, err := r.loadKEPFromOldStyle(k)
 			if err != nil {
-				fmt.Fprintf(r.Err, "error reading KEP %s: %s\n", k, err)
+				return nil, errors.Wrapf(
+					err,
+					"reading KEP %s from markdown",
+					k,
+				)
 			} else {
 				allKEPs = append(allKEPs, kep)
 			}
 		}
 	}
 
-	return allKEPs
+	logrus.Debugf("returning %d local KEPs", len(allKEPs))
+
+	return allKEPs, nil
 }
 
 func (r *Repo) loadKEPPullRequests(sig string) ([]*api.Proposal, error) {

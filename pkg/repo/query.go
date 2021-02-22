@@ -21,6 +21,7 @@ import (
 	"regexp"
 
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 
 	"k8s.io/enhancements/api"
 )
@@ -113,11 +114,16 @@ func (r *Repo) Query(opts *QueryOpts) error {
 		return errors.Wrapf(tokenErr, "setting GitHub token")
 	}
 
-	allKEPs := make([]*api.Proposal, 10)
+	allKEPs := make([]*api.Proposal, 0, 10)
 	// load the KEPs for each listed SIG
 	for _, sig := range opts.Groups {
 		// KEPs in the local filesystem
-		allKEPs = append(allKEPs, r.LoadLocalKEPs(sig)...)
+		localKEPs, err := r.LoadLocalKEPs(sig)
+		if err != nil {
+			return errors.Wrap(err, "loading local KEPs")
+		}
+
+		allKEPs = append(allKEPs, localKEPs...)
 
 		// Open PRs; existing KEPs with open PRs will be shown twice
 		if opts.IncludePRs {
@@ -131,6 +137,8 @@ func (r *Repo) Query(opts *QueryOpts) error {
 		}
 	}
 
+	logrus.Debugf("all KEPs collected: %v", allKEPs)
+
 	// filter the KEPs by criteria
 	allowedStatus := sliceToMap(opts.Status)
 	allowedStage := sliceToMap(opts.Stage)
@@ -138,8 +146,14 @@ func (r *Repo) Query(opts *QueryOpts) error {
 	allowedAuthor := sliceToMap(opts.Author)
 	allowedApprover := sliceToMap(opts.Approver)
 
-	keps := make([]*api.Proposal, 10)
+	results := make([]*api.Proposal, 0, 10)
 	for _, k := range allKEPs {
+		if k == nil {
+			return errors.New("one of the KEPs in query was nil")
+		}
+
+		logrus.Debugf("current KEP: %v", k)
+
 		if len(opts.Status) > 0 && !allowedStatus[k.Status] {
 			continue
 		}
@@ -156,7 +170,7 @@ func (r *Repo) Query(opts *QueryOpts) error {
 			continue
 		}
 
-		keps = append(keps, k)
+		results = append(results, k)
 	}
 
 	switch opts.Output {
@@ -171,12 +185,12 @@ func (r *Repo) Query(opts *QueryOpts) error {
 				"Title",
 				"Link",
 			),
-			keps,
+			results,
 		)
 	case "yaml":
-		r.PrintYAML(keps)
+		r.PrintYAML(results)
 	case "json":
-		r.PrintJSON(keps)
+		r.PrintJSON(results)
 	default:
 		// this check happens as a validation step in cobra as well
 		// added it for additional verbosity

@@ -44,15 +44,20 @@ func (r *Repo) Validate() (
 	err = filepath.Walk(
 		kepDir,
 		func(path string, info os.FileInfo, err error) error {
+			logrus.Debugf("processing filename %s", info.Name())
+
 			if err != nil {
 				return err
 			}
 
 			if info.IsDir() {
+				if info.Name() == PRRApprovalPathStub {
+					return filepath.SkipDir
+				}
+
 				return nil
 			}
 
-			dir := filepath.Dir(path)
 			// true if the file is a symlink
 			if info.Mode()&os.ModeSymlink != 0 {
 				// Assume symlink from old KEP location to new. The new location
@@ -60,10 +65,12 @@ func (r *Repo) Validate() (
 				return nil
 			}
 
+			dir := filepath.Dir(path)
+
 			metadataFilename := ProposalMetadataFilename
 			metadataFilepath := filepath.Join(dir, metadataFilename)
 			if _, err := os.Stat(metadataFilepath); err == nil {
-				// There is kep metadata file in this directory, only that one should be processed.
+				// There is KEP metadata file in this directory, only that one should be processed.
 				if info.Name() == metadataFilename {
 					files = append(files, metadataFilepath)
 				}
@@ -71,7 +78,7 @@ func (r *Repo) Validate() (
 				return nil
 			}
 
-			if ignore(info.Name()) {
+			if ignore(info.Name(), "yaml", "md") {
 				return nil
 			}
 

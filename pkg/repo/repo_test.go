@@ -84,7 +84,9 @@ func TestFindLocalKEPs(t *testing.T) {
 	require.Nil(t, repoErr)
 
 	for i, tc := range testcases {
-		k := r.LoadLocalKEPs(tc.sig)
+		k, err := r.LoadLocalKEPs(tc.sig)
+		require.Nil(t, err)
+
 		if len(k) != len(tc.keps) {
 			t.Errorf("Test case %d: expected %d but got %d", i, len(tc.keps), len(k))
 			continue

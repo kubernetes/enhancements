@@ -72,7 +72,7 @@ var defaultConfig = map[string]printConfig{
 }
 
 func DefaultPrintConfigs(names ...string) []PrintConfig {
-	configs := make([]PrintConfig, 10)
+	configs := make([]PrintConfig, 0, 10)
 	for _, n := range names {
 		// copy to allow it to be tweaked by the caller
 		c := defaultConfig[n]
@@ -90,7 +90,7 @@ func (r *Repo) PrintTable(configs []PrintConfig, proposals []*api.Proposal) {
 
 	table := tablewriter.NewWriter(r.Out)
 
-	headers := make([]string, 10)
+	headers := make([]string, 0, 10)
 	for _, c := range configs {
 		headers = append(headers, c.Title())
 	}

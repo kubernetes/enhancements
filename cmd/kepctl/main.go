@@ -16,8 +16,14 @@ limitations under the License.
 
 package main
 
-import "k8s.io/enhancements/pkg/kepctl/commands"
+import (
+	"github.com/sirupsen/logrus"
+
+	"k8s.io/enhancements/pkg/kepctl/commands"
+)
 
 func main() {
-	commands.New().Execute()
+	if err := commands.New().Execute(); err != nil {
+		logrus.Fatalf("error during command execution: %v", err)
+	}
 }
