@@ -1,0 +1,16 @@
+title: Cloud Provider for BaiduCloud
+kep-number: 2531
+authors:
+  - "@tizhou86"
+owning-sig: sig-cloud-provider
+reviewers:
+  - "@andrewsykim"
+  - "@cheftako"
+approvers:
+  - "@andrewsykim"
+  - "@cheftako"
+  - "@hogepodge"
+  - "@jagosan"
+creation-date: 2020-02-25
+last-updated: 2020-02-25
+status: implementable

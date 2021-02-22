@@ -1,22 +1,3 @@
----
-title: Cloud Provider for BaiduCloud
-authors:
-  - "@tizhou86"
-owning-sig: sig-cloud-provider
-reviewers:
-  - "@andrewsykim"
-  - "@cheftako"
-approvers:
-  - "@andrewsykim"
-  - "@cheftako"
-  - "@hogepodge"
-  - "@jagosan"
-editor: TBD
-creation-date: 2020-02-25
-last-updated: 2020-02-25
-status: implementable
----
-
 # Cloud Provider BaiduCloud
 
 ## Table of Contents
