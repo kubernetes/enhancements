@@ -30,8 +30,9 @@ import (
 
 const (
 	// TODO: Make this configurable and set in a client instead
-	DefaultPRRDir = "prod-readiness"
-	kepMetadata   = "kep.yaml"
+	DefaultPRRDir  = "prod-readiness"
+	kepMetadata    = "kep.yaml"
+	kepsReadmePath = "enhancements/keps/README.md"
 )
 
 var files = []string{}
@@ -145,10 +146,7 @@ var walkFn = func(path string, info os.FileInfo, err error) error {
 		return nil
 	}
 
-	// TODO(#2220): Return an error as soon as all KEPs are migrated to directory-based
-	//   KEP format.
-	files = append(files, path)
-	return nil
+	return fmt.Errorf("incorrect KEP format: %s", path)
 }
 
 // TODO: Consider replacing with a .kepignore file
@@ -159,12 +157,5 @@ func ignore(dir, name string) bool {
 		return true
 	}
 
-	if name == "0023-documentation-for-images.md" ||
-		name == "0004-cloud-provider-template.md" ||
-		name == "README.md" ||
-		name == "kep-faq.md" {
-		return true
-	}
-
-	return false
+	return strings.HasSuffix(filepath.Join(dir, name), kepsReadmePath) ||	name == "FAQ.md"
 }
