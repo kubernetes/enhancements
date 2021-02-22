@@ -531,32 +531,3 @@ func (r *Repo) loadKEPFromOldStyle(kepPath string) (*api.Proposal, error) {
 	kep.Name = filepath.Base(kepPath)
 	return kep, nil
 }
-
-func (r *Repo) WriteKEP(kep *api.Proposal) error {
-	b, err := yaml.Marshal(kep)
-	if err != nil {
-		return fmt.Errorf("KEP is invalid: %s", err)
-	}
-
-	if mkErr := os.MkdirAll(
-		filepath.Join(
-			r.ProposalPath,
-			kep.OwningSIG,
-			kep.Name,
-		),
-		os.ModePerm,
-	); mkErr != nil {
-		return errors.Wrapf(mkErr, "creating KEP directory")
-	}
-
-	newPath := filepath.Join(
-		r.ProposalPath,
-		kep.OwningSIG,
-		kep.Name,
-		ProposalMetadataFilename,
-	)
-
-	fmt.Fprintf(r.Out, "writing KEP to %s\n", newPath)
-
-	return ioutil.WriteFile(newPath, b, os.ModePerm)
-}
