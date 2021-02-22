@@ -22,13 +22,21 @@
     - [Huge pages as shared memory](#huge-pages-as-shared-memory)
     - [NUMA](#numa)
 - [Graduation Criteria](#graduation-criteria)
+- [Graduation Criteria for HugePageStorageMediumSize](#graduation-criteria-for-hugepagestoragemediumsize)
 - [Test Plan](#test-plan)
+- [Test Plan for HugePageStorageMediumSize](#test-plan-for-hugepagestoragemediumsize)
+- [Production Readiness Review Questionnaire for HugePageStorageMediumSize](#production-readiness-review-questionnaire-for-hugepagestoragemediumsize)
+  - [Monitoring requirements](#monitoring-requirements)
+  - [Dependencies](#dependencies)
+  - [Scalability](#scalability)
+  - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
   - [Version 1.8](#version-18)
   - [Version 1.9](#version-19)
   - [Version 1.14](#version-114)
   - [Version 1.18](#version-118)
-  - [Version 1.19[TBD]](#version-119tbd)
+  - [Version 1.19](#version-119)
+  - [Version 1.22](#version-122)
 - [Release Signoff Checklist](#release-signoff-checklist)
 <!-- /toc -->
 
@@ -534,6 +542,12 @@ locality guarantees as a feature of QoS.  In particular, pods in the
 - E2E testing validating its usage.
 -- https://k8s-testgrid.appspot.com/sig-node-kubelet#node-kubelet-serial&include-filter-by-regex=Feature%3AHugePages
 
+## Graduation Criteria for HugePageStorageMediumSize
+
+- Reports of successful usage of the hugepage-<size> resources
+- E2E testing validating its usage
+-- https://k8s-testgrid.appspot.com/sig-node-kubelet#kubelet-serial-gce-e2e-hugepages
+
 ## Test Plan
 
 - A test plan will consist of the following tests
@@ -545,6 +559,75 @@ locality guarantees as a feature of QoS.  In particular, pods in the
   - cri-tools
     - Test case will be added to cri-tools to be used in CRI runtime' test(CI).
     - here: https://github.com/kubernetes-sigs/cri-tools
+
+## Test Plan for HugePageStorageMediumSize
+
+- Promote existing HugePages E2E tests to conformance
+
+## Production Readiness Review Questionnaire for HugePageStorageMediumSize
+### Monitoring requirements
+
+* **How can an operator determine if the feature is in use by workloads?**
+An operator could use hugepages-<size> resource limits and emptydir
+mounts with medium: HugePage-<size> as described in the Kubernetes
+documentation at https://kubernetes.io/docs/tasks/manage-hugepages/scheduling-hugepages
+
+* **What are the SLIs (Service Level Indicators) an operator can use to determine.
+the health of the service?**
+  - [ ] Metrics
+    - Metric name:
+      `kube_pod_resource_request` and `kube_pod_resource_limit` for hugepages-<size> resources indicates usage.
+    - Components exposing the metric: kube-scheduler
+
+Workload performance can be measured by existing system metrics provided by Kubernetes components and e.g. [node_exporter](https://github.com/prometheus/node_exporter)
+
+* **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
+
+These will be set individually by application developers. This feature allows them to tune the performance of their workloads. See e.g. [Linux Huge Pages and virtual memory (VM) tuning](https://blog.yannickjaquier.com/linux/linux-hugepages-and-virtual-memory-vm-tuning.html)
+
+* **Are there any missing metrics that would be useful to have to improve observability.
+of this feature?**
+No.
+
+### Dependencies
+
+* **Does this feature depend on any specific services running in the cluster?**
+No
+
+### Scalability
+
+* **Will enabling / using this feature result in any new API calls?**
+No.
+
+* **Will enabling / using this feature result in introducing new API types?**
+No
+
+* **Will enabling / using this feature result in any new calls to the cloud.
+provider?**
+No
+
+* **Will enabling / using this feature result in increasing size or count of.
+the existing API objects?**
+No
+
+* **Will enabling / using this feature result in increasing time taken by any.
+operations covered by [existing SLIs/SLOs]?**
+No
+
+* **Will enabling / using this feature result in non-negligible increase of.
+resource usage (CPU, RAM, disk, IO, ...) in any components?**
+No
+
+### Troubleshooting
+
+* **How does this feature react if the API server and/or etcd is unavailable?**
+No impact.
+
+* **What are other known failure modes?**
+Not applicable.
+
+* **What steps should be taken if SLOs are not being met to determine the problem?**
+A cluster admin can tune the HugePage requests allocated to a workload by changing the available sizes, use the default HugePages configuration, or disable HugePages on the workload entirely.
 
 ## Implementation History
 
@@ -565,9 +648,14 @@ using the feature without issue.
 
 Extending of huge pages feature to support container isolation of huge pages and multiple sizes of huge pages.
 
-### Version 1.19[TBD]
+### Version 1.19
 
-Extending of huge pages test suit of E2E tests and cri-tools for enhancements after GA.
+Extending of huge pages test suite of E2E tests and cri-tools for enhancements after GA.
+
+### Version 1.22
+
+GA support of multiple huge page sizes proposed based on feedback from
+user community using the feature without issue.
 
 ## Release Signoff Checklist
 - \[x] kubernetes/enhancements issue in release milestone, which links to KEP (this should be a link to the KEP location in kubernetes/enhancements, not the initial KEP PR)
