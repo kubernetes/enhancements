@@ -359,7 +359,22 @@ _This section must be completed when targeting beta graduation to a release._
   Crashes of kube-apiserver.
 
 * **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
-  Manual tests are still to be run.
+  Manual tests were run in GKE Regional Cluster with 3 master nodes. No problems were
+  identified during those tests (which no state is stored in etcd associated with this
+  feature).
+
+  Additionally, an upgrade path was also tested in GKE Regional Cluster with 5000 nodes
+  with the feature enabled. There is a tremendous positive impact on API call latency
+  metrics:
+  - [before] for many resources, even simple GET requests were spiking to 1m on 99th
+    percentile
+  - [after] we keep all resource and namespace scoped requests within SLO and just some
+    cluster-scoped requests slightly exceeding the [SLO].
+
+[before]: ./without_feature_metrics.png
+[after]: ./with_feature_metrics.png
+[SLO]: https://github.com/kubernetes/community/blob/master/sig-scalability/slos/api_call_latency.md
+	
 
 * **Is the rollout accompanied by any deprecations and/or removals of features, APIs, 
 fields of API types, flags, etc.?**
