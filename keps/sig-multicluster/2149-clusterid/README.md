@@ -469,7 +469,7 @@ spec:
 
 ### CRD upgrade path
 
-#### To k/k or not to k/k?
+#### To CRD or not to CRD?
 
 _That is the question._
 
