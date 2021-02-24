@@ -45,4 +45,7 @@ cd "${ROOT}"
 # Update tables of contents if necessary.
 find keps -name '*.md' \
     | grep -Fxvf hack/.notableofcontents \
-    | xargs mdtoc --inplace --max-depth=5
+    | xargs mdtoc --inplace --max-depth=5  || (
+      echo "Failed generating TOC. If this failed silently and you are on mac, try 'brew install grep'"
+      exit 1
+    )
