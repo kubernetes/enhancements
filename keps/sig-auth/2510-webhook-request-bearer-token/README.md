@@ -14,15 +14,15 @@ tags, and then generate with `hack/update-toc.sh`.
 - [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
 - [Motivation](#motivation)
+  - [Background](#background)
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [User Stories (Optional)](#user-stories-optional)
-    - [Story 1](#story-1)
-    - [Story 2](#story-2)
-  - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
-  - [Risks and Mitigations](#risks-and-mitigations)
+  - [User Stories](#user-stories)
+    - [An aggreated apiserver developer can configure token authentication to webhook by setting a field in <code>MutatingWebhookConfiguration</code> or <code>ValidatingWebhookConfiguration</code>.](#an-aggreated-apiserver-developer-can-configure-token-authentication-to-webhook-by-setting-a-field-in--or-)
 - [Design Details](#design-details)
+  - [User-facing changes](#user-facing-changes)
+  - [Internal changes](#internal-changes)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
@@ -117,33 +117,10 @@ This is a cumbersome and error-prone process to developers. This KEP intends to 
 
 ## Proposal
 
-### User Stories (Optional)
+### User Stories
 
 #### An aggreated apiserver developer can configure token authentication to webhook by setting a field in `MutatingWebhookConfiguration` or `ValidatingWebhookConfiguration`.
 The developer does not need to mint the client certificate or key, and does not need to create a kubeconfig file. They can enable the automatic token option in `MutatingWebhookConfiguration` or `ValidatingWebhookConfiguration`. The corresponding webhook client will request a token and include it in the request.
-
-### Notes/Constraints/Caveats (Optional)
-
-<!--
-What are the caveats to the proposal?
-What are some important details that didn't come across above?
-Go in to as much detail as necessary here.
-This might be a good place to talk about core concepts and how they relate.
--->
-
-### Risks and Mitigations
-
-<!--
-What are the risks of this proposal, and how do we mitigate? Think broadly.
-For example, consider both security and how this will impact the larger
-Kubernetes ecosystem.
-
-How will security be reviewed, and by whom?
-
-How will UX be reviewed, and by whom?
-
-Consider including folks who also work outside the SIG or subproject.
--->
 
 ## Design Details
 
@@ -154,9 +131,125 @@ required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
 
+### User-facing changes
+
+A new field `authenticationSource` will be added to WebhookClientConfig. In this proposal, user can use `tokenRequest` source for requesting a bearer token. By doing this, users no longer have to mint token or ceritificate/key, or to create kubeconfig files.
+
+The `authenticationSource` field is optional. If it is not set, there will be no change to webhook client behavior. This is to make sure such change is backward-compatible.
+
+For example, this is an `ValidatingWebhookConfiguration` object created in Kubernetes. It defines an out-of-cluster webhook client that uses `tokenRequest` for adding a bearer token.
+```yaml
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: "pod-policy.example.com"
+webhooks:
+- name: "pod-policy.example.com"
+  rules:
+  - apiGroups:   [""]
+    apiVersions: ["v1"]
+    operations:  ["CREATE"]
+    resources:   ["pods"]
+    scope:       "Namespaced"
+  clientConfig:
+    url: "https://my-webhook.example.com"
+    caBundle: "Ci0tLS0tQk......tLS0K"
+    authenticationSource:  # New addition.
+      tokenRequest: {}  # New addition.
+  admissionReviewVersions: ["v1", "v1beta1"]
+  sideEffects: None
+  timeoutSeconds: 5
+```
+
+In the case that a bearer token is already provided in the kubeconfig file, the bearer token generated in `tokenRequest` should be used instead.
+
+For example, this is how webhook authentication is configured now, buy referring to a kubeconfig file in a `AdmissionConfiguration` plugin.
+```yaml
+apiVersion: apiserver.config.k8s.io/v1
+kind: AdmissionConfiguration
+plugins:
+- name: ValidatingAdmissionWebhook
+  configuration:
+    apiVersion: apiserver.config.k8s.io/v1
+    kind: WebhookAdmissionConfiguration
+    kubeConfigFile: "<path-to-kubeconfig-file>"
+```
+The token defined here in a kubeconfig file will not be used, if the `tokenRequest` source is configured.
+```yaml
+apiVersion: v1
+kind: Config
+users:
+- name: 'https://my-webhook.example.com'
+  user:
+    token: "239asdy93fs0...8sfd-0digfd===" # This token will be overridden.
+```
+
+However, if kubeconfig uses another authentication scheme that doesn't conflict with `authenticationSource`, both authentication methods will be used.
+
+For example, the client certificate authentication defined in this kubeconfig file will be used together with `tokenRequest` source.
+```yaml
+apiVersion: v1
+kind: Config
+users:
+- name: 'https://my-webhook.example.com'
+  user:
+    client-certificate: fake-cert-file
+    client-key: fake-key-file
+```
+
+### Internal changes
+
+Corresponding to the user-facing changes, two new structs will be added to the [webhook package](https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/apiserver/pkg/util/webhook/BUILD):
+
+```go
+// AuthenticationSource specifies how a webhook client authenticates to a webhook server.
+// If the AuthenticationSource conflicts with kubeconfig (e.g. bearer token in kubeconfig), the authentication source defined here will be used instead.
+// If the AuthenticationSource doesn't conflicts with kubeconfig (e.g. client certificate in kubeconfig), both methods will be used.
+// Only one source can be defined in AuthenticationSource.
+type AuthenticationSource struct {
+	TokenRequest TokenRequestAuthenticationSource
+}
+
+// TokenRequestAuthenticationSource requests a bearer token from TokenRequest API and attaches it as bearer token in webhook requests.
+type TokenRequestAuthenticationSource struct {
+}
+```
+ClientConfig struct will be updated:
+
+```go
+// ClientConfig defines parameters required for creating a hook client.
+type ClientConfig struct {
+	Name     string
+	URL      string
+	CABundle []byte
+	Service  *ClientConfigService
+	AnthenticationSource AuthenticationSource
+}
+```
+
+A new type of `AuthenticationInfoResolver` will be added, which can request, cache, and refresh bearer token. 
+```go
+type tokenRequestAuthInfoResolver struct {
+  // Internal implementation TBC.
+}
+
+func (*tokenRequestAuthInfoResolver) ClientConfigFor(hostPort string) (*rest.Config, error) {
+  // Internal implementation TBC.
+}
+
+func (c *tokenRequestAuthInfoResolver) ClientConfigForService(serviceName, serviceNamespace string, servicePort int) (*rest.Config, error) {
+  // Internal implementation TBC.
+}
+```
+
 ### Test Plan
 
-TBC
+An end-to-end test should include following general steps:
+* Create a cluster.
+* Deploy an in-cluster webhook server, which parses bearer tokens.
+* Register the webhook as validation webhook for Pods with a `ValidatingWebhookConfiguration`, in which `tokenRequest` is used for `authenticationSource`.
+* Create a Pod.
+* Inspect the webhook server logs or metrics to see if bearer token parsing is correct.
 
 ### Graduation Criteria
 
@@ -168,18 +261,7 @@ TBC
 
 ### Version Skew Strategy
 
-<!--
-If applicable, how will the component handle version skew with other
-components? What are the guarantees? Make sure this is in the test plan.
-
-Consider the following in developing a version skew strategy for this
-enhancement:
-- Does this enhancement involve coordinating behavior in the control plane and
-  in the kubelet? How does an n-2 kubelet without this feature available behave
-  when this feature is used?
-- Will any other components on the node change? For example, changes to CSI,
-  CRI or CNI may require updating that component before the kubelet.
--->
+This change should be compatible with different versions of other components. If the user doesn't define an `authenticationSource`, current authentication mechanism should still work.
 
 ## Production Readiness Review Questionnaire
 
