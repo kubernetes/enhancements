@@ -176,73 +176,44 @@ The "Design Details" section below is for the real
 nitty-gritty.
 -->
 
+### ClusterNetworkPolicy
+
 A ClusterNetworkPolicy resource will help the administrators set strict security rules for the cluster,
-i.e. a developer cannot override these rules by defining NetworkPolicies.
+i.e. a developer CANNOT override these rules by creating NetworkPolicies that applies to the same workloads
+as the ClusterNetworkPolicy does.
 
-Following new `ClusterNetworkPolicy` API will be added to the `networking.k8s.io` API group.
+Unlike the NetworkPolicy resource in which each rule represents a whitelisted traffic, ClusterNetworkPolicy
+will enable administrators to set `Allow` or `Deny` as the action of each rule. ClusterNetworkPolicy rules
+should be read as-is, i.e. there will not be any implicit isolation effects for the Pods selected by the
+ClusterNetworkPolicy, as opposed to what NetworkPolicy rules imply.
 
-```golang
-type ClusterNetworkPolicy struct {
-	metav1.TypeMeta
-	metav1.ObjectMeta
-	
-	Spec ClusterNetworkPolicySpec
-}
+In terms of precedence, the aggregated `Deny` rules (all ClusterNetworkPolicy rules with action `Deny` in
+the cluster combined) should be evaluated before aggregated ClusterNetworkPolicy `Allow` rules, followed
+by aggregated NetworkPolicy rules in all Namespaces. As such, the `Deny` rules have the highest precedence,
+which prevents them to be unexpectedly overwritten.
 
-type ClusterNetworkPolicySpec struct {
-	// No implicit isolation of AppliedTo Pods.
-	AppliedTo    AppliedTo
-	Ingress      []IngressRule
-	Egress       []EgressRule
-}
+ClusterNetworkPolicy `Deny` rules are useful for administrators to explicitly block traffic from malicious
+clients, or workloads that poses security risks. Those traffic restrictions can only be lifted once the
+`Deny` rules are deleted or modified. On the other hand, the `Allow` rules can be used to call out traffic
+in the cluster that needs to be allowed for certain components to work as expected (egress to CoreDNS for
+example). Those traffic could be blocked when developers apply NetworkPolicy to their Namespaces which
+turns the workloads to be isolated.
 
-type Ingress/EgressRule struct {
-	Action       RuleAction
-	Ports        []networkingv1.NetworkPolicyPort
-	From/To      []networkingv1.NetworkPolicyPeer
-}
-
-type AppliedTo struct {
-	PodSelector         *metav1.LabelSelector
-    NamespaceSelector   *metav1.LabelSelector
-}
-
-const (
-	RuleActionDeny  RuleAction = "Deny"
-	RuleActionAllow RuleAction = "Allow"
-)
-```
+### DefaultNetworkPolicy
 
 A DefaultNetworkPolicy resource will help the administrators set baseline security rules for the cluster,
-i.e. a developer can override these rules by defining NetworkPolicies.
+i.e. a developer CAN override these rules by creating NetworkPolicies that applies to the same workloads
+as the DefaultNetworkPolicy does.
 
-Following new `DefaultNetworkPolicy` API will be added to the `networking.k8s.io` API group.
+DefaultNetworkPolicy works just like NetworkPolicy except that it is cluster-scoped. When workloads are
+selected by a DefaultNetworkPolicy, they are isolated except for the ingress/egress rules whitelisted.
+DefaultNetworkPolicy rules will not have actions associated -- each rule will be an 'allow' rule.
 
-```golang
-type DefaultNetworkPolicy struct {
-	metav1.TypeMeta
-	metav1.ObjectMeta
-	
-	Spec DefaultNetworkPolicySpec
-}
+Aggregated NetworkPolicy rules will be evaluated before aggregated DefaultNetworkPolicy rules.
+If a Pod is selected by both a DefaultNetworkPolicy and a NetworkPolicy, then the DefaultNetworkPolicy's
+effect on that Pod becomes obsolete. The traffic allowed will be solely determined by the NetworkPolicy.
 
-type DefaultNetworkPolicySpec struct {
-	// Implicit isolation of AppliedTo Pods.
-	AppliedTo    AppliedTo
-	Ingress      []IngressRule
-	Egress       []EgressRule
-}
-
-type Ingress/EgressRule struct {
-	Ports        []networkingv1.NetworkPolicyPort
-	From/To      []networkingv1.NetworkPolicyPeer
-}
-
-type AppliedTo struct {
-	PodSelector         *metav1.LabelSelector
-    NamespaceSelector   *metav1.LabelSelector
-}
-```
+(TODO: Add a diagram to explain the precedence?)
 
 Together, a ClusterNetworkPolicy and a DefaultNetworkPolicy resource can help satisfy all the
 administrator use cases.
@@ -292,6 +263,85 @@ required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
 
+The following new `ClusterNetworkPolicy` API will be added to the `networking.k8s.io` API group:
+
+```golang
+type ClusterNetworkPolicy struct {
+	metav1.TypeMeta
+	metav1.ObjectMeta
+
+	Spec ClusterNetworkPolicySpec
+}
+
+type ClusterNetworkPolicySpec struct {
+	// No implicit isolation of AppliedTo Pods.
+	AppliedTo    AppliedTo
+	Ingress      []ClusterNetworkPolicyIngressRule
+	Egress       []ClusterNetworkPolicyEgressRule
+}
+
+type ClusterNetworkPolicyIngress/EgressRule struct {
+	Action       RuleAction
+	Ports        []networkingv1.NetworkPolicyPort
+	From/To      []networkingv1.ClusterNetworkPolicyPeer
+}
+
+type ClusterNetworkPolicyPeer struct {
+	PodSelector  *metav1.LabelSelector
+	Namespaces   *networkingv1.Namespaces
+	IPBlock      *IPBlock
+}
+
+const (
+	RuleActionDeny  RuleAction = "Deny"
+	RuleActionAllow RuleAction = "Allow"
+)
+```
+
+The following new `DefaultNetworkPolicy` API will be added to the `networking.k8s.io` API group:
+
+```golang
+type DefaultNetworkPolicy struct {
+	metav1.TypeMeta
+	metav1.ObjectMeta
+
+	Spec DefaultNetworkPolicySpec
+}
+
+type DefaultNetworkPolicySpec struct {
+	// Implicit isolation of AppliedTo Pods.
+	AppliedTo    AppliedTo
+	Ingress      []DefaultNetworkPolicyIngressRule
+	Egress       []DefaultNetworkPolicyEgressRule
+}
+
+type DefaultNetworkPolicyIngress/EgressRule struct {
+	Ports        []networkingv1.NetworkPolicyPort
+	From/To      []networkingv1.DefaultNetworkPolicyPeer
+}
+
+type DefaultNetworkPolicyPeer struct {
+	PodSelector  *metav1.LabelSelector
+	Namespaces   *networkingv1.Namespaces
+	IPBlock      *IPBlock
+}
+```
+
+The following structs will be added to the `networking.k8s.io` API group and shared between
+`ClusterNetworkPolicy` and `DefaultNetworkPolicy`:
+
+```golang
+type AppliedTo struct {
+	PodSelector         *metav1.LabelSelector
+	NamespaceSelector   *metav1.LabelSelector
+}
+
+type Namespaces struct {
+	Self                bool
+	NamespaceSelector   *metav1.LabelSelector
+	Except              *metav1.LabelSelector
+}
+```
 
 ### Test Plan
 
@@ -364,7 +414,7 @@ in back-to-back releases.
 - Address feedback on usage/changed behavior, provided on GitHub issues
 - Deprecate the flag
 
-**For non-optional features moving to GA, the graduation criteria must include 
+**For non-optional features moving to GA, the graduation criteria must include
 [conformance tests].**
 
 [conformance tests]: https://git.k8s.io/community/contributors/devel/sig-architecture/conformance-tests.md
