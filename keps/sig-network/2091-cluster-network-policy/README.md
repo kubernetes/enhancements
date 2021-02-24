@@ -140,7 +140,7 @@ to complement the developer focused NetworkPolicy API in Kubernetes.
 Kubernetes provides NetworkPolicy resources to control traffic within a cluster.
 NetworkPolicies focus on expressing a developers intent to secure their applications.
 Thus, in order to satisfy the needs of a security admin, we propose to introduce new set of APIs
-which capture the administrators intent.
+that capture the administrators intent.
 
 <!--
 This section is for explicitly listing the motivation, goals, and non-goals of
@@ -153,30 +153,32 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 
 ### Goals
 
-<!--
-List the specific goals of the KEP. What is it trying to achieve? How will we
-know that this has succeeded?
--->
+The goals for this KEP are to satisfy two keey CUJs
+1. As a cluster administrator, I want to enforce irrevocable guardrails that all workloads must adhere to to guarantee the safety of my clusters.
+2. As a cluster administrator, I want to deploy a default set of policies to all workloads that may be overridden by the workloads if needed.
+
+There are several unique properties that we need to add in order accomplish the CUJs above.
+1. Deny rules and, therefore, hierarchical enforcement of policy
+2. Semantics for a cluster-scoped policy object that may include namespaces/workloads that have not been created yet.
+3. Backwards compatibility with existing Kubernetes Network Policy API
 
 ### Non-Goals
 
-<!--
-What is out of scope for this KEP? Listing non-goals helps to focus discussion
-and make progress.
--->
+Our mission is to solve the most common use cases that cluster admins have. That is, we don't want to solve for every possible policy permutation a user can think of. Instead, we want to design an API that addresses 90-95% use cases while keeping the mental model easy to understand and use.
+
+Additionally, this proposal is squarely focused on solving the needs of the Cluster Administrator. It is not intended to solve:
+1. Logging / error reporting for Network Policy
+2. Kubernetes Node policies
+3. New policy selectors (services, service accounts, etc.)
 
 ## Proposal
 
-<!--
-This is where we get down to the specifics of what the proposal actually is.
-This should have enough detail that reviewers can understand exactly what
-you're proposing, but should not include things like API designs or
-implementation. What is the desired outcome and how do we measure success?.
-The "Design Details" section below is for the real
-nitty-gritty.
--->
+In order to achieve the two primary broad use cases for a cluster admin to secure K8s clusters,
+we propose to introduce the following two new resources under `networking.k8s.io` API group:
+- ClusterNetworkPolicy resource
+- DefaultNetworkPolicy resource
 
-### ClusterNetworkPolicy
+### ClusterNetworkPolicy resource
 
 A ClusterNetworkPolicy resource will help the administrators set strict security rules for the cluster,
 i.e. a developer CANNOT override these rules by creating NetworkPolicies that applies to the same workloads
@@ -199,7 +201,7 @@ in the cluster that needs to be allowed for certain components to work as expect
 example). Those traffic could be blocked when developers apply NetworkPolicy to their Namespaces which
 turns the workloads to be isolated.
 
-### DefaultNetworkPolicy
+### DefaultNetworkPolicy resource
 
 A DefaultNetworkPolicy resource will help the administrators set baseline security rules for the cluster,
 i.e. a developer CAN override these rules by creating NetworkPolicies that applies to the same workloads
@@ -213,23 +215,42 @@ Aggregated NetworkPolicy rules will be evaluated before aggregated DefaultNetwor
 If a Pod is selected by both a DefaultNetworkPolicy and a NetworkPolicy, then the DefaultNetworkPolicy's
 effect on that Pod becomes obsolete. The traffic allowed will be solely determined by the NetworkPolicy.
 
-(TODO: Add a diagram to explain the precedence?)
-
-Together, a ClusterNetworkPolicy and a DefaultNetworkPolicy resource can help satisfy all the
-administrator use cases.
+(TODO: Add a diagram to explain the precedence)
 
 ### User Stories (Optional)
 
-<!--
-Detail the things that people will be able to do if this KEP is implemented.
-Include as much detail as possible so that people can understand the "how" of
-the system. The goal here is to make this feel real for users without getting
-bogged down.
--->
+TODO: insert image
 
-#### Story 1
+#### Story 1: Deny traffic from certain sources
 
-#### Story 2
+As a cluster admin, I want to explicitly deny traffic from certain source IPs that I know to be bad.
+
+Many admins maintain lists of IPs that are known to be bad actors, especially to curb DoS attacks. A cluster admin could use Cluster Network Policy to codify all the source IPs that should be denied in order to prevent that traffic from accidentally reaching workloads. Note that the inverse of this (allow traffic from well known source IPs) is also a valid use case.
+
+#### Story 2: Funnel traffic through ingress/egress gateways
+
+As a cluster admin, I want to ensure that all traffic coming into (going out of) my cluster always goes through my ingress (egress) gateway.
+
+It is common pratice in enterprises to setup checkpoints in their clusters at ingress/egress. These checkpoints usually perform advanced checks such as firewalling, authentication, packet/connection logging, etc. This is a big request for compliance reasons, and Cluster Network Policy can ensure that all the traffic is forced to go through ingress/egress gateways.
+
+#### Story 3: Isolate multiple tenants in a cluster
+
+As a cluster admin, I want to isolate all the tenants (modeled as namespaces) on my cluster from each other by default.
+
+Many enterprises are creating shared Kubernetes clusters that are managed by a centralized platform team. Each internal team that wants to run their workloads gets assigned a namespace on the shared clusters. Naturally, the platform team will want to make sure that, by default, all intra-namespace traffic is allowed and all inter-namespace traffic is denied.
+
+#### Story 4: Enforce network/security best practices
+
+As a cluster admin, I want all workloads to start with a baseline network/security model that meets the needs of my company.
+
+A platform admin may want to factor out policies that each namespace would have to write individually in order to make deployment and auditability easier. Common examples include allowing all workloads to be able to talk to the cluster DNS service and, similarly, allowing all workloads to talk to the logging/monitoring pods running on the cluster.
+
+#### Story 5: Restrict egress to well known destinations
+
+As a cluster admin, I want to explicitly limit which workloads can connect to well known destinations outside the cluster.
+
+This CUJ is particularly relevant in hybrid environments where customers have highly restricted databases running behind static IPs in their networks and want to ensure that only a given set of workloads is allowed to connect to the database for PII/privacy reasons. Using Cluster Network Policy, a user can write a policy to guarantee that only the selected pods can connect to the database IP.
+
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -755,4 +776,30 @@ Why should this KEP _not_ be implemented?
 What other approaches did you consider, and why did you rule them out? These do
 not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
+-->
+
+Following alternative approaches were considered:
+
+### NetworkPolicy v2
+
+<!--
+Complete me
+-->
+
+### Single CRD with DefaultRules field
+
+<!--
+Complete me
+-->
+
+### Single CRD with IsOverrideable field
+
+<!--
+Complete me
+-->
+
+### Single CRD with BaselineAllow as Action
+
+<!--
+Complete me
 -->
