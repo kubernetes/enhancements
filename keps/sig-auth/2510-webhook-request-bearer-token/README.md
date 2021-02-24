@@ -223,7 +223,7 @@ type ClientConfig struct {
 	URL      string
 	CABundle []byte
 	Service  *ClientConfigService
-	AnthenticationSource AuthenticationSource
+	AnthenticationSource AuthenticationSource // New Addition.
 }
 ```
 
