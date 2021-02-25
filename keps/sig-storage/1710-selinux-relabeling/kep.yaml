@@ -5,7 +5,7 @@ authors:
 owning-sig: sig-storage
 participating-sigs:
   - sig-node
-status: implementable
+status: provisional
 creation-date: 2020-02-18
 reviewers:
   - "@msau42"
@@ -17,15 +17,15 @@ reviewers:
 approvers:
   - "@saad-ali"
 see-also:
-  - /keps/sig-storage/20200120-skip-permission-change.md
+  - /keps/sig-storage/695-skip-permission-change/README.md
 stage: alpha
-latest-milestone: "v1.19"
+latest-milestone: "v1.24"
 milestone:
-  alpha: "v1.19"
-  beta: "v1.20"
-  stable: "v1.22"
+  alpha: "v1.24"
+  beta: "v1.25"
+  stable: "v1.27"
 feature-gates:
-  - name: SELinuxRelabelPolicy
+  - name: SELinuxMountReadWriteOncePod
     components:
       - kube-apiserver
       - kubelet
