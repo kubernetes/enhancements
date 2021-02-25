@@ -4,7 +4,9 @@ authors:
   - "@44past4"
   - "@immutableT"
   - "@PurelyApplied"
-owning-sig: sig-instrumentation
+owning-sig: sig-security
+participating-sigs:
+  - sig-instrumentation
 status: implementable
 creation-date: 2020-05-07
 last-updated: 2020-10-14
