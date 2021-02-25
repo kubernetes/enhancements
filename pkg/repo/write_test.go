@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package kepctl
+package repo_test
 
 import (
 	"bytes"
@@ -26,50 +26,82 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"k8s.io/enhancements/api"
+	"k8s.io/enhancements/pkg/repo"
 	"sigs.k8s.io/yaml"
 )
 
+// TODO: Consider using afero to mock the filesystem here
 func TestWriteKep(t *testing.T) {
 	testcases := []struct {
 		name         string
 		kepFile      string
 		repoPath     string
-		opts         CreateOpts
+		kepName      string
+		sig          string
 		expectedPath string
 		expectError  bool
 	}{
 		{
-			name:     "simple kep",
-			kepFile:  "testdata/valid-kep.yaml",
-			repoPath: "enhancements",
-			opts: CreateOpts{
-				CommonArgs: CommonArgs{
-					Name: "1010-test",
-					SIG:  "sig-auth",
-				},
-			},
+			name:         "simple KEP",
+			kepFile:      "testdata/valid-kep.yaml",
+			repoPath:     "enhancements",
+			kepName:      "1010-test",
+			sig:          "sig-auth",
 			expectedPath: filepath.Join("enhancements", "keps", "sig-auth", "1010-test"),
 			expectError:  false,
 		},
 		{
-			name:     "opts repo path works",
-			kepFile:  "testdata/valid-kep.yaml",
-			repoPath: "",
-			opts: CreateOpts{
-				CommonArgs: CommonArgs{
-					Name:     "1011-test",
-					SIG:      "sig-architecture",
-					RepoPath: "enhancementz",
-				},
-			},
-			expectedPath: filepath.Join("enhancementz", "keps", "sig-architecture", "1011-test"),
-			expectError:  false,
+			name:         "missing KEP name",
+			kepFile:      "testdata/valid-kep.yaml",
+			repoPath:     "enhancements",
+			sig:          "sig-auth",
+			expectedPath: filepath.Join("enhancements", "keps", "sig-auth", "1010-test"),
+			expectError:  true,
+		},
+		{
+			name:         "missing owning SIG",
+			kepFile:      "testdata/valid-kep.yaml",
+			repoPath:     "enhancements",
+			kepName:      "1010-test",
+			expectedPath: filepath.Join("enhancements", "keps", "sig-auth", "1010-test"),
+			expectError:  true,
 		},
 	}
 
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
 			tempDir, err := ioutil.TempDir("", "")
+			mkErr := os.MkdirAll(
+				filepath.Join(
+					tempDir,
+					tc.repoPath,
+					repo.ProposalPathStub,
+					repo.PRRApprovalPathStub,
+				),
+				os.ModePerm,
+			)
+
+			require.Nil(t, mkErr)
+
+			templatePath := filepath.Join(
+				tempDir,
+				tc.repoPath,
+				repo.ProposalPathStub,
+				repo.ProposalTemplatePathStub,
+			)
+
+			mkErr = os.MkdirAll(
+				templatePath,
+				os.ModePerm,
+			)
+
+			require.Nil(t, mkErr)
+
+			templateFile := filepath.Join(templatePath, repo.ProposalFilename)
+			emptyTemplate, fileErr := os.Create(templateFile)
+			require.Nil(t, fileErr)
+			emptyTemplate.Close()
+
 			defer func() {
 				t.Logf("cleanup!")
 				err := os.RemoveAll(tempDir)
@@ -77,13 +109,17 @@ func TestWriteKep(t *testing.T) {
 					t.Logf("error cleaning up test: %s", err)
 				}
 			}()
-			require.NoError(t, err)
-			repoPath := tc.repoPath
-			if repoPath == "" {
-				repoPath = tc.opts.RepoPath
-			}
 
+			require.NoError(t, err)
+
+			repoPath := tc.repoPath
 			repoPath = filepath.Join(tempDir, repoPath)
+
+			proposalReadme := filepath.Join(repoPath, repo.ProposalPathStub, "README.md")
+			emptyReadme, fileErr := os.Create(proposalReadme)
+			require.Nil(t, fileErr)
+			emptyReadme.Close()
+
 			c := newTestClient(t, repoPath)
 
 			b, err := ioutil.ReadFile(tc.kepFile)
@@ -93,8 +129,17 @@ func TestWriteKep(t *testing.T) {
 			err = yaml.Unmarshal(b, &p)
 			require.NoError(t, err)
 
-			tc.opts.CommonArgs.RepoPath = repoPath
-			err = c.writeKEP(&p, &tc.opts.CommonArgs)
+			p.OwningSIG = tc.sig
+			p.Name = tc.kepName
+
+			err = c.r.WriteKEP(&p)
+
+			files, readErr := ioutil.ReadDir(c.r.ProposalPath)
+			require.Nil(t, readErr)
+
+			for _, f := range files {
+				t.Logf(f.Name())
+			}
 
 			if tc.expectError {
 				require.Error(t, err)
@@ -106,7 +151,7 @@ func TestWriteKep(t *testing.T) {
 				require.NoError(t, err)
 				require.NotNil(t, dirStat)
 				require.True(t, dirStat.IsDir())
-				p := filepath.Join(computedPath, "kep.yaml")
+				p := filepath.Join(computedPath, repo.ProposalMetadataFilename)
 				fileStat, err := os.Stat(p)
 				require.NoError(t, err)
 				require.NotNil(t, fileStat)
@@ -118,7 +163,7 @@ func TestWriteKep(t *testing.T) {
 type testClient struct {
 	T *testing.T
 	b *bytes.Buffer
-	*Client
+	r *repo.Repo
 }
 
 func newTestClient(t *testing.T, repoPath string) testClient {
@@ -126,30 +171,40 @@ func newTestClient(t *testing.T, repoPath string) testClient {
 	tc := testClient{
 		T: t,
 		b: b,
-		Client: &Client{
-			RepoPath: repoPath,
-			Out:      b,
-		},
 	}
 
+	r, err := repo.New(repoPath)
+	require.Nil(t, err)
+
+	r.Out = b
+	tc.r = r
+
 	// TODO: Parameterize
-	tc.addTemplate("kep.yaml")
-	tc.addTemplate("README.md")
+	tc.addTemplate(repo.ProposalMetadataFilename)
+	tc.addTemplate(repo.ProposalFilename)
+
 	return tc
 }
 
 func (tc *testClient) addTemplate(file string) {
-	src := filepath.Join("testdata", "templates", file)
+	src := filepath.Join(
+		validRepo,
+		repo.ProposalPathStub,
+		repo.ProposalTemplatePathStub,
+		file,
+	)
+
 	data, err := ioutil.ReadFile(src)
 	if err != nil {
 		tc.T.Fatal(err)
 	}
 
-	dirPath := filepath.Join(tc.Client.RepoPath, "keps", "NNNN-kep-template")
+	dirPath := filepath.Join(tc.r.BasePath, repo.ProposalPathStub, repo.ProposalTemplatePathStub)
 	err = os.MkdirAll(dirPath, os.ModePerm)
 	if err != nil {
 		tc.T.Fatal(err)
 	}
+
 	dest := filepath.Join(dirPath, file)
 	tc.T.Logf("Writing %s to %s", file, dest)
 	err = ioutil.WriteFile(dest, data, os.ModePerm)

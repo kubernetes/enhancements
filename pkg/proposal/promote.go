@@ -14,34 +14,43 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package kepctl
+package proposal
 
 import (
 	"fmt"
+
+	"k8s.io/enhancements/pkg/repo"
 )
 
 type PromoteOpts struct {
-	CommonArgs
+	Repo *repo.Repo
+
+	// Proposal options
+	KEP    string // KEP name sig-xxx/xxx-name
+	Name   string
+	Number string
+	SIG    string
+
+	// Promotion options
 	Release string
 	Stage   string
 }
 
 // Validate checks the args provided to the promote command populates the promote opts
-func (c *PromoteOpts) Validate(args []string) error {
-	return c.validateAndPopulateKEP(args)
+func (o *PromoteOpts) Validate(args []string) error {
+	// TODO: Populate logic
+	// nolint:gocritic
+	return nil // o.Repo.ValidateAndPopulateKEP(args)
 }
 
 // Promote changes the stage and target release for a specified KEP based on the
 // values specified in PromoteOpts is used to populate the template
-func (c *Client) Promote(opts *PromoteOpts) error {
-	fmt.Fprintf(c.Out, "Updating KEP %s/%s\n", opts.SIG, opts.Name)
+func Promote(opts *PromoteOpts) error {
+	r := opts.Repo
 
-	repoPath, err := c.findEnhancementsRepo(&opts.CommonArgs)
-	if err != nil {
-		return fmt.Errorf("unable to promote KEP: %s", err)
-	}
+	fmt.Fprintf(r.Out, "Updating KEP %s/%s\n", opts.SIG, opts.Name)
 
-	p, err := c.readKEP(repoPath, opts.SIG, opts.Name)
+	p, err := r.ReadKEP(opts.SIG, opts.Name)
 	if err != nil {
 		return fmt.Errorf("unable to load KEP for promotion: %s", err)
 	}
@@ -50,13 +59,13 @@ func (c *Client) Promote(opts *PromoteOpts) error {
 	p.LatestMilestone = opts.Release
 	p.LastUpdated = opts.Release
 
-	err = c.writeKEP(p, &opts.CommonArgs)
+	err = r.WriteKEP(p)
 	if err != nil {
 		return fmt.Errorf("unable to write updated KEP: %s", err)
 	}
 
 	// TODO: Implement ticketing workflow artifact generation
-	fmt.Fprintf(c.Out, "KEP %s/%s updated\n", opts.SIG, opts.Name)
+	fmt.Fprintf(r.Out, "KEP %s/%s updated\n", opts.SIG, opts.Name)
 
 	return nil
 }

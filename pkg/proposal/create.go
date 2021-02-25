@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package kepctl
+package proposal
 
 import (
 	"fmt"
@@ -27,10 +27,19 @@ import (
 	"github.com/pkg/errors"
 
 	"k8s.io/enhancements/api"
+	"k8s.io/enhancements/pkg/repo"
 )
 
 type CreateOpts struct {
-	CommonArgs
+	Repo *repo.Repo
+
+	// Proposal options
+	KEP    string // KEP name sig-xxx/xxx-name
+	Name   string
+	Number string
+	SIG    string
+
+	// Create options
 	Title        string
 	Approvers    []string
 	Authors      []string
@@ -44,42 +53,39 @@ type CreateOpts struct {
 // Validate checks the args provided to the create command and parses the sig,
 // kep # and name to populate the create opts
 func (c *CreateOpts) Validate(args []string) error {
-	err := c.validateAndPopulateKEP(args)
-	if err != nil {
-		return err
-	}
+	// TODO: Populate logic
+	// nolint:gocritic
+	/*
+		err := repoOpts.ValidateAndPopulateKEP(args)
+		if err != nil {
+			return err
+		}
 
-	if len(c.PRRApprovers) == 0 {
-		return errors.New("must provide at least one PRR Approver")
-	}
+		if len(c.PRRApprovers) == 0 {
+			return errors.New("must provide at least one PRR Approver")
+		}
+	*/
 
 	return nil
 }
 
 // Create builds a new KEP based on the README.md and kep.yaml templates in the
 // path specified by the command args. CreateOpts is used to populate the template
-func (c *Client) Create(opts *CreateOpts) error {
-	fmt.Fprintf(c.Out, "Creating KEP %s %s %s\n", opts.SIG, opts.Number, opts.Name)
+func Create(opts *CreateOpts) error {
+	r := opts.Repo
 
-	repoPath, err := c.findEnhancementsRepo(&opts.CommonArgs)
-	fmt.Fprintf(c.Out, "Looking for enhancements repo in %s\n", repoPath)
-	if err != nil {
-		return fmt.Errorf("unable to create KEP: %s", err)
-	}
+	fmt.Fprintf(r.Out, "Creating KEP %s %s %s\n", opts.SIG, opts.Number, opts.Name)
 
-	t, err := c.getKepTemplate(repoPath)
-	if err != nil {
-		return err
-	}
+	kep := &api.Proposal{}
 
-	updateTemplate(t, opts)
+	populateProposal(kep, opts)
 
-	err = validateKEP(t)
+	err := kep.Validate()
 	if err != nil {
 		return err
 	}
 
-	err = c.createKEP(t, opts)
+	err = createKEP(kep, opts)
 	if err != nil {
 		return err
 	}
@@ -87,17 +93,43 @@ func (c *Client) Create(opts *CreateOpts) error {
 	return nil
 }
 
-func updateTemplate(t *api.Proposal, opts *CreateOpts) {
+func createKEP(kep *api.Proposal, opts *CreateOpts) error {
+	r := opts.Repo
+
+	fmt.Fprintf(r.Out, "Generating new KEP %s in %s ===>\n", opts.Name, opts.SIG)
+
+	err := r.WriteKEP(kep)
+	if err != nil {
+		return fmt.Errorf("unable to create KEP: %s", err)
+	}
+
+	template := r.ProposalTemplate
+
+	newPath := filepath.Join(
+		r.ProposalPath,
+		opts.SIG,
+		opts.Name,
+		repo.ProposalFilename,
+	)
+
+	if writeErr := ioutil.WriteFile(newPath, template, os.ModePerm); writeErr != nil {
+		return errors.Wrapf(writeErr, "writing KEP data to file")
+	}
+
+	return nil
+}
+
+func populateProposal(p *api.Proposal, opts *CreateOpts) {
 	if opts.State != "" {
-		t.Status = opts.State
+		p.Status = opts.State
 	}
 
 	now := time.Now()
 	layout := "2006-01-02"
 
-	t.CreationDate = now.Format(layout)
-	t.Number = opts.Number
-	t.Title = opts.Title
+	p.CreationDate = now.Format(layout)
+	p.Number = opts.Number
+	p.Title = opts.Title
 
 	if len(opts.Authors) > 0 {
 		authors := []string{}
@@ -109,26 +141,27 @@ func updateTemplate(t *api.Proposal, opts *CreateOpts) {
 			authors = append(authors, author)
 		}
 
-		t.Authors = authors
+		p.Authors = authors
 	}
 
 	if len(opts.Approvers) > 0 {
-		t.Approvers = updatePersonReference(opts.Approvers)
+		p.Approvers = updatePersonReference(opts.Approvers)
 	}
 
 	if len(opts.Reviewers) > 0 {
-		t.Reviewers = updatePersonReference(opts.Reviewers)
+		p.Reviewers = updatePersonReference(opts.Reviewers)
 	}
 
-	t.OwningSIG = opts.SIG
+	p.OwningSIG = opts.SIG
 
 	// TODO(lint): appendAssign: append result not assigned to the same slice (gocritic)
 	//nolint:gocritic
-	t.ParticipatingSIGs = append(opts.SIGS, opts.SIG)
-	t.Filename = opts.Name
-	t.LastUpdated = "v1.19"
+	p.ParticipatingSIGs = append(opts.SIGS, opts.SIG)
+	p.Filename = opts.Name
+	p.LastUpdated = "v1.19"
+
 	if len(opts.PRRApprovers) > 0 {
-		t.PRRApprovers = updatePersonReference(opts.PRRApprovers)
+		p.PRRApprovers = updatePersonReference(opts.PRRApprovers)
 	}
 }
 
@@ -138,34 +171,9 @@ func updatePersonReference(names []string) []string {
 		if !strings.HasPrefix(name, "@") {
 			name = fmt.Sprintf("@%s", name)
 		}
+
 		persons = append(persons, name)
 	}
+
 	return persons
-}
-
-func (c *Client) createKEP(kep *api.Proposal, opts *CreateOpts) error {
-	fmt.Fprintf(c.Out, "Generating new KEP %s in %s ===>\n", opts.Name, opts.SIG)
-
-	args := &opts.CommonArgs
-	err := c.writeKEP(kep, args)
-	if err != nil {
-		return fmt.Errorf("unable to create KEP: %s", err)
-	}
-
-	path, err := c.findEnhancementsRepo(args)
-	if err != nil {
-		return err
-	}
-
-	b, err := c.getReadmeTemplate(path)
-	if err != nil {
-		return fmt.Errorf("couldn't find README template: %s", err)
-	}
-
-	newPath := filepath.Join(path, "keps", opts.SIG, opts.Name, "README.md")
-	if writeErr := ioutil.WriteFile(newPath, b, os.ModePerm); writeErr != nil {
-		return errors.Wrapf(writeErr, "writing KEP data to file")
-	}
-
-	return nil
 }

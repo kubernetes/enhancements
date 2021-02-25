@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package kepctl
+package repo
 
 import (
 	"fmt"
@@ -32,10 +32,8 @@ func TestValidateQueryOpt(t *testing.T) {
 		{
 			name: "Valid SIG",
 			queryOpts: QueryOpts{
-				CommonArgs: CommonArgs{
-					Name: "1011-test",
-				},
-				SIG:        []string{"sig-multicluster"},
+				Name:       "1011-test",
+				Groups:     []string{"sig-multicluster"},
 				IncludePRs: true,
 				Output:     "json",
 			},
@@ -44,10 +42,8 @@ func TestValidateQueryOpt(t *testing.T) {
 		{
 			name: "Invalid SIG",
 			queryOpts: QueryOpts{
-				CommonArgs: CommonArgs{
-					Name: "1011-test-xyz",
-				},
-				SIG:        []string{"sig-xyz"},
+				Name:       "1011-test-xyz",
+				Groups:     []string{"sig-xyz"},
 				IncludePRs: true,
 				Output:     "json",
 			},
@@ -56,10 +52,8 @@ func TestValidateQueryOpt(t *testing.T) {
 		{
 			name: "Unsupported Output format",
 			queryOpts: QueryOpts{
-				CommonArgs: CommonArgs{
-					Name: "1011-test-testing",
-				},
-				SIG:        []string{"sig-testing"},
+				Name:       "1011-test-testing",
+				Groups:     []string{"sig-testing"},
 				IncludePRs: true,
 				Output:     "PDF",
 			},

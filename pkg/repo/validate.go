@@ -1,0 +1,126 @@
+/*
+Copyright 2021 The Kubernetes Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package repo
+
+import (
+	"os"
+	"path/filepath"
+
+	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
+
+	"k8s.io/enhancements/pkg/kepval"
+)
+
+// This is the actual validation check of all KEPs in this repo
+func (r *Repo) Validate() (
+	warnings []string,
+	valErrMap map[string][]error,
+	err error,
+) {
+	if r.ProposalPath == "" {
+		return warnings, valErrMap, errors.New("proposal path cannot be empty")
+	}
+
+	kepDir := r.ProposalPath
+	files := []string{}
+
+	// Find all the KEPs
+	err = filepath.Walk(
+		kepDir,
+		func(path string, info os.FileInfo, err error) error {
+			logrus.Debugf("processing filename %s", info.Name())
+
+			if err != nil {
+				return err
+			}
+
+			if info.IsDir() {
+				if info.Name() == PRRApprovalPathStub {
+					return filepath.SkipDir
+				}
+
+				return nil
+			}
+
+			dir := filepath.Dir(path)
+
+			metadataFilename := ProposalMetadataFilename
+			metadataFilepath := filepath.Join(dir, metadataFilename)
+			if _, err := os.Stat(metadataFilepath); err == nil {
+				// There is KEP metadata file in this directory, only that one should be processed.
+				if info.Name() == metadataFilename {
+					files = append(files, metadataFilepath)
+					return filepath.SkipDir
+				}
+			}
+
+			return nil
+		},
+	)
+
+	// This indicates a problem walking the filepath, not a validation error.
+	if err != nil {
+		return warnings, valErrMap, errors.Wrap(err, "walking repository")
+	}
+
+	if len(files) == 0 {
+		return warnings, valErrMap, errors.New("must find more than zero KEPs")
+	}
+
+	kepHandler, prrHandler := r.KEPHandler, r.PRRHandler
+	prrDir := r.PRRApprovalPath
+	logrus.Infof("PRR directory: %s", prrDir)
+
+	for _, filename := range files {
+		kepFile, err := os.Open(filename)
+		if err != nil {
+			return warnings, valErrMap, errors.Wrapf(err, "could not open file %s", filename)
+		}
+
+		defer kepFile.Close()
+
+		logrus.Infof("parsing %s", filename)
+		kep, kepParseErr := kepHandler.Parse(kepFile)
+		if kepParseErr != nil {
+			return warnings, valErrMap, errors.Wrap(kepParseErr, "parsing KEP file")
+		}
+
+		// TODO: This shouldn't be required once we push the errors into the
+		//       parser struct
+		if kep.Error != nil {
+			return warnings, valErrMap, errors.Wrapf(kep.Error, "%v has an error", filename)
+		}
+
+		err = kepval.ValidatePRR(kep, prrHandler, prrDir)
+		if err != nil {
+			valErrMap[filename] = append(valErrMap[filename], err)
+		}
+	}
+
+	if len(valErrMap) > 0 {
+		for filename, errs := range valErrMap {
+			logrus.Infof("the following PRR validation errors occurred in %s:", filename)
+
+			for _, e := range errs {
+				logrus.Infof("%v", e)
+			}
+		}
+	}
+
+	return warnings, valErrMap, nil
+}

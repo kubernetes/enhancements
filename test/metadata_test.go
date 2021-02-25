@@ -23,11 +23,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"k8s.io/enhancements/pkg/kepval"
-)
-
-const (
-	kepsDir = "keps"
+	"k8s.io/enhancements/pkg/repo"
 )
 
 func TestValidation(t *testing.T) {
@@ -35,9 +31,10 @@ func TestValidation(t *testing.T) {
 	require.Nil(t, err)
 
 	rootDir := filepath.Dir(wd)
-	kepsDir := filepath.Join(rootDir, kepsDir)
+	r, err := repo.New(rootDir)
+	require.Nil(t, err)
 
-	warnings, valErrMap, err := kepval.ValidateRepository(kepsDir)
+	warnings, valErrMap, err := r.Validate()
 	require.Nil(t, err)
 	require.Len(t, valErrMap, 0)
 

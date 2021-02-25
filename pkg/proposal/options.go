@@ -1,5 +1,5 @@
 /*
-Copyright 2020 The Kubernetes Authors.
+Copyright 2021 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -14,17 +14,40 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package kepctl
+package proposal
+
+import (
+	"fmt"
+	"regexp"
+
+	"github.com/pkg/errors"
+)
 
 type Options struct {
-	// command options
-	LogLevel  string
-	RepoPath  string // override the default settings
-	TokenPath string
-
-	// KEP options
 	KEP    string // KEP name sig-xxx/xxx-name
 	Name   string
 	Number string
 	SIG    string
+}
+
+func NewOptions(kep, sig, name, number string) (*Options, error) {
+	if kep == "" {
+		return nil, errors.New("must provide a path for the new KEP like sig-architecture/0000-new-kep")
+	}
+
+	re := regexp.MustCompile(`([a-z\\-]+)/((\\d+)-.+)`)
+	matches := re.FindStringSubmatch(kep)
+
+	if matches == nil || len(matches) != 4 {
+		return nil, errors.New(
+			fmt.Sprintf("invalid KEP name: %s", kep),
+		)
+	}
+
+	return &Options{
+		KEP:    kep,
+		SIG:    sig,
+		Name:   name,
+		Number: number,
+	}, nil
 }

@@ -14,16 +14,16 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package kepctl
+package repo
 
 import (
 	"fmt"
 	"regexp"
 
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 
 	"k8s.io/enhancements/api"
-	"k8s.io/enhancements/pkg/legacy/util"
 )
 
 var (
@@ -44,8 +44,14 @@ var (
 )
 
 type QueryOpts struct {
-	CommonArgs
-	SIG         []string
+	// Proposal options
+	KEP    string // KEP name sig-xxx/xxx-name
+	Name   string
+	Number string
+	SIG    string
+
+	// Queries
+	Groups      []string
 	Status      []string
 	Stage       []string
 	PRRApprover []string
@@ -56,10 +62,14 @@ type QueryOpts struct {
 }
 
 // Validate checks the query options and cleans them up if needed
-func (c *QueryOpts) Validate() error {
-	groups := util.Groups()
-	if len(c.SIG) > 0 {
-		sigs, err := selectByRegexp(groups, c.SIG)
+func (o *QueryOpts) Validate() error {
+	groups, err := api.FetchGroups()
+	if err != nil {
+		return errors.Wrap(err, "fetching groups")
+	}
+
+	if len(o.Groups) > 0 {
+		sigs, err := selectByRegexp(groups, o.Groups)
 		if err != nil {
 			return err
 		}
@@ -68,15 +78,15 @@ func (c *QueryOpts) Validate() error {
 			return fmt.Errorf("no SIG matches any of the passed regular expressions")
 		}
 
-		c.SIG = sigs
+		o.Groups = sigs
 	} else {
 		// if no SIGs are passed, list KEPs from all SIGs
-		c.SIG = groups
+		o.Groups = groups
 	}
 
 	// check if the Output specified is one of "", "json" or "yaml"
-	if !sliceContains(SupportedOutputOpts, c.Output) {
-		return fmt.Errorf("unsupported output format: %s. Valid values: %v", c.Output, SupportedOutputOpts)
+	if !sliceContains(SupportedOutputOpts, o.Output) {
+		return fmt.Errorf("unsupported output format: %s. Valid values: %v", o.Output, SupportedOutputOpts)
 	}
 
 	// TODO: check the valid values of stage, status, etc.
@@ -85,7 +95,7 @@ func (c *QueryOpts) Validate() error {
 
 // Query searches the local repo and possibly GitHub for KEPs
 // that match the search criteria.
-func (c *Client) Query(opts *QueryOpts) error {
+func (r *Repo) Query(opts *QueryOpts) error {
 	// if output format is json/yaml, suppress other outputs
 	// json/yaml are structured formats, logging events which
 	// do not conform to the spec will create formatting issues
@@ -97,35 +107,37 @@ func (c *Client) Query(opts *QueryOpts) error {
 	}
 
 	if !suppressOutputs {
-		fmt.Fprintf(c.Out, "Searching for KEPs...\n")
+		fmt.Fprintf(r.Out, "Searching for KEPs...\n")
 	}
 
-	repoPath, err := c.findEnhancementsRepo(&opts.CommonArgs)
-	if err != nil {
-		return errors.Wrap(err, "unable to search KEPs")
-	}
-
-	if tokenErr := c.SetGitHubToken(&opts.CommonArgs); tokenErr != nil {
+	if tokenErr := r.SetGitHubToken(r.TokenPath); tokenErr != nil {
 		return errors.Wrapf(tokenErr, "setting GitHub token")
 	}
 
-	allKEPs := make([]*api.Proposal, 10)
+	allKEPs := make([]*api.Proposal, 0, 10)
 	// load the KEPs for each listed SIG
-	for _, sig := range opts.SIG {
+	for _, sig := range opts.Groups {
 		// KEPs in the local filesystem
-		allKEPs = append(allKEPs, c.loadLocalKEPs(repoPath, sig)...)
+		localKEPs, err := r.LoadLocalKEPs(sig)
+		if err != nil {
+			return errors.Wrap(err, "loading local KEPs")
+		}
+
+		allKEPs = append(allKEPs, localKEPs...)
 
 		// Open PRs; existing KEPs with open PRs will be shown twice
 		if opts.IncludePRs {
-			prKeps, err := c.loadKEPPullRequests(sig)
+			prKeps, err := r.loadKEPPullRequests(sig)
 			if err != nil {
-				fmt.Fprintf(c.Err, "error searching for KEP PRs from %s: %s\n", sig, err)
+				fmt.Fprintf(r.Err, "error searching for KEP PRs from %s: %s\n", sig, err)
 			}
 			if prKeps != nil {
 				allKEPs = append(allKEPs, prKeps...)
 			}
 		}
 	}
+
+	logrus.Debugf("all KEPs collected: %v", allKEPs)
 
 	// filter the KEPs by criteria
 	allowedStatus := sliceToMap(opts.Status)
@@ -134,8 +146,14 @@ func (c *Client) Query(opts *QueryOpts) error {
 	allowedAuthor := sliceToMap(opts.Author)
 	allowedApprover := sliceToMap(opts.Approver)
 
-	keps := make([]*api.Proposal, 10)
+	results := make([]*api.Proposal, 0, 10)
 	for _, k := range allKEPs {
+		if k == nil {
+			return errors.New("one of the KEPs in query was nil")
+		}
+
+		logrus.Debugf("current KEP: %v", k)
+
 		if len(opts.Status) > 0 && !allowedStatus[k.Status] {
 			continue
 		}
@@ -152,21 +170,39 @@ func (c *Client) Query(opts *QueryOpts) error {
 			continue
 		}
 
-		keps = append(keps, k)
+		results = append(results, k)
 	}
 
 	switch opts.Output {
 	case "table":
-		c.PrintTable(DefaultPrintConfigs("LastUpdated", "Stage", "Status", "SIG", "Authors", "Title", "Link"), keps)
+		r.PrintTable(
+			DefaultPrintConfigs(
+				"LastUpdated",
+				"Stage",
+				"Status",
+				"SIG",
+				"Authors",
+				"Title",
+				"Link",
+			),
+			results,
+		)
 	case "yaml":
-		c.PrintYAML(keps)
+		r.PrintYAML(results)
 	case "json":
-		c.PrintJSON(keps)
+		r.PrintJSON(results)
 	default:
 		// this check happens as a validation step in cobra as well
 		// added it for additional verbosity
-		return fmt.Errorf("unsupported output format: %s. Valid values: %s", opts.Output, SupportedOutputOpts)
+		return errors.New(
+			fmt.Sprintf(
+				"unsupported output format: %s. Valid values: %s",
+				opts.Output,
+				SupportedOutputOpts,
+			),
+		)
 	}
+
 	return nil
 }
 
@@ -204,6 +240,7 @@ func selectByRegexp(vals, regexps []string) ([]string, error) {
 			}
 		}
 	}
+
 	return matches, nil
 }
 

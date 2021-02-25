@@ -86,22 +86,34 @@ func (p *Proposal) Validate() error {
 }
 
 func (p *Proposal) IsMissingMilestone() bool {
-	if p.LatestMilestone == "" {
-		return true
-	}
-
-	return false
+	return p.LatestMilestone == ""
 }
 
 func (p *Proposal) IsMissingStage() bool {
-	if p.Stage == "" {
-		return true
-	}
-
-	return false
+	return p.Stage == ""
 }
 
 type KEPHandler Parser
+
+func NewKEPHandler() (*KEPHandler, error) {
+	handler := &KEPHandler{}
+
+	groups, err := FetchGroups()
+	if err != nil {
+		return nil, errors.Wrap(err, "fetching groups")
+	}
+
+	handler.Groups = groups
+
+	approvers, err := FetchPRRApprovers()
+	if err != nil {
+		return nil, errors.Wrap(err, "fetching PRR approvers")
+	}
+
+	handler.PRRApprovers = approvers
+
+	return handler, nil
+}
 
 // TODO(api): Make this a generic parser for all `Document` types
 func (k *KEPHandler) Parse(in io.Reader) (*Proposal, error) {
