@@ -17,7 +17,6 @@ limitations under the License.
 package repo
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -59,10 +58,11 @@ type Repo struct {
 	BasePath        string
 	ProposalPath    string
 	PRRApprovalPath string
-	TokenPath       string
+	ProposalReadme  string
 
 	// Auth
-	Token string
+	TokenPath string
+	Token     string
 
 	// I/O
 	In  io.Reader
@@ -121,10 +121,28 @@ func New(repoPath string) (*Repo, error) {
 		)
 	}
 
+	proposalReadme := filepath.Join(proposalPath, "README.md")
+	fi, err = os.Stat(proposalReadme)
+	if err != nil {
+		return nil, errors.Wrapf(
+			err,
+			"getting file info for proposal README path %s",
+			proposalPath,
+		)
+	}
+
+	if !fi.Mode().IsRegular() {
+		return nil, errors.Wrap(
+			err,
+			"checking if proposal README is a file",
+		)
+	}
+
 	repo := &Repo{
 		BasePath:        repoPath,
 		ProposalPath:    proposalPath,
 		PRRApprovalPath: prrApprovalPath,
+		ProposalReadme:  proposalReadme,
 		In:              os.Stdin,
 		Out:             os.Stdout,
 		Err:             os.Stderr,
@@ -203,10 +221,6 @@ func (r *Repo) findLocalKEPMeta(sig string) ([]string, error) {
 				return err
 			}
 
-			if ignore(info.Name(), "yaml", "md") {
-				return nil
-			}
-
 			// true if the file is a symlink
 			if info.Mode()&os.ModeSymlink != 0 {
 				// Assume symlink from old KEP location to new. The new location
@@ -223,10 +237,6 @@ func (r *Repo) findLocalKEPMeta(sig string) ([]string, error) {
 				logrus.Debugf("adding %s as KEP metadata", info.Name())
 				keps = append(keps, path)
 				return filepath.SkipDir
-			}
-
-			if filepath.Ext(path) != ".md" {
-				return nil
 			}
 
 			if info.Name() == ProposalFilename {
@@ -263,17 +273,6 @@ func (r *Repo) LoadLocalKEPs(sig string) ([]*api.Proposal, error) {
 				return nil, errors.Wrapf(
 					err,
 					"reading KEP %s from yaml",
-					k,
-				)
-			}
-
-			allKEPs = append(allKEPs, kep)
-		} else {
-			kep, err := r.loadKEPFromOldStyle(k)
-			if err != nil {
-				return nil, errors.Wrapf(
-					err,
-					"reading KEP %s from markdown",
 					k,
 				)
 			}
@@ -428,18 +427,11 @@ func (r *Repo) ReadKEP(sig, name string) (*api.Proposal, error) {
 	)
 
 	_, err := os.Stat(kepPath)
-	if err == nil {
-		return r.loadKEPFromYaml(kepPath)
+	if err != nil {
+		return nil, errors.Wrapf(err, "getting file info for %s", kepPath)
 	}
 
-	// No kep.yaml, treat as old-style KEP
-	kepPath = filepath.Join(
-		r.ProposalPath,
-		sig,
-		name,
-	) + ".md"
-
-	return r.loadKEPFromOldStyle(kepPath)
+	return r.loadKEPFromYaml(kepPath)
 }
 
 func (r *Repo) loadKEPFromYaml(kepPath string) (*api.Proposal, error) {
@@ -511,23 +503,4 @@ func (r *Repo) loadKEPFromYaml(kepPath string) (*api.Proposal, error) {
 	}
 
 	return &p, nil
-}
-
-func (r *Repo) loadKEPFromOldStyle(kepPath string) (*api.Proposal, error) {
-	b, err := ioutil.ReadFile(kepPath)
-	if err != nil {
-		return nil, fmt.Errorf("no kep.yaml, but failed to read as old-style KEP: %s", err)
-	}
-
-	reader := bytes.NewReader(b)
-
-	handler := r.KEPHandler
-
-	kep, err := handler.Parse(reader)
-	if err != nil {
-		return nil, fmt.Errorf("kep is invalid: %s", kep.Error)
-	}
-
-	kep.Name = filepath.Base(kepPath)
-	return kep, nil
 }

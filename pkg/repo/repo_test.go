@@ -71,7 +71,9 @@ func TestFindLocalKEPs(t *testing.T) {
 	}{
 		{
 			"sig-architecture",
-			[]string{"123-newstyle", "20200115-kubectl-diff.md"},
+			[]string{
+				"123-newstyle",
+			},
 		},
 		{
 			"sig-sig",
@@ -79,7 +81,7 @@ func TestFindLocalKEPs(t *testing.T) {
 		},
 	}
 
-	r, repoErr := repo.New("testdata")
+	r, repoErr := repo.New(validRepo)
 	require.Nil(t, repoErr)
 
 	for i, tc := range testcases {

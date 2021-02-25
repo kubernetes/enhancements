@@ -19,16 +19,11 @@ package repo
 import (
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 
 	"k8s.io/enhancements/pkg/kepval"
-)
-
-const (
-	kepsReadmePath = "enhancements/keps/README.md"
 )
 
 // This is the actual validation check of all KEPs in this repo
@@ -37,6 +32,10 @@ func (r *Repo) Validate() (
 	valErrMap map[string][]error,
 	err error,
 ) {
+	if r.ProposalPath == "" {
+		return warnings, valErrMap, errors.New("proposal path cannot be empty")
+	}
+
 	kepDir := r.ProposalPath
 	files := []string{}
 
@@ -58,13 +57,6 @@ func (r *Repo) Validate() (
 				return nil
 			}
 
-			// true if the file is a symlink
-			if info.Mode()&os.ModeSymlink != 0 {
-				// Assume symlink from old KEP location to new. The new location
-				// will be processed separately, so no need to process it here.
-				return nil
-			}
-
 			dir := filepath.Dir(path)
 
 			metadataFilename := ProposalMetadataFilename
@@ -73,18 +65,10 @@ func (r *Repo) Validate() (
 				// There is KEP metadata file in this directory, only that one should be processed.
 				if info.Name() == metadataFilename {
 					files = append(files, metadataFilepath)
+					return filepath.SkipDir
 				}
-
-				return nil
 			}
 
-			if ignore(info.Name(), "yaml", "md") {
-				return nil
-			}
-
-			// TODO(#2220): Return an error as soon as all KEPs are migrated to directory-based
-			//   KEP format.
-			files = append(files, path)
 			return nil
 		},
 	)
@@ -139,15 +123,4 @@ func (r *Repo) Validate() (
 	}
 
 	return warnings, valErrMap, nil
-}
-
-// TODO: Consider replacing with a .kepignore file
-// TODO: Is this a duplicate of the package function?
-// ignore certain files in the keps/ subdirectory
-func ignore(dir, name string) bool {
-	if !strings.HasSuffix(name, "md") {
-		return true
-	}
-
-	return strings.HasSuffix(filepath.Join(dir, name), kepsReadmePath) || name == "FAQ.md"
 }

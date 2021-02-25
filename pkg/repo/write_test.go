@@ -30,6 +30,7 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
+// TODO: Consider using afero to mock the filesystem here
 func TestWriteKep(t *testing.T) {
 	testcases := []struct {
 		name         string
@@ -113,6 +114,12 @@ func TestWriteKep(t *testing.T) {
 
 			repoPath := tc.repoPath
 			repoPath = filepath.Join(tempDir, repoPath)
+
+			proposalReadme := filepath.Join(repoPath, repo.ProposalPathStub, "README.md")
+			emptyReadme, fileErr := os.Create(proposalReadme)
+			require.Nil(t, fileErr)
+			emptyReadme.Close()
+
 			c := newTestClient(t, repoPath)
 
 			b, err := ioutil.ReadFile(tc.kepFile)
@@ -181,7 +188,7 @@ func newTestClient(t *testing.T, repoPath string) testClient {
 
 func (tc *testClient) addTemplate(file string) {
 	src := filepath.Join(
-		"testdata",
+		validRepo,
 		repo.ProposalPathStub,
 		repo.ProposalTemplatePathStub,
 		file,

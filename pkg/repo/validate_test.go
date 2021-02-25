@@ -17,6 +17,7 @@ limitations under the License.
 package repo_test
 
 import (
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -24,16 +25,49 @@ import (
 	"k8s.io/enhancements/pkg/repo"
 )
 
+const (
+	testdataDir = "testdata"
+	reposDir    = "repos"
+)
+
+var validRepo = filepath.Join(
+	testdataDir,
+	reposDir,
+	"valid",
+)
+
 func TestRepoValidate(t *testing.T) {
-	r, repoErr := repo.New("testdata")
-	require.Nil(t, repoErr)
+	testcases := []struct {
+		name        string
+		repoPath    string
+		expectError bool
+	}{
+		{
+			name:        "valid",
+			repoPath:    "valid",
+			expectError: false,
+		},
+	}
 
-	warnings, valErrMap, err := r.Validate()
-	require.Nil(t, err)
-	require.Len(t, valErrMap, 0)
+	for _, tc := range testcases {
+		t.Run(tc.name, func(t *testing.T) {
+			repoPath := filepath.Join(testdataDir, reposDir, tc.repoPath)
 
-	t.Logf(
-		"KEP validation succeeded, but the following warnings occurred: %v",
-		warnings,
-	)
+			r, repoErr := repo.New(repoPath)
+			require.NoError(t, repoErr)
+
+			warnings, valErrMap, err := r.Validate()
+			if tc.expectError {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+				require.Len(t, valErrMap, 0)
+			}
+
+			t.Logf(
+				"KEP validation succeeded, but the following warnings occurred: %v",
+				warnings,
+			)
+		})
+	}
 }
