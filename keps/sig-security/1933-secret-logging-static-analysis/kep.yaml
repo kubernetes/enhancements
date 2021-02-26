@@ -2,10 +2,11 @@ title: Defend against accidental credential logging via static analysis interati
 kep-number: "1933"
 authors:
 - "@PurelyApplied"
-owning-sig: sig-instrumentation
+owning-sig: sig-security
 participating-sigs:
 - sig-instrumentation
 - sig-testing
+- sig-security
 status: implementable
 creation-date: "2020-08-12"
 reviewers:
