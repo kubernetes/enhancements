@@ -847,9 +847,18 @@ Because we now have more possible values for `mu(i,t)` than 0 and
 `mu_fair(t)`, it is more computationally complex to adjust the
 `mu(i,t)` values when a packet arrives or completes virtual service.
 That complexity is:
-- O(n log n), where n is the number of queues,
-  in a straightforward implementation;
-- O(log n) if the queues are kept in a data structure sorted by `rho(i,t)`.
+- `O(n log n)`, where n is the number of queues, in a straightforward
+  implementation that sorts the queues by increasing rho and then
+  enumerates them to find the least demanding, if any, that can not
+  get all it wants;
+- `O((1 + n_delta) * log n)` if the queues are kept in a
+  logarithmic-complexity sorted data structure (such as skip-list or
+  red-black tree) ordered by `rho(i,t)`, `n_delta` is the number of
+  queues that enter or leave the relationship `mu(i,t) == rho(i,t)`,
+  and a pointer to that boundary in the sorted data structure is
+  maintained.  Note that in a system that stays out of overload,
+  `n_delta` stays zero.  The same result obtains while the system
+  stays overloaded by a fixed few queues.
 
 We can keep the same virtual transmission scheduling scheme as in the
 single-link world --- that is, each queue sends one packet at a time
