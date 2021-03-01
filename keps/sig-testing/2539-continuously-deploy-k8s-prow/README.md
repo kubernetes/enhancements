@@ -116,13 +116,6 @@ This approach uses tide auto-merge feature, so that no need to worry about repo 
 
 ```
 <<[UNRESOLVED (spiffxp) ]>>
-Suggestion: annotate prow job with prow versions.
-<<[/UNRESOLVED]>>
-```
-
-
-```
-<<[UNRESOLVED (spiffxp) ]>>
 Suggestion: how to keep slack reports on each automated bump.
 <<[/UNRESOLVED]>>
 ```
