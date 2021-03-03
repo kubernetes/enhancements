@@ -62,6 +62,8 @@ Check these off as they are completed for the Release Team to track. These check
 
 ## Summary
 
+[Reject Invalid PVC DataSource KEP]: ../2546-reject-invalid-pvc-datasource/README.md
+
 In Kubernetes 1.12, we added the `DataSource` field to the PVC spec. The field was implemented
 as a `TypedLocalObjectReference` to give flexibility in the future about what objects could be
 data sources for new volumes.
@@ -85,6 +87,8 @@ field to allow arbitrary object types to be data sources, and rely on new contro
 perform the validation on those data sources and provide feedback to users. We will introduce
 a new CRD to register valid datasource kinds, and individual volume populators will
 create a CR for each kind of data source that it understands.
+
+See [Reject Invalid PVC DataSource KEP] for changes to `DataSource` field handling.
 
 ## Motivation
 

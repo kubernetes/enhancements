@@ -1,0 +1,21 @@
+title: Reject Invalid PVC DataSource
+kep-number: 2546
+authors:
+  - "@bswartz"
+owning-sig: sig-storage
+participating-sigs:
+  - sig-api-machinery
+status: implementable
+creation-date: 2021-03-02
+last-updated: 2021-03-02
+reviewers:
+  - "@thockin"
+  - "@saad-ali"
+approvers:
+  - "@thockin"
+  - "@saad-ali"
+stage: stable
+latest-milestone: "v1.21"
+milestone:
+  stable: "v1.21"
+disable-supported: false
