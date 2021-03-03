@@ -6,13 +6,13 @@ owning-sig: sig-testing
 participating-sigs:
   - sig-testing
   - sig-release
-status: provisional
+status: implementable
 creation-date: 2021-02-23
 reviewers:
   - "@spiffxp" # Sig-testing chair
-  - "@ameukam" # Sig-release chair
+  - "@justaugustus" # Sig-release chair
   - "@alvaroaleman" # Prow approver
 approvers:
   - "@spiffxp" # Sig-testing chair
-  - "@ameukam" # Sig-release chair
+  - "@justaugustus" # Sig-release chair
   - "@alvaroaleman" # Prow approver
