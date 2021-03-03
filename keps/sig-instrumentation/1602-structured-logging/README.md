@@ -369,6 +369,8 @@ Klog interface was selected as it is already supported by klog.v2 with `SetLogge
 
 ### Migration / Graduation Criteria
 
+NOTE: The components kubectl and kubeadm are out of scope for this migration effort until further notice.
+
 #### Alpha
 
 Introduce structured logging and JSON format:
