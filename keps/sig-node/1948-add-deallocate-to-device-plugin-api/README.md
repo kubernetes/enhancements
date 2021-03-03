@@ -1,5 +1,8 @@
 # KEP-20201808: Add Deallocate and PostStopContainer to device plugin API
 
+## Table of Contents
+
+<!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
 - [Motivation](#motivation)
@@ -10,6 +13,8 @@
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
+    - [Beta -&gt; GA Graduation](#beta---ga-graduation)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -93,7 +98,7 @@ Since both additions are optional, existing device plugins should continue funct
 
 Only risk is breaking existing device plugins by introducing non optional changes. Can be mitigated by enough test coverage.
 
-### Design Details
+## Design Details
 
 - Remove reusable devices from `devicemanage`. Reusable devices are silently reused by kubernetes, and so they can't be reported back to device plugins for cleanup, tracking, etc.
 - Move `PreStartContainer` in `DeviceManager` to be used as a container lifecycle hook. (This change isn't truly required, but useful for compatibility and organization with the next steps).
@@ -108,7 +113,7 @@ Only risk is breaking existing device plugins by introducing non optional change
 ### Test Plan
 
 - Unit tests will be updated to include the new API calls
-- E2E tests should be added with a sample device plugin gor verification.
+- E2E tests should be added with a sample device plugin for verification.
 
 ### Graduation Criteria
 
@@ -126,6 +131,10 @@ Only risk is breaking existing device plugins by introducing non optional change
 ### Upgrade / Downgrade Strategy
 
 As part of the device plugin API, this will follow the same API versioning system. This means that it is up to an application (a device plugin) to choose the required API version it wants. As long as the cluster has a recent enough (to include the required API version) kubernetes, upgrade or downgrades require no cluster modifications at all, and are decided on the application level.
+
+### Version Skew Strategy
+
+As part of the device plugin API, this will follow the same API versioning system. This means that it is up to an application (a device plugin) to choose the required API version it wants. No version skew issues will arise.
 
 ## Production Readiness Review Questionnaire
 
@@ -194,6 +203,10 @@ of this feature?**
   The extra API calls originate from the kubelet to the device plugin running on the
   same node. Since they are only happening on the node level, there's no risk of
   congestion, or a need to measure their throughput, etc.
+
+### Troubleshooting
+
+Detection of failures can only be done through using test/mock device plugins, along with checking the kubelet logs. Extra tests according to the test plan mentioned above should help mitigating issues.
 
 ## Implementation History
 
