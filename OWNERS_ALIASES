@@ -168,14 +168,18 @@ aliases:
     - jeremyrickard
     - johnbelamaric
     - justaugustus
+    - kikisdeliveryservice
     - LappleApple
     - mrbobbytables
   enhancements-reviewers:
+    - annajung
     - jeremyrickard
     - johnbelamaric
     - justaugustus
+    - kikisdeliveryservice
     - LappleApple
     - mrbobbytables
+    - palnabarun
   kep-tools-approvers:
     - jeremyrickard
     - johnbelamaric
@@ -186,6 +190,7 @@ aliases:
     - johnbelamaric
     - justaugustus
     - mrbobbytables
+    - palnabarun
   prod-readiness-approvers:
     - johnbelamaric
     - deads2k
