@@ -153,9 +153,9 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 
 ### Goals
 
-The goals for this KEP are to satisfy two keey CUJs
-1. As a cluster administrator, I want to enforce irrevocable guardrails that all workloads must adhere to to guarantee the safety of my clusters.
-2. As a cluster administrator, I want to deploy a default set of policies to all workloads that may be overridden by the workloads if needed.
+The goals for this KEP are to satisfy two key CUJs
+1. As a cluster administrator, I want to enforce irrevocable guardrails that all workloads must adhere to in order to guarantee the safety of my clusters.
+2. As a cluster administrator, I want to deploy a default set of policies to all workloads that may be overridden by the developers if needed.
 
 There are several unique properties that we need to add in order accomplish the CUJs above.
 1. Deny rules and, therefore, hierarchical enforcement of policy
@@ -199,7 +199,7 @@ clients, or workloads that poses security risks. Those traffic restrictions can 
 `Deny` rules are deleted or modified. On the other hand, the `Allow` rules can be used to call out traffic
 in the cluster that needs to be allowed for certain components to work as expected (egress to CoreDNS for
 example). Those traffic could be blocked when developers apply NetworkPolicy to their Namespaces which
-turns the workloads to be isolated.
+isolates the workloads.
 
 ### DefaultNetworkPolicy resource
 
@@ -225,19 +225,19 @@ TODO: insert image
 
 As a cluster admin, I want to explicitly deny traffic from certain source IPs that I know to be bad.
 
-Many admins maintain lists of IPs that are known to be bad actors, especially to curb DoS attacks. A cluster admin could use Cluster Network Policy to codify all the source IPs that should be denied in order to prevent that traffic from accidentally reaching workloads. Note that the inverse of this (allow traffic from well known source IPs) is also a valid use case.
+Many admins maintain lists of IPs that are known to be bad actors, especially to curb DoS attacks. A cluster admin could use ClusterNetworkPolicy to codify all the source IPs that should be denied in order to prevent that traffic from accidentally reaching workloads. Note that the inverse of this (allow traffic from well known source IPs) is also a valid use case.
 
 #### Story 2: Funnel traffic through ingress/egress gateways
 
 As a cluster admin, I want to ensure that all traffic coming into (going out of) my cluster always goes through my ingress (egress) gateway.
 
-It is common pratice in enterprises to setup checkpoints in their clusters at ingress/egress. These checkpoints usually perform advanced checks such as firewalling, authentication, packet/connection logging, etc. This is a big request for compliance reasons, and Cluster Network Policy can ensure that all the traffic is forced to go through ingress/egress gateways.
+It is common pratice in enterprises to setup checkpoints in their clusters at ingress/egress. These checkpoints usually perform advanced checks such as firewalling, authentication, packet/connection logging, etc. This is a big request for compliance reasons, and ClusterNetworkPolicy can ensure that all the traffic is forced to go through ingress/egress gateways.
 
 #### Story 3: Isolate multiple tenants in a cluster
 
-As a cluster admin, I want to isolate all the tenants (modeled as namespaces) on my cluster from each other by default.
+As a cluster admin, I want to isolate all the tenants (modeled as Namespaces) on my cluster from each other by default.
 
-Many enterprises are creating shared Kubernetes clusters that are managed by a centralized platform team. Each internal team that wants to run their workloads gets assigned a namespace on the shared clusters. Naturally, the platform team will want to make sure that, by default, all intra-namespace traffic is allowed and all inter-namespace traffic is denied.
+Many enterprises are creating shared Kubernetes clusters that are managed by a centralized platform team. Each internal team that wants to run their workloads gets assigned a Namespace on the shared clusters. Naturally, the platform team will want to make sure that, by default, all intra-namespace traffic is allowed and all inter-namespace traffic is denied.
 
 #### Story 4: Enforce network/security best practices
 
@@ -274,15 +274,44 @@ How will UX be reviewed, and by whom?
 
 Consider including folks who also work outside the SIG or subproject.
 -->
+A potential risk of the ClusterNetworkPolicy resource is, when it's stacked on top of existing
+NetworkPolicies in the cluster, some existing allowed traffic patterns (which were regulated by
+those NetworkPolicies) may become blocked by ClusterNetworkPolicy `Deny` rules, while some isolated
+workloads may become accessible instead because of ClusterNetworkPolicy `Allow` rules.
+
+Developers could face some difficulties figuring out why the NetworkPolicies did not take effect,
+even if they know to look for ClusterNetworkPolicy rules that can potentially override these policies:
+To understand why traffic between a pair of Pods is allowed/denied, a list of NetworkPolicy resources
+in both Pods' Namespace used to be sufficient (considering no other CRDs in the cluster tries to alter
+traffic behavior). The same Pods, on the other hand, can appear as an AppliedTo, or an ingress/egress
+peer in any ClusterNetworkPolicy. This makes looking up policies that affect a particular Pod more
+challenging than when there's only NetworkPolicy resources.
+
+In addition, in an extreme case where a ClusterNetworkPolicy `Deny` rule, ClusterNetworkPolicy `Allow`
+rule, NetworkPolicy rule and DefaultNetworkPolicy rule applies to an overlapping set of Pods, users
+will need to refer to the precedence model mentioned in the previous section to determine which rule
+would take effect. Consider the following scenario:
+
+- Pods [a, b, c, d] exist in Namespace x. Another Pod `client` exist in Namespace y. Namespace z has no Pods.
+The following policy resources also exist in the cluster:
+- (1) A ClusterNetworkPolicy `Deny` rule selects [x/a] and denies all ingress traffic from Namespace y.
+- (2) A ClusterNetworkPolicy `Allow` rule selects [x/a, x/b] and allows all ingress traffic Namespace y.
+- (3) A NetworkPolicy rule isolates [x/b], only allows ingress traffic from Namespace z.
+- (4) A NetworkPolicy rule isolates [x/c], only allows ingress traffic from Namespace y.
+- (5) A DefaultNetworkPolicy rule isolates [x/c, x/d], only allows ingress traffic from Namespace z.
+
+Now suppose Pod y/client initiates traffic towards x/a, x/b, x/c and x/d.
+- y/client -> x/a is affected by rule (1) and (2). Since rule (1) has higher precedence, the request should be denied.
+- y/client -> x/b is affected by rule (2) and (3). Since rule (2) has higher precedence, the request should be allowed.
+- y/client -> x/c is affected by rule (4) and (5). Since rule (4) has higher precedence, the request should be allowed.
+- y/client -> x/d is affected by rule (5) only, The request should be denied.
+
+As shown above, figuring out how stacked policies affect traffic between workloads might not be
+very straightfoward. To mitigate this risk and improve UX, A tool which reversely looks up affecting
+policies for a given Pod and prints out relative precedence of those rules can be quite useful.
+(TODO: link to NP explainer/future work?)
 
 ## Design Details
-
-<!--
-This section should contain enough information that the specifics of your
-change are understandable. This may include API specs (though not always
-required) or even code snippets. If there's any ambiguity about HOW your
-proposal will be implemented, this is the place to discuss them.
--->
 
 The following new `ClusterNetworkPolicy` API will be added to the `networking.k8s.io` API group:
 
@@ -331,14 +360,14 @@ type DefaultNetworkPolicy struct {
 
 type DefaultNetworkPolicySpec struct {
 	// Implicit isolation of AppliedTo Pods.
-	AppliedTo    AppliedTo
-	Ingress      []DefaultNetworkPolicyIngressRule
-	Egress       []DefaultNetworkPolicyEgressRule
+	AppliedTo   AppliedTo
+	Ingress     []DefaultNetworkPolicyIngressRule
+	Egress      []DefaultNetworkPolicyEgressRule
 }
 
 type DefaultNetworkPolicyIngress/EgressRule struct {
-	Ports        []networkingv1.NetworkPolicyPort
-	From/To      []networkingv1.DefaultNetworkPolicyPeer
+	Ports            []networkingv1.NetworkPolicyPort
+	OnlyFrom/OnlyTo  []networkingv1.DefaultNetworkPolicyPeer
 }
 
 type DefaultNetworkPolicyPeer struct {
@@ -347,6 +376,11 @@ type DefaultNetworkPolicyPeer struct {
 	IPBlock      *IPBlock
 }
 ```
+Most structs above are very similiar to NetworkPolicy and quite self-explanatory. One detail to
+notice is that in the DefaultNetworkPolicy Ingress/Egress rule spec, the peers are created in a
+field named `OnlyFrom`/`OnlyTo`, as opposed to `To`/`From` in ClusterNetworkPolicy. We chose this
+naming to better hint policy writers about the isolation effect of DefaultNetworkPolicy on the
+workloads it applies to.
 
 The following structs will be added to the `networking.k8s.io` API group and shared between
 `ClusterNetworkPolicy` and `DefaultNetworkPolicy`:
@@ -358,11 +392,51 @@ type AppliedTo struct {
 }
 
 type Namespaces struct {
-	Self                bool
-	NamespaceSelector   *metav1.LabelSelector
-	Except              *metav1.LabelSelector
+	Self       bool
+	Selector   *metav1.LabelSelector
+	Except     []*metav1.LabelSelector
 }
 ```
+
+### AppliedTo
+The `AppliedTo` field replaces `PodSelector` in NetworkPolicy spec, as means to specify the target
+Pods that this cluster-scoped policy (either `ClusterNetworkPolicy` or `DefaultNetworkPolicy`)
+applies to. Since the policy is cluster-scoped, the `NamespaceSelector` field is required. An empty
+`NamespaceSelector` (namespaceSelector: {}) selects all Namespaces in the Cluster.
+(TODO: should the PodSelector be required?)
+
+### Namespaces
+The `Namespaces` field replaces `NamespaceSelector` in NetworkPolicyPeer, as means to specify the
+Namespaces of ingress/egress peers for cluster-scoped policies. For selecting Pods from specific
+Namespaces, the `Selector` field under `Namespaces` works exactly as `NamespaceSelector`. The two
+other fields `Self` and `Except` are added to satisfy the specific needs for cluster-scoped policies:
+
+#### Self
+An optional field, which evaluates to false by default. When `self: true` is set, no selectors
+or `Except` can be present concurrently. This is a special keyword to indicate that the corresponding
+`podSelector` should be evaluated from the Namespace for which the ingress/egress rule is currently
+being evaluated upon. Consider the following exmaple:
+
+- Pods [a1, b1] exist in Namespace x, which has labels `app=a` and `app=b` respectively.
+- Pods [a2, b2] exist in Namespace y, which also has labels `app=a` and `app=b` respectively.
+
+```yaml
+apiVersion: networking.k8s.io/v1alpha1
+kind: DefaultNetworkPolicy
+Spec:
+  appliedTo:
+    namespaceSelector: {}
+  ingress:
+    - onlyFrom:
+      - namespaces:
+          self: true
+        podSelector:
+          matchLabels:
+            app: b
+```
+The above DefaultNetworkPolicy should be interpreted as: for each Namespace in the cluster, all
+Pods in that Namespace should only allow traffic from Pods in the __same Namespace__ who has label
+app=b. Hence, the policy above allows x/b1 -> x/a1, but denies y/b2 -> x/a1.
 
 ### Test Plan
 
