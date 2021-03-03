@@ -362,17 +362,20 @@ automatically enable late binding for PVCs which are owned by a pod.
 
 ### Test Plan
 
-- Unit tests will be added for the API change.
-- Unit tests will cover the functionality of the controller, similar
+- Unit tests were added for the API change.
+- Unit tests cover the functionality of the controller, similar
   to
   https://github.com/kubernetes/kubernetes/blob/v1.18.2/pkg/controller/volume/persistentvolume/pv_controller_test.go.
-- Unit tests need to cover the positive case (feature enabled) as
+- Unit tests cover the positive case (feature enabled) as
   well as negative case (feature disabled or feature used incorrectly).
-- A new [storage test
-  suite](https://github.com/kubernetes/kubernetes/blob/2b2cf8df303affd916bbeda8c2184b023f6ee53c/test/e2e/storage/testsuites/base.go#L84-L94)
-  will be added which tests ephemeral volume creation, usage and deletion
-  in combination with all drivers that support dynamic volume
-  provisioning.
+- The ephemeral volume test [was
+  extended](https://github.com/kubernetes/kubernetes/commit/2468a24b7a732fa492027a159ee15b6d31bf0577#diff-20517805986874f69e3254bed93d59996d5a6fd571a70ab8120736ded5aafa24)
+  to also test generic ephemeral volumes in combination with all
+  drivers that support dynamic volume provisioning. It currently runs
+  as part of the
+  [alpha-canary-on-master](https://k8s-testgrid.appspot.com/sig-storage-csi-ci#alpha-canary-on-master)
+  Prow job. After the promotion to beta it will also be part of all
+  `-on-1.21` jobs.
 
 ### Graduation Criteria
 
