@@ -32,6 +32,7 @@ var (
 		"table",
 		"json",
 		"yaml",
+		"csv",
 	}
 
 	// DefaultOutputOpt is the default output format for kepctl query
@@ -40,6 +41,7 @@ var (
 	StructuredOutputFormats = []string{
 		"json",
 		"yaml",
+		"csv",
 	}
 )
 
@@ -191,6 +193,8 @@ func (r *Repo) Query(opts *QueryOpts) error {
 		r.PrintYAML(results)
 	case "json":
 		r.PrintJSON(results)
+	case "csv":
+		r.PrintCSV(DefaultPrintConfigs("Title", "Authors", "SIG", "Stage", "Status", "LastUpdated", "Link"), results)
 	default:
 		// this check happens as a validation step in cobra as well
 		// added it for additional verbosity
