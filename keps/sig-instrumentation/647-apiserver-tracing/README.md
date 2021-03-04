@@ -132,7 +132,7 @@ The [OpenTelemetry Collector](https://github.com/open-telemetry/opentelemetry-co
 
 ### APIServer Configuration and EgressSelectors
 
-The API Server controls where traffic is sent using an [EgressSelector](https://github.com/kubernetes/enhancements/blob/master/keps/sig-api-machinery/20190226-network-proxy.md), and has separate controls for `ControlPlane`, `Cluster`, and `Etcd` traffic.  As described above, we would like to support either sending telemetry to a url using the `ControlPlane` egress, or a service using the `Cluster` egress.  To accomplish this, we will introduce a flag, `--opentelemetry-config-file`, that will point to the file that defines the opentelemetry exporter configuration.  That file will have the following format:
+The API Server controls where traffic is sent using an [EgressSelector](https://github.com/kubernetes/enhancements/blob/master/keps/sig-api-machinery/20190226-network-proxy.md), and has separate controls for `ControlPlane`, `Cluster`, and `Etcd` traffic.  As described above, we would like to support sending telemetry to a url using the `ControlPlane` egress.  To accomplish this, we will introduce a flag, `--opentelemetry-config-file`, that will point to the file that defines the opentelemetry exporter configuration.  That file will have the following format:
 
 ```golang
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
