@@ -154,7 +154,7 @@ type TracingConfiguration struct {
 }
 ```
 
-If `--opentelemetry-config-file` is not specified, the API Server will not send any spans, even if incoming requests are sampled.
+If `--opentelemetry-config-file` is not specified, the API Server will not send any spans, even if incoming requests ask for sampling.
 
 ### Controlling use of the OpenTelemetry library
 
