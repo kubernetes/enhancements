@@ -327,6 +327,10 @@ set of proposals as future work items:
   to uniquely identify a rule within a cluster-scoped policy resource becomes very important.
   This can be addressed by introducing a field, say `name`, per `ClusterNetworkPolicy` and `DefaultNetworkPolicy`
   ingress/egress rule.
+- **Node Selector**:  Cluster administrators and developers want to write policies that apply to
+  cluster nodes or host network pods. This can be addressed by introducing nodeSelector field under
+  `appliedTo` field of the `ClusterNetworkPolicy` and `DefaultNetworkPolicy` spec. `DefaultNetworkPolicy`
+   is a better candidate compared to K8s `NetworkPolicy` for introducing this field as nodes are cluster level resources.
 
 ## Design Details
 
@@ -440,7 +444,7 @@ being evaluated upon. Consider the following exmaple:
 ```yaml
 apiVersion: networking.k8s.io/v1alpha1
 kind: DefaultNetworkPolicy
-Spec:
+spec:
   appliedTo:
     namespaceSelector: {}
   ingress:
@@ -930,12 +934,52 @@ the definition of each resource much cleaner and simpler.
 
 ### Single CRD with IsOverrideable field
 
-<!--
-Complete me
--->
+An alternative approach is to combine `ClusterNetworkPolicy` and `DefaultNetworkPolicy`
+into a single CRD with an additional overrideable field in Ingress/ Egress rule as shown below.
+```golang
+type ClusterNetworkPolicyIngress/EgressRule struct {
+	Action        RuleAction
+	IsOverridable bool
+	Ports         []networkingv1.NetworkPolicyPort
+	From/To       []networkingv1.ClusterNetworkPolicyPeer
+}
+```
+If `IsOverridable` is set to false, the rules will take higher precedence than the
+Kubernetes Network Policy rules. Otherwise, the rules will take lower precedence.
+Note that both overridable and non overridable cluster network policy rules have explicit
+allow/ deny rules. The precedence order of the rules is as follows:
+
+`ClusterNetworkPolicy` Deny (`IsOverridable`=false) > `ClusterNetworkPolicy` Allow (`IsOverridable`=false) > K8s `NetworkPolicy` > `ClusterNetworkPolicy` Allow (`IsOverridable`=true) > `ClusterNetworkPolicy` Deny (`IsOverridable`=true)
+
+As the semantics for overridable Cluster Network Policies are different from K8s Network Policies,
+Cluster administrators who worked on K8s Network policies will have hard time writing similar policies for the cluster.
+Also, modifying a single field (`IsOverridable`) of a rule will change the priority in a non-intuitive manner which
+may cause some confusion. For these reasons, we decided not go with this proposal.
 
 ### Single CRD with BaselineAllow as Action
 
-<!--
-Complete me
--->
+We evaluated another single CRD approach with an additional `RuleAction` to cover
+use-cases of both `ClusterNetworkPolicy` and `DefaultNetworkPolicy`
+
+In this approach, we introduce a `BaselineRuleAction` rule action.
+```golang
+type ClusterNetworkPolicyIngress/EgressRule struct {
+	Action       RuleAction
+	Ports        []networkingv1.NetworkPolicyPort
+	From/To      []networkingv1.ClusterNetworkPolicyPeer
+}
+const (
+	RuleActionDeny          RuleAction = "Deny"
+	RuleActionAllow         RuleAction = "Allow"
+	RuleActionBaselineAllow RuleAction = "BaselineAllow"
+)
+```
+
+RuleActionDeny and RuleActionAllow are used to specify rules that take higher precedence
+than Kubernetes Network Policies whereas RuleActionBaselineAllow is used to specify the
+rules that take lower precedence Kubernetes Network Policies. The RuleActionBaselineAllow rules
+have same semantics as Kubernetes Network Policy rules but defined at cluster level.
+
+One of the reasons we did not go with this approach is the ambiguity of the term `BaselineAllow`.
+Also, the semantics around `RuleActionBaselineAllow` is slightly different as it involves
+implicit isolation compared to explicit Allow/ Deny rules with other `RuleActions`.
