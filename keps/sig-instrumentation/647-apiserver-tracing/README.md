@@ -8,6 +8,9 @@
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
+  - [User Stories](#user-stories)
+    - [Steady-State trace collection](#steady-state-trace-collection)
+    - [On-Demand trace collection](#on-demand-trace-collection)
   - [Tracing API Requests](#tracing-api-requests)
   - [Exporting Spans](#exporting-spans)
   - [Running the OpenTelemetry Collector](#running-the-opentelemetry-collector)
@@ -73,6 +76,27 @@ Along with metrics and logs, traces are a useful form of telemetry to aid with d
 
 ## Proposal
 
+### User Stories
+
+Since this feature is for diagnosing problems with the Kube-API Server, it is targeted at Cluster Operators and Cloud Vendors that manage kubernetes control-planes.
+
+For the following use-cases, I can deploy an OpenTelemetry collector as a sidecar to the API Server.  I can use the API Server's `--opentelemetry-config-file` flag with the default URL to make the API Server send its spans to the sidecar collector.  Alternatively, I can point the API Server at an OpenTelemetry collector listening on a different port or URL if I need to.
+
+#### Steady-State trace collection
+
+As a cluster operator or cloud provider, I would like to collect traces for API requests to the API Server to help debug a variety of control-plane problems.  I can set the `SamplingRatePerMillion` in the configuration file to a non-zero number to have spans collected for a small fraction of requests.  Depending on the symptoms I need to debug, I can search span metadata to find a trace which displays the symptoms I am looking to debug.  Even for issues which occur non-deterministically, a low sampling rate is generally still enough to surface a representative trace over time.
+
+#### On-Demand trace collection
+
+As a cluster operator or cloud provider, I would like to collect a trace for a specific request to the API Server.  This will often happen when debugging a live problem.  In such cases, I don't want to change the `SamplingRatePerMillion` to collecting a high percentage of requests, which would be expensive and collect many things I don't care about.  I also don't want to restart the API Server, which may fix the problem I am trying to debug.  Instead, I can make sure the incoming request to the API Server is sampled.  The tooling to do this easily doesn't exist today, but could be added in the future.
+
+For example, to trace a request to list nodes, with traceid=4bf92f3577b34da6a3ce929d0e0e4737, no parent span, and sampled=true:
+
+```bash
+kubectl proxy --port=8080 &
+curl http://localhost:8080/api/v1/nodes -H "traceparent: 00-4bf92f3577b34da6a3ce929d0e0e4737-0000000000000000-01"
+```
+
 ### Tracing API Requests
 
 We will wrap the API Server's http server and http clients with [otelhttp](https://github.com/open-telemetry/opentelemetry-go-contrib/tree/master/instrumentation/net/http/otelhttp) to get spans for incoming and outgoing http requests.  This generates spans for all sampled incoming requests and propagates context with all client requests.  For incoming requests, this would go below [WithRequestInfo](https://github.com/kubernetes/kubernetes/blob/9eb097c4b07ea59c674a69e19c1519f0d10f2fa8/staging/src/k8s.io/apiserver/pkg/server/config.go#L676) in the filter stack, as it must be after authentication and authorization, before the panic filter, and is closest in function to the WithRequestInfo filter.
@@ -108,44 +132,29 @@ The [OpenTelemetry Collector](https://github.com/open-telemetry/opentelemetry-co
 
 ### APIServer Configuration and EgressSelectors
 
-The API Server controls where traffic is sent using an [EgressSelector](https://github.com/kubernetes/enhancements/blob/master/keps/sig-api-machinery/20190226-network-proxy.md), and has separate controls for `Master`, `Cluster`, and `Etcd` traffic.  As described above, we would like to support either sending telemetry to a url using the `Master` egress, or a service using the `Cluster` egress.  To accomplish this, we will introduce a flag, `--opentelemetry-config-file`, that will point to the file that defines the opentelemetry exporter configuration.  That file will have the following format:
+The API Server controls where traffic is sent using an [EgressSelector](https://github.com/kubernetes/enhancements/blob/master/keps/sig-api-machinery/20190226-network-proxy.md), and has separate controls for `ControlPlane`, `Cluster`, and `Etcd` traffic.  As described above, we would like to support sending telemetry to a url using the `ControlPlane` egress.  To accomplish this, we will introduce a flag, `--opentelemetry-config-file`, that will point to the file that defines the opentelemetry exporter configuration.  That file will have the following format:
 
 ```golang
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
-// OpenTelemetryClientConfiguration provides versioned configuration for opentelemetry clients.
-type OpenTelemetryClientConfiguration struct {
+// TracingConfiguration provides versioned configuration for tracing clients.
+type TracingConfiguration struct {
   metav1.TypeMeta `json:",inline"`
 
   // +optional
-  // URL of the collector that's running on the master.
-  // if URL is specified, APIServer uses the egressType Master when sending data to the collector.
-  URL *string `json:"url,omitempty" protobuf:"bytes,3,opt,name=url"`
+  // URL of the collector that's running on the control-plane node.
+  // the APIServer uses the egressType ControlPlane when sending data to the collector.
+  // Defaults to localhost:4317
+  URL *string `json:"url,omitempty" protobuf:"bytes,1,opt,name=url"`
 
   // +optional
-  // Service that's the frontend of the collector deployment running in the cluster.
-  // If Service is specified, APIServer uses the egressType Cluster when sending data to the collector.
-  Service *ServiceReference `json:"service,omitempty" protobuf:"bytes,1,opt,name=service"`
-}
-
-// ServiceReference holds a reference to Service.legacy.k8s.io
-type ServiceReference struct {
-  // `namespace` is the namespace of the service.
-  // Required
-  Namespace string `json:"namespace" protobuf:"bytes,1,opt,name=namespace"`
-  // `name` is the name of the service.
-  // Required
-  Name string `json:"name" protobuf:"bytes,2,opt,name=name"`
-
-  // If specified, the port on the service.
-  // Defaults to 4317, the IANA reserved port for OpenTelemetry.
-  // `port` should be a valid port number (1-65535, inclusive).
-  // +optional
-  Port *int32 `json:"port,omitempty" protobuf:"varint,3,opt,name=port"`
+  // SamplingRatePerMillion is the number of samples to collect per million spans.
+  // Defaults to 0.
+  SamplingRatePerMillion *int32 `json:"samplingRatePerMillion,omitempty" protobuf:"varint,2,opt,name=samplingRatePerMillion"`
 }
 ```
 
-If `--opentelemetry-config-file` is not specified, the API Server will not send any telemetry.
+If `--opentelemetry-config-file` is not specified, the API Server will not send any spans, even if incoming requests ask for sampling.
 
 ### Controlling use of the OpenTelemetry library
 
@@ -153,7 +162,7 @@ As the community found in the [Metrics Stability Framework KEP](https://github.c
 
 ### Test Plan
 
-We will e2e test this feature by deploying an OpenTelemetry Collector on the master, and configure it to export traces using the [stdout exporter](https://github.com/open-telemetry/opentelemetry-go/tree/master/exporters/stdout), which logs the spans in json format.  We can then verify that the logs contain our expected traces when making calls to the API Server.
+We will e2e test this feature by deploying an OpenTelemetry Collector on the control-plane node, and configure it to export traces using the [stdout exporter](https://github.com/open-telemetry/opentelemetry-go/tree/master/exporters/stdout), which logs the spans in json format.  We can then verify that the logs contain our expected traces when making calls to the API Server.
 
 ## Graduation requirements
 
@@ -349,7 +358,7 @@ _This section must be completed when targeting beta graduation to a release._
 
 ### Introducing a new EgressSelector type
 
-Instead of a configuration file to choose between a url on the `Master` network, or a service on the `Cluster` network, we considered introducing a new `OpenTelemetry` egress type, which could be configured separately.  However, we aren't actually introducing a new destination for traffic, so it is more conventional to make use of existing egress types.  We will also likely want to add additional configuration for the OpenTelemetry client in the future.
+Instead of a configuration file to choose between a url on the `ControlPlane` network, or a service on the `Cluster` network, we considered introducing a new `OpenTelemetry` egress type, which could be configured separately.  However, we aren't actually introducing a new destination for traffic, so it is more conventional to make use of existing egress types.  We will also likely want to add additional configuration for the OpenTelemetry client in the future.
 
 ### Other OpenTelemetry Exporters
 
