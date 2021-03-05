@@ -1,0 +1,15 @@
+title: Circumvent 50 tag ASG limit for EKS ManagedNodegroups
+kep-number: 2556
+authors:
+  - "@MyannaHarris"
+owning-sig: sig-autoscaling
+reviewers:
+  - "@gjtempleton"
+  - "@jaypipes"
+approvers:
+  - "@gjtempleton"
+  - "@jaypipes"
+editor: "@MyannaHarris"
+creation-date: 2021-03-05
+last-updated: 2021-03-17
+status: provisional
