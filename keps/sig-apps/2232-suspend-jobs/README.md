@@ -253,8 +253,16 @@ Pods owned by the Job are terminating or have been deleted.
 The suspend `JobCondition` also has a `LastTransitionTime` field. This can be
 used to infer how long a Job has been suspended for (if `Status` is true).
 
-If a Job is created with `suspend: true`, the `StartTime` field of the Job
-status is set only when it is resumed for the first time.
+The `StartTime` field of the Job status is reset to the current time every time
+the Job is resumed from suspension. If a Job is created with `suspend: true`,
+the `StartTime` field of the Job status is set only when it is resumed for the
+first time.
+
+If a Job is suspended (at creation or through an update), the `ActiveDeadlineSeconds`
+timer will effectively be stopped and reset when the Job is resumed again. That
+is, Jobs will never be terminated for exceeding `ActiveDeadlineSeconds` when a
+Job is suspended. Users must interpret `ActiveDeadlineSeconds` as the duration
+for which a Job can be *continuously* active before which it is terminated.
 
 When a Job is suspended or created in the suspended state, a "Suspended" event
 is recorded. Similarly, when a Job is resumed from its suspended state, a
