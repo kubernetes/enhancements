@@ -88,13 +88,13 @@ supported on cgroup v2.
 
 - CRI-O+crun: support cgroups v2
 
-- runc support for cgroups v2 is work in progress [current status](#current-cgroups-usage-and-the-equivalent-in-cgroups-v2)
+- runc: since [v1.0.0-rc91](https://github.com/opencontainers/runc/tree/v1.0.0-rc91) experimentally, ready for production in [v1.0.0-rc93](https://github.com/opencontainers/runc/releases/tag/v1.0.0-rc93)
 
-- containerd: [https://github.com/containerd/containerd/issues/3726](https://github.com/containerd/containerd/issues/3726)
+- containerd: support cgroup v2 since [v1.4.0](https://github.com/containerd/containerd/releases/tag/v1.4.0)
 
 - Moby: [https://github.com/moby/moby/pull/40174](https://github.com/moby/moby/pull/40174)
 
-- OCI runtime spec: TODO
+- OCI runtime spec: [support cgroup v2 parameters](https://github.com/opencontainers/runtime-spec/pull/1040)
 
 - cAdvisor already supports cgroups v2 ([https://github.com/google/cadvisor/pull/2309](https://github.com/google/cadvisor/pull/2309))
 
