@@ -1,0 +1,40 @@
+title: Add a +featureGate tag to API
+kep-number: 2558
+authors:
+  - "@thockin"
+owning-sig: sig-architecture
+participating-sigs:
+  - sig-api-machinery
+status: provisional
+creation-date: 2021-03-06
+reviewers:
+  - "@lavalamp"
+approvers:
+  - "@liggitt"
+prr-approvers:
+  - "@johnbelamaric"
+see-also:
+  - "https://groups.google.com/g/kubernetes-sig-architecture/c/UmPwm-J3ztE/m/QckZWJAABQAJ"
+replaces: []
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: alpha
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.22"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.22"
+  beta: "v1.22"
+  stable: "v1.22"
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates: []
+disable-supported: false
+
+# The following PRR answers are required at beta release
+metrics: []
