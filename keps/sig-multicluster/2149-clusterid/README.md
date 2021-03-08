@@ -432,7 +432,7 @@ Since this KEP does not formally mandate that the cluster ID *must* be immutable
 
 Despite this flexibility in the KEP, clusterIDs may still be useful before ClusterSet membership needs to be established; again, particularly if the implementation chooses the broadest restrictions regarding immutability and uniqueness. Therefore, having a controller that initializes it early in the lifecycle of the cluster, and possibly as part of cluster creation, may be a useful place to implement it, though within the bounds of this KEP that is not strictly necessary.
 
-The most common discussion point within the SIG regarding whether an implementation should favor a UUID or a human-readable clusterID string is when it comes to DNS. Since DNS names are originally intended to be the a human readable technique of address, clunky DNS names composed from long UUIDs seems like an anti-pattern, or at least unfinished. While some extensions to this spec have been discussed as ways to leverage the best parts of both (ex. using labels on the `id.k8s.io ClusterClaim` to store aliases for DNS), an actual API specification to allow for this is outside the scope of this KEP at this time (see the Non-Goals section).
+The most common discussion point within the SIG regarding whether an implementation should favor a UUID or a human-readable clusterID string is when it comes to DNS. Since DNS names are originally intended to be a human readable technique of address, clunky DNS names composed from long UUIDs seems like an anti-pattern, or at least unfinished. While some extensions to this spec have been discussed as ways to leverage the best parts of both (ex. using labels on the `id.k8s.io ClusterClaim` to store aliases for DNS), an actual API specification to allow for this is outside the scope of this KEP at this time (see the Non-Goals section).
 
 ```
 # An example object of `id.k8s.io ClusterClaim`:
@@ -451,7 +451,7 @@ A cluster in a ClusterSet is expected to be authoritatively associated with that
 
 Because there are obligations of the `id.k8s.io ClusterClaim` that are not meanigfully verifiable until a cluster tries to join a ClusterSet and set its `clusterset.k8s.io ClusterClaim`, the admission controller responsible for setting a `clusterset.k8s.io ClusterClaim` will need the ability to reject such an attempt when it is invalid, and alert `[UNRESOLVED]` or possibly affect changes to that cluster's `id.k8s.io ClusterClaim` to make it valid `[/UNRESOLVED]`. Two symptomatic cases of this would be:
 
-1. When a cluster with a given `id.k8s.io ClusterClaim` ties to join a ClusterSet, but a cluster with that same `id.k8s.io ClusterClaim` appears to already be in the set.
+1. When a cluster with a given `id.k8s.io ClusterClaim` tries to join a ClusterSet, but a cluster with that same `id.k8s.io ClusterClaim` appears to already be in the set.
 2. When a cluster that does not have a `id.k8s.io ClusterClaim` tries to join a ClusterSet.
 
 In situations like these, the admission controller will need to fail to add the invalid cluster to the ClusterSet by refusing to set its `clusterset.k8s.io ClusterClaim`, and surface an error that is actionable to make the claim valid.
