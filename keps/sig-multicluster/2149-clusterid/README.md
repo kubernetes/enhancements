@@ -287,7 +287,7 @@ Clusters within my ClusterSet send logs/metrics to a common monitoring solution 
 
 My controller interacts with multiple clusters and needs to disambiguate between them to process its business logic.
 
-_For example, [CAPN's virtualcluster project](https://github.com/kubernetes-sigs/cluster-api-provider-nested) is implementing a multi-tenant scheduler that schedules tenant namespaces only in certain parent super clusters, and a separate syncer running in each parent super cluster controller needs to compare the name of the parent super cluster to determine whether the namespace should be synced. ([ref](https://github.com/kubernetes/enhancements/issues/2149#issuecomment-768486457))._
+_For example, [CAPN's virtualcluster project](https://github.com/kubernetes-sigs/cluster-api-provider-nested) is implementing a multi-tenant scheduler that schedules tenant namespaces only in certain parent clusters, and a separate syncer running in each parent cluster controller needs to compare the name of the parent cluster to determine whether the namespace should be synced. ([ref](https://github.com/kubernetes/enhancements/issues/2149#issuecomment-768486457))._
 
 
 ### `ClusterClaim` CRD
