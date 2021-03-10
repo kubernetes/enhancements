@@ -435,7 +435,8 @@ Despite this flexibility in the KEP, clusterIDs may still be useful before Clust
 The most common discussion point within the SIG regarding whether an implementation should favor a UUID or a human-readable clusterID string is when it comes to DNS. Since DNS names are originally intended to be a human readable technique of address, clunky DNS names composed from long UUIDs seems like an anti-pattern, or at least unfinished. While some extensions to this spec have been discussed as ways to leverage the best parts of both (ex. using labels on the `id.k8s.io ClusterClaim` to store aliases for DNS), an actual API specification to allow for this is outside the scope of this KEP at this time (see the Non-Goals section).
 
 ```
-# An example object of `id.k8s.io ClusterClaim`:
+# An example object of `id.k8s.io ClusterClaim` 
+# using a kube-system ns uuid as the id value (recommended above):
 
 apiVersion: multicluster.k8s.io/v1
 kind: ClusterClaim
@@ -443,6 +444,18 @@ metadata:
   name: id.k8s.io
 spec:
   value: 721ab723-13bc-11e5-aec2-42010af0021e
+```
+
+```
+# An example object of `id.k8s.io ClusterClaim` 
+# using a human-readable string as the id value:
+
+apiVersion: multicluster.k8s.io/v1
+kind: ClusterClaim
+metadata:
+  name: id.k8s.io
+spec:
+  value: cluster-1
 ```
 
 #### `clusterset.k8s.io ClusterClaim`
