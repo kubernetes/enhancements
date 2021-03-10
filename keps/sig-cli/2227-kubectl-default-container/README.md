@@ -310,7 +310,11 @@ resource usage (CPU, RAM, disk, IO, ...) in any components?**
 
 ## Implementation History
 
-WIP in https://github.com/kubernetes/kubernetes/pull/97099 in 1.21.
+2021-03-10: Alpha implementation completion in 1.21
+- https://github.com/kubernetes/kubernetes/pull/97099
+- https://github.com/kubernetes/kubernetes/pull/99615
+- https://github.com/kubernetes/kubernetes/pull/99581
+- https://github.com/kubernetes/kubernetes/pull/99833
 
 ## Drawbacks
 
