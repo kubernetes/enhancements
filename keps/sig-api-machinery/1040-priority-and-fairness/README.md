@@ -717,9 +717,11 @@ mu(i,t) = min(rho(i,t), mu_fair(t))
 
 where:
 - `i` identifies a queue,
-- `rho(i,t)` is the rate requested by queue `i` at time `t` and is defined to be
-  the product of `mu_single` and the number of packets of that queue
-  that are unsent in the virtual world at time `t`,
+- `rho(i,t)` is the rate requested by queue `i` at time `t` and is
+  defined to be the product of `mu_single` and the number of packets
+  of that queue that are not fully sent in the virtual world at time
+  `t` (those for which `t_arrive(i,j) <= t` and whose transmission
+  completes strictly after `t`), and
 - `mu_fair(t)` is the smallest non-negative quantity that solves the equation
   ```
   min(mu_single, Sum[over i] rho(i,t)) = Sum[over i] min(rho(i,t), mu_fair(t))
@@ -737,13 +739,13 @@ adjusted at this time, among others.  In this virtual world a queue's
 packets are divided into three subsets: those that have been
 completely sent, those that are in the process of being sent, and
 those that have not yet started being sent.  That number being sent is
-1 unless it is 0 and the queue has no unsent packets.  Unlike the
-original fantasy, this virtual world uses the same clock as the real
-world.  Whenever a packet finishes being sent in the real world, the
-next packet to be transmitted is the unsent one that will finish being
-sent soonest in the virtual world.  If there is a tie among several,
-we pick the one whose queue is next in round-robin order (following
-the queue last picked).
+1 unless it is 0 and the queue has no unsent packets.  This virtual
+world uses the same clock as the real world.  Whenever a packet
+finishes being sent in the real world, the next packet to be
+transmitted is the one that is unsent in the real world and will
+finish being sent soonest in the virtual world.  If there is a tie
+among several, we pick the one whose queue is next in round-robin
+order (following the queue last picked).
 
 We can define beginning and end times (B and E) for transmission of
 the j'th packet of queue i in the virtual world, with the following
@@ -757,7 +759,7 @@ Integral[from tau=B(i,j) to tau=E(i,j)] mu(i,tau) dtau = len(i,j)
 This has a practical advantage over the original story: the integrals
 are only over the lifetime of a single request's service --- rather
 than over the lifetime of the server.  This makes it easier to use
-floating point representations with sufficient precision.
+floating or fixed point representations with sufficient precision.
 
 Note that computing an E value before it has arrived requires
 predicting the course of `mu(i,t)` from now until E arrives.  However,
@@ -787,7 +789,13 @@ S(i,j) = R(B(i,j))
 (R and max commute because both are monotonically non-decreasing).
 
 Note that `mu_fair(t)` is exactly the same as `dR/dt` in the original
-story.  So we can reason as follows.
+story (excepting inconsequential differences at the instants when
+packets complete: `rho` is defined to exclude the packat at that
+instant and `NAQ` is defined to include the packet; the differences
+are inconsequential because all we do with `mu` and `dR/dt` in the
+argument below is integrate them, and a difference in the integrand at
+a countable number of instants makes zero difference to the integral).
+So we can reason as follows.
 
 ```
 Integral[tau=B(i,j) to tau=E(i,j)] mu(i,tau) dtau = len(i,j)
@@ -847,69 +855,177 @@ Because we now have more possible values for `mu(i,t)` than 0 and
 `mu_fair(t)`, it is more computationally complex to adjust the
 `mu(i,t)` values when a packet arrives or completes virtual service.
 That complexity is:
-- O(n log n), where n is the number of queues,
-  in a straightforward implementation;
-- O(log n) if the queues are kept in a data structure sorted by `rho(i,t)`.
+- `O(n log n)`, where n is the number of queues, in a straightforward
+  implementation that sorts the queues by increasing rho and then
+  enumerates them to find the least demanding, if any, that can not
+  get all it wants;
+- `O((1 + n_delta) * log n)` if the queues are kept in a
+  logarithmic-complexity sorted data structure (such as skip-list or
+  red-black tree) ordered by `rho(i,t)`, `n_delta` is the number of
+  queues that enter or leave the relationship `mu(i,t) == rho(i,t)`,
+  and a pointer to that boundary in the sorted data structure is
+  maintained.  Note that in a system that stays out of overload,
+  `n_delta` stays zero.  The same result obtains while the system
+  stays overloaded by a fixed few queues.
 
-We can keep the same virtual transmission scheduling scheme as in the
-single-link world --- that is, each queue sends one packet at a time
-in the virtual world.  We do this even though a queue can have
-multiple packets being sent at a given moment in the real world.  This
-has the virtue of keeping the logic relatively simple; we can use the
-same equations for B and E.  In a world where different packets can
-have very different lengths, this choice of virtual transmission
-schedule looks dubious.  But once we get to the last step below, where
-are talking about serving requests that all have the same guessed
-service duration, this virtual transmission schedule does not look so
-unreasonable.  If some day we wish to make request-specific guesses of
-service duration then we can revisit the virtual transmission
-schedule.
+In order to maintain the useful property that transmissions finish in
+the virtual world no sooner than they do in the real world (which is
+good because it means we do not have to revise history in the virtual
+world when a completion comes earlier than expected --- which
+possibility we introduce below) we suppose in the virtual world that
+each queue `i` has its `min(rho(i,t), C)` oldest unsent packets being
+transmitted at time `t`, using equal shares of `mu(i,t)`.  The
+following equations define that set of packets (`SAP`), the size of
+that set (`NAP`), and the `rate` at which each of them is being sent.
 
-However, the greater diversity of `mu(i,t)` values breaks the
-correspondence with the original story.  We can still define `R(t) =
-Integral[from tau=start to tau=t] mu_fair(tau) dtau`.  However,
-because sometimes some queues get a rate that is less than
-`mu_fair(t)`, it is not necessarily true that `R(E(i,j)) - R(B(i,j)) =
-len(i,j)`.  Because all non-empty queues do not necessarily get the
-rate `mu_fair(t)`, the prediction of that affects the dispatching
-choice.  This ruins the simple story about how to get logarithmic cost
-for dispatching.
+```
+SAP(i,t) = {j such that B(i,j) <= t < E(i,j)}
 
-We can partially recover by dividing queues into three classes rather
-than two: empty queues, those for which `rho(i,t) <= mu_fair(t)`, and
-those for which `mu_fair(t) < rho(i,t)`.  We can efficiently make a
-dispatching choice from each of the two latter classes of queues,
-under the assumption that `mu_fair(t)` will be henceforth constant,
-and then efficiently choose between those two choices.  However, it is
-also necessary to react to a stimulus that modifies `mu_fair(t)` or
-some `rho(i,t)` so that some queues move between classes --- and this
-costs O(m log n), where m is the number of queues moved and n is the
-number of queues in the larger class.  The details are as follows.
+NAP(i,t) = |SAP(i,t)|
 
-For queues where `rho(i,t) <= mu_fair(t)` we can keep track of the
-predicted E for the packet virtually being transmitted.  As long as
-that queue's `rho` remains less than or equal to `mu_fair`, these E
-predictions do not change.  We can keep these queues in a data
-structure sorted by those E predictions.
+rate(i,t) = if NAP(i,tau) > 0 then mu(i,t) / NAP(i,t) else 0
+```
 
-For queues `i` where `mu_fair(t) <= rho(i,t)` we can keep track of the
-F (that is, `R(E)`) of the packet virtually being transmitted.  As
-long as `mu_fair` remains less than or equal to that queue's `rho`,
-that F does not change.  We can keep these queues in a data structure
-sorted by those F predictions.
+Following is an outline of a proof that `rate(i,t) <= mu_single` ---
+that is, a packet is transmitted no faster in the virtual world than
+in the real world.  When `rate(i,t) == 0` we are already done.  When
+`rho(i,t) >= C`: `mu(i,t) <= mu_single * C` and `NAP(i,t) = C`, so
+their quotient can not exceed `mu_single`.  When `0 < rho(i,t) < C`:
+`mu(i,t) <= mu_single * rho(i,t)` and `NAP(i,t) = rho(i,t)`, whose
+quotient is also thusly limited.
 
-When a stimulus --- that is, packet arrival or virtual completion ---
-changes `mu_fair(t)` or some `rho(i,t)` in such a way that some queues
-move between classes, those queues get removed from their old class
-data structure and added to the new one.
+The following equations say when transmissions begin and end in this
+virtual world.  To make the logic simple, we assume that each packet
+arrives at a different time (the implementation will run this logic
+with a mutex locked and thus naturally process arrivals serially,
+effectively standing them apart in time even if the clock does not).
 
-When it comes time to choose a packet to begin transmitting in the
-real world, we start by choosing the best packet from each non-empty
-class of non-empty queues.  Supposing that gives us two packets, we
-have to compare the E of one packet with the F of the other.  This is
-done by assuming that `mu_fair` will not change henceforth.  Finally,
-we may have to break a tie; that is done by round-robin ordering, as
-usual.
+```
+B(i,j) = if NAP(i,t_arrive(i,j)) <= C then t_arrive(i,j)
+         else min[k in SAP(i,j)] E(i,k)
+
+Integral[from tau=B(i,j) to tau=E(i,j)] rate(i,tau) dtau = len(i,j)
+```
+
+Those equations look dangerously close to circular logic: `B` is
+defined in terms of `SAP`, and `SAP` is defined in terms of `B`.  But
+note that the equation for `B` says that the start of transmission for
+a packet (i) can only be delayed because of `C` other packets that
+started transmission earlier (remember, distinct arrival times) and
+have not finished yet and (ii) can only be delayed until the first one
+of those finishes.  There is only one choice of `B` for each packet
+that makes all the equations hold.
+
+Note that when C is 1 these equations produce the same begin and end
+times as the single-link design.
+
+As in the single-link case, at any given time we can estimate expected
+end times for packets in progress.  These estimates may not be
+accurate, but simple estimates can be defined that nonetheless yield
+the correct ordering among a queue's packets.  Furthermore, these
+estimates will correctly identify the next packet to complete among
+all the queues, even though it may say incorrect things about
+subsequent events.  That is enough, because the implemenation will
+update the estimates every time a packet begins or ends transmission.
+
+To help define these estimates we first define a concept `P(i,t)`, the
+"progress" made by a given queue up to a given time.  It might be
+described as the number of bits transmitted serially (that is,
+considering only one link at any given time) since an arbitrary
+queue-specific starting time `epoch(i)`.  A given active packet gets
+transmitted at the rate that `P` increases.
+
+```
+P(i,t) = Integral[from tau=epoch(i) to tau=t] rate(i,t) dtau
+```
+
+We can accumulate `P(i)` in a 64-bit number and only rarely need to
+advance `epoch(i)` in order to prevent overflow or troublesome loss of
+precision.  Advancing `epoch(i)` will cost O(number of active
+packets), to make the corresponding updates to the `PEnd` values
+introduced below.
+
+For a given queue `i` and packet `j`, by looking at the `P` value when
+the packet begins transmission and adding the length of the packet, we
+get the `P` value when the packet will finish transmission.  By
+focusing on `P` values instead of wall clock time we gain independence
+from the variations in `rate`.  This is similar to the use of `R`
+values in the original Fair Queuing scheme.
+
+```
+PEnd(i,j) = P(i, B(i,j)) + len(i,j)
+```
+
+For a given queue `i` at a given time `t` we can write the expected
+end (EE) time of each active packet `j` as the current time plus the
+expected amount of time needed to transmit the bits that have not
+already been transmitted (making the assumption that the current rate
+will continue into the future):
+
+```
+EE(i,j,t) = t + (PEnd(i,j) - P(i,t)) / rate(i,t)
+```
+
+Notice that the remaining time to transmit the packet, `EE(i,j,t)-t`,
+is a function of:
+- a packet-specific quantity (`PEnd`) that does not change over time,
+  and
+- queue-specific quantities (`P`, `rate`) that change over time and
+  are independent of packet.
+
+The complexity of updating this representation of a queue's expected
+end times to account for the passage of time or a change in `mu` does
+not require modifying the packet-specific data (`PEnd` values) in this
+data structure, thus costs `O(1)`.  Adding or removing a packet or
+changing its length (see below) does not require changing the
+packet-specific data of the other active packets.
+
+We can keep the active packets of a queue in a logarithmic-complexity
+sorted data structure ordered by expected end time.  Adding or
+removing a packet from the active set or changing the packet's length
+will cost O(log(size of the active set)).
+
+We can divide the non-empty queues into two categories and keep each
+in its own data structure.  For the queues that get `mu(i,t) ==
+rho(i,t)`, keep them in a logarithmic-complexity sorted data structure
+ordered by the earliest expected end time of the queue's active
+packets.  Changes to `mu_fair` do not affect this data structure,
+except to the degree that they cause queues to enter or leave this
+category.
+
+Similarly, we can keep the queues for which `mu(i,t) == mu_fair(t)` in
+another sorted data structure ordered by earliest expected end time.
+Since `mu(i,t)` is the same for all queues in this category, the
+passage of time and changes in `mu_fair` do not change the ordering of
+packets or queues in this data structure, except to the degree that
+queues enter or leave this category.  The representation of expected
+end times in this category gets one more level of indirection, through
+that shared `mu_fair`.
+
+When a change in `mu_fair` causes `n_delta` queues to move from one
+category to another, it costs `O(n_delta * log num_queues)` to update
+these data structures by those moves.
+
+Updating the data structures for a mere change in one queue's `NAP`
+has logarithmic cost.
+
+The above discussion concerns the virtual world, which transmits each
+packet no more quickly than the real world.  Usually a packet will
+finish transmission in the real world before it finishes in the
+virtual word.  But it is important to keep each packet in the virtual
+world data structure until it is fully transmitted in the virtual
+world.  Yet, our ultimate goal is to select the next packet to
+complete transmission in the virtual world _from among those packets
+that have not yet started transmission in the real world_.  To do this
+we maintain, in addition to the full virtual data structures above,
+filtered variants that contain only packets that have not yet started
+transmission in the real world.  We use the `mu` and `rho` values from
+the virtual world in the calculations for the packets in the filtered
+data structures.  Whenever it is necessary to identify the earliest
+expected end time among all the filtered packets, this can be done
+with O(1) complexity.  Finding the earliest from each of the two
+categories costs O(1).  Finding the earliest of those (at most) two
+also takes O(1).
 
 ##### From packets to requests
 
@@ -921,18 +1037,34 @@ measured in seconds.  The units change: `mu_single` and `mu_i` are no
 longer in bits per second but rather are in service-seconds per
 second; we call this unit "seats" for short.  We now say `mu_single`
 is 1 seat.  As before: when it is time to dispatch the next request in
-the real world we pick from the queue whose current packet
-transmission would finish soonest in the virtual world, using
-round-robin ordering to break ties.
+the real world we pick from a queue with a request that will complete
+soonest in the virtual world, using round-robin ordering to break
+ties.
 
 ##### Not knowing service duration up front
 
 The final change removes the up-front knowledge of the service
-duration of a request.  Instead, we use a guess `G`.  When a request
-finishes execution in the real world, we learn its actual service
-duration `D`.  At this point we adjust the explicitly represented B
-and E (and F, if using those) values of following requests in that
-queue to account for the difference `D - G`.
+duration of a request.  Instead, we use a guess `G`.  If and when the
+guess turns out to be too short --- that is, its expected end time
+arrives in the virtual world but the request has not finished in the
+real world --- the guess is increased.  Remember that the virtual
+world never serves a request faster than the real world, so whenever
+that adjustment is made we are sure that the guess really was too
+short.
+
+Essentially always the (eventually adjusted, as necessary) guess will
+turn out to be too long.  When the request finishes execution in the
+real world, we learn its actual service duration `D`.  The completion
+in the virtual world is concurrent or in the future, never the past.
+At this point we adjust the expected end time of the request in the
+virtual world to be based on `D` rather than the guess.
+
+When the request finishes execution in the virtual world --- which by
+this time is an accurate reflection of the true service duration `D`
+--- either another request is dispatched from the same queue or all
+the remaining requests in that queue start getting faster service.  In
+both cases, the service delivery in the virtual world has reacted
+properly to the true service duration.
 
 ### Example Configuration
 
