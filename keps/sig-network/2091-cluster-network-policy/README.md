@@ -359,6 +359,7 @@ type ClusterNetworkPolicyIngress/EgressRule struct {
 	Action       RuleAction
 	Ports        []networkingv1.NetworkPolicyPort
 	From/To      []networkingv1.ClusterNetworkPolicyPeer
+  Except       []networkingv1.ClusterNetworkPolicyExcept
 }
 
 type ClusterNetworkPolicyPeer struct {
@@ -367,11 +368,28 @@ type ClusterNetworkPolicyPeer struct {
 	IPBlock      *IPBlock
 }
 
+type ClusterNetworkPolicyExcept struct {
+	PodSelector  *metav1.LabelSelector
+	Namespaces   *networkingv1.Namespaces
+}
+
 const (
 	RuleActionDeny  RuleAction = "Deny"
 	RuleActionAllow RuleAction = "Allow"
 )
 ```
+
+For the ClusterNetworkPolicy ingress/egress rule, the `Action` field dictates whether traffic
+should be allowed or denied from/to the ClusterNetworkPolicyPeer. This will be a required field.
+An optional `Except` field can be used by policy writers to add exclusions to the
+`ClusterNetworkPolicyPeer`s selected. This is especially useful in policies that, for example,
+intend to deny ingress from everywhere except a few specific Namespaces, such as `kube-system`.
+
+ClusterNetworkPolicy does not validate that the Pods selected by the `Except` list is subset of
+`From/To`: the final peers selected are simply the set of Pods selected by
+`ClusterNetworkPolicyPeer`s, subtracting the set of Pods selected by `ClusterNetworkPolicyExcept`s.
+IPBlock is not allowed in `ClusterNetworkPolicyExcept` since IPBlock already provides a way to add
+except CIDRs.
 
 The following new `DefaultNetworkPolicy` API will be added to the `networking.k8s.io` API group:
 
@@ -419,7 +437,6 @@ type AppliedTo struct {
 type Namespaces struct {
 	Self       bool
 	Selector   *metav1.LabelSelector
-	Except     []*metav1.LabelSelector
 }
 ```
 
@@ -473,6 +490,8 @@ few specific Namespaces, such as `kube-system`.
 ### Sample Specs for User Stories
 
 #### Story 1: Deny traffic from certain sources
+As a cluster admin, I want to explicitly deny traffic from certain source IPs that I know to be bad.
+
 ```yaml
 apiVersion: networking.k8s.io/v1alpha1
 kind: ClusterNetworkPolicy
@@ -490,6 +509,9 @@ spec:
 ```
 
 #### Story 2: Funnel traffic through ingress/egress gateways
+As a cluster admin, I want to ensure that all traffic coming into (going out of) my cluster always goes through my
+ingress (egress) gateway.
+
 ```yaml
 apiVersion: networking.k8s.io/v1alpha1
 kind: ClusterNetworkPolicy
@@ -503,23 +525,31 @@ spec:
   ingress:
     - action: Deny
       from:
+      - ipBlock:
+          cidr: 0.0.0.0/0
+      except:
       - namespaces:
-          selector: {}
-          except:
-          - matchLabels:
+          self: true
+      - namespaces:
+          selector:
+            matchLabels:
               k8s.metadata.io/name: dmz  # ingress gateway
   egress:
     - action: Deny
-      to:
+      from:
+      - ipBlock:
+          cidr: 0.0.0.0/0
+      except:
       - namespaces:
-          selector: {}
-          except:
-          - matchLabels:
+          self: true
+      - namespaces:
+          selector:
+            matchLabels:
               k8s.metadata.io/name: istio-egress  # egress gateway
 ```
 __Note:__ The above policy is very restrictive, i.e. it rejects ingress/egress traffic between tenant
-Namespaces and `kube-system`. For `core-dns` etc. to work, `kube-system` needs to be added into the
-Deny `except` list.
+Namespaces and `kube-system`. For `coredns` etc. to work, `kube-system` Namespace or at least the
+`coredns` pods needs to be added into the Deny `except` list.
 
 #### Story 3: Isolate multiple tenants in a cluster
 ```yaml
@@ -586,11 +616,11 @@ spec:
 ### Test Plan
 
 - Add e2e tests for ClusterNetworkPolicy resource
-  - Ensure `deny` rules override all allowed traffic in the cluster
-  - Ensure `allow` rules override K8s NetworkPolicies
+  - Ensure `Deny` rules override all allowed traffic in the cluster
+  - Ensure `Allow` rules override K8s NetworkPolicies
   - Ensure that in stacked ClusterNetworkPolicies/K8s NetworkPolicies, the following precedence is maintained
 
-    aggregated `deny` rules > aggregated `allow` rules > K8s NetworkPolicy rules
+    aggregated `Deny` rules > aggregated `Allow` rules > K8s NetworkPolicy rules
 - Add e2e tests for DefaultNetworkPolicy resource
   - Ensure that in absence of ClusterNetworkPolicy rules and K8s NetworkPolicy rules, DefaultNetworkPolicy rules are observed
   - Ensure that K8s NetworkPolicies override DefaultNetworkPolicies by applying policies to the same workloads
