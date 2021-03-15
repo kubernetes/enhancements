@@ -49,23 +49,30 @@ SIG Architecture for cross-cutting KEPs).
 - [Summary](#summary)
 - [Motivation](#motivation)
   - [FIXME](#fixme)
+    - [TODO Deterministic](#todo-deterministic)
+    - [TODO Reduce risk](#todo-reduce-risk)
     - [Data](#data)
   - [Goals](#goals)
     - [FIXME Does that mandate a fixed frequency?](#fixme-does-that-mandate-a-fixed-frequency)
     - [FIXME Releases don’t necessarily have to be equally spaced](#fixme-releases-dont-necessarily-have-to-be-equally-spaced)
   - [Non-Goals](#non-goals)
+    - [TODO Release Team](#todo-release-team)
+    - [TODO Enhancement graduation](#todo-enhancement-graduation)
     - [FIXME Ideas](#fixme-ideas)
     - [FIXME Comment, without decision](#fixme-comment-without-decision)
     - [FIXME Needs response](#fixme-needs-response)
   - [FIXME Explanatory](#fixme-explanatory)
 - [Proposal](#proposal)
   - [User Stories (Optional)](#user-stories-optional)
-    - [Story 1](#story-1)
-    - [Story 2](#story-2)
-    - [FIXME Support](#fixme-support)
+    - [TODO End User](#todo-end-user)
+    - [TODO Distributors and downstream projects](#todo-distributors-and-downstream-projects)
+    - [TODO Contributors](#todo-contributors)
+    - [TODO SIG Release members](#todo-sig-release-members)
+      - [TODO @neolit123](#todo-neolit123)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
+  - [TODO Schedule](#todo-schedule)
   - [FIXME Implementation Details](#fixme-implementation-details)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
@@ -191,6 +198,36 @@ I'd prefer three releases/year.
 /milestone v1.20
 /priority important-longterm
 
+#### TODO Deterministic
+
+@akutz:
+
+> I strongly believe a deterministic and known schedule is more important than the frequency itself. Slowing down to three releases, as @justaugustus said, will provide three additional months for triage and the addressing of existing issues. This should help us to better meet planned release dates as there, in theory, should be fewer unknown-unknowns. So a big +1 from me.
+
+#### TODO Reduce risk
+
+@Klaven:
+
+> I see some people attributing drift to longer release cycles (we are only talking about extending them by a month, not 3 months), but I would argue that fast release cycles have caused their own amount of drift, never mind the burden on the release team.
+>
+> Look at GKE, for example. Versions 1.14 to 1.17 are supported. GKE is arguably one of the best Kubernetes providers and there is a LOT of drift because corporations don't like continuous rapid change and find it hard to support. I also think that as a project matures the rate of change of the increasingly stable and feature-complete core should decrease. At some point the plugins and the out-of-tree projects should be where more change happens. Projects like cluster-api and the like get the attention which used to be focused on maturing the core.
+>
+> I know that recently there has been a lot of focus on how many releases something needs in order to become GA. I think that honestly is the wrong approach.
+>
+> I do think it's valid to be concerned that the release of k8s is too much work. I would say this means this system is too laborious. Given that it is this much work, rushing it more would probably only hurt us more. It's obvious that the ecosystem has already felt this strain. If we want to be able to release frequently, we need the release process to become painless. If we don't fix that problem, I don't see any solution other then pushing releases to a manageable cadence.
+>
+> If we want to release quickly, we need to think not only about the release team, but also the downstream; the adopters. If we want to release quickly and frequently, then we need to focus on making the upgrade process even easier and similar things.
+
+@ehashman:
+
+> While some folks in the thread note that this increases the heft/risk of each release, I actually think less releases will reduce risk. I'm speaking from an operations perspective as opposed to a development perspective.
+>
+> The current Kubernetes release cadence is so high that most organizations cannot keep up with making a major version update every 3 months regularly, or going out of security support in less than a year. While in theory, releasing more frequently reduces the churn and risk of each release, this is only true if end users are actually able to apply the upgrades.
+>
+> In my experience, this is very challenging and I have not yet seen any organization consistently keep up with the 3 month major upgrade pace for production clusters, especially at a large scale. So, what effectively happens is that end users upgrade less frequently than 3 months, but since that isn't supported, they end up in the situation where they are required to jump multiple major releases at once, which effectively results in much higher risk.
+>
+> 4 vs. 3 releases is >30% more release work, but I do not believe it provides benefit proportional to that work, nor does a quarterly major release cadence match the vast majority of operation teams' upgrade cycles.
+
 #### Data
 
 @jberkus:
@@ -308,6 +345,38 @@ What is out of scope for this KEP? Listing non-goals helps to focus discussion
 and make progress.
 -->
 
+#### TODO Release Team
+
+@saschagrunert:
+
+> On the other hand it will give less people a chance to participate in the shadowing program for example. Anyways, I think we will find appropriate solutions around those kind of new challenges.
+
+@jeremyrickard:
+
+> The one downside is that we will remove an opportunity for shadowing, and as we saw this time around we had >100 people apply, and this will remove ~24-ish opportunities. I think we can maybe identify some opportunities for folks that want to be involved though. takes off release lead hat
+
+@wilsonehusin:
+
+> as someone who started getting involved in this project through shadowing release team, I'd like to echo what @saschagrunert & @jeremyrickard raised above regarding shadow opportunities -- I'm glad we're acknowledging the downside and hope we can keep in mind to present other opportunities for folks to get involved!
+
+@kcmartin:
+
+> As to the potential for limiting shadow opportunities (mentioned by @jeremyrickard, @wilsonehusin, and others), I'm definitely tuned in to that being a downside, since I've served as a SIG-Release shadow three times, and I think it's a fantastic opportunity!
+>
+> One possible way to alleviate that downside would be to have 5 shadows, instead of three or four, per sub-team. I believe this is still a manageable number for the Leads, and could distribute the work more evenly.
+
+@pires:
+
+> On a more personal note, (@jeremyrickard wink, wink) I applied for release shadow believing I'd be picked given my past contributions to the project and my justification to be selected over others. Being rejected was a humbling experience and I'm happy to let you know I didn't lose any of the appetite to contribute. Others may feel differently but, then again, the project is maturing and so should the community.
+
+#### TODO Enhancement graduation
+
+@jberkus:
+
+> @johnbelamaric everything you've said is valid. At the same time, though, my experience has been that the pressure goes the other way: features already linger in alpha or beta for way longer than they ought to. The push to get most features to GA -- or deprecate them -- really seems to be lacking. It's hard to pull stats for this, but most KEP-worthy features seem to take something like 2 years to get there. So from my perspective, more state changes per release would be a good thing (at least, more getting alpha features to beta/GA), even if we didn't change the number of releases per year.
+>
+> It's hard to tell whether or not switching to 3 releases a year would affect the slow pace of finishing features at all.
+
 #### FIXME Ideas
 
 @sftim:
@@ -400,40 +469,59 @@ the system. The goal here is to make this feel real for users without getting
 bogged down.
 -->
 
-#### Story 1
+TODO: Add general note about state of the world and human challenges
 
-#### Story 2
+#### TODO End User
 
-#### FIXME Support
+- Hard to keep up with four releases / too much churn
+  - TODO: Get data from SIG Cluster Lifecycle
+  - One quarter where teams cannot focus on infra work
+    - 16 weeks with 4 weeks for holiday buffer works well
 
-@markyjackson-taulia:
+@OmerKahani:
 
-> I am a +1 for 3 releases/year. As you noted, this will allow us to work on items that can enhance things
+> 3 is the maximum upgrades that we can do in my company. Our customers are eCommerce merchants, so from September to December (include), we are in a freeze on all of the infrastructure.
 
-@saschagrunert:
+#### TODO Distributors and downstream projects
 
-> My personal opinion is that three releases per year are enough. This means more time can be spent on actual feature development, without narrowing them down just to fit into the release cycle. It will also reduce the management overhead for SIG Release (and the release engineering).
+https://www.cncf.io/certification/software-conformance/
+
+- Keeping up for both installers and cluster addons
+- Cloud provider parity
+- Less upgrades helps complex workloads
+
+@leodido:
+
+> +1 for 3 releases.
 >
-> On the other hand it will give less people a chance to participate in the shadowing program for example. Anyways, I think we will find appropriate solutions around those kind of new challenges.
+> Making users able to catch-up is more important than keeping a pace so fast that can lead nowhere (we experienced the same with https://github.com/falcosecurity/falco and we switched to 6 releases per year from 12).
 
-@mkorbi:
+@afirth:
 
-> I don’t have a strong preference on the one or the other. But from what I
-> see from our clients or even from public cloud providers, 4 release seems
-> to be a huge struggle.
-> Therefore
-> +1 4 3 (you get joke in it)
+> I guess most end users are blocked by their upstream distro's ability to keep up with the K8s release. For example, GKE rapid channel is currently on 1.18, but 1.19 released in August. Somebody previously mentioned kops has similar issues (also currently on 1.18). I'm curious whether this is because those providers routinely find issues, or because it takes some fixed time to implement the new capabilities and changes. Either way, I don't think this change would impact end user's ability to get new features in a timely fashion much.
 
-@timothysc:
+#### TODO Contributors
 
-> Huge +1. In a series of user surveys from SIG Cluster lifecycle, we've consistently found that users struggle to keep up with 4 releases a year and have data to show this.
->
-> cc @neolit123
+- Time for project enhancements
+- Time for feature development
+- Time for planning / KEPs
+- Time for health and well-being of tests
+- Time for mental health / curtailing burnout
+- Time for KubeCon execution
+- Further show of maturity with less churn
 
-@neolit123:
+@pires:
 
-> +1
->
+> And as noted over Twitter, given someone's concerns on expecting same amount of changes over 25% less releases, I think it's of paramount importance for SIGs to step up and limit the things they include in a release, balancing what matters short/ long-term and kicking out all that can be done outside of the release cycle (we have CRDs, custom API servers, scheduling plug-ins, and so on). Now, I understand it's hard, sometimes even painful, to manage the enthusiasm some like me have on things close to them they want to see gaining traction but the early days are gone and this is now a solid OSS project that requires mature contributors.
+
+#### TODO SIG Release members
+
+- Reduce management overhead for SIG Release / Release Engineering
+- With the yearly support KEP, we only have three 3 releases to maintain
+- One less quarterly Release Team to recruit for
+
+##### TODO @neolit123
+
 >     Of the 709 votes, 59.1% preferred three releases over our current, non-2020 target of four.
 >
 > i find these results surprising. we had the same question in the latest SIG CL survey and the most picked answer was "not sure". this tells me that users possibly do not understand all the implications or it does not matter to them.
@@ -444,211 +532,6 @@ bogged down.
 >     less e2e test jobs
 >
 > as long as SIG Arch are on board we should just proceed with the change.
->
-> EDIT: to Tim's point
->
->     Huge +1. In a series of user surveys from SIG Cluster lifecycle, we've consistently found that users struggle to keep up with 4 releases a year and have data to show this.
->
-> this however we did see, users struggle to upgrade.
-
-@jeremyrickard:
-
->     less churn for external consumers
->
-> puts on external consumer hat This would be super great. We really, really struggle as is. takes off external consumer hat
->
->     one less quarterly Release Team to recruit for
->
-> puts on release lead hat This I am 100% in agreement on. When we kicked off 1.18 (because of the extra time over the new year and stuff), we had extra time to solicit shadows and as the enhancements lead for 1.18, I was really able to onboard my shadows early and hit the ground running. For 1.20, we didn't have a large amount of time between identifying an EA, 1.19 ending, and 1.20 starting so selecting the shadows and getting things rolling was a challenge, especially for the front loaded work Enhancements has to do. The one downside is that we will remove an opportunity for shadowing, and as we saw this time around we had >100 people apply, and this will remove ~24-ish opportunities. I think we can maybe identify some opportunities for folks that want to be involved though. takes off release lead hat
->
-> I think in general, this gives people more time do planning within their SIG, work on KEPS that fall out of that planning, and maybe work toward general health and well being of tests?
->
-> Probably a lot to work out if we make that decision, but overall I am pretty strongly in favor of this.
-
-@yahorse:
-
-> With everything going on three releases is fine, we should be considerate of the challenges everyone has right now.
-
-@frapposelli:
-
-> Big +1 on the 3 releases/year cadence. As the project matures, having less churn becomes a very desirable feature wink
-
-@ArangoGutierrez:
-
-> ++ for 3 releases a year
-
-@Klaven:
-
-> +1 for 3.
-
-@hasheddan:
-
-> +1 for 3 releases
-
-@ameukam:
-
-> +1 for 3 releases a year.
-
-@savitharaghunathan:
-
-> Huge +1 for three releases a year. From an end user perspective it puts less toil on the teams to keep up with the upgrades and administrative work associated with it.
-
-@benhemp:
-
-> +1
->
-> 3 as a consumer team. because almost guaranteed my team will have one quarter where we have to focus elsewhere. Two or one my fear is the machine of getting things to the finish line gets rusty if exercised too infrequently. 16 weeks to ship, extra 4 weeks buffer for holidays for the consuming teams also works out pretty well.
-
-@wilsonehusin:
-
-> +1 for 3 releases/year, agree with what many have stated well regarding churn
->
-> as someone who started getting involved in this project through shadowing release team, I'd like to echo what @saschagrunert & @jeremyrickard raised above regarding shadow opportunities -- I'm glad we're acknowledging the downside and hope we can keep in mind to present other opportunities for folks to get involved!
-
-@kcmartin:
-
-> 3 Releases/year, I am on board with this!
->
-> This option seems to open up a lot of opportunity to keep the pace more reasonable, and keep folks from burning out too quickly!
->
-> As to the potential for limiting shadow opportunities (mentioned by @jeremyrickard, @wilsonehusin, and others), I'm definitely tuned in to that being a downside, since I've served as a SIG-Release shadow three times, and I think it's a fantastic opportunity!
->
-> One possible way to alleviate that downside would be to have 5 shadows, instead of three or four, per sub-team. I believe this is still a manageable number for the Leads, and could distribute the work more evenly.
-
-@bai:
-
-> Big +1 on having 3 releases/year.
-
-@LappleApple:
-
-> Absolutely +1 for three releases per year, for reasons already stated here.
-
-@palnabarun:
-
-> +3000 for 3 releases a year. heart_eyes_cat
-
-@recollir:
-
-> +1 for 3 releases. It will help downstream projects to be able to keep up. I mainly think on all “installers” out there, but also all other cluster add-ons.
-
-@SayakMukhopadhyay:
-
-> +1 for 3 releases. It will also help some cloud providers playing catch-up to come to parity.
-
-@leodido:
-
-> +1 for 3 releases.
->
-> Making users able to catch-up is more important than keeping a pace so fast that can lead nowhere (we experienced the same with https://github.com/falcosecurity/falco and we switched to 6 releases per year from 12).
-
-@vincepri:
-
-> Big +100 for 3 releases / year cadence.
-
-@ncdc:
-
-> +1 to fewer releases / year.
-
-@fabriziopandini:
-
-> +1 to 3 releases
-
-@nader-ziada:
-
-> +1 on having 3 releases/year
-
-@oldthreefeng:
-
-> +1 to 3 releases / years .
-
-@cpanato:
-
-> The bot replied for me, but this is myself
-> #1290 (comment)
->
-> +1 for 3 releases a year
-
-@jackfrancis:
-
-> +1 on 3 releases per year
->
-> Thanks @justaugustus!
-
-@akutz:
-
-> I strongly believe a deterministic and known schedule is more important than the frequency itself. Slowing down to three releases, as @justaugustus said, will provide three additional months for triage and the addressing of existing issues. This should help us to better meet planned release dates as there, in theory, should be fewer unknown-unknowns. So a big +1 from me.
-
-@pires:
-
-> +1 on 3 releases a year.
->
-> And as noted over Twitter, given someone's concerns on expecting same amount of changes over 25% less releases, I think it's of paramount importance for SIGs to step up and limit the things they include in a release, balancing what matters short/ long-term and kicking out all that can be done outside of the release cycle (we have CRDs, custom API servers, scheduling plug-ins, and so on). Now, I understand it's hard, sometimes even painful, to manage the enthusiasm some like me have on things close to them they want to see gaining traction but the early days are gone and this is now a solid OSS project that requires mature contributors. I'll try and do my part.
->
-> On a more personal note, (@jeremyrickard wink, wink) I applied for release shadow believing I'd be picked given my past contributions to the project and my justification to be selected over others. Being rejected was a humbling experience and I'm happy to let you know I didn't lose any of the appetite to contribute. Others may feel differently but, then again, the project is maturing and so should the community.
-
-@mpbarrett:
-
-> As more and more complex workloads move to Kube, having less upgrades in a single year is a good thing. Which months (ie April, August, Dec would be every 4 months from the beginning of a year) would be important for me as a user to know.
-
-@OmerKahani:
-
-> +1 for 3
->
-> 3 is the maximum upgrades that we can do in my company. Our customers are eCommerce merchants, so from September to December (include), we are in a freeze on all of the infrastructure.
->
-> @tpepper for your question - the best month for us will be March, July, November-December.
-
-@tasdikrahman:
-
-> +1 on moving to 3 releases, this will definitely help us (end users) in keeping up with the release cadence, by reducing the toil and effort required by us to upgrade versions, if we move from 4 releases to 3.
-
-@xmudrii:
-
-> +1 for 3 releases a year.
-
-@afirth:
-
-> I guess most end users are blocked by their upstream distro's ability to keep up with the K8s release. For example, GKE rapid channel is currently on 1.18, but 1.19 released in August. Somebody previously mentioned kops has similar issues (also currently on 1.18). I'm curious whether this is because those providers routinely find issues, or because it takes some fixed time to implement the new capabilities and changes. Either way, I don't think this change would impact end user's ability to get new features in a timely fashion much. So, besides the reduced shadow capacity and the complexity of actually making the change, what are the downsides?
->
-> +1 for me.
-
-@Klaven:
-
-> I see some people attributing drift to longer release cycles (we are only talking about extending them by a month, not 3 months), but I would argue that fast release cycles have caused their own amount of drift, never mind the burden on the release team.
->
-> Look at GKE, for example. Versions 1.14 to 1.17 are supported. GKE is arguably one of the best Kubernetes providers and there is a LOT of drift because corporations don't like continuous rapid change and find it hard to support. I also think that as a project matures the rate of change of the increasingly stable and feature-complete core should decrease. At some point the plugins and the out-of-tree projects should be where more change happens. Projects like cluster-api and the like get the attention which used to be focused on maturing the core.
->
-> I know that recently there has been a lot of focus on how many releases something needs in order to become GA. I think that honestly is the wrong approach.
->
-> I do think it's valid to be concerned that the release of k8s is too much work. I would say this means this system is too laborious. Given that it is this much work, rushing it more would probably only hurt us more. It's obvious that the ecosystem has already felt this strain. If we want to be able to release frequently, we need the release process to become painless. If we don't fix that problem, I don't see any solution other then pushing releases to a manageable cadence.
->
-> If we want to release quickly, we need to think not only about the release team, but also the downstream; the adopters. If we want to release quickly and frequently, then we need to focus on making the upgrade process even easier and similar things.
->
-> As it is. I think quarterly is too much because of all the above issues. Sadly, I have not gotten as much time contributing to Kubernetes as I would like, so I will butt out of the conversation. I just wanted to put my thoughts down.
-
-@yboujallab:
-
-> +1 for 3 releases / year
-
-@jberkus:
-
-> @johnbelamaric everything you've said is valid. At the same time, though, my experience has been that the pressure goes the other way: features already linger in alpha or beta for way longer than they ought to. The push to get most features to GA -- or deprecate them -- really seems to be lacking. It's hard to pull stats for this, but most KEP-worthy features seem to take something like 2 years to get there. So from my perspective, more state changes per release would be a good thing (at least, more getting alpha features to beta/GA), even if we didn't change the number of releases per year.
->
-> It's hard to tell whether or not switching to 3 releases a year would affect the slow pace of finishing features at all.
-
-@ehashman:
-
-> I was on leave for the past two weeks so chiming in a little late...
->
-> I am +1 to 3 releases per year.
->
-> While some folks in the thread note that this increases the heft/risk of each release, I actually think less releases will reduce risk. I'm speaking from an operations perspective as opposed to a development perspective.
->
-> The current Kubernetes release cadence is so high that most organizations cannot keep up with making a major version update every 3 months regularly, or going out of security support in less than a year. While in theory, releasing more frequently reduces the churn and risk of each release, this is only true if end users are actually able to apply the upgrades.
->
-> In my experience, this is very challenging and I have not yet seen any organization consistently keep up with the 3 month major upgrade pace for production clusters, especially at a large scale. So, what effectively happens is that end users upgrade less frequently than 3 months, but since that isn't supported, they end up in the situation where they are required to jump multiple major releases at once, which effectively results in much higher risk.
->
-> 4 vs. 3 releases is >30% more release work, but I do not believe it provides benefit proportional to that work, nor does a quarterly major release cadence match the vast majority of operation teams' upgrade cycles.
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -681,6 +564,16 @@ change are understandable. This may include API specs (though not always
 required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
+
+### TODO Schedule
+
+@mpbarrett:
+
+> Which months (ie April, August, Dec would be every 4 months from the beginning of a year) would be important for me as a user to know.
+
+@OmerKahani:
+
+> @tpepper for your question - the best month for us will be March, July, November-December.
 
 ### FIXME Implementation Details
 
