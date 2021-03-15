@@ -48,7 +48,6 @@ SIG Architecture for cross-cutting KEPs).
 - [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
 - [TODO Motivation](#todo-motivation)
-    - [Data](#data)
   - [Goals](#goals)
     - [TODO Deterministic](#todo-deterministic)
     - [TODO Reduce risk](#todo-reduce-risk)
@@ -60,6 +59,7 @@ SIG Architecture for cross-cutting KEPs).
   - [Non-Goals](#non-goals)
     - [TODO Release Team](#todo-release-team)
     - [TODO Enhancement graduation](#todo-enhancement-graduation)
+      - [Data](#data)
     - [TODO Further decoupling core](#todo-further-decoupling-core)
     - [TODO Modifying SIG Architecture policies](#todo-modifying-sig-architecture-policies)
 - [Proposal](#proposal)
@@ -188,94 +188,6 @@ I'd prefer three releases/year.
 /assign
 /milestone v1.20
 /priority important-longterm
-
-#### Data
-
-@jberkus:
-
-> All: I'm going to research what actual feature trajectory looks like through Kubernetes, because @johnbelamaric has identified that as a critical question. Stats to come.
-
-@ehashman:
-
-> @jberkus Any updates on the stats? :)
-
-@jberkus:
-
-> Nope, got bogged down with other issues, and the question of "what is a feature" in Kubernetes turns out to be a hard one to answer. We don't actually track features outside of a single release cycle; we track KEPs, which can either be part of a feature or the parent of several features, but don't match up 1:1 as features. So first I need to invent a way to identify "features" in a way that works for multiple release cycles.
-
-@jberkus
-
-> Sorry this has been forever, but answering the question of "how fast do our features advance" turns out to be really hard, because there is literally no object called a "feature" that persists reliably through multiple releases.
->
-> To reduce the scope of the problem, I decided to limit this to tracked Enhancements introduced as alpha in 1.12 or 1.13, which were particularly fruitful releases for new features. Limiting it to Tracked kind of limits it to larger features, but I think these are the only ones required to go through alpha/beta/stable anyway (yes/no?). So, in 1.12 and 1.13:
->
-> 20 new enhancements were introduced
-> 7 did not follow a alpha/beta/stable path, mostly because the were removed or broken up into other features
-> 2 are still beta
-> 1 advanced in minimum time, that is 1 release alpha, 1 beta, then stable, in 9 months
-> 4 advanced from alpha to beta in 1 release, but then took 2 or more releases to go to stable
-> 7 advanced more slowly
->
-> Our median number of releases for an enhancement to progress is:
->
-> Alpha to Beta: 2 releases
-> Beta to Stable: 3 releases
-> Alpha to Stable: 6 releases
->
-> Given this, it does not look like moving to 3 releases a year would slow down feature development  due to the alpha/beta/stable progression requirements.
->
-> I will note, however, that for many enhancements nagging by the Release Team during each release cycle did provide a goad to resume stalled development. So I'm at least a little concerned that if we make 3/year and don't change how we monitor feature progression at all, it will still slow things down because devs are being nagged less often.
-
-@ehashman
-
-> I am a little less worried about the "nag factor" now that we've moved to push-driven enhancements this release (SIG leads track, enhancements team accepts vs. enhancements team tracks).
-
-@jberkus
-
-> I'm very worried about it, see new thread.
-
-@johnbelamaric
-
-> I am more concerned about the "nag factor" due to the move to push-driven
-> development; I think the lack of nagging will slow some features down.
-> However, there are new things at play that will help with it - namely, the
-> "no more permabeta" where things can't linger in beta forever because their
-> API gets turned off automatically. At least for things with APIs.
->
-> I strongly believe our alpha-to-stable latency, already quite high, will
-> get worse with 3 releases per year. But ultimately, it's up to the feature
-> authors. If they want it to go fast enough, they'll have to push for it
-> more. Missing a train will have higher cost.
->
-> Anyway, I personally am, as I said before, ambivalent on this decision.
-> Putting on my GKE hat, it makes my life easier. Putting on my OSS hat, I
-> have concerns but nothing that would make me strongly oppose it. It's not a
-> change I would push for, but I think it's reasonable to see what happens if
-> we try it.
->
-> And thank you Josh for the analysis. The median 6 releases goes from 18
-> months to 24 months, which is not great but also something that is not
-> forced on feature authors - they could push and get it done in less time if
-> they need to. It's a rare feature that was making it in the 9 months
-> before, so it would be a rare feature that is forced to have a longer cycle
-> than they would have otherwise.
-
-@jberkus
-
-> I'm going to start a new thread on nag factors, because these are a bigger deal than I think folks want to address.
->
-> There are two areas in the project, currently, that are almost entirely dependent on release team nagging (herafter RTN) for development:
->
->    Getting features to GA (and to a lesser degree, to beta)
->    Fixing test failures and flakes
->
-> With the current 3-month cycle, this means that for 1 month of every cycle RTN doesn't happen, and as a result, these two activities don't happen. This is an extremely broken system. Contributors should not be dependent on nagging of any sort to take care of these project priorities, and the project as a whole shouldn't be depending on the RT for them except during Code Freeze.
->
-> A 4-month cycle will make this problem worse, because we'll be looking a 2 months of every cycle where RTN won't happen, a doubling of the amount of time per year for tests to fail and alpha features to be forgotten.
->
-> I am not saying that this is a reason NOT to do a 4-month cycle. I am saying that switching to a 4-month cycle makes fixing our broken RTN-based system an urgent priority. Fixing failing tests needs to happen year round. Reviewing features for promotion needs to happen at every SIG meeting.
->
-> (FWIW, this is an issue that every large OSS project faces, which is why Code Freeze is to awful in so many projects)
 
 ### Goals
 
@@ -499,6 +411,43 @@ Daniel:
 
 > the concern about things "taking longer" to go stable because of # of releases in beta also came up again, can we think of a way to handle this?
 
+##### Data
+
+@jberkus:
+
+> All: I'm going to research what actual feature trajectory looks like through Kubernetes, because @johnbelamaric has identified that as a critical question. Stats to come.
+
+@ehashman:
+
+> @jberkus Any updates on the stats? :)
+
+@jberkus:
+
+> Nope, got bogged down with other issues, and the question of "what is a feature" in Kubernetes turns out to be a hard one to answer. We don't actually track features outside of a single release cycle; we track KEPs, which can either be part of a feature or the parent of several features, but don't match up 1:1 as features. So first I need to invent a way to identify "features" in a way that works for multiple release cycles.
+
+@jberkus
+
+> Sorry this has been forever, but answering the question of "how fast do our features advance" turns out to be really hard, because there is literally no object called a "feature" that persists reliably through multiple releases.
+>
+> To reduce the scope of the problem, I decided to limit this to tracked Enhancements introduced as alpha in 1.12 or 1.13, which were particularly fruitful releases for new features. Limiting it to Tracked kind of limits it to larger features, but I think these are the only ones required to go through alpha/beta/stable anyway (yes/no?). So, in 1.12 and 1.13:
+>
+> 20 new enhancements were introduced
+> 7 did not follow a alpha/beta/stable path, mostly because the were removed or broken up into other features
+> 2 are still beta
+> 1 advanced in minimum time, that is 1 release alpha, 1 beta, then stable, in 9 months
+> 4 advanced from alpha to beta in 1 release, but then took 2 or more releases to go to stable
+> 7 advanced more slowly
+>
+> Our median number of releases for an enhancement to progress is:
+>
+> Alpha to Beta: 2 releases
+> Beta to Stable: 3 releases
+> Alpha to Stable: 6 releases
+>
+> Given this, it does not look like moving to 3 releases a year would slow down feature development  due to the alpha/beta/stable progression requirements.
+>
+> I will note, however, that for many enhancements nagging by the Release Team during each release cycle did provide a goad to resume stalled development. So I'm at least a little concerned that if we make 3/year and don't change how we monitor feature progression at all, it will still slow things down because devs are being nagged less often.
+
 #### TODO Further decoupling core
 
 @sftim:
@@ -631,6 +580,61 @@ https://www.cncf.io/certification/software-conformance/
 @sebgoa:
 
 > The kubernetes releases have been a strong point of the software since its inception. The quality, testing and general care has been amazing and only improved (my point of reference is releases of some apache foundation software). With the increased usage, scrutiny and complexity of the software it feels like each release is a huge effort for the release team so naturally less releases could mean a bit less work.
+
+@jberkus:
+
+> I will note, however, that for many enhancements nagging by the Release Team during each release cycle did provide a goad to resume stalled development. So I'm at least a little concerned that if we make 3/year and don't change how we monitor feature progression at all, it will still slow things down because devs are being nagged less often.
+
+@ehashman
+
+> I am a little less worried about the "nag factor" now that we've moved to push-driven enhancements this release (SIG leads track, enhancements team accepts vs. enhancements team tracks).
+
+@jberkus
+
+> I'm very worried about it, see new thread.
+
+@johnbelamaric
+
+> I am more concerned about the "nag factor" due to the move to push-driven
+> development; I think the lack of nagging will slow some features down.
+> However, there are new things at play that will help with it - namely, the
+> "no more permabeta" where things can't linger in beta forever because their
+> API gets turned off automatically. At least for things with APIs.
+>
+> I strongly believe our alpha-to-stable latency, already quite high, will
+> get worse with 3 releases per year. But ultimately, it's up to the feature
+> authors. If they want it to go fast enough, they'll have to push for it
+> more. Missing a train will have higher cost.
+>
+> Anyway, I personally am, as I said before, ambivalent on this decision.
+> Putting on my GKE hat, it makes my life easier. Putting on my OSS hat, I
+> have concerns but nothing that would make me strongly oppose it. It's not a
+> change I would push for, but I think it's reasonable to see what happens if
+> we try it.
+>
+> And thank you Josh for the analysis. The median 6 releases goes from 18
+> months to 24 months, which is not great but also something that is not
+> forced on feature authors - they could push and get it done in less time if
+> they need to. It's a rare feature that was making it in the 9 months
+> before, so it would be a rare feature that is forced to have a longer cycle
+> than they would have otherwise.
+
+@jberkus
+
+> I'm going to start a new thread on nag factors, because these are a bigger deal than I think folks want to address.
+>
+> There are two areas in the project, currently, that are almost entirely dependent on release team nagging (herafter RTN) for development:
+>
+>    Getting features to GA (and to a lesser degree, to beta)
+>    Fixing test failures and flakes
+>
+> With the current 3-month cycle, this means that for 1 month of every cycle RTN doesn't happen, and as a result, these two activities don't happen. This is an extremely broken system. Contributors should not be dependent on nagging of any sort to take care of these project priorities, and the project as a whole shouldn't be depending on the RT for them except during Code Freeze.
+>
+> A 4-month cycle will make this problem worse, because we'll be looking a 2 months of every cycle where RTN won't happen, a doubling of the amount of time per year for tests to fail and alpha features to be forgotten.
+>
+> I am not saying that this is a reason NOT to do a 4-month cycle. I am saying that switching to a 4-month cycle makes fixing our broken RTN-based system an urgent priority. Fixing failing tests needs to happen year round. Reviewing features for promotion needs to happen at every SIG meeting.
+>
+> (FWIW, this is an issue that every large OSS project faces, which is why Code Freeze is to awful in so many projects)
 
 ##### TODO @neolit123
 
