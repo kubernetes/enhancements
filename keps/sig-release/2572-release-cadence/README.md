@@ -47,14 +47,11 @@ SIG Architecture for cross-cutting KEPs).
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
-- [Motivation](#motivation)
-  - [FIXME](#fixme)
-    - [TODO Deterministic](#todo-deterministic)
-    - [TODO Reduce risk](#todo-reduce-risk)
+- [TODO Motivation](#todo-motivation)
     - [Data](#data)
   - [Goals](#goals)
-    - [FIXME Does that mandate a fixed frequency?](#fixme-does-that-mandate-a-fixed-frequency)
-    - [FIXME Releases don’t necessarily have to be equally spaced](#fixme-releases-dont-necessarily-have-to-be-equally-spaced)
+    - [TODO Deterministic](#todo-deterministic)
+    - [TODO Reduce risk](#todo-reduce-risk)
     - [TODO Create data](#todo-create-data)
     - [TODO Blocking upgrade tests](#todo-blocking-upgrade-tests)
     - [TODO More automation](#todo-more-automation)
@@ -63,9 +60,8 @@ SIG Architecture for cross-cutting KEPs).
   - [Non-Goals](#non-goals)
     - [TODO Release Team](#todo-release-team)
     - [TODO Enhancement graduation](#todo-enhancement-graduation)
-    - [FIXME Comment, without decision](#fixme-comment-without-decision)
-    - [FIXME Needs response](#fixme-needs-response)
-  - [FIXME Explanatory](#fixme-explanatory)
+    - [TODO Further decoupling core](#todo-further-decoupling-core)
+    - [TODO Modifying SIG Architecture policies](#todo-modifying-sig-architecture-policies)
 - [Proposal](#proposal)
   - [User Stories (Optional)](#user-stories-optional)
     - [TODO End User](#todo-end-user)
@@ -154,7 +150,7 @@ updates.
 [documentation style guide]: https://github.com/kubernetes/community/blob/master/contributors/guide/style-guide.md
 -->
 
-## Motivation
+## TODO Motivation
 
 <!--
 This section is for explicitly listing the motivation, goals, and non-goals of
@@ -164,8 +160,6 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 
 [experience reports]: https://github.com/golang/go/wiki/ExperienceReports
 -->
-
-### FIXME
 
 What would you like to be added:
 
@@ -194,38 +188,6 @@ I'd prefer three releases/year.
 /assign
 /milestone v1.20
 /priority important-longterm
-
-#### TODO Deterministic
-
-@akutz:
-
-> I strongly believe a deterministic and known schedule is more important than the frequency itself. Slowing down to three releases, as @justaugustus said, will provide three additional months for triage and the addressing of existing issues. This should help us to better meet planned release dates as there, in theory, should be fewer unknown-unknowns. So a big +1 from me.
-
-TODO: Stick to schedule and just not cut a 4th release?
-
-#### TODO Reduce risk
-
-@Klaven:
-
-> I see some people attributing drift to longer release cycles (we are only talking about extending them by a month, not 3 months), but I would argue that fast release cycles have caused their own amount of drift, never mind the burden on the release team.
->
-> Look at GKE, for example. Versions 1.14 to 1.17 are supported. GKE is arguably one of the best Kubernetes providers and there is a LOT of drift because corporations don't like continuous rapid change and find it hard to support. I also think that as a project matures the rate of change of the increasingly stable and feature-complete core should decrease. At some point the plugins and the out-of-tree projects should be where more change happens. Projects like cluster-api and the like get the attention which used to be focused on maturing the core.
->
-> I know that recently there has been a lot of focus on how many releases something needs in order to become GA. I think that honestly is the wrong approach.
->
-> I do think it's valid to be concerned that the release of k8s is too much work. I would say this means this system is too laborious. Given that it is this much work, rushing it more would probably only hurt us more. It's obvious that the ecosystem has already felt this strain. If we want to be able to release frequently, we need the release process to become painless. If we don't fix that problem, I don't see any solution other then pushing releases to a manageable cadence.
->
-> If we want to release quickly, we need to think not only about the release team, but also the downstream; the adopters. If we want to release quickly and frequently, then we need to focus on making the upgrade process even easier and similar things.
-
-@ehashman:
-
-> While some folks in the thread note that this increases the heft/risk of each release, I actually think less releases will reduce risk. I'm speaking from an operations perspective as opposed to a development perspective.
->
-> The current Kubernetes release cadence is so high that most organizations cannot keep up with making a major version update every 3 months regularly, or going out of security support in less than a year. While in theory, releasing more frequently reduces the churn and risk of each release, this is only true if end users are actually able to apply the upgrades.
->
-> In my experience, this is very challenging and I have not yet seen any organization consistently keep up with the 3 month major upgrade pace for production clusters, especially at a large scale. So, what effectively happens is that end users upgrade less frequently than 3 months, but since that isn't supported, they end up in the situation where they are required to jump multiple major releases at once, which effectively results in much higher risk.
->
-> 4 vs. 3 releases is >30% more release work, but I do not believe it provides benefit proportional to that work, nor does a quarterly major release cadence match the vast majority of operation teams' upgrade cycles.
 
 #### Data
 
@@ -322,7 +284,15 @@ List the specific goals of the KEP. What is it trying to achieve? How will we
 know that this has succeeded?
 -->
 
-#### FIXME Does that mandate a fixed frequency?
+#### TODO Deterministic
+
+@akutz:
+
+> I strongly believe a deterministic and known schedule is more important than the frequency itself. Slowing down to three releases, as @justaugustus said, will provide three additional months for triage and the addressing of existing issues. This should help us to better meet planned release dates as there, in theory, should be fewer unknown-unknowns. So a big +1 from me.
+
+TODO: Stick to schedule and just not cut a 4th release?
+
+TODO: Does that mandate a fixed frequency?
 
 Thoughts:
 Roughly, yes.
@@ -333,9 +303,33 @@ Roughly, yes.
 
 As a consumer, I'd be looking for some predictability in the schedule.
 
-#### FIXME Releases don’t necessarily have to be equally spaced
+TODO: Releases don’t necessarily have to be equally spaced
 
 See point on predictability.
+
+#### TODO Reduce risk
+
+@Klaven:
+
+> I see some people attributing drift to longer release cycles (we are only talking about extending them by a month, not 3 months), but I would argue that fast release cycles have caused their own amount of drift, never mind the burden on the release team.
+>
+> Look at GKE, for example. Versions 1.14 to 1.17 are supported. GKE is arguably one of the best Kubernetes providers and there is a LOT of drift because corporations don't like continuous rapid change and find it hard to support. I also think that as a project matures the rate of change of the increasingly stable and feature-complete core should decrease. At some point the plugins and the out-of-tree projects should be where more change happens. Projects like cluster-api and the like get the attention which used to be focused on maturing the core.
+>
+> I know that recently there has been a lot of focus on how many releases something needs in order to become GA. I think that honestly is the wrong approach.
+>
+> I do think it's valid to be concerned that the release of k8s is too much work. I would say this means this system is too laborious. Given that it is this much work, rushing it more would probably only hurt us more. It's obvious that the ecosystem has already felt this strain. If we want to be able to release frequently, we need the release process to become painless. If we don't fix that problem, I don't see any solution other then pushing releases to a manageable cadence.
+>
+> If we want to release quickly, we need to think not only about the release team, but also the downstream; the adopters. If we want to release quickly and frequently, then we need to focus on making the upgrade process even easier and similar things.
+
+@ehashman:
+
+> While some folks in the thread note that this increases the heft/risk of each release, I actually think less releases will reduce risk. I'm speaking from an operations perspective as opposed to a development perspective.
+>
+> The current Kubernetes release cadence is so high that most organizations cannot keep up with making a major version update every 3 months regularly, or going out of security support in less than a year. While in theory, releasing more frequently reduces the churn and risk of each release, this is only true if end users are actually able to apply the upgrades.
+>
+> In my experience, this is very challenging and I have not yet seen any organization consistently keep up with the 3 month major upgrade pace for production clusters, especially at a large scale. So, what effectively happens is that end users upgrade less frequently than 3 months, but since that isn't supported, they end up in the situation where they are required to jump multiple major releases at once, which effectively results in much higher risk.
+>
+> 4 vs. 3 releases is >30% more release work, but I do not believe it provides benefit proportional to that work, nor does a quarterly major release cadence match the vast majority of operation teams' upgrade cycles.
 
 #### TODO Create data
 
@@ -505,7 +499,7 @@ Daniel:
 
 > the concern about things "taking longer" to go stable because of # of releases in beta also came up again, can we think of a way to handle this?
 
-#### FIXME Comment, without decision
+#### TODO Further decoupling core
 
 @sftim:
 
@@ -513,21 +507,7 @@ Daniel:
 >
 > A bit more decoupling, now that the investment is made to enable that, sounds good to me - and allows for minor releases of Kubernetes itself to become less frequent.
 
-#### FIXME Needs response
-
-@aojea:
-
-> 3 releases is cool for development, but not for releasing something with a minimum level of quality.
-> We barely keep with the tech debt we have in CI and testing, ie, how many jobs are failing for years that nobody noticed?, how many bugs are open for years? how many features are in alpha,beta for years?
-> Each release cycle force people to FIX things if they want to release, the more time to release the more technical debt that you accumulate.
-> At least in all my life I never see a project that reducing the release cycle you don't end rushing everything for last week and honestly, I gave up believing that will be real some time.
-
-### FIXME Explanatory
-
-@MIhirMishra:
-
-> What is the need to decide in advance ? Release when it is ready for its level i.e. if it is ready for beta - release as beta and when ready for GA release as GA.
-> More important is what is in the release than how frequently you are releasing.
+#### TODO Modifying SIG Architecture policies
 
 @johnbelamaric:
 
@@ -634,6 +614,13 @@ https://www.cncf.io/certification/software-conformance/
 @pires:
 
 > And as noted over Twitter, given someone's concerns on expecting same amount of changes over 25% less releases, I think it's of paramount importance for SIGs to step up and limit the things they include in a release, balancing what matters short/ long-term and kicking out all that can be done outside of the release cycle (we have CRDs, custom API servers, scheduling plug-ins, and so on). Now, I understand it's hard, sometimes even painful, to manage the enthusiasm some like me have on things close to them they want to see gaining traction but the early days are gone and this is now a solid OSS project that requires mature contributors.
+
+@aojea:
+
+> 3 releases is cool for development, but not for releasing something with a minimum level of quality.
+> We barely keep with the tech debt we have in CI and testing, ie, how many jobs are failing for years that nobody noticed?, how many bugs are open for years? how many features are in alpha,beta for years?
+> Each release cycle force people to FIX things if they want to release, the more time to release the more technical debt that you accumulate.
+> At least in all my life I never see a project that reducing the release cycle you don't end rushing everything for last week and honestly, I gave up believing that will be real some time.
 
 #### TODO SIG Release members
 
