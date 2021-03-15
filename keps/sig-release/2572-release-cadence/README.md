@@ -57,11 +57,11 @@ SIG Architecture for cross-cutting KEPs).
     - [TODO Improve visibility](#todo-improve-visibility)
     - [TODO More policy](#todo-more-policy)
   - [Non-Goals](#non-goals)
-    - [TODO Release Team](#todo-release-team)
     - [TODO Enhancement graduation](#todo-enhancement-graduation)
       - [Data](#data)
     - [TODO Further decoupling core](#todo-further-decoupling-core)
     - [TODO Modifying SIG Architecture policies](#todo-modifying-sig-architecture-policies)
+    - [Determining an upper bound for Release Team shadows](#determining-an-upper-bound-for-release-team-shadows)
 - [Proposal](#proposal)
   - [User Stories (Optional)](#user-stories-optional)
     - [TODO End User](#todo-end-user)
@@ -295,30 +295,6 @@ What is out of scope for this KEP? Listing non-goals helps to focus discussion
 and make progress.
 -->
 
-#### TODO Release Team
-
-@saschagrunert:
-
-> On the other hand it will give less people a chance to participate in the shadowing program for example. Anyways, I think we will find appropriate solutions around those kind of new challenges.
-
-@jeremyrickard:
-
-> The one downside is that we will remove an opportunity for shadowing, and as we saw this time around we had >100 people apply, and this will remove ~24-ish opportunities. I think we can maybe identify some opportunities for folks that want to be involved though. takes off release lead hat
-
-@wilsonehusin:
-
-> as someone who started getting involved in this project through shadowing release team, I'd like to echo what @saschagrunert & @jeremyrickard raised above regarding shadow opportunities -- I'm glad we're acknowledging the downside and hope we can keep in mind to present other opportunities for folks to get involved!
-
-@kcmartin:
-
-> As to the potential for limiting shadow opportunities (mentioned by @jeremyrickard, @wilsonehusin, and others), I'm definitely tuned in to that being a downside, since I've served as a SIG-Release shadow three times, and I think it's a fantastic opportunity!
->
-> One possible way to alleviate that downside would be to have 5 shadows, instead of three or four, per sub-team. I believe this is still a manageable number for the Leads, and could distribute the work more evenly.
-
-@pires:
-
-> On a more personal note, (@jeremyrickard wink, wink) I applied for release shadow believing I'd be picked given my past contributions to the project and my justification to be selected over others. Being rejected was a humbling experience and I'm happy to let you know I didn't lose any of the appetite to contribute. Others may feel differently but, then again, the project is maturing and so should the community.
-
 #### TODO Enhancement graduation
 
 @johnbelamaric:
@@ -487,6 +463,14 @@ Daniel:
 >     Requiring a higher bar for a state transition, thus making the effort involved to get to the next stage higher
 >
 > Reducing the transitions per feature can only be done by changing our policy. In order to do that, we would certainly need to raise the bar higher for state transition - this dovetails with our goal per release. Another possibility is to classify features into low and high risk features. Low risk features could go straight to beta and skip the alpha phase, for example.
+
+#### Determining an upper bound for Release Team shadows
+
+It was noted that fewer releases for the year would lead to fewer opportunities
+to participate on the Release Team.
+
+This will be discussed and eventually addressed in
+https://github.com/kubernetes/sig-release/issues/1494.
 
 ## Proposal
 
