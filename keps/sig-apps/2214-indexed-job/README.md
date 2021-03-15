@@ -48,7 +48,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [x] (R) Production readiness review completed
 - [x] (R) Production readiness review approved
 - [x] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 [kubernetes.io]: https://kubernetes.io/
@@ -98,7 +98,7 @@ for Job queueing or workflows to support all of them.
 
 ### Goals
 
-- Support the *array Job* pattern by adding completion indexes to each Pod
+- Support the *indexed Job* pattern by adding completion indexes to each Pod
   of a Job in *fixed completion count* mode.
 
 ### Non-Goals
@@ -136,7 +136,7 @@ spec:
         - name: INDEX
           valueFrom:
             fieldRef:
-              fieldPath: metadata.annotations['batch.alpha.kubernetes.io/job-completion-index'] 
+              fieldPath: metadata.annotations['batch.kubernetes.io/job-completion-index'] 
 ```
 
 ### Notes/Constraints/Caveats (Optional)
@@ -187,25 +187,24 @@ const (
 
 type JobSpec struct {	
   ...	
-  // CompletionMode specifies how Pod completions are tracked. It can be	
-  // `NonIndexed` (default) or `Indexed`.	
+  // CompletionMode specifies how Pod completions are tracked. It can be
+  // `NonIndexed` (default) or `Indexed`.
   //
-  // `NonIndexed` means that each Pod completion is homologous to each other.	
-  // The Job is considered complete when there have been .spec.completions	
-  // successful completions.	
+  // `NonIndexed` means that the Job is considered complete when there have
+  // been .spec.completions successfully completed Pods. Each Pod completion is
+  // homologous to each other.
   //
-  // `Indexed` means that each Pod completion needs to be tracked individually;	
-  // each Pods gets an associated completion index, which is available in the
-  // annotation	`batch.alpha.kubernetes.io/job-completion-index`.	
-  // The Job is considered complete when there is one successful Pod for each	
-  // index in the range 0 to (.spec.completions - 1).	
-  // When value is `Indexed`, .spec.completions must have a non-zero positive
-  // value and `.spec.parallelism` must be less than or equal to 10^5.
-  //
-  // More completion modes can be added in the future. If a Job controller
-  // observes a mode that it doesn't recognize, it manages the Job as in
-  // `NonIndexed`.
-  CompletionMode CompletionMode
+  // `Indexed` means that the Pods of a
+  // Job get an associated completion index from 0 to (.spec.completions - 1),
+  // available in the annotation batch.kubernetes.io/job-completion-index.
+  // The Job is considered complete when there is one successfully completed Pod
+  // for each index.
+  // When value is `Indexed`, .spec.completions must be specified and
+  // `.spec.parallelism` must be less than or equal to 10^5.
+  // More completion modes can be added in the future. If the Job controller
+  // observes a mode that it doesn't recognize, the controller skips updates
+  // for the Job.
+  CompletionMode *CompletionMode
 }	
 
 type JobStatus struct {
@@ -233,7 +232,7 @@ As the comment describes, when `.spec.completionMode = "Indexed"`:
 ### Pod detail
 
 The Pod and PodSpec APIs don't get any new fields. However, Pods created for
-Indexed Jobs get the annotation `batch.alpha.kubernetes.io/job-completion-index`
+Indexed Jobs get the annotation `batch.kubernetes.io/job-completion-index`
 with a value equal to its completion index. The annotation is immutable.
 
 The annotation can be accessed through the downward API as a file or environment
@@ -253,7 +252,7 @@ spec:
         - name: JOB_COMPLETION_INDEX
           valueFrom:
             fieldRef:
-              fieldPath: metadata.annotations['batch.alpha.kubernetes.io/job-completion-index'] 
+              fieldPath: metadata.annotations['batch.kubernetes.io/job-completion-index'] 
 ```
 
 The Job controller doesn't add the environment variable if there is a name
@@ -380,7 +379,7 @@ without a completion index.
 
 ### Version Skew Strategy
 
-This features has no node runtime implications.
+This feature has no node runtime implications.
 
 ## Production Readiness Review Questionnaire
 
@@ -566,6 +565,7 @@ _This section must be completed when targeting beta graduation to a release._
 
 * 2021-01-08: First version of the KEP in provisional status. Design Details
   completed.
+* 2021-03-03-09: Feature implemented under feature gate disabled by default.
 
 ## Drawbacks
 
