@@ -61,6 +61,7 @@ SIG Architecture for cross-cutting KEPs).
       - [Data](#data)
     - [TODO Further decoupling core](#todo-further-decoupling-core)
     - [TODO Modifying SIG Architecture policies](#todo-modifying-sig-architecture-policies)
+    - [Establishing maintenance/stability releases](#establishing-maintenancestability-releases)
     - [Determining an upper bound for Release Team shadows](#determining-an-upper-bound-for-release-team-shadows)
 - [Proposal](#proposal)
   - [User Stories (Optional)](#user-stories-optional)
@@ -87,7 +88,7 @@ SIG Architecture for cross-cutting KEPs).
 - [Alternatives](#alternatives)
   - [TODO LTS](#todo-lts)
   - [TODO Go faster](#todo-go-faster)
-  - [TODO Maintenance releases](#todo-maintenance-releases)
+  - [End-of-year maintenance/stability releases](#end-of-year-maintenancestability-releases)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -463,6 +464,10 @@ Daniel:
 >     Requiring a higher bar for a state transition, thus making the effort involved to get to the next stage higher
 >
 > Reducing the transitions per feature can only be done by changing our policy. In order to do that, we would certainly need to raise the bar higher for state transition - this dovetails with our goal per release. Another possibility is to classify features into low and high risk features. Low risk features could go straight to beta and skip the alpha phase, for example.
+
+#### Establishing maintenance/stability releases
+
+Discussed [here](#end-of-year-maintenancestability-releases).
 
 #### Determining an upper bound for Release Team shadows
 
@@ -981,21 +986,19 @@ information to express the idea and why it was not acceptable.
 >
 > I don't know how that would affect our choice of major release cadence (isn't it orthagonal?) but it would be a great thing to do regardless. Also very hard.
 
-### TODO Maintenance releases
+### End-of-year maintenance/stability releases
 
-@youngnick:
+Establishing a shorter maintenance/stability release at the end of the year has
+been casually discussed at several points in the project, with the most recent
+(at the time of writing) occurrence being
+[here](https://github.com/kubernetes/sig-release/issues/809).
 
-> I agree with @spiffxp that whatever we end up doing, we should acknowledge that calendar Q4 is substantially quieter than other quarters, with US Kubecon rolling into US Thanksgiving, rolling into the December festive season.
->
-> I think that any plan to change the release cadence needs to take that as a prime consideration, whether it's keeping four releases a year and marking the Q4 one as minimal features, spreading three releases across the year, or some other solution.
+Nothing compelling has emerged from previous conversations to give cause to
+establish maintenance/stability releases.
 
-@jberkus:
-
-> @spiffxp we've talked about making Q4 a "maintenance" release endlessly, but we've never actually implemented that.
-
-@jayunit100:
-
-> Sounds like joshs comment is middle ground on the way to three : sure you get 4 releases but the fourth is only bug fixes, tests and stability .
+Fixing bugs, stabilizing components, adding/deflaking tests, improving
+documentation, and graduating features are activities that can and should
+happen in a reasonably consistent manner throughout the year.
 
 ## Infrastructure Needed (Optional)
 
