@@ -57,6 +57,9 @@ SIG Architecture for cross-cutting KEPs).
     - [FIXME Releases don’t necessarily have to be equally spaced](#fixme-releases-dont-necessarily-have-to-be-equally-spaced)
     - [TODO Create data](#todo-create-data)
     - [TODO Blocking upgrade tests](#todo-blocking-upgrade-tests)
+    - [TODO More automation](#todo-more-automation)
+    - [TODO Improve visibility](#todo-improve-visibility)
+    - [TODO More policy](#todo-more-policy)
   - [Non-Goals](#non-goals)
     - [TODO Release Team](#todo-release-team)
     - [TODO Enhancement graduation](#todo-enhancement-graduation)
@@ -74,9 +77,11 @@ SIG Architecture for cross-cutting KEPs).
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
     - [TODO Concentrating risk](#todo-concentrating-risk)
+    - [TODO Attention to tests](#todo-attention-to-tests)
+    - [TODO Attention to dependencies](#todo-attention-to-dependencies)
 - [Design Details](#design-details)
   - [TODO Schedule](#todo-schedule)
-  - [FIXME Implementation Details](#fixme-implementation-details)
+    - [TODO Impact to existing deadlines](#todo-impact-to-existing-deadlines)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
@@ -361,6 +366,24 @@ Aaron C:
 
 > Can we make upgrade jobs / tests blocking to make the upgrade between versions better
 
+#### TODO More automation
+
+@vincepri:
+
+> There is not enough automation (true for probably all our projects and repositories).
+
+#### TODO Improve visibility
+
+@vincepri:
+
+> Changes are hard to keep up with, and sometimes important things are buried in release notes.
+
+#### TODO More policy
+
+@vincepri:
+
+> Some fear that less releases without policies (read: saying "no" more) isn't enough.
+
 ### Non-Goals
 
 <!--
@@ -393,6 +416,86 @@ and make progress.
 > On a more personal note, (@jeremyrickard wink, wink) I applied for release shadow believing I'd be picked given my past contributions to the project and my justification to be selected over others. Being rejected was a humbling experience and I'm happy to let you know I didn't lose any of the appetite to contribute. Others may feel differently but, then again, the project is maturing and so should the community.
 
 #### TODO Enhancement graduation
+
+@johnbelamaric:
+
+> I am tentatively in favor of 3 releases per year, primarily because I believe 4 releases per year is too hard for folks to consume. Even 3 releases per year is probably too much for most, but the downsides of fewer releases make anything less than 3 too risky in my mind.
+>
+> As I see it, those downsides are some things already mentioned above:
+>
+>     Build up of too much content in the release, and consequent potential for more painful upgrades.
+>     Very long lead time to get a feature to GA through the alpha/beta/stable phases.
+>
+> Before making this decision, I think we need mitigations for these. Those mitigations have extensive ripples in how we do our development.
+>
+> For (1), some mitigations are:
+> a) More development out-of-tree / decoupling more components
+> b) SIGs saying "no" more
+> c) Stricter admission criteria in the release (higher bar from SIG Release, SIG Testing, PRR, WG Reliability, SIG Scalability, etc.)
+>
+> Of course some of these mitigations might make (2) worse. Other ideas?
+>
+> For (2), we may want to thinking about how we do our feature graduation process. Having three stages to go through and one less release per year to do it will stretch out how long it takes to add a feature quite substantially. This is a big topic we wouldn't want to gate on, but we may want to have a plan for before moving forward. Some options others have mentioned to me:
+> a) Features are in, or out. That is, straight to GA, but with features not admitted to the main build until they are ready. This means we need some alternate build and perhaps dev or feature branches.
+> b) Two stages instead of three. I am very skeptical of this, but there is some support for this in how K8s is actually used today. We did an operator survey in the PRR subproject and we found that:
+>
+>     More than 90% of surveyed orgs allow (by policy) all Beta and GA features in prod.
+>     Less than 10% of surveyed orgs have ever disabled a beta feature in prod. The caveat is that both operators with more than 10,000 nodes under management that answered the survey have done this.
+>
+> This would indicate that people already treat beat as GA, for the most part. That's not necessarily a good thing, but it is a fact. Of course, the big benefit for us as contributors is that betas can be changed if we have made a mistake. So again we probably wouldn't want to use the current bar for beta and just map it to GA. We would need to raise that quite a bit.
+>
+> With respect to alpha, the idea there is to gather feedback. I think we get some limited feedback with it, but is it enough? If alpha and beta are not really serving their intended purpose, are they really that useful, as currently defined?
+>
+> Another option for (2) is breaking up the monolith more and allowing components to release independently. However, this could make test coverage nearly impossible, as individual components would need to be tested in various versions. Given that K8s is operated independently by thousands of organizations, I don't think we can treat the core components as completely independent. Nonetheless there may be some opportunities for decomposition (like we did with CoreDNS, for example). @thockin mentioned kubelet and kube-proxy in this regard.
+>
+> See also (there are probably many more issues like these):
+>
+>     kubernetes/community#567
+>     kubernetes/community#4000
+
+@jberkus:
+
+>     For (2), we may want to thinking about how we do our feature graduation process. Having three stages to go through and one less release per year to do it will stretch out how long it takes to add a feature quite substantially.
+>
+> Does it really, though? How many features actually went from alpha to GA in 9 months?
+>
+> Does anyone have hard data on this?
+
+@johnbelamaric:
+
+>     Does it really, though? How many features actually went from alpha to GA in 9 months?
+>
+>     Does anyone have hard data on this?
+>
+> Ok, that's a fair point to challenge that assumption. I agree probably most don't do it in 9 months, but data would help. I am not sure if "months" is the right measure, though. My concern is that people will still take the same number of releases to make it happen, which means it will take longer.
+>
+> On a similar note, I am curious if there is any data on the amount of feedback alpha features actually get.
+
+@jberkus:
+
+> Yah, and "Is there some outstanding blocker that prevents new features from actually going from alpha to GA in 3 releases for any reason other than maturity?"
+>
+> That is, if a feature can go from alpha to GA in 3 releases, that's fine. That's a year, and do we really want to make the case that it should take less than a year to get a new feature to GA? BUT ... if something in our process means that features realistically can't be introduced in 1.23 and go to beta in 1.24, then we have a potential problem, because that timeline gets very long if it's gonna actually take you 5 releases.
+
+@johnbelamaric:
+
+> The two points I bring up are in tension with each other. That is, the same
+> features spread across fewer annual releases automatically means more per
+> release, or longer duration in the pipeline.
+
+@bowei:
+
+> We should make sure that there are sufficient improvements/metrics/goals to meet w/ any change (or no change).
+> It wouldn't be great if 4 -> 3 didn't improve things and the same rationales would justify 3 -> 2.
+> Is there a bar where we can comfortably go back from 3 -> 4?
+
+@onlydole:
+
+> +1 for three releases a year, and all of this discussion is fantastic!
+>
+> I agree with there being three releases a year. However, I do think that having more regular minor version releases would be helpful, so there isn’t any rush to get things into a specific release, nor a blocker around shipping bugfixes or improvements.
+>
+> I’d like to propose a strongly scoped path for Alpha, Beta, and GA features. I believe that allowing for a bit more leniency for Alpha and Beta code promotion and more stringent requirements for features before they make GA status.
 
 @jberkus:
 
@@ -540,6 +643,13 @@ https://www.cncf.io/certification/software-conformance/
 - Time for mental health / curtailing burnout
 - Time for KubeCon execution
 - Further show of maturity with less churn
+- Saying "no" more
+
+@vincepri:
+
+> Taking a step back, a few people are suggesting to fix some of these problem from a technical perspective (which is good in itself) and we should prioritize these efforts. From the other side, there is a general sentiment that we need to slow down for the sake of this community's health.
+>
+> These are both valid, and agreeing on a slower cadence is just the first step; going forward we should normalize taking a few steps back, reflect, and course-correct when things are becoming unsustainable.
 
 @pires:
 
@@ -625,6 +735,32 @@ Consider including folks who also work outside the SIG or subproject.
 >
 > With less releases developers will tend to rush their features at the last minute to "get it in" because the next one will be further apart.
 
+#### TODO Attention to tests
+
+@jberkus:
+
+>         Extra month for flakes/failures to get worse if nobody looks at them until Code Freeze
+>
+>     I think risk this can be reduced if we adjust (increase) the code freeze period.
+>
+> Better, how about we keep on top of flakes even if it's not Code Freeze?
+
+@alculquicondor:
+
+>     Better, how about we keep on top of flakes even if it's not Code Freeze?
+>
+> Absolutely, but it's not easy to enforce without hurting development of non-violators.
+
+@jberkus:
+
+> Shutting down merges is the nuclear option for preventing flakes and fails. We should be able to keep on top of them without resorting to that. But ... we're getting off topic here, unless folks think the "increased time to flake" is a blocker for this (I don't).
+
+#### TODO Attention to dependencies
+
+@jberkus:
+
+> Extra problems with upstream dependency patch support if our timing is bad
+
 ## Design Details
 
 <!--
@@ -636,15 +772,13 @@ proposal will be implemented, this is the place to discuss them.
 
 ### TODO Schedule
 
-@mpbarrett:
-
-> Which months (ie April, August, Dec would be every 4 months from the beginning of a year) would be important for me as a user to know.
-
-@OmerKahani:
-
-> @tpepper for your question - the best month for us will be March, July, November-December.
-
-### FIXME Implementation Details
+- Symmetric vs asymmetric
+- Explicit months
+- Considerations around KubeCon
+- Link notional schedules
+- Golang releases
+- November/December breaks
+- Other dependencies to consider?
 
 @tpepper:
 
@@ -665,167 +799,35 @@ proposal will be implemented, this is the place to discuss them.
 >     some other explicit stability effort periods like taken in August 2020, formalized into the release cadence as a longer code freeze?
 >
 > Depending on how we lay out the annual calendar, we might also get some benefit (or complexity) relative to the golang release cycle and our need to update golang twice on average across the patch release lifecycle of each release. This may also compound relative to distributors release cadences, support lifecycles, their stabilization and lead time between content selection and release, and their balancing interoperability across a larger set of dependencies where those are tied to specific months on the annual calendar.
->
-> There's not an easy answer here that's going to work right for everybody, but while lots of folks are +1'ing the abstract concept it would be good to capture additional constraints and ideas that are otherwise implicit when they make the +1.
 
 @neolit123:
 
 > Golang has a "symmetric" model, so i think k8s should do the same.
 > the "symmetric" choice however, would require more discipline and availability from contributors, so my vote here is to try "symmetric" and if it fails (maybe after one year) go "asymmetric".
 
+@mpbarrett:
+
+> Which months (ie April, August, Dec would be every 4 months from the beginning of a year) would be important for me as a user to know.
+
+@OmerKahani:
+
+> @tpepper for your question - the best month for us will be March, July, November-December.
+
 @khenidak:
 
 > @tpepper would be great if we add to this post typical kubecon(s) schedule, since most the community (those who are reviewing, approving, building, releasing changes) is also heavily engaged in these events.
 
-@vincepri:
-
-> Trying to summarize general feedback I've gathered today here and there for visibility. This particular issue started with "slowing down", although it quickly became a reflection on why and what can we do about it:
->
->     Releases are hard, they need people to commit.
->     There is not enough automation (true for probably all our projects and repositories).
->     With each Kubernetes release, there is a world of clients that needs to be updated.
->     Changes are hard to keep up with, and sometimes important things are buried in release notes.
->     Some fear that less releases without policies (read: saying "no" more) isn't enough.
->     2020
->
-> Taking a step back, a few people are suggesting to fix some of these problem from a technical perspective (which is good in itself) and we should prioritize these efforts. From the other side, there is a general sentiment that we need to slow down for the sake of this community's health.
->
-> These are both valid, and agreeing on a slower cadence is just the first step; going forward we should normalize taking a few steps back, reflect, and course-correct when things are becoming unsustainable.
-
-@cblecker:
-
->     Can folks comment on how they'd prefer this to look operationally?
->
-> We should also talk about how this may impact things like code freeze (longer feature freeze with only bug/scale/stability fixes?).
->
-> I'm +1 to 3 releases in general, but the details obviously matter. I'd also love to see this in a KEP if we come to consensus on making a change.
-
 @jberkus:
 
-> So, some pros/cons not previously mentioned on this thread:
->
-> Additional Pros:
->
->     Easier to schedule releases because we can fudge dates more to avoid Kubecons and holidays
->     Reduced number of E2E, conformance, skew, and upgrade test jobs
->     Means that new 1+ year patch support doesn't result in additional patch releases
->     We'll get to 1.99 slower so we won't run out of digits
->
-> Cons:
->
->     Increased pressure by feature authors to get their feature in this release as opposed to waiting.
->     Extra month for flakes/failures to get worse if nobody looks at them until Code Freeze
->     Extra problems with upstream dependency patch support if our timing is bad
->
-> Regarding Tim's question of exact implementation:
->
 > My vote is for symmetric releases in April, August, and December. While it's tempting to make December an "off month", development does happen all the time, and if it's not on a release, what is it on?
 >
 > That would be a reason for my 2nd choice, which would be Symmetric March, July, November, which puts Slow December at the beginning of the cycle instead of the end. However, that's mainly a benefit for working around Kubecon November, and there's no good reason to believe that Kubecon will be happening in November 2 years from now; it might be September or October instead.
 
-@alculquicondor:
+#### TODO Impact to existing deadlines
 
->     Extra month for flakes/failures to get worse if nobody looks at them until Code Freeze
->
-> I think risk this can be reduced if we adjust (increase) the code freeze period.
+@cblecker:
 
-@jberkus:
-
->         Extra month for flakes/failures to get worse if nobody looks at them until Code Freeze
-> 
->     I think risk this can be reduced if we adjust (increase) the code freeze period.
->
-> Better, how about we keep on top of flakes even if it's not Code Freeze?
-
-@alculquicondor:
-
->     Better, how about we keep on top of flakes even if it's not Code Freeze?
->
-> Absolutely, but it's not easy to enforce without hurting development of non-violators.
-
-@jberkus:
-
-> Shutting down merges is the nuclear option for preventing flakes and fails. We should be able to keep on top of them without resorting to that. But ... we're getting off topic here, unless folks think the "increased time to flake" is a blocker for this (I don't).
-
-@johnbelamaric:
-
-> I am tentatively in favor of 3 releases per year, primarily because I believe 4 releases per year is too hard for folks to consume. Even 3 releases per year is probably too much for most, but the downsides of fewer releases make anything less than 3 too risky in my mind.
->
-> As I see it, those downsides are some things already mentioned above:
->
->     Build up of too much content in the release, and consequent potential for more painful upgrades.
->     Very long lead time to get a feature to GA through the alpha/beta/stable phases.
->
-> Before making this decision, I think we need mitigations for these. Those mitigations have extensive ripples in how we do our development.
->
-> For (1), some mitigations are:
-> a) More development out-of-tree / decoupling more components
-> b) SIGs saying "no" more
-> c) Stricter admission criteria in the release (higher bar from SIG Release, SIG Testing, PRR, WG Reliability, SIG Scalability, etc.)
->
-> Of course some of these mitigations might make (2) worse. Other ideas?
->
-> For (2), we may want to thinking about how we do our feature graduation process. Having three stages to go through and one less release per year to do it will stretch out how long it takes to add a feature quite substantially. This is a big topic we wouldn't want to gate on, but we may want to have a plan for before moving forward. Some options others have mentioned to me:
-> a) Features are in, or out. That is, straight to GA, but with features not admitted to the main build until they are ready. This means we need some alternate build and perhaps dev or feature branches.
-> b) Two stages instead of three. I am very skeptical of this, but there is some support for this in how K8s is actually used today. We did an operator survey in the PRR subproject and we found that:
->
->     More than 90% of surveyed orgs allow (by policy) all Beta and GA features in prod.
->     Less than 10% of surveyed orgs have ever disabled a beta feature in prod. The caveat is that both operators with more than 10,000 nodes under management that answered the survey have done this.
->
-> This would indicate that people already treat beat as GA, for the most part. That's not necessarily a good thing, but it is a fact. Of course, the big benefit for us as contributors is that betas can be changed if we have made a mistake. So again we probably wouldn't want to use the current bar for beta and just map it to GA. We would need to raise that quite a bit.
->
-> With respect to alpha, the idea there is to gather feedback. I think we get some limited feedback with it, but is it enough? If alpha and beta are not really serving their intended purpose, are they really that useful, as currently defined?
->
-> Another option for (2) is breaking up the monolith more and allowing components to release independently. However, this could make test coverage nearly impossible, as individual components would need to be tested in various versions. Given that K8s is operated independently by thousands of organizations, I don't think we can treat the core components as completely independent. Nonetheless there may be some opportunities for decomposition (like we did with CoreDNS, for example). @thockin mentioned kubelet and kube-proxy in this regard.
->
-> See also (there are probably many more issues like these):
->
->     kubernetes/community#567
->     kubernetes/community#4000
-
-@jberkus:
-
->     For (2), we may want to thinking about how we do our feature graduation process. Having three stages to go through and one less release per year to do it will stretch out how long it takes to add a feature quite substantially.
->
-> Does it really, though? How many features actually went from alpha to GA in 9 months?
->
-> Does anyone have hard data on this?
-
-@johnbelamaric:
-
->     Does it really, though? How many features actually went from alpha to GA in 9 months?
-> 
->     Does anyone have hard data on this?
->
-> Ok, that's a fair point to challenge that assumption. I agree probably most don't do it in 9 months, but data would help. I am not sure if "months" is the right measure, though. My concern is that people will still take the same number of releases to make it happen, which means it will take longer.
->
-> On a similar note, I am curious if there is any data on the amount of feedback alpha features actually get.
-
-@jberkus:
-
-> Yah, and "Is there some outstanding blocker that prevents new features from actually going from alpha to GA in 3 releases for any reason other than maturity?"
->
-> That is, if a feature can go from alpha to GA in 3 releases, that's fine. That's a year, and do we really want to make the case that it should take less than a year to get a new feature to GA? BUT ... if something in our process means that features realistically can't be introduced in 1.23 and go to beta in 1.24, then we have a potential problem, because that timeline gets very long if it's gonna actually take you 5 releases.
-
-@johnbelamaric:
-
-> The two points I bring up are in tension with each other. That is, the same
-features spread across fewer annual releases automatically means more per
-release, or longer duration in the pipeline.
-
-@bowei:
-
-> We should make sure that there are sufficient improvements/metrics/goals to meet w/ any change (or no change).
-> It wouldn't be great if 4 -> 3 didn't improve things and the same rationales would justify 3 -> 2.
-> Is there a bar where we can comfortably go back from 3 -> 4?
-
-@onlydole:
-
-> +1 for three releases a year, and all of this discussion is fantastic!
->
-> I agree with there being three releases a year. However, I do think that having more regular minor version releases would be helpful, so there isn’t any rush to get things into a specific release, nor a blocker around shipping bugfixes or improvements.
->
-> I’d like to propose a strongly scoped path for Alpha, Beta, and GA features. I believe that allowing for a bit more leniency for Alpha and Beta code promotion and more stringent requirements for features before they make GA status.
+> We should also talk about how this may impact things like code freeze (longer feature freeze with only bug/scale/stability fixes?).
 
 ### Test Plan
 
