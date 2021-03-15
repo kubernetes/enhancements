@@ -63,7 +63,6 @@ SIG Architecture for cross-cutting KEPs).
   - [Non-Goals](#non-goals)
     - [TODO Release Team](#todo-release-team)
     - [TODO Enhancement graduation](#todo-enhancement-graduation)
-    - [FIXME Ideas](#fixme-ideas)
     - [FIXME Comment, without decision](#fixme-comment-without-decision)
     - [FIXME Needs response](#fixme-needs-response)
   - [FIXME Explanatory](#fixme-explanatory)
@@ -90,10 +89,9 @@ SIG Architecture for cross-cutting KEPs).
   - [Leads meeting feedback](#leads-meeting-feedback)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
-  - [FIXME](#fixme-1)
-    - [LTS](#lts)
-    - [Go faster](#go-faster)
-    - [Maintenance releases](#maintenance-releases)
+  - [TODO LTS](#todo-lts)
+  - [TODO Go faster](#todo-go-faster)
+  - [TODO Maintenance releases](#todo-maintenance-releases)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
 
@@ -506,24 +504,6 @@ and make progress.
 Daniel:
 
 > the concern about things "taking longer" to go stable because of # of releases in beta also came up again, can we think of a way to handle this?
-
-#### FIXME Ideas
-
-@sftim:
-
-> If there were an unsupported-but-tested Kubernetes release cut and published once a week - what would that mean?
->
-> I'm imagining something that passes the conformance tests (little point otherwise) but comes with no guarantee. The Rust project has a model a bit like this with a daily unstable release which has nevertheless been through lots of automated testing.
->
-> When I'm typing this I'm imagining that I could run minikube start --weekly-unstable and get a local test cluster based on the most recent release. If Kubernetes already had that built and working, would people pick different answers?
-
-@jberkus:
-
-> @sftim yeah, you've noticed that the reason, right now, we don't see a lot of community testing on alphas and betas is that we don't make them easy to consume.
->
-> I'd say that it would need to go beyond that: we'd need images, minikube, and kubeadm releases for each weekly release.
->
-> I don't know how that would affect our choice of major release cadence (isn't it orthagonal?) but it would be a great thing to do regardless. Also very hard.
 
 #### FIXME Comment, without decision
 
@@ -964,9 +944,7 @@ not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
 -->
 
-### FIXME
-
-#### LTS
+### TODO LTS
 
 @kellycampbell:
 
@@ -992,7 +970,7 @@ information to express the idea and why it was not acceptable.
 
 > @youngnick you summed it up. Having 2 years of support for a specific API snapshot is unrealistic right now for all sorts of reasons, and it wasn't even clear that it was what people actually wanted.
 
-#### Go faster
+### TODO Go faster
 
 @sebgoa:
 
@@ -1010,7 +988,23 @@ information to express the idea and why it was not acceptable.
 >
 > I don't think going from 4->3 releases will create this problem, though I do think going to 2 or 1 release would. We need some plan around the mitigations I described earlier though, to ensure we avoid this fate.
 
-#### Maintenance releases
+@sftim:
+
+> If there were an unsupported-but-tested Kubernetes release cut and published once a week - what would that mean?
+>
+> I'm imagining something that passes the conformance tests (little point otherwise) but comes with no guarantee. The Rust project has a model a bit like this with a daily unstable release which has nevertheless been through lots of automated testing.
+>
+> When I'm typing this I'm imagining that I could run minikube start --weekly-unstable and get a local test cluster based on the most recent release. If Kubernetes already had that built and working, would people pick different answers?
+
+@jberkus:
+
+> @sftim yeah, you've noticed that the reason, right now, we don't see a lot of community testing on alphas and betas is that we don't make them easy to consume.
+>
+> I'd say that it would need to go beyond that: we'd need images, minikube, and kubeadm releases for each weekly release.
+>
+> I don't know how that would affect our choice of major release cadence (isn't it orthagonal?) but it would be a great thing to do regardless. Also very hard.
+
+### TODO Maintenance releases
 
 @youngnick:
 
