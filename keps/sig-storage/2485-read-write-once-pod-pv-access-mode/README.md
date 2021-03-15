@@ -3,19 +3,19 @@
 
 To get started with this template:
 
-- [ ] **Pick a hosting SIG.**
+- [X] **Pick a hosting SIG.**
   Make sure that the problem space is something the SIG is interested in taking
   up. KEPs should not be checked in without a sponsoring SIG.
-- [ ] **Create an issue in kubernetes/enhancements**
+- [X] **Create an issue in kubernetes/enhancements**
   When filing an enhancement tracking issue, please make sure to complete all
   fields in that template. One of the fields asks for a link to the KEP. You
   can leave that blank until this KEP is filed, and then go back to the
   enhancement and add the link.
-- [ ] **Make a copy of this template directory.**
+- [X] **Make a copy of this template directory.**
   Copy this template into the owning SIG's directory and name it
   `NNNN-short-descriptive-title`, where `NNNN` is the issue number (with no
   leading-zero padding) assigned to your enhancement above.
-- [ ] **Fill out as much of the kep.yaml file as you can.**
+- [X] **Fill out as much of the kep.yaml file as you can.**
   At minimum, you should fill in the "Title", "Authors", "Owning-sig",
   "Status", and date-related fields.
 - [ ] **Fill out this file as best you can.**
@@ -58,7 +58,7 @@ If none of those approvers are still appropriate, then changes to that list
 should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross-cutting KEPs).
 -->
-# KEP-NNNN: Your short, descriptive title
+# KEP-2485: ReadWriteOncePod PersistentVolume AccessMode
 
 <!--
 This is the title of your KEP. Keep it short, simple, and descriptive. A good
@@ -79,7 +79,10 @@ tags, and then generate with `hack/update-toc.sh`.
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
+- [Glossary](#glossary)
 - [Motivation](#motivation)
+  - [Kubernetes Changes](#kubernetes-changes)
+  - [CSI Specification Changes](#csi-specification-changes)
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
@@ -165,6 +168,38 @@ updates.
 [documentation style guide]: https://github.com/kubernetes/community/blob/master/contributors/guide/style-guide.md
 -->
 
+This KEP introduces a new ReadWriteOncePod access mode for PersistentVolumes
+that restricts access to a single pod on a single node. This access mode
+differs from the existing ReadWriteOnce (RWO) access mode, which restricts
+access to a single node, but allows simultaneous access from many pods on that
+node.
+
+Additionally, this KEP outlines required changes to the CSI spec, drivers, and
+sidecars in order to support this new access mode while maintaining backwards
+compatibility.
+
+## Glossary
+
+- [Node]
+  - A virtual or physical machine in a Kubernetes cluster that runs pods
+- [PersistentVolume]
+  - A piece of storage in the cluster that has been provisioned by an
+    administrator or dynamically provisioned using `StorageClasses`
+- Access mode
+  - A description of how a PersistentVolume can be accessed
+- ReadWriteOnce (RWO)
+  - An access mode that restricts PersistentVolume access to a single node
+- ReadWriteOncePod (RWOP)
+  - A new access mode that restricts PersistentVolume access to a single pod on
+    a single node
+- [CSI]
+  - The Container Storage Interface, a specification for storage provider
+    plugins to integrate with cluster orchestrators (like Kubernetes)
+
+[Node]: https://kubernetes.io/docs/concepts/architecture/nodes/
+[PersistentVolume]: https://kubernetes.io/docs/concepts/storage/persistent-volumes/
+[CSI]: https://github.com/container-storage-interface/spec
+
 ## Motivation
 
 <!--
@@ -176,12 +211,59 @@ demonstrate the interest in a KEP within the wider Kubernetes community.
 [experience reports]: https://github.com/golang/go/wiki/ExperienceReports
 -->
 
+### Kubernetes Changes
+
+Kubernetes does not have an access mode for PersistentVolumes that allows users
+to restrict access to a single pod on a single node. This can cause problems for
+certain workloads. For example, if you had a workload (using ReadWriteOnce)
+performing an update of a storage device and the workload scaled to more than
+one Pod, you could encounter issues if the second pod landed on the same node
+and started simultaneously modifying the device.
+
+For sensitive workloads, users have to work around the lack of a single-workload
+access mode in other ways (for example, scheduling only a single pod on a node
+and using ReadWriteOnce), which can lead to inefficient use of resources in
+their cluster.
+
+See [#30085] and [#26567] for issues related to this.
+
+[#30085]: https://github.com/kubernetes/kubernetes/issues/30085
+[#26567]: https://github.com/kubernetes/kubernetes/issues/26567
+
+### CSI Specification Changes
+
+In the CSI spec there are conflicting definitions of the [`SINGLE_NODE_WRITER`]
+access mode. By definition, `SINGLE_NODE_WRITER` means "Can only be published
+once as read/write on a single node, at any given time." The problem is how this
+access mode is used during `NodePublishVolume`, which is typically where volume
+mounting is performed.
+
+The CSI spec defines that when [`NodePublishVolume`] is called a second time for
+a volume with a non-`MULTI_NODE` access mode and with a different target path,
+the plugin should return `FAILED_PRECONDITION`. For CSI plugins that strictly
+adhere to the spec, this guarantees that a volume can only be mounted to a
+single target path, which means `SINGLE_NODE_WRITER` restricts access to a
+single pod on a single node. This behavior conflicts with the original
+definition. Due to this conflict, we do not have an access mode that represents
+multiple writers on the same node.
+
+[`SINGLE_NODE_WRITER`]: https://github.com/container-storage-interface/spec/blob/v1.4.0/csi.proto#L405-L407
+[`NodePublishVolume`]: https://github.com/container-storage-interface/spec/blob/v1.4.0/spec.md#nodepublishvolume
+
 ### Goals
 
 <!--
 List the specific goals of the KEP. What is it trying to achieve? How will we
 know that this has succeeded?
 -->
+
+- Outline expected behavior of the ReadWriteOncePod access mode
+- Provide a high level design for ReadWriteOncePod access mode support
+- Define API changes needed to support this access mode
+- Outline changes needed in CSI spec and sidecars to support the
+  ReadWriteOncePod access mode
+- Outline changes needed in CSI spec and sidecars to continue supporting the
+  ReadWriteOnce access mode
 
 ### Non-Goals
 
