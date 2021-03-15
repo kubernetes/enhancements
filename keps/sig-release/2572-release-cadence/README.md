@@ -55,6 +55,8 @@ SIG Architecture for cross-cutting KEPs).
   - [Goals](#goals)
     - [FIXME Does that mandate a fixed frequency?](#fixme-does-that-mandate-a-fixed-frequency)
     - [FIXME Releases don’t necessarily have to be equally spaced](#fixme-releases-dont-necessarily-have-to-be-equally-spaced)
+    - [TODO Create data](#todo-create-data)
+    - [TODO Blocking upgrade tests](#todo-blocking-upgrade-tests)
   - [Non-Goals](#non-goals)
     - [TODO Release Team](#todo-release-team)
     - [TODO Enhancement graduation](#todo-enhancement-graduation)
@@ -79,6 +81,7 @@ SIG Architecture for cross-cutting KEPs).
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Implementation History](#implementation-history)
+  - [Leads meeting feedback](#leads-meeting-feedback)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
   - [FIXME](#fixme-1)
@@ -87,15 +90,6 @@ SIG Architecture for cross-cutting KEPs).
     - [No](#no)
     - [Maintenance releases](#maintenance-releases)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
-- [FIXME Cleanup](#fixme-cleanup)
-  - [How do we make a decision?](#how-do-we-make-a-decision)
-    - [Canonical](#canonical)
-    - [Alternatives](#alternatives-1)
-  - [Do we have any data?](#do-we-have-any-data)
-  - [How do we implement?](#how-do-we-implement)
-  - [Conversations](#conversations)
-    - [Leads meeting feedback](#leads-meeting-feedback)
-    - [From Jeremy](#from-jeremy)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -203,6 +197,8 @@ I'd prefer three releases/year.
 @akutz:
 
 > I strongly believe a deterministic and known schedule is more important than the frequency itself. Slowing down to three releases, as @justaugustus said, will provide three additional months for triage and the addressing of existing issues. This should help us to better meet planned release dates as there, in theory, should be fewer unknown-unknowns. So a big +1 from me.
+
+TODO: Stick to schedule and just not cut a 4th release?
 
 #### TODO Reduce risk
 
@@ -338,6 +334,33 @@ As a consumer, I'd be looking for some predictability in the schedule.
 
 See point on predictability.
 
+#### TODO Create data
+
+Elana:
+
+> additional ask: can we send out a real survey to end users
+
+Primarily anecdotal from SIG Release members, vendors, and end users.
+
+AI:
+
+- (to Elana) What kind of data specifically are we looking for?
+  - Who's the audience? End users or principals?
+  - Should we just do this all of the time post-release?
+- (to Josh) What did we discover regarding feature trajectory?
+
+Thoughts:
+I would want requesters to be very explicit about the kind of data we're interested in.
+SIG Release and others can work on collection, but we need to make sure this isn't a continually moving target.
+
+We're also starting from a disadvantage trying to compare our status quo to something we haven't tried for a sustained period of time.
+
+#### TODO Blocking upgrade tests
+
+Aaron C:
+
+> Can we make upgrade jobs / tests blocking to make the upgrade between versions better
+
 ### Non-Goals
 
 <!--
@@ -376,6 +399,10 @@ and make progress.
 > @johnbelamaric everything you've said is valid. At the same time, though, my experience has been that the pressure goes the other way: features already linger in alpha or beta for way longer than they ought to. The push to get most features to GA -- or deprecate them -- really seems to be lacking. It's hard to pull stats for this, but most KEP-worthy features seem to take something like 2 years to get there. So from my perspective, more state changes per release would be a good thing (at least, more getting alpha features to beta/GA), even if we didn't change the number of releases per year.
 >
 > It's hard to tell whether or not switching to 3 releases a year would affect the slow pace of finishing features at all.
+
+Daniel:
+
+> the concern about things "taking longer" to go stable because of # of releases in beta also came up again, can we think of a way to handle this?
 
 #### FIXME Ideas
 
@@ -877,6 +904,8 @@ Major milestones might include:
 - when the KEP was retired or superseded
 -->
 
+### [Leads meeting](https://docs.google.com/document/d/1Jio9rEtYxlBbntF8mRGmj6Q1JAdzZ9fTDo3ru1HK_LI/edit#bookmark=id.val5alfdahlr) feedback
+
 ## Drawbacks
 
 <!--
@@ -1000,90 +1029,3 @@ Use this section if you need things from the project/SIG. Examples include a
 new subproject, repos requested, or GitHub details. Listing these here allows a
 SIG to get the process for these resources started right away.
 -->
-
-## FIXME Cleanup
-
-### How do we make a decision?
-
-#### Canonical
-
-Write a KEP
-
-- Seek approval from:
-  - SIG Release
-  - SIG Architecture
-  - SIG Testing
-  - (maybe) Steering
-- Set a lazy consensus timeout
-
-#### Alternatives
-
-- A survey
-  - What would this need to contain to be effective?
-- Vote to stakeholders (SIG leads + Steering)
-  - Is there precedence for this outside of elections?
-  - Should this include subproject owners?
-  - 1 (Strong disagree) - 5 (Strong agree)
-
-### Do we have any data?
-
-Primarily anecdotal from SIG Release members, vendors, and end users.
-
-AI:
-
-- (to Elana) What kind of data specifically are we looking for?
-  - Who's the audience? End users or principals?
-  - Should we just do this all of the time post-release?
-- (to Josh) What did we discover regarding feature trajectory?
-
-Thoughts:
-I would want requesters to be very explicit about the kind of data we're interested in.
-SIG Release and others can work on collection, but we need to make sure this isn't a continually moving target.
-
-We're also starting from a disadvantage trying to compare our status quo to something we haven't tried for a sustained period of time.
-
-### How do we implement?
-
-TBD
-AI: Expand
-
-Thoughts:
-I feel like less is going to change in the process than people think.
-
-- Make the decision
-- Set the schedule
-
-### Conversations
-
-#### [Leads meeting](https://docs.google.com/document/d/1Jio9rEtYxlBbntF8mRGmj6Q1JAdzZ9fTDo3ru1HK_LI/edit#bookmark=id.val5alfdahlr) feedback
-
-- Q: how are we making a decision?
-- [comment]: 1.21 is the real EOY release as its scheduler covers december
-- Do we have any data?
-- [comment]: does sig-arch, sig-release, steering, etc own the final decision?
-- [comment]: sep question of how we implement; does that mandate a fixed freq?
-  - Stick to schedule and just not cut a 4th release?
-- [comment]: releases don’t necessarily have to be equally spaced
-- [comment]: cadence doesn't feel like things get the attention they deserve, things always feel rushed. Not a lot of space for people to take a step back.
-- [comment]: should upgrade testing improve? Be blocking?
-
-#### From Jeremy
-
-John B:
-
-> Ask in the meeting, how are we going to make the actual decision for 3 vs 4?
-> are we going to vote? or will SIG Release just make the decision?
-
-Elana:
-
-> additional ask: can we send out a real survey to end users
-
-Daniel:
-
-> the concern about things "taking longer" to go stable because of # of releases in beta also came up again, can we think of a way to handle this?
-> Do the three releases need to be evenly spaced?
-
-Aaron C:
-
-> Can we get more "implementation" details about how three releases would word?
-> Can we make upgrade jobs / tests blocking to make the upgrade between versions better
