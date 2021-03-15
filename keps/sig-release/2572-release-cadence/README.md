@@ -61,6 +61,7 @@ SIG Architecture for cross-cutting KEPs).
       - [Data](#data)
     - [TODO Further decoupling core](#todo-further-decoupling-core)
     - [TODO Modifying SIG Architecture policies](#todo-modifying-sig-architecture-policies)
+    - [Accelerated release cycles](#accelerated-release-cycles)
     - [Establishing maintenance/stability releases](#establishing-maintenancestability-releases)
     - [Determining an upper bound for Release Team shadows](#determining-an-upper-bound-for-release-team-shadows)
 - [Proposal](#proposal)
@@ -87,7 +88,7 @@ SIG Architecture for cross-cutting KEPs).
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
   - [TODO LTS](#todo-lts)
-  - [TODO Go faster](#todo-go-faster)
+  - [Releasing Kubernetes faster](#releasing-kubernetes-faster)
   - [End-of-year maintenance/stability releases](#end-of-year-maintenancestability-releases)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
@@ -464,6 +465,10 @@ Daniel:
 >     Requiring a higher bar for a state transition, thus making the effort involved to get to the next stage higher
 >
 > Reducing the transitions per feature can only be done by changing our policy. In order to do that, we would certainly need to raise the bar higher for state transition - this dovetails with our goal per release. Another possibility is to classify features into low and high risk features. Low risk features could go straight to beta and skip the alpha phase, for example.
+
+#### Accelerated release cycles
+
+Discussed [here](#releasing-kubernetes-faster).
 
 #### Establishing maintenance/stability releases
 
@@ -952,39 +957,29 @@ information to express the idea and why it was not acceptable.
 
 > @youngnick you summed it up. Having 2 years of support for a specific API snapshot is unrealistic right now for all sorts of reasons, and it wasn't even clear that it was what people actually wanted.
 
-### TODO Go faster
+### Releasing Kubernetes faster
 
-@sebgoa:
+The intent of this proposal is to create more opportunities to provide a
+high-value experience for Kubernetes consumers.
 
-> IMHO with more releases, developers don't need to rush their features, upgrades a more bite size and it necessarily pushes for even more automation.
->
-> So at the risk of being down voted I would argue that we have worked over the last 15 years to agree that "release early, release often" was a good idea, that creating a tight feedback loop with devs, testers and users was a very good idea.
->
-> Theoretically we should have processes in place to be able to automatically upgrade and be able to handle even a higher cadence of releases. I could see a future were people don't upgrade that often because there are less releases and then start to fall behind one year, then two...etc.
+The implication is that we as a community have a reasonable amount of tech debt
+across infrastructure, testing, policy, and documentation that does not suggest
+it would be feasible to spend more time releasing when we could be paying down
+that debt.
 
-@johnbelamaric:
+SIG Release currently produces releases at the following cadence:
 
->     I could see a future were people don't upgrade that often because there are less releases and then start to fall behind one year, then two...etc.
->
-> Yes, this is a big fear of mine as well. We have worked hard to prevent vendor-based fragmentation (e.g., with conformance) and version-based fragmentation (with API round trip policies, etc). Bigger releases with riskier upgrades may undermine that work. We must avoid a Python2 -> 3 situation. This is also why we elected for a longer support cycle as opposed to an LTS. With the extensive ecosystem we have, fragmentation is extremely dangerous.
->
-> I don't think going from 4->3 releases will create this problem, though I do think going to 2 or 1 release would. We need some plan around the mitigations I described earlier though, to ensure we avoid this fate.
+- patch releases (`x.y.Z`): [monthly][patch-releases]
+- minor releases (`x.Y.z`): [every four months][versioning]
+- pre-releases (`x.y.0-(alpha|beta|rc).N`): every 1-3 weeks during active
+  development cycles ([example](https://git.k8s.io/sig-release/releases/release-1.21/README.md#timeline))
 
-@sftim:
+At the time of writing, SIG Release considers these to be reasonable cadences
+for patch and pre-releases.
 
-> If there were an unsupported-but-tested Kubernetes release cut and published once a week - what would that mean?
->
-> I'm imagining something that passes the conformance tests (little point otherwise) but comes with no guarantee. The Rust project has a model a bit like this with a daily unstable release which has nevertheless been through lots of automated testing.
->
-> When I'm typing this I'm imagining that I could run minikube start --weekly-unstable and get a local test cluster based on the most recent release. If Kubernetes already had that built and working, would people pick different answers?
-
-@jberkus:
-
-> @sftim yeah, you've noticed that the reason, right now, we don't see a lot of community testing on alphas and betas is that we don't make them easy to consume.
->
-> I'd say that it would need to go beyond that: we'd need images, minikube, and kubeadm releases for each weekly release.
->
-> I don't know how that would affect our choice of major release cadence (isn't it orthagonal?) but it would be a great thing to do regardless. Also very hard.
+If you'd like to provide feedback on longer-term improvements that maybe
+accelerate production of releases, please join the discussion
+[here](https://github.com/kubernetes/sig-release/discussions/1495)
 
 ### End-of-year maintenance/stability releases
 
@@ -1007,3 +1002,6 @@ Use this section if you need things from the project/SIG. Examples include a
 new subproject, repos requested, or GitHub details. Listing these here allows a
 SIG to get the process for these resources started right away.
 -->
+
+[patch-releases]: https://git.k8s.io/sig-release/releases/patch-releases.md
+[versioning]: https://git.k8s.io/sig-release/release-engineering/versioning.md
