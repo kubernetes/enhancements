@@ -82,7 +82,7 @@ SIG Architecture for cross-cutting KEPs).
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Implementation History](#implementation-history)
-  - [Leads meeting feedback](#leads-meeting-feedback)
+  - [Leads meeting feedback session](#leads-meeting-feedback-session)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
   - [TODO LTS](#todo-lts)
@@ -919,7 +919,9 @@ Major milestones might include:
 - when the KEP was retired or superseded
 -->
 
-### [Leads meeting](https://docs.google.com/document/d/1Jio9rEtYxlBbntF8mRGmj6Q1JAdzZ9fTDo3ru1HK_LI/edit#bookmark=id.val5alfdahlr) feedback
+### Leads meeting feedback session
+
+Already captured above, but you can find meeting notes [here](https://docs.google.com/document/d/1Jio9rEtYxlBbntF8mRGmj6Q1JAdzZ9fTDo3ru1HK_LI/edit#bookmark=id.val5alfdahlr).
 
 ## Drawbacks
 
