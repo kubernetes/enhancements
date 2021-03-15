@@ -73,6 +73,7 @@ SIG Architecture for cross-cutting KEPs).
       - [TODO @neolit123](#todo-neolit123)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
+    - [TODO Concentrating risk](#todo-concentrating-risk)
 - [Design Details](#design-details)
   - [TODO Schedule](#todo-schedule)
   - [FIXME Implementation Details](#fixme-implementation-details)
@@ -87,7 +88,6 @@ SIG Architecture for cross-cutting KEPs).
   - [FIXME](#fixme-1)
     - [LTS](#lts)
     - [Go faster](#go-faster)
-    - [No](#no)
     - [Maintenance releases](#maintenance-releases)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
 <!-- /toc -->
@@ -527,6 +527,10 @@ https://www.cncf.io/certification/software-conformance/
 
 > I guess most end users are blocked by their upstream distro's ability to keep up with the K8s release. For example, GKE rapid channel is currently on 1.18, but 1.19 released in August. Somebody previously mentioned kops has similar issues (also currently on 1.18). I'm curious whether this is because those providers routinely find issues, or because it takes some fixed time to implement the new capabilities and changes. Either way, I don't think this change would impact end user's ability to get new features in a timely fashion much.
 
+@sebgoa:
+
+> Users and even cloud providers seem to struggle to keep up with the releases (e.g 1.18 is not yet available on GKE for instance), so this also seems to indicate that less releases would ease the work of users and providers.
+
 #### TODO Contributors
 
 - Time for project enhancements
@@ -546,6 +550,10 @@ https://www.cncf.io/certification/software-conformance/
 - Reduce management overhead for SIG Release / Release Engineering
 - With the yearly support KEP, we only have three 3 releases to maintain
 - One less quarterly Release Team to recruit for
+
+@sebgoa:
+
+> The kubernetes releases have been a strong point of the software since its inception. The quality, testing and general care has been amazing and only improved (my point of reference is releases of some apache foundation software). With the increased usage, scrutiny and complexity of the software it feels like each release is a huge effort for the release team so naturally less releases could mean a bit less work.
 
 ##### TODO @neolit123
 
@@ -582,6 +590,40 @@ How will UX be reviewed, and by whom?
 
 Consider including folks who also work outside the SIG or subproject.
 -->
+
+#### TODO Concentrating risk
+
+@adrianotto:
+
+> -1
+>
+> I acknowledge this proposed change will not slow the rate of change, but it does concentrate risk. It means that each release would carry more change, and more risk. It also means that adoption of those features will be slower, and that's bad for users.
+>
+> Release early and release often. This philosophy is a key reason k8s matured as quickly as it did. I accept that 2020 is a strange year, and should be handled as such. That is not a valid reason to change what is done in subsequent years. Each time you make a change like this, it has a range of unintended consequences, such as the risk packing I mentioned above. It would be tragic to slow overall slowdown in the promotion of GA features because they transition based on releases, not duration in use. If the release process is burdensome, we should be asking how we can apply our creativity to make it easier, and reducing the release frequency might be one of several options. But asking the question this way constrains us from looking at the bigger picture, and fully considering what will serve the community best.
+
+@bowei:
+
+> Echoing Adrian's comment:
+>
+> I think releases are a nice forcing function towards stabilization and having less releases will increase drift in the extra time.
+> Are we coupling feature(s) stabilization to release cadence too much?
+> One fear is that the work simply going to be pushed rather than decrease, but now there are fewer "stabilization" points in the year.
+
+@spiffxp:
+
+> I'm a net -1 on 3 releases per year, but I understand I'm in the minority. Reducing the frequency of a risky/painful process does not naturally lead to a net reduction of pain or risk, and usually incentivizes increased risk. "Stabilize the patient" can be a good first step, but is insufficient on its own.
+>
+> To @tpepper's question of implementation, if we go with 3 symmetric releases, I would suggest using the "extra time" as a tech debt / process debt paydown phase at the beginning of each release cycle. Somewhat like how we left the milestone restriction in place at the beginning of the 1.20 release cycle. This would provide opportunity to pay down tech debt / process debt that involves large refactoring or breaking changes, the sort of work that is actively discouraged during the code freeze leading up to a release.
+>
+> I may have too narrow a view, but I have concerns that an April / August / December cadence puts undue pressure to land in August. I'm thinking of industries that typically go through a seasonal freeze in Q4. Shifting forward by a month (January / May / September) or two (February, June, October) may relieve some of that pressure, though it does cause one release to straddle Q4/Q1 in an awkward way.
+>
+> Another option is to declare Q4 what it has been in practice, a quieter time during which we're not actually going to push hard on a release, but I don't think that works as well with 3 releases vs. 4.
+
+@sebgoa:
+
+> But, generally speaking less releases (or less frequent minor releases) will also mean that each release will pack more weight, which means it will need even more testing and it will make upgrades tougher.
+>
+> With less releases developers will tend to rush their features at the last minute to "get it in" because the next one will be further apart.
 
 ## Design Details
 
@@ -952,23 +994,11 @@ information to express the idea and why it was not acceptable.
 
 @sebgoa:
 
-> Mostly a peanut gallery comment.
->
-> The kubernetes releases have been a strong point of the software since its inception. The quality, testing and general care has been amazing and only improved (my point of reference is releases of some apache foundation software). With the increased usage, scrutiny and complexity of the software it feels like each release is a huge effort for the release team so naturally less releases could mean a bit less work.
->
-> Users and even cloud providers seem to struggle to keep up with the releases (e.g 1.18 is not yet available on GKE for instance), so this also seems to indicate that less releases would ease the work of users and providers.
->
-> But, generally speaking less releases (or less frequent minor releases) will also mean that each release will pack more weight, which means it will need even more testing and it will make upgrades tougher.
->
-> With less releases developers will tend to rush their features at the last minute to "get it in" because the next one will be further apart.
->
 > IMHO with more releases, developers don't need to rush their features, upgrades a more bite size and it necessarily pushes for even more automation.
 >
 > So at the risk of being down voted I would argue that we have worked over the last 15 years to agree that "release early, release often" was a good idea, that creating a tight feedback loop with devs, testers and users was a very good idea.
 >
 > Theoretically we should have processes in place to be able to automatically upgrade and be able to handle even a higher cadence of releases. I could see a future were people don't upgrade that often because there are less releases and then start to fall behind one year, then two...etc.
->
-> PS: I understand this is almost a theoretical argument and that each release is a ton of work, I also know I am not helping the release team and I know 2020 is a very tough year.
 
 @johnbelamaric:
 
@@ -977,34 +1007,6 @@ information to express the idea and why it was not acceptable.
 > Yes, this is a big fear of mine as well. We have worked hard to prevent vendor-based fragmentation (e.g., with conformance) and version-based fragmentation (with API round trip policies, etc). Bigger releases with riskier upgrades may undermine that work. We must avoid a Python2 -> 3 situation. This is also why we elected for a longer support cycle as opposed to an LTS. With the extensive ecosystem we have, fragmentation is extremely dangerous.
 >
 > I don't think going from 4->3 releases will create this problem, though I do think going to 2 or 1 release would. We need some plan around the mitigations I described earlier though, to ensure we avoid this fate.
-
-#### No
-
-@adrianotto:
-
-> -1
->
-> I acknowledge this proposed change will not slow the rate of change, but it does concentrate risk. It means that each release would carry more change, and more risk. It also means that adoption of those features will be slower, and that's bad for users.
->
-> Release early and release often. This philosophy is a key reason k8s matured as quickly as it did. I accept that 2020 is a strange year, and should be handled as such. That is not a valid reason to change what is done in subsequent years. Each time you make a change like this, it has a range of unintended consequences, such as the risk packing I mentioned above. It would be tragic to slow overall slowdown in the promotion of GA features because they transition based on releases, not duration in use. If the release process is burdensome, we should be asking how we can apply our creativity to make it easier, and reducing the release frequency might be one of several options. But asking the question this way constrains us from looking at the bigger picture, and fully considering what will serve the community best.
-
-@bowei:
-
-> Echoing Adrian's comment:
->
-> I think releases are a nice forcing function towards stabilization and having less releases will increase drift in the extra time.
-> Are we coupling feature(s) stabilization to release cadence too much?
-> One fear is that the work simply going to be pushed rather than decrease, but now there are fewer "stabilization" points in the year.
-
-@spiffxp:
-
-> I'm a net -1 on 3 releases per year, but I understand I'm in the minority. Reducing the frequency of a risky/painful process does not naturally lead to a net reduction of pain or risk, and usually incentivizes increased risk. "Stabilize the patient" can be a good first step, but is insufficient on its own.
->
-> To @tpepper's question of implementation, if we go with 3 symmetric releases, I would suggest using the "extra time" as a tech debt / process debt paydown phase at the beginning of each release cycle. Somewhat like how we left the milestone restriction in place at the beginning of the 1.20 release cycle. This would provide opportunity to pay down tech debt / process debt that involves large refactoring or breaking changes, the sort of work that is actively discouraged during the code freeze leading up to a release.
->
-> I may have too narrow a view, but I have concerns that an April / August / December cadence puts undue pressure to land in August. I'm thinking of industries that typically go through a seasonal freeze in Q4. Shifting forward by a month (January / May / September) or two (February, June, October) may relieve some of that pressure, though it does cause one release to straddle Q4/Q1 in an awkward way.
->
-> Another option is to declare Q4 what it has been in practice, a quieter time during which we're not actually going to push hard on a release, but I don't think that works as well with 3 releases vs. 4.
 
 #### Maintenance releases
 
