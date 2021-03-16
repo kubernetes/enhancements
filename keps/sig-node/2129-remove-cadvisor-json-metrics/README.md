@@ -174,7 +174,7 @@ Remove the `--enable-cadvisor-json-endpoints` flag and the kubelet stops serving
 
 - 2020-10-04: Initial version of the KEP
 - 2021-02-04: Updates based on feedback
-- 2021-03-10: Implementation code complete
+- 2021-03-10: Implementation code complete in [kubernetes/kubernetes#99236](https://github.com/kubernetes/kubernetes/pull/99236)
 
 ## Drawbacks
 
