@@ -57,6 +57,7 @@ SIG Architecture for cross-cutting KEPs).
     - [TODO Improve visibility](#todo-improve-visibility)
     - [TODO More policy](#todo-more-policy)
   - [Non-Goals](#non-goals)
+    - [Long-term support (LTS) releases](#long-term-support-lts-releases)
     - [TODO Enhancement graduation](#todo-enhancement-graduation)
       - [Data](#data)
     - [TODO Further decoupling core](#todo-further-decoupling-core)
@@ -87,7 +88,7 @@ SIG Architecture for cross-cutting KEPs).
   - [Leads meeting feedback session](#leads-meeting-feedback-session)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
-  - [TODO LTS](#todo-lts)
+  - [LTS](#lts)
   - [Releasing Kubernetes faster](#releasing-kubernetes-faster)
   - [End-of-year maintenance/stability releases](#end-of-year-maintenancestability-releases)
 - [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
@@ -296,6 +297,10 @@ Aaron C:
 What is out of scope for this KEP? Listing non-goals helps to focus discussion
 and make progress.
 -->
+
+#### Long-term support (LTS) releases
+
+Discussed [here](#lts).
 
 #### TODO Enhancement graduation
 
@@ -931,31 +936,17 @@ not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
 -->
 
-### TODO LTS
+### LTS
 
-@kellycampbell:
+The LTS Working Group was [disbanded](https://github.com/kubernetes/community/pull/5240)
+on October 20, 2020.
 
-> +1 One thing I'm wondering is how this would affect vendors and other downstream integrators. For example, we build our clusters using kops. It is normally at least one release behind the k8s releases. Would having an extra month help them sync up with the release? I imagine other integrators and cloud providers would also benefit from extra time to update.
->
-> Additional point: we really are only able to upgrade our clusters about twice a year for various reasons not related to the k8s or kops release schedule. I see the maturing k8s as similar to OS upgrades such as Ubuntu which releases twice a year and have LTS every 4 releases or so. They are able to patch incrementally and continuously though. If k8s had a similar ability to apply incremental patches in a standard way such that 1.19.1 -> 1.19.2 is more or less automatic and not up to each vendor, that would be amazing.
+The outcome of their conversations was the proposal which established a
+[yearly support period][yearly-support-kep] for minor releases of the project.
 
-@chris-short:
-
-> I'm in favor of three releases a year. I like @jberkus comment about a Q4 maintenance release too without so much hoopla and fanfare.
->
-> I hope folks aren't driven to only fix stuff in Q4, "Oh that's a gnarly one, wait until the end of the year." Is something I could foresee someone thinking at some point, if we don't word things right about a maintenance release.
->
-> One question I think has been lightly touched on is, "What about LTS releases?" (and I know this is out of scope but, I don't know where we stand on this atm)
-
-@youngnick:
-
-> The consensus on LTS (meaning multi-year support for a single version) is, in short, there's no consensus. We in the LTS WG worked for over two years, and we were able to get everyone to agree to extend the support window to one year (from nine months), which I think speaks to the passion that everyone has about this, the diversity of the use cases Kubernetes is supporting, and the community's determination to get it right.
->
-> Speaking personally, I think that LTS is a long way away, if ever - it would require a lot more stability in the core than we have right now. With efforts like all the work to pull things out of tree, and the general movement towards adding new APIs outside of the core API group, I think it's plausible that one day, we may get to a place where we could consider it, but I don't think it's likely for some time, if ever. @tpepper, @jberkus, @LiGgit, and @dims among others may have thoughts here. :)
-
-@jberkus:
-
-> @youngnick you summed it up. Having 2 years of support for a specific API snapshot is unrealistic right now for all sorts of reasons, and it wasn't even clear that it was what people actually wanted.
+While we may revisit the idea in the future, for now, we trust the 2+ years of
+thoughtful deliberation by the working group enough to conclude that the
+project is not currently in a place to support long-term support releases.
 
 ### Releasing Kubernetes faster
 
@@ -1005,3 +996,4 @@ SIG to get the process for these resources started right away.
 
 [patch-releases]: https://git.k8s.io/sig-release/releases/patch-releases.md
 [versioning]: https://git.k8s.io/sig-release/release-engineering/versioning.md
+[yearly-support-kep]: /keps/sig-release/1498-kubernetes-yearly-support-period/README.md
