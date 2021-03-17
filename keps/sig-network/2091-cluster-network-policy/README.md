@@ -142,15 +142,6 @@ NetworkPolicies focus on expressing a developers intent to secure their applicat
 Thus, in order to satisfy the needs of a security admin, we propose to introduce new set of APIs
 that capture the administrators intent.
 
-<!--
-This section is for explicitly listing the motivation, goals, and non-goals of
-this KEP.  Describe why the change is important and the benefits to users. The
-motivation section can optionally provide links to [experience reports] to
-demonstrate the interest in a KEP within the wider Kubernetes community.
-
-[experience reports]: https://github.com/golang/go/wiki/ExperienceReports
--->
-
 ### Goals
 
 The goals for this KEP are to satisfy two key user stories:
@@ -184,7 +175,7 @@ A ClusterNetworkPolicy resource will help the administrators set strict security
 i.e. a developer CANNOT override these rules by creating NetworkPolicies that applies to the same workloads
 as the ClusterNetworkPolicy does.
 
-Unlike the NetworkPolicy resource in which each rule represents a whitelisted traffic, ClusterNetworkPolicy
+Unlike the NetworkPolicy resource in which each rule represents a allowed traffic, ClusterNetworkPolicy
 will enable administrators to set `Allow` or `Deny` as the action of each rule. ClusterNetworkPolicy rules
 should be read as-is, i.e. there will not be any implicit isolation effects for the Pods selected by the
 ClusterNetworkPolicy, as opposed to what NetworkPolicy rules imply.
@@ -198,7 +189,7 @@ ClusterNetworkPolicy `Deny` rules are useful for administrators to explicitly bl
 clients, or workloads that poses security risks. Those traffic restrictions can only be lifted once the
 `Deny` rules are deleted or modified. On the other hand, the `Allow` rules can be used to call out traffic
 in the cluster that needs to be allowed for certain components to work as expected (egress to CoreDNS for
-example). Those traffic cannot be blocked when developers apply NetworkPolicy to their Namespaces which
+example). Those traffic should not be blocked when developers apply NetworkPolicy to their Namespaces which
 isolates the workloads.
 
 ### DefaultNetworkPolicy resource
@@ -208,7 +199,7 @@ i.e. a developer CAN override these rules by creating NetworkPolicies that appli
 as the DefaultNetworkPolicy does.
 
 DefaultNetworkPolicy works just like NetworkPolicy except that it is cluster-scoped. When workloads are
-selected by a DefaultNetworkPolicy, they are isolated except for the ingress/egress rules whitelisted.
+selected by a DefaultNetworkPolicy, they are isolated except for the ingress/egress rules specified.
 DefaultNetworkPolicy rules will not have actions associated -- each rule will be an 'allow' rule.
 
 Aggregated NetworkPolicy rules will be evaluated before aggregated DefaultNetworkPolicy rules.
@@ -314,7 +305,7 @@ database for PII/privacy reasons. Using ClusterNetworkPolicy, a user can write a
 pods can connect to the database IP.
 
 
-### Notes/Constraints/Caveats (Optional)
+### Notes/Constraints/Caveats
 
 It is important to note that the controller implementation for cluster-scoped policy APIs will
 not be provided as part of this KEP. Such controllers which realize the intent of these APIs
