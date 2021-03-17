@@ -216,7 +216,38 @@ If a Pod is selected by both a DefaultNetworkPolicy and a NetworkPolicy, then th
 effect on that Pod becomes obsolete. The traffic allowed will be solely determined by the NetworkPolicy.
 
 ### Precedence model
-(TODO: Add a diagram to explain the precedence)
+```
+
+                 Yes -------> [ Drop ]            Yes -------> [ Allow ]          Yes -------> [ Allow ]
+                  |                                |                               |
+                  |                                |                               |
+         +------------------+             +-------------------+              +------------------+
+  ---->  | traffic matches  | --- No -->  | traffic matches   |  --- No -->  | traffic matches  |
+         | a CNP Deny rule? |             | a CNP Allow rule? |              | a NetworkPolicy  |
+         +------------------+             +-------------------+              | rule?            |
+                                                                             +------------------+
+                                                                                   |
+                                                                                   No
+                                                                                   |
+                                                                                   V
+         +------------------+             +-------------------+              +------------------+
+  <----  | traffic matches  | <--- No --- | traffic matches   |  <--- No --- | traffic matches  |
+         | DNP default      |             | a DNP Allow rule? |              | NP default       |
+         | isolation(*)?    |             +-------------------+              | isolation(*)?    |
+         +------------------+                      |                         +------------------+
+                |                                  |                                |
+                |                                 Yes -------> [ Allow ]            |
+               Yes ------> [ Drop ]                                                Yes ------> [ Drop ]
+
+
+CNP = ClusterNetworkPolicy   DNP = DefaultNetworkPolicy
+(*) If a Pod has a ingress NetworkPolicy applied, then any ingress traffic to the Pod that does
+    not match the NetworkPolicy's ingress rules, matches NetworkPolicy default isolation
+    (the Pod is isolated for ingress). Same applies for egress.
+
+```
+The diagram above explains the rule evaluation precedence between ClusterNetworkPolicy, NetworkPolicy and
+DefaultNetworkPolicy.
 
 Consider the following scenario:
 
@@ -234,9 +265,9 @@ Now suppose Pod y/client initiates traffic towards x/a, x/b, x/c and x/d.
 - y/client -> x/c is affected by rule (4) and (5). Since rule (4) has higher precedence, the request should be allowed.
 - y/client -> x/d is affected by rule (5) only, The request should be denied.
 
-### User Stories (Optional)
+### User Stories
 
-TODO: insert image
+![Alt text](user_story_diagram.png?raw=true "User Story Diagram")
 
 #### Story 1: Deny traffic from certain sources
 
@@ -311,8 +342,11 @@ determine which rule would take effect. As shown in that section, figuring out h
 affect traffic between workloads might not be very straightfoward.
 
 To mitigate this risk and improve UX, A tool which reversely looks up affecting policies for a given
-Pod and prints out relative precedence of those rules can be quite useful.
-(TODO: link to NP explainer/future work?)
+Pod and prints out relative precedence of those rules can be quite useful. The
+[cyclonus](https://github.com/mattfenwick/cyclonus) project for example, could be extended to support
+ClusterNetworkPolicy and DefaultNetworkPolicy. This is a vertical effort and will not be addressed by
+this KEP in particular.
+
 
 ### Future work
 
@@ -488,6 +522,8 @@ few specific Namespaces, such as `kube-system`.
 
 
 ### Sample Specs for User Stories
+
+![Alt text](user_story_diagram.png?raw=true "User Story Diagram")
 
 #### Story 1: Deny traffic from certain sources
 As a cluster admin, I want to explicitly deny traffic from certain source IPs that I know to be bad.
