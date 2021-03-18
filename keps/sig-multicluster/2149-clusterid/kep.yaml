@@ -7,7 +7,7 @@ owning-sig: sig-multicluster
 #participating-sigs:
 #  - sig-aaa
 #  - sig-bbb
-status: provisional
+status: implementable
 creation-date: 2020-11-13
 reviewers:
   - "@mikedanese"

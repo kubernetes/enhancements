@@ -500,6 +500,7 @@ _That is the question._
 | Deployment            | Must be installed by the cluster lifecycle management, or as a manual setup step | In every cluster over target milestone            |
 | Schema validation     | Can use OpenAPI v3 validation                                                    | Can use the built-in Kubernetes schema validation |
 | Blockers     | Making a sigs-repo                                                    | Official API review |
+| Conformance testing     | Not possible now, and no easy path forward                                                   | Standard |
 
 `[/UNRESOLVED]`
 
@@ -529,6 +530,11 @@ when drafting this test plan.
 #### Alpha -> Beta Graduation
 
 - Determine if an `id.k8s.io ClusterClaim` be strictly a valid DNS label, or is allowed to be a subdomain.
+- To CRD or not to CRD (see section above)
+
+#### Beta -> GA criteria
+
+- At least one headless implementation using clusterID for MCS DNS
 
 <!--
 **Note:** *Not required until targeted at a release.*
