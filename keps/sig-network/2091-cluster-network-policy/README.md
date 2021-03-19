@@ -7,27 +7,50 @@
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [User Stories (Optional)](#user-stories-optional)
-    - [Story 1](#story-1)
-    - [Story 2](#story-2)
-  - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
+  - [ClusterNetworkPolicy Resource](#clusternetworkpolicy-resource)
+  - [DefaultNetworkPolicy Resource](#defaultnetworkpolicy-resource)
+  - [Precedence Model](#precedence-model)
+  - [User Stories](#user-stories)
+    - [Story 1](#story-1-deny-traffic-from-certain-sources)
+    - [Story 2](#story-2-funnel-traffic-through-ingressegress-gateways)
+    - [Story 3](#story-3-isolate-multiple-tenants-in-a-cluster)
+    - [Story 4](#story-4-enforce-networksecurity-best-practices)
+    - [Story 5](#story-5-restrict-egress-to-well-known-destinations)
+  - [Notes/Constraints/Caveats](#notesconstraintscaveats)
   - [Risks and Mitigations](#risks-and-mitigations)
+  - [Future Work](#future-work)
 - [Design Details](#design-details)
+  - [ClusterNetworkPolicy API Design](#clusternetworkPolicy-api-design)
+    - [Except Field Semantics](#except-field-semantics)
+  - [DefaultNetworkPolicy API Design](#defaultnetworkPolicy-api-design)
+  - [Shared API Design](#shared-api-design)
+    - [AppliedTo](#appliedto)
+    - [Namespaces](#namespaces)
+  - [Sample Specs for User Stories](#sample-specs-for-user-stories)
+    - [Story 1](#story-1-deny-traffic-from-certain-sources-1)
+    - [Story 2](#story-2-funnel-traffic-through-ingressegress-gateways-1)
+    - [Story 3](#story-3-isolate-multiple-tenants-in-a-cluster-1)
+    - [Story 4](#story-4-enforce-networksecurity-best-practices-1)
+    - [Story 5](#story-5-restrict-egress-to-well-known-destinations-1)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha -> Beta Graduation](#alpha---beta-graduation)
+    - [Beta -> GA Graduation](#beta---ga-graduation)
+    - [Removing a Deprecated Flag](#removing-a-deprecated-flag)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+    - [Upgrade considerations](#upgrade-considerations)
+    - [Downgrade considerations](#downgrade-considerations)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
-  - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
-  - [Monitoring Requirements](#monitoring-requirements)
-  - [Dependencies](#dependencies)
   - [Scalability](#scalability)
-  - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
-- [Alternatives](#alternatives)
-- [Infrastructure Needed (Optional)](#infrastructure-needed-optional)
+- [Alternatives](#alternatives
+  - [NetworkPolicy v2](#networkpolicy-v2)
+  - [Single CRD with DefaultRules field](#single-crd-with-defaultrules-field)
+  - [Single CRD with IsOverrideable field](#single-crd-with-isoverrideable-field)
+  - [Single CRD with BaselineAllow as Action](#single-crd-with-baselineallow-as-action)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -207,7 +230,8 @@ Now suppose Pod y/client initiates traffic towards x/a, x/b, x/c and x/d.
 
 #### Story 1: Deny traffic from certain sources
 
-As a cluster admin, I want to explicitly deny traffic from certain source IPsthat I know to be bad.
+As a cluster admin, I want to explicitly deny traffic from certain source IPs
+that I know to be bad.
 
 Many admins maintain lists of IPs that are known to be bad actors, especially
 to curb DoS attacks. A cluster admin could use ClusterNetworkPolicy to codify
@@ -293,11 +317,11 @@ how stacked policies affect traffic between workloads might not be very straight
 
 To mitigate this risk and improve UX, a tool which reversely looks up affecting
 policies for a given Pod and prints out relative precedence of those rules
-can be quite useful. The [cyclonus](https://github.com/mattfenwick/cyclonus) project for example, could be extended to support
-ClusterNetworkPolicy and DefaultNetworkPolicy. This is an orthogonal effort and
-will not be addressed by this KEP in particular.
+can be quite useful. The [cyclonus](https://github.com/mattfenwick/cyclonus) project
+for example, could be extended to support ClusterNetworkPolicy and DefaultNetworkPolicy.
+This is an orthogonal effort and will not be addressed by this KEP in particular.
 
-### Future work
+### Future Work
 
 Although the scope of the cluster-scoped policies is wide, the above proposal
 intends to only solve the use cases documented in this KEP. However, we would
@@ -324,6 +348,7 @@ also like to consider the following set of proposals as future work items:
 
 ## Design Details
 
+### ClusterNetworkPolicy API Design
 The following new `ClusterNetworkPolicy` API will be added to the `networking.k8s.io` API group:
 
 ```golang
@@ -350,6 +375,7 @@ type ClusterNetworkPolicyIngress/EgressRule struct {
 
 type ClusterNetworkPolicyPeer struct {
 	PodSelector  *metav1.LabelSelector
+	// required if a PodSelector is specified
 	Namespaces   *networkingv1.Namespaces
 	IPBlock      *IPBlock
 }
@@ -366,19 +392,24 @@ const (
 ```
 
 For the ClusterNetworkPolicy ingress/egress rule, the `Action` field dictates whether
-traffic should be allowed or denied from/to the ClusterNetworkPolicyPeer. This will be a required field.
+traffic should be allowed or denied from/to the ClusterNetworkPolicyPeer.
+This will be a required field.
 An optional `Except` field can be used by policy writers to add exclusions to the
 `ClusterNetworkPolicyPeer`s selected. This is especially useful in policies that,
 for example, intend to deny ingress from everywhere except a few specific
 Namespaces, such as `kube-system`.
 
+### `Except` Field Semantics
 ClusterNetworkPolicy does not validate that the Pods selected by the `Except`
-list is subset of `From/To`: the final peers selected are simply the set of
-Pods selected by `ClusterNetworkPolicyPeer`s, subtracting the set of Pods
-selected by `ClusterNetworkPolicyExcept`s.
+list is subset of `From/To`: the final peers selected are simply, the set of
+Pods selected by `ClusterNetworkPolicyPeer`s, subtracting the set of Pods selected
+by `ClusterNetworkPolicyExcept`s. This implies that if the set of Pods selected
+by `ClusterNetworkPolicyPeer`s does not intersect with the `ClusterNetworkPolicyExcept`
+set, then the `Except` list will be completely disregarded.
 IPBlock is not allowed in `ClusterNetworkPolicyExcept` since IPBlock already
 provides a way to add except CIDRs.
 
+### DefaultNetworkPolicy API Design
 The following new `DefaultNetworkPolicy` API will be added to the `networking.k8s.io` API group:
 
 ```golang
@@ -403,6 +434,7 @@ type DefaultNetworkPolicyIngress/EgressRule struct {
 
 type DefaultNetworkPolicyPeer struct {
 	PodSelector  *metav1.LabelSelector
+	// required if a PodSelector is specified
 	Namespaces   *networkingv1.Namespaces
 	IPBlock      *IPBlock
 }
@@ -414,15 +446,16 @@ the peers are created in a field named `OnlyFrom`/`OnlyTo`, as opposed to `To`/`
 in ClusterNetworkPolicy. We chose this naming to better hint policy writers about
 the isolation effect of DefaultNetworkPolicy on the workloads it applies to.
 
+### Shared API Design
 The following structs will be added to the `networking.k8s.io` API group and
 shared between `ClusterNetworkPolicy` and `DefaultNetworkPolicy`:
 
 ```golang
 type AppliedTo struct {
-	// required
+	// required if a PodSelector is specified
 	NamespaceSelector   *metav1.LabelSelector
 	// optional
-    PodSelector         *metav1.LabelSelector
+	PodSelector         *metav1.LabelSelector
 }
 
 type Namespaces struct {
@@ -432,14 +465,14 @@ type Namespaces struct {
 }
 ```
 
-### AppliedTo
+#### AppliedTo
 The `AppliedTo` field replaces `PodSelector` in NetworkPolicy spec, as means to specify
 the target Pods that this cluster-scoped policy (either `ClusterNetworkPolicy` or
 `DefaultNetworkPolicy`) applies to.
 Since the policy is cluster-scoped, the `NamespaceSelector` field is required.
 An empty `NamespaceSelector` (namespaceSelector: {}) selects all Namespaces in the Cluster.
 
-### Namespaces
+#### Namespaces
 The `Namespaces` field replaces `NamespaceSelector` in NetworkPolicyPeer, as
 means to specify the Namespaces of ingress/egress peers for cluster-scoped policies.
 For selecting Pods from specific Namespaces, the `Selector` field under `Namespaces`
