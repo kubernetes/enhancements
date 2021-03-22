@@ -829,13 +829,6 @@ new API calls will be made.
 
 ###### Will enabling / using this feature result in introducing new API types?
 
-<!--
-Describe them, providing:
-  - API type
-  - Supported number of objects per cluster
-  - Supported number of objects per namespace (for namespace-scoped objects)
--->
-
 Enabling this feature will introduce new API types as described in the [design](#design-details)
 section. The supported number of objects per cluster will depend on the individual
 CNI providers who will be responsible to provide the implementation to realize
