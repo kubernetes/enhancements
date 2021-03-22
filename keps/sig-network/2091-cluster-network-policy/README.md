@@ -7,36 +7,36 @@
   - [Goals](#goals)
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [ClusterNetworkPolicy Resource](#clusternetworkpolicy-resource)
-  - [DefaultNetworkPolicy Resource](#defaultnetworkpolicy-resource)
-  - [Precedence Model](#precedence-model)
+  - [ClusterNetworkPolicy resource](#clusternetworkpolicy-resource)
+  - [DefaultNetworkPolicy resource](#defaultnetworkpolicy-resource)
+  - [Precedence model](#precedence-model)
   - [User Stories](#user-stories)
-    - [Story 1](#story-1-deny-traffic-from-certain-sources)
-    - [Story 2](#story-2-funnel-traffic-through-ingressegress-gateways)
-    - [Story 3](#story-3-isolate-multiple-tenants-in-a-cluster)
-    - [Story 4](#story-4-enforce-networksecurity-best-practices)
-    - [Story 5](#story-5-restrict-egress-to-well-known-destinations)
+    - [Story 1: Deny traffic from certain sources](#story-1-deny-traffic-from-certain-sources)
+    - [Story 2: Funnel traffic through ingress/egress gateways](#story-2-funnel-traffic-through-ingressegress-gateways)
+    - [Story 3: Isolate multiple tenants in a cluster](#story-3-isolate-multiple-tenants-in-a-cluster)
+    - [Story 4: Enforce network/security best practices](#story-4-enforce-networksecurity-best-practices)
+    - [Story 5: Restrict egress to well known destinations](#story-5-restrict-egress-to-well-known-destinations)
   - [Notes/Constraints/Caveats](#notesconstraintscaveats)
   - [Risks and Mitigations](#risks-and-mitigations)
   - [Future Work](#future-work)
 - [Design Details](#design-details)
-  - [ClusterNetworkPolicy API Design](#clusternetworkPolicy-api-design)
-    - [Except Field Semantics](#except-field-semantics)
-  - [DefaultNetworkPolicy API Design](#defaultnetworkPolicy-api-design)
+  - [ClusterNetworkPolicy API Design](#clusternetworkpolicy-api-design)
+  - [Except Field Semantics](#except-field-semantics)
+  - [DefaultNetworkPolicy API Design](#defaultnetworkpolicy-api-design)
   - [Shared API Design](#shared-api-design)
     - [AppliedTo](#appliedto)
     - [Namespaces](#namespaces)
     - [IPBlock](#ipblock)
   - [Sample Specs for User Stories](#sample-specs-for-user-stories)
-    - [Story 1](#story-1-deny-traffic-from-certain-sources-1)
-    - [Story 2](#story-2-funnel-traffic-through-ingressegress-gateways-1)
-    - [Story 3](#story-3-isolate-multiple-tenants-in-a-cluster-1)
-    - [Story 4](#story-4-enforce-networksecurity-best-practices-1)
-    - [Story 5](#story-5-restrict-egress-to-well-known-destinations-1)
+    - [Story 1: Deny traffic from certain sources](#story-1-deny-traffic-from-certain-sources-1)
+    - [Story 2: Funnel traffic through ingress/egress gateways](#story-2-funnel-traffic-through-ingressegress-gateways-1)
+    - [Story 3: Isolate multiple tenants in a cluster](#story-3-isolate-multiple-tenants-in-a-cluster-1)
+    - [Story 4: Enforce network/security best practices](#story-4-enforce-networksecurity-best-practices-1)
+    - [Story 5: Restrict egress to well known destinations](#story-5-restrict-egress-to-well-known-destinations-1)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
-    - [Alpha -> Beta Graduation](#alpha---beta-graduation)
-    - [Beta -> GA Graduation](#beta---ga-graduation)
+    - [Alpha to Beta Graduation](#alpha-to-beta-graduation)
+    - [Beta to GA Graduation](#beta-to-ga-graduation)
     - [Removing a Deprecated Flag](#removing-a-deprecated-flag)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
     - [Upgrade considerations](#upgrade-considerations)
@@ -47,7 +47,7 @@
   - [Scalability](#scalability)
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
-- [Alternatives](#alternatives
+- [Alternatives](#alternatives)
   - [NetworkPolicy v2](#networkpolicy-v2)
   - [Single CRD with DefaultRules field](#single-crd-with-defaultrules-field)
   - [Single CRD with IsOverrideable field](#single-crd-with-isoverrideable-field)
@@ -400,7 +400,7 @@ An optional `Except` field can be used by policy writers to add exclusions to th
 for example, intend to deny ingress from everywhere except a few specific
 Namespaces, such as `kube-system`.
 
-### `Except` Field Semantics
+### Except Field Semantics
 ClusterNetworkPolicy does not validate that the Pods selected by the `Except`
 list is subset of `From/To`: the final peers selected are simply, the set of
 Pods selected by `ClusterNetworkPolicyPeer`s, subtracting the set of Pods selected
@@ -691,14 +691,14 @@ spec:
 
 ### Graduation Criteria
 
-#### Alpha -> Beta Graduation
+#### Alpha to Beta Graduation
 
 - Gather feedback from developers and surveys
 - At least 1 CNI provider must provide the implementation for the complete set
   of alpha features
 - Evaluate "future work" items based on feedback from community
 
-#### Beta -> GA Graduation
+#### Beta to GA Graduation
 
 - At least 2 CNI providers must provide the implementation for the complete set
   of alpha features
