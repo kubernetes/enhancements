@@ -64,7 +64,7 @@ in a kubernetes cluster. This is a problem because the different custom
 metric providers which have been developed since this feature was added
 provide different metrics for different domains. For instance the
 [prometheus-metrics-adapter](https://github.com/kubernetes-sigs/prometheus-adapter)
-exposes metrics stored in Prometheus. Similarly there are metrics adapters
+exposes metrics stored in Prometheus and [KEDA](https://github.com/kedacore/keda) uses external metrics for event driven based autoscaling. Similarly there are metrics adapters
 for different metric sources like
 [stackdriver](https://github.com/GoogleCloudPlatform/k8s-stackdriver/tree/master/custom-metrics-stackdriver-adapter),
 [AWS Cloudwatch](https://github.com/awslabs/k8s-cloudwatch-adapter). This
