@@ -79,9 +79,9 @@ and the [metrics client](https://github.com/kubernetes/metrics).
 
 ### Goals
 
-* Allows for multiple metric sources in a cluster Existing metrics sources
-* should be compatible with solution Leverage existing functionality in metric
-* sources for discovery and routing.
+* Allows for multiple metric sources in a cluster
+* Existing metrics sources should be compatible with solution
+* Leverage existing functionality in metric sources for discovery and routing.
 
 ### Non-Goals
 
