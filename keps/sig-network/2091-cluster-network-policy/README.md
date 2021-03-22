@@ -26,6 +26,7 @@
   - [Shared API Design](#shared-api-design)
     - [AppliedTo](#appliedto)
     - [Namespaces](#namespaces)
+    - [IPBlock](#ipblock)
   - [Sample Specs for User Stories](#sample-specs-for-user-stories)
     - [Story 1](#story-1-deny-traffic-from-certain-sources-1)
     - [Story 2](#story-2-funnel-traffic-through-ingressegress-gateways-1)
@@ -510,6 +511,22 @@ The above DefaultNetworkPolicy should be interpreted as: for each Namespace in
 the cluster, all Pods in that Namespace should only allow traffic from Pods in
 the _same Namespace_ who has label app=b. Hence, the policy above allows
 x/b1 -> x/a1 and y/b2 -> y/a2, but denies y/b2 -> x/a1 and x/b1 -> y/a2.
+
+#### IPBlock
+
+The `ClusterNetworkPolicyPeer` and `DefaultNetworkPolicyPeer` both allow the
+ability to set an `IPBlock` as a peer. The usage of this field is similar to
+how it is used in the NetworkPolicyPeer. However, we should also explicitly
+note that the IPBlock set in this field could belong to the cluster locally, or
+could be cluster external. For example, the peer could be set with a subnet
+or an IP which maps to a Pod existing in the cluster. This means that a Pod
+in a cluster-scoped NetworkPolicy could be identified by either the labels
+applied on the Pod, or its IP address. In case of multiple conflicting rules
+targeting the same Pod, but identified in different ways, such as via labelSelector
+or via PodIP set in IPBlock, the net effect of the rules will be determined
+by the `action` associated with the rule and/or the resource in which the
+rule is set in, i.e. ClusterNetworkPolicy rule takes precedence over a
+DefaultNetworkPolicy rule.
 
 ### Sample Specs for User Stories
 
