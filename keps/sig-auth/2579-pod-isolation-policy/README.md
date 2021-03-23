@@ -57,6 +57,7 @@ The name of this feature / policy is open to discussion. Other options considere
   - [Windows Support](#windows-support)
   - [Offline Policy Checking](#offline-policy-checking)
   - [Event recording](#event-recording)
+  - [Conformance](#conformance)
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
@@ -898,6 +899,16 @@ templated pod resources. This could be useful in CI/CD pipelines and tests.
 ### Event recording
 
 Allow recording an event in response to a pod creation attempt that exceeds a given level.
+
+### Conformance
+
+As this feature progresses towards GA, we should think more about how it interacts with conformance.
+
+- Enabling the admission controller with the "default-default" enforcing mode of privileged is
+  essentially a no-op without adding namespace labels, so it shouldn't have any impact on
+  conformance.
+- If we want a more restricted version to still be considered conformant, we might need to
+  explicitly label namespaces in the conformance tests with the privilege level the tests require.
 
 ## Implementation History
 
