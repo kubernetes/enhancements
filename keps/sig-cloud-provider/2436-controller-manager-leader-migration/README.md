@@ -157,24 +157,25 @@ type LeaderMigrationConfiguration struct {
 	LeaderName string `json:"leaderName"`
 
 	// ResourceLock indicates the resource object type that will be used to lock
-    // Must be either "leases" or "endpoints", defaults to 'leases'
-    // No other types (e.g. "endpointsleases" or "configmapsleases") are allowed
-    ResourceLock string
+	// Must be either "leases" or "endpoints", defaults to 'leases'
+	// No other types (e.g. "endpointsleases" or "configmapsleases") are allowed
+	ResourceLock string
 
-// ControllerLeaders contains a list of migrating leader lock configurations
-ControllerLeaders []ControllerLeaderConfiguration `json:"controllerLeaders"`
+	// ControllerLeaders contains a list of migrating leader lock configurations
+	ControllerLeaders []ControllerLeaderConfiguration `json:"controllerLeaders"`
 }
 
 // ControllerLeaderConfiguration provides the configuration for a migrating leader lock.
 type ControllerLeaderConfiguration struct {
-// Name is the name of the controller being migrated
-// E.g. service-controller, route-controller, cloud-node-controller, etc
-Name string `json:"name"`
+	// Name is the name of the controller being migrated
+	// E.g. service-controller, route-controller, cloud-node-controller, etc
+	Name string `json:"name"`
 
-// Component is the name of the component in which the controller will be running.
-// E.g. kube-controller-manager, cloud-controller-manager, etc
-Component string `json:"component"`
+	// Component is the name of the component in which the controller will be running.
+	// E.g. kube-controller-manager, cloud-controller-manager, etc
+	Component string `json:"component"`
 }
+
 ```
 
 #### Default LeaderMigrationConfiguration
@@ -228,7 +229,7 @@ The provided default configuration will be equivalent to the following:
 
 ```yaml
 kind: LeaderMigrationConfiguration
-apiVersion: v1alpha1
+apiVersion: controllermanager.config.k8s.io/v1alpha1
 leaderName: cloud-provider-extraction-migration
 resourceLock: leases
 controllerLeaders:
@@ -266,7 +267,7 @@ following:
 
 ```yaml
 kind: LeaderMigrationConfiguration
-apiVersion: v1alpha1
+apiVersion: controllermanager.config.k8s.io/v1alpha1
 leaderName: cloud-provider-extraction-migration
 resourceLock: leases
 controllerLeaders:
