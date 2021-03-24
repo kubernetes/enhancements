@@ -183,37 +183,34 @@ is not currently in a place to support long-term support releases.
 
 #### Changing enhancements graduation
 
-The way that enhancements are being graduated will not change with this KEP. It's
+This KEP will not change the way that enhancements are being graduated. It's
 the responsibility of SIGs to keep track of their enhancements and
 graduate them in the provided constraints of SIG Architecture.
 
 The new release schedule will add room for only a few more weeks of development.
-This means that SIGs can focus on using that time to enhance documentation and
-testing (stability) over adding more features.
-
-Those decisions are not part of any SIG Release planning and will be considered
-therefore as out of scope.
+SIGs should focus on using those additional weeks to enhance documentation and
+testing (stability)—not on adding more features. These decisions are not part of 
+any SIG Release planning and will therefore be considered out of scope.
 
 #### Architecture changes
 
-Changing any architecture of Kubernetes, for example decoupling its core
-components from the k/k repository, is out of scope of this KEP.
+Changing any architecture of Kubernetes—for example, decoupling its core
+components from the k/k repository—is outside the scope of this KEP.
 
 #### Modifying SIG Architecture policies
 
-This non-goal corresponds partially to the [Changing enhancements
-graduation](#changing-enhancements-graduation) section and broadens its scope
-that any policy change made by SIG Architecture is out of scope of this KEP.
+Any policy change made by SIG Architecture is out of scope of this KEP. This 
+non-goal corresponds partially to the [Changing enhancements
+graduation](#changing-enhancements-graduation) section.
 
 #### Accelerated release cycles
 
 The intent of this proposal is to create more opportunities to provide a
 high-value experience for Kubernetes consumers.
 
-The implication is that we as a community have a reasonable amount of tech debt
-across infrastructure, testing, policy, and documentation that does not suggest
-it would be feasible to spend more time releasing when we could be paying down
-that debt.
+The Kubernetes community faces a reasonable amount of tech debt across infrastructure, 
+testing, policy, and documentation. This KEP proposes that we spend 
+more time paying down that debt.
 
 SIG Release currently produces releases at the following cadence:
 
@@ -225,9 +222,9 @@ SIG Release currently produces releases at the following cadence:
 At the time of writing, SIG Release considers these to be reasonable cadences
 for patch and pre-releases.
 
-If you'd like to provide feedback on longer-term improvements that maybe
+If you'd like to provide suggestions on longer-term improvements that could potentially
 accelerate production of releases, please join the discussion
-[here](https://github.com/kubernetes/sig-release/discussions/1495)
+[here](https://github.com/kubernetes/sig-release/discussions/1495).
 
 #### Establishing maintenance/stability releases
 
@@ -255,10 +252,10 @@ https://github.com/kubernetes/sig-release/issues/1494.
 
 ### User Stories
 
-Kubernetes releases are made by real people. The technical aspects, for example
-the release automation, reflects only a tiny part of the complete cycle. This
+Kubernetes releases are made by real people. The technical aspects—for example,
+the release automation—reflects only a tiny part of the complete cycle. This
 means we will mainly focus on the human aspects and their corresponding roles
-when deciding to move to a 3 releases per year cadence.
+when deciding to move to a 3-releases-per-year cadence.
 
 #### End User
 
@@ -268,18 +265,18 @@ only 3 releases per year will relax this situation.
 #### Distributors and downstream projects
 
 Downstream projects assemble their solution from different projects. Having
-fewer upgrades helps them to reduce the complexity. For example cloud providers
+fewer upgrades helps them to reduce complexity. For example, cloud providers
 will gain more room for upgrading their infrastructure.
 
 #### Contributors
 
-With a lower release cadence, contributors will gain more time for, project
-enhancements, feature development, planning and testing. It will provide more
+With a lower release cadence, contributors will gain more time for project
+enhancements, feature development, planning, and testing. It will provide more
 room for maintaining their mental health and prepare for events like KubeCon.
 
-Target of SIG Release with this proposal is to explicitly not push contributors
-in doing more. It is about giving contributors more flexibility to decide how to
-invest their time.
+Through this proposal SIG Release's aim is to give contributors more flexibility 
+to decide how to invest their time. It is explicitly *not* to push contributors
+in doing more.
 
 #### SIG Release members
 
@@ -295,11 +292,11 @@ appropriate.
 #### Concentrating risk
 
 In theory a reduced release cadence will cause more changes for every release.
-This means that there will be an increased risk, which would be usually split-up
+This means that there will be an increased risk, which would usually be split up
 into 4 dedicated milestones rather than 3.
 
 SIG Release cannot mitigate this risk directly, but is able to track and
-influence it during each release cycle. It's in the responsibility of SIG
+influence it during each release cycle. It's the responsibility of SIG
 Release, together with SIG Testing and SIG Architecture, to identify new gaps and
 issues in the release cadence and mitigate them on a case-by-case basis.
 
@@ -307,15 +304,15 @@ issues in the release cadence and mitigate them on a case-by-case basis.
 
 This KEP does not propose any change to the release cycle itself and assumes
 that the same periods for Code and Test Freeze. Assuming that, there is an
-increased risk for flakes and test failures. It will be in the responsibility of
-SIG Release to mitigate together with the CI signal role. If we speak about an
+increased risk for flakes and test failures. It will be the responsibility of
+SIG Release to mitigate this, together with the CI signal role. If we speak about an
 overall release cycle enhancement of 3-4 weeks, then we believe that SIG Release
 is able to mitigate this risk over multiple releases.
 
 #### Attention to dependencies
 
-Having less releases will introduce the risk of missing dependencies, for
-example golang upgrades. This has to be mitigated on a case-by-case basis, in
+Having fewer releases will introduce the risk of missing dependencies—for
+example, Golang upgrades. This has to be mitigated on a case-by-case basis, in
 the same way as it is being done right now.
 
 ## Design Details
@@ -336,12 +333,12 @@ is defined as:
 3. A Kubernetes release cycle has a length of of ~15 weeks.
 
 4. Events like KubeCon will be considered as blocked from development or
-   decision making. SIG Release will also consider the week before and after the
+   decision-making. SIG Release will also consider the week before and after the
    event in the same way.
 
-5. Providing an explicit break of at least two weeks between each release cycle.
-   This does not mean that no development can happen during that time, but more
-   that SIG Release will use this time to do the release retrospective and plan
+5. An explicit break of at least two weeks between each release cycle will be enforced.
+   This does not mean that zero development can happen during that time. Rather,
+   SIG Release will use this time to do the release retrospective and plan
    for the next cycle.
 
 ## Implementation History
