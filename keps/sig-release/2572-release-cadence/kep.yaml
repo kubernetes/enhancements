@@ -6,7 +6,7 @@ owning-sig: sig-release
 participating-sigs:
   - sig-architecture
   - sig-testing
-status: provisional
+status: implementable
 creation-date: 2021-01-21
 reviewers:
   - "@BenTheElder"
