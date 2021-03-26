@@ -73,6 +73,7 @@ SIG Architecture for cross-cutting KEPs).
     - [Attention to dependencies](#attention-to-dependencies)
 - [Design Details](#design-details)
   - [Schedule Policy](#schedule-policy)
+  - [Feedback survey](#feedback-survey)
 - [Implementation History](#implementation-history)
   - [Leads meeting feedback session](#leads-meeting-feedback-session)
 - [Drawbacks](#drawbacks)
@@ -345,6 +346,27 @@ is defined as:
    This does not mean that zero development can happen during that time.
    Rather, SIG Release will use this time to do the release retrospective and
    plan for the next cycle.
+
+### Feedback survey
+
+Each minor Kubernetes release will be an experience survey, which will include
+questions around the release cadence.
+
+Survey contents are to be determined, but we welcome content suggestions to
+continually improve the process.
+
+Post-release surveys will close after the `.2` patch release to allow the team
+sufficient time to process and incorporate feedback.
+
+Using Kubernetes v1.19 date to provide an example of the survey timeline:
+
+- 2020-08-26: v1.19.0 released (survey would go out)
+- 2020-09-09: v1.19.1 released
+- 2020-09-16: v1.19.2 released (survey would close)
+
+With this example, the survey would have been open for three weeks.
+With an extended release cycle, post-release surveys would be open for around
+three to six weeks (depending on the patch release schedule).
 
 ## Implementation History
 
