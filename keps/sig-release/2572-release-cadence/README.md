@@ -1,47 +1,3 @@
-<!--
-**Note:** When your KEP is complete, all of these comment blocks should be removed.
-
-To get started with this template:
-
-- [ ] **Fill out this file as best you can.**
-  At minimum, you should fill in the "Summary" and "Motivation" sections.
-  These should be easy if you've preflighted the idea of the KEP with the
-  appropriate SIG(s).
-- [ ] **Merge early and iterate.**
-  Avoid getting hung up on specific details and instead aim to get the goals of
-  the KEP clarified and merged quickly. The best way to do this is to just
-  start with the high-level sections and fill out details incrementally in
-  subsequent PRs.
-
-Just because a KEP is merged does not mean it is complete or approved. Any KEP
-marked as `provisional` is a working document and subject to change. You can
-denote sections that are under active debate as follows:
-
-```
-<<[UNRESOLVED optional short context or usernames ]>>
-Stuff that is being argued.
-<<[/UNRESOLVED]>>
-```
-
-When editing KEPS, aim for tightly-scoped, single-topic PRs to keep discussions
-focused. If you disagree with what is already in a document, open a new PR
-with suggested changes.
-
-One KEP corresponds to one "feature" or "enhancement" for its whole lifecycle.
-You do not need a new KEP to move from beta to GA, for example. If
-new details emerge that belong in the KEP, edit the KEP. Once a feature has become
-"implemented", major changes should get new KEPs.
-
-The canonical place for the latest set of instructions (and the likely source
-of this file) is [here](/keps/NNNN-kep-template/README.md).
-
-**Note:** Any PRs to move a KEP to `implementable`, or significant changes once
-it is marked `implementable`, must be approved by each of the KEP approvers.
-If none of those approvers are still appropriate, then changes to that list
-should be approved by the remaining approvers and/or the owning SIG (or
-SIG Architecture for cross-cutting KEPs).
--->
-
 # KEP-2572: Defining the Kubernetes Release Cadence
 
 <!-- toc -->
@@ -82,22 +38,6 @@ SIG Architecture for cross-cutting KEPs).
 
 ## Release Signoff Checklist
 
-<!--
-**ACTION REQUIRED:** In order to merge code into a release, there must be an
-issue in [kubernetes/enhancements] referencing this KEP and targeting a release
-milestone **before the [Enhancement Freeze](https://git.k8s.io/sig-release/releases)
-of the targeted release**.
-
-For enhancements that make changes to code or processes/procedures in core
-Kubernetes—i.e., [kubernetes/kubernetes], we require the following Release
-Signoff checklist to be completed.
-
-Check these off as they are completed for the Release Team to track. These
-checklist items _must_ be updated for the enhancement to be released.
--->
-
-Items marked with (R) are required *prior to targeting to a milestone / release*.
-
 - [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
 - [ ] (R) KEP approvers have approved the KEP status as `implementable`
 - [ ] (R) Design details are appropriately documented
@@ -108,10 +48,6 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [ ] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
-
-<!--
-**Note:** This checklist is iterative and should be reviewed and updated every time this enhancement is being considered for a milestone.
--->
 
 [kubernetes.io]: https://kubernetes.io/
 [kubernetes/enhancements]: https://git.k8s.io/enhancements
@@ -369,17 +305,6 @@ With an extended release cycle, post-release surveys would be open for around
 three to six weeks (depending on the patch release schedule).
 
 ## Implementation History
-
-<!--
-Major milestones in the lifecycle of a KEP should be tracked in this section.
-Major milestones might include:
-- the `Summary` and `Motivation` sections being merged, signaling SIG acceptance
-- the `Proposal` section being merged, signaling agreement on a proposed design
-- the date implementation started
-- the first Kubernetes release where an initial version of the KEP was available
-- the version of Kubernetes where the KEP graduated to general availability
-- when the KEP was retired or superseded
--->
 
 ### Leads meeting feedback session
 
