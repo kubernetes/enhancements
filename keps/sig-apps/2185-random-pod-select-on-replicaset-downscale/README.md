@@ -200,15 +200,15 @@ be relatively balanced.
 ### Graduation Criteria
 
 Alpha (v1.21): 
-- Add RandomReplicaSetDownscale feature gate to kube-controller-manager 
+- Add LogarithmicScaleDown feature gate to kube-controller-manager 
 (disabled by default).
 - Unit and e2e tests
 
 Beta (v1.22): 
-- Enable RandomReplicaSetDownscale feature gate by default
+- Enable LogarithmicScaleDown feature gate by default
 
 Stable (v1.23):
-- Remove RandomReplicaSetDownscale feature gate
+- Remove LogarithmicScaleDown feature gate
 - Make this behavior standard
 
 ### Upgrade / Downgrade Strategy
@@ -233,7 +233,7 @@ _This section must be completed when targeting alpha to a release._
 
 * **How can this feature be enabled / disabled in a live cluster?**
   - [x] Feature gate (also fill in values in `kep.yaml`)
-    - Feature gate name: RandomReplicaSetDownscale
+    - Feature gate name: LogarithmicScaleDown
     - Components depending on the feature gate: kube-controller-manager
   - [ ] Other
     - Describe the mechanism:

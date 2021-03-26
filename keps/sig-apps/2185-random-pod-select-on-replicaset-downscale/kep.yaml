@@ -30,7 +30,7 @@ milestone:
   stable: "v1.23"
 
 feature-gates:
-  - name: RandomReplicaSetDownscale
+  - name: LogarithmicScaleDown
     components:
       - kube-controller-manager
 disable-supported: true
