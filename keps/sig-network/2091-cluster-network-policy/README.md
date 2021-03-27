@@ -37,7 +37,6 @@
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha to Beta Graduation](#alpha-to-beta-graduation)
     - [Beta to GA Graduation](#beta-to-ga-graduation)
-    - [Removing a Deprecated Flag](#removing-a-deprecated-flag)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
     - [Upgrade considerations](#upgrade-considerations)
     - [Downgrade considerations](#downgrade-considerations)
@@ -250,6 +249,9 @@ ingress/egress. These checkpoints usually perform advanced checks such as
 firewalling, authentication, packet/connection logging, etc.
 This is a big request for compliance reasons, and ClusterNetworkPolicy can ensure
 that all the traffic is forced to go through ingress/egress gateways.
+It is worth noting that the Cluster-scoped NetworkPolicy APIs will not redirect
+traffic, rather it can ensure that no traffic is allowed in/out except traffic
+via the gateways.
 
 #### Story 3: Isolate multiple tenants in a cluster
 
@@ -261,6 +263,10 @@ centralized platform team. Each internal team that wants to run their workloads
 gets assigned a Namespace on the shared clusters. Naturally, the platform team
 will want to make sure that, by default, all intra-namespace traffic is allowed
 and all inter-namespace traffic is denied.
+
+Cluster NetworkPolicies can help achieve namespace-level tenancy. However, if
+a tenant owns more than one namespace, admins must write specific Cluster NetworkPolicies
+to open up traffic for such tenants.
 
 #### Story 4: Enforce network/security best practices
 
@@ -370,20 +376,20 @@ type ClusterNetworkPolicySpec struct {
 type ClusterNetworkPolicyIngress/EgressRule struct {
 	Action       RuleAction
 	Ports        []networkingv1.NetworkPolicyPort
-	From/To      []networkingv1.ClusterNetworkPolicyPeer
-	Except       []networkingv1.ClusterNetworkPolicyExcept
+	From/To      []ClusterNetworkPolicyPeer
+	Except       []ClusterNetworkPolicyExcept
 }
 
 type ClusterNetworkPolicyPeer struct {
 	PodSelector  *metav1.LabelSelector
 	// required if a PodSelector is specified
-	Namespaces   *networkingv1.Namespaces
-	IPBlock      *IPBlock
+	Namespaces   *Namespaces
+	IPBlock      *networkingv1.IPBlock
 }
 
 type ClusterNetworkPolicyExcept struct {
 	PodSelector  *metav1.LabelSelector
-	Namespaces   *networkingv1.Namespaces
+	Namespaces   *Namespaces
 }
 
 const (
@@ -430,14 +436,14 @@ type DefaultNetworkPolicySpec struct {
 
 type DefaultNetworkPolicyIngress/EgressRule struct {
 	Ports            []networkingv1.NetworkPolicyPort
-	OnlyFrom/OnlyTo  []networkingv1.DefaultNetworkPolicyPeer
+	OnlyFrom/OnlyTo  []DefaultNetworkPolicyPeer
 }
 
 type DefaultNetworkPolicyPeer struct {
 	PodSelector  *metav1.LabelSelector
 	// required if a PodSelector is specified
-	Namespaces   *networkingv1.Namespaces
-	IPBlock      *IPBlock
+	Namespaces   *Namespaces
+	IPBlock      *networkingv1.IPBlock
 }
 ```
 
@@ -550,7 +556,7 @@ spec:
     - action: Deny
       from:
       - ipBlock:
-          cidr: 62.210.0.0/16  # blacklisted addresses
+          cidr: 192.0.2.0/24  # blacklisted addresses
 ```
 
 #### Story 2: Funnel traffic through ingress/egress gateways
@@ -579,6 +585,12 @@ spec:
           selector:
             matchLabels:
               kubernetes.io/metadata.name: dmz  # ingress gateway
+    - action: Allow
+      from:
+      - namespaces:
+          selector:
+            matchLabels:
+              kubernetes.io/metadata.name: dmz # ingress gateway
   egress:
     - action: Deny
       to:
@@ -587,6 +599,12 @@ spec:
       except:
       - namespaces:
           self: true
+      - namespaces:
+          selector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-egress  # egress gateway
+    - action: Allow
+      to:
       - namespaces:
           selector:
             matchLabels:
@@ -706,13 +724,6 @@ spec:
   — e.g., downgrade tests and scalability tests
 - Allowing time for feedback
 - Completion of all accepted "future work" items
-
-#### Removing a Deprecated Flag
-
-- Announce deprecation and support policy of the existing flag
-- Two versions passed since introducing the functionality that deprecates the flag (to address version skew)
-- Address feedback on usage/changed behavior, provided on GitHub issues
-- Deprecate the flag
 
 ### Upgrade / Downgrade Strategy
 
