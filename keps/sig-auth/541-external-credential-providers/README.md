@@ -550,9 +550,12 @@ var (
   execPluginCalls = k8smetrics.NewCounterVec(
     &k8smetrics.CounterOpts{
       Name: "rest_client_exec_plugin_call_total",
-      Help: "Number of calls to an exec plugin, partitioned by exit code.",
+      Help: "Number of calls to an exec plugin, partitioned by the type of " +
+        "event encountered (no_error, plugin_execution_error, plugin_not_found_error, " +
+        "client_internal_error) and an optional exit code. The exit code will " +
+        "be set to 0 if and only if the plugin call was successful.",
     },
-    []string{"code"},
+    []string{"code", "call_status"},
   )
 )
 ```
@@ -572,8 +575,8 @@ type ExpiryMetric interface {
 
 // CallsMetric counts calls that take place for a specific exec plugin.
 type CallsMetric interface {
-  // Increment increments a counter per exitCode.
-  Increment(exitCode int)
+  // Increment increments a counter per exitCode and callStatus.
+  Increment(exitCode int, callStatus string)
 }
 
 var (
@@ -582,13 +585,13 @@ var (
   // ClientCertRotationAge is the age of a certificate that has just been rotated.
   ClientCertRotationAge DurationMetric = noopDuration{}
   // ExecPluginCalls is the number of calls made to an exec plugin, partitioned by
-  // exit code.
+  // exit code and call status.
   ExecPluginCalls CallsMetric = noopCalls{}
 )
 ```
 
-The `"code"` label of these metrics is an attempt to elucidate the exec plugin
-failure mode to the user.
+The `"code"` and `"call_status"` labels of these metrics are an attempt to
+elucidate the exec plugin failure mode to the user.
 
 ### Risks and Mitigations
 
