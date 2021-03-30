@@ -21,7 +21,7 @@ This proposal is intended as an extension of the existing Kubernetes DNS specifi
 
 clusterset = as defined in [KEP-1645: Multi-Cluster Services API](README.md): “A placeholder name for a group of clusters with a high degree of mutual trust and shared ownership that share services amongst themselves. Membership in a clusterset is symmetric and transitive. The set of member clusters are mutually aware, and agree about their collective association. Within a clusterset, [namespace sameness](https://github.com/kubernetes/community/blob/master/sig-multicluster/namespace-sameness-position-statement.md) applies and all namespaces with a given name are considered to be the same namespace.”
 
-`<clustersetzone>` = configured domain for multi-cluster services in the clusterset, e.g. clusterset.local 
+`<clustersetzone>` = domain for multi-cluster services in the clusterset, which must be `clusterset.local`; as this may become configurable in the future, this specification refers to it by the palceholder `<clustersetzone>`, but per the MCS API it currently must be defined to be `clusterset.local`. 
 
 ClusterSetIP / `<clusterset-ip>` = as defined in [KEP-1645: Multi-Cluster Services API](README.md): “A non-headless ServiceImport is expected to have an associated IP address, the clusterset IP, which may be accessed from within an importing cluster. This IP may be a single IP used clusterset-wide or assigned on a per-cluster basis, but is expected to be consistent for the life of a ServiceImport from the perspective of the importing cluster. Requests to this IP from within a cluster will route to backends for the aggregated Service.”
 
@@ -30,7 +30,7 @@ Cluster ID / `<clusterid>` = the cluster id stored in the `id.k8s.io ClusterProp
 
 ### 2.2 - Record for Schema Version
 
-Following the existing specification, clusters implementing multi cluster DNS will contain an additional `TXT` record responding with the semantic version of the DNS schema used for the multi cluster DNS `<zone>`, also known in this specification as `<clustersetzone>`. As this may become configurable in the future, this specification refers to it by the palceholder `<clustersetzone>`, but per the MCS API it currenlty must be defined to be the zone `clusterset.local.`. 
+Following the existing specification, clusters implementing multi cluster DNS will contain an additional `TXT` record responding with the semantic version of the DNS schema used for the multi cluster DNS `<zone>`, also known in this specification as `<clustersetzone>`.
 
 - Question Example:
   - `dns-version.clusterset.local. IN TXT`
@@ -121,7 +121,7 @@ In particular, implementations that create a new "dummy" cluster-local `Service`
 
 ClusterSetIP Services should **NOT** have a record disambiguating to a single cluster's backends, ex. `<clusterid>.<svc>.<ns>.svc.<clustersetzone>`. 
 
-(See the DNS section of the [KEP-1645: Multi-Cluster Services API](README.md) for more context.)
+(See the DNS section of the [KEP-1645: Multi-Cluster Services API](README.md#dns) for more context.)
 
 ### 2.4 - Records for a Multicluster Headless Service
 
@@ -234,4 +234,4 @@ In particular, implementations that create a new "dummy" cluster-local `Service`
 
 Multicluster Headless Services should **NOT** have a record disambiguating to a single cluster's backends, ex. `<clusterid>.<svc>.<ns>.svc.<clustersetzone>`.
 
-(See the DNS section of the [KEP-1645: Multi-Cluster Services API](README.md) for more context.)
+(See the DNS section of the [KEP-1645: Multi-Cluster Services API](README.md#dns) for more context.)
