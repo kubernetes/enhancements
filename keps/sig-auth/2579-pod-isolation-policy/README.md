@@ -107,8 +107,8 @@ through the create-pod permission.
 ### Goals
 
 Replace PodSecurityPolicy without compromising the ability for Kubernetes to limit privilege
-escalation out of the box. Specifically, create/update pod permission should not be equivalent
-to root-on-node (or cluster).
+escalation out of the box. Specifically, there should be a built-in way to limit create/update pod
+permissions so they are not equivalent to root-on-node (or cluster).
 
 #### Requirements
 
@@ -120,15 +120,16 @@ to root-on-node (or cluster).
     - Don’t automatically break windows pods
 5. Must be responsive to Pod API evolution across versions
 6. (fuzzy) Easy to use, don’t need to be a kubernetes/security/linux expert to meet the basic objective
+7. Extensible: should work with custom policy implementations without whole-sale replacement
+    - Enable custom policies keyed off of RuntimeClassNames
 
 Nice to have:
 
 1. Exceptions or policy bindings by requesting user
-2. Extensible: should work with custom policy implementations without whole-sale replacement
-3. Windows support in the initial release
-4. Enabled by default (not in alpha)
-5. Provide an easy migration path from PodSecurityPolicy
-6. Enforcement on pod-controller resources (i.e. things embedding a PodTemplate)
+2. (fuzzy) Windows support in the initial release
+3. Admission controller is enabled by default in beta or GA phase
+4. Provide an easy migration path from PodSecurityPolicy
+5. Enforcement on pod-controller resources (i.e. things embedding a PodTemplate)
 
 ### Non-Goals
 
@@ -165,12 +166,14 @@ podisolationpolicy.kubernetes.io/warn-version: <policy version>
 **Allow:** Pods meeting the requirements of the allowed level are allowed. Violations are rejected
 in admission.
 
-**Audit:** Pods and [templated pods] meeting the requirements of the audit
-policy level are ignored. Violations are recorded in a
-`podisolationpolicy.kubernetes.io/audit: <violation>` annotation on the audit event for the request.
+**Audit:** Pods and [templated pods] meeting the requirements of the audit policy level are ignored.
+Violations are recorded in a `podisolationpolicy.kubernetes.io/audit: <violation>` annotation on the
+audit event for the request. Audit annotations will **not** be applied to the pod objects
+themselves, as doing so would violate the non-mutating requirement.
 
-**Warn:** Pods and [templated pods] meeting the requirements of the warn
-level are ignored. Violations are returned in a user-facing warning message.
+**Warn:** Pods and [templated pods] meeting the requirements of the warn level are ignored.
+Violations are returned in a user-facing warning message. Warn & audit modes are independent; if the
+functionality of both is desired, then both labels must be set.
 
 [templated pods]: #podtemplate-resources
 
@@ -182,9 +185,9 @@ The mode key names are open to discussion. In particular, I'm not satisfied that
 - `allow` means "allow pods meeting this profile level & below" (i.e. deny above)
 - `audit` and `warn` mean "audit/warn on pods exceeding this profile level" (i.e. audit/warn above)
 
-Using `deny` for the enforcing level would be more consistent with audit/warn (deny above), but is a
-counter-intuitive user experience. One would expect `deny = privileged` to deny privileged pods, but
-it really means allow privileged pods (hence using `allow` for the key).
+~~Using `deny` for the enforcing level would be more consistent with audit/warn (deny above), but is
+a counter-intuitive user experience. One would expect `deny = privileged` to deny privileged pods,
+but it really means allow privileged pods (hence using `allow` for the key).~~ (Rejected)
 
 Another option is to change the `audit` and `warn` keys to something meaning "don't audit/warn at this
 level and bellow", but we haven't thought of a good name. The best alternative we've come up with is
@@ -195,6 +198,20 @@ inconsistency with audit & warn less obvious, but doesn't help the user experien
 
 <<[/UNRESOLVED]>>
 
+There are several reasons for controlling the policy directly through namespace labels, rather than
+through a separate object:
+
+- Using labels enables various workflows around policy management through kubectl, for example
+  issuing queries like `kubectl get namespaces -l
+  podisolationpolicy.kubernetes.io/allow-version!=v1.22` to find namespaces where the enforcing
+  policy isn't pinned to the most recent version.
+- Keeping the options on namespaces allows atomic create-and-set-policy, as opposed to creating a
+  namespace and then creating a second object inside the namespace.
+- Policies settings are per-namespace singletons, and singleton objects are not well supported in
+  Kubernetes.
+- Labels are lighter-weight than namespace fields, making it clear that this is a policy layer on
+  top of namespaces, not inherent to namespaces itself.
+
 ### Validation
 
 The following restrictions are placed (by the admission plugin) on the policy namespace labels:
@@ -204,6 +221,9 @@ The following restrictions are placed (by the admission plugin) on the policy na
 3. Version values must be match `(latest|v[0-9]+\.[0-9]+`. That is, one of:
     1. `latest`
     2. `vMAJOR.MINOR` (e.g. `v1.21`)
+
+Enforcement is best effort, and invalid labels that pre-existed the admission controller enablement
+are ignored. Updates to a previously invalid label are only allowed if the new value is valid.
 
 ### Versioning
 
@@ -221,43 +241,35 @@ other than latest are applied:
 
 <<[UNRESOLVED]>>
 
-Under the webhook implementation, if the webhook version is newer than the cluster version, how
+Under the webhook implementation, policy versions are tied to the webhook version, not the cluster
+version. This means that it is recommended for the webhook to updated prior to updating the cluster.
+
+~~if the webhook version is newer than the cluster version, how
 should policy versions past the cluster version be handled? Should `latest` mean the latest version
 supported by the webhook, or the policy version matching the cluster version? _Leaning towards
 supporting all policy versions supported by the webhook, even if they are newer than the cluster
-version._
+version._~~
 
 Note that policies are not guaranteed to be backwards compatible, and a newer restricted policy
 could require setting a field that doesn't exist in the current API version.
 
 <<[/UNRESOLVED]>>
 
-<<[UNRESOLVED]>>
+- Under an older version X of a policy:
+    - Allow pods that were allowed under policy version X running on cluster version X
+    - Allow pods that set new fields that the policy level has no opinion about (e.g. pod overhead
+      fields)
+    - Allow pods that set new fields that the policy level has an opinion about if the value is the
+      default (explicit or implicit) value OR the value is allowed by newer versions of the policy
+      level (e.g. a less privileged value of a new field)
 
-- Under an older version of a policy, a new field may only be set to its default value (or left unset).
-
-**Open Question:** Should this apply to all new fields, or only new fields that are constrained
-under a more recent version of the policy? If we only constrain fields that are in-scope for policy
-enforcement, then that becomes a problem if we later decide that a field should be in scope. The
-versioning machanism gives us a way to safely make "breaking" changes like adding enforcement to a
-previously unenforced field, but it is strictly less safe. Either way, there is some maintenance
-burden to declare which fields are in-scope at each version. _Leaning towards only restricting
-relevant fields._
-
-**Open Question:** If the control (or options) are strictly less privileged than the default, should
-it be allowed? For example, the `allowPrivilegeEscalation` field was added in Kubernetes v1.8, which
-sets the `no_new_privs` flag on the container processes when set to false. Prior to that version,
-the `no_new_privs` flag was never set, which is also the default in v1.8+. If older policies require
-the default value, then only `allowPrivilegeEscalation: true` would be allowed, even though
-`allowPrivilegeEscalation: false` is strictly less privileged. _Leaning towards allowing strictly
-more-restricted versions._
-
-- If the range of valid values on an existing field is expanded, the new values are forbidden. E.g.
-  adding a new enum value.
-
-Same questions as above
-
-<<[/UNRESOLVED]>>
+For example, the restricted policy level now requires `allowPrivilegeEscalation=false`, but this
+field wasn't added until Kubernetes v1.8, and all containers prior to v1.8 implicitly ran as
+`allowPrivilegeEscalation=true`. Under the **restricted v1.7** profile, the following
+`allowPrivilegeEscalation` configurations would be allowed on a v1.8 cluster:
+- `null` (allowed during the v1.7 release)
+- `true` (equal in privilege to a v1.7 pod that didn't set the field)
+- `false` (strictly less privileged than other allowed values)
 
 ### PodTemplate Resources
 
@@ -340,13 +352,6 @@ plugins:
 
 The default policy level and version for each mode (when no label is present) can be statically
 configured. The default for the static configuration is `privileged` and `latest`.
-
-<<[UNRESOLVED]>>
-
-**Open Question:** Should we set the default policy mode labels on namespace creation? If so, should
-we set all of them or only a subset?
-
-<<[/UNRESOLVED]>>
 
 #### Exemptions
 
