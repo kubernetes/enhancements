@@ -486,23 +486,22 @@ spec:
 
 _That is the question._
 
-`[UNRESOLVED] Must resolve before alpha`
+While this document has thus far referred to the `ClusterClaim` resource as being implemented as a CRD, another implementation point of debate has been whether this belongs in the core Kubernetes API, particularly the `id.k8s.io ClusterClaim`. A dependable cluster ID or cluster name has previously been discussed in other forums (such as [this SIG-Architecture thread](https://groups.google.com/g/kubernetes-sig-architecture/c/mVGobfD4TpY/m/nkdbkX1iBwAJ) from 2018, or, as mentioned above, the [Cluster API subproject](https://github.com/kubernetes-sigs/cluster-api/issues/4044) which implemented [their own solution](https://github.com/kubernetes-sigs/cluster-api/pull/4048).) It is the opinion of SIG-Multicluster that the function of the proposed `ClusterClaim` CRD is of broad utility and becomes more useful the more ubiquitous it is, not only in multicluster set ups.
 
-> While this document has thus far referred to the `ClusterClaim` resource as being implemented as a CRD, another implementation point of debate has been whether this belongs in the core Kubernetes API, particularly the `id.k8s.io ClusterClaim`. A dependable cluster ID or cluster name has previously been discussed in other forums (such as [this SIG-Architecture thread](https://groups.google.com/g/kubernetes-sig-architecture/c/mVGobfD4TpY/m/nkdbkX1iBwAJ) from 2018, or, as mentioned above, the [Cluster API subproject](https://github.com/kubernetes-sigs/cluster-api/issues/4044) which implemented [their own solution](https://github.com/kubernetes-sigs/cluster-api/pull/4048).) It is the opinion of SIG-Multicluster that the function of the proposed `ClusterClaim` CRD is of broad utility and becomes more useful the more ubiquitous it is, not only in multicluster set ups.
+This has led to the discussion of whether or not we should pursue adding this resource type not as a CRD associated with SIG-Multicluster, but as a core Kubernetes API implemented in `kubernetes/kubernetes`. A short pro/con list is enclosed at the end of this section.
 
-> This has led to the discussion of whether or not we should pursue adding this resource type not as a CRD associated with SIG-Multicluster, but as a core Kubernetes API implemented in `kubernetes/kubernetes`. A short pro/con list is enclosed at the end of this section.
-
-> One effect of that decision is related to the upgrade path. Implementing this resource only in k/k will restrict the types of clusters that can use cluster ID to only ones on the target version (or above) of Kubernetes, unless a separate backporting CRD is made available to them. At that point, with two install options, other issues arise. How do backported clusters deal with migrating their CRD data to the core k/k objects during upgrade -- will the code around the formal k/k implementation be sensitive to the backport CRD and migrate itself? Will users have to handle upgrades in a bespoke manner?
+One effect of that decision is related to the upgrade path. Implementing this resource only in k/k will restrict the types of clusters that can use cluster ID to only ones on the target version (or above) of Kubernetes, unless a separate backporting CRD is made available to them. At that point, with two install options, other issues arise. How do backported clusters deal with migrating their CRD data to the core k/k objects during upgrade -- will the code around the formal k/k implementation be sensitive to the backport CRD and migrate itself? Will users have to handle upgrades in a bespoke manner?
 
 |                       | CRD                                                                              | k/k                                               |
 |-----------------------|----------------------------------------------------------------------------------|---------------------------------------------------|
-| Built-in / ubiquitous | Unlikely (?)                                                                     | Likely (?)                                        |
+| Ubiquitous | No                                                                     | Yes                                        |
+| Default always set | No                                                                     | Yes                                        |
 | Deployment            | Must be installed by the cluster lifecycle management, or as a manual setup step | In every cluster over target milestone            |
-| Schema validation     | Can use OpenAPI v3 validation                                                    | Can use the built-in Kubernetes schema validation |
-| Blockers     | Making a sigs-repo                                                    | Official API review |
+| Schema validation     | OpenAPI v3 validation                                                    | Can use the built-in Kubernetes schema validation |
+| Blockers     | Official API review if using *.k8s.io                                                    | Official API review |
 | Conformance testing     | Not possible now, and no easy path forward                                                   | Standard |
 
-`[/UNRESOLVED]`
+**In the end, SIG-Multicluster discussed this with SIG-Architecture and it was decided to stick with the plan to use a CRD.** Notes from this conversation are in the [SIG-Architecture meeting agenda](https://docs.google.com/document/d/1BlmHq5uPyBUDlppYqAAzslVbAO8hilgjqZUTaNXUhKM/preview) for 3/25/2021.
 
 
 ### Test Plan
