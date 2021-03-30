@@ -715,16 +715,11 @@ to describe a selector based policy that applies to a multi-cluster service.
 
 _Optional, but recommended._
 
-MCS aims to align with the existing [service DNS
+The full specification for Multicluster Service DNS is in this KEP's [specification.md](specification.md). MCS aims to align with the existing [service DNS
 spec](https://github.com/kubernetes/dns/blob/master/docs/specification.md). This
 section assumes familiarity with in-cluster Service DNS behavior.
-```
-<<[UNRESOLVED]>>
-Full DNS spec needed prior to Beta graduation following:
-https://github.com/kubernetes/dns/blob/master/docs/specification.md
-<<[UNRESOLVED]>>
-```
-When a `ServiceExport` is created, this will cause a domain name for the
+
+In short, when a `ServiceExport` is created, this will cause a domain name for the
 multi-cluster service to become accessible from within the clusterset. The
 domain name will be `<service>.<ns>.svc.clusterset.local`. 
 
@@ -738,7 +733,7 @@ endpoint of the headless service. `<service>.<ns>.svc.clusterset.local` will
 resolve to the set of all ready pod IPs for the service.
 
 Pods backing a clusterset service may be addressed individually using the
-`<hostname>.<clustername>.<svc>.<ns>.svc.clusterset.local` format. Necessary
+`<hostname>.<clusterid>.<svc>.<ns>.svc.clusterset.local` format. Necessary
 records will be created based on each ready endpoint's hostname and the
 `multicluster.kubernetes.io/source-cluster` label on the `EndpointSlice`. This
 allows naming collisions to be avoided for headless services backed by identical
@@ -757,6 +752,21 @@ of the `cluster.local` zone.
 _It is expected that the `.clusterset.local` zone is standard and available in
 all implementations, but customization and/or aliasing can be explored if there's
 demand._
+
+##### Not allowing cluster-specific targeting via DNS
+
+Both ClusterSetIP Services and Multicluster Headless Services are specified to explicitly disallow DNS records that target single clusters, such as using a formulation like `<clusterid>.<svc>.<ns>.svc.clusterset.local.` to target all 1+N backends in a single cluster.
+
+For ClusterSetIP services, this rationale is tied to the intent of its underlying ClusterIP Service. In a single-cluster setup, the purpose of a ClusterIP service is to reduce the context needed by the application to target ready backends, especially if those backends disappear or change frequently, and leverages kube-proxy to do this independent of the limitations of DNS. ([ref](https://kubernetes.io/docs/concepts/services-networking/service/#why-not-use-round-robin-dns)) Similarly, users of exported ClusterIP services should depend on the single `<clusterset-ip>` (or the single A/AAAA record mapped to it), instead of targeting per cluster backends. If a user has a need to target backends in a different way, they should use headless Services.
+
+For Multicluster Headless Services, the rationale is tied to the intent of its underlying Headless Service to provide absolutely no load balancing capabilities on any stateful dimension of the backends, and provide routing to each single backend for the application's purposes.
+
+In both cases, this restriction seeks to preserve the MCS position on [namespace sameness](https://github.com/kubernetes/community/blob/master/sig-multicluster/namespace-sameness-position-statement.md). Services of the same name/namespace exported in the multicluster environment are considered to be the same by definition, and thus their backends are safe to 'merge' at the ClusterSet level. If these backends need to be addressed differently based on other properties than name and namespace, they lose their fungible nature which the MCS API depends on. In these situations, those backends should instead be fronted by a Service with a different name and/or namespace.
+
+For example, say an application wishes to target the backends for a `ClusterSetIP ServiceExport` called `special/prod` in `<clusterid>=clusterEast` separately from all backends in `<clusterid>=clusterWest`. Instead of depending on the disallowed implementation of cluster-specific addressing, the Services in each specific cluster should actually be considered non-fungible and be created and exported by `ServiceExport`s with different names that honor the boundaries of their sameness, such as `specialEast/prod` for all the backends in `<clusterid>=clusterEast` and `specialWest/prod` for the backends in `<clusterid>=clusterWest`. In this situation, the resulting DNS names `specialEast.prod.svc.clusterset.local` and `specialWest.prod.svc.clusterset.local` encode the cluster-specific addressing required by virtue of being two different `ServiceExport`s.
+
+Note that this puts the burden of enforcing the boundaries of a `ServiceExport`'s fungibility on the name/namespace creator.
+
 
 #### EndpointSlice
 
