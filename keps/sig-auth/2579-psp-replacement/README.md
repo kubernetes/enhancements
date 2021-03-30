@@ -1,8 +1,9 @@
-# KEP-2579: Pod Isolation Policy
+# KEP-2579: PSP Replacement Policy (placeholder)
 
 <<[UNRESOLVED]>>
 
-The name of this feature / policy is open to discussion. Other options considered:
+The name of this feature / policy is open to discussion. Options considered:
+- Pod Isolation Policy
 - Pod Policy Check
 - Pod Security Standards
 - ~~Namsepace Security Policy~~ (there is a lot more to namespace security that is out-of-scope for this policy)
@@ -148,26 +149,26 @@ version that they were introduced in.
 
 <<[UNRESOLVED]>>
 
-The annotation prefix `podisolationpolicy.kubernetes.io` is open to discussion. The proposed
-prefix structure is `<featurename>.kubernetes.io`, and depends on the final name we settle on.
+The annotation prefix is a placeholder, and will depend on the final feature name. The proposed
+prefix structure is `<featurename>.kubernetes.io`.
 
 <<[/UNRESOLVED]>>
 
 Policy application is controlled based on labels on the namespace. The following labels are supported:
 ```
-podisolationpolicy.kubernetes.io/allow: <policy level>
-podisolationpolicy.kubernetes.io/allow-version: <policy version>
-podisolationpolicy.kubernetes.io/audit: <policy level>
-podisolationpolicy.kubernetes.io/audit-version: <policy version>
-podisolationpolicy.kubernetes.io/warn: <policy level>
-podisolationpolicy.kubernetes.io/warn-version: <policy version>
+<prefix>/allow: <policy level>
+<prefix>/allow-version: <policy version>
+<prefix>/audit: <policy level>
+<prefix>/audit-version: <policy version>
+<prefix>/warn: <policy level>
+<prefix>/warn-version: <policy version>
 ```
 
 **Allow:** Pods meeting the requirements of the allowed level are allowed. Violations are rejected
 in admission.
 
 **Audit:** Pods and [templated pods] meeting the requirements of the audit policy level are ignored.
-Violations are recorded in a `podisolationpolicy.kubernetes.io/audit: <violation>` annotation on the
+Violations are recorded in a `<prefix>/audit: <violation>` annotation on the
 audit event for the request. Audit annotations will **not** be applied to the pod objects
 themselves, as doing so would violate the non-mutating requirement.
 
@@ -203,7 +204,7 @@ through a separate object:
 
 - Using labels enables various workflows around policy management through kubectl, for example
   issuing queries like `kubectl get namespaces -l
-  podisolationpolicy.kubernetes.io/allow-version!=v1.22` to find namespaces where the enforcing
+  <prefix>/allow-version!=v1.22` to find namespaces where the enforcing
   policy isn't pinned to the most recent version.
 - Keeping the options on namespaces allows atomic create-and-set-policy, as opposed to creating a
   namespace and then creating a second object inside the namespace.
@@ -216,7 +217,7 @@ through a separate object:
 
 The following restrictions are placed (by the admission plugin) on the policy namespace labels:
 
-1. Unknown labels with the pod security prefix (TBD) are rejected, e.g. `podisolationpolicy.kubernetes.io/foo-bar`
+1. Unknown labels with the pod security prefix (TBD) are rejected, e.g. `<prefix>/foo-bar`
 2. Policy level must be one of: `privileged`, `baseline`, `restricted`
 3. Version values must be match `(latest|v[0-9]+\.[0-9]+`. That is, one of:
     1. `latest`
@@ -311,7 +312,7 @@ These checks are also performed when making a dry-run request, which can be an e
 checking for breakages before updating a policy, for example:
 
 ```
-kubectl label --dry-run=server --overwrite ns --all podisolationpolicy.kubernetes.io/allow=baseline
+kubectl label --dry-run=server --overwrite ns --all <prefix>/allow=baseline
 ```
 
 <<[UNRESOLVED]>>
@@ -330,7 +331,7 @@ A number of options can be statically configured through the [Admission Configur
 apiVersion: apiserver.config.k8s.io/v1
 kind: AdmissionConfiguration
 plugins:
-- name: PodIsolationPolicy
+- name: PSPReplacement # Placeholder
   configuration:
     defaults:  # Defaults applied when a mode label is not set.
       allow:         <default allow policy level>
@@ -839,8 +840,9 @@ Each step in the rollout could be overridden with a flag (e.g. force the admissi
 
 ### PodSecurityPolicy Migration
 
-Migrating to PodIsolationPolicy from PodSecurityPolicies can be done effectively using a combination
-of dry-run and audit/warn modes (although this becomes harder if mutating PSPs are used).
+Migrating to the replacement policy from PodSecurityPolicies can be done effectively using a
+combination of dry-run and audit/warn modes (although this becomes harder if mutating PSPs are
+used).
 
 We could also ship a standalone tool to assist with the PodSecurityPolicy migration. Here are some
 ideas for the sorts of things the tool could assist with:
