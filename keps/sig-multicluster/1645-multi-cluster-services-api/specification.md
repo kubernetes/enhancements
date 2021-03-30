@@ -25,7 +25,7 @@ clusterset = as defined in [KEP-1645: Multi-Cluster Services API](README.md): �
 
 ClusterSetIP / `<clusterset-ip>` = as defined in [KEP-1645: Multi-Cluster Services API](README.md): “A non-headless ServiceImport is expected to have an associated IP address, the clusterset IP, which may be accessed from within an importing cluster. This IP may be a single IP used clusterset-wide or assigned on a per-cluster basis, but is expected to be consistent for the life of a ServiceImport from the perspective of the importing cluster. Requests to this IP from within a cluster will route to backends for the aggregated Service.”
 
-Cluster ID / `<clusterid>` = the cluster id stored in the `id.k8s.io ClusterProperty` as described in [KEP-2149: ClusterId for ClusterSet identification]. Though this can be any valid DNS label, in this KEP the examples mimic the recommended value, a kube-system namespace uid (`721ab723-13bc-11e5-aec2-42010af0021e`).
+Cluster ID / `<clusterid>` = the cluster id stored in the `id.k8s.io ClusterProperty` as described in [KEP-2149: ClusterId for ClusterSet identification](../2149-clusterid/README.md). Though this can be any valid DNS label, in this KEP the examples mimic the recommended value, a kube-system namespace uid (`721ab723-13bc-11e5-aec2-42010af0021e`).
 
 
 ### 2.2 - Record for Schema Version
