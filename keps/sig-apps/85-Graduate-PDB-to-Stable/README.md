@@ -8,10 +8,10 @@
   - [Goals](#goals)
 - [Proposal](#proposal)
   - [Implementation Details/Notes/Constraints](#implementation-detailsnotesconstraints)
+    - [Promote Eviction to policy/v1 without breaking pods/eviction support for policy/v1beta1](#promote-eviction-to-policyv1-without-breaking-podseviction-support-for-policyv1beta1)
     - [Mutable PDBs](#mutable-pdbs)
     - [Eviction of non-ready pods](#eviction-of-non-ready-pods)
     - [Make the disruption controller more lenient for pods belonging to non-scale controllers](#make-the-disruption-controller-more-lenient-for-pods-belonging-to-non-scale-controllers)
-      - [Proposed solution](#proposed-solution)
     - [Address scalability issues with the disruption controller](#address-scalability-issues-with-the-disruption-controller)
     - [Fix handling of empty selector in disruption controller](#fix-handling-of-empty-selector-in-disruption-controller)
   - [API changes](#api-changes)
@@ -81,6 +81,26 @@ long term.
 
 ### Implementation Details/Notes/Constraints
 
+#### Promote Eviction to policy/v1 without breaking pods/eviction support for policy/v1beta1
+
+Eviction is part of policy/v1beta1, but because it is a subresource of the v1 Pod API,
+support for accepting policy/v1beta1 requests should not be dropped.
+
+Luckily, the endpoint only supports Create and returns v1 Status,
+so it is possible to let the current endpoint accept both policy/v1 and policy/v1beta1 Evictions.
+
+The following changes will be made:
+
+ * The decoding stack will be adjusted to allow a REST handler to accept multiple GroupVersionKinds
+ * Discovery documents will indicate that policy/v1 Eviction kinds are accepted
+ * client-go will add Eviction v1 and v1beta1 methods
+ * `kubectl drain` will use v1 Eviction if available and fall back to v1beta1 Eviction
+ * The Eviction subresource handler will accept policy/v1 and policy/v1beta1 Eviction objects
+ * Integration tests will be added to ensure:
+   * Get requests continue to be unsupported for this endpoint
+   * Patch requests continue to be unsupported for this endpoint
+   * Create requests continue to accept policy/v1 and policy/v1beta1 requests and return Status objects
+
 #### Mutable PDBs
 
 A mutable PDB object allows its `MinAvailable`, `MaxUnavailable`, and `Selector`
@@ -126,43 +146,23 @@ The current behavior of the disruption controller for the different types of
 input and the different types of pods that might be encountered are documented in: 
 https://docs.google.com/spreadsheets/d/12HUundBS-slA6axfQYZPRCeIu_Au_wsGD0Vu_oKAnM8/edit?usp=sharing
 
-##### Proposed solution
+This has been addressed by improving the users' visibility into any issues 
+encountered by the disruption controller, primarily through the addition of 
+conditions to the PDB status: https://github.com/kubernetes/kubernetes/pull/98127.
+We also improve the error message provided to users in the case where a controller
+resource can not be found with the scale client: https://github.com/kubernetes/kubernetes/pull/98346
 
-To fix this, we will make two adjustments:
-
-Loosen the rules somewhat, so instead of just returning an error and block all
-evictions when the controller encounters invalid pods, it will ignore those pods
-when computing `AllowedDisruptions`. And similarly, the Eviction API will ignore
-the PDB when evicting those pods. This means that in a situation like was
-mentioned in the issue, where a PDB selector happen to match both pods belonging
-to a Deployment and pods belonging to a CronJob, the PDB will protect the
-Deployment pods as expected, but ignore the pods from the CronJob.
-
-Combined with loosening the rules in the controller, we also want to improve
-feedback to the user in these situations. So while the pods from the CronJob
-described above will not be covered by the PDB, the controller will generate
-warning events for these situations that will provide accurate descriptions of
-what makes the pod ineligible for the PDB. Events should only be generated the
-first time the controller encounters the workload to avoid generating new events
-on every reconcile. In this case it would mean an event explaining that the pod
-has a controller that does not implement scale, and therefore can only be used
-if the PDB is using `minAvilable` as a number. We also want to introduce
-conditions on the PDB status object that can signal error situations to users
-and tools. In particular, whenever the failsafe functionality of the disruption
-controller forces `AllowedDisruptions`to be 0, there should be a condition that
-allow tools to distinguish this situation from `AllowedDisruptions` being 0
-simply because there are not enough ready pods.
-
-Combined, these should make the behavior of the disruption controller more
-intuitive, but also provide signals to users whenever the configuration of the
-pdb and/or the targeted workloads are invalid.
+We considered changing the current behavior of setting `DisruptionsAllowed` to zero,
+but decided against it as it creates issues for the Eviction API and it makes it
+harder to understand the behavior of the disruption controller.
 
 #### Address scalability issues with the disruption controller
 
 The disruption controller has some performance issues as reported in 
 https://github.com/kubernetes/kubernetes/issues/92826.
 https://github.com/kubernetes/kubernetes/pull/92827 was merged to remove the 30s
-resync period which should improve performance.
+resync period which should improve performance. The frequency at which the
+disruption controller creates events has also been reduced.
 
 #### Fix handling of empty selector in disruption controller
 
@@ -171,6 +171,8 @@ https://github.com/kubernetes/kubernetes/issues/95083. We can't fix this
 directly in the v1beta1 version of PDBs, but we should fix this as part of
 promoting PDBs to v1 using the approach described in
 https://github.com/kubernetes/kubernetes/issues/95083#issuecomment-703723763
+
+Fixed as part of https://github.com/kubernetes/kubernetes/pull/99290
 
 ### API changes
 
@@ -321,9 +323,9 @@ The following e2e tests will be included in the conformance tests:
 
 Graduation to GA:
 - [x] Implement Mutable PDBs
-- [ ] Address performance issues
-- [ ] Pass conformance tests
-- [ ] Update documents to reflect the changes
+- [x] Address performance issues
+- [x] Pass conformance tests
+- [x] Update documents to reflect the changes
 
 ## Production Readiness Review Questionnaire
 
@@ -452,3 +454,4 @@ details). For now, we leave it here.
 
 - PodDisruptionBudget was introduced in Kubernetes 1.4 as an alpha version.
 - PodDisruptionBudget was graduated to beta in Kubernetes 1.5.
+- PodDisruptionBudget was graduated to GA in Kubernetes 1.21.
