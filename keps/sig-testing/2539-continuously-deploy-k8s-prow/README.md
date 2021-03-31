@@ -14,6 +14,10 @@
 - [Design Details](#design-details)
     - [Automated Merging of Prow Autobump PRs](#automated-merging-of-prow-autobump-prs)
     - [Roll Back Process](#roll-back-process)
+  - [Graduation Criteria](#graduation-criteria)
+    - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
+    - [Beta -&gt; GA Graduation](#beta---ga-graduation)
+    - [Announcement](#announcement)
 - [Implementation History](#implementation-history)
 - [Alternatives](#alternatives)
     - [A new tool merges autobump PRs](#a-new-tool-merges-autobump-prs)
@@ -82,7 +86,7 @@ Shouldn’t see any change, prow breakage should be discovered by prow monitorin
 - What’s Not Changed
   - React to prow alerts and take actions.
 - What’s Changed
-  - No more manual inspecting prow healthiness.
+  - Decouple prow logs inspection from prow bump.
   - No more manual lgtm/approve/retest autobump PRs.
   - No more manual Slack posting.
 
@@ -94,7 +98,7 @@ Change how prow is released.
 
 ## Proposal
 
-Prow autobump PRs are automatically merged every hour, only on working hours of working days.
+Prow autobump PRs are automatically merged every 3 hours, only on working hours of working days.
 
 ### Notes/Constraints/Caveats (Optional)
 
@@ -114,36 +118,55 @@ One possible way of dealing with breaking changes, is:
 
 This approach uses tide auto-merge feature, so that no need to worry about repo requirements such as need more than one approver etc.
 
-```
-<<[UNRESOLVED (spiffxp) ]>>
-Suggestion: how to keep slack reports on each automated bump.
-<<[/UNRESOLVED]>>
-```
-
 #### Roll Back Process
 
 When prow stopped functioning after a bump, prow oncall should:
 - Stop auto-deploying by commenting `/hold` on latest autobump PR.
 - Manually create rollback PR for rolling back to known good version.
-- Manually apply the changes from rollback PR.
+  - Prow is not super actively developed currently, normally there are not many
+    changes between bumps, and it should be easy to identify culprit.
+  - General rule of thumb is we can assume last bump was good.
+- Manually apply the changes from rollback PR by running [`prow/bump.sh`](https://github.com/kubernetes/test-infra/blob/master/prow/deploy.sh)
 
-```
-<<[UNRESOLVED]>>
-Which version to roll back. This is generally not a problem due to low release volume of prow. @alvaroaleman suggested 6 hours intervals.
-<<[/UNRESOLVED]>>
-```
+### Graduation Criteria
+
+#### Alpha -> Beta Graduation
+
+- Low frequency continuous deployment bumped prow as expected
+- Known prow failures are captured by alerts ahead of non-oncall human
+
+#### Beta -> GA Graduation
+
+- High frequency continuous deployment bumped prow as expected
+- Testgrid displays prow plank version
+
+#### Announcement
+
+Before enabling Alpha phase, this will be announced:
+- On #prow and #testing-ops channel on Slack
+- Via email to the entire kubernetes-dev@googlegroups.com group
 
 ## Implementation History
 
 
 ## Alternatives
 
-
 #### A new tool merges autobump PRs
-This method is independent of tide, which makes sure it works on every prow instance.
+
+Instead of letting tide merge PR, an alternative idea is to created a dedicated
+continuous deploy job that takes full control:
+- Merge autobump PR on a fixed schedule
 
 ##### Pros:
-Not relying on tide, works really well with prow instances that don't have tide.
+- This method is independent of tide, which makes sure it works on every prow instance.
 
 ##### Cons:
-Probably have significantly divergent code paths for finding and approving PRs on Gerrit vs PRs on GitHub.
+- The tools is pretty similar to tide, means there will be lots of duplicated
+  logic with tide.
+
+The biggest pros of this approach, is that it works better with prow instance
+that doesn't have tide support yet, for example prow that works with gerrit.
+However, there are two reasons for not going this path:
+- The current design is targeting k8s prow, which does have tide.
+- Tide will eventually come to gerrit and this can be evaluated later which
+  should be done first: tide for gerrit, or continuous deploy prow with gerrit.
