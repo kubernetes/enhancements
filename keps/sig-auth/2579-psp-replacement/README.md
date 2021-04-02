@@ -36,6 +36,7 @@ The name of this feature / policy is open to discussion. Options considered:
 - [Design Details](#design-details)
   - [Updates](#updates)
     - [Ephemeral Containers](#ephemeral-containers)
+    - [Other Pod Subresources](#other-pod-subresources)
   - [Pod Security Standards](#pod-security-standards)
   - [Flexible Extension Support](#flexible-extension-support)
   - [Test Plan](#test-plan)
@@ -294,9 +295,11 @@ Templated pod resources include:
 - batch/v1 CronJob
 - batch/v1 Job
 
-CRDs that wish to take advantage of this functionality should instead have an object reference to a
-v1/PodTemplate resource. We will publish a guide (documentation and/or examples) that demonstrate
-this pattern.
+PodTemplate warnings & audit will only be applied to built-in types. CRDs that wish to take
+advantage of this functionality can use an object reference to a v1/PodTemplate resource rather than
+inlining a PodTemplate. We will publish a guide (documentation and/or examples) that demonstrate
+this pattern. Alternatively, the functionality can be implemented in a 3rd party admission plugin
+leveraging the library implementation.
 
 ### Namespace policy update warnings
 
@@ -451,6 +454,14 @@ only applies enforcement to ephemeral containers (defaults to the allow policy).
 [custom security contexts]: https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/277-ephemeral-containers#configurable-security-policy
 
 <<[/UNRESOLVED]>>
+
+#### Other Pod Subresources
+
+Aside from ephemeral containers, the policy is not checked for any other Pod subresources (status,
+bind, logs, exec, attach, port-forward).
+
+Although annotations can be updated through the status subresource, the apparmor annotations are
+immutable and the seccomp annotations are deprecated and slated for removal in v1.23.
 
 ### Pod Security Standards
 
