@@ -121,14 +121,15 @@ checklist items _must_ be updated for the enhancement to be released.
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
 - [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
 - [x] (R) Design details are appropriately documented
 - [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
 - [x] (R) Graduation criteria is in place
 - [x] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
+- [x] (R) Production readiness review approved
 - [x] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+  - N/A, this is not user facing
 - [x] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 <!--
@@ -552,7 +553,11 @@ Major milestones might include:
 -->
 
 - 2020-02-04 - Initial KEP draft / provisional [#2421](https://github.com/kubernetes/enhancements/pull/2421)
-- 2020-02-08 - KEP implementable [#2469](https://github.com/kubernetes/enhancements/pull/2469)
+- 2020-02-08 - KEP Implementable [#2469](https://github.com/kubernetes/enhancements/pull/2469)
+- 2020-04-01 - KEP Alpha, Beta in Kubernetes 1.21
+  - There is no distinct alpha/beta for this KEP, only alpha/beta (implemented at HEAD) vs stable (all supported branches)
+
+See also PR listing: https://github.com/kubernetes/enhancements/issues/2420#issuecomment-791024902
 
 ## Drawbacks
 
