@@ -136,22 +136,27 @@ security rules for the cluster, i.e. a developer CANNOT override these rules
 by creating NetworkPolicies that applies to the same workloads as the
 ClusterNetworkPolicy does.
 
-Unlike the NetworkPolicy resource in which each rule represents a allowed
-traffic, ClusterNetworkPolicy will enable administrators to set `Allow` or
-`Deny` as the action of each rule. ClusterNetworkPolicy rules should be read
-as-is, i.e. there will not be any implicit isolation effects for the Pods
+Unlike the NetworkPolicy resource in which each rule represents an allowed
+traffic, ClusterNetworkPolicy will enable administrators to set `Authorize`,
+`Deny` or `Allow` as the action of each rule. ClusterNetworkPolicy rules should
+be read as-is, i.e. there will not be any implicit isolation effects for the Pods
 selected by the ClusterNetworkPolicy, as opposed to what NetworkPolicy rules imply.
 
-In terms of precedence, the aggregated `Deny` rules (all ClusterNetworkPolicy
-rules with action `Deny` in the cluster combined) should be evaluated before
-aggregated ClusterNetworkPolicy `Allow` rules, followed by aggregated
-NetworkPolicy rules in all Namespaces. As such, the `Deny` rules have the
-highest precedence, which prevents them to be unexpectedly overwritten.
+In terms of precedence, the aggregated `Authorize` rules (all ClusterNetworkPolicy
+rules with action `Authorize` in the cluster combined) should be evaluated before
+aggregated ClusterNetworkPolicy `Deny` rules, followed by aggregated ClusterNetworkPolicy
+`Allow` rules, followed by NetworkPolicy rules in all Namespaces. As such, the
+`Authorize` rules have the highest precedence, which in most cases shall only be
+used to provide exceptions to deny-all rules by authorizing traffic from/to well-known
+entities.
 
 ClusterNetworkPolicy `Deny` rules are useful for administrators to explicitly
 block traffic from malicious clients, or workloads that poses security risks.
-Those traffic restrictions can only be lifted once the`Deny` rules are deleted
-or modified. On the other hand, the `Allow` rules can be used to call out
+Those traffic restrictions can only be lifted once the `Deny` rules are deleted
+or modified by the admin. In clusters where the admin requires total control over
+security postures of all workloads, the `Deny` rules can also be used to deny all
+incoming/outgoing traffic in the cluster, with few exceptions that's listed out
+by `Authorize` rules. On the other hand, the `Allow` rules can be used to call out
 traffic in the cluster that needs to be allowed for certain components to work
 as expected (egress to CoreDNS for example). Those traffic should not be blocked
 when developers apply NetworkPolicy to their Namespaces which isolates the workloads.
@@ -175,17 +180,24 @@ In this case, the traffic allowed will be solely determined by the NetworkPolicy
 ### Precedence model
 
 ```
-
-                 Yes -------> [ Drop ]            Yes -------> [ Allow ]          Yes -------> [ Allow ]
-                  |                                |                               |
-                  |                                |                               |
+                    Yes -------> [ Allow ]             
+                     |                                                             
+                     |                                                           
+         +-----------------------+      
+  ---->  |    traffic matches    |   
+         | a CNP Authorize rule? |                 
+         +-----------------------+             
+                 |                                                                
+                 No                               Yes ------> [ Allow ]           Yes ------> [ Allow ]
+                 |                                 |                               |
+                 V                                 |                               |
          +------------------+             +-------------------+              +------------------+
-  ---->  | traffic matches  | --- No -->  | traffic matches   |  --- No -->  | traffic matches  |
+         | traffic matches  | --- No -->  | traffic matches   |  --- No -->  | traffic matches  |
          | a CNP Deny rule? |             | a CNP Allow rule? |              | a NetworkPolicy  |
          +------------------+             +-------------------+              | rule?            |
-                                                                             +------------------+
-                                                                                   |
-                                                                                   No
+                |                                                            +------------------+
+                |                                                                  |
+               Yes -------> [ Drop ]                                               No
                                                                                    |
                                                                                    V
          +------------------+             +-------------------+              +------------------+
@@ -377,7 +389,6 @@ type ClusterNetworkPolicyIngress/EgressRule struct {
 	Action       RuleAction
 	Ports        []networkingv1.NetworkPolicyPort
 	From/To      []ClusterNetworkPolicyPeer
-	Except       []ClusterNetworkPolicyExcept
 }
 
 type ClusterNetworkPolicyPeer struct {
@@ -401,20 +412,6 @@ const (
 For the ClusterNetworkPolicy ingress/egress rule, the `Action` field dictates whether
 traffic should be allowed or denied from/to the ClusterNetworkPolicyPeer.
 This will be a required field.
-An optional `Except` field can be used by policy writers to add exclusions to the
-`ClusterNetworkPolicyPeer`s selected. This is especially useful in policies that,
-for example, intend to deny ingress from everywhere except a few specific
-Namespaces, such as `kube-system`.
-
-### Except Field Semantics
-ClusterNetworkPolicy does not validate that the Pods selected by the `Except`
-list is subset of `From/To`: the final peers selected are simply, the set of
-Pods selected by `ClusterNetworkPolicyPeer`s, subtracting the set of Pods selected
-by `ClusterNetworkPolicyExcept`s. This implies that if the set of Pods selected
-by `ClusterNetworkPolicyPeer`s does not intersect with the `ClusterNetworkPolicyExcept`
-set, then the `Except` list will be completely disregarded.
-IPBlock is not allowed in `ClusterNetworkPolicyExcept` since IPBlock already
-provides a way to add except CIDRs.
 
 ### DefaultNetworkPolicy API Design
 The following new `DefaultNetworkPolicy` API will be added to the `networking.k8s.io` API group:
@@ -556,7 +553,7 @@ spec:
     - action: Deny
       from:
       - ipBlock:
-          cidr: 192.0.2.0/24  # blacklisted addresses
+          cidr: 192.0.2.0/24  # banned addresses
 ```
 
 #### Story 2: Funnel traffic through ingress/egress gateways
@@ -574,47 +571,33 @@ spec:
       matchLabels:
         type: tenant  # assuming all tenant namespaces will be created with this label
   ingress:
-    - action: Deny
-      from:
-      - ipBlock:
-          cidr: 0.0.0.0/0
-      except:
-      - namespaces:
-          self: true
-      - namespaces:
-          selector:
-            matchLabels:
-              kubernetes.io/metadata.name: dmz  # ingress gateway
-    - action: Allow
+    - action: Authorize
       from:
       - namespaces:
           selector:
             matchLabels:
               kubernetes.io/metadata.name: dmz # ingress gateway
+    - action: Deny
+      from:
+      - ipBlock:
+          cidr: 0.0.0.0/0
   egress:
+    - action: Authorize
+      to:
+      - namespaces:
+          selector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-egress  # egress gateway
     - action: Deny
       to:
       - ipBlock:
           cidr: 0.0.0.0/0
-      except:
-      - namespaces:
-          self: true
-      - namespaces:
-          selector:
-            matchLabels:
-              kubernetes.io/metadata.name: istio-egress  # egress gateway
-    - action: Allow
-      to:
-      - namespaces:
-          selector:
-            matchLabels:
-              kubernetes.io/metadata.name: istio-egress  # egress gateway
 ```
 
 __Note:__ The above policy is very restrictive, i.e. it rejects ingress/egress
 traffic between tenant Namespaces and `kube-system`. For `coredns` etc. to work,
 `kube-system` Namespace or at least the `coredns` pods needs to be added into
-the Deny `except` list.
+the `Authorize` rule list.
 
 #### Story 3: Isolate multiple tenants in a cluster
 
@@ -662,7 +645,7 @@ will not be blocked, if developers create NetworkPolicy which isolates the Pods 
 tenant Namespaces. When there's a ClusterNetworkPolicy like `ingress-egress-gateway`
 present in the cluster, the above policy will be overridden as `Deny` rules have
 higher precedence than `Allow` rules. In that case, the `app=system` Namespaces need
-to be added to the Deny `except` list of `ingress-egress-gateway`.
+to be added to the `Authorize` rule list of `ingress-egress-gateway`.
 
 #### Story 5: Restrict egress to well known destinations
 
@@ -687,7 +670,8 @@ spec:
 ### Test Plan
 
 - Add e2e tests for ClusterNetworkPolicy resource
-  - Ensure `Deny` rules override all allowed traffic in the cluster
+  - Ensure `Authorize`rules are always allowed
+  - Ensure `Deny` rules override all allowed traffic in the cluster, except for `Authorize` traffic.
   - Ensure `Allow` rules override K8s NetworkPolicies
   - Ensure that in stacked ClusterNetworkPolicies/K8s NetworkPolicies, the following precedence is maintained
     aggregated `Deny` rules > aggregated `Allow` rules > K8s NetworkPolicy rules
@@ -700,7 +684,6 @@ spec:
 - e2e test cases must cover various combinations of `podSelector` in `appliedTo` and ingress/egress rules
 - e2e test cases must cover various combinations of `namespaceSelector` in `appliedTo`
 - e2e test cases must cover various combinations of `namespaces` in ingress/egress rules
-  - Ensure that `except` field works as expected
   - Ensure that `self` field works as expected
 - Add unit tests to test the validation logic which shall be introduced for cluster-scoped policy resources
   - Ensure that `self` field cannot be set along with `selector` within `namespaces`
