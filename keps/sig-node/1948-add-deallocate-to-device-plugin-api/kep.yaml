@@ -20,8 +20,8 @@ replaces: []
 stage: alpha
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
-latest-milestone: "v1.22"
+latest-milestone: "v1.23"
 milestone:
-  alpha: "v1.22"
-  beta: "v1.23"
-  stable: "v1.24"
+  alpha: "v1.23"
+  beta: "v1.24"
+  stable: "v1.25"

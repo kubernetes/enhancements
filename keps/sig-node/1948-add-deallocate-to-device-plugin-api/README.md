@@ -100,12 +100,10 @@ Only risk is breaking existing device plugins by introducing non optional change
 
 ## Design Details
 
-- Remove reusable devices from `devicemanage`. Reusable devices are silently reused by kubernetes, and so they can't be reported back to device plugins for cleanup, tracking, etc.
 - Move `PreStartContainer` in `DeviceManager` to be used as a container lifecycle hook. (This change isn't truly required, but useful for compatibility and organization with the next steps).
 - Add `PostStopContainer` and `Deallocate` calls in the DevicePlugin API.
 - Add `PostStopContainer` as a container lifecycle hook.
-- Add `Deallocate` calls in container manager.
-- Delete test cases for reusable devices.
+- Add `Deallocate` calls in container manager, taking care to only do so for devices that are no longer in the reuse list.
 - Add and modify test cases for both calls.
 - Test with existing device plugins to ensure the changes are non-breaking.
 - Test with new device plugins utilizing such changes to ensure the changes are working.
