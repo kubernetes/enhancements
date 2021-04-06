@@ -1014,6 +1014,8 @@ Major milestones might include:
 - when the KEP was retired or superseded
 -->
 
+- 3/10/2021: Implementation started
+
 ## Drawbacks
 
 <!--
@@ -1028,6 +1030,13 @@ not need to be as detailed as the proposal, but should include enough
 information to express the idea and why it was not acceptable.
 -->
 
+When it comes to handling ReadWriteOnce, an alternative that was considered was
+not introducing a `SINGLE_NODE_MULTI_WRITER` access mode in the CSI spec and
+continuing to use `SINGLE_NODE_WRITER`. This solution was ruled out because the
+`SINGLE_NODE_WRITER` access mode has conflicting definitions, and since we're
+introducing a `SINGLE_NODE_SINGLE_WRITER` access mode we should also address
+this issue to reduce confusion for developers.
+
 ## Infrastructure Needed (Optional)
 
 <!--
@@ -1035,3 +1044,5 @@ Use this section if you need things from the project/SIG. Examples include a
 new subproject, repos requested, or GitHub details. Listing these here allows a
 SIG to get the process for these resources started right away.
 -->
+
+None.
