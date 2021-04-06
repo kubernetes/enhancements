@@ -92,10 +92,24 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
+  - [Kubernetes Changes, Access Mode](#kubernetes-changes-access-mode)
+  - [CSI Specification Changes, Volume Capabilities](#csi-specification-changes-volume-capabilities)
   - [Test Plan](#test-plan)
+    - [Validation of PersistentVolumeSpec Object](#validation-of-persistentvolumespec-object)
+    - [Mounting and Mapping with ReadWriteOncePod](#mounting-and-mapping-with-readwriteoncepod)
+    - [Mounting and Mapping with ReadWriteOnce](#mounting-and-mapping-with-readwriteonce)
+    - [Mapping Kubernetes Access Modes to CSI Volume Capability Access Modes](#mapping-kubernetes-access-modes-to-csi-volume-capability-access-modes)
+    - [End to End Tests](#end-to-end-tests)
   - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
+    - [Beta](#beta)
+    - [GA](#ga)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
+    - [API Server Version N / Scheduler Version N / Kubelet Version N-1 or N-2](#api-server-version-n--scheduler-version-n--kubelet-version-n-1-or-n-2)
+    - [API Server Version N / Scheduler Version N-1 / Kubelet Version N-1 or N-2](#api-server-version-n--scheduler-version-n-1--kubelet-version-n-1-or-n-2)
+    - [API Understands ReadWriteOncePod, CSI Sidecars Do Not](#api-understands-readwriteoncepod-csi-sidecars-do-not)
+    - [CSI Controller Service Understands New CSI Access Modes, CSI Node Service Does Not](#csi-controller-service-understands-new-csi-access-modes-csi-node-service-does-not)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
   - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
@@ -292,6 +306,10 @@ the system. The goal here is to make this feel real for users without getting
 bogged down.
 -->
 
+See the [version skew strategy] section below for additional scenarios.
+
+[version skew strategy]: #version-skew-strategy
+
 #### ReadWriteOncePod PVC Used Twice Fails for Second Consumer
 
 This scenario asserts a ReadWriteOncePod can only be bind mounted into a single
@@ -352,6 +370,77 @@ required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
 
+### Kubernetes Changes, Access Mode
+
+In Kubernetes, we should add a new ReadWriteOncePod persistent volume access
+mode to PersistentVolumes and PersistentVolumeClaims. This change will require
+adding a feature gate to the kube-apiserver, kube-controller-manager,
+kube-scheduler, and kubelet. Validation logic will need updating to accept this
+access mode type if the feature gate is enabled.
+
+```golang
+       // can be mounted read/write mode to exactly 1 pod
+       ReadWriteOncePod PersistentVolumeAccessMode = "ReadWriteOncePod"
+```
+
+This access mode will be enforced in two places:
+
+- First is at the time a pod is scheduled. When scheduling a pod, if another pod
+  is found using the same PVC and the PVC uses ReadWriteOncePod, then scheduling
+  will fail and the pod will be considered unresolvable.
+- As an additional precaution this will also be enforced at the time a volume is
+  mounted for filesystem devices, and at the time a volume is mapped for block
+  devices. During the mount operation, kubelet will check the actual state of
+  the world to determine if the volume is already in-use by another pod. If it
+  is, kubelet will fail mounting with an appropriate error message.
+
+### CSI Specification Changes, Volume Capabilities
+
+In the CSI spec we should add two new access modes that explicitly state the
+number of writers on a single node.
+
+```protobuf
+      // Can only be published once as read/write at a single worklad on
+      // a single node, at any given time.
+      SINGLE_NODE_SINGLE_WRITER = 6;
+
+      // Can be published as read/write at multiple workloads on a
+      // single node simultaneously.
+      SINGLE_NODE_MULTI_WRITER = 7;
+```
+
+These access modes are modeled after the existing `MULTI_NODE_SINGLE_WRITER` and
+`MULTI_NODE_MULTI_WRITER` access modes. The reason for making this distinction
+is because the `SINGLE_NODE_WRITER` volume capability has conflicting
+definitions (see the [motivation](#motivation) section for context).
+
+For CSI clients, the new ReadWriteOncePod Kubernetes access mode will map to the
+`SINGLE_NODE_SINGLE_WRITER` volume capability access mode in the CSI spec.
+
+For the ReadWriteOnce access mode, the value it maps to depends on the CSI
+driver. If the CSI driver supports the `SINGLE_NODE_MULTI_WRITER` access mode,
+then ReadWriteOnce will map to that value. If the CSI driver does not support
+the `SINGLE_NODE_MULTI_WRITER` access mode, then ReadWriteOnce will map to
+`SINGLE_NODE_WRITER` to preserve backwards compatibility. In order to determine
+which mapping to use, both the controller and node services should have
+capability bits for this access mode.
+
+```protobuf
+      // Indicates the SP supports the SINGLE_NODE_MULTI_WRITER access
+      // mode.
+      SINGLE_NODE_MULTI_WRITER = 13;
+```
+
+Put more succinctly:
+
+|                  | Driver Supports `SINGLE_NODE_*_WRITER` | Driver Does Not Support `SINGLE_NODE_*_WRITER`    |
+|------------------|----------------------------------------|---------------------------------------------------|
+| ReadWriteOncePod | SINGLE_NODE_SINGLE_WRITER              | Don't use ReadWriteOncePod if driver is incapable |
+| ReadWriteOnce    | SINGLE_NODE_MULTI_WRITER               | SINGLE_NODE_WRITER (Existing behavior)            |
+
+CSI clients that will need updating are kubelet, external-provisioner,
+external-attacher, and external-resizer.
+
 ### Test Plan
 
 <!--
@@ -371,6 +460,56 @@ when drafting this test plan.
 
 [testing-guidelines]: https://git.k8s.io/community/contributors/devel/sig-testing/testing.md
 -->
+
+#### Validation of PersistentVolumeSpec Object
+
+To test the validation logic of the PersistentVolumeSpec, we need to check the
+following cases:
+
+- Validation succeeds when feature gate is enabled and PersistentVolume is created with
+  ReadWriteOncePod access mode
+- Validation fails when feature gate is disabled and PersistentVolume is created with
+  ReadWriteOncePod access mode
+- Validation succeeds when feature gate is enabled and PersistentVolumeClaim is created with
+  ReadWriteOncePod access mode
+- Validation fails when feature gate is disabled and PersistentVolumeClaim is created with
+  ReadWriteOncePod access mode
+
+#### Mounting and Mapping with ReadWriteOncePod
+
+To test mount behavior, we need to check the following cases:
+
+- Mounting a volume with ReadWriteOncePod succeeds if the volume isn't already
+  mounted
+- Mounting a volume with ReadWriteOncePod fails if the volume is already mounted
+
+#### Mounting and Mapping with ReadWriteOnce
+
+Existing unit tests should cover this scenario.
+
+#### Mapping Kubernetes Access Modes to CSI Volume Capability Access Modes
+
+This test involves asserting the behavior in the above table. The volume
+capability access mode for ReadWriteOnce will depend on the capabilities of the
+CSI driver. A test asserting this behavior will be needed in both Kubernetes as
+well as in CSI sidecars.
+
+#### End to End Tests
+
+To test this feature end to end, we will need to check the following cases:
+
+- A ReadWriteOncePod volume will succeed mounting when consumed by a single pod
+  on a node
+- A ReadWriteOncePod volume will fail to mount when consumed by a second pod on
+  the same node
+- A ReadWriteOncePod volume will fail to attach when consumed by a second pod on
+  a different node
+
+For testing the mapping for ReadWriteOnce, we should update the mock CSI driver
+to support the new volume capability access modes and cut a release. The
+existing Kubernetes end to end tests will be updated to use this version which
+will test the mapping behavior because most storage end to end tests rely on the
+ReadWriteOnce access mode.
 
 ### Graduation Criteria
 
@@ -429,6 +568,27 @@ in back-to-back releases.
 [conformance tests]: https://git.k8s.io/community/contributors/devel/sig-architecture/conformance-tests.md
 -->
 
+#### Alpha
+
+- CSI spec supports `SINGLE_NODE_*_WRITER` access modes
+- Kubernetes supports ReadWriteOncePod access mode, has unit test coverage, has
+  updated CSI spec
+- CSI sidecars support `SINGLE_NODE_*_WRITER` access modes and have unit test
+  coverage
+
+#### Beta
+
+- ReadWriteOncePod access mode has end to end test coverage
+- Mock CSI driver supports `SINGLE_NODE_*_WRITER` access modes, relevant end to
+  end tests updated to use this driver
+- Hostpath CSI driver supports `SINGLE_NODE_*_WRITER` access modes, relevant end
+  to end tests updated to use this driver
+
+#### GA
+
+- Kubernetes API and CSI spec changes are stable
+- CSI drivers support `SINGLE_NODE_*_WRITER` access modes
+
 ### Upgrade / Downgrade Strategy
 
 <!--
@@ -442,6 +602,24 @@ enhancement:
 - What changes (in invocations, configurations, API use, etc.) is an existing
   cluster required to make on upgrade, in order to make use of the enhancement?
 -->
+
+In order to upgrade a cluster to use this feature, the user will need to restart
+the kube-apiserver, kube-controller-manager, kube-scheduler, and kubelet with
+the ReadWriteOncePod feature gate enabled.  Additionally they will need to
+update their CSI drivers and sidecars to versions that depend on the new
+Kubernetes API and CSI spec.
+
+When downgrading a cluster to disable this feature, the user will need to
+restart the kube-apiserver with the ReadWriteOncePod feature gate disabled. When
+disabling this feature gate, any existing volumes with the ReadWriteOncePod
+access mode will continue to exist, but can only be deleted. An alternative is
+to allow these volumes to be treated as ReadWriteOnce, however that would
+violate the intent of the user and so it is not recommended.
+
+If a user downgrades their CSI drivers or sidecars, any existing volumes using
+ReadWriteOnce should continue working (switching from `SINGLE_NODE_MULTI_WRITER`
+to `SINGLE_NODE_WRITER`). This behavior is ultimately up to each CSI driver, but
+they should be designed with this backwards compatibility in mind.
 
 ### Version Skew Strategy
 
@@ -457,6 +635,62 @@ enhancement:
 - Will any other components on the node change? For example, changes to CSI,
   CRI or CNI may require updating that component before the kubelet.
 -->
+
+
+#### API Server Version N / Scheduler Version N / Kubelet Version N-1 or N-2
+
+When starting two pods with both using the same PVC with ReadWriteOncePod, one pod
+will successfully start, but the other will not be scheduled due to the
+ReadWriteOncePod access mode conflict.
+
+When starting the same two pods but also setting `pod.spec.nodeName` to the same
+node, kubelet will not enforce the access mode and will proceed with starting
+both pods.
+
+For older kubelets, [ReadWriteOncePod will map to access mode `UNKNOWN`]. How
+this access mode is used will vary across CSI drivers. By definition, the CSI
+spec says ["If ANY of the specified volume capabilities are not supported by the
+SP, the call MUST return the appropriate gRPC error code"], see the
+`volume_capabilities` field in CreateVolumeRequest. However, not all CSI drivers
+strictly adhere to this spec. For example, the EBS CSI driver will [error when
+supplied an unsupported access mode]. Other drivers like the mock CSI driver
+[won't check the supplied access modes], meaning `UNKNOWN` is valid.
+
+[ReadWriteOncePod will map to access mode `UNKNOWN`]: https://github.com/kubernetes/kubernetes/blob/v1.21.0/pkg/volume/csi/csi_client.go#L512
+[error when supplied an unsupported access mode]: https://github.com/kubernetes-sigs/aws-ebs-csi-driver/blob/v1.0.0/pkg/driver/controller.go#L117-L122
+[won't check the supplied access modes]: https://github.com/kubernetes-csi/csi-test/blob/v4.2.0/mock/service/controller.go#L44-L46
+["If ANY of the specified volume capabilities are not supported by the SP, the call MUST return the appropriate gRPC error code"]: https://github.com/container-storage-interface/spec/blob/v1.4.0/spec.md#createvolume
+
+#### API Server Version N / Scheduler Version N-1 / Kubelet Version N-1 or N-2
+
+When creating a pod using ReadWriteOncePod, the scheduler will not enforce this
+access mode during scheduling. It will be possible for two pods using the same
+PVC with this access mode to be assigned the same node.
+
+Same as the above case, with an older kubelet ReadWriteOncePod will map to
+access mode `UNKNOWN`. How this access mode is used will vary across CSI
+drivers.
+
+#### API Understands ReadWriteOncePod, CSI Sidecars Do Not
+
+Both the the [CSI attacher] and the [CSI resizer] will error if they do not
+understand ReadWriteOncePod and this access mode is used on a PV.
+
+The CSI provisioner will [map ReadWriteOncePod to a nil access mode]. How this
+access mode is used will vary across CSI drivers.
+
+[CSI attacher]: https://github.com/kubernetes-csi/external-attacher/blob/v3.2.0/pkg/controller/util.go#L196-L197
+[CSI resizer]: https://github.com/kubernetes-csi/external-resizer/blob/v1.2.0/pkg/resizer/csi_resizer.go#L237-L238
+[map ReadWriteOncePod to a nil access mode]: https://github.com/kubernetes-csi/external-provisioner/blob/v2.2.0/pkg/controller/controller.go#L468-L469
+
+#### CSI Controller Service Understands New CSI Access Modes, CSI Node Service Does Not
+
+If the CSI driver running the controller service understands the new access
+modes, then volumes will be provisioned and attached using these access modes
+(if ReadWriteOncePod or ReadWriteOnce are used). If the CSI driver running the
+node service does not understand these access modes, the behavior will depend on
+the CSI driver and how it treats unknown access modes. The recommendation is to
+upgrade the CSI drivers for the controller and node services together.
 
 ## Production Readiness Review Questionnaire
 
