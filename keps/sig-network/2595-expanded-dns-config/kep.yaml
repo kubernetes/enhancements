@@ -5,7 +5,7 @@ authors:
 owning-sig: sig-network
 participating-sigs:
   - sig-node
-status: provisional
+status: implementable
 creation-date: 2021-04-02
 reviewers:
   - "@thockin"
@@ -15,7 +15,7 @@ reviewers:
 approvers:
   - "@thockin"
 prr-approvers:
-  - TBD
+  - "@johnbelamaric"
 see-also:
 replaces:
 
