@@ -728,15 +728,13 @@ This section must be completed when targeting alpha to a release.
 Pick one of these and delete the rest.
 -->
 
-- [ ] Feature gate (also fill in values in `kep.yaml`)
-  - Feature gate name:
+- [X] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name: ReadWriteOncePod
   - Components depending on the feature gate:
-- [ ] Other
-  - Describe the mechanism:
-  - Will enabling / disabling the feature require downtime of the control
-    plane?
-  - Will enabling / disabling the feature require downtime or reprovisioning
-    of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
+    - kube-apiserver
+    - kube-controller-manager
+    - kube-scheduler
+    - kubelet
 
 ###### Does enabling the feature change any default behavior?
 
@@ -744,6 +742,8 @@ Pick one of these and delete the rest.
 Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
+
+No.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -754,7 +754,15 @@ feature, can it break the existing applications?).
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 
+When the feature gate is disabled, existing ReadWriteOncePod volumes will
+continue working. The only allowed operation will be the deletion of
+ReadWriteOncePod volumes.
+
 ###### What happens if we reenable the feature if it was previously rolled back?
+
+Any existing ReadWriteOncePod and ReadWriteOnce volumes will continue working.
+Upon re-enabling of the feature gate, users can begin creating ReadWriteOncePod
+volumes again.
 
 ###### Are there any tests for feature enablement/disablement?
 
@@ -764,6 +772,10 @@ gates. However, unit tests in each component dealing with managing data, created
 with and without the feature, are necessary. At the very least, think about
 conversion tests if API types are being modified.
 -->
+
+There will be unit test coverage for API validation and mount behavior with the
+feature gate enabled and disabled. There will also be end to end test coverage
+for mount behavior (if the the feature gate is enabled).
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -895,6 +907,8 @@ Focusing mostly on:
     heartbeats, leader election, etc.)
 -->
 
+No.
+
 ###### Will enabling / using this feature result in introducing new API types?
 
 <!--
@@ -904,6 +918,12 @@ Describe them, providing:
   - Supported number of objects per namespace (for namespace-scoped objects)
 -->
 
+No, it will introduce a new "ReadWriteOncePod" value for the
+PersistentVolumeAccessMode type, added to the [internal] and [v1] APIs.
+
+[internal]: https://github.com/kubernetes/kubernetes/blob/v1.21.0/pkg/apis/core/types.go#L503-L514
+[v1]: https://github.com/kubernetes/kubernetes/blob/v1.21.0/staging/src/k8s.io/api/core/v1/types.go#L556-L565
+
 ###### Will enabling / using this feature result in any new calls to the cloud provider?
 
 <!--
@@ -911,6 +931,8 @@ Describe them, providing:
   - Which API(s):
   - Estimated increase:
 -->
+
+No.
 
 ###### Will enabling / using this feature result in increasing size or count of the existing API objects?
 
@@ -920,6 +942,8 @@ Describe them, providing:
   - Estimated increase in size: (e.g., new annotation of size 32B)
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
+
+No.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -932,6 +956,8 @@ Think about adding additional work or introducing new steps in between
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 -->
 
+No.
+
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
 <!--
@@ -943,6 +969,8 @@ This through this both in small and large cases, again with respect to the
 
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 -->
+
+No, the solution will involve using the same ActualStateOfWorld cache in kubelet.
 
 ### Troubleshooting
 
