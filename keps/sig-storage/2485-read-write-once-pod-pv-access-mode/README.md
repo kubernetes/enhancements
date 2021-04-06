@@ -87,8 +87,8 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
   - [User Stories (Optional)](#user-stories-optional)
-    - [Story 1](#story-1)
-    - [Story 2](#story-2)
+    - [ReadWriteOncePod PVC Used Twice Fails for Second Consumer](#readwriteoncepod-pvc-used-twice-fails-for-second-consumer)
+    - [ReadWriteOnce PVC Continues to Succeed with New Kubernetes, Old CSI Driver](#readwriteonce-pvc-continues-to-succeed-with-new-kubernetes-old-csi-driver)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
@@ -292,9 +292,33 @@ the system. The goal here is to make this feel real for users without getting
 bogged down.
 -->
 
-#### Story 1
+#### ReadWriteOncePod PVC Used Twice Fails for Second Consumer
 
-#### Story 2
+This scenario asserts a ReadWriteOncePod can only be bind mounted into a single
+pod on a single node.
+
+- User creates a PVC with ReadWriteOncePod access mode
+- User creates pod 1 using this PVC, scheduled on node 1
+- User creates pod 2 using this PVC, also scheduled on node 1
+- User observes pod 2 fails to start because the referenced PVC is in-use by
+  another pod on the same node
+
+Additionally, for attachment:
+
+- User creates pod 3 using this PVC, scheduled on node 2
+- User observes pod 3 fails to start because the referenced PVC is attached to
+  another node
+
+#### ReadWriteOnce PVC Continues to Succeed with New Kubernetes, Old CSI Driver
+
+This scenario asserts the existing ReadWriteOnce behavior is preserved for old
+CSI drivers. The exact behavior may differ across CSI drivers since not all
+drivers conform to the CSI spec, but it should be consistent with how it behaved
+before.
+
+- User creates a PVC with ReadWriteOnce access mode
+- User creates pod 1 using this PVC, scheduled on node 1
+- User observes pod running
 
 ### Notes/Constraints/Caveats (Optional)
 
