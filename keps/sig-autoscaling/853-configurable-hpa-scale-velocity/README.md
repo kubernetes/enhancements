@@ -202,7 +202,7 @@ behavior:
   scaleDown:
     stabilizationWindowSeconds: 600
     policies:
-    - type: pods
+    - type: Pods
       value: 5
 ```
 
@@ -244,7 +244,7 @@ behavior:
   scaleUp:
     stabilizationWindowSeconds: 300
     policies:
-    - type: pods
+    - type: Pods
       value: 20
 ```
 
@@ -378,7 +378,7 @@ Please note that:
 - from the command-line options for the controller. Check the [Command Line Option Changes][] section.
 - from the hardcoded default value `300`.
 
-The `scaleDown` behavior has a single `percent` policy with a value of `100` because
+The `scaleDown` behavior has a single `Percent` policy with a value of `100` because
 the current scale down behavior is only limited by [Stabilization Window][] which means after
 the stabilization window has passed the target can be scaled down to the minimum specified replicas.
 In order to replicate the default behavior we set `behavior.scaleDown.stabilizationWindowSeconds` to 300
