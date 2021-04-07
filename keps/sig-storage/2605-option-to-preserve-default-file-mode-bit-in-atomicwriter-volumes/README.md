@@ -55,10 +55,10 @@ Some workloads may want to run multiple containers in a single pod, under differ
 have the ability to access a shared\common secret or config volume.
 
 As a platform, Kubernetes should evolve to allow the sharing of AtomicWriter volumes (secret, config etc.)
-accross containers running under different UIDs as a first party scenario.
+across containers running under different UIDs as a first party scenario.
 
 With this feature, we try to provide a backwards compatible way for the users to
-share a AtomicWriter volumes accross containers running under different UIDs.
+share a AtomicWriter volumes across containers running under different UIDs.
 
 We intend to provide a way for the users to opt-in for the new behavior and expect not to break
 any existing applications\configurations.
@@ -153,7 +153,7 @@ chown and chmod to the fsGroup
   - We would have to pass the payload information along with PreserveDefaultMode to the SetVolumeOwnership routine
         and skip chown\chmod if PreserveDefaultMode is set to true for the file.
   - This will be more invasive change, but would allow more granular control at per file level
-  - If users want to preserve Mode for one file in the volume and not for another they can acheive that by creating
+  - If users want to preserve Mode for one file in the volume and not for another they can achieve that by creating
         two different volumes, with PreserveDefaultMode set to true for the volume where they want to preserve default mode for all files
 
 ### Scope Of the Change
