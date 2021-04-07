@@ -27,6 +27,13 @@ feature-gates:
       - kubelet
 disable-supported: true
 
-# The following PRR answers are required at beta release
-#metrics:
-#  - my_feature_metric
+metrics:
+  - ephemeral_volume_controller_create_total
+  - ephemeral_volume_controller_create_failures_total
+  - workqueue_adds_total (name="ephemeral_volume")
+  - workqueue_depth (name="ephemeral_volume")
+  - workqueue_longest_running_processor_seconds (name="ephemeral_volume")
+  - workqueue_queue_duration_seconds (name="ephemeral_volume")
+  - workqueue_retries_total (name="ephemeral_volume")
+  - workqueue_unfinished_work_seconds (name="ephemeral_volume")
+  - workqueue_work_duration_seconds (name="ephemeral_volume")

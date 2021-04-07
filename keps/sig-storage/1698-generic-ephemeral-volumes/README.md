@@ -362,17 +362,20 @@ automatically enable late binding for PVCs which are owned by a pod.
 
 ### Test Plan
 
-- Unit tests will be added for the API change.
-- Unit tests will cover the functionality of the controller, similar
+- Unit tests were added for the API change.
+- Unit tests cover the functionality of the controller, similar
   to
   https://github.com/kubernetes/kubernetes/blob/v1.18.2/pkg/controller/volume/persistentvolume/pv_controller_test.go.
-- Unit tests need to cover the positive case (feature enabled) as
+- Unit tests cover the positive case (feature enabled) as
   well as negative case (feature disabled or feature used incorrectly).
-- A new [storage test
-  suite](https://github.com/kubernetes/kubernetes/blob/2b2cf8df303affd916bbeda8c2184b023f6ee53c/test/e2e/storage/testsuites/base.go#L84-L94)
-  will be added which tests ephemeral volume creation, usage and deletion
-  in combination with all drivers that support dynamic volume
-  provisioning.
+- The ephemeral volume test [was
+  extended](https://github.com/kubernetes/kubernetes/commit/2468a24b7a732fa492027a159ee15b6d31bf0577#diff-20517805986874f69e3254bed93d59996d5a6fd571a70ab8120736ded5aafa24)
+  to also test generic ephemeral volumes in combination with all
+  drivers that support dynamic volume provisioning. It currently runs
+  as part of the
+  [alpha-canary-on-master](https://k8s-testgrid.appspot.com/sig-storage-csi-ci#alpha-canary-on-master)
+  Prow job. After the promotion to beta it will also be part of all
+  `-on-1.21` jobs.
 
 ### Graduation Criteria
 
@@ -489,13 +492,42 @@ is defined for pods without volumes and work in progress for pods with
 volumes.
 
 For kube-controller-manager, a metric that exposes the usual work
-queue metrics data (like queue length) will be made available.
-Furthermore, a count of PVC creation attempts will be added, labeled
-with the result (successful vs. error code). A non-zero count of attempts
-with "already exists" will indicate that there were conflicts with
-manually created PVCs.
+queue metrics data (like queue length) will be made available with
+"ephemeral_volume" as name. Here is one example after processing a
+single pod with a generic ephemeral volume:
 
-TODO: list metrics names here and in kep.yaml
+```
+workqueue_adds_total{name="ephemeral_volume"} 1
+workqueue_depth{name="ephemeral_volume"} 0
+workqueue_longest_running_processor_seconds{name="ephemeral_volume"} 0
+workqueue_queue_duration_seconds_bucket{name="ephemeral_volume",le="1e-08"} 0
+...
+workqueue_queue_duration_seconds_bucket{name="ephemeral_volume",le="9.999999999999999e-05"} 1
+workqueue_queue_duration_seconds_bucket{name="ephemeral_volume",le="0.001"} 1
+...
+workqueue_queue_duration_seconds_bucket{name="ephemeral_volume",le="+Inf"} 1
+workqueue_queue_duration_seconds_sum{name="ephemeral_volume"} 4.8201e-05
+workqueue_queue_duration_seconds_count{name="ephemeral_volume"} 1
+workqueue_retries_total{name="ephemeral_volume"} 0
+workqueue_unfinished_work_seconds{name="ephemeral_volume"} 0
+workqueue_work_duration_seconds_bucket{name="ephemeral_volume",le="1e-08"} 0
+...
+workqueue_work_duration_seconds_bucket{name="ephemeral_volume",le="0.1"} 1
+...
+workqueue_work_duration_seconds_bucket{name="ephemeral_volume",le="+Inf"} 1
+workqueue_work_duration_seconds_sum{name="ephemeral_volume"} 0.035308659
+workqueue_work_duration_seconds_count{name="ephemeral_volume"} 1
+```
+
+Furthermore, counters of PVC creation attempts and failed attempts
+will be added. There should be no failures. If there are any, analyzing
+the logs of kube-controller manager will provide further insights into
+the reason why they occurred.
+
+```
+ephemeral_volume_controller_create_total 1
+ephemeral_volume_controller_create_failures_total 0
+```
 
 * **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
 
