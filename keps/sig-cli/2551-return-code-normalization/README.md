@@ -92,10 +92,10 @@ to this specific problem.
 ## Proposal
 
 * Define the majority of the behaviors that a kubectl request can face:
- * Possible errors on the client side.
- * Possible errors on the server side.
+  * Possible errors on the client side.
+  * Possible errors on the server side.
 * Define a table/list of numeric error codes for each of those cases:
- * If the error code is related to a subcommand (as diff), we might have a return code that is defined as "error on the external subcommand" (like 127) and sum with the exit code from the external command (so a 130 exit code means 127 + exit code of '3' from the external subcommand/plugin)
+  * If the error code is related to a subcommand (as diff), we might have a return code that is defined as "error on the external subcommand" (like 127) and sum with the exit code from the external command (so a 130 exit code means 127 + exit code of '3' from the external subcommand/plugin)
 * Implement a common way so commands can delegate the exit code normalization to a different function
 
 ### User Stories (Optional)
@@ -136,7 +136,15 @@ the flags, it will be necessary a different way to make it aware of which behavi
 
 ## Design Details
 
-The majority of commands already uses [cmdutil.CheckErr](https://github.com/kubernetes/kubernetes/blob/2a26f276a8c8c13b2f45927ee5ece2063950dd1d/staging/src/k8s.io/kubectl/pkg/cmd/util/helpers.go#L114) 
+The majority of commands already are organized as the following:
+* Run Complete to complete missing information with defaults. This runs on the client side
+* Run Validation to check command syntax and missing arguments. This runs on the client side
+* Run the command itself. This might run on the client side, be dry-run, run an external command or call the APIServer.
+
+One thing that should be done is map all the error codes/ints as constants in some file, so they can be automatically
+documented.
+
+All of the steps above uses [cmdutil.CheckErr](https://github.com/kubernetes/kubernetes/blob/2a26f276a8c8c13b2f45927ee5ece2063950dd1d/staging/src/k8s.io/kubectl/pkg/cmd/util/helpers.go#L114) 
 function to delegate the error validation. This function might be slight changed 
 (without changing its signature) to instead of use the default `fatalErrHandler` 
 function, use some more specific function that might verify the error against a matrix of possible errors
@@ -145,9 +153,12 @@ and exit with the right code.
 The function [CheckDiffErr](https://github.com/kubernetes/kubernetes/blob/2a26f276a8c8c13b2f45927ee5ece2063950dd1d/staging/src/k8s.io/kubectl/pkg/cmd/util/helpers.go#L124)
 can be used as an example of how this can be implemented.
 
-Another design solution might be change only the `checkErr` function to receive the error and instead of 
-running the `handleErr` function, do a switch case against the error table matrix and return the error with
-the right exit code.
+Another design solution is to create helper functions for each steps:
+* When running Complete, call cmdutil.CheckReturnErr(err, ErrorCodeComplete) and exits with ErrorCodeComplete
+* When running Validate, call cmdutil.CheckReturnErr(err, ErrorCodeValidate) and exits with ErrorCodeValidate
+* When running the command (Run()), delegate the returning error to a new function (cmdutil.CheckRunErr) that
+can assess if the error contains some APIError (like forbidden, not found) or Client Error and return the proper
+error. Any new Return Code from Run step should be added to errors.go and the case predicted here. 
 
 
 ### Test Plan
