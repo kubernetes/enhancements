@@ -7,7 +7,7 @@
 - [Summary](#summary)
 - [Motivation](#motivation)
 - [Proposal](#proposal)
-  - [Preserve DefaultMode Flag](#preserve-defaultMode-flag)
+  - [Preserve DefaultMode Flag](#preserve-defaultmode-flag)
   - [File Permission](#file-permission)
     - [Proposed heuristics](#proposed-heuristics)
     - [Alternatives considered](#alternatives-considered)
