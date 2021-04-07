@@ -10,9 +10,13 @@
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1](#story-1)
     - [Story 2](#story-2)
+    - [Story 3](#story-3)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
+  - [Changing error checker functions](#changing-error-checker-functions)
+  - [Creating new error parser functions](#creating-new-error-parser-functions)
+  - [Hybrid approach](#hybrid-approach)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
@@ -74,6 +78,7 @@ This brings a complexity about assessing:
 * Was that a problem on the client side? Was that a problem of an external system command?
 
 We have a number of issues across the repo, as [kubernetes #99354](https://github.com/kubernetes/kubernetes/issues/99354),
+[kubectl #847](https://github.com/kubernetes/kubectl/issues/847), 
 [kubernetes #73056](https://github.com/kubernetes/kubernetes/issues/73056), 
 [kubernetes #39767](https://github.com/kubernetes/kubernetes/issues/39767) and 
 [kubernetes #26424](https://github.com/kubernetes/kubernetes/issues/26424) that points
@@ -87,15 +92,15 @@ to this specific problem.
 
 ### Non-Goals
 
-* TBD
+* Define a different return for each internal kubectl step or each APIServer condition/return
 
 ## Proposal
 
 * Define the majority of the behaviors that a kubectl request can face:
   * Possible errors on the client side.
   * Possible errors on the server side.
-* Define a table/list of numeric error codes for each of those cases:
-  * If the error code is related to a subcommand (as diff), we might have a return code that is defined as "error on the external subcommand" (like 127) and sum with the exit code from the external command (so a 130 exit code means 127 + exit code of '3' from the external subcommand/plugin)
+* Define a table/list of numeric error codes for each of the main cases:
+  * If the error code is related to a subcommand (as diff), we might have a return code that is defined as "error on the external subcommand" (like 128) and sum with the exit code from the external command (so a 130 exit code means 128 + exit code of '2' from the external subcommand/plugin)
 * Implement a common way so commands can delegate the exit code normalization to a different function
 
 ### User Stories (Optional)
@@ -116,6 +121,13 @@ fails because of wrong manifests and not because of authorization issues. So Bru
 when it fails because of the lack of the authorization on Kubernetes API Server, and then the warning is sent to the security team
 only when the pipeline breaks because of a specific error code that represents this authorization failure.
 
+#### Story 3
+Roberta works as the product manager of a big CI/CD SaaS provider. They want to have in their marketplace the
+execution of kubernetes commands targeting a cluster, and fastly providing a feedback to the user if the error
+was due to something on the client side (like a missing flag, an invalid yaml file because of...tabs...) or if this
+is due to some invalid operation on the server side.
+
+
 ### Notes/Constraints/Caveats (Optional)
 
 <!--
@@ -128,11 +140,25 @@ This might be a good place to talk about core concepts and how they relate.
 ### Risks and Mitigations
 
 * Users already relying on specific error codes might face migration problems / false positives or negatives 
-because of some specific error code change. This can be dealt with a global flag (like --error-codes) that 
-can trigger the exit code specific behavior when used. This might be defaulted to true on the beta release, 
-deprecated on GA and then removed. The major problem here is that, as the `cmdutil.CheckErr` is not aware of
-the flags, it will be necessary a different way to make it aware of which behavior to take.
+because of some specific error code change. The proposal here is to decide if the old or new return code behavior
+will be used based on a well defined environment variable. The old behavior will be kept and followed by the 
+deprecation path will be defaulted after a number of releases.
 
+```
+<<[UNRESOLVED feature gating ]>>
+Decide if a global flag to control this behavior will be present, or if the Env Variable is enough
+<<[/UNRESOLVED]>>
+```
+
+
+* Some exit code might not be proper related to an error. The reserved exit codes are documented [here](https://tldp.org/LDP/abs/html/exitcodes.html)
+and should be used carefully in a way to not generate conflict with existing scripts. 
+
+```
+<<[UNRESOLVED initial error codes ]>>
+Define the initial error codes, and how to document them
+<<[/UNRESOLVED]>>
+```
 
 ## Design Details
 
@@ -144,6 +170,24 @@ The majority of commands already are organized as the following:
 One thing that should be done is map all the error codes/ints as constants in some file, so they can be automatically
 documented.
 
+There are three design suggestions:
+
+```
+<<[UNRESOLVED select design approach ]>>
+Select the best design approach, move others to design alternatives
+<<[/UNRESOLVED]>>
+```
+
+```
+<<[UNRESOLVED dealing with kubectl exec and run exit ]>>
+kubectl exec and run uses the pod exit code as its own exit code, we should figure out how we 
+should deal with this
+https://github.com/kubernetes/kubernetes/blob/v1.22.0-alpha.0/test/e2e/kubectl/kubectl.go#L496
+https://github.com/kubernetes/kubernetes/blob/v1.22.0-alpha.0/staging/src/k8s.io/kubectl/pkg/cmd/util/helpers.go#L178-L179
+<<[/UNRESOLVED]>>
+```
+
+### Changing error checker functions
 All of the steps above uses [cmdutil.CheckErr](https://github.com/kubernetes/kubernetes/blob/2a26f276a8c8c13b2f45927ee5ece2063950dd1d/staging/src/k8s.io/kubectl/pkg/cmd/util/helpers.go#L114) 
 function to delegate the error validation. This function might be slight changed 
 (without changing its signature) to instead of use the default `fatalErrHandler` 
@@ -153,12 +197,48 @@ and exit with the right code.
 The function [CheckDiffErr](https://github.com/kubernetes/kubernetes/blob/2a26f276a8c8c13b2f45927ee5ece2063950dd1d/staging/src/k8s.io/kubectl/pkg/cmd/util/helpers.go#L124)
 can be used as an example of how this can be implemented.
 
+The pro of using this design approach is that almost no change will be needed in commands, as they already use the 
+CheckErr function.
+
+The con of using this design approach is that the Error Validation functions are pretty hard to change/evolve
+in the manner they are designed, calling another checkErr inner function.
+
+For the rollout of this approach, a new non-exported error checker function needs to be developed and make the 
+call to the old checkErr or the new function according to the value of the Environment Variable described in
+[Risks and Mitigations](#risks-and-mitigations) 
+
+### Creating new error parser functions
+
 Another design solution is to create helper functions for each steps:
-* When running Complete, call cmdutil.CheckReturnErr(err, ErrorCodeComplete) and exits with ErrorCodeComplete
-* When running Validate, call cmdutil.CheckReturnErr(err, ErrorCodeValidate) and exits with ErrorCodeValidate
-* When running the command (Run()), delegate the returning error to a new function (cmdutil.CheckRunErr) that
+* When running Complete, Validate or other client side steps, call cmdutil.CheckClientErr(err) and exits with some well defined client error code, mapped to ErrorCodeClient
+* When running the Run* step, delegate the returning error to a new function (cmdutil.CheckRunErr) that
 can assess if the error contains some APIError (like forbidden, not found) or Client Error and return the proper
 error. Any new Return Code from Run step should be added to errors.go and the case predicted here. 
+
+The pro of this approach is that we can re-develop everything controlling the behavior.
+
+The con of this approach is that it takes much more time and code change to point every command to the 
+right error checking function.
+
+For the rollout of this approach, the new functions will call the old `CheckErr` 
+according to the value of the Environment Variable described in [Risks and Mitigations](#risks-and-mitigations), 
+or will follow the new flow.
+
+### Hybrid approach
+
+There's an Hybrid approach that can be used:
+
+* For the steps that run on the client side, create a new function that does an early exit/return with 
+an well known exit code that will be used for all client side operations (no difference between yaml
+validation, missing flag, etc)
+* For the Run* step, call CheckErr, that might delegate the error validation to a new function or follow
+with the old behavior, depending on the Environment Variable described above
+
+```
+<<[UNRESOLVED external commands ]>>
+For commands that call external commands (diff, plugins, edit) this needs to be discussed.
+<<[/UNRESOLVED]>>
+```
 
 
 ### Test Plan
