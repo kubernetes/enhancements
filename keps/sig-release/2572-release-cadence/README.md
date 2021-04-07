@@ -1,6 +1,7 @@
 # KEP-2572: Defining the Kubernetes Release Cadence
 
 <!-- toc -->
+
 - [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
 - [Motivation](#motivation)
@@ -76,9 +77,9 @@ intends to only have three minor releases/year.
 With the current release cadence we already achieve a deterministic schedule
 for every year. The goal of this KEP is to increase this even further by
 providing a lightweight policy around creating the release schedule. Going
-down to 3 releases provides additional room for triage, development, and
-explicit breaks, which should result in better overall planning and more
-predictability.
+down to 3 releases provides additional room for triage, development, conference
+and release cycle preparations, which should result in better overall planning
+and more predictability.
 
 #### Reduce risk
 
@@ -94,8 +95,9 @@ end users are actually able to apply the upgrades.
 
 #### Collecting data
 
-After this KEP is in place, SIG Release will follow up with a survey to collect
-feedback about the new release cadence.
+After this KEP is in place and the first three minor (`1.x.0`) versions have
+been released, SIG Release will follow up with a survey to collect feedback
+about the new release cadence.
 
 #### Creating a policy
 
@@ -109,11 +111,10 @@ when it comes to knowing when and how Kubernetes releases will be scheduled.
 #### Long-term support (LTS) releases
 
 The LTS Working Group was
-[disbanded](https://github.com/kubernetes/community/pull/5240) on October 20,
-2020.
+[disbanded](https://github.com/kubernetes/community/pull/5240) on October 20, 2020.
 
 The outcome of their conversations was the proposal which established a
-[yearly support period][/keps/sig-release/1498-kubernetes-yearly-support-period/README.md]
+[yearly support period](/keps/sig-release/1498-kubernetes-yearly-support-period/readme.md)
 for minor releases of the project.
 
 While we may revisit the idea in the future, for now we trust the 2+ years of
@@ -129,7 +130,7 @@ them in the provided constraints of SIG Architecture.
 The new release schedule will add room for only a few more weeks of
 development.
 SIGs should focus on using those additional weeks to enhance documentation and
-testing (stability)—not on adding more features. These decisions are not part
+testing (stability) - not on adding more features. These decisions are not part
 of any SIG Release planning and will therefore be considered out of scope.
 
 #### Architecture changes
@@ -199,8 +200,8 @@ when deciding to move to a 3-releases-per-year cadence.
 
 #### End User
 
-Most companies are facing issues upgrading Kubernetes 4 times a year. Providing
-only 3 releases per year will relax this situation.
+Most end user organizations find it difficult to match Kubernetes release
+cadence - only 3 releases per year will relax this situation.
 
 #### Distributors and downstream projects
 
@@ -212,10 +213,11 @@ will gain more room for upgrading their infrastructure.
 
 With a lower release cadence, contributors will gain more time for project
 enhancements, feature development, planning, and testing. It will provide more
-room for maintaining their mental health and prepare for events like KubeCon.
+room for maintaining their mental health, prepare for events like KubeCon or
+work on the downstream integration.
 
 Through this proposal SIG Release's aim is to give contributors more
-flexibility to decide how to invest their time. It is explicitly *not* to push
+flexibility to decide how to invest their time. It is explicitly _not_ to push
 contributors in doing more.
 
 #### SIG Release members
@@ -251,7 +253,7 @@ SIG Release is able to mitigate this risk over multiple releases.
 
 #### Attention to dependencies
 
-Having fewer releases will introduce the risk of missing dependencies—for
+Having fewer releases will introduce the risk of missing dependencies — for
 example, Golang upgrades. This has to be mitigated on a case-by-case basis, in
 the same way as it is being done right now.
 
@@ -273,11 +275,11 @@ is defined as:
 3. A Kubernetes release cycle has a length of of ~15 weeks.
 
 4. Events like KubeCon will be considered as blocked from development or
-   decision-making. SIG Release will also consider the week before and after
-   the event in the same way.
+   decision-making from the SIG release perspective. SIG Release will also
+   consider the week before and after the event in the same way.
 
-5. An explicit break of at least two weeks between each release cycle will be
-   enforced.
+5. An explicit SIG release break of at least two weeks between each cycle will
+   be enforced.
 
    This does not mean that zero development can happen during that time.
    Rather, SIG Release will use this time to do the release retrospective and
@@ -285,24 +287,12 @@ is defined as:
 
 ### Feedback survey
 
-Each minor Kubernetes release will be an experience survey, which will include
-questions around the release cadence.
+SIG Release will draft an experience survey after the first three releases from
+which the new cadence has been applied. This survey which will include questions
+around the release cadence and how it impacted end users.
 
 Survey contents are to be determined, but we welcome content suggestions to
 continually improve the process.
-
-Post-release surveys will close after the `.2` patch release to allow the team
-sufficient time to process and incorporate feedback.
-
-Using Kubernetes v1.19 date to provide an example of the survey timeline:
-
-- 2020-08-26: v1.19.0 released (survey would go out)
-- 2020-09-09: v1.19.1 released
-- 2020-09-16: v1.19.2 released (survey would close)
-
-With this example, the survey would have been open for three weeks.
-With an extended release cycle, post-release surveys would be open for around
-three to six weeks (depending on the patch release schedule).
 
 ## Implementation History
 
