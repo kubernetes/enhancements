@@ -1,7 +1,6 @@
 # KEP-2572: Defining the Kubernetes Release Cadence
 
 <!-- toc -->
-
 - [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
 - [Motivation](#motivation)
@@ -28,6 +27,7 @@
     - [Concentrating risk](#concentrating-risk)
     - [Attention to tests](#attention-to-tests)
     - [Attention to dependencies](#attention-to-dependencies)
+    - [Feature graduation](#feature-graduation)
 - [Design Details](#design-details)
   - [Schedule Policy](#schedule-policy)
   - [Feedback survey](#feedback-survey)
@@ -256,6 +256,15 @@ SIG Release is able to mitigate this risk over multiple releases.
 Having fewer releases will introduce the risk of missing dependencies — for
 example, Golang upgrades. This has to be mitigated on a case-by-case basis, in
 the same way as it is being done right now.
+
+#### Feature graduation
+
+Research discovered that only 5% of Kubernetes features advanced from Alpha to
+GA in the minimum 3 releases. However, the same research showed that reminders
+from the Release Team played a critical role in advancement of more than 50% of
+features. With an increased release cycle, this reminder activity can be
+expected to slow down. As such, advancement will need to be mitigated by making
+sure that SIGs keep track of their feature enhancement in more detail.
 
 ## Design Details
 
