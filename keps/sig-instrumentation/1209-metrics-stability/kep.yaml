@@ -13,7 +13,7 @@ participating-sigs:
   - sig-cluster-lifecycle
   - sig-cloud-provider
   - sig-testing
-status: implementable
+status: implemented
 creation-date: 2019-04-04
 reviewers:
   - "@brancz" # instrumentation

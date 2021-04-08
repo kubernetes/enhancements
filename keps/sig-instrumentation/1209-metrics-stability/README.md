@@ -27,6 +27,7 @@
     - [How does this feature react if the API server and/or etcd is unavailable?](#how-does-this-feature-react-if-the-api-server-andor-etcd-is-unavailable)
     - [What are other known failure modes?](#what-are-other-known-failure-modes)
 - [Implementation History](#implementation-history)
+  - [Current list of stable metrics:](#current-list-of-stable-metrics)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -222,12 +223,18 @@ At worst, this thing can clog the commit pipeline (since it is effectively a con
 
 ## Implementation History
 
-See:
-
 1. [Metrics Stability Framework#Implementation History]
 1. [Metrics Stability Migration#Implementation History]
 1. [Metrics Validation and Verification#Implementation History]
 1. [Metrics Stability to Beta#Implementation History]
+
+Status: currently implemented.
+
+### Current list of stable metrics:
+
+1. [apiserver_request_total](https://github.com/kubernetes/kubernetes/pull/99788)
+2. [apiserver_storage_object_counts](https://github.com/kubernetes/kubernetes/pull/99785)
+3. [apiserver_request_duration_seconds](https://github.com/kubernetes/kubernetes/pull/99925)
 
 [Metrics Stability Framework#Implementation History]: kubernetes-control-plane-metrics-stability.md#implementation-history
 [Metrics Stability Migration#Implementation History]: metrics-stability-migration.md#implementation-history
