@@ -415,8 +415,6 @@ Consider including folks who also work outside the SIG or subproject.
 
 ### Updates
 
-<<[UNRESOLVED]>>
-
 Updates to the following pod fields are exempt from policy checks, meaning that if a pod update
 request only changes these fields it will not be denied even if the pod is in violation of the
 current policy level:
@@ -437,8 +435,6 @@ respectively, and are not checked against policies.
 Update requests to Pods and [PodTemplate resources](#podtemplate-resources) will reevaluate the full object
 against audit & warn policies, independent of which fields are being modified.
 
-<<[/UNRESOLVED]>>
-
 #### Ephemeral Containers
 
 In the initial implementation, ephemeral containers will be subject to the same policy restrictions,
@@ -452,6 +448,18 @@ the baseline policy but can be useful in debugging. We could introduce yet-anoth
 only applies enforcement to ephemeral containers (defaults to the allow policy).
 
 [custom security contexts]: https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/277-ephemeral-containers#configurable-security-policy
+
+One way this could be handled under the current model is:
+1. Exempt a special username (not one that can be authenticated directly) from policy enforcement,
+   e.g. `ops:privileged-debugger`
+2. Grant the special user permission to ONLY operate on the ephemeral containers subresource (it is
+   critical that they cannot create or update pods directly).
+3. Grant (real) users that should have privileged debug capability the ability to impersonate the
+   exempt user.
+
+We could consider ways to streamline the user experience of this, for instance adding a special RBAC
+binding that exempts users when operating on the ephemeral containers subresource (e.g. an
+`escalate-privilege` verb on the ephemeral containers subresource).
 
 <<[/UNRESOLVED]>>
 
@@ -484,6 +492,12 @@ installed by the cluster admin, and AppArmor fails closed when a profile is not 
   user specified and what an earlier mutating admission plugin specified. Disallowing setting
   selinux labels in the pod spec would also prevent another admission plugin from setting
   constrained-but-shared-within-the-same-namespace selinux labels on the pod.
+- (Tim Allclair) It seems like we have 3 options here, none of them good:
+    1. Forbid setting any SELinux options (i.e. use the default) under the baseline (or restricted)
+       profiles. This probably breaks shared volumes.
+    2. Allow all SELinux options, and require a 3rd party controller to enforce custom SELinux
+       policy.
+    3. Add a configuration knob to allowlist (or deny) specific SELinux configurations.
 
 <<[/UNRESOLVED]>>
 
@@ -547,9 +561,22 @@ coverage of unit tests.
 
 The following metrics could be useful:
 
-- Per profile-mode denials. Maybe per-(profile mode, profile version).
-- Per profile-mode (maybe version) allows.
-- Same as above, but for warning & audit modes.
+1. Policy decision - record the policy decision for each mode, for each pod create/update request.
+   Potential label dimensions:
+    - decision (allow, deny, exempt)
+    - policy mode (enforcing, warning, audit)
+    - policy level (privileged, baseline, restricted)
+    - policy version (latest, current, past, future), optionally replace current & past with the
+      specific version
+    - resource type (Pod, Deployment, ReplicaSet, etc.) - for audit & warnings applied to templated
+      pods
+    - request type (create, update)
+2. Exemptions - record whenever a request is exempt (should this only increment when it would
+   otherwise have been denied?)
+    - exempt dimension (user, namespace, runtimeclass)
+3. (maybe) Violated control - record the specific policy check that failed.
+    - Potentially all the dimensions from the policy decision metric
+    - control aspect (host network, privileged, capabilities, etc.)
 
 <<[/UNRESOLVED]>>
 
@@ -907,6 +934,11 @@ of the box though. Requirements include:
 
 1. A standardized identifier for Windows pods
 2. Write the Pod Security Standards for windows
+
+Risk: If a Windows RuntimeClass uses a runtime handler that is also configured on linux nodes, then
+a user can just create a linux pod with the Windows RuntimeClass and manually schedule it to a linux
+node to bypass the policy checks. For example, this would be the case if the cluster was exclusively
+using the dockershim runtime, which requires the hardcoded `docker` runtime handler to be set.
 
 ### Offline Policy Checking
 
