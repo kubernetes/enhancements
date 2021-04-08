@@ -41,6 +41,8 @@
   - [Custom Scheduler Plugins (out of tree)](#custom-scheduler-plugins-out-of-tree)
 - [Test Plans](#test-plans)
 - [Graduation Criteria](#graduation-criteria)
+- [Reference](#reference)
+- [Example](#example)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -704,4 +706,8 @@ End-to-end tests are not needed when integration tests can provided adequate cov
   * No major bug in the implementation of the framework is reported in the past
   three months.
 
-
+## Reference
+  [CNCF conference](https://www.youtube.com/watch?v=0O_06RNEiL4)
+  
+## Example
+  [examples](https://github.com/kubernetes-sigs/scheduler-plugins/tree/master/pkg)
