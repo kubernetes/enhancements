@@ -15,8 +15,8 @@ prr-approvers:
   - "@johnbelamaric"
 editor:
 creation-date: 2018-04-30
-last-updated: 2021-02-08
-status: implementable
+last-updated: 2021-04-08
+status: implemented
 
 # The target maturity stage in the current dev cycle for this KEP.
 stage: stable
