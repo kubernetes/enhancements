@@ -27,6 +27,7 @@
     - [How does this feature react if the API server and/or etcd is unavailable?](#how-does-this-feature-react-if-the-api-server-andor-etcd-is-unavailable)
     - [What are other known failure modes?](#what-are-other-known-failure-modes)
 - [Implementation History](#implementation-history)
+  - [Current list of stable metrics:](#current-list-of-stable-metrics)
 <!-- /toc -->
 
 ## Release Signoff Checklist
