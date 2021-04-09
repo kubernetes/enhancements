@@ -58,7 +58,8 @@
 ## Summary
 
 With this KEP, SIG Release proposes to change the current Kubernetes release
-cadence from 4 down to 3 releases per year.
+cadence from 4 down to 3 releases per year. This would start with the 
+Kubernetes 1.22 release cycle.
 
 ## Motivation
 
@@ -155,8 +156,8 @@ spend more time paying down that debt.
 
 SIG Release currently produces releases at the following cadence:
 
-- patch releases (`x.y.Z`): [monthly][https://git.k8s.io/sig-release/releases/patch-releases.md]
-- minor releases (`x.Y.z`): [every four months][https://git.k8s.io/sig-release/release-engineering/versioning.md]
+- patch releases (`x.y.Z`): [monthly](https://git.k8s.io/sig-release/releases/patch-releases.md)
+- minor releases (`x.Y.z`): [every four months](https://git.k8s.io/sig-release/release-engineering/versioning.md)
 - pre-releases (`x.y.0-(alpha|beta|rc).N`): every 1-3 weeks during active
   development cycles ([example](https://git.k8s.io/sig-release/releases/release-1.21/README.md#timeline))
 
@@ -304,6 +305,10 @@ Survey contents are to be determined, but we welcome content suggestions to
 continually improve the process.
 
 ## Implementation History
+
+### GitHub Discussion
+
+Prior to opening this KEP, a [Github Discussion](https://github.com/kubernetes/sig-release/discussions/1290) was opened to solicit community feedback, which was used as the basis for this KEP. 
 
 ### Leads meeting feedback session
 
