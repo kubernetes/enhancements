@@ -32,6 +32,7 @@
   - [Schedule Policy](#schedule-policy)
   - [Feedback survey](#feedback-survey)
 - [Implementation History](#implementation-history)
+  - [GitHub Discussion](#github-discussion)
   - [Leads meeting feedback session](#leads-meeting-feedback-session)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
