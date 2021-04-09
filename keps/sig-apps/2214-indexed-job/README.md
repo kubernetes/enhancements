@@ -155,12 +155,22 @@ semantics, as opposed to Jobs.
 
 ### Risks and Mitigations
 
-Jobs have a known issue in which more than one Pod can be started even if
-parallelism and completion are set to 1 ([reference]). In the case of indexed
-Jobs, this translates to more than one Pod having the same index.
+- More than one pod per index
+  Jobs have a known issue in which more than one Pod can be started even if
+  parallelism and completion are set to 1 ([reference]). In the case of indexed
+  Jobs, this translates to more than one Pod having the same index.
 
-Just like for existing Job patterns, workloads have to handle duplicates at the
-application level.
+  Just like for existing Job patterns, workloads have to handle duplicates at the
+  application level.
+
+- Jobs with a high number of parallelism produce starvation on small jobs
+  
+  This problem is not unique to Indexed Jobs, but the new API might motivate
+  use cases with higher degree of parallelism.
+  
+  In a Job sync, the controller will be limited to create or delete up to 500
+  Pods. The controller processes the remaining operations in subsequent syncs,
+  which it schedules with no delay.
 
 [reference]: https://kubernetes.io/docs/concepts/workloads/controllers/job/#handling-pod-and-container-failures
 
@@ -212,7 +222,7 @@ type JobStatus struct {
 
   // CompletedIndexes holds the completed indexes when .spec.completionMode =
   // "Indexed" in a text format. The indexes are represented as decimal integers
-  // separated by commas. The numbers are listed in increasing order. Two or
+  // separated by commas. The numbers are listed in increasing order. Three or
   // more consecutive numbers are compressed and represented by the first and
   // last element of the series, separated by a hyphen.
   // For example, if the completed indexes are 1, 3, 4, 5 and 7, they are
@@ -335,15 +345,15 @@ gate enabled and disabled.
 #### Alpha -> Beta Graduation
 
 - Complete features:
-  - Indexed Jobs when tracking completion without lingering Pods
+  - Indexed Jobs when tracking completion with finalizers.
     [kubernetes/enhancements#2307](https://github.com/kubernetes/enhancements/issues/2307).
     
     Keeping the size of .status.completedIndexes is desirable to reduce load
     on watchers. We will evaluate holding of from counting completed Pods that
     have an outlying index. That is, contiguous indexes would be counted first.
     This allows to keep the size of the compressed list small.
-- Gather feedback from end users and operators' developers. Open questions:
-  - Are stable Pod names necessary?
+  - Add metrics.
+- Enable feature gate IndexedJob by default.
 - Tests are in Testgrid and linked in KEP
 
 #### Beta -> GA Graduation
@@ -419,69 +429,72 @@ _This section must be completed when targeting alpha to a release._
 _This section must be completed when targeting beta graduation to a release._
 
 * **How can a rollout fail? Can it impact already running workloads?**
-  Try to be as paranoid as possible - e.g., what if some components will restart
-   mid-rollout?
+
+  If the new kube-controller-manager crashes, it's possible that an older
+  version of it would pick it up. In 1.21, when the IndexedJob feature is
+  disabled (default), the controller would not sync Indexed Jobs, that is: the
+  controller doesn't create or delete Pods and doesn't update Job status.
+  Running Pods are not affected.
 
 * **What specific metrics should inform a rollback?**
 
+  - job_sync_duration_seconds shows significantly more latency for label
+    mode=Indexed Jobs than mode=NonIndexed.
+  - job_sync_total shows more errors for mode=Indexed than mode=NonIndexed.
+  - job_finished_total shows that Jobs with mode=Indexed don't finish.
+
 * **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
-  Describe manual testing that was done and the outcomes.
-  Longer term, we may want to require automated upgrade/rollback tests, but we
-  are missing a bunch of machinery and tooling and can't do that now.
+
+  Manual test:
+  
+  1. Deploy k8s 1.21 cluster
+  1. Upgrade to 1.22
+  1. Create Indexed Job with big number of completions and pods that run for ~10min.
+  1. Downgrade to 1.21. Verify that no new pods are created for the Indexed Job.
+  1. Upgrade to 1.22. Verify that new pods are created for Indexed Job.
 
 * **Is the rollout accompanied by any deprecations and/or removals of features, APIs, 
 fields of API types, flags, etc.?**
-  Even if applying deprecation policies, they may still surprise some users.
+
+  No
 
 ### Monitoring Requirements
 
 _This section must be completed when targeting beta graduation to a release._
 
 * **How can an operator determine if the feature is in use by workloads?**
-  Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
-  checking if there are objects with field X set) may be a last resort. Avoid
-  logs or events for this purpose.
+
+  - job_sync_total has values for the label mode=Indexed.
 
 * **What are the SLIs (Service Level Indicators) an operator can use to determine 
 the health of the service?**
-  - [ ] Metrics
-    - Metric name:
-    - [Optional] Aggregation method:
-    - Components exposing the metric:
-  - [ ] Other (treat as last resort)
-    - Details:
+
+  - [x] Metrics
+    - Metric name (all new):
+      - job_sync_duration_seconds: tracks the latency of a Job sync.
+      - job_sync_total: tracks the number of Job syncs.
+      - job_finished_total: tracks the number of Jobs that finish as
+        result=failed/succeeded
+    - Components exposing the metric: kube-controller-manager
 
 * **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
-  At a high level, this usually will be in the form of "high percentile of SLI
-  per day <= X". It's impossible to provide comprehensive guidance, but at the very
-  high level (needs more precise definitions) those may be things like:
-  - per-day percentage of API calls finishing with 5XX errors <= 1%
-  - 99% percentile over day of absolute value from (job creation time minus expected
-    job creation time) for cron job <= 10%
-  - 99,9% of /health requests per day finish with 200 code
 
+  - per-day percentage of job_sync_total with label result=error <= 1%
+  - 99% percentile over day for job_sync_duration_seconds is <= 15s, assuming
+    a client-side QPS limit of 50 calls per second.
+  
 * **Are there any missing metrics that would be useful to have to improve observability 
 of this feature?**
-  Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
-  implementation difficulties, etc.).
+
+  N/A
 
 ### Dependencies
 
 _This section must be completed when targeting beta graduation to a release._
 
 * **Does this feature depend on any specific services running in the cluster?**
-  Think about both cluster-level services (e.g. metrics-server) as well
-  as node-level agents (e.g. specific version of CRI). Focus on external or
-  optional services that are needed. For example, if this feature depends on
-  a cloud provider API, or upon an external software-defined storage or network
-  control plane.
 
-  For each of these, fill in the following—thinking about running existing user workloads
-  and creating new ones, as well as about cluster-level services (e.g. DNS):
-  - [Dependency name]
-    - Usage description:
-      - Impact of its outage on the feature:
-      - Impact of its degraded performance or high-error rates on the feature:
+  Feature only involves kube-apiserver and kube-controller-manager.
 
 
 ### Scalability
@@ -544,19 +557,22 @@ _This section must be completed when targeting beta graduation to a release._
 
 * **How does this feature react if the API server and/or etcd is unavailable?**
 
+  The job controller can't create or delete pods nor update job status.
+  The metric job_sync_total increases for label result=error.
+  Existing pods continue to run.
+
 * **What are other known failure modes?**
-  For each of them, fill in the following information by copying the below template:
-  - [Failure mode brief description]
-    - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without logging into a master or worker node?
-    - Mitigations: What can be done to stop the bleeding, especially for already
-      running user workloads?
-    - Diagnostics: What are the useful log messages and their required logging
-      levels that could help debug the issue?
-      Not required until feature graduated to beta.
-    - Testing: Are there any tests for failure mode? If not, describe why.
+
+  None.
 
 * **What steps should be taken if SLOs are not being met to determine the problem?**
+
+  1. Check job_sync_total with label result=error. See if it varies for
+     different completion modes.
+  1. Verify if kube-apiserver is healthy. If not, the Job controller can't operate.
+  1. Check job_sync_duration_seconds. If the latency is increased, verify if it
+     varies for different completion modes.
+     Note that latency increases linearly with the Job's parallelism.
 
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
@@ -565,14 +581,13 @@ _This section must be completed when targeting beta graduation to a release._
 
 * 2021-01-08: First version of the KEP in provisional status. Design Details
   completed.
-* 2021-03-03-09: Feature implemented under feature gate disabled by default.
+* 2021-03-09: Feature implemented under feature gate disabled by default.
+* 2021-04-09: KEP updated for graduation to beta.
 
 ## Drawbacks
 
 * Adds more complexity to the Job controller in terms of Pod and Pod status
   management, as it introduces a new mode.
-* Failed Pods are removed before being replaced by new Pods, reducing end-user
-  debugging capabilities. However, failed Pod persists when the whole Job fails.
 
 ## Alternatives
 
