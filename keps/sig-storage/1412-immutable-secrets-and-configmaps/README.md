@@ -334,6 +334,8 @@ v1.18: Launched in `Alpha`
 
 v1.19: Launched to `Beta`
 
+v1.20: Launched to 'GA'
+
 ## Alternatives
 
 ### Define immutability at VolumeSource level

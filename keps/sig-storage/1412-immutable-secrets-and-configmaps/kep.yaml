@@ -7,7 +7,7 @@ participating-sigs:
   - sig-apps
   - sig-node
   - sig-scalability
-status: implementable
+status: implemented
 reviewers:
   - "@yujuhong"
   - "@lavalamp"
