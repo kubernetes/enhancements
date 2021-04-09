@@ -193,6 +193,69 @@ https://github.com/kubernetes/sig-release/issues/1494.
 
 ## Proposal
 
+The following tables detail a notional timeline for the remainder of 2021 and 
+for 2020, leveraging the historical *4-releases-per-year cadence*. Generally, 
+code freeze remains in effect until the last week of the release, so 
+development for the next release generally starts prior to the official release 
+team kickoff. A minimum of 1 week is needed between releases to fully form the 
+release team and to facilitate on-boarding of shadows. The fourth release of 
+the year has traditionally been compressed and limited in scope, overlapping 
+with of end of year holidays and vacation for many contributors. Additionally, 
+KubeCon normally occurs during at least one release, eliminating a week of 
+working time.
+
+*Kubernetes Release Sechedule 2021 (Existing 4 Release Cadence)*
+
+| Year Week Number | Release Number | Release Week | Note |
+| -------- | -------- | -------- | -------- |
+| 2     | 1     | 1 (January 11) | |
+| 14 | 1 | 13 (April 8) | |
+| 16 | 2 | 1 (April 19) | |
+| 27 | 2 | 11 (July 06) | One week break for KubeCon EU - 10 weeks of working | 
+| 29 | 3 | 1 (July 20) | |
+| 40 | 3 | 11 (October 5) | | 
+| 42 | 4 | 1 (October 18) | |
+| 52 | 4 | 10 (December 28) | End of Year Holidays |
+
+*Kubernetes Release Sechedule 2022 (Existing 4 Release Cadence)*
+
+| Year Week Number | Release Number | Release Week | Note |
+| -------- | -------- | -------- | -------- |
+| 1  | 1 | 1 (January 3) | |
+| 12 | 1 | 12 (March 15) | |
+| 14 | 2 | 1 (March 28) | Probable KubeCon EU |
+| 26 | 2 | 12 (June 28) | |
+| 28 | 3 | 1 (July 11) | | 
+| 40 | 3 | 12 (October 4) | | 
+| 42 | 4 | 1 (October 17) | Probably KubeCon NA | 
+| 52 | 4 | 10 (Dec 28) | | 
+
+This KEP proposes a transition to a *3-releases-per-year cadence*, beginning 
+with the Kubernetes 1.22 Release. This would result in a *15* week release 
+cycle, with *2* weeks between release cycles.
+
+*Kubernetes Release Sechedule 2021 (Proposed 3 Release Cadence)*
+
+| Year Week Number | Release Number | Release Week | Note |
+| -------- | -------- | -------- | -------- |
+| 2  | 1 | 1 (January 11) | |
+| 14 | 1 | 13 (April 8) | |
+| 17 | 2 | 1 (April 26) | |
+| 32 | 2 | 15 (August 10) | KubeCon EU - 14 weeks of actual work|
+| 35 | 3 | 1 (August 31) | | 
+| 50 | 3 | 15 (December 14) | Kubecon NA - 14 weeks of actual work | 
+
+*Kubernetes Release Sechedule 2022 (Proposed 3 Release Cadence)*
+
+| Year Week Number | Release Number | Release Week | Note |
+| -------- | -------- | -------- | -------- |
+| 1  | 1 | 1 (January 3) | |
+| 15 | 1 | 15 (April 12) | | 
+| 18 | 2 | 1 (May 2) | Probably KubeCon EU |
+| 33 | 2 | 15 (August 15) | |
+| 36 | 3 | 1 (September 6 | Probably KubeCon NA | 
+| 51 | 3 | 15 (December 20) | 
+
 ### User Stories
 
 Kubernetes releases are made by real people. The technical aspects—for example,
