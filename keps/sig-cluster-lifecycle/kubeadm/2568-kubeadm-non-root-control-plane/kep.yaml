@@ -1,0 +1,46 @@
+title: Run control-plane as non-root in kubeadm.
+kep-number: 2568
+authors:
+  - "@vinayakankugoyal"
+owning-sig: sig-cluster-lifecycle
+participating-sigs:
+  - sig-security
+status: provisional
+creation-date: 2021-03-13
+reviewers:
+  - "@neolit123"
+  - "@fabriziopandini"
+  - "@randomvariable"
+  - "@vincepri"
+  - "@PushkarJ"
+approvers:
+  - "@neolit123"
+  - "@fabriziopandini"
+prr-approvers:
+  - TBD
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: alpha
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.22"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.22"
+  beta: TBD
+  stable: TBD
+
+# The following PRR answers are required at alpha release
+# List the feature gate name and the components for which it must be enabled
+feature-gates:
+  - name: kubeadmRootlessControlPlane
+    components:
+      - kubeadm
+disable-supported: true
+
+# The following PRR answers are required at beta release
+metrics:
+  - TBD
