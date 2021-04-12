@@ -576,6 +576,7 @@ perform a much better allocation, with minimal cost.
 * Add support for device-specific topology constraints beyond NUMA.
 * Support hugepages alignment.
 * User feedback.
+* Scalability design is reviewed
 * *TBD*
 
 # Test Plan
@@ -609,6 +610,9 @@ resources. When the policy is set to single-numa-node for guaranteed pods,
 the test will verify that guaranteed pods resources (CPU and devices) 
 are aligned on the same NUMA node. Initially, the test will request 
 SR-IOV devices, utilizing the SR-IOV device plugin. 
+
+## Scalability and performance
+TBD. (concerm was raised in [kubernetes/kubernetes#100906](https://github.com/kubernetes/kubernetes/issues/100906))
 
 ## Future Tests
 It would be good to add additional devices, such as GPU, in the multi-NUMA
