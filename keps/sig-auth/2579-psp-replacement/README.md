@@ -181,8 +181,8 @@ functionality of both is desired, then both labels must be set.
 
 <<[UNRESOLVED]>>
 
-The mode key names are open to discussion. In particular, I'm not satisfied that `allow` and
-`audit/warn` carry slightly different meanings:
+The mode key names are open to discussion.
+@tallclair is not satisfied that `allow` and `audit/warn` carry slightly different meanings:
 
 - `allow` means "allow pods meeting this profile level & below" (i.e. deny above)
 - `audit` and `warn` mean "audit/warn on pods exceeding this profile level" (i.e. audit/warn above)
