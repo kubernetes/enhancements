@@ -1,0 +1,14 @@
+title: Reconcile kube proxy command line and config map operations
+kep-number: 2157
+authors:
+  - "@alejandrox"
+  - "@jayunit100"
+  - "@rikatz"
+owning-sig: sig-network
+status: provisional
+creation-date: 2020-11-19
+reviewers:
+approvers:
+prr-approvers:
+see-also:
+replaces:
