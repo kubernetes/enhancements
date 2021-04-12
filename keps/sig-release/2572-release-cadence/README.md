@@ -194,13 +194,13 @@ https://github.com/kubernetes/sig-release/issues/1494.
 ## Proposal
 
 The following tables detail a notional timeline for the remainder of 2021 and 
-for 2020, leveraging the historical *4-releases-per-year cadence*. Generally, 
+for 2022, leveraging the historical *4-releases-per-year cadence*. Generally, 
 code freeze remains in effect until the last week of the release, so 
 development for the next release generally starts prior to the official release 
 team kickoff. A minimum of 1 week is needed between releases to fully form the 
 release team and to facilitate on-boarding of shadows. The fourth release of 
 the year has traditionally been compressed and limited in scope, overlapping 
-with of end of year holidays and vacation for many contributors. Additionally, 
+with end of year holidays and vacation for many contributors. Additionally, 
 KubeCon normally occurs during at least one release, eliminating a week of 
 working time.
 
@@ -234,7 +234,7 @@ This KEP proposes a transition to a *3-releases-per-year cadence*, beginning
 with the Kubernetes 1.22 Release. This would result in a *15* week release 
 cycle, with *2* weeks between release cycles.
 
-*Kubernetes Release Sechedule 2021 (Proposed 3 Release Cadence)*
+*Kubernetes Release Schedule 2021 (Proposed 3 Release Cadence)*
 
 | Year Week Number | Release Number | Release Week | Note |
 | -------- | -------- | -------- | -------- |
@@ -327,7 +327,7 @@ the same way as it is being done right now.
 Research discovered that only 5% of Kubernetes features advanced from Alpha to
 GA in the minimum 3 releases. However, the same research showed that reminders
 from the Release Team played a critical role in advancement of more than 50% of
-features. With an increased release cycle, this reminder activity can be
+features. With a longer release cycle, this reminder activity can be
 expected to slow down. As such, advancement will need to be mitigated by making
 sure that SIGs keep track of their feature enhancement in more detail.
 
