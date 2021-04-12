@@ -186,16 +186,22 @@ restrictions:
 
 ### Creating Ephemeral Containers
 
-1.  A client fetches the current list of Ephemeral Containers in a pod using
-    `GetEphemeralContainers` in the generated client. This returns a
-    `v1.EphemeralContainers` to which the client appends a new
-    `EphemeralContainer` and then calls `UpdateEphemeralContainers`.
-1.  The apiserver validates and performs the pod update, copying the new 
-    ephemeral container into `Pod.Spec.EphemeralContainers`.
+Ephemeral containers are described in the `EphemeralContainers` field of
+`Pod.Spec`. This must be updated using the `/ephemeralcontainers` subresource,
+similarly to updating `Pod.Status` via `/status`.
+
+The end-to-end process for creating an ephemeral container is:
+
+1.  Fetch a `Pod` object from the `/pods` resource.
+1.  Modify the object and write it back to the pod's `/ephemeralcontainers`
+    subresource, for example using `UpdateEphemeralContainers` in the generated
+    client. (Patching is also supported on `/ephemeralcontainers`.)
+1.  The apiserver validates the update.
     1.  Pod validation fails if container spec contains fields disallowed for
         Ephemeral Containers or the same name as a container in the spec or
         `EphemeralContainers`.
-    1.  API resource versioning resolves update races.
+    1.  Registered admission controllers receive an `AdmissionReview` request
+        containing the entire `Pod`.
 1.  The kubelet's pod watcher notices the update and triggers a `syncPod()`.
     During the sync, the kubelet calls `kuberuntime.StartEphemeralContainer()`
     for any new Ephemeral Container.
@@ -303,7 +309,7 @@ ephemeral container creation in a cluster.
 
 Ephemeral Containers will stop when their command exits, such as exiting a
 shell, and they will not be restarted.  Unlike `kubectl exec`, processes in
-Ephemeral Containers will not receive an EOF if their connection is
+Ephemeral Containers will not receive an EOF if their connections are
 interrupted, so shells won't automatically exit on disconnect. Without the
 ability to remove an Ephemeral Container via the API, the only way to exit the
 container is to send it an OS signal.
@@ -629,10 +635,7 @@ via this subresource. `EphemeralContainerStatuses` is updated in the same manner
 as everything else in `Pod.Status` via `/status`.
 
 `Pod.Spec.EphemeralContainers` may be updated via `/ephemeralcontainers` as per
-normal (using PUT, PATCH, etc) except that existing Ephemeral Containers may not
-be modified or deleted. Deleting Ephemeral Containers is not supported in the
-initial implementation to reduce complexity. It could be added in the future,
-but see *Killing Ephemeral Containers* below for additional constraints.
+normal (using PUT, PATCH, etc).
 
 The subresources `attach`, `exec`, `log`, and `portforward` are available for
 Ephemeral Containers and will be forwarded by the apiserver. This means `kubectl
@@ -1039,6 +1042,7 @@ _This section must be completed when targeting beta graduation to a release._
 - *2019-04-24*: Added notes on Windows feature compatibility
 - *2020-09-29*: Ported KEP to directory-based template.
 - *2021-01-07*: Updated KEP for beta release in 1.21 and completed PRR section.
+- *2021-04-12*: Switched `/ephemeralcontainers` API to use `Pod`.
 
 ## Drawbacks
 
