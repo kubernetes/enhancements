@@ -130,13 +130,14 @@ checklist items _must_ be updated for the enhancement to be released.
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
 - [ ] (R) KEP approvers have approved the KEP status as `implementable`
 - [ ] (R) Design details are appropriately documented
 - [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
-- [ ] (R) Graduation criteria is in place
-- [ ] (R) Production readiness review completed
-- [ ] (R) Production readiness review approved
+- [x] (R) Graduation criteria is in place
+- [x] (R) Production readiness review completed
+- [x] (R) Production readiness review approved
+  - The PRR was N/A as there are no in-tree changes proposed in this KEP. Pleases see these slack discussion threads. [Thread 1](https://kubernetes.slack.com/archives/CPNHUMN74/p1618272532012700) [Thread 2](https://kubernetes.slack.com/archives/CPNHUMN74/p1619205764018600)
 - [ ] "Implementation History" section is up-to-date for milestone
 - [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
@@ -728,7 +729,7 @@ enhancement:
 
 The flow below is assuming that the feature-flag  to run control-plane as non-root is enabled.
 
-`kubeadm` checks the cluster-config to see if the control-plane is already running as non-root. If so it re-writes the contents of the file and makes sure that the `UID`s and `GID`s previously assigned have permissions to read/write appropriately. The control-plane stati-pod manifests don't explicitly need to be updated for running them as non-root in this case.
+`kubeadm` checks the cluster-config to see if the control-plane is already running as non-root. If so it re-writes the contents of the files/credentials and makes sure that the `UID`s and `GID`s previously assigned have permissions to read/write appropriately. The control-plane static-pod manifests don't explicitly need to be updated for running them as non-root in this case.
 
 If the control-plane was not running as non-root before then `kubeadm` creates new `UID`s and `GID`s based on the approach mentioned in the [Assigning UID and GID](#assigning-uid-and-gid) section and updates the cluster-config. When files/credentials are re-written the owner of these files are set appropriately. The control-plane static-pod manifests explicitly need to be updated to run as non-root in this case.
 
@@ -750,6 +751,8 @@ enhancement:
 `kubeadm` version X supports deploying kubernetes control-plane version X and X-1. Once the feature gate is enabled in kubeadm to run the control-plane as non root we will run both X and X-1 versions of control-plane as non-root. Nothing in the design of this feature is tied to the version of the control-plane.
 
 ## Production Readiness Review Questionnaire
+
+> :warning:  **The PRR was N/A as there are no in-tree changes proposed in this KEP.** Pleases see these slack discussion threads. [Thread 1](https://kubernetes.slack.com/archives/CPNHUMN74/p1618272532012700) [Thread 2](https://kubernetes.slack.com/archives/CPNHUMN74/p1619205764018600)
 
 <!--
 
@@ -784,7 +787,7 @@ This section must be completed when targeting alpha to a release.
 <!--
 Pick one of these and delete the rest.
 -->
-Note: the feature gate here is for `kubeadm` and not k8s components.
+Note: the feature gate here is for `kubeadm` and not the control-plane components.
 
 - [X] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: kubeadmRootlessControlPlane
@@ -827,6 +830,8 @@ gates. However, unit tests in each component dealing with managing data, created
 with and without the feature, are necessary. At the very least, think about
 conversion tests if API types are being modified.
 -->
+
+Yes we plan to add e2e tests to test the kubeadm behavior with feature gate enabled using kinder.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -994,7 +999,9 @@ Think about adding additional work or introducing new steps in between
 
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 -->
-Yes, in kubeadm control-plane bootstrap process when we create files and directories we would have to change the permissions and the owners of these files. So there will be a minute increase in bootstrap time for control-plane.
+Yes, in kubeadm control-plane bootstrap process we will create users/groups for the various control-plane components. This operation will add a minute delay to bootstrap. Also failing to do so would cause the bootstrap to fail.
+
+When we create files and directories we would have to change the permissions and the owners of these files. So there will be a minute increase in bootstrap time for control-plane.
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
 <!--
@@ -1050,6 +1057,8 @@ Major milestones might include:
 -->
 Major milestones:
 - Initial draft of KEP created - 2021-03-13
+- Production readiness review - 2021-04-12
+- Production readiness review approved - 2021-04-29
 
 ## Drawbacks
 
