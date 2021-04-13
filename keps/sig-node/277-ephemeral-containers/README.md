@@ -193,9 +193,11 @@ similarly to updating `Pod.Status` via `/status`.
 The end-to-end process for creating an ephemeral container is:
 
 1.  Fetch a `Pod` object from the `/pods` resource.
-1.  Modify the object and write it back to the pod's `/ephemeralcontainers`
-    subresource, for example using `UpdateEphemeralContainers` in the generated
-    client. (Patching is also supported on `/ephemeralcontainers`.)
+1.  Modify `spec.ephemeralContainers` and write it back to the Pod's
+    `/ephemeralcontainers` subresource, for example using `UpdateEphemeralContainers`
+    in the generated client. (Patching is also supported on `/ephemeralcontainers`.)
+1.  The apiserver discards all changes except those to `spec.ephemeralContainers`.
+    That is, only `spec.ephemeralContainers` may be changed via `/ephemeralcontainers`.
 1.  The apiserver validates the update.
     1.  Pod validation fails if container spec contains fields disallowed for
         Ephemeral Containers or the same name as a container in the spec or
@@ -635,7 +637,8 @@ via this subresource. `EphemeralContainerStatuses` is updated in the same manner
 as everything else in `Pod.Status` via `/status`.
 
 `Pod.Spec.EphemeralContainers` may be updated via `/ephemeralcontainers` as per
-normal (using PUT, PATCH, etc).
+normal (using PUT, PATCH, etc) except that existing Ephemeral Containers may
+not be modified.
 
 The subresources `attach`, `exec`, `log`, and `portforward` are available for
 Ephemeral Containers and will be forwarded by the apiserver. This means `kubectl
