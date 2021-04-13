@@ -35,16 +35,16 @@
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
-- [ ] (R) Graduation criteria is in place
-- [ ] (R) Production readiness review completed
-- [ ] Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [X] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [X] (R) KEP approvers have approved the KEP status as `implementable`
+- [X] (R) Design details are appropriately documented
+- [X] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
+- [X] (R) Graduation criteria is in place
+- [X] (R) Production readiness review completed
+- [X] Production readiness review approved
+- [X] "Implementation History" section is up-to-date for milestone
+- [X] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [X] Supporting documentation e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 
 [kubernetes.io]: https://kubernetes.io/
@@ -193,7 +193,7 @@ It should continue to work as expected.
 
 
 * **Are there any tests for feature enablement/disablement?**
-We will add unit tests. 
+Unit tests.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -207,7 +207,7 @@ since users need to explicitly set the annotation.
 None.
 
 * **Were upgrade and rollback tested? Was upgrade->downgrade->upgrade path tested?**
-We will do manual testing.
+Manually tested, worked as expected.
 
 * **Is the rollout accompanied by any deprecations and/or removals of features,
   APIs, fields of API types, flags, etc.?**
@@ -275,6 +275,7 @@ _This section must be completed when targeting beta graduation to a release._
 
 * **How does this feature react if the API server and/or etcd is unavailable?**
   - The pod annotation can't be set. The normal pod deletion behavior will be used for non-annotated pods in a Deployment.
+  
 * **What are other known failure modes?**
   - None.
 
@@ -285,6 +286,7 @@ _This section must be completed when targeting beta graduation to a release._
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 
 ## Implementation History
+- 2021-04-11: Promoted the feature to Beta
 - 2021-01-13: Initial KEP submitted as provisional
 - 2021-01-15: KEP promoted to implementable
 
