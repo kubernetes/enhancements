@@ -1,8 +1,10 @@
-title: Kubeadm config file graduation (v1beta2)
+title: Kubeadm config file graduation
 kep-number: 970
 authors:
   - "@fabriziopandini"
   - "@luxas"
+  - "@rosti"
+  - "@neolit123"
 owning-sig: sig-cluster-lifecycle
 reviewers:
   - "@chuckha"
@@ -13,9 +15,7 @@ approvers:
   - "@timothysc"
   - "@fabriziopandini"
   - "@neolit123"
-editor: "@fabriziopandini"
+editor: "@neolit123"
 creation-date: 2018-08-01
-last-updated: 2019-04-29
+last-updated: 2021-04-15
 status: implementable
-see-also:
-  - KEP 0008
