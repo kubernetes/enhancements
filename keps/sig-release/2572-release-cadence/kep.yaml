@@ -9,18 +9,19 @@ participating-sigs:
 status: implementable
 creation-date: 2021-01-21
 reviewers:
-  - "@BenTheElder"
-  - "@derekwaynecarr"
-  - "@dims"
   - "@ehashman"
   - "@hasheddan"
   - "@jeremyrickard"
-  - "@johnbelamaric"
-  - "@spiffxp"
-  - "@stevekuznetsov"
+
 approvers:
-  - "@LappleApple"
-  - "@saschagrunert"
+  - "@BenTheElder" #sig-testing
+  - "@derekwaynecarr" #sig-architecture
+  - "@dims" #sig-architecture
+  - "@johnbelamaric" #sig-architecture
+  - "@LappleApple" #sig-release
+  - "@saschagrunert" #sig-release
+  - "@spiffxp" #sig-testing
+  - "@stevekuznetsov" #sig-testing
 
 # The target maturity stage in the current dev cycle for this KEP.
 stage: alpha
