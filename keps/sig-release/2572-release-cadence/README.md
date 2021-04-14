@@ -28,6 +28,7 @@
     - [Attention to tests](#attention-to-tests)
     - [Attention to dependencies](#attention-to-dependencies)
     - [Feature graduation](#feature-graduation)
+    - [Unprepared Kubernetes Users](#unprepared-kubernetes-users)
 - [Design Details](#design-details)
   - [Schedule Policy](#schedule-policy)
   - [Feedback survey](#feedback-survey)
@@ -60,7 +61,7 @@
 
 With this KEP, SIG Release proposes to change the current Kubernetes release
 cadence from 4 down to 3 releases per year. This would start with the 
-Kubernetes 1.22 release cycle.
+Kubernetes 1.23 release cycle.
 
 ## Motivation
 
@@ -103,9 +104,8 @@ about the new release cadence.
 
 #### Creating a policy
 
-The outcome of this KEP is a policy for creating release schedules for
-Kubernetes.
-This allows the release team, as well as users, to follow a set of simple rules
+The outcome of this KEP is written, lightweight policy for creating release schedules for
+Kubernetes. This allows the release team, as well as users, to follow a set of simple rules
 when it comes to knowing when and how Kubernetes releases will be scheduled.
 
 ### Non-Goals
@@ -193,6 +193,12 @@ https://github.com/kubernetes/sig-release/issues/1494.
 
 ## Proposal
 
+This KEP proposes a transition to a *3-releases-per-year cadence*, beginning 
+with the Kubernetes 1.23 Release. This would result in a *15* week release 
+cycle, with *2* weeks between release cycles. During the Kubernetes 1.22 release, 
+a focused communication effort will be undertaken to communicate to contributors and 
+the end user community.
+
 The following tables detail a notional timeline for the remainder of 2021 and 
 for 2022, leveraging the historical *4-releases-per-year cadence*. Generally, 
 code freeze remains in effect until the last week of the release, so 
@@ -201,7 +207,7 @@ team kickoff. A minimum of 1 week is needed between releases to fully form the
 release team and to facilitate on-boarding of shadows. The fourth release of 
 the year has traditionally been compressed and limited in scope, overlapping 
 with end of year holidays and vacation for many contributors. Additionally, 
-KubeCon normally occurs during at least one release, eliminating a week of 
+KubeCon normally occurs during at least one release, eliminating at *least* one week of 
 working time.
 
 *Kubernetes Release Sechedule 2021 (Existing 4 Release Cadence)*
@@ -211,7 +217,7 @@ working time.
 | 2     | 1     | 1 (January 11) | |
 | 14 | 1 | 13 (April 8) | |
 | 16 | 2 | 1 (April 19) | |
-| 27 | 2 | 11 (July 06) | One week break for KubeCon EU - 10 weeks of working | 
+| 27 | 2 | 11 (July 06) | One week break for KubeCon EU | 
 | 29 | 3 | 1 (July 20) | |
 | 40 | 3 | 11 (October 5) | | 
 | 42 | 4 | 1 (October 18) | |
@@ -223,16 +229,15 @@ working time.
 | -------- | -------- | -------- | -------- |
 | 1  | 1 | 1 (January 3) | |
 | 12 | 1 | 12 (March 15) | |
-| 14 | 2 | 1 (March 28) | Probable KubeCon EU |
+| 14 | 2 | 1 (March 28) | Probable KubeCon EU Break|
 | 26 | 2 | 12 (June 28) | |
 | 28 | 3 | 1 (July 11) | | 
 | 40 | 3 | 12 (October 4) | | 
-| 42 | 4 | 1 (October 17) | Probably KubeCon NA | 
+| 42 | 4 | 1 (October 17) | Probably KubeCon NA Break | 
 | 52 | 4 | 10 (Dec 28) | | 
 
-This KEP proposes a transition to a *3-releases-per-year cadence*, beginning 
-with the Kubernetes 1.22 Release. This would result in a *15* week release 
-cycle, with *2* weeks between release cycles.
+With the proposed change in cadence, the notional schedules for the remainder of
+2021 and 2022 are shown below:
 
 *Kubernetes Release Schedule 2021 (Proposed 3 Release Cadence)*
 
@@ -241,9 +246,9 @@ cycle, with *2* weeks between release cycles.
 | 2  | 1 | 1 (January 11) | |
 | 14 | 1 | 13 (April 8) | |
 | 17 | 2 | 1 (April 26) | |
-| 32 | 2 | 15 (August 10) | KubeCon EU - 14 weeks of actual work|
-| 35 | 3 | 1 (August 31) | | 
-| 50 | 3 | 15 (December 14) | Kubecon NA - 14 weeks of actual work | 
+| 31 | 2 | 14 (August 02) | KubeCon EU Break |
+| 34 | 3 | 1 (August 23) | | 
+| 50 | 3 | 16 (December 14) | Kubecon Break | 
 
 *Kubernetes Release Sechedule 2022 (Proposed 3 Release Cadence)*
 
@@ -255,6 +260,15 @@ cycle, with *2* weeks between release cycles.
 | 33 | 2 | 15 (August 15) | |
 | 36 | 3 | 1 (September 6 | Probably KubeCon NA | 
 | 51 | 3 | 15 (December 20) | 
+
+
+This KEP will be in the `alpha` stage for the Kubernetes 1.22 Release. During this 
+time, we will focus on communication of the cadence change. The KEP will promote to
+the `beta` stage for the Kubernetes 1.23 Release, which will be the final release of 
+2021 and being our official *3-releases-per-year* cadence. After the 1.23, 1.24, and 
+1.25 Releases, will will collect feedback and incorporate that feedback into the 
+lightweight framework surrounding release schedule development and promote this 
+KEP to `stable` for the 1.26 Release. 
 
 ### User Stories
 
@@ -331,6 +345,26 @@ features. With a longer release cycle, this reminder activity can be
 expected to slow down. As such, advancement will need to be mitigated by making
 sure that SIGs keep track of their feature enhancement in more detail.
 
+#### Unprepared Kubernetes Users
+
+Kubernetes effectively moved to a *3 release per year* cadence in 2020, starting 
+with the Kubernetes 1.19 release. At the start of the Kubernetes 1.21 release, 
+there was communication that a permanent cadence change was under consideration, 
+however this KEP was not submitted and approved within the Kubernetes 1.21 release 
+cycle, so there is a risk that downstream consumers may be unaware that such a 
+change was under consideration and could be caught by surprise by a cadence change. 
+Some downstream projects, such as Helm have already begun 
+[planning](https://github.com/helm/community/blob/main/hips/hip-0002.md#minor-releases) 
+for this change.
+
+To mitigate this risk, SIG-Release will perform the following actions:
+
+* Once this KEP has merged, an email will be sent to the [k/dev](https://groups.google.com/g/kubernetes-dev) list
+* A community meeting occurring during the 1.22 Release Cycle will be used to communicate the change
+* Early in the Kubernetes 1.22 Release cycle, a blog will be written and published to 
+https://kubernetes.io/blog/ that fully explains this change.
+* A tweet (linking to the blog) will sent from the k8scontributors twitter account
+
 ## Design Details
 
 ### Schedule Policy
@@ -349,10 +383,12 @@ is defined as:
 3. A Kubernetes release cycle has a length of of ~15 weeks.
 
 4. Events like KubeCon will be considered as blocked from development or
-   decision-making from the SIG release perspective. SIG Release will also
-   consider the week before and after the event in the same way.
+   decision-making from the SIG release perspective and the release team will 
+   not hold meetings during this week. The release team must also
+   consider the week before and after the event when setting deadlines to 
+   minimize impact on contributors.
 
-5. An explicit SIG release break of at least two weeks between each cycle will
+5. An explicit SIG Release break of at least two weeks between each cycle will
    be enforced.
 
    This does not mean that zero development can happen during that time.
@@ -361,9 +397,10 @@ is defined as:
 
 ### Feedback survey
 
-SIG Release will draft an experience survey after the first three releases from
-which the new cadence has been applied. This survey which will include questions
-around the release cadence and how it impacted end users.
+SIG Release will draft an experience survey and distribute it to [k/dev](https://groups.google.com/g/kubernetes-dev)) and include it in the release notes of the first *three* releases from
+which the new cadence has been applied. This survey will include questions
+around the release cadence and how it impacted end users and can be used to make a final
+decision regarding release cadence (i.e. promoting this KEP to stable).
 
 Survey contents are to be determined, but we welcome content suggestions to
 continually improve the process.
