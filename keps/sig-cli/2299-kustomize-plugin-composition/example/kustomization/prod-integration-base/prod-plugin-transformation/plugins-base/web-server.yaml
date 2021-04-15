@@ -1,0 +1,14 @@
+apiVersion: team.example.com/v1alpha1
+kind: WebServer
+metadata:
+  name: web-server
+  annotations:
+    config.kubernetes.io/function: |
+      container:
+        image: docker.example.com/kustomize-modules/web-server:v0.1.0
+spec:
+  appName: nginx-example
+  image: nginx:1.18
+  replicas: 2
+  expose:
+    http: yes

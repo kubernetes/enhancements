@@ -1,0 +1,9 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# The ordering here becomes super important once they're transformers, and in practice it is preserved. But it's not obvious at the point where they become transformers.
+# It isn't possible to mix base resources that should remain resources with ones that need to become transformers. This makes sense in the Kustomization paradigm, but forces splitting apart the pieces of a given logical layer.
+resources:
+- web-server.yaml
+- logger.yaml
+- lb.yaml

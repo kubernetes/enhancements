@@ -1,0 +1,62 @@
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Composition
+
+modules:
+- apiVersion: kustomize.config.k8s.io/v1alpha1
+  kind: StaticResources
+  metadata:
+    name: local-resources
+  spec:
+    paths:
+    - resources
+- apiVersion: team.example.com/v1alpha1
+  kind: WebServer
+  metadata:
+    name: web-server
+  provider:
+    container:
+      image: docker.example.com/kustomize-modules/web-server:v0.1.0
+  spec:
+    appName: nginx-example
+    image: nginx:1.18
+    replicas: 2
+    expose:
+      http: yes
+- apiVersion: team.example.com/v1alpha1
+  kind: Logger
+  metadata:
+    name: logging
+  provider:
+    container:
+      image: docker.example.com/kustomize-modules/logger:v0.1.0
+  spec:
+    selector:
+      matchLabels:
+        app: nginx-example
+    source:
+      paths:
+        - /var/log/nginx/error.log
+        - /var/log/nginx/access.log
+- apiVersion: team.example.com/v1alpha1
+  kind: HTTPLoadBalancer
+  metadata:
+    name: lb
+  provider:
+    container:
+      image: docker.example.com/kustomize-modules/lb:v0.1.1
+  spec:
+    selector:
+      matchLabels:
+        app: nginx-example
+    loadBalancer:
+      domain: nginx-example.myco-dev.io
+    expose:
+      serviceName: nginx
+      port: 80
+- apiVersion: kustomize.config.k8s.io/v1alpha1
+  kind: Kustomize
+  metadata:
+    name: my-kustomize
+  spec:
+    commonLabels:
+      foo: bar
