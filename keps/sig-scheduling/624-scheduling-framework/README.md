@@ -604,7 +604,7 @@ configuration.
 
 *Note: Moving `KubeSchedulerConfiguration` to `v1` is outside the scope of this
 design, but see also
-https://github.com/kubernetes/enhancements/blob/master/keps/sig-cluster-lifecycle/wgs/0032-create-a-k8s-io-component-repo.md
+https://github.com/kubernetes/enhancements/blob/master/keps/sig-cluster-lifecycle/wgs/783-component-base/README.md
 and https://github.com/kubernetes/community/pull/3008*
 
 ### Interactions with Cluster Autoscaler
