@@ -61,8 +61,10 @@
 ## Summary
 
 With this KEP, SIG Release proposes to change the current Kubernetes release
-cadence from 4 down to 3 releases per year. This would start with the 
-Kubernetes 1.23 release cycle.
+cadence from 4 down to 3 releases per year. This cadence started in ad-hoc manner
+in 2020, and will be formalized with the KEP. This will be reflected in the 
+release calendar for the Kubernetes 1.22 and 1.23 releases, which will each be 
+*15* weeks in duration.
 
 ## Motivation
 
@@ -195,7 +197,7 @@ https://github.com/kubernetes/sig-release/issues/1494.
 ## Proposal
 
 This KEP proposes a transition to a *3-releases-per-year cadence*, beginning 
-with the Kubernetes 1.23 Release. This would result in a *15* week release 
+with the Kubernetes 1.22 Release. This would result in a *15* week release 
 cycle, with *2* weeks between release cycles. During the Kubernetes 1.22 release, 
 a focused communication effort will be undertaken to communicate to contributors and 
 the end user community.
@@ -247,9 +249,9 @@ With the proposed change in cadence, the notional schedules for the remainder of
 | 2  | 1 | 1 (January 11) | |
 | 14 | 1 | 13 (April 8) | |
 | 17 | 2 | 1 (April 26) | |
-| 31 | 2 | 14 (August 02) | KubeCon EU Break |
-| 34 | 3 | 1 (August 23) | | 
-| 50 | 3 | 16 (December 14) | Kubecon Break | 
+| 32 | 2 | 15 (August 02) | KubeCon EU Break (May 4-7) |
+| 35 | 3 | 1 (August 30) | | 
+| 50 | 3 | 15 (December 14) | Kubecon Break (Oct 12-15) | 
 
 *Kubernetes Release Sechedule 2022 (Proposed 3 Release Cadence)*
 
@@ -263,13 +265,13 @@ With the proposed change in cadence, the notional schedules for the remainder of
 | 51 | 3 | 15 (December 20) | 
 
 
-This KEP will be in the `alpha` stage for the Kubernetes 1.22 Release. During this 
-time, we will focus on communication of the cadence change. The KEP will promote to
-the `beta` stage for the Kubernetes 1.23 Release, which will be the final release of 
-2021 and being our official *3-releases-per-year* cadence. After the 1.23, 1.24, and 
-1.25 Releases, will will collect feedback and incorporate that feedback into the 
-lightweight framework surrounding release schedule development and promote this 
-KEP to `stable` for the 1.26 Release. 
+This KEP will be in the `alpha` stage for the Kubernetes 1.22 Release. During 
+this time, SIG-Release will focus on communication of the cadence change through
+all available mechanisms. The KEP will promote to the `beta` stage for the 
+Kubernetes 1.23 Release, which will be the final release of 2021. After 
+the 1.23, 1.24, and  1.25 Releases, will will collect feedback and incorporate 
+that feedback into the lightweight framework surrounding release schedule 
+development and promote this KEP to `stable` for the 1.26 Release. 
 
 ### User Stories
 
