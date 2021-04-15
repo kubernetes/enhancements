@@ -1,7 +1,12 @@
 title: Defining the Kubernetes Release Cadence
 kep-number: 2572
 authors:
+  - "@kikisdeliveryservice"
+  - "@jeremyrickard"
+  - "@jberkus"
   - "@justaugustus"
+  - "@LappleApple"
+  - "@saschagrunert"
 owning-sig: sig-release
 participating-sigs:
   - sig-architecture
@@ -11,8 +16,6 @@ creation-date: 2021-01-21
 reviewers:
   - "@ehashman"
   - "@hasheddan"
-  - "@jeremyrickard"
-
 approvers:
   - "@BenTheElder" #sig-testing
   - "@derekwaynecarr" #sig-architecture

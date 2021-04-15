@@ -61,10 +61,10 @@
 ## Summary
 
 With this KEP, SIG Release proposes to change the current Kubernetes release
-cadence from 4 down to 3 releases per year. This cadence started in ad-hoc manner
-in 2020, and will be formalized with the KEP. This will be reflected in the 
-release calendar for the Kubernetes 1.22 and 1.23 releases, which will each be 
-*15* weeks in duration.
+cadence from 4 down to 3 releases per year. This cadence started in ad hoc manner
+in 2020 due to the ongoing COVID-19 pandemic. This KEP serves to formalize this release 
+cadence, which will be shape the development of the release calendars for the 
+Kubernetes 1.22 and 1.23 releases, each of which will be *15* weeks in duration.
 
 ## Motivation
 
@@ -74,7 +74,9 @@ releases 4 times per year, are ongoing in the community.
 The extended release schedule for 1.19 resulted in only three minor Kubernetes
 releases for 2020. As a result, SIG Release received several questions across a
 variety of platforms and communication channels about whether the project
-intends to only have three minor releases/year.
+intends to only have three minor releases/year, as a lot of folks, both 
+contributors and end users, need to be able plan ahead and expect a predictable 
+release cadence.
 
 ### Goals
 
@@ -196,14 +198,14 @@ https://github.com/kubernetes/sig-release/issues/1494.
 
 ## Proposal
 
-This KEP proposes a transition to a *3-releases-per-year cadence*, beginning 
+This KEP proposes a transition to a *3-releases-per-calendar-year cadence*, beginning 
 with the Kubernetes 1.22 Release. This would result in a *15* week release 
 cycle, with *2* weeks between release cycles. During the Kubernetes 1.22 release, 
 a focused communication effort will be undertaken to communicate to contributors and 
 the end user community.
 
 The following tables detail a notional timeline for the remainder of 2021 and 
-for 2022, leveraging the historical *4-releases-per-year cadence*. Generally, 
+for 2022, leveraging the historical *4-releases-per-calendar-year cadence*. Generally, 
 code freeze remains in effect until the last week of the release, so 
 development for the next release generally starts prior to the official release 
 team kickoff. A minimum of 1 week is needed between releases to fully form the 
@@ -273,12 +275,20 @@ the 1.23, 1.24, and  1.25 Releases, will will collect feedback and incorporate
 that feedback into the lightweight framework surrounding release schedule 
 development and promote this KEP to `stable` for the 1.26 Release. 
 
+| Release Number | Stage |
+|----------------|-------|
+| 1.22           | Alpha |
+| 1.23           | Beta  |
+| 1.24           | Beta  |
+| 1.25           | Beta  |
+| 1.26           | Stable |
+
 ### User Stories
 
 Kubernetes releases are made by real people. The technical aspects—for example,
 the release automation—reflects only a tiny part of the complete cycle. This
 means we will mainly focus on the human aspects and their corresponding roles
-when deciding to move to a 3-releases-per-year cadence.
+when deciding to move to a 3-releases-per-calendar-year cadence.
 
 #### End User
 
