@@ -1,5 +1,5 @@
 title: KEP Template
-kep-number: NNNN
+kep-number: 2580
 authors:
   - "@arjunrn"
 owning-sig: sig-instrumentation
