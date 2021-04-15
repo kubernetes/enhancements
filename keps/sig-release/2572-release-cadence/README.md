@@ -29,6 +29,7 @@
     - [Attention to dependencies](#attention-to-dependencies)
     - [Feature graduation](#feature-graduation)
     - [Unprepared Kubernetes Users](#unprepared-kubernetes-users)
+    - [Increased enhancements lifecycle](#increased-enhancements-lifecycle)
 - [Design Details](#design-details)
   - [Schedule Policy](#schedule-policy)
   - [Feedback survey](#feedback-survey)
@@ -364,6 +365,17 @@ To mitigate this risk, SIG-Release will perform the following actions:
 * Early in the Kubernetes 1.22 Release cycle, a blog will be written and published to 
 https://kubernetes.io/blog/ that fully explains this change.
 * A tweet (linking to the blog) will sent from the k8scontributors twitter account
+
+#### Increased enhancements lifecycle
+
+With a 4 releases/year cadence, an enhancement could graduate from alpha to beta
+to GA in 9 months, with truly trivial features sometimes skipping beta. On the
+proposed 3 releases/year cadence, the best possible case is 12 months for a
+3-phase features and 8 months if skipping beta if the graduation rules will not
+change. These drawn out timelines may cause more features to skip beta or take
+more risks in advancing phases, even when not confident. The mitigation here is
+human vigilance and engineering discipline to hold the line and say "no" when
+appropriate.
 
 ## Design Details
 
