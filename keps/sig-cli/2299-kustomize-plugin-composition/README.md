@@ -11,6 +11,7 @@
     - [Story 1](#story-1)
     - [Story 2](#story-2)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
+    - [Integration with Kustomization](#integration-with-kustomization)
   - [Risks and Mitigations](#risks-and-mitigations)
     - [Security of running containers locally](#security-of-running-containers-locally)
 - [Design Details](#design-details)
