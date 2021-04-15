@@ -71,16 +71,8 @@ operations applied to Kustomize bases. This API is suboptimal for workflows that
 are primarily composed of Kustomize plugins.  Challenges with the current approach include:
 
 1. Packaging, distribution and installation of plugins is immature and non-declarative.
-2. Orchestration, ordering and dependencies is overly complex due to its integration
-with the orchestration of built-in operations. For example, `Kustomization` requires
-generators and transformers to be specified and executed separately, whereas a given
-plugin may do both (or neither, as in a validator plugin).
-3. Plugin execution happens during the evaluation of the `Kustomization` where it is
-specified. Overlays cannot modify plugin values before they are evaluated,
-which seriously hinders plugin usability for developing composable abstractions.
-4. The `Kustomization.yaml` format does not elegantly allow plugins to be
-specified inline. Instead, they are defined in separate files, which obfuscates
-the holistic user intent in workflows primarily driven by plugins.
+2. `Kustomization` separates plugins into three categories: generators, transformers and validators. With abstraction-based plugins, which mechanism the plugin uses is opaque to the end user and may even change based on input. This leads all abstraction-based plugins to be placed under `transformers`. Because these are executed after built-in transformers, an additional `Kustomization` layer is typically required to use built-ins fruitfully in abstraction-based workflows.
+3. Although it is possible to transform plugin configuration as resources before execution, it is not possible to have a sensible distribution of concerns in configuration sets composed this way. Notably, plugin configuration must be finalized (e.g. tailored to an environment) before it can be combined with built-in configuration at all, and built-in transformers cannot be specified in bases, or else they will not apply to the results of the plugins.
 
 ### Goals
 
@@ -88,14 +80,8 @@ Develop an API (`kind`) for Kustomize that is focused on plugin-based workflows.
 
 A successful implementation of this API should have the following characteristics:
 
-1. The orchestration model used to evaluate the API must be simplified in a way
-that is optimized for plugins. Notably, it must be possible for lists of plugins to be
-recursively composed, and for overlay instances of the API to modify the
-configuration of plugins they import.
-1. The API format must be optimized for plugins. This means most or all of its
-top-level fields should configure plugin orchestration in some way.
-Support for existing Kustomize operations should be compiled in, but
-expressed in the same way as extensions plugin operations.
+1. The orchestration model used to evaluate the API must be simplified in a way that is optimized for plugins. Notably, it must be easy to recursively compose and modify lists of plugins in a way that yields an overall configuration structure that reflects the user's intent.
+1. Plugin orchestration must be central to the new API format. Support for existing Kustomize operations should be compiled in, but expressed in the same way as extensions plugin operations.
 1. The machinery for the new API must enable seamless invocation of sets of approved
 plugins, and must not require out-of-band imperative installation steps.
 1. The new API must cleanly integrate with the existing Kustomize tool (i.e. `kustomize build`).
@@ -111,7 +97,7 @@ plugins, and must not require out-of-band imperative installation steps.
 
 ## Proposal
 
-Introduce `Composition` as a new API `kind` recognized by `kustomize build`.
+Introduce `Composition` as a new API `kind` recognized by `kustomize build`. A `Composition` must be defined in a `composition.yaml` file, and inclusion of both `composition.yaml` and `kustomization.yaml` in the target directory of a build will be considered an error.
 
 The Composition API enables users to:
 
@@ -196,10 +182,13 @@ modules:
 
 ### Notes/Constraints/Caveats (Optional)
 
-Although direct integration with the existing `Kustomization` API could be done,
-it is outside the scope of this proposal and carries risks that must be considered.
-For example, given that `Kustomization` is integrated with existing workflows such as `kubectl apply -k`,
-the introduction of automatic plugin installation and execution may be undesirable.
+#### Integration with Kustomization
+
+For the alpha phase, the integration between Composition and Kustomization should be unidirectional: Composition can process a Kustomization via a built-in transformer, but Composition cannot be loaded from a Kustomization.
+
+For the beta phase, we should consider enabling Kustomizations to reference Compositions in the `resources` and various plugin fields. When used in `resources` or `generators`, the Composition would be executed with empty input and the results would be added to the resource list. When used in `validators` or `transformers`, the resource list would be provided as input to the first module in the consolidated Composition, and in the case of `transformers`, the output would replace the resource list.
+
+Regardless of Kustomization integration, all extensions plugin execution from either Kind should remain gated behind `--enable-alpha-plugins`. This means Composition will essentially be useless in `kubectl -k` for the time being, since plugins cannot be enabled in that context. If the evolution of plugins leads to enablement in kubectl becoming acceptable in the future, plugins defined in both Kinds should be enabled the same way.
 
 ### Risks and Mitigations
 
@@ -207,8 +196,7 @@ the introduction of automatic plugin installation and execution may be undesirab
 
 Composition has similar capabilities to Kustomization.
 
-The key difference for security is that it executes plugins automatically (no alpha flag
-required) and does not require them to be installed in advance / out of band. This difference is
+The key difference for security is that it does not require plugins to be installed in advance / out of band. This difference is
 key to the user experience, and it does decrease user awareness of exactly what is
 being executed. As such, it must be made clear to users that Compositions are not inherently
 secure and that they should only build Compositions they trust.
@@ -444,8 +432,7 @@ modules:
 Other possibilities include:
 
 - A validation module.
-- A Helm module that would enable existing Helm charts to be used as a starting point
-for interoperable customization. It would do the equivalent of running `helm template`.
+- Exposing individual Kustomization built-in transformers in Composition as well. The built-in HelmChartInflationGenerator would be particularly well-suited for this, since it provides module-like encapsulated functionality.
 
 ### Function invocation
 
@@ -569,9 +556,7 @@ a completely different evaluation model. Namely, a topological sort is applied t
 entire tree of modules prior to evaluation, as opposed to Kustomization's current
 model of executing generators, transformers and plugins in each level in isolation.
 Combining these two mental models within a single API would be difficult and likely
-lead to considerable confusion among users. Adding these features to `Kustomization`
-would also preclude excluding them from workflows like `kubectl apply -k` unless they
-permanently require extra enablement flags.
+lead to considerable confusion among users.
 * Implement this as an independent tool. This is certainly a possibility, but
 this proposal is effectively an improved way of exposing existing Kustomize features.
 As such, it would be great if the Kustomize community could leverage it directly.

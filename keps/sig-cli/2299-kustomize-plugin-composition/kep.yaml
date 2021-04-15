@@ -15,4 +15,4 @@ approvers:
   - "@monopole"
   - "@pwittrock"
 stage: alpha
-latest-milestone: "v1.21"
+latest-milestone: "v1.22"
