@@ -26,6 +26,10 @@
       - [From one to many](#from-one-to-many)
       - [From packets to requests](#from-packets-to-requests)
       - [Not knowing service duration up front](#not-knowing-service-duration-up-front)
+  - [Support for LIST requests](#support-for-list-requests)
+    - [Width of the request](#width-of-the-request)
+    - [Determining the width](#determining-the-width)
+    - [Dispatching the request](#dispatching-the-request)
   - [Example Configuration](#example-configuration)
   - [Reaction to Configuration Changes](#reaction-to-configuration-changes)
   - [Default Behavior](#default-behavior)
@@ -627,7 +631,6 @@ The Fair Queuing for Server Requests algorithm below is used to pick a
 non-empty queue at that priority level.  Then the request at the head
 of that queue is dispatched.
 
-
 #### Fair Queuing for Server Requests
 
 This is based on fair queuing but is modified to deal with serving
@@ -1066,8 +1069,191 @@ the remaining requests in that queue start getting faster service.  In
 both cases, the service delivery in the virtual world has reacted
 properly to the true service duration.
 
-### Example Configuration
+### Support for LIST requests
 
+Up until now, we were assuming that even though the requests aren't
+necessarily equally expensive, their actual cost is actually greatly
+reflected by the time it took to process them.  But while being processed
+each of them is consuming the equal amount of resources.
+
+It works well for requests that are touching only a single object.
+However, given the fact that in practise the concurrency limits has to be
+set much higher than number of available cores to achieve reasonable system
+throughput, this no longer works that well for LIST requests that are orders
+of magnitude more expensive.  There are two aspects of that:
+- for CPU the hand-wavy way of rationalizing it is that he ratio of time
+  the request is processed by the processor to the actual time of processing
+  the request starts to visibly differ (e.g. due to I/O waiting time -
+  there is communication with etcd in between for example).
+- for memory the reasoning is more obvious as we simply keep all elements
+  that we process in memory
+
+As a result, kube-apiserver (and etcd) may be able to easily keep with N
+simple in-flight requests (e.g. create or get a single Pod), but will explode
+trying to process N requests listing all the pods in the system at the same
+time.
+
+#### Width of the request
+
+In order to address this problem, we are introducing the concept of `width`
+of the request.  Instead of saying that every request is consuming a single
+unit of concurrency, we allow for a request to consume `<width>` units of
+concurrency while being processed.
+
+This basically means, that the cost of processing a given request is no
+longer reflected by its `<processing latency>` and instead its cost is now
+equal to `<width> x <processing latency>`.  The rationale behind it is that
+the request is now consuming `<width>` concurrency units for the duration
+of its processing.
+
+While in theory the `width` can be an arbitrary non-integer number, for
+practical reasons, we will assume it actually is an integer.  Given that
+our estimations here are very rough anyway that seems a reasonable
+simplification that makes dispatching the budget a bit simpler.
+
+#### Determining the width
+
+While one can imagine arbitrarily sophisticated algorithms for it (including
+exposing defining the width of requests via FlowSchema API), we want to start
+with something relatively simple to first get operational experience with it
+before investing into sophisticated algorithms or exposing a knob to users.
+
+In order to determine the function that will be approximating the `width` of
+a request, we should first estimate how expensive a particular request is.
+And we need to think about both dimensions that we're trying to protect from
+overloading (CPU and RAM) and how many concurrency units a request can actually
+consume.
+
+Let's start with CPU.  The total cost of processing a LIST request should be
+proportional to the number of processed objects.  However, given that in
+practice processing a single request isn't parallelized (and the fact that
+we generally scale the number of total concurrency units linearly with amount
+of available resources), a single request should consume no more than A
+concurrency units.  Fortunately that all compiles together because the
+`processing latency` of the LIST request is actually proportional to the
+number of processed objects, so the cost of the request (defined above as
+`<width> x <processing latency>` really is proportaional to the number of
+processed objects as expected.
+
+For RAM the situation is actually different.  In order to process a LIST
+request we actually store all objects that we process in memory. Given that
+memory is uncompressable resource, we effectively need to reserve all that
+memory for the whole time of processing that request.  That suggests that
+the `width` for the request from the RAM perspective should be proportional
+to the number of processed items.
+
+So what we get is that:
+```
+  width_cpu(N) = min(A, B * N)
+  width_ram(N) = D * N
+```
+where N is the number of items a given LIST request is processing.
+
+The question is how to combine them to a single number.  While the main goal
+is to stay on the safe side and protect from the overload, we also want to
+maxiumize the utilization of the available concurrency units.
+Fortunately, when we normalize CPU and RAM to percentage of available capacity,
+it appears that almost all requests are much more cpu-intensive.  Assuming
+4GB:1CPU ratio and 10kB average object and the fact that processing larger
+number of objects can utilize exactly 1 core, that means that we need to
+process 400.000 objects to make the memory cost higher.
+This means, that we can afford the potential minor efficiency that extremely
+large requests would cause and just approximate it by protecting every resource
+independently, which translates to the following function:
+```
+  width(n) = max(min(A, B * N), D * N)
+```
+We're going to better tune the function based on experiments, but based on the
+above back-of-envelope calculations showing that memory should almost never be
+a limiting factor we will apprximate the width simply with:
+```
+width_approx(n) = min(A, ceil(N / E)), where E = 1 / B
+```
+Fortunately that logic will be well separated and purely in-memory so we
+can decide to arbitrarily adjust it in future releases.
+
+Given that the estimation is well separated piece of logic, we can decide
+to replace with much more sophisticated logic later (e.g. whether it is
+served from etcd or from cache, whether it is namespaced or not, etc.).
+
+One more important aspect to resolve is what happens if a given priority
+level doesn't have enough concurrency units assigned to it. To be on the
+safe side we should probably implement borrowing across priority levels.
+However, given we don't want to block introducing the `width` concept on
+design and implementation of borrowing, until this is done we have two
+main options:
+- cap the `width` at the concurrency units assigned to the priority level
+- reject requests for which we won't be able to allocate enough concurrency
+  units
+
+To avoid breaking some users, we will proceed with the first option (when
+computing the cap we should also report requests that we believe are too
+wide for a given priority level - it would allow operators to adjust configs).
+That said, to accommodate for the inaccuracy here we will introduce a concept
+of `additional latency` for a request.  This basically means that after the
+request finishes in a real world, we still don't mark it as finished in
+the virtual world for `additional latency`.
+Adjusting virtual time of a queue to do that is trivial.  The other thing
+to tweak is to ensure that the concurrency units will not get available
+for other requests for that time (because currently all actions are
+triggerred by starting or finishing some request).  We will maintain that
+possibility by wrapping the handler into another one that will be sleeping
+for `additional latence` after the request is processed.
+
+Note that given the estimation for duration of processing the requests is
+automatically corrected (both up and down), there is no need to change that
+in the initial version.
+
+#### Dispatching the request
+
+The hardest part of adding support for LIST requests is dispatching the
+requests.  Now in order to start processing a request, it has to accumulate
+`<width>` units of concurrency.
+
+The important requirement to recast now is fairness.  As soon a single
+request can consume more units of concurrency, the fairness is
+no longer about the number of requests from a given queue, but rather
+about number of consumed concurrency units.  This justifes the above
+definition of adjusting the cost of the request to now be equal to
+`<width> x <processing latency>` (instead of just `<processing latency>`).
+
+At the same time, we want to maximally utilize the available capacity.
+In other words, we want to minimize the time when some concurrency unit
+is not used, but there are requests at a given PL that could use it.
+
+In order to achieve the above goals, we are introducing the following
+modification to the current dispatching algorithm:
+- as soon as we choose the request to dispatch (i.e. the queue from which
+  the first request should be dispatched), we start accumulating concurrency
+  units until we accumulate `<width>` and only then dispatch the request.
+  In other words, if the chosen request has width `<width>` and there
+  are less then `<width>` available seats, we don't dispatch any other request
+  (at a given priority level) until we will have `<width>` available seats
+  at which point we dispatch this request.
+  Such approach (as opposed to dispatching individual concurrency units
+  independently one-by-one) allows us to not waste too many seats and avoid
+  deadlocks if we would be dispatching seats to multiple LIST requests
+  without having enough of them for a given priority level.
+- however, to ensure fairness (especially over longer period of times)
+  we need to change how virtual time is advanced too.  We will change the
+  semantics of virtual time tracked by the queues to correspond to work,
+  instead of just wall time.  That means when we estimate a request's
+  virtual duration, we will use `estimated width x estimated latency` instead
+  of just estimated latecy.  And when a request finishes, we will update
+  the virtual time for it with `seats x actual latency` (note that seats
+  will always equal the estimated width, since we have no way to figure out
+  if a request used less concurrency than we granted it).
+
+However, now the queueing mechanism also requires adjustment.  So far,
+when putting a request into the queue, we were choosing the shortest queue.
+It worked, because it well proxied the total cost of processing all requests
+in that queue.
+After the above changes, the size of the queue is no longer correctly
+approximating the cost of processing the queued items.  Given that the
+total cost of processing a request is now `<width> x <processing latency>`,
+the weight of the queue should now reflect that.
+
+### Example Configuration
 
 For requests from admins and requests in service of other, potentially
 system, requests.
