@@ -2,6 +2,8 @@
 
 <<[UNRESOLVED]>>
 
+**BLOCKING**
+
 The name of this feature / policy is open to discussion. Options considered:
 - Pod Isolation Policy
 - Pod Policy Check
@@ -97,7 +99,8 @@ PSP that lead to the decision to deprecate it, rather than promote it to GA, inc
      - The feature can never be enabled by default
      - Need 100% coverage before rolling out (and no dry-run / audit mode)
      - Leads to insufficient test coverage
-3. Inconsistent & unbounded API - Partly an aesthetic issue, but highlights lack of flexibility
+3. Inconsistent & unbounded API - Can lead to confusion and errors, and highlights lack of
+   flexibility
      - API has grown organically and has many internal inconsistencies (usability challenge)
      - Unclear how to decide what should be part of PSP (e.g. fine-grained volume restrictions)
      - Doesn’t compose well
@@ -150,6 +153,8 @@ version that they were introduced in.
 
 <<[UNRESOLVED]>>
 
+_BLOCKING: depends on the name we choose._
+
 The annotation prefix is a placeholder, and will depend on the final feature name. The proposed
 prefix structure is `<featurename>.kubernetes.io`.
 
@@ -180,6 +185,8 @@ functionality of both is desired, then both labels must be set.
 [templated pods]: #podtemplate-resources
 
 <<[UNRESOLVED]>>
+
+**BLOCKING**
 
 The mode key names are open to discussion.
 @tallclair is not satisfied that `allow` and `audit/warn` carry slightly different meanings:
@@ -240,23 +247,6 @@ other than latest are applied:
   a version is allowed but ignored).
 - Specifying a version more recent than the current Kubernetes version is allowed (for rollback &
   version skew reasons), but is treated as `latest`.
-
-<<[UNRESOLVED]>>
-
-Under the webhook implementation, policy versions are tied to the webhook version, not the cluster
-version. This means that it is recommended for the webhook to updated prior to updating the cluster.
-
-~~if the webhook version is newer than the cluster version, how
-should policy versions past the cluster version be handled? Should `latest` mean the latest version
-supported by the webhook, or the policy version matching the cluster version? _Leaning towards
-supporting all policy versions supported by the webhook, even if they are newer than the cluster
-version._~~
-
-Note that policies are not guaranteed to be backwards compatible, and a newer restricted policy
-could require setting a field that doesn't exist in the current API version.
-
-<<[/UNRESOLVED]>>
-
 - Under an older version X of a policy:
     - Allow pods that were allowed under policy version X running on cluster version X
     - Allow pods that set new fields that the policy level has no opinion about (e.g. pod overhead
@@ -264,6 +254,10 @@ could require setting a field that doesn't exist in the current API version.
     - Allow pods that set new fields that the policy level has an opinion about if the value is the
       default (explicit or implicit) value OR the value is allowed by newer versions of the policy
       level (e.g. a less privileged value of a new field)
+- Under the webhook implementation, policy versions are tied to the webhook version, not the cluster
+  version. This means that it is recommended for the webhook to updated prior to updating the
+  cluster. Note that policies are not guaranteed to be backwards compatible, and a newer restricted
+  policy could require setting a field that doesn't exist in the current API version.
 
 For example, the restricted policy level now requires `allowPrivilegeEscalation=false`, but this
 field wasn't added until Kubernetes v1.8, and all containers prior to v1.8 implicitly ran as
@@ -272,6 +266,14 @@ field wasn't added until Kubernetes v1.8, and all containers prior to v1.8 impli
 - `null` (allowed during the v1.7 release)
 - `true` (equal in privilege to a v1.7 pod that didn't set the field)
 - `false` (strictly less privileged than other allowed values)
+
+<<[UNRESOLVED]>>
+
+_Blocking for Beta._
+
+How long will old profiles be kept for? What is the removal policy?
+
+<<[/UNRESOLVED]>>
 
 ### PodTemplate Resources
 
@@ -320,7 +322,9 @@ kubectl label --dry-run=server --overwrite ns --all <prefix>/allow=baseline
 
 <<[UNRESOLVED]>>
 
-- What should the timout be for pod update warnings?
+_Non-blocking: can be decided on the implementing PR_
+
+- What should the timeout be for pod update warnings?
 - What should the pod limit be set to?
 
 <<[/UNRESOLVED]>>
@@ -366,13 +370,6 @@ the admission controller (allow, audit and warn). Exemption dimensions include:
 - Usernames: requests from users with an exempt authenticated (or impersonated) username are ignored.
 - RuntimeClassNames: pods and [templated pods] with specifying an exempt runtime class name are ignored.
 - Namespaces: pods and [templated pods] in an exempt namespace are ignored.
-
-<<[UNRESOLVED]>>
-
-Should the `kube-system` namespace default to being exempt? Alternatively, we can just label it as
-privileged out of the box.
-
-<<[/UNRESOLVED]>>
 
 ### Risks and Mitigations
 
@@ -442,6 +439,8 @@ and adding or updating ephemeral containers will require a full policy check.
 
 <<[UNRESOLVED]>>
 
+_Non-blocking for alpha. This should be resolved for beta._
+
 Once ephemeral containers allow [custom security contexts], it may be desireable to run an ephemeral
 container with higher privileges for debugging purposes. For example, CAP_SYS_PTRACE is forbidden by
 the baseline policy but can be useful in debugging. We could introduce yet-another-mode-label that
@@ -484,20 +483,19 @@ the container-host boundary.
 installed by the cluster admin, and AppArmor fails closed when a profile is not present.
 
 <<[UNRESOLVED]>>
+**BLOCKING**
+
 **SELinux** - (baseline)
-- (Peter Hunt) we could restrict to certain Type values i.e. ban `spc_t` (privileged) or only allow
-  `container_t` (only allowed to touch `container_file_t`, or container contents). That seems
-  consistent with how AppArmor and Seccomp work
-- (Jordan Liggitt) Remember that this admission plugin can't tell the difference between what the
-  user specified and what an earlier mutating admission plugin specified. Disallowing setting
-  selinux labels in the pod spec would also prevent another admission plugin from setting
-  constrained-but-shared-within-the-same-namespace selinux labels on the pod.
-- (Tim Allclair) It seems like we have 3 options here, none of them good:
-    1. Forbid setting any SELinux options (i.e. use the default) under the baseline (or restricted)
-       profiles. This probably breaks shared volumes.
-    2. Allow all SELinux options, and require a 3rd party controller to enforce custom SELinux
-       policy.
-    3. Add a configuration knob to allowlist (or deny) specific SELinux configurations.
+- Unset `SELinuxOptions` is allowed.
+- If options are set, they must match the following:
+  - `type` is one of:
+    - `container_init_t`
+    - `container_kvm_t`
+    - `container_logreader_t`
+    - `container_t`
+  - `level` can be anything
+  - `user` is unset
+  - `role` is unset
 
 <<[/UNRESOLVED]>>
 
@@ -558,6 +556,8 @@ coverage of unit tests.
 ### Monitoring
 
 <<[UNRESOLVED]>>
+
+**BLOCKING**
 
 The following metrics could be useful:
 
@@ -991,11 +991,6 @@ documents:
 ## Infrastructure Needed (Optional)
 
 We will need a new repo to host the code listed under [Flexible Extension
-Support](#flexible-extension-support).
-
-<<[UNRESOLVED]>>
-
-If the library implementation needs to be in-tree for core kubernetes, it should be implemented in a
-new staging repo. Otherwise, it will be hosted in a new kubernetes-sigs repo.
-
-<<[/UNRESOLVED]>>
+Support](#flexible-extension-support). This will need to be a staged under
+https://github.com/kubernetes/kubernetes/tree/master/staging/src/k8s.io, since the library code will
+be linked in-tree and needs to track the current API.
