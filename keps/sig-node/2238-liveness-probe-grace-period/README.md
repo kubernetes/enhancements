@@ -43,9 +43,9 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 - [X] (R) Graduation criteria is in place
 - [X] (R) Production readiness review completed
 - [X] (R) Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
-- [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
+- [X] "Implementation History" section is up-to-date for milestone
+- [X] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [X] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 [kubernetes.io]: https://kubernetes.io/
 [kubernetes/enhancements]: https://git.k8s.io/enhancements
@@ -140,12 +140,6 @@ spec:
       terminationGracePeriodSeconds: 60
 ```
 
-### User Stories (Optional)
-
-N/A - bugfix
-
-### Notes/Constraints/Caveats (Optional)
-
 ### Risks and Mitigations
 
 This should be a low-risk API change as it is backwards-compatible. If the
@@ -198,11 +192,13 @@ quickly.
   available behind a feature flag.
 - Appropriate tests are written.
 
-_Below graduation criteria are tentative._
-
 #### Beta
 
 - Feature flag is defaulted on.
+- Remove feature gate from [kubelet](https://github.com/kubernetes/kubernetes/pull/99375#issuecomment-794680869).
+- Add validation to ensure `terminationGracePeriodSeconds` is non-negative.
+
+_Below graduation criteria are tentative._
 
 #### Graduation
 
