@@ -1,4 +1,4 @@
-# kubeadm Config file graduation (v1beta2)
+# kubeadm Config file graduation
 
 ## Table of Contents
 
@@ -16,13 +16,16 @@
     - [Add config options for new and existing kubeadm features](#add-config-options-for-new-and-existing-kubeadm-features)
   - [v1beta3](#v1beta3)
     - [Make kubeadm's config format more CRD and third party friendly](#make-kubeadms-config-format-more-crd-and-third-party-friendly)
-    - [Opt-in AddOns](#opt-in-addons)
+    - [Allow skipping phases via config](#allow-skipping-phases-via-config)
+    - [Remove deprecated structures and fields](#remove-deprecated-structures-and-fields)
+    - [Other changes](#other-changes)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Graduation Criteria](#graduation-criteria)
 - [Implementation History](#implementation-history)
   - [v1alpha3 released with Kubernetes 1.12](#v1alpha3-released-with-kubernetes-112)
   - [v1beta1 released with Kubernetes 1.13](#v1beta1-released-with-kubernetes-113)
   - [v1beta2 released with Kubernetes 1.15](#v1beta2-released-with-kubernetes-115)
+  - [v1beta3 released with Kubernetes 1.22](#v1beta3-released-with-kubernetes-122)
 - [Drawbacks](#drawbacks)
 <!-- /toc -->
 
@@ -176,7 +179,7 @@ etcd configuration in the `v1alpha2` version.
 
 ### v1beta2
 
-This section outlines changes to be introduced in a second iteration of the kubeadm config format.
+This section outlines changes to be introduced in a second Beta iteration of the kubeadm configuration.
 
 #### Add config options for new and existing kubeadm features
 
@@ -195,7 +198,10 @@ limited use cases.
 
 ### v1beta3
 
-This section outlines changes to be introduced in the third iteration of the kubeadm config format.
+This section outlines changes to be introduced in a third Beta iteration of the kubeadm configuration.
+
+The version introduces no drastic changes since v1beta2. It performs cleanup of deprecated features
+and introduces features that have seen high demand.
 
 #### Make kubeadm's config format more CRD and third party friendly
 
@@ -204,10 +210,21 @@ This includes:
 - Adding metadata fields to InitConfiguration, JoinConfiguration and ClusterConfiguration.
 - Marking omitempty fields as `+optional`.
 
-#### Opt-in AddOns
+#### Allow skipping phases via config
 
-In the past few releases users have been increasingly using the kubeadm phases feature to skip the installation of the Kube-Proxy and CoreDNS/Kube-DNS addons. This, however, causes some problems when joining new nodes to the cluster or upgrading existing ones, as there are no means of persisting the user wish to not install some of the addons.
-This, combined with recent developments in the Cluster AddOns sub-project of SIG Cluster Lifecycle, led us to believe, that the best way to tackle the problem at hand is to allow for users to specify precisely which addons should be installed by kubeadm and persist the choice in the ClusterConfiguration.
+In the past few releases users have been increasingly using the kubeadm phases feature to skip the
+installation of the bundled kube-proxy and CoreDNS addon. From the configuration API this will be
+done with a `skipPhases` field (string slice) that is part of InitConfiguration and JoinConfiguration.
+
+#### Remove deprecated structures and fields
+
+- `ClusterStatus`: deprecated and replaced by annotating the kube-apiserver Pod.
+- `ClusterConfiguration.dns.type`: no longer needed since kubeadm only supports CoreDNS.
+- `ClusterConfiguration.useHyperkubeImage`: hyperkube was previously deprecated.
+
+#### Other changes
+
+Lower priority changes will be a best effort.
 
 ### Risks and Mitigations
 
@@ -264,6 +281,12 @@ This risk will be mitigated by implementing the change according to following ap
 
 - Added new fields for specifying the encryption key for certificates and for specifying which pre-flight errors to be ignored.
 - **omitempty** has a wider use, but is removed from the *taints* field of NodeRegistrationOptions.
+
+### v1beta3 released with Kubernetes 1.22
+
+- Details for the changes in v1beta3 since v1beta2 can be seen in the
+[changelog](https://pkg.go.dev/k8s.io/kubernetes/cmd/kubeadm/app/apis/kubeadm/v1beta3).
+- v1beta1 removed.
 
 ## Drawbacks
 
