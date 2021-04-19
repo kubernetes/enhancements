@@ -100,7 +100,8 @@ to this specific problem.
   * Possible errors on the client side.
   * Possible errors on the server side.
 * Define a table/list of numeric error codes for each of the main cases:
-  * If the error code is related to a subcommand (as diff), we might have a return code that is defined as "error on the external subcommand" (like 128) and sum with the exit code from the external command (so a 130 exit code means 128 + exit code of '2' from the external subcommand/plugin)
+  * If the error code is related to a subcommand (as diff), we might have a return code that is defined as "error on the external subcommand" (like 128) and sum with the exit code from the external command (so a 130 exit code means 128 + exit code of '2' from the external subcommand/plugin). The code MUST VERIFY if the sum is not bigger than 255 and if it is 
+  correct the value instead of leaving this for a panic.
 * Implement a common way so commands can delegate the exit code normalization to a different function
 
 ### User Stories (Optional)
