@@ -123,6 +123,15 @@ Example: let’s consider a pod with one container requesting 5 cores.
 
 ![Example core allocation with the smtaware policy when requesting a odd number of cores](smtaware-allocation-odd-cores.png)
 
+### Implementation details of `smtaware` CPU Manager
+
+- The CPU Manager implements the pod admit handler interface and participates in Kubelet pod admission.
+- GetAllocateResourcesPodAdmitHandler() function in the Container Manager is modified to perform admission checks for CPU Manager in addition to the already occuring Topology manager admission check. Just like Topology Manager returns `TopologyAffinityError` is case of resources cannot be NUMA-aligned in case of `restricted` or `single-numa-node policy`, CPU Manager admission failure results in a rejected pod with `SMTAlignmentError`. If both CPU Manager and Topology manager don't allow pod to be admitted `ContainerManagerAdmissionError` is returned to indicate that both the admit handlers are not allowing pod to be admitted. 
+- The Policy interface in CPU Manager is enhanced to support an Admit function. This allows to perform pod admission decision for CPU Manager policies.
+- When CPU Manager is configured with `smtaware` policy, when the Admit() function is called it is checked if the CPU request is
+such that it would acquire an entire physical core. In case request translates to partial occupancy of the cores the Pod will not be admitted and would fail with `SMTAlignmentError`. In case of `static` and `none` policy, the Admit() function always returns true meaning the pod is always admitted.
+- When `smtaware` policy is bootstrapped, we intentionally reuse `static` policy. The allocation logic of the `static` policy works seemlessly in case of `smtaware` policy as following the check at admission time of a pod, it is known that CPUs would be allocated such that full cores are allocated. Because of this check, a pod would never have to acquire single threads with the aim to fill partially-allocated cores
+
 
 #### smtisolate policy
 
@@ -304,4 +313,5 @@ No changes needed
 
 - 2021-04-14: KEP created
 - 2021-04-16: KEP updated with the `smtisolate` policy
+- 2021-04-19: KEP updated to capture implementation details of the `smtaware` policy
 
