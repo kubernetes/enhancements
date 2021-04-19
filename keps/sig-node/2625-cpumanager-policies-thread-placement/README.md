@@ -9,16 +9,19 @@
   - [Goals](#goals)
 - [Proposal](#proposal)
   - [User Stories](#user-stories)
-    - [Containerized Network Functions (CNF)](#containerized-network-functions-cnf)
+    - [Latency-sensitive applications runtime guarantees](#latency-sensitive-applications-runtime-guarantees)
+    - [Improve the density of running containers](#improve-the-density-of-running-containers)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Proposed Change](#proposed-change)
     - [smtaware policy](#smtaware-policy)
+  - [Implementation strategy of <code>smtaware</code> CPU Manager policy](#implementation-strategy-of--cpu-manager-policy)
     - [smtisolate policy](#smtisolate-policy)
   - [Resource Accounting](#resource-accounting)
     - [smtaware policy](#smtaware-policy-1)
     - [smtisolate policy](#smtisolate-policy-1)
   - [Alternatives](#alternatives)
+    - [Lift the admission prerequisite](#lift-the-admission-prerequisite)
     - [Add extra resources](#add-extra-resources)
     - [Add a new unit for CPU resources](#add-a-new-unit-for-cpu-resources)
   - [Test Plan](#test-plan)
@@ -70,21 +73,30 @@ However, for some classes of these latency-sensitive applications running on sim
 
 ### Goals
 
-* Allow the workload to request the core allocation at per-hardware-thread level, avoiding noisy neighbours situations and allow emulation of non-SMT behaviour on SMT systems. 
+* Allow the workload to request the core allocation at per-hardware-thread level, avoiding noisy neighbours situations
+* Allow emulation of non-SMT behaviour on SMT systems.
 
 ## Proposal
 
 ### User Stories
 
-#### Containerized Network Functions (CNF)
+#### Latency-sensitive applications runtime guarantees
 
-This class of latency applications benefits of hardware-thread level placement control
-To maximise cache efficiency, the workload  wants to be pinned to thread siblings. This is already the default behaviour of the cpumanager static policy, but this enhancement wants to provide stronger guarantees.
+Classes of latency-sensitive applications (CNF, HFT, ML/AI) benefit of the thread placement constraints this policy enables.
+These classes of latency applications benefits of hardware-thread level placement control To maximise cache efficiency, the workload  wants to be pinned to thread siblings.
+This is already the default behaviour of the cpumanager static policy, but this enhancement wants to provide stronger guarantees.
 
 The workload guest may wish to avoid thread siblings. This is to avoid noisy neighborhoods, which may have effect on core compute resources or in processor cache interference.
-Implementations of this policy proposed here are already found in [external projects](https://github.com/nokia/CPU-Pooler#hyperthreading-support)
-or in [OpenStack](https://specs.openstack.org/openstack/nova-specs/specs/mitaka/implemented/virt-driver-cpu-thread-pinning.html),
+Implementations of this policy proposed here are already found in [external projects](https://github.com/nokia/CPU-Pooler#hyperthreading-support).
+
+[OpenStack](https://specs.openstack.org/openstack/nova-specs/specs/mitaka/implemented/virt-driver-cpu-thread-pinning.html),
 which is one of the leading platform for VNF (Virtual Network Functions), the predecessor of CNFs.
+
+#### Improve the density of running containers
+
+This user story is related but independent from the above. Once we have the guaranteed behaviour that noisy-neighborhood prevention enables, we in turn enable more efficient
+usage of the node resources. The nodes can now accommodate safely mixed workloads of latency-sensitive and not-latency-sensitive (infrastructure) pods. This increases the node usage,
+which reduces the need for extra nodes, which drives down the TCO of a container-based solution.
 
 ### Risks and Mitigations
 
@@ -119,14 +131,14 @@ The new `smtaware` policy will allocate cores like the current cpumanager static
 This means that the allocation will be performed in terms of hardware thread sets (physical cores).  On 2-way SMT platforms this means hardware thread pairs.
 If the container requires a odd number of cores, the leftover core will be left unallocated, and the policy will guarantee no workload will consume it.
 
-Example: let’s consider a pod with one container requesting 5 cores.
+Example: let’s consider a pod with a single container. The workload needs 5 isolated cores; a core must be left unallocated to avoid noisy neighbours. To pass admission, 6 cores must be requested.
 
 ![Example core allocation with the smtaware policy when requesting a odd number of cores](smtaware-allocation-odd-cores.png)
 
-### Implementation details of `smtaware` CPU Manager
+### Implementation strategy of `smtaware` CPU Manager policy
 
 - The CPU Manager implements the pod admit handler interface and participates in Kubelet pod admission.
-- GetAllocateResourcesPodAdmitHandler() function in the Container Manager is modified to perform admission checks for CPU Manager in addition to the already occuring Topology manager admission check. Just like Topology Manager returns `TopologyAffinityError` is case of resources cannot be NUMA-aligned in case of `restricted` or `single-numa-node policy`, CPU Manager admission failure results in a rejected pod with `SMTAlignmentError`. If both CPU Manager and Topology manager don't allow pod to be admitted `ContainerManagerAdmissionError` is returned to indicate that both the admit handlers are not allowing pod to be admitted. 
+- GetAllocateResourcesPodAdmitHandler() function in the Container Manager is modified to perform admission checks for CPU Manager in addition to the already occurring Topology manager admission check. Just like Topology Manager returns `TopologyAffinityError` is case of resources cannot be NUMA-aligned in case of `restricted` or `single-numa-node policy`, CPU Manager admission failure results in a rejected pod with `SMTAlignmentError`. If both CPU Manager and Topology manager don't allow pod to be admitted `ContainerManagerAdmissionError` is returned to indicate that both the admit handlers are not allowing pod to be admitted. 
 - The Policy interface in CPU Manager is enhanced to support an Admit function. This allows to perform pod admission decision for CPU Manager policies.
 - When CPU Manager is configured with `smtaware` policy, when the Admit() function is called it is checked if the CPU request is
 such that it would acquire an entire physical core. In case request translates to partial occupancy of the cores the Pod will not be admitted and would fail with `SMTAlignmentError`. In case of `static` and `none` policy, the Admit() function always returns true meaning the pod is always admitted.
@@ -137,13 +149,14 @@ such that it would acquire an entire physical core. In case request translates t
 
 Key properties:
 - Each guaranteed container will have allocated a integral even number of cores, multiple of the number of virtual cpus per physical cores rounding up. (e.g. multiple of 2 on 2-way SMT)
-- Ensure that containers will get allocated a number of cores which is the ratio of requested amound of cores divided the numer of virtual cores per physical cores.
+- The policy will allocate full physical cores, up until the total amount of allocated virtual cores matches the requested amount.
+- The container will get only a single virtual core per physical core on its allowed set (on its cgroup)
 - Should the node not have enough free physical cores, the Pod will be put in Failed state, with `SMTAlignmentError` as reason.
 
 This policy will emulate non-SMT on SMT-enabled machines. It will have no effect on non-SMT machines. Only one of a group of virtual thread pair will be used per physical core.
 All but one thread sibling on each utilized core is therefore guaranteed to be unallocatable.
 
-Example: let’s consider a pod with one container requesting 5 cores.
+Example: let’s consider a pod with a single container. The workload needs 5 isolated cores; each core sibling must be left unallocated to avoid noisy neighbours. To pass admission, 10 cores must be requested.
 
 ![Example core allocation with the smtisolate policy when requesting a odd number of cores](smtisolate-allocation-odd-cores.png)
 
@@ -178,7 +191,7 @@ The admission will accept only pods whose Guaranteed QOS containers request a in
 | 5                       | 5                               | 5                           | 10                        |
 | 11                      | 11                              | 11                          | 22                        |
 
-So, yo make the `cpu` resource accounting consistent, and in order to minimize the overall changes to the system, we added the extra admission check for `smtisolate` policy.
+So, to make the `cpu` resource accounting consistent, and in order to minimize the overall changes to the system, we added the extra admission check for `smtisolate` policy.
 The admission will accept only pods whose Guaranteed QOS containers request a integral amount of CPU which is a multiple of the number of virtual cpus per physical core (= 2 on 2-way SMT).
 With this prerequisite enforced, the policy can safely allocate an amount of physical cores equal to request(cpu) divided by the number of virtual cpus per physical core (= 2 on 2-way SMT).
 
@@ -192,6 +205,43 @@ Once the container is removed, all 20 cpus will be made available again.
 
 The constraint we add to make the resource accounting consistent when using the `smtisolate` policy is admittedly awkward. We evaluated possible alternatives, but we eventually
 discarded all of them. We document them in this section.
+
+#### Lift the admission prerequisite
+
+We acknowledge that the extra requirements on admission makes the UX less then optimal, because the admission requirements (for both policies) and the opaque allocation behaviour (`smtisolate`)
+both creation a friction user experience. A more natural option qould have been to just drop the admission requirements and let user express their need in terms of cores. However, we discarded this option
+for the following reasons.
+
+Let's consider again this workload example, which needs cores:
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: frontend
+spec:
+  containers:
+  - name: app
+    image: images.my-company.example/app:v4
+    resources:
+      requests:
+        memory: "128Mi"
+        cpu: "5"
+      limits:
+        memory: "128Mi"
+        cpu: "5"
+```
+
+With the `smtaware` policy, considering again 2 way SMT system, the policy will overallocate 1 core to prevent any possibly noisy neighbours
+
+| Requested Virtual cores | Workload-required Virtual Cores | Unallocatable Virtual Cores | Total taken virtual cores |
+| ----------------------- | ------------------------------- | --------------------------- | ------------------------- |
+| 5                       | 5                               | 1                           | 6                         |
+
+This will lead to a state on which *the node resources consumed by a container are actually more than what the container requested in its limits*. We could not find a clean way to convey this information
+to the scheduler and into the pod status in general without cascading changes (e.g. to the API, to the scheduler and to other core components).
+
+We acknowledge the friction present in `smtisolate` as well. We need to preserve the key property that [one cpu, in Kubernetes, is equivalent to 1 vCPU/Core for cloud providers and 1 hyperthread on bare-metal Intel processors.](https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/#meaning-of-cpu). Thus, we need to express the requests in term of *virtual* CPUs, instead of the much more natural *physical* CPUS. See below about a possible, related option using new resource units.
 
 #### Add extra resources
 
@@ -313,5 +363,5 @@ No changes needed
 
 - 2021-04-14: KEP created
 - 2021-04-16: KEP updated with the `smtisolate` policy
-- 2021-04-19: KEP updated to capture implementation details of the `smtaware` policy
+- 2021-04-19: KEP updated to capture implementation details of the `smtaware` policy; clarified the resource accounting vs admission requirements
 
