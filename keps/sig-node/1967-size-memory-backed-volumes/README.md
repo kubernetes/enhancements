@@ -249,6 +249,7 @@ Not applicable
 ## Implementation History
 
 v1.20: Launched to `Alpha`
+v1.22: Moved to `Beta`
 
 ## Drawbacks
 
