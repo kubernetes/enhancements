@@ -421,10 +421,12 @@ is defined as:
 
 ### Feedback survey
 
-SIG Release will draft an experience survey and distribute it to [k/dev](https://groups.google.com/g/kubernetes-dev)) and include it in the release notes of the first *three* releases from
-which the new cadence has been applied. This survey will include questions
-around the release cadence and how it impacted end users and can be used to make a final
-decision regarding release cadence (i.e. promoting this KEP to stable).
+SIG Release will draft an experience survey, distribute it to
+[k/dev](https://groups.google.com/g/kubernetes-dev) and include it in the
+release notes of the first *three* releases from which the new cadence has been
+applied. This survey will include questions around the release cadence and how
+it impacted end users and can be used to make a final decision regarding release
+cadence (i.e. promoting this KEP to stable).
 
 Survey contents are to be determined, but we welcome content suggestions to
 continually improve the process.
