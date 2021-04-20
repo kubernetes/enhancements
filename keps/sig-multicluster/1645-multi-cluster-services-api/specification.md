@@ -7,9 +7,7 @@ This document is a specification for DNS-based Kubernetes service discovery for 
 
 ## 1 - Schema Version
 
-`<<[UNRESOLVED need to pick schema version]>>`
-This document describes version X.X.X of the schema.
-`<<[/UNRESOLVED]>>`
+This document describes version 1.0.0 of the schema.
 
 ## 2 - Resource Records
 
@@ -35,7 +33,7 @@ Following the existing specification, clusters implementing multicluster DNS wil
 - Question Example:
   - `dns-version.clusterset.local. IN TXT`
 - Answer Example:
-  - `dns-version.clusterset.local. 28800 IN TXT “1.1.0”`
+  - `dns-version.clusterset.local. 28800 IN TXT “1.0.0”`
 
 ### 2.3 - Records for a Service with ClusterSetIP
 
