@@ -1,63 +1,3 @@
-<!--
-**Note:** When your KEP is complete, all of these comment blocks should be removed.
-
-To get started with this template:
-
-- [ ] **Pick a hosting SIG.**
-  Make sure that the problem space is something the SIG is interested in taking
-  up. KEPs should not be checked in without a sponsoring SIG.
-- [ ] **Create an issue in kubernetes/enhancements**
-  When filing an enhancement tracking issue, please make sure to complete all
-  fields in that template. One of the fields asks for a link to the KEP. You
-  can leave that blank until this KEP is filed, and then go back to the
-  enhancement and add the link.
-- [ ] **Make a copy of this template directory.**
-  Copy this template into the owning SIG's directory and name it
-  `NNNN-short-descriptive-title`, where `NNNN` is the issue number (with no
-  leading-zero padding) assigned to your enhancement above.
-- [ ] **Fill out as much of the kep.yaml file as you can.**
-  At minimum, you should fill in the "Title", "Authors", "Owning-sig",
-  "Status", and date-related fields.
-- [ ] **Fill out this file as best you can.**
-  At minimum, you should fill in the "Summary" and "Motivation" sections.
-  These should be easy if you've preflighted the idea of the KEP with the
-  appropriate SIG(s).
-- [ ] **Create a PR for this KEP.**
-  Assign it to people in the SIG who are sponsoring this process.
-- [ ] **Merge early and iterate.**
-  Avoid getting hung up on specific details and instead aim to get the goals of
-  the KEP clarified and merged quickly. The best way to do this is to just
-  start with the high-level sections and fill out details incrementally in
-  subsequent PRs.
-
-Just because a KEP is merged does not mean it is complete or approved. Any KEP
-marked as `provisional` is a working document and subject to change. You can
-denote sections that are under active debate as follows:
-
-```
-<<[UNRESOLVED optional short context or usernames ]>>
-Stuff that is being argued.
-<<[/UNRESOLVED]>>
-```
-
-When editing KEPS, aim for tightly-scoped, single-topic PRs to keep discussions
-focused. If you disagree with what is already in a document, open a new PR
-with suggested changes.
-
-One KEP corresponds to one "feature" or "enhancement" for its whole lifecycle.
-You do not need a new KEP to move from beta to GA, for example. If
-new details emerge that belong in the KEP, edit the KEP. Once a feature has become
-"implemented", major changes should get new KEPs.
-
-The canonical place for the latest set of instructions (and the likely source
-of this file) is [here](/keps/NNNN-kep-template/README.md).
-
-**Note:** Any PRs to move a KEP to `implementable`, or significant changes once
-it is marked `implementable`, must be approved by each of the KEP approvers.
-If none of those approvers are still appropriate, then changes to that list
-should be approved by the remaining approvers and/or the owning SIG (or
-SIG Architecture for cross-cutting KEPs).
--->
 # KEP-2307: Job tracking without lingering Pods
 
 <!-- toc -->
@@ -75,6 +15,7 @@ SIG Architecture for cross-cutting KEPs).
 - [Design Details](#design-details)
   - [API changes](#api-changes)
   - [Algorithm](#algorithm)
+    - [Simplified algorithm for Indexed Jobs](#simplified-algorithm-for-indexed-jobs)
   - [Deleted Pods](#deleted-pods)
   - [Deleted Jobs](#deleted-jobs)
   - [Pod adoption](#pod-adoption)
@@ -238,11 +179,17 @@ could be stopped at any point and executed again from the first step without
 losing information. Generally, all the steps happen in a single Job sync
 cycle.
 
+0. The Job controller adds a the `batch.kubernetes.io/job-completion` finalizer
+   to the Job.
 1. The Job controller calculates the number of succeeded Pods as the sum of:
    - `.status.succeeded`,
    - the size of `job.status.uncountedTerminatedPods.succeeded` and
    - the number of finished Pods that are not in `job.status.uncountedTerminatedPods.succeeded`
      and have a finalizer.
+     
+   The Job controller calculates the number of failed Pods similarly, and the
+   number of active Pods as Pods that don't have a Failed or Succeeded condition
+   and have a finalizer.
 
    This number informs the creation of missing Pods to reach `.spec.completions`.
    The controller creates Pods for a Job with the finalizer
@@ -262,6 +209,9 @@ cycle.
    The counts increment the `.status.failed` and `.status.succeeded` and clears
    counted Pods from `.status.uncountedTerminatedPods` lists. The controller
    sends a status update.
+5. The Job controller removes the `batch.kubernetes.io/job-completion` finalizer
+   from the Job if it has completed (succeeded or failed) and no Job Pod's have
+   finalizers.
 
 Steps 2 to 4 might deal with a potentially big number of Pods. Thus, status
 updates can potentially stress the kube-apiserver. For this reason, the Job
@@ -280,20 +230,41 @@ Steps 2 to 4 might be skipped in the scenario where a status update happened
 too recently and the number of uncounted Pods is a small percentage of
 parallelism.
 
+Note that the `.status.uncountedTerminatedPods` struct allows to uniquely
+identify finished Pods to avoid over counting.
+
+#### Simplified algorithm for Indexed Jobs
+
+Pods in Indexed Jobs have a unique identifier: the completion index. Even if
+more than one Pod gets created for the same index, only one of them counts
+towards completions. The completed indexes are available in
+`.status.completedIndexes` in a compressed format.
+
+When tracking Indexed Jobs, the Job controller can use
+`.status.completedIndexes` in place of
+`.status.uncountedTerminatedPods.succeeded` in step 2 and completely skip step 4
+if there are no failed terminated pods in the same sync cycle. This saves one
+API call for a Job status update.
+
 ### Deleted Pods
    
 In the case where a user or another controller removes a Pod, which sets a
 deletion timestamp, the Job controller treats it the same as any other Pod.
-That is, once it reaches Failed status, the controller accounts for the Pod and
-then removes the finalizer.
-
+Since deleted Pods with finalizers get inevitably marked as Failed, the
+Job controller already counts them as such and removes their finalizers.
 This is different from the legacy tracking, where the Job controller does not
 account for deleted Pods. This is a limitation that this KEP also wants to
 solve.
 
-However, if the Job controller deletes the Pod (when parallelism is decreased,
-for example), the controller removes the finalizer before deleting it. Thus,
-these deletions don't count towards the failures.
+One edge case is when there is a Node failure. If the Node is down long enough,
+its Pods become orphan, and the garbage collector deletes them. Some of these
+deleted Pods could not have finished, but the algorithm described above treats
+them as failed.
+
+On the other hand, if the Job controller deletes the Pod (when the user
+decreases parallelism or suspends the Job, for example), the controller removes
+the finalizer before deleting it. Thus, these deletions don't count towards the
+failures.
 
 ### Deleted Jobs
 
@@ -332,11 +303,11 @@ the owner reference.
 - Implementation:
   - Job tracking without lingering Pods
   - Removal of finalizer when feature gate is disabled.
+  - Support for [Indexed Jobs](https://git.k8s.io/enhancements/keps/sig-apps/2214-indexed-job)
 - Tests: unit, integration, E2E
 
 #### Alpha -> Beta Graduation
 
-- Support for [Indexed Jobs](https://git.k8s.io/enhancements/keps/sig-apps/2214-indexed-job)
 - Processing 5000 Pods per minute across any number of Jobs, with Pod creation
   having higher priority than status updates. This might depend on
   [Priority and Fairness](https://git.k8s.io/enhancements/keps/sig-api-machinery/1040-priority-and-fairness).
@@ -353,7 +324,7 @@ the owner reference.
 
 ### Upgrade / Downgrade Strategy
 
-When the feature `JobTrackingWithoutLingeringPods` is enabled for the first
+When the feature `JobTrackingWithFinalizers` is enabled for the first
 time, the cluster can have Jobs whose Pods don't have the
 `batch.kubernetes.io/job-completion` finalizer. It would be hard to add the
 finalizer to all Pods while preventing race conditions.
@@ -363,9 +334,8 @@ was created after the feature was enabled. If this field is nil, the Job
 controller tracks Pods using the legacy tracking.
 
 The kube-apiserver sets `.status.uncountedTerminatedPods` to an empty struct
-when the feature gate `JobTrackingWithoutLingeringPods` is enabled, at Job
-creation. In alpha, apiserver leaves `.status.uncountedTerminatedPods = nil`
-for [Indexed Jobs](https://git.k8s.io/enhancements/keps/sig-apps/2214-indexed-job)
+when the feature gate `JobTrackingWithFinalizers` is enabled, at Job
+creation.
 
 When the feature is disabled after being enabled for some time, the next time
 the Job controller syncs a Job:
@@ -384,7 +354,7 @@ _This section must be completed when targeting alpha to a release._
 
 * **How can this feature be enabled / disabled in a live cluster?**
   - [x] Feature gate (also fill in values in `kep.yaml`)
-    - Feature gate name: JobTrackingWithoutLingeringPods
+    - Feature gate name: JobTrackingWithFinalizers
     - Components depending on the feature gate:
       - kube-apiserver
       - kube-controller-manager
@@ -506,6 +476,9 @@ previous answers based on experience in the field._
     - estimated throughput: one per Pod created by the Job controller, when Pod
       finishes or is removed.
     - originating component: kube-controller-manager
+  - PATCH Jobs, to add and remove finalizers.
+    - estimated throughput: two calls for each Job created.
+    - originating component: kube-controller-manager
   - PUT Job status, to keep track of uncounted Pods.
     - estimated throughput: at least one per Job sync. The job controller
       throttles additional calls at 1 per a few seconds (precise throughput TBD
@@ -525,6 +498,8 @@ provider?**
 the existing API objects?**
 
   - Pod
+    - Estimated increase: new finalizer of 33 bytes.
+  - Job
     - Estimated increase: new finalizer of 33 bytes.
   - Job status
     - Estimated increase: new array temporarily containing terminated Pod UIDs.
