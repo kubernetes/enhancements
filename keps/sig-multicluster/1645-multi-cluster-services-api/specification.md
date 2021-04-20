@@ -21,7 +21,7 @@ clusterset = as defined in [KEP-1645: Multi-Cluster Services API](README.md): �
 
 `<clustersetzone>` = domain for multi-cluster services in the clusterset, which must be `clusterset.local`; as this may become configurable in the future, this specification refers to it by the palceholder `<clustersetzone>`, but per the MCS API it currently must be defined to be `clusterset.local`. 
 
-ClusterSetIP / `<clusterset-ip>` = as defined in [KEP-1645: Multi-Cluster Services API](README.md): “A non-headless ServiceImport is expected to have an associated IP address, the clusterset IP, which may be accessed from within an importing cluster. This IP may be a single IP used clusterset-wide or assigned on a per-cluster basis, but is expected to be consistent for the life of a ServiceImport from the perspective of the importing cluster. Requests to this IP from within a cluster will route to backends for the aggregated Service.”
+ClusterSetIP / `<clusterset-ip>` / clusterset IP = as defined in [KEP-1645: Multi-Cluster Services API](README.md): “A non-headless ServiceImport is expected to have an associated IP address, the clusterset IP, which may be accessed from within an importing cluster. This IP may be a single IP used clusterset-wide or assigned on a per-cluster basis, but is expected to be consistent for the life of a ServiceImport from the perspective of the importing cluster. Requests to this IP from within a cluster will route to backends for the aggregated Service.”
 
 Cluster ID / `<clusterid>` = the cluster id stored in the `id.k8s.io ClusterProperty` as described in [KEP-2149: ClusterId for ClusterSet identification](../2149-clusterid/README.md). Though this can be any valid DNS label, in this KEP the examples mimic the recommended value, a kube-system namespace uid ( such as `721ab723-13bc-11e5-aec2-42010af0021e`).
 
@@ -88,7 +88,7 @@ The Additional section of the response may include the Service `A`/`AAAA` record
 
 #### 2.3.3 - `PTR` Record
 
-Given an exported Service assigned the IPv4 ClusterSet IP `<a>.<b>.<c>.<d>` **that does not already have a `PTR` record (see Limitations, below)**, a `PTR` record of the following form must exist.
+Given an exported Service assigned the IPv4 clusterset IP `<a>.<b>.<c>.<d>` **that does not already have a `PTR` record (see Limitations, below)**, a `PTR` record of the following form must exist.
 
 
 *   Record Format:
@@ -98,7 +98,7 @@ Given an exported Service assigned the IPv4 ClusterSet IP `<a>.<b>.<c>.<d>` **th
 *   Answer Example:
     *   `1.0.3.10.in-addr.arpa. 14 IN PTR kubernetes.test.svc.clusterset.local.`
 
-Given an exported Service assigned the IPv6 ClusterSet IP represented in hexadecimal format without any simplification `<a1a2a3a4:b1b2b3b4:c1c2c3c4:d1d2d3d4:e1e2e3e4:f1f2f3f4:g1g2g3g4:h1h2h3h4>` **that does not already have a `PTR` record (see Limitations, below)**, a `PTR` record as a sequence of nibbles in reverse order of the following form must exist.
+Given an exported Service assigned the IPv6 clusterset IP represented in hexadecimal format without any simplification `<a1a2a3a4:b1b2b3b4:c1c2c3c4:d1d2d3d4:e1e2e3e4:f1f2f3f4:g1g2g3g4:h1h2h3h4>` **that does not already have a `PTR` record (see Limitations, below)**, a `PTR` record as a sequence of nibbles in reverse order of the following form must exist.
 
 
 
