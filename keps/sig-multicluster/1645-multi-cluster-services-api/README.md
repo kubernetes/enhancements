@@ -717,23 +717,22 @@ _Optional, but recommended._
 
 The full specification for Multicluster Service DNS is in this KEP's [specification.md](specification.md). MCS aims to align with the existing [service DNS
 spec](https://github.com/kubernetes/dns/blob/master/docs/specification.md). This
-section assumes familiarity with in-cluster Service DNS behavior.
+section provides an overview of the multicluster DNS specification and its rationale, and assumes familiarity with in-cluster Service DNS behavior.
 
 In short, when a `ServiceExport` is created, this will cause a domain name for the
 multi-cluster service to become accessible from within the clusterset. The
-domain name will be `<service>.<ns>.svc.clusterset.local`. 
+domain name will be `<service>.<ns>.svc.clusterset.local`. This domain name operates differently depending on whether the `ServiceExport` refers to a ClusterSetIP or Headless service:
 
-**ClusterSetIP services:** Requests to this domain name from within an importing
+  * **ClusterSetIP services:** Requests to this domain name from within an importing
 cluster will resolve to the clusterset IP, which points to endpoints for pods
 within the underlying `Service`(s) across the clusterset.
-
-**Headless services:** Within an importing cluster, the clusterset domain name
+  * **Headless services:** Within an importing cluster, the clusterset domain name
 will have multiple `A`/`AAAA` records, each containing the address of a ready
 endpoint of the headless service. `<service>.<ns>.svc.clusterset.local` will
 resolve to the set of all ready pod IPs for the service.
 
-Pods backing a clusterset service may be addressed individually using the
-`<hostname>.<clusterid>.<svc>.<ns>.svc.clusterset.local` format. Necessary
+In addition, other resource records are included to conform to in-cluster Service DNS behavior. SRV records are included to support known use cases such as VOIP, Active Directory, and etcd cluster bootstrapping. PTR records are required at the multicluster DNS level only for implementations that do not have PTR records for ClusterSetIPs covered by the in-cluster DNS specification. Pods backing a Headless service may be addressed individually using the
+`<hostname>.<clusterid>.<svc>.<ns>.svc.clusterset.local` format; necessary
 records will be created based on each ready endpoint's hostname and the
 `multicluster.kubernetes.io/source-cluster` label on the `EndpointSlice`. This
 allows naming collisions to be avoided for headless services backed by identical
@@ -757,9 +756,9 @@ demand._
 
 Both ClusterSetIP Services and Multicluster Headless Services are specified to explicitly disallow DNS records that target single clusters, such as using a formulation like `<clusterid>.<svc>.<ns>.svc.clusterset.local.` to target all 1+N backends in a single cluster.
 
-For ClusterSetIP services, this rationale is tied to the intent of its underlying ClusterIP Service. In a single-cluster setup, the purpose of a ClusterIP service is to reduce the context needed by the application to target ready backends, especially if those backends disappear or change frequently, and leverages kube-proxy to do this independent of the limitations of DNS. ([ref](https://kubernetes.io/docs/concepts/services-networking/service/#why-not-use-round-robin-dns)) Similarly, users of exported ClusterIP services should depend on the single `<clusterset-ip>` (or the single A/AAAA record mapped to it), instead of targeting per cluster backends. If a user has a need to target backends in a different way, they should use headless Services.
+For ClusterSetIP services, this rationale is tied to the intent of its underlying ClusterIP Service. In a single-cluster setup, the purpose of a ClusterIP service is to reduce the context needed by the application to target ready backends, especially if those backends disappear or change frequently, and leverages kube-proxy to do this independent of the limitations of DNS. ([ref](https://kubernetes.io/docs/concepts/services-networking/service/#why-not-use-round-robin-dns)) Similarly, users of exported ClusterIP services should depend on the single `<clusterset-ip>` (or the single `A`/`AAAA` record mapped to it), instead of targeting per cluster backends. If a user has a need to target backends in a different way, they should use headless Services.
 
-For Multicluster Headless Services, the rationale is tied to the intent of its underlying Headless Service to provide absolutely no load balancing capabilities on any stateful dimension of the backends, and provide routing to each single backend for the application's purposes.
+For Multicluster Headless Services, the rationale is tied to the intent of its underlying Headless Service to provide absolutely no load balancing capabilities on any stateful dimension of the backends (such as cluster locality), and provide routing to each single backend for the application's purposes.
 
 In both cases, this restriction seeks to preserve the MCS position on [namespace sameness](https://github.com/kubernetes/community/blob/master/sig-multicluster/namespace-sameness-position-statement.md). Services of the same name/namespace exported in the multicluster environment are considered to be the same by definition, and thus their backends are safe to 'merge' at the ClusterSet level. If these backends need to be addressed differently based on other properties than name and namespace, they lose their fungible nature which the MCS API depends on. In these situations, those backends should instead be fronted by a Service with a different name and/or namespace.
 
