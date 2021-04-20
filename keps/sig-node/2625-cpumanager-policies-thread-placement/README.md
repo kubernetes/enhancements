@@ -15,7 +15,7 @@
 - [Design Details](#design-details)
   - [Proposed Change](#proposed-change)
     - [smtaware policy](#smtaware-policy)
-  - [Implementation strategy of <code>smtaware</code> CPU Manager policy](#implementation-strategy-of-smtaware-cpu-manager-policy)
+  - [Implementation strategy of smtaware CPU Manager policy](#implementation-strategy-of-smtaware-cpu-manager-policy)
     - [smtisolate policy](#smtisolate-policy)
   - [Resource Accounting](#resource-accounting)
     - [smtaware policy](#smtaware-policy-1)
@@ -135,7 +135,7 @@ Example: let’s consider a pod with a single container. The workload needs 5 is
 
 ![Example core allocation with the smtaware policy when requesting a odd number of cores](smtaware-allocation-odd-cores.png)
 
-### Implementation strategy of `smtaware` CPU Manager policy
+### Implementation strategy of smtaware CPU Manager policy
 
 - The CPU Manager implements the pod admit handler interface and participates in Kubelet pod admission.
 - GetAllocateResourcesPodAdmitHandler() function in the Container Manager is modified to perform admission checks for CPU Manager in addition to the already occurring Topology manager admission check. Just like Topology Manager returns `TopologyAffinityError` is case of resources cannot be NUMA-aligned in case of `restricted` or `single-numa-node policy`, CPU Manager admission failure results in a rejected pod with `SMTAlignmentError`. If both CPU Manager and Topology manager don't allow pod to be admitted `ContainerManagerAdmissionError` is returned to indicate that both the admit handlers are not allowing pod to be admitted. 
