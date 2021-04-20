@@ -731,7 +731,7 @@ will have multiple `A`/`AAAA` records, each containing the address of a ready
 endpoint of the headless service. `<service>.<ns>.svc.clusterset.local` will
 resolve to the set of all ready pod IPs for the service.
 
-In addition, other resource records are included to conform to in-cluster Service DNS behavior. SRV records are included to support known use cases such as VOIP, Active Directory, and etcd cluster bootstrapping. PTR records are required at the multicluster DNS level only for implementations that do not have PTR records for ClusterSetIPs covered by the in-cluster DNS specification. Pods backing a Headless service may be addressed individually using the
+In addition, other resource records are included to conform to in-cluster Service DNS behavior. SRV records are included to support known use cases such as VOIP, Active Directory, and etcd cluster bootstrapping. PTR records are required at the multicluster DNS level only for implementations that do not already have PTR records for clusterset IPs from the in-cluster DNS specification (for example, implementations that utilize a "dummy" in-cluster service to represent the clusterset IP). Pods backing a Headless service may be addressed individually using the
 `<hostname>.<clusterid>.<svc>.<ns>.svc.clusterset.local` format; necessary
 records will be created based on each ready endpoint's hostname and the
 `multicluster.kubernetes.io/source-cluster` label on the `EndpointSlice`. This
