@@ -63,7 +63,7 @@
 With this KEP, SIG Release proposes to change the current Kubernetes release
 cadence from 4 down to 3 releases per year. This cadence started in ad hoc manner
 in 2020 due to the ongoing COVID-19 pandemic. This KEP serves to formalize this release 
-cadence, which will be shape the development of the release calendars for the 
+cadence, which will shape the development of the release calendars for the 
 Kubernetes 1.22 and 1.23 releases, each of which will be *15* weeks in duration.
 
 ## Motivation
