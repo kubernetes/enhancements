@@ -15,7 +15,7 @@
 - [Design Details](#design-details)
   - [Proposed Change](#proposed-change)
     - [smtaware policy](#smtaware-policy)
-  - [Implementation strategy of <code>smtaware</code> CPU Manager policy](#implementation-strategy-of--cpu-manager-policy)
+  - [Implementation strategy of <code>smtaware</code> CPU Manager policy](#implementation-strategy-of-smtaware-cpu-manager-policy)
     - [smtisolate policy](#smtisolate-policy)
   - [Resource Accounting](#resource-accounting)
     - [smtaware policy](#smtaware-policy-1)
@@ -142,7 +142,7 @@ Example: let’s consider a pod with a single container. The workload needs 5 is
 - The Policy interface in CPU Manager is enhanced to support an Admit function. This allows to perform pod admission decision for CPU Manager policies.
 - When CPU Manager is configured with `smtaware` policy, when the Admit() function is called it is checked if the CPU request is
 such that it would acquire an entire physical core. In case request translates to partial occupancy of the cores the Pod will not be admitted and would fail with `SMTAlignmentError`. In case of `static` and `none` policy, the Admit() function always returns true meaning the pod is always admitted.
-- When `smtaware` policy is bootstrapped, we intentionally reuse `static` policy. The allocation logic of the `static` policy works seemlessly in case of `smtaware` policy as following the check at admission time of a pod, it is known that CPUs would be allocated such that full cores are allocated. Because of this check, a pod would never have to acquire single threads with the aim to fill partially-allocated cores
+- When `smtaware` policy is bootstrapped, we intentionally reuse `static` policy. The allocation logic of the `static` policy works seamlessly in case of `smtaware` policy as following the check at admission time of a pod, it is known that CPUs would be allocated such that full cores are allocated. Because of this check, a pod would never have to acquire single threads with the aim to fill partially-allocated cores
 
 
 #### smtisolate policy
@@ -151,7 +151,7 @@ Key properties:
 - Each guaranteed container will have allocated a integral even number of cores, multiple of the number of virtual cpus per physical cores rounding up. (e.g. multiple of 2 on 2-way SMT)
 - The policy will allocate full physical cores, up until the total amount of allocated virtual cores matches the requested amount.
 - The container will get only a single virtual core per physical core on its allowed set (on its cgroup)
-- Should the node not have enough free physical cores, the Pod will be put in Failed state, with `SMTAlignmentError` as reason.
+- In case the CPU request is not a multiple of the number of virtual cpus per physical cores, the Pod will be put in Failed state, with `SMTAlignmentError` as reason.
 
 This policy will emulate non-SMT on SMT-enabled machines. It will have no effect on non-SMT machines. Only one of a group of virtual thread pair will be used per physical core.
 All but one thread sibling on each utilized core is therefore guaranteed to be unallocatable.
@@ -245,7 +245,7 @@ We acknowledge the friction present in `smtisolate` as well. We need to preserve
 
 #### Add extra resources
 
-We can add a new extended resource alongside `cpu` - [which on baremetal represents virtual thrads]((https://kubernetes.io/docs/tasks/configure-pod-container/assign-cpu-resource/#cpu-units), to represent
+We can add a new extended resource alongside `cpu` - [which on baremetal represents virtual threads](https://kubernetes.io/docs/tasks/configure-pod-container/assign-cpu-resource/#cpu-units), to represent
 physical cpus. However having two resources to represent the same hardware entity is confusing and cumbersome. We believe cpumanager should keep consuming the core `cpu` resource for consistency reasons.
 
 #### Add a new unit for CPU resources
