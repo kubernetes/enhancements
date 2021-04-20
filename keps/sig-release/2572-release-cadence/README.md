@@ -261,11 +261,10 @@ With the proposed change in cadence, the notional schedules for the remainder of
 | -------- | -------- | -------- | -------- |
 | 1  | 1 | 1 (January 3) | |
 | 15 | 1 | 15 (April 12) | | 
-| 18 | 2 | 1 (May 2) | Probably KubeCon EU |
-| 33 | 2 | 15 (August 15) | |
-| 36 | 3 | 1 (September 6 | Probably KubeCon NA | 
-| 51 | 3 | 15 (December 20) | 
-
+| 17 | 2 | 1 (April 26) | Probably KubeCon EU |
+| 32 | 2 | 15 (August 09) | |
+| 34 | 3 | 1 (August 22 | Probably KubeCon NA |
+| 49 | 3 | 14 (December 06) |
 
 This KEP will be in the `alpha` stage for the Kubernetes 1.22 Release. During 
 this time, SIG-Release will focus on communication of the cadence change through
