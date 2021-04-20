@@ -59,7 +59,7 @@ should be approved by the remaining approvers and/or the owning SIG (or
 SIG Architecture for cross cutting KEPs).
 -->
 
-# KEP-1792: Configure FQDN as Hostname for Pods
+# KEP-1797: Configure FQDN as Hostname for Pods
 
 <!--
 This is the title of your KEP.  Keep it short, simple, and descriptive.  A good
@@ -614,10 +614,12 @@ _This section must be completed when targeting beta graduation to a release._
   Abnormal increase in `run_podsandbox_errors_total` count could be related to this feature. We should filter those pods having issues to create sandbox and check whether they are stuck due to the length of their FQDN, as described in the proposal.
 
 * **Were upgrade and rollback tested? Was upgrade->downgrade->upgrade path tested?**
-  We tested enabling and disabling this feature. Running pods are not affected by
-  either enabling nor disabling this feature. When disabling the feature, Pods 
-  using it that are "stuck" due to having long FQDNs will go into 
-  running.
+  Yes. We tested enabling and disabling this feature. Running pods are not affected by
+  either enabling nor disabling this feature. When disabling the feature, running Pods 
+  using the feature keep making use of it, while new pods do not get the 
+  setHostnameAsFQDN field even if a user tries to set it. Similarly, when reenabling 
+  the feature gate, existing pods keep existing behavior, and new pods that define
+  setHostnameAsFQDN make use of the feature as expected.
 
 * **Is the rollout accompanied by any deprecations and/or removals of features,
   APIs, fields of API types, flags, etc.?**
@@ -633,8 +635,13 @@ _This section must be completed when targeting beta graduation to a release._
   checking if there are objects with field X set) may be last resort. Avoid
   logs or events for this purpose.
 
-  Listing pods in the cluster and checking if any has both
-  `subDomain` and `setHostnameAsFQDN` fields set.
+  Yes, operators can use Kubenetes API for this purpose. They would need to get 
+  all pods in the cluster and check if any has both
+  `subdomain` and `setHostnameAsFQDN` fields set. For example, we could find the 
+  namespace and name of the pods using this feature with the following command: 
+  ```
+  kubectl get pod -o json --all-namespaces | jq '.items[] | select(.spec.setHostnameAsFQDN=true) | select(.spec.subdomain!=null) | "\(.metadata.namespace):\(.metadata.name)"'
+  ```
 
 * **What are the SLIs (Service Level Indicators) an operator can use to
   determine the health of the service?**
