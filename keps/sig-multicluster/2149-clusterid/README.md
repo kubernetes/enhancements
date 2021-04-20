@@ -24,7 +24,7 @@ To get started with this template:
   appropriate SIG(s).
 - [x] **Create a PR for this KEP.**
   Assign it to people in the SIG who are sponsoring this process.
-- [ ] **Merge early and iterate.**
+- [x] **Merge early and iterate.**
   Avoid getting hung up on specific details and instead aim to get the goals of
   the KEP clarified and merged quickly. The best way to do this is to just
   start with the high-level sections and fill out details incrementally in
@@ -89,6 +89,7 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Joining or moving between ClusterSets](#joining-or-moving-between-clustersets)
     - [Multi-Cluster Services](#multi-cluster-services)
     - [Diagnostics](#diagnostics)
+    - [Multi-tenant controllers](#multi-tenant-controllers)
   - [<code>ClusterClaim</code> CRD](#-crd)
   - [Well known claims](#well-known-claims)
     - [Claim: <code>id.k8s.io</code>](#claim-)
@@ -105,12 +106,16 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
-  - [Implementing the <code>ClusterClaim</code> CRD](#implementing-the--crd)
+  - [Rationale behind the <code>ClusterClaim</code> CRD](#rationale-behind-the--crd)
+  - [Implementing the <code>ClusterClaim</code> CRD and its admission controllers](#implementing-the--crd-and-its-admission-controllers)
     - [<code>id.k8s.io ClusterClaim</code>](#)
     - [<code>clusterset.k8s.io ClusterClaim</code>](#-1)
+  - [CRD upgrade path](#crd-upgrade-path)
+    - [To CRD or not to CRD?](#to-crd-or-not-to-crd)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
+    - [Beta -&gt; GA criteria](#beta---ga-criteria)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -267,6 +272,8 @@ bogged down.
 
 I have some set of clusters working together and need a way to uniquely identify them within the system that I use to track membership, or determine if a given cluster is in a ClusterSet.
 
+_For example, SIG-Cluster-Lifecycle's Cluster API subproject uses a management cluster to deploy resources to member workload clusters, but today member workload clusters do not have a way to identify their own management cluster or any interesting metadata about it, such as what cloud provider it is hosted on._
+
 #### Joining or moving between ClusterSets
 
 I want the ability to add a previously-isolated cluster to a ClusterSet, or to move a cluster from one ClusterSet to another and be aware of this change.
@@ -275,23 +282,25 @@ I want the ability to add a previously-isolated cluster to a ClusterSet, or to m
 
 I have a headless multi-cluster service deployed across clusters in my ClusterSet with similarly named pods in each cluster. I need a way to disambiguate each backend pod via DNS.
 
-```
-<<[UNRESOLVED]>>
-Examples of DNS using cluster ID a la `<hostname>.<clusterID>.<svc>.<ns>.svc.clusterset.local`
-<<[/UNRESOLVED]>>
-```
+_For example, an exported headless service of services name `myservice` in namespace `test`,  backed by pods in two clusters with clusterIDs `clusterA` and `clusterB`, could be disambiguated by different DNS names following the pattern `<clusterID>.<svc>.<ns>.svc.clusterset.local`: `clusterA.myservice.test.svc.clusterset.local.` and `clusterB.myservice.test.svc.clusterset.local.`. This way the user can implement whatever load balancing they want (as is usually the case with headless services) by targeting each cluster's available backends directly._
 
 #### Diagnostics
 
 Clusters within my ClusterSet send logs/metrics to a common monitoring solution and I need to be able to identify the cluster from which a given set of events originated.
 
+#### Multi-tenant controllers
+
+My controller interacts with multiple clusters and needs to disambiguate between them to process its business logic.
+
+_For example, [CAPN's virtualcluster project](https://github.com/kubernetes-sigs/cluster-api-provider-nested) is implementing a multi-tenant scheduler that schedules tenant namespaces only in certain parent clusters, and a separate syncer running in each parent cluster controller needs to compare the name of the parent cluster to determine whether the namespace should be synced. ([ref](https://github.com/kubernetes/enhancements/issues/2149#issuecomment-768486457))._
+
 
 ### `ClusterClaim` CRD
-```
-<<[UNRESOLVED]>>
-The actual name of the CRD is not finalized and is provisionally titled `ClusterClaim` for the remainder of this document.
-<<[/UNRESOLVED]>>
-```
+  ```
+  <<[UNRESOLVED]>>
+  The actual name of the CRD is not finalized and is provisionally titled `ClusterClaim` for the remainder of this document.
+  <<[/UNRESOLVED]>>
+  ```
 
 The `ClusterClaim` resource provides a way to store identification related, cluster scoped information for multi-cluster tools while creating flexibility for implementations. A cluster may have multiple `ClusterClaim`s, each holding a different identification related value. Each claim contains the following information:
 
@@ -348,19 +357,6 @@ Contains a unique identifier for the containing cluster.
 **Renaming a cluster**: Since a `id.k8s.io ClusterClaim` must be immutable for the duration of its *membership* in a given ClusterSet, the claim contents can be "changed" by unregistering the cluster from the ClusterSet and reregistering it with the new name.
 
 **Reusing cluster names**: Since an `id.k8s.io ClusterClaim` has no restrictions on whether or not a ClusterClaim can be repeatable, if a cluster unregisters from a ClusterSet it is permitted under this standard to rejoin later with the same `id.k8s.io ClusterClaim` it had before. Similarly, a *different* cluster could join a ClusterSet with the same `id.k8s.io ClusterClaim` that had been used by another cluster previously, as long as both do not have membership in the same ClusterSet at the same time. Finally, two or more clusters may have the same `id.k8s.io ClusterClaim` concurrently (though they **should** not; see "Uniqueness" above) *as long as* they both do not have membership in the same ClusterSet.
-
-```
-<<[UNRESOLVED]>>
-We could probably use some example scenarios describing how some dependent tool should handle IDs changing or disappearing during various stages of the cluster/membership lifecycle - @jeremyot
-<<[/UNRESOLVED]>>
-```
-
-```
-<<[UNRESOLVED]>>
-How should uniqueness restrictions be handled to clusters who were originally isolated and only acquired/verified an id when joining a ClusterSet
-<<[/UNRESOLVED]>>
-```
-
 
 #### Claim: `clusterset.k8s.io`
 
@@ -422,7 +418,14 @@ required) or even code snippets. If there's any ambiguity about HOW your
 proposal will be implemented, this is the place to discuss them.
 -->
 
-### Implementing the `ClusterClaim` CRD
+### Rationale behind the `ClusterClaim` CRD
+
+This proposal suggests a CRD composed of objects all of the same `Kind` `ClusterClaim`, and that are distinguished using certain well known values in their `metadata.name` fields. This design avoids cluster-wide singleton `Kind`s for each claim, reduces access competition for the same metadata by making each claim its own resource (instead of all in one), allows for RBAC to be applied in a targeted way to individual claims, and supports the user prerogative to store other simple metadata in one centralized CRD by creating CRs of the same `Kind` `ClusterClaim` but with their own names.
+
+Storing arbitrary facts about a cluster can be implemented in other ways. For example, Cluster API subproject stopgapped their need for cluster name metadata by leveraging the existing `Node` `Kind` and storing metadata there via annotations, such as `cluster.x-k8s.io/cluster-name` ([ref](https://github.com/kubernetes-sigs/cluster-api/pull/4048)). While practical for their case, this KEP avoids adding cluster-level info as annotations on child resources so as not to be dependent on a child resource's existence, to avoid issues maintaining parity across multiple resources of the same `Kind` for identical metadata, and maintain RBAC separation between the cluster-level metadata and the child resources. Even within the realm of implementing as a CRD, the API design could focus on distinguishing each fact by utilizing different `spec.Type`s (as `Service` objects do e.g. `spec.type=ClusterIP` or `spec.type=ExternalName`), or even more strictly, each as a different `Kind`.  The former provides no specific advantages since multiple differently named claims for the same fact are unnecessary, and is less expressive to query (it is easier to query by name directly like `kubectl get clusterclaims id.k8s.io`). The latter would result in the proliferation of cluster-wide singleton `Kind` resources, and be burdensome for users to create their own custom claims.
+
+
+### Implementing the `ClusterClaim` CRD and its admission controllers
 
 #### `id.k8s.io ClusterClaim`
 
@@ -430,19 +433,81 @@ The actual implementation to select and store the identifier of a given cluster 
 
 That being said, for less stringent identifiers, for example a user-specified and human-readable value, a given `id.k8s.io ClusterClaim` may need to change if an identical identifier is in use by another member of the ClusterSet it wants to join. It is likely this would need to happen outside the cluster-local boundary; for example, whatever manages memberships would likely need to deny the incoming cluster, and potentially assign (or prompt the cluster to assign itself) a new ID.
 
+Since this KEP does not formally mandate that the cluster ID *must* be immutable for the lifetime of the cluster, only for the lifetime of its membership in a ClusterSet, any dependent tooling explicitly *cannot* assume the `id.k8s.io ClusterClaim` for a given cluster will stay constant on its own merit. For example, log aggregation of a given cluster ID based on this claim should only be trusted to be referring to the same cluster for as long as it has one ClusterSet membership; similarly, controllers whose logic depends on distinguishing clusters by cluster ID can only trust this claim to disambiguate the same cluster for as long as the cluster has one ClusterSet membership.
+
+Despite this flexibility in the KEP, clusterIDs may still be useful before ClusterSet membership needs to be established; again, particularly if the implementation chooses the broadest restrictions regarding immutability and uniqueness. Therefore, having a controller that initializes it early in the lifecycle of the cluster, and possibly as part of cluster creation, may be a useful place to implement it, though within the bounds of this KEP that is not strictly necessary.
+
+The most common discussion point within the SIG regarding whether an implementation should favor a UUID or a human-readable clusterID string is when it comes to DNS. Since DNS names are originally intended to be a human readable technique of address, clunky DNS names composed from long UUIDs seems like an anti-pattern, or at least unfinished. While some extensions to this spec have been discussed as ways to leverage the best parts of both (ex. using labels on the `id.k8s.io ClusterClaim` to store aliases for DNS), an actual API specification to allow for this is outside the scope of this KEP at this time (see the Non-Goals section).
+
 ```
-<<[UNRESOLVED]>>
-Effect of different identifier styles (mainly UUID vs human readable) on DNS
-<<[/UNRESOLVED]>>
+# An example object of `id.k8s.io ClusterClaim` 
+# using a kube-system ns uuid as the id value (recommended above):
+
+apiVersion: multicluster.k8s.io/v1
+kind: ClusterClaim
+metadata:
+  name: id.k8s.io
+spec:
+  value: 721ab723-13bc-11e5-aec2-42010af0021e
+```
+
+```
+# An example object of `id.k8s.io ClusterClaim` 
+# using a human-readable string as the id value:
+
+apiVersion: multicluster.k8s.io/v1
+kind: ClusterClaim
+metadata:
+  name: id.k8s.io
+spec:
+  value: cluster-1
 ```
 
 #### `clusterset.k8s.io ClusterClaim`
 
+A cluster in a ClusterSet is expected to be authoritatively associated with that ClusterSet by an external process and storage mechanism with a purview above the cluster local boundary, whether that is some form of a cluster registry or just a human running kubectl. (The details of any specific mechanism is out of scope for the MCS API and this KEP -- see the Non-Goals section.) Mirroring this information in the cluster-local `ClusterClaim` CRD will necessarily need to be managed above the level of the cluster itself, since the properties of `clusterset.k8s.io` extend beyond the boundaries of a single cluster, and will likely be something that has access to whatever cluster registry-esque concept is implemented for that multicluster setup. It is expected that the mcs-controller ([as described in the MCS API KEP](https://github.com/kubernetes/enhancements/tree/master/keps/sig-multicluster/1645-multi-cluster-services-api#proposal)), will act as an admission controller to verify individual objects of this claim.
+
+Because there are obligations of the `id.k8s.io ClusterClaim` that are not meanigfully verifiable until a cluster tries to join a ClusterSet and set its `clusterset.k8s.io ClusterClaim`, the admission controller responsible for setting a `clusterset.k8s.io ClusterClaim` will need the ability to reject such an attempt when it is invalid, and alert `[UNRESOLVED]` or possibly affect changes to that cluster's `id.k8s.io ClusterClaim` to make it valid `[/UNRESOLVED]`. Two symptomatic cases of this would be:
+
+1. When a cluster with a given `id.k8s.io ClusterClaim` tries to join a ClusterSet, but a cluster with that same `id.k8s.io ClusterClaim` appears to already be in the set.
+2. When a cluster that does not have a `id.k8s.io ClusterClaim` tries to join a ClusterSet.
+
+In situations like these, the admission controller will need to fail to add the invalid cluster to the ClusterSet by refusing to set its `clusterset.k8s.io ClusterClaim`, and surface an error that is actionable to make the claim valid.
+
 ```
-<<[UNRESOLVED]>>
-How do we associate a cluster with a Clusterset?
-<<[/UNRESOLVED]>>
+# An example object of `clusterset.k8s.io ClusterClaim`:
+
+apiVersion: multicluster.k8s.io/v1
+kind: ClusterClaim
+metadata:
+  name: clusterset.k8s.io
+spec:
+  value: environ-1
 ```
+
+### CRD upgrade path
+
+#### To CRD or not to CRD?
+
+_That is the question._
+
+While this document has thus far referred to the `ClusterClaim` resource as being implemented as a CRD, another implementation point of debate has been whether this belongs in the core Kubernetes API, particularly the `id.k8s.io ClusterClaim`. A dependable cluster ID or cluster name has previously been discussed in other forums (such as [this SIG-Architecture thread](https://groups.google.com/g/kubernetes-sig-architecture/c/mVGobfD4TpY/m/nkdbkX1iBwAJ) from 2018, or, as mentioned above, the [Cluster API subproject](https://github.com/kubernetes-sigs/cluster-api/issues/4044) which implemented [their own solution](https://github.com/kubernetes-sigs/cluster-api/pull/4048).) It is the opinion of SIG-Multicluster that the function of the proposed `ClusterClaim` CRD is of broad utility and becomes more useful the more ubiquitous it is, not only in multicluster set ups.
+
+This has led to the discussion of whether or not we should pursue adding this resource type not as a CRD associated with SIG-Multicluster, but as a core Kubernetes API implemented in `kubernetes/kubernetes`. A short pro/con list is enclosed at the end of this section.
+
+One effect of that decision is related to the upgrade path. Implementing this resource only in k/k will restrict the types of clusters that can use cluster ID to only ones on the target version (or above) of Kubernetes, unless a separate backporting CRD is made available to them. At that point, with two install options, other issues arise. How do backported clusters deal with migrating their CRD data to the core k/k objects during upgrade -- will the code around the formal k/k implementation be sensitive to the backport CRD and migrate itself? Will users have to handle upgrades in a bespoke manner?
+
+|                       | CRD                                                                              | k/k                                               |
+|-----------------------|----------------------------------------------------------------------------------|---------------------------------------------------|
+| Ubiquitous | No                                                                     | Yes                                        |
+| Default always set | No                                                                     | Yes                                        |
+| Deployment            | Must be installed by the cluster lifecycle management, or as a manual setup step | In every cluster over target milestone            |
+| Schema validation     | OpenAPI v3 validation                                                    | Can use the built-in Kubernetes schema validation |
+| Blockers     | Official API review if using *.k8s.io                                                    | Official API review |
+| Conformance testing     | Not possible now, and no easy path forward                                                   | Standard |
+
+**In the end, SIG-Multicluster discussed this with SIG-Architecture and it was decided to stick with the plan to use a CRD.** Notes from this conversation are in the [SIG-Architecture meeting agenda](https://docs.google.com/document/d/1BlmHq5uPyBUDlppYqAAzslVbAO8hilgjqZUTaNXUhKM/preview) for 3/25/2021.
+
 
 ### Test Plan
 
@@ -469,6 +534,11 @@ when drafting this test plan.
 #### Alpha -> Beta Graduation
 
 - Determine if an `id.k8s.io ClusterClaim` be strictly a valid DNS label, or is allowed to be a subdomain.
+- To CRD or not to CRD (see section above)
+
+#### Beta -> GA criteria
+
+- At least one headless implementation using clusterID for MCS DNS
 
 <!--
 **Note:** *Not required until targeted at a release.*

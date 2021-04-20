@@ -13,8 +13,8 @@ reviewers:
   - "@mikedanese"
 approvers:
   - "@pmorie"
-prr-approvers:
-  - "@deads2k"
+#prr-approvers:
+#  - N/A -- out of tree
 see-also:
   - "/keps/sig-multicluster/1645-multi-cluster-services-api"
 #replaces:
