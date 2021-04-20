@@ -473,6 +473,25 @@ checking if there are objects with field X set) may be a last resort. Avoid
 logs or events for this purpose.
 -->
 
+###### How can someone using this feature know that it is working for their instance?
+
+<!--
+For instance, if this is a pod-related feature, it should be possible to determine if the feature is functioning properly
+for each individual pod.
+Pick one more of these and delete the rest.
+Please describe all items visible to end users below with sufficient detail so that they can verify correct enablement
+and operation of this feature.
+Recall that end users cannot usually observe component logs or access metrics.
+-->
+
+- [ ] Events
+  - Event Reason: 
+- [ ] API .status
+  - Condition name: 
+  - Other field: 
+- [ ] Other (treat as last resort)
+  - Details:
+
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 <!--
