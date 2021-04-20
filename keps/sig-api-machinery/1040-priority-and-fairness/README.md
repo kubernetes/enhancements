@@ -30,6 +30,13 @@
     - [Width of the request](#width-of-the-request)
     - [Determining the width](#determining-the-width)
     - [Dispatching the request](#dispatching-the-request)
+  - [Support for WATCH requests](#support-for-watch-requests)
+    - [Watch initialization](#watch-initialization)
+    - [Keeping the watch up-to-date](#keeping-the-watch-up-to-date)
+      - [Estimating cost of the request](#estimating-cost-of-the-request)
+      - [Multiple apiservers](#multiple-apiservers)
+      - [Cost of the watch event](#cost-of-the-watch-event)
+      - [Dispatching the request](#dispatching-the-request-1)
   - [Example Configuration](#example-configuration)
   - [Reaction to Configuration Changes](#reaction-to-configuration-changes)
   - [Default Behavior](#default-behavior)
@@ -1252,6 +1259,181 @@ After the above changes, the size of the queue is no longer correctly
 approximating the cost of processing the queued items.  Given that the
 total cost of processing a request is now `<width> x <processing latency>`,
 the weight of the queue should now reflect that.
+
+### Support for WATCH requests
+
+The next thing to consider is support for long-running requests.  However,
+solving it in a generic case is hard, because we don't have any way to
+predict how expensive those requests will be.  Moreover, for requests like
+port forwarding this is completely outside our control (being application
+specific).  As a result, as the first step we're going to limit our focus
+to just WATCH requests.
+
+However, even for WATCH requests, there are effectively two separate problems
+that has to be considered and addressed.
+
+#### Watch initialization
+
+While this is an important piece to address, to allow incremental progress
+we are leaving addressing this problem for the future release.
+
+Note for the future when we get to this:
+
+The most compatible approach would be to simply include WATCH requests as
+ones that are processed by APF dispatcher, but allow them to send an artificial
+`request finished` signal to the dispatcher once their initialization is done.
+However, that requires more detailed design.
+
+#### Keeping the watch up-to-date
+
+Once the watch is initialized, we have to keep it up-to-date with incoming
+changes.  That basically means that whenever some object that this particular
+watch is interested in is added/updated/deleted, and appropriate event has
+to be sent.
+
+Similarly as in generic case of long-running requests, predicting this cost
+up front is impossible. Fortunately, in this case we have a full control over
+those events, because those are effectively a result of the mutating requests
+that out mechanism is explicitly admitting.
+So instead of associating the cost of sending watch events to the corresponding
+WATCH request, we will reverse the situation and associate the cost of sending
+watch events to the mutating request that triggering them.
+
+In other words, we will be throttling the write requests to ensure that
+apiserver would be able to keep up with the watch traffic instead of throttling
+the watchers themselves.  The main reason for that is that throttling watchers
+themselves isn't really effective: we either need to send all objects to them
+anyway or in case we close them, they will try to resume from last received
+event anyway.  Which means we don't get anything on throttling them.
+
+##### Estimating cost of the request
+
+Let's start with an assumption that sending every watch event is equally
+expensive.  We will discuss how to generalize it below.
+
+With the above assumption, a cost of a mutating request associated with
+sending watch events triggerred by it is proportional to the number of
+watchers that has to process that event.   So let's describe how we can
+estimate this number.
+
+Obviously, we can't afford going over all watches to compute that - we need
+to keep this information already precomputed. What if we would simply
+store an in-memory map from (resource type, namespace, name) tuple into
+number of opened watches that are interested in a given event.  The size of
+that map won't be larger then the total number of watches, so that is
+acceptable.
+Note that each watch can also specify label and field selectors.  However,
+in most of cases a particular object has to be processed for them anyway
+to check if the selectors are satisfied.  So we can ignore those selectors
+as the object contributes to the cost (even if it will not be send as not
+satisfying the selector).
+The only exception to this is caused by a few predefined selectors that
+kube-apiserver is optimized for (this includes pods from a given node and
+nodes/secrets/configmaps specifying metadata.name field selector).  Given
+their simplicity, we can extend our mapping to handle those too.
+
+Having such in-memory map, we can quickly estimate the cost of a request.
+It's not as simple as taking a single map item as it requires adding watches
+for the whole namespace and all objects of a given type.  But it be done in
+O(1) map accesses.
+Keeping such map up-to-date is also easy - whenever a new watch start we
+increment a corresponding entry, when it ends we decrement it.
+
+##### Multiple apiservers
+
+All the above works well in the case of single kube-apiserver.  But if there
+are N kube-apiservers, there is no guarantee that the number of watches are
+evenly distributed across them.
+
+To address the problem, individual kube-apiservers has to publish the
+information about number of watches for other kube-apiservers.  We obviously
+don't want to introduce a new communications channel, so that can be done
+only by writing necessary information to the storage layer (etcd).
+However, writing a map that can contain tens (or hundreds?) of thousands of
+entries wouldn't be efficient. So we need to smartly hash that to a smaller
+structure to avoid loosing too much information.
+If we would have a hashing function that can combine only a similar buckets
+(e.g. it won't combine "all Endpoints" bucket with "pods from node X") then
+we can simply write maximum from all entries that are hashed to the same value.
+This means that some costs may be overestimated, but if we resaonably hash
+requests originating by system components, that seems acceptable.
+The above can be achieved by hashing each resource type to a separate set of
+buckets, and within a resource type hashing (namespace, name) as simple as:
+```
+  hash(ns, name) = 0                              if namespace == "" & name == ""
+  hash(ns, name) = 1 + hash(namespace)%A          if name == ""
+  hash(ns, name) = 1 + A + hash(namespace/name)%B otherwise
+```
+For small enough A and B (e.g. A=3, B=6), the representation should have less
+than 1000 entries, so it would be small enough to make periodic updates in etcd
+reasonable.
+
+We can optimize amount of data written to etcd by frequently (say once per
+second) checking what changed, but writing rarely (say once per minute) or
+if values in some buckets significantly increased.
+The above algorithm would allow us to avoid some more complicated time-smearing,
+as whenever something quickly grows we report it, but we don't immediately
+downscale which is a way to somehow incorporate a history.
+
+However, we will treat the above as a feasibility proof.  We will just start
+with the simplest apprach of treating each kube-apiserver independently.
+We will implement the above (i.e. knowledge sharing between kube-apiserver),
+if the independence assumption will not work good enough.
+The above description shows that it won't result in almost any wasted work
+if the code will be well structured.
+
+##### Cost of the watch event
+
+We assumed above that the cost of processing every watch event is equal.
+However, in practice the cost associated with sending an event consists
+of two main parts:
+- the cost of going through event change logic
+- the cost of processing the event object (e.g. deserialization or sending data
+  over network)
+The first one is close to equal independently of the event, the second one
+is more proportional to the size of the object.
+However, estimating size of the object is hard to predict for PATCH or DELETE
+requests. Additionally, even for POST or PUT requests where we could potentially
+estimate it based on size of the body of the requests, we may not yet have
+access to it when we need to make a decision.
+
+One way to estimate it would be to keep a running average of watch event size
+per bucket.  While it won't give us an accurate estimate, it should amortize
+well over time.
+
+Obviously some normalization will be needed here, but it's impossible to assess
+it on paper, and we are leaving this for the implementation and tuning phase
+to figure out the details.
+
+##### Dispatching the request
+
+We described how we can estimate the cost of the request associated with
+watch events triggerred by it.  But we didn't yet said how this translates
+to dispatching the request.
+
+First of all, we need to decide how to translate the estimated cost to the
+`width` of the request and its latency.  Second, we need to introduce the
+changes to our virtual world, as the fact that the request finished doesn't
+mean that sending all associated watch events has also finished (as they are
+send asynchronously).
+
+Given that individual watch events are to significant extent processed
+independently in individual goroutines, it actually makes sense to adjust the
+`width` of the request based on the expected number of triggerred events.
+However, we don't want to inflate the width of every single request that is
+triggering some watch event (as described in the above sections, setting
+the width to greater is reducing our ability to fully utilize our capacity).
+The exact function to computing the width should be figured out during
+further experiments, but the initial candidate for it would be:
+```
+  width(request) = min(floor(expected events / A), concurrency units in PL)
+```
+
+However, adjusting the width is not enough because, as mentioned above,
+processing watch events happens asynchronously.  As a result, we will use
+the mechanism of `additional latency` that is described in the section
+about LIST requests to compensate for asynchronous cost of the request
+(which in virtual world quals `<width> x <additional latency>`.
 
 ### Example Configuration
 
