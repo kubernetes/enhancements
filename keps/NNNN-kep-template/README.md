@@ -492,6 +492,23 @@ Recall that end users cannot usually observe component logs or access metrics.
 - [ ] Other (treat as last resort)
   - Details:
 
+###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
+
+<!--
+This is your opportunity to define what "normal" quality of service looks like
+for a feature.
+
+It's impossible to provide comprehensive guidance, but at the very
+high level (needs more precise definitions) those may be things like:
+  - per-day percentage of API calls finishing with 5XX errors <= 1%
+  - 99% percentile over day of absolute value from (job creation time minus expected
+    job creation time) for cron job <= 10%
+  - 99.9% of /health requests per day finish with 200 code
+
+These goals will help you determine what you need to measure (SLIs) in the next
+question.
+-->
+
 ###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
 
 <!--
@@ -504,18 +521,6 @@ Pick one more of these and delete the rest.
   - Components exposing the metric:
 - [ ] Other (treat as last resort)
   - Details:
-
-###### What are the reasonable SLOs (Service Level Objectives) for the above SLIs?
-
-<!--
-At a high level, this usually will be in the form of "high percentile of SLI
-per day <= X". It's impossible to provide comprehensive guidance, but at the very
-high level (needs more precise definitions) those may be things like:
-  - per-day percentage of API calls finishing with 5XX errors <= 1%
-  - 99% percentile over day of absolute value from (job creation time minus expected
-    job creation time) for cron job <= 10%
-  - 99,9% of /health requests per day finish with 200 code
--->
 
 ###### Are there any missing metrics that would be useful to have to improve observability of this feature?
 
