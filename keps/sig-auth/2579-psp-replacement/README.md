@@ -482,22 +482,32 @@ the container-host boundary.
 **AppArmor** - (baseline) Allow anything except `unconfined`. Custom AppArmor profiles must be
 installed by the cluster admin, and AppArmor fails closed when a profile is not present.
 
-<<[UNRESOLVED]>>
-**BLOCKING**
+**SELinux** - (baseline) type may only be set to allowlisted values, level may be anything, user &
+role must be unset. Spec:
 
-**SELinux** - (baseline)
-- Unset `SELinuxOptions` is allowed.
-- If options are set, they must match the following:
-  - `type` is one of:
-    - `container_init_t`
-    - `container_kvm_t`
-    - `container_logreader_t`
-    - `container_t`
-  - `level` can be anything
-  - `user` is unset
-  - `role` is unset
+- SELinuxOptions.Type
+    - **Restricted Fields:**
+        - `spec.securityContext.seLinuxOptions.type`
+        - `spec.containers[*].securityContext.seLinuxOptions.type`
+        - `spec.initContainers[*].securityContext.seLinuxOptions.type`
+    - **Allowed Values:**
+        - undefined/empty
+        - `container_t`
+        - `container_init_t`
+        - `container_kvm_t`
 
-<<[/UNRESOLVED]>>
+- SELinuxOptions.User and SELinuxOptions.Role
+    - **Restricted Fields:**
+        - `spec.securityContext.seLinuxOptions.user`
+        - `spec.containers[*].securityContext.seLinuxOptions.user`
+        - `spec.initContainers[*].securityContext.seLinuxOptions.user`
+        - `spec.securityContext.seLinuxOptions.role`
+        - `spec.containers[*].securityContext.seLinuxOptions.role`
+        - `spec.initContainers[*].securityContext.seLinuxOptions.role`
+    - **Allowed Values:** undefined/empty
+
+- SELinuxOptions.Level
+    - Unrestricted.
 
 **Non-root Groups** - (restricted) This optional constraint will be omitted from the initial
 implementation.
@@ -523,6 +533,17 @@ Kubernetes does not define the default set, but Docker does. This leaves us with
    gives less flexibility to the pod definition.
 
 @tallclair prefers option 2
+
+<<[/UNRESOLVED]>>
+
+<<[UNRESOLVED]>>
+
+**BLOCKING**
+
+**Volumes** - Which volume types should be allowed under the restricted profile?
+
+- Should we allow inline CSI volumes?
+- Should we allow `Ephemeral` volume types?
 
 <<[/UNRESOLVED]>>
 
