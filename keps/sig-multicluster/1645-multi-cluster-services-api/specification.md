@@ -1,7 +1,23 @@
 # Kubernetes DNS-Based **Multicluster** Service Discovery
 
 <!-- toc -->
-
+- [0 - About This Document](#0---about-this-document)
+- [1 - Schema Version](#1---schema-version)
+- [2 - Resource Records](#2---resource-records)
+  - [2.1 - Definitions](#21---definitions)
+  - [2.2 - Record for Schema Version](#22---record-for-schema-version)
+  - [2.3 - Records for a Service with ClusterSetIP](#23---records-for-a-service-with-clustersetip)
+    - [2.3.1 - <code>A</code>/<code>AAAA</code> Record](#231----record)
+    - [2.3.2 - <code>SRV</code> Records](#232----records)
+    - [2.3.3 - <code>PTR</code> Record](#233----record)
+      - [Limitations](#limitations)
+    - [2.3.4 - Records that should NOT exist for a Service with ClusterSetIP](#234---records-that-should-not-exist-for-a-service-with-clustersetip)
+  - [2.4 - Records for a Multicluster Headless Service](#24---records-for-a-multicluster-headless-service)
+    - [2.4.1 - <code>A</code>/<code>AAAA</code> Records](#241----records)
+    - [2.4.2 - <code>SRV</code> Records](#242----records)
+    - [2.4.3 - <code>PTR</code> Records](#243----records)
+      - [Limitations](#limitations-1)
+    - [2.4.4 - Records that should NOT exist for a Multicluster Headless Service](#244---records-that-should-not-exist-for-a-multicluster-headless-service)
 <!-- /toc -->
 
 ## 0 - About This Document
