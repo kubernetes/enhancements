@@ -97,6 +97,7 @@ tags, and then generate with `hack/update-toc.sh`.
     - [Service Types](#service-types)
     - [ClusterSetIP](#clustersetip)
     - [DNS](#dns)
+      - [Not allowing cluster-specific targeting via DNS](#not-allowing-cluster-specific-targeting-via-dns)
     - [EndpointSlice](#endpointslice)
     - [Endpoint TTL](#endpoint-ttl)
 - [Constraints and Conflict Resolution](#constraints-and-conflict-resolution)

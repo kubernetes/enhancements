@@ -1,5 +1,8 @@
 # Kubernetes DNS-Based **Multicluster** Service Discovery
 
+<!-- toc -->
+
+<!-- /toc -->
 
 ## 0 - About This Document
 
@@ -19,7 +22,7 @@ This proposal is intended as an extension of the [cluster-local Kubernetes DNS s
 
 clusterset = as defined in [KEP-1645: Multi-Cluster Services API](README.md): “A placeholder name for a group of clusters with a high degree of mutual trust and shared ownership that share services amongst themselves. Membership in a clusterset is symmetric and transitive. The set of member clusters are mutually aware, and agree about their collective association. Within a clusterset, [namespace sameness](https://github.com/kubernetes/community/blob/master/sig-multicluster/namespace-sameness-position-statement.md) applies and all namespaces with a given name are considered to be the same namespace.”
 
-`<clustersetzone>` = domain for multi-cluster services in the clusterset, which must be `clusterset.local`; as this may become configurable in the future, this specification refers to it by the palceholder `<clustersetzone>`, but per the MCS API it currently must be defined to be `clusterset.local`. 
+`<clustersetzone>` = domain for multi-cluster services in the clusterset, which must be `clusterset.local`; as this may become configurable in the future, this specification refers to it by the placeholder `<clustersetzone>`, but per the MCS API it currently must be defined to be `clusterset.local`. 
 
 ClusterSetIP / `<clusterset-ip>` / clusterset IP = as defined in [KEP-1645: Multi-Cluster Services API](README.md): “A non-headless ServiceImport is expected to have an associated IP address, the clusterset IP, which may be accessed from within an importing cluster. This IP may be a single IP used clusterset-wide or assigned on a per-cluster basis, but is expected to be consistent for the life of a ServiceImport from the perspective of the importing cluster. Requests to this IP from within a cluster will route to backends for the aggregated Service.”
 
