@@ -441,7 +441,7 @@ and adding or updating ephemeral containers will require a full policy check.
 
 _Non-blocking for alpha. This should be resolved for beta._
 
-Once ephemeral containers allow [custom security contexts], it may be desireable to run an ephemeral
+Once ephemeral containers allow [custom security contexts], it may be desirable to run an ephemeral
 container with higher privileges for debugging purposes. For example, CAP_SYS_PTRACE is forbidden by
 the baseline policy but can be useful in debugging. We could introduce yet-another-mode-label that
 only applies enforcement to ephemeral containers (defaults to the allow policy).
@@ -503,6 +503,28 @@ installed by the cluster admin, and AppArmor fails closed when a profile is not 
 implementation.
 
 **Seccomp** - (restricted) Allow anything except `unconfined`. Same reasoning as AppArmor.
+
+<<[UNRESOLVED]>>
+
+**BLOCKING**
+
+**Capabilities** - (baseline) Adding additional capabilities beyond the default set must be
+disallowed.
+
+Kubernetes does not define the default set, but Docker does. This leaves us with 2 options:
+
+1. Hardcode the [docker default capability
+   set](https://docs.docker.com/engine/reference/run/#runtime-privilege-and-linux-capabilities), and
+   allow adding a capability in that set. This enables workloads to use an allowlist approach where
+   they drop all capabilities (`*`), and only explicitly add the ones they need. However, it means
+   that operators cannot effectively customize the default set (e.g. drop CAP_NET_RAW) through
+   runtime parameters.
+2. Forbid any use of adding capabilities. This allows runtimes to customize the default set, but
+   gives less flexibility to the pod definition.
+
+@tallclair prefers option 2
+
+<<[/UNRESOLVED]>>
 
 ### Flexible Extension Support
 
