@@ -1,4 +1,4 @@
-# Option to Preserve default file mode bit (Mode\DefaultMode) set in AtomicWriter volumes
+# Option to Preserve default file mode bit (Mode/DefaultMode) set in AtomicWriter volumes
 
 ## Table of Contents
 
@@ -34,34 +34,42 @@ Kubernetes allows users to use Secret (and other configs) as a VolumeSource
 in pod spec. It also allows users to set a default file mode at the secret
 or every file level.
 The security context set for the pod (runAsUser or fsGroup) conflicts with
-default mode specified for the secret\file. In current implementation of the
+default mode specified for the secret/file. In current implementation of the
 AtomicWriter volumes, default file mode is overwritten by the runAsUser or fsGroup
 bit while setting the volume ownership.
 
 Above results in unexpected behavior in cases where users want to run multiple
 containers in a single pod and want them to run under a fsGroup, have different UIDs etc.
-and yet have the ability to share same secret\config volume across containers.
+and yet have the ability to share same secret/config volume across containers.
 
-This proposal proposes to provide users with ability to preserve the file Mode\DefaultMode bit set on the
+For ex: If user has a ssh key, exposed as a secret volume to the pod, which runs
+under security context of a fsGroup.
+If user sets the DefaultMode on the secret volume to 256. User expects file mode to be set to 0400 on all files.
+However, the actual file mode set on the files is 0440, as SetVolumeOwnership applies
+the group ownership permissions to the files in the volume.
+
+This proposal proposes to provide users with ability to preserve the file Mode/DefaultMode bit set on the
 AtomicWriter volumes (Secret, ConfigMap etc) in an opt-in and backward compatible manner.
 
 ## Motivation
 
 Many workloads running on Kubernetes today need the ability to run multiple containers
 in the same pod. Primitives such as main, sidecars and init containers form the core
-of distributed application development in kubernetes and are very widely accepted\used patterns.
+of distributed application development in kubernetes and are very widely accepted/used patterns.
 
 Some workloads may want to run multiple containers in a single pod, under different UIDs and
-have the ability to access a shared\common secret or config volume.
+have the ability to access a shared/common secret or config volume and yet have a
+tighter control on the file mode set on the files inside the volume.
 
 As a platform, Kubernetes should evolve to allow the sharing of AtomicWriter volumes (secret, config etc.)
-across containers running under different UIDs as a first party scenario.
+across containers running under different UIDs as a first party scenario and allow users to control the
+file mode bit set on the files in a predictable way.
 
 With this feature, we try to provide a backwards compatible way for the users to
-share a AtomicWriter volumes across containers running under different UIDs.
+to have a tighter/predictable control over the file mode set on the files in AtomicWriter volumes.
 
 We intend to provide a way for the users to opt-in for the new behavior and expect not to break
-any existing applications\configurations.
+any existing applications/configurations.
 
 ## Proposal
 
@@ -111,6 +119,9 @@ type SecretVolumeSource struct {
     // at the time of file creation.
     // If PreserveDefaultMode is set to true the file mode is not modified based
     // on fsGroup after the file is created with the defaultMode.
+    // If the PreserveDefaultMode is set to false and fsGroup is specified
+    // the volume is modified to be owned by the fsGroup.
+    // If PreserveDefaultMode is not specified in the volume spec, it defaults to false.
     // +optional
     PreserveDefaultMode *bool
 }
@@ -137,13 +148,13 @@ chown and chmod to the fsGroup
 
 #### Proposed heuristics
 
-- *Case 1*: The volume has PreserveDefaultMode set to false.
+- *Case 1*: The volume has PreserveDefaultMode set to false or not specified.
     In this case there is no behavioural change in how the file permissions are
     set for the volume. In other words, we will continue to create the files
-    with Mode\Default and then set the volume ownership based on fsGroup if specified.
+    with Mode/Default and then set the volume ownership based on fsGroup if specified.
     This is the default case.
 - *Case 2*: The volume has PreserveDefaultMode set to true.
-    In this case the payload\volume\files are created using Mode\Default mode.
+    In this case the payload/volume/files are created using Mode/Default mode.
     Then the call to SetVolumeOwnership is skipped, in turn preserving the Default file mode on the files.
 
 #### Alternatives considered
@@ -151,7 +162,7 @@ chown and chmod to the fsGroup
 - Instead of having PreserveDefaultMode flag at the volume source level, we can have the same flag in
     the KeyToPath struct. That will allow us granular control over every file with-in the volume :
   - We would have to pass the payload information along with PreserveDefaultMode to the SetVolumeOwnership routine
-        and skip chown\chmod if PreserveDefaultMode is set to true for the file.
+        and skip chown/chmod if PreserveDefaultMode is set to true for the file.
   - This will be more invasive change, but would allow more granular control at per file level
   - If users want to preserve Mode for one file in the volume and not for another they can achieve that by creating
         two different volumes, with PreserveDefaultMode set to true for the volume where they want to preserve default mode for all files
