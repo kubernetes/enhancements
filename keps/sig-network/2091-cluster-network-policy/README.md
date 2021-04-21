@@ -16,6 +16,7 @@
     - [Story 3: Isolate multiple tenants in a cluster](#story-3-isolate-multiple-tenants-in-a-cluster)
     - [Story 4: Enforce network/security best practices](#story-4-enforce-networksecurity-best-practices)
     - [Story 5: Restrict egress to well known destinations](#story-5-restrict-egress-to-well-known-destinations)
+  - [RBAC](#rbac)
   - [Notes/Constraints/Caveats](#notesconstraintscaveats)
   - [Risks and Mitigations](#risks-and-mitigations)
   - [Future Work](#future-work)
@@ -302,6 +303,14 @@ and want to ensure that only a given set of workloads is allowed to connect to
 the database for PII/privacy reasons. Using ClusterNetworkPolicy, a user can
 write a policy to guarantee that only the selected pods can connect to the
 database IP.
+
+### RBAC
+
+Cluster-scoped NetworkPolicy resources are meant for cluster administrators.
+Thus, access to manage these resources must be granted to subjects which have
+the authority to outline the security policies for the cluster. Therefore, by
+default, the `admin` and `edit` ClusterRoles will be granted the permissions
+to edit the cluster-scoped NetworkPolicy resources.
 
 ### Notes/Constraints/Caveats
 
