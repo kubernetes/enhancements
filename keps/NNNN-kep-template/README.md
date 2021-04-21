@@ -431,11 +431,16 @@ conversion tests if API types are being modified.
 This section must be completed when targeting beta to a release.
 -->
 
-###### How can a rollout fail? Can it impact already running workloads?
+###### How can a rollout or rollback fail? Can it impact already running workloads?
 
 <!--
 Try to be as paranoid as possible - e.g., what if some components will restart
 mid-rollout?
+
+Be sure to consider highly-available clusters, where, for example,
+feature flags will be enabled on some API servers and not others during the
+rollout. Similarly, consider large clusters and how enablement/disablement
+will rollout across nodes.
 -->
 
 ###### What specific metrics should inform a rollback?
