@@ -161,10 +161,10 @@ The `smtaware` policy would need to make sure the remaining core on the half-all
 
 The container will then actually get more virtual cores (6) than what is requesting (5).
 
-| Requested (virtual) CPUs | Requested (physical) CPUs | Actual virtual CPUs allocation |
-| ------------------------ | ------------------------- | ------------------------------ |
-| 5                        | 3                         | 1                              |
-| N                        | M = N / `threads_per_cpu` | X = N % `threads_per_cpu`      |
+| Requested (virtual) CPUs | Requested (physical) CPUs | Unallocatable (virtual) CPUs   | Total allocated (virtual) CPUs            |
+| ------------------------ | ------------------------- | ------------------------------ | ----------------------------------------- |
+| 5                        | 3                         | 1                              | 6                                         |
+| N                        | M = N / `threads_per_cpu` | X = N % `threads_per_cpu`      | `requested_vcpus` + `unallocatable_vcpus` |
 
 With `threads_per_cpu` is typical 2 on x86_64 with SMT enabled - but this number is not fixed and can change in future hardware implementation.
 
