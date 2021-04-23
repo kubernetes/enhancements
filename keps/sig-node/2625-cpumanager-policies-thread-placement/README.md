@@ -122,7 +122,7 @@ Key properties:
 
 - The CPU Manager implements the pod admit handler interface and participates in Kubelet pod admission.
 - The `GetAllocateResourcesPodAdmitHandler()` function in the Container Manager is modified to perform admission checks for CPU Manager in addition to the already occurring Topology manager admission check.
-Just like Topology Manager returns `TopologyAffinityError` is case of resources cannot be NUMA-aligned in case of `restricted` or `single-numa-node policy`, CPU Manager admission failure results in a rejected pod with `SMTAlignmentError`. If both CPU Manager and Topology manager don't allow pod to be admitted `ContainerManagerAdmissionError` is returned to indicate that both the admit handlers are not allowing pod to be admitted. 
+Just like Topology Manager returns `TopologyAffinityError` is case of resources cannot be NUMA-aligned in case of `restricted` or `single-numa-node policy`, CPU Manager admission failure results in a rejected pod with `SMTAlignmentError`.
 - The Policy interface in CPU Manager is enhanced to support an Admit function. This allows to perform pod admission decision for CPU Manager policies.
 - When CPU Manager is configured with `smtaware` policy, when the `Admit()` function is called it is checked if the CPU request is
 such that it would acquire an entire physical core. In case request translates to partial occupancy of the cores the Pod will not be admitted and would fail with `SMTAlignmentError`. In case of `static` and `none` policy, the Admit() function always returns true meaning the pod is always admitted.
