@@ -1,0 +1,41 @@
+title: Defining the Kubernetes Release Cadence
+kep-number: 2572
+authors:
+  - "@kikisdeliveryservice"
+  - "@jeremyrickard"
+  - "@jberkus"
+  - "@justaugustus"
+  - "@LappleApple"
+  - "@saschagrunert"
+owning-sig: sig-release
+participating-sigs:
+  - sig-architecture
+  - sig-testing
+status: implementable
+creation-date: 2021-01-21
+reviewers:
+  - "@ehashman"
+  - "@hasheddan"
+approvers:
+  - "@BenTheElder" #sig-testing
+  - "@derekwaynecarr" #sig-architecture
+  - "@dims" #sig-architecture
+  - "@johnbelamaric" #sig-architecture
+  - "@LappleApple" #sig-release
+  - "@saschagrunert" #sig-release
+  - "@spiffxp" #sig-testing
+  - "@stevekuznetsov" #sig-testing
+
+# The target maturity stage in the current dev cycle for this KEP.
+stage: alpha
+
+# The most recent milestone for which work toward delivery of this KEP has been
+# done. This can be the current (upcoming) milestone, if it is being actively
+# worked on.
+latest-milestone: "v1.22"
+
+# The milestone at which this feature was, or is targeted to be, at each stage.
+milestone:
+  alpha: "v1.22"
+  beta: "v1.23"
+  stable: "v1.26"
