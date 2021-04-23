@@ -7,6 +7,7 @@ authors:
   - "@lachie83"
   - "@khenidak"
   - "@feiskyer"
+  - "@bridgetkromhout"
 owning-sig: sig-network
 participating-sigs:
   - sig-cluster-lifecycle
@@ -18,20 +19,11 @@ prr-approvers:
   - "@johnbelamaric"
 editor: TBD
 creation-date: "2018-05-21"
-last-updated: "2021-02-02"
-status: implementable
-stage: beta
-latest-milestone: v1.21
+last-updated: "2021-04-23"
+status: implemented
+stage: stable
+latest-milestone: v1.22
 milestone:
   alpha: "v1.20"
   beta: "v1.21"
   stable: "v1.22"
-feature-gates:
-  - name: IPv6DualStack
-    components:
-      - kube-apiserver
-      - kube-controller-manager
-      - kubelet
-      - kube-proxy
-disable-supported: true
-metrics: []
