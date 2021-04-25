@@ -7,7 +7,7 @@
 - [Summary](#summary)
 - [Motivation](#motivation)
 - [Proposal](#proposal)
-  - [Preserve DefaultMode Flag](#preserve-defaultmode-flag)
+  - [Preserve Permissions Flag](#preserve-permissions-flag)
   - [File Permission](#file-permission)
     - [Proposed heuristics](#proposed-heuristics)
     - [Alternatives considered](#alternatives-considered)
@@ -73,15 +73,15 @@ any existing applications/configurations.
 
 ## Proposal
 
-Kubernetes should implement a new boolean flag (PreserveDefaultMode) in the SecretVolumeSource and
+Kubernetes should implement a new boolean flag (PreservePermissions) in the SecretVolumeSource and
 other AtomicWriter volumes.
 
 The flag should be optional and default to false in code. This flag should be honored at the time of volume
-set-up and call to SetVolumeOwnership should be skipped in case PreserveDefaultMode=true.
+set-up and call to SetVolumeOwnership should be skipped in case PreservePermissions=true.
 
-### Preserve DefaultMode Flag
+### Preserve Permissions Flag
 
-A new PreserveDefaultMode boolean will be implemented in SecretVolumeSource and other AtomicWriter volumes.
+A new PreservePermissions boolean will be implemented in SecretVolumeSource and other AtomicWriter volumes.
 
 ```go
 // SecretVolumeSource adapts a Secret into a volume.
@@ -107,7 +107,7 @@ type SecretVolumeSource struct {
     // Directories within the path are not affected by this setting.
     // This might be in conflict with other options that affect the file
     // mode, like fsGroup, and the result can be other mode bits set.
-    // If PreserveDefaultMode is set to true then file mode bit is not
+    // If PreservePermissions is set to true then file mode bit is not
     // modified after the file creation, due to any other options set
     // such as fsGroup etc
     // +optional
@@ -117,23 +117,23 @@ type SecretVolumeSource struct {
     Optional *bool
     // Specify whether we want to preserve the DefaultMode set on the files
     // at the time of file creation.
-    // If PreserveDefaultMode is set to true the file mode is not modified based
+    // If PreservePermissions is set to true the file mode is not modified based
     // on fsGroup after the file is created with the defaultMode.
-    // If the PreserveDefaultMode is set to false and fsGroup is specified
+    // If the PreservePermissions is set to false and fsGroup is specified
     // the volume is modified to be owned by the fsGroup.
-    // If PreserveDefaultMode is not specified in the volume spec, it defaults to false.
+    // If PreservePermissions is not specified in the volume spec, it defaults to false.
     // +optional
-    PreserveDefaultMode *bool
+    PreservePermissions *bool
 }
 ```
 
-A secret volume source with preserveDefaultMode=true:
+A secret volume source with PreservePermissions=true:
 
 ```yaml
   volumes:
   - name: test-secret
     secret:
-      preserveDefaultMode: true
+      preservePermissions: true
       defaultMode: 256
       secretName: test-secret
 ```
@@ -148,24 +148,24 @@ chown and chmod to the fsGroup
 
 #### Proposed heuristics
 
-- *Case 1*: The volume has PreserveDefaultMode set to false or not specified.
+- *Case 1*: The volume has PreservePermissions set to false or not specified.
     In this case there is no behavioural change in how the file permissions are
     set for the volume. In other words, we will continue to create the files
     with Mode/Default and then set the volume ownership based on fsGroup if specified.
     This is the default case.
-- *Case 2*: The volume has PreserveDefaultMode set to true.
+- *Case 2*: The volume has PreservePermissions set to true.
     In this case the payload/volume/files are created using Mode/Default mode.
     Then the call to SetVolumeOwnership is skipped, in turn preserving the Default file mode on the files.
 
 #### Alternatives considered
 
-- Instead of having PreserveDefaultMode flag at the volume source level, we can have the same flag in
+- Instead of having PreservePermissions flag at the volume source level, we can have the same flag in
     the KeyToPath struct. That will allow us granular control over every file with-in the volume :
-  - We would have to pass the payload information along with PreserveDefaultMode to the SetVolumeOwnership routine
-        and skip chown/chmod if PreserveDefaultMode is set to true for the file.
+  - We would have to pass the payload information along with PreservePermissions to the SetVolumeOwnership routine
+        and skip chown/chmod if PreservePermissions is set to true for the file.
   - This will be more invasive change, but would allow more granular control at per file level
   - If users want to preserve Mode for one file in the volume and not for another they can achieve that by creating
-        two different volumes, with PreserveDefaultMode set to true for the volume where they want to preserve default mode for all files
+        two different volumes, with PreservePermissions set to true for the volume where they want to preserve default mode for all files
 
 ### Scope Of the Change
 
