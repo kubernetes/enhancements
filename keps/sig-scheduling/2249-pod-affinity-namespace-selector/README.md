@@ -398,7 +398,8 @@ proposal will be implemented, this is the place to discuss them.
   - feature gate enabled/disabled
 - Benchmark Tests: 
   - evaluate performance for the case where the selector matches a large number of pods 
-    in large number of namespaces
+    in large number of namespaces. The evaluation shows that using NamespaceSelector has no
+    impact on performance (see https://github.com/kubernetes/kubernetes/pull/101329 for details).
 
 <!--
 **Note:** *Not required until targeted at a release.*
@@ -487,7 +488,10 @@ in back-to-back releases.
 
 ### Upgrade / Downgrade Strategy
 
-N/A
+In the event of an upgrade, kube-apiserver will start accepting NamespaceSelector and the 
+new CrossNamespaceAffinity quota scope.
+
+In the event of a downgrade, kube-scheduler will ignore NamespaceSelector even if it was set.
 
 ### Version Skew Strategy
 
@@ -546,7 +550,7 @@ _This section must be completed when targeting alpha to a release._
  It should continue to work as expected.
 
 * **Are there any tests for feature enablement/disablement?**
-  No, but we can do manual testing.
+  Yes, unit tests exist.
 
 
 ### Rollout, Upgrade and Rollback Planning
@@ -566,7 +570,7 @@ _This section must be completed when targeting beta graduation to a release._
 
 
 * **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
-No, will be manually tested.
+Manually tested successfully.
 
 * **Is the rollout accompanied by any deprecations and/or removals of features, APIs, 
 fields of API types, flags, etc.?**
@@ -656,7 +660,9 @@ not get assigned nodes.
 N/A
 
 * **What steps should be taken if SLOs are not being met to determine the problem?**
-N/A
+
+Check `plugin_execution_duration_seconds{plugin="InterPodAffinity"}` to see if latency increased. Note 
+that latency increases with number of existing pods.
 
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
@@ -679,6 +685,7 @@ information to express the idea and why it was not acceptable.
 ## Implementation History
  - 2021-01-11: Initial KEP sent for review
  - 2021-02-10: Remove the restriction on empty namespace selector
+ - 2021-04-26: Graduate the feature to Beta
  
 <!--
 Major milestones in the lifecycle of a KEP should be tracked in this section.
