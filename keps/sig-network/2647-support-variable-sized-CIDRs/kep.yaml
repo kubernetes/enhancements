@@ -1,17 +1,24 @@
 title: NodeIPAM controller support variable sized CIDRs
-kep-number: 20200617
-authors: ['@liuxu623']
+kep-number: 2647
+authors: 
+  - '@liuxu623'
+  - '@pacoxu'
 owning-sig: sig-network
-reviewers: ['@thockin']
-approvers: [TBD, '@oscar.doe']
-prr-approvers: ['@deads2k']
+reviewers: 
+  - '@thockin'
+  - '@aojea'
+approvers: 
+  - '@thockin'
+  - '@aojea'
+prr-approvers: 
+  - '@deads2k'
 creation-date: "2020-06-17"
-last-updated: v1.19
-status: provisional
+last-updated: v1.22
+status: implementable
 stage: stable
-latest-milestone: v1.19
+latest-milestone: v1.22
 milestone:
-  stable: v1.19
+  stable: v1.22
 disable-supported: false
 see-also:
   - "https://github.com/kubernetes/kubernetes/issues/90922"
