@@ -1392,8 +1392,8 @@ This capability will move to stable when the following criteria have been met.
 * **How can this feature be enabled / disabled in a live cluster?**
   - With this feature moving to stable, the feature will always be enabled.
   - While disabling the feature is not possible, using it is not required. Any
-    cluster can be provisioned with the `spec.ipFamilyPolicy` field set to
-    `SingleStack`.
+    cluster can be provisioned as single-stack by setting `--cluster-cidr` to
+    only one CIDR and ` --service-cluster-ip-range` to only one address block.
 
 * **Does enabling the feature change any default behavior?**
   Pods and Services will remain single-stack until cli flags have been modified
