@@ -243,7 +243,8 @@ Since this has been reserved since 2017 (if not earlier), no backwards guarantee
 - release note
 
 1.22:
-- gate enabled by default
+- promote to GA
+- cannot be disabled
 - release note
 
 1.23:

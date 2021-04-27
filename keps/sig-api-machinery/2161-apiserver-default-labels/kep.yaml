@@ -10,7 +10,7 @@ owning-sig: sig-api-machinery
 participating-sigs:
   - sig-api-machinery
   - sig-network
-status: implementable
+status: implemented
 creation-date: 2020-11-22
 reviewers:
   - "@liggitt"
@@ -21,8 +21,8 @@ approvers:
   - "@liggitt"
   - "@deads2k"
 replaces:
-stage: beta
-latest-milestone: "v1.21"
+stage: stable
+latest-milestone: "v1.22"
 milestone:
   beta: "v1.21"
   stable: "v1.22"
@@ -30,4 +30,4 @@ feature-gates:
   - name: NamespaceDefaultLabelName
     components:
       - kube-apiserver
-disable-supported: true
+disable-supported: false
