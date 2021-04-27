@@ -1,0 +1,16 @@
+  apiVersion: team.example.com/v1alpha1
+  kind: Logger
+  metadata:
+    name: logging
+    annotations:
+      config.kubernetes.io/function: |
+        container:
+          image: docker.example.com/kustomize-modules/logger:v0.1.0
+  spec:
+    selector:
+      matchLabels:
+        app: nginx-example
+    source:
+      paths:
+        - /var/log/nginx/error.log
+        - /var/log/nginx/access.log

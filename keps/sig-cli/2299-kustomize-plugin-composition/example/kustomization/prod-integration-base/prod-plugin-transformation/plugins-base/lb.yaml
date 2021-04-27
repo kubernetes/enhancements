@@ -1,0 +1,15 @@
+apiVersion: team.example.com/v1alpha1
+kind: HTTPLoadBalancer
+metadata:
+  name: lb
+  annotations:
+    config.kubernetes.io/function: |
+      container:
+        image: docker.example.com/kustomize-modules/lb:v0.1.1
+spec:
+  selector:
+    matchLabels:
+      app: nginx-example
+  expose:
+    serviceName: nginx
+    port: 80

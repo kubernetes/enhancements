@@ -1,0 +1,9 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+- builtins-base
+
+# This layer changes the transformer configs from being treated as resources to being executed. Transformer config must be fully resolved by this point. It is not possible to create a true "base" Kustomization that incorporates resources/built-ins with generic transformer configs. Instead, transformer config must be finalized (e.g. with production values) below this layer, and built-ins (e.g. label transformer config) must be specified above it (to apply to the results of the transformers).
+transformers:
+- prod-plugin-transformation
