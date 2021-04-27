@@ -6,13 +6,12 @@ owning-sig: sig-apps
 status: implemented
 creation-date: 2020-12-29
 reviewers:
-  - "@soltysh"
   - "@erictune"
   - "@ahg"
   - "@liggitt"
 approvers:
+  - "@soltysh"
   - "@janetkuo"
-  - "@kow3ns"
 
 # The target maturity stage in the current dev cycle for this KEP.
 stage: beta

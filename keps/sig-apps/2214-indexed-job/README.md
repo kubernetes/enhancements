@@ -9,6 +9,7 @@
 - [Proposal](#proposal)
   - [User Stories (Optional)](#user-stories-optional)
     - [Story 1](#story-1)
+    - [Story 2](#story-2)
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
@@ -58,19 +59,21 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-This KEP extends kubernetes with user-friendly support for running
-embarrassingly parallel jobs.
+This KEP extends kubernetes with user-friendly support for running parallel jobs.
 
-Here, parallel means multiple pods. By embarrassingly parallel, it means that
-the pods have no dependencies between each other.
-In particular, neither ordering between pods nor gang scheduling are supported.
+Here, parallel means multiple pods per Job. Jobs can be:
+- Embarrassingly parallel, where the pods have no dependencies between each other.
+- Tightly coupled, where the Pods communicate among themselves to make progress
+  (kubernetes/kubernetes#99497)[https://github.com/kubernetes/kubernetes/issues/99497]
 
 We propose the addition of completion indexes into the Pods of a *Job
 [with fixed completion count]* to support running embarrassingly parallel
-programs, with a focus on ease of use.
+programs, with a focus on ease of use for workload partitioning.
 We call this new Job pattern an *Indexed Job*, because each Pod of the Job
 specializes to work on a particular index, as if the Pods where elements of an
 array.
+With the addition of a headless Service, Pods can address another Pod with a
+specific index with a DNS lookup, because the index is part of the hostname.
 
 [with fixed completion count]: https://kubernetes.io/docs/concepts/workloads/controllers/job/#parallel-jobs
 
@@ -94,18 +97,45 @@ own APIs and controllers or adopt third party implementations. Each
 implementation splits the ecosystem, making it harder for higher level systems
 for Job queueing or workflows to support all of them.
 
+Additionally, the Pods within a Job can't easily address and communicate with
+each other, making it hard to run tightly coupled parallel Jobs using the Job
+API.
+
+Third-party operators cover these use cases by defining their own APIs, leading
+to fragmentation of the ecosystem. The operators use mainly two networking
+patterns: (1) fronting each index with a Service or (2) creating Pods with
+stable hostnames based on their index.
+
+Using a Service per index has scalability problems. Other than the Service
+objects themselves, the control plane creates an Endpoint object.
+
+Creating Pods with stable hostnames mitigates this problem. The control plane
+requires only one headless Service and one Endpoint (or a few EndpointSlices) to
+inform the DNS programming. Pods can address each other with a DNS lookup and
+communicate directly using Pod IPs.
+
+A popular operator chose to use a StatefulSet to handle Pod creation and
+management with these characteristics. Due to limitations, the operator now
+manages plain pods. These limitations of StatefulSet were:
+- Pods are created serially.
+- Pods can be replaced without leaving notice of failures.
+- Pods cannot run to completion (containers restart on success or failure).
+
 [Job patterns]: https://kubernetes.io/docs/concepts/workloads/controllers/job/#job-patterns
 
 ### Goals
 
 - Support the *indexed Job* pattern by adding completion indexes to each Pod
   of a Job in *fixed completion count* mode.
+- Add stable hostnames to Pods based on the index to simplify communication 
+  among themselves.
 
 ### Non-Goals
 
 - Support for work lists, where each Pod receives a different element of a
   static list. This can be implemented by users from completion indexes.
 - Support for completion index in non-parallel Jobs or Jobs with a work queue.
+- Network programming for indexed Jobs. This is left to headless Services.
 - All-or-nothing scheduling.
 
 ## Proposal
@@ -114,7 +144,7 @@ for Job queueing or workflows to support all of them.
 
 #### Story 1
 
-As a Job author, I can create an array Job where each Pod receives an ordered
+As a Job author, I can create an Indexed Job where each Pod receives an ordered
 completion index. I can use the index in my binary through an environment
 variable or a file to statically select the load the Pod should work on.
 
@@ -122,21 +152,54 @@ variable or a file to statically select the load the Pod should work on.
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: parallel-work
+  name: my-job
 spec:
   completions: 100
   parallelism: 100
+  completionMode: Indexed
   template:
     spec:
       containers:
       - name: task
         image: registry.example.com/processing-image
-        command: ["./process",  "--index", "$INDEX"]
-        env:
-        - name: INDEX
-          valueFrom:
-            fieldRef:
-              fieldPath: metadata.annotations['batch.kubernetes.io/job-completion-index'] 
+        command: ["./process",  "--index", "$JOB_COMPLETION_INDEX"]
+```
+
+#### Story 2
+
+As a Job author, I can create an Indexed Job where pods can address each other
+by the hostname that can be built from the index.
+
+```yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: my-job
+spec:
+  completions: 100
+  parallelism: 100
+  completionMode: Indexed
+  template:
+    metadata:
+      labels:
+        job: my-job
+    spec:
+      subdomain: my-job-svc
+      containers:
+      - name: task
+        image: registry.example.com/processing-image
+        command: ["./process",  "--index", "$JOB_COMPLETION_INDEX", "--hosts-pattern", "my-job-{{.id}}.my-job-svc"]
+```
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-job-svc
+spec:
+  clusterIP: None
+  selector:
+    job: my-job
 ```
 
 ### Notes/Constraints/Caveats (Optional)
@@ -148,14 +211,18 @@ because work lists can be implemented in a startup script using the completion
 index as building block.
 * The semantics of an indexed Job are similar to a StatefulSet, in the sense
 that Pods have an associated index.
-However, the APIs have a major difference: a StatefulSet doesn't have completion
-semantics, as opposed to Jobs.
+However, the APIs have major differences:
+  - a StatefulSet doesn't have completion semantics, as opposed to Jobs.
+  - a StatefulSet creates pods serially, whereas Job creates all Pods in
+    parallel.
+  - a StatefulSet gives Pods stable hostnames, a Job doesn't.
 
 [indexed Job]: https://github.com/kubernetes/community/blob/b21d1b27c8c748bf81283c2d89cde2becb5f2709/contributors/design-proposals/apps/indexed-job.md
 
 ### Risks and Mitigations
 
 - More than one pod per index
+
   Jobs have a known issue in which more than one Pod can be started even if
   parallelism and completion are set to 1 ([reference]). In the case of indexed
   Jobs, this translates to more than one Pod having the same index.
@@ -171,6 +238,29 @@ semantics, as opposed to Jobs.
   In a Job sync, the controller will be limited to create or delete up to 500
   Pods. The controller processes the remaining operations in subsequent syncs,
   which it schedules with no delay.
+
+- Scalability and latency of DNS programming, if users choose to pair the
+  Indexed Job with a headless service.
+
+  DNS programming requires the update of Endpoint or EndpointSlices by the
+  control plane and updating DNS records by the DNS provider.
+  This might not scale well for short-lived Jobs with high number of
+  parallelism.
+  
+  Thus, Pods need to be prepared to:
+  - Retry lookups, when the control plane didn't have time to update the records.
+  - Handle the IPs for a CNAME to change, in the case of a Pod failure.
+  - Handle more than one IP for the CNAME. This might happen temporarily when
+    the job controller creates more than one pod per index. The controller
+    corrects this in the next sync, deleting the Pod that started last, which
+    should correspond to the last IP added to the record.
+  In short, Pods are ephemeral and resolutions might change, so users shouldn't
+  rely on DNS caches.
+  
+  However, DNS programming is opt-in (users need to create a matching
+  headless Service). Moreover, workloads have other means of obtaining IPs,
+  such as querying/watching the API server. Vendors can also choose to implement
+  alternate DNS programming tailored for Jobs.
 
 [reference]: https://kubernetes.io/docs/concepts/workloads/controllers/job/#handling-pod-and-container-failures
 
@@ -207,6 +297,8 @@ type JobSpec struct {
   // `Indexed` means that the Pods of a
   // Job get an associated completion index from 0 to (.spec.completions - 1),
   // available in the annotation batch.kubernetes.io/job-completion-index.
+  // The Pod hostnames are set to $(job-name)-$(index) and the names to
+  // $(job-name)-$(index)-$(random-suffix).
   // The Job is considered complete when there is one successfully completed Pod
   // for each index.
   // When value is `Indexed`, .spec.completions must be specified and
@@ -269,6 +361,14 @@ The Job controller doesn't add the environment variable if there is a name
 conflict with an existing environment variable. Users can specify other
 environment variables for the same annotation.
 
+The Pod name takes the form `$(job-name)-$(index)-$(random-string)`,
+which can be used for quickly identifying Pods for a specific index when listing
+pods or looking at logs.
+
+The Pod hostname takes the form `$(job-name)-$(index)` which can be used to
+address the Pod from others, when the Job is used in combination with a headless
+Service.
+
 ### Job completion and restart policy
 
 When dealing with Indexed Jobs, the Job controller keeps track of Pod
@@ -327,7 +427,7 @@ Reducing parallelism is unaffected by completion index.
 
 Unit, integration and E2E tests cover the following Indexed Job mechanics:
 
-  - Creation with indexed Pod names and index annotations.
+  - Creation with index annotations and indexed pod hostnames.
   - Scale up and down.
   - Pod failures.
   
@@ -345,6 +445,7 @@ gate enabled and disabled.
 #### Alpha -> Beta Graduation
 
 - Complete features:
+  - Index as part of the pod name and hostname.
   - Indexed Jobs when tracking completion with finalizers.
     [kubernetes/enhancements#2307](https://github.com/kubernetes/enhancements/issues/2307).
     
@@ -439,9 +540,10 @@ _This section must be completed when targeting beta graduation to a release._
 * **What specific metrics should inform a rollback?**
 
   - job_sync_duration_seconds shows significantly more latency for label
-    mode=Indexed Jobs than mode=NonIndexed.
-  - job_sync_total shows more errors for mode=Indexed than mode=NonIndexed.
-  - job_finished_total shows that Jobs with mode=Indexed don't finish.
+    completion_mode=Indexed Jobs than completion_mode=NonIndexed.
+  - job_sync_total shows more errors for completion_mode=Indexed than
+    completion_mode=NonIndexed.
+  - job_finished_total shows that Jobs with completion_mode=Indexed don't finish.
 
 * **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
 
@@ -464,7 +566,7 @@ _This section must be completed when targeting beta graduation to a release._
 
 * **How can an operator determine if the feature is in use by workloads?**
 
-  - job_sync_total has values for the label mode=Indexed.
+  - job_sync_total has values for the label completion_mode=Indexed.
 
 * **What are the SLIs (Service Level Indicators) an operator can use to determine 
 the health of the service?**
@@ -534,7 +636,8 @@ the existing API objects?**
       than 1MB.
   
   - API type(s): Pod, only when created with the new completion mode.
-  - Estimated increase in size: new annotation of about 50 bytes.
+  - Estimated increase in size: new annotation of about 50 bytes and hostname
+    which includes the index.
 
 * **Will enabling / using this feature result in increasing time taken by any 
 operations covered by [existing SLIs/SLOs]?**
@@ -606,11 +709,9 @@ _This section must be completed when targeting beta graduation to a release._
 
   Completion indexes could also be part of the Pod name, leading to stable Pod
   names. This allows 2 things:
-  - Uniqueness for each completion index, freeing applications from having to
-    handle duplicated indexes.
-  - Predictable hostnames, which benefits applications that need to communicate
-    to Pods of a Job (or among Pods of the same Job) without having to do
-    discovery.
+  - Uniqueness for each completion index. This frees applications from having to
+    handle duplicated indexes. When used along with a headless Service, there
+    are less chances for a DNS record to refer to more than one Pod.
   
   Stable pod names require the Job controller to remove failed Pods before
   creating a new one with the same index. This has some downsides:
@@ -620,11 +721,9 @@ _This section must be completed when targeting beta graduation to a release._
     the status of the Job, affecting retry backoffs and backoff limit. This
     needs to change before stable Pod names can be implemented
     [#28486](https://github.com/kubernetes/kubernetes/issues/28486).
-  - Reduced availability of Job Pods per completion index. This happens when
-    a Node becomes unavailable. The Job controller cannot remove such Pods.
-    Either the kubelet in the Node recovers and marks the Pod as failed; or the
-    kube-apiserver removes the Node and the garbage collector removes the orphan
-    Pods.
+  - Reduced availability of Job Pods per completion index as, in addition to
+    the time necessary to create a new Pod, we need to account for the time of
+    deleting the failed Pod.
     
   However, stable Pod names can be offered later as a new value for
   `.spec.completionMode` for Jobs.
