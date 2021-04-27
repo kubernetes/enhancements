@@ -15,12 +15,12 @@ approvers:
   - "@kow3ns"
 
 # The target maturity stage in the current dev cycle for this KEP.
-stage: alpha
+stage: beta
 
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.21"
+latest-milestone: "v1.22"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
@@ -39,4 +39,6 @@ disable-supported: true
 
 # The following PRR answers are required at beta release
 metrics:
-  - TBD
+  - job_sync_duration_seconds
+  - job_sync_total
+  - job_finished_total
