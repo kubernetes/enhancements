@@ -43,6 +43,7 @@ The name of this feature / policy is open to discussion. Options considered:
   - [Flexible Extension Support](#flexible-extension-support)
   - [Test Plan](#test-plan)
   - [Monitoring](#monitoring)
+  - [Audit Annotations](#audit-annotations)
   - [Graduation Criteria](#graduation-criteria)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
@@ -155,7 +156,7 @@ version that they were introduced in.
 
 _BLOCKING: depends on the name we choose._
 
-The annotation prefix is a placeholder, and will depend on the final feature name. The proposed
+The label prefix is a placeholder, and will depend on the final feature name. The proposed
 prefix structure is `<featurename>.kubernetes.io`.
 
 <<[/UNRESOLVED]>>
@@ -636,6 +637,18 @@ The metric will use the following labels:
 6. `request_operation {create, update}` - The operation of the request being checked.
 
 <<[/UNRESOLVED]>>
+
+### Audit Annotations
+
+The following audit annotations will be added:
+
+1. `<prefix>/enforced-policy = <policy_level>:<resolved_version>` Record which policy was evaluated
+   for enforcing mode. Resolved version is the actual version of the policy that was evaluated, so
+   in the case of `latest` or future versions, it will be resolved to the current version.
+2. `<prefix>/audit = <policy violations>` When an audit mode policy is set, record violations of
+   that policy here.
+
+`<prefix>` matches the prefix used for [namespace labels](#api).
 
 ### Graduation Criteria
 
