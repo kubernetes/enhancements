@@ -526,13 +526,15 @@ Kubernetes does not define the default set, but Docker does. This leaves us with
 1. Hardcode the [docker default capability
    set](https://docs.docker.com/engine/reference/run/#runtime-privilege-and-linux-capabilities), and
    allow adding a capability in that set. This enables workloads to use an allowlist approach where
-   they drop all capabilities (`*`), and only explicitly add the ones they need. However, it means
+   they drop all capabilities (`ALL`), and only explicitly add the ones they need. However, it means
    that operators cannot effectively customize the default set (e.g. drop CAP_NET_RAW) through
    runtime parameters.
+    - The drop all + add pattern is widely used. See
+      https://kubernetes.slack.com/archives/C0BP8PW9G/p1619042209240300 for discussion, and
+      https://github.com/kubernetes/kubernetes/blob/ea0764452222146c47ec826977f49d7001b0ea8c/cluster/addons/dns/coredns/coredns.yaml.base#L172-L178
+      for an example.
 2. Forbid any use of adding capabilities. This allows runtimes to customize the default set, but
    gives less flexibility to the pod definition.
-
-@tallclair prefers option 2
 
 <<[/UNRESOLVED]>>
 
