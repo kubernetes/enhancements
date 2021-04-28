@@ -71,6 +71,7 @@ Please do not comment on the enhancement issue to:
 All the enhancements from this repo are visualized in the Enhancements Tracking Spreadsheets.
 
 Links:
+- [1.22 Milestone](https://bit.ly/k8s122-enhancements)
 - [1.21 Milestone](https://bit.ly/k8s121-enhancements)
 - [1.20 Milestone](https://bit.ly/k8s-1-20-enhancements)
 - [1.19 Milestone](https://bit.ly/k8s-1-19-enhancements)
@@ -85,6 +86,14 @@ Links:
 
 Procedure:
 *TBA*
+
+Current Release Cycle:
+
+[Dates and further information for the 1.22 Release](https://github.com/kubernetes/sig-release/tree/master/releases/release-1.22)
+
+Exceptions to Enhancement Milestone Dates:
+
+The Exceptions Process is handled by the Release Team, please see their [documentation](https://github.com/kubernetes/sig-release/blob/master/releases/EXCEPTIONS.md) for further details.
 
 ## Labels
 
