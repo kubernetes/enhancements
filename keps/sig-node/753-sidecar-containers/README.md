@@ -15,21 +15,23 @@
 - [Goals](#goals)
 - [Non-Goals](#non-goals)
 - [Proposal](#proposal)
+  - [Startup within a phase](#startup-within-a-phase)
+  - [&quot;Completion&quot; and container restart policy](#completion-and-container-restart-policy)
+  - [Phase: Network](#phase-network)
+  - [Phase: ClusterEnv](#phase-clusterenv)
+  - [Phase: AppInit](#phase-appinit)
+  - [Phase: AppRun](#phase-apprun)
+  - [End-of-life](#end-of-life)
   - [Notes/Constraints/Caveats](#notesconstraintscaveats)
+    - [InitContainers](#initcontainers)
+    - [RestartPolicy](#restartpolicy)
     - [Pods with RestartPolicy Never](#pods-with-restartpolicy-never)
     - [Modify killContainer() to enforece gracePeriodOverride on preStop hooks](#modify-killcontainer-to-enforece-graceperiodoverride-on-prestop-hooks)
     - [Time to kill a pod increased by 4 seconds in the worst case](#time-to-kill-a-pod-increased-by-4-seconds-in-the-worst-case)
     - [Enforce the startup/shutdown behavior only on startup/shutdown](#enforce-the-startupshutdown-behavior-only-on-startupshutdown)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
-  - [API Changes:](#api-changes)
-  - [Kubelet Changes:](#kubelet-changes)
-    - [Shutdown triggering](#shutdown-triggering)
-    - [Sidecars terminated last](#sidecars-terminated-last)
-    - [Sidecars started first](#sidecars-started-first)
   - [Proof of concept implementations](#proof-of-concept-implementations)
-    - [KEP implementation and Demo](#kep-implementation-and-demo)
-    - [Another implementation using pod annotations](#another-implementation-using-pod-annotations)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
@@ -39,6 +41,8 @@
 - [Implementation History](#implementation-history)
 - [Alternatives](#alternatives)
   - [Alternative designs considered](#alternative-designs-considered)
+    - [Add a pod.spec.lifecycle.type=sidecar,  implementation and Demo](#add-a-podspeclifecycletypesidecar--implementation-and-demo)
+    - [Using pod annotations](#using-pod-annotations)
     - [Add a pod.spec.SidecarContainers array](#add-a-podspecsidecarcontainers-array)
     - [Mark one container as the Primary Container](#mark-one-container-as-the-primary-container)
     - [Boolean flag on container, Sidecar: true](#boolean-flag-on-container-sidecar-true)
@@ -81,45 +85,25 @@ Check these off as they are completed for the Release Team to track. These check
 
 ## Summary
 
-This KEP adds the concept of sidecar containers to Kubernetes. This KEP proposes
-to add a `lifecycle.type` field to the `container` object in the `pod.spec` to
-define if a container is a sidecar container. The only valid value for now is
-`sidecar`, but other values can be added in the future if needed.
+From a high level, this proposal can be summarized as “add more phases and define container restart policies”.
 
-Pods with sidecar containers change the behaviour of the startup and shutdown
-sequence of a pod: sidecar containers are started before non-sidecars and
-stopped after non-sidecars. Sidecar containers are also terminated when all
-non-sidecar containers finished.
+We believe that a relatively small number of well-defined, linear phases, with clear statements of what parts of the pod are working or not working in each phase can address most user requirements without imposing the complexity of a full dependency graph on end users. As a pod moves through the phases, containers within each phase can depend on the results of containers executed in previous phases. When all containers in phase X are “complete” (see below for the definition), containers in phase Y may be started.
 
-A pod that has sidecar containers guarantees that non-sidecar containers are
-started only after all sidecar containers are started and are in a ready state.
-Furthermore, we propose to treat sidecar containers as regular (non-sidecar)
-containers as much as possible all over the code, except for the mentioned
-special startup and shutdown behaviour. The rest of the pod lifecycle (regarding
-restarts, etc.) remains unchanged, this KEP aims to modify only the startup and
-shutdown behaviour.
-
-If a pod doesn't have a sidecar container, the behaviour is completely unchanged
-by this proposal.
+This proposal rejects the proposed requirement that users be able to express explicit container-to-container startup dependencies. We believe this proposal captures the majority of the intent in a simpler way:
+* Sidecars must be guaranteed to start BEFORE and end AFTER application workloads.
+* Service-mesh proxy sidecars must be able to capture traffic from initContainers.
+* Sidecars must not artificially prevent the termination of a pod when app containers exit.
+* Application authors must not need to be aware of sidecars when it comes to sequencing.
+* If a pod doesn't have a sidecar container, the behaviour is completely unchanged.
 
 ## Prerequisites
 
 On June 23 2020, during SIG-node meeting, it was decided that this KEP has a
-prerequisite on the (not yet submitted KEP) kubelet node graceful shutdown.
+prerequisite on the [node graceful shutdown KEP].
 
-As of writing, when a node is shutdown the kubelet doesn't gracefully shutdown
-all of the containers (running preStop hooks and other guarantees users would
-expect). It was then decided that adding more guarantees to pod shutdown
-behavior (as this KEP proposes) depends on having the kubelet gracefully
-shutdown first. The main reason for this is to avoid users relying on something
-we can't guarantee (like the pod shutdown sequence in case the node shutdowns).
+As of writing, this enhancement has reached beta (since 1.21) lifting any prerequisite on this KEP.
 
-Also, authors of this KEP and the (yet not submitted) KEP for node graceful
-shutdown have met several times and are in sync regarding these features
-interoperability.
-
-The details about this dependency is explained in the [graduation criteria
-section](#graduation-criteria).
+[node graceful shutdown KEP]: https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/2000-graceful-node-shutdown
 
 ## Motivation
 
@@ -132,12 +116,7 @@ gained popularity and the uses cases are getting more diverse. The current
 Kubernetes primitives handled that well, but they are starting to fall short for
 several use cases and force weird work-arounds in the applications.
 
-This proposal aims to remediate this by adding a simple set of guarantees for
-sidecar containers, while trying to avoid doing a complete re-implementation of an
-init system. These alternatives are interesting and were considered,
-but in the end the community decided to go for something simpler that will cover
-most of the use cases. These options are explored in the
-[alternatives](#alternatives) section.
+Pods today are split into 2 lifecycle “phases”. First, all init containers (the `initContainers` field) are run to completion, in serial. They look, schematically, like regular containers (the `containers` field) but many sub-fields are validated as “must not be specified for init containers” (blech!). Kubernetes does not make many statements about what does or does not work during the init container sequence, and indeed many init containers rely on things like volumes or networking to be up. Kubernetes does not offer any real way to sequence init containers (though they can be re-run) other than the order in which they are defined, and does not have any affordances or metadata about init container behaviors or needs, which might facilitate automatic sequencing. Perhaps most importantly, Kubernetes offers no way for init containers to remain active while app containers are running.
 
 The next section expands on what the current problems are. But, to give more
 context, it is important to highlight that some companies are already using a
@@ -155,14 +134,6 @@ a service mesh, a metrics gathering statsd server, etc.
 When the main processing finishes, the pod won't terminate until the sidecar
 container finishes too. This is problematic for sidecar containers that run
 continuously.
-
-There is no simple way to handle this on Kubernetes today. There are
-work-arounds for this problem, most of them consist of some form of coupling
-between the containers to add some logic where a container that finishes
-communicates it so other containers can react. But it gets tricky when you have
-more than one sidecar container or want to auto-inject sidecars. Some
-alternatives to achieve this currently and their pain points are discussed in
-detail on the [alternatives](#alternatives) section.
 
 ### Problems: service mesh, metrics and logging sidecars
 
@@ -215,7 +186,7 @@ blackholed or not use the service mesh.
 However, as none of these are possible to guarantee, most service meshes (like
 Linkerd and Istio), need to do several hacks to have the basic
 functionality. These are explained in detail in the
-[alternatives](#alternatives) section. Nonetheless, here is a  quick highlight
+[alternatives](#alternatives) section. Nonetheless, here is a quick highlight
 of some of the things some service mesh currently need to do:
  * Recommend users to delay starting their apps by using a script to wait for
    the service mesh to be ready. The goal of a service mesh to augment the app
@@ -284,7 +255,7 @@ This proposal doesn't aim to:
 
 ## Proposal
 
-Create a way to define containers as sidecars, this will be an additional field to the `container.lifecycle` spec: `Type` can be either nil (default behavior is used) or `Sidecar`. IOW, if the field is not present default behavior is used and the container is not a sidecar container.
+A simple approach to the API expression for this proposal is to add a single enumerated-string field to each container in `containers`, defining the phase. If this field is not specified, we can assume AppRun, for compatibility. This approach requires careful handling of version-skew and adding new phases, and must define what happens when a back-rev kubelet finds a phase it does not understand. This requires treating `initContainers` as a special-case (see the [note](#initcontainers) for more on this).
 
 e.g:
 ```yaml
@@ -298,34 +269,88 @@ spec:
   containers:
   - name: myapp
     image: myapp
+    phase: AppRun # default phase
     command: ['do something']
   - name: sidecar
     image: sidecar-image
-    lifecycle:
-      type: Sidecar
+    phase: AppInit
+    restartPolicy: OnFailure
     command: ["do something to help my app"]
 
 ```
-Sidecars will be started before normal containers but after init, so that they are ready before your main processes start.
 
-This will change the Pod startup to look like this:
-* Init containers start
-* Init containers finish
-* Sidecars start (all in parallel)
-* Sidecars become ready
-* Non-sidecar containers start (all in parallel)
+### Startup within a phase
 
-During pod termination sidecars will be terminated last:
-* Non-sidecar containers sent SIGTERM
-* Once all non-sidecar containers have exited: Sidecar container are sent a SIGTERM
+Within a single phase, there are no guarantees made about container startup ordering.They may be started in serial, in parallel, or some combination thereof as determined by the system. This is intended to emphasize that phased-containers are just an extension of the "normal" container lifecycle. and that sequencing within a phase is a non-thing (lest users come to rely on *that* rather than the documented properties of each phase).
 
-Containers and Sidecar will share the TerminationGracePeriod. If Containers don't exit before the end of the TerminationGracePeriod then they will be sent a SIGKIll as normal, Sidecars will then be sent a SIGTERM with a short grace period of 2 Seconds to give them a chance to cleanly exit. Prestop hooks will also have a 2 seconds grace period to execute in that case.
+### "Completion" and container restart policy
 
-To solve the problem of Jobs that don't complete: When RestartPolicy!=Always if all normal containers have reached a terminal state (Succeeded for restartPolicy=OnFailure, or Succeeded/Failed for restartPolicy=Never), then all sidecar containers will be sent a SIGTERM.
+Unlike init containers, the containers within a phase are NOT necessarily run to completion, but may elect to stay resident. To achieve this, we propose to add a `restartPolicy` field to each container, seeded with the same values as the pod `restartPolicy` field.
 
-Sidecars are just normal containers in almost all respects, they have all the same attributes, they are included in pod state, obey pod restart policy, don't change pod phase in any way etc. The only differences are in the shutdown and startup of the pod.
+Containers which set this field to “Always” are assumed to be “sidecars” and they are considered “complete” when they become “ready” (including being subject to `startupProbe` and `readinessProbe`). If such a container terminates (or indicates failure through liveness probe), it will be restarted, the same as any other container. If multiple containers fail, they will be restarted in phase-order.
+
+Containers which set this field to “OnFailure” are assumed to be roughly equivalent to init containers in that they must run to successful completion before their phase is complete. If such a container terminates without success, it will be restarted.
+
+Containers which set this field to “Never” must run to completion before their phase is complete. If such a container terminates without success, the phase will be failed and the pod’s own `restartPolicy` will be invoked.
+
+### Phase: Network
+
+Containers in this phase are responsible for establishing the low-level environment for the pod, including things like network connectivity and, as such, may not rely on the network themselves.  Kubernetes projected volumes (e.g. Secrets) are available, and PersistentVolumes are mounted, so logging agents can run here as long as they can buffer until this phase completes.
+
+Optional: If we link this to network plugins lifecycle (e.g. CNI), we could ensure that nobody can use the network during this phase.
+
+Examples:
+* Installing iptables rules to capture traffic
+* Starting the service-mesh proxy
+
+
+### Phase: ClusterEnv
+
+This phase is earmarked for non-app-defined containers (e.g. injected sidecars) which want to envelope the user’s application.  Containers in this phase may rely on the network and can perform initialization of the pod environment.
+
+Examples:
+* Populating cloud credentials
+
+### Phase: AppInit
+
+This phase is roughly what the pod’s `initContainers` field represents today.  Containers in this phase may rely on the network and can perform initialization of the pod.  This phase is earmarked as “for the app”.  Injected sidecars should use the previous phases.
+
+Examples:
+* Populate data in an `emptyDir` volume
+
+### Phase: AppRun
+
+This phase is what the pod’s `containers` field represents today.  Containers in this phase are fully empowered.  This phase is special.  When this phase is complete, the pod’s end-of-life begins.
+
+### End-of-life
+
+A pod’s end-of-life can be triggered by one of several mechanisms:
+* Successful completion of all AppRun containers
+* Kubelet declares failure of any phase
+* External termination (e.g. Pod was deleted, node is going down)
+
+In all cases, any long-running containers will be terminated in reverse phase order.
 
 ### Notes/Constraints/Caveats
+
+#### InitContainers
+
+The existing `initContainers` field must be respected, including the fact that initContainers are started and completed in serial.
+
+We could define that `initContainers` retains its current semantics and is executed as the first part of the AppRun phase. This seems to offer good compatibility, and users who need more robust semantics can move containers from `initContainers` into the AppInit phase. We could even deprecate (but not remove) `initContainers` in favor of AppInit and document it as such.
+
+Similarly, we could define that `initContainers` retains its current semantics and is executed as the first part of the AppInit phase.
+
+We could merge `initContainers` with the AppInit phase. Containers defined there have more limited semantics than containers defined in AppInit, but should be strictly compatible with this proposal.
+
+Considered and rejected: If the API defines a list of containers for each phase, `initContainers` could simply become the AppInit phase. This would either change the semantics of `initContainers` (serial start, run-to-completion), or would make AppInit different from other phases with regards to sequencing.
+
+#### RestartPolicy
+
+Adding a container-scoped `restartPolicy` raises the question of what the pod-scoped `restartPolicy` field means. For pods that do not specify container-scoped policy, the pod-scoped policy can be used. This ensures that existing pods do not change semantics.
+
+Beyond that, though, we can perhaps use the pod-scoped policy as an “outer loop”. If a phase fails, the pod-scoped policy can suggest how to respond. For example, if a container in the ClusterEnv phase fails (perhaps it was retried several times and some heuristic or config decides it is not going to be retried), we can choose to restart the entire pod from the beginning.
+
 
 #### Pods with RestartPolicy Never
 
@@ -416,100 +441,13 @@ handle the case when all containers crashed differently.
 
 ### Risks and Mitigations
 
-You could set all containers to have `lifecycle.type: Sidecar`, this would cause strange behaviour in regards to shutting down the sidecars when all the non-sidecars have exited. To solve this the api could do a validation check that at least one container is not a sidecar.
-
-Init containers would be able to have `lifecycle.type: Sidecar` applied to them as it's an additional field to the container spec, this doesn't currently make sense as init containers are ran sequentially. We could get around this by having the api throw a validation error if you try to use this field on an init container or just ignore the field.
-
-Older Kubelets that don't implement the sidecar logic could have a pod scheduled on them that has the sidecar field. As this field is just an addition to the Container Spec the Kubelet would still be able to schedule the pod, treating the sidecars as if they were just a normal container. This could potentially cause confusion to a user as their pod would not behave in the way they expect, but would avoid pods being unable to schedule.
-
-Shutdown ordering of Containers in a Pod can not be guaranteed when a node is being shutdown, this is due to the fact that the Kubelet is not responsible for stopping containers when the node shuts down, it is instead handed off to systemd (when on Linux) which would not be aware of the ordering requirements. Daemonset and static Pods would be the most effected as they are typically not drained from a node before it is shutdown. This could be seen as a larger issue with node shutdown (also effects things like termination grace period) and does not necessarily need to be addressed in this KEP , however it should be clear in the documentation what guarantees we can provide in regards to the ordering.
+TODO
 
 ## Design Details
 
-The proposal can broken down into four key pieces of implementation that all relatively separate from one another:
-
-* Shutdown triggering for sidecars when RestartPolicy!=Always
-* Sidecars are terminated after normal containers
-* Sidecars start before normal containers
-
-### API Changes:
-As this is a change to the Container spec we will be using feature gating, you will be required to explicitly enable this feature on the api server as recommended [here](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api_changes.md#adding-unstable-features-to-stable-versions).
-
-New field `Type` will be added to the lifecycle struct:
-
-```go
-type Lifecycle struct {
-  // Type specifies the container type.
-  // It can be sidecar or, if not present, default behavior is used
-  // +optional
-  Type LifecycleType `json:"type,omitempty" protobuf:"bytes,3,opt,name=type,casttype=LifecycleType"`
-}
-```
-New type `LifecycleType` will be added with one constant:
-```go
-// LifecycleType describes the lifecycle behaviour of the container
-type LifecycleType string
-
-const (
-  // LifecycleTypeSidecar means that the container will start up before non-sidecar containers and be terminated after
-  LifecycleTypeSidecar LifecycleType = "Sidecar"
-)
-```
-Note that currently the `lifecycle` struct is only used for `preStop` and `postStop` so we will need to change its description to reflect the expansion of its uses.
-
-### Kubelet Changes:
-Broad outline of what places could be modified to implement desired behaviour:
-
-#### Shutdown triggering
-Package `kuberuntime`
-
-Modify `kuberuntime_manager.go`, function `computePodActions`. Have a check in this function that will see if all the non-sidecars had permanently exited, if true: return all the running sidecars in `ContainersToKill`. These containers will then be killed via the `killContainer` function which sends preStop hooks, sig-terms and obeys grace period, thus giving the sidecars a chance to gracefully terminate.
-
-#### Sidecars terminated last
-Package `kuberuntime`
-
-Modify `kuberuntime_container.go`, function `killContainersWithSyncResult`. Break up the looping over containers so that it goes through killing the non-sidecars before terminating the sidecars.
-Note that the containers in this function are `kubecontainer.Container` instead of `v1.Container` so we would need to cross reference with the `v1.Pod` to check if they are sidecars or not. This Pod can be `nil`, so labels will be added to recover the sidecar information in those cases (just like it is done for the preStop hook and other fields, in `labels.go` of `kuberuntime` package).
-
-To make sure `killContainersWithSyncResult()` finishes in time,
-`killContainer()` will be adapted to enforce the `gracePeriodOverride` parameter
-on preStop hooks too. See the [caveats](#notesconstraintscaveats) section for more details on why this
-is needed.
-
-#### Sidecars started first
-Package `kuberuntime`
-
-Modify `kuberuntime_manager.go`, function `computePodActions`. If pods has sidecars it will return these first in `ContainersToStart`, until they are all ready it will not return the non-sidecars. Readiness changes do not normally trigger a pod sync, so to avoid waiting for the Kubelet's `SyncFrequency` (default 1 minute) we can modify `HandlePodReconcile` in the `kubelet.go` to trigger a sync when the sidecars first become ready (ie only during startup).
+TODO
 
 ### Proof of concept implementations
-
-#### KEP implementation and Demo
-
-There is a [PR here](https://github.com/kubernetes/kubernetes/pull/75099) with a working Proof of concept for this KEP, it's just a draft but should help illustrate what these changes would look like.
-
-Please view this [video](https://youtu.be/4hC8t6_8bTs) if you want to see what the PoC looks like in action.
-
-#### Another implementation using pod annotations
-
-Another implementation using pod annotations on top of Kubernetes 1.17 is
-available [here][kinvolk-sidecar-branch].
-
-There are some example yamls in the [sidecar-tests
-folder][kinvolk-poc-sidecar-test], also the yaml output was captured to easily
-see the behavior. [See the commit that created
-them][kinvolk-poc-sidecar-test-commit] for instruction on how to run it.
-
-Some other things worth noting about the implementation:
- * It is done using pod annotations so it is easy to test for users (doesn't
-   modify pod spec)
- * Wasn't updated to call preStop hooks one time only, as this KEP now proposes
- * There is some c&p code to avoid doing refactors and just have a patch that is
-   simpler to cherry-pick on different Kubernetes versions.
-
-[kinvolk-poc-sidecar-prestop]: https://github.com/kinvolk/kubernetes/blob/52a96112b3e7878740a0945ad3fc4c6d0a6c5227/pkg/kubelet/kuberuntime/kuberuntime_container.go#L851
-[kinvolk-sidecar-branch]: https://github.com/kinvolk/kubernetes/tree/rata/sidecar-ordering-annotations-1.17
-[kinvolk-poc-sidecar-test]: https://github.com/kinvolk/kubernetes/tree/52a96112b3e7878740a0945ad3fc4c6d0a6c5227/sidecar-tests
-[kinvolk-poc-sidecar-test-commit]: https://github.com/kinvolk/kubernetes/commit/385a89d83df9c076963d2943507d1527ffa606f7
 
 
 ### Test Plan
@@ -529,10 +467,6 @@ Some other things worth noting about the implementation:
 * Addressed feedback from Alpha testers
 * Thorough E2E and Unit testing in place
 * The beta API either supports the important use cases discovered during alpha testing, or has room for further enhancements that would support them
-* Graduation depends on the (yet not submitted) kubelet graceful shutdown KEP
-  reaching Beta stage. It is okay to for both features to reach Beta in the same
-  release, but this KEP should not reach beta before kubelet graceful shutdown KEP
-
 
 #### Beta -> GA Graduation
 * Sufficient number of end users are using the feature
@@ -558,8 +492,13 @@ Older Kubelets should still be able to schedule Pods that have sidecar container
 - 24th June 2020: KEP Marked as provisional. Got stalled on [March 10][stalled]
   with a clear explanation. The topic has been discussed in SIG-node and this
   KEP will be evolved with, at least, some already discussed changes.
+- 5th October 2020: Use cases [collection][use cases] for sidecar lifecycles started.
+- 6th November 2020: @thockin proposes a new approach leveraging [phases][tim proposal].
+- 17th March 2021: @matthyx takes over the KEP on behalf of @rata using Tim's [proposal][tim proposal] as a starting point.
 
 [stalled]: https://github.com/kubernetes/enhancements/issues/753#issuecomment-597372056
+[use cases]: https://docs.google.com/document/d/1Drw9C_Ljpcr4X9UPLvms1fn8uMRnTfJLb-xipgX4C1M
+[tim proposal]: https://docs.google.com/document/d/1Q3685Ic2WV7jPo9vpmirZL1zLVJU91zd3_p_aFDPcS0
 
 ## Alternatives
 
@@ -567,6 +506,34 @@ Older Kubelets should still be able to schedule Pods that have sidecar container
 
 This section contains ideas that were originally discussed but then dismissed in favour of the current design.
 It also includes some links to related discussion on each topic to give some extra context, however not all decisions are documented in Github prs and may have been discussed in sig-meetings or in slack etc.
+
+#### Add a pod.spec.lifecycle.type=sidecar,  implementation and Demo
+
+There is a [PR here](https://github.com/kubernetes/kubernetes/pull/75099) with a working Proof of concept for this, it's just a draft but should help illustrate what these changes would look like.
+
+Please view this [video](https://youtu.be/4hC8t6_8bTs) if you want to see what the PoC looks like in action.
+
+#### Using pod annotations
+
+Another implementation using pod annotations on top of Kubernetes 1.17 is
+available [here][kinvolk-sidecar-branch].
+
+There are some example yamls in the [sidecar-tests
+folder][kinvolk-poc-sidecar-test], also the yaml output was captured to easily
+see the behavior. [See the commit that created
+them][kinvolk-poc-sidecar-test-commit] for instruction on how to run it.
+
+Some other things worth noting about the implementation:
+ * It is done using pod annotations so it is easy to test for users (doesn't
+   modify pod spec)
+ * Wasn't updated to call preStop hooks one time only, as this KEP now proposes
+ * There is some c&p code to avoid doing refactors and just have a patch that is
+   simpler to cherry-pick on different Kubernetes versions.
+
+[kinvolk-poc-sidecar-prestop]: https://github.com/kinvolk/kubernetes/blob/52a96112b3e7878740a0945ad3fc4c6d0a6c5227/pkg/kubelet/kuberuntime/kuberuntime_container.go#L851
+[kinvolk-sidecar-branch]: https://github.com/kinvolk/kubernetes/tree/rata/sidecar-ordering-annotations-1.17
+[kinvolk-poc-sidecar-test]: https://github.com/kinvolk/kubernetes/tree/52a96112b3e7878740a0945ad3fc4c6d0a6c5227/sidecar-tests
+[kinvolk-poc-sidecar-test-commit]: https://github.com/kinvolk/kubernetes/commit/385a89d83df9c076963d2943507d1527ffa606f7
 
 #### Add a pod.spec.SidecarContainers array
 An early idea was to have a separate list of containers in a similar style to init containers, they would have behaved in the same way that the current KEP details. The reason this was dismissed was due to it being considered too large a change to the API that would require a lot of updates to tooling, for a feature that in most respects would act the same as a normal container.
