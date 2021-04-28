@@ -609,24 +609,31 @@ coverage of unit tests.
 
 **BLOCKING**
 
-The following metrics could be useful:
+A single metric will be added to track policy evaluations against pods and templated pods.
+[Namespace evaluations](#namespace-policy-update-warnings) are not counted.
 
-1. Policy decision - record the policy decision for each mode, for each pod create/update request.
-   Potential label dimensions:
-    - decision (allow, deny, exempt)
-    - policy mode (enforcing, warning, audit)
-    - policy level (privileged, baseline, restricted)
-    - policy version (latest, current, past, future), optionally replace current & past with the
-      specific version
-    - resource type (Pod, Deployment, ReplicaSet, etc.) - for audit & warnings applied to templated
-      pods
-    - request type (create, update)
-2. Exemptions - record whenever a request is exempt (should this only increment when it would
-   otherwise have been denied?)
-    - exempt dimension (user, namespace, runtimeclass)
-3. (maybe) Violated control - record the specific policy check that failed.
-    - Potentially all the dimensions from the policy decision metric
-    - control aspect (host network, privileged, capabilities, etc.)
+```
+<component_name>_evaluations_total
+```
+
+The metric will use the following labels:
+
+1. `decision {allow, deny, ignore, error}` - The policy decision _before_ exemptions are considered.
+   Error is reserved for panics or other errors in policy evaluation. `ignore` is only used for
+   update requests that are out of scope (see [Updates](#updates) above).
+2. `exempt {no, user, namespace, runtimeclass, multiple}` - If the request is exempt (otherwise,
+   `no`), which parameter exempted it? If it was exempt on multiple dimensions, `multiple` is used.
+   This label is independent of policy decision.
+3. `policy_level {privileged, baseline, restricted}` - The policy level that the request was
+   evaluated against.
+4. `policy_version {latest, v1.YY, >v1.ZZ}` - The policy version that was used for the evaluation.
+   To constrain cardinality, if the version is set higher than `v{latest+1}`, then `>v{latest+1}`
+   will be used. In other words, if the current version of the admission controller is v1.22, then a
+   version of `v1.23` would be unchanged, but `v1.24` would be recorded as `>v1.23`.
+5. `mode {enforce, warn, audit}` - The type of evaluation mode being recorded. Note that a single
+   request can increment this metric 3 times, once for each mode. If this admission controller is
+   enabled, every request will at least increment the `enforce` total.
+6. `request_operation {create, update}` - The operation of the request being checked.
 
 <<[/UNRESOLVED]>>
 
