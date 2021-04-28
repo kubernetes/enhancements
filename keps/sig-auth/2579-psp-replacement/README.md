@@ -545,7 +545,12 @@ Kubernetes does not define the default set, but Docker does. This leaves us with
 **Volumes** - Which volume types should be allowed under the restricted profile?
 
 - Should we allow inline CSI volumes?
-- Should we allow `Ephemeral` volume types?
+  - Inline CSI volumes are only supposed to be used for ephemeral volumes
+  - The CSIDriver object spec controls whether a driver can be used inline, and can be modified
+    without binary changes to disable inline usage.
+  - Risky inline drivers should already use a 3rd party admission controller, since they are usable
+    by the baseline policy.
+- ~~Should we allow `Ephemeral` volume types?~~ Yes, this is essentially just syntax sugar on PVCs.
 
 <<[/UNRESOLVED]>>
 
