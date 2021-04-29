@@ -278,10 +278,7 @@ include them.
 
 We propose to:
 1. to allow the CRDs to publish the defaults field which helps the client to set the <zero-value>.
-2. filter out defaults in the built-in type schemas too in a first step
-3. but possibly reconsider this behaviour in the future when the
-necessity of defaults for client-side merging (e.g. through kustomize)
-and influences on the ecosystem of default mis-use is better understood.
+2. publish out defaults in the built-in type schemas.
 
 ### Marker format
 
