@@ -277,7 +277,7 @@ values of built-in types. The kube-openapi generated schemas will
 include them.
 
 We propose to:
-1. leave CRDs not publishing defaults
+1. to allow the CRDs to publish the defaults field which helps the client to set the <zero-value>.
 2. filter out defaults in the built-in type schemas too in a first step
 3. but possibly reconsider this behaviour in the future when the
 necessity of defaults for client-side merging (e.g. through kustomize)
