@@ -6,18 +6,22 @@ authors:
 owning-sig: sig-auth
 participating-sigs:
   - sig-auth
+  - sig-storage
 reviewers:
   - "@liggitt"
 approvers:
   - "@liggitt"
 creation-date: 2019-08-06
-last-updated: 2021-02-08
-status: implemented
-stage: beta
-latest-milestone: "v1.21"
+last-updated: 2021-04-29
+status: implementable
+replaces:
+  - "/keps/sig-storage/2451-service-account-token-volumes"
+stage: stable
+latest-milestone: "v1.22"
 milestone:
   alpha: "v1.13"
   beta: "v1.21"
+  stable: "v1.22"
 feature-gates:
   - name: TokenRequest
     components:
@@ -35,3 +39,4 @@ feature-gates:
       - kube-apiserver
 metrics:
   - serviceaccount_stale_tokens_total
+  - serviceaccount_valid_tokens_total
