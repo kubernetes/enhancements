@@ -5,7 +5,7 @@ authors:
   - "@SergeyKanzhelev"
 owning-sig: sig-node
 participating-sigs:
-status: implemented
+status: withdrawn
 creation-date: 2020-09-08
 reviewers:
   - "@dchen1107"
@@ -20,7 +20,7 @@ stage: stable
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.20"
+latest-milestone: "v1.22"
 
 # The milestone at which this feature was, or is targeted to be, at each stage.
 milestone:
@@ -32,5 +32,5 @@ feature-gates:
   - name: ExecProbeTimeouts
     components:
       - kubelet
-disable-supported: true
+disable-supported: false
 
