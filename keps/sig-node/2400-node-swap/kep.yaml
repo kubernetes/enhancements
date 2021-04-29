@@ -35,5 +35,6 @@ milestone:
 feature-gates:
   - name: NodeSwapEnabled
     components:
+      - kube-apiserver
       - kubelet
 disable-supported: false

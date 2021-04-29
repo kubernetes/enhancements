@@ -1,21 +1,5 @@
 # KEP-2400: Node system swap support
 
-<!--
-This is the title of your KEP. Keep it short, simple, and descriptive. A good
-title can help communicate what the KEP is and should be considered as part of
-any review.
--->
-
-<!--
-A table of contents is helpful for quickly jumping to sections of a KEP and for
-highlighting any additional information provided beyond the standard KEP
-template.
-
-Ensure the TOC is wrapped with
-  <code>&lt;!-- toc --&rt;&lt;!-- /toc --&rt;</code>
-tags, and then generate with `hack/update-toc.sh`.
--->
-
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
 - [Summary](#summary)
@@ -34,6 +18,10 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
+  - [Enabling swap as an end user](#enabling-swap-as-an-end-user)
+  - [API Changes](#api-changes)
+    - [KubeConfig addition](#kubeconfig-addition)
+  - [CRI Changes](#cri-changes)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha](#alpha)
@@ -121,20 +109,24 @@ This KEP will be limited in scope to the first two scenarios. The third can be a
 - On Linux systems, when swap is provisioned and available, Kubelet can start up with swap on.
 - Configuration is available for CRI to set swap utilization available to Kubernetes workloads, defaulting to 0 swap.
 - Cluster administrators can enable and configure CRI swap utilization on a per-node basis.
+- Use of swap memory with both cgroupsv1 and cgroupsv2 is supported.
 
 ### Non-Goals
 
 - Provisioning swap. Swap must already be available on the system.
+- Setting [swappiness]. This can already be set on a system-wide level outside of Kubernetes.
 - Allocating swap on a per-workload basis with accounting (e.g. pod-level specification of swap). If desired, this should be designed and implemented as part of a follow-up KEP. This KEP is a prerequisite for that work.
 - Supporting zram, zswap, or other memory types like SGX EPC. These could be addressed in a follow-up KEP, and are out of scope.
 
+[swappiness]: https://en.wikipedia.org/wiki/Memory_paging#Swappiness
+
 ## Proposal
 
-I propose that, when swap is provisioned and available on a node, we allow cluster administrators to configure the Kubelet and CRI such that:
+We propose that, when swap is provisioned and available on a node, cluster administrators can configure the Kubelet and CRI such that:
 
 - The kubelet can start with swap on.
 - The CRI is updated such that by default, workloads will use 0 swap.
-- The CRI will have configuration available such that swap utilization can be configured for the entire node (e.g. as a percentage of pod memory requests).
+- The CRI will have configuration available such that swap utilization can be configured for the entire node.
 
 This proposal enables scenarios 1 and 2 above, but not 3.
 
@@ -201,133 +193,121 @@ This user story is addressed by scenario 2, and could benefit from 3.
 
 ### Notes/Constraints/Caveats (Optional)
 
-<!--
-What are the caveats to the proposal?
-What are some important details that didn't come across above?
-Go in to as much detail as necessary here.
-This might be a good place to talk about core concepts and how they relate.
--->
+In changing the CRI, we must ensure that container runtime downstreams are able to support the new configurations.
+
+We considered adding parameters for both per-workload `memory-swap` and `swappiness`. These are documented as part of the Open Containers [runtime specification] for Linux memory configuration. Since `memory-swap` is a per-workload parameter, and `swappiness` is optional and can be set globally, we are choosing to only expose `memory-swap` which will adjust swap available to workloads.
+
+Since we are not currently setting `memory-swap` in the CRI, the default behaviour is to allocate the same amount of swap for a workload as memory requested. We will update the default to not permit the use of swap by setting `memory-swap` equal to `limit`.
+
+[runtime specification]: https://github.com/opencontainers/runtime-spec/blob/1c3f411f041711bbeecf35ff7e93461ea6789220/config-linux.md#memory
 
 ### Risks and Mitigations
 
-Having swap available on a system reduces predictability. When swap is available to workloads, and is not accounted for on an individual workload-by-workload basis
+Having swap available on a system reduces predictability. Swap's performance is worse than regular memory, sometimes by many orders of magnitude, which can cause unexpected performance regressions. Furthermore, swap changes a system's behaviour under memory pressure, and applications cannot directly control what portions of their memory usage are swapped out. Since enabling swap permits greater memory usage for workloads in Kubernetes that cannot be predictably accounted for, it also increases the risk of noisy neighbours and unexpected packing configurations, as the scheduler cannot account for swap memory usage.
 
-First, this risk is mitigated by preventing any workloads from using swap by default, even if it is enabled on a system. This will allow a cluster administrator to test swap utilization just at the system level without introducing unpredictability to workload resource utilization.
+This risk is mitigated by preventing any workloads from using swap by default, even if swap is enabled and available on a system. This will allow a cluster administrator to test swap utilization just at the system level without introducing unpredictability to workload resource utilization.
 
-Additionally, we mitigate this risk by quantifying system stability and then gathering test and production data to determine if system stability remains the same or is improved when swap is available to the system and/or workloads.
+Additionally, we will mitigate this risk by determining a set of metrics to quantify system stability and then gathering test and production data to determine if system stability changes when swap is available to the system and/or workloads in a number of different scenarios.
 
-Since swap provisioning is out of scope of this proposal, this enhancement poses little risk to Kubernetes clusters that will not enable swap.
+Since swap provisioning is out of scope of this proposal, this enhancement poses low risk to Kubernetes clusters that will not enable swap.
 
 ## Design Details
 
-### TL;DR
+We summarize the implementation plan as following:
 
-In a nutshell, the following implementation are planned for Memory Swap Support
-in 1.22 GKE alpha
+1. Add a feature gate `NodeSwapEnabled` to enable swap support.
+1. Leave the default value of kubelet flag `--fail-on-swap` to `true`, to avoid changing default behaviour.
+1. Introduce a new kubelet config parameter, `MemorySwapLimit`.
+1. Introduce a new CRI parameter, `memory_swap_limit_in_bytes`.
+1. Integrate new kubelet config and pass values to CRI for container creation.
+1. Ensure container runtimes are updated so they can make use of the new CRI configuration.
 
-1. Having a feature gate `SupportNodeMemorySwap` guarding against the memory
-   swap support feature
-2. Keep the default value of kubelet flag `--fail-on-swap` to `true` in order
-   to minimize the blast radius
-3. Introducing two new kubelet config `MemorySwapLimit` and `Swappiness`
-4. Introducing two new CRI parameter `memory_swap_limit_in_bytes` and `memory_swappiness`
-5. End to end wiring from kubelet config file to CRI
+### Enabling swap as an end user
 
-### Expected User Behaviour
+Swap can be enabled as follows:
 
-For alpha, the feature gate `SupportNodeMemorySwap` is default to disabled, and
-`--fail-on-swap` flag value is the same as 1.21. Therefore, from Kubernetes
-user’s perspective, no behavior changes out of the box.
+1. Provision swap on the target worker nodes,
+1. Enable `NodeMemorySwap` flag on the kubelet,
+1. Set `--fail-on-swap` flag to `false`, and
+1. (Optional) Configure `MemorySwapLimit` in the KubeletConfig for tuning.
 
-For users that are ready to explore the Memory Swap feature in 1.22 Alpha, they
-will need to complete the following steps
+### API Changes
 
-1. provision swap enable `SupportNodeMemorySwap` flag AND
-2. set `--fail-on-swap` flag to `false`
+#### KubeConfig addition
 
-Then, the user can start experimenting/fine tuning kubelet configuration
-`MemorySwapLimit` and/or `Swappiness` and observe the changes.
+We will add an optional `MemorySwapLimit` value to the `KubeletConfig` struct in [pkg/kubelet/apis/config/types.go] for a compatible API change as follows:
 
-### New Kubelet Configuration
+[pkg/kubelet/apis/config/types.go]: https://github.com/kubernetes/kubernetes/blob/6baad0a1d45435ff5844061aebab624c89d698f8/pkg/kubelet/apis/config/types.go#L81
 
-We will be introducing two new parameters to `KubeletConfiguration struct`
-defined in
-[https://github.com/kubernetes/kubernetes/blob/master/pkg/kubelet/apis/config/types.go](https://github.com/kubernetes/kubernetes/blob/master/pkg/kubelet/apis/config/types.go).
-These two configurations, if set, will apply to every container of the Node
-where kubelet is running.
-
-|Name|Description|Default Value|Feature Gate|
-|--- |--- |--- |--- |
-|MemorySwapLimit|This parameter sets total memory limit (memory + swap). This limits the total amount of memory this container is allowed to swap to disk.|-2, which enable disable swap|SupportNodeMemorySwap|
-|MemorySwappiness|This configuration sets how aggressively the kernel will swap memory pages. By default, the host kernel can swap out a percentage of anonymous pages used by a container. Users can set value between 0 and 100, to tune this percentage.|Unset, which will use host value|SupportNodeMemorySwap|
-
-#### MemorySwapLimit details
-
-MemorySwapLimit configuration is a kubelet flag that only takes effect on a
-container that has a memory limit set, either explicitly from
-[PodSpec]([https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/#requests-and-limits](https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/#requests-and-limits)
-) or implicitly from [Resource
-Quota]([https://kubernetes.io/docs/concepts/policy/resource-quotas/](https://kubernetes.io/docs/concepts/policy/resource-quotas/)
-).
+```go
+// KubeletConfiguration contains the configuration for the Kubelet
+type KubeletConfiguration struct {
+	metav1.TypeMeta
+...
+	// Configure swap memory available to container workloads.
+	// If not set, workloads cannot use swap.
+	// If set to 0, workloads can use as much swap as their memory limit.
+	// If set to -1, workloads can use unlimited swap, up to the system limit.
+	// If set to a positive integer, workloads can use a total of memory and swap up to this
+	// limit. When containers request more memory than this limit, they cannot use swap.
+	// +featureGate=NodeSwapEnabled
+	// +optional
+	MemorySwapLimit *int64
+}
+```
 
 For container with memory limit set, MemorySwapLimit setting will have the
-following effects, [similar to
-docker](https://docs.docker.com/config/containers/resource_constraints/#--memory-swap-details)
+following effects, following the [Docker] and open container specification:
 
-* If MemorySwapLimit is set to a positive integer,
-  * If the memory limit of the container is greater or equal to
-    MemorySwapLimit, then no swap is allowed, the container does not have
-    access to swap.
-  * If the memory limit of the container is less than MemorySwapLimit, then
-    MemorySwapLimit represents the total amount of memory and swap that can be
-    used. For example, for a container with memory limit set to 300m, and
-    `MemorySwapLimit` set to 1g, the container can use 300m of memory and 700m (1g
-    - 300m) swap.
-* If MemorySwapLimit is set to 0, for containers with memory limit is set, the
-  container can use as much swap as the Memory limit setting, if the host
-  container has swap memory configured. For instance, if  a container requests
-  memory="300m" and MemorySwapLimit is not set, the container can use 600m in
-  total of memory and swap.
-* If MemorySwapLimit is explicitly set to -1, the container is allowed to use
-  unlimited swap, up to the amount available on the host system.
-* If MemorySwapLimit is explicitly set to -2,  the container does not have
-  access to swap. This value effectively prevents a container from using swap.
+* If `MemorySwapLimit` is not set, containers do not have access to swap. This
+  value effectively prevents a container from using swap, even if it is enabled
+  on a system.
+* If `MemorySwapLimit` is set to 0, for containers with memory limit is set, the
+  container can use as much swap as its memory limit setting. For instance, if
+  a container requests 300Mi memory and `MemorySwapLimit` is not set, the
+  container can use 600Mi total memory and swap.
+* If `MemorySwapLimit` is set to -1, the container is allowed to use
+  unlimited swap, up to the maximum amount available on the host system.
+* If `MemorySwapLimit` is set to a positive integer, then for containers with a
+  memory limit set, that value represents the system-wide maximum limit for
+  combined memory and swap usage of a container. For example, if
+  `MemorySwapLimit` is set to 1073742000 (1Gi):
+  * If the container's memory limit is 300Mi, it can use 1Gi combined memory
+    and swap (e.g. up to 700Mi swap).
+  * If the container's memory limit is 700Mi, it can use 1Gi combined memory
+    and swap (e.g. up to 300Mi swap).
+  * If the container's memory limit is 1Gi or greater, it cannot use swap.
 
-In summary, for users experimenting with this feature
-
-|MemorySwapLimit|container memory limit (explicit or implicit)|Expected Behavior|Comment|
-|--- |--- |--- |--- |
-|Any|not set|N/A|Same as docker|
-|-2|N|no swap allowed, this is the default value||
-|-1|N|unlimited swap|Same as docker|
-|0|N|container can use up to N swap (ie: 2N memory+swap)|Same as docker|
-|X where X > 0|N where N < X|container can use up to X-N swap (ie: 2N memory+swap)|Same as docker|
-|X where X > 0|N where N >= X|no swap allowed (ie: N memory only)|Same as docker|
-
-#### MemorySwappiness details
-
-* A value of 0 turns off anonymous page swapping.
-* A value of 100 sets all anonymous pages as swappable.
-* By default, if you do not set MemorySwappiness, the value is inherited from
-  the host machine.
+[docker]: https://docs.docker.com/config/containers/resource_constraints/#--memory-swap-details
 
 ### CRI Changes
 
-We will be introducing the following two parameters
-`memory_swap_limit_in_bytes` and `memory_swappiness` to `message
-LinuxContainerResources` defined in
-[https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/cri-api/pkg/apis/runtime/v1/api.proto#L563-L580](https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/cri-api/pkg/apis/runtime/v1/api.proto#L563-L580)
+The CRI requires a corresponding change in order to allow the kubelet to set swap usage in container runtimes.
+We will introduce a parameter `memory_swap_limit_in_bytes` to the CRI API (found in [k8s.io/cri-api/pkg/apis/runtime/v1/api.proto]):
 
-|Name|Type|Description|Default Value|Feature Gate|
-|--- |--- |--- |--- |--- |
-|`memory_swap_limit_in_bytes`|int64|set/show limit of memory+swap usage|Default 0, which is unspecified.|SupportNodeMemorySwap|
-|`memory_swappiness`|int64|set/show swappiness parameter|Default 0, which is unspecified.|SupportNodeMemorySwap|
+[k8s.io/cri-api/pkg/apis/runtime/v1/api.proto]: https://github.com/kubernetes/kubernetes/blob/6baad0a1d45435ff5844061aebab624c89d698f8/staging/src/k8s.io/cri-api/pkg/apis/runtime/v1/api.proto#L563-L580
+
+```go
+// LinuxContainerResources specifies Linux specific configuration for
+// resources.
+message LinuxContainerResources {
+...
+    // Memory limit in bytes. Default: 0 (not specified).
+    int64 memory_limit_in_bytes = 4;
+    // Memory + swap limit in bytes. Default: 0 (not specified).
+    int64 memory_swap_limit_in_bytes = 9;
+...
+    // List of HugepageLimits to limit the HugeTLB usage of container per page size. Default: nil (not specified).
+    repeated HugepageLimit hugepage_limits = 8;
+}
+```
 
 ### Test Plan
 
 For alpha:
 
 - Swap scenarios are enabled in test-infra for at least two Linux distributions. e2e suites will be run against them.
+  - Container runtimes must be bumped in CI to use the new CRI.
 - Data should be gathered from a number of use cases to guide beta graduation and further development efforts.
 
 Once this data is available, additional test plans should be added for the next phase of graduation.
@@ -426,7 +406,7 @@ Pick one of these and delete the rest.
 
 - [x] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: NodeSwapEnabled
-  - Components depending on the feature gate: Kubelet
+  - Components depending on the feature gate: API Server, Kubelet
 - [ ] Other
   - Describe the mechanism:
   - Will enabling / disabling the feature require downtime of the control
