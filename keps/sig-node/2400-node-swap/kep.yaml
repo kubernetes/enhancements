@@ -2,6 +2,7 @@ title: Node system swap support
 kep-number: 2400
 authors:
   - "@ehashman"
+  - "@ike-ma"
 owning-sig: sig-node
 participating-sigs:
   - sig-node

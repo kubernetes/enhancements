@@ -220,13 +220,108 @@ Since swap provisioning is out of scope of this proposal, this enhancement poses
 
 ## Design Details
 
-\[In progress\]
+### TL;DR
 
-Need to add specifics here for:
+In a nutshell, the following implementation are planned for Memory Swap Support
+in 1.22 GKE alpha
 
-- Changes to `--fail-on-swap` flag
-- CRI config details
-- Where changes will need to be made so that dockershim and the CRI are consistent with swap control
+1. Having a feature gate `SupportNodeMemorySwap` guarding against the memory
+   swap support feature
+2. Keep the default value of kubelet flag `--fail-on-swap` to `true` in order
+   to minimize the blast radius
+3. Introducing two new kubelet config `MemorySwapLimit` and `Swappiness`
+4. Introducing two new CRI parameter `memory_swap_limit_in_bytes` and `memory_swappiness`
+5. End to end wiring from kubelet config file to CRI
+
+### Expected User Behaviour
+
+For alpha, the feature gate `SupportNodeMemorySwap` is default to disabled, and
+`--fail-on-swap` flag value is the same as 1.21. Therefore, from Kubernetes
+user’s perspective, no behavior changes out of the box.
+
+For users that are ready to explore the Memory Swap feature in 1.22 Alpha, they
+will need to complete the following steps
+
+1. provision swap enable `SupportNodeMemorySwap` flag AND
+2. set `--fail-on-swap` flag to `false`
+
+Then, the user can start experimenting/fine tuning kubelet configuration
+`MemorySwapLimit` and/or `Swappiness` and observe the changes.
+
+### New Kubelet Configuration
+
+We will be introducing two new parameters to `KubeletConfiguration struct`
+defined in
+[https://github.com/kubernetes/kubernetes/blob/master/pkg/kubelet/apis/config/types.go](https://github.com/kubernetes/kubernetes/blob/master/pkg/kubelet/apis/config/types.go).
+These two configurations, if set, will apply to every container of the Node
+where kubelet is running.
+
+|Name|Description|Default Value|Feature Gate|
+|--- |--- |--- |--- |
+|MemorySwapLimit|This parameter sets total memory limit (memory + swap). This limits the total amount of memory this container is allowed to swap to disk.|-2, which enable disable swap|SupportNodeMemorySwap|
+|MemorySwappiness|This configuration sets how aggressively the kernel will swap memory pages. By default, the host kernel can swap out a percentage of anonymous pages used by a container. Users can set value between 0 and 100, to tune this percentage.|Unset, which will use host value|SupportNodeMemorySwap|
+
+#### MemorySwapLimit details
+
+MemorySwapLimit configuration is a kubelet flag that only takes effect on a
+container that has a memory limit set, either explicitly from
+[PodSpec]([https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/#requests-and-limits](https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/#requests-and-limits)
+) or implicitly from [Resource
+Quota]([https://kubernetes.io/docs/concepts/policy/resource-quotas/](https://kubernetes.io/docs/concepts/policy/resource-quotas/)
+).
+
+For container with memory limit set, MemorySwapLimit setting will have the
+following effects, [similar to
+docker](https://docs.docker.com/config/containers/resource_constraints/#--memory-swap-details)
+
+* If MemorySwapLimit is set to a positive integer,
+  * If the memory limit of the container is greater or equal to
+    MemorySwapLimit, then no swap is allowed, the container does not have
+    access to swap.
+  * If the memory limit of the container is less than MemorySwapLimit, then
+    MemorySwapLimit represents the total amount of memory and swap that can be
+    used. For example, for a container with memory limit set to 300m, and
+    `MemorySwapLimit` set to 1g, the container can use 300m of memory and 700m (1g
+    - 300m) swap.
+* If MemorySwapLimit is set to 0, for containers with memory limit is set, the
+  container can use as much swap as the Memory limit setting, if the host
+  container has swap memory configured. For instance, if  a container requests
+  memory="300m" and MemorySwapLimit is not set, the container can use 600m in
+  total of memory and swap.
+* If MemorySwapLimit is explicitly set to -1, the container is allowed to use
+  unlimited swap, up to the amount available on the host system.
+* If MemorySwapLimit is explicitly set to -2,  the container does not have
+  access to swap. This value effectively prevents a container from using swap.
+
+In summary, for users experimenting with this feature
+
+|MemorySwapLimit|container memory limit (explicit or implicit)|Expected Behavior|Comment|
+|--- |--- |--- |--- |
+|Any|not set|N/A|Same as docker|
+|-2|N|no swap allowed, this is the default value||
+|-1|N|unlimited swap|Same as docker|
+|0|N|container can use up to N swap (ie: 2N memory+swap)|Same as docker|
+|X where X > 0|N where N < X|container can use up to X-N swap (ie: 2N memory+swap)|Same as docker|
+|X where X > 0|N where N >= X|no swap allowed (ie: N memory only)|Same as docker|
+
+#### MemorySwappiness details
+
+* A value of 0 turns off anonymous page swapping.
+* A value of 100 sets all anonymous pages as swappable.
+* By default, if you do not set MemorySwappiness, the value is inherited from
+  the host machine.
+
+### CRI Changes
+
+We will be introducing the following two parameters
+`memory_swap_limit_in_bytes` and `memory_swappiness` to `message
+LinuxContainerResources` defined in
+[https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/cri-api/pkg/apis/runtime/v1/api.proto#L563-L580](https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/cri-api/pkg/apis/runtime/v1/api.proto#L563-L580)
+
+|Name|Type|Description|Default Value|Feature Gate|
+|--- |--- |--- |--- |--- |
+|`memory_swap_limit_in_bytes`|int64|set/show limit of memory+swap usage|Default 0, which is unspecified.|SupportNodeMemorySwap|
+|`memory_swappiness`|int64|set/show swappiness parameter|Default 0, which is unspecified.|SupportNodeMemorySwap|
 
 ### Test Plan
 
