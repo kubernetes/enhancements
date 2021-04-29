@@ -77,7 +77,7 @@ Links:
 - [1.14 Milestone](https://bit.ly/k8s114-enhancements)
 - [1.13 Milestone](https://bit.ly/k8s113-features)
 - [1.12 Milestone](https://bit.ly/k8s112-features)
-- [1.11 Milestone](http://bit.ly/k8s-features-111)
+- [1.11 Milestone](https://bit.ly/k8s-features-111)
 
 Procedure:
 *TBA*
