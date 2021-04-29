@@ -276,7 +276,7 @@ endpoint today, but we have to decide what to do with the new default
 values of built-in types. The kube-openapi generated schemas will
 include them.
 
-We proppose to:
+We propose to:
 1. leave CRDs not publishing defaults
 2. filter out defaults in the built-in type schemas too in a first step
 3. but possibly reconsider this behaviour in the future when the
