@@ -324,3 +324,7 @@ Option 1 is adopted. See discussion
     the same functionality.
 
 ## Implementation History
+
+- ALPHA: 1.20
+- BETA: 1.21
+- STABLE: 1.22
