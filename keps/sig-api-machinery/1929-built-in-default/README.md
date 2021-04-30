@@ -277,8 +277,12 @@ values of built-in types. The kube-openapi generated schemas will
 include them.
 
 We propose to:
-1. to allow the CRDs to publish the defaults field which helps the client to set the <zero-value>.
-2. publish out defaults in the built-in type schemas.
+
+1. Clients should NOT be modified to use that default for fields that are not specified, and the documentation must make that very clear. The default is informational only, according to OpenAPI documentation: 
+  > The default value is the one that the server uses if the client does not supply the parameter value in the request.
+ 
+2. Kustomize and clients can't merge associative lists with default key fields if the default isn't visible, e.g. unable to merge port/protocol lists in the client.
+
 
 ### Marker format
 
