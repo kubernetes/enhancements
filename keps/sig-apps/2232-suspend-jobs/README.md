@@ -81,7 +81,11 @@ SIG Architecture for cross-cutting KEPs).
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
+  - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+  - [Monitoring Requirements](#monitoring-requirements)
+  - [Dependencies](#dependencies)
   - [Scalability](#scalability)
+  - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
@@ -280,6 +284,7 @@ Unit, integration, and end-to-end tests will be added to test that:
 ### Graduation Criteria
 
 #### Alpha -> Beta Graduation
+* Metrics with observability in to the Job controller available
 * Implemented feedback from alpha testers
 
 #### Beta -> GA Graduation
@@ -383,80 +388,91 @@ field.
   Jobs that have the flag set will be suspended, and new jobs or updates to existing
   ones to the field will be persisted.
 
-* **Are there any tests for feature enablement/disablement?** No.
-
-<!-- Uncomment when targeting beta graduation
+* **Are there any tests for feature enablement/disablement?** Yes. Integration
+  tests have exhaustive testing switching between different feature enablement
+  states whilst using the feature at the same time. Unit tests and end-to-end
+  tests test feature enablement too.
 
 ### Rollout, Upgrade and Rollback Planning
 
 _This section must be completed when targeting beta graduation to a release._
 
-* **How can a rollout fail? Can it impact already running workloads?**
-  Try to be as paranoid as possible - e.g., what if some components will restart
-   mid-rollout?
+* **How can a rollout fail? Can it impact already running workloads?** Impact
+  to existing Jobs that previously didn't use this feature in alpha is
+  impossible. In workloads using the feature in an older version, suspended
+  Jobs may inadvertently be resumed (or Jobs may be inadvertently suspended) if
+  there are storage-related issues arising from components crashing
+  mid-rollout.
 
-* **What specific metrics should inform a rollback?**
+* **What specific metrics should inform a rollback?** `job_sync_duration_seconds`
+  and `job_sync_total` should be observed. Unexpected spikes in the metric with
+  labels `result=error` and `action=pods_deleted` is potentially an indicator
+  that:
+    1. Job suspension is producing errors in the Job controller,
+    1. Jobs are getting suspended when they shouldn't be, or
+    1. Job sync latency is high when Job are suspended.
+  While the above list isn't exhaustive, they're signals in favour of rollbacks.
 
-* **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
+* **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path
+  tested?** <!-- I'll answer this after implementation.
   Describe manual testing that was done and the outcomes.
   Longer term, we may want to require automated upgrade/rollback tests, but we
-  are missing a bunch of machinery and tooling and can't do that now.
+  are missing a bunch of machinery and tooling and can't do that now. -->
 
-* **Is the rollout accompanied by any deprecations and/or removals of features, APIs, 
-fields of API types, flags, etc.?**
-  Even if applying deprecation policies, they may still surprise some users.
+* **Is the rollout accompanied by any deprecations and/or removals of features,
+  APIs, fields of API types, flags, etc.?** No.
 
 ### Monitoring Requirements
 
 _This section must be completed when targeting beta graduation to a release._
 
 * **How can an operator determine if the feature is in use by workloads?**
-  Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
-  checking if there are objects with field X set) may be a last resort. Avoid
-  logs or events for this purpose.
+  The `.spec.suspend` field is set to true by Jobs. The status conditions of a
+  Job can also be used to determine whether a Job is using the feature (look
+  for a condition of type "Suspended").
 
-* **What are the SLIs (Service Level Indicators) an operator can use to determine 
-the health of the service?**
-  - [ ] Metrics
-    - Metric name:
-    - [Optional] Aggregation method:
+* **What are the SLIs (Service Level Indicators) an operator can use to
+  determine the health of the service?**
+  - [x] Metrics
+    - Metric name: The metrics `job_sync_duration_seconds` and `job_sync_total`
+      get a new label named `action` to allow operators to filter Job sync
+      latency and error rate, respectively, by the action performed. There are
+      four mutually-exclusive values possible for this label:
+        - `reconciling` when the Job's pod creation/deletion expectations are
+          unsatisfied and the controller is waiting for issued Pod
+          creation/deletions to complete.
+        - `tracking` when the Job's pod creation/deletion expectations are
+          satisfied and the number of active Pods matches expectations (i.e. no
+          pod creation/deletions issued in this sync). This is expected to be
+          the action in most of the syncs.
+        - `pods_created` when the controller creates Pods. This can happen
+          when the number of active Pods is less than the wanted Job
+          parallelism.
+        - `pods_deleted` when the controller deletes Pods. This can happen if a
+          Job is suspended or if the number of active Pods is more than
+          parallelism.
+      Each sample of the two metrics will have exactly one of the above values
+      for the `action` label.
     - Components exposing the metric:
-  - [ ] Other (treat as last resort)
-    - Details:
+      - kube-controller-manager
 
-* **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
-  At a high level, this usually will be in the form of "high percentile of SLI
-  per day <= X". It's impossible to provide comprehensive guidance, but at the very
-  high level (needs more precise definitions) those may be things like:
-  - per-day percentage of API calls finishing with 5XX errors <= 1%
-  - 99% percentile over day of absolute value from (job creation time minus expected
-    job creation time) for cron job <= 10%
-  - 99,9% of /health requests per day finish with 200 code
+* **What are the reasonable SLOs (Service Level Objectives) for the above
+  SLIs?**
+  - per-day percentage of `job_sync_total` with labels `result=error` and
+    `action=pods_deleted` <= 1%
+  - 99% percentile over day for `job_sync_duration_seconds` with label
+    `action=pods_deleted` is <= 15s, assuming a client-side QPS limit of 50
+    calls per second
 
-* **Are there any missing metrics that would be useful to have to improve observability 
-of this feature?**
-  Describe the metrics themselves and the reasons why they weren't added (e.g., cost,
-  implementation difficulties, etc.).
+* **Are there any missing metrics that would be useful to have to improve
+  observability of this feature?** No.
 
 ### Dependencies
 
 _This section must be completed when targeting beta graduation to a release._
 
 * **Does this feature depend on any specific services running in the cluster?**
-  Think about both cluster-level services (e.g. metrics-server) as well
-  as node-level agents (e.g. specific version of CRI). Focus on external or
-  optional services that are needed. For example, if this feature depends on
-  a cloud provider API, or upon an external software-defined storage or network
-  control plane.
-
-  For each of these, fill in the following—thinking about running existing user workloads
-  and creating new ones, as well as about cluster-level services (e.g. DNS):
-  - [Dependency name]
-    - Usage description:
-      - Impact of its outage on the feature:
-      - Impact of its degraded performance or high-error rates on the feature:
-
--->
+  Feature is restricted to kube-apiserver and kube-controller-manager.
 
 ### Scalability
 
@@ -480,8 +496,6 @@ _This section must be completed when targeting beta graduation to a release._
 * **Will enabling / using this feature result in non-negligible increase of 
   resource usage (CPU, RAM, disk, IO, ...) in any components?** No.
 
-<!-- Uncomment when targeting beta graduation
-
 ### Troubleshooting
 
 The Troubleshooting section currently serves the `Playbook` role. We may consider
@@ -491,22 +505,24 @@ details). For now, we leave it here.
 _This section must be completed when targeting beta graduation to a release._
 
 * **How does this feature react if the API server and/or etcd is unavailable?**
+  Updates to suspend or resume a Job will not work. The controller will not be
+  able to create or delete Pods. Events, logs, and status conditions for Jobs
+  will not be updated to reflect their suspended status.
 
-* **What are other known failure modes?**
-  For each of them, fill in the following information by copying the below template:
-  - [Failure mode brief description]
-    - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without logging into a master or worker node?
-    - Mitigations: What can be done to stop the bleeding, especially for already
-      running user workloads?
-    - Diagnostics: What are the useful log messages and their required logging
-      levels that could help debug the issue?
-      Not required until feature graduated to beta.
-    - Testing: Are there any tests for failure mode? If not, describe why.
+* **What are other known failure modes?** None. The API server, etcd, and the
+  controller manager are the only possible points of failure.
 
-* **What steps should be taken if SLOs are not being met to determine the problem?**
-
--->
+* **What steps should be taken if SLOs are not being met to determine the
+  problem?**
+  - Verify that kube-apiserver and etcd are healthy. If not, the Job controller
+    cannot operate, so you must fix those problems first.
+  - Verify that `job_sync_total` is unexpectedly high for `result=error` and
+    `action=pods_deleted` in comparison to other actions.
+  - Verify that `job_sync_duration_seconds` is noticeably larger for
+    `action=pods_deleted` in comparison to the other actions.
+  - If control plane components are starved for CPU, which could be a potential
+    reason behind Job sync latency spikes, consider increasing the control
+    plane's resources.
 
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
@@ -514,6 +530,8 @@ _This section must be completed when targeting beta graduation to a release._
 ## Implementation History
 
 2021-02-01: Initial KEP merged, alpha targeted for 1.21
+2021-03-08: Implementation merged in 1.21 with feature gate disabled by default
+2021-04-22: KEP updated for beta graduation in 1.22
 
 ## Drawbacks
 
