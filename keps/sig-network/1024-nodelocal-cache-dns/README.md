@@ -70,7 +70,7 @@ The node's resolv.conf will be used by this local agent for all other cache miss
 
 #### Daemonset and Listen Interface for caching agent
 
-The caching agent daemonset runs in hostNetwork mode in kube-system namespace with a Priority Class of “system-node-critical”. It listens for dns requests on a dummy interface created on the host. A separate ip address is assigned to this dummy interface, so that requests to kube-dns or any other custom service are not incorrectly intercepted by the caching agent. This will be a link-local ip address selected by the user. Each cluster node will have this dummy interface. This ip address will be passed on to kubelet via the --cluster-dns flag, if the feature is enabled.
+The caching agent daemonset runs in hostNetwork mode in kube-system namespace with a Priority Class of “system-node-critical”. It listens for dns requests on a dummy interface created on the host. A separate ip address is assigned to this dummy interface, so that requests to kube-dns or any other custom service are not incorrectly intercepted by the caching agent. This will be a link-local ip address selected by the user. Each cluster node will have this dummy interface. If the cluster has kube-proxy running in iptables mode, the dummy interface has both the special IP address as well as kube-dns service IP address assigned to it. There is no change to the --cluster-dns kubelet flag value. In other modes, the dummy interface is only assigned the special IP address. This ip address will be passed on to kubelet via the --cluster-dns flag, if the feature is enabled.
 
 A new service spec is added to the node-local-dns yaml, this is almost identical to the kube-dns service spec. 
 
@@ -131,7 +131,9 @@ The benefits of this approach are:
 
 We still need some component to dynamically determine when to use node-local-dns and when to flip to kube-dns endpoints. This logic can be separated out into an independent container/pod whose function is to query for dns records on 169.254.20.10:53 and follow some threshold to either install or remove the NOTRACK rules. This can be a new Daemonset or combined into an existing Daemonset that is in HostNetwork mode and manages iptables rules in some way - for instance a CNI Daemonset. This component will handle adding all iptables rules needed for node-local-dns.
 
-The caveat of this approach is that it only works in the iptables implementation of kube-proxy. 
+The caveat of this approach is that it only works in the iptables implementation of kube-proxy. In order to achieve High Availability in other modes like IPVS: 
+2 daemonsets of node-local-dns can be run with both using the same listenIP (example - 169.254.20.10) via SO_REUSEPORT option. Upgrades will be done one daemonset at a time.
+
 Another observation is that the upstream dns server IP used by node-local-dns will differ from one setup to another since it is a dynamically allocated service IP.  This doesn't appear to be a major concern.
 
 The cache process will also periodically ensure that the dummy interface and iptables rules are present, in the background. Rules need to be checked in the raw table and filter table. Rules in these tables do not grow with number of valid services. Services with no endpoints will have rules added in filter table to drop packets destined to these ip. The resource usage for periodic iptables check was measured by creating 2k services with no endpoints and running the nodelocal caching agent. Peak memory usage was 20Mi for the caching agent when it was responding to queries along with the periodic checks. This was measured using `kubectl top` command. More details on the testing are in the following section.
@@ -245,7 +247,7 @@ Per-zone metrics will be available via the metrics/prometheus plugin in CoreDNS.
 - Upgrade to a newer CoreDNS version(1.6.x) in [node-cache](https://github.com/kubernetes/dns/pull/328).
 - Add a plan for periodic upgrade to newer CoreDNS versions.
 - Ensure that Kubernetes [e2e tests with NodeLocal DNSCache](https://k8s-testgrid.appspot.com/sig-network-gce#gci-gce-kube-dns-nodecache) are passing.
-- Scalability tests with NodeLocal DNSCache enabled, verifying the [HA modes](https://github.com/kubernetes/enhancements/blob/master/keps/sig-network/20190424-NodeLocalDNS-beta-proposal.md#design-details) as well as the regular mode.
+- Scalability tests with NodeLocal DNSCache enabled, verifying the HA mode as well as the regular mode.
 - Add tests that clearly demonstrate the benefits of NodeLocal DNSCache and document the steps to run them.
 - Have 10 users running in production with NodeLocal DNSCache enabled.
 - Provide clear documentation on using NodeLocal DNSCache aimed at cluster
@@ -262,6 +264,7 @@ This feature will be launched with Alpha support in the first release. Master ve
 * 2018-11-02 - Added GA graduation criteria
 * v1.18 - GA graduation
 * 2021-02-15 - Two DNS NodeLocal Cache KEPs merged together for cleanup
+* 2021-03-31 - Adding back note about HA for non-iptables modes.
 
 ## Drawbacks [optional]
 
