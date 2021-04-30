@@ -5,17 +5,18 @@
 **BLOCKING**
 
 The name of this feature / policy is open to discussion. Options considered:
-- Pod Isolation Policy
-- Pod Policy Check
-- Pod Security Standards
+- Pod Isolation Policy (PIP)
+- Pod Security Standards (PSS)
+- Pod Admission Security Standards (PASS)
+- Pod Policy Check (PPC)
+- Pod Security Constraints (PSC)
+- Pod Isolation Constraints (PIC)
+- Pod Isolation Requirements (PIR)
+- Namespace Security Labels (NSL)
+- Pod Security Policy v2 (PSPv2)
+- ~~Pod Security Defaults~~ (policy is non-mutating)
 - ~~Namsepace Security Policy~~ (there is a lot more to namespace security that is out-of-scope for this policy)
 - ~~Pod Configuration Constraints~~ (not all of pod configuration is in-scope)
-- Pod Security Constraints
-- Pod Isolation Constraints
-- Pod Isolation Requirements
-- Namespace Security Labels
-- ~~Pod Security Defaults~~ (policy is non-mutating)
-- Pod Security Policy v2
 
 <<[/UNRESOLVED]>>
 
@@ -163,21 +164,21 @@ prefix structure is `<featurename>.kubernetes.io`.
 
 Policy application is controlled based on labels on the namespace. The following labels are supported:
 ```
-<prefix>/allow: <policy level>
-<prefix>/allow-version: <policy version>
+<prefix>/enforce: <policy level>
+<prefix>/enforce-version: <policy version>
 <prefix>/audit: <policy level>
 <prefix>/audit-version: <policy version>
 <prefix>/warn: <policy level>
 <prefix>/warn-version: <policy version>
 ```
 
-**Allow:** Pods meeting the requirements of the allowed level are allowed. Violations are rejected
+**Enforce:** Pods meeting the requirements of the enforced level are allowed. Violations are rejected
 in admission.
 
 **Audit:** Pods and [templated pods] meeting the requirements of the audit policy level are ignored.
-Violations are recorded in a `<prefix>/audit: <violation>` annotation on the
-audit event for the request. Audit annotations will **not** be applied to the pod objects
-themselves, as doing so would violate the non-mutating requirement.
+Violations are recorded in a `<prefix>/audit-violations: <violation>` [audit
+annotation](#audit-annotations) on the audit event for the request. Audit annotations will **not**
+be applied to the pod objects themselves, as doing so would violate the non-mutating requirement.
 
 **Warn:** Pods and [templated pods] meeting the requirements of the warn level are ignored.
 Violations are returned in a user-facing warning message. Warn & audit modes are independent; if the
@@ -185,35 +186,12 @@ functionality of both is desired, then both labels must be set.
 
 [templated pods]: #podtemplate-resources
 
-<<[UNRESOLVED]>>
-
-**BLOCKING**
-
-The mode key names are open to discussion.
-@tallclair is not satisfied that `allow` and `audit/warn` carry slightly different meanings:
-
-- `allow` means "allow pods meeting this profile level & below" (i.e. deny above)
-- `audit` and `warn` mean "audit/warn on pods exceeding this profile level" (i.e. audit/warn above)
-
-~~Using `deny` for the enforcing level would be more consistent with audit/warn (deny above), but is
-a counter-intuitive user experience. One would expect `deny = privileged` to deny privileged pods,
-but it really means allow privileged pods (hence using `allow` for the key).~~ (Rejected)
-
-Another option is to change the `audit` and `warn` keys to something meaning "don't audit/warn at this
-level and bellow", but we haven't thought of a good name. The best alternative we've come up with is
-`audit-above` and `warn-above`, but that is cumbersome.
-
-A final option is to change `allow` to `enforce`, which is more ambiguous. The ambiguity makes the
-inconsistency with audit & warn less obvious, but doesn't help the user experience.
-
-<<[/UNRESOLVED]>>
-
 There are several reasons for controlling the policy directly through namespace labels, rather than
 through a separate object:
 
 - Using labels enables various workflows around policy management through kubectl, for example
   issuing queries like `kubectl get namespaces -l
-  <prefix>/allow-version!=v1.22` to find namespaces where the enforcing
+  <prefix>/enforce-version!=v1.22` to find namespaces where the enforcing
   policy isn't pinned to the most recent version.
 - Keeping the options on namespaces allows atomic create-and-set-policy, as opposed to creating a
   namespace and then creating a second object inside the namespace.
@@ -279,7 +257,7 @@ How long will old profiles be kept for? What is the removal policy?
 ### PodTemplate Resources
 
 Audit and Warn modes are also checked on resource types that embed a PodTemplate (enumerated below),
-but Allow mode only applies to actual pod resources.
+but enforce mode only applies to actual pod resources.
 
 Since users do not create pods directly in the typical deployment model, the warning mechanism is
 only effective if it can also warn on templated pod resources. Similarly, for audit it is useful to
@@ -306,7 +284,7 @@ leveraging the library implementation.
 
 ### Namespace policy update warnings
 
-When an allow policy (or version) label is added or changed, the admission plugin will test each pod
+When an `enforce` policy (or version) label is added or changed, the admission plugin will test each pod
 in the namespace against the new policy. Violations are returned to the user as warnings. These
 checks have a timeout of XX seconds and a limit of YY pods, and will return a warning in the event
 that not every pod was checked. User exemptions are ignored by these checks, but runtime class
@@ -318,7 +296,7 @@ These checks are also performed when making a dry-run request, which can be an e
 checking for breakages before updating a policy, for example:
 
 ```
-kubectl label --dry-run=server --overwrite ns --all <prefix>/allow=baseline
+kubectl label --dry-run=server --overwrite ns --all <prefix>/enforce=baseline
 ```
 
 <<[UNRESOLVED]>>
@@ -326,7 +304,15 @@ kubectl label --dry-run=server --overwrite ns --all <prefix>/allow=baseline
 _Non-blocking: can be decided on the implementing PR_
 
 - What should the timeout be for pod update warnings?
+  - Total is a parameter on the context (query parameter for webhooks). Cap should be
+    `min(timeout_param, hard_cap)`, where the `hard_cap` is a small number of seconds.
+  - Expect evaluation to be fast, so even 3k pods should come in well under the timeout.
 - What should the pod limit be set to?
+  - 3,000 is the
+    [documented](https://github.com/kubernetes/community/blob/master/sig-scalability/configs-and-limits/thresholds.md)
+    scalability limit for per-namespace pod count.
+  - Warnings should be aggregated for large namespaces (soft cap number of warnings, hard cap number
+    of evaluations).
 
 <<[/UNRESOLVED]>>
 
@@ -365,8 +351,9 @@ configured. The default for the static configuration is `privileged` and `latest
 #### Exemptions
 
 Policy exemptions can be statically configured. Exemptions must be explicitly enumerated, and don’t
-support indirection such as label or group selectors. Requests meeting criteria are completely by
-the admission controller (allow, audit and warn). Exemption dimensions include:
+support indirection such as label or group selectors. Requests meeting criteria are ignored by the
+admission controller (enforce, audit and warn) except for recording an [audit
+annotation](#audit-annotations). Exemption dimensions include:
 
 - Usernames: requests from users with an exempt authenticated (or impersonated) username are ignored.
 - RuntimeClassNames: pods and [templated pods] with specifying an exempt runtime class name are ignored.
@@ -445,7 +432,7 @@ _Non-blocking for alpha. This should be resolved for beta._
 Once ephemeral containers allow [custom security contexts], it may be desirable to run an ephemeral
 container with higher privileges for debugging purposes. For example, CAP_SYS_PTRACE is forbidden by
 the baseline policy but can be useful in debugging. We could introduce yet-another-mode-label that
-only applies enforcement to ephemeral containers (defaults to the allow policy).
+only applies enforcement to ephemeral containers (defaults to the enforce policy).
 
 [custom security contexts]: https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/277-ephemeral-containers#configurable-security-policy
 
@@ -539,21 +526,14 @@ Kubernetes does not define the default set, but Docker does. This leaves us with
 
 <<[/UNRESOLVED]>>
 
-<<[UNRESOLVED]>>
-
-**BLOCKING**
-
-**Volumes** - Which volume types should be allowed under the restricted profile?
-
-- Should we allow inline CSI volumes?
-  - Inline CSI volumes are only supposed to be used for ephemeral volumes
+**Volumes** - Inline CSI volumes will be allowed by the restricted profile. Justification:
+  - Inline CSI volumes should only be used for ephemeral volumes
   - The CSIDriver object spec controls whether a driver can be used inline, and can be modified
     without binary changes to disable inline usage.
   - Risky inline drivers should already use a 3rd party admission controller, since they are usable
     by the baseline policy.
-- ~~Should we allow `Ephemeral` volume types?~~ Yes, this is essentially just syntax sugar on PVCs.
-
-<<[/UNRESOLVED]>>
+  - We should thoroughly document safe usage, both on the documentation for this (PSP replacement)
+    feature, as well as in the CSI driver documentation.
 
 ### Flexible Extension Support
 
@@ -574,7 +554,7 @@ relabeling specific test namespaces.
 
 **E2E Tests:** The following tests should be added:
 
-1. Allow mode tests:
+1. Enforce mode tests:
     - Test all profile levels
     - Test profile version support
 2. Warning mode tests:
@@ -619,12 +599,9 @@ A single metric will be added to track policy evaluations against pods and templ
 
 The metric will use the following labels:
 
-1. `decision {allow, deny, ignore, error}` - The policy decision _before_ exemptions are considered.
-   Error is reserved for panics or other errors in policy evaluation. `ignore` is only used for
-   update requests that are out of scope (see [Updates](#updates) above).
-2. `exempt {no, user, namespace, runtimeclass, multiple}` - If the request is exempt (otherwise,
-   `no`), which parameter exempted it? If it was exempt on multiple dimensions, `multiple` is used.
-   This label is independent of policy decision.
+1. `decision {allow, deny, exempt, error}` - The policy decision _before_ exemptions are considered.
+   Error is reserved for panics or other errors in policy evaluation. Update requests that are out
+   of scope (see [Updates](#updates) above) are not counted.
 3. `policy_level {privileged, baseline, restricted}` - The policy level that the request was
    evaluated against.
 4. `policy_version {latest, v1.YY, >v1.ZZ}` - The policy version that was used for the evaluation.
@@ -642,11 +619,21 @@ The metric will use the following labels:
 
 The following audit annotations will be added:
 
-1. `<prefix>/enforced-policy = <policy_level>:<resolved_version>` Record which policy was evaluated
-   for enforcing mode. Resolved version is the actual version of the policy that was evaluated, so
-   in the case of `latest` or future versions, it will be resolved to the current version.
-2. `<prefix>/audit = <policy violations>` When an audit mode policy is set, record violations of
-   that policy here.
+1. `<prefix>/enforce-policy = <policy_level>:<resolved_version>` Record which policy was evaluated
+   for enforcing mode.
+    - Resolved version is the actual version of the policy that was evaluated, so in the case of
+      `latest` or future versions, it will be `latest@<version>` where `<version>` is the tagged
+      version of the apiserver or webhook (e.g. `latest@v1.22.5-build.8`).
+    - This annotation is only recorded when a policy is enforced. Specifically, it will not be
+      recorded for irrelevant updates or exempt requests.
+2. `<prefix>/audit-policy = <policy_level>:<resolved_version>` Same as `enforce-policy`, but for
+   audit mode policies (only included when an audit policy is set).
+3. `<prefix>/enforce-violations = <policy violations>` When an enforcing policy is violated, record
+   the violations here.
+4. `<prefix>/audit-violations = <policy violations>` When an audit mode policy is violated, record
+   the violations here.
+5. `<prefix>/exempt = [user, namespace, runtimeClass]` For exmept requests, record the parameters
+   that triggered the exemption here.
 
 `<prefix>` matches the prefix used for [namespace labels](#api).
 
@@ -937,12 +924,12 @@ conservative rollout path, potentially with multiple releases between steps. Ste
 or combined for a more aggressive rollout:
 
 1. Admission plugin goes to GA
-2. Admission plugin enabled by default; Unlabeled namespaces treated as allow=privileged,
+2. Admission plugin enabled by default; Unlabeled namespaces treated as enforce=privileged,
    audit=baseline, warn=privileged; Privileged pod (or PodTemplate controller) creation in an
    unlabeled namespace triggers the namespace to be labeled as privileged
 3. Same as (2) but new namespaces are automatically labeled as unprivileged
    (`security.kubernetes.io/privileged: false`), warn=baseline
-4. Default unlabeled namespaces to allow=baseline
+4. Default unlabeled namespaces to enforce=baseline
 
 Each step in the rollout could be overridden with a flag (e.g. force the admission plugin to step N)
 
@@ -979,7 +966,7 @@ this, with the items tagged (automated) having support from the PSP migration to
     2. Evaluate the difference in privileges that would come from disabling the PSP controller
        (automated).
 4. (optional) Apply the profiles in `warn` and `audit` mode (automated)
-5. Apply the profiles in `allow` mode (automated)
+5. Apply the profiles in `enforce` mode (automated)
 6. Disable PodSecurityPolicy
 
 ### Custom Profiles
