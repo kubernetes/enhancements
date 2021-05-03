@@ -1242,7 +1242,9 @@ v1.20: Relaunched to `Alpha`
 
 v1.21: Moved from `Alpha` to `Beta`
 
-v1.22: Moved from `Beta` to `Stable`
+v1.22: Gathering beta user feedback and making bugfixes as needed.
+
+v1.23: Planning to move from `Beta` to `Stable`
 
 ## Alternatives
 
@@ -1390,10 +1392,17 @@ This capability will move to stable when the following criteria have been met.
 
 
 * **How can this feature be enabled / disabled in a live cluster?**
-  - With this feature moving to stable, the feature will always be enabled.
-  - While disabling the feature is not possible, using it is not required. Any
-    cluster can be provisioned as single-stack by setting `--cluster-cidr` to
-    only one CIDR and ` --service-cluster-ip-range` to only one address block.
+  - While the feature is in beta:
+    [X] Feature gate (also fill in values in `kep.yaml`)
+    - Feature gate name: IPv6DualStack
+    - Components depending on the feature gate:
+      kube-apiserver, kube-controller-manager, kube-proxy, and kubelet
+
+  - When this feature moves to stable, the feature will always be enabled.
+  - While disabling the feature will not be possible after the move to stable,
+    using it is not required. Any cluster can be provisioned as single-stack by
+    setting `--cluster-cidr` to only one CIDR and ` --service-cluster-ip-range`
+    to only one address block.
 
 * **Does enabling the feature change any default behavior?**
   Pods and Services will remain single-stack until cli flags have been modified
@@ -1404,11 +1413,30 @@ This capability will move to stable when the following criteria have been met.
 
 * **Can the feature be disabled once it has been enabled (i.e. can we roll back
   the enablement)?**
-  As the feature is stable, it is always available. However, it need not be used.
+
+  Yes. If you decide to turn off dual-stack after turning on:
+    1. Ensure all services are converted to single-stack first (downgraded to
+       single-stack as described in this KEP)
+    2. Remove the CLI parameters.
+    3. Disable the feature.
+
+ Notes:
+    1. When the user disables dual-stack from the controller manager,
+       endpointSlices will no longer be created for the alternative IP family.
+    2. Existing endpointSlices for the alternative family will not be
+       automatically removed; this is left to the operator.
+    3. Existing dual-stack service configurations will remain in place when
+       the feature is disabled, but no routing will happen and no
+       endpointSlices will be created while the feature is disabled.
+
+  - When the feature becomes stable, it will always be available. However, it
+    need not be used.
 
 * **What happens if we reenable the feature if it was previously rolled back?**
 
-  The controller manager will automatically update endpoints and endpointSlices
+  If the system has no existing dual-stack services, then it will be treated
+  as a new enablement. However, if dual-stack services exist in the cluster,
+  the controller manager will automatically update endpoints and endpointSlices
   to match the service IP families. When the feature is reenabled, kube-proxy
   will automatically start updating iptables/ipvs rules for the alternative
   ipfamily, for existing and new dual-stack services.
@@ -1420,10 +1448,10 @@ This capability will move to stable when the following criteria have been met.
   iptables rules are fully propagated.
 
 * **Are there any tests for feature enablement/disablement?**
-  The feature was tested before stable, using integration tests with gate on/off. The
-  tests can be found here: https://github.com/kubernetes/kubernetes/tree/master/test/integration/dualstack
+  The feature is tested before going stable, using integration tests with gate
+  on/off. The tests can be found here: https://github.com/kubernetes/kubernetes/tree/master/test/integration/dualstack
 
-  The feature was tested on a cloud provider and kind.
+  The feature is tested on a cloud provider and kind.
    1. azure dual-stack e2e: https://testgrid.k8s.io/sig-network-dualstack-azure-e2e
    2. kind dual-stack iptables: https://testgrid.k8s.io/sig-network-kind#sig-network-kind,%20dual,%20master
    3. kind dual-stack ipvs: https://testgrid.k8s.io/sig-network-kind#sig-network-kind,%20ipvs,%20master
@@ -1431,16 +1459,17 @@ This capability will move to stable when the following criteria have been met.
 ### Rollout, Upgrade and Rollback Planning
 
 * **How can a rollout fail? Can it impact already running workloads?**
-
   Users **must** avoid changing existing CIDRs for both pods and services.
   Users can only add an alternative ip family to existing CIDRs. Changing
   existing CIDRs will result in nondeterministic failures depending on how the
   cluster networking was configured.
 
-  Existing workloads are not expected to be impacted during rollout. A component
-  restart during rollout might delay generating endpoints and endpointSlices for
-  alternative IP families. If there are *new* workloads that depend on the
-  endpointSlices, these workloads will fail until the endpoint slices are created.
+  Existing workloads are not expected to be impacted during rollout. When you
+  disable dual-stack, existing services aren't deleted, but routes for
+  alternative families are disabled. A component restart during rollout might
+  delay generating endpoints and endpointSlices for alternative IP families.
+  If there are *new* workloads that depend on the endpointSlices, these
+  workloads will fail until the endpoint slices are created.
 
   Because of the nature of the gradual rollout (node by node) of the dual-stack
   feature, endpoints for the alternative IP family will not be created for
@@ -1559,18 +1588,23 @@ resource usage (CPU, RAM, disk, IO, ...) in any components?**
        CNI provider.
     3. Service CIDRs need to be sufficiently large to allow for creation of
        new services.
+    4. Dual-stack CLI flags must be configured on the cluster as defined in the [dual-stack docs](https://kubernetes.io/docs/concepts/services-networking/dual-stack/#enable-ipv4-ipv6-dual-stack)
 
   * Failure to create dual-stack services. Operator must perform the following steps:
-    1. Ensure that the cluster is running a version of Kubernetes with the `IPv6DualStack`
-       feature enabled.
+    1. Ensure that the cluster has `IPv6DualStack` feature enabled.
     2. Ensure that api-server is correctly configured with multi (dual-stack) service
        CIDRs using `--services-cluster-ip-range` flag.
 
   * Failure to route traffic to pod backing a dual-stack service. Operator must     perform the following steps:
     1. Ensure that nodes (where the pod is running) are configured for dual-stack
        a. Node is using dual-stack enabled CNI.
+       b. kubelet is configured with dual-stack feature flag.
+       c. kube-proxy is configured with dual-stack feature flag.
+    2. Ensure that api-server is configured for dual-stack
+       a. Feature flag is turned on.
     3. Ensure that kube-controller-manager is configured for dual-stack
-       a. `--cluster-cidr` cli flag is correctly configured with dual-stack 
+       a. Feature flag is turned on.
+       b. `--cluster-cidr` cli flag is correctly configured with dual-stack 
           where applicable.
     4. Operator can ensure that `endpoints` and `endpointSlices` are correctly 
        created for the service in question by using kubectl.
@@ -1580,7 +1614,7 @@ resource usage (CPU, RAM, disk, IO, ...) in any components?**
        scaling with dual-stack it may take time to attach all ready endpoints.
 
   * CNI changes may affect legacy workloads.
-    1. When dual-stack is configured, DNS queries will start returning
+    1. When dual-stack is configured and enabled, DNS queries will start returning
        IPv4(A) and IPv6(AAAA).
     2. If a workload doesn't account for being offered both IP families, it
        may fail in unexpected ways. For example, firewall rules may need to be
