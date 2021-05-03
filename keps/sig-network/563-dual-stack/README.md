@@ -1232,13 +1232,19 @@ be run individually, with the same initial configurations.
 v1.16: Implemented phase 1 & 2 defined in the [implementation plan](#implementation-plan)
 and launched in `Alpha`
 
-v1.17: Implemented phase 3 defined [iplementation plan](#implementation-plan)
+v1.17: Implemented phase 3 defined [implementation plan](#implementation-plan)
 
-v1.18: Took user feedback on potentiall issues caused in feature enablement/disablement. Which lead us to redesign dual stack Services
+v1.18: Took user feedback on potential issues caused in feature enablement/disablement, which led us to redesign dual-stack Services.
 
-v1.19: Implemented redesigned duals stack Services see [PR 91824](https://github.com/kubernetes/kubernetes/pull/91824)
+v1.19: Implemented redesigned dual-stack Services see [PR 91824](https://github.com/kubernetes/kubernetes/pull/91824)
 
 v1.20: Relaunched to `Alpha`
+
+v1.21: Moved from `Alpha` to `Beta`
+
+v1.22: Gathering beta user feedback and making bugfixes as needed.
+
+v1.23: Planning to move from `Beta` to `Stable`
 
 ## Alternatives
 
@@ -1386,9 +1392,17 @@ This capability will move to stable when the following criteria have been met.
 
 
 * **How can this feature be enabled / disabled in a live cluster?**
-  - [X] Feature gate (also fill in values in `kep.yaml`)
+  - While the feature is in beta:
+    [X] Feature gate (also fill in values in `kep.yaml`)
     - Feature gate name: IPv6DualStack
-    - Components depending on the feature gate: kube-apiserver, kube-controller-manager, kube-proxy, and kubelet
+    - Components depending on the feature gate:
+      kube-apiserver, kube-controller-manager, kube-proxy, and kubelet
+
+  - When this feature moves to stable, the feature will always be enabled.
+  - While disabling the feature will not be possible after the move to stable,
+    using it is not required. Any cluster can be provisioned as single-stack by
+    setting `--cluster-cidr` to only one CIDR and ` --service-cluster-ip-range`
+    to only one address block.
 
 * **Does enabling the feature change any default behavior?**
   Pods and Services will remain single-stack until cli flags have been modified
@@ -1399,6 +1413,7 @@ This capability will move to stable when the following criteria have been met.
 
 * **Can the feature be disabled once it has been enabled (i.e. can we roll back
   the enablement)?**
+
   Yes. If you decide to turn off dual-stack after turning on:
     1. Ensure all services are converted to single-stack first (downgraded to
        single-stack as described in this KEP)
@@ -1413,6 +1428,9 @@ This capability will move to stable when the following criteria have been met.
     3. Existing dual-stack service configurations will remain in place when
        the feature is disabled, but no routing will happen and no
        endpointSlices will be created while the feature is disabled.
+
+  - When the feature becomes stable, it will always be available. However, it
+    need not be used.
 
 * **What happens if we reenable the feature if it was previously rolled back?**
 
@@ -1430,10 +1448,10 @@ This capability will move to stable when the following criteria have been met.
   iptables rules are fully propagated.
 
 * **Are there any tests for feature enablement/disablement?**
-  The feature is being tested using integration tests with gate on/off. The
-  tests can be found here: https://github.com/kubernetes/kubernetes/tree/master/test/integration/dualstack
+  The feature is tested before going stable, using integration tests with gate
+  on/off. The tests can be found here: https://github.com/kubernetes/kubernetes/tree/master/test/integration/dualstack
 
-  The feature is being tested on a cloud provider and kind.
+  The feature is tested on a cloud provider and kind.
    1. azure dual-stack e2e: https://testgrid.k8s.io/sig-network-dualstack-azure-e2e
    2. kind dual-stack iptables: https://testgrid.k8s.io/sig-network-kind#sig-network-kind,%20dual,%20master
    3. kind dual-stack ipvs: https://testgrid.k8s.io/sig-network-kind#sig-network-kind,%20ipvs,%20master
@@ -1460,7 +1478,7 @@ This capability will move to stable when the following criteria have been met.
   following steps:
 
   1. (preferred) Do not create dual-stack services until the rollout of the
-     dual-stack feature across the cluster is complete.
+     dual-stack feature (on supported versions) across the cluster is complete.
   or
   2. Cordon and drain the node(s) where the feature is not enabled
 
