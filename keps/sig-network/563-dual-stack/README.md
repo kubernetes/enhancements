@@ -1478,7 +1478,7 @@ This capability will move to stable when the following criteria have been met.
   following steps:
 
   1. (preferred) Do not create dual-stack services until the rollout of the
-     dual-stack feature (via supported version) across the cluster is complete.
+     dual-stack feature (on supported versions) across the cluster is complete.
   or
   2. Cordon and drain the node(s) where the feature is not enabled
 
