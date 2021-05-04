@@ -97,7 +97,7 @@ There are hence a number of possible ways that one could envision swap use on a 
 
 ### Scenarios
 
-1. Swap is enabled only at the system level. The CRI does not permit user workloads to use swap. (This scenario is a prerequisite for the following use cases.)
+1. Swap is enabled on a node's host system, but the CRI does not permit Kubernetes workloads to use swap. (This scenario is a prerequisite for the following use cases.)
 1. Swap is enabled at the node level. The CRI can be globally configured to permit user workloads scheduled on the node to use some quantity of swap.
 1. Swap is set on a per-workload basis. The CRI sets permitted swap utilization on each individual workload.
 
@@ -245,33 +245,46 @@ type KubeletConfiguration struct {
 	metav1.TypeMeta
 ...
 	// Configure swap memory available to container workloads.
-	// If not set, workloads cannot use swap.
-	// If set to 0, workloads can use as much swap as their memory limit.
-	// If set to -1, workloads can use unlimited swap, up to the system limit.
-	// If set to a positive integer, workloads can use a total of memory and swap up to this
-	// limit. When containers request more memory than this limit, they cannot use swap.
 	// +featureGate=NodeSwapEnabled
 	// +optional
-	MemorySwapLimit *int64
+	MemorySwap MemorySwapConfiguration
+}
+
+type MemorySwapConfiguration struct {
+	// Configure swap memory available to container workloads. May be one of
+	// "", "NoSwap": workloads cannot use swap
+	// "WorkloadSpecifiedSwapLimit": workloads can use as much swap as their memory limit.
+	// "UnlimitedSwap": workloads can use unlimited swap, up to the system limit.
+	// "LimitedSwap": workloads can use a total of memory and swap up to this
+	// limit. When containers request more memory than this limit, they cannot use swap.
+	SwapBehavior string
+
+	LimitedSwap *LimitedSwapConfiguration
+}
+
+type LimitedSwapConfiguration struct {
+	PerWorkloadMemorySwapLimit resource.Quantity
 }
 ```
 
-For container with memory limit set, MemorySwapLimit setting will have the
-following effects, following the [Docker] and open container specification:
+The `MemorySwapConfiguration.SwapBehavior` setting will have the following
+effects, based on the [Docker] and open container specification for the
+`--memory-swap` flag:
 
-* If `MemorySwapLimit` is not set, containers do not have access to swap. This
-  value effectively prevents a container from using swap, even if it is enabled
-  on a system.
-* If `MemorySwapLimit` is set to 0, for containers with memory limit is set, the
-  container can use as much swap as its memory limit setting. For instance, if
-  a container requests 300Mi memory and `MemorySwapLimit` is not set, the
-  container can use 600Mi total memory and swap.
-* If `MemorySwapLimit` is set to -1, the container is allowed to use
-  unlimited swap, up to the maximum amount available on the host system.
-* If `MemorySwapLimit` is set to a positive integer, then for containers with a
-  memory limit set, that value represents the system-wide maximum limit for
-  combined memory and swap usage of a container. For example, if
-  `MemorySwapLimit` is set to 1073742000 (1Gi):
+* If `SwapBehavior` is not set or set to `"NoSwap"`, containers do not have
+  access to swap. This value effectively prevents a container from using swap,
+  even if it is enabled on a system.
+* If `SwapBehavior` is set to `"WorkloadSpecifiedSwapLimit"`, then for
+  containers with memory limit is set, the container can use as much swap as
+  its memory limit setting. For instance, if a container requests 300Mi memory
+  and `MemorySwapLimit` is not set, the container can use 600Mi total memory
+  and swap.
+* If `SwapBehavior` is set to `"UnlimitedSwap"`, the container is allowed to
+  use unlimited swap, up to the maximum amount available on the host system.
+* If `SwapBehavior` is set to a `"LimitedSwap"`, then the `LimitedSwap`
+  configuration must also be set. `LimitedSwap.PerWorkloadMemorySwapLimit`
+  represents the system-wide maximum limit for combined memory and swap usage
+  of a container. For example, if the limit is set to `1Gi`:
   * If the container's memory limit is 300Mi, it can use 1Gi combined memory
     and swap (e.g. up to 700Mi swap).
   * If the container's memory limit is 700Mi, it can use 1Gi combined memory
@@ -309,6 +322,7 @@ For alpha:
 - Swap scenarios are enabled in test-infra for at least two Linux distributions. e2e suites will be run against them.
   - Container runtimes must be bumped in CI to use the new CRI.
 - Data should be gathered from a number of use cases to guide beta graduation and further development efforts.
+  - Focus should be on supported user stories as listed above.
 
 Once this data is available, additional test plans should be added for the next phase of graduation.
 
@@ -331,6 +345,7 @@ Once this data is available, additional test plans should be added for the next 
 
 #### GA
 
+- Test a wide variety of scenarios that may be affected by swap support, such as workloads using tmpfs storage.
 - Remove feature flag.
 
 ### Upgrade / Downgrade Strategy
