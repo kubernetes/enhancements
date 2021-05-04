@@ -510,8 +510,32 @@ implementation.
 
 **BLOCKING**
 
-**Capabilities** - (baseline) Adding additional capabilities beyond the default set must be
-disallowed.
+**Capabilities** - (baseline) Only the following capabilities may be added:
+- AUDIT_WRITE
+- CHOWN
+- DAC_OVERRIDE
+- FOWNER
+- FSETID
+- KILL
+- MKNOD
+- NET_BIND_SERVICE
+- SETFCAP
+- SETGID
+- SETPCAP
+- SETUID
+- SYS_CHROOT
+
+_Note: This set is equal to the [docker default capability
+   set](https://docs.docker.com/engine/reference/run/#runtime-privilege-and-linux-capabilities)
+   minus `NET_RAW`._
+
+_Note: The [OpenShift default capability
+set](https://github.com/openshift/hypershift-toolkit/blob/148be6f31a365dbcdf1cbd647773f59ccbcc282a/assets/ignition/files/etc/crio/crio.conf#L87-L102)
+also drops AUDIT_WRITE, MKNOD, SETFCAP, and SYS_CHROOT._
+
+---
+
+Prior discussion:
 
 Kubernetes does not define the default set, but Docker does. This leaves us with 2 options:
 
