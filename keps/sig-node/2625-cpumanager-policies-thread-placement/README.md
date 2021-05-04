@@ -1,4 +1,4 @@
-# SMT-aware cpu manager
+# SMT-aligned cpu manager
 
 ## Table of Contents
 
@@ -14,7 +14,7 @@
   - [Risks and Mitigations](#risks-and-mitigations)
 - [Design Details](#design-details)
   - [Proposed Change](#proposed-change)
-  - [Implementation strategy of smtaware CPU Manager policy](#implementation-strategy-of-smtaware-cpu-manager-policy)
+  - [Implementation strategy of smtalign CPU Manager policy option](#implementation-strategy-of-smtalign-cpu-manager-policy-option)
   - [Resource Accounting](#resource-accounting)
   - [Alternatives](#alternatives)
     - [Add extra resources](#add-extra-resources)
@@ -109,8 +109,9 @@ The impact in the shared codebase will be addressed enhancing the current testsu
 
 ### Proposed Change
 
-We propose to add a cpumanager policy called `smtaware` which will be a further refinements of the existing static policy.
+We propose to add a new flag in Kubelet called `CPUManagerPolicyOptions` in the kubelet config or command line argument called `cpumanager-policy-options` which allows the user to specify the CPU Manager policy option. If the value of this option is specified to be `smtalign`, it results in further refinements of the existing static policy.
 The static policy allocates CPUs using a topology-aware best-fit allocation. This enhancement wants to provide stronger guarantees by restricting the allocation of threads.
+The aim is to achieve the isolation for workloads managed by Kubernetes. The other part of isolation is (as of now) not managed by Kubernetes, as described in [Explicitly Reserved CPU List](https://kubernetes.io/docs/tasks/administer-cluster/reserve-compute-resources/#explicitly-reserved-cpu-list) and [Static policy](https://kubernetes.io/docs/tasks/administer-cluster/cpu-management-policies/#static-policy).
 
 Key properties:
 - Preserve all the properties of the `static` policy.
@@ -118,21 +119,22 @@ Key properties:
 - With this requirement enforced, the cpumanager allocation algorithm will guarantee avoidance of physical core sharing.
 - Should the node not have enough free physical cores, the Pod will be put in Failed state, with `SMTAlignmentError` as reason.
 
-### Implementation strategy of smtaware CPU Manager policy
+### Implementation strategy of smtalign CPU Manager policy option
 
-- The CPU Manager implements the pod admit handler interface and participates in Kubelet pod admission.
-- The `GetAllocateResourcesPodAdmitHandler()` function in the Container Manager is modified to perform admission checks for CPU Manager in addition to the already occurring Topology manager admission check.
-Just like Topology Manager returns `TopologyAffinityError` is case of resources cannot be NUMA-aligned in case of `restricted` or `single-numa-node policy`, CPU Manager admission failure results in a rejected pod with `SMTAlignmentError`.
-- The Policy interface in CPU Manager is enhanced to support an Admit function. This allows to perform pod admission decision for CPU Manager policies.
-- When CPU Manager is configured with `smtaware` policy, when the `Admit()` function is called it is checked if the CPU request is
-such that it would acquire an entire physical core. In case request translates to partial occupancy of the cores the Pod will not be admitted and would fail with `SMTAlignmentError`. In case of `static` and `none` policy, the Admit() function always returns true meaning the pod is always admitted.
-- When `smtaware` policy is bootstrapped, we intentionally reuse `static` policy. The allocation logic of the `static` policy works seamlessly in case of `smtaware` policy as following the check at admission time of a pod, it is known that CPUs would be allocated such that full cores are allocated. Because of this check, a pod would never have to acquire single threads with the aim to fill partially-allocated cores.
+- In order to introduce SMT-alignment in CPU Manager, we introduce a new flag in Kubelet to allow the user to specify `cpumanager-policy-options` which when specified with `smtalign` as its value provides the capability to modify the behaviour of static policy to strictly guarantee allocation of whole cores to a workload.  
+- The `CPUManagerPolicyOptions` received from the kubelet config/command line args is propogated to the Container Manager.
+- The responsibility of admission control is centralized in containermanager. The resource managers and/or the resource allocation orchestrator (Topology Manager) still have the responsibility of running the checks to admit the pods, but the handling of these errors and the building of the pod lifecycle result are now factored in containermanager.
+- Prior to this feature, the Container Manager admission handler was delegated to the topology manager if the latter was enabled. This worked well under the assumption that only Topology Manager had the ability to reject admissions with pods. But with the introduction of this feature, the CPU Manager also needs the ability to possibly reject pods if strict SMT alignment is requested. In order to do so, we introduce a new error and let it drive the rejection. Due to an already existing dependency between cpumanager and topologymanager as the former imports the latter in order to support the topologymanager.HintProvider interface, container manager is considered as the appropriate for performing admission control.
+- When `smtalign` policy option is specified along with `static` CPU Manager policy, an additional check in the allocation logic of the `static` policy ensures that CPUs would be allocated such that full cores are allocated. Because of this check, a pod would never have to acquire single threads with the aim to fill partially-allocated cores.
+- In case request translates to partial occupancy of the cores, the Pod will not be admitted and would fail with `SMTAlignmentError`.
+
+
 
 ### Resource Accounting
 
-To illustrate the behaviour of the policy, we will consider the following CPU topology. We will use as example a CPU package with 16 physical cores, 2-way SMT-capable.
+To illustrate the behaviour of the `smtalign` policy option, we will consider the following CPU topology. We will use as example a CPU package with 16 physical cores, 2-way SMT-capable.
 
-![Example Topology](smtaware-topology.png)
+![Example Topology](smtalign-topology.png)
 
 
 Let's consider a single container, requesting 5 isolated cores.
@@ -155,9 +157,9 @@ spec:
         cpu: "5"
 ```
 
-The `smtaware` policy would need to make sure the remaining core on the half-allocated physical CPU is left unallocated to avoid noisy neighbours.
+The `smtalign` policy option would need to make sure the remaining core on the half-allocated physical CPU is left unallocated to avoid noisy neighbours.
 
-![Example core allocation with the smtaware policy when requesting a odd number of cores](smtaware-allocation-odd-cores.png)
+![Example core allocation with the smtalign policy option when requesting a odd number of cores](smtalign-allocation-odd-cores.png)
 
 The container will then actually get more virtual cores (6) than what is requesting (5).
 
@@ -227,7 +229,7 @@ We would like to mention a further extension of this work, which we are *not* pr
 A further subset of the latency sensitive class of workload we identified (CNF, HFT) benefits most of non-SMT system, delivering the best possible performance here.
 For these applications, just disabling SMT at machine level solves the need of the workload, but overall creates worse usage of hardware resources and poorer container density.
 
-Another policy, or a further refinement of `smtaware`, which enables non-SMT emulation on SMT-enabled system would allow to accommodate these needs, but this would cause even more significant resource accounting mismatches
+Another policy option, or a further refinement of `smtalign`, which enables non-SMT emulation on SMT-enabled system would allow to accommodate these needs, but this would cause even more significant resource accounting mismatches
 as described above. Furthermore, at the moment of writing we are still assessing how large is the set of the classes which benefit of these extra guarantees.
 
 For all these reasons we postponed this work to a later date.
@@ -261,7 +263,7 @@ No changes needed
 ## Production Readiness Review Questionnaire
 ### Feature enablement and rollback
 
-* **How can this feature be enabled / disabled in a live cluster?** Change the kubelet configuration to set the cpumanager policy to `smtaware`
+* **How can this feature be enabled / disabled in a live cluster?** Change the kubelet configuration to set the cpumanager policy option to `smtalign`
 * **Does enabling the feature change any default behavior?** No
 * **Can the feature be disabled once it has been enabled (i.e. can we rollback the enablement)?** Yes, through kubelet configuration - switch to a different policy.
 * **What happens if we reenable the feature if it was previously rolled back?** No changes. Existing container will not see their allocation changed. New containers will.
@@ -311,4 +313,4 @@ No changes needed
 - 2021-04-16: KEP updated with the `smtisolate` policy
 - 2021-04-19: KEP updated to capture implementation details of the `smtaware` policy; clarified the resource accounting vs admission requirements
 - 2021-04-22: KEP updated to clarify the `smtaware` policy after discussion on sig-node and to postpone the `smtisolate` policy
-
+- 2021-05-04: KEP updated to change name from `smtaware` to `smtalign`. In addition to this we capture changes in the implmentation details including the introduction of a new flag in Kubelet called `cpumanager-policy-options` to allow the user to specify `smtalign` as a value to enable this capability.
