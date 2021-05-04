@@ -500,7 +500,11 @@ role must be unset. Spec:
 **Non-root Groups** - (restricted) This optional constraint will be omitted from the initial
 implementation.
 
-**Seccomp** - (restricted) Allow anything except `unconfined`. Same reasoning as AppArmor.
+**Seccomp**
+- (restricted) Must be set to anything except `unconfined`. Same reasoning as AppArmor. If the default
+  value changes from `unconfined` (see https://github.com/kubernetes/enhancements/issues/2413), then
+  the requirement to set a profile will be lifted.
+- (baseline) May be unset; any profile except `unconfined` allowed.
 
 <<[UNRESOLVED]>>
 
