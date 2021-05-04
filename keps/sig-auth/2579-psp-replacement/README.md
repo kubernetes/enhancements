@@ -525,13 +525,18 @@ implementation.
 - SETUID
 - SYS_CHROOT
 
-_Note: This set is equal to the [docker default capability
-   set](https://docs.docker.com/engine/reference/run/#runtime-privilege-and-linux-capabilities)
-   minus `NET_RAW`._
-
-_Note: The [OpenShift default capability
-set](https://github.com/openshift/hypershift-toolkit/blob/148be6f31a365dbcdf1cbd647773f59ccbcc282a/assets/ignition/files/etc/crio/crio.conf#L87-L102)
-also drops AUDIT_WRITE, MKNOD, SETFCAP, and SYS_CHROOT._
+Notes:
+- This set is equal to the [docker default capability
+  set](https://docs.docker.com/engine/reference/run/#runtime-privilege-and-linux-capabilities) minus
+  `NET_RAW`.
+- The [OpenShift default capability
+  set](https://github.com/openshift/hypershift-toolkit/blob/148be6f31a365dbcdf1cbd647773f59ccbcc282a/assets/ignition/files/etc/crio/crio.conf#L87-L102)
+  also drops AUDIT_WRITE, MKNOD, SETFCAP, and SYS_CHROOT._
+- The allowed set for the restricted profile is implicitly empty (no capabilities), since
+  [Kubernetes does not support ambient
+  capabilities](https://github.com/kubernetes/kubernetes/issues/56374). If ambient capability
+  support is ever added, we may want to consider a more conservative allowed set for the restricted
+  profile.
 
 ---
 
