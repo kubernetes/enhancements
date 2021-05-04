@@ -76,7 +76,8 @@ Confirmed that expanded DNS configuration is supported by
 
 - Make `kube-apiserver` allow expanded DNS configuration when validating Pod's
 or PodTemplate's `DNSConfig`
-- Make `kubelet` allow expanded DNS configuration when validating `resolvConf`
+- Make `kubelet` allow expanded DNS configuration when validating
+[`resolvConf`](https://kubernetes.io/docs/reference/config-api/kubelet-config.v1beta1/#kubelet-config-k8s-io-v1beta1-KubeletConfiguration)
 - Make `kubelet` allow expanded DNS configuration when validating actual DNS
 resolver configuration composed of `cluster domain suffixes`(e.g.
     default.svc.cluster.local, svc.cluster.local, cluster.local), kubelet's
@@ -144,6 +145,10 @@ DNS configuration
 N/A
 
 ### Version Skew Strategy
+
+In clusters with older kubelets, old kubelets with `resolvConf` configured to
+exceed bounds throw warnings but do not fail. Eventually, old kubelets truncate
+the overage and apply the actual DNS resolver configuration.
 
 In clusters with a replicated control plane, all kube-apiservers should enable
 or disable the expanded DNS configuration feature.
