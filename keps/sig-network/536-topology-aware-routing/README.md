@@ -3,6 +3,7 @@
 ## Table of Contents
 
 <!-- toc -->
+- [Status](#status)
 - [Motivation](#motivation)
   - [Goals](#goals)
   - [Non-goals](#non-goals)
@@ -24,6 +25,11 @@
     - [Alpha -&gt; Beta](#alpha---beta)
       - [Beta -&gt; GA Graduation](#beta---ga-graduation)
 <!-- /toc -->
+
+## Status
+This KEP has been replaced by [KEP 2433: Topology Aware
+Hints](https://github.com/kubernetes/enhancements/issues/2433). It will be fully
+removed in Kubernetes 1.22.
 
 ## Motivation
 
