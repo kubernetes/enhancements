@@ -212,10 +212,14 @@ type Endpoint struct {
     // +optional
     TargetRef *v1.ObjectReference `json:"targetRef,omitempty" protobuf:"bytes,4,opt,name=targetRef"`
 
-    // topology was a beta feature for Endpoint to store arbitrary topology
-    // information. The values of this field are persisted as an anotation on
-    // on the EndpointSlice starting in v1.
-    // +k8s:deprecated=topology,protobuf=5
+    // deprecatedTopology contains topology information part of the v1beta1
+    // API. This field is deprecated, and will be removed when the v1beta1
+    // API is removed (no sooner than kubernetes v1.24).  While this field can
+    // hold values, it is not writable through the v1 API, and any attempts to
+    // write to it will be silently ignored. Topology information can be found
+    // in the zone and nodeName fields instead.
+    // +optional
+    DeprecatedTopology map[string]string `json:"deprecatedTopology,omitempty" protobuf:"bytes,5,opt,name=deprecatedTopology"`
 
     // nodeName represents the name of the Node hosting this endpoint. This can
     // be used to determine endpoints local to a Node. This field can be enabled
@@ -312,34 +316,11 @@ labels will be copied to endpoint topology.
 ### Converting Topology in EndpointSlice GA
 
 For beta resources that have set the topology field, the string to string map
-will be converted into an annotation on the v1 resource with the key
-**endpointslice.kubernetes.io/v1beta1-topology**. The annotation encoding will
-allow the topology information to be roundtripped between v1beta1 and v1
-resources.
+will be converted into the `deprecatedTopology` field the v1 resource. This
+field will be read-only in the v1 API.
 
-The size limits of the topology field is 63B per key and per value, with a
-maximum of 126B per key-value pair. The maximum number of endpoints in an
-EndpointSlice is 1000.
-
-```
-{Max Key-Value Pairs} * ({Max Key Size} + {Max Value Size}) * {Max Endpoints}
-16 * (63 + 63) * 1000 = 2,016,000b
-```
-
-The maximum value of the combined maps in the endpoints is almost a factor of
-10 greater than the max annotation size (256kB). This is a worst case scenario,
-which is unlikely as the recommendation and default is 100 endpoints. In
-situations where the size is over the annotation limit, keys will be dropped from
-the topology maps starting with the non-standard ones. All of the endpoint
-topology maps will be encoded in an annotation and can be decoded back into the
-individual topology maps as needed. As there is no uniqueness guarantee on any
-of the endpoint fields, the index of the endpoint will be used when generating
-the annotation. Therefore any insertions, removals, and reordering of
-endpoints while using v1 clients will require the annotation to be
-regenerated.
-
-The only key in the topology field that will not be preserved in the annotation
-will be **topology.kubernetes.io/zone** and instead its value will be converted
+The only key in the topology field that will not be preserved is
+**topology.kubernetes.io/zone** and instead its value will be converted
 into the [zone field](#zone-per-endpoint) on the Endpoint.
 
 ### Zone (Per Endpoint)
