@@ -110,8 +110,11 @@ func (r *Repo) Query(opts *QueryOpts) error {
 		fmt.Fprintf(r.Out, "Searching for KEPs...\n")
 	}
 
-	if tokenErr := r.SetGitHubToken(r.TokenPath); tokenErr != nil {
-		return errors.Wrapf(tokenErr, "setting GitHub token")
+	if r.TokenPath != "" {
+		logrus.Infof("Setting GitHub token: %v", r.TokenPath)
+		if tokenErr := r.SetGitHubToken(r.TokenPath); tokenErr != nil {
+			return errors.Wrapf(tokenErr, "setting GitHub token")
+		}
 	}
 
 	allKEPs := make([]*api.Proposal, 0, 10)
