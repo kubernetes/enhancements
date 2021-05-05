@@ -21,3 +21,6 @@ replaces:
   -
 superseded-by:
   -
+
+latest-milestone: "1.0"
+stage: "alpha"

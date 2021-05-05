@@ -26,3 +26,6 @@ see-also:
   - "[Vanilla OpenAPI Subset Design](https://docs.google.com/document/d/1pcGlbmw-2Y0JJs9hsYnSBXamgG9TfWtHY6eh80zSTd8)"
   - "[Pruning for CustomResources KEP](https://github.com/kubernetes/enhancements/pull/709)"
   - "[Defaulting for Custom Resources KEP](https://github.com/kubernetes/enhancements/blob/master/keps/sig-api-machinery/20190426-crd-defaulting.md)"
+
+latest-milestone: "1.0"
+stage: "alpha"

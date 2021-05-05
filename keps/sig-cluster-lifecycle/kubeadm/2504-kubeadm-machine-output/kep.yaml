@@ -22,3 +22,6 @@ editor:
 creation-date: 2019-05-06
 last-updated: 2019-05-29
 status: implementable
+
+latest-milestone: "1.0"
+stage: "alpha"

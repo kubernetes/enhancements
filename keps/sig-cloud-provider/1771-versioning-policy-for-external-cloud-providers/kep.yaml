@@ -15,3 +15,6 @@ see-also:
   - "/kep/sig-cloud-provider/20190125-removing-in-tree-providers.md"
   - "/kep/sig-cloud-provider/20180530-cloud-controller-manager.md"
 replaces:
+
+latest-milestone: "1.0"
+stage: "alpha"

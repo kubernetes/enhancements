@@ -20,3 +20,6 @@ see-also:
   - "/keps/sig-node/1287-in-place-update-pod-resources"
 replaces:
 superseded-by:
+
+latest-milestone: "1.0"
+stage: "alpha"

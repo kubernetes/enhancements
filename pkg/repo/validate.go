@@ -32,6 +32,8 @@ func (r *Repo) Validate() (
 	valErrMap map[string][]error,
 	err error,
 ) {
+	valErrMap = map[string][]error{}
+
 	if r.ProposalPath == "" {
 		return warnings, valErrMap, errors.New("proposal path cannot be empty")
 	}
@@ -99,6 +101,7 @@ func (r *Repo) Validate() (
 		if kepParseErr != nil {
 			return warnings, valErrMap, errors.Wrap(kepParseErr, "parsing KEP file")
 		}
+		kep.Filename = filename
 
 		// TODO: This shouldn't be required once we push the errors into the
 		//       parser struct

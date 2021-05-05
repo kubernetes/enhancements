@@ -16,3 +16,6 @@ approvers:
 creation-date: 2019-03-19
 last-updated: 2019-11-01
 status: implementable
+
+latest-milestone: "1.0"
+stage: "alpha"

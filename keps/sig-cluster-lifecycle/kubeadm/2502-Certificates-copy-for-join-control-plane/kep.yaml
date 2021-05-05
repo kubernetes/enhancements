@@ -21,3 +21,6 @@ see-also:
   - KEP-0015
 replaces:
 superseded-by:
+
+latest-milestone: "1.0"
+stage: "alpha"

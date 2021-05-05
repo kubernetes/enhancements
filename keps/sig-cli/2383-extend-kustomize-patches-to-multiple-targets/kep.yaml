@@ -18,3 +18,6 @@ see-also:
 replaces:
 superseded-by:
  - n/a
+
+latest-milestone: "1.0"
+stage: "alpha"

@@ -27,6 +27,7 @@ feature-gates:
       - kube-controller-manager
 disable-supported: true
 latest-milestone: "v1.21"
+stage: alpha
 milestone:
   alpha: "v1.21"
   beta: "v1.22"

@@ -25,3 +25,6 @@ replaces:
   - "NA"
 superseded-by:
   - "NA"
+
+latest-milestone: "1.0"
+stage: "alpha"

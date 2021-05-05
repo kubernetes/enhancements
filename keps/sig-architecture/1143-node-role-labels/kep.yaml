@@ -20,3 +20,6 @@ prr-approvers:
 creation-date: 2019-07-16
 last-updated: 2020-06-01
 status: implementable
+
+latest-milestone: "1.0"
+stage: "alpha"

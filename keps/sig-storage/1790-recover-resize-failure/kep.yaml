@@ -22,6 +22,7 @@ replaces:
 superseded-by:
 
 latest-milestone: "v1.19"
+stage: "alpha"
 milestone:
   alpha: "v1.19"
   beta: "v1.20"

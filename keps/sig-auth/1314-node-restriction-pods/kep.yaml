@@ -18,3 +18,6 @@ approvers:
 editor: TBD
 creation-date: 2019-09-16
 status: implementable
+
+latest-milestone: "1.0"
+stage: "alpha"

@@ -11,3 +11,6 @@ approvers:
   - "@timothysc"
   - "@justinsb"
   - "@neolit123"
+
+latest-milestone: "1.0"
+stage: "alpha"

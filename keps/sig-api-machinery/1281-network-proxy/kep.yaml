@@ -30,3 +30,6 @@ see-also:
   - "https://github.com/kubernetes-sigs/apiserver-network-proxy - Reference implementations of API Server Network Proxy"
 replaces:
 superseded-by:
+
+latest-milestone: "1.0"
+stage: "alpha"

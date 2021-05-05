@@ -21,3 +21,6 @@ last-updated: 2019-10-23
 status: implementable
 see-also:
   - "/keps/sig-architecture/20190412-conformance-behaviors.md"
+
+latest-milestone: "1.0"
+stage: "alpha"

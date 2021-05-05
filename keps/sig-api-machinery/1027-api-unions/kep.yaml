@@ -20,3 +20,6 @@ see-also:
 replaces:
   - "https://docs.google.com/document/d/1lrV-P25ZTWukixE9ZWyvchfFR0NE2eCHlObiCUgNQGQ"
 superseded-by:
+
+latest-milestone: "1.0"
+stage: "alpha"

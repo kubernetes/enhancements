@@ -14,8 +14,6 @@ approvers:
   - "@thockin"
   - "@andrewsykim"
 
-stage: "alpha"
-
 # latest-milestone: "v1.21"
 
 milestone:
@@ -28,3 +26,6 @@ feature-gates:
       - kube-apiserver
       - kube-proxy
 disable-supported: true
+
+latest-milestone: "1.0"
+stage: "alpha"

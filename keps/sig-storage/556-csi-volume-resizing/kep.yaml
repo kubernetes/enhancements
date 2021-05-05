@@ -19,3 +19,6 @@ see-also:
   - "[Online resizing design](https://github.com/kubernetes/enhancements/pull/737)"
 replaces:
 superseded-by:
+
+latest-milestone: "1.0"
+stage: "alpha"
