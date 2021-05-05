@@ -15,10 +15,9 @@ approvers:
 editor: TBD
 creation-date: 2019-04-12
 last-updated: 2019-04-12
-status: implementable
+status: implemented
 see-also:
 replaces:
 superseded-by:
-
-latest-milestone: "1.0"
-stage: "alpha"
+latest-milestone: "1.15"
+stage: "stable"

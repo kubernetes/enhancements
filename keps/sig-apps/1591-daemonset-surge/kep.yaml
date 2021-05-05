@@ -26,8 +26,8 @@ feature-gates:
       - kube-apiserver
       - kube-controller-manager
 disable-supported: true
+stage: "alpha"
 latest-milestone: "v1.21"
-stage: alpha
 milestone:
   alpha: "v1.21"
   beta: "v1.22"

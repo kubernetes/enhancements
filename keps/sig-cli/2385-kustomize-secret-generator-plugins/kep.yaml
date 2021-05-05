@@ -16,7 +16,4 @@ approvers:
 editor: "@sethpollack"
 creation-date: 2019-02-04
 last-updated: 2019-02-04
-status: implementable
-
-latest-milestone: "1.0"
-stage: "alpha"
+status: provisional

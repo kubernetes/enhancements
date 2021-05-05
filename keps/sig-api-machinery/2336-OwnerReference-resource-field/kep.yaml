@@ -15,7 +15,4 @@ approvers:
 editor: "@deads2k"
 creation-date: 2019-06-07
 last-updated: 2019-06-12
-status: implementable
-
-latest-milestone: "1.0"
-stage: "alpha"
+status: provisional
