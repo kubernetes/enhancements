@@ -32,6 +32,10 @@ func (r *Repo) Validate() (
 	valErrMap map[string][]error,
 	err error,
 ) {
+	if valErrMap == nil {
+		valErrMap = make(map[string][]error)
+	}
+
 	if r.ProposalPath == "" {
 		return warnings, valErrMap, errors.New("proposal path cannot be empty")
 	}
