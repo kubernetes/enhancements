@@ -143,7 +143,8 @@ Nice to have:
 1. Provide a configurable policy mechanism that meets the needs of all use-cases
 2. Limit privilege escalation and other attacks beyond the pod to host boundary
    (e.g. policies on services, secrets, etc.)
-
+3. Feature parity with PodSecurityPolicy. In particular, support for providing default values or any
+   other mutations will not be included.
 
 ## Proposal
 
@@ -328,8 +329,8 @@ plugins:
 - name: PSPReplacement # Placeholder
   configuration:
     defaults:  # Defaults applied when a mode label is not set.
-      allow:         <default allow policy level>
-      allow-version: <default allow policy version>
+      enforce:         <default enforce policy level>
+      enforce-version: <default enforce policy version>
       audit:         <default audit policy level>
       audit-version: <default audit policy version>
       warn:          <default warn policy level>
@@ -623,7 +624,7 @@ coverage of unit tests.
 
 **BLOCKING**
 
-A single metric will be added to track policy evaluations against pods and templated pods.
+A single metric will be added to track policy evaluations against pods and [templated pods].
 [Namespace evaluations](#namespace-policy-update-warnings) are not counted.
 
 ```
@@ -632,9 +633,9 @@ A single metric will be added to track policy evaluations against pods and templ
 
 The metric will use the following labels:
 
-1. `decision {allow, deny, exempt, error}` - The policy decision _before_ exemptions are considered.
-   Error is reserved for panics or other errors in policy evaluation. Update requests that are out
-   of scope (see [Updates](#updates) above) are not counted.
+1. `decision {allow, deny, exempt, error}` - The policy decision. Error is reserved for panics or
+   other errors in policy evaluation. Update requests that are out of scope (see [Updates](#updates)
+   above) are not counted.
 3. `policy_level {privileged, baseline, restricted}` - The policy level that the request was
    evaluated against.
 4. `policy_version {latest, v1.YY, >v1.ZZ}` - The policy version that was used for the evaluation.
@@ -643,7 +644,8 @@ The metric will use the following labels:
    version of `v1.23` would be unchanged, but `v1.24` would be recorded as `>v1.23`.
 5. `mode {enforce, warn, audit}` - The type of evaluation mode being recorded. Note that a single
    request can increment this metric 3 times, once for each mode. If this admission controller is
-   enabled, every request will at least increment the `enforce` total.
+   enabled, every every create request and in-scope update request will at least increment the
+   `enforce` total.
 6. `request_operation {create, update}` - The operation of the request being checked.
 
 <<[/UNRESOLVED]>>
@@ -665,7 +667,7 @@ The following audit annotations will be added:
    the violations here.
 4. `<prefix>/audit-violations = <policy violations>` When an audit mode policy is violated, record
    the violations here.
-5. `<prefix>/exempt = [user, namespace, runtimeClass]` For exmept requests, record the parameters
+5. `<prefix>/exempt = [user, namespace, runtimeClass]` For exempt requests, record the parameters
    that triggered the exemption here.
 
 `<prefix>` matches the prefix used for [namespace labels](#api).
