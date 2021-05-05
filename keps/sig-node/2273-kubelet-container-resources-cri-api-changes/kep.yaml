@@ -21,5 +21,17 @@ see-also:
 replaces:
 superseded-by:
 
-latest-milestone: "0.0"
+# PRR
+prr-approvers:
+  - "@ehashman"
+feature-gates:
+  - name: InPlacePodVerticalScaling
+    components:
+      - kubelet
+disable-supported: true
+milestone:
+  alpha: "v1.22"
+  beta: "v1.23"
+  stable: "v1.24"
 stage: "alpha"
+latest-milestone: "0.0"
