@@ -198,7 +198,7 @@ through a separate object:
   namespace and then creating a second object inside the namespace.
 - Policies settings are per-namespace singletons, and singleton objects are not well supported in
   Kubernetes.
-- Labels are lighter-weight than namespace fields, making it clear that this is a policy layer on
+- Labels are not part of the hardcoded namespace API, making it clear that this is a policy layer on
   top of namespaces, not inherent to namespaces itself.
 
 ### Validation
@@ -507,10 +507,6 @@ implementation.
   the requirement to set a profile will be lifted.
 - (baseline) May be unset; any profile except `unconfined` allowed.
 
-<<[UNRESOLVED]>>
-
-**BLOCKING**
-
 **Capabilities** - (baseline) Only the following capabilities may be added:
 - AUDIT_WRITE
 - CHOWN
@@ -539,27 +535,6 @@ Notes:
   support is ever added, we may want to consider a more conservative allowed set for the restricted
   profile.
 
----
-
-Prior discussion:
-
-Kubernetes does not define the default set, but Docker does. This leaves us with 2 options:
-
-1. Hardcode the [docker default capability
-   set](https://docs.docker.com/engine/reference/run/#runtime-privilege-and-linux-capabilities), and
-   allow adding a capability in that set. This enables workloads to use an allowlist approach where
-   they drop all capabilities (`ALL`), and only explicitly add the ones they need. However, it means
-   that operators cannot effectively customize the default set (e.g. drop CAP_NET_RAW) through
-   runtime parameters.
-    - The drop all + add pattern is widely used. See
-      https://kubernetes.slack.com/archives/C0BP8PW9G/p1619042209240300 for discussion, and
-      https://github.com/kubernetes/kubernetes/blob/ea0764452222146c47ec826977f49d7001b0ea8c/cluster/addons/dns/coredns/coredns.yaml.base#L172-L178
-      for an example.
-2. Forbid any use of adding capabilities. This allows runtimes to customize the default set, but
-   gives less flexibility to the pod definition.
-
-<<[/UNRESOLVED]>>
-
 **Volumes** - Inline CSI volumes will be allowed by the restricted profile. Justification:
   - Inline CSI volumes should only be used for ephemeral volumes
   - The CSIDriver object spec controls whether a driver can be used inline, and can be modified
@@ -568,6 +543,30 @@ Kubernetes does not define the default set, but Docker does. This leaves us with
     by the baseline policy.
   - We should thoroughly document safe usage, both on the documentation for this (PSP replacement)
     feature, as well as in the CSI driver documentation.
+
+**Windows Host Process** - [Privileged Windows container
+support](https://github.com/kubernetes/enhancements/tree/master/keps/sig-windows/1981-windows-privileged-container-support)
+is targeting alpha in v1.22, and adds new fields for running privileged windows containers. These
+fields will be restricted under the baseline policy.
+- **Restricted Fields:**
+  - `spec.securityContext.windowsOptions.hostProcess`
+  - `spec.containers[*].securityContext.windowsOptions.hostProcess`
+- **Allowed Values:** false, undefined/nil
+
+_Note: These fields should be unconditionally restricted, regardless of targetted OS._
+
+### Windows Support
+
+In the initial alpha implementation, Windows pods will be supported by both the `privileged` and
+`baseline` profiles. Windows pods _may_ be broken by the restricted field, which requires setting
+linux-specific settings (such as seccomp profile, run as non root, and disallow privilege
+escalation). If the Kubelet and/or container runtime choose to ignore these linux-specific values at
+runtime, then windows pods should still be allowed under the restricted profile, although the
+profile will not add additional enforcement over baseline (for Windows).
+
+Windows support will be reevaluated prior to this policy feature going to beta, or if/when
+Kubernetes adds support to definitively destinguish between Windows and Linux workloads. See
+[Windows restricted profile support](#windows-restricted-profile-support) for more details.
 
 ### Flexible Extension Support
 
@@ -1018,7 +1017,7 @@ addition to the standard message) whenever a policy warning is triggered. This c
 announcing the date that new policy will take effect, or providing a point of contact if you need to
 request an exception.
 
-### Windows Support
+### Windows restricted profile support
 
 Even without built-in support, enforcement for Windows pods can be delegated to a webhook admission
 plugin by exempting the `windows` RuntimeClass. We should investigate built-in Windows support out
