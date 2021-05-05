@@ -18,5 +18,5 @@ see-also:
   - "/keps/sig-network/1672-tracking-terminating-endpoints/README.md"
   - https://github.com/kubernetes/kubernetes/issues/85643
 
-latest-milestone: "1.0"
+latest-milestone: "0.0"
 stage: "alpha"

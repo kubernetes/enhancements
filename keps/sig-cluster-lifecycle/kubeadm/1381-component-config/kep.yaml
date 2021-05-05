@@ -20,5 +20,5 @@ see-also:
   - "/keps/sig-cluster-lifecycle/kubeadm/0023-kubeadm-config.md"
   - "/keps/sig-cluster-lifecycle/kubeadm/20190722-Advanced-configurations-with-kubeadm-(Kustomize).md"
 
-latest-milestone: "1.0"
+latest-milestone: "0.0"
 stage: "alpha"

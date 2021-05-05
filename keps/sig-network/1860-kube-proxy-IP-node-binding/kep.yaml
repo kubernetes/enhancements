@@ -27,5 +27,5 @@ feature-gates:
       - kube-proxy
 disable-supported: true
 
-latest-milestone: "1.0"
+latest-milestone: "0.0"
 stage: "alpha"

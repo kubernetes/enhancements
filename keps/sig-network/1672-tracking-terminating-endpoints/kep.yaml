@@ -19,5 +19,5 @@ see-also:
   - /kep/sig-network/20190603-EndpointSlice-API.md
 replaces: []
 
-latest-milestone: "1.0"
+latest-milestone: "0.0"
 stage: "alpha"
