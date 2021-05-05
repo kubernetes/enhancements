@@ -360,6 +360,16 @@ annotation](#audit-annotations). Exemption dimensions include:
 - RuntimeClassNames: pods and [templated pods] with specifying an exempt runtime class name are ignored.
 - Namespaces: pods and [templated pods] in an exempt namespace are ignored.
 
+The username exemption is special in that the creating user is not persisted on the pod object, and
+the pod may be modified by different non-exempt users in the future. See [Updates](#updates) for
+details on how non-exempt updates of a previously exempted pod are handled. Use cases for username
+exemptions include:
+
+- Trusted controllers that create pods in tenant namespaces with additional 3rd party enforcement on
+  the privileged pods.
+- Break-glass operations roles, for example for [debugging workloads in a restricted
+  namespace](#ephemeral-containers).
+
 ### Risks and Mitigations
 
 **Future proofing:** The policy versioning aspects of this proposal are designed to anticipate
