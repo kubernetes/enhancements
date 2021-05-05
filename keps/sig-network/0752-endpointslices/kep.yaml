@@ -16,7 +16,7 @@ approvers:
 prr-approvers:
   - "@wojtek-t"
 creation-date: 2019-06-01
-last-updated: 2021-01-28
+last-updated: 2021-05-04
 status: implementable
 # The target maturity stage in the current dev cycle for this KEP.
 stage: stable
@@ -24,7 +24,7 @@ stage: stable
 # The most recent milestone for which work toward delivery of this KEP has been
 # done. This can be the current (upcoming) milestone, if it is being actively
 # worked on.
-latest-milestone: "v1.19"
+latest-milestone: "v1.22"
 
 milestone:
   alpha: "v1.16"

@@ -677,8 +677,10 @@ Default**
   on Endpoints resources exceeding 1000 endpoints.
 
 **Kubernetes 1.22: Kube-Proxy GA**
-* The `EndpointSliceProxying` feature gate guarding EndpointSlice integration
-  with kube-proxy will graduate to GA on both Linux and Windows.
+* Kube-Proxy will use v1 EndpointSlice API.
+* The `EndpointSliceProxying` & `WindowsEndpointSliceProxying` feature gates
+  guarding EndpointSlice integration with kube-proxy will graduate to GA on
+  both Linux and Windows.
 * Endpoints resources will be limited to 1000 endpoints. The
   `endpoints.kubernetes.io/over-capacity` label will continue to be set to
   "truncated" in these cases.
