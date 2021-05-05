@@ -106,6 +106,10 @@ func (r *Repo) Validate() (
 			return warnings, valErrMap, errors.Wrapf(kep.Error, "%v has an error", filename)
 		}
 
+		if valErrMap == nil {
+			valErrMap = make(map[string][]error)
+		}
+
 		err = kepval.ValidatePRR(kep, prrHandler, prrDir)
 		if err != nil {
 			valErrMap[filename] = append(valErrMap[filename], err)
