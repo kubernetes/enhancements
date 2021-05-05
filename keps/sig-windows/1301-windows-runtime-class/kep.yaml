@@ -18,3 +18,6 @@ last-updated: 2019-10-15
 status: implementable
 see-also:
   - "/keps/sig-windows/20190424-windows-cri-containerd.md"
+
+latest-milestone: "0.0"
+stage: "alpha"

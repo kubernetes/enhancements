@@ -19,3 +19,6 @@ see-also:
   - "https://github.com/kubernetes/kubernetes/issues/44164"
 replaces:
 superseded-by:
+
+latest-milestone: "1.16"
+stage: "beta"

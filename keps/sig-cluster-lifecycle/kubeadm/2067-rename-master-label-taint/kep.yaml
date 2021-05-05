@@ -13,3 +13,4 @@ approvers:
   - "@fabriziopandini"
 
 latest-milestone: "v1.20"
+stage: "alpha"

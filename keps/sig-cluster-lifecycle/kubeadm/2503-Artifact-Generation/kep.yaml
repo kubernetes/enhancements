@@ -20,3 +20,6 @@ last-updated: 2019-02-27
 status: implementable
 see-also:
   - "https://github.com/kubernetes/enhancements/pull/843"
+
+latest-milestone: "0.0"
+stage: "alpha"

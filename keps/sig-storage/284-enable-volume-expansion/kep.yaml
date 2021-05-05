@@ -20,6 +20,7 @@ replaces:
 superseded-by:
 
 latest-milestone: "v1.19"
+stage: "alpha"
 milestone:
   beta: "v1.11"
 feature-gates:

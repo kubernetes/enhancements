@@ -16,3 +16,6 @@ reviewers:
 approvers:
   - "@pmorie"
   - "@thockin"
+
+latest-milestone: "0.0"
+stage: "alpha"

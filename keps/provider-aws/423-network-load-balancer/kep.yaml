@@ -16,3 +16,6 @@ status: implementable
 see-also:
 replaces:
 superseded-by:
+
+latest-milestone: "1.9"
+stage: "alpha"

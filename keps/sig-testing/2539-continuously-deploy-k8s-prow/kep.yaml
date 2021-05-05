@@ -16,3 +16,6 @@ approvers:
   - "@spiffxp" # Sig-testing chair
   - "@justaugustus" # Sig-release chair
   - "@alvaroaleman" # Prow approver
+
+latest-milestone: "0.0"
+stage: "alpha"

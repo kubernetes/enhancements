@@ -29,3 +29,6 @@ see-also:
   - "/keps/sig-node/2273-kubelet-container-resources-cri-api-changes"
 replaces:
 superseded-by:
+
+latest-milestone: "0.0"
+stage: "alpha"

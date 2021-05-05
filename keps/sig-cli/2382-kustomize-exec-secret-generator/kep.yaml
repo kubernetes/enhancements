@@ -16,3 +16,6 @@ last-updated: 2019-03-12
 status: implementable
 see-also:
   - "/keps/sig-cli/2385-kustomize-secret-generator-plugins/"
+
+latest-milestone: "0.0"
+stage: "alpha"

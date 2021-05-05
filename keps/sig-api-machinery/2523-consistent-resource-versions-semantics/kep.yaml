@@ -12,3 +12,6 @@ approvers:
 creation-date: 2020-03-09
 last-updated: 2020-04-02
 status: implementable
+
+latest-milestone: "0.0"
+stage: "alpha"

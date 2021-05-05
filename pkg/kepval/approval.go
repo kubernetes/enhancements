@@ -110,18 +110,12 @@ func isPRRRequired(kep *api.Proposal) (required, missingMilestone, missingStage 
 	}
 
 	if missingMilestone {
-		required = false
-		// TODO: Make this a specialized error
-		logrus.Warnf("KEP %s is missing the latest milestone field. This will become a validation error in future releases.", kep.Number)
-
+		logrus.Warnf("Missing the latest milestone field: %s", kep.Filename)
 		return required, missingMilestone, missingStage, nil
 	}
 
 	if missingStage {
-		required = false
-		// TODO: Make this a specialized error
-		logrus.Warnf("KEP %s is missing the stage field. This will become a validation error in future releases.", kep.Number)
-
+		logrus.Warnf("Missing the stage field: %s", kep.Filename)
 		return required, missingMilestone, missingStage, nil
 	}
 

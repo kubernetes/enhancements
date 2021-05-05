@@ -19,3 +19,6 @@ editor: "@feiskyer"
 creation-date: 2019-01-29
 last-updated: 2020-09-29
 status: implementable
+
+latest-milestone: "0.0"
+stage: "alpha"

@@ -20,3 +20,6 @@ see-also:
   - "https://github.com/kubernetes/community/pull/1535"
 replaces:
 superseded-by:
+
+latest-milestone: "0.0"
+stage: "alpha"

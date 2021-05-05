@@ -20,3 +20,6 @@ see-also:
   - "https://github.com/kubernetes/community/blob/master/contributors/design-proposals/api-machinery/server-get.md"
 replaces:
 superseded-by:
+
+latest-milestone: "1.15"
+stage: "alpha"

@@ -20,3 +20,6 @@ see-also:
 replaces:
   - " kubernetes/community/contributors/design-proposals/node/cpu-manager.md"
 superseded-by:
+
+latest-milestone: "0.0"
+stage: "alpha"
