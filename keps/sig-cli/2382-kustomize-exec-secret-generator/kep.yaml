@@ -13,7 +13,7 @@ approvers:
 editor: "@pwittrock"
 creation-date: 2019-03-12
 last-updated: 2019-03-12
-status: provisional
+status: implementable
 see-also:
   - "/keps/sig-cli/2385-kustomize-secret-generator-plugins/"
 

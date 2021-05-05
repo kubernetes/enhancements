@@ -12,10 +12,13 @@ approvers:
   - n/a
 creation-date: 2020-12-21
 last-updated: 2020-01-15
-status: provisional
+status: implementable
 see-also:
   - n/a
 replaces:
   - n/a
 superseded-by:
   - n/a
+
+latest-milestone: "0.0"
+stage: "alpha"
