@@ -799,33 +799,46 @@ you need any help or guidance.
 _This section must be completed when targeting alpha to a release._
 
 * **How can this feature be enabled / disabled in a live cluster?**
-  - [ ] Feature gate (also fill in values in `kep.yaml`)
-    - Feature gate name:
-    - Components depending on the feature gate:
-  - [ ] Other
+  - [x] Feature gate (also fill in values in `kep.yaml`)
+    - Feature gate name: `PodSecurity`
+    - Components depending on the feature gate: PodSecurity admission plugin
+  - [x] Other
     - Describe the mechanism:
+        - The new functionality is entirely encapsulated by the admission controller, so enabling or
+          disabling the feature is a matter of adding or removing the admission plugin from the list
+          of enabled admission plugins.
     - Will enabling / disabling the feature require downtime of the control
       plane?
+        - Yes. Admission plugins are statically configured, so enabling or disabling will require an
+          API server restart. This can be done in a rolling manner for HA clusters.
     - Will enabling / disabling the feature require downtime or reprovisioning
       of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
+        - No. This feature does not touch any node components.
 
 * **Does enabling the feature change any default behavior?**
   Any change of default behavior may be surprising to users or break existing
   automations, so be extremely careful here.
+    - No.
 
 * **Can the feature be disabled once it has been enabled (i.e. can we roll back
   the enablement)?**
   Also set `disable-supported` to `true` or `false` in `kep.yaml`.
   Describe the consequences on existing workloads (e.g., if this is a runtime
   feature, can it break the existing applications?).
+  - Yes. Disabling it means that the policies will no longer be enforced, but there are no stateful
+    changes that will be affected.
 
 * **What happens if we reenable the feature if it was previously rolled back?**
+  - There might be pods violating the policy in namespaces when it's turned on. The [Updates
+    section](#updates) explains how this case is handled.
 
 * **Are there any tests for feature enablement/disablement?**
   The e2e framework does not currently support enabling or disabling feature
   gates. However, unit tests in each component dealing with managing data, created
   with and without the feature, are necessary. At the very least, think about
   conversion tests if API types are being modified.
+  - There will be tests for updates to "violating" pods, but I do not think explicit feature
+    enable/disablement tests are necessary.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -909,44 +922,33 @@ previous answers based on experience in the field._
 
 * **Will enabling / using this feature result in any new API calls?**
   Describe them, providing:
-  - API call type (e.g. PATCH pods)
-  - estimated throughput
-  - originating component(s) (e.g. Kubelet, Feature-X-controller)
-  focusing mostly on:
-  - components listing and/or watching resources they didn't before
-  - API calls that may be triggered by changes of some Kubernetes resources
-    (e.g. update of object X triggers new updates of object Y)
-  - periodic API calls to reconcile state (e.g. periodic fetching state,
-    heartbeats, leader election, etc.)
+  - Updating namespace labels will trigger a list of pods in that namespace. With the built-in
+    admission plugin, this call will be local within the apiserver. There will be a hard cap on the
+    number of pods analyzed, and a timeout for the review of those pods. See [Namespace policy
+    update warnings](#namespace-policy-update-warnings).
 
 * **Will enabling / using this feature result in introducing new API types?**
-  Describe them, providing:
-  - API type
-  - Supported number of objects per cluster
-  - Supported number of objects per namespace (for namespace-scoped objects)
+  - No.
 
 * **Will enabling / using this feature result in any new calls to the cloud
 provider?**
+  - No.
 
 * **Will enabling / using this feature result in increasing size or count of
 the existing API objects?**
   Describe them, providing:
-  - API type(s):
-  - Estimated increase in size: (e.g., new annotation of size 32B)
-  - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
+  - API type(s): Namespaces
+  - Estimated increase in size: new labels, up to 300 bytes if all are provided
+  - Estimated amount of new objects: 0
 
 * **Will enabling / using this feature result in increasing time taken by any
 operations covered by [existing SLIs/SLOs]?**
-  Think about adding additional work or introducing new steps in between
-  (e.g. need to do X to start a container), etc. Please describe the details.
+  - This will require negligible additional work in Pod create/update admission. Namespace label
+    updates may heavier, but have limits in place.
 
 * **Will enabling / using this feature result in non-negligible increase of
 resource usage (CPU, RAM, disk, IO, ...) in any components?**
-  Things to keep in mind include: additional in-memory state, additional
-  non-trivial computations, excessive access to disks (including increased log
-  volume), significant amount of data sent and/or received over network, etc.
-  This through this both in small and large cases, again with respect to the
-  [supported limits].
+  - No. Resource usage will be negligible.
 
 ### Troubleshooting
 
