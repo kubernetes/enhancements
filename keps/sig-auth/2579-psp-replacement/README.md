@@ -1,24 +1,4 @@
-# KEP-2579: PSP Replacement Policy (placeholder)
-
-<<[UNRESOLVED]>>
-
-**BLOCKING**
-
-The name of this feature / policy is open to discussion. Options considered:
-- Pod Isolation Policy (PIP)
-- Pod Security Standards (PSS)
-- Pod Admission Security Standards (PASS)
-- Pod Policy Check (PPC)
-- Pod Security Constraints (PSC)
-- Pod Isolation Constraints (PIC)
-- Pod Isolation Requirements (PIR)
-- Namespace Security Labels (NSL)
-- Pod Security Policy v2 (PSPv2)
-- ~~Pod Security Defaults~~ (policy is non-mutating)
-- ~~Namsepace Security Policy~~ (there is a lot more to namespace security that is out-of-scope for this policy)
-- ~~Pod Configuration Constraints~~ (not all of pod configuration is in-scope)
-
-<<[/UNRESOLVED]>>
+# KEP-2579: Pod Security Admission Control
 
 <!-- toc -->
 - [Summary](#summary)
@@ -154,30 +134,21 @@ version that they were introduced in.
 
 ### API
 
-<<[UNRESOLVED]>>
-
-_BLOCKING: depends on the name we choose._
-
-The label prefix is a placeholder, and will depend on the final feature name. The proposed
-prefix structure is `<featurename>.kubernetes.io`.
-
-<<[/UNRESOLVED]>>
-
 Policy application is controlled based on labels on the namespace. The following labels are supported:
 ```
-<prefix>/enforce: <policy level>
-<prefix>/enforce-version: <policy version>
-<prefix>/audit: <policy level>
-<prefix>/audit-version: <policy version>
-<prefix>/warn: <policy level>
-<prefix>/warn-version: <policy version>
+pod-security.kubernetes.io/enforce: <policy level>
+pod-security.kubernetes.io/enforce-version: <policy version>
+pod-security.kubernetes.io/audit: <policy level>
+pod-security.kubernetes.io/audit-version: <policy version>
+pod-security.kubernetes.io/warn: <policy level>
+pod-security.kubernetes.io/warn-version: <policy version>
 ```
 
 **Enforce:** Pods meeting the requirements of the enforced level are allowed. Violations are rejected
 in admission.
 
 **Audit:** Pods and [templated pods] meeting the requirements of the audit policy level are ignored.
-Violations are recorded in a `<prefix>/audit-violations: <violation>` [audit
+Violations are recorded in a `pod-security.kubernetes.io/audit-violations: <violation>` [audit
 annotation](#audit-annotations) on the audit event for the request. Audit annotations will **not**
 be applied to the pod objects themselves, as doing so would violate the non-mutating requirement.
 
@@ -192,7 +163,7 @@ through a separate object:
 
 - Using labels enables various workflows around policy management through kubectl, for example
   issuing queries like `kubectl get namespaces -l
-  <prefix>/enforce-version!=v1.22` to find namespaces where the enforcing
+  pod-security.kubernetes.io/enforce-version!=v1.22` to find namespaces where the enforcing
   policy isn't pinned to the most recent version.
 - Keeping the options on namespaces allows atomic create-and-set-policy, as opposed to creating a
   namespace and then creating a second object inside the namespace.
@@ -205,7 +176,8 @@ through a separate object:
 
 The following restrictions are placed (by the admission plugin) on the policy namespace labels:
 
-1. Unknown labels with the pod security prefix (TBD) are rejected, e.g. `<prefix>/foo-bar`
+1. Unknown labels with the `pod-security.kubernetes.io` prefix are rejected, e.g.
+   `pod-security.kubernetes.io/foo-bar`
 2. Policy level must be one of: `privileged`, `baseline`, `restricted`
 3. Version values must be match `(latest|v[0-9]+\.[0-9]+`. That is, one of:
     1. `latest`
@@ -297,7 +269,7 @@ These checks are also performed when making a dry-run request, which can be an e
 checking for breakages before updating a policy, for example:
 
 ```
-kubectl label --dry-run=server --overwrite ns --all <prefix>/enforce=baseline
+kubectl label --dry-run=server --overwrite ns --all pod-security.kubernetes.io/enforce=baseline
 ```
 
 <<[UNRESOLVED]>>
@@ -326,7 +298,7 @@ A number of options can be statically configured through the [Admission Configur
 apiVersion: apiserver.config.k8s.io/v1
 kind: AdmissionConfiguration
 plugins:
-- name: PSPReplacement # Placeholder
+- name: PodSecurity
   configuration:
     defaults:  # Defaults applied when a mode label is not set.
       enforce:         <default enforce policy level>
@@ -393,7 +365,7 @@ library implementation and spec to encourage custom controller development.
 fields. The more exemption knobs we add, the harder it becomes to comprehend the current state of
 the policy, and the more room there is for error. To prevent this, we should be very conservative
 about adding new exemption dimensions. The existing knobs were carefully chosen with specific
-extensibility usecases in mind.
+extensibility use cases in mind.
 
 <!--
 What are the risks of this proposal, and how do we mitigate? Think broadly.
@@ -551,8 +523,8 @@ Notes:
     without binary changes to disable inline usage.
   - Risky inline drivers should already use a 3rd party admission controller, since they are usable
     by the baseline policy.
-  - We should thoroughly document safe usage, both on the documentation for this (PSP replacement)
-    feature, as well as in the CSI driver documentation.
+  - We should thoroughly document safe usage, both on the documentation for this (pod security
+    admission) feature, as well as in the CSI driver documentation.
 
 **Windows Host Process** - [Privileged Windows container
 support](https://github.com/kubernetes/enhancements/tree/master/keps/sig-windows/1981-windows-privileged-container-support)
@@ -563,7 +535,7 @@ fields will be restricted under the baseline policy.
   - `spec.containers[*].securityContext.windowsOptions.hostProcess`
 - **Allowed Values:** false, undefined/nil
 
-_Note: These fields should be unconditionally restricted, regardless of targetted OS._
+_Note: These fields should be unconditionally restricted, regardless of targeted OS._
 
 ### Windows Support
 
@@ -575,7 +547,7 @@ runtime, then windows pods should still be allowed under the restricted profile,
 profile will not add additional enforcement over baseline (for Windows).
 
 Windows support will be reevaluated prior to this policy feature going to beta, or if/when
-Kubernetes adds support to definitively destinguish between Windows and Linux workloads. See
+Kubernetes adds support to definitively distinguish between Windows and Linux workloads. See
 [Windows restricted profile support](#windows-restricted-profile-support) for more details.
 
 ### Flexible Extension Support
@@ -663,23 +635,21 @@ The metric will use the following labels:
 
 The following audit annotations will be added:
 
-1. `<prefix>/enforce-policy = <policy_level>:<resolved_version>` Record which policy was evaluated
+1. `pod-security.kubernetes.io/enforce-policy = <policy_level>:<resolved_version>` Record which policy was evaluated
    for enforcing mode.
     - Resolved version is the actual version of the policy that was evaluated, so in the case of
       `latest` or future versions, it will be `latest@<version>` where `<version>` is the tagged
       version of the apiserver or webhook (e.g. `latest@v1.22.5-build.8`).
     - This annotation is only recorded when a policy is enforced. Specifically, it will not be
       recorded for irrelevant updates or exempt requests.
-2. `<prefix>/audit-policy = <policy_level>:<resolved_version>` Same as `enforce-policy`, but for
+2. `pod-security.kubernetes.io/audit-policy = <policy_level>:<resolved_version>` Same as `enforce-policy`, but for
    audit mode policies (only included when an audit policy is set).
-3. `<prefix>/enforce-violations = <policy violations>` When an enforcing policy is violated, record
+3. `pod-security.kubernetes.io/enforce-violations = <policy violations>` When an enforcing policy is violated, record
    the violations here.
-4. `<prefix>/audit-violations = <policy violations>` When an audit mode policy is violated, record
+4. `pod-security.kubernetes.io/audit-violations = <policy violations>` When an audit mode policy is violated, record
    the violations here.
-5. `<prefix>/exempt = [user, namespace, runtimeClass]` For exempt requests, record the parameters
+5. `pod-security.kubernetes.io/exempt = [user, namespace, runtimeClass]` For exempt requests, record the parameters
    that triggered the exemption here.
-
-`<prefix>` matches the prefix used for [namespace labels](#api).
 
 ### Graduation Criteria
 
@@ -1022,10 +992,10 @@ if desired).
 
 ### Custom Warning Messages
 
-An optional `prefix/warn-message` annotation can be used to return a custom warning message (in
-addition to the standard message) whenever a policy warning is triggered. This could be useful for
-announcing the date that new policy will take effect, or providing a point of contact if you need to
-request an exception.
+An optional `pod-security.kubernetes.io/warn-message` annotation can be used to return a custom
+warning message (in addition to the standard message) whenever a policy warning is triggered. This
+could be useful for announcing the date that new policy will take effect, or providing a point of
+contact if you need to request an exception.
 
 ### Windows restricted profile support
 
