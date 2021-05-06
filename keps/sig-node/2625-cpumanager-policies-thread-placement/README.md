@@ -263,11 +263,19 @@ No changes needed
 ## Production Readiness Review Questionnaire
 ### Feature enablement and rollback
 
-* **How can this feature be enabled / disabled in a live cluster?** Change the kubelet configuration to set the cpumanager policy option to `smtalign`
-* **Does enabling the feature change any default behavior?** No
-* **Can the feature be disabled once it has been enabled (i.e. can we rollback the enablement)?** Yes, through kubelet configuration - switch to a different policy.
+* **How can this feature be enabled / disabled in a live cluster?**
+  - [X] Feature gate (also fill in values in `kep.yaml`).
+    - Feature gate name: `CPUManagerPolicyOptions`.
+    - Components depending on the feature gate: kubelet
+  - [X] Change the kubelet configuration to set the cpumanager policy option to `smtalign`
+* **Does enabling the feature change any default behavior?**
+  - Yes, it makes the behaviour of the `cpumanager` static policy more restrictive and can lead to pod admission rejection.
+* **Can the feature be disabled once it has been enabled (i.e. can we rollback the enablement)?**
+  - Yes, disabling the feature gate shuts down the feature completely; alternatively,
+  - Yes, through kubelet configuration - switch to a different policy.
 * **What happens if we reenable the feature if it was previously rolled back?** No changes. Existing container will not see their allocation changed. New containers will.
-* **Are there any tests for feature enablement/disablement?** E2E tests will ensure full backward compatible behaviour if the feature is not used.
+* **Are there any tests for feature enablement/disablement?**
+  - A specific e2e test will demonstrate that the default behaviour is preserved when the feature gate is disabled, or when the feature is not used (2 separate tests)
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -278,7 +286,7 @@ No changes needed
 
 ### Monitoring requirements
 * **How can an operator determine if the feature is in use by workloads?**
-  - Inspect the kubelet configuration of the nodes.
+  - Inspect the kubelet configuration of the nodes: check feature gate and usage of the new option
 * **What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?**
   - No change
 * **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?** N/A.
@@ -287,7 +295,7 @@ No changes needed
 
 ### Dependencies
 
-* **Does this feature depend on any specific services running in the cluster?** Not applicable.
+* **Does this feature depend on any specific services running in the cluster?** No.
 
 ### Scalability
 
@@ -314,3 +322,4 @@ No changes needed
 - 2021-04-19: KEP updated to capture implementation details of the `smtaware` policy; clarified the resource accounting vs admission requirements
 - 2021-04-22: KEP updated to clarify the `smtaware` policy after discussion on sig-node and to postpone the `smtisolate` policy
 - 2021-05-04: KEP updated to change name from `smtaware` to `smtalign`. In addition to this we capture changes in the implmentation details including the introduction of a new flag in Kubelet called `cpumanager-policy-options` to allow the user to specify `smtalign` as a value to enable this capability.
+- 2021-05-06: KEP update to add the feature gate and clarify PRR answers.
