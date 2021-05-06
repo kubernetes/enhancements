@@ -42,11 +42,11 @@
 ## Summary
 
 This proposal outlines a plan to enable building Kubernetes without the in-tree
-cloud providers in preparation for [removing them entirely](keps/sig-cloud-provider/20190125-removing-in-tree-providers.md).
+cloud providers in preparation for [removing them entirely](/keps/sig-cloud-provider/2395-removing-in-tree-cloud-providers).
 
 ## Motivation
 
-The in tree cloud-provider implementations are being [removed](keps/sig-cloud-provider/20190125-removing-in-tree-providers.md) in the future, this involves a large amount
+The in tree cloud-provider implementations are being [removed](/keps/sig-cloud-provider/2395-removing-in-tree-cloud-providers) in the future, this involves a large amount
 of code that is used in many places in tree. In order to prepare for this eventuality
 it would be helpful to see what that removal entails exactly and verify that Kubernetes
 will continue to function correctly. Doing so is a bit tricky without ensuring
@@ -71,7 +71,7 @@ no provider based clusters.
 - Mechanisms for migrating to out of tree providers
   - CSI Migration for in-tree Volumes is already underway in SIG Storage
   - External Credential Providers is being written / solved in another KEP ([#541](https://github.com/kubernetes/enhancements/issues/541))
-  - CCMs and overall scope for moving out of tree is in [removing-in-tree-providers](keps/sig-cloud-provider/20190125-removing-in-tree-providers.md)
+  - CCMs and overall scope for moving out of tree is in [removing-in-tree-providers](/keps/sig-cloud-provider/2395-removing-in-tree-cloud-providers)
 
 ## Proposal
 
@@ -138,7 +138,7 @@ some of these must be updated with both a "with provider" version and a
 "without provider" version broken out of the existing code. In particular this 
 includes the in-tree volumes until CSI migration is standard, and the GCE IPAM
 logic in kube-controller-manager.
-  - Note that the nodeIpamController GCE IPAM logic is slated for removal (see [the cloud controller manager KEP](https://github.com/kubernetes/enhancements/blob/master/keps/sig-cloud-provider/20180530-cloud-controller-manager.md))
+  - Note that the nodeIpamController GCE IPAM logic is slated for removal (see [the cloud controller manager KEP](/keps/sig-cloud-provider/2392-cloud-controller-manager))
 
 In particular this adds tags / constraints to:
 - `staging/src/k8s.io/legacy-cloud-providers/*` (constraints on all the providers)
