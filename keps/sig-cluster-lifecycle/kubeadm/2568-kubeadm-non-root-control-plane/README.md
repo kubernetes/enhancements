@@ -93,6 +93,8 @@ tags, and then generate with `hack/update-toc.sh`.
   - [Updating the component manifests](#updating-the-component-manifests)
   - [Host Volume Permissions](#host-volume-permissions)
   - [Shared files](#shared-files)
+  - [Reusing users and groups](#reusing-users-and-groups)
+  - [Cleaning up users and groups](#cleaning-up-users-and-groups)
   - [Multi OS support](#multi-os-support)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
@@ -131,9 +133,9 @@ checklist items _must_ be updated for the enhancement to be released.
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
 - [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
-- [ ] (R) KEP approvers have approved the KEP status as `implementable`
-- [ ] (R) Design details are appropriately documented
-- [ ] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
+- [x] (R) KEP approvers have approved the KEP status as `implementable`
+- [x] (R) Design details are appropriately documented
+- [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input (including test refactors)
 - [x] (R) Graduation criteria is in place
 - [x] (R) Production readiness review completed
 - [x] (R) Production readiness review approved
@@ -250,7 +252,7 @@ bogged down.
 
 #### Story 1
 
-As a security conscious user I would like to run the kubernetes control-plane as non-root.
+As a security conscious user I would like to run the kubernetes control-plane as non-root to reduce the risk associated with container escape vulnerabilities in the control-plane.
 
 #### Story 2
 
@@ -304,7 +306,7 @@ There are 3 options for setting the `UID`/`GID` of the control-plane components:
 
 3. **Create system users and let users override the defaults:** Use `adduser --system` or equivalent to create `UID`s in the SYS_UID_MIN - SYS_UID_MAX range and `groupadd --system` or equivalent to create `GID`s in the SYS_GID_MIN - SYS_GID_MAX range. Additionally if users want to specify their own `UID`s or `GID`s we will support that through `kubeadm` patching.
 
-The author(s) believes that starting out with a safe default of option 3. and allowing the user to set the `UID` and `GID` through the `kubeadm` patching mechanism is more user-friendly for users who just wan't to quickly bootstrap and also users who care about which `UID`s and `GID`s that they want to run the control-plane as and also users . Further this feature will be opt-in and will be hidden behind a feature-gate.
+The author(s) believes that starting out with a safe default of option 3. and allowing the user to set the `UID` and `GID` through the `kubeadm` patching mechanism is more user-friendly for users who just wan't to quickly bootstrap and also users who care about which `UID`s and `GID`s that they want to run the control-plane as and also users . Further this feature will be opt-in and will be hidden behind a feature-gate, until it graduates to GA.
 
 Choosing the `UID` between SYS_UID_MIN and SYS_UID_MAX and `GID` between SYS_GID_MIN and SYS_GID_MAX is in adherence with distro standards.
 * For Debian : https://www.debian.org/doc/debian-policy/ch-opersys.html#uid-and-gid-classes
@@ -569,7 +571,7 @@ spec:
     ... # omitted to save space. 
 ```
 
-Each of the components will run with a unique `UID` and `GID`. For each of the components we will create a unique user. For the shared files/resources we will create groups. The naming convention of these groups is tabulated below.
+Each of the components will run with a unique `UID` and `GID`. For each of the components we will create a unique user. For the shared files/resources we will create groups. The naming convention of these groups is tabulated below. It should be noted that `kubeadm` will take exclusive ownership of these users/groups and will throw erros if users/groups with these names exist and are not in the expected ID range of `SYS_UID_MIN`-`SYS_UID_MAX` for users and `SYS_GID_MIN`-`SYS_GID_MAX` for groups.
 
 | User/Group name | Explanation |
 |--------------|-------------|
@@ -617,6 +619,15 @@ In addition to the file/directories in that table above the control-plane compon
 - /etc/ssl/certs
 - /etc/ca-certificates
 
+### Reusing users and groups
+
+If any of the users/groups defined above exist already and are in the expected ID range of `SYS_UID_MIN`-`SYS_UID_MAX` for users and `SYS_GID_MIN`-`SYS_GID_MAX` for groups, then `kubeadm` will reuse these instead of creating new ones. More specifically `kubeadm` will reuse the ones that exist and meet the criteria and will create the ones that it needs.
+
+### Cleaning up users and groups
+
+`kubeadm reset` tries to remove everything created by `kubeadm` on the host and it should do this for the users and groups that it creates as part of cluster bootstrap.
+
+
 ### Multi OS support
 
 A Windows control plane is out of scope for this proposal for the time being. OS specific implementations for Linux, would be carefully abstracted behind helper utilities in kubeadm to not block the support for a Windows control plane in the future.
@@ -645,7 +656,7 @@ Following functionality needs to be tested:
 1. With feature-gate=True create a cluster
 2. With feature-gate=True upgrade a cluster
 
-These tests will be added using the [kinder](https://github.com/kubernetes/kubeadm/tree/master/kinder) tooling.
+These tests will be added using the [kinder](https://github.com/kubernetes/kubeadm/tree/master/kinder) tooling during the Alpha stage.
 
 ### Graduation Criteria
 
@@ -710,7 +721,7 @@ in back-to-back releases.
 - All control-plane components have `runtime/default` seccomp profile.
 - All control-plane components drop all unnecessary capabilities.
 - The feature is tested by the community and feedback is adapted with changes.
-- e2e tests created and running periodically, but may not be completely green.
+- e2e tests are running periodically and are green with respect to testing this functionality.
 - `kubeadm` documentation is updated.
 
 ### Upgrade / Downgrade Strategy
@@ -1059,6 +1070,7 @@ Major milestones:
 - Initial draft of KEP created - 2021-03-13
 - Production readiness review - 2021-04-12
 - Production readiness review approved - 2021-04-29
+- KEP marked implementable - 2021-04-28
 
 ## Drawbacks
 

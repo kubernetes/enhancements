@@ -5,7 +5,7 @@ authors:
 owning-sig: sig-cluster-lifecycle
 participating-sigs:
   - sig-security
-status: provisional
+status: implementable
 creation-date: 2021-03-13
 reviewers:
   - "@neolit123"
