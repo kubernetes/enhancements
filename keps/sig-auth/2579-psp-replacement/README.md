@@ -601,10 +601,6 @@ coverage of unit tests.
 
 ### Monitoring
 
-<<[UNRESOLVED]>>
-
-**BLOCKING**
-
 A single metric will be added to track policy evaluations against pods and [templated pods].
 [Namespace evaluations](#namespace-policy-update-warnings) are not counted.
 
@@ -620,14 +616,28 @@ The metric will use the following labels:
 3. `policy_level {privileged, baseline, restricted}` - The policy level that the request was
    evaluated against.
 4. `policy_version {latest, v1.YY, >v1.ZZ}` - The policy version that was used for the evaluation.
-   To constrain cardinality, if the version is set higher than `v{latest+1}`, then `>v{latest+1}`
-   will be used. In other words, if the current version of the admission controller is v1.22, then a
-   version of `v1.23` would be unchanged, but `v1.24` would be recorded as `>v1.23`.
+   How to constrain cardinality is unresolved (see below).
 5. `mode {enforce, warn, audit}` - The type of evaluation mode being recorded. Note that a single
    request can increment this metric 3 times, once for each mode. If this admission controller is
    enabled, every every create request and in-scope update request will at least increment the
    `enforce` total.
 6. `request_operation {create, update}` - The operation of the request being checked.
+
+<<[UNRESOLVED]>>
+
+_Non-blocking: can be decided on the implementing PR_
+
+How should policy version labels be handled, to control cardinality? Specifically:
+- How should future versions be labeled?
+- How should (very old) past versions be labeled?
+
+Ideas:
+- If the version is set higher than `v{latest+1}`, then `>v{latest+1}`
+  will be used. In other words, if the current version of the admission controller is v1.22, then a
+  version of `v1.23` would be unchanged, but `v1.24` would be recorded as `>v1.23`.
+    - Concern that the sliding-window approach will cause issues with historical data.
+- If the version is set higher than latest, simply record it as `future`. Allow recording of all
+  past versions.
 
 <<[/UNRESOLVED]>>
 
