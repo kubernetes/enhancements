@@ -661,6 +661,48 @@ The following audit annotations will be added:
 5. `pod-security.kubernetes.io/exempt = [user, namespace, runtimeClass]` For exempt requests, record the parameters
    that triggered the exemption here.
 
+### PodSecurityPolicy Migration
+
+<<[UNRESOLVED]>>
+
+_Targetting Beta or GA, non-blocking for Alpha._
+
+Migrating to the replacement policy from PodSecurityPolicies can be done effectively using a
+combination of dry-run and audit/warn modes (although this becomes harder if mutating PSPs are
+used).
+
+We could also ship a standalone tool to assist with the PodSecurityPolicy migration. Here are some
+ideas for the sorts of things the tool could assist with:
+
+- Analyze PSP resources, identify the closest profile level, and highlight the differences
+- Check the authorization mode for existing pods. For example, if a pod’s service account is not
+  authorized to use the PSP that validated it (based on the `kubernetes.io/psp` annotation), then
+  that should trigger a warning.
+- Automate the dry-run and/or labeling process.
+- Automatically select (and optionally apply) a policy level for each namespace.
+
+We should also publish a step-by-step migration guide. A rough approach might look something like
+this, with the items tagged (automated) having support from the PSP migration tool.
+
+1. Enable 3-tier policy admission plugin, default everything to privileged.
+2. Eliminate mutating PSPs:
+    1. Clone all mutating PSPs to a non-mutating version (automated)
+    2. Update all ClusterRoles authorizing use of the mutating PSPs to also authorize use of the
+       non-mutating variant (automated)
+    3. Watch for pods using the mutating PSPs (check via the `kubernetes.io/psp` annotation), and
+       work with code owners to migrate to valid non-mutating resources.
+    4. Delete mutating PSPs
+3. Select a compatible profile for each namespace, based on the existing resources in the namespace
+   (automated)
+    1. Review the profile choices
+    2. Evaluate the difference in privileges that would come from disabling the PSP controller
+       (automated).
+4. (optional) Apply the profiles in `warn` and `audit` mode (automated)
+5. Apply the profiles in `enforce` mode (automated)
+6. Disable PodSecurityPolicy
+
+<<[/UNRESOLVED]>>
+
 ### Graduation Criteria
 
 <!--
@@ -956,42 +998,6 @@ or combined for a more aggressive rollout:
 4. Default unlabeled namespaces to enforce=baseline
 
 Each step in the rollout could be overridden with a flag (e.g. force the admission plugin to step N)
-
-### PodSecurityPolicy Migration
-
-Migrating to the replacement policy from PodSecurityPolicies can be done effectively using a
-combination of dry-run and audit/warn modes (although this becomes harder if mutating PSPs are
-used).
-
-We could also ship a standalone tool to assist with the PodSecurityPolicy migration. Here are some
-ideas for the sorts of things the tool could assist with:
-
-- Analyze PSP resources, identify the closest profile level, and highlight the differences
-- Check the authorization mode for existing pods. For example, if a pod’s service account is not
-  authorized to use the PSP that validated it (based on the `kubernetes.io/psp` annotation), then
-  that should trigger a warning.
-- Automate the dry-run and/or labeling process.
-- Automatically select (and optionally apply) a policy level for each namespace.
-
-We should also publish a step-by-step migration guide. A rough approach might look something like
-this, with the items tagged (automated) having support from the PSP migration tool.
-
-1. Enable 3-tier policy admission plugin, default everything to privileged.
-2. Eliminate mutating PSPs:
-    1. Clone all mutating PSPs to a non-mutating version (automated)
-    2. Update all ClusterRoles authorizing use of the mutating PSPs to also authorize use of the
-       non-mutating variant (automated)
-    3. Watch for pods using the mutating PSPs (check via the `kubernetes.io/psp` annotation), and
-       work with code owners to migrate to valid non-mutating resources.
-    4. Delete mutating PSPs
-3. Select a compatible profile for each namespace, based on the existing resources in the namespace
-   (automated)
-    1. Review the profile choices
-    2. Evaluate the difference in privileges that would come from disabling the PSP controller
-       (automated).
-4. (optional) Apply the profiles in `warn` and `audit` mode (automated)
-5. Apply the profiles in `enforce` mode (automated)
-6. Disable PodSecurityPolicy
 
 ### Custom Profiles
 
