@@ -83,50 +83,76 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 
 ## Summary
 
-Kubernetes currently does not support the use of [swap memory](https://en.wikipedia.org/wiki/Paging#Linux) on Linux, as it is difficult to provide guarantees and account for pod memory utilization when swap is involved. As part of Kubernetes’ earlier design, [swap support was considered out of scope](https://github.com/kubernetes/kubernetes/issues/7294).
+Kubernetes currently does not support the use of [swap
+memory](https://en.wikipedia.org/wiki/Paging#Linux) on Linux, as it is
+difficult to provide guarantees and account for pod memory utilization when
+swap is involved. As part of Kubernetes’ earlier design, [swap support was
+considered out of scope](https://github.com/kubernetes/kubernetes/issues/7294).
 
-However, there are a [number of use cases](#user-stories) that would benefit from Kubernetes nodes supporting swap. Hence, this proposal aims to add swap support to nodes in a controlled, predictable manner so that Kubernetes users can perform testing and provide data to continue building cluster capabilities on top of swap.
+However, there are a [number of use cases](#user-stories) that would benefit
+from Kubernetes nodes supporting swap. Hence, this proposal aims to add swap
+support to nodes in a controlled, predictable manner so that Kubernetes users
+can perform testing and provide data to continue building cluster capabilities
+on top of swap.
 
 ## Motivation
 
 There are two distinct types of user for swap, who may overlap:
-- node administrators, who may want swap available for node-level performance tuning and stability/reducing noisy neighbour issues
-- application developers, who have written applications that would benefit from using swap memory
+- node administrators, who may want swap available for node-level performance
+  tuning and stability/reducing noisy neighbour issues
+- application developers, who have written applications that would benefit from
+  using swap memory
 
-There are hence a number of possible ways that one could envision swap use on a node.
+There are hence a number of possible ways that one could envision swap use on a
+node.
 
 ### Scenarios
 
-1. Swap is enabled on a node's host system, but the CRI does not permit Kubernetes workloads to use swap. (This scenario is a prerequisite for the following use cases.)
-1. Swap is enabled at the node level. The CRI can be globally configured to permit user workloads scheduled on the node to use some quantity of swap.
-1. Swap is set on a per-workload basis. The CRI sets permitted swap utilization on each individual workload.
+1. Swap is enabled on a node's host system, but the CRI does not permit
+   Kubernetes workloads to use swap. (This scenario is a prerequisite for the
+   following use cases.)
+1. Swap is enabled at the node level. The CRI can be globally configured to
+   permit user workloads scheduled on the node to use some quantity of swap.
+1. Swap is set on a per-workload basis. The CRI sets permitted swap utilization
+   on each individual workload.
 
-This KEP will be limited in scope to the first two scenarios. The third can be addressed in a follow-up KEP. The enablement work that is in scope for this KEP will be necessary to implement the third scenario.
+This KEP will be limited in scope to the first two scenarios. The third can be
+addressed in a follow-up KEP. The enablement work that is in scope for this KEP
+will be necessary to implement the third scenario.
 
 
 ### Goals
 
-- On Linux systems, when swap is provisioned and available, Kubelet can start up with swap on.
-- Configuration is available for CRI to set swap utilization available to Kubernetes workloads, defaulting to 0 swap.
-- Cluster administrators can enable and configure CRI swap utilization on a per-node basis.
+- On Linux systems, when swap is provisioned and available, Kubelet can start
+  up with swap on.
+- Configuration is available for CRI to set swap utilization available to
+  Kubernetes workloads, defaulting to 0 swap.
+- Cluster administrators can enable and configure CRI swap utilization on a
+  per-node basis.
 - Use of swap memory with both cgroupsv1 and cgroupsv2 is supported.
 
 ### Non-Goals
 
 - Provisioning swap. Swap must already be available on the system.
-- Setting [swappiness]. This can already be set on a system-wide level outside of Kubernetes.
-- Allocating swap on a per-workload basis with accounting (e.g. pod-level specification of swap). If desired, this should be designed and implemented as part of a follow-up KEP. This KEP is a prerequisite for that work.
-- Supporting zram, zswap, or other memory types like SGX EPC. These could be addressed in a follow-up KEP, and are out of scope.
+- Setting [swappiness]. This can already be set on a system-wide level outside
+  of Kubernetes.
+- Allocating swap on a per-workload basis with accounting (e.g. pod-level
+  specification of swap). If desired, this should be designed and implemented
+  as part of a follow-up KEP. This KEP is a prerequisite for that work.
+- Supporting zram, zswap, or other memory types like SGX EPC. These could be
+  addressed in a follow-up KEP, and are out of scope.
 
 [swappiness]: https://en.wikipedia.org/wiki/Memory_paging#Swappiness
 
 ## Proposal
 
-We propose that, when swap is provisioned and available on a node, cluster administrators can configure the Kubelet and CRI such that:
+We propose that, when swap is provisioned and available on a node, cluster
+administrators can configure the Kubelet and CRI such that:
 
 - The kubelet can start with swap on.
 - The CRI is updated such that by default, workloads will use 0 swap.
-- The CRI will have configuration available such that swap utilization can be configured for the entire node.
+- The CRI will have configuration available such that swap utilization can be
+  configured for the entire node.
 
 This proposal enables scenarios 1 and 2 above, but not 3.
 
@@ -134,7 +160,9 @@ This proposal enables scenarios 1 and 2 above, but not 3.
 
 #### Improved Node Stability
 
-cgroupsv2 improved memory management algos, such as oomd, currently require swap. Hence, having a small amount of swap available on nodes could improve better resource pressure handling and recovery.
+cgroupsv2 improved memory management algos, such as oomd, currently require
+swap. Hence, having a small amount of swap available on nodes could improve
+better resource pressure handling and recovery.
 
 - https://www.kernel.org/doc/html/latest/admin-guide/cgroup-v2.html#id1
 - https://chrisdown.name/2018/01/02/in-defence-of-swap.html
@@ -145,28 +173,46 @@ This user story is addressed by scenario 1 and 2, and could benefit from 3.
 
 #### Long-running applications that swap out startup memory
 
-- Applications such as the Java and Node runtimes rely on swap for optimal performance https://github.com/kubernetes/kubernetes/issues/53533#issue-263475425
-- Initialization logic of applications can be safely swapped out without affecting long-running application resource usage https://github.com/kubernetes/kubernetes/issues/53533#issuecomment-615967154
+- Applications such as the Java and Node runtimes rely on swap for optimal
+  performance
+  https://github.com/kubernetes/kubernetes/issues/53533#issue-263475425
+- Initialization logic of applications can be safely swapped out without
+  affecting long-running application resource usage
+  https://github.com/kubernetes/kubernetes/issues/53533#issuecomment-615967154
 
 This user story is addressed by scenario 2, and could benefit from 3.
 
 #### Memory Flexibility
 
-This user story addresses cases in which cost of additional memory is prohibitive, or elastic scaling is impossible (e.g. on-premise/bare metal deployments).
+This user story addresses cases in which cost of additional memory is
+prohibitive, or elastic scaling is impossible (e.g. on-premise/bare metal
+deployments).
 
-- Occasional cron job with high memory usage and lack of swap support means cloud nodes must always be allocated for maximum possible memory utilization, leading to overprovisioning/high costs https://github.com/kubernetes/kubernetes/issues/53533#issuecomment-354832960
-- Lack of swap support would require provisioning 3x the amount of memory as required with swap https://github.com/kubernetes/kubernetes/issues/53533#issuecomment-617654228
-- On-premise deployment can’t horizontally scale available memory based on load https://github.com/kubernetes/kubernetes/issues/53533#issuecomment-637715138
-- Scaling resources is technically feasible but cost-prohibitive, swap provides flexibility at lower cost https://github.com/kubernetes/kubernetes/issues/53533#issuecomment-553713502
+- Occasional cron job with high memory usage and lack of swap support means
+  cloud nodes must always be allocated for maximum possible memory utilization,
+  leading to overprovisioning/high costs
+  https://github.com/kubernetes/kubernetes/issues/53533#issuecomment-354832960
+- Lack of swap support would require provisioning 3x the amount of memory as
+  required with swap
+  https://github.com/kubernetes/kubernetes/issues/53533#issuecomment-617654228
+- On-premise deployment can’t horizontally scale available memory based on load
+  https://github.com/kubernetes/kubernetes/issues/53533#issuecomment-637715138
+- Scaling resources is technically feasible but cost-prohibitive, swap provides
+  flexibility at lower cost
+  https://github.com/kubernetes/kubernetes/issues/53533#issuecomment-553713502
 
 This user story is addressed by scenario 2, and could benefit from 3.
 
 #### Local development and systems with fast storage
 
-Local development or single-node clusters and systems with fast storage may benefit from using available swap (e.g. NVMe swap partitions, one-node clusters).
+Local development or single-node clusters and systems with fast storage may
+benefit from using available swap (e.g. NVMe swap partitions, one-node
+clusters).
 
-- Single node, local Kubernetes deployment on laptop https://github.com/kubernetes/kubernetes/issues/53533#issuecomment-361748518
-- Linux has optimizations for swap on SSD, allowing for performance boosts https://github.com/kubernetes/kubernetes/issues/53533#issuecomment-589275277
+- Single node, local Kubernetes deployment on laptop
+  https://github.com/kubernetes/kubernetes/issues/53533#issuecomment-361748518
+- Linux has optimizations for swap on SSD, allowing for performance boosts
+  https://github.com/kubernetes/kubernetes/issues/53533#issuecomment-589275277
 
 This user story is addressed by scenarios 1 and 2, and could benefit from 3.
 
@@ -174,49 +220,82 @@ This user story is addressed by scenarios 1 and 2, and could benefit from 3.
 
 For example, edge devices with limited memory.
 
-- Edge compute systems/devices with small memory footprints (\<2Gi) https://github.com/kubernetes/kubernetes/issues/53533#issuecomment-751398086
-- Clusters with nodes \<4Gi memory https://github.com/kubernetes/kubernetes/issues/53533#issuecomment-751404417
+- Edge compute systems/devices with small memory footprints (\<2Gi)
+  https://github.com/kubernetes/kubernetes/issues/53533#issuecomment-751398086
+- Clusters with nodes \<4Gi memory
+  https://github.com/kubernetes/kubernetes/issues/53533#issuecomment-751404417
 
 This user story is addressed by scenario 2, and could benefit from 3.
 
 #### Virtualization management overhead
 
-This would apply to virtualized Kubernetes workloads such as VMs launched by kubevirt.
+This would apply to virtualized Kubernetes workloads such as VMs launched by
+kubevirt.
 
-Every VM comes with a management related overhead which can sporadically be pretty significant (memory streaming, SRIOV attachment, gpu attachment, virtio-fs, …). Swap helps to not request much more memory to deal with short term worst-case scenarios.
+Every VM comes with a management related overhead which can sporadically be
+pretty significant (memory streaming, SRIOV attachment, gpu attachment,
+virtio-fs, …). Swap helps to not request much more memory to deal with short
+term worst-case scenarios.
 
-With virtualization, clusters are typically provisioned based on the workloads’ memory consumption, and any infrastructure container overhead is overcommitted. This overhead could be safely swapped out.
+With virtualization, clusters are typically provisioned based on the workloads’
+memory consumption, and any infrastructure container overhead is overcommitted.
+This overhead could be safely swapped out.
 
-- Required for live migration of VMs https://github.com/kubernetes/kubernetes/issues/53533#issuecomment-754878431
+- Required for live migration of VMs
+  https://github.com/kubernetes/kubernetes/issues/53533#issuecomment-754878431
 
 This user story is addressed by scenario 2, and could benefit from 3.
 
 ### Notes/Constraints/Caveats (Optional)
 
-In changing the CRI, we must ensure that container runtime downstreams are able to support the new configurations.
+In changing the CRI, we must ensure that container runtime downstreams are able
+to support the new configurations.
 
-We considered adding parameters for both per-workload `memory-swap` and `swappiness`. These are documented as part of the Open Containers [runtime specification] for Linux memory configuration. Since `memory-swap` is a per-workload parameter, and `swappiness` is optional and can be set globally, we are choosing to only expose `memory-swap` which will adjust swap available to workloads.
+We considered adding parameters for both per-workload `memory-swap` and
+`swappiness`. These are documented as part of the Open Containers [runtime
+specification] for Linux memory configuration. Since `memory-swap` is a
+per-workload parameter, and `swappiness` is optional and can be set globally,
+we are choosing to only expose `memory-swap` which will adjust swap available
+to workloads.
 
-Since we are not currently setting `memory-swap` in the CRI, the default behaviour is to allocate the same amount of swap for a workload as memory requested. We will update the default to not permit the use of swap by setting `memory-swap` equal to `limit`.
+Since we are not currently setting `memory-swap` in the CRI, the default
+behaviour is to allocate the same amount of swap for a workload as memory
+requested. We will update the default to not permit the use of swap by setting
+`memory-swap` equal to `limit`.
 
 [runtime specification]: https://github.com/opencontainers/runtime-spec/blob/1c3f411f041711bbeecf35ff7e93461ea6789220/config-linux.md#memory
 
 ### Risks and Mitigations
 
-Having swap available on a system reduces predictability. Swap's performance is worse than regular memory, sometimes by many orders of magnitude, which can cause unexpected performance regressions. Furthermore, swap changes a system's behaviour under memory pressure, and applications cannot directly control what portions of their memory usage are swapped out. Since enabling swap permits greater memory usage for workloads in Kubernetes that cannot be predictably accounted for, it also increases the risk of noisy neighbours and unexpected packing configurations, as the scheduler cannot account for swap memory usage.
+Having swap available on a system reduces predictability. Swap's performance is
+worse than regular memory, sometimes by many orders of magnitude, which can
+cause unexpected performance regressions. Furthermore, swap changes a system's
+behaviour under memory pressure, and applications cannot directly control what
+portions of their memory usage are swapped out. Since enabling swap permits
+greater memory usage for workloads in Kubernetes that cannot be predictably
+accounted for, it also increases the risk of noisy neighbours and unexpected
+packing configurations, as the scheduler cannot account for swap memory usage.
 
-This risk is mitigated by preventing any workloads from using swap by default, even if swap is enabled and available on a system. This will allow a cluster administrator to test swap utilization just at the system level without introducing unpredictability to workload resource utilization.
+This risk is mitigated by preventing any workloads from using swap by default,
+even if swap is enabled and available on a system. This will allow a cluster
+administrator to test swap utilization just at the system level without
+introducing unpredictability to workload resource utilization.
 
-Additionally, we will mitigate this risk by determining a set of metrics to quantify system stability and then gathering test and production data to determine if system stability changes when swap is available to the system and/or workloads in a number of different scenarios.
+Additionally, we will mitigate this risk by determining a set of metrics to
+quantify system stability and then gathering test and production data to
+determine if system stability changes when swap is available to the system
+and/or workloads in a number of different scenarios.
 
-Since swap provisioning is out of scope of this proposal, this enhancement poses low risk to Kubernetes clusters that will not enable swap.
+Since swap provisioning is out of scope of this proposal, this enhancement
+poses low risk to Kubernetes clusters that will not enable swap.
 
 ## Design Details
 
 We summarize the implementation plan as following:
 
 1. Add a feature gate `NodeSwapEnabled` to enable swap support.
-1. Leave the default value of kubelet flag `--fail-on-swap` to `true`, to avoid changing default behaviour.
+1. Leave the default value of kubelet flag `--fail-on-swap` to `true`, to avoid
+   changing default behaviour.
 1. Introduce a new kubelet config parameter, `MemorySwapLimit`.
 1. Introduce a new CRI parameter, `memory_swap_limit_in_bytes`.
 1. Integrate new kubelet config and pass values to CRI for container creation.
@@ -235,7 +314,8 @@ Swap can be enabled as follows:
 
 #### KubeConfig addition
 
-We will add an optional `MemorySwapLimit` value to the `KubeletConfig` struct in [pkg/kubelet/apis/config/types.go] for a compatible API change as follows:
+We will add an optional `MemorySwapLimit` value to the `KubeletConfig` struct
+in [pkg/kubelet/apis/config/types.go] for a compatible API change as follows:
 
 [pkg/kubelet/apis/config/types.go]: https://github.com/kubernetes/kubernetes/blob/6baad0a1d45435ff5844061aebab624c89d698f8/pkg/kubelet/apis/config/types.go#L81
 
@@ -295,8 +375,10 @@ effects, based on the [Docker] and open container specification for the
 
 ### CRI Changes
 
-The CRI requires a corresponding change in order to allow the kubelet to set swap usage in container runtimes.
-We will introduce a parameter `memory_swap_limit_in_bytes` to the CRI API (found in [k8s.io/cri-api/pkg/apis/runtime/v1/api.proto]):
+The CRI requires a corresponding change in order to allow the kubelet to set
+swap usage in container runtimes.  We will introduce a parameter
+`memory_swap_limit_in_bytes` to the CRI API (found in
+[k8s.io/cri-api/pkg/apis/runtime/v1/api.proto]):
 
 [k8s.io/cri-api/pkg/apis/runtime/v1/api.proto]: https://github.com/kubernetes/kubernetes/blob/6baad0a1d45435ff5844061aebab624c89d698f8/staging/src/k8s.io/cri-api/pkg/apis/runtime/v1/api.proto#L563-L580
 
@@ -319,19 +401,23 @@ message LinuxContainerResources {
 
 For alpha:
 
-- Swap scenarios are enabled in test-infra for at least two Linux distributions. e2e suites will be run against them.
+- Swap scenarios are enabled in test-infra for at least two Linux
+  distributions. e2e suites will be run against them.
   - Container runtimes must be bumped in CI to use the new CRI.
-- Data should be gathered from a number of use cases to guide beta graduation and further development efforts.
+- Data should be gathered from a number of use cases to guide beta graduation
+  and further development efforts.
   - Focus should be on supported user stories as listed above.
 
-Once this data is available, additional test plans should be added for the next phase of graduation.
+Once this data is available, additional test plans should be added for the next
+phase of graduation.
 
 ### Graduation Criteria
 
 #### Alpha
 
 - Kubelet can be started with swap enabled.
-- KubeletConfig allows CRI to be configured with a percentage of swap available to workloads. This will default to 0.
+- KubeletConfig allows CRI to be configured with a percentage of swap available
+  to workloads. This will default to 0.
 - e2e test jobs are configured for Linux systems with swap enabled.
 
 
@@ -339,13 +425,15 @@ Once this data is available, additional test plans should be added for the next 
 
 (Tentative.)
 
-- Determine a set of metrics for node QoS in order to evaluate the performance of nodes with and without swap enabled.
+- Determine a set of metrics for node QoS in order to evaluate the performance
+  of nodes with and without swap enabled.
 - Collect feedback from test user cases.
 - Improve coverage for appropriate scenarios in testgrid.
 
 #### GA
 
-- Test a wide variety of scenarios that may be affected by swap support, such as workloads using tmpfs storage.
+- Test a wide variety of scenarios that may be affected by swap support, such
+  as workloads using tmpfs storage.
 - Remove feature flag.
 
 ### Upgrade / Downgrade Strategy
@@ -364,7 +452,8 @@ enhancement:
 
 No changes are required on upgrade to maintain previous behaviour.
 
-It is possible to downgrade a kubelet on a node that was using swap, but this would require disabling the use of swap and setting `swapoff` on the node.
+It is possible to downgrade a kubelet on a node that was using swap, but this
+would require disabling the use of swap and setting `swapoff` on the node.
 
 ### Version Skew Strategy
 
@@ -436,9 +525,12 @@ Any change of default behavior may be surprising to users or break existing
 automations, so be extremely careful here.
 -->
 
-No. If the feature flag is enabled, the user must still set `--fail-swap-on=false` to adjust the default behaviour.
+No. If the feature flag is enabled, the user must still set
+`--fail-swap-on=false` to adjust the default behaviour.
 
-A node must have swap provisioned and available for this feature to work. If there is no swap available, but the feature flag is set to true, there will still be no change in existing behaviour.
+A node must have swap provisioned and available for this feature to work. If
+there is no swap available, but the feature flag is set to true, there will
+still be no change in existing behaviour.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
@@ -449,7 +541,10 @@ feature, can it break the existing applications?).
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 
-No. I don’t think it makes much sense to be able to provide users a meaningful ability to disable the feature flag at runtime, as this would be highly disruptive to workloads and difficult to implement. To turn this off, the kubelet would need to be restarted.
+No. I don’t think it makes much sense to be able to provide users a meaningful
+ability to disable the feature flag at runtime, as this would be highly
+disruptive to workloads and difficult to implement. To turn this off, the
+kubelet would need to be restarted.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
@@ -464,7 +559,8 @@ with and without the feature, are necessary. At the very least, think about
 conversion tests if API types are being modified.
 -->
 
-N/A. This should be tested separately for scenarios with the flag enabled and disabled.
+N/A. This should be tested separately for scenarios with the flag enabled and
+disabled.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -630,7 +726,8 @@ Describe them, providing:
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
 -->
 
-The KubeletConfig API object may slightly increase in size due to new config fields.
+The KubeletConfig API object may slightly increase in size due to new config
+fields.
 
 ###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
 
@@ -643,7 +740,9 @@ Think about adding additional work or introducing new steps in between
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 -->
 
-It is possible for this feature to affect performance of some worker node-level SLIs/SLOs. We will need to monitor for differences, particularly during beta testing, when evaluating this feature for beta and graduation.
+It is possible for this feature to affect performance of some worker node-level
+SLIs/SLOs. We will need to monitor for differences, particularly during beta
+testing, when evaluating this feature for beta and graduation.
 
 ###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
 
@@ -657,7 +756,9 @@ This through this both in small and large cases, again with respect to the
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 -->
 
-Yes. It will permit the utilization of swap memory (i.e. disk) on nodes. This is expected, as this enhancement is enabling cluster administrators to access this resource.
+Yes. It will permit the utilization of swap memory (i.e. disk) on nodes. This
+is expected, as this enhancement is enabling cluster administrators to access
+this resource.
 
 ### Troubleshooting
 
@@ -701,15 +802,23 @@ For each of them, fill in the following information by copying the below templat
 Why should this KEP _not_ be implemented?
 -->
 
-When swap is enabled, particularly for workloads, the kubelet’s resource accounting may become much less accurate. This may make cluster administration more difficult and less predictable.
+When swap is enabled, particularly for workloads, the kubelet’s resource
+accounting may become much less accurate. This may make cluster administration
+more difficult and less predictable.
 
-Currently, there exists an unsupported workaround, which is setting the kubelet flag `--fail-swap-on` to false.
+Currently, there exists an unsupported workaround, which is setting the kubelet
+flag `--fail-swap-on` to false.
 
 ## Alternatives
 
 ### Just set `--fail-swap-on=false`
 
-This is insufficient for most use cases because there is inconsistent control over how swap will be used by various container runtimes. Dockershim currently sets swap available for workloads to 0. The CRI does not restrict it at all. This inconsistency makes it difficult or impossible to use swap in production, particularly if a user wants to restrict workloads from using swap when using the CRI rather than dockershim.
+This is insufficient for most use cases because there is inconsistent control
+over how swap will be used by various container runtimes. Dockershim currently
+sets swap available for workloads to 0. The CRI does not restrict it at all.
+This inconsistency makes it difficult or impossible to use swap in production,
+particularly if a user wants to restrict workloads from using swap when using
+the CRI rather than dockershim.
 
 ## Infrastructure Needed (Optional)
 
