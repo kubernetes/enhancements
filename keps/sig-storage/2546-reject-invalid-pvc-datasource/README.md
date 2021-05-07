@@ -13,6 +13,13 @@
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
 - [Alternatives](#alternatives)
+- [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
+  - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
+  - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+  - [Monitoring Requirements](#monitoring-requirements)
+  - [Dependencies](#dependencies)
+  - [Scalability](#scalability)
+  - [Troubleshooting](#troubleshooting)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -128,4 +135,152 @@ modifies this.)
 ## Alternatives
 
 The only viable alternative that I can see is to forever enshrine the existing
-behavior and accept that it's gross. 
+behavior and accept that it's gross.
+
+## Production Readiness Review Questionnaire
+
+<!--
+
+Production readiness reviews are intended to ensure that features merging into
+Kubernetes are observable, scalable and supportable; can be safely operated in
+production environments, and can be disabled or rolled back in the event they
+cause increased failures in production. See more in the PRR KEP at
+https://git.k8s.io/enhancements/keps/sig-architecture/1194-prod-readiness.
+
+The production readiness review questionnaire must be completed and approved
+for the KEP to move to `implementable` status and be included in the release.
+
+In some cases, the questions below should also have answers in `kep.yaml`. This
+is to enable automation to verify the presence of the review, and to reduce review
+burden and latency.
+
+The KEP must have a approver from the
+[`prod-readiness-approvers`](http://git.k8s.io/enhancements/OWNERS_ALIASES)
+team. Please reach out on the
+[#prod-readiness](https://kubernetes.slack.com/archives/CPNHUMN74) channel if
+you need any help or guidance.
+-->
+
+### Feature Enablement and Rollback
+
+###### How can this feature be enabled / disabled in a live cluster?
+
+- [ ] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name:
+  - Components depending on the feature gate:
+- [X] Other
+  - Describe the mechanism: Cannot be disabled
+  - Will enabling / disabling the feature require downtime of the control
+    plane?
+  - Will enabling / disabling the feature require downtime or reprovisioning
+    of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
+
+###### Does enabling the feature change any default behavior?
+
+Use of invalid datasources, which would previously have been ignored and yielded
+an empty volume, will now properly result in an error.
+
+###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
+
+No
+
+###### What happens if we reenable the feature if it was previously rolled back?
+
+n/a
+
+###### Are there any tests for feature enablement/disablement?
+
+No, the change will always be on.
+
+### Rollout, Upgrade and Rollback Planning
+
+###### How can a rollout fail? Can it impact already running workloads?
+
+As this is effectively a bug fix, the rollout cannot fail. Also, because the change
+alters PVC creation, already-running workloads won't be affected.
+
+###### What specific metrics should inform a rollback?
+
+Rollback is not possible.
+
+###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
+
+n/a
+
+###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
+
+No
+
+### Monitoring Requirements
+
+###### How can an operator determine if the feature is in use by workloads?
+
+This is a bug fix, so not applicable.
+
+###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
+
+- [ ] Metrics
+  - Metric name:
+  - [Optional] Aggregation method:
+  - Components exposing the metric:
+- [X] Other (treat as last resort)
+  - Details: It's not a service, and doesn't have a health status per se. One could track
+    failed PVC creations to notice if users were relying on the previously buggy behavior.
+
+###### What are the reasonable SLOs (Service Level Objectives) for the above SLIs?
+
+The expectation is that nobody would rely on this particular bug, because if they wanted
+an empty volume, it's much easier to leave the data source field empty. So we don't
+anticipate the error case ever occurring.
+
+###### Are there any missing metrics that would be useful to have to improve observability of this feature?
+
+Failed PVC creations.
+
+### Dependencies
+
+###### Does this feature depend on any specific services running in the cluster?
+
+No, it's a change to kube-api-server.
+
+### Scalability
+
+###### Will enabling / using this feature result in any new API calls?
+
+No
+
+###### Will enabling / using this feature result in introducing new API types?
+
+No
+
+###### Will enabling / using this feature result in any new calls to the cloud provider?
+
+No
+
+###### Will enabling / using this feature result in increasing size or count of the existing API objects?
+
+No
+
+###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
+
+No
+
+###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
+
+No
+
+### Troubleshooting
+
+###### How does this feature react if the API server and/or etcd is unavailable?
+
+No impact, because the change is in API server itself.
+
+###### What are other known failure modes?
+
+The only way this change can "fail" is if a user was relying on the old buggy behavior.
+The best remediation in that case is for the user to stop filling in the `DataSource`
+field of the PVC with an invalid value and leave it empty isntead.
+
+###### What steps should be taken if SLOs are not being met to determine the problem?
+
+Fix the user's PVC definitions.
