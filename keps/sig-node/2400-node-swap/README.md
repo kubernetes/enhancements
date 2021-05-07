@@ -164,6 +164,7 @@ cgroupsv2 improved memory management algos, such as oomd, currently require
 swap. Hence, having a small amount of swap available on nodes could improve
 better resource pressure handling and recovery.
 
+- https://man7.org/linux/man-pages/man8/systemd-oomd.service.8.html
 - https://www.kernel.org/doc/html/latest/admin-guide/cgroup-v2.html#id1
 - https://chrisdown.name/2018/01/02/in-defence-of-swap.html
 - https://media.ccc.de/v/ASG2018-175-oomd
@@ -258,10 +259,10 @@ per-workload parameter, and `swappiness` is optional and can be set globally,
 we are choosing to only expose `memory-swap` which will adjust swap available
 to workloads.
 
-Since we are not currently setting `memory-swap` in the CRI, the default
-behaviour is to allocate the same amount of swap for a workload as memory
-requested. We will update the default to not permit the use of swap by setting
-`memory-swap` equal to `limit`.
+Since we are not currently setting `memory-swap` in the CRI, the current
+default behaviour when `--fail-swap-on=false` is set is to allocate the same
+amount of swap for a workload as memory requested. We will update the default
+to not permit the use of swap by setting `memory-swap` equal to `limit`.
 
 [runtime specification]: https://github.com/opencontainers/runtime-spec/blob/1c3f411f041711bbeecf35ff7e93461ea6789220/config-linux.md#memory
 
@@ -347,9 +348,9 @@ type LimitedSwapConfiguration struct {
 }
 ```
 
-The `MemorySwapConfiguration.SwapBehavior` setting will have the following
-effects, based on the [Docker] and open container specification for the
-`--memory-swap` flag:
+We want to expose all possible swap settings based on the [Docker] and open
+container specification for the `--memory-swap` flag. Thus, the
+`MemorySwapConfiguration.SwapBehavior` setting will have the following effects:
 
 * If `SwapBehavior` is not set or set to `"NoSwap"`, containers do not have
   access to swap. This value effectively prevents a container from using swap,
@@ -361,7 +362,7 @@ effects, based on the [Docker] and open container specification for the
   and swap.
 * If `SwapBehavior` is set to `"UnlimitedSwap"`, the container is allowed to
   use unlimited swap, up to the maximum amount available on the host system.
-* If `SwapBehavior` is set to a `"LimitedSwap"`, then the `LimitedSwap`
+* If `SwapBehavior` is set to `"LimitedSwap"`, then the `LimitedSwap`
   configuration must also be set. `LimitedSwap.PerWorkloadMemorySwapLimit`
   represents the system-wide maximum limit for combined memory and swap usage
   of a container. For example, if the limit is set to `1Gi`:
@@ -387,13 +388,9 @@ swap usage in container runtimes.  We will introduce a parameter
 // resources.
 message LinuxContainerResources {
 ...
-    // Memory limit in bytes. Default: 0 (not specified).
-    int64 memory_limit_in_bytes = 4;
     // Memory + swap limit in bytes. Default: 0 (not specified).
     int64 memory_swap_limit_in_bytes = 9;
 ...
-    // List of HugepageLimits to limit the HugeTLB usage of container per page size. Default: nil (not specified).
-    repeated HugepageLimit hugepage_limits = 8;
 }
 ```
 
@@ -511,12 +508,16 @@ Pick one of these and delete the rest.
 - [x] Feature gate (also fill in values in `kep.yaml`)
   - Feature gate name: NodeSwapEnabled
   - Components depending on the feature gate: API Server, Kubelet
-- [ ] Other
-  - Describe the mechanism:
+- [x] Other
+  - Describe the mechanism: `--fail-swap-on=false` flag for kubelet must also
+    be set at kubelet start
   - Will enabling / disabling the feature require downtime of the control
-    plane?
+    plane? Yes. Flag must be set on kubelet start. To disable, kubelet must be
+    restarted. Hence, there would be brief control component downtime on a
+    given node.
   - Will enabling / disabling the feature require downtime or reprovisioning
     of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
+    Yes. See above; disabling would require brief node downtime.
 
 ###### Does enabling the feature change any default behavior?
 
@@ -541,10 +542,14 @@ feature, can it break the existing applications?).
 NOTE: Also set `disable-supported` to `true` or `false` in `kep.yaml`.
 -->
 
-No. I don’t think it makes much sense to be able to provide users a meaningful
-ability to disable the feature flag at runtime, as this would be highly
-disruptive to workloads and difficult to implement. To turn this off, the
-kubelet would need to be restarted.
+No. The feature flag can be disabled while the `--fail-swap-on=false` flag is
+set, but this would result in undefined behaviour.
+
+To turn this off, the kubelet would need to be restarted. If a cluster admin
+wants to disable swap on the node without repartitioning the node, they could
+stop the kubelet, set `swapoff` on the node, and restart the kubelet with
+`--fail-swap-on=true`. The setting of the feature flag will be ignored in this
+case.
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
