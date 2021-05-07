@@ -4,7 +4,7 @@ authors:
   - "@chrishenzie"
 owning-sig: sig-storage
 participating-sigs:
-status: provisional
+status: implementable
 creation-date: 2021-02-10
 reviewers:
   - TBD
