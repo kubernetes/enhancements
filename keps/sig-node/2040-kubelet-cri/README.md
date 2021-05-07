@@ -1,4 +1,3 @@
-
 # Kubelet CRI support
 
 <!-- toc -->
@@ -13,6 +12,7 @@
   - [Identified Work Items](#identified-work-items)
     - [Changes from v1alpha2 to v1beta1](#changes-from-v1alpha2-to-v1beta1)
     - [Clean Up](#clean-up)
+    - [Pinned Images](#pinned-images)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
     - [Alpha -&gt; Beta Graduation](#alpha---beta-graduation)
@@ -81,6 +81,7 @@ Evolve the CRI API version as we address feedback in each milestone towards stab
 - No longer map the `container-runtime-endpoint` flag as experimental.
 - Keep the `image-service-endpoint` flag as experimental and evaluate if it makes sense to keep
   as a configurable or remove it.
+- Introduce field in the `Image` message to indicate an image should not be garbage collected (see #pinned-images)
 
 #### Changes from v1alpha2 to v1beta1
 
@@ -100,6 +101,26 @@ Need Sig-Node and Sig-Networking to help validate if / when kubenet is being dep
 - Removal of TODOs that are no longer valid should be done before v1beta. We have scraped the api specification once and have a small
 list of commits to file.
 
+#### Pinned Images
+- Introduce field in the `Image` message to indicate an image should not be garbage collected:
+```golang
+message Image {
+...
+    ImageSpec spec = 7;
+    // Recommendation on whether this image should be exempt from garbage collection.
+    // It must only be treated as a recommendation--the client can still request the image be deleted,
+    // and the runtime must oblige.
+    bool pinned = 8;
+
+}
+...
+```
+- Rely on this behavior instead of having the Kubelet keep track of expected pause image.
+	- In other words, have the runtime say the required pause image is pinned, indicating the Kubelet should not garbage collect it.
+	- As a result, support for `pod-infra-container` option in Kubelet will be dropped (not part of this KEP, but worth mentioning).
+- See https://github.com/kubernetes/kubernetes/pull/101808 for more details.
+
+
 ### Test Plan
    - Review of the existing test cases in critest and adding more if we find any gaps.
    - Make sure we have e2e node (and possibly selected e2e conformance) tests running on more than one CRI implementation.
@@ -113,6 +134,7 @@ list of commits to file.
 - Documentation is updated to reflect beta status. 
 - Update the CI with containerd and CRI-O versions that support the v1 proto.
 - Ensure that the required CRI stats changes are included. See https://github.com/kubernetes/enhancements/issues/2371.
+- Introduce field in the `Image` message to indicate an image should not be garbage collected (see #pinned-images)
 
 #### Beta -> GA Graduation
 - TBD
