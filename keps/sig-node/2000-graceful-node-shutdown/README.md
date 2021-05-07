@@ -470,7 +470,7 @@ Communication with systemd over dbus for (creating inhibitor lock, receiving
 [`vendor/`](https://github.com/kubernetes/kubernetes/tree/release-1.19/vendor/github.com/godbus/dbus/v5).
 
 Termination of pods will make use of the existing
-[killPod](https://github.com/kubernetes/kubernetes/blob/release-1.19/pkg/kubelet/pod_workers.go#L292)function
+[killPod](https://github.com/kubernetes/kubernetes/blob/release-1.19/pkg/kubelet/pod_workers.go#L292) function
 from the `kubelet` package and specify the appropriate `gracePeriodOverride` as
 necessary.
 
