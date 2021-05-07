@@ -32,6 +32,6 @@ disable-supported: true
 milestone:
   alpha: "v1.22"
   beta: "v1.23"
-  stable: "v1.24"
+  stable: "v1.25"
 stage: "alpha"
-latest-milestone: "0.0"
+latest-milestone: "v1.22"

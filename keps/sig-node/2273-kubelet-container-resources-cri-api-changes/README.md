@@ -262,9 +262,9 @@ _This section must be completed when targeting alpha to a release._
   - [ ] Other
     - Describe the mechanism:
     - Will enabling / disabling the feature require downtime of the control
-      plane?
+      plane? No.
     - Will enabling / disabling the feature require downtime or reprovisioning
-      of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled).
+      of a node? (Do not assume `Dynamic Kubelet Config` feature is enabled). No.
 
 * **Does enabling the feature change any default behavior?** No
 
@@ -272,8 +272,13 @@ _This section must be completed when targeting alpha to a release._
   the enablement)?** Yes
 
 * **What happens if we reenable the feature if it was previously rolled back?**
+  - API will once again permit modification of Resources for 'cpu' and 'memory'.
+  - Actual resources applied will be reflected in in Pod's ContainerStatuses.
 
-* **Are there any tests for feature enablement/disablement?** Unit tests
+* **Are there any tests for feature enablement/disablement?**
+  Unit tests and E2E tests.
+   - Unit tests verify that feature does not introduce any regression.
+   - E2E tests run against a local cluster verify that feature works as expected.
 
 ### Rollout, Upgrade and Rollback Planning
 
@@ -354,11 +359,14 @@ _For beta, this section is required: reviewers must answer these questions._
 _For GA, this section is required: approvers should be able to confirm the
 previous answers based on experience in the field._
 
-* **Will enabling / using this feature result in any new API calls?**
+* **Will enabling / using this feature result in any new API calls?** Yes
   Describe them, providing:
   - API call type (e.g. PATCH pods)
+    - One UpdateContainerResources CRI API call per Pod resize request.
+    - No additional overhead unless Pod resize is invoked.
   - estimated throughput
   - originating component(s) (e.g. Kubelet, Feature-X-controller)
+    - Kubelet
   focusing mostly on:
   - components listing and/or watching resources they didn't before
   - API calls that may be triggered by changes of some Kubernetes resources
@@ -366,29 +374,38 @@ previous answers based on experience in the field._
   - periodic API calls to reconcile state (e.g. periodic fetching state,
     heartbeats, leader election, etc.)
 
-* **Will enabling / using this feature result in introducing new API types?**
+* **Will enabling / using this feature result in introducing new API types?** No
   Describe them, providing:
   - API type
   - Supported number of objects per cluster
   - Supported number of objects per namespace (for namespace-scoped objects)
 
 * **Will enabling / using this feature result in any new calls to the cloud
-provider?**
+provider?** No
 
 * **Will enabling / using this feature result in increasing size or count of
-the existing API objects?**
+the existing API objects?** Yes
   Describe them, providing:
   - API type(s):
   - Estimated increase in size: (e.g., new annotation of size 32B)
   - Estimated amount of new objects: (e.g., new Object X for every existing Pod)
+    - message runtimeapi.UpdateContainerResourcesRequest in UpdateContainerResources
+      CRI API adds a new field of type ContainerResources that is a oneof, which has
+      a size of max(LinuxContainerResources, WindowsContainerResources).
+    - message runtimeapi.ContainerStatus returned by ContainerStatus CRI API adds a
+      new field of type ContainerResources that is a oneof, which has a
+      size of max(LinuxContainerResources, WindowsContainerResources).
 
 * **Will enabling / using this feature result in increasing time taken by any
-operations covered by [existing SLIs/SLOs]?**
+operations covered by [existing SLIs/SLOs]?** Yes
   Think about adding additional work or introducing new steps in between
   (e.g. need to do X to start a container), etc. Please describe the details.
+  - ContainerStatus CRI API populates ContainerResources. Data is already
+    being queried in dockershim during InspectContainer call, so the impact
+    is negligible.
 
 * **Will enabling / using this feature result in non-negligible increase of
-resource usage (CPU, RAM, disk, IO, ...) in any components?**
+resource usage (CPU, RAM, disk, IO, ...) in any components?** No
   Things to keep in mind include: additional in-memory state, additional
   non-trivial computations, excessive access to disks (including increased log
   volume), significant amount of data sent and/or received over network, etc.

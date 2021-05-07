@@ -43,6 +43,6 @@ disable-supported: true
 milestone:
   alpha: "v1.22"
   beta: "v1.23"
-  stable: "v1.24"
-latest-milestone: "0.0"
+  stable: "v1.25"
+latest-milestone: "v1.22"
 stage: "alpha"
