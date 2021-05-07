@@ -23,16 +23,18 @@
   - [Affected Components](#affected-components)
   - [Future Enhancements](#future-enhancements)
   - [Risks and Mitigations](#risks-and-mitigations)
-- [Test Plan](#test-plan)
-  - [Unit Tests](#unit-tests)
-  - [Pod Resize E2E Tests](#pod-resize-e2e-tests)
-  - [Resource Quota and Limit Ranges](#resource-quota-and-limit-ranges)
-  - [Resize Policy Tests](#resize-policy-tests)
-  - [Backward Compatibility and Negative Tests](#backward-compatibility-and-negative-tests)
-- [Graduation Criteria](#graduation-criteria)
-  - [Alpha](#alpha)
-  - [Beta](#beta)
-  - [Stable](#stable)
+  - [Test Plan](#test-plan)
+    - [Unit Tests](#unit-tests)
+    - [Pod Resize E2E Tests](#pod-resize-e2e-tests)
+    - [Resource Quota and Limit Ranges](#resource-quota-and-limit-ranges)
+    - [Resize Policy Tests](#resize-policy-tests)
+    - [Backward Compatibility and Negative Tests](#backward-compatibility-and-negative-tests)
+  - [Graduation Criteria](#graduation-criteria)
+    - [Alpha](#alpha)
+    - [Beta](#beta)
+    - [Stable](#stable)
+  - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+  - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
   - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
@@ -504,14 +506,14 @@ Other components:
    keep compatibility, PodResourceAllocation admission controller mutates such
    an update by copying non-nil values from the old Pod to current Pod.
 
-## Test Plan
+### Test Plan
 
-### Unit Tests
+#### Unit Tests
 
 Unit tests will cover the sanity of code changes that implements the feature,
 and the policy controls that are introduced as part of this feature.
 
-### Pod Resize E2E Tests
+#### Pod Resize E2E Tests
 
 End-to-End tests resize a Pod via PATCH to Pod's Spec.Containers[i].Resources.
 The e2e tests use docker as container runtime.
@@ -569,7 +571,7 @@ E2E tests for Guaranteed class Pod with three containers (c1, c2, c3):
 1. Increase CPU for c1 & c3, decrease c2 - net CPU increase for Pod.
 1. Increase memory for c1 & c3, decrease c2 - net memory increase for Pod.
 
-### Resource Quota and Limit Ranges
+#### Resource Quota and Limit Ranges
 
 Setup a namespace with ResourceQuota and a single, valid Pod.
 1. Resize the Pod within resource quota - CPU only.
@@ -586,7 +588,7 @@ Setup a namespace with min and max LimitRange and create a single, valid Pod.
 1. Increase memory to exceed max value.
 1. Decrease memory to go below min value.
 
-### Resize Policy Tests
+#### Resize Policy Tests
 
 Setup a guaranteed class Pod with two containers (c1 & c2).
 1. No resize policy specified, defaults to RestartNotRequired. Verify that CPU and
@@ -600,7 +602,7 @@ Setup a guaranteed class Pod with two containers (c1 & c2).
 1. RestartNotRequired cpu, Restart memory policy for c1. Resize c1 CPU & memory,
    verify container is resized with restart.
 
-### Backward Compatibility and Negative Tests
+#### Backward Compatibility and Negative Tests
 
 1. Verify that Node is allowed to update only a Pod's ResourcesAllocated field.
 1. Verify that only Node account is allowed to udate ResourcesAllocated field.
@@ -615,27 +617,39 @@ Setup a guaranteed class Pod with two containers (c1 & c2).
 
 TODO: Identify more cases
 
-## Graduation Criteria
+### Graduation Criteria
 
-### Alpha
+#### Alpha
 - In-Place Pod Resouces Update functionality is implemented for running Pods,
 - LimitRanger and ResourceQuota handling are added,
 - Resize Policies functionality is implemented,
 - Unit tests and E2E tests covering basic functionality are added,
 - E2E tests covering multiple containers are added.
 
-### Beta
+#### Beta
 - VPA alpha integration of feature completed and any bugs addressed,
 - E2E tests covering Resize Policy, LimitRanger, and ResourceQuota are added,
 - Negative tests are identified and added.
 - A "/resize" subresource is defined and implemented.
 - Pod-scoped resources are handled if that KEP is past alpha
 
-### Stable
+#### Stable
 - VPA integration of feature moved to beta,
 - User feedback (ideally from atleast two distinct users) is green,
 - No major bugs reported for three months.
 - Pod-scoped resources are handled if that KEP is past alpha
+
+### Upgrade / Downgrade Strategy
+Scheduler and API server should be updated before Kubelets in that order.
+Kubelet and the runtime versions should use the same CRI version in lock-step.
+Upgrade involves draining all pods from a node, installing a CRI runtime with this
+version of the API and update to a matching kubelet and making node schedulable again.
+Downgrade involves doing the above in reverse.
+
+### Version Skew Strategy
+Kubelet and the CRI runtime versions are expected to match so we don't have to worry about.
+Previous versions of clients that are unaware of the new ResizePolicy fields would set them
+to nil. API server mutates such updates by copying non-nil values from old Pod to current Pod
 
 ## Production Readiness Review Questionnaire
 

@@ -15,6 +15,8 @@
     - [Alpha](#alpha)
     - [Beta](#beta)
     - [Stable](#stable)
+  - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
+  - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
   - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
   - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
@@ -224,6 +226,14 @@ TBD
 #### Stable
 
 * No major bugs reported for three months.
+
+### Upgrade / Downgrade Strategy
+Kubelet and the runtime versions should use the same CRI version in lock-step.
+Upgrade involves draining all pods from a node, installing a CRI runtime with this
+version of the API and update to a matching kubelet and making node schedulable again.
+
+### Version Skew Strategy
+Kubelet and the CRI runtime versions are expected to match so we don't have to worry about.
 
 ## Production Readiness Review Questionnaire
 
