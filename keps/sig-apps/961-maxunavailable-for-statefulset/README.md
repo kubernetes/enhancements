@@ -12,12 +12,19 @@
     - [Story 1](#story-1)
   - [Implementation Details](#implementation-details)
     - [API Changes](#api-changes)
-      - [Recommended Choice](#recommended-choice)
     - [Implementation](#implementation)
   - [Risks and Mitigations](#risks-and-mitigations)
   - [Upgrades/Downgrades](#upgradesdowngrades)
   - [Tests](#tests)
+- [Test Plan](#test-plan)
 - [Graduation Criteria](#graduation-criteria)
+- [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
+  - [Feature Enablement and Rollback](#feature-enablement-and-rollback)
+  - [Rollout, Upgrade and Rollback Planning](#rollout-upgrade-and-rollback-planning)
+  - [Monitoring Requirements](#monitoring-requirements)
+  - [Dependencies](#dependencies)
+  - [Scalability](#scalability)
+  - [Troubleshooting](#troubleshooting)
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
@@ -150,15 +157,13 @@ complicated.
 Choice 4 provides a choice to the users and hence takes the guessing out of the picture on what they 
 will expect. Implementing Choice 4 using PMP would be the easiest.
 
-##### Recommended Choice
-
-I recommend Choice 4, using PMP=Parallel for the first Alpha Phase. This would give the users fast 
-rollouts without having them to second guess what the behavior should be. This choice also allows for 
-easily extending the behavior with PMP=OrderedReady in future to choose either behavior 1 or 3.
-
 #### Implementation
 
-TBD: Will be updated after we have agreed on the semantics being discussed above.
+The alpha release we are going with Choice 4 with support for both PMP=Parallel and PMP=OrderedReady.
+For PMP=Parallel, we will use Choice 2
+For PMP=OrderedReady, we will use Choice 3 to ensure we can support ordering guarantees while also 
+making sure the rolling updates are fast.
+
 
 https://github.com/kubernetes/kubernetes/blob/v1.13.0/pkg/controller/statefulset/stateful_set_control.go#L504
 ```go
@@ -234,13 +239,17 @@ tried this feature in Alpha, we would have time to fix issues.
 
 ### Upgrades/Downgrades
 
-- Upgrades
- When upgrading from a release without this feature, to a release with maxUnavailable, we will set maxUnavailable to 1. This would give users the same default
- behavior they have to come to expect of in previous releases
-- Downgrades
- When downgrading from a release with this feature, to a release without maxUnavailable, there are two cases
- -- if maxUnavailable is greater than 1 -- in this case user  can see unexpected behavior(Find out what is the recommendation here(Warning, disable upgrade, drop field, etc? )
- -- if maxUnavailable is less than equal to 1 -- in this case user wont see any difference in behavior
+We will default to 1 for maxUnavailable field in StatefulSet for backward compatibility
+
+Downgrades
+
+When downgrading from a release with this feature, to a release without maxUnavailable, there are two cases
+ - If maxUnavailable is greater than 1, there are two more cases:-
+   - If you're rolling back to a release that doesn't have this field - then there is even no way to discover it
+   - If you're just disabling the feature (either together with downgrade to a release that has a field or without downgrade),the field should remain set 
+        (unless someone will explicitly delete it later), but controller should ignore its behavior (and there shouldn't be a way to set it if the feature gate
+         is switched off).
+ - If maxUnavailable is less than equal to 1 -- in this case user wont see any difference in behavior
 
 ### Tests
 
@@ -254,11 +263,126 @@ tried this feature in Alpha, we would have time to fix issues.
 - maxUnavailable greater than 1 with partition and staged pods greater than maxUnavailable
 - maxUnavailable greater than 1 with partition and maxUnavailable greater than replicas
 
+## Test Plan
+For `Alpha`, unit tests and e2e tests will be added to test functionality at both
+with feature flag enabled and disabled. Defaults will be verified so that users
+who donot set this flag are not surprised at all.
+
+
 ## Graduation Criteria
 
-- Alpha: Initial support for maxUnavailable in StatefulSets added. Disabled by default. 
-- Beta:  Enabled by default with default value of 1. 
+- Alpha: Initial support for maxUnavailable in StatefulSets added. Disabled by default with default value of 1.
+- Beta:  Enabled by default with default value of 1 with upgrade downgrade testedd at least manually.
 
+
+## Production Readiness Review Questionnaire
+
+### Feature Enablement and Rollback
+
+###### How can this feature be enabled / disabled in a live cluster?
+
+- [x] Feature gate (also fill in values in `kep.yaml`)
+  - Feature gate name: MaxUnavailableStatefulSet
+  - Components depending on the feature gate: kube-apiserver and kube-controller-manager
+
+###### Does enabling the feature change any default behavior?
+
+No, the default behavior remains the same.
+
+###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
+
+Yes this feature can be disabled. Once disabled, all existing  StatefulSet will
+revert to the old behavior where rolling update will proceed one pod at a time.
+
+###### What happens if we reenable the feature if it was previously rolled back?
+
+We will restore the desired behavior for StatefulSets for which the maxunavailable field wasn't deleted after 
+the feature gate was disabled.
+
+###### Are there any tests for feature enablement/disablement?
+yes, there are unit tests which make sure the field is correctly dropped 
+on feature enable and disabled
+
+### Rollout, Upgrade and Rollback Planning
+
+###### How can a rollout or rollback fail? Can it impact already running workloads?
+
+A rollout or rollback of this feature can fail if there is a bug which causes the kube-apiserver or 
+the kube-controller-manager to start crashing when the feature flag is enabled.
+
+
+Yes, it can impact already running workloads.
+
+If a rolling update is in progress for a StatefulSet, while this feature is being enabled in kube-apiserver
+and kube-controller-manager, the StatefulSet controller can run into corner cases where it will take longer
+for the controller to converge. This will only happen if after enabling the feature, the customer also sets
+maxUnavailable to a number greater than 1,  but the invariants and the logic will ensure that there are never more than
+maxUnavailable pods with the same identity and never more than maxUnavailable being deleted.
+
+###### What specific metrics should inform a rollback?
+TODO when we reach Beta
+
+###### Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?
+Will be tested when graduating to Beta.
+
+
+###### Is the rollout accompanied by any deprecations and/or removals of features, APIs, fields of API types, flags, etc.?
+No
+
+### Monitoring Requirements
+
+###### How can an operator determine if the feature is in use by workloads?
+If their StatefulSet rollingUpdate section has the field maxUnavailable specified with
+a value different than 1.
+The below command should show maxUnavailable value:
+```
+kubectl get statefulsets -o yaml | grep maxUnavailable
+```
+
+###### How can someone using this feature know that it is working for their instance?
+TODO when we reach Beta
+
+###### What are the reasonable SLOs (Service Level Objectives) for the enhancement?
+
+###### What are the SLIs (Service Level Indicators) an operator can use to determine the health of the service?
+
+###### Are there any missing metrics that would be useful to have to improve observability of this feature?
+
+### Dependencies
+
+###### Does this feature depend on any specific services running in the cluster?
+NA
+
+### Scalability
+
+###### Will enabling / using this feature result in any new API calls?
+It doesnt make any extra API calls.
+
+###### Will enabling / using this feature result in introducing new API types?
+No
+
+###### Will enabling / using this feature result in any new calls to the cloud provider?
+No
+
+
+###### Will enabling / using this feature result in increasing size or count of the existing API objects?
+A struct gets added to every StatefulSet object which has three fields, one 32 bit integer and two fields of type string.
+The struct in question is IntOrString.
+
+###### Will enabling / using this feature result in increasing time taken by any operations covered by existing SLIs/SLOs?
+No
+
+###### Will enabling / using this feature result in non-negligible increase of resource usage (CPU, RAM, disk, IO, ...) in any components?
+The controller-manager will see very negligible and almost un-notoceable increase in cpu usage.
+
+### Troubleshooting
+
+###### How does this feature react if the API server and/or etcd is unavailable?
+The RollingUpdate will fail or will not be able to proceed if etcd or apiserver is unavailable and
+hence this feature will also be not be able to be used.
+
+###### What are other known failure modes?
+NA
 
 ## Implementation History
 
