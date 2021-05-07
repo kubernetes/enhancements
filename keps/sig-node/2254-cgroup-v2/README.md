@@ -210,7 +210,8 @@ these controllers is to use eBPF.
   A good candidate for running cgroup v2 test is Fedora 31 that has
   already switched to default to cgroup v2.
 
-- Beta: e2e tests coverage and performance testing.
+- Beta: e2e tests coverage and performance testing.  Verify that both
+  the CPU and Memory Manager work.
 
 - GA: Assuming no negative user feedback based on production
   experience, promote after 2 releases in beta.
