@@ -34,15 +34,15 @@
 
 Items marked with (R) are required *prior to targeting to a milestone / release*.
 
-- [ ] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
+- [x] (R) Enhancement issue in release milestone, which links to KEP dir in [kubernetes/enhancements] (not the initial KEP PR)
 - [x] (R) KEP approvers have approved the KEP status as `implementable`
 - [x] (R) Design details are appropriately documented
 - [x] (R) Test plan is in place, giving consideration to SIG Architecture and SIG Testing input
 - [x] (R) Graduation criteria is in place
 - [x] (R) Production readiness review completed
 - [x] Production readiness review approved
-- [ ] "Implementation History" section is up-to-date for milestone
-- [ ] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
+- [x] "Implementation History" section is up-to-date for milestone
+- [x] User-facing documentation has been created in [kubernetes/website], for publication to [kubernetes.io]
 - [ ] Supporting documentation—e.g., additional design documents, links to mailing list discussions/SIG meetings, relevant PRs/issues, release notes
 
 
@@ -206,6 +206,7 @@ Alpha (v1.21):
 
 Beta (v1.22): 
 - Enable LogarithmicScaleDown feature gate by default
+- Enable `deleted_pod_age_ratio` metric
 
 Stable (v1.23):
 - Remove LogarithmicScaleDown feature gate
@@ -263,46 +264,48 @@ _This section must be completed when targeting alpha to a release._
 _This section must be completed when targeting beta graduation to a release._
 
 * **How can a rollout fail? Can it impact already running workloads?**
-  Try to be as paranoid as possible - e.g., what if some components will restart
-   mid-rollout?
+  This should not affect running workloads, though there is the possibility that the logic 
+  panics which would cause kube-controller-manager to crash
 
 * **What specific metrics should inform a rollback?**
+  Increased pod deletions could indicate runaway/hot-loop failures in the scaledown logic.
+  Availability of applications may also be affected. Though the intent of this is to provide 
+  better available through more distributed victim selection, in cases of desired binpacking 
+  pods may remain running on undesired nodes.
 
 * **Were upgrade and rollback tested? Was the upgrade->downgrade->upgrade path tested?**
-  Describe manual testing that was done and the outcomes.
-  Longer term, we may want to require automated upgrade/rollback tests, but we
-  are missing a bunch of machinery and tooling and can't do that now.
+  This will be manually tested before the graduation to beta
 
 * **Is the rollout accompanied by any deprecations and/or removals of features, APIs, 
 fields of API types, flags, etc.?**
-  Even if applying deprecation policies, they may still surprise some users.
+  No
 
 ### Monitoring Requirements
 
 _This section must be completed when targeting beta graduation to a release._
 
 * **How can an operator determine if the feature is in use by workloads?**
-  Ideally, this should be a metric. Operations against the Kubernetes API (e.g.,
-  checking if there are objects with field X set) may be a last resort. Avoid
-  logs or events for this purpose.
+  The scaledown behavior of all replicasets will be affected by this featuregate being 
+  enabled, so somehow monitoring them will be necessary to determine it
 
 * **What are the SLIs (Service Level Indicators) an operator can use to determine 
 the health of the service?**
-  - [ ] Metrics
-    - Metric name:
+  - [x] Metrics
+    - Metric name: deleted_pod_age_ratio
     - [Optional] Aggregation method:
-    - Components exposing the metric:
+    - Components exposing the metric: kube-controller-manager
   - [ ] Other (treat as last resort)
-    - Details:
+  
+The metric `deleted_pod_age_ratio` will provide a histogram of the ratio between the 
+chosen `deleted pod`'s age over the current `youngest pod`'s age, for pods where the sort 
+algorithm falls back to age. (Pod age is the final criteria in the sorting algorithm, so we don't 
+want to measure this ratio for deletions which don't use this feature, as those may validly fall 
+outside the desired range).
 
 * **What are the reasonable SLOs (Service Level Objectives) for the above SLIs?**
-  At a high level, this usually will be in the form of "high percentile of SLI
-  per day <= X". It's impossible to provide comprehensive guidance, but at the very
-  high level (needs more precise definitions) those may be things like:
-  - per-day percentage of API calls finishing with 5XX errors <= 1%
-  - 99% percentile over day of absolute value from (job creation time minus expected
-    job creation time) for cron job <= 10%
-  - 99,9% of /health requests per day finish with 200 code
+  There should be no values `>2` in the above metric when the Pod Cost annotation is unset 
+  (see https://github.com/kubernetes/enhancements/tree/master/keps/sig-apps/2255-pod-cost) and 
+  the pod's deletion was based on a timestamp comparison (rather than, for example, pod state).
 
 * **Are there any missing metrics that would be useful to have to improve observability 
 of this feature?**
@@ -314,19 +317,7 @@ of this feature?**
 _This section must be completed when targeting beta graduation to a release._
 
 * **Does this feature depend on any specific services running in the cluster?**
-  Think about both cluster-level services (e.g. metrics-server) as well
-  as node-level agents (e.g. specific version of CRI). Focus on external or
-  optional services that are needed. For example, if this feature depends on
-  a cloud provider API, or upon an external software-defined storage or network
-  control plane.
-
-  For each of these, fill in the following—thinking about running existing user workloads
-  and creating new ones, as well as about cluster-level services (e.g. DNS):
-  - [Dependency name]
-    - Usage description:
-      - Impact of its outage on the feature:
-      - Impact of its degraded performance or high-error rates on the feature:
-
+  No, it is part of the controller-manager
 
 ### Scalability
 
@@ -369,27 +360,22 @@ details). For now, we leave it here.
 _This section must be completed when targeting beta graduation to a release._
 
 * **How does this feature react if the API server and/or etcd is unavailable?**
+  N/a - this is not a feature of running workloads. The main controller will not work and 
+  be unable to scale up or down if API or etcd are unavailable.
 
 * **What are other known failure modes?**
-  For each of them, fill in the following information by copying the below template:
-  - [Failure mode brief description]
-    - Detection: How can it be detected via metrics? Stated another way:
-      how can an operator troubleshoot without logging into a master or worker node?
-    - Mitigations: What can be done to stop the bleeding, especially for already
-      running user workloads?
-    - Diagnostics: What are the useful log messages and their required logging
-      levels that could help debug the issue?
-      Not required until feature graduated to beta.
-    - Testing: Are there any tests for failure mode? If not, describe why.
+n/a
 
 * **What steps should be taken if SLOs are not being met to determine the problem?**
+n/a
 
 [supported limits]: https://git.k8s.io/community//sig-scalability/configs-and-limits/thresholds.md
 [existing SLIs/SLOs]: https://git.k8s.io/community/sig-scalability/slos/slos.md#kubernetes-slisslos
 
 ## Implementation History
 
-- 2020-01-06: Initial KEP submitted
+- 2021-01-06: Initial KEP submitted
+- 2021-05-07: Updated KEP for graduation to beta
 
 ## Drawbacks
 
