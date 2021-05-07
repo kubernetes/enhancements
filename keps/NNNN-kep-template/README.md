@@ -297,13 +297,18 @@ functionality is accessed.
 
 Below are some examples to consider, in addition to the aforementioned [maturity levels][maturity-levels].
 
-#### Alpha -> Beta Graduation
+#### Alpha
+
+- Feature implemented behind a feature flag
+- Initial e2e tests completed and enabled
+
+#### Beta
 
 - Gather feedback from developers and surveys
 - Complete features A, B, C
-- Tests are in Testgrid and linked in KEP
+- Additional tests are in Testgrid and linked in KEP
 
-#### Beta -> GA Graduation
+#### GA
 
 - N examples of real-world usage
 - N installs
@@ -314,17 +319,17 @@ Below are some examples to consider, in addition to the aforementioned [maturity
 GA/stable, because there's no opportunity for user feedback, or even bug reports,
 in back-to-back releases.
 
-#### Removing a Deprecated Flag
+**For non-optional features moving to GA, the graduation criteria must include
+[conformance tests].**
+
+[conformance tests]: https://git.k8s.io/community/contributors/devel/sig-architecture/conformance-tests.md
+
+#### Deprecation
 
 - Announce deprecation and support policy of the existing flag
 - Two versions passed since introducing the functionality that deprecates the flag (to address version skew)
 - Address feedback on usage/changed behavior, provided on GitHub issues
 - Deprecate the flag
-
-**For non-optional features moving to GA, the graduation criteria must include 
-[conformance tests].**
-
-[conformance tests]: https://git.k8s.io/community/contributors/devel/sig-architecture/conformance-tests.md
 -->
 
 ### Upgrade / Downgrade Strategy
